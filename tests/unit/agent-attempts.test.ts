@@ -54,4 +54,23 @@ describe('one line’s attempts: no kind of asking takes another’s slot', () =
     expect(fn).toContain('gte(agentRuns.attempt, EDIT_ATTEMPT_BASE)');
     expect(fn).toContain('return EDIT_ATTEMPT_BASE + ');
   });
+
+  it('a job that waits (typing, a bare greeting) asks again on the slot it was given — never counted afresh onto 0', () => {
+    const run = readFileSync('src/modules/wms/agent/run.ts', 'utf8');
+    const fn = run.slice(run.indexOf('async function attemptFor('), run.indexOf('const lastOutAsked'));
+    expect(fn.indexOf('if (job.attempt !== undefined) return job.attempt;')).toBeGreaterThan(-1);
+    expect(fn.indexOf('if (job.attempt !== undefined) return job.attempt;')).toBeLessThan(fn.indexOf("if (job.origin !== 'edit')"));
+    const wait = run.slice(run.indexOf('async function reschedule('), run.indexOf('/** The ledger row for a run'));
+    expect(wait).toContain('{ ...job, attempt, waited }');
+    expect(wait).not.toContain("origin: 'typing_wait'");
+  });
+
+  it('the press reads the queue BEFORE the ledger — a job moving from one into the other between the reads is seen by one of them', () => {
+    const decide = readFileSync('src/modules/wms/agent/decide.ts', 'utf8');
+    const fn = decide.slice(decide.indexOf('async function redraftNewest('), decide.indexOf('const SUPERSEDED_AS'));
+    const jobs = fn.indexOf('await inboundJobsComing(');
+    const runs = fn.indexOf('.from(agentRuns)');
+    expect(jobs).toBeGreaterThan(-1);
+    expect(runs).toBeGreaterThan(jobs);
+  });
 });

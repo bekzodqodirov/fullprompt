@@ -38,8 +38,9 @@ import {
  * a card that came 23 minutes after the customer's lines, and a log that
  * could not say whether the job waited in the queue or was born late). The
  * ORIGIN says who asked — the live hook, an edit, a stranger's pull answered
- * on the bot's card or the web tray, the sweep's gap pass or retry, a typing
- * wait, his ✅/❌ asking again (`redraft`) — and the clocks
+ * on the bot's card or the web tray, the sweep's gap pass or retry, his ✅/❌
+ * asking again (`redraft`) — `waited` that it looked once and waited out the
+ * customer's typing or a bare greeting (run `reschedule`), and the clocks
  * say how long it waited: `lagMs` past the moment it was allowed to start (a
  * busy or stopped worker), `queuedMs` since it was put on the queue. Both
  * from pg-boss's own columns (`includeMetadata`), the database's one clock;
@@ -51,7 +52,14 @@ export function inboundLogFields(job: {
   startAfter?: Date | string | null;
   createdOn?: Date | string | null;
   startedOn?: Date | string | null;
-}): { peer: string; origin: AgentInboundJob['origin']; attempt: number; lagMs?: number; queuedMs?: number } {
+}): {
+  peer: string;
+  origin: AgentInboundJob['origin'];
+  attempt: number;
+  waited?: AgentInboundJob['waited'];
+  lagMs?: number;
+  queuedMs?: number;
+} {
   const at = (value: Date | string | null | undefined): number | null => {
     if (value === null || value === undefined) return null;
     const ms = new Date(value).getTime();
@@ -64,6 +72,7 @@ export function inboundLogFields(job: {
     peer: job.data.peerId,
     origin: job.data.origin,
     attempt: job.data.attempt ?? 0,
+    ...(job.data.waited ? { waited: job.data.waited } : {}),
     ...(started !== null && allowed !== null ? { lagMs: Math.max(0, started - allowed) } : {}),
     ...(started !== null && created !== null ? { queuedMs: Math.max(0, started - created) } : {}),
   };
@@ -223,6 +232,31 @@ export async function inboundJobsWaiting(managerUserId: string): Promise<Set<str
      WHERE name = ${JOB_AGENT_INBOUND}
        AND state IN ('created', 'retry')
        AND data->>'managerUserId' = ${managerUserId}`);
+  return new Set(rows.map((r) => `${r.peer_id}:${r.anchor}`));
+}
+
+/**
+ * The press's question (decide `redraftNewest`), one state wider than the
+ * sweep's: a job WAITING, as above, or one the worker has just PICKED UP and
+ * that has not written its run yet — between pg-boss's fetch and `reserve`
+ * the run reads the chat, asks whether the customer is typing, `draftWorthy`
+ * and eligibility, and neither table says anything of it (review: ✅ in that
+ * window answered «o‘zingiz javob bering», and the card came anyway). Only a
+ * pick-up younger than `INTERRUPTED_RUN_MS` — an older 'active' is a killed
+ * process's, which the sweep recovers (K24) — and started at or after
+ * `since`: for the anchor his card answers, a job picked up before the card
+ * was written is the card's own run finishing, not a new one.
+ */
+export async function inboundJobsComing(managerUserId: string, since: Date, now: Date = new Date()): Promise<Set<string>> {
+  const [present] = await db.execute<{ job: boolean }>(sql`SELECT to_regclass('pgboss.job') IS NOT NULL AS job`);
+  if (!present?.job) return new Set();
+  const floor = new Date(Math.max(since.getTime(), now.getTime() - INTERRUPTED_RUN_MS)).toISOString();
+  const rows = await db.execute<{ peer_id: string | null; anchor: string | null }>(sql`
+    SELECT data->>'peerId' AS peer_id, data->>'anchorTgMessageId' AS anchor
+      FROM pgboss.job
+     WHERE name = ${JOB_AGENT_INBOUND}
+       AND data->>'managerUserId' = ${managerUserId}
+       AND (state IN ('created', 'retry') OR (state = 'active' AND started_on >= ${floor}::timestamptz))`);
   return new Set(rows.map((r) => `${r.peer_id}:${r.anchor}`));
 }
 

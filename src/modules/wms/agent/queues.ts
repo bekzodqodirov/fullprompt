@@ -22,15 +22,26 @@ export interface AgentInboundJob {
   /** bigints travel as strings through pg-boss's JSON. */
   peerId: string;
   anchorTgMessageId: string;
-  /** 0 from the listener; the sweep's one retry of an errored run is 1 (fit-15); his press asks from 50 (`nextRedraftAttempt`). */
+  /**
+   * 0 from the listener; the sweep's one retry of an errored run is 1 (fit-15); his press asks from 50
+   * (`nextRedraftAttempt`). An edit's is counted by the run (`attemptFor`, from 100) and then CARRIED
+   * when the run waits (`reschedule`), so a job that waited asks on the slot it was given.
+   */
   attempt?: number;
   /**
    * Why this job exists — the live hook, an edit of the newest inbound, a
-   * pull, the sweep, a typing wait, or his ✅/❌ on a card the chat had moved
-   * past (decide `redraftNewest`): that one is HIS press, never the sweep's,
-   * and the late note and the `[agent] inbound` line say so.
+   * pull, the sweep, or his ✅/❌ on a card the chat had moved past (decide
+   * `redraftNewest`): that one is HIS press, never the sweep's, and the late
+   * note and the `[agent] inbound` line say so. A job that waited out the
+   * customer's typing or a bare greeting KEEPS its asker's origin (`waited`
+   * says it waited — review: an edit rescheduled as 'typing_wait' lost both
+   * its cause and its edit attempt, and stood down as a duplicate of the
+   * very draft it was re-thinking). 'typing_wait' is only ever read now, on
+   * a job an older worker queued before the deploy.
    */
   origin: 'live' | 'edit' | 'pull' | 'sweep' | 'typing_wait' | 'redraft';
+  /** The run looked once and waited (run `reschedule`): the customer was still typing, or the burst was a bare greeting. */
+  waited?: 'typing' | 'greeting';
 }
 
 /**

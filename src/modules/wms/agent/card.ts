@@ -309,8 +309,10 @@ export const LATE_CARD_MS = 3 * 60_000;
  * door's buttons; the sweep's gap pass re-asks a message no run took; an
  * edit re-asks the anchor; his ✅/❌ on a card the chat had moved past asks
  * the newest line again (decide `redraftNewest`) — his press, never «the AI
- * looked again». A live or typing-wait run that is late has no cause the job
- * can name, and none is invented.
+ * looked again». A job that waited out the customer's typing keeps its
+ * asker's origin (run `reschedule`), so its cause is still the asker's. A live
+ * run that is late — or a 'typing_wait' job an older worker queued — has no
+ * cause the job can name, and none is invented.
  */
 const LATE_CAUSE: Partial<Record<AgentInboundJob['origin'], string>> = {
   pull: '(chat lid yoki mijoz deb belgilangandan keyin yozildi)',

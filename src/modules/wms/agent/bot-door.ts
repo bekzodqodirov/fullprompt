@@ -10,7 +10,7 @@ import { digestBody, hitWords } from './card';
 import { actionLines } from './card-io';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
-import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
+import { decideDraft, submitOwnText, type DecideRefusal, type SupersededDetail } from './decide';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { extractNumbers } from './numbers';
@@ -80,7 +80,7 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   policy_block: 'Bu matn shunday yuborilmaydi — «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing.',
   listener_behind: "Telegram ko'prigi (tinglovchi) yangilanmagan — xabar ketmaydi. Serverda tg-listen'ni qayta quring.",
   sending_disabled: "CRM'dan Telegramga yuborish o'chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o'zingiz yuboring.",
-  // A newer card is coming (decide `redraftNewest`); `SUPERSEDED_NO_DRAFT` when none is.
+  // A newer card is coming (decide `redraftNewest`); the other answers are `SUPERSEDED_WORDS`.
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
@@ -94,6 +94,20 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
 
 /** ✅ refused because the customer wrote again and no run will draft the newer message — he answers it. */
 export const SUPERSEDED_NO_DRAFT = 'Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.';
+
+/**
+ * A ✅ refused as `superseded`, in the words of what the press found (decide
+ * `SUPERSEDED_AS`): a customer who EDITED his line did not write again, and a
+ * line whose reply he already approved is not his to answer a second time
+ * (review). The page says the same through its own labels (web-actions).
+ */
+export const SUPERSEDED_WORDS: Record<SupersededDetail, string> = {
+  redrafting: DECIDE_WORDS.superseded,
+  no_draft: SUPERSEDED_NO_DRAFT,
+  edited_redrafting: 'Mijoz xabarini tahrirladi — yangi qoralama tayyorlanadi.',
+  edited_no_draft: 'Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.',
+  answered: 'Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
+};
 
 /** A ✅ refusal that RETIRED the draft (or found it gone): the edit armed for it is over. */
 const RETIRING: ReadonlySet<DecideRefusal> = new Set(['superseded', 'taken_over', 'not_live', 'identity_changed']);
@@ -184,7 +198,8 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
           const toast = r.code === 'budget_spent' ? '⛔ Chegara tugadi' : '⛔ Yuborish o‘chirilgan';
           return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}`, quotes: { draftId: id, parts: ['reply'] } };
         }
-        const words = r.code === 'superseded' && r.detail === 'no_draft' ? SUPERSEDED_NO_DRAFT : DECIDE_WORDS[r.code];
+        const words =
+          r.code === 'superseded' ? (SUPERSEDED_WORDS[r.detail as SupersededDetail] ?? DECIDE_WORDS.superseded) : DECIDE_WORDS[r.code];
         return {
           toast: words.slice(0, 190),
           reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined,

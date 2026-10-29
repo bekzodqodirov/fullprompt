@@ -23,7 +23,7 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { cardDigest, digestBody } from './card';
-import { LANDING_CLAIM, renderDraftCardFull } from './card-io';
+import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
@@ -208,6 +208,20 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
 }
 
 /**
+ * What `redraftNewest` found, for the press's words AND the card's: which line
+ * the chat moved to — the EDITED anchor itself, or a newer message (an edit
+ * with a newer line past it is a newer message) — and what happens to it.
+ * «Mijoz yana yozdi» about an edit sent him looking for a message that is not
+ * there, and «o‘zingiz javob bering» about a line whose reply he had already
+ * approved told him to answer twice (review).
+ */
+export interface RedraftAnswer {
+  line: 'edited' | 'newer';
+  /** coming: a card for that line is on its way; none: nothing will draft it — he answers; answered: its card is approved. */
+  next: 'coming' | 'none' | 'answered';
+}
+
+/**
  * The customer's newest message asked again when the draft a run stood down
  * for is gone (review: ✅ on an editing draft after the customer wrote again).
  * A run that meets a draft he is EDITING stands down after its model call
@@ -224,27 +238,33 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
  * `nextRedraftAttempt`) — never attempt 1, the sweep's one retry of a first
  * look, or a redraft that errored would never be tried again.
  *
- * True = a card for that line is coming — what the press may promise; false
- * is said to him as «o‘zingiz javob bering», so it must be as true (review):
+ * `coming` is what the press may promise; `none` is said to him as
+ * «o‘zingiz javob bering», so it must be as true (review):
  *  - a run of the line still in flight, or a card of it still up, is the card;
- *  - a job for the line still WAITING its turn is the card (jobs
- *    `inboundJobsWaiting`): the listener's edit job sits 12 s out, longer
- *    behind a busy worker, and the live hook's on its debounce;
+ *  - a job for the line still WAITING its turn, or just picked up and not yet
+ *    reserved, is the card (jobs `inboundJobsComing`): the listener's edit job
+ *    sits 12 s out, longer behind a busy worker, and the live hook's on its
+ *    debounce. The jobs are read BEFORE the runs, so a job moving from the
+ *    queue into its run between the two reads is seen by one of them;
  *  - an errored ask the sweep will retry is the card (`isFirstAsk`, its window);
- *  - a refusal, a cap, a «no reply needed», a notice, a card he already
- *    decided, an error past its retry: that run's own answer — nothing comes.
+ *  - otherwise the line is judged by its NEWEST ask, never by every run of it
+ *    (review: a first look that errored and the sweep's retry that then stood
+ *    down for his ✏️ — the old error kept the line from ever being asked
+ *    again): asked again when that ask stood down for his edit, or drafted a
+ *    card this very draft superseded (the hand-back that landed after it);
+ *    `answered` when its card is approved; `none` for a refusal, a cap, a «no
+ *    reply needed», a notice, a card he rejected or let expire, an error past
+ *    its retry — that ask's own answer, nothing comes.
  * Which runs answer the line: for an edited anchor only those since the draft
  * (the draft's own run answered the text before the edit); for a newer
  * message EVERY run of it, whenever it began — a hand-back draft is written
  * on its own worker and can land while the newer message's run is still in
  * its model call, and asking that line again paid the model twice (review).
- * Asked again: a run that stood down for his edit, or one whose card this
- * very draft superseded (the hand-back that landed after it).
  */
-async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<boolean> {
+async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<RedraftAnswer> {
   // The sweep's own gate: with no model a queued run writes nothing, and the press must not promise a card.
   const config = await readAgentConfig();
-  if (!agentRunning(config) || config.ownerUserId !== d.managerUserId || !aiConfigured()) return false;
+  if (!agentRunning(config) || config.ownerUserId !== d.managerUserId || !aiConfigured()) return { line: how, next: 'none' };
   const [newest] = await db
     .select({ tgMessageId: tgMessages.tgMessageId })
     .from(tgMessages)
@@ -260,9 +280,13 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
     )
     .orderBy(desc(tgMessages.tgMessageId))
     .limit(1);
-  if (!newest) return false;
+  if (!newest) return { line: how, next: 'none' };
   // Past the edited line a newer message is the one to answer — asked about as a newer message.
   const edited = how === 'edited' && newest.tgMessageId === d.anchorTgMessageId;
+  const line: RedraftAnswer['line'] = edited ? 'edited' : 'newer';
+  // The queue first, then the ledger: a job that leaves the one for the other between the reads is in one of them.
+  const { ERRORED_RETRY_WINDOW_MS, inboundJobsComing } = await import('./jobs');
+  const jobs = await inboundJobsComing(d.managerUserId, edited ? d.createdAt : new Date(0));
   const runs = await db
     .select({ id: agentRuns.id, attempt: agentRuns.attempt, outcome: agentRuns.outcome, error: agentRuns.error, createdAt: agentRuns.createdAt })
     .from(agentRuns)
@@ -275,26 +299,30 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
       ),
     );
   const answering = edited ? runs.filter((r) => r.createdAt.getTime() >= d.createdAt.getTime()) : runs;
-  if (answering.some((r) => r.outcome === 'reserved')) return true;
+  if (answering.some((r) => r.outcome === 'reserved')) return { line, next: 'coming' };
   const drafted = answering.filter((r) => r.outcome === 'draft').map((r) => r.id);
   const cards = drafted.length
     ? await db.select({ runId: agentDrafts.runId, status: agentDrafts.status }).from(agentDrafts).where(inArray(agentDrafts.runId, drafted))
     : [];
-  if (cards.some((c) => c.status === 'pending' || c.status === 'editing')) return true;
-  const { ERRORED_RETRY_WINDOW_MS, inboundJobsWaiting } = await import('./jobs');
-  if ((await inboundJobsWaiting(d.managerUserId)).has(`${d.peerId}:${newest.tgMessageId}`)) return true;
+  if (cards.some((c) => c.status === 'pending' || c.status === 'editing')) return { line, next: 'coming' };
+  if (jobs.has(`${d.peerId}:${newest.tgMessageId}`)) return { line, next: 'coming' };
   // The sweep retries an errored ask that nothing asked after (jobs `agentSweep` step 4).
   const top = Math.max(-1, ...runs.map((r) => r.attempt));
   const retrying = (r: (typeof runs)[number]) =>
     r.outcome === 'error' && isFirstAsk(r.attempt) && r.attempt === top && Date.now() - r.createdAt.getTime() < ERRORED_RETRY_WINDOW_MS;
-  if (answering.some(retrying)) return true;
-  const superseded = new Set(cards.filter((c) => c.status === 'superseded').map((c) => c.runId));
-  const askAgain = (r: (typeof runs)[number]) =>
-    (r.outcome === 'stood_down' && r.error === 'editing') || (r.outcome === 'draft' && superseded.has(r.id));
-  if (!answering.every(askAgain)) return false;
-  if (edited && answering.length === 0) return false;
+  if (answering.some(retrying)) return { line, next: 'coming' };
+  // The line's newest ask — by when it was asked; an edit's 100 + n can be older than a press's 50.
+  const last = [...answering].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.attempt - y.attempt).at(-1);
+  if (last) {
+    const card = last.outcome === 'draft' ? cards.find((c) => c.runId === last.id) : undefined;
+    if (card?.status === 'approved') return { line, next: 'answered' };
+    const askAgain = (last.outcome === 'stood_down' && last.error === 'editing') || card?.status === 'superseded';
+    if (!askAgain) return { line, next: 'none' };
+  } else if (edited) {
+    return { line, next: 'none' };
+  }
   const attempt = runs.length === 0 ? 0 : nextRedraftAttempt(runs.map((r) => r.attempt));
-  if (attempt === null) return false;
+  if (attempt === null) return { line, next: 'none' };
   const job: AgentInboundJob = {
     managerUserId: d.managerUserId,
     peerId: String(d.peerId),
@@ -303,16 +331,37 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
     origin: 'redraft',
   };
   await enqueue(JOB_AGENT_INBOUND, job, { retryLimit: 0, startAfter: 1 });
-  return true;
+  return { line, next: 'coming' };
 }
 
+/**
+ * A ✅'s `superseded` refusal, from what `redraftNewest` found: the press's
+ * `detail` (the bot's toast, the page's label — bot-door `SUPERSEDED_WORDS`,
+ * web-actions) and the card's `policy.stale` (card-io STALE_WORDS) — one
+ * table, so the three say one thing. A newer message with a card coming
+ * keeps the card's ordinary «↪️ Mijoz yana yozdi — yangi qoralama».
+ */
+export type SupersededDetail = 'redrafting' | 'no_draft' | 'edited_redrafting' | 'edited_no_draft' | 'answered';
+const SUPERSEDED_AS: Record<RedraftAnswer['line'], Record<RedraftAnswer['next'], { detail: SupersededDetail; stale: SupersededStale | null }>> = {
+  newer: {
+    coming: { detail: 'redrafting', stale: null },
+    none: { detail: 'no_draft', stale: 'no_redraft' },
+    answered: { detail: 'answered', stale: 'answered' },
+  },
+  edited: {
+    coming: { detail: 'edited_redrafting', stale: 'edited' },
+    none: { detail: 'edited_no_draft', stale: 'edited_no_redraft' },
+    answered: { detail: 'answered', stale: 'answered' },
+  },
+};
+
 /** `redraftNewest`, never a reason for the press itself to fail. */
-async function redraftQuietly(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<boolean> {
+async function redraftQuietly(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<RedraftAnswer> {
   try {
     return await redraftNewest(d, how);
   } catch (err) {
     logger.warn({ err, draftId: d.id }, '[agent] newer message not asked again');
-    return false;
+    return { line: how, next: 'none' };
   }
 }
 
@@ -646,16 +695,18 @@ export async function decideDraft(
       return { ok: false, code: 'taken_over' };
     }
     // «Yangi qoralama tayyorlanadi» only where one is coming (`redraftNewest`); otherwise the press AND
-    // the card tell him to answer (card-io STALE_WORDS `no_redraft`).
-    const coming = retired ? await redraftQuietly(d, moved === 'anchor_edited' ? 'edited' : 'newer') : false;
-    if (retired && !coming) {
+    // the card tell him to answer — and an edit is said as an edit (card-io STALE_WORDS).
+    const line = moved === 'anchor_edited' ? 'edited' : 'newer';
+    const found: RedraftAnswer = retired ? await redraftQuietly(d, line) : { line, next: 'none' };
+    const said = SUPERSEDED_AS[found.line][found.next];
+    if (retired && said.stale) {
       await db
         .update(agentDrafts)
-        .set({ policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale: 'no_redraft' })}::jsonb` })
+        .set({ policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale: said.stale })}::jsonb` })
         .where(eq(agentDrafts.id, draftId));
     }
     await refreshDraftCard(draftId);
-    return { ok: false, code: 'superseded', detail: coming ? 'redrafting' : 'no_draft' };
+    return { ok: false, code: 'superseded', detail: said.detail };
   }
 
   // Whose chat it is NOW (final review K7). The draft was written for a client

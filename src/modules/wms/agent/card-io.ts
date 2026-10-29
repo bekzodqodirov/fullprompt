@@ -85,19 +85,29 @@ const CANCEL_WORDS: Record<string, string> = {
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
 };
 
+/** The `policy.stale` a ✅ writes when it finds the chat moved (decide `SUPERSEDED_AS`). */
+export type SupersededStale = 'no_redraft' | 'edited' | 'edited_no_redraft' | 'answered';
+
 /**
- * A draft retired because the figure on it stopped standing, not because the
- * customer wrote again (`policy.stale`): a recalculation of the chain a 💵 was
- * typed on (calc-loop `retirePricesOf`), a new avia rate (config
- * `setAviaRate`). Said as itself — «Mijoz yana yozdi» would send him looking
- * for a message that is not there.
+ * A draft retired with a reason of its own (`policy.stale`). The figure on it
+ * stopped standing, not because the customer wrote again: a recalculation of
+ * the chain a 💵 was typed on (calc-loop `retirePricesOf`), a new avia rate
+ * (config `setAviaRate`). Or a ✅ found the chat moved and says how (decide
+ * `redraftNewest`): an EDIT of the line is said as an edit, a line he already
+ * approved a reply to as answered. Each said as itself — «Mijoz yana yozdi»
+ * would send him looking for a message that is not there.
  */
-const STALE_WORDS: Record<string, string> = {
+const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate', string> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
-  // ✅ found the customer's newer message and no run will draft it (decide `redraftNewest`):
+  // ✅ found the customer's newer message and no run will draft it:
   // «— yangi qoralama» would promise a card that never comes.
   no_redraft: '↪️ Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.',
+  // ✅ found the line EDITED — the customer changed his words, he did not write again.
+  edited: '↪️ Mijoz xabarini tahrirladi — yangi qoralama.',
+  edited_no_redraft: '↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.',
+  // ✅ found the newest line's own card already approved: telling him to answer it would be answering twice.
+  answered: '↪️ Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
 };
 
 /**
@@ -191,7 +201,7 @@ function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions, s
     case 'rejected':
       return '❌ Rad etildi.';
     case 'superseded':
-      return STALE_WORDS[((d.policy ?? {}) as { stale?: string }).stale ?? ''] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
+      return STALE_WORDS[(((d.policy ?? {}) as { stale?: string }).stale ?? '') as keyof typeof STALE_WORDS] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
     case 'expired':
       return '⌛ Muddati o‘tdi.';
     case 'taken_over': {

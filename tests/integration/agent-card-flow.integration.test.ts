@@ -95,7 +95,7 @@ import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { createDraft } from '@/modules/wms/agent/drafts';
-import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
+import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, SUPERSEDED_WORDS, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
 import { agentSweep, retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
@@ -770,25 +770,153 @@ describe('the press promises only the card that is coming, and asks as itself (r
         .where(and(eq(agentRuns.managerUserId, me.id), eq(agentRuns.peerId, me.peer), eq(agentRuns.anchorTgMessageId, anchor)))
     ).sort((x, y) => x.attempt - y.attempt);
   const mine = (me: Owner) => queuedRuns().filter((j) => j.peerId === String(me.peer));
+  /** `applyEdit`'s stamp on the line his card answers — the greeting became a question. */
+  const editAnchor = (me: Owner) =>
+    db
+      .update(tgMessages)
+      .set({ editedAt: new Date(), body: 'Narxi qancha? 3 kub kiyim' })
+      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, me.anchor)));
+  /** The listener's typing stamp on this chat (null: he stopped). */
+  const typing = (me: Owner, at: Date | null) =>
+    db
+      .insert(agentConversations)
+      .values({ managerUserId: me.id, peerId: me.peer, peerTypingAt: at })
+      .onConflictDoUpdate({ target: [agentConversations.managerUserId, agentConversations.peerId], set: { peerTypingAt: at } });
+  /** pg-boss's own state for this chat's waiting jobs — the worker's fetch. */
+  const jobState = (me: Owner, state: 'active', startedOn: Date) =>
+    db.execute(sql`
+      UPDATE pgboss.job SET state = ${state}, started_on = ${startedOn.toISOString()}::timestamptz
+       WHERE name = ${JOB_AGENT_INBOUND} AND data->>'peerId' = ${String(me.peer)}`);
 
   it('the customer EDITED the line and the listener’s edit job is still waiting: «yangi qoralama» — that job is the card, and nothing more is queued', async () => {
     const me = await owner();
     const a = await draftFor(me);
     // `applyEdit`'s stamp, and the job `rethinkOnEdit` leaves on the queue.
-    await db
-      .update(tgMessages)
-      .set({ editedAt: new Date() })
-      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, me.anchor)));
+    await editAnchor(me);
     await waitingJob(me, me.anchor, 'edit');
     const send = await cardSend(a.draftId);
     const m = h.mark();
     await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
-    expect(toastOf(h.since(m).api)).toBe(COMING);
+    // An edit is said as an edit — he did not write again (review: «Mijoz yana yozdi» sent him looking for a message).
+    expect(toastOf(h.since(m).api)).toBe('Mijoz xabarini tahrirladi — yangi qoralama tayyorlanadi.');
     expect((await draftOf(a.draftId)).status).toBe('superseded');
     expect(mine(me), 'the waiting job asks; a second would be a second bill').toEqual([]);
     const card = String((await cardPayloadOf(a.draftId)).text);
-    expect(card).toContain('↪️ Mijoz yana yozdi — yangi qoralama.');
+    expect(card).toContain('↪️ Mijoz xabarini tahrirladi — yangi qoralama.');
+    expect(card).not.toContain('Mijoz yana yozdi');
     expect(card).not.toContain('o‘zingiz javob bering');
+  });
+
+  it('…and that edit job, meeting the customer still TYPING, waits as itself — on its edit attempt, its origin kept — and the card it promised comes', async () => {
+    const me = await owner();
+    // The draft's own run, as the run writes it: attempt 0 of this line.
+    const [own] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const a = await draftFor(me, { runId: own!.id });
+    await editAnchor(me);
+    await waitingJob(me, me.anchor, 'edit');
+    const m = h.mark();
+    await withModelKey(async () => h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!)));
+    expect(toastOf(h.since(m).api)).toBe('Mijoz xabarini tahrirladi — yangi qoralama tayyorlanadi.');
+    // The worker takes the edit job; the customer is still typing (he has just edited).
+    await typing(me, new Date());
+    const later: AgentInboundJob[] = [];
+    const editJob: AgentInboundJob = { managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(me.anchor), origin: 'edit' };
+    const first = await withModelKey(() =>
+      handleInbound(editJob, { callModel: composing('Qaysi tovar?'), enqueue: async (j) => void later.push(j) }),
+    );
+    expect(first).toEqual({ outcome: 'rescheduled', reason: 'peer_typing' });
+    expect(later).toEqual([{ ...editJob, attempt: 100, waited: 'typing' }]);
+    // He stops typing: the job it left asks on the edit's slot — never the draft's own attempt 0.
+    await typing(me, null);
+    const second = await withModelKey(() => handleInbound(later[0]!, { callModel: composing('Qaysi tovar?') }));
+    expect(second, JSON.stringify(second)).toMatchObject({ outcome: 'draft' });
+    expect(await runsOf(me, me.anchor)).toEqual([
+      { attempt: 0, outcome: 'draft' },
+      { attempt: 100, outcome: 'draft' },
+    ]);
+  });
+
+  it('his press’s own redraft that meets typing stays HIS: the late card it writes names his press, not «a wait»', async () => {
+    const me = await owner();
+    await db
+      .update(tgMessages)
+      .set({ sentAt: new Date(Date.now() - 12 * 60_000) })
+      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, me.anchor)));
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    // Written a minute ago, inside the typing wait's cap.
+    const newer = await newerWhileEditing(me, 60_000);
+    await withModelKey(async () => h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!)));
+    const [asked] = mine(me);
+    expect(asked).toMatchObject({ attempt: 50, origin: 'redraft' });
+    await typing(me, new Date());
+    const later: AgentInboundJob[] = [];
+    expect(await withModelKey(() => handleInbound(asked!, { callModel: composing('x'), enqueue: async (j) => void later.push(j) }))).toEqual({
+      outcome: 'rescheduled',
+      reason: 'peer_typing',
+    });
+    expect(later).toEqual([{ ...asked!, attempt: 50, origin: 'redraft', waited: 'typing' }]);
+    // He stops typing, and the wait outlives the card's three-minute line (`lateNote`): the line is five minutes old when it looks again.
+    await typing(me, null);
+    await db
+      .update(tgMessages)
+      .set({ sentAt: new Date(Date.now() - 5 * 60_000) })
+      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, newer)));
+    expect(await withModelKey(() => handleInbound(later[0]!, { callModel: composing('Qaysi tovar va necha kg?') }))).toMatchObject({ outcome: 'draft' });
+    const [b] = await db
+      .select()
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.anchorTgMessageId, newer)));
+    expect((b!.policy as { notes: string[] }).notes[0]).toBe('⏱ Mijoz 12 daqiqadan beri javob kutyapti (✅/❌ bosilganda chat o‘zgargani uchun qayta yozildi)');
+  });
+
+  it('the edit job the worker has just PICKED UP and not yet reserved is the card too — never «o‘zingiz javob bering» while it comes', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await editAnchor(me);
+    await waitingJob(me, me.anchor, 'edit');
+    // pg-boss 'active': the worker is between its fetch and `reserve` (reading the chat, the typing check, eligibility).
+    await jobState(me, 'active', new Date());
+    const r = await withModelKey(async () =>
+      decideDraft(actor(me.id), a.draftId, 'send', { digest: (await cardSend(a.draftId))!.split(':').at(-1)! }, { actorId: me.id }),
+    );
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'edited_redrafting' });
+    expect(mine(me)).toEqual([]);
+  });
+
+  it('…but a job picked up BEFORE the card was written is the card’s own run finishing — the edit is his to answer, in words', async () => {
+    const me = await owner();
+    await waitingJob(me, me.anchor, 'live');
+    await jobState(me, 'active', new Date(Date.now() - 10_000));
+    const a = await draftFor(me);
+    await editAnchor(me);
+    const m = h.mark();
+    await withModelKey(async () => h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!)));
+    expect(toastOf(h.since(m).api)).toBe(SUPERSEDED_WORDS.edited_no_draft);
+    expect(SUPERSEDED_WORDS.edited_no_draft).toBe('Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.');
+    expect(String((await cardPayloadOf(a.draftId)).text)).toContain('↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.');
+    expect(mine(me)).toEqual([]);
+  });
+
+  it('the newer line’s first look ERRORED and the sweep’s retry then stood down for his ✏️: the line is judged by its newest ask and asked again', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    // The card he is on was written first; the customer's newer line and its two asks after it.
+    await db.update(agentDrafts).set({ createdAt: new Date(Date.now() - 8 * 60_000) }).where(eq(agentDrafts.id, a.draftId));
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerLine(me, 6 * 60_000);
+    await db.insert(agentRuns).values([
+      { managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'error', error: 'Request timed out.', createdAt: new Date(Date.now() - 5 * 60_000) },
+      { managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 1, outcome: 'stood_down', error: 'editing', createdAt: new Date(Date.now() - 2 * 60_000) },
+    ]);
+    const r = await withModelKey(async () =>
+      decideDraft(actor(me.id), a.draftId, 'send', { digest: (await cardSend(a.draftId))!.split(':').at(-1)! }, { actorId: me.id }),
+    );
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'redrafting' });
+    expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
   });
 
   it('the newer message’s run began BEFORE this draft was written (a hand-back lands on its own worker) and is still in its model call: that run is the card — no second bill', async () => {
@@ -826,7 +954,22 @@ describe('the press promises only the card that is coming, and asks as itself (r
     expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
   });
 
-  it('…but a card of it he already DECIDED is that line’s answer: «o‘zingiz javob bering», nothing queued', async () => {
+  it('…but a card of it he already REJECTED is that line’s answer: «o‘zingiz javob bering», nothing queued', async () => {
+    const me = await owner();
+    const newer = await newerLine(me);
+    const [run] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
+    await db.update(agentDrafts).set({ status: 'rejected' }).where(eq(agentDrafts.id, theirs.draftId));
+    const a = await draftFor(me);
+    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
+    expect(mine(me)).toEqual([]);
+  });
+
+  it('…and one he already APPROVED is answered: the press and the page say so — never «o‘zingiz javob bering» about a line he answered', async () => {
     const me = await owner();
     const newer = await newerLine(me);
     const [run] = await db
@@ -836,9 +979,25 @@ describe('the press promises only the card that is coming, and asks as itself (r
     const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
     await db.update(agentDrafts).set({ status: 'approved' }).where(eq(agentDrafts.id, theirs.draftId));
     const a = await draftFor(me);
-    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
-    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
+    webActor.current = { id: me.id, roles: ['super_admin'], permissions: new Set<string>() };
+    try {
+      const digest = (await cardSend(a.draftId))!.split(':').at(-1)!;
+      expect(await withModelKey(() => agentDecideAction(a.draftId, 'send', digest))).toEqual({ ok: false, error: 'superseded_answered' });
+    } finally {
+      webActor.current = null;
+    }
     expect(mine(me)).toEqual([]);
+    const card = String((await cardPayloadOf(a.draftId)).text);
+    expect(card).toContain('↪️ Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.');
+    expect(card).not.toContain('o‘zingiz javob bering');
+    // The page's label is the bot's sentence.
+    expect(errorKey('superseded_answered')).toBe('errors.superseded_answered');
+    const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { agentAi: { errors: Record<string, string> } };
+    expect(uz.agentAi.errors.superseded_answered).toBe(SUPERSEDED_WORDS.answered);
+    expect(uz.agentAi.errors.superseded_edited).toBe(SUPERSEDED_WORDS.edited_redrafting);
+    expect(uz.agentAi.errors.superseded_edited_no_draft).toBe(SUPERSEDED_WORDS.edited_no_draft);
+    expect(uz.agentAi.errors.superseded_no_draft).toBe(SUPERSEDED_WORDS.no_draft);
+    expect(uz.agentAi.errors.superseded).toBe(SUPERSEDED_WORDS.redrafting);
   });
 
   it('an errored first look the sweep will retry is the card too — promised, and not asked a second time beside the retry', async () => {

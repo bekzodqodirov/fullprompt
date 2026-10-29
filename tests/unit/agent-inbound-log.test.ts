@@ -77,6 +77,13 @@ describe('the inbound worker logs the origin and how long the job waited', () =>
     expect(inboundLogFields({ data: { ...data, origin: 'sweep', attempt: 1 } })).toEqual({ peer: '9001', origin: 'sweep', attempt: 1 });
     // His ✅/❌ asking the newest line again is named as itself, on its own attempt — never as the sweep.
     expect(inboundLogFields({ data: { ...data, origin: 'redraft', attempt: 50 } })).toEqual({ peer: '9001', origin: 'redraft', attempt: 50 });
+    // A job that waited out the customer's typing is still its asker's, and the line says it waited (run `reschedule`).
+    expect(inboundLogFields({ data: { ...data, origin: 'edit', attempt: 100, waited: 'typing' } })).toEqual({
+      peer: '9001',
+      origin: 'edit',
+      attempt: 100,
+      waited: 'typing',
+    });
     // pg-boss hands timestamps over as Dates; a string is read the same, a garbage one is left out.
     expect(
       inboundLogFields({ data, startAfter: '2026-10-29T13:00:00Z', createdOn: 'garbage', startedOn: '2026-10-29T13:00:05Z' }),

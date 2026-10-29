@@ -98,8 +98,17 @@ interface LoopResult {
 const CAP_LOCK = 'agent_run_cap';
 const LOOP_WALL_MS = 90_000;
 
-async function reschedule(job: AgentInboundJob, startAfterS: number, deps: RunDeps): Promise<void> {
-  const next: AgentInboundJob = { ...job, origin: 'typing_wait' };
+/**
+ * Look again shortly — as the SAME ask: the attempt this job runs as is fixed
+ * now and carried (an edit's 100 + n is counted from the ledger, and the next
+ * look would count again and land on 0 or on the draft's own slot), and the
+ * asker's origin stays, so the late note and the `[agent] inbound` line still
+ * name who asked (review: an edit that met the customer typing came back as
+ * 'typing_wait' on attempt 0, stood down as a duplicate of the draft it was
+ * re-thinking, and the card his press had promised never came).
+ */
+async function reschedule(job: AgentInboundJob, attempt: number, startAfterS: number, deps: RunDeps, waited: 'typing' | 'greeting'): Promise<void> {
+  const next: AgentInboundJob = { ...job, attempt, waited };
   if (deps.enqueue) return deps.enqueue(next, startAfterS);
   await enqueue(JOB_AGENT_INBOUND, next, { startAfter: Math.max(1, Math.round(startAfterS)), retryLimit: 0 });
 }
@@ -331,12 +340,14 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
 
 /**
  * The attempt this job runs as: the job's own (0, the sweep's retry 1, his
- * press's from 50 — queues `nextRedraftAttempt`), and an edit of the anchor
- * its own from 100 (regression-10), counted here because the listener that
- * queues an edit does not read the ledger.
+ * press's from 50 — queues `nextRedraftAttempt`, a waited job's carried by
+ * `reschedule`), and an edit of the anchor its own from 100 (regression-10),
+ * counted here because the listener that queues an edit does not read the
+ * ledger.
  */
 async function attemptFor(job: AgentInboundJob): Promise<number> {
-  if (job.origin !== 'edit') return job.attempt ?? 0;
+  if (job.attempt !== undefined) return job.attempt;
+  if (job.origin !== 'edit') return 0;
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(agentRuns)
@@ -374,8 +385,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     .select({ typingAt: agentConversations.peerTypingAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, job.managerUserId), eq(agentConversations.peerId, peerId)));
+  const attempt = await attemptFor(job);
   if (conv?.typingAt && t.getTime() - conv.typingAt.getTime() < 6_000 && ageMs < AGENT_LIMITS.typingWaitCapMs) {
-    await reschedule(job, AGENT_LIMITS.typingExtendMs / 1000, deps);
+    await reschedule(job, attempt, AGENT_LIMITS.typingExtendMs / 1000, deps, 'typing');
     return { outcome: 'rescheduled', reason: 'peer_typing' };
   }
 
@@ -383,7 +395,6 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     ctx.burst.map((m) => ({ text: m.body, media: m.media })),
     lastOutAsked(ctx),
   );
-  const attempt = await attemptFor(job);
   if (!worthy.worthy) {
     if ('notice' in worthy) {
       if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
@@ -394,7 +405,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'skipped', reason: worthy.reason };
   }
   if (worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
-    await reschedule(job, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps);
+    await reschedule(job, attempt, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps, 'greeting');
     return { outcome: 'rescheduled', reason: 'greeting_only' };
   }
 

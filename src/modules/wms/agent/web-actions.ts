@@ -17,7 +17,7 @@ import {
   setAgentOwner,
   setAviaRate,
 } from './config';
-import { decideDraft, submitOwnText, type DraftDecision } from './decide';
+import { decideDraft, submitOwnText, type DraftDecision, type SupersededDetail } from './decide';
 import { KbError } from './kb';
 import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
@@ -99,6 +99,20 @@ async function run(work: (g: Gate) => Promise<AgentActionResult | void>): Promis
   }
 }
 
+/**
+ * A `superseded` ✅ in the page's own labels (`/suhbatlar/ai` labels.ts), by
+ * what the press found (decide `SUPERSEDED_AS`) — the bot says the same in its
+ * words (bot-door `SUPERSEDED_WORDS`): «a new draft is coming» only when one
+ * is, an edit said as an edit, an approved line as answered.
+ */
+const SUPERSEDED_ERROR: Record<SupersededDetail, string> = {
+  redrafting: 'superseded',
+  no_draft: 'superseded_no_draft',
+  edited_redrafting: 'superseded_edited',
+  edited_no_draft: 'superseded_edited_no_draft',
+  answered: 'superseded_answered',
+};
+
 /** ✅ / ❌ / 🙋 on a draft card. The ✅ posts the digest of what the page SHOWED (leak-3). */
 export async function agentDecideAction(
   draftId: string,
@@ -108,8 +122,8 @@ export async function agentDecideAction(
   if (decision !== 'send' && decision !== 'reject' && decision !== 'human') return { ok: false, error: 'bad_value' };
   return run(async ({ actor, ctx }) => {
     const r = await decideDraft(actor, draftId, decision, { digest: decision === 'send' ? digest : undefined }, ctx);
-    // The customer wrote again and nothing will draft it: «a new draft is coming» would be false here too.
-    if (!r.ok) return { ok: false, error: r.code === 'superseded' && r.detail === 'no_draft' ? 'superseded_no_draft' : r.code };
+    // The chat moved: «a new draft is coming» only when one is (`SUPERSEDED_ERROR`).
+    if (!r.ok) return { ok: false, error: r.code === 'superseded' ? (SUPERSEDED_ERROR[r.detail as SupersededDetail] ?? r.code) : r.code };
     revalidatePath('/suhbatlar', 'layout');
     return { ok: true, sendAt: r.sendAt?.toISOString() };
   });
