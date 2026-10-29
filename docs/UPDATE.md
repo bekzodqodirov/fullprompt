@@ -369,6 +369,23 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## «AI habarni ko‘rmayapti» tuzatishi (2026-10-29, migratsiyasiz)
+
+Migratsiya yo‘q — son **139** bo‘lib qoladi, shuning uchun son yangilanishni ko‘rsatmaydi (to‘rtinchi tuzoq).
+O‘zgarish asosan **tg-listen**da, demak u albatta qayta qurilishi kerak.
+
+1. Zaxira (§1).
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. Tinglovchi yangi kodda ekanini logdan bilasiz:
+   `docker compose --profile telegram logs --since 5m tg-listen | grep catch-up`
+   Endi 8 ta uzun «Could not find the input entity» xatosi o‘rniga **bitta** qator chiqadi:
+   «catch-up: N ta saqlangan suhbat bu Telegram akkauntda ochilmadi …». Eski matn chiqsa, tg-listen qayta
+   qurilmagan.
+5. Mijoz yozganda logda `GS… ← in` yoki «· o‘tkazildi …: <sabab>» qatori chiqadi:
+   `docker compose --profile telegram logs --since 5m tg-listen | tail -20`
+
 ## AI sotuvchi (2026-10-29, 0138) — tekshiruv tartibi
 
 Bu raundda migratsiya bor: **0138** — deploydan keyin son **139** bo‘ladi

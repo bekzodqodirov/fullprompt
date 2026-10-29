@@ -64,6 +64,7 @@ import {
   type DialogPeer,
   type RawMessage,
 } from '../src/modules/wms/crm/telegram-import';
+import { chatOfMessage, lastFour, passedLine, userIdOf } from '../src/modules/wms/crm/listen-trace';
 import {
   confirmSiteTagOnCard,
   landSiteTag,
@@ -210,6 +211,9 @@ const USERNAME_REFRESH_MS = 20 * 60_000;
  * stale costs a manager one line they would have seen anyway.
  */
 const INDEX_EVERY_MS = 24 * 60 * 60 * 1000;
+
+/** How many of the newest dialogs warm the entity cache before catch-up (one GetDialogs page). */
+const CATCHUP_WARM_DIALOGS = 100;
 
 /**
  * How a stored message reached this process — the agent's hook asks
@@ -442,7 +446,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (!(await tablesReady())) return;
       const { agentOff } = await agentTelegramNotice(alarmAccount, kind);
       if (agentOff) console.error('TELEGRAM XIZMATI (777000) XABAR YUBORDI — AI sotuvchi o‘chirildi');
-      else if (kind === 'login') console.log('  🔑 Telegram (777000): kirish kodi yoki yangi kirish — AI o‘chirilmadi');
+      else if (kind === 'login') console.log('  🔑 Telegram (777000): kirish kodi yoki yangi kirish — mijoz xabari emas, AI sozlamasiga tegilmadi');
     } catch (err) {
       console.error('Telegram xizmati xabari AI ni o‘chirmadi:', err instanceof Error ? err.message : err);
     }
@@ -533,6 +537,21 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     return next;
   };
 
+  /**
+   * One page of the newest dialogs into gramjs's entity cache, single-flighted:
+   * every live line whose chat the cache cannot name awaits the SAME call
+   * (`chatOfMessage`), so a burst of strangers after a restart is one
+   * GetDialogs. A failure is an empty answer here — the line is then named
+   * «aniqlab bermadi» in the log — never a thrown handler.
+   */
+  let warming: Promise<unknown> | null = null;
+  const warmDialogs = (): Promise<unknown> => {
+    warming ??= client.getDialogs({ limit: CATCHUP_WARM_DIALOGS }).finally(() => {
+      warming = null;
+    });
+    return warming;
+  };
+
   client.addEventHandler(async (event: { message?: unknown }) => {
     try {
       const msg = event.message as RawMessage & {
@@ -542,14 +561,26 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         date: number;
         media?: unknown;
         getChat?: () => Promise<unknown>;
+        getInputChat?: () => Promise<unknown>;
+        peerId?: unknown;
       };
       // The CHAT, not the sender. An outgoing private message has no sender at
       // all in GramJS, so reading the sender drops every reply we send while
       // the client's half keeps arriving — see `peerFromChat` and
       // `telegram-peer.test.ts`. The chat is the same person either way, and
       // it is what the import iterates, so both paths reduce a conversation
-      // identically.
-      const peer = listenPeer(await msg.getChat?.());
+      // identically. Asked through `chatOfMessage`, because a short update
+      // names a customer by id alone and `getChat()` answers from an empty
+      // cache with nothing at all (2026-10-29, his new number).
+      const resolved = await chatOfMessage(msg, { warm: warmDialogs, getEntity: (p) => client.getEntity(p as never) });
+      if (resolved.unresolved) {
+        if (msg.out !== true && (await agentHere().catch(() => false))) {
+          const line = passedLine({ reason: 'unresolved', peerId: userIdOf(msg.peerId), phone: null });
+          if (line) console.log(line);
+        }
+        return;
+      }
+      const peer = listenPeer(resolved.chat);
       // Before anything else decides about the line: an official notice switches the agent off first.
       if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
       await serialised(peer.id.toString(), () => handleMessage(peer, msg, 'live'));
@@ -672,6 +703,16 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
 
       if (!verdict.store) {
+        // Why the AI did not see it, in words, on the account it speaks from
+        // (`passedLine`): only an inbound LIVE line, never a word of it.
+        if (origin === 'live' && msg.out !== true && (await agentHere().catch(() => false))) {
+          const line = passedLine({
+            reason: 'ask' in verdict ? 'not_a_client' : verdict.reason,
+            peerId: peer.id,
+            phone: 'ask' in verdict ? verdict.phone : null,
+          });
+          if (line) console.log(line);
+        }
         if ('ask' in verdict) {
           // A stranger on a PERSONAL number. The tray gets who to ask about
           // and nothing else — not one word of what was said (round 79).
@@ -1811,7 +1852,17 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const catchUp = async () => {
     const points = await resumePoints(account.managerUserId);
     if (points.length === 0) return;
+    // The entity cache is in memory and empty at every start, and a bare id
+    // resolves only for a contact (gramjs `getInputEntity` asks GetUsers with
+    // access hash 0), so every other stored chat failed «Could not find the
+    // input entity» here on every restart. One page of the newest dialogs
+    // fills the cache for the chats that matter most — the ones written in
+    // last — before the walk asks for any of them.
+    await warmDialogs().catch((err: unknown) => {
+      console.error('catch-up: chatlar ro‘yxati olinmadi:', err instanceof Error ? err.message : err);
+    });
     let recovered = 0;
+    const unreachable: string[] = [];
     for (const point of points) {
       try {
         for await (const msg of client.iterMessages(
@@ -1857,9 +1908,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           }
         }
       } catch (err) {
-        // One unreachable chat must not stop the rest catching up.
-        console.error('catch-up:', err instanceof Error ? err.message : err);
+        // One unreachable chat must not stop the rest catching up. A chat this
+        // Telegram account cannot open at all is counted, not printed one by
+        // one: after a change of number every chat the OLD number kept is one
+        // (2026-10-29 — eight identical gramjs paragraphs on every start).
+        const message = err instanceof Error ? err.message : String(err);
+        if (/Could not find the input entity/i.test(message)) unreachable.push(`#…${lastFour(point.peerId)}`);
+        else console.error('catch-up:', message);
       }
+    }
+    if (unreachable.length > 0) {
+      console.error(
+        `catch-up: ${unreachable.length} ta saqlangan suhbat bu Telegram akkauntda ochilmadi (${unreachable.join(', ')}) — boshqa raqamdan qolgan yoki kontaktda yo‘q`,
+      );
     }
     if (recovered > 0) console.log(`uzilish davridagi ${recovered} ta xabar olindi`);
   };

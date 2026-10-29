@@ -3218,6 +3218,20 @@ only when the run spoke, best-effort. And the merged bundle outgrew V8's ~2 GB d
 ~2,000 MB and passes at the Dockerfile's 3,072, so CI's build step carries the same `NODE_OPTIONS` (#1543, fenced in
 `build-typecheck.test.ts`).
 
+**Hotfix — «AI habarni ko'rmayapti» (2026-10-29; DECISIONS #1544; NO migration, 139 stands).** Live day one: a
+client in the book wrote to his NEW client-only number (+998902405077, two private dialogs) and nothing happened
+anywhere. gramjs builds a private text from `UpdateShortMessage` (sender by id alone) and `getChat()` answers from
+an empty in-memory cache, short-circuiting its own dialog walk — the line became `not_private`, silently.
+`crm/listen-trace.ts` `chatOfMessage` (cache → the walk gramjs skips → `getEntity`) is the live handler's door;
+`passedLine` names why an inbound live line was not kept, on the AGENT's account only, last four digits only.
+Catch-up warms the cache with one dialogs page and counts unopenable chats in one line (an old number's chats
+must NOT hold `caughtUp`, or every ✅ is refused for ever). DIAGNOSIS LESSON: the first SQL to ask on «the AI saw
+nothing» is which number is listened (`tinglayapman: … · <phone> · …` heads every start) — his 777000 line read
+«AI o'chirilmadi» and steered everybody toward «it saw the message». The rest of that diagnosis (the stranger
+card's window on the rule's birth, the week walk dropping strangers with no tray row, Business auto-replies read
+as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
+for a card) is owed as the next round; his number should be switched to «Ish raqami».
+
 **Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
