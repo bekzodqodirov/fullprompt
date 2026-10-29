@@ -30,18 +30,54 @@ import {
  * after its commit. Every job asks `agentTablesReady()` first.
  */
 
+/**
+ * Why a run started when it did, for the `[agent] inbound` line (2026-10-29:
+ * a card that came 23 minutes after the customer's lines, and a log that
+ * could not say whether the job waited in the queue or was born late). The
+ * ORIGIN says who asked — the live hook, an edit, a stranger's pull answered
+ * on the card, the sweep's gap pass or retry, a typing wait — and the clocks
+ * say how long it waited: `lagMs` past the moment it was allowed to start (a
+ * busy or stopped worker), `queuedMs` since it was put on the queue. Both
+ * from pg-boss's own columns (`includeMetadata`), the database's one clock;
+ * a job without them (an old caller) logs the origin alone. Never a word of
+ * the chat — the peer's id is all the line names.
+ */
+export function inboundLogFields(job: {
+  data: AgentInboundJob;
+  startAfter?: Date | string | null;
+  createdOn?: Date | string | null;
+  startedOn?: Date | string | null;
+}): { peer: string; origin: AgentInboundJob['origin']; attempt: number; lagMs?: number; queuedMs?: number } {
+  const at = (value: Date | string | null | undefined): number | null => {
+    if (value === null || value === undefined) return null;
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : null;
+  };
+  const started = at(job.startedOn);
+  const allowed = at(job.startAfter);
+  const created = at(job.createdOn);
+  return {
+    peer: job.data.peerId,
+    origin: job.data.origin,
+    attempt: job.data.attempt ?? 0,
+    ...(started !== null && allowed !== null ? { lagMs: Math.max(0, started - allowed) } : {}),
+    ...(started !== null && created !== null ? { queuedMs: Math.max(0, started - created) } : {}),
+  };
+}
+
 export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
   await boss.createQueue(JOB_AGENT_INBOUND);
-  await boss.work<AgentInboundJob>(JOB_AGENT_INBOUND, async (jobs) => {
+  // `includeMetadata`: the line below names how long the job waited (calc/jobs.ts asks the same way).
+  await boss.work<AgentInboundJob>(JOB_AGENT_INBOUND, { includeMetadata: true }, async (jobs) => {
     const { handleInbound } = await import('./run');
     for (const job of jobs) {
       try {
         const out = await handleInbound(job.data);
-        logger.info({ peer: job.data.peerId, ...out }, '[agent] inbound');
+        logger.info({ ...inboundLogFields(job), ...out }, '[agent] inbound');
       } catch (err) {
         // retryLimit 0: a re-delivered model call is a second bill for one
         // message. The sweep retries an errored run once, deliberately.
-        logger.error({ err }, '[agent] inbound job failed');
+        logger.error({ err, ...inboundLogFields(job) }, '[agent] inbound job failed');
       }
     }
   });
@@ -151,6 +187,35 @@ export async function remindOwnerQuestions(now: Date): Promise<number> {
   return claimed.length;
 }
 
+/**
+ * The chats whose run is already on its way: an `agent.inbound` job still
+ * WAITING to be picked up for the anchor, from pg-boss's own table — keyed
+ * `peer:anchor` for this account (2026-10-29). The sweep's two passes below
+ * looked only at `agent_runs`, and a run writes its row when it STARTS, so
+ * while one job waited behind a busy worker every sweep added another for
+ * the same line, a minute apart — and the one serial worker then had to
+ * carry each of them to its «duplicate» before it reached the next
+ * customer's chat. No `singletonKey`: the queues are standard (queues.ts).
+ *
+ * Waiting only, never 'active': a job a killed process was running stays
+ * 'active' until pg-boss expires it a quarter of an hour later, and the two
+ * passes are exactly what recovers that line (K24); a job really running
+ * writes its `agent_runs` row in its first moments, and that the passes
+ * already ask. A database with no pg-boss schema yet (a fresh test db) has
+ * no jobs.
+ */
+export async function inboundJobsWaiting(managerUserId: string): Promise<Set<string>> {
+  const [present] = await db.execute<{ job: boolean }>(sql`SELECT to_regclass('pgboss.job') IS NOT NULL AS job`);
+  if (!present?.job) return new Set();
+  const rows = await db.execute<{ peer_id: string | null; anchor: string | null }>(sql`
+    SELECT data->>'peerId' AS peer_id, data->>'anchorTgMessageId' AS anchor
+      FROM pgboss.job
+     WHERE name = ${JOB_AGENT_INBOUND}
+       AND state IN ('created', 'retry')
+       AND data->>'managerUserId' = ${managerUserId}`);
+  return new Set(rows.map((r) => `${r.peer_id}:${r.anchor}`));
+}
+
 async function refreshCardOf(draftId: string): Promise<void> {
   const { refreshAgentCard } = await import('./card-io');
   await refreshAgentCard(draftId).catch((err: unknown) => logger.warn({ err, draftId }, '[agent] card not refreshed'));
@@ -235,6 +300,8 @@ export async function agentSweep(
   let gap = 0;
   let retried = 0;
   if (agentRunning(config) && aiConfigured()) {
+    // A line whose job is still waiting is asked about by that job, not again.
+    const waiting = await inboundJobsWaiting(config.ownerUserId);
     // 3. The deploy gap: a chat whose newest inbound (≤ 30 min) has no run.
     const due = await db.execute<{ peer_id: string; tg_message_id: string }>(sql`
       SELECT DISTINCT ON (m.peer_id) m.peer_id::text, m.tg_message_id::text
@@ -250,6 +317,7 @@ export async function agentSweep(
         .where(and(eq(tgMessages.managerUserId, config.ownerUserId), eq(tgMessages.peerId, BigInt(row.peer_id)), eq(tgMessages.tgMessageId, BigInt(row.tg_message_id))));
       if (newest?.direction !== 'in') continue;
       if (now.getTime() - newest.sentAt.getTime() < AGENT_LIMITS.debounceMs + 60_000) continue; // the live hook's job
+      if (waiting.has(`${row.peer_id}:${row.tg_message_id}`)) continue;
       const [run] = await db
         .select({ id: agentRuns.id })
         .from(agentRuns)
@@ -268,6 +336,7 @@ export async function agentSweep(
         anchorTgMessageId: row.tg_message_id,
         origin: 'sweep',
       } satisfies AgentInboundJob, { retryLimit: 0, startAfter: 1 });
+      waiting.add(`${row.peer_id}:${row.tg_message_id}`);
       gap += 1;
     }
 
@@ -296,6 +365,7 @@ export async function agentSweep(
       );
     for (const e of errored) {
       if (e.anchor === null) continue;
+      if (waiting.has(`${e.peerId}:${e.anchor}`)) continue;
       await enqueue(JOB_AGENT_INBOUND, {
         managerUserId: config.ownerUserId,
         peerId: String(e.peerId),
@@ -303,6 +373,7 @@ export async function agentSweep(
         attempt: 1,
         origin: 'sweep',
       } satisfies AgentInboundJob, { retryLimit: 0, startAfter: INBOUND_START_AFTER_S });
+      waiting.add(`${e.peerId}:${e.anchor}`);
       retried += 1;
     }
   }

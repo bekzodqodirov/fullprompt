@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { chatOfMessage, lastFour, passedLine, sharedWarmer, userIdOf } from '../../src/modules/wms/crm/listen-trace';
+import { chatOfMessage, lastFour, LOOKUP_DEADLINE_MS, passedLine, sharedWarmer, userIdOf } from '../../src/modules/wms/crm/listen-trace';
 
 /**
  * A stand-in for a gramjs `Message` built from an `UpdateShortMessage`: no
@@ -107,6 +107,43 @@ describe('chatOfMessage — the live chat of a short update (2026-10-29)', () =>
       },
     );
     expect(got).toEqual({ chat: undefined, unresolved: true, via: null });
+  });
+
+  it('a GetUsers that never answers is given up at the deadline — the sender’s queue is not held (L5)', async () => {
+    const { msg } = shortMessage(9003n, new Set());
+    const started = Date.now();
+    const got = await chatOfMessage(msg, {
+      warm: async () => undefined,
+      getEntity: () => new Promise(() => {}),
+      deadlineMs: 25,
+    });
+    expect(got).toEqual({ chat: undefined, unresolved: true, via: null });
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('the lookup AFTER the warm-up is bounded too — a cache that now knows the peer, a GetUsers that hangs', async () => {
+    const cache = new Set<bigint>();
+    const msg = {
+      peerId: { className: 'PeerUser', userId: 9004n },
+      get inputChat() {
+        return cache.has(9004n) ? { className: 'InputPeerUser', userId: 9004n } : undefined;
+      },
+      // Empty before the warm-up (the cache alone answers), a network call after it.
+      getChat: () => (cache.has(9004n) ? new Promise<unknown>(() => {}) : Promise.resolve(undefined)),
+    };
+    const started = Date.now();
+    const got = await chatOfMessage(msg, {
+      warm: async () => {
+        cache.add(9004n);
+      },
+      deadlineMs: 25,
+    });
+    expect(got).toEqual({ chat: undefined, unresolved: true, via: null });
+    expect(Date.now() - started).toBeLessThan(2_000);
+  });
+
+  it('with no deadline given, the listener’s own is the default — the warm-up’s thirty seconds', () => {
+    expect(LOOKUP_DEADLINE_MS).toBe(30_000);
   });
 
   it('a group or channel without a chat is never warmed for — and is not «unresolved»', async () => {
@@ -228,7 +265,9 @@ describe('the listener asks through it (source shape)', () => {
 
   it('the live NewMessage handler resolves a private line INSIDE its sender’s queue, through chatOfMessage', () => {
     const queued = live.indexOf('await serialised(bareUser.toString(), async () => {');
-    const resolve = live.indexOf('await chatOfMessage(msg, { warm: warmDialogs, getEntity: (p) => client.getEntity(p as never) })');
+    const resolve = live.search(
+      /await chatOfMessage\(msg, \{\s*warm: warmDialogs,\s*getEntity: \(p\) => client\.getEntity\(p as never\),\s*deadlineMs: WARM_DEADLINE_MS,\s*\}\)/,
+    );
     expect(queued).toBeGreaterThan(-1);
     expect(resolve).toBeGreaterThan(queued);
     expect(live).not.toContain('listenPeer(await msg.getChat?.())');

@@ -248,10 +248,11 @@ export async function decideChat(
   });
 
   await withdrawAgentRepliesOf(rule);
+  if (input.decision === 'include') await pullForAgent(rule, ctx);
 }
 
 /**
- * The rule doors' one hook into the AI sotuvchi (final review K7, ident fix
+ * The rule doors' first hook into the AI sotuvchi (final review K7, ident fix
  * F1/F11): a decision that makes the chat somebody else's — the tray's «↩»,
  * «Shaxsiy», another client, «Yangi lid» from a stale tab, a card's «Chatni
  * qo'shish» — takes back the agent's replies written for whoever it was,
@@ -286,6 +287,38 @@ async function withdrawAgentRepliesOf(rule: { id?: string; managerUserId: string
 }
 
 /**
+ * The rule doors' second hook into the AI sotuvchi (2026-10-29): a stranger
+ * answered — «Bu mijoz» or «Yangi lid» — on the account the AI speaks from
+ * asks the listener for the chat's last day (`tg_peer_pulls`), exactly as the
+ * bot's stranger card has since it shipped. Until somebody answers nothing a
+ * stranger wrote is stored (round 79), so without it the burst that prompted
+ * the answer — the opening question — was never stored and never drafted:
+ * the AI woke only on the customer's NEXT message, and answered that one
+ * without the question before it.
+ *
+ * Only an answer to a chat still IN QUESTION (`pending` before the write — a
+ * re-decided chat was being kept already, or was somebody's «never»), only on
+ * the account the AI is running from (any other account keeps round 79's
+ * «future only»), and through the bot's own `queuePull`, whose open-pull
+ * unique index makes the bot's press and this one a single pull. After the
+ * rule is written, so the listener's pull reads the NEW rule. Best-effort,
+ * like the withdrawal: the decision stands whatever happens here.
+ */
+async function pullForAgent(rule: { id?: string; managerUserId: string; peerId: bigint; decision: string }, ctx: AuditContext): Promise<void> {
+  if (rule.decision !== 'pending') return;
+  try {
+    const { agentRunning, agentTablesReady, readAgentConfig } = await import('../agent/config');
+    if (!(await agentTablesReady())) return;
+    const config = await readAgentConfig();
+    if (!agentRunning(config) || config.ownerUserId !== rule.managerUserId) return;
+    const { queuePull } = await import('../agent/bot-door');
+    await queuePull(rule.managerUserId, rule.peerId, ctx.actorId ?? rule.managerUserId);
+  } catch (err) {
+    logger.warn({ err, ruleId: rule.id, peerId: String(rule.peerId) }, '[chat-rules] agent pull not queued');
+  }
+}
+
+/**
  * The third answer the tray could not give: «this is business, but they are
  * nobody yet».
  *
@@ -303,7 +336,9 @@ async function withdrawAgentRepliesOf(rule: { id?: string; managerUserId: string
  * Future only, exactly like «Qo'shish» for a client: this attaches the chat,
  * it does not import what was said before the press. Round 79's promise was
  * that nothing is stored until somebody answers, and reaching backwards
- * through Telegram for the history is a separate decision.
+ * through Telegram for the history is a separate decision — taken for ONE
+ * account only, the one the AI speaks from (`pullForAgent`), whose opening
+ * question is the thing the AI must answer.
  */
 export async function openLeadForChat(
   ruleId: string,
@@ -344,6 +379,7 @@ export async function openLeadForChat(
     after: { decision: 'include', clientId: null, leadId, ...(phone ? {} : { reason: 'agent_stranger_phoneless' }) },
   });
   await withdrawAgentRepliesOf(rule);
+  await pullForAgent(rule, ctx);
   return { leadId };
 }
 

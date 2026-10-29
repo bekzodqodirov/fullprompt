@@ -82,6 +82,42 @@ export function shouldRefreshOnMiss(
   return now - book.missRefreshedAt >= cooldownMs;
 }
 
+/**
+ * The account's «Ish raqami / Shaxsiy raqam» switch, as the running listener
+ * holds it (2026-10-29). It used to be re-read only with the ten-minute book —
+ * and every stranger's miss refresh resets that clock, so on a number that
+ * strangers keep writing to a switch to «Ish raqami» could wait for ever:
+ * each of them got a tray question instead of a lead, nothing they wrote was
+ * stored, and the AI saw none of it. So it has a clock of its own, as short
+ * as the agent's settings' (tg-listen `AGENT_CONFIG_TTL_MS`): one indexed
+ * row, asked at most twice a minute and only when a stranger's line hangs on
+ * the answer.
+ */
+export interface WorkModeState {
+  work: boolean;
+  readAt: number;
+}
+
+/** Thirty seconds — a switch flipped on the screen reaches the next stranger's line inside half a minute. */
+export const WORK_MODE_TTL_MS = 30 * 1000;
+
+export function workModeIsStale(state: WorkModeState, now: number, ttlMs = WORK_MODE_TTL_MS): boolean {
+  return now - state.readAt >= ttlMs;
+}
+
+/** The mode in the owner's words — the start line prints it, so «which mode is it in» is in the log. */
+export function workModeWord(work: boolean): string {
+  return work ? 'ish raqami' : 'shaxsiy raqam';
+}
+
+/** One line when the switch changed under a running listener, or null when it did not. */
+export function workModeChangeLine(before: boolean, after: boolean): string | null {
+  if (before === after) return null;
+  return after
+    ? '  ⚙ akkaunt endi «ish raqami»: raqami ko‘rinadigan notanish odam yozsa lid ochiladi'
+    : '  ⚙ akkaunt endi «shaxsiy raqam»: notanish odam «Qaysi chatlar»da so‘raladi';
+}
+
 export type LiveVerdict =
   | { store: true; clientId: string; clientCode: string; row: MessageRow }
   /**

@@ -51,9 +51,13 @@ import {
   decideIncoming,
   newBook,
   shouldRefreshOnMiss,
+  workModeChangeLine,
+  workModeIsStale,
+  workModeWord,
   HEARTBEAT_MS,
   type BookState,
   type LiveVerdict,
+  type WorkModeState,
 } from '../src/modules/wms/crm/telegram-live';
 import {
   peerFromChat,
@@ -218,7 +222,10 @@ const CATCHUP_WARM_DIALOGS = 100;
 const WARM_GAP_MS = 10_000;
 /** After a failed warm-up (a thrown FLOOD_WAIT is over 60 s by gramjs's own threshold). */
 const WARM_FAIL_GAP_MS = 120_000;
-/** A warm-up given up on: gramjs `invoke` has no timeout of its own. */
+/**
+ * A warm-up — and each live line's own lookup (`chatOfMessage`), which runs
+ * inside the sender's queue — given up on: gramjs `invoke` has no timeout.
+ */
 const WARM_DEADLINE_MS = 30_000;
 
 /**
@@ -399,10 +406,36 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   let passed = 0;
   // Strangers put on the tray for the manager to answer about (round 79).
   let asked = 0;
-  let workAccount = await isWorkAccount(account.managerUserId);
+  let workMode: WorkModeState = { work: await isWorkAccount(account.managerUserId), readAt: Date.now() };
   console.log(
-    `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
+    `tinglayapman: ${account.managerName} · ${tgPhone} · ${workModeWord(workMode.work)} · ${book.clients.length} mijoz · ${rules.size} qoida`,
   );
+
+  /**
+   * «Ish raqami» on its own half-minute clock, never the book's (2026-10-29):
+   * the stranger path asks it before it decides a stranger's line, so a
+   * switch flipped on the screen is the next stranger's answer within thirty
+   * seconds however often strangers write. Says so in the log when it moved.
+   * Returns whether it moved — the line just decided must then be decided
+   * again. A failed read keeps the last answer: the switch is a setting, and
+   * a database blink must not turn a work number personal for a line.
+   */
+  const workModeMoved = async (now: number, force = false): Promise<boolean> => {
+    if (!force && !workModeIsStale(workMode, now)) return false;
+    let work: boolean;
+    try {
+      work = await isWorkAccount(account.managerUserId);
+    } catch (err) {
+      // Asked again on the next clock, not on the next line of a database outage.
+      workMode = { work: workMode.work, readAt: now };
+      console.error('«ish raqami» o‘qilmadi:', err instanceof Error ? err.message : err);
+      return false;
+    }
+    const line = workModeChangeLine(workMode.work, work);
+    workMode = { work, readAt: now };
+    if (line) console.log(line);
+    return line !== null;
+  };
 
   /**
    * Does 0138 exist here? The kernel's probe caches only TRUE, so on a
@@ -596,7 +629,11 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // (the review of this fix: a site tag and its photo, decided backwards).
       await serialised(bareUser.toString(), async () => {
         try {
-          const resolved = await chatOfMessage(msg, { warm: warmDialogs, getEntity: (p) => client.getEntity(p as never) });
+          const resolved = await chatOfMessage(msg, {
+            warm: warmDialogs,
+            getEntity: (p) => client.getEntity(p as never),
+            deadlineMs: WARM_DEADLINE_MS,
+          });
           if (!resolved.unresolved) return await decide(listenPeer(resolved.chat));
           // Telegram's own account is known by its id alone (K33): a notice
           // that cannot be resolved must still switch the agent off.
@@ -710,13 +747,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (bookIsStale(book, now)) {
         book = newBook(await clientBook(), now);
         rules = await rulesFor(account.managerUserId);
-        // Re-read on the same tick as the book: the manager may have flipped
-        // «ish raqami» on the screen while the listener was running, and a
-        // switch that needs a restart is a switch nobody trusts.
-        workAccount = await isWorkAccount(account.managerUserId);
+        // Re-read on the same tick as the book as well: the manager may have
+        // flipped «ish raqami» on the screen while the listener was running,
+        // and a switch that needs a restart is a switch nobody trusts.
+        await workModeMoved(now, true);
       }
 
-      let verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+      let verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
+      // A stranger's line is the one the switch decides (a lead, or a tray
+      // question) — so it asks the switch's own clock first. The miss refresh
+      // below resets the BOOK's, and on a busy number that alone kept the
+      // switch from ever being read again.
+      if (suspectsStaleBook(verdict) && (await workModeMoved(now))) {
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
+      }
       // A number we do not know MIGHT be a client added since the book was
       // read. Ask once, rate-limited, before concluding they are a stranger.
       // Keyed on the verdicts a stranger actually gets since round 79 — the
@@ -724,11 +768,11 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (suspectsStaleBook(verdict) && shouldRefreshOnMiss(book, now)) {
         book = { ...newBook(await clientBook(), now), missRefreshedAt: now };
         rules = await rulesFor(account.managerUserId);
-        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
       // A website visitor's tag may turn this stranger into a lead's chat.
       if (await applySiteTag(peer, msg, verdict)) {
-        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
 
       if (!verdict.store) {
@@ -1904,7 +1948,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // The same decision the live path makes, including the work-account
           // widening — a message that arrived during an outage is the same
           // message it would have been a minute earlier.
-          const verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+          const verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
           if (!verdict.store) continue;
           // The same three owners the live path resolves, in the same order.
           let catchUpClientId: string | null = null;
@@ -2055,7 +2099,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // Newest first; the first message past the cutoff ends the chat.
           if (!withinWindow(msg.date, cutoff)) break;
           const step = backfillStep(
-            decideIncoming(peer, msg, book.clients, rules, workAccount),
+            decideIncoming(peer, msg, book.clients, rules, workMode.work),
           );
           if (step.kind === 'stop') break; // the whole chat is not ours
           if (step.kind === 'skip') continue; // a client's service row

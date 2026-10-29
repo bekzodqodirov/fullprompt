@@ -55,12 +55,31 @@ function isUserPeer(peerId: unknown): boolean {
   return (peerId as { className?: unknown } | null | undefined)?.className === 'PeerUser';
 }
 
-async function quietly<T>(work: (() => Promise<T>) | undefined): Promise<T | undefined> {
+/**
+ * How long one lookup may take before it is given up on — the warm-up's own
+ * deadline (`WARM_DEADLINE_MS` in tg-listen.ts). gramjs `invoke` has no
+ * timeout, and every lookup here runs INSIDE the sender's queue: a GetUsers
+ * that hangs, or sleeps out a flood inside gramjs, would hold that person's
+ * every later line behind it until it came back.
+ */
+export const LOOKUP_DEADLINE_MS = 30_000;
+
+/** A lookup that answers — or answers nothing, by throwing or by running past `deadlineMs`. */
+async function quietly<T>(work: (() => Promise<T>) | undefined, deadlineMs?: number): Promise<T | undefined> {
   if (!work) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await work();
+    if (deadlineMs === undefined) return await work();
+    // `race` subscribes to the lookup too, so one that fails after the
+    // deadline is a settled promise nobody reads, never an unhandled rejection.
+    const deadline = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), deadlineMs);
+    });
+    return await Promise.race([work(), deadline]);
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -79,10 +98,12 @@ function cached(msg: ChatSource): boolean {
  * an event handler.
  *
  * At most: the message's own lookup, one SHARED warm-up (paced by its owner,
- * `sharedWarmer`), one more lookup, one GetUsers by the bare peer. And a peer
- * the cache already knew whose lookup still failed is a network failure, not
- * a miss — it is answered unresolved at once, so a flood is not knocked on
- * three more times per line.
+ * `sharedWarmer`), one more lookup, one GetUsers by the bare peer — each of
+ * them given up at its own deadline, so a person's queue is held for a
+ * bounded time and never for the life of the process. And a peer the cache
+ * already knew whose lookup still failed is a network failure, not a miss —
+ * it is answered unresolved at once, so a flood is not knocked on three more
+ * times per line.
  */
 export async function chatOfMessage(
   msg: ChatSource,
@@ -90,9 +111,18 @@ export async function chatOfMessage(
     /** Fill the entity cache with the newest dialogs — one call shared by every line waiting on it. */
     warm?: () => Promise<unknown>;
     getEntity?: (peer: unknown) => Promise<unknown>;
+    /**
+     * How long each lookup that may ask Telegram is waited for — the warm-up
+     * keeps its own (`sharedWarmer`). Past it the lookup answered nothing:
+     * the line is unresolved and the sender's next line is not held.
+     */
+    deadlineMs?: number;
   } = {},
 ): Promise<ResolvedChat> {
-  const direct = await quietly(msg.getChat?.bind(msg));
+  const deadlineMs = lookups.deadlineMs ?? LOOKUP_DEADLINE_MS;
+  // For a peer the cache knows only by its input peer, `getChat()` is a
+  // GetUsers too — the same hang, so the same deadline.
+  const direct = await quietly(msg.getChat?.bind(msg), deadlineMs);
   if (direct) return { chat: direct, unresolved: false, via: 'direct' };
   // Only a bare USER needs more. A group's or a channel's message carries its
   // chat in the update, and a group is never a client chat anyway.
@@ -102,14 +132,14 @@ export async function chatOfMessage(
   await quietly(lookups.warm);
   if (cached(msg)) {
     // `getChat()` now finds the input peer in the cache and asks for the user.
-    const walked = await quietly(msg.getChat?.bind(msg));
+    const walked = await quietly(msg.getChat?.bind(msg), deadlineMs);
     if (walked) return { chat: walked, unresolved: false, via: 'dialogs' };
     return { chat: undefined, unresolved: true, via: null };
   }
   // Not among the newest dialogs either: a bare id still resolves for a
   // contact (gramjs `getInputEntity`, GetUsers with access hash 0).
   const getEntity = lookups.getEntity;
-  const asked = getEntity ? await quietly(() => getEntity(msg.peerId)) : undefined;
+  const asked = getEntity ? await quietly(() => getEntity(msg.peerId), deadlineMs) : undefined;
   if (asked) return { chat: asked, unresolved: false, via: 'entity' };
   return { chat: undefined, unresolved: true, via: null };
 }

@@ -862,11 +862,15 @@ async function codeEcho(staffId: string, ruleId: string, text: string): Promise<
   return '👆 Tekshiring va tasdiqlang.';
 }
 
-/** One stranger's chat pulled into the CRM by the listener (tg_peer_pulls, one open per chat). */
-async function queuePull(managerUserId: string, peerId: bigint): Promise<void> {
+/**
+ * One stranger's chat pulled into the CRM by the listener (tg_peer_pulls, one
+ * open per chat — a second ask while one is open is the same ask). The web
+ * tray's answer asks through here too (chat-rules `pullForAgent`).
+ */
+export async function queuePull(managerUserId: string, peerId: bigint, requestedBy: string = managerUserId): Promise<void> {
   await db
     .insert(tgPeerPulls)
-    .values({ managerUserId, peerId, requestedBy: managerUserId })
+    .values({ managerUserId, peerId, requestedBy })
     .onConflictDoNothing()
     .catch((err: unknown) => logger.warn({ err }, '[agent] pull not queued'));
 }

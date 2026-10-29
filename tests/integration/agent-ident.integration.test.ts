@@ -42,6 +42,7 @@ import {
   tgChatRules,
   tgMessageFlags,
   tgMessages,
+  tgPeerPulls,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
@@ -254,6 +255,8 @@ async function clearChats() {
   await db.delete(agentRuns).where(inArray(agentRuns.peerId, PEERS));
   await db.delete(agentConversations).where(inArray(agentConversations.peerId, PEERS));
   await db.delete(tgChatRules).where(inArray(tgChatRules.peerId, PEERS));
+  // A tray answer on the AI's account asks for a pull (chat-rules `pullForAgent`).
+  await db.delete(tgPeerPulls).where(inArray(tgPeerPulls.peerId, PEERS));
   await db.delete(tgMessages).where(inArray(tgMessages.peerId, PEERS));
   await db.delete(notifications).where(and(inArray(notifications.userId, [ownerId, sellerId]), sql`${notifications.type} LIKE 'Agent%'`));
   queued.length = 0;
