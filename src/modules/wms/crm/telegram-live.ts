@@ -90,8 +90,9 @@ export function shouldRefreshOnMiss(
  * each of them got a tray question instead of a lead, nothing they wrote was
  * stored, and the AI saw none of it. So it has a clock of its own, as short
  * as the agent's settings' (tg-listen `AGENT_CONFIG_TTL_MS`): one indexed
- * row, asked at most twice a minute and only when a stranger's line hangs on
- * the answer.
+ * row, read at most once a half-minute however many strangers write at once
+ * (`workModeSwitch` — they share the read in flight), and only when a
+ * stranger's line hangs on the answer.
  */
 export interface WorkModeState {
   work: boolean;
@@ -116,6 +117,69 @@ export function workModeChangeLine(before: boolean, after: boolean): string | nu
   return after
     ? '  ⚙ akkaunt endi «ish raqami»: raqami ko‘rinadigan notanish odam yozsa lid ochiladi'
     : '  ⚙ akkaunt endi «shaxsiy raqam»: notanish odam «Qaysi chatlar»da so‘raladi';
+}
+
+/**
+ * The switch as one running listener holds it: the value, its clock, and the
+ * one read in flight. gramjs dispatches each update without awaiting the one
+ * before (`sequentialUpdates: false`), so two strangers' first lines after a
+ * flip are decided at the same moment — and the old reader answered «did MY
+ * read see it change», which the second of them never does: A's read printed
+ * the change and re-decided A as a lead, B's found nothing new and kept the
+ * tray question it was decided with (the review of this fix). Now every
+ * caller that finds the clock due while a read runs awaits THAT read, and
+ * each line asks whether the switch differs from the value IT was decided
+ * with (`movedFrom`) — who happened to see the change does not enter.
+ *
+ * A failed read is not a personal number: the last answer stands, asked again
+ * on the next clock — not on the next line of a database outage.
+ */
+export interface WorkModeSwitch {
+  readonly work: boolean;
+  /** Read the switch when its clock is due (or `force`) — the read already running, if one is. */
+  refresh(now: number, force?: boolean): Promise<void>;
+  /** After `refresh`: does the switch now differ from `decidedWith` — must the line be decided again? */
+  movedFrom(decidedWith: boolean, now: number): Promise<boolean>;
+}
+
+export function workModeSwitch(opts: {
+  initial: boolean;
+  now: number;
+  read: () => Promise<boolean>;
+  log: (line: string) => void;
+  warn: (err: unknown) => void;
+  ttlMs?: number;
+}): WorkModeSwitch {
+  let state: WorkModeState = { work: opts.initial, readAt: opts.now };
+  let inFlight: Promise<void> | null = null;
+  const refresh = (now: number, force = false): Promise<void> => {
+    if (inFlight) return inFlight;
+    if (!force && !workModeIsStale(state, now, opts.ttlMs)) return Promise.resolve();
+    inFlight = (async () => {
+      try {
+        const work = await opts.read();
+        const line = workModeChangeLine(state.work, work);
+        state = { work, readAt: now };
+        if (line) opts.log(line);
+      } catch (err) {
+        state = { work: state.work, readAt: now };
+        opts.warn(err);
+      }
+    })().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  };
+  return {
+    get work() {
+      return state.work;
+    },
+    refresh,
+    async movedFrom(decidedWith: boolean, now: number): Promise<boolean> {
+      await refresh(now);
+      return state.work !== decidedWith;
+    },
+  };
 }
 
 export type LiveVerdict =

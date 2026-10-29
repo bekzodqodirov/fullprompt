@@ -299,20 +299,24 @@ async function withdrawAgentRepliesOf(rule: { id?: string; managerUserId: string
  * Only an answer to a chat still IN QUESTION (`pending` before the write — a
  * re-decided chat was being kept already, or was somebody's «never»), only on
  * the account the AI is running from (any other account keeps round 79's
- * «future only»), and through the bot's own `queuePull`, whose open-pull
- * unique index makes the bot's press and this one a single pull. After the
- * rule is written, so the listener's pull reads the NEW rule. Best-effort,
- * like the withdrawal: the decision stands whatever happens here.
+ * «future only»), only when the person answering IS that account's holder —
+ * the bot's stranger card answers only to him, and the tray's
+ * `admin.settings.manage` holders, who may answer every account's row, do
+ * not get to reach back a day into his own Telegram with it (the review of
+ * this fix) — and through the bot's own `queuePull`, whose open-pull unique
+ * index makes the bot's press and this one a single pull. After the rule is
+ * written, so the listener's pull reads the NEW rule. Best-effort, like the
+ * withdrawal: the decision stands whatever happens here.
  */
 async function pullForAgent(rule: { id?: string; managerUserId: string; peerId: bigint; decision: string }, ctx: AuditContext): Promise<void> {
-  if (rule.decision !== 'pending') return;
+  if (rule.decision !== 'pending' || ctx.actorId !== rule.managerUserId) return;
   try {
     const { agentRunning, agentTablesReady, readAgentConfig } = await import('../agent/config');
     if (!(await agentTablesReady())) return;
     const config = await readAgentConfig();
     if (!agentRunning(config) || config.ownerUserId !== rule.managerUserId) return;
     const { queuePull } = await import('../agent/bot-door');
-    await queuePull(rule.managerUserId, rule.peerId, ctx.actorId ?? rule.managerUserId);
+    await queuePull(rule.managerUserId, rule.peerId, ctx.actorId);
   } catch (err) {
     logger.warn({ err, ruleId: rule.id, peerId: String(rule.peerId) }, '[chat-rules] agent pull not queued');
   }
@@ -337,8 +341,8 @@ async function pullForAgent(rule: { id?: string; managerUserId: string; peerId: 
  * it does not import what was said before the press. Round 79's promise was
  * that nothing is stored until somebody answers, and reaching backwards
  * through Telegram for the history is a separate decision — taken for ONE
- * account only, the one the AI speaks from (`pullForAgent`), whose opening
- * question is the thing the AI must answer.
+ * account only, the one the AI speaks from, on its holder's own press
+ * (`pullForAgent`): its opening question is the thing the AI must answer.
  */
 export async function openLeadForChat(
   ruleId: string,

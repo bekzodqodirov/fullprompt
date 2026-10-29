@@ -28,8 +28,9 @@ import { decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
  * database and pg-boss's real table:
  *
  *  - the WEB tray's answer to a stranger asks for the same one-chat pull the
- *    bot's stranger card does — on the account the AI speaks from, and only
- *    there — so the opening burst is drafted, not only the next message;
+ *    bot's stranger card does — on the account the AI speaks from, pressed
+ *    by its holder, and only then — so the opening burst is drafted, not
+ *    only the next message;
  *  - the sweep asks for a line ONCE while its job is still waiting, so a
  *    busy worker is not handed the same line again every minute.
  *
@@ -167,12 +168,22 @@ afterAll(async () => {
 });
 
 describe('the web tray’s answer pulls the opening burst on the AI’s account (L2)', () => {
-  it('«Yangi lid» on the account the AI speaks from leaves ONE open pull, asked by whoever pressed', async () => {
+  it('«Yangi lid» on the account the AI speaks from, pressed by its holder, leaves ONE open pull', async () => {
     const ruleId = await strangerRule(ownerId, PEER, '11');
-    await openLead(ruleId, otherId);
+    await openLead(ruleId, ownerId);
     const [pull, ...more] = await pulls(ownerId, PEER);
     expect(more).toHaveLength(0);
-    expect(pull).toMatchObject({ requestedBy: otherId, doneAt: null, claimedAt: null });
+    expect(pull).toMatchObject({ requestedBy: ownerId, doneAt: null, claimedAt: null });
+  });
+
+  it('somebody else answering HIS row — the tray lets an admin answer every account’s — reaches back into nothing', async () => {
+    const lead = await strangerRule(ownerId, PEER, '18');
+    await openLead(lead, otherId);
+    expect(await pulls(ownerId, PEER)).toHaveLength(0);
+    await db.delete(tgChatRules).where(eq(tgChatRules.id, lead));
+    const client = await strangerRule(ownerId, PEER, '19');
+    await decideChat({ id: client, decision: 'include', clientId }, { actorId: otherId });
+    expect(await pulls(ownerId, PEER)).toHaveLength(0);
   });
 
   it('«Bu mijoz» there pulls too — and on another manager’s account neither door does', async () => {

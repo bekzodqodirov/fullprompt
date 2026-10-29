@@ -55,14 +55,34 @@ function isUserPeer(peerId: unknown): boolean {
   return (peerId as { className?: unknown } | null | undefined)?.className === 'PeerUser';
 }
 
+/** The retry after a flood sleep, and the round trip around it. */
+const LOOKUP_MARGIN_S = 15;
+
 /**
- * How long one lookup may take before it is given up on — the warm-up's own
- * deadline (`WARM_DEADLINE_MS` in tg-listen.ts). gramjs `invoke` has no
- * timeout, and every lookup here runs INSIDE the sender's queue: a GetUsers
- * that hangs, or sleeps out a flood inside gramjs, would hold that person's
- * every later line behind it until it came back.
+ * How long one lookup may take before it is given up on. gramjs `invoke` has
+ * no timeout, and every lookup here runs INSIDE the sender's queue: a
+ * GetUsers that HANGS would hold that person's every later line behind it for
+ * the life of the process.
+ *
+ * But a FLOOD_WAIT up to the client's `floodSleepThreshold` is not a hang:
+ * `invoke` sleeps it out itself and then answers (`client/users.js`,
+ * `e.seconds <= client.floodSleepThreshold`), and the listener keeps that
+ * sleep on purpose (ban-2's deviation). A deadline inside it turned a line
+ * that would have been stored a minute late into one never stored at all —
+ * an unresolved line is passed over, and catch-up runs only at start, from
+ * the newest stored id (the review of this fix: a 45 s flood on a known
+ * client's GetUsers). So the bound sits a margin PAST the sleep: one flood
+ * sleep and its retry finish; only a request that answers nothing for
+ * longer is given up. Two floods back to back on one lookup are the one
+ * case still passed over — named «aniqlab bermadi» in the log of the
+ * account the AI speaks from.
  */
-export const LOOKUP_DEADLINE_MS = 30_000;
+export function lookupDeadlineMs(floodSleepThresholdS: number): number {
+  return (floodSleepThresholdS + LOOKUP_MARGIN_S) * 1000;
+}
+
+/** gramjs's own default threshold, 60 s — what the listener runs with. */
+export const LOOKUP_DEADLINE_MS = lookupDeadlineMs(60);
 
 /** A lookup that answers — or answers nothing, by throwing or by running past `deadlineMs`. */
 async function quietly<T>(work: (() => Promise<T>) | undefined, deadlineMs?: number): Promise<T | undefined> {
@@ -112,16 +132,18 @@ export async function chatOfMessage(
     warm?: () => Promise<unknown>;
     getEntity?: (peer: unknown) => Promise<unknown>;
     /**
-     * How long each lookup that may ask Telegram is waited for — the warm-up
-     * keeps its own (`sharedWarmer`). Past it the lookup answered nothing:
-     * the line is unresolved and the sender's next line is not held.
+     * How long each lookup that may ask Telegram is waited for — past the
+     * client's flood sleep (`lookupDeadlineMs`); the warm-up keeps its own
+     * (`sharedWarmer`). Past it the lookup answered nothing: the line is
+     * unresolved and the sender's next line is not held.
      */
     deadlineMs?: number;
   } = {},
 ): Promise<ResolvedChat> {
   const deadlineMs = lookups.deadlineMs ?? LOOKUP_DEADLINE_MS;
-  // For a peer the cache knows only by its input peer, `getChat()` is a
-  // GetUsers too — the same hang, so the same deadline.
+  // For a peer the cache knows only by its input peer — every known client
+  // after the first warm-up — `getChat()` is a GetUsers too: the same hang,
+  // and the same flood sleep, so the same deadline.
   const direct = await quietly(msg.getChat?.bind(msg), deadlineMs);
   if (direct) return { chat: direct, unresolved: false, via: 'direct' };
   // Only a bare USER needs more. A group's or a channel's message carries its

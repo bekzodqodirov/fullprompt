@@ -1,6 +1,14 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
-import { chatOfMessage, lastFour, LOOKUP_DEADLINE_MS, passedLine, sharedWarmer, userIdOf } from '../../src/modules/wms/crm/listen-trace';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  chatOfMessage,
+  lastFour,
+  LOOKUP_DEADLINE_MS,
+  lookupDeadlineMs,
+  passedLine,
+  sharedWarmer,
+  userIdOf,
+} from '../../src/modules/wms/crm/listen-trace';
 
 /**
  * A stand-in for a gramjs `Message` built from an `UpdateShortMessage`: no
@@ -144,8 +152,10 @@ describe('chatOfMessage — the live chat of a short update (2026-10-29)', () =>
     // A lookup with no deadline never returns: the test's own limit is the red.
   }, 5_000);
 
-  it('with no deadline given, the listener’s own is the default — the warm-up’s thirty seconds', () => {
-    expect(LOOKUP_DEADLINE_MS).toBe(30_000);
+  it('with no deadline given, the default sits PAST gramjs’s own sixty-second flood sleep', () => {
+    expect(LOOKUP_DEADLINE_MS).toBe(lookupDeadlineMs(60));
+    expect(LOOKUP_DEADLINE_MS).toBeGreaterThan(60_000);
+    expect(lookupDeadlineMs(20)).toBeGreaterThan(20_000);
   });
 
   it('a group or channel without a chat is never warmed for — and is not «unresolved»', async () => {
@@ -160,6 +170,84 @@ describe('chatOfMessage — the live chat of a short update (2026-10-29)', () =>
     );
     expect(got).toEqual({ chat: undefined, unresolved: false, via: null });
     expect(warms).toBe(0);
+  });
+});
+
+/**
+ * gramjs sleeps a FLOOD_WAIT up to `floodSleepThreshold` (60 s, the listener's
+ * own) INSIDE `invoke` and then answers. A known client's `getChat()` is a
+ * GetUsers — so the lookup deadline must let that sleep finish, or a line that
+ * would have been stored a minute late is passed over for good (the review of
+ * L5). Fake timers: the 45 s flood is a timer, not a wait.
+ */
+describe('chatOfMessage — a flood gramjs sleeps out is waited for, a hang is not', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** A known client's live line whose GetUsers answers after `ms`, or never. */
+  function cachedLine(answersAfterMs: number | null) {
+    const user = { className: 'User', id: 77n };
+    const msg = {
+      peerId: { className: 'PeerUser', userId: 77n },
+      inputChat: { className: 'InputPeerUser', userId: 77n },
+      getChat: () =>
+        answersAfterMs === null
+          ? new Promise<unknown>(() => {})
+          : new Promise<unknown>((resolve) => setTimeout(() => resolve(user), answersAfterMs)),
+    };
+    return { msg, user };
+  }
+
+  async function settle(work: Promise<unknown>, ms: number) {
+    let answer: unknown = 'pending';
+    void work.then((got) => {
+      answer = got;
+    });
+    await vi.advanceTimersByTimeAsync(ms);
+    return answer;
+  }
+
+  it('a known client’s GetUsers caught in a 45 s flood sleep still resolves — under the default AND the listener’s deadline', async () => {
+    vi.useFakeTimers();
+    for (const deadlineMs of [undefined, lookupDeadlineMs(60)]) {
+      const { msg, user } = cachedLine(45_000);
+      const got = await settle(chatOfMessage(msg, { deadlineMs }), 45_000);
+      expect(got).toEqual({ chat: user, unresolved: false, via: 'direct' });
+    }
+  });
+
+  it('a known client’s GetUsers that never answers is given up — at the deadline and not before', async () => {
+    vi.useFakeTimers();
+    const { msg } = cachedLine(null);
+    const work = chatOfMessage(msg, { deadlineMs: lookupDeadlineMs(60) });
+    expect(await settle(work, lookupDeadlineMs(60) - 1)).toBe('pending');
+    expect(await settle(work, 1)).toEqual({ chat: undefined, unresolved: true, via: null });
+  });
+
+  it('the lookup after the warm-up waits out the same sleep', async () => {
+    vi.useFakeTimers();
+    const cache = new Set<bigint>();
+    const user = { className: 'User', id: 78n };
+    const msg = {
+      peerId: { className: 'PeerUser', userId: 78n },
+      get inputChat() {
+        return cache.has(78n) ? { className: 'InputPeerUser', userId: 78n } : undefined;
+      },
+      getChat: () =>
+        cache.has(78n)
+          ? new Promise<unknown>((resolve) => setTimeout(() => resolve(user), 45_000))
+          : Promise.resolve(undefined),
+    };
+    const got = await settle(
+      chatOfMessage(msg, {
+        warm: async () => {
+          cache.add(78n);
+        },
+      }),
+      45_000,
+    );
+    expect(got).toEqual({ chat: user, unresolved: false, via: 'dialogs' });
   });
 });
 
@@ -268,7 +356,7 @@ describe('the listener asks through it (source shape)', () => {
   it('the live NewMessage handler resolves a private line INSIDE its sender’s queue, through chatOfMessage', () => {
     const queued = live.indexOf('await serialised(bareUser.toString(), async () => {');
     const resolve = live.search(
-      /await chatOfMessage\(msg, \{\s*warm: warmDialogs,\s*getEntity: \(p\) => client\.getEntity\(p as never\),\s*deadlineMs: WARM_DEADLINE_MS,\s*\}\)/,
+      /await chatOfMessage\(msg, \{\s*warm: warmDialogs,\s*getEntity: \(p\) => client\.getEntity\(p as never\),\s*deadlineMs: lookupDeadlineMs\(client\.floodSleepThreshold\),\s*\}\)/,
     );
     expect(queued).toBeGreaterThan(-1);
     expect(resolve).toBeGreaterThan(queued);
