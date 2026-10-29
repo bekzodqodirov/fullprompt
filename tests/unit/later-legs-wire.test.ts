@@ -60,7 +60,10 @@ describe('the screens ask the rule, not a copy of it', () => {
 
   it('a price for a client whose cargo follows an earlier truck asks first (4a), and the confirm cannot post twice', () => {
     expect(pricing).toMatch(/secondBill=\{/);
-    expect(form).toContain('if (!secondBill && !deviates) return;');
+    // Widened by his Q8 «c» (2026-10-27): the same ONE confirmation also asks
+    // on a two-deal truck and before any further price for a client already
+    // priced here — `secondBill` still stops the press on its own.
+    expect(form).toContain('if (!secondBill && !deviates && !choiceAsks && pricedHere.length === 0) return;');
     const confirm = form.slice(form.indexOf('data-testid="pricing-deviation-confirm"') - 200, form.indexOf('data-testid="pricing-deviation-confirm"'));
     expect(confirm).toContain('disabled={pending}');
   });

@@ -271,7 +271,21 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
           <dt className="text-ink-500">{t('fields.weightKg')}</dt>
           <dd className="num md:text-left">{row.weightKg ?? '—'}</dd>
           <dt className="text-ink-500">{t('fields.volumeM3')}</dt>
-          <dd className="num md:text-left">{row.volumeM3 ?? '—'}</dd>
+          <dd className="num md:text-left" data-testid="calc-request-volume">
+            {row.volumeM3 ?? '—'}
+            {/* The m³ every section prints — and, when it IS the Σ of the
+                lines, said so (round 2, §7.2.8): on such a request
+                `reconcile.mismatch` compares the Σ with itself and can never
+                see a wrong line volume, so this label is the only signal. On
+                the cell that always renders, not in the freight panel only:
+                a rastamojka job is exactly where the mismatch is blind
+                (review P2-2). */}
+            {workspace?.volumeFromLines ? (
+              <span className="ml-1 text-2xs text-ink-500" data-testid="calc-volume-from-lines">
+                · {t('volumeFromLinesShort')}
+              </span>
+            ) : null}
+          </dd>
           <dt className="text-ink-500">{t('askedAt')}</dt>
           <dd>{format.dateTime(row.requestedAt, { dateStyle: 'short', timeStyle: 'short' })}</dd>
           <dt className="text-ink-500">{t('dueBy')}</dt>

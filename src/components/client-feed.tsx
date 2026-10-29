@@ -1,6 +1,12 @@
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { clientFeed, type FeedItem, type FeedKind } from '@/modules/wms/crm/feed';
+import {
+  clientFeed,
+  machineReplyOf,
+  type FeedItem,
+  type FeedKind,
+  type MachineReplyChip,
+} from '@/modules/wms/crm/feed';
 import { mentionablePeople } from '@/modules/wms/crm/internal-chat';
 import { lentaAdmission } from '@/modules/wms/crm/thread-door';
 import { threadHrefsFor } from '@/modules/wms/crm/thread';
@@ -154,7 +160,15 @@ export async function ClientFeed({
 
   const t = await getTranslations('crm');
   const tth = await getTranslations('threads');
-  const threadMarks = { calc: tth('feedCalcThread'), telegram: tth('feedViaTelegram') };
+  const threadMarks: FeedMarks = {
+    calc: tth('feedCalcThread'),
+    telegram: tth('feedViaTelegram'),
+    // A machine's calculation answer (his 2.4 c): which reply it is, and
+    // whether an estimate is inside — the same words for every reader.
+    ai: tth('feedAiReply'),
+    tariff: tth('feedTariffReply'),
+    estimate: tth('feedEstimateReply'),
+  };
   const items = await clientFeed(clientId, { money: showMoney, limit, leadId, dealId });
   // A note that is a calculation's question or answer carries «🧮 Hisob savoli
   // · ↩️ javob» — a link to WHERE that calculation's Q&A lives now (the ONE
@@ -234,7 +248,16 @@ export async function ClientFeed({
   );
 }
 
-function FeedRow({
+/**
+ * The words of a note's marks (the `threads` namespace): the two thread marks,
+ * and one per machine-reply chip — a `Record` over the chip union, so a chip
+ * in the union with no word here is a compile error, not a blank. Which chips
+ * the query actually answers is feed.ts's CASE, pinned by feed.integration.
+ */
+export type FeedMarks = { calc: string; telegram: string } & Record<MachineReplyChip, string>;
+
+/** Exported for the render test alone (tests/unit/feed-machine-chip.test.ts). */
+export function FeedRow({
   item,
   t,
   viewerId,
@@ -244,8 +267,7 @@ function FeedRow({
   item: FeedItem;
   t: Awaited<ReturnType<typeof getTranslations<'crm'>>>;
   viewerId: string;
-  /** The two thread marks' words (the `threads` namespace). */
-  marks: { calc: string; telegram: string };
+  marks: FeedMarks;
   /** Where this note's calculation Q&A lives for this reader — null draws the chip as text. */
   calcHref: string | null;
 }) {
@@ -266,6 +288,7 @@ function FeedRow({
   // an appended brand tint would be dead CSS (telegram-bubble's ternary is
   // the idiom).
   const own = item.kind === 'note' && item.meta.authorId === viewerId;
+  const machineReply = machineReplyOf(item);
 
   return (
     <div
@@ -296,6 +319,16 @@ function FeedRow({
           {item.kind === 'note' && item.meta.viaTelegram === true ? (
             <span className="ml-1.5" data-testid="feed-via-telegram">
               {marks.telegram}
+            </span>
+          ) : null}
+          {/* A calculation answer the machine wrote (his 2.4 c): «not
+              official», and when an estimate is inside it says so without
+              the note being opened. Warn-toned for every reader — the
+              seller read the same figures in Telegram, and the line under
+              the note's heading is the part addressed to the VED. */}
+          {machineReply ? (
+            <span className="ml-1.5 font-semibold text-warn" data-testid="feed-machine-reply">
+              {marks[machineReply]}
             </span>
           ) : null}
         </span>

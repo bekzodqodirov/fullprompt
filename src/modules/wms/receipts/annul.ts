@@ -20,6 +20,7 @@ import { retireTaskCopiesSoon } from '../../platform/notifications/retire-tasks'
 import { CostError, recomputeAll, recomputeEntry, scopeBoxIds, voidCostEntryInTx } from '../costing/service';
 import { voidBoxRows } from './void-box';
 import { receiptHasCompensation } from '../finance/compensation-follow';
+import { anyRoadOwedFor, planRoadReady } from '../planning/road';
 
 /**
  * Anulirovka — the super-admin cascade void of a receipt (owner, 2026-08-26:
@@ -167,6 +168,8 @@ export async function annulReceipt(
   // The tasks a retired truck takes with it — retired in Telegram after the
   // commit, never inside it (#714).
   const cancelledTasks: string[] = [];
+  // On the pool, before the transaction (#714).
+  const road = await planRoadReady();
   const outcome = await db.transaction(async (tx) => {
     // LOCKED (0105): the lost-cargo door locks the prixod first too.
     const [receipt] = await tx.select().from(receipts).where(eq(receipts.id, receiptId)).for('update');
@@ -221,6 +224,10 @@ export async function annulReceipt(
         )
         .limit(1);
       if (pending.length) throw new AnnulError('box_on_active_plan');
+      // Yo'ldagi yuk: an approved plan that still OWES this lot from the road
+      // holds none of its cartons yet — and would wait for ever for cargo
+      // this annul is about to retire (docs/YOLDAGI-YUK.md §9).
+      if (await anyRoadOwedFor(tx, road, lotIds)) throw new AnnulError('box_on_active_plan');
     }
 
     // Money, in the SAME transaction: every live receipt-scope entry goes,

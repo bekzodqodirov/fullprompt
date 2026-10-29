@@ -2,7 +2,8 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
-import { quoteLockedFor } from '@/modules/wms/crm/service';
+import { quoteWriterFor, writerWroteCard } from '@/modules/wms/crm/service';
+import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
 import { mayGrantDebt, mayOpenClientLedger } from '@/modules/wms/finance/scope';
 import { mayOpenClientCard } from '@/modules/platform/clients/card-door';
 import { PageHeader, Section } from '@/components/ui/page';
@@ -76,8 +77,15 @@ export default async function DealPage({
   const row = await dealById(id);
 
   if (!row) notFound();
-  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2).
-  const quoteLocked = (await quoteLockedFor('deal', id)) !== null;
+  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2)
+  // — `quoteLockedFor`'s rule, read once: locked while the writer stands, and
+  // the job that wrote the number linked for the VED whether it stands or
+  // not (his 2026-10-27).
+  const writer = await quoteWriterFor('deal', id);
+  const quoteLocked = writer?.stands === true;
+  const quoteCalcHref = writerWroteCard(writer, row.deal.quotedAmount)
+    ? calcWorkspaceHref(actor, writer.requestId)
+    : null;
   // LTL / FTL (0135): null = the server is one migration behind (no control, no chip).
   const loadMode = await dealLoadMode(id);
   // The thread's filter and the calls' filter live on the same URL; a link
@@ -95,6 +103,7 @@ export default async function DealPage({
   const t = await getTranslations('deals');
   const tc = await getTranslations('common');
   const tf = await getTranslations('ftl');
+  const tcalc = await getTranslations('calc');
   // The seller's half of the card (17a): its terms. Asked ONCE, here.
   const terms = mayEditDealTerms(actor.permissions);
   const [{ reality, deviation }, stages, managers, threshold, unlinked] = await Promise.all([
@@ -232,6 +241,13 @@ export default async function DealPage({
                 strong
               />
             </dl>
+            {quoteCalcHref ? (
+              <p className="mt-1 text-sm">
+                <Link href={quoteCalcHref} className="font-semibold text-brand-700" data-testid="deal-quote-calc-link">
+                  {tcalc('openCalc')}
+                </Link>
+              </p>
+            ) : null}
             {/* FTL shows, LTL — the default — stays silent (0135). */}
             {loadMode === 'ftl' ? (
               <p className="mt-1 text-sm" data-testid="deal-ftl-chip">
@@ -317,6 +333,7 @@ export default async function DealPage({
         <Panel title={`✏️ ${tc('edit')}`} testId="deal-edit-panel">
           <DealForm
             quoteLocked={quoteLocked}
+            quoteCalcHref={quoteCalcHref}
             load={loadMode ? { initial: loadMode, office: mayRevertFtl(actor) } : null}
             dealId={row.deal.id}
             stages={formStages(stages, row.deal.stageId)}
@@ -467,6 +484,18 @@ export default async function DealPage({
               {t('profitUnlinked', { amount: profit.unlinkedBatchUsd.toFixed(2) })}
             </p>
           )}
+          {/* A two-deal truck's price the person wrote to the OTHER deal (Q8
+              «c») — named here, or this card reads cost with no revenue and
+              no word about where the price went. Never folded in. */}
+          {profit.otherDealPrices.map((row) => (
+            <p
+              key={`${row.batchId}:${row.dealId}`}
+              className="rounded-xl border border-warn/30 bg-warn/10 p-2 text-xs"
+              data-testid="deal-profit-other-deal"
+            >
+              {t('profitOtherDeal', { truck: row.batchCode, amount: row.usd.toFixed(2), code: row.dealCode })}
+            </p>
+          ))}
           {/* A held yo'lkira bill on a truck these cartons rode is in no
               allocation, so the cost above lacks this deal's share of it and
               the profit reads high. Said, never folded in: the money sits on

@@ -871,6 +871,7 @@
       "calcRecalc": "已提交重新计算",
       "calcSection": "类别",
       "itemCount": "商品行数",
+      "volumeFromLines": "体积由各行合计",
       "allocationBasis": "分摊方式",
       "tariffZone": "价目表栏",
       "tariffFrom": "价目表日期",
@@ -1078,6 +1079,7 @@
     "voidHasCompensation": "此入库单有给客户的赔偿记录。请先由会计作废。",
     "assignHasCompensation": "此入库单有赔偿记录——更换客户前，请会计作废并记到正确的客户。",
     "dealLinkCompensation": "此入库单有赔偿——将一并转到新交易。",
+    "dealLinkUpsalePaid": "该交易的销售员提成已支付 — 移动入库前请会计撤销该笔支付",
     "attachInUse": "此单据被批次组成使用 — 在报关员或物流员选择其他单据前无法删除"
   },
   "stock": {
@@ -1231,7 +1233,21 @@
       "reason_required": "请填写原因"
     },
     "cancelPlan": "取消计划",
-    "stockFailed": "货物列表未加载 — 请刷新页面；如果重复出现，请告知管理员"
+    "stockFailed": "货物列表未加载 — 请刷新页面；如果重复出现，请告知管理员",
+    "roadToggle": "包括在途货物",
+    "roadHint": "正在驶往本仓库的车上的货物。列入计划后，在这里卸车时会自动转到这辆车上。",
+    "roadDropped": "已从选择中移除在途货物：{n}",
+    "roadFailed": "在途货物列表未能加载——显示的是仓库内的货物",
+    "unseenPicks": "已选的 {n} 批货物不在列表中，未计入合计——请重新加载列表或将其移除",
+    "unseenDrop": "移除",
+    "roadLine": "+{n} 在途 ·",
+    "roadAtGate": "已到门口",
+    "factoryTrips": "从工厂运来（{n}）",
+    "factoryTripsHint": "工厂车的货物在本仓库收货后才能列入计划。",
+    "roadPart": "{n} 在途",
+    "roadAwaited": "待到 {n}",
+    "roadCame": "已到 {n}",
+    "roadMissed": "未到 {n}"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -1484,7 +1500,8 @@
       "batch_has_costs": "该批次已录入费用",
       "batch_has_charges": "该批次已向客户计费",
       "batch_has_moved_boxes": "箱子已进入下一环节",
-      "reason_required": "请填写原因"
+      "reason_required": "请填写原因",
+      "road_owed_open": "请先点“装车完成”——计划中的货物还在途中"
     },
     "startUnloading": "卸货（扫码）",
     "transitReport": "在途",
@@ -1663,8 +1680,11 @@
       "emptyBoard": "没有未结束的车辆。",
       "capped": "仅显示最早的 {n} 辆车。",
       "filters": "筛选",
-      "loadedNoPlan": "已装 {boxes}箱 · {cargo}"
-    }
+      "loadedNoPlan": "已装 {boxes}箱 · {cargo}",
+      "roadOwed": "+{n} 在途"
+    },
+    "finishSummaryRoad": "{n} 箱在途未到",
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
   },
   "loading": {
     "title": "装车",
@@ -1696,7 +1716,9 @@
       "unknown_code": "未找到编号。",
       "not_loaded_here": "此箱未记录在本车上。",
       "forbidden": "无权限。"
-    }
+    },
+    "roadNotLanded": "这箱还在 {truck} 车上——请先在卸车时收货",
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
   },
   "unloading": {
     "title": "卸货",
@@ -2069,7 +2091,31 @@
     "unsplit": "⚠ {n, plural, other {# 笔费用}}（{usd}）未分摊到本车货物——未计入成本。",
     "unsplitCarried": "⚠ 车辆 {code} 的 {usd} 费用未分摊到货物——「{leg}」成本中没有",
     "unsplitCarriedNoRate": "⚠ 车辆 {code} 有 {n, plural, other {# 笔费用}}没有汇率——「{leg}」成本中没有",
-    "carriedIncomplete": "⚠ 不完整"
+    "carriedIncomplete": "⚠ 不完整",
+    "truckDealLabel": "价格记入哪笔交易",
+    "truckDealPick": "选择交易",
+    "truckDealNone": "不记入交易——用于未关联交易的货物",
+    "truckDealHint": "该客户在此车上的货物属于多笔交易——请选择这是哪笔交易的价格",
+    "truckDealStale": "选择已过期——交易已变更，请重新选择",
+    "truckDealLine": "价格记入交易 {code}——占该客户本车货物的 {pct} %。另一笔交易的货物请单独定价",
+    "truckDealLineNoShare": "价格记入交易 {code}。另一笔交易的货物请单独定价",
+    "truckDealLineNone": "价格不记入任何交易",
+    "truckDealDeferred": "交易 {code} 已延期付款：在延期有效期内，交货时此价格不会作为欠款扣住货物",
+    "truckDealAsk": "此价格仅为交易 {code} 的部分吗（占该客户本车货物的 {pct} %）？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
+    "truckDealAskNoShare": "此价格仅为交易 {code} 的部分吗？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
+    "truckDealAskNone": "价格不记入任何交易——交易的利润和加价都看不到它。",
+    "pricedHereAsk": "该客户在此车上已有价格：{list}。此价格将是额外的账单。",
+    "pricedHereTitle": "本车上的价格",
+    "pricedHereNoDeal": "无交易",
+    "pricedHereMissing": "本车上无价格",
+    "pricedHereCardPrice": "该交易有自己的价格（无车次）",
+    "pricedHereGone": "该交易的货物已不在车上",
+    "truckDealChanged": "本车货物的交易已变更——页面已刷新，请核对价格后重新保存",
+    "truckDealNotAboard": "该交易在此车上没有货物——价格应记入货物在本车上的交易",
+    "truckDealRequired": "该客户在此车上的货物属于多笔交易——请选择价格记入哪笔交易",
+    "truckDealInvalid": "此选择不适用于本车——请刷新页面后重新选择",
+    "truckDealMismatch": "该交易属于其他客户——价格不会记入",
+    "pricedHereWhole": "无交易的价格已覆盖该客户本车全部货物——如需记入交易，请作废后按交易重新录入"
   },
   "map": {
     "title": "地图",
@@ -2814,10 +2860,17 @@
         "codeFormat": "编号格式不正确",
         "stageGone": "阶段不存在——请刷新页面",
         "forbidden": "没有权限",
-        "failed": "保存失败"
+        "failed": "保存失败",
+        "leadAboutClient": "此线索属于同事的客户——只能赢单到该客户代码",
+        "serverBehind": "服务器仍在更新——请稍后再试",
+        "changed": "线索的计算刚刚发生变化——请关闭后重新打开此窗口"
       },
       "search": "查找客户：代码、姓名或电话",
-      "toDeal": "交易 →"
+      "toDeal": "交易 →",
+      "sellerOf": "销售：{name}",
+      "noSeller": "无销售",
+      "aboutColleague": "将为该客户新建一笔交易",
+      "otherDeals": "为线索的其他计算另外新建了 {count} 笔交易："
     },
     "errors": {
       "quote_sealed": "价格已封存，无法修改（请重新计算）"
@@ -3313,7 +3366,8 @@
     "weightKg": "重量（kg）",
     "profitCompensation": "− 赔偿（丢失货物）",
     "profitNetRevenue": "收入（扣除赔偿后）",
-    "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。"
+    "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。",
+    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。"
   },
   "automation": {
     "title": "自动化规则",
@@ -3461,6 +3515,7 @@
       "fromDeal": "从交易明细填写",
       "totalWeight": "总重量（毛重），公斤",
       "totalVolume": "总体积，立方米",
+      "volumeFromLines": "留空则合计各行体积",
       "noName": "未填写品名",
       "badCell": "「{text}」不是数字",
       "fixFirst": "请先修正标记的行",
@@ -3507,6 +3562,7 @@
     "returnReasonLabel": "退回原因",
     "finish": "完成",
     "answerAmount": "价格",
+    "finishNotEstimate": "Telegram 和动态中机器人的数字——「Aniq」「Taxminiy」「JAMI」「Yo‘lkira ≈」——不是正式价格：请勿抄到这里，请填写您自己算出的价格。",
     "answerNote": "备注",
     "answered": "答复",
     "returned": "已退回",
@@ -3576,6 +3632,7 @@
       "rate_range": "税率应在 0–100 之间",
       "amount_range": "金额有误",
       "label_required": "请填写名称",
+      "lead_closed": "线索已关闭——不能再添加新计算。若已赢单，请从其交易发送",
       "product_required": "请填写商品名称",
       "code_required": "请填写海关编码",
       "zone_required": "请选择线路",
@@ -3803,7 +3860,7 @@
     "makeOffer": "向客户报价",
     "belowFloor": "低于成本 — 核算结果为 {floor} 美元",
     "belowFloorChip": "偏低",
-    "offerSent": "已发送到 Telegram",
+    "offerSent": "PDF 和文字已发送到 Telegram",
     "offerNoTelegram": "未连接 Telegram — 请复制文本",
     "offerMuted": "您的个人资料中已关闭这些 Telegram 消息 — 请复制文本",
     "offerText": "报价文本",
@@ -3868,6 +3925,8 @@
       "rateNoted": "词典税率附有说明",
       "bazaFromImport": "基价来自海关导入（估算）",
       "bazaFromMemory": "基价来自已封存的核算",
+      "bazaDictionaryMoved": "词典基价已变更",
+      "aiRecode": "编码由AI依据申报选择——请核对编码和关税",
       "basisNotLaw": "基价单位与法规不同"
     },
     "refusal": {
@@ -3895,6 +3954,10 @@
     "threadAnalyze": "读取",
     "threadReading": "AI 读取中…",
     "threadRead": "{lines} 行 · {files} 个文件",
+    "threadAiFailed": "⚠ AI 未能读取 — 数字仅取自文本。",
+    "threadAiRetry": "请稍后再试。",
+    "threadAiNoRetry": "重试无济于事 — 请告知管理员，VED 将手动查看。",
+    "threadAiTooBig": "所选内容过多或文件无法读取 — 请少选几条消息，或换一种方式发送文件。",
     "threadMissing": "信息不全 — VED 仍会受理",
     "threadSendBtn": "发送给 VED",
     "threadCancel": "取消",
@@ -3907,6 +3970,10 @@
       "not_yours": "部分消息不属于此会话",
       "bad_section": "请选择类别",
       "forbidden": "无权限",
+      "too_many_open": "未完成的请求太多 — 请在 VED 回复后再发送",
+      "too_many_items": "货物太多",
+      "lead_closed": "线索已关闭——不能再添加新计算。若已赢单，请从其交易发送",
+      "note_foreign": "材料属于另一张卡片",
       "deal_terms_only": "申请计算由销售发起。机器人里的「🧮 Hisoblatish」对所有员工开放。",
       "not_found": "未找到卡片",
       "note_taken": "已发送 — 请刷新页面",
@@ -3947,11 +4014,13 @@
       "basisSuspect": "请检查基价单位（法律按其他单位计价）— 行",
       "importFilled": "已从导入填充 {count} 行基价（估算），行号",
       "memoryFilled": "来自已封存核算的基价：{count} 项，行",
+      "dictionaryFilled": "从词典填入的基价：{count} 条，行",
       "basisAuto": "自动",
       "basisConflict": "单位与法规冲突（每行只有一个计量）— 行",
       "alreadySaved": "此前已保存：{count} 行",
       "basisNotLaw": "法规按 {unit} 计 — 基价为其他单位"
     },
+    "volumeFromLinesShort": "由各行合计",
     "grid": {
       "qty": "件数",
       "kg": "净重，公斤",
@@ -4072,7 +4141,10 @@
     "statsWeightNoRow": "该行没有数量或重量——无重量行",
     "statsWeightNone": "没有重量在 ±25 % 内的申报",
     "statsPick": "选择",
+    "importOtherCode": "编码：{code}",
     "statsTimeout": "统计超时（文件较大）——请从列表选择",
+    "statsShortCode": "统计需10位编码——从列表选一条申报，编码自动填入",
+    "importListTimeout": "该品目范围过大——未能读取列表。请输入10位编码。",
     "statsFailed": "统计未加载",
     "statsTable": "表格形式",
     "statsColN": "数量",
@@ -4163,6 +4235,7 @@
     "kartaHint": "销售的卡片——只读。请把问题写在动态里，销售会在那里回复。",
     "kartaBack": "返回计算",
     "kartaWonDeal": "线索已转为交易——计算在交易中：",
+    "openCalc": "🧮 计算",
     "sellerGuess": "销售填写的估价",
     "importConflict": "不可用 {unit}：法规按 {law} 计",
     "freightWatchTitle": "{column}——运费按此列价目的比例分摊，但此列不完整：目前任何费用都不会按价目表分摊。",
@@ -5571,6 +5644,8 @@
     "m3": "体积 (m³)",
     "tnved": "海关编码",
     "addLine": "+ 行",
+    "oneGood": "单一货物 — 从批次填写",
+    "oneLineNoVouch": "名称与批次名称不同 — 不会自动标记 ✅「按文件」",
     "removeLine": "删除行",
     "line": "第 {n} 行",
     "prefill": "按箱数分配",
@@ -5592,7 +5667,7 @@
     "saved": "组成已保存",
     "savedFrozen": "{trucks} 已发送 — 其单据不变",
     "clear": "删除组成",
-    "clearConfirm": "组成将被删除 — 发票重新显示为一行。继续？",
+    "clearConfirm": "组成将被删除 — 发票和装箱单重新显示批次自己的名称。继续？",
     "cleared": "组成已删除",
     "stale": "组成填写后批次已变化：填写时 {stated}，现在 {current} — 请核对",
     "staleShort": "批次已变化 — 请核对组成",
@@ -5611,7 +5686,7 @@
     "errors": {
       "forbidden": "您无权填写此入库单的组成",
       "receipt_not_confirmed": "已作废的入库单不能填写组成",
-      "lines_count": "至少 2 种、最多 20 种货物。如只有一种，请物流员修改批次名称",
+      "lines_count": "请填写 1 至 20 种货物",
       "bad_line": "第 {seq} 行：请填写品名",
       "bad_number_kg": "第 {seq} 行，公斤：数字错误 — 小数最多 3 位",
       "bad_number_m3": "第 {seq} 行，体积：数字错误 — 小数最多 4 位",
@@ -5627,6 +5702,7 @@
       "document_not_on_receipt": "单据必须上传到本入库单（不是车辆）",
       "document_is_photo": "这是纸箱照片 — 请上传客户单据",
       "lot_changed": "批次已变化 — 请刷新，已输入内容会保留",
+      "tnved_would_vanish": "该批次的 TNVED 编码为 {code} — 行中不填编码，发票上将没有编码。请填写编码或点击「单一货物」",
       "composition_changed": "其他员工已修改组成 — 请刷新",
       "composition_changed_self": "您已保存 — 请刷新",
       "busy": "系统繁忙 — 请再按一次",
@@ -5650,6 +5726,7 @@
     "stalePerson": "核对后已变更：{what} — 请再次询问",
     "staleWas": "之前确认：{by} · {day}",
     "staleDocument": "组成文件之后批次已变更 — 请再次询问",
+    "documentOtherName": "组成中写的是另一种货物 — 物流员更正批次名称后，即按文件 ✅",
     "none": "信息未核对",
     "unclaimed": "货主未确定 — 请先指定客户",
     "movedName": "货物名称",
@@ -5675,7 +5752,7 @@
     },
     "personOld": "之前客户已确认：{by} · {day} — 之后已变更：{what}",
     "documentOld": "组成文件已与批次不符 — 请检查组成",
-    "otherAnswersAskLogist": "客户说「其他货物」— 请告知物流员，由他修改名称；说「混装」— 用其文件填写 🧩 批次组成。",
+    "otherAnswersAskLogist": "客户说「其他货物」— 按其文件把 🧩 批次组成填为一行，单据显示该名称；仓库界面和标签上的名称由物流员修改。说「混装」— 每种货物一行。",
     "pruned": "{n} 个已选行已不在此仓库 — 已从计划中移除"
   },
   "qarzIzoh": {
@@ -5708,6 +5785,9 @@
     "noAudience": "⚠ 目前没有人会收到此消息——计算尚未分配，接手的人会看到。",
     "feedCalcThread": "🧮 计算问答 · ↩️ 回复",
     "feedViaTelegram": "📱 来自 Telegram",
+    "feedAiReply": "🤖 AI 估算 · 非正式",
+    "feedTariffReply": "🧮 按运价估算 · 非正式",
+    "feedEstimateReply": "📊 含估算 · 非正式 — 由VED核对",
     "feedCalcHint": "此消息不会发给报关员——请在「❓ 问答」中回答计算问题。",
     "notifMuteChat": "内部沟通（卡片问答、@提及）",
     "unreachable": {

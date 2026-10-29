@@ -212,8 +212,12 @@ describe('parseDraft + checkSums', () => {
     ]);
   });
 
-  it('lines_count: 1 line and 21 lines refused; blank rows dropped', () => {
-    expect(parseDraft([good[0]!])).toEqual({ ok: false, refusal: { code: 'lines_count' } });
+  it('lines_count: ONE line is a tarkib (his 2026-10-27), none and 21 are refused; blank rows dropped', () => {
+    const one = parseDraft([draft({ name: 'Клавиатура', cartons: '100', kg: '1000', m3: '2.5', pieces: '500' })]);
+    expect(one.ok).toBe(true);
+    if (one.ok) expect(checkSums(one.lines, LOT)).toBeNull();
+    expect(parseDraft([])).toEqual({ ok: false, refusal: { code: 'lines_count' } });
+    expect(parseDraft([draft({ name: '', kg: '', m3: '' })])).toEqual({ ok: false, refusal: { code: 'lines_count' } });
     const many = Array.from({ length: 21 }, (_, i) => draft({ name: `Tovar ${i}` }));
     expect(parseDraft(many)).toEqual({ ok: false, refusal: { code: 'lines_count' } });
     const blank = draft({ name: '', kg: '', m3: '' });
@@ -579,6 +583,21 @@ describe('paperLines — the worked example of §2', () => {
     expect(v.reasons).toEqual(['share']);
   });
 
+  it('U10b: a ONE-line tarkib on part of the lot is the truck’s own figures — an estimate only for its pieces (his 8.7)', () => {
+    const ONE = { seenBoxCount: 100, lines: [{ ...KB, cartons: 100, kg: '1000.000', m3: '2.5000', pieces: null }] };
+    const t1 = paperLines(ONE, LOT, { before: 0, cartons: 40, kg: 400, places: { loose: 40, pallets: 0 } });
+    expect(rows(t1)).toEqual([['Клавиатура', 40, 400, null, 40]]);
+    expect(t1.reasons).toEqual([]);
+    expect(t1.estimate).toBe(false);
+    // Pieces are the one figure a truck's share of ONE good has to divide.
+    const counted = { ...ONE, lines: [{ ...ONE.lines[0]!, pieces: 1000 }] };
+    const t2 = paperLines(counted, LOT, { before: 0, cartons: 40, kg: 400, places: { loose: 40, pallets: 0 } });
+    expect(rows(t2)).toEqual([['Клавиатура', 40, 400, 400, 40]]);
+    expect(t2.reasons).toEqual(['share']);
+    // The whole lot on one truck is never an estimate, pieces or not.
+    expect(paperLines(counted, LOT, { before: 0, cartons: 100, kg: 1000, places: { loose: 100, pallets: 0 } }).reasons).toEqual([]);
+  });
+
   it('U11: aralash pieces that round to 0 on a truck', () => {
     const comp = {
       seenBoxCount: 100,
@@ -662,5 +681,21 @@ describe('paperLines — the worked example of §2', () => {
       expect(cartons, `split ${split}`).toEqual([3, 2, 2]);
       expect(pieces, `split ${split}`).toEqual([31, 17, 5]);
     }
+  });
+});
+
+describe('«Bitta tovar» — the job’s pieces (his 8.8)', () => {
+  it('one counted good in a word that says pieces, a whole number — anything else is no prefill', async () => {
+    const { jobPiecesOf } = await import('@/modules/wms/receipts/lot-composition');
+    const { routeAmount } = await import('@/modules/wms/calc/units');
+    expect(jobPiecesOf([{ quantity: '1000.000', unit: null }], routeAmount)).toBe(1000);
+    expect(jobPiecesOf([{ quantity: '1000.000', unit: 'шт' }], routeAmount)).toBe(1000);
+    // The old way: «120 m2» kept in the piece column is not 120 pieces.
+    expect(jobPiecesOf([{ quantity: '120.000', unit: 'm2' }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([{ quantity: '12.000', unit: 'karobka' }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([{ quantity: '2.500', unit: null }], routeAmount)).toBeNull();
+    // Two goods: whose count would it be?
+    expect(jobPiecesOf([{ quantity: '10', unit: null }, { quantity: '20', unit: null }], routeAmount)).toBeNull();
+    expect(jobPiecesOf([], routeAmount)).toBeNull();
   });
 });

@@ -22,6 +22,7 @@ import {
   estimateNote,
   invoiceRowCells,
   packingBoxesCell,
+  packingPiecesCell,
   packingProductCell,
 } from './composition-cells';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
@@ -353,10 +354,11 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
   const sheet = workbook.addWorksheet('Packing list');
   await header(sheet, batchId, 'PACKING LIST (draft)');
 
-  const head = sheet.addRow(['№', DOC.code, DOC.product, DOC.packaging, DOC.boxes, DOC.weightKg, DOC.m3]);
+  // His 8.5: «Кол-во, шт» right BEFORE the carton count, blank when unknown.
+  const head = sheet.addRow(['№', DOC.code, DOC.product, DOC.packaging, DOC.pieces, DOC.boxes, DOC.weightKg, DOC.m3]);
   head.font = { bold: true };
   sheet.columns = [
-    { width: 5 }, { width: 14 }, { width: 40 }, { width: 16 }, { width: 10 }, { width: 12 }, { width: 10 },
+    { width: 5 }, { width: 14 }, { width: 40 }, { width: 16 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 10 },
   ];
 
   const rows = await batchLines(batchId);
@@ -417,8 +419,8 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
       view.lines.forEach((line, i) => {
         n += 1;
         const row = sheet.addRow([
-          n, agg.code, packingProductCell(line), pack, packingBoxesCell(line, mode, i === 0, cartons),
-          line.kg, line.m3 ?? '',
+          n, agg.code, packingProductCell(line, { zh: lot.productNameZh, ru: lot.productNameRu }), pack, packingPiecesCell(line),
+          packingBoxesCell(line, mode, i === 0, cartons), line.kg, line.m3 ?? '',
         ]);
         if (view.estimate) {
           row.getCell(3).note = estimateNote(view, cartons, lot.boxCount);
@@ -429,12 +431,13 @@ export async function buildPackingXlsx(batchId: string): Promise<Buffer | null> 
     }
     n += 1;
     sheet.addRow([
-      n, agg.code, agg.product, agg.pack, agg.boxCount,
+      n, agg.code, agg.product, agg.pack, '', agg.boxCount,
       Math.round(agg.kg * 10) / 10, Math.round(agg.m3 * 1000) / 1000,
     ]);
   }
   const total = sheet.addRow([
-    '', DOC.total, '', '', totalBoxes, Math.round(totalKg * 10) / 10, Math.round(totalM3 * 1000) / 1000,
+    // No pieces total: pieces of different goods do not add.
+    '', DOC.total, '', '', '', totalBoxes, Math.round(totalKg * 10) / 10, Math.round(totalM3 * 1000) / 1000,
   ]);
   total.font = { bold: true };
   return Buffer.from(await workbook.xlsx.writeBuffer());

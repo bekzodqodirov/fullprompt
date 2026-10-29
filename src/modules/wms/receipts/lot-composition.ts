@@ -16,7 +16,7 @@ import {
   KG_SCALE,
   M3_SCALE,
   MAX_LINES,
-  MIN_LINES,
+  MIN_STORED_LINES,
   parseDraft,
   storedUnits,
   truckSegments,
@@ -59,7 +59,8 @@ export type CompositionRefusalCode =
   | 'document_not_on_receipt'
   | 'document_is_photo'
   | 'lot_changed'
-  | 'composition_changed';
+  | 'composition_changed'
+  | 'tnved_would_vanish';
 
 export class CompositionError extends Error {
   constructor(
@@ -69,6 +70,8 @@ export class CompositionError extends Error {
     public readonly sums?: { sum: string; lot: string },
     /** `composition_changed` because the SAME person saved a moment ago (a double tap). */
     public readonly bySelf?: boolean,
+    /** `tnved_would_vanish`: the code the lot's own name carries in the memory. */
+    public readonly tnvedCode?: string,
   ) {
     super(code);
   }
@@ -266,6 +269,8 @@ export async function saveComposition(
   if (!parsed.ok) throw refusalError(parsed.refusal);
   if (!parsedInput.attachmentId) throw new CompositionError('document_required');
   const attachmentId = parsedInput.attachmentId;
+  // ON THE POOL, before the transaction (#714).
+  await refuseVanishingCode(parsedInput.lotId, parsed.lines);
 
   return db.transaction(async (tx) => {
     await compositionLockTimeout(tx);
@@ -490,11 +495,107 @@ const uuidList = (ids: string[]): SQL =>
   );
 
 /**
+ * A ONE-line tarkib of the lot's OWN good (its name is the lot's, 8.6) with
+ * no code: the invoice prints a composed line's own code and never the
+ * memory's (fence 4), so the code the uncomposed lot printed would vanish
+ * from the paper — refused, naming that code (the judge's regression-5). A
+ * line naming another good is the VED's to code; several lines are coded on
+ * the Bojxona tab as before.
+ */
+async function refuseVanishingCode(lotId: string, lines: readonly { name: string; tnvedCode: string | null }[]): Promise<void> {
+  if (lines.length !== 1 || lines[0]!.tnvedCode !== null) return;
+  const lot = await db.query.receiptLots.findFirst({
+    where: eq(receiptLots.id, lotId),
+    columns: { productNameZh: true, productNameRu: true },
+  });
+  if (!lot) return;
+  const { productKey, tnvedFor } = await import('../tnved/service');
+  const line = productKey(lines[0]!.name);
+  if (line !== productKey(lot.productNameZh) && line !== productKey(lot.productNameRu ?? '')) return;
+  const code = (await tnvedFor([lot.productNameZh])).get(productKey(lot.productNameZh))?.tnvedCode;
+  if (code) throw new CompositionError('tnved_would_vanish', 1, undefined, undefined, undefined, code);
+}
+
+/**
+ * The pieces a prixod's job states for its ONE good, or null: exactly one
+ * counted item, a whole number, and a row whose own word says pieces (or says
+ * nothing — the doors' «nomi, soni» convention). An old row keeps «120» under
+ * «m2» in this very column, and that is not 120 of anything countable
+ * (`routeAmount`, RASTAMOJKA-TUZATISH's one rule — passed in so this stays a
+ * plain function the unit test calls).
+ */
+export function jobPiecesOf(
+  items: readonly { quantity: string; unit: string | null }[],
+  route: (value: number, unit: string | null) => object,
+): number | null {
+  if (items.length !== 1) return null;
+  const n = Number(items[0]!.quantity);
+  return Number.isInteger(n) && n > 0 && 'quantity' in route(n, items[0]!.unit) ? n : null;
+}
+
+export interface OneGoodPrefill {
+  name: string;
+  tnved: string | null;
+  pieces: number | null;
+  /** The lot's own names — the editor says when one line will not vouch (8.6). */
+  zh: string;
+  ru: string | null;
+}
+
+/**
+ * What «Bitta tovar» fills a one-row tarkib with, per lot of one prixod (his
+ * 8.x A+, 2026-10-21; docs/UCH-BAND.md §4): the lot's own name (Russian,
+ * else Chinese), the code the TNVED memory holds for its Chinese name, and
+ * the pieces of the prixod's job — only when a PERSON confirmed the link
+ * (an «auto» link is a suggestion that scores nobody, #804), the job counts
+ * exactly ONE good, and the prixod holds exactly one lot, so the count cannot
+ * belong to a neighbour. A prefill a person sees and keeps — never a value
+ * written by itself, and never the job's money. Read on the pool by the
+ * receipt card, only for a composition writer.
+ */
+export async function oneGoodPrefillFor(
+  receipt: { id: string; calcRequestId: string | null; calcLinkSource: string | null },
+  lots: readonly { id: string; productNameZh: string; productNameRu: string | null }[],
+): Promise<Map<string, OneGoodPrefill>> {
+  const out = new Map<string, OneGoodPrefill>();
+  if (lots.length === 0) return out;
+  const { productKey, tnvedFor } = await import('../tnved/service');
+  const memory = await tnvedFor(lots.map((lot) => lot.productNameZh));
+  let pieces: number | null = null;
+  if (lots.length === 1 && receipt.calcRequestId && receipt.calcLinkSource === 'person') {
+    // …and only when THIS prixod is the job's only live one: a job whose
+    // cargo arrived in three prixods would otherwise put its whole count
+    // into one lot (judge product-1) — the invoice multiplies by it.
+    const items = (await db.execute(sql`
+      SELECT i.quantity::text AS quantity, i.unit
+        FROM calc_request_items i
+       WHERE i.request_id = ${receipt.calcRequestId}::uuid
+         AND i.quantity IS NOT NULL AND i.quantity > 0
+         AND NOT EXISTS (
+           SELECT 1 FROM receipts o
+            WHERE o.calc_request_id = i.request_id AND o.id <> ${receipt.id}::uuid AND o.status <> 'voided')
+    `)) as unknown as { quantity: string; unit: string | null }[];
+    const { routeAmount } = await import('../calc/units');
+    pieces = jobPiecesOf(items, routeAmount);
+  }
+  for (const lot of lots) {
+    out.set(lot.id, {
+      name: (lot.productNameRu ?? '').trim() || lot.productNameZh.trim(),
+      zh: lot.productNameZh,
+      ru: lot.productNameRu,
+      tnved: memory.get(productKey(lot.productNameZh))?.tnvedCode ?? null,
+      pieces,
+    });
+  }
+  return out;
+}
+
+/**
  * ONE statement: headers ⋈ attachments ⋈ users ⋈ LATERAL json_agg(lines
  * ORDER BY seq) — two statements could tear (a clear between them gave a
  * header with no lines, which `compositionMode([])` reads as «mixed» and the
  * invoice prints as NO row: the lot vanishes from a customs paper). A view
- * with fewer than 2 lines is treated as no composition and logged. `exec`
+ * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
  * DEFAULTS to `db` (`= db` in the signature, so the tx-pool fence classifies
  * it and flags an in-transaction call that forgets `tx`). A missing table
  * (the deploy morning, before `migrate`) answers an EMPTY map.
@@ -532,7 +633,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
   }
   for (const row of rows) {
     const lines = jsonLines(row.lines);
-    if (lines.length < MIN_LINES) {
+    if (lines.length < MIN_STORED_LINES) {
       console.warn(`[lot-composition] lot ${row.lot_id}: ${lines.length} line(s) — read as no composition`);
       continue;
     }
@@ -606,7 +707,7 @@ export async function paperCompositionsFor(
     if (row.frozen) {
       if (row.s_lines === null || row.s_rev === null) continue;
       const lines = jsonLines(row.s_lines);
-      if (lines.length < MIN_LINES) continue;
+      if (lines.length < MIN_STORED_LINES) continue;
       out.set(row.lot_id, {
         seenBoxCount: Number(row.s_seen),
         lines,
@@ -617,7 +718,7 @@ export async function paperCompositionsFor(
     }
     if (row.rev === null) continue;
     const lines = jsonLines(row.lines);
-    if (lines.length < MIN_LINES) {
+    if (lines.length < MIN_STORED_LINES) {
       console.warn(`[lot-composition] lot ${row.lot_id}: ${lines.length} line(s) — read as no composition`);
       continue;
     }
@@ -784,7 +885,7 @@ export async function paperStampFor(batchId: string): Promise<string> {
       SELECT lc.lot_id, lc.rev
         FROM (SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}) ml
         JOIN lot_compositions lc ON lc.lot_id = ml.lot_id
-       WHERE (SELECT count(*) FROM lot_composition_lines g WHERE g.lot_id = lc.lot_id) >= ${MIN_LINES}
+       WHERE (SELECT count(*) FROM lot_composition_lines g WHERE g.lot_id = lc.lot_id) >= ${MIN_STORED_LINES}
     `)) as unknown as { lot_id: string; rev: string | number }[];
     if (rows.length === 0) return '';
     const positions = await truckPositions(db, batchId, rows.map((r) => r.lot_id));
@@ -858,9 +959,9 @@ async function copyCompositionsInTx(
   const rows = (await tx.execute(sql`
     INSERT INTO batch_sent_compositions (batch_id, lot_id, rev, seen_box_count, lines, segments)
     SELECT ${batchId}::uuid, ml.lot_id,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.rev END,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN lc.seen_box_count END,
-           CASE WHEN json_array_length(ln.lines) >= ${MIN_LINES} THEN ln.lines::jsonb END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN lc.rev END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN lc.seen_box_count END,
+           CASE WHEN json_array_length(ln.lines) >= ${MIN_STORED_LINES} THEN ln.lines::jsonb END,
            pos.segments
       FROM (SELECT DISTINCT boxes.lot_id FROM boxes WHERE ${batchMemberFilter(batchId)}) ml
       LEFT JOIN ${pos} ON pos.lot_id = ml.lot_id

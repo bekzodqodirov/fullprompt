@@ -32,6 +32,7 @@ import {
   ScanError,
 } from '@/modules/wms/scanning/service';
 import { ingestUnloadScans, landUnloadInput, unloadRemaining } from '@/modules/wms/scanning/unload';
+import { planRoadReady } from '@/modules/wms/planning/road';
 import { lotModeOnTruck } from '@/modules/wms/scanning/count-rules';
 import { GrowLotError, growLotInTx } from '@/modules/wms/receipts/grow-lot';
 import { auditLog, boxMovements, receipts } from '@/modules/platform/db/schema';
@@ -137,22 +138,30 @@ const manual = (batchId: string, code: string, manualReason: string) => ({
 });
 
 /** What an office count door does for one carton: the shared body, a door, the box by id. */
-function countLoad(batchId: string, box: { id: string; code: string }, over = false) {
+async function countLoad(batchId: string, box: { id: string; code: string }, over = false) {
+  const road = await planRoadReady();
   return db.transaction((tx) =>
-    loadScanInTx(tx, { ...manual(batchId, box.code, 'count_load'), addedOnSpot: over }, actorId, {
-      door: 'count_load',
-      boxId: box.id,
-      quietSpot: true,
-    }),
+    loadScanInTx(
+      tx,
+      { ...manual(batchId, box.code, 'count_load'), addedOnSpot: over },
+      actorId,
+      { door: 'count_load', boxId: box.id, quietSpot: true },
+      road,
+    ),
   );
 }
-function countAccept(batchId: string, box: { id: string; code: string }) {
+async function countAccept(batchId: string, box: { id: string; code: string }) {
+  const road = await planRoadReady();
   return db.transaction((tx) =>
-    landUnloadInput(tx, manual(batchId, box.code, 'count_accept'), actorId, new Set(), {
-      door: 'count_accept',
-      boxId: box.id,
-      quietSpot: true,
-    }),
+    landUnloadInput(
+      tx,
+      manual(batchId, box.code, 'count_accept'),
+      actorId,
+      new Set(),
+      { door: 'count_accept', boxId: box.id, quietSpot: true },
+      {},
+      road,
+    ),
   );
 }
 
@@ -222,17 +231,21 @@ describe('a server reason from a phone is a forgery', () => {
   it('a door whose reason disagrees with the input throws', async () => {
     const lot = await mkLot(1);
     const truck = await planTruck([{ lot, take: 1 }]);
+    const road = await planRoadReady();
     await expect(
       db.transaction((tx) =>
-        loadScanInTx(tx, manual(truck.id, lot.boxes[0]!.code, 'count_accept'), actorId, { door: 'count_load' }),
+        loadScanInTx(tx, manual(truck.id, lot.boxes[0]!.code, 'count_accept'), actorId, { door: 'count_load' }, road),
       ),
     ).rejects.toThrow(ScanError);
     await expect(
       db.transaction((tx) =>
-        loadScanInTx(tx, manual(truck.id, 'ZZ-00000', 'count_load'), actorId, {
-          door: 'count_load',
-          boxId: lot.boxes[0]!.id,
-        }),
+        loadScanInTx(
+          tx,
+          manual(truck.id, 'ZZ-00000', 'count_load'),
+          actorId,
+          { door: 'count_load', boxId: lot.boxes[0]!.id },
+          road,
+        ),
       ),
     ).rejects.toThrow('door_box_mismatch');
   });

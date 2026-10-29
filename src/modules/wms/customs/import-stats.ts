@@ -1,4 +1,4 @@
-import { sql, type SQL } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import type { Tx } from '../../platform/db/client';
 import { basisConflicts } from '../calc/basis';
 import type { BazaBasis } from '../calc/pricing';
@@ -16,7 +16,7 @@ import {
   type RawSeries,
   type SeriesStats,
 } from './import-stats-math';
-import { chinaOriginSql, exemplarOrderSql, seriesAggSql, weightBandSql } from './import-stats-sql';
+import { chinaOriginSql, codeScopeCtes, exemplarOrderSql, seriesAggSql, weightBandSql } from './import-stats-sql';
 
 export type { PriceExemplar, SeriesStats } from './import-stats-math';
 
@@ -64,7 +64,10 @@ export interface UnitStats {
 }
 
 export interface ImportStatsAnswer {
-  state: 'ok' | 'no_code' | 'no_batch' | 'behind' | 'timeout';
+  /** 'short_code': the row's code is not a full 10 digits, and a heading-wide
+   * series would mix its subheadings — the stats route answers it before any
+   * read (round 2, §7.4); the list beside it still answers the heading. */
+  state: 'ok' | 'no_code' | 'no_batch' | 'behind' | 'timeout' | 'short_code';
   batchId: string | null;
   /** «2026-04-01 … 2026-06-29», or the file name when the file had no dates. */
   period: string | null;
@@ -113,34 +116,6 @@ type ExemplarRow = {
   w: string | null;
 };
 
-/**
- * The code's rows in ONE batch, scoped to China by D3 — the three CTEs
- * statement 1 and statement 3 both stand on, so the previous quarter is
- * measured by exactly the rule the current one is.
- *
- * `named_any` is NULL — not false — when the batch holds no row of the code:
- * «this file names no country» and «this file has nothing of this code» are
- * different facts, and only the first is a reason to say the previous
- * quarter's split differs.
- */
-function scopedCtes(batchId: string, code: string): SQL {
-  // `cn` is decided ONCE per row: both the origin counts and the scope ask
-  // the same question, and the country patterns are the costly part of the
-  // read — measured on a synthetic 130k-row code (jit off, work_mem 16MB),
-  // statement 1 took ~450 ms asking it three times per row, ~330 ms once.
-  return sql`base AS (
-      SELECT r.unit, r.price_per_unit_usd AS p, r.weight_per_unit_kg AS w, r.origin_country AS o,
-             (r.origin_country IS NOT NULL AND ${chinaOriginSql(sql`r.origin_country`)}) AS cn
-        FROM customs_import_rows r
-       WHERE r.batch_id = ${batchId}::uuid AND r.tnved_code = ${code}
-    ), na AS (
-      SELECT bool_or(o IS NOT NULL) AS named_any FROM base
-    ), scoped AS (
-      SELECT b.* FROM base b CROSS JOIN na
-       WHERE NOT na.named_any OR b.cn
-    )`;
-}
-
 export async function readImportStats(
   tx: Tx,
   input: StatsInput,
@@ -152,7 +127,7 @@ export async function readImportStats(
   // has nothing — so the other-countries line still exists. Origin counts
   // are PER UNIT (D2); `named_any` is code-wide (D3).
   const [agg] = await tx.execute<{ named_any: boolean | null; origin_by_unit: unknown; units: unknown }>(sql`
-    WITH ${scopedCtes(input.batchId, input.tnvedCode)},
+    WITH ${codeScopeCtes(input.batchId, input.tnvedCode)},
     og AS (
       SELECT unit,
              count(*) FILTER (WHERE cn)::int                     AS china,
@@ -247,7 +222,7 @@ export async function readImportStats(
   let prev: { filtered: boolean | null; byUnit: Map<ImportUnit, { n: number; p50: number | null }> } | null = null;
   if (input.prevBatchId) {
     const [p] = await tx.execute<{ named_any: boolean | null; units: unknown }>(sql`
-      WITH ${scopedCtes(input.prevBatchId, input.tnvedCode)}
+      WITH ${codeScopeCtes(input.prevBatchId, input.tnvedCode)}
       SELECT (SELECT named_any FROM na) AS named_any,
              coalesce((
                SELECT json_agg(x) FROM (

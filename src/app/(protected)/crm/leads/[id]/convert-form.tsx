@@ -56,7 +56,9 @@ export function ConvertForm({
             ? tc('error') + ': ' + t('clientCode')
             : state.error === 'already_converted'
               ? t('alreadyClient')
-              : tc('error')}
+              : state.error === 'lead_about_client'
+                ? t('won.errors.leadAboutClient')
+                : tc('error')}
         </p>
       )}
     </form>

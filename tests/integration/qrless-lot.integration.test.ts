@@ -31,6 +31,7 @@ import { createCrate } from '@/modules/wms/crates/service';
 import { recordVerdict, submitPlan } from '@/modules/wms/planning/service';
 import { departBatch, finishLoading, loadScanInTx } from '@/modules/wms/scanning/service';
 import { cancelBatch, landUnloadInput } from '@/modules/wms/scanning/unload';
+import { planRoadReady } from '@/modules/wms/planning/road';
 
 /**
  * «QR yopishtirilmadi» (0112, the owner's Q8) through the real doors: the
@@ -275,7 +276,8 @@ describe('the switch on the receipt card (I2, I3)', () => {
     const lot = made.lots[0]!;
     const truck = await planTruck(lot.lotId, 3);
     for (const box of lot.boxes) {
-      await db.transaction((tx) => loadScanInTx(tx, { ...manual(truck.id, box.code, 'sticker_lost') }, actorId, {}));
+      const road = await planRoadReady();
+      await db.transaction((tx) => loadScanInTx(tx, { ...manual(truck.id, box.code, 'sticker_lost') }, actorId, {}, road));
     }
     await finishLoading(truck.id, ctx());
     await departBatch(truck.id, ctx());
@@ -413,24 +415,31 @@ describe('the stocktake never writes them off (I6, decision 33)', () => {
     const made = await mkReceipt([{ count: 2 }]);
     const lot = made.lots[0]!;
     const truck = await planTruck(lot.lotId, 2);
+    const road = await planRoadReady();
     for (const box of lot.boxes) {
       const ack = await db.transaction((tx) =>
-        loadScanInTx(tx, manual(truck.id, box.code, 'count_load'), actorId, {
-          door: 'count_load',
-          boxId: box.id,
-          quietSpot: true,
-        }),
+        loadScanInTx(
+          tx,
+          manual(truck.id, box.code, 'count_load'),
+          actorId,
+          { door: 'count_load', boxId: box.id, quietSpot: true },
+          road,
+        ),
       );
       expect(ack.result).toBe('ok');
     }
     await finishLoading(truck.id, ctx());
     await departBatch(truck.id, ctx());
     const landed = await db.transaction((tx) =>
-      landUnloadInput(tx, manual(truck.id, lot.boxes[0]!.code, 'count_accept'), actorId, new Set(), {
-        door: 'count_accept',
-        boxId: lot.boxes[0]!.id,
-        quietSpot: true,
-      }),
+      landUnloadInput(
+        tx,
+        manual(truck.id, lot.boxes[0]!.code, 'count_accept'),
+        actorId,
+        new Set(),
+        { door: 'count_accept', boxId: lot.boxes[0]!.id, quietSpot: true },
+        {},
+        road,
+      ),
     );
     expect(landed.result).toBe('ok');
     const box = await boxRow(lot.boxes[0]!.id);

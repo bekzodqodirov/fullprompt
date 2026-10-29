@@ -14,9 +14,12 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
+import { runPooled } from '../../../components/pooled';
+import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey, type SheetPhoto } from './sheet-photo';
 import { paperLines, planSegments, truckSegments, type PaperView, type StoredLine } from '../receipts/composition-math';
 import { compositionsFor, lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
-import { agentContentsText, ESTIMATE_FILL, estimateNote } from './composition-cells';
+import { agentContentsText, agentPiecesCell, ESTIMATE_FILL, estimateNote } from './composition-cells';
+import { planRoadReady, roadOfVersion, roadTrucksByLot } from '../planning/road';
 
 /**
  * Agent approval Excel (W3, spec 6.3): one row per planned line with an
@@ -81,18 +84,90 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   }
   const maxPhotos = Math.max(1, ...[...photosByLot.values()].map((ids) => ids.length));
 
+  // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): a line with a road part is TWO
+  // rows — what stands here under the truck that brought it, and what is
+  // still on the road under its own block — each with its own count and its
+  // share of the kilos. Filed whole under an arrival, the road part would be
+  // a false «arrived here» on a customs document. Before the approval the
+  // road part is the promise; after, what is still owed (what has landed
+  // stands here and files under its arrival like any carton). What a loading
+  // ENDED without (`missed`) never came: its own block, never «received here».
+  const road = await planRoadReady();
+  const roadByLine = await roadOfVersion(db, road, version.id);
+  const approved = version.agentVerdict === 'approved';
+  type SheetRow = (typeof lines)[number];
+  const share = (row: SheetRow, n: number): SheetRow => ({
+    ...row,
+    line: {
+      ...row.line,
+      plannedBoxCount: n,
+      plannedKg: String(Math.round((Number(row.line.plannedKg) * n * 1000) / row.line.plannedBoxCount) / 1000),
+      plannedM3: String(Math.round((Number(row.line.plannedM3) * n * 10_000) / row.line.plannedBoxCount) / 10_000),
+    },
+  });
+  const hereRows: SheetRow[] = [];
+  const roadRows: SheetRow[] = [];
+  const missedRows: SheetRow[] = [];
+  for (const row of lines) {
+    const part = roadByLine.get(row.line.id);
+    const onRoad = part ? (approved ? part.owed : part.part) : 0;
+    const missed = part && approved ? part.missed : 0;
+    if (onRoad <= 0 && missed <= 0) {
+      hereRows.push(row);
+      continue;
+    }
+    const here = row.line.plannedBoxCount - onRoad - missed;
+    if (here > 0) hereRows.push(share(row, here));
+    if (onRoad > 0) roadRows.push(share(row, onRoad));
+    if (missed > 0) missedRows.push(share(row, missed));
+  }
+  const roadTrucks = await roadTrucksByLot(db, road, plan.originWarehouseId, [
+    ...new Set(roadRows.map((r) => r.lot.id)),
+  ]);
+
   // Which truck brought each lot to the warehouse this plan loads FROM.
   const arrivals = await arrivalsForLots(lotIds, plan.originWarehouseId);
-  const blocks = groupByArrival(lines, ({ lot, clientCode, marking }) => ({
-    arrival: arrivals.get(lot.id),
-    within: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
-  }));
+  const blocks = [
+    ...groupByArrival(hereRows, ({ lot, clientCode, marking }) => ({
+      arrival: arrivals.get(lot.id),
+      within: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
+    })).map((block) => ({ ...block, onRoad: false })),
+    ...(roadRows.length
+      ? [
+          {
+            key: 'road',
+            code: [...new Set(roadRows.flatMap((r) => roadTrucks.get(r.lot.id) ?? []))].sort().join(', '),
+            source: null,
+            factories: [] as string[],
+            arrivedAt: null,
+            rows: roadRows,
+            onRoad: true,
+          },
+        ]
+      : []),
+    ...(missedRows.length
+      ? [
+          {
+            key: 'missed',
+            code: '',
+            source: null,
+            factories: [] as string[],
+            arrivedAt: null,
+            rows: missedRows,
+            onRoad: false,
+            notCame: true,
+          },
+        ]
+      : []),
+  ];
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet(`План v${versionNo}`);
   sheet.columns = [
     { header: DOC.code, key: 'code', width: 14 },
     { header: DOC.product, key: 'product', width: 40 },
+    // BEFORE the carton count, blank when unknown (his 8.5 and 7b, 2026-10-27).
+    { header: DOC.pieces, key: 'pieces', width: 10 },
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
@@ -118,19 +193,17 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   // goods the picture is of. Both are frozen.
   sheet.views = [{ state: 'frozen', xSplit: 1, ySplit: 2 }];
 
-  // Photo thumbnails: exceljs embeds png/jpeg only; thumbs are webp — convert.
-  const thumbs = new Map<string, Buffer>();
-  if (photoRows.length) {
-    const sharp = (await import('sharp')).default;
-    for (const att of photoRows) {
-      try {
-        const bytes = await getStorage().get(att.thumb200Key ?? att.storageKey);
-        thumbs.set(att.id, await sharp(bytes).jpeg({ quality: 70 }).toBuffer());
-      } catch {
-        /* photo unavailable — leave the cell empty */
-      }
+  // The 800-px copy, fitted into its cell (`sheet-photo.ts` — his «hira
+  // korinyabti»); four at a time, as every other photo pipe here.
+  const thumbs = new Map<string, SheetPhoto>();
+  await runPooled(photoRows, 4, async (att) => {
+    try {
+      const bytes = await getStorage().get(sheetPhotoKey(att));
+      thumbs.set(att.id, await sheetPhoto(bytes, SHEET_PHOTO_PX.document));
+    } catch {
+      /* photo unavailable — leave the cell empty */
     }
-  }
+  });
 
   // Lot tarkibi: the contents are computed ONCE PER LOT, over the version's
   // lines of that lot summed — `load_plan_lines_version_lot_unique` is
@@ -142,7 +215,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   const contents = await planContents(plan, lines, lotIds, origin?.country ?? '', dest?.country ?? '');
   const contentsDone = new Set<string>();
 
-  const PHOTO_START_COL = 8; // zero-based: right after the arrival columns
+  const PHOTO_START_COL = 9; // zero-based: right after the arrival columns
   // Every date on this sheet is the warehouse's own day, not the server's.
   const zone = origin?.timezone ?? 'UTC';
   let rowNo = 3;
@@ -165,9 +238,13 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
     // words and names its factories (every stop the block's cargo came
     // from) and plate. «Received here» stays for what came on no truck.
     const dated = block.arrivedAt ? ` · ${docDate(block.arrivedAt, zone)}` : '';
-    heading.value = !block.source
-      ? `${DOC.receivedHere} · ${totalsText}`
-      : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
+    heading.value = block.onRoad
+      ? `${DOC.onRoad}: ${block.code || '—'} · ${totalsText}`
+      : 'notCame' in block
+        ? `${DOC.notCame} · ${totalsText}`
+        : !block.source
+        ? `${DOC.receivedHere} · ${totalsText}`
+        : `${block.source.kind === 'pickup' ? DOC.factoryPickup : DOC.arrivalBatch}: ${arrivalBlockLabel(block)}${dated} · ${totalsText}`;
     heading.font = { bold: true };
     heading.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
     rowNo += 1;
@@ -181,6 +258,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
       sheet.getRow(rowNo).values = {
         code: `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`,
         product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
+        pieces: '',
         boxCount: line.plannedBoxCount,
         kg: Number(line.plannedKg),
         m3: Number(line.plannedM3),
@@ -192,8 +270,12 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         // what the owner asked to be ADDED; the blocks are the order he asked
         // for, not a substitute for it. A factory trip's cell names THIS
         // row's own stop — the heading lists every factory of the block.
-        arrivalBatch: arrival?.labels.join(', ') || '—',
-        arrivedAt: arrival ? docDate(arrival.arrivedAt, zone) : '',
+        arrivalBatch: block.onRoad
+          ? `🚚 ${(roadTrucks.get(lot.id) ?? []).join(', ') || '—'}`
+          : 'notCame' in block
+            ? '—'
+            : arrival?.labels.join(', ') || '—',
+        arrivedAt: !block.onRoad && !('notCame' in block) && arrival ? docDate(arrival.arrivedAt, zone) : '',
       };
       sheet.getRow(rowNo).height = 60;
       const lotContents = contents.get(lot.id);
@@ -204,6 +286,7 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
         const { view, cartons } = lotContents;
         const cell = sheet.getRow(rowNo).getCell('product');
         cell.value = `${cell.value as string}\n${agentContentsText(view.lines, view.estimate)}`;
+        sheet.getRow(rowNo).getCell('pieces').value = agentPiecesCell(view.lines);
         cell.alignment = { wrapText: true, vertical: 'top' };
         if (view.estimate) {
           cell.note = estimateNote(view, cartons, lot.boxCount);
@@ -215,17 +298,20 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
       photoIds.forEach((photoId, i) => {
         const thumb = thumbs.get(photoId);
         if (!thumb) return;
-        const imageId = workbook.addImage({ buffer: thumb as unknown as ExcelJS.Buffer, extension: 'jpeg' });
+        const imageId = workbook.addImage({ buffer: thumb.buffer as unknown as ExcelJS.Buffer, extension: 'jpeg' });
         sheet.addImage(imageId, {
           tl: { col: PHOTO_START_COL + i + 0.1, row: rowNo - 1 + 0.1 },
-          ext: { width: 78, height: 72 },
+          ext: fitInBox(thumb),
         });
       });
       rowNo += 1;
     }
   }
 
-  return Buffer.from(await workbook.xlsx.writeBuffer());
+  // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+  // default ran pure-JS deflate over every photograph on the one Node process
+  // — 9 s of CPU at 1,200 photos for ~1 % of size (the review).
+  return Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } }));
 }
 
 /** «Crosses a border», `crossesBorderSql` restated for a plan with no truck yet. */

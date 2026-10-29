@@ -4,6 +4,7 @@ import { cookies, headers } from 'next/headers';
 import { db } from '../db/client';
 import { sessions, users } from '../db/schema';
 import { canLogIn } from '../users/login';
+import { delegatedUserId } from './download-link';
 
 export const SESSION_COOKIE = 'gsr_session';
 const SESSION_DAYS = 30;
@@ -86,8 +87,36 @@ export interface SessionUser {
   sessionId: string;
 }
 
+/**
+ * The user a download link names, on the link route's OWN request to a file
+ * route (`download-link.ts`): the phone's download manager carries no cookie,
+ * so the link route asks the file route as that person, with a header only
+ * this process can sign. The person is read afresh — a colleague deactivated
+ * since the click gets nothing — and the session id is empty: this is a
+ * read of one file, never a session anybody can see, slide or revoke.
+ */
+async function delegatedSessionUser(): Promise<SessionUser | null | undefined> {
+  const h = await headers();
+  const userId = delegatedUserId((name) => h.get(name));
+  if (!userId) return undefined;
+  const user = await db.query.users.findFirst({ where: eq(users.id, userId) });
+  if (!user || !canLogIn(user) || user.phone === null) return null;
+  return {
+    id: user.id,
+    phone: user.phone,
+    username: user.username,
+    fullName: user.fullName,
+    locale: user.locale,
+    active: user.active,
+    sessionId: '',
+  };
+}
+
 /** Resolve the current session user, sliding the expiry forward (30-day rolling). */
 export async function getSessionUser(): Promise<SessionUser | null> {
+  const delegated = await delegatedSessionUser();
+  if (delegated !== undefined) return delegated;
+
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;

@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
-import { candidateStatement, chinaOriginSql } from '@/modules/wms/customs/import-stats-sql';
+import { candidateStatement, chinaOriginSql, codeBounds, codeMatchSql } from '@/modules/wms/customs/import-stats-sql';
 
 /**
  * The wiring of «Narxlar statistikasi» (his C1-C6), where a behaviour test
@@ -64,6 +65,57 @@ describe('3. the ceiling transaction body touches only its tx (#714)', () => {
     expect(body).not.toMatch(/\bdb\./);
     expect(body).not.toContain('getSetting');
   });
+
+  it('the heading read’s ceiling body calls nothing but its own tx (review P2-NIT-5)', () => {
+    // `queryCandidates` runs on the ceiling transaction for a heading, and
+    // tx-pool.test.ts does not scan `underCeiling` bodies: a `getSetting(` or
+    // a `db.` added there would hold two of the ten pool connections per 📥
+    // and per pick, unseen. So every CALL in it — and in the ceiling
+    // callback that reaches it — is on an allowlist of the tx and pure
+    // helpers; anything else must be read before the transaction opens.
+    const file = ts.createSourceFile(
+      'import-baza.ts',
+      readFileSync('src/modules/wms/customs/import-baza.ts', 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const callsIn = (node: ts.Node): string[] => {
+      const out: string[] = [];
+      const visit = (n: ts.Node) => {
+        if (ts.isCallExpression(n)) out.push(n.expression.getText(file));
+        ts.forEachChild(n, visit);
+      };
+      visit(node);
+      return out;
+    };
+    let query: ts.FunctionDeclaration | undefined;
+    let ceiling: ts.ArrowFunction | undefined;
+    const find = (n: ts.Node) => {
+      if (ts.isFunctionDeclaration(n) && n.name?.text === 'queryCandidates') query = n;
+      if (
+        ts.isCallExpression(n) &&
+        n.expression.getText(file) === 'underCeiling' &&
+        n.arguments[0] &&
+        ts.isArrowFunction(n.arguments[0])
+      ) {
+        ceiling = n.arguments[0];
+      }
+      ts.forEachChild(n, find);
+    };
+    find(file);
+    expect(query, 'queryCandidates moved — re-anchor this fence').toBeDefined();
+    expect(ceiling, 'the heading read left underCeiling — re-anchor this fence').toBeDefined();
+    const PURE = new Set(['candidateStatement', 'Number', 'rows.map', 'input.units.includes', 'namedSeriesOf', 'jsonRows']);
+    const queryCalls = callsIn(query!.body!);
+    expect(queryCalls).toContain('exec.execute');
+    for (const call of queryCalls) {
+      expect(call === 'exec.execute' || PURE.has(call), `queryCandidates calls ${call}`).toBe(true);
+    }
+    for (const call of callsIn(ceiling!.body)) {
+      expect(['tx.execute', 'String', 'ask'].includes(call), `the ceiling body calls ${call}`).toBe(true);
+    }
+    expect(query!.body!.getText(file)).not.toMatch(/\bdb\b/);
+  });
 });
 
 describe('4. only «Tanlash» drafts a price (C3)', () => {
@@ -102,6 +154,12 @@ describe('6b. the 📥 waits on a row whose code, count, weight or volume is dra
     const ROW_DRAFT = read('src/modules/wms/calc/row-draft.ts');
     const rule = bodyOf(ROW_DRAFT, 'export function rowDirtyForPicker(');
     expect(rule).toContain("(['tnvedCode', 'quantity', 'weightKg', 'volumeM3'] as const).some(");
+    // The pick's own drafted code is exempt (review regression-18) — and the
+    // pick then REPLACES a drafted code rather than spreading it under the
+    // next declaration.
+    expect(rule).toContain("!(k === 'tnvedCode' && draft?.importRowId !== undefined)");
+    const pick = TABLE.slice(TABLE.indexOf('const pickImport = useCallback('));
+    expect(pick.slice(0, pick.indexOf('[itemById]'))).toContain('delete rest.tnvedCode;');
     expect(TABLE).toContain('rowDirty={rowDirtyForPicker(drafts)}');
     const at = TABLE.indexOf('data-testid="calc-import-pick"');
     expect(at).toBeGreaterThan(-1);
@@ -157,11 +215,43 @@ describe('9. «newest» has ONE order, clamped (his C6)', () => {
     // A fence on the chooser's body says nothing about whether the routes
     // call it; integration test 12 makes the two disagree under any other
     // order, and this names the two calls it depends on.
-    expect(STATS_ROUTE).toContain('batchId = await newestReadyBatchId();');
+    //
+    // Re-anchored for round 2 (docs/SAKKIZ-R2.md §7.3): the chooser is PER
+    // CODE now — `batchesForCodes` — and the stats route asks it for the
+    // row's own code; `suggestImportBaza` asks the same chooser when no batch
+    // is passed, which is what the list route relies on.
+    expect(STATS_ROUTE).toContain('batchId = (await batchesForCodes([item.code])).get(item.code)?.batchId ?? null;');
+    expect(STATS_ROUTE).not.toContain('newestReadyBatchId');
     const call = LIST_ROUTE.slice(LIST_ROUTE.indexOf('suggestImportBaza('));
     const opts = call.slice(0, call.indexOf(');'));
     expect(opts).toContain('picker: true');
     expect(opts).not.toContain('batchId');
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function suggestImportBaza(')).toContain('batchesForCodes([input.tnvedCode])');
+  });
+
+  it('the per-code chooser orders by «enough rows», quarter, rows, then the ONE order of newest', () => {
+    // `batchesForCodes` runs the statement its builder makes, and nothing
+    // else — the builder is what batch-choice (h) EXPLAINs.
+    expect(bodyOf(SERVICE, 'export async function batchesForCodes(')).toContain('batchChooserStatement(asked)');
+    const chooser = bodyOf(SERVICE, 'export function batchChooserStatement(');
+    // The heading's range from its ONE home, bound per code into a VALUES
+    // list — one statement planned once (review P2-10).
+    expect(chooser).toContain('codeBounds(');
+    expect(chooser).toContain('VALUES ${values}');
+    expect(chooser).not.toContain('UNION ALL');
+    expect(chooser).toContain('r.tnved_code BETWEEN a.lo AND a.hi');
+    expect(chooser).toContain('>= ${FEW}');
+    expect(chooser).toContain("date_trunc('quarter'");
+    expect(chooser).toContain('batchRecencySql(');
+    // TOTAL: a code no batch holds still maps — onto the newest ready batch.
+    expect(chooser).toContain('LEFT JOIN LATERAL');
+    expect(chooser).toContain('COALESCE(p.id, n.id)');
+    // Two steps (review performance-8): every batch is counted to FEW, and
+    // only the newest quarter that has FEW is counted on to the cap.
+    expect(chooser).toContain('LIMIT ${FEW}');
+    expect(chooser).toContain('LIMIT ${CHOOSER_COUNT_CAP}');
+    expect(chooser).toContain('= s.best');
   });
 });
 
@@ -182,6 +272,24 @@ describe('10. the auto-fill pays for no aggregate (rendered, not read)', () => {
     expect(text).toContain('named_q');
     expect(text).toContain('named_ex');
   });
+  it('every shape computes the similarity ONCE per row, behind an OFFSET 0 fence (review perf-1)', () => {
+    // Postgres shares no common subexpression: written into the select list
+    // AND both arms of the score, `word_similarity` ran up to three times per
+    // row — measured ~1.6× on a 30k-row heading. The fence keeps the planner
+    // from pulling the inner select up and splicing it back in.
+    const dona = { ...input, units: ['dona' as const], weightPerUnitKg: 0.5 };
+    const shapes = [
+      candidateStatement(id, input, 'abcd', 10),
+      candidateStatement(id, dona, 'abcd', 10),
+      candidateStatement(id, { ...dona, tnvedCode: '6702' }, 'abcd', 50),
+      candidateStatement(id, dona, 'abcd', 10, { minSim: 0.45 }),
+    ];
+    for (const shape of shapes) {
+      const text = dialect.sqlToQuery(shape).sql;
+      expect(text.match(/word_similarity\(/g), text).toHaveLength(1);
+      expect(text).toMatch(/OFFSET 0\)\s+r\b/);
+    }
+  });
 });
 
 describe('11. «Xitoy» names the territories that are NOT China', () => {
@@ -199,5 +307,49 @@ describe('12. the weight label and the previous-quarter line each have one rule'
     expect(BAZA_STATS).toContain('prevLine(unit.prev, answer.filtered)');
     // The table's «oldingi chorak» cell follows the same decision.
     expect(BAZA_STATS).toContain("prev === 'median' ? cell(");
+  });
+});
+
+describe('13. a heading is a range, a full code is exact (round 2, §7.4)', () => {
+  const input = { name: 'x', units: ['kg' as const], weightPerUnitKg: null };
+  const id = '00000000-0000-0000-0000-000000000000';
+  it('codeMatchSql: = for ten digits, BETWEEN … AND …9999 for a heading, both bounds TEXT', () => {
+    const full = dialect.sqlToQuery(codeMatchSql(sql`r`, '6403991000'));
+    expect(full.sql).toBe('r.tnved_code = $1');
+    expect(full.params).toEqual(['6403991000']);
+    const heading = dialect.sqlToQuery(codeMatchSql(sql`r`, '6403'));
+    expect(heading.sql).toBe('r.tnved_code BETWEEN $1 AND $2');
+    expect(heading.params).toEqual(['6403', '6403999999']);
+    // No LIKE and no COLLATE: either forfeits the btree on the default
+    // collation, and two collations would be two oracles (#653).
+    expect(`${full.sql} ${heading.sql}`).not.toMatch(/LIKE|COLLATE/i);
+    // The chooser's bounds come from the same home: a full code is both of
+    // its own, a heading runs to …9999.
+    expect(codeBounds('6403991000')).toEqual({ lo: '6403991000', hi: '6403991000' });
+    expect(codeBounds('6403')).toEqual({ lo: '6403', hi: '6403999999' });
+  });
+
+  it('the candidate list takes the range; the named series never runs on a heading', () => {
+    // ASKED for the named series (review P2-6): without the `minSim` the
+    // statement could never carry it, whatever the code, and the assertion
+    // below could not go red.
+    const shortList = dialect.sqlToQuery(
+      candidateStatement(id, { ...input, tnvedCode: '6403' }, 'abcd', 50, { minSim: 0.45 }),
+    ).sql;
+    expect(shortList).toContain('BETWEEN');
+    expect(shortList).not.toContain('percentile_disc');
+    const fullList = dialect.sqlToQuery(candidateStatement(id, { ...input, tnvedCode: '6403991000' }, 'abcd', 50)).sql;
+    expect(fullList).not.toContain('BETWEEN');
+    expect(fullList).toContain('r.tnved_code = $');
+    // The dialog asks for the named series only on a full code.
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function suggestImportBaza(')).toContain('const named = dialog && usable && !heading;');
+  });
+
+  it('the exact readers stay exact: the statistics scope and the picked-row check name the code with =', () => {
+    expect(bodyOf(STATS_SQL, 'export function codeScopeCtes(')).toContain('r.tnved_code = ${code}');
+    expect(bodyOf(STATS_SQL, 'export function codeScopeCtes(')).not.toContain('codeMatchSql');
+    const BAZA = read('src/modules/wms/customs/import-baza.ts');
+    expect(bodyOf(BAZA, 'export async function importRowForCode(')).toContain('AND r.tnved_code = ${tnvedCode}');
   });
 });

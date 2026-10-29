@@ -2,7 +2,6 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, notInArray, or, sq
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import {
-  boxMovements,
   boxes,
   clientTransactions,
   clients,
@@ -34,6 +33,7 @@ import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
 import { heldFreightRiddenBy } from '../costing/service';
+import { riderRowsSql } from '../batches/riders';
 import { mayGrantDebt, type MoneyActor } from '../finance/scope';
 import { STAGE_COLORS, activeLostReasonLabels } from '../crm/service';
 import { closedAtFor, reasonAllowed, stageWrite } from '../crm/stage-law';
@@ -179,60 +179,96 @@ export async function createDeal(
     if (refusal) throw new DealError(refusal);
   }
 
-  const id = await db.transaction(async (tx) => {
-    const code = await nextDealCode(tx);
-    const stageId = input.stageId ?? (await firstStageId(tx));
-    // The quote is only "given" once a price exists; a deal opened to collect
-    // the request carries sizes and no amount, and quotedAt stays null so the
-    // "how long did we take to price this" clock is honest.
-    const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
-    const [row] = await tx
-      .insert(deals)
-      .values({
-        code,
-        clientId: input.clientId,
-        stageId,
-        ownerId,
-        title: input.title || null,
-        quotedVolumeM3: num(input.quotedVolumeM3),
-        quotedWeightKg: num(input.quotedWeightKg),
-        quotedAmount: num(input.quotedAmount),
-        quotedCurrency: input.quotedCurrency ?? (priced ? 'USD' : null),
-        quotedAt: priced ? new Date() : null,
-        quotedBy: priced ? ctx.actorId : null,
-        note: input.note || null,
-        createdBy: ctx.actorId!,
-        // Top of its column, which is where a newly raised job has always
-        // appeared — see the funnel's own create (0075).
-        boardOrder: options.atBottom
-          ? await bottomOfColumn(tx, DEAL_BOARD, stageId)
-          : await topOfColumn(tx, DEAL_BOARD, stageId),
-      })
-      .returning();
-
-    // A new job has no prixods yet, so marking it moves nothing but the mark.
-    let ftl = false;
-    if (markFtl) {
-      await setDealFtlTx(tx, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office }, ctx);
-      ftl = true;
-    } else if (options.carryFtlFromLead && ftlOn) {
-      ftl = await carryLeadFtlTx(tx, options.carryFtlFromLead, row!.id);
-    }
-
-    await writeAudit(tx, ctx, {
-      entityType: 'deal',
-      entityId: row!.id,
-      action: 'create',
-      after: { code, client: client.clientCode, amount: input.quotedAmount ?? null, ...(ftl ? { freightMode: 'ftl' } : {}) },
-    });
-    return row!.id;
-  });
+  const id = await db.transaction((tx) =>
+    createDealInTx(tx, input, ctx, { ...options, clientCode: client.clientCode, ownerId, ftlOn }),
+  );
   if (markFtl && !input.load!.door.office) {
     await notifyFtlMarked({ kind: 'deal', id, actorId: input.load!.door.actorId }).catch((err) =>
       logger.error({ err, dealId: id }, '[ftl] FtlMarked notice failed'),
     );
   }
   return id;
+}
+
+/**
+ * `createDeal`'s transaction body, for a caller that must write MORE in the
+ * same commit — the calc landing writes the card AND its note as one fact
+ * (docs/UCH-BAND.md §7: «the note exists» iff «its card exists», so a
+ * retried save finds the card through the note and never mints twice), and
+ * the won lead's split writes every job's deal at once. Everything pooled —
+ * the client, the owner, the FTL probe — is resolved by the caller BEFORE
+ * the transaction and passed in (#714); the FTL door's refusal is the
+ * caller's to ask first (`createDeal` does). `quoteStamp` names who gave the
+ * price when it is not the presser — a sealed floor or a released offer
+ * moved onto a deal at a win (judge money-4).
+ */
+export async function createDealInTx(
+  tx: Tx,
+  input: DealInput,
+  ctx: AuditContext,
+  pre: {
+    clientCode: string;
+    ownerId: string | null;
+    ftlOn: boolean;
+    atBottom?: boolean;
+    carryFtlFromLead?: string;
+    quoteStamp?: { at: Date; by: string | null };
+    /**
+     * The row's id when the caller derives it — the win's split names its
+     * deals from the dialog's token (uuidv5), so a double press or a retry
+     * converges on the deals the first attempt wrote (judge conc-6).
+     */
+    id?: string;
+  },
+): Promise<string> {
+  const markFtl = input.load?.mode === 'ftl';
+  const code = await nextDealCode(tx);
+  const stageId = input.stageId ?? (await firstStageId(tx));
+  // The quote is only "given" once a price exists; a deal opened to collect
+  // the request carries sizes and no amount, and quotedAt stays null so the
+  // "how long did we take to price this" clock is honest.
+  const priced = input.quotedAmount !== null && input.quotedAmount !== undefined;
+  const [row] = await tx
+    .insert(deals)
+    .values({
+      ...(pre.id ? { id: pre.id } : {}),
+      code,
+      clientId: input.clientId,
+      stageId,
+      ownerId: pre.ownerId,
+      title: input.title || null,
+      quotedVolumeM3: num(input.quotedVolumeM3),
+      quotedWeightKg: num(input.quotedWeightKg),
+      quotedAmount: num(input.quotedAmount),
+      quotedCurrency: input.quotedCurrency ?? (priced ? 'USD' : null),
+      quotedAt: priced ? (pre.quoteStamp?.at ?? new Date()) : null,
+      quotedBy: priced ? (pre.quoteStamp ? pre.quoteStamp.by : ctx.actorId) : null,
+      note: input.note || null,
+      createdBy: ctx.actorId!,
+      // Top of its column, which is where a newly raised job has always
+      // appeared — see the funnel's own create (0075).
+      boardOrder: pre.atBottom
+        ? await bottomOfColumn(tx, DEAL_BOARD, stageId)
+        : await topOfColumn(tx, DEAL_BOARD, stageId),
+    })
+    .returning();
+
+  // A new job has no prixods yet, so marking it moves nothing but the mark.
+  let ftl = false;
+  if (markFtl) {
+    await setDealFtlTx(tx, row!.id, true, { actorId: input.load!.door.actorId, office: input.load!.door.office }, ctx);
+    ftl = true;
+  } else if (pre.carryFtlFromLead && pre.ftlOn) {
+    ftl = await carryLeadFtlTx(tx, pre.carryFtlFromLead, row!.id);
+  }
+
+  await writeAudit(tx, ctx, {
+    entityType: 'deal',
+    entityId: row!.id,
+    action: 'create',
+    after: { code, client: pre.clientCode, amount: input.quotedAmount ?? null, ...(ftl ? { freightMode: 'ftl' } : {}) },
+  });
+  return row!.id;
 }
 
 export async function updateDeal(
@@ -573,6 +609,20 @@ export async function linkReceipt(
     if (ftlOn && dealId) {
       await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${dealId}::uuid FOR SHARE`);
       if (await dealIsFtl(tx, dealId)) ftlLocked = await takeKpiSellerLocks(tx, [receipt.salesManagerId]);
+    }
+    // Cargo that has PAID a seller's upsale stays on the deal that paid it
+    // (docs/UCH-BAND.md §7, judge money-2): with a new deal per request a
+    // re-sent job is a second deal, and moving the prixod there after the
+    // first payout would pay the same cargo twice. The accountant takes the
+    // payout back first (/upsale), then the prixod moves.
+    if (receipt.dealId) {
+      const paid = (await tx.execute(sql`
+        SELECT 1 AS ok FROM calc_offers o
+         WHERE o.entity_type = 'deal' AND o.entity_id = ${receipt.dealId}::uuid
+           AND o.payout_expense_id IS NOT NULL
+         LIMIT 1
+      `)) as unknown as { ok: number }[];
+      if (paid.length > 0) throw new DealError('upsale_paid');
     }
     await tx
       .update(receipts)
@@ -2098,12 +2148,24 @@ export interface DealProfit {
    * Money the client paid through BATCH pricing on trucks that carried this
    * deal's boxes — posted without a deal, so it is not in revenueUsd. Since
    * R3a a truck price carries the deal by itself when the client's cargo
-   * aboard is this deal's alone; what stays here is a truck shared with
-   * another deal or with deal-less goods (and prices from before R3a). Shown,
-   * not guessed at: pro-rating somebody's batch invoice across deals would
-   * put invented numbers in front of an accountant.
+   * aboard is this deal's alone, and since Q8 «c» the person chooses the deal
+   * when two or more of his deals ride; what stays here is a truck shared
+   * with deal-less goods, a chosen «bitimsiz», and prices from before either
+   * (a price chosen for ANOTHER deal is `otherDealPrices`). Shown, not
+   * guessed at: pro-rating somebody's batch invoice across deals would put
+   * invented numbers in front of an accountant.
    */
   unlinkedBatchUsd: number;
+  /**
+   * The client's prices on this deal's trucks that went to ANOTHER of his
+   * deals, on a truck where this deal has no price of its own (his Q8 «c»:
+   * the person setting a two-deal truck's price chooses the deal). The price
+   * left this card's revenue and its «bog'lanmagan» line both, so without
+   * this the card read cost with no revenue and no sentence (review). Named,
+   * never folded into the profit — whose cargo the price was for is the
+   * person's statement, not the card's guess.
+   */
+  otherDealPrices: { batchId: string; batchCode: string; dealId: string; dealCode: string; usd: number }[];
   /**
    * HELD yo'lkira bills (his rule 6) on the trucks this deal's cartons rode:
    * converted and on no box, so `costUsd` — summed from allocations — holds
@@ -2171,36 +2233,21 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     );
   const costUsd = Math.round(Number(costRow?.total ?? 0) * 100) / 100;
 
-  // The batches this deal's boxes actually rode (departed movements, plus a
-  // batch still forming) — membership through box_movements, never a
-  // subquery in a join predicate (#152).
-  const ridden = await db
-    .selectDistinct({ batchId: boxMovements.refId })
-    .from(boxMovements)
-    .innerJoin(boxes, eq(boxMovements.boxId, boxes.id))
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(
-      and(
-        eq(receipts.dealId, dealId),
-        isNull(receipts.voidedAt),
-        eq(boxMovements.refType, 'batch'),
-        eq(boxMovements.cause, 'batch_departed'),
-      ),
-    );
-  const current = await db
-    .selectDistinct({ batchId: boxes.currentBatchId })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .where(and(eq(receipts.dealId, dealId), isNull(receipts.voidedAt)));
-  const batchIds = [
-    ...new Set(
-      [...ridden.map((r) => r.batchId), ...current.map((r) => r.batchId)].filter(
-        (id): id is string => Boolean(id),
-      ),
-    ),
-  ];
+  // The trucks this deal's cartons RODE for money — the riders (`riderRowsSql`:
+  // the live pointer before departure, the rides after it, never a void box
+  // or a truck a carton was found back from). The same base the price door's
+  // question is drawn from (`dealCandidateRows`), so a truck the «Narx» tab
+  // asked this deal about is a truck this card answers about (review: a
+  // carton landed with no load scan rode the truck the price named, and the
+  // departed-only list left the card silent).
+  const rideRows = (await db.execute(sql`
+    SELECT DISTINCT rr.batch_id FROM (${riderRowsSql({
+      boxes: sql`SELECT rb.id FROM boxes rb
+                   JOIN receipt_lots dl ON dl.id = rb.lot_id
+                   JOIN receipts dr ON dr.id = dl.receipt_id
+                  WHERE dr.deal_id = ${dealId}::uuid AND dr.voided_at IS NULL`,
+    })}) rr`)) as unknown as { batch_id: string }[];
+  const batchIds = [...rideRows].map((row) => row.batch_id).filter((id): id is string => Boolean(id));
 
   // Every truck these cartons RODE for money (the bill's own base rule, not
   // the list above — that one misses a ride with no load scan and keeps a
@@ -2228,6 +2275,41 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
       );
     unlinkedBatchUsd = Math.round(Number(row?.total ?? 0) * 100) / 100;
   }
+  let otherDealPrices: DealProfit['otherDealPrices'] = [];
+  if (batchIds.length > 0) {
+    const list = sql.join(
+      batchIds.map((id) => sql`${id}::uuid`),
+      sql`, `,
+    );
+    const rows = (await db.execute(sql`
+      SELECT ct.batch_id, b.code AS batch_code, ct.deal_id, d.code AS deal_code, sum(ct.amount_usd) AS usd
+        FROM client_transactions ct
+        JOIN batches b ON b.id = ct.batch_id
+        JOIN deals d ON d.id = ct.deal_id
+       WHERE ct.client_id = ${deal.clientId}::uuid AND ct.batch_id IN (${list})
+         AND ct.deal_id IS NOT NULL AND ct.deal_id <> ${dealId}::uuid
+         AND ct.type = 'charge' AND ct.voided_at IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM client_transactions own
+            WHERE own.client_id = ct.client_id AND own.batch_id = ct.batch_id AND own.deal_id = ${dealId}::uuid
+              AND own.type = 'charge' AND own.voided_at IS NULL
+         )
+       GROUP BY ct.batch_id, b.code, ct.deal_id, d.code
+       ORDER BY b.code, d.code`)) as unknown as {
+      batch_id: string;
+      batch_code: string;
+      deal_id: string;
+      deal_code: string;
+      usd: string | null;
+    }[];
+    otherDealPrices = [...rows].map((row) => ({
+      batchId: row.batch_id,
+      batchCode: row.batch_code,
+      dealId: row.deal_id,
+      dealCode: row.deal_code,
+      usd: Math.round(Number(row.usd ?? 0) * 100) / 100,
+    }));
+  }
 
   const profitUsd = Math.round((revenueUsd - costUsd) * 100) / 100;
   return {
@@ -2237,6 +2319,7 @@ export async function dealProfit(dealId: string): Promise<DealProfit> {
     profitUsd,
     marginPct: marginPct(profitUsd, revenueUsd),
     unlinkedBatchUsd,
+    otherDealPrices,
     heldFreight,
   };
 }

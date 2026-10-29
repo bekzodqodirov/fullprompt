@@ -51,6 +51,10 @@ const serwist = new Serwist({
        * off a factory truck?» — a cached answer asks again about a line
        * another phone just received, which is the double receive the round
        * exists to stop.
+       *
+       * `/api/dl/*` is a download link: one person's file under an address
+       * that dies in minutes. Cached, it is the whole file kept in the
+       * phone's storage under a key nobody will ask for again.
        */
       matcher: ({ url: { pathname }, sameOrigin }) =>
         sameOrigin &&
@@ -58,7 +62,8 @@ const serwist = new Serwist({
           pathname === '/api/chat/pulse' ||
           pathname.startsWith('/api/cabinet/') ||
           pathname.startsWith('/api/calc/rev/') ||
-          pathname === '/api/receive/pickups'),
+          pathname === '/api/receive/pickups' ||
+          pathname.startsWith('/api/dl/')),
       handler: new NetworkOnly(),
     },
     ...defaultCache,

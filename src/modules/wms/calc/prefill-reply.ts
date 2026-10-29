@@ -8,6 +8,8 @@ import type {
 } from './pricing';
 import { needPhraseUz, needUnitOf } from './needs';
 import type { SealBlocker } from './workspace';
+import { fitTelegram, roadLines, roadRefusalLine, type AiVedFreight } from './ai-reply';
+import { TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -133,119 +135,54 @@ export function blockerText(b: SealBlocker): string {
   }
 }
 
-const money = (n: number) => `$${n.toFixed(2)}`;
-
-export interface PrefillReplyInput {
-  /** What the engine could price, or null where it refused. */
-  customsUsd: number | null;
-  freightUsd: number | null;
-  /** Does this section even have a freight half? */
-  hasFreight: boolean;
-  /**
-   * …and a customs half?
-   *
-   * `loadWorkspace` answers `customsUsd: 0` — not null — for a section that
-   * has no customs at all (`parts.customs ? assembled.customsUsd : 0`), so a
-   * yolkira job read as «priced at zero» and the reply led with
-   * «Tahminiy: rastamojka ~$0.00». Law 6's own $0, printed by the round whose
-   * founding law it is, on the freight-only section the bot offers first.
-   */
-  hasCustoms: boolean;
-  blockers: SealBlocker[];
-  /** How much the machine did, so the VED knows what to check. */
-  codesStamped: number;
-  ratesPulled: number;
-  importFilled: number;
-  /** The card, so the seller can open it. */
+/**
+ * A yolkira job's answer (his 2.5 b, 2026-10-21): «yo'lkira so'rovi bo'lsa,
+ * tarif bo'yicha darhol javob bersin» — straight from the tariff table, with
+ * no model call at all, on its own queue so it never waits behind a customs
+ * pass (docs/SAKKIZ-R2.md §2.4, §6.8).
+ *
+ * It replaces `prefillReplyText`, the summary a freight-only job used to get
+ * («🧮 Tahminiy: yo‘lkira ~$…»), which had no other caller once the customs
+ * jobs moved to the AI-VED's per-line reply: one road, one set of words
+ * (`ai-reply.ts`'s route and refusal lines), so the yolkira reply and the
+ * podklyuch reply cannot say two things about the same truck (#513).
+ *
+ * Never «rastamojka», never «AI», never a budget: this pass makes no model
+ * call and a yolkira job has no customs half.
+ */
+export interface TariffReplyInput {
+  clientLabel: string | null;
+  cardLabel: string | null;
+  /** `freightAnswerFor`'s answer — a yolkira job always has a road. */
+  freight: AiVedFreight;
   link: string | null;
-  /** No key configured — the honest word, not a silent half-answer. */
-  aiConfigured: boolean;
-  /**
-   * Rows the pass did NOT answer a baza for, and why — law 6 applied to the
-   * pass's own decisions and not only to the engine's.
-   *
-   * `capped` are the rows past `MAX_PICK_ROWS`, never shown to the model at
-   * all; `refused` are picks the model made in the wrong unit, which the
-   * basis fence dropped. Both used to vanish into a log line, so a 60-line
-   * invoice came back reading like a complete answer with twenty rows
-   * silently baza-less.
-   */
-  pickCapped?: number;
-  pickRefused?: number;
-  /**
-   * Rows a PERSON filled while the model was thinking — left alone, and a
-   * different fact from a refused pick. Counting the two together would put
-   * the wrong reason on the screen: the model's unit was fine, the VED
-   * simply got there first, and that is not a fault to report as one.
-   */
-  pickOvertaken?: number;
+  /** The card's copy carries the VED's line under its heading when the zone was guessed. */
+  audience: 'chat' | 'lenta';
 }
 
-/**
- * The message itself.
- *
- * The figure comes first when there is one, because that is what the person
- * pressed the button for; the caveat travels WITH it on the same line, so a
- * screenshot of the number cannot lose the word «tahminiy». What the machine
- * did is a quiet second line, and what is still missing is named — never a
- * count, always the words, because «3 ta muammo» is not something a seller
- * can do anything about.
- */
-export function prefillReplyText(input: PrefillReplyInput): string {
-  const lines: string[] = [];
-  const priced =
-    (input.hasCustoms && input.customsUsd !== null) || input.freightUsd !== null;
-
-  if (priced) {
-    const parts: string[] = [];
-    // A figure is only worth printing where the SECTION has that half. Not
-    // «is it zero» — a genuine $0 customs bill is a fact worth stating; the
-    // question is whether this job has a customs side at all.
-    if (input.hasCustoms && input.customsUsd !== null) {
-      // The figure is the WHOLE declaration's or there is none: the kernel's
-      // `requestCustomsFor` answers null while any row stands uncoded or any
-      // block refuses, so the «(N ta tovarsiz)» label this line once carried
-      // described a state that can no longer reach it (judge MR-23 — a
-      // builder «checking the reply» would only have rebuilt a partial
-      // figure to satisfy it).
-      parts.push(`rastamojka ~${money(input.customsUsd)}`);
-    }
-    if (input.freightUsd !== null) parts.push(`yo‘lkira ~${money(input.freightUsd)}`);
-    lines.push(`🧮 Tahminiy: ${parts.join(' · ')}`);
-    lines.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+export function tariffReplyText(input: TariffReplyInput): string {
+  const f = input.freight;
+  // The words of the title are reply-heads.ts's, so the lenta chip that
+  // anchors on the PRICED title cannot drift from what this writes (#513).
+  const title = [TARIFF_REPLY_TITLE]
+    .concat(f.ok ? [TARIFF_ESTIMATE_WORD] : [])
+    .concat(input.clientLabel ? [input.clientLabel] : [])
+    .concat(input.cardLabel ? [input.cardLabel] : [])
+    .join(' · ');
+  const out = [title];
+  if (f.ok && f.zoneGuessed && input.audience === 'lenta') {
+    // The VED's line (§2.6), worded for the one thing a yolkira guess leaves
+    // him to do: choose the zone before he prices it.
+    out.push(`${VED_ESTIMATE_MARK} zona «${f.zoneReadFrom ?? ''}»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`);
+  }
+  if (f.ok) {
+    // The road's own lines — ONE shape for this reply and the podklyuch one.
+    out.push(...roadLines(f));
+    out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
   } else {
-    lines.push('🧮 Hozircha hisoblab bo‘lmadi.');
+    // Law 6: a refusal is a sentence, and it says who can fix it.
+    out.push(roadRefusalLine(f));
   }
-
-  // Freight the section HAS but the engine could not price is named as a
-  // gap rather than left out: «rastamojka ~$248» alone reads as the whole
-  // price on a podklyuch quote.
-  if (input.hasFreight && input.freightUsd === null && priced) {
-    lines.push('Yo‘lkira hali hisoblanmadi.');
-  }
-
-  const did: string[] = [];
-  if (input.codesStamped) did.push(`${input.codesStamped} ta kod`);
-  if (input.ratesPulled) did.push(`${input.ratesPulled} ta stavka`);
-  if (input.importFilled) did.push(`${input.importFilled} ta baza (import)`);
-  if (did.length) lines.push(`AI qo‘ydi: ${did.join(' · ')}`);
-
-  if (!input.aiConfigured) lines.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
-
-  // What the pass did not reach, named. A count is enough here — the rows
-  // themselves are on the screen, and the seller's action either way is the
-  // same: the VED finishes it.
-  const left: string[] = [];
-  if (input.pickCapped) left.push(`${input.pickCapped} ta qator ko‘rilmadi (juda ko‘p)`);
-  if (input.pickRefused) left.push(`${input.pickRefused} ta taklif o‘lchovi mos kelmadi`);
-  if (input.pickOvertaken) left.push(`${input.pickOvertaken} tasini o‘zingiz to‘ldirdingiz`);
-  if (left.length) lines.push(`Bazasi qo‘yilmadi: ${left.join(' · ')}`);
-
-  const missing = input.blockers.map(blockerText);
-  if (missing.length) {
-    lines.push(`Yetishmayapti: ${missing.slice(0, 6).join('; ')}${missing.length > 6 ? '; …' : ''}`);
-  }
-
-  if (input.link) lines.push(input.link);
-  return lines.join('\n');
+  if (input.link) out.push(`Karta: ${input.link}`);
+  return fitTelegram(out, [], [], []);
 }

@@ -871,6 +871,7 @@
       "calcRecalc": "Sent for recalculation",
       "calcSection": "Section",
       "itemCount": "Goods lines",
+      "volumeFromLines": "Volume summed from the lines",
       "allocationBasis": "Split basis",
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",
@@ -1078,6 +1079,7 @@
     "voidHasCompensation": "A compensation to the client names this receipt. The accountant voids it first.",
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
+    "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
     "attachInUse": "This document backs a lot's contents — it cannot be deleted until the VED or the logist picks another"
   },
   "stock": {
@@ -1231,7 +1233,21 @@
       "reason_required": "Give a reason"
     },
     "cancelPlan": "Cancel plan",
-    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator"
+    "stockFailed": "The cargo list did not load — refresh the page; if it repeats, tell the administrator",
+    "roadToggle": "Cargo on the road too",
+    "roadHint": "Cargo on trucks heading to this warehouse. Once planned, it moves onto this truck by itself when it is unloaded here.",
+    "roadDropped": "Cargo on the road taken out of the picks: {n}",
+    "roadFailed": "The list of cargo on the road did not load — the warehouse stock is shown",
+    "unseenPicks": "{n} picked lots are not in the list and are not counted — reload the list or take them out",
+    "unseenDrop": "Take them out",
+    "roadLine": "+{n} on the road ·",
+    "roadAtGate": "at the gate",
+    "factoryTrips": "Coming from factories ({n})",
+    "factoryTripsHint": "A factory trip’s cargo is planned once it is received at this warehouse.",
+    "roadPart": "{n} from the road",
+    "roadAwaited": "{n} awaited",
+    "roadCame": "{n} came",
+    "roadMissed": "{n} did not come"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1484,7 +1500,8 @@
       "batch_has_costs": "Costs are attached to this batch",
       "batch_has_charges": "A client has already been charged for this batch",
       "batch_has_moved_boxes": "Its boxes have already moved on",
-      "reason_required": "Give a reason"
+      "reason_required": "Give a reason",
+      "road_owed_open": "Press «Loading finished» first — the plan’s cargo is still on the road"
     },
     "startUnloading": "Unloading (scan)",
     "transitReport": "In transit",
@@ -1663,8 +1680,11 @@
       "emptyBoard": "No open trucks.",
       "capped": "Showing the {n} oldest trucks.",
       "filters": "Filter",
-      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}"
-    }
+      "loadedNoPlan": "Loaded {boxes} boxes · {cargo}",
+      "roadOwed": "+{n} from the road"
+    },
+    "finishSummaryRoad": "{n} did not come from the road",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "loading": {
     "title": "Loading",
@@ -1696,7 +1716,9 @@
       "unknown_code": "Code not found.",
       "not_loaded_here": "This box is not recorded on this truck.",
       "forbidden": "No access."
-    }
+    },
+    "roadNotLanded": "This carton is still on truck {truck} — receive it at the unloading first",
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
   },
   "unloading": {
     "title": "Unloading",
@@ -2069,7 +2091,31 @@
     "unsplit": "⚠ {n, plural, one {# cost} other {# costs}} ({usd}) not split over the cargo of this truck — missing from the cost.",
     "unsplitCarried": "⚠ {usd} of costs on truck {code} is not split over the cargo — missing from «{leg}» in the cost",
     "unsplitCarriedNoRate": "⚠ Truck {code} has {n, plural, one {# cost} other {# costs}} with no FX rate — missing from «{leg}» in the cost",
-    "carriedIncomplete": "⚠ incomplete"
+    "carriedIncomplete": "⚠ incomplete",
+    "truckDealLabel": "Which deal the price is written to",
+    "truckDealPick": "choose a deal",
+    "truckDealNone": "No deal — for the cargo with no deal",
+    "truckDealHint": "This client’s cargo on this truck belongs to several deals — choose whose price this is",
+    "truckDealStale": "The choice is out of date — the deals changed, choose again",
+    "truckDealLine": "The price is written to deal {code} — {pct} % of the client’s cargo on this truck. Price the other deal’s cargo separately",
+    "truckDealLineNoShare": "The price is written to deal {code}. Price the other deal’s cargo separately",
+    "truckDealLineNone": "The price is written to no deal",
+    "truckDealDeferred": "Deal {code} has a payment deferral: while it lasts, this price does not hold the cargo at handover as debt",
+    "truckDealAsk": "Is this price only deal {code}’s part ({pct} % of the client’s cargo on this truck)? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
+    "truckDealAskNoShare": "Is this price only deal {code}’s part? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
+    "truckDealAskNone": "The price is written to no deal — the deals’ profit and upsale will not see it.",
+    "pricedHereAsk": "This client already has a price on this truck: {list}. This price will be an extra bill.",
+    "pricedHereTitle": "Prices on this truck",
+    "pricedHereNoDeal": "no deal",
+    "pricedHereMissing": "no price on this truck",
+    "pricedHereCardPrice": "the deal has its own price (no truck)",
+    "pricedHereGone": "this deal’s cargo is no longer on the truck",
+    "truckDealChanged": "The deals of the cargo on this truck changed — the page was refreshed, check the price and save again",
+    "truckDealNotAboard": "This deal has no cargo on this truck — the price goes to a deal whose cargo is aboard",
+    "truckDealRequired": "This client’s cargo on this truck belongs to several deals — choose which one the price is written to",
+    "truckDealInvalid": "This choice does not fit this truck — refresh the page and choose again",
+    "truckDealMismatch": "This deal belongs to another client — the price is not written to it",
+    "pricedHereWhole": "the no-deal price covers all this client’s cargo on this truck — to put it on a deal, void it and enter it again per deal"
   },
   "map": {
     "title": "Map",
@@ -2814,10 +2860,17 @@
         "codeFormat": "Bad code format",
         "stageGone": "Stage not found — refresh the page",
         "forbidden": "No permission",
-        "failed": "Could not save"
+        "failed": "Could not save",
+        "leadAboutClient": "This lead is about a colleague’s client — it can only be won onto that client’s code",
+        "serverBehind": "The server is still updating — try again shortly",
+        "changed": "The lead’s calculations just changed — close and reopen this window"
       },
       "search": "Find a client: code, name or phone",
-      "toDeal": "Deal →"
+      "toDeal": "Deal →",
+      "sellerOf": "Seller: {name}",
+      "noSeller": "No seller",
+      "aboutColleague": "a new deal opens for this client",
+      "otherDeals": "Opened {count} more deals for the lead’s other calculations:"
     },
     "errors": {
       "quote_sealed": "The price is sealed — it cannot be edited (recalculate instead)"
@@ -3313,7 +3366,8 @@
     "weightKg": "Weight (kg)",
     "profitCompensation": "− compensation (lost cargo)",
     "profitNetRevenue": "Revenue (after compensation)",
-    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method»."
+    "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method».",
+    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue."
   },
   "automation": {
     "title": "Automation rules",
@@ -3461,6 +3515,7 @@
       "fromDeal": "Fill from the deal lines",
       "totalWeight": "Total weight (gross), kg",
       "totalVolume": "Total volume, m³",
+      "volumeFromLines": "Left empty — the lines’ m³ are summed",
       "noName": "No product name",
       "badCell": "«{text}» is not a number",
       "fixFirst": "Fix the marked rows first",
@@ -3507,6 +3562,7 @@
     "returnReasonLabel": "Reason",
     "finish": "Done",
     "answerAmount": "Price",
+    "finishNotEstimate": "The bot’s figures in Telegram and the feed — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — are not official prices: do not copy them here, enter the price you worked out yourself.",
     "answerNote": "Note",
     "answered": "Answer",
     "returned": "Sent back",
@@ -3576,6 +3632,7 @@
       "rate_range": "A rate is between 0 and 100",
       "amount_range": "Bad amount",
       "label_required": "Give it a label",
+      "lead_closed": "The lead is closed — it takes no new calculation. If it was won, send it from its deal",
       "product_required": "Give the product name",
       "code_required": "Give the TNVED code",
       "zone_required": "Choose a route",
@@ -3803,7 +3860,7 @@
     "makeOffer": "Offer to client",
     "belowFloor": "Below cost — the calculation came to ${floor}",
     "belowFloorChip": "below",
-    "offerSent": "Sent to Telegram",
+    "offerSent": "PDF and text sent to Telegram",
     "offerNoTelegram": "Telegram not linked — copy the text",
     "offerMuted": "These Telegram messages are muted in your profile — copy the text",
     "offerText": "Offer text",
@@ -3868,6 +3925,8 @@
       "rateNoted": "dictionary rate carries a note",
       "bazaFromImport": "baza filled from the customs import",
       "bazaFromMemory": "baza taken from a sealed calculation",
+      "bazaDictionaryMoved": "The dictionary baza has changed",
+      "aiRecode": "The AI chose the code from a declaration — check the code and the duty",
       "basisNotLaw": "baza not in the law’s unit"
     },
     "refusal": {
@@ -3895,6 +3954,10 @@
     "threadAnalyze": "Read",
     "threadReading": "AI is reading…",
     "threadRead": "{lines} lines · {files} files",
+    "threadAiFailed": "⚠ AI could not read this — the figures are from the typed text only.",
+    "threadAiRetry": "Try again later.",
+    "threadAiNoRetry": "Retrying will not help — tell the admin; the VED will review it by hand.",
+    "threadAiTooBig": "The selection is too big or a file could not be read — select fewer messages, or send the file another way.",
     "threadMissing": "Some data is missing — the VED will still take it",
     "threadSendBtn": "Send to VED",
     "threadCancel": "Cancel",
@@ -3907,6 +3970,10 @@
       "not_yours": "Some messages are not from this conversation",
       "bad_section": "Pick a section",
       "forbidden": "No permission",
+      "too_many_open": "Too many open requests — send once the VED answers",
+      "too_many_items": "Too many goods",
+      "lead_closed": "The lead is closed — it takes no new calculation. If it was won, send it from its deal",
+      "note_foreign": "The material belongs to another card",
       "deal_terms_only": "Asking for a calculation is the seller’s move. «🧮 Hisoblatish» in the bot stays open to all staff.",
       "not_found": "Card not found",
       "note_taken": "Already sent — refresh the page",
@@ -3947,11 +4014,13 @@
       "basisSuspect": "check the baza unit (the law prices in another) — row",
       "importFilled": "{count} baza(s) filled from the import (estimate), rows",
       "memoryFilled": "baza filled from a sealed calculation: {count}, rows",
+      "dictionaryFilled": "baza from the dictionary: {count}, rows",
       "basisAuto": "auto",
       "basisConflict": "a unit the law cannot hold (one measure per row) — row",
       "alreadySaved": "already saved earlier: {count}",
       "basisNotLaw": "the law counts in {unit} — the baza is per another unit"
     },
+    "volumeFromLinesShort": "from the lines",
     "grid": {
       "qty": "Pcs",
       "kg": "Net, kg",
@@ -4072,7 +4141,10 @@
     "statsWeightNoRow": "The row has no count or weight — no weight row",
     "statsWeightNone": "No declarations within ±25 % weight",
     "statsPick": "Choose",
+    "importOtherCode": "code: {code}",
     "statsTimeout": "Statistics timed out (large file) — pick from the list",
+    "statsShortCode": "Statistics need a 10-digit code — pick a declaration from the list and its code is set",
+    "importListTimeout": "This heading is too wide — the list was not read. Type the 10-digit code.",
     "statsFailed": "Statistics did not load",
     "statsTable": "As a table",
     "statsColN": "Count",
@@ -4163,6 +4235,7 @@
     "kartaHint": "The seller's card — read only. Write your question on the timeline; the seller answers there.",
     "kartaBack": "Back to the calculation",
     "kartaWonDeal": "The lead became a deal — the calculation is on the deal:",
+    "openCalc": "🧮 Calculation",
     "sellerGuess": "Seller's own estimate",
     "importConflict": "{unit} not allowed: the law counts in {law}",
     "freightWatchTitle": "{column} — freight bills are split in proportion to this column’s prices, but it is incomplete: as it stands, no bill is split by the tariff.",
@@ -5571,6 +5644,8 @@
     "m3": "Volume (m³)",
     "tnved": "HS code",
     "addLine": "+ line",
+    "oneGood": "One good — fill from the lot",
+    "oneLineNoVouch": "The name differs from the lot's — ✅ «by document» is not set by itself",
     "removeLine": "Remove line",
     "line": "Line {n}",
     "prefill": "Split by cartons",
@@ -5592,7 +5667,7 @@
     "saved": "Contents saved",
     "savedFrozen": "{trucks} already sent — their papers do not change",
     "clear": "Remove contents",
-    "clearConfirm": "The contents go — the invoice prints one row again. Continue?",
+    "clearConfirm": "The contents go — the invoice and packing lists print the lot's own name again. Continue?",
     "cleared": "Contents removed",
     "stale": "The lot changed after the contents were stated: stated {stated}, now {current} — check it",
     "staleShort": "The lot changed — check the contents",
@@ -5611,7 +5686,7 @@
     "errors": {
       "forbidden": "You may not state the contents of this receipt",
       "receipt_not_confirmed": "A voided receipt takes no contents",
-      "lines_count": "At least 2 and at most 20 goods. If it is one good, the logist renames the lot",
+      "lines_count": "Write 1 to 20 goods",
       "bad_line": "Line {seq}: write the goods name",
       "bad_number_kg": "Line {seq}, kg: not a number — at most 3 decimals",
       "bad_number_m3": "Line {seq}, m³: not a number — at most 4 decimals",
@@ -5627,6 +5702,7 @@
       "document_not_on_receipt": "The document must be on this receipt (not on the truck)",
       "document_is_photo": "That is a carton photo — upload the client's document",
       "lot_changed": "The lot changed — reload; what you typed stays",
+      "tnved_would_vanish": "The lot has TNVED code {code} — with no code on the line the invoice prints none. Type the code or press «One good»",
       "composition_changed": "Someone else changed the contents — reload",
       "composition_changed_self": "You already saved — reload",
       "busy": "It was busy — press again",
@@ -5650,6 +5726,7 @@
     "stalePerson": "Changed after the check: {what} — ask again",
     "staleWas": "Confirmed earlier by: {by} · {day}",
     "staleDocument": "The lot changed after the contents document — ask again",
+    "documentOtherName": "The contents name another good — once the logist renames the lot, it reads ✅ by document",
     "none": "Information not checked",
     "unclaimed": "Owner unknown — assign the client first",
     "movedName": "goods name",
@@ -5675,7 +5752,7 @@
     },
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
     "documentOld": "The contents document no longer matches the lot — check the contents",
-    "otherAnswersAskLogist": "If the client says «other goods» — tell the logist, who changes the name; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line from their document, and the papers print that name; on the warehouse screens and stickers the logist changes the name. If «mixed» — one line per good.",
     "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
   },
   "qarzIzoh": {
@@ -5708,6 +5785,9 @@
     "noAudience": "⚠ Nobody receives this right now — the calculation is not assigned yet. Whoever takes it will see it.",
     "feedCalcThread": "🧮 Calculation question · ↩️ reply",
     "feedViaTelegram": "📱 from Telegram",
+    "feedAiReply": "🤖 AI estimate · not official",
+    "feedTariffReply": "🧮 Tariff estimate · not official",
+    "feedEstimateReply": "📊 Contains an estimate · not official — the VED checks it",
     "feedCalcHint": "This does not reach the VED — answer the calculation question in «❓ Questions».",
     "notifMuteChat": "Internal threads (questions on cards, @-mentions)",
     "unreachable": {

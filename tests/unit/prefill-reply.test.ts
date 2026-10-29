@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { blockerText, prefillReplyText } from '@/modules/wms/calc/prefill-reply';
+import { blockerText, tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import type { SealBlocker } from '@/modules/wms/calc/workspace';
+import type { AiVedFreight } from '@/modules/wms/calc/ai-reply';
+import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -12,66 +14,86 @@ import type { SealBlocker } from '@/modules/wms/calc/workspace';
  * 6 — the figure is TAHMINIY and the official price is the seal.
  */
 
-const base = {
-  customsUsd: null as number | null,
-  freightUsd: null as number | null,
-  hasFreight: false,
-  hasCustoms: true,
-  blockers: [],
-  codesStamped: 0,
-  ratesPulled: 0,
-  importFilled: 0,
-  link: null as string | null,
-  aiConfigured: true,
-};
+/*
+ * Re-anchored for round 2 (docs/SAKKIZ-R2.md §6.7): `prefillReplyText` — the
+ * summary a freight-only job used to get — is DELETED with its only caller;
+ * a yolkira job is now answered by `tariffReplyText` from the tariff table
+ * (his 2.5 b). The figure-and-caveat and the no-$0 cases follow it there.
+ * The cases about the summary's customs figure, its blocker list, its «AI
+ * qo‘ydi» counts and its pick confessions die with their subject: a
+ * customs job has used the AI-VED's per-line reply since sub-round C, which
+ * carries all of that in its own words (ai-reply.test.ts), and the per-
+ * blocker words below stay on `blockerText`.
+ */
+const priced = (over: Partial<Extract<AiVedFreight, { ok: true }>> = {}): AiVedFreight => ({
+  ok: true,
+  listUsd: 1920,
+  routeLabel: 'Xitoy → O‘zbekiston',
+  bandText: '180 kg/m³ · $160/m³ × 12 m³ (qatorlardan)',
+  zoneGuessed: true,
+  zoneReadFrom: 'Yiwu',
+  volumeFromLines: true,
+  exact: false,
+  small: false,
+  ...over,
+});
+const tariff = { clientLabel: 'GS777', cardLabel: 'B-000067', link: 'https://gsrwms.uz/bitimlar/x', audience: 'chat' as const };
 
-describe('a figure never travels without the word «tahminiy»', () => {
-  it('states the estimate and the caveat together', () => {
-    const t = prefillReplyText({ ...base, customsUsd: 248 });
-    expect(t).toContain('Tahminiy');
-    expect(t).toContain('$248.00');
-    // The caveat is its own line, right under the number: a screenshot of
-    // the figure cannot lose it.
-    expect(t.split('\n')[1]).toContain('Rasmiy emas');
+describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () => {
+  it('the figure, the route as read, the band — and the caveat right under the figure', () => {
+    const t = tariffReplyText({ ...tariff, freight: priced() });
+    expect(t).toBe(
+      [
+        `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · GS777 · B-000067`,
+        'Xitoy → O‘zbekiston — zona «Yiwu»dan taxmin',
+        '180 kg/m³ · $160/m³ × 12 m³ (qatorlardan)',
+        'Yo‘lkira: ≈ $1920.00',
+        '⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.',
+        'Karta: https://gsrwms.uz/bitimlar/x',
+      ].join('\n'),
+    );
   });
 
-  it('names BOTH halves on a podklyuch quote', () => {
-    const t = prefillReplyText({ ...base, hasFreight: true, customsUsd: 248, freightUsd: 4800 });
-    expect(t).toContain('rastamojka ~$248.00');
-    expect(t).toContain('yo‘lkira ~$4800.00');
+  it('a stored zone is printed bare; a tiny load is flagged', () => {
+    const t = tariffReplyText({ ...tariff, freight: priced({ zoneGuessed: false, zoneReadFrom: null, listUsd: 32, small: true }) });
+    expect(t.split('\n')[1]).toBe('Xitoy → O‘zbekiston');
+    expect(t).toContain('⚠️ Juda kichik yuk (yo‘lkira $50 dan kam) — VED ko‘rib chiqadi.');
   });
 
-  it('says so when the freight half is MISSING rather than printing customs alone', () => {
-    // «rastamojka ~$248» by itself reads as the whole price on a podklyuch
-    // quote — the gap has to be a sentence.
-    const t = prefillReplyText({ ...base, hasFreight: true, customsUsd: 248, freightUsd: null });
-    expect(t).toContain('Yo‘lkira hali hisoblanmadi');
-  });
-
-  it('never invents a zero when nothing could be priced', () => {
-    const t = prefillReplyText({ ...base });
+  it('a refusal is a sentence naming who fixes it — never a $0, never «taxminiy» over nothing', () => {
+    const t = tariffReplyText({
+      ...tariff,
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    expect(t).toBe(
+      [
+        `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · GS777 · B-000067`,
+        'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+        'Karta: https://gsrwms.uz/bitimlar/x',
+      ].join('\n'),
+    );
     expect(t).not.toContain('$0');
-    expect(t).toContain('hisoblab bo‘lmadi');
+  });
+
+  it('it never speaks of customs, the AI or a budget — this pass asked no model', () => {
+    for (const freight of [priced(), { ok: false as const, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' as const }]) {
+      const t = tariffReplyText({ ...tariff, freight });
+      expect(t).not.toContain('rastamojka');
+      expect(t).not.toContain('AI');
+      expect(t).not.toContain('limit');
+    }
+  });
+
+  it('the card’s copy: no link, and the VED’s own line under the heading when the zone was guessed', () => {
+    const lenta = tariffReplyText({ ...tariff, link: null, audience: 'lenta', freight: priced() }).split('\n');
+    expect(lenta[1]).toBe(`${VED_ESTIMATE_MARK} zona «Yiwu»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`);
+    expect(lenta.join('\n')).not.toContain('Karta:');
+    const stored = tariffReplyText({ ...tariff, link: null, audience: 'lenta', freight: priced({ zoneGuessed: false, zoneReadFrom: null }) });
+    expect(stored).not.toContain(VED_ESTIMATE_MARK);
   });
 });
 
 describe('what is missing is said in WORDS', () => {
-  it('names each blocker rather than counting them', () => {
-    const t = prefillReplyText({
-      ...base,
-      customsUsd: 100,
-      blockers: [
-        { kind: 'customs', groupSeq: 1, groupLabel: 'Plitka', reason: 'baza_missing', itemLabel: 'Plitka keramik' },
-        { kind: 'groups_unconfirmed', count: 2 },
-      ],
-    });
-    expect(t).toContain('baza yo‘q');
-    expect(t).toContain('Plitka keramik');
-    expect(t).toContain('tasdiqlanmagan');
-    // «3 ta muammo» is not something a seller can act on.
-    expect(t).not.toMatch(/\d+ ta muammo/);
-  });
-
   it('every blocker kind has words of its own', () => {
     const kinds: Parameters<typeof blockerText>[0][] = [
       { kind: 'section_missing' },
@@ -130,86 +152,6 @@ describe('what is missing is said in WORDS', () => {
       }),
     ).toBe('9403: 1-qator «Stol»: soni (dona) kiritilmagan — baza dona bo‘yicha');
   });
-
-  it('a long list is cut with a mark, never silently', () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({
-      kind: 'customs' as const,
-      groupSeq: i,
-      groupLabel: `G${i}`,
-      reason: 'baza_missing',
-    }));
-    const t = prefillReplyText({ ...base, blockers: many });
-    expect(t).toContain('…');
-  });
-});
-
-describe('the honest degradations', () => {
-  it('says the key is missing rather than half-answering', () => {
-    const t = prefillReplyText({ ...base, aiConfigured: false });
-    expect(t).toContain('sozlanmagan');
-  });
-
-  it('reports what the machine actually did, so the VED knows what to check', () => {
-    const t = prefillReplyText({ ...base, customsUsd: 10, codesStamped: 4, ratesPulled: 3, importFilled: 2 });
-    expect(t).toContain('4 ta kod');
-    expect(t).toContain('3 ta stavka');
-    expect(t).toContain('2 ta baza (import)');
-  });
-
-  it('stays quiet about work it did not do', () => {
-    const t = prefillReplyText({ ...base, customsUsd: 10 });
-    expect(t).not.toContain('AI qo‘ydi');
-  });
-});
-
-describe('the pass names what it did NOT do', () => {
-  it('a capped or refused pick is said out loud, never only logged', () => {
-    // Law 6 applied to the pass's own decisions. `MAX_PICK_ROWS` is 40, so a
-    // 60-line invoice leaves twenty rows unanswered — and the first version
-    // reported that to `logger.info` alone, which made the reply read like a
-    // complete answer with twenty rows silently baza-less.
-    const text = prefillReplyText({
-      customsUsd: 248,
-      freightUsd: null,
-      hasFreight: false,
-      hasCustoms: true,
-      blockers: [],
-      codesStamped: 0,
-      ratesPulled: 0,
-      importFilled: 40,
-      link: null,
-      aiConfigured: true,
-      pickCapped: 20,
-      pickRefused: 3,
-    });
-    expect(text).toContain('20 ta qator');
-    expect(text).toContain('3 ta taklif');
-    // …and a row a PERSON filled while the model was thinking is a different
-    // fact with a different sentence: the model's unit was fine, the VED
-    // simply got there first, and reporting that as a fault would be the
-    // wrong reason on the screen.
-    const overtaken = prefillReplyText({
-      ...base,
-      customsUsd: 248,
-      pickOvertaken: 2,
-    });
-    expect(overtaken).toContain('2 tasini o‘zingiz to‘ldirdingiz');
-    expect(overtaken).not.toContain('o‘lchovi mos kelmadi');
-    // …and stays quiet when there is nothing to confess.
-    const clean = prefillReplyText({
-      customsUsd: 248,
-      freightUsd: null,
-      hasFreight: false,
-      hasCustoms: true,
-      blockers: [],
-      codesStamped: 0,
-      ratesPulled: 0,
-      importFilled: 2,
-      link: null,
-      aiConfigured: true,
-    });
-    expect(clean).not.toContain('Bazasi qo‘yilmadi');
-  });
 });
 
 describe('every refusal the engine can make has a sentence', () => {
@@ -261,66 +203,7 @@ describe('every refusal the engine can make has a sentence', () => {
   });
 });
 
-describe('a section with no customs half says nothing about customs', () => {
-  it('a yolkira job never leads with «rastamojka ~$0.00»', () => {
-    // `loadWorkspace` answers `customsUsd: 0` — NOT null — for a section with
-    // no customs (`parts.customs ? assembled.customsUsd : 0`), so the reply
-    // read that as «priced, at zero» and led with it. On the freight-only
-    // section the bot offers FIRST, and with the freight still unpriced, the
-    // whole message was a $0: law 6 broken by the round whose law it is.
-    const priced = prefillReplyText({
-      ...base,
-      hasCustoms: false,
-      hasFreight: true,
-      customsUsd: 0,
-      freightUsd: 4800,
-    });
-    expect(priced).not.toContain('rastamojka');
-    expect(priced).not.toContain('$0.00');
-    expect(priced).toContain('yo‘lkira ~$4800.00');
-
-    // …and with nothing priced at all it must refuse in words, not print $0.
-    const bare = prefillReplyText({
-      ...base,
-      hasCustoms: false,
-      hasFreight: true,
-      customsUsd: 0,
-      freightUsd: null,
-    });
-    expect(bare).not.toContain('$0.00');
-    expect(bare).toContain('Hozircha hisoblab bo‘lmadi');
-
-    // A real customs job with a genuine zero is a FACT and still prints — the
-    // question was never «is it zero», it was «does this job have a customs
-    // side at all».
-    const genuine = prefillReplyText({ ...base, hasCustoms: true, customsUsd: 0 });
-    expect(genuine).toContain('rastamojka ~$0.00');
-  });
-});
-
-describe('a figure over PART of the cargo is not a figure', () => {
-  /*
-   * Re-anchored deliberately (2026-10-09, judge MR-23): this pinned the label
-   * «rastamojka ~$376.96 (3 ta tovarsiz)» — a partial figure the kernel's
-   * `requestCustomsFor` can no longer produce. The input is what the
-   * WORKSPACE answers with an uncoded row standing: a null customs total and
-   * the blocker that names the rows.
-   */
-  it('an uncoded row means no customs figure — the blocker names the rows', () => {
-    const partial = prefillReplyText({
-      ...base,
-      customsUsd: null,
-      blockers: [{ kind: 'ungrouped_items', count: 3 }],
-    });
-    expect(partial).toContain('Hozircha hisoblab bo‘lmadi');
-    expect(partial).toContain('3 ta tovarga TNVED kod qo‘yilmagan');
-    expect(partial).not.toContain('tovarsiz');
-
-    // Nothing loose: the figure stands on its own, as it always has.
-    const whole = prefillReplyText({ ...base, customsUsd: 376.96, blockers: [] });
-    expect(whole).toContain('rastamojka ~$376.96');
-  });
-
+describe('the fee’s blocker names whose job it is', () => {
   it('a fee blocked by the BHM setting names the admin’s job, not a typo', () => {
     expect(blockerText({ kind: 'fee', reason: 'fee_bhm_bad' })).toBe(
       'bojxona yig‘imi: BHM sozlamasi noto‘g‘ri — admin tuzatadi',

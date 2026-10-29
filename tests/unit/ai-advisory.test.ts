@@ -124,30 +124,41 @@ describe('the AI VED hodimi picks a row, never a price', () => {
   });
 
   it('the prefill writes no provenance of its own', () => {
-    const source = read('src/modules/wms/calc/prefill.ts');
-    // `baza_source` is `saveTable`'s to decide, and it decides 'import'
-    // BECAUSE an `importRowId` was posted. A prefill that named the source
-    // itself would be a second writer, and the only value it could invent
-    // is the one 0094 and 0096 refuse.
-    //
-    // The forbidden shape is the WRITE — a `bazaSource:` key in a posted
-    // object. Sub-round C reads `item.bazaSource` to choose the 🧠/📥 chip
-    // in the seller's reply, which states a provenance somebody else
-    // decided; the fence is narrowed to the assignment rather than widened
-    // to allow the file, so a real second writer still turns it red.
-    expect(source).not.toMatch(/\bbazaSource\s*:/);
-    expect(source).not.toMatch(/\brateSource\s*:/);
-    // …and it may not name a source VALUE at all: the only way to write one
-    // without the key above is a string that travels to a writer.
-    for (const invented of ["'import'", "'dictionary'", "'typed'", "'memory'", "'ai'"]) {
-      expect(source, `the prefill must not name the source ${invented}`).not.toContain(invented);
+    // BOTH files (re-anchored by docs/SAKKIZ-R2.md K5): the pass's saving
+    // steps — the memory's codes and the pick — moved out of prefill.ts into
+    // prefill-steps.ts, so the subject of this fence is now two files. Read
+    // only the old one and the fence would guard a file with no writer left
+    // in it.
+    const files = ['src/modules/wms/calc/prefill.ts', 'src/modules/wms/calc/prefill-steps.ts'];
+    for (const file of files) {
+      const source = read(file);
+      // `baza_source` is `saveTable`'s to decide, and it decides 'import'
+      // BECAUSE an `importRowId` was posted. A prefill that named the source
+      // itself would be a second writer, and the only value it could invent
+      // is the one 0094 and 0096 refuse.
+      //
+      // The forbidden shape is the WRITE — a `bazaSource:` key in a posted
+      // object. Sub-round C reads `item.bazaSource` to choose the 🧠/📥 chip
+      // in the seller's reply, which states a provenance somebody else
+      // decided; the fence is narrowed to the assignment rather than widened
+      // to allow the file, so a real second writer still turns it red.
+      expect(source, file).not.toMatch(/\bbazaSource\s*:/);
+      expect(source, file).not.toMatch(/\brateSource\s*:/);
+      // …and it may not name a source VALUE at all: the only way to write one
+      // without the key above is a string that travels to a writer.
+      for (const invented of ["'import'", "'dictionary'", "'typed'", "'memory'", "'ai'"]) {
+        expect(source, `${file} must not name the source ${invented}`).not.toContain(invented);
+      }
     }
     // The row id is what makes the price the FILE's. Without it the number
     // posted here is stored as somebody's typing — measured, red-proven.
     // Anchored INSIDE the pick: 0096 added a second push in the memory pass,
     // which posts a code and no price at all, and a file-wide `indexOf` would
     // have silently started asserting about that one instead.
-    const picker = source.slice(source.indexOf('async function pickBazas'));
+    const steps = read('src/modules/wms/calc/prefill-steps.ts');
+    const at = steps.indexOf('async function pickBazas');
+    expect(at, 'pickBazas has moved — re-anchor this fence').toBeGreaterThan(-1);
+    const picker = steps.slice(at);
     expect(picker.length, 'pickBazas has been renamed — re-anchor this fence').toBeGreaterThan(0);
     const edit = block(picker, 'edits.push(');
     expect(edit).toContain('importRowId: chosen.id');

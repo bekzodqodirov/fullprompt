@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FIT_FLOOR_MM, FIT_STEP_MM, fitSize } from '@/modules/wms/labels/geometry';
+import { signedDownloadUrl } from '@/components/download-url';
 
 /**
  * The label sheet's controls, and the print dialog itself.
@@ -105,7 +106,9 @@ export function PrintSheet({
       throw new Error('cannot_share');
     } catch (err) {
       if ((err as Error)?.name === 'AbortError') return;
-      window.open(pdfHref, '_blank', 'noopener');
+      // No share sheet (Telegram's in-app browser): the new window is handed to
+      // the download manager, which carries no cookie — so a signed link.
+      window.open(await signedDownloadUrl(pdfHref), '_blank', 'noopener');
     } finally {
       setSharing(false);
       shareFile.current = null;

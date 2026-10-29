@@ -230,8 +230,24 @@ export type DraftRefusal =
   | { code: 'kg_sum'; sum: string; lot: string }
   | { code: 'm3_sum'; sum: string; lot: string };
 
-export const MIN_LINES = 2;
+/**
+ * The WRITER's floor: one line is a tarkib (his 2026-10-27 «tarkib 1
+ * qatorlik bolsa ham ruxsat berish», reversing his own 1a of 2026-10-01,
+ * #1263 — a lot of ONE good still needs its pieces and its name on the
+ * client's paper, and two differently named lines of one good were the
+ * workaround the old floor taught).
+ */
+export const MIN_LINES = 1;
 export const MAX_LINES = 20;
+/**
+ * The READERS' torn-header guard, kept apart from the writer's floor on
+ * purpose: a header whose lines are gone (a clear torn between two
+ * statements) reads `compositionMode([])` as «mixed» and the invoice prints
+ * NO row — the lot vanishes from a customs paper. A composition with fewer
+ * stored lines than this is read as none. It must never follow MIN_LINES
+ * down to 0, which is why it is its own constant.
+ */
+export const MIN_STORED_LINES = 1;
 
 /**
  * The duplicate key of a line name: `tnved/service.ts productKey`, restated
@@ -240,6 +256,24 @@ export const MAX_LINES = 20;
  */
 export function nameKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Does this line name the lot's OWN good — Chinese or Russian, by `nameKey`
+ * (the TNVED memory's `productKey`, character for character)? The pure twin
+ * of the equality inside `tarkibVouchesSql` (lot-check-sql.ts), pinned
+ * against it by lot-check.integration.test.ts (#1267): the editor's hint, the
+ * packing lists' Chinese name and the ✅ cannot disagree about it.
+ */
+export function lineIsLotGood(lineName: string, lot: { zh: string; ru: string | null }): boolean {
+  const key = nameKey(lineName);
+  return key !== '' && (key === nameKey(lot.zh) || key === nameKey(lot.ru ?? ''));
+}
+
+/** A tarkib vouches for its lot's ✅ «hujjat bo'yicha»: several lines always, ONE line only when it names the lot's own good (8.6). */
+export function linesVouchForLot(lines: readonly { name: string }[], lot: { zh: string; ru: string | null }): boolean {
+  if (lines.length >= 2) return true;
+  return lines.length === 1 && lineIsLotGood(lines[0]!.name, lot);
 }
 
 /** A TNVED code as typed («8471 60 7000») → its digits, or the refusal. */
@@ -675,7 +709,11 @@ export function paperLines(
     reasons.add('invalid');
     mode = 'mixed';
   }
-  if (n !== B) reasons.add('share');
+  // A truck carrying part of the lot prints a SHARE — but a one-line tarkib's
+  // kg, m³ and cartons ARE the truck's own figures (the line is the whole
+  // lot), so only its pieces are proportional: it is an estimate only when it
+  // states pieces (his 8.7, 2026-10-21).
+  if (n !== B && (lines.length > 1 || lines.some((l) => l.pieces !== null))) reasons.add('share');
   if (isStale(comp, lot)) reasons.add('stale');
 
   const kgUnits = lines.map((l) => BigInt(storedUnits(l.kg, KG_SCALE)));

@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
 
 /**
@@ -17,11 +17,33 @@ import { MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
  * Four halves, none of which any behavioural test can reach — the bot needs
  * a Telegram and the worker needs a running boss (#531's rule: a
  * service-level test of a queued path proves the service, not the wiring).
+ * Round 2's routing (§6.8) IS reachable on a stand-in `enqueue`, so it is
+ * asserted behaviourally below.
  */
 const read = (path: string) =>
   readFileSync(path, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
+
+const sent = vi.hoisted(() => vi.fn());
+vi.mock('@/modules/platform/jobs/boss', () => ({ enqueue: sent }));
+// The real module, with the revision read stood in: the sender stamps it.
+vi.mock('@/modules/wms/calc/prefill', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/wms/calc/prefill')>()),
+  prefillTicket: async () => 7,
+}));
+
+import { queueCalcPrefill } from '@/modules/wms/calc/prefill-queue';
+import {
+  JOB_CALC_PREFILL,
+  JOB_CALC_TARIFF_REPLY,
+  PASS_EXPIRE_S,
+  TARIFF_EXPIRE_S,
+  registerCalcPrefillWorker,
+} from '@/modules/wms/calc/jobs';
+import { PASS_DEADLINE_MS } from '@/modules/wms/calc/prefill';
+import { MAX_CALC_ITEMS } from '@/modules/wms/calc/service';
+import { AI_BATCH_SIZE } from '@/modules/wms/calc/grouping';
 
 describe('every door hands the job to the machine', () => {
   // DERIVED, not a list of today's three (#789's idiom): every file that
@@ -51,13 +73,68 @@ describe('every door hands the job to the machine', () => {
       expect(text).toMatch(/queueCalcPrefill\(|queuePrefill\(/);
     });
   }
+});
 
-  it('the sender refuses a freight-only job rather than paying for one', () => {
-    // The owner's decision 8: the AI prices rastamojka and nothing else, so a
-    // yolkira request would spend a model call to answer «I do not price
-    // this».
-    const sender = read('src/modules/wms/calc/prefill-queue.ts');
-    expect(sender).toContain('if (!parts.customs) return false;');
+describe('the section picks the queue (§6.8)', () => {
+  beforeEach(() => sent.mockReset());
+
+  // Re-anchored for round 2: this pinned «the sender refuses a freight-only
+  // job» (decision 8), which the owner overturned on 2026-09-26 and reversed
+  // on 2026-10-21 (his 2.5 b: a yolkira request is answered from the tariff
+  // at once). The sender now queues EVERY section; that the freight-only
+  // pass calls no model is proven by calc-prefill.integration («a
+  // freight-only job is left ALONE»), which stays.
+  it('a yolkira job goes to the tariff queue — no longer refused', async () => {
+    expect(await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section: 'yolkira' })).toBe(true);
+    expect(sent).toHaveBeenCalledTimes(1);
+    expect(sent).toHaveBeenCalledWith(
+      JOB_CALC_TARIFF_REPLY,
+      { requestId: 'r1', staffId: 's1', rev: 7, section: 'yolkira' },
+      { expireInSeconds: TARIFF_EXPIRE_S },
+    );
+  });
+
+  it('a rastamojka or podklyuch job goes to the customs queue, with an expiry above the pass', async () => {
+    for (const section of ['rastamojka', 'podklyuch']) {
+      sent.mockReset();
+      await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section });
+      expect(sent).toHaveBeenCalledWith(
+        JOB_CALC_PREFILL,
+        { requestId: 'r1', staffId: 's1', rev: 7, section },
+        { expireInSeconds: PASS_EXPIRE_S },
+      );
+    }
+    // A request with no section yet reads as customs (the only kind queued
+    // before the section existed).
+    sent.mockReset();
+    await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section: null });
+    expect(sent.mock.calls[0]?.[0]).toBe(JOB_CALC_PREFILL);
+  });
+
+  it('the customs expiry clears the pass deadline plus one worst step (2 × 60 s)', () => {
+    // pg-boss re-delivers a job past its expiry while the first run is still
+    // going; the default 15 minutes would have run a second pass beside it.
+    expect(PASS_EXPIRE_S * 1000).toBeGreaterThan(PASS_DEADLINE_MS + 2 * 60_000);
+  });
+
+  it('…and the worst step is the GROUPING of a full request, derived (R2 late pass, review perf-3)', () => {
+    // Every model step asks the clock before it starts, so a pass overruns
+    // the deadline by one step at most — and the longest is the grouping:
+    // MAX_CALC_ITEMS rows in AI_BATCH_SIZE batches, each one call of up to
+    // 60 s with one retry (tnved/service.ts). Derived from the constants, so
+    // a larger request cap or a smaller batch turns this red.
+    const worstGroupingMs = Math.ceil(MAX_CALC_ITEMS / AI_BATCH_SIZE) * 2 * 60_000;
+    expect(PASS_EXPIRE_S * 1000).toBeGreaterThan(PASS_DEADLINE_MS + worstGroupingMs);
+    // Comments stripped (#725): the glue explains this rule in prose.
+    const glue = read('src/modules/wms/calc/prefill.ts');
+    for (const step of ["late('step 1')", "late('step 3')"]) expect(glue).toContain(step);
+  });
+
+  it('registerCalcPrefillWorker creates and works BOTH queues, the customs one first', async () => {
+    const boss = { createQueue: vi.fn(async () => {}), work: vi.fn(async () => 'w') };
+    await registerCalcPrefillWorker(boss as never);
+    expect(boss.createQueue.mock.calls.map((c) => (c as unknown[])[0])).toEqual([JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY]);
+    expect(boss.work.mock.calls.map((c) => (c as unknown[])[0])).toEqual([JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY]);
   });
 });
 
@@ -79,14 +156,24 @@ describe('the prefill survives a deploy', () => {
   it('a worker is registered for it, or nothing ever drains the queue', () => {
     const boss = read('src/modules/platform/jobs/boss.ts');
     expect(boss).toContain('registerCalcPrefillWorker');
+    // Both queues are created and worked inside the one registration
+    // `boss.ts` already calls (asserted behaviourally above).
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    expect(jobs).toContain('boss.createQueue(JOB_CALC_PREFILL)');
-    expect(jobs).toContain('boss.work<CalcPrefillJob>(JOB_CALC_PREFILL');
+    expect(jobs).toContain('for (const queue of [JOB_CALC_PREFILL, JOB_CALC_TARIFF_REPLY])');
+    expect(jobs).toContain('boss.createQueue(queue)');
+    expect(jobs).toContain('boss.work<CalcPrefillJob>(queue');
   });
 
-  it('the answer goes through the drain, which owns the claim and the retries', () => {
+  it('the answer goes through the drain — once per request — which owns the claim and the retries', () => {
+    // Re-anchored for round 2: every machine message goes through `sayOnce`
+    // (§6.8), which queues on the drain's own rows (`queueStaffTelegram`)
+    // and kicks it after the commit.
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    expect(jobs).toContain('notifyStaffTelegram');
+    expect(jobs).toContain('sayOnce(requestId, {');
+    expect(jobs).not.toContain('notifyStaffTelegram(');
+    const once = read('src/modules/wms/calc/say-once.ts');
+    expect(once).toContain('queueStaffTelegram(tx,');
+    expect(once).toContain('await kickTelegramDrain()');
     // …and the type it sends under is one a person can actually silence.
     expect(jobs).toContain("type: 'CalcPrefilled'");
     expect(Object.values(MUTE_GROUPS).flat()).toContain('CalcPrefilled');
@@ -103,10 +190,10 @@ describe('the prefill survives a deploy', () => {
     expect(jobs.indexOf('prefillStanding(')).toBeLessThan(jobs.indexOf('aiPrefill(requestId'));
     // …and the revision it compares against travels ON the job, stamped by
     // the sender: read at drain time it would always agree with itself.
-    expect(jobs).toContain('job.data.rev');
+    expect(jobs).toContain('prefillStanding(requestId, data.rev ?? null)');
     const sender = read('src/modules/wms/calc/prefill-queue.ts');
     expect(sender).toContain('prefillTicket(');
-    expect(sender).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}\)/);
+    expect(sender).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}, \{ expireInSeconds: PASS_EXPIRE_S \}\)/);
   });
 
   it('the machine writes as NOBODY, and the seller is only told', () => {
@@ -119,7 +206,12 @@ describe('the prefill survives a deploy', () => {
     const jobs = read('src/modules/wms/calc/jobs.ts');
     // The third argument names who READS the answer — its link is chosen for
     // them (`calcJobHrefFor`); it carries no authorship, the actor stays null.
-    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId })');
+    // The fourth (round 2) names the queue, so a moved section stands down,
+    // and the revision the standing was CHECKED against, where the pass's
+    // compare-and-set chain starts (the review's P1-R2: a fresh read there
+    // adopted a save landing after the check as the machine's own base).
+    expect(jobs).toContain('const expected = { expectCustoms: writes, expectRev: data.rev ?? null };');
+    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected)');
     expect(jobs).not.toContain('actorId: staffId');
     // …and `staffId` still names who hears about it.
     expect(jobs).toContain('userIds: [staffId]');
@@ -130,9 +222,9 @@ describe('the prefill survives a deploy', () => {
     // nothing; the request is in the VED's queue whatever happens here. What
     // pg-boss is here for is the process dying, which it re-delivers itself.
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    const at = jobs.indexOf('JOB_CALC_PREFILL,');
+    const at = jobs.indexOf('async function runPrefillJob');
     expect(at).toBeGreaterThan(-1);
-    const body = jobs.slice(at);
+    const body = jobs.slice(at, jobs.indexOf('async function writeReplyToLenta'));
     expect(body).toContain('[calc-prefill] pass failed');
     expect(body).not.toContain('throw err');
   });

@@ -35,6 +35,19 @@ export const DOC = {
    * a batch word over a ZR- code would send him looking for a batch.
    */
   factoryPickup: 'Заводской рейс / Factory pickup',
+  /**
+   * The heading over a plan's ROAD part (docs/YOLDAGI-YUK.md §9): cartons still
+   * on a truck bound for this warehouse. Never «received here» — that would be
+   * a false sentence on a customs document.
+   */
+  onRoad: 'В пути / On the road',
+  /**
+   * The heading over the road part a loading ENDED without (4a, «yuklash
+   * tugadi» or the cancel): it never came and is not on this truck. Filed
+   * under an arrival, it was a false «received here» on a customs document
+   * (review numbers#4).
+   */
+  notCame: 'Не пришло / Did not come',
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',
@@ -59,6 +72,12 @@ export const DOC = {
    */
   partOfPlace: '(часть места) / (part of a place)',
   photo: 'Фото / Photo',
+  /**
+   * The packing lists' piece column (his 8.5, 2026-10-21: «karobka sonidan
+   * oldin shtuk donasi yozilsin yoqlari bosh qolsin») — blank wherever no
+   * count is stated, and never totalled: pieces of different goods do not add.
+   */
+  pieces: 'Кол-во, шт / Pieces',
   places: 'кол-во мест / Places',
   price: 'Цена за ед $ / Unit price $',
   product: 'Товар / Product',

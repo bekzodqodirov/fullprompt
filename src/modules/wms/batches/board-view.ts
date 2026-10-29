@@ -377,8 +377,8 @@ export interface CargoMeasure {
 export type CargoLine =
   | { kind: 'planNone' }
   | { kind: 'loadedNoPlan'; loaded: CargoMeasure }
-  | { kind: 'plan'; planned: CargoMeasure }
-  | { kind: 'loaded'; loaded: CargoMeasure; planned: CargoMeasure; all: boolean }
+  | { kind: 'plan'; planned: CargoMeasure; road: number }
+  | { kind: 'loaded'; loaded: CargoMeasure; planned: CargoMeasure; all: boolean; road: number }
   | { kind: 'rode'; rode: CargoMeasure }
   | { kind: 'unloaded'; off: number; rode: CargoMeasure };
 
@@ -388,15 +388,29 @@ export function cargoLineOf(card: {
   load: { loaded: CargoMeasure; planned: CargoMeasure } | null;
   rode: CargoMeasure | null;
   awaitingUnload: number | null;
+  /**
+   * Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): cartons the plan still owes from
+   * the road. A plan all on the road has nothing on its pointer and is not
+   * «rejasiz»; a truck owed cartons is never «hammasi yuklandi».
+   */
+  roadOwed?: number;
 }): CargoLine | null {
   if (card.status === 'forming' || card.status === 'loading') {
     const load = card.load;
+    const road = card.roadOwed ?? 0;
     if (!card.hasPlan) {
       return load && load.loaded.boxes > 0 ? { kind: 'loadedNoPlan', loaded: load.loaded } : { kind: 'planNone' };
     }
-    if (!load || load.planned.boxes === 0) return { kind: 'planNone' };
-    if (card.status === 'forming') return { kind: 'plan', planned: load.planned };
-    return { kind: 'loaded', loaded: load.loaded, planned: load.planned, all: load.loaded.boxes === load.planned.boxes };
+    const none = { boxes: 0, kg: 0, m3: 0 };
+    if ((!load || load.planned.boxes === 0) && road === 0) return { kind: 'planNone' };
+    if (card.status === 'forming' || !load) return { kind: 'plan', planned: load?.planned ?? none, road };
+    return {
+      kind: 'loaded',
+      loaded: load.loaded,
+      planned: load.planned,
+      all: road === 0 && load.loaded.boxes === load.planned.boxes,
+      road,
+    };
   }
   if (!card.rode) return null;
   if (card.status !== 'arrived') return { kind: 'rode', rode: card.rode };

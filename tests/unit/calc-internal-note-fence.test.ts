@@ -91,6 +91,8 @@ describe('no seller-facing surface names it', () => {
     'src/components/calc-panel.tsx',
     'src/modules/wms/calc/offer.ts',
     'src/modules/wms/calc/offer-pdf.ts',
+    // The sheet's one assembler — the route's AND the seller's Telegram copy.
+    'src/modules/wms/calc/offer-sheet-file.ts',
     'src/modules/wms/calc/sheet.ts',
     'src/components/calc-sheet.tsx',
     'src/app/api/calc/registry/[requestId]/goods/route.ts',

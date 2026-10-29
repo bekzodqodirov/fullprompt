@@ -742,7 +742,7 @@
       "import_baza_min_sim": "Import bazasidan nom o'xshashligi shu darajadan yuqori bo'lsa — baza avtomatik qo'yiladi (0..1)",
       "calc_memory_min_sim": "AI avvalgi MUHRLANGAN hisobdan bazani olishi uchun nom o'xshashligi darajasi (0..1)",
       "ai_calc_daily_limit": "Hisoblash uchun kuniga nechta AI so'rovi (limitdan keyin faqat xotira, lug'at va bojxona fayli ishlaydi)",
-      "ai_calc_reply_lenta": "AI ning tahminiy hisobi karta lentasiga ham yozilsinmi",
+      "ai_calc_reply_lenta": "AI ning taxminiy hisobi karta lentasiga ham yozilsinmi",
       "cost_kassa_since": "Shu kundan boshlab kiritilgan, kassasi ko‘rsatilmagan xarajatlar buxgalter navbatiga tushadi (YYYY-MM-DD; bo‘sh = hammasi)",
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
@@ -871,6 +871,7 @@
       "calcRecalc": "Qayta hisoblashga yuborildi",
       "calcSection": "Bo‘lim",
       "itemCount": "Tovar qatorlari",
+      "volumeFromLines": "Hajm qatorlardan qo‘shildi",
       "allocationBasis": "Bo‘lish usuli",
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",
@@ -1078,6 +1079,7 @@
     "voidHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan. Avval buxgalter uni bekor qilsin.",
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
+    "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibida ishlatilgan — VED yoki logist boshqa hujjatni tanlamaguncha o'chirib bo'lmaydi"
   },
   "stock": {
@@ -1231,7 +1233,21 @@
       "reason_required": "Sababni yozing"
     },
     "cancelPlan": "Planni bekor qilish",
-    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting"
+    "stockFailed": "Yuk ro'yxati yuklanmadi — sahifani yangilang; takrorlansa administratorga ayting",
+    "roadToggle": "Yo‘ldagi yuklar ham",
+    "roadHint": "Bu skladga kelayotgan mashinalardagi yuk. Rejaga olsangiz, shu yerda tushirilganda o‘zi shu mashinaga o‘tadi.",
+    "roadDropped": "Yo‘ldagi yuk tanlovdan olindi: {n}",
+    "roadFailed": "Yo‘ldagi yuk ro‘yxati yuklanmadi — skladdagi yuk ko‘rsatildi",
+    "unseenPicks": "{n} ta tanlangan yuk ro‘yxatda ko‘rinmayapti va hisobga kirmayapti — ro‘yxatni qayta yuklang yoki ularni olib tashlang",
+    "unseenDrop": "Olib tashlash",
+    "roadLine": "+{n} yo‘lda ·",
+    "roadAtGate": "darvozada",
+    "factoryTrips": "Zavoddan kelyapti ({n})",
+    "factoryTripsHint": "Zavod reysi yuki shu skladga qabul qilinganidan keyin rejaga olinadi.",
+    "roadPart": "{n} yo‘ldan",
+    "roadAwaited": "{n} kutilmoqda",
+    "roadCame": "{n} keldi",
+    "roadMissed": "{n} kelmadi"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1484,7 +1500,8 @@
       "batch_has_costs": "Partiyaga xarajat kiritilgan",
       "batch_has_charges": "Bu partiya bo‘yicha mijozga hisob qo‘yilgan",
       "batch_has_moved_boxes": "Qutilar allaqachon oldinga ketgan",
-      "reason_required": "Sababni yozing"
+      "reason_required": "Sababni yozing",
+      "road_owed_open": "Avval «Yuklash tugadi»ni bosing — rejadagi yuk hali yo‘lda"
     },
     "startUnloading": "Razgruzka (skan)",
     "transitReport": "Yo‘lda",
@@ -1663,8 +1680,11 @@
       "emptyBoard": "Ochiq mashina yo‘q.",
       "capped": "Eng eski {n} ta mashina ko‘rsatilmoqda.",
       "filters": "Filtr",
-      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}"
-    }
+      "loadedNoPlan": "Yuklandi {boxes} karobka · {cargo}",
+      "roadOwed": "+{n} yo‘ldan"
+    },
+    "finishSummaryRoad": "{n} yo‘ldan kelmadi",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1696,7 +1716,9 @@
       "unknown_code": "Kod topilmadi.",
       "not_loaded_here": "Bu karobka bu mashinada yozilmagan.",
       "forbidden": "Ruxsat yo'q."
-    }
+    },
+    "roadNotLanded": "Bu karobka hali {truck} mashinasida — avval tushirishda qabul qiling",
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
   },
   "unloading": {
     "title": "Razgruzka",
@@ -2069,7 +2091,31 @@
     "unsplit": "⚠ {n, plural, other {# ta xarajat}} ({usd}) bu mashina yukiga bo‘linmagan — tannarxga kirmagan.",
     "unsplitCarried": "⚠ {code} mashinasining {usd} xarajati yukka bo‘linmagan — {leg} tannarxda yo‘q",
     "unsplitCarriedNoRate": "⚠ {code} mashinasining {n, plural, other {# ta xarajatida}} kurs yo‘q — {leg} tannarxda yo‘q",
-    "carriedIncomplete": "⚠ to‘liq emas"
+    "carriedIncomplete": "⚠ to‘liq emas",
+    "truckDealLabel": "Narx qaysi bitimga yoziladi",
+    "truckDealPick": "bitimni tanlang",
+    "truckDealNone": "Bitimsiz — bitimga ulanmagan yuk uchun",
+    "truckDealHint": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimniki ekanini tanlang",
+    "truckDealStale": "Tanlov eskirdi — bitimlar o‘zgardi, qaytadan tanlang",
+    "truckDealLine": "Narx {code} bitimiga yoziladi — mijozning bu mashinadagi yukining {pct} %. Boshqa bitim yukining narxini alohida qo‘ying",
+    "truckDealLineNoShare": "Narx {code} bitimiga yoziladi. Boshqa bitim yukining narxini alohida qo‘ying",
+    "truckDealLineNone": "Narx hech qaysi bitimga yozilmaydi",
+    "truckDealDeferred": "{code} bitimida to‘lov kechiktirilgan: muddat tugaguncha bu narx yuk topshirishda qarz deb to‘xtatilmaydi",
+    "truckDealAsk": "Bu narx faqat {code} bitimining ulushi uchunmi (mijozning bu mashinadagi yukining {pct} %)? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
+    "truckDealAskNoShare": "Bu narx faqat {code} bitimining ulushi uchunmi? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
+    "truckDealAskNone": "Narx hech qaysi bitimga yozilmaydi — bitimlarning foydasi va upsale’i bu narxni ko‘rmaydi.",
+    "pricedHereAsk": "Bu mijozga bu mashinada allaqachon narx bor: {list}. Bu narx qo‘shimcha hisob bo‘ladi.",
+    "pricedHereTitle": "Bu mashinadagi narxlar",
+    "pricedHereNoDeal": "bitimsiz",
+    "pricedHereMissing": "bu mashinada narx yo‘q",
+    "pricedHereCardPrice": "bitimning o‘z narxi bor (mashinasiz)",
+    "pricedHereGone": "bu bitimning yuki mashinada qolmagan",
+    "truckDealChanged": "Bu mashinadagi yuk bitimlari o‘zgardi — sahifa yangilandi, narxni qaytadan tekshirib saqlang",
+    "truckDealNotAboard": "Bu bitimning yuki bu mashinada yo‘q — narx yuki shu mashinada bo‘lgan bitimga yoziladi",
+    "truckDealRequired": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimga yozilishini tanlang",
+    "truckDealInvalid": "Bu tanlov bu mashina uchun to‘g‘ri emas — sahifani yangilab, qaytadan tanlang",
+    "truckDealMismatch": "Bu bitim boshqa mijozniki — narx unga yozilmaydi",
+    "pricedHereWhole": "bitimsiz narx bu mijozning shu mashinadagi butun yukini qoplaydi — bitimga yozish uchun uni bekor qilib, bitim bo‘yicha qayta kiriting"
   },
   "map": {
     "title": "Xarita",
@@ -2814,10 +2860,17 @@
         "codeFormat": "Kod formati noto'g'ri",
         "stageGone": "Bosqich topilmadi — sahifani yangilang",
         "forbidden": "Huquq yo'q",
-        "failed": "Saqlab bo'lmadi"
+        "failed": "Saqlab bo'lmadi",
+        "leadAboutClient": "Bu lid hamkasbingiz mijozi haqida — faqat o‘sha mijoz kodiga yutiladi",
+        "serverBehind": "Server hali to‘liq yangilanmagan — bir ozdan keyin qayta urinib ko‘ring",
+        "changed": "Shu payt lidning hisob-kitoblari o‘zgardi — oynani yopib qayta oching"
       },
       "search": "Mijozni topish: kod, ism yoki telefon",
-      "toDeal": "Bitim →"
+      "toDeal": "Bitim →",
+      "sellerOf": "Sotuvchisi: {name}",
+      "noSeller": "Sotuvchisi yo‘q",
+      "aboutColleague": "shu mijozga yangi bitim ochiladi",
+      "otherDeals": "Lidning boshqa hisob-kitoblari uchun yana {count} ta bitim ochildi:"
     },
     "errors": {
       "quote_sealed": "Narx muhrlangan — o‘zgartirib bo‘lmaydi (qayta hisoblang)"
@@ -3313,7 +3366,8 @@
     "weightKg": "Og'irlik (kg)",
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
     "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
-    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi."
+    "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi.",
+    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",
@@ -3461,6 +3515,7 @@
       "fromDeal": "Bitim qatorlaridan to‘ldirish",
       "totalWeight": "Umumiy og‘irlik (brutto), kg",
       "totalVolume": "Umumiy hajm, m³",
+      "volumeFromLines": "Bo‘sh qolsa — qatorlardagi kub qo‘shiladi",
       "noName": "Tovar nomi yozilmagan",
       "badCell": "«{text}» — son emas",
       "fixFirst": "Avval belgilangan qatorlarni to‘g‘rilang",
@@ -3507,6 +3562,7 @@
     "returnReasonLabel": "Qaytarish sababi",
     "finish": "Bajarildi",
     "answerAmount": "Narx",
+    "finishNotEstimate": "Telegram va lentadagi bot raqamlari — «Aniq», «Taxminiy», «JAMI», «Yo‘lkira ≈» — rasmiy narx emas: ularni bu yerga ko‘chirmang, o‘zingiz hisoblagan narxni yozing.",
     "answerNote": "Izoh",
     "answered": "Javob",
     "returned": "Qaytarildi",
@@ -3576,6 +3632,7 @@
       "rate_range": "Stavka 0–100 oralig‘ida",
       "amount_range": "Summa noto‘g‘ri",
       "label_required": "Nomini yozing",
+      "lead_closed": "Lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi. Yutilgan bo‘lsa, uning bitimidan yuboring",
       "product_required": "Tovar nomini yozing",
       "code_required": "TNVED kodini yozing",
       "zone_required": "Yo‘nalishni tanlang",
@@ -3803,7 +3860,7 @@
     "makeOffer": "Mijozga taklif",
     "belowFloor": "Tannarxdan past — hisob {floor} $ chiqqan",
     "belowFloorChip": "past",
-    "offerSent": "Telegramga yuborildi",
+    "offerSent": "PDF va matn Telegramga yuborildi",
     "offerNoTelegram": "Telegram ulanmagan — matnni nusxalab oling",
     "offerMuted": "Profilingizda bu Telegram xabarlari o'chirilgan — matnni nusxalab oling",
     "offerText": "Taklif matni",
@@ -3868,6 +3925,8 @@
       "rateNoted": "lug'at stavkasi izoh bilan",
       "bazaFromImport": "Baza importdan (taxmin)",
       "bazaFromMemory": "Baza muhrlangan hisobdan",
+      "bazaDictionaryMoved": "Lug‘atdagi baza o‘zgargan",
+      "aiRecode": "Kodni AI deklaratsiyaga qarab tanlagan — kod va bojni tekshiring",
       "basisNotLaw": "Baza qonun birligida emas"
     },
     "refusal": {
@@ -3895,6 +3954,10 @@
     "threadAnalyze": "O‘qish",
     "threadReading": "AI o‘qimoqda…",
     "threadRead": "qator: {lines} · fayl: {files}",
+    "threadAiFailed": "⚠ AI o‘qiy olmadi — raqamlar faqat yozilgan matndan olindi.",
+    "threadAiRetry": "Keyinroq qayta urinib ko‘ring.",
+    "threadAiNoRetry": "Qayta urinish yordam bermaydi — adminga ayting, VED qo‘lda ko‘radi.",
+    "threadAiTooBig": "Tanlov juda katta yoki fayl o‘qilmadi — kamroq xabar tanlang yoki faylni boshqacha yuboring.",
     "threadMissing": "Ma’lumot yetishmaydi — VED baribir qabul qiladi",
     "threadSendBtn": "VEDga yuborish",
     "threadCancel": "Bekor",
@@ -3907,6 +3970,10 @@
       "not_yours": "Ba’zi xabarlar bu suhbatdan emas",
       "bad_section": "Bo‘limni tanlang",
       "forbidden": "Ruxsat yo‘q",
+      "too_many_open": "Ochiq so‘rovlar juda ko‘p — VED javob bergach yuboring",
+      "too_many_items": "Tovarlar juda ko‘p",
+      "lead_closed": "Lid yopilgan — unga yangi hisob-kitob qo‘shilmaydi. Yutilgan bo‘lsa, uning bitimidan yuboring",
+      "note_foreign": "Material boshqa kartaga tegishli",
       "deal_terms_only": "Hisob so‘rash — sotuvchining ishi. Botdagi «🧮 Hisoblatish» hamma xodimga ochiq.",
       "not_found": "Karta topilmadi",
       "note_taken": "Allaqachon yuborilgan — sahifani yangilang",
@@ -3947,11 +4014,13 @@
       "basisSuspect": "birligini tekshiring (qonun boshqa birlikda o‘lchaydi) — qator",
       "importFilled": "importdan to‘ldirilgan baza: {count} ta, qator",
       "memoryFilled": "muhrlangan hisobdan to‘ldirilgan baza: {count} ta, qator",
+      "dictionaryFilled": "lug‘atdan to‘ldirilgan baza: {count} ta, qator",
       "basisAuto": "avto",
       "basisConflict": "birlik qonunga mos emas (qatorda bitta o‘lchov bo‘ladi) — qator",
       "alreadySaved": "avval saqlangan edi: {count} qator",
       "basisNotLaw": "qonun {unit} bo‘yicha o‘lchaydi — baza boshqa birlikda"
     },
+    "volumeFromLinesShort": "qatorlardan",
     "grid": {
       "qty": "Dona",
       "kg": "Netto, kg",
@@ -4072,7 +4141,10 @@
     "statsWeightNoRow": "Qatorda soni yoki og'irligi yo'q — og'irlik bo'yicha qator chiqmaydi",
     "statsWeightNone": "±25 % og'irlikda deklaratsiya yo'q",
     "statsPick": "Tanlash",
+    "importOtherCode": "kod: {code}",
     "statsTimeout": "Statistika hozir hisoblanmadi (fayl katta) — ro'yxatdan tanlang",
+    "statsShortCode": "Statistika 10 xonali kod bo'yicha — ro'yxatdan deklaratsiya tanlang, kodi o'zi qo'yiladi",
+    "importListTimeout": "Bu sarlavha juda keng — ro'yxat o'qilmadi. 10 xonali kodni yozing.",
     "statsFailed": "Statistika yuklanmadi",
     "statsTable": "Jadval ko'rinishida",
     "statsColN": "Soni",
@@ -4163,6 +4235,7 @@
     "kartaHint": "Sotuvchining kartasi — faqat o‘qish uchun. Savolni lentaga yozing, sotuvchi shu yerda javob beradi.",
     "kartaBack": "Hisob-kitobga qaytish",
     "kartaWonDeal": "Lid bitimga aylangan — hisob-kitob bitimda:",
+    "openCalc": "🧮 Hisob-kitob",
     "sellerGuess": "Sotuvchi yozgan taxmin",
     "importConflict": "{unit} bo‘lmaydi: qonun {law} bo‘yicha",
     "freightWatchTitle": "{column} — yo‘lkira hisoblari shu ustun narxlari nisbatida bo‘linadi, lekin ustun to‘liq emas: shu holatda hisoblar tarif bo‘yicha bo‘linmaydi.",
@@ -5571,6 +5644,8 @@
     "m3": "Kub (m³)",
     "tnved": "TNVED",
     "addLine": "+ qator",
+    "oneGood": "Bitta tovar — lotdan to'ldirish",
+    "oneLineNoVouch": "Nom lot nomidan farq qiladi — ✅ «hujjat bo'yicha» avtomatik qo'yilmaydi",
     "removeLine": "Qatorni o'chirish",
     "line": "{n}-qator",
     "prefill": "Karobka soniga qarab taqsimlash",
@@ -5592,7 +5667,7 @@
     "saved": "Tarkib saqlandi",
     "savedFrozen": "{trucks} yuborilgan — uning hujjatlari o'zgarmaydi",
     "clear": "Tarkibni o'chirish",
-    "clearConfirm": "Tarkib o'chiriladi — invoys yana bitta qator bo'ladi. Davom etasizmi?",
+    "clearConfirm": "Tarkib o'chiriladi — invoys va packing list yana lotning o'z nomini chiqaradi. Davom etasizmi?",
     "cleared": "Tarkib o'chirildi",
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
@@ -5611,7 +5686,7 @@
     "errors": {
       "forbidden": "Sizda bu prixodning tarkibini yozish huquqi yo'q",
       "receipt_not_confirmed": "Bekor qilingan prixodga tarkib yozilmaydi",
-      "lines_count": "Kamida 2 ta, ko'pi bilan 20 ta tovar. Bitta tovar bo'lsa — lot nomini logist o'zgartiradi",
+      "lines_count": "1 tadan 20 tagacha tovar yozing",
       "bad_line": "{seq}-qator: tovar nomini yozing",
       "bad_number_kg": "{seq}-qator, kg: son noto'g'ri — verguldan keyin ko'pi bilan 3 raqam",
       "bad_number_m3": "{seq}-qator, kub: son noto'g'ri — verguldan keyin ko'pi bilan 4 raqam",
@@ -5627,6 +5702,7 @@
       "document_not_on_receipt": "Hujjat shu prixodga yuklangan bo'lishi kerak (mashinaga emas)",
       "document_is_photo": "Bu karobka rasmi — mijozning hujjatini yuklang",
       "lot_changed": "Lot o'zgardi — yangilang, yozganlaringiz qoladi",
+      "tnved_would_vanish": "Lotning TNVED kodi {code} — qatorda kod bo'lmasa, invoysda kod chiqmaydi. Kodni yozing yoki «Bitta tovar»ni bosing",
       "composition_changed": "Tarkibni boshqa hodim o'zgartirdi — yangilang",
       "composition_changed_self": "Siz allaqachon saqladingiz — yangilang",
       "busy": "Band edi — qaytadan bosing",
@@ -5650,6 +5726,7 @@
     "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
     "staleWas": "Avval tasdiqlagan: {by} · {day}",
     "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
+    "documentOtherName": "Tarkibda lotdan boshqa nom yozilgan — logist lot nomini to'g'rilasa, hujjat bo'yicha ✅ bo'ladi",
     "none": "Ma'lumot tekshirilmagan",
     "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
     "movedName": "tovar nomi",
@@ -5675,7 +5752,7 @@
     },
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
     "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
-    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — logistga ayting, nomini u o'zgartiradi; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — hujjati bilan 🧩 lot tarkibini bitta qator qilib yozing, hujjatlar shu nomni chiqaradi; sklad ekranlari va stikerlarda nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
     "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   },
   "qarzIzoh": {
@@ -5708,6 +5785,9 @@
     "noAudience": "⚠ Bu xabarni hozir hech kim olmaydi — hisob hali hech kimga biriktirilmagan. Kim olsa, o‘sha ko‘radi.",
     "feedCalcThread": "🧮 Hisob savoli · ↩️ javob",
     "feedViaTelegram": "📱 Telegramdan",
+    "feedAiReply": "🤖 AI taxmini · rasmiy emas",
+    "feedTariffReply": "🧮 Tarif bo‘yicha taxmin · rasmiy emas",
+    "feedEstimateReply": "📊 Ichida taxmin bor · rasmiy emas — VED tekshiradi",
     "feedCalcHint": "Bu VED ga bormaydi — hisob savoliga «❓ Savol-javob»da javob bering.",
     "notifMuteChat": "Ichki yozishmalar (kartadagi savol-javob, @ bilan chaqirish)",
     "unreachable": {

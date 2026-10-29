@@ -215,7 +215,10 @@ describe('(8) no collector this process opened takes a backlog message', () => {
     expect(photos.slice(0, 900)).toContain('if (!state || late) {');
     expect(photos.slice(0, 1400)).toContain('if (!capture || late) {');
     const voice = HANDLERS.slice(found(HANDLERS, "['message:voice', 'message:audio'"));
-    expect(voice.slice(0, 500)).toContain('if (!late && (activeIntake(chatId) || activeCapture(chatId))) return next();');
+    // A live collection answers a voice note in words (his 1.12 a) and a live
+    // zametka capture keeps it — both only when it is NOT from the backlog.
+    expect(voice.slice(0, 900)).toContain('if (!late && activeIntake(chatId)) {');
+    expect(voice.slice(0, 1500)).toContain('if (!late && activeCapture(chatId)) return next();');
   });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));

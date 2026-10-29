@@ -53,6 +53,8 @@ export const WARNING_LABELS: Record<string, string> = {
   dictionary_moved: 'warnings.dictionaryMoved',
   code_heading: 'warnings.codeHeading',
   excise_unanswered: 'warnings.exciseUnanswered',
+  baza_dictionary_moved: 'warnings.bazaDictionaryMoved',
+  ai_recode: 'warnings.aiRecode',
 };
 
 export const REFUSAL_LABELS: Record<string, string> = {

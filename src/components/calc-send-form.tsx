@@ -334,11 +334,14 @@ export function CalcSendForm({
           value={weight}
           onChange={setWeight}
         />
+        {/* Empty = the lines' m³ summed at the landing (his 2.7 b) — said
+            here, or the seller types the Σ by hand believing nobody will. */}
         <TotalBox
           label={t('sendTable.totalVolume')}
           testId="calc-volume"
           value={volume}
           onChange={setVolume}
+          hint={t('sendTable.volumeFromLines')}
         />
       </div>
 
@@ -439,11 +442,14 @@ function TotalBox({
   testId,
   value,
   onChange,
+  hint,
 }: {
   label: string;
   testId: string;
   value: string;
   onChange: (v: string) => void;
+  /** A muted line under the box — what an empty box means. */
+  hint?: string;
 }) {
   const t = useTranslations('calc');
   const cell = readNumberCell(value);
@@ -458,6 +464,7 @@ function TotalBox({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+      {hint ? <p className="text-2xs text-ink-500">{hint}</p> : null}
       {cell.state === 'ambiguous' ? (
         <AmbiguousPick
           a={cell.decimalText}

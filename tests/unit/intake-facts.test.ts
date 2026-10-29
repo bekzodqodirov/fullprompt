@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import {
+  LONE_NETTO_NOTE,
   LONE_WEIGHT_NOTE,
   intakeSummaryText,
   itemFacts,
@@ -8,6 +9,7 @@ import {
   lineNeeds,
   loneWeightKg,
   missingFields,
+  weightFromTotalNote,
 } from '@/modules/wms/calc/intake';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
@@ -263,6 +265,33 @@ describe('a derived weight is SAID, and a stated one is never overwritten (judge
     expect(item!.weightKg).toBe(250);
     expect(item!.weightFromTotal).toBe(true);
     expect(item!.note).toBe(`qora · ${LONE_WEIGHT_NOTE}`);
+  });
+
+  it('weightFromTotalNote recognises the lone copy in the note itemFacts writes (K15)', () => {
+    // On the note's REAL output, beside a seller's own words — the reader
+    // round 2 adds («og‘irlik bruttodan» on the Telegram line) asks the stored
+    // note, never the sentence spelled a second time.
+    //
+    // Re-anchored (review PF-3): it now answers WHICH total — the brutto, or
+    // a netto a customs job's document stated alone — never a bare «yes».
+    const [copied] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol', note: 'qora' }] });
+    expect(weightFromTotalNote(copied!.note)).toBe('brutto');
+    const [bare] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol' }] });
+    expect(weightFromTotalNote(bare!.note)).toBe('brutto');
+    // A line that stated its own weight carries no such note.
+    const [own] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol', weightKg: 200, note: 'qora' }] });
+    expect(weightFromTotalNote(own!.note)).toBeNull();
+    expect(weightFromTotalNote(null)).toBeNull();
+  });
+
+  it('a NETTO total is copied as netto — the note and its reader say so (review PF-3)', () => {
+    // A customs job whose document stated only the netto: both readers take it
+    // as the total (`NETTO_ONLY`, `parseManualFacts`) and flag it. The lone
+    // copy said «brutto» beside an AI izohi saying «faqat netto».
+    const [item] = itemFacts({ weightKg: 1200, weightNetto: true, goods: [{ name: 'Kurtka', quantity: 300 }] });
+    expect(item!.weightKg).toBe(1200);
+    expect(item!.note).toBe(LONE_NETTO_NOTE);
+    expect(weightFromTotalNote(item!.note)).toBe('netto');
   });
 
   it('facts whose line weights were STATED derive nothing from the total', () => {
