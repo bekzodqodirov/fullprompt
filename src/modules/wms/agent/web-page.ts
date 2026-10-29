@@ -16,7 +16,7 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
-import { cardDigest, digestBody } from './card';
+import { cardDigest, cardDrawsSend, digestBody } from './card';
 import { renderDraftCardFull } from './card-io';
 import { agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
@@ -74,13 +74,14 @@ export function webDigest(d: Pick<DraftRow, 'finalBody' | 'proposedBody' | 'acti
 }
 
 /**
- * Does the page draw ✅ for this draft — the bot's rule, said once: not
- * blocked (the policy, or a card too long to show), and live — `editing`
- * included while he has written nothing for it, because ✅ then sends the
- * machine's words exactly as the bot's does (decide `decideDraft`, C7).
+ * Does the page draw ✅ for this draft — the bot's own rule (card
+ * `cardDrawsSend`, which the bot's keyboard is drawn by too): not blocked
+ * (the policy, or a card too long to show), and live — `editing` included
+ * while he has written nothing for it, because ✅ then sends the machine's
+ * words exactly as the bot's does (decide `decideDraft`, C7).
  */
 export function pageDrawsSend(d: Pick<WebDraft, 'blocked' | 'status' | 'ownText'>): boolean {
-  return !d.blocked && (d.status === 'pending' || (d.status === 'editing' && !d.ownText));
+  return cardDrawsSend(d);
 }
 
 function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {

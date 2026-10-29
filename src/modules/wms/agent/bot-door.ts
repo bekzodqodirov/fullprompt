@@ -7,6 +7,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { phoneSiblingClients } from '../client-cabinet/service';
 import { digestBody, hitWords } from './card';
+import { actionLines } from './card-io';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
@@ -18,7 +19,7 @@ import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
 import type { PolicyHit } from './policy';
-import type { DraftPolicyJson } from './types';
+import type { ComposedAction, DraftPolicyJson } from './types';
 
 /**
  * The bot's side of the agent, as plain functions the grammY shell calls
@@ -48,6 +49,19 @@ export interface PressAnswer {
   drop?: AgentWaitKind;
   /** Drop the ✏️ wait only if it names THIS draft — a ✅ ended the edit it was armed for (C7). */
   dropEditOf?: string;
+  /**
+   * Said when that wait WAS armed and this press dropped it — a ✅ refused
+   * because the draft is gone: his next text would otherwise go down the
+   * ladder (a code lookup, the AI assistant) while he meant it for the card.
+   */
+  editClosed?: string;
+  /**
+   * The draft whose WORDS a message of this answer carries — ✏️'s copy to
+   * change, a refusal handing the text over to send by hand. The shell
+   * records each such message on the draft's card row (`recordCardCopies`),
+   * where the chat's purge blanks it like the card (review leak-9).
+   */
+  quotes?: { draftId: string; parts: ('reply' | 'followUp')[] };
 }
 
 /** What his typed text is answered with — words, and a button under them when the words lead to one. */
@@ -66,6 +80,7 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   policy_block: 'Bu matn shunday yuborilmaydi — «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing.',
   listener_behind: "Telegram ko'prigi (tinglovchi) yangilanmagan — xabar ketmaydi. Serverda tg-listen'ni qayta quring.",
   sending_disabled: "CRM'dan Telegramga yuborish o'chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o'zingiz yuboring.",
+  // A newer card is coming (decide `redraftNewest`); `SUPERSEDED_NO_DRAFT` when none is.
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
@@ -74,6 +89,12 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   identity_changed: "Chat endi boshqa mijozga bog'langan (yoki hech kimga) — bu javob ketmaydi.",
   empty: "Javob bo'sh.",
 };
+
+/** ✅ refused because the customer wrote again and no run will draft the newer message — he answers it. */
+export const SUPERSEDED_NO_DRAFT = 'Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.';
+
+/** A ✅ refusal that RETIRED the draft (or found it gone): the edit armed for it is over. */
+const RETIRING: ReadonlySet<DecideRefusal> = new Set(['superseded', 'taken_over', 'not_live', 'identity_changed']);
 
 /**
  * How a figure is typed AGAIN after a refusal. The text that was refused
@@ -159,9 +180,14 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
         if (r.code === 'budget_spent' || r.code === 'sending_disabled') {
           const [d] = await db.select({ body: agentDrafts.finalBody, proposed: agentDrafts.proposedBody }).from(agentDrafts).where(eq(agentDrafts.id, id));
           const toast = r.code === 'budget_spent' ? '⛔ Chegara tugadi' : '⛔ Yuborish o‘chirilgan';
-          return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}` };
+          return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}`, quotes: { draftId: id, parts: ['reply'] } };
         }
-        return { toast: DECIDE_WORDS[r.code].slice(0, 190), reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined };
+        const words = r.code === 'superseded' && r.detail === 'no_draft' ? SUPERSEDED_NO_DRAFT : DECIDE_WORDS[r.code];
+        return {
+          toast: words.slice(0, 190),
+          reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined,
+          ...(RETIRING.has(r.code) ? { dropEditOf: id, editClosed: `✏️ ${words} Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.` } : {}),
+        };
       }
       const soon = !r.sendAt || r.sendAt.getTime() <= Date.now() + 60_000;
       // An edit he armed for this draft and did not use is over: the ✅ sent the card's words.
@@ -176,7 +202,9 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
         toast: '✏️',
         reply: EDIT_PROMPT,
         // Telegram's own cap is 4 096; a text that long is a blocked one to shorten anyway.
-        ...(current ? { followUp: current.length > 4000 ? `${current.slice(0, 4000)}…` : current } : {}),
+        ...(current
+          ? { followUp: current.length > 4000 ? `${current.slice(0, 4000)}…` : current, quotes: { draftId: id, parts: ['followUp'] } }
+          : {}),
         arm: { kind: 'agent_edit', payload: { draftId: id } },
       };
     }
@@ -224,6 +252,17 @@ export const EDIT_PROMPT =
 export const OWN_TEXT_PLACED = '✏️ Matningiz kartaga qo‘yildi. Mijozga yuborish uchun ✅ Yuborish ni bosing.';
 
 /**
+ * The confirmation, with what its ✅ ALSO does (review): the button approves
+ * the card, and the card carries the draft's actions — a mute, a
+ * calculation, a follow-up — so a sentence naming only his words approved
+ * side effects it did not show. The lines are the card's own (`actionLines`).
+ */
+export function ownTextPlaced(actions: readonly ComposedAction[]): string {
+  const lines = actionLines([...actions]);
+  return lines.length === 0 ? OWN_TEXT_PLACED : `${OWN_TEXT_PLACED}\n\n✅ bilan birga:\n${lines.map((l) => `➕ ${l}`).join('\n')}`;
+}
+
+/**
  * A text typed at a draft that is no longer live — answered, rejected,
  * expired, or retired by his own message in the customer's chat. Says that the
  * text went nowhere: «faol emas» alone left him wondering whether it was kept.
@@ -249,7 +288,7 @@ export async function agentText(
     // A ✅ only where the card draws one (C9): «tekshirib ✅ bosing» promised it over a text
     // the owner subset had blocked, and the card's ✅ was an edited message somewhere above.
     if (r.blocked || !r.digest) return { text: ownTextBlocked(r.blocks ?? []) };
-    return { text: OWN_TEXT_PLACED, buttons: [[{ text: '✅ Yuborish', callback_data: `ag:s:${draftId}:${r.digest}` }]] };
+    return { text: ownTextPlaced(r.actions ?? []), buttons: [[{ text: '✅ Yuborish', callback_data: `ag:s:${draftId}:${r.digest}` }]] };
   }
   if (target.kind === 'agent_price') {
     const r = await priceDraftFromText(staffId, target.payload.requestId!, text);
@@ -282,6 +321,25 @@ export async function editStillLive(staffId: string, draftId: string | undefined
     .from(agentDrafts)
     .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, staffId)));
   return d?.status === 'pending' || d?.status === 'editing';
+}
+
+/**
+ * The bot's messages that carry a draft's WORDS (`PressAnswer.quotes`),
+ * recorded on HIS card row of that draft as `payload.copies` — where the
+ * chat's purge finds them and blanks them like the card (purge
+ * `blankQuotedCopies`, review leak-9). Sent by `ctx.reply`, each was a copy of
+ * the customer-facing text that no row named, and «🚫 Shaxsiy» left it
+ * standing in his chat with the bot for ever. Every card row re-render merges
+ * over the payload (`||`), so the list survives them.
+ */
+export async function recordCardCopies(staffId: string, draftId: string, copies: readonly { chatId: number; messageId: number }[]): Promise<void> {
+  if (copies.length === 0) return;
+  await db
+    .update(notifications)
+    .set({
+      payload: sql`${notifications.payload} || jsonb_build_object('copies', coalesce(${notifications.payload}->'copies', '[]'::jsonb) || ${JSON.stringify(copies)}::jsonb)`,
+    })
+    .where(and(eq(notifications.userId, staffId), eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`));
 }
 
 /** Which agent card a swipe-reply answers — resolved from HIS OWN notification row by `payload.tg` (reply-door's rule). */

@@ -301,7 +301,7 @@ describe('what the chat did since the draft (S4)', () => {
       })
       .returning({ id: attachments.id });
     madeFiles.push(file!.id);
-    expect(await decideDraft(actor(), draftId, 'send', {}, ctx())).toEqual({ ok: false, code: 'superseded' });
+    expect(await decideDraft(actor(), draftId, 'send', {}, ctx())).toMatchObject({ ok: false, code: 'superseded' });
     expect(await outboxOf(draftId)).toBeNull();
   });
 });

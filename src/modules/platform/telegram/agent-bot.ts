@@ -81,7 +81,7 @@ export async function handleAgentPress(
     return;
   }
   try {
-    const { agentPress, releaseEdit } = await import('../../wms/agent/bot-door');
+    const { agentPress, recordCardCopies, releaseEdit } = await import('../../wms/agent/bot-door');
     const out = await agentPress(staff.id, parsed.op, parsed.id, parsed.digest);
     // The same target asked again keeps its earlier prompts answerable (a
     // swipe-reply to the FIRST ✏️ prompt is still this draft's text).
@@ -101,16 +101,30 @@ export async function handleAgentPress(
       for (const kind of AGENT_WAITS) if (kind !== out.arm.kind) dropWait(chatId, kind);
     }
     if (out.drop) dropWait(chatId, out.drop);
+    let closed: string | null = null;
     if (out.dropEditOf && readWait<{ draftId?: string }>(chatId, 'agent_edit')?.payload.draftId === out.dropEditOf) {
       dropWait(chatId, 'agent_edit');
+      closed = out.editClosed ?? null;
     }
     await answerPress(ctx, out.toast);
     const prompt = out.reply
       ? await ctx.reply(out.reply, out.buttons ? { reply_markup: { inline_keyboard: out.buttons } } : undefined)
       : null;
+    // The ✏️ he armed for this draft is over, and his next text goes elsewhere — said where it stays.
+    if (closed && !prompt) await ctx.reply(closed);
     // The draft's text on its own (✏️, C4), after the prompt: copied, changed and sent back —
     // as a reply to it too, so it is one of the prompts the wait names.
     const copy = out.followUp ? await ctx.reply(out.followUp) : null;
+    if (out.quotes) {
+      const quoted = [
+        ...(out.quotes.parts.includes('reply') && prompt ? [prompt] : []),
+        ...(out.quotes.parts.includes('followUp') && copy ? [copy] : []),
+      ];
+      // Where the chat's purge finds them (leak-9); a failure here must not undo the press.
+      await recordCardCopies(staff.id, out.quotes.draftId, quoted.map((m) => ({ chatId: Number(chatId), messageId: m.message_id }))).catch(
+        (err: unknown) => logger.warn({ err }, '[agent] card copy not recorded'),
+      );
+    }
     if (out.arm) {
       // Armed AFTER its prompt, at the prompt's own date, naming the prompt
       // (the task waits' rule, Q5 a): a swipe-reply to THIS question — or to

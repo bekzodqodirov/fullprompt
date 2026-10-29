@@ -267,7 +267,24 @@ export function cardDigest(body: string, actions: readonly unknown[]): string {
   return hash.toString(16).padStart(8, '0');
 }
 
-/** The payload a card's notification row carries — the bot draws buttons from it. */
+/**
+ * Does the card draw ✅ — ONE rule for the bot's keyboard (`cardExtra`'s
+ * `blocked` is its negation), the page (web-page `pageDrawsSend`) and what
+ * `decideDraft` accepts: nothing holds it (the policy, or a card too long to
+ * show — `blocked` here carries both), and it is live — `editing` only while
+ * he has written nothing for it, because ✅ then sends the machine's words
+ * (C7); a second ✏️ over his own words waits for the new ones, and a button
+ * there was a press answered «Avval o'z matningizni yozing» under a status
+ * line promising the ✅ would come (review).
+ */
+export function cardDrawsSend(d: { blocked: boolean; status: string; ownText: boolean }): boolean {
+  return !d.blocked && (d.status === 'pending' || (d.status === 'editing' && !d.ownText));
+}
+
+/**
+ * The payload a card's notification row carries — the bot draws buttons from
+ * it. `blocked` is «no ✅»: every writer passes `!cardDrawsSend(…)`.
+ */
 export function cardExtra(draft: { id: string; body: string; actions: unknown[]; blocked: boolean; live: boolean; kind: string }) {
   return {
     draftId: draft.id,

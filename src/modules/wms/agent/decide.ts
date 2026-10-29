@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
+import { aiConfigured } from '../../platform/ai/model';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
 import {
@@ -8,6 +9,7 @@ import {
   agentConversations,
   agentDrafts,
   agentOutbox,
+  agentRuns,
   calcRequests,
   crmActivities,
   leads,
@@ -16,6 +18,7 @@ import {
   tgMessages,
   users,
 } from '../../platform/db/schema';
+import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
@@ -29,6 +32,7 @@ import { keptFileSql } from './outbox-store';
 import { asksAnew, releaseAt } from './send-step';
 import { sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
+import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { isNudge } from './worthy';
 import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -86,6 +90,8 @@ export type DecideResult =
       blocked?: boolean;
       blocks?: PolicyHit[];
       digest?: string;
+      /** What that ✅ also does — the draft's actions ride with his words (C9: the confirmation names them). */
+      actions?: ComposedAction[];
       /**
        * 🙋's withdrawals, said on the press (ident fix F10): the approved
        * replies still waiting that it cancelled, and how many of them were HIS
@@ -181,6 +187,83 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
     .orderBy(desc(tgMessages.sentAt))
     .limit(1);
   return row?.sentAt ?? null;
+}
+
+/**
+ * The customer's newest message asked again when the draft a run stood down
+ * for is gone (review: ✅ on an editing draft after the customer wrote again).
+ * A run that meets a draft he is EDITING stands down after its model call
+ * (`createDraft` → 'editing', the run's row `stood_down`/'editing') — he is
+ * typing an answer — and nothing asked again: the sweep's gap pass reads «a
+ * run exists» and goes on. So when that draft leaves the chat by a newer
+ * message (`chatMoved` on ✅) or his ❌, the newest live inbound is queued
+ * once more — the anchor itself when it was EDITED (an edit's job, its own
+ * attempt from 100), otherwise the newer message, at the next free attempt
+ * below 100 (the inbound UNIQUE is per attempt; the live hook's own job, if
+ * it is still on its debounce, meets this one there and one of them stands
+ * down as a duplicate). Only a stand-down for HIM is re-asked: a refusal, a
+ * cap, a «no reply needed» or an error is that run's own answer (the sweep
+ * retries an error itself). True = a card for the newer message is coming —
+ * what the press may promise.
+ */
+async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<boolean> {
+  // The sweep's own gate: with no model a queued run writes nothing, and the press must not promise a card.
+  const config = await readAgentConfig();
+  if (!agentRunning(config) || config.ownerUserId !== d.managerUserId || !aiConfigured()) return false;
+  const [newest] = await db
+    .select({ tgMessageId: tgMessages.tgMessageId })
+    .from(tgMessages)
+    .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
+    .where(
+      and(
+        eq(tgMessages.managerUserId, d.managerUserId),
+        eq(tgMessages.peerId, d.peerId),
+        eq(tgMessages.direction, 'in'),
+        how === 'edited' ? gte(tgMessages.tgMessageId, d.anchorTgMessageId) : gt(tgMessages.tgMessageId, d.anchorTgMessageId),
+        isNull(tgMessageFlags.deletedAt),
+      ),
+    )
+    .orderBy(desc(tgMessages.tgMessageId))
+    .limit(1);
+  if (!newest) return false;
+  const runs = await db
+    .select({ attempt: agentRuns.attempt, outcome: agentRuns.outcome, error: agentRuns.error, createdAt: agentRuns.createdAt })
+    .from(agentRuns)
+    .where(
+      and(
+        eq(agentRuns.managerUserId, d.managerUserId),
+        eq(agentRuns.peerId, d.peerId),
+        eq(agentRuns.trigger, 'inbound'),
+        eq(agentRuns.anchorTgMessageId, newest.tgMessageId),
+      ),
+    );
+  // The draft's own run (an edited anchor's first draft) is no answer to the message as it stands now.
+  const since = runs.filter((r) => r.createdAt.getTime() >= d.createdAt.getTime());
+  if (since.some((r) => r.outcome === 'reserved' || r.outcome === 'draft')) return true;
+  if (since.some((r) => !(r.outcome === 'stood_down' && r.error === 'editing'))) return false;
+  if (how === 'edited' && since.length === 0) return false;
+  const job: AgentInboundJob =
+    how === 'edited'
+      ? { managerUserId: d.managerUserId, peerId: String(d.peerId), anchorTgMessageId: String(newest.tgMessageId), origin: 'edit' }
+      : {
+          managerUserId: d.managerUserId,
+          peerId: String(d.peerId),
+          anchorTgMessageId: String(newest.tgMessageId),
+          attempt: runs.length === 0 ? 0 : Math.max(...runs.filter((r) => r.attempt < 100).map((r) => r.attempt), -1) + 1,
+          origin: 'sweep',
+        };
+  await enqueue(JOB_AGENT_INBOUND, job, { retryLimit: 0, startAfter: 1 });
+  return true;
+}
+
+/** `redraftNewest`, never a reason for the press itself to fail. */
+async function redraftQuietly(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<boolean> {
+  try {
+    return await redraftNewest(d, how);
+  } catch (err) {
+    logger.warn({ err, draftId: d.id }, '[agent] newer message not asked again');
+    return false;
+  }
 }
 
 /** A claim older than this is a press that died mid-landing (a deploy, a kill), and the next ✅ takes it over. */
@@ -444,6 +527,8 @@ export async function decideDraft(
     await refreshDraftCard(draftId);
     // Each cancelled reply's own card says it will not go (card-io's CANCEL_WORDS `taken_over`).
     for (const held of changed.held) await refreshDraftCard(held);
+    // ❌ on a draft he had opened for editing: a newer message that stood down for that edit is asked again.
+    if (decision === 'reject' && d.status === 'editing') await redraftQuietly(d, 'newer');
     return { ok: true, status, ...(decision === 'human' ? { withdrawn: { total: changed.held.length, own: changed.own } } : {}) };
   }
 
@@ -501,9 +586,16 @@ export async function decideDraft(
   const moved = await chatMoved(d);
   if (moved) {
     const status = moved === 'taken_over' ? 'taken_over' : 'superseded';
-    await db.update(agentDrafts).set({ status, updatedAt: new Date() }).where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status)));
+    const [retired] = await db
+      .update(agentDrafts)
+      .set({ status, updatedAt: new Date() })
+      .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status)))
+      .returning({ id: agentDrafts.id });
     await refreshDraftCard(draftId);
-    return { ok: false, code: moved === 'taken_over' ? 'taken_over' : 'superseded' };
+    if (moved === 'taken_over') return { ok: false, code: 'taken_over' };
+    // «Yangi qoralama tayyorlanadi» only where one is coming (`redraftNewest`); otherwise he is told to answer.
+    const coming = retired ? await redraftQuietly(d, moved === 'anchor_edited' ? 'edited' : 'newer') : false;
+    return { ok: false, code: 'superseded', detail: coming ? 'redrafting' : 'no_draft' };
   }
 
   // Whose chat it is NOW (final review K7). The draft was written for a client
@@ -591,7 +683,12 @@ export async function decideDraft(
     });
     return true;
   });
-  if (!approved) return { ok: false, code: 'not_live' };
+  if (!approved) {
+    // The row moved under the press — his own words landed on it between the read and here (the
+    // `finalBody` guard above): the draft is live, the card is a different one, and «faol emas» is false.
+    const [after] = await db.select({ status: agentDrafts.status }).from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    return { ok: false, code: after?.status === 'pending' || after?.status === 'editing' ? 'stale_card' : 'not_live' };
+  }
   await runDraftActions(draftId, actor).catch((err: unknown) => logger.error({ err, draftId }, '[agent] actions failed'));
   await refreshDraftCard(draftId);
   return { ok: true, status: 'approved', sendAt, requestId };
@@ -690,6 +787,7 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
     blocked: !policy.ok || tooLong,
     blocks: policy.blocks,
     digest: cardDigest(digestBody(row), (row.actions ?? []) as ComposedAction[]),
+    actions: (row.actions ?? []) as ComposedAction[],
   };
 }
 

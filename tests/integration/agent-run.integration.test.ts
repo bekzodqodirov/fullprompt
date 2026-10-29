@@ -274,6 +274,14 @@ describe('a run drafts a reply and posts its card', () => {
     expect(((await cardOf(d!.id))!.payload as { text: string }).text).toContain(`ℹ️ ${late}`);
   });
 
+  it('the wait is counted from the customer’s FIRST unanswered line, not the anchor (C11, the run’s own argument)', async () => {
+    await inbound('Assalomu alaykum, yuk bor', 30 * 60_000);
+    const a = await inbound('Yiwudan Toshkentga 5 kub, narxi qancha?', 5 * 60_000);
+    await handleInbound({ ...job(a), origin: 'sweep' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });
+    const d = await liveDraft();
+    expect((d!.policy as { notes: string[] }).notes[0]).toBe('⏱ Mijoz 30 daqiqadan beri javob kutyapti (AI qayta tekshirganda yozildi)');
+  });
+
   it('…and a card on time carries no such line', async () => {
     const a = await inbound('Yukim qayerda?');
     await handleInbound({ ...job(a), origin: 'pull' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });

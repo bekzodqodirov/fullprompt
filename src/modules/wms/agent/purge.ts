@@ -15,6 +15,7 @@ import {
 import { logger } from '../../platform/logger';
 import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf } from '../../platform/notifications/staff-html';
+import { h } from '../../platform/telegram/format';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
 import { agentTablesReady } from './config';
@@ -76,6 +77,35 @@ export async function editAgentCopies(rows: readonly AgentCopy[]): Promise<numbe
     }
   }
   return edited;
+}
+
+/**
+ * The bot's messages that carried a card's draft WORDS outside the card —
+ * ✏️'s copy to change, a refusal handing the text over (bot-door
+ * `recordCardCopies` writes them as `payload.copies`) — blanked to the
+ * purged card's sentence, with nothing to press. The card itself is
+ * `editAgentCopies`' job; these are plain messages beside it (review leak-9).
+ * Best-effort, after the commit, like it.
+ */
+export async function blankQuotedCopies(rows: readonly AgentCopy[]): Promise<number> {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return 0;
+  let blanked = 0;
+  for (const row of rows) {
+    const copies = Array.isArray(row.payload.copies) ? (row.payload.copies as { chatId?: unknown; messageId?: unknown }[]) : [];
+    for (const copy of copies) {
+      const chatId = Number(copy.chatId);
+      const messageId = Number(copy.messageId);
+      if (!Number.isFinite(chatId) || !Number.isInteger(messageId)) continue;
+      try {
+        const res = await editText({ chatId, messageId, html: h(PURGED_CARD_TEXT) });
+        if (res.ok) blanked += 1;
+        else logger.warn({ notificationId: row.id, description: res.description }, '[agent] quoted copy not blanked');
+      } catch (err) {
+        logger.warn({ err, notificationId: row.id }, '[agent] quoted copy not blanked');
+      }
+    }
+  }
+  return blanked;
 }
 
 /**
@@ -166,6 +196,8 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
   // it deletes the messages, and N cards × a 10-second Telegram deadline on a
   // bad day (round 48's outage) is a button that hangs while the customer's
   // text is still stored.
-  void editAgentCopies(out.blanked).catch((err: unknown) => logger.warn({ err }, '[agent] purged copies not edited'));
+  void editAgentCopies(out.blanked)
+    .then(() => blankQuotedCopies(out.blanked))
+    .catch((err: unknown) => logger.warn({ err }, '[agent] purged copies not edited'));
   return { drafts: out.drafts, cards: out.blanked.length };
 }

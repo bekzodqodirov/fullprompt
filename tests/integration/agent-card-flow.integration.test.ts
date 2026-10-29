@@ -21,12 +21,37 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   enqueue: vi.fn(async () => {}),
 }));
 
+/**
+ * A hook between `decideDraft`'s read of the row and its approval's
+ * compare-and-set: the send switch is the first thing it awaits after the
+ * read, so a case can land his own words exactly in that gap — deterministic,
+ * where a burst of two presses would be a race. A pass-through otherwise.
+ */
+const betweenReadAndCas: { once: null | (() => Promise<void>) } = { once: null };
+vi.mock('@/modules/platform/settings/service', async (original) => {
+  const real = await original<typeof import('@/modules/platform/settings/service')>();
+  return {
+    ...real,
+    getSetting: (async (key: string, ...rest: unknown[]) => {
+      if (key === 'tg_sending_enabled' && betweenReadAndCas.once) {
+        const run = betweenReadAndCas.once;
+        betweenReadAndCas.once = null;
+        await run();
+      }
+      return (real.getSetting as (...a: unknown[]) => unknown)(key, ...rest);
+    }) as typeof real.getSetting,
+  };
+});
+
+import type { CallModel, ModelResponse } from '@/modules/platform/ai/model';
 import { db, pgClient } from '@/modules/platform/db/client';
+import { enqueue } from '@/modules/platform/jobs/boss';
 import {
   agentConfig,
   agentConversations,
   agentDrafts,
   agentOutbox,
+  agentRuns,
   clients,
   notifications,
   roles,
@@ -47,10 +72,13 @@ import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { decideDraft } from '@/modules/wms/agent/decide';
+import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { createDraft } from '@/modules/wms/agent/drafts';
-import { EDIT_PROMPT, OWN_TEXT_PLACED, agentPress } from '@/modules/wms/agent/bot-door';
+import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
 import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
+import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
+import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
+import { handleInbound } from '@/modules/wms/agent/run';
 import type { PolicyMemory } from '@/modules/wms/agent/policy-input';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
@@ -138,7 +166,10 @@ async function owner(): Promise<Owner> {
 }
 
 /** A draft and its card as the run writes them (`createDraft`), the card's copy then SENT to him. */
-async function draftFor(me: Owner, over: { body?: string; withMemory?: boolean } = {}): Promise<{ draftId: string; card: number }> {
+async function draftFor(
+  me: Owner,
+  over: { body?: string; withMemory?: boolean; lastOut?: string | null; ledger?: unknown[]; actions?: unknown[] } = {},
+): Promise<{ draftId: string; card: number }> {
   const written = await createDraft({
     runId: null,
     managerUserId: me.id,
@@ -158,15 +189,15 @@ async function draftFor(me: Owner, over: { body?: string; withMemory?: boolean }
     policy: {
       blocks: [],
       warnings: [],
-      ledger: [],
+      ledger: over.ledger ?? [],
       ...(over.withMemory === false ? {} : { memory }),
-      card: { customerLabel: `KF${STAMP.slice(-5)} · Karta mijoz`, lastOut: null, customerLines: ['17:46 Assalomu alaykum'] },
+      card: { customerLabel: `KF${STAMP.slice(-5)} · Karta mijoz`, lastOut: over.lastOut ?? null, customerLines: ['17:46 Assalomu alaykum'] },
       notes: [],
     } as never,
     blocked: false,
     needsOwner: false,
     ownerQuestion: null,
-    actions: [],
+    actions: (over.actions ?? []) as never,
     citedMessageIds: [],
     offerId: null,
   });
@@ -207,6 +238,91 @@ async function cardSend(draftId: string): Promise<string | null> {
 
 const actor = (id: string) => ({ id, roles: ['super_admin'], permissions: new Set<string>() });
 
+/** The card's own way of saying the config's pause («2 soat», «90 daqiqa»). */
+const pauseWords = (min: number) => (min >= 60 && min % 60 === 0 ? `${min / 60} soat` : `${min} daqiqa`);
+
+/** A Tashkent wall clock «20:34» of an instant. */
+const tashkentClock = (d: Date) => {
+  const t = new Date(d.getTime() + 5 * 3_600_000);
+  return `${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
+};
+
+/** The toast a press was answered with. */
+const toastOf = (calls: { method: string; payload: Record<string, unknown> }[]) =>
+  String(calls.find((c) => c.method === 'answerCallbackQuery')?.payload.text ?? '');
+
+/** A model that composes this one reply — the run around it is real, the model is not (CI has no key). */
+function composing(text: string): CallModel {
+  return (async (): Promise<ModelResponse> => ({
+    stopReason: 'tool_use',
+    content: [
+      {
+        type: 'tool_use',
+        id: 't1',
+        name: 'compose_reply',
+        input: {
+          reply_needed: true,
+          reply_text: text,
+          language: 'uz',
+          gloss_uz: '',
+          category: 'qualification',
+          confidence: 0.8,
+          needs_owner: false,
+          owner_question: '',
+          next_step: 'ask',
+          actions: [],
+          used_fact_ids: [],
+        },
+      },
+    ],
+    usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  })) as CallModel;
+}
+
+/** With a model key for the length of `fn` — the re-ask is the sweep's, and the sweep asks only with one. */
+async function withModelKey<T>(fn: () => Promise<T>): Promise<T> {
+  const saved = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = 'test-key-not-used';
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = saved;
+  }
+}
+
+/** The customer writes again while he is on ✏️, and the run for it stands down for his edit (`createDraft` → 'editing'). */
+async function newerWhileEditing(me: Owner): Promise<bigint> {
+  const newer = BigInt(nextMsg());
+  await db.insert(tgMessages).values({
+    clientId,
+    managerUserId: me.id,
+    peerId: me.peer,
+    tgMessageId: newer,
+    direction: 'in',
+    body: 'Narxi qancha? Yiwu dan Toshkentga 5 kub',
+    // After the anchor (a minute old), as the customer wrote it.
+    sentAt: new Date(Date.now() - 30_000),
+  });
+  await db.insert(agentRuns).values({
+    managerUserId: me.id,
+    peerId: me.peer,
+    trigger: 'inbound',
+    anchorTgMessageId: newer,
+    attempt: 0,
+    outcome: 'stood_down',
+    error: 'editing',
+  });
+  return newer;
+}
+
+/** The agent runs this test queued (the `enqueue` mock's calls). */
+const queuedRuns = () =>
+  vi
+    .mocked(enqueue)
+    .mock.calls.filter(([name]) => name === JOB_AGENT_INBOUND)
+    .map(([, data]) => data as AgentInboundJob);
+
 beforeAll(async () => {
   snapshot = await readAgentConfig();
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
@@ -220,6 +336,8 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  betweenReadAndCas.once = null;
+  vi.mocked(enqueue).mockClear();
   __resetLifecycle();
   __forgetWaitMemory();
   __resetPresses();
@@ -235,6 +353,7 @@ afterAll(async () => {
   await setSetting('tg_sending_enabled', sendingBefore, null);
   await db.delete(agentOutbox).where(inArray(agentOutbox.managerUserId, madeUsers));
   await db.delete(agentDrafts).where(inArray(agentDrafts.managerUserId, madeUsers));
+  await db.delete(agentRuns).where(inArray(agentRuns.managerUserId, madeUsers));
   await db.delete(tgMessages).where(inArray(tgMessages.managerUserId, madeUsers));
   await db.delete(notifications).where(inArray(notifications.userId, madeUsers));
   await db.delete(agentConversations).where(inArray(agentConversations.managerUserId, madeUsers));
@@ -409,7 +528,7 @@ describe('his own Telegram reply is told apart from 🙋 (C6)', () => {
     const text = String((await cardPayloadOf(draftId)).text);
     const pause = (await readAgentConfig())!.humanPauseMin;
     expect(text).toMatch(/✋ Siz mijozga Telegramda o‘zingiz yozdingiz \(\d\d:\d\d\) — AI javobi bekor qilindi\./u);
-    expect(text).toContain(`Xabaringizdan keyin AI bu chatga ${pause} daqiqa yozmaydi.`);
+    expect(text).toContain(`Oxirgi xabaringizdan keyin AI bu chatga ${pauseWords(pause)} yozmaydi.`);
     expect(text).not.toContain('🙋');
   });
 
@@ -429,5 +548,208 @@ describe('his own Telegram reply is told apart from 🙋 (C6)', () => {
     const hours = (conv!.until!.getTime() - Date.now()) / 3_600_000;
     expect(hours).toBeGreaterThan(23.9);
     expect(hours).toBeLessThanOrEqual(24);
+  });
+});
+
+describe('a ✅ the row moved under is refused as a changed card, never sent (review of C7)', () => {
+  it('his words land between the press’s read and its approval: no machine text is queued, and the card is «o‘zgargan», not «faol emas»', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me);
+    const send = await cardSend(draftId);
+    betweenReadAndCas.once = async () => {
+      const r = await submitOwnText(actor(me.id), draftId, `Mening matnim ${STAMP}`, { actorId: me.id });
+      expect(r.ok).toBe(true);
+    };
+    const r = await decideDraft(actor(me.id), draftId, 'send', { digest: send!.split(':')[3]! }, { actorId: me.id });
+    expect(r).toEqual({ ok: false, code: 'stale_card' });
+    expect(betweenReadAndCas.once, 'the hook ran').toBeNull();
+    expect(await outboxOf(draftId)).toBeNull();
+    const d = await draftOf(draftId);
+    expect(d.status).toBe('pending');
+    expect(d.finalBody).toBe(`Mening matnim ${STAMP}`);
+  });
+});
+
+describe('✅ after the customer wrote again while he was on ✏️ (review: the dead end)', () => {
+  it('the newer message is asked again — the card promised is real, the run makes it, and the edit is over in words', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    const send = await cardSend(a.draftId);
+    const m = h.mark();
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    expect(toastOf(h.since(m).api)).toBe('Mijoz yana yozdi — yangi qoralama tayyorlanadi.');
+    expect((await draftOf(a.draftId)).status).toBe('superseded');
+    expect(await outboxOf(a.draftId)).toBeNull();
+    // Asked again at the next free attempt — 0 is the stand-down's.
+    const jobs = queuedRuns();
+    expect(jobs).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 1, origin: 'sweep' }]);
+    // The edit armed for the dead draft is gone, and he is told his next text will not land on it.
+    expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
+    expect(h.textsTo(me.chat, m)).toContain('✏️ Mijoz yana yozdi — yangi qoralama tayyorlanadi. Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.');
+    // The job runs: a new card for the newer message, as promised.
+    const out = await withModelKey(() => handleInbound(jobs[0]!, { callModel: composing('Qaysi tovar va necha kg?') }));
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const [b] = await db
+      .select()
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.status, 'pending')));
+    expect(b?.anchorTgMessageId).toBe(newer);
+  });
+
+  it('with nothing to draft it (no model) the press says so — «o‘zingiz javob bering» — and queues nothing', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    await newerWhileEditing(me);
+    const saved = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const m = h.mark();
+      await h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!));
+      expect(toastOf(h.since(m).api)).toBe(SUPERSEDED_NO_DRAFT);
+      expect(h.textsTo(me.chat, m)).toContain(`✏️ ${SUPERSEDED_NO_DRAFT} Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.`);
+    } finally {
+      if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+    }
+    expect(queuedRuns()).toEqual([]);
+  });
+
+  it('a run that refused the newer message is its own answer — not re-asked', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    await db
+      .update(agentRuns)
+      .set({ outcome: 'refused', error: 'human_active' })
+      .where(and(eq(agentRuns.managerUserId, me.id), eq(agentRuns.anchorTgMessageId, newer)));
+    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
+    expect(queuedRuns()).toEqual([]);
+  });
+
+  it('❌ on the draft he had opened for editing asks the newer message again too', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
+    expect((await draftOf(a.draftId)).status).toBe('rejected');
+    expect(queuedRuns().map((j) => j.anchorTgMessageId)).toEqual([String(newer)]);
+  });
+});
+
+describe('the confirmation names what its ✅ also does (review of C9)', () => {
+  it('a draft that mutes the chat: the sentence lists the mute under his words — never a bare «yuborish uchun ✅»', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me, { body: 'Rahmat, kerak bo‘lsa yozing.', actions: [{ type: 'mute', reason: 'conversation_closed' }] });
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, `Yukingiz necha kub? ${STAMP}`));
+    const expected = ownTextPlaced([{ type: 'mute', reason: 'conversation_closed' }] as never);
+    expect(expected).toContain('➕ 🔕 Bu chatda AI o‘chiriladi');
+    const answer = h.since(m).api.find((c) => c.method === 'sendMessage' && c.payload.text === expected);
+    expect(answer, 'the confirmation with the mute named').toBeDefined();
+    expect(h.textsTo(me.chat, m)).not.toContain(OWN_TEXT_PLACED);
+  });
+});
+
+describe('a second ✏️ over his own words draws no ✅ on the bot either (review: one rule with the page)', () => {
+  it('the card has no ✅, and its status line’s «keyin ✅ chiqadi» is true', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    await h.handle(tg.text(me.chat, `Ertaga aytaman ${STAMP}`));
+    expect(await cardSend(draftId), 'his words placed: ✅').not.toBeNull();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    expect((await draftOf(draftId)).status).toBe('editing');
+    expect(await cardSend(draftId)).toBeNull();
+    expect(String((await cardPayloadOf(draftId)).text)).toContain('✏️ Matnni shu botga yozing (mijozning chatiga emas) — keyin ✅ chiqadi.');
+  });
+});
+
+describe('a crowded card keeps ✅ on a reply it shows whole (review of C10 a)', () => {
+  const ledger = Array.from({ length: 10 }, (_, i) => ({ raw: `${100 + i} $`, kind: 'money', source: 'tarif: Yiwu → Toshkent, 1-100 kg/m³ zonasi' }));
+
+  it('our long last message (3 200 characters) and ten figures: the short reply keeps its ✅ and its card says what was cut', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me, { ledger, lastOut: 'Xitoydagi omborlarimiz manzili: '.repeat(100).slice(0, 3200) });
+    const payload = await cardPayloadOf(draftId);
+    expect(payload.blocked).toBe(false);
+    expect(await cardSend(draftId)).not.toBeNull();
+    expect(String(payload.text)).toContain(MACHINE);
+    expect(String(payload.text)).toContain('Oxirgi javobimiz kartaga sig‘madi');
+    expect(String(payload.text)).not.toContain('Javob juda uzun');
+  });
+
+  it('a last message near the cap no longer stops the draft from being written at all', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me, { lastOut: 'M'.repeat(3750) });
+    expect(await cardSend(draftId)).not.toBeNull();
+  });
+
+  it('his own 1 600 characters beside a 2 200-character last message: the confirmation, never «Xatolik»', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me, { lastOut: 'L'.repeat(2200) });
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, 'O'.repeat(1600)));
+    expect(h.textsTo(me.chat, m)).toEqual([OWN_TEXT_PLACED]);
+    expect((await draftOf(draftId)).finalBody).toBe('O'.repeat(1600));
+  });
+});
+
+describe('the ✋ line names when he WROTE (review of C6)', () => {
+  it('his reply 47 minutes ago, ✅ pressed now: the card prints his time, not the press’s', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me);
+    const wrote = new Date(Date.now() - 47 * 60_000);
+    await db.insert(tgMessages).values({ clientId, managerUserId: me.id, peerId: me.peer, tgMessageId: me.anchor + 3n, direction: 'out', body: 'Salom, hozir aytaman', sentAt: wrote });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(draftId))!));
+    expect(toastOf(h.since(m).api)).toBe("Siz allaqachon o'zingiz javob bergansiz.");
+    const text = String((await cardPayloadOf(draftId)).text);
+    expect(text).toContain(`✋ Siz mijozga Telegramda o‘zingiz yozdingiz (${tashkentClock(wrote)}) — AI javobi bekor qilindi.`);
+    if (tashkentClock(wrote) !== tashkentClock(new Date())) expect(text).not.toContain(`(${tashkentClock(new Date())})`);
+  });
+});
+
+describe('the bot’s copies of a draft’s words go with the chat’s purge (review leak-9)', () => {
+  it('✏️’s copy and a refusal that hands the text over are recorded on the card and blanked by the purge', async () => {
+    const me = await owner();
+    const { draftId, card } = await draftFor(me);
+    let m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    const copy = h.since(m).api.find((c) => c.method === 'sendMessage' && c.payload.text === MACHINE)!;
+    expect(copy, 'the ✏️ copy').toBeDefined();
+    // The send switch off: the ✅ hands him the text to send by hand — a second copy.
+    await setSetting('tg_sending_enabled', false, null);
+    try {
+      m = h.mark();
+      await h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(draftId))!));
+    } finally {
+      await setSetting('tg_sending_enabled', true, null);
+    }
+    const handed = h.since(m).api.find((c) => c.method === 'sendMessage' && String(c.payload.text).endsWith(MACHINE))!;
+    expect(handed, 'the refusal with the text').toBeDefined();
+    const copies = (await cardPayloadOf(draftId)).copies as { chatId: number; messageId: number }[];
+    expect(copies.map((c) => c.messageId).sort()).toEqual([copy.messageId!, handed.messageId!].sort());
+    expect(copies.every((c) => c.chatId === me.chat)).toBe(true);
+
+    m = h.mark();
+    await purgeAgentChat(me.id, me.peer);
+    await vi.waitFor(
+      () => {
+        const edited = h.since(m).sent.filter((c) => c.method === 'editMessageText').map((c) => Number(c.body.message_id));
+        expect(edited.sort()).toEqual([card, copy.messageId!, handed.messageId!].sort());
+      },
+      { timeout: 5_000 },
+    );
+    for (const c of h.since(m).sent.filter((x) => x.method === 'editMessageText' && Number(x.body.message_id) !== card)) {
+      expect(String(c.body.text)).toBe(PURGED_CARD_TEXT);
+      expect(c.body.reply_markup).toBeUndefined();
+    }
   });
 });

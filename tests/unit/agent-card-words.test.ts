@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { AGENT_WAIT_TTL_MS } from '@/modules/platform/telegram/agent-bot';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
-import { EDIT_PROMPT } from '@/modules/wms/agent/bot-door';
-import { agentCardText, BLOCK_REMEDY, hitWords, lateNote, LATE_CARD_MS, POLICY_WORDS } from '@/modules/wms/agent/card';
+import { EDIT_PROMPT, OWN_TEXT_PLACED, ownTextPlaced } from '@/modules/wms/agent/bot-door';
+import { agentCardText, BLOCK_REMEDY, cardDrawsSend, hitWords, lateNote, LATE_CARD_MS, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCard, renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 import { HUMAN_TAKEOVER_HOURS } from '@/modules/wms/agent/limits';
 import type { PolicyHit } from '@/modules/wms/agent/policy';
@@ -158,13 +158,27 @@ describe('the editing status line says WHERE (C5)', () => {
 describe('his own Telegram reply is not 🙋 (C6)', () => {
   it('no decider: he wrote to the customer himself — when, that the AI reply was cancelled, and the pause', () => {
     const text = renderDraftCard(row({ status: 'taken_over', updatedAt: tk('2026-10-29T18:10') }), null, [], { humanPauseMin: 120 });
-    expect(text).toContain('✋ Siz mijozga Telegramda o‘zingiz yozdingiz (18:10) — AI javobi bekor qilindi. Xabaringizdan keyin AI bu chatga 120 daqiqa yozmaydi.');
+    expect(text).toContain('✋ Siz mijozga Telegramda o‘zingiz yozdingiz (18:10) — AI javobi bekor qilindi. Oxirgi xabaringizdan keyin AI bu chatga 2 soat yozmaydi.');
+  });
+
+  it('the time is when he WROTE, not when the draft was retired (a ✅ pressed later, the sweep’s minute)', () => {
+    const text = renderDraftCard(row({ status: 'taken_over', updatedAt: tk('2026-10-29T21:21') }), null, [], {
+      humanPauseMin: 120,
+      humanWroteAt: tk('2026-10-29T20:34'),
+    });
+    expect(text).toContain('✋ Siz mijozga Telegramda o‘zingiz yozdingiz (20:34) — AI javobi bekor qilindi.');
+    expect(text).not.toContain('21:21');
+  });
+
+  it('a pause that is not whole hours reads in minutes', () => {
+    const text = renderDraftCard(row({ status: 'taken_over' }), null, [], { humanPauseMin: 90 });
+    expect(text).toContain('Oxirgi xabaringizdan keyin AI bu chatga 90 daqiqa yozmaydi.');
   });
 
   it('…and without the config the pause is not guessed', () => {
     const text = renderDraftCard(row({ status: 'taken_over', updatedAt: tk('2026-10-29T09:05') }), null);
     expect(text).toContain('✋ Siz mijozga Telegramda o‘zingiz yozdingiz (09:05) — AI javobi bekor qilindi.');
-    expect(text).not.toContain('daqiqa yozmaydi');
+    expect(text).not.toContain('yozmaydi.');
   });
 
   it('a 🙋 press (a decider) says he took the chat, for the hours the press writes', () => {
@@ -194,11 +208,123 @@ describe('a card too long to show is blocked in its buttons too (C10 a)', () => 
     expect(rows.flat().some((b) => 'callback_data' in b && b.callback_data.startsWith('ag:s:'))).toBe(false);
   });
 
-  it('both writers of a card’s payload carry the cut as a block — refreshAgentCard and createDraft', () => {
+  it('both writers of a card’s payload draw ✅ by the one rule, the cut included — refreshAgentCard and createDraft', () => {
     const io = readFileSync('src/modules/wms/agent/card-io.ts', 'utf8');
     const drafts = readFileSync('src/modules/wms/agent/drafts.ts', 'utf8');
-    expect(io).toContain('blocked: d.blocked || tooLong');
-    expect(drafts).toContain('blocked: row.blocked || tooLong');
+    expect(io).toContain('cardDrawsSend({ blocked: d.blocked || tooLong, status: d.status, ownText: d.finalBody !== null })');
+    expect(io).toContain('blocked: !sendable');
+    expect(drafts).toContain('cardDrawsSend({ blocked: row.blocked || tooLong, status: row.status, ownText: false })');
+    expect(drafts).toContain('blocked: !sendable');
+  });
+});
+
+describe('a crowded card leaves out what it can, in order, and never throws (review of C10 a)', () => {
+  const ledger = (n: number, source = 'tarif: Yiwu → Toshkent, 1-100 kg/m³ zonasi') =>
+    Array.from({ length: n }, (_, i) => ({ raw: `${100 + i} $`, kind: 'money', source }));
+  const crowded = (over: { reply?: string; finalBody?: string; gloss?: string | null; ledger?: unknown[]; lastOut?: string | null; notes?: string[] }) =>
+    row({
+      proposedBody: over.reply ?? 'Assalomu alaykum! Qanday yordam bera olaman?',
+      finalBody: over.finalBody ?? null,
+      glossUz: over.gloss ?? null,
+      policy: {
+        blocks: [],
+        warnings: [],
+        notes: over.notes ?? [],
+        ledger: over.ledger ?? [],
+        card: { customerLabel: 'GS777 · Ali Valiyev', lastOut: over.lastOut ?? null, customerLines: ['17:46 narxi qancha?'] },
+      },
+    });
+
+  it('OUR long last message is cut to its start — the short reply keeps its ✅ and is not called long', () => {
+    const reply = 'Assalomu alaykum! Qanday yordam bera olaman?';
+    const full = renderDraftCardFull(crowded({ reply, ledger: ledger(10), lastOut: 'Xitoydagi omborlarimiz manzili: '.repeat(100).slice(0, 3200) }), null);
+    expect(full.tooLong).toBe(false);
+    expect(full.text).toContain(reply);
+    expect(full.text).toContain('• 109 $ (pul) — tarif');
+    expect(full.text).toContain('ℹ️ Oxirgi javobimiz kartaga sig‘madi — boshi ko‘rsatildi (to‘liqi Telegram chatida).');
+    expect(full.text).not.toContain('Javob juda uzun');
+    expect(full.text.length).toBeLessThanOrEqual(3900);
+  });
+
+  it('the review’s own probe: a 690-character reply, its gloss and six figures beside a 1 600-character last message', () => {
+    const reply = 'Ваш груз на складе в Иу, отправка через 3 дня, цена 250 долларов за куб. '.repeat(10).slice(0, 690).trim();
+    const gloss = 'Yukingiz Yiwu omborida, 3 kunda jo‘natiladi, kubi 250 dollar. '.repeat(15).slice(0, 850).trim();
+    for (const lastOutLength of [1600, 1800, 3750]) {
+      const full = renderDraftCardFull(crowded({ reply, gloss, ledger: ledger(6), lastOut: 'L'.repeat(lastOutLength) }), null);
+      expect(full.tooLong, String(lastOutLength)).toBe(false);
+      expect(full.text).toContain(reply);
+      expect(full.text).toContain(gloss);
+    }
+  });
+
+  it('figures whose sources do not fit: the reply is whole, the card says the sources are missing, and no ✅', () => {
+    const reply = 'Narxlar: ' + Array.from({ length: 45 }, (_, i) => `${100 + i} $`).join(', ');
+    const full = renderDraftCardFull(crowded({ reply, ledger: ledger(45, 'tool:freight_quote — sayt narxi, 151-200 kg/m³ zonasi, Yiwu → Toshkent') }), null);
+    expect(full.tooLong).toBe(true);
+    expect(full.text).toContain(reply);
+    expect(full.text).toContain('ℹ️ Kartada joy yo‘q — raqamlarning manbasi ko‘rsatilmadi, shuning uchun ✅ yo‘q.');
+    expect(full.text).not.toContain('Javob juda uzun');
+  });
+
+  it('only a reply that itself does not fit is called «juda uzun»', () => {
+    const full = renderDraftCardFull(crowded({ finalBody: 'O'.repeat(3800) }), null);
+    expect(full.tooLong).toBe(true);
+    expect(full.text).toContain('Javob juda uzun — kartaga sig‘maydi, ✅ yo‘q.');
+  });
+
+  it('his own 1 600 characters beside a 2 200-character last message fit — no throw, no block', () => {
+    const full = renderDraftCardFull(crowded({ finalBody: 'O'.repeat(1600), lastOut: 'L'.repeat(2200) }), null);
+    expect(full.tooLong).toBe(false);
+    expect(full.text).toContain('O'.repeat(1600));
+  });
+
+  it('whatever the head carries, the card is returned within the cap — a writer never fails on a card', () => {
+    const full = renderDraftCardFull(crowded({ finalBody: 'O'.repeat(3000), notes: ['N'.repeat(3800)] }), null);
+    expect(full.tooLong).toBe(true);
+    expect(full.text.length).toBeLessThanOrEqual(3700);
+    expect(full.text.startsWith('🤖 Javob qoralamasi — GS777 · Ali Valiyev')).toBe(true);
+  });
+
+  it('an editing card the fit took the ✅ from does not offer the AI’s ✅ in its status line', () => {
+    const text = renderDraftCard(row({ status: 'editing', proposedBody: 'Ш'.repeat(3800) }), null);
+    expect(text).toContain('✏️ Matnni shu botga yozing (mijozning chatiga emas) — keyin ✅ chiqadi.');
+    expect(text).not.toContain('yoki AI matnini ✅ bilan yuboring');
+  });
+});
+
+describe('one rule draws ✅ for the bot and the page (review: an editing draft with his words)', () => {
+  it('a second ✏️ over his own words draws no ✅ — and its status line’s «keyin ✅ chiqadi» is true', () => {
+    expect(cardDrawsSend({ blocked: false, status: 'editing', ownText: true })).toBe(false);
+    expect(cardDrawsSend({ blocked: false, status: 'editing', ownText: false })).toBe(true);
+    expect(cardDrawsSend({ blocked: false, status: 'pending', ownText: true })).toBe(true);
+    expect(cardDrawsSend({ blocked: true, status: 'pending', ownText: false })).toBe(false);
+    const text = renderDraftCard(row({ status: 'editing', finalBody: 'Ertaga aytaman.' }), null);
+    expect(text).toContain('— keyin ✅ chiqadi.');
+  });
+
+  it('the page asks the same function', () => {
+    for (const d of [
+      { blocked: false, status: 'editing', ownText: true },
+      { blocked: false, status: 'editing', ownText: false },
+      { blocked: true, status: 'pending', ownText: false },
+      { blocked: false, status: 'approved', ownText: false },
+    ]) {
+      expect(pageDrawsSend(d)).toBe(cardDrawsSend(d));
+    }
+  });
+});
+
+describe('the confirmation after his own text names what its ✅ also does (review of C9)', () => {
+  it('a mute, a follow-up, a calculation — the card’s own lines', () => {
+    const text = ownTextPlaced([
+      { type: 'mute', reason: 'conversation_closed' },
+      { type: 'set_followup', date: '2026-11-02', note: 'qo‘ng‘iroq' },
+    ] as never);
+    expect(text).toBe(`${OWN_TEXT_PLACED}\n\n✅ bilan birga:\n➕ 🔕 Bu chatda AI o‘chiriladi\n➕ 📅 Qayta aloqa: 2026-11-02 — qo‘ng‘iroq`);
+  });
+
+  it('a draft with no actions says only that his words are placed', () => {
+    expect(ownTextPlaced([])).toBe(OWN_TEXT_PLACED);
   });
 });
 
