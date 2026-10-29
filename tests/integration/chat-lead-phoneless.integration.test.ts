@@ -33,7 +33,7 @@ import { JOB_AGENT_INBOUND, shouldStartAgentRun } from '@/modules/wms/agent/queu
 import { leadForChat, ownerOfVerdict, phonelessLeadForChat } from '@/modules/wms/crm/chat-lead';
 import { decideChat, openLeadForChat, rulesFor } from '@/modules/wms/crm/chat-rules';
 import { storeIncoming } from '@/modules/wms/crm/telegram-accounts';
-import type { ChatRule, DialogPeer, RawMessage } from '@/modules/wms/crm/telegram-import';
+import { toMessageRow, type ChatRule, type DialogPeer, type RawMessage } from '@/modules/wms/crm/telegram-import';
 import { decideIncoming } from '@/modules/wms/crm/telegram-live';
 import { PHONELESS_LEAD_NAME } from '@/modules/wms/crm/unknown-chat';
 
@@ -339,6 +339,27 @@ describe('a person’s answer on the tray outranks the machine (R2)', () => {
     expect(next.owner!.leadId).toBe(leadId);
     expect((await phonelessLeads()).length).toBe(before);
     expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId });
+  });
+});
+
+describe('a CLIENT whose number Telegram has since hidden is still that client (R2)', () => {
+  it('the line goes on the client the chat was kept on — no lead, no rule that would outrank the phone for good', async () => {
+    const peer = nextPeer();
+    // Kept by the phone classifier, the day the number still showed: rows on the client, no rule.
+    await storeIncoming({
+      clientId,
+      managerUserId: managerId,
+      row: toMessageRow(peer, line({ date: Math.floor(Date.now() / 1000) - 86_400 })),
+    });
+    const before = (await phonelessLeads()).length;
+    const now = await liveLine(hidden(peer), line({ message: 'Raqamimni yashirdim' }));
+    expect(now.verdict).toMatchObject({ openLead: true });
+    expect(now.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}` });
+    expect((await phonelessLeads()).length).toBe(before);
+    expect(await ruleOf(peer)).toBeUndefined();
+    // …and the door itself refuses to mint over it when asked directly.
+    expect(await leadForChat(managerId, { peerId: peer, phone: null, title: 'X' }, ctx())).toBeNull();
+    expect(await ruleOf(peer)).toBeUndefined();
   });
 });
 

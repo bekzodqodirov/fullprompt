@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { leadStages, leads, tgAccounts, tgChatRules, tgMessages } from '../../platform/db/schema';
+import { clients, leadStages, leads, tgAccounts, tgChatRules, tgMessages } from '../../platform/db/schema';
 import { phoneDigits } from '../../platform/clients/phone';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { createLead, defaultStageId, insertLeadTx } from './service';
@@ -153,6 +153,10 @@ export async function phonelessLeadForChat(
   // meanwhile is the stale-rules race every listener rule has.
   const [bound] = await db.select({ decision: tgChatRules.decision, leadId: tgChatRules.leadId }).from(tgChatRules).where(where);
   if (bound?.decision === 'include' && bound.leadId) return bound.leadId;
+  // A client's chat whose number Telegram has since hidden is that client's,
+  // not a new lead's (`keptClientOfChat`) — the machine door mints nothing
+  // over it; `ownerOfVerdict` files the line on the client.
+  if (!bound && input.via === 'work_account' && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
   const stageId = await defaultStageId();
   return db.transaction(async (tx) => {
     await tx
@@ -227,6 +231,40 @@ export async function phonelessLeadForChat(
   });
 }
 
+/**
+ * The client a hidden number's chat was ALREADY kept on — by the phone it
+ * showed before its owner hid it from this account (Telegram's privacy
+ * setting; the user id, and so the chat, stays the same). Only for a chat no
+ * person ever decided on the tray (no rule row): those rows came from the
+ * phone classifier, which is proof (agent `chatIdentity`). A rule-derived
+ * client a ↩ took back is history, not identity, and is not followed here.
+ * Without this, the first hidden line of a known client on a work number
+ * would mint a «Telegram» lead and bind the chat to it for good — a rule
+ * outranks the phone match even once the number shows again.
+ */
+export async function keptClientOfChat(
+  managerUserId: string,
+  peerId: bigint,
+): Promise<{ clientId: string; clientCode: string } | null> {
+  const [rule] = await db
+    .select({ id: tgChatRules.id })
+    .from(tgChatRules)
+    .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)));
+  if (rule) return null;
+  const [newest] = await db
+    .select({ clientId: tgMessages.clientId })
+    .from(tgMessages)
+    .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)))
+    .orderBy(desc(tgMessages.sentAt))
+    .limit(1);
+  if (!newest?.clientId) return null;
+  const [client] = await db
+    .select({ id: clients.id, clientCode: clients.clientCode })
+    .from(clients)
+    .where(eq(clients.id, newest.clientId));
+  return client ? { clientId: client.id, clientCode: client.clientCode } : null;
+}
+
 /** Where a kept line goes, and the word the listener's log prints for it. */
 export interface ChatOwner {
   clientId: string | null;
@@ -241,6 +279,9 @@ export interface ChatOwner {
  * work number, whose lead is found or minted here (0064, and a hidden number
  * since his «1 a»).
  *
+ * A hidden number whose chat was already kept on a client by the phone it
+ * once showed stays on that client (`keptClientOfChat`).
+ *
  * Null only for a hidden number whose chat a person answered otherwise since
  * the listener read its rules (`phonelessLeadForChat`): the line is not
  * stored, the caller re-reads the rules, and the answer decides the next line
@@ -253,6 +294,10 @@ export async function ownerOfVerdict(
   ctx: AuditContext,
 ): Promise<ChatOwner | null> {
   if ('openLead' in verdict) {
+    if (verdict.peer.phone === null) {
+      const kept = await keptClientOfChat(managerUserId, verdict.peer.peerId);
+      if (kept) return { clientId: kept.clientId, leadId: null, label: kept.clientCode };
+    }
     const leadId = await leadForChat(managerUserId, verdict.peer, ctx);
     return leadId ? { clientId: null, leadId, label: 'LID' } : null;
   }
