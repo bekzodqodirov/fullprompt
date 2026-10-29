@@ -10,9 +10,10 @@ tekshiriladi.
 - **Telegram mijozni darhol tanitmasa, xabar tashlab yuborilmaydi.** Tizim qayta ishga tushgandan keyin mijoz
   yozsa, Telegram ba'zan xabar bilan birga uning kimligini bermaydi. Ayniqsa yangi raqamda shunday bo'ladi. Ilgari
   bunday xabar jimgina o'tkazib yuborilardi. Endi tizim chatni oxirgi chatlar ro'yxatidan va Telegram'ning o'zidan
-  qayta so'raydi.
-- **AI ko'rmagan xabarning sababi logda yoziladi.** Bu faqat AI ulangan raqamda, xabar matnisiz, chat va raqamning
-  oxirgi 4 xonasi bilan ishlaydi:
+  qayta so'raydi. Telegram cheklov qo'ygan paytda unga qayta-qayta so'rov yubormaydi, shuning uchun ban xavfi
+  oshmaydi. Bitta mijozning ketma-ket xabarlari tartibi ham buzilmaydi.
+- **AI ko'rmagan xabarning sababi logda yoziladi.** Bu faqat AI ulangan raqamda ishlaydi. Xabar matni ham, kim
+  yozgani ham yozilmaydi. Faqat tizimda yo'q notanish odamning raqami oxirgi 4 xonasi bilan ko'rsatiladi:
   - «raqami yashirin» — mijozni shu Telegram kontaktlariga raqami bilan saqlang;
   - «…4567 raqami mijozlar ro'yxatida yo'q» — mijoz tizimda boshqa raqam bilan yozilgan yoki umuman yo'q;
   - «olinmasin deb belgilangan» — Suhbatlar → Qaysi chatlar'da o'zgartiriladi;

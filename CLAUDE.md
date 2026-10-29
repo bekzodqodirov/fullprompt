@@ -3222,10 +3222,12 @@ only when the run spoke, best-effort. And the merged bundle outgrew V8's ~2 GB d
 client in the book wrote to his NEW client-only number (+998902405077, two private dialogs) and nothing happened
 anywhere. gramjs builds a private text from `UpdateShortMessage` (sender by id alone) and `getChat()` answers from
 an empty in-memory cache, short-circuiting its own dialog walk — the line became `not_private`, silently.
-`crm/listen-trace.ts` `chatOfMessage` (cache → the walk gramjs skips → `getEntity`) is the live handler's door;
-`passedLine` names why an inbound live line was not kept, on the AGENT's account only, last four digits only.
-Catch-up warms the cache with one dialogs page and counts unopenable chats in one line (an old number's chats
-must NOT hold `caughtUp`, or every ✅ is refused for ever). DIAGNOSIS LESSON: the first SQL to ask on «the AI saw
+`crm/listen-trace.ts` `chatOfMessage` (cache → ONE shared, paced, deadlined dialogs page via `sharedWarmer` → cache
+again → `getEntity`; a cached peer that failed is never escalated, NEVER gramjs's per-message walk) is the live
+handler's door, run INSIDE the sender's `serialised` queue (keyed on the bare user id) so a slow lookup cannot be
+overtaken, with 777000 still checked when unresolved; `passedLine` names the REASON an inbound live line was not
+kept, on the AGENT's account only, never the chat. Catch-up warms through the same warmer and counts unopenable
+chats in one line (an old number's chats must NOT hold `caughtUp`, or every ✅ is refused for ever). DIAGNOSIS LESSON: the first SQL to ask on «the AI saw
 nothing» is which number is listened (`tinglayapman: … · <phone> · …` heads every start) — his 777000 line read
 «AI o'chirilmadi» and steered everybody toward «it saw the message». The rest of that diagnosis (the stranger
 card's window on the rule's birth, the week walk dropping strangers with no tray row, Business auto-replies read
