@@ -71,7 +71,22 @@ va **«1 a»**. Bitta migratsiya (0139) — deploydan keyin baza hisobi **140** 
   ko'rsatilmaydi va ular haqida «📵» karta kelmaydi. Eski karta qolgan bo'lsa, tugmasi «Telegram xizmati — mijoz
   emas» deb javob beradi.
 
+- **So'z bilan yozilgan narx va yashirin va'dalar yana to'xtatiladi.** Birinchi yumshatish ba'zi xavfli javoblarni ham
+  o'tkazib yuborardi, masalan:
+  - «3 kub yukingizga besh yuz atrofida bo'ladi»;
+  - «Shuncha kunda yetkazib beramiz»;
+  - «Hisoblash bepul, qolgani ham»;
+  - «yuk kelganda to'laysiz… lekin shoshilmasangiz ham bo'ladi».
+
+  Endi bular to'xtatiladi. Oddiy salomlashuv va kub/kg so'rash esa baribir o'tadi.
+- **Siz ✅ bosgan matnning o'zi ketadi.** Botga matn yozayotganingizda ✅ ni bossangiz, ilgari kartada bir matn
+  ko'rinib, mijozga boshqasi ketishi mumkin edi. Endi karta o'zgargan bo'lsa, ✅ «Karta o'zgargan» deb rad etadi.
+- Mijoz xabarini tahrirlasa, kartada «mijoz yana yozdi» emas, **«Mijoz xabarini tahrirladi»** deb yoziladi.
+- «GSR Logistics» so'zi endi «hodim ismi» deb ogohlantirish chiqarmaydi.
+
 ### Bilib qo'ying
+- «O'n yillik tajriba», «ikki yuz», «ming» kabi so'z bilan yozilgan katta son javobda bo'lsa, ✅ chiqmaydi. Raqam
+  bilan yozilgani kabi u ham manba so'raydi. «Ming rahmat» va «ikki xil yo'l» o'tadi.
 - Raqamini yashirgan hodim ish raqamingizga yozsa, u ham lid bo'lib ochiladi: tizim uning raqamini ko'ra olmaydi.
 - Tinglovchi to'xtab turgan paytda raqami yashirin odam yozgan bo'lsa, o'sha xabarlar keyin olinmaydi. Lid u yana
   yozganda ochiladi.

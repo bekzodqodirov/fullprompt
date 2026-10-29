@@ -369,20 +369,22 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
-## «✅ Yuborish chiqmadi» tuzatishi (2026-10-29 kechqurun, migratsiyasiz)
+## «✅ Yuborish chiqmadi» tuzatishi (2026-10-29 kechqurun, 0139)
 
-Migratsiya yo‘q — son **139** bo‘lib qoladi, shuning uchun yangilanishni son emas, `/api/version` ko‘rsatadi.
-O‘zgarish ham ilovada, ham **tg-listen**da — ikkalasi ham qayta qurilishi kerak.
+Bitta migratsiya bor: **0139** — deploydan keyin son **140** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). O‘zgarish ham ilovada, ham **tg-listen**da — ikkalasi ham
+qayta qurilishi kerak.
 
 1. Zaxira (§1).
 2. `git pull`, keyin `docker compose build migrate`, so‘ng
    `docker compose --profile https --profile telegram up -d --build`.
-3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
-4. Tinglovchi yangi kodda ekanini birinchi qatoridan bilasiz:
+3. Sonni o‘qing — **140**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Tinglovchi yangi kodda ekanini birinchi qatoridan bilasiz:
    `docker compose --profile telegram logs --since 5m tg-listen | grep tinglayapman`
    Qatorda endi raqam turi bor: `… · ish raqami · …` yoki `… · shaxsiy raqam · …`. Raqam turi yo‘q bo‘lsa,
    tg-listen qayta qurilmagan.
-5. Sinov: hodim bo‘lmagan, «olinmasin» deb belgilanmagan raqamdan ish raqamiga «Assalomu alaykum» deb yozing.
+6. Sinov: hodim bo‘lmagan, «olinmasin» deb belgilanmagan raqamdan ish raqamiga «Assalomu alaykum» deb yozing.
    Botda kelgan kartada «✅ Yuborish» bo‘lishi kerak. Kech kelgan bo‘lsa, sababi logda:
    `docker compose logs --since 10m app | grep "\[agent\] inbound"` (`origin`, `lagMs`).
 

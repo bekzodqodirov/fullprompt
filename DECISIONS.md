@@ -6566,3 +6566,33 @@ code:
 13 red proofs by string edit, restored byte-identical: the rows road (the harness restating the listener, the live
 and the catch-up fences), the direction guard (behaviour and fence), the official ↩, the three purge guards, the
 own-chat re-read (fence and parity), the `held` words and their gated call site.
+
+1578. **The policy, reviewed a third time: key each door on the thing itself, not on the words around it.** The
+merged-delta review (#1575) found the first softening's leaks — a spelled price with no unit right beside it
+(«3 kub yukingiz uchun besh yuz atrofida»), the pay-first exemption taken back a statement later, «hisoblash bepul,
+qolgani ham», «Shuncha kunda yetkazib beramiz» after an asking question, a hedged vague travel time, the company-rule
+minimum vouching for «your 100 kg arrived» — and the first fix tuned word lists, which its own verifier broke again
+in both directions. The third pass keys each door on its subject: a spelled hundred, thousand, ten or teen is a
+figure in ANY reply, exactly like its digits (only a thanks word frees it — «Ming rahmat»), while a small count 2-9
+is judged only beside its unit, so qualification replies stay free; the paid-first exemption reads every other
+statement of the reply for a take-back (softenings, talk-or-wait, a contrast turning to the money), and the rule
+restated («после оплаты», «avval to'lov») is not one; the free-calculation exemption carries over through a likeness,
+an also-word or a nothing-charged phrase in any later statement, but not through a question, a request or a price we
+will tell; a back-reference to the customer's deadline (shuncha kunda, в срок, on time, ulguramiz) is a dispatch
+promise unless a condition or purpose wraps it; a vague travel time is a G1 figure (as at a4e1b1c) where the cargo
+or the trip is the subject; a minimum source vouches only for a sentence said as a minimum, never an arrival or the
+customer's own cargo, and the road a figure belongs to is the one named last before it; «GSR Logistics» (any case
+ending) is the company, not a colleague. STATED: «O'n yillik tajribamiz bor» loses ✅ like «10 yillik» did; a 2-9
+«price» beside no unit passes (no real price here is that small). Probed on four trees over the verifier's 265-case
+corpus; every case pinned in `tests/unit/agent-policy-first-reply.test.ts`.
+
+1579. **The ✅ sends the words he pressed, and a press promises only the card that is coming.** The own-text race
+(#1575 finding 16): ✅ pressed while his new text was being placed could queue the OLD text while the card showed
+the new one. The approval transaction now locks the draft row and compares status, `final_body` and the card digest
+over the digest's own inputs before the outbox insert; a stale press answers «Karta o'zgargan» in words.
+`redraftNewest` counts a waiting edit job (created, retry, or active within the interrupted-run window) as the card
+that is coming, judges a line by its NEWEST ask, takes its own attempt band (never the sweep's retry slot), and runs
+as origin `redraft`; a job that waits for typing keeps its attempt and its asker (it had fallen to attempt 0 and stood
+down as a duplicate of its own draft — a card that never came, before this round too). Words are true to the case:
+«Mijoz xabarini tahrirladi …», «… javob allaqachon tasdiqlangan», and the pull cause names both doors.
+

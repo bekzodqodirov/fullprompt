@@ -3235,7 +3235,7 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1577; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1579; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
