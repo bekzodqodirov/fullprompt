@@ -1052,12 +1052,16 @@ describe('third review — a hundred, a thousand, a ten is a figure in any reply
     // A bare thousand in a reply that prices is the package's figure still.
     ['Narxi:\n1. ming\n2. ming besh yuz'],
     ['Narx dollarda hisoblanadi. Taxminan ming chiqadi.'],
+    // A bare «yuz» with the price's own verb or hedge after it is a hundred like «ming».
+    ['Narx dollarda. Taxminan yuz chiqadi.'],
+    ['Yuz atrofida chiqadi, kub hisobida.'],
   ])('«%s» is a figure spelled out', (text) => {
     expect(unverifiableNumeral(normalizeDigits(text))).toBe('word_numeral');
   });
 
-  it('…and a bare thousand in a reply that prices nothing is a word', () => {
+  it('…and a bare thousand in a reply that prices nothing is a word; a «yuz» that happens is no hundred', () => {
     expect(unverifiableNumeral(normalizeDigits("Bizda ming xil tovar bor, qaysi biri sizniki?"))).toBeNull();
+    expect(unverifiableNumeral(normalizeDigits("Kechikish yuz bersa, narxni o'zgartirmaymiz."))).toBeNull();
   });
 
   it.each([
@@ -1149,6 +1153,7 @@ describe('third review — the payment rule is taken back by a softening in any 
     [`${U} Doimiy mijozlarimizga boshqacha.`],
     [`${R} Оплатить можно и позже.`],
     [`${R} Но забрать можно и сразу.`],
+    [`${E} But we hand it over first.`],
   ])('«%s» is still credit', (text) => {
     expect(promiseHits(text)).toContain('credit_release');
   });
@@ -1171,6 +1176,9 @@ describe('third review — the payment rule is taken back by a softening in any 
     // Paying EARLY is no credit — refused on HEAD as the bare «можно и раньше».
     [`${R} Оплатить можно и раньше.`],
     [`${R} Можете оплатить и раньше, если удобно.`],
+    // «Handle» is no handover, a truck's capacity no concession.
+    [`${E} But we handle the paperwork too.`],
+    [`${E} Our trucks accommodate any volume.`],
   ])('«%s» is the company’s rule, and no credit', (text) => {
     expect(promiseHits(text)).not.toContain('credit_release');
   });
@@ -1228,8 +1236,12 @@ describe('third review — his deadline met is a promise whatever its verb; an �
     ['К какому числу нужно? Доставим к нему.'],
     ['Через сколько дней нужно? Уложимся в ваш срок.'],
     ['Yuk qachon kerak? Avia bilan ulguramiz.'],
-    // The condition is his; the promise in the clause it serves is ours.
+    // The condition is his; the promise in the clause it serves is ours — and so where the condition FOLLOWS the
+    // back-reference, or names a document the cargo waits on.
     ["Agar 10 kunda kerak bo'lsa, shuncha kunda yetkazamiz."],
+    ["Biz yukni o'z vaqtida yetkazamiz agar hujjatlar tayyor bo'lsa."],
+    ['Мы доставим вовремя если документы будут готовы.'],
+    ['We ship on time if the documents are ready.'],
   ])('«%s»', (text) => {
     expect(promiseHits(text)).toContain('dispatch_promise');
   });
@@ -1243,6 +1255,7 @@ describe('third review — his deadline met is a promise whatever its verb; an �
     ['Не успеем к этому сроку, лучше авиа.'],
     ["We won't make the deadline by truck."],
     ['Necha kunda kerak? Ulgurasizmi?'],
+    ['If you need it on time, choose air.'],
   ])('«%s» promises nothing', (text) => {
     expect(promiseHits(text)).not.toContain('dispatch_promise');
   });
@@ -1258,6 +1271,8 @@ describe('third review — a vague time the cargo or the trip takes is G1’s fi
     [EN, 'latin', 'en', 'Shipping takes just a few days.'],
     [EN, 'latin', 'en', 'Your goods will be with you in a few days.'],
     [RU, 'cyrillic', 'ru', 'Через пару дней груз будет у вас.'],
+    // The documents are the condition, not what is sent.
+    [RU, 'cyrillic', 'ru', 'Отправим через пару дней если документы будут готовы.'],
   ] as const)('«%s» … «%s» is a delivery time nothing vouches for', (lines, script, language, reply) => {
     expect(vagueTravelTime(reply)).toBe(true);
     expect(blockCodes(verdict(lines, script, language, reply))).toContain('number_unverifiable:word_numeral');
@@ -1280,6 +1295,7 @@ describe('third review — a vague time the cargo or the trip takes is G1’s fi
     [UZ, 'latin', 'uz', 'Hisobni bir necha soatda yuboraman.'],
     [RU, 'cyrillic', 'ru', 'Пришлю расчёт через пару часов.'],
     [EN, 'latin', 'en', "I'll send you the quote in a few hours."],
+    [RU, 'cyrillic', 'ru', 'Если хотите, расчёт пришлю через пару часов.'],
   ] as const)('«%s» … «%s» sends the quote, not the cargo, and keeps its ✅', (lines, script, language, reply) => {
     expect(promiseHits(reply)).not.toContain('dispatch_promise');
     const r = verdict(lines, script, language, reply);

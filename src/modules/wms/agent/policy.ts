@@ -253,9 +253,9 @@ interface PaidFirst {
    * credit («можете оплатить сразу при получении»), so a pay verb takes back only with «later», a handover only
    * with «earlier». An agreement about the PRICE says nothing of when he pays («Narxni kelishib olamiz», «О цене
    * договоримся»), so `agree` is read only where the payment, or no price, is named. What is always a takeback is
-   * `back`; and what every language shares — an exception, a concession, no hurry, our wait, our trust, «go
-   * ahead and take it», regular clients, special terms, a contrast that turns to the money or the handover — is
-   * `SOFTENED` below.
+   * `back`; and what every language shares — an exception, a concession, no hurry, our trust, «go ahead and take
+   * it», regular clients, special terms (`SOFTENED`), a discussion or our wait (`TALK_OR_WAIT`), a contrast that
+   * turns to the money or the handover (`CONTRAST_OPEN`) — is read below.
    */
   later: string;
   /** A time said FROM the payment — «to'lovdan keyin», «после оплаты», «once paid», «pay first». */
@@ -280,7 +280,7 @@ const UNDONE_NEXT =
 const SOFTENED = new RegExp(
   `(?<![\\p{L}])(?:${[
     'istisno\\p{L}*|истисно\\p{L}*|исключени\\p{L}*|exception\\p{L}*',
-    'yon\\s+ber\\p{L}*|ён\\s+бер\\p{L}*|навстречу|lenien\\p{L}*|accommodat\\p{L}*',
+    'yon\\s+ber\\p{L}*|ён\\s+бер\\p{L}*|навстречу|lenien\\p{L}*',
     `shoshil(?:ma|mas)\\p{L}*|шошил(?:ма|мас)\\p{L}*|не\\s+(?:спеш|тороп)\\p{L}*|no\\s+(?:rush|hurry)|take\\s+your\\s+time|whenever\\s+you\\s+can`,
     'ishonamiz|ишонамиз|доверяем|we\\s+trust\\s+you',
     '(?:ber|ol|topshir)aver\\p{L}*|olib\\s+ketaver\\p{L}*|(?:бер|ол|топшир)авер\\p{L}*|олиб\\s+кетавер\\p{L}*',
@@ -304,7 +304,7 @@ const PAY_TOPIC = new RegExp(
 );
 /** …and the handover: a contrast turned to the money or the cargo's release takes the rule back however it is worded. */
 const HANDOVER_TOPIC = new RegExp(
-  `(?<![\\p{L}])(?:olib\\s+ket\\p{L}*|topshir\\p{L}*|yukni\\s+ber\\p{L}*|олиб\\s+кет\\p{L}*|топшир\\p{L}*|юкни\\s+бер\\p{L}*|выда\\p{L}*|выдад\\p{L}*|отда\\p{L}*|отдад\\p{L}*|забр\\p{L}*|забир\\p{L}*|забер\\p{L}*|hand\\p{L}*|release\\p{L}*|collect\\p{L}*|pick\\s+up)(?![\\p{L}])`,
+  `(?<![\\p{L}])(?:olib\\s+ket\\p{L}*|topshir\\p{L}*|yukni\\s+ber\\p{L}*|олиб\\s+кет\\p{L}*|топшир\\p{L}*|юкни\\s+бер\\p{L}*|выда\\p{L}*|выдад\\p{L}*|отда\\p{L}*|отдад\\p{L}*|забр\\p{L}*|забир\\p{L}*|забер\\p{L}*|hand(?:s|ed|ing)?(?:\\s+(?:it|them))?\\s+(?:over|it\\s+to|them\\s+to)|release\\p{L}*|collect\\p{L}*|pick\\s+up)(?![\\p{L}])`,
   'iu',
 );
 const CONTRAST_OPEN =
@@ -1204,13 +1204,30 @@ const DEADLINE_MET =
   /(?<![\p{L}])(?:ulgur(?:amiz|aman|ib\s+beramiz|ib\s+qolamiz)|улгур(?:амиз|аман|иб\s+берамиз)|(?<!не\s)(?:успе(?:ем|ю)|уложимся|уложусь)|(?<!(?:not|n['’]t)\s)(?:make|meet|hit)\s+(?:the|your)\s+deadline|(?:get|deliver|bring|ship)\s+(?:it|them|your\s+cargo|the\s+cargo|your\s+goods)\s+(?:to\s+you\s+)?(?:in|on)\s+time)(?![\p{L}])/iu;
 
 /**
- * A clause that only says WHY or IF (third review) — «Yukni o'z vaqtida yetkazish uchun necha kub ekanini bilishim
- * kerak», «Чтобы доставить вовремя, нам нужно знать объём», «To ship on time, we need the volume», «…shu muddatda
- * yetib kelishi uchun avia tavsiya qilaman»: its «on time» is the purpose of a question or a piece of advice, and
- * promises nothing. The clause it serves is judged on its own («Agar 10 kunda kerak bo'lsa, shuncha kunda yetkazamiz»).
+ * A time pointed back at that only says WHY or IF (third review) — «Yukni o'z vaqtida yetkazish uchun necha kub
+ * ekanini bilishim kerak», «Чтобы доставить вовремя, нам нужно знать объём», «To ship on time, we need the volume»,
+ * «…shu muddatda yetib kelishi uchun avia tavsiya qilaman»: its «on time» is the purpose of a question or a piece
+ * of advice, and promises nothing. The condition or the purpose must hold the back-reference — «agar», «если»,
+ * «чтобы», «if», «to» BEFORE it, «-ish uchun» AFTER it: «Biz yukni o'z vaqtida yetkazamiz agar hujjatlar tayyor
+ * bo'lsa», «Мы доставим вовремя если документы будут готовы» and «Agar 10 kunda kerak bo'lsa, shuncha kunda
+ * yetkazamiz» are promises still.
  */
-const PURPOSE_OR_IF =
-  /\p{L}(?:i?sh(?:i|imiz|ingiz)?)\s+uchun(?![\p{L}])|(?<![\p{L}])(?:agar|агар|если|чтобы|in\s+order\s+to|so\s+that|if)(?![\p{L}])|\p{L}(?:и?ш(?:и|имиз|ингиз)?)\s+учун(?![\p{L}])|^\s*to\s+\p{L}+/iu;
+const PURPOSE_OR_IF_BEFORE = /(?<![\p{L}])(?:agar|агар|если|чтобы|in\s+order\s+to|so\s+that|if)(?![\p{L}])|^\s*to\s+\p{L}+/iu;
+const PURPOSE_OR_IF_AFTER = /\p{L}(?:i?sh(?:i|imiz|ingiz)?)\s+uchun(?![\p{L}])|\p{L}(?:и?ш(?:и|имиз|ингиз)?)\s+учун(?![\p{L}])/iu;
+
+/**
+ * The OBJECT of a clause's sending verb — the clause with its condition taken out: «agar …», «если …», «if …» to
+ * its end, and the Uzbek «… bo'lsa» before the verb. «Narxni bir necha daqiqada hisoblab yuboraman» sends the
+ * quote; «Мы доставим вовремя если документы будут готовы» sends the cargo, and the documents are its condition.
+ */
+function objectOf(clause: string): string {
+  return clause
+    .replace(/(?<![\p{L}])(?:agar|агар|если|if|when|once)(?![\p{L}]).*$/iu, ' ')
+    .replace(/^.*(?<![\p{L}])(?:bo['‘’ʻ`]?lsa|бўлса)(?![\p{L}])/iu, ' ');
+}
+function servesPurposeOrIf(clause: string, start: number, end: number): boolean {
+  return PURPOSE_OR_IF_BEFORE.test(clause.slice(0, start)) || PURPOSE_OR_IF_AFTER.test(clause.slice(end));
+}
 
 /** A question about the customer's own deadline — «necha kunda?», «через сколько дней?», «how many days?», «by when?». */
 const DEADLINE_QUESTION =
@@ -1251,7 +1268,7 @@ export function vagueTravelTime(text: string): boolean {
       if (zhPast(c) || SUPPLIER_SUBJECT.test(c)) continue;
       const trip = tripOf(c) || (!NOT_CARGO.test(c) && tripOf(s));
       if (!trip && !sending && !coming) continue;
-      if (!trip && !aboutCargo(c, s) && (!sending || NOT_CARGO.test(c))) continue;
+      if (!trip && !aboutCargo(c, s) && (!sending || NOT_CARGO.test(objectOf(c)))) continue;
       for (const m of c.matchAll(SPELLED_DURATION_G)) {
         if (FREQUENCY.test(c.slice(0, m.index)) || SINCE_OR_AGO.test(c.slice(m.index + m[0].length))) continue;
         if (vagueDuration(m[0])) return true;
@@ -1316,7 +1333,7 @@ export function timePromise(text: string): boolean {
       }
       // A sending verb whose object is the answer or the quote is no time of the cargo's (third review): «Narxni bir
       // necha daqiqada hisoblab yuboraman», «Расчёт отправлю через пару часов», «Hisobni bir necha soatda yuboraman».
-      if (!aboutCargo(c, s) && (!sending || NOT_CARGO.test(c))) continue;
+      if (!aboutCargo(c, s) && (!sending || NOT_CARGO.test(objectOf(c)))) continue;
       // A clause with a verb of its own — «…, yukingiz 2 kunda yetib keladi», «…, 2 kunda jo'natamiz» — is
       // judged ALONE: it says when THIS cargo comes, whatever was estimated before it. Only a clause with
       // none — «…, reys bo'lsa 2 kunda», «…, yetib borishi 2-5 kun» — is the earlier clause's figure said
@@ -1330,7 +1347,7 @@ export function timePromise(text: string): boolean {
       // it — then it is HIS deadline, and nothing vouches that we meet it.
       for (const m of c.matchAll(BACKREF_TIME)) {
         if (asked && !certain && !WE_SEND.test(s)) continue;
-        if (PURPOSE_OR_IF.test(c)) continue;
+        if (servesPurposeOrIf(c, m.index, m.index + m[0].length)) continue;
         if (certain || deadlineAsked || (!covered && !hedgedAt(c, m.index, m.index + m[0].length))) return true;
       }
       for (const [start, end] of durationsIn(c)) {

@@ -385,8 +385,13 @@ const TENS_WORD = new RegExp(
 );
 /** A bare scale word standing alone — «ming», «сто», «тысяча», «hundred»: a figure in a reply that prices, a word in one that does not. */
 const LONE_SCALE = /^(?:ming|минг|сто|тысяч\p{L}*|hundred|thousand|صد|هزار)$/iu;
-/** «Yuz» alone is also a FACE — «yuz kremi», a face cream, is goods — and «yuz bermoq» is to happen: only its neighbours make it a figure. */
+/**
+ * «Yuz» alone is also a FACE — «yuz kremi», a face cream, is goods — and «yuz bermoq» is to happen: only its
+ * neighbours make it a figure — a unit or a price word (`numeralBesideUnit`), or the price's own verb or hedge
+ * after it («Taxminan yuz chiqadi», «yuz atrofida»), where it is a bare hundred like «ming».
+ */
 const LONE_FACE = /^(?:yuz|юз)$/iu;
+const PRICED_NEXT = /^(?:atrofida|chamasi\p{L}*|chiqadi|tushadi|bo['‘’ʻ`]?ladi|атрофида|чамаси\p{L}*|чиқади|тушади|бўлади)[.,]?$/iu;
 const NINE_FA = /(?<![\p{L}])نه\s+(?:روز|هفته|ماه|ساعت|دلار|تومان|افغانی|کیلو|متر)/u;
 
 /** A money or measure word nearby, in any of the six languages — the shipped list, read across the whole text (Chinese numerals only). */
@@ -528,8 +533,9 @@ const NOT_A_FIGURE = new RegExp(
   ].join('|')})[.,:]?$`,
   'iu',
 );
-/** The only words that free a hundred or a thousand: a thanks — «Ming rahmat», «Тысяча благодарностей», «a thousand thanks». */
+/** «Marta», «bor», «раз», «times» — between a thousand and its thanks: «Ming marta rahmat». */
 const TIMES = /^(?:marta|bor|марта|бор|раз|times)[.,]?$/iu;
+/** The only words that free a hundred or a thousand: a thanks — «Ming rahmat», «Тысяча благодарностей», «a thousand thanks». */
 const THANKS = /^(?:rahmat\p{L}*|raxmat\p{L}*|раҳмат\p{L}*|рахмат\p{L}*|благодарност\p{L}*|спасибо|thanks?)[.,:!]?$/iu;
 
 /** A per-unit price anywhere in a sentence: «kub uchun», «kilosiga», «за один куб», «per kg». */
@@ -748,7 +754,7 @@ function numeralInPricedReply(normalized: string): boolean {
       const parts = run.flatMap((t) => t.replace(/[.,]$/u, '').split(/[-–]/u)).filter((w) => w !== '' && !/^bir$/iu.test(w));
       const large = parts.some((w) => SCALE_WORD.test(w) || TENS_WORD.test(w));
       if (!large) continue;
-      if (parts.length === 1 && LONE_FACE.test(parts[0]!)) continue;
+      if (parts.length === 1 && LONE_FACE.test(parts[0]!) && !(priced && after !== undefined && PRICED_NEXT.test(after))) continue;
       if (parts.length === 1 && LONE_SCALE.test(parts[0]!) && !priced) continue;
       return true;
     }
