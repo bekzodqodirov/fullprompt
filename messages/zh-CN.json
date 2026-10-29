@@ -747,6 +747,7 @@
       "unpriced_gate_since": "此时间之后由车辆运抵乌兹别克斯坦且未定价的货物须经许可方可交付（日期或时间；留空 = 关闭禁令）",
       "fx_residue_auto": "账户按原币归零时，系统是否自动以汇兑差额结清美元余差。“否”——不再新建记录，已有记录继续维护。",
       "lead_assign_origins": "允许询问「访客联系谁」的网页（以空格分隔，每个为 https://…）",
+      "agent_no_contact_reasons": "以这些原因关闭的线索号码，找客户代理永不再推荐（用「;」分隔，不区分大小写）",
       "kpi_expense_category_id": "销售员KPI支付所记入的费用类别（仅现金）。在「员工」页面选择。",
       "salary_expense_category_id": "工资类别：「员工」页面据其月度模板显示工资及支付状态。",
       "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）",
@@ -756,7 +757,8 @@
     },
     "driverApp": "司机应用",
     "callsApp": "通话应用",
-    "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。"
+    "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。",
+    "badValueReasons": "值无效——请至少填写一个原因（用「;」分隔，每个不超过80个字符）。未保存任何内容。"
   },
   "audit": {
     "title": "审计日志",
@@ -2795,6 +2797,7 @@
     "doorBot": "Telegram 机器人",
     "doorWebhook": "平台自带表单",
     "doorWebhookHint": "仅用于用户无需离开应用即可填写的表单（Google Ads、YouTube、TikTok 连接器、您的网站）。密钥填入平台设置。",
+    "doorWebhookHintAgent": "仅供客户搜寻代理使用 — 请将密钥填入代理服务器的 .env（CRM_AGENT_KEY）。切勿粘贴到广告平台或其他任何地方：同一密钥可读取代理的两个数据源。",
     "doorKey": "密钥",
     "doorOn": "已开启",
     "doorOff": "已关闭",
@@ -6391,6 +6394,7 @@
       "calc_not_queued": "计算未进入队列 — 回复未发送。",
       "calc_in_flight": "计算正在进入队列 — 一分钟后再看。",
       "identity_changed": "此对话现已绑定到另一位客户（或未绑定）— 此回复不会发送。",
+      "window_closed": "此线索由客户搜寻代理找到：只能在周一至周六 10:00–17:00 联系，到那时客户的消息已超过 24 小时 — 回复未排队。请在工作时间亲自回复。",
       "empty": "文字为空。",
       "not_ready": "数据库尚未更新。",
       "forbidden": "无权限。",

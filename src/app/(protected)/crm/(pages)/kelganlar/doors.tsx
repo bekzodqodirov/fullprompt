@@ -20,16 +20,31 @@ import { setSourceWebhookAction } from './actions';
  *     owner has switched it on.
  *
  * The key is behind a fold and only for whoever may change settings: it is a
- * password for writing into the funnel, and a screenshot of this page taken
- * for any other reason must not carry it.
+ * password for writing into the funnel (and, on the agent's door, for reading
+ * the agent feeds), and a screenshot of this page taken for any other reason
+ * must not carry it. It is not even SENT to anybody else (`door-views.ts`).
  */
 
 export interface DoorView {
   key: string;
   name: string;
-  formUrl: string;
+  /** Null on the agent's door — no person is meant to fill it in. */
+  formUrl: string | null;
   botUrl: string | null;
   webhookUrl: string;
+  /** Whether the webhook is switched on — for every reader of the screen. */
+  on: boolean;
+  /**
+   * The webhook is a MACHINE's (the client-finding agent's door): its hint
+   * says where the key goes — the agent server's `.env` — and never «a form a
+   * person fills in», which would send the owner to paste the key that READS
+   * the agent feeds into an advert platform (the merge review).
+   */
+  machine: boolean;
+  /**
+   * The key itself, ONLY for `admin.settings.manage` (`door-views.ts`): a
+   * prop of this component is in the page's data whether or not it renders.
+   */
   secret: string | null;
   /**
    * The website's «who should they write to?» door (round 113) — only on the
@@ -65,17 +80,19 @@ export function InboundDoors({
       {doors.map((door) => (
         <li key={door.key} className="card space-y-1.5 p-3">
           <p className="font-semibold">{door.name}</p>
-          <Copyable label={t('doorForm')} value={door.formUrl} />
+          {door.formUrl && <Copyable label={t('doorForm')} value={door.formUrl} />}
           {door.botUrl && <Copyable label={t('doorBot')} value={door.botUrl} />}
           {door.assignUrl && <Copyable label={t('doorAssign')} value={door.assignUrl} />}
 
           {canManage && (
             <details className="rounded-xl border border-line p-2">
               <summary className="cursor-pointer text-xs font-semibold text-ink-500">
-                {t('doorWebhook')} · {door.secret ? t('doorOn') : t('doorOff')}
+                {t('doorWebhook')} · {door.on ? t('doorOn') : t('doorOff')}
               </summary>
               <div className="mt-1.5 space-y-1.5">
-                <p className="text-xs text-ink-500">{t('doorWebhookHint')}</p>
+                <p className="text-xs text-ink-500" data-testid="door-webhook-hint">
+                  {door.machine ? t('doorWebhookHintAgent') : t('doorWebhookHint')}
+                </p>
                 {door.secret && (
                   <>
                     <Copyable label="URL" value={door.webhookUrl} />
@@ -84,12 +101,12 @@ export function InboundDoors({
                 )}
                 <button
                   type="button"
-                  onClick={() => toggle(door.key, !door.secret)}
+                  onClick={() => toggle(door.key, !door.on)}
                   disabled={busy === door.key}
                   data-testid="door-toggle"
                   className="btn w-full"
                 >
-                  {door.secret ? t('doorTurnOff') : t('doorTurnOn')}
+                  {door.on ? t('doorTurnOff') : t('doorTurnOn')}
                 </button>
               </div>
             </details>

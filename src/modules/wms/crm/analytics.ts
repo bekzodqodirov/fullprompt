@@ -6,6 +6,7 @@ import {
   leadWonOtherCurrencySql,
   leadWonUsdSql,
 } from './won-money';
+import { CONTACT_LOOKBACK_DAYS } from './first-contact';
 import { db } from '../../platform/db/client';
 import { deals, dealStages, leadIntakes, leads, leadSources, leadStages, users } from '../../platform/db/schema';
 import { isServerBehind } from '../../platform/db/errors';
@@ -354,11 +355,19 @@ export async function firstContactBySeller(
         : undefined;
   const waitedUntil = sql`coalesce(${leadIntakes.contactedAt}, CASE WHEN ${leadStages.kind} = 'open' THEN ${at}::timestamptz ELSE ${leads.closedAt} END)`;
   const waited = sql`${waitedUntil} - ${leadIntakes.contactClockAt}`;
+  // The median and its count read a first contact made within the week the
+  // sweep watches EVERY door for (`CONTACT_LOOKBACK_DAYS`). The agent's
+  // arrivals are watched for ninety days so the agent hears of a day-9 call
+  // (its outcomes feed); here that call is late like anybody else's — in the
+  // late counts, outside the median — so the seller's number does not depend
+  // on which door a lead came through (review, 2026-10-24). For every other
+  // source this is no filter at all: nothing stamps them later than that.
+  const inMedian = sql`${leadIntakes.contactedAt} IS NOT NULL AND ${leadIntakes.contactedAt} <= ${leadIntakes.contactClockAt} + make_interval(days => ${CONTACT_LOOKBACK_DAYS})`;
   const rows = await db
     .select({
       assignedUserId: leadIntakes.assignedUserId,
-      median: sql<string | null>`percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM greatest(interval '0', ${leadIntakes.contactedAt} - ${leadIntakes.contactClockAt})) / 60) FILTER (WHERE ${leadIntakes.contactedAt} IS NOT NULL)`,
-      measured: sql<number>`count(*) FILTER (WHERE ${leadIntakes.contactedAt} IS NOT NULL)`,
+      median: sql<string | null>`percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM greatest(interval '0', ${leadIntakes.contactedAt} - ${leadIntakes.contactClockAt})) / 60) FILTER (WHERE ${inMedian})`,
+      measured: sql<number>`count(*) FILTER (WHERE ${inMedian})`,
       lateHour: sql<number>`count(*) FILTER (WHERE ${waited} > interval '1 hour')`,
       lateDay: sql<number>`count(*) FILTER (WHERE ${waited} > interval '24 hours')`,
     })

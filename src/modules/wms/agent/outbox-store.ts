@@ -10,6 +10,7 @@ import { floodEnds } from '../crm/telegram-guard';
 import { agentRunning, readAgentConfig } from './config';
 import { AGENT_LIMITS, dailySendCeiling, sendJitterMs } from './limits';
 import { asksAnew, type AgentOutboxRow, type AgentStepStore, type SendFacts, type StepOutcome } from './send-step';
+import { sendWindowFor } from './send-window';
 import { offerStandsFor, onAgentOutboxSettled } from './settle-hooks';
 import { isNudge } from './worthy';
 
@@ -333,6 +334,8 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     { clientId: row.clientId, leadId: row.leadId },
     await chatIdentity(row.managerUserId, row.peerId),
   );
+  // The press's own question (`sendWindowFor`), asked again at every step.
+  const sendWindow = await sendWindowFor(row);
 
   return {
     now,
@@ -351,6 +354,7 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
     newerSubstantiveInbound: substantive,
     peerHasWritten: chat.peer_has_written,
     lastInboundAt: dateOf(chat.last_inbound_ms),
+    sendWindow,
     conversationMuted: chat.muted,
     ruleExcluded: chat.excluded,
     identityChanged,
@@ -464,7 +468,7 @@ export async function applyAgentOutcome(
       return quiet;
     }
     case 'wait': {
-      if (outcome.reason !== 'night') {
+      if (outcome.reason !== 'night' && outcome.reason !== 'agent_window') {
         const moved = await db
           .update(agentOutbox)
           .set({ nextStepAt: outcome.nextStepAt })
@@ -476,7 +480,8 @@ export async function applyAgentOutcome(
         if (moved.length > 0 && heldPastCard(outcome.nextStepAt, now)) await settled(row);
         return quiet;
       }
-      // A night hold moves the approval's own clock with it (S2, S3): the reply waits for the morning it is
+      // A night hold — and an agent lead's window hold, the same shape — moves the approval's own clock with
+      // it (S2, S3): the reply waits for the morning it is
       // now promised for, and its six hours count from there. And the morning starts the choreography
       // afresh — verify, read, type, send — because hours have passed since any of it, and a row left at
       // 'typing' or 'send' would be the one in flight that no other approved reply may start behind

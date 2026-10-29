@@ -73,7 +73,7 @@ describe('the chat mute group (E8 a)', () => {
 describe('E11 a — a thread message is not contact', () => {
   it('the NOTE branch excludes the tag and the Telegram landing inside the responsible half only', () => {
     const text = new PgDialect().sqlToQuery(
-      contactEvidenceSql({ leadId: sql`l.id`, since: sql`now()`, ownerId: sql`l.owner_id`, assignedId: sql`null` }),
+      contactEvidenceSql({ leadId: sql`l.id`, since: sql`now()`, ownerId: sql`l.owner_id`, assignedId: sql`null`, flags: true }),
     ).sql;
     const note = text.slice(text.indexOf("'note'::text"), text.indexOf("'stage'::text"));
     const responsibleHalf = note.slice(0, note.indexOf("ca.kind = 'call'"));

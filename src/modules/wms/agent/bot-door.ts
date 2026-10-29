@@ -54,6 +54,8 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   calc_not_queued: 'Hisoblatish navbatga tushmadi — javob yuborilmadi (sababi kartada).',
   calc_in_flight: '⏳ Hisoblatish hozir navbatga qo‘yilmoqda — bir daqiqadan keyin kartani qarang.',
   identity_changed: "Chat endi boshqa mijozga bog'langan (yoki hech kimga) — bu javob ketmaydi.",
+  window_closed:
+    "Bu lidni mijoz topuvchi agent topgan: unga faqat dushanba–shanba 10:00–17:00 da yoziladi, o'sha paytgacha mijozning xabari 24 soatdan eskiradi — javob navbatga qo'yilmadi. Ish vaqtida o'zingiz yozing.",
   empty: "Javob bo'sh.",
 };
 

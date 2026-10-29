@@ -1,9 +1,10 @@
-import { randomBytes } from 'node:crypto';
-import { and, count, desc, eq, gt, inArray, sql } from 'drizzle-orm';
+import { createHash, randomBytes } from 'node:crypto';
+import { and, count, desc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { leadIntakes, leadSources, leadStages, leads, users } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { logger } from '../../platform/logger';
+import { clipUnits, storableJson, storableText } from '../../platform/text/clip';
 import { listFields, setFieldValues } from '../../platform/fields/service';
 import { addActivity, createLead, CrmError } from './service';
 import { activeClientsByPhone } from '../client-cabinet/service';
@@ -18,6 +19,10 @@ import {
 } from './field-map';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { announceArrival, type LandedArrival } from './inbound-notify';
+import { AGENT_SOURCE_KEY, isAgentSource } from './agent-source';
+import { isSuppressedTail, noContactReasons } from './agent-feed';
+
+export { AGENT_SOURCE_KEY, isAgentSource } from './agent-source';
 
 /**
  * A lead that arrived by itself — from an advert, the public form, or the bot.
@@ -44,9 +49,46 @@ export const INBOUND_SOURCE_KEYS = [
   'tiktok',
   'google',
   'sayt',
+  /**
+   * A lead a MACHINE found (the client-finding agent), not one a person sent.
+   * The only key whose arrivals are also read back (/api/agent/*), whose
+   * phone is checked against the client book and the «Qayta qilinmasin»
+   * leads before it may become a lead, whose owner reminder is off — and
+   * which only its own webhook may claim (`inboundSourceKey`).
+   * docs/AGENT-FEED.md.
+   */
+  'agent',
   'other',
 ] as const;
 export type InboundSourceKey = (typeof INBOUND_SOURCE_KEYS)[number];
+
+/**
+ * The source an arrival is recorded under: one of the allowlist, else
+ * `other` — and `agent` only through the WEBHOOK channel. `/ariza?manba=agent`
+ * or a bot link `ad_agent` is a person, and a person must not inherit the
+ * machine's belt (a client asking through the form would be dropped in
+ * silence), its unreminded clock, or a row in the agent's outcomes. Every door
+ * lands through `landInboundLead`, so this one line covers the form, the bot
+ * and anything added later.
+ */
+export function inboundSourceKey(raw: string | null | undefined, channel: InboundArrival['channel']): string {
+  if (!(INBOUND_SOURCE_KEYS as readonly string[]).includes(raw ?? '')) return 'other';
+  if (isAgentSource(raw) && channel !== 'webhook') return 'other';
+  return raw!;
+}
+
+/**
+ * The source the public form (`/ariza?manba=…`) offers: a key it knows, and
+ * `sayt` for anything else — `agent` included, because nobody filling in a
+ * form is the machine, and before the agent's key existed `?manba=agent` was
+ * an unknown word the page turned into «Sayt». It still is (review,
+ * regression lens).
+ */
+export function formSourceKey(asked: string): string {
+  return (INBOUND_SOURCE_KEYS as readonly string[]).includes(asked) && !isAgentSource(asked)
+    ? asked
+    : 'sayt';
+}
 
 /**
  * How long an open lead stays "the same enquiry".
@@ -94,6 +136,8 @@ export interface InboundArrival {
   name?: string | null;
   phone?: string | null;
   note?: string | null;
+  /** The sender's firm (`company` / `firma` on the plain webhook) — the lead card's own column. */
+  company?: string | null;
   /** The form's own questions as pairs — the tarjimon's raw material (0074). */
   fields?: { key: string; value: string }[] | null;
   /**
@@ -128,8 +172,19 @@ export function inboundPhoneDigits(raw: string | null | undefined): string | nul
   return digits.length >= 9 ? digits.slice(-9) : null;
 }
 
+/**
+ * Whitespace collapsed, then cut at `max` UTF-16 units — the budget it always
+ * had — never through an emoji, with NUL and lone halves made U+FFFD. Every
+ * value cut here reaches postgres somewhere — the name in `createLead`'s
+ * INSERT and audit row and the seller's push, the note in the lenta and the
+ * push — and a half emoji (jsonb) or a NUL (text and jsonb) was refused AFTER
+ * the lead's own INSERT: an orphan lead, no ledger row, an open replay fence,
+ * and on the public form a lead the daily caps never counted (reviews,
+ * 2026-10-24; #1106's rule). `clipUnits` keeps every spelling the old
+ * `slice` stored.
+ */
 const trim = (value: string | null | undefined, max: number) =>
-  (value ?? '').replace(/\s+/g, ' ').trim().slice(0, max) || null;
+  clipUnits((value ?? '').replace(/\s+/g, ' ').trim(), max) || null;
 
 /**
  * `lead_sources.key` → id. NEVER mints a row.
@@ -219,16 +274,60 @@ async function openLeadById(id: string): Promise<{ id: string; ownerId: string |
 }
 
 /**
+ * An external id longer than this many UTF-8 bytes MAY be refused by the
+ * ledger's unique index (`lead_intakes_external_idx`, 0066): a btree row
+ * holds at most 2,704 bytes, and postgres compresses the id first, so a
+ * repetitive id of 50 KB fits while 2,685 random bytes do not (measured,
+ * 2026-10-24: 2,684 taken on every channel but `telegram`, 2,680 there). At
+ * or under it an id is always taken, so its own spelling is the only one it
+ * can be stored under. Google's lead ids, Meta's leadgen ids, the bot's
+ * `tg:<chat>:<message>`, the website's tags and the agent's
+ * `cs:<uuid>:<yyyymm>` are all under a hundred.
+ */
+export const INDEX_SAFE_ID_BYTES = 2048;
+
+/**
+ * The spelling an id is stored under when the index refused its own:
+ * `sha256:` and the hex digest of its UTF-8 bytes. Deterministic, so a
+ * retry meets the replay fence and two different ids stay two; null for an
+ * id the index always takes. The id as `storableText` already made it.
+ */
+export function oversizeIdSpelling(id: string): string | null {
+  if (Buffer.byteLength(id, 'utf8') <= INDEX_SAFE_ID_BYTES) return null;
+  return `sha256:${createHash('sha256').update(id, 'utf8').digest('hex')}`;
+}
+
+/** Every spelling an arrival with this id may stand in the ledger under — what the replay fences ask. */
+export function externalIdSpellings(id: string): string[] {
+  const hashed = oversizeIdSpelling(id);
+  return hashed ? [id, hashed] : [id];
+}
+
+/** Postgres's «program limit exceeded» — here, an index row bigger than a btree holds. */
+function isProgramLimit(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && 'code' in err && err.code === '54000';
+}
+
+/**
  * Has this exact arrival landed before? (Q5 a.) The bot's advert contact is
  * keyed by its Telegram message (`tg:<chat>:<message>`), and a redelivered
  * contact must be thanked again without landing a second enquiry. Served by
  * the partial unique index on (channel, external_id).
  */
 export async function inboundLanded(channel: InboundArrival['channel'], externalId: string): Promise<boolean> {
+  const spellings = externalIdSpellings(storableText(externalId));
   const rows = await db.execute<{ one: number }>(sql`
-    SELECT 1 AS one FROM lead_intakes WHERE channel = ${channel} AND external_id = ${externalId} LIMIT 1`);
+    SELECT 1 AS one FROM lead_intakes
+     WHERE channel = ${channel}
+       AND external_id IN (${sql.join(
+         spellings.map((spelling) => sql`${spelling}`),
+         sql`, `,
+       )}) LIMIT 1`);
   return rows.length > 0;
 }
+
+/** The deliveries of one `(channel, external id)` in flight, newest last — `landInboundLead`'s chain. */
+const landing = new Map<string, Promise<unknown>>();
 
 /**
  * Land an arrival.
@@ -240,19 +339,77 @@ export async function inboundLanded(channel: InboundArrival['channel'], external
  * cannot record a lead that was deliberately not created, and «why did the
  * advert produce nothing today» has to be answerable.
  */
-export async function landInboundLead(arrival: InboundArrival): Promise<InboundResult> {
+export async function landInboundLead(sent: InboundArrival): Promise<InboundResult> {
+  // The id as postgres will store it (a text column turns a lone half into
+  // U+FFFD on the wire and refuses NUL), so the chain below and the replay
+  // fence agree with the ledger about which deliveries are one: a NUL in it
+  // used to make the fence's own SELECT throw on every retry, for ever. An id
+  // too long for the ledger's index is stored under its hash instead
+  // (`record`), and the fence asks both spellings (`externalIdSpellings`).
+  const arrival = sent.externalId ? { ...sent, externalId: storableText(sent.externalId) } : sent;
+  if (!arrival.externalId) return landOnce(arrival);
+  // One delivery of an id at a time. The replay fence below is a SELECT at the
+  // start and the ledger's ON CONFLICT at the end, so two deliveries of one id
+  // IN FLIGHT both passed the SELECT and both created a lead — the database
+  // kept one ledger row and the other lead stood unannounced, unclocked and in
+  // nobody's outcomes (review, 2026-10-24: measured with the first delivery
+  // held on a lock). A sender re-sends exactly when the first try is slow: the
+  // agent after its read timeout, a platform that did not get its 200 in
+  // time. Chained here, the second waits and then meets the fence as a
+  // replay. «Here» is this module instance: a production bundle may hold more
+  // than one copy of this file, but every channel that carries an id lands
+  // through ONE caller — `webhook` the route, `meta` the Meta worker (pg-boss,
+  // in the app process), `telegram` the cabinet bot — so each channel's
+  // deliveries meet in one map (third review). The form carries no id; the site door in
+  // tg-listen keeps its own `serialised`, and the unique index still stands
+  // behind all of it across processes.
+  const key = `${arrival.channel}\u0000${arrival.externalId}`;
+  const before = landing.get(key) ?? Promise.resolve();
+  const mine = before.catch(() => undefined).then(() => landOnce(arrival));
+  landing.set(key, mine);
+  try {
+    return await mine;
+  } finally {
+    // Only the last in the chain clears it, so a third delivery still queues.
+    if (landing.get(key) === mine) landing.delete(key);
+  }
+}
+
+/** `landInboundLead`'s body: one delivery, after any earlier one of the same id has settled. */
+async function landOnce(arrival: InboundArrival): Promise<InboundResult> {
   const phone = inboundPhoneDigits(arrival.phone);
   const name = trim(arrival.name, 120);
   const note = trim(arrival.note, 1000);
-  const sourceKey: string = (INBOUND_SOURCE_KEYS as readonly string[]).includes(
-    arrival.sourceKey ?? '',
-  )
-    ? arrival.sourceKey!
-    : 'other';
+  const sourceKey = inboundSourceKey(arrival.sourceKey, arrival.channel);
 
   // Capped, normalized, secret-named keys dropped — what of the form's own
   // questions is worth keeping and worth showing the mapping screen.
   const pairs = capturePairs(arrival.fields);
+  const refText = storedRef(arrival.ref);
+
+  /** One INSERT of the ledger row under one spelling of the id — `record` below decides which. */
+  const insertIntake = async (
+    outcome: InboundOutcome,
+    extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
+    externalId: string | null,
+  ): Promise<string | null> => {
+    const rows = await db.execute<{ id: string }>(sql`
+      INSERT INTO lead_intakes
+        (channel, external_id, source_key, ref, phone, name, outcome, reason,
+         fields, lead_id, client_id, assigned_user_id)
+      VALUES (${arrival.channel}, ${externalId}, ${sourceKey},
+              ${refText}::jsonb,
+              ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
+              ${pairs ? JSON.stringify(pairs) : null}::jsonb,
+              ${extra.leadId ?? null}::uuid, ${extra.clientId ?? null}::uuid,
+              ${extra.assignedUserId ?? null}::uuid)
+      -- The SECOND delivery of the same advert lead is refused by the
+      -- database rather than by a check somebody can forget: Meta re-sends
+      -- until it gets a 200, and a form page reloads.
+      ON CONFLICT DO NOTHING
+      RETURNING id`);
+    return rows[0]?.id ?? null;
+  };
 
   /**
    * The ledger row. Answers its id, or null when the database refused it as
@@ -265,27 +422,28 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
    * database one migration behind — deploy morning (#472) — and this row is
    * the replay fence: without it Meta's retry passes the check below and a
    * SECOND lead is created. The clock is a separate UPDATE that may fail.
+   *
+   * An id the unique index refuses for its size (54000, `INDEX_SAFE_ID_BYTES`)
+   * is written again under its hash — the fences ask both spellings. Every id
+   * the index takes keeps the spelling it always had; the refused one used to
+   * throw here, after the lead and its lenta note (fourth review, 2026-10-24).
    */
   const record = async (
     outcome: InboundOutcome,
     extra: { reason?: string; leadId?: string; clientId?: string; assignedUserId?: string },
   ): Promise<string | null> => {
-    const rows = await db.execute<{ id: string }>(sql`
-      INSERT INTO lead_intakes
-        (channel, external_id, source_key, ref, phone, name, outcome, reason,
-         fields, lead_id, client_id, assigned_user_id)
-      VALUES (${arrival.channel}, ${arrival.externalId ?? null}, ${sourceKey},
-              ${arrival.ref ? JSON.stringify(arrival.ref) : null}::jsonb,
-              ${phone}, ${name}, ${outcome}, ${extra.reason ?? null},
-              ${pairs ? JSON.stringify(pairs) : null}::jsonb,
-              ${extra.leadId ?? null}::uuid, ${extra.clientId ?? null}::uuid,
-              ${extra.assignedUserId ?? null}::uuid)
-      -- The SECOND delivery of the same advert lead is refused by the
-      -- database rather than by a check somebody can forget: Meta re-sends
-      -- until it gets a 200, and a form page reloads.
-      ON CONFLICT DO NOTHING
-      RETURNING id`);
-    return rows[0]?.id ?? null;
+    const own = arrival.externalId ?? null;
+    try {
+      return await insertIntake(outcome, extra, own);
+    } catch (err) {
+      const hashed = own ? oversizeIdSpelling(own) : null;
+      if (!hashed || !isProgramLimit(err)) throw err;
+      logger.warn(
+        { channel: arrival.channel, bytes: Buffer.byteLength(own!, 'utf8') },
+        '[inbound] external id too long for the ledger index; stored as its sha256',
+      );
+      return insertIntake(outcome, extra, hashed);
+    }
   };
 
   /**
@@ -327,23 +485,53 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
       .where(
         and(
           eq(leadIntakes.channel, arrival.channel),
-          eq(leadIntakes.externalId, arrival.externalId),
+          inArray(leadIntakes.externalId, externalIdSpellings(arrival.externalId)),
         ),
       )
       .limit(1);
     if (seen) return { outcome: 'dropped', reason: 'replay' };
   }
 
+  // A machine-found lead the belt below cannot CHECK must not reach a seller:
+  // with no phone of nine digits it is neither ruled out as a client nor as a
+  // «Qayta qilinmasin» number (review, feed lens). The agent refuses such a
+  // candidate itself; this is the ERP's last line. After the replay fence, so
+  // a re-send writes no second row.
+  if (isAgentSource(sourceKey) && !phone) {
+    await record('dropped', { reason: 'no_phone' });
+    return { outcome: 'dropped', reason: 'no_phone' };
+  }
+
   // The ceilings, asked BEFORE anything is created and counted over the
   // arrivals ledger rather than over `leads` — a flood that was correctly
   // dropped still has to count towards the next one, or the cap is escapable
-  // by making every attempt look like a duplicate.
+  // by making every attempt look like a duplicate. The per-phone count is per
+  // FAMILY: the agent's arrivals count only against the agent, everybody
+  // else's only against everybody else — three agent pushes on one number
+  // (three firms sharing a phone) must not stop that person's own enquiry
+  // through the form for a day (review, sec lens). Every door that is not the
+  // agent counts exactly what it counted before the agent existed.
   const capped =
-    (phone && (await inboundCount({ phone, sinceMs: DAY_MS })) >= PHONE_CAP_PER_DAY) ||
+    (phone &&
+      (await inboundCount({ phone, sinceMs: DAY_MS, agent: isAgentSource(sourceKey) })) >=
+        PHONE_CAP_PER_DAY) ||
     (await inboundCount({ sourceKey, sinceMs: DAY_MS })) >= SOURCE_CAP_PER_DAY;
   if (capped) {
     await record('dropped', { reason: 'capped' });
     return { outcome: 'dropped', reason: 'capped' };
+  }
+
+  // The agent's belt (docs/AGENT-FEED.md). The agent holds the suppression
+  // feed, so reaching this line means its copy was stale: the arrival is
+  // recorded as `suppressed` — the outcomes feed tells it to pull again — and
+  // NOBODY is told. A client's manager must not hear «a machine found your
+  // client on OLX», and a «Qayta qilinmasin» number must not reach a seller
+  // again by any road. Wider than step (0) below on purpose: an INACTIVE
+  // client is still ours. Adverts and the public form keep today's behaviour:
+  // a client's question still lands on the client's card.
+  if (isAgentSource(sourceKey) && phone && (await isSuppressedTail(phone, await noContactReasons()))) {
+    await record('dropped', { reason: 'suppressed' });
+    return { outcome: 'dropped', reason: 'suppressed' };
   }
 
   const sourceId = await sourceIdForKey(sourceKey);
@@ -438,7 +626,16 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
     {
       // `leadSchema` wants two characters and an advert may send none.
       name: name ?? `${sourceKey} · ${phone ?? '—'}`,
-      phone: arrival.phone ?? '',
+      // As sent — the card keeps the spelling — but storable: it is the
+      // INSERT's own column (text, refuses NUL) and rides into the create's
+      // audit row (jsonb, refuses a lone half too).
+      phone: storableText(arrival.phone ?? ''),
+      // The agent's firm onto the card's own column, at `leadSchema`'s
+      // ceiling. The agent's only: every other door keeps a posted `company`
+      // as the note line and question pair it always was (review, regression
+      // lens), and the agent's copy is in its note too, so a JOINED push
+      // still shows it.
+      company: isAgentSource(sourceKey) ? (trim(arrival.company, 200) ?? undefined) : undefined,
       sourceId: sourceId ?? '',
       ownerId: ownerId ?? '',
       // `note` deliberately left empty. What the person WROTE goes on the
@@ -519,21 +716,46 @@ export async function landInboundLead(arrival: InboundArrival): Promise<InboundR
   return { outcome: 'created', leadId: lead.id };
 }
 
+/**
+ * The body as `lead_intakes.ref` stores it, decided BEFORE anything is
+ * written. `storableJson` makes every string storable; what it cannot write —
+ * a body nested thousands of levels deep overflows the serialiser's stack — is
+ * kept as a marker, because the ref is a trail and the arrival is the record:
+ * that throw came in `record()`, after the lead and its lenta note (third
+ * review, 2026-10-24).
+ */
+function storedRef(ref: InboundArrival['ref']): string | null {
+  if (!ref) return null;
+  try {
+    return storableJson(ref);
+  } catch (err) {
+    logger.warn({ err }, '[inbound] ref not storable; kept as a marker');
+    return JSON.stringify({ _truncated: true });
+  }
+}
+
 /** What the note says on the card. The source is the useful half. */
 function inboundNote(sourceKey: string, text: string): string {
   return [`📣 ${sourceKey}`, text].filter(Boolean).join('\n');
 }
 
-/** How many arrivals a source produced in a window — for the caps and reports. */
+/**
+ * How many arrivals a source produced in a window — for the caps and reports.
+ * `agent` splits the ledger in two families: true counts only the agent's
+ * rows, false only everybody else's; absent counts all.
+ */
 export async function inboundCount(where: {
   phone?: string | null;
   sourceKey?: string | null;
+  agent?: boolean;
   sinceMs: number;
 }): Promise<number> {
   const since = new Date(Date.now() - where.sinceMs);
   const conditions = [gt(leadIntakes.createdAt, since)];
   if (where.phone) conditions.push(eq(leadIntakes.phone, where.phone));
   if (where.sourceKey) conditions.push(eq(leadIntakes.sourceKey, where.sourceKey));
+  if (where.agent === true) conditions.push(eq(leadIntakes.sourceKey, AGENT_SOURCE_KEY));
+  if (where.agent === false) conditions.push(ne(leadIntakes.sourceKey, AGENT_SOURCE_KEY));
   const [row] = await db
     .select({ n: count() })
     .from(leadIntakes)

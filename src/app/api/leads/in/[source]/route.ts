@@ -1,5 +1,6 @@
 import {
   INBOUND_SOURCE_KEYS,
+  isAgentSource,
   landInboundLead,
   sourceWebhookSecret,
 } from '@/modules/wms/crm/inbound';
@@ -33,7 +34,24 @@ import { logger } from '@/modules/platform/logger';
  *    dropped at the cap all leave with the same body, because a public
  *    endpoint that answers differently for a number already in the client book
  *    is a way to walk a list and learn who our customers are (#600).
+ *
+ * The client-finding agent's door (`agent`, docs/AGENT-FEED.md §1) keeps the
+ * one constant answer for every OUTCOME, but not for a landing that failed:
+ * there it answers 503. The 200 was a promise the arrival was recorded, and
+ * the agent believed it — a push lost to a bad minute was never re-sent and
+ * never flagged, and when the throw came after the lead's INSERT the lead
+ * stood unannounced and outside the agent's outcomes (review, 2026-10-24).
+ * The agent is ours and retries on a schedule we wrote, so the retry loop the
+ * second rule fears is bounded there; a retry of an arrival that WAS recorded
+ * meets the replay fence and is answered 200. Every other door keeps the 200.
  */
+
+/** The agent's own door, after its landing (or the key lookup) failed: retry later. */
+const UNAVAILABLE = () =>
+  new Response(JSON.stringify({ error: 'unavailable' }), {
+    status: 503,
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  });
 
 /** What every caller is told, whatever actually happened. */
 const OK = () =>
@@ -48,7 +66,19 @@ export async function POST(request: Request, ctx: { params: Promise<{ source: st
     return new Response('Not found', { status: 404 });
   }
 
-  const secret = await sourceWebhookSecret(source);
+  let secret: string | null;
+  try {
+    secret = await sourceWebhookSecret(source);
+  } catch (err) {
+    // Nothing is checked yet. The agent, which SENDS its key in the header,
+    // is told to come back — the GET feeds' rule (agent-feed-door.ts); a
+    // caller with no header, and every other door, fail as they always did.
+    if (isAgentSource(source) && request.headers.get('x-gsr-key')) {
+      logger.error({ err, source }, '[leads-in] key lookup failed');
+      return UNAVAILABLE();
+    }
+    throw err;
+  }
   if (!secret) return new Response('Not found', { status: 404 });
 
   let body: unknown;
@@ -81,14 +111,17 @@ export async function POST(request: Request, ctx: { params: Promise<{ source: st
       name: fields.name,
       phone: fields.phone,
       note: fields.note,
+      company: fields.company,
       fields: fields.fields,
     });
     logger.info({ source, outcome: result.outcome, reason: result.reason }, '[leads-in] landed');
   } catch (err) {
     // The sender must not learn that our database is having a bad minute, and
     // must not be told to retry into it either — the arrival is lost, loudly,
-    // in our own log. Answering 500 would have Google re-post for hours.
+    // in our own log. Answering 500 would have Google re-post for hours. The
+    // agent's door is the exception above: it IS told, and retries.
     logger.error({ err, source }, '[leads-in] landing failed');
+    if (isAgentSource(source)) return UNAVAILABLE();
   }
   return OK();
 }
