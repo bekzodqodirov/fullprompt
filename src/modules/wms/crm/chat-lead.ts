@@ -146,9 +146,15 @@ export async function phonelessLeadForChat(
   ctx: AuditContext,
 ): Promise<string | null> {
   const actor = { ...ctx, actorId: ctx.actorId ?? input.managerUserId };
+  const where = and(eq(tgChatRules.managerUserId, input.managerUserId), eq(tgChatRules.peerId, input.peerId));
+  // Every later line of the chat asks this until the listener's rules are
+  // read again (ten minutes): an already-bound chat is one indexed read, not
+  // a transaction. A committed include is final here — a person changing it
+  // meanwhile is the stale-rules race every listener rule has.
+  const [bound] = await db.select({ decision: tgChatRules.decision, leadId: tgChatRules.leadId }).from(tgChatRules).where(where);
+  if (bound?.decision === 'include' && bound.leadId) return bound.leadId;
   const stageId = await defaultStageId();
   return db.transaction(async (tx) => {
-    const where = and(eq(tgChatRules.managerUserId, input.managerUserId), eq(tgChatRules.peerId, input.peerId));
     await tx
       .insert(tgChatRules)
       .values({

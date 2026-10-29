@@ -207,8 +207,12 @@ describe('a hidden number writing to a WORK number becomes a lead the AI answers
     const before = (await phonelessLeads()).length;
     const first = await liveLine(hidden(peer), line());
     const leadId = first.owner!.leadId!;
-    // The listener's in-memory rules are minutes old: the next line of the burst decides with none.
+    // The listener's in-memory rules are minutes old: the next line of the burst decides with none —
+    // and a chat already bound costs it one read, not a transaction (it asks on every line for ten minutes).
+    const tx = vi.spyOn(db, 'transaction');
     const second = await liveLine(hidden(peer), line({ message: 'Narxi qancha?' }));
+    expect(tx).not.toHaveBeenCalled();
+    tx.mockRestore();
     expect(second.verdict).toMatchObject({ openLead: true });
     expect(second.owner!.leadId).toBe(leadId);
     // Catch-up after a restart reads fresh rules: the chat's rule IS its lead.
