@@ -3,8 +3,8 @@
 ## 2026-10-29 (kechqurun) — «✅ Yuborish» oddiy javobda ham chiqadi; raqami yashirin mijoz ham lid bo'ladi
 
 Sizning so'zingiz: «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», javobingiz **«A»**
-va **«1 a»**. Migratsiya yo'q — baza hisobi **139** bo'lib qoladi. Yangilangani `/api/version` va tinglovchining
-birinchi qatori bilan tekshiriladi.
+va **«1 a»**. Bitta migratsiya (0139) — deploydan keyin baza hisobi **140** bo'lishi kerak. Yangilangani shu son,
+`/api/version` va tinglovchining birinchi qatori bilan tekshiriladi. Tinglovchi (tg-listen) albatta qayta quriladi.
 
 ### Nima tuzatildi — AI javobi
 - **Oddiy salomlashuv va savol javoblari endi to'xtatilmaydi.** Quyidagilar sababsiz to'xtatilayotgan edi:
@@ -42,7 +42,26 @@ birinchi qatori bilan tekshiriladi.
 - **Raqamini yashirgan odam ish raqamingizga yozsa, tizim avtomatik lid ochadi** (sizning «1 a»). Lid nomi uning
   Telegramdagi ismi bo'ladi, ismi bo'lmasa «Telegram (raqam yashirin)». Bitta odamga bitta lid ochiladi. Raqami
   keyin ko'rinib, mijozlar ro'yxatidagi mijoz bo'lib chiqsa, chat o'sha mijozga o'tadi. Raqam yashirin ekan, AI unga
-  yuki va balansi haqida gapirmaydi. «Shaxsiy raqam»da hammasi avvalgidek qoladi.
+  yuki va balansi haqida gapirmaydi. «Shaxsiy raqam»da yangi notanish odam uchun hammasi avvalgidek qoladi.
+
+### Tekshiruvdan keyin tuzatilganlar
+- **Saytdan kelgan mijozning keyingi xabarlari yo'qolmaydi.** Birinchi tuzatish sayt orqali ochilgan lidning
+  chatini «tizim o'zi ochgan lid» deb o'qib qo'yardi: shaxsiy raqamda bunday mijozning keyingi xabarlari
+  saqlanmay qolardi. Endi tizim o'zi ochgan lidda alohida belgi bor, sayt lidlari esa avvalgidek ishlaydi.
+- **«Shaxsiy raqam»ga qaytarsangiz, ochilgan lidlar yo'qolmaydi.** Tugma faqat YANGI notanish odamga ta'sir qiladi.
+  Ish raqami paytida lid bo'lib ochilgan chatlarning xabarlari o'sha ochiq lidga tushaveradi, raqami yashirin
+  bo'lsa ham, ko'rinsa ham. Lid yutilgan yoki yo'qotilgan bo'lsa, odam yana yozganda u yangi notanish hisoblanadi:
+  «Qaysi chatlar»da so'raladi va AI egasiga yangi «📵» karta keladi.
+- **«📵» karta ish raqamida o'zi yopiladi.** Odam avval shaxsiy raqamga yozib karta kelgan bo'lsa, keyin raqam «Ish
+  raqami» bo'lib lid o'zi ochilsa, karta «lid o'zi ochildi» deb yopiladi. Shunday chatda tugmalar baribir ishlaydi:
+  «🚫 Shaxsiy» chatni o'chiradi va lidga saqlangan xabarlarni ham o'chiradi; «👤 Mijoz — kod» chatni mijozga
+  o'tkazadi; «🆕 Yangi lid» lidni sizniki qilib yozadi.
+- **«Qaysi chatlar»dagi ↩ endi ustidan yozilmaydi.** Ish raqamida tizim ochgan lidni ↩ bilan qaytarsangiz, keyingi
+  xabar uni qayta lidga bog'lamaydi — chat sizning javobingizni kutadi. Ish raqamida raqami yashirin odam uchun
+  «Lid ochish» tugmasi endi shu sahifada ham bor.
+- **Telegramning o'z akkauntlari** (kodlar keladigan «Verification Codes» va boshqalar) «Qaysi chatlar»da
+  ko'rsatilmaydi va ular haqida «📵» karta kelmaydi. Eski karta qolgan bo'lsa, tugmasi «Telegram xizmati — mijoz
+  emas» deb javob beradi.
 
 ### Bilib qo'ying
 - Raqamini yashirgan hodim ish raqamingizga yozsa, u ham lid bo'lib ochiladi: tizim uning raqamini ko'ra olmaydi.

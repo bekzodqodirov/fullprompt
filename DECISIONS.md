@@ -6387,7 +6387,7 @@ reply since the CRM's Telegram bridge shipped; the door that exists is the selle
 qilinmasin», which the feed already carries. Adding a block as suppression is a change to what the feed means
 (its `kind` set is the agent's contract), so it is asked of the owner, not built (CHANGELOG, AGENT-FEED.md §5).
 
-## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; NO migration, ledger 139; numbered past main's #1545-#1570, the TWENTY-SEVENTH collision)
+## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; migration 0139 `chat_rule_bound_via` since #1576, ledger 140; numbered past main's #1545-#1570, the TWENTY-SEVENTH collision)
 
 1571. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
 evening as #1544: a customer wrote «Assalomu alaykum», the card came with «✏️ O‘zim yozaman · ❌ · 🙋» and no ✅,
@@ -6463,7 +6463,7 @@ empty or an id (display name → @username → «Telegram (raqam yashirin)», wi
 stripped). The machine binding YIELDS: to a person's answer on the tray, to the client book once the phone shows
 (the binding is retired, audited `book_match`), to a client the chat's rows already belong to, to a closed lead
 (a lost lead's next enquiry opens a new one, as a visible number's does), and to the switch turned back to
-«Shaxsiy raqam». The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
+«Shaxsiy raqam» (REVERSED by #1576: the switch governs new strangers only). The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
 accounts are fenced beyond 777000 (`isTelegramOfficialPeer`: 489000, «Replies», the `support` flag, early
 round-thousand ids). Backfill still stops at a new stranger; catch-up never sees a stranger it never stored.
 STATED: a colleague or a contact writing with a hidden number becomes a lead too (nothing can see the phone); a
@@ -6473,3 +6473,44 @@ hidden-number stranger's lines written while the listener was down are not fetch
 two lenses (regression, safety) with the findings fixed and red-proven before the cherry-pick, then the merged
 delta was reviewed again for what no single package could see (the interactions, customer safety on the merged
 policy, the owner's live day walked through the real functions).
+
+1576. **The listener's own binding is a MARK, not a shape — and the switch governs new strangers only.** The
+review of the merged branch (two skeptics per finding, re-verified against HEAD) found the blocker in #1574 itself:
+«machine» was read off the rule's shape — include, a lead, no client, no `decided_by` — and round 113's website door
+(`landSiteTag`) has written exactly that shape since it shipped, with no actor. Production holds such rows, so a
+website visitor's later lines would have stopped being stored on a personal number, the book's claim would have
+DELETED the site rule, `nobodyDecided` called it nobody's. No column of the row and no lead fact can tell the two
+apart (the machine door reuses any open lead of the chat, a website lead included), so migration **0139** adds
+`tg_chat_rules.bound_via` (`'work_account'` or NULL, CHECK) — positive for the work-number door, NULL on every
+existing row. SQL-only this release (0127's reason, #472: the table is read whole-row by the tray, the bot's
+stranger buttons and the minting door, and drizzle names every declared column), written by ONE raw statement in
+`phonelessLeadForChat`'s transaction (set by the machine, cleared by a person's press over it), read through
+`to_jsonb(row)` (`boundViaSql` — NULL, never 42703, one migration behind: walked on a copy with the column dropped);
+the writer asks `boundViaReady()` first and mints nothing while 0139 is absent, because an unmarked machine binding
+would read as a door's answer for good. `isMachineBinding` = the mark AND the shape (a person's write always carries
+`decided_by`); `nobodyDecided`, `rulesFor`, `retireMachineBinding` and the bot's stranger buttons all ask it.
+Fenced by `tests/unit/chat-rule-bound-via.test.ts` (not declared, named by chat-lead alone, written once).
+
+The switch (his «1 a» was about NEW strangers): a chat the work number bound stays on its OPEN lead after
+«Shaxsiy raqam» — `decideIncoming` no longer asks the switch for it and `switchDecides` drops it; the first cut
+passed its lines over, and the binding's row kept every question (the tray's, the «📵» card's) from ever being
+asked. The visible-number twin — a chat kept on an open lead by its own rows, which the phone path writes no rule
+for — stays there too (`keptLeadOfChat`, on the live line and the catch-up). Chosen over «re-ask»: a hidden number
+cannot be asked on most accounts at all (the tray refuses `chat_no_phone`; only the agent owner gets a card), so a
+re-ask would have been the same hole on every other account. A binding whose lead CLOSED is retired on a personal
+number (`retireMachineBinding(…, 'lead_closed')`, the closed lead checked in the statement, not in the ten-minute
+map) so the chat is a new stranger's: the tray lists it and `noteStranger`'s `reopened` gives the one-card claim
+back. A mistaken binding is undone per chat, by a person: the tray's ↩ and «hech qachon», the card's «🚫 Shaxsiy».
+
+The presses: the binding closes a live «📵» card for its chat (`closeStrangerCards`, best-effort after the commit);
+a press on a machine-bound chat is the FIRST decision — «🚫 Shaxsiy» excludes and purges what the listener stored,
+«👤 Mijoz — kod» re-points to the client (the confirm's clock is a person's, not the machine's), «🆕 Yangi lid»
+makes the binding the person's. A tray ↩ (pending WITH `decided_by`) is a person's answer the work number no longer
+re-binds over (a pre-check and the same refusal under the lock — either alone holds); so a work number's tray can
+open a hidden-number lead itself (`PhonelessVia` `tray`), a personal one still refuses. Telegram's own accounts are
+neither on the tray nor carded (`officialPeerSql`, built from the live predicate's own list and bound; the `support`
+flag is on no stored row), and a stale card's buttons answer in words instead of `service_chat`. 22 red proofs by
+string edit, plus one that stayed green by design: the ↩ pre-check stripped alone (the lock's re-check holds; both
+stripped is red). The flipped-back hidden chat has two roads too — its binding (`decideIncoming`) and its rows
+(`keptLeadOfChat`): stripping the first is red in the unit test and green in the integration through the second,
+both stripped is red.

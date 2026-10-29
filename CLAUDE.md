@@ -3235,7 +3235,7 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1575; NO migration, 139 stands; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1576; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
@@ -3253,12 +3253,16 @@ copies of a draft's words are recorded on its row and blanked by the purge. LIST
 (30 s, shared read, fresh read for a line about to be stored), the start line names the mode, the web tray's
 holder press queues the pull, `[agent] inbound` carries origin/lag, the gap/retry passes skip a waiting job, lookup
 deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1574): `no_phone` on a work account → `open_lead` through
-ONE door `phonelessLeadForChat` (the rule row is the fence, `decided_by NULL` = the listener's own binding, which
-YIELDS to a person, the book, a closed lead and the switch); `isTelegramOfficialPeer` fences Telegram's own
-accounts. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
+ONE door `phonelessLeadForChat` (the rule row is the fence; the listener's own binding is marked by 0139's
+`bound_via = 'work_account'` — SQL-only, read through `to_jsonb(row)` (`boundViaSql`), because round 113's website
+rule has the same shape with no `decided_by` either — and YIELDS to a person, the book and a closed lead, never to
+the switch: the switch governs NEW strangers only, and a chat a work number kept stays on its open lead by its rule
+or its rows, `settlePassedChat`, #1576); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
+is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
 listener was down are not fetched. Deploy MUST rebuild tg-listen.
 
-**Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
+**Latest migration: 0139** (`chat_rule_bound_via`, `when` …118; ledger must reach **140**). Before
+it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
 it: 0135 (`load_mode`, `when` …114). Before
@@ -3401,7 +3405,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **139** since 0138 (138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **140** since 0139 (139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
