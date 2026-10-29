@@ -73,6 +73,16 @@ export function webDigest(d: Pick<DraftRow, 'finalBody' | 'proposedBody' | 'acti
   return cardDigest(digestBody(d), (d.actions ?? []) as ComposedAction[]);
 }
 
+/**
+ * Does the page draw ✅ for this draft — the bot's rule, said once: not
+ * blocked (the policy, or a card too long to show), and live — `editing`
+ * included while he has written nothing for it, because ✅ then sends the
+ * machine's words exactly as the bot's does (decide `decideDraft`, C7).
+ */
+export function pageDrawsSend(d: Pick<WebDraft, 'blocked' | 'status' | 'ownText'>): boolean {
+  return !d.blocked && (d.status === 'pending' || (d.status === 'editing' && !d.ownText));
+}
+
 function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   if (d.clientId) return `/suhbatlar/${d.clientId}`;
   if (d.leadId) return `/crm/leads/${d.leadId}#tg-thread`;

@@ -11,6 +11,7 @@ import {
   openCalcsFor,
   ownerAccountState,
   ownerCandidates,
+  pageDrawsSend,
   tariffMismatchSeen,
   userName,
   webDrafts,
@@ -106,8 +107,7 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         body={d.body}
         holder={d.managerUserId === viewerId}
         holderName={d.holderName}
-        // An `editing` draft he has written nothing for sends the machine's words — the bot's ✅ on it does too (decide).
-        canSend={!d.blocked && (d.status === 'pending' || (d.status === 'editing' && !d.ownText))}
+        canSend={pageDrawsSend(d)}
         waitingInChat={d.waitingInChat}
       />
     </article>

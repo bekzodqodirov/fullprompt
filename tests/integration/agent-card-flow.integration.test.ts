@@ -386,7 +386,11 @@ describe('a card that cannot be checked or shown has no ✅ (C10)', () => {
     const { draftId } = await draftFor(me, { withMemory: false });
     const send = await cardSend(draftId);
     expect(send).not.toBeNull();
+    const m = h.mark();
     await h.handle(tg.callback(me.chat, nextMsg(), send!));
+    // The press's own toast names the door, not «✏️ bilan o'zingiz yozing».
+    const toast = h.since(m).api.find((c) => c.method === 'answerCallbackQuery');
+    expect(String(toast?.payload.text)).toBe('Bu matn shunday yuborilmaydi — «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing.');
     const d = await draftOf(draftId);
     expect(d.status).toBe('pending');
     expect(d.blocked).toBe(true);

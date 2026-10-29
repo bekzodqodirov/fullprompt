@@ -5,6 +5,7 @@ import { agentCardText, BLOCK_REMEDY, hitWords, lateNote, LATE_CARD_MS, POLICY_W
 import { renderDraftCard, renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 import { HUMAN_TAKEOVER_HOURS } from '@/modules/wms/agent/limits';
 import type { PolicyHit } from '@/modules/wms/agent/policy';
+import { pageDrawsSend } from '@/modules/wms/agent/web-page';
 
 /**
  * What the owner reads on an AI draft card and presses (the 2026-10-29
@@ -263,5 +264,20 @@ describe('the C10 b code has its words (the exhaustive Record)', () => {
   it('memory_missing is a sentence, not a code', () => {
     expect(hitWords({ rule: 'G1', code: 'memory_missing' })).toBe(POLICY_WORDS.memory_missing);
     expect(POLICY_WORDS.memory_missing).not.toMatch(/^[a-z_]+$/u);
+  });
+});
+
+describe('the page draws ✅ by the bot’s rule (C7, C10 a)', () => {
+  it('an editing draft with no words of his has ✅; with his words, blocked, or cut, it has none', () => {
+    expect(pageDrawsSend({ blocked: false, status: 'pending', ownText: false })).toBe(true);
+    expect(pageDrawsSend({ blocked: false, status: 'editing', ownText: false })).toBe(true);
+    expect(pageDrawsSend({ blocked: false, status: 'editing', ownText: true })).toBe(false);
+    expect(pageDrawsSend({ blocked: true, status: 'editing', ownText: false })).toBe(false);
+    expect(pageDrawsSend({ blocked: true, status: 'pending', ownText: true })).toBe(false);
+    expect(pageDrawsSend({ blocked: false, status: 'approved', ownText: false })).toBe(false);
+  });
+
+  it('the page asks it', () => {
+    expect(readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8')).toContain('canSend={pageDrawsSend(d)}');
   });
 });
