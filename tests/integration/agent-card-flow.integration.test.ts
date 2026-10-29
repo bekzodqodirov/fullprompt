@@ -58,6 +58,7 @@ import {
   telegramLinks,
   tgAccountGuard,
   tgAccounts,
+  tgMessageFlags,
   tgMessages,
   userRoles,
   users,
@@ -713,6 +714,46 @@ describe('the ✋ line names when he WROTE (review of C6)', () => {
     const text = String((await cardPayloadOf(draftId)).text);
     expect(text).toContain(`✋ Siz mijozga Telegramda o‘zingiz yozdingiz (${tashkentClock(wrote)}) — AI javobi bekor qilindi.`);
     if (tashkentClock(wrote) !== tashkentClock(new Date())) expect(text).not.toContain(`(${tashkentClock(new Date())})`);
+  });
+
+  it('the AI’s own send and a deleted message are not «his» — chatMoved’s predicate, read for the time too', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me);
+    const at = (min: number) => new Date(Date.now() - min * 60_000);
+    // An earlier approved reply of the agent's, sent 50 minutes ago — its echo is an out row the outbox names.
+    const [earlier] = await db
+      .insert(agentDrafts)
+      .values({ managerUserId: me.id, peerId: me.peer, clientId, anchorTgMessageId: me.anchor, proposedBody: 'Avvalgi javob', status: 'approved' })
+      .returning({ id: agentDrafts.id });
+    await db.insert(tgMessages).values({ clientId, managerUserId: me.id, peerId: me.peer, tgMessageId: me.anchor + 2n, direction: 'out', body: 'Avvalgi javob', sentAt: at(50) });
+    await db.insert(agentOutbox).values({
+      draftId: earlier!.id,
+      managerUserId: me.id,
+      peerId: me.peer,
+      clientId,
+      body: 'Avvalgi javob',
+      randomId: BigInt(`${PREFIX}${nextMsg()}`),
+      answersTgMessageId: me.anchor,
+      status: 'sent',
+      sentAt: at(50),
+      tgMessageId: me.anchor + 2n,
+      queuedBy: me.id,
+    });
+    // A message of his he deleted, 49 minutes ago.
+    const [gone] = await db
+      .insert(tgMessages)
+      .values({ clientId, managerUserId: me.id, peerId: me.peer, tgMessageId: me.anchor + 3n, direction: 'out', body: 'xato', sentAt: at(49) })
+      .returning({ id: tgMessages.id });
+    await db.insert(tgMessageFlags).values({ messageId: gone!.id, deletedAt: at(48) });
+    // And the one he wrote, 47 minutes ago.
+    const wrote = at(47);
+    await db.insert(tgMessages).values({ clientId, managerUserId: me.id, peerId: me.peer, tgMessageId: me.anchor + 4n, direction: 'out', body: 'Salom, hozir aytaman', sentAt: wrote });
+    await h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(draftId))!));
+    expect((await draftOf(draftId)).status).toBe('taken_over');
+    const text = String((await cardPayloadOf(draftId)).text);
+    expect(text).toContain(`o‘zingiz yozdingiz (${tashkentClock(wrote)})`);
+    expect(text).not.toContain(`(${tashkentClock(at(50))})`);
+    expect(text).not.toContain(`(${tashkentClock(at(49))})`);
   });
 });
 
