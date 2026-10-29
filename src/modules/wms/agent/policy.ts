@@ -215,7 +215,10 @@ function statementsFor(text: string): string[] {
  * stay credit whatever follows.
  */
 interface PaidFirst {
-  /** «Before the cargo is taken» — never «до получения оплаты», which is the money's receipt. */
+  /**
+   * «Before the cargo is taken». «До получения оплаты» — the MONEY's receipt — needs no fence here: nothing but
+   * the tail may follow these words, and «оплаты» is no tail word; `handFirst` names it as well.
+   */
   first: string;
   /** What may follow it to the end of the statement. */
   tail: string;
@@ -269,7 +272,7 @@ const PAID_FIRST_UZC: PaidFirst = {
 };
 const PAID_FIRST_RU: PaidFirst = {
   first:
-    '(?<![\\p{L}])(?:перед|до)\\s+(?:получением|получения|выдачей|выдачи)(?!\\s+(?:оплат|денег|плат|средств|расч|сумм|чек)\\p{L}*)|(?<![\\p{L}])(?:перед\\s+тем|до\\s+того),?\\s+как\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)|(?<![\\p{L}])прежде\\s+чем\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)',
+    '(?<![\\p{L}])(?:перед|до)\\s+(?:получением|получения|выдачей|выдачи)|(?<![\\p{L}])(?:перед\\s+тем|до\\s+того),?\\s+как\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)|(?<![\\p{L}])прежде\\s+чем\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)',
   tail: 'груз\\p{L}*|товар\\p{L}*|посылк\\p{L}*|со|с|из|на|в|склад\\p{L}*|ташкент\\p{L}*|андижан\\p{L}*|сум\\p{L}*|наличн\\p{L}*|карт\\p{L}*|перевод\\p{L}*|через|или|и|ваш\\p{L}*|его|их',
   deny: `${DENY_RU}|(?<![\\p{L}])(?:необязательн\\p{L}*|позже|потом|когда\\s+(?:вам\\s+)?удобно|в\\s+любое\\s+время)(?![\\p{L}])`,
   handFirst:
