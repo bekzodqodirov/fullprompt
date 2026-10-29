@@ -119,7 +119,8 @@ describe('chatOfMessage — the live chat of a short update (2026-10-29)', () =>
     });
     expect(got).toEqual({ chat: undefined, unresolved: true, via: null });
     expect(Date.now() - started).toBeLessThan(2_000);
-  });
+    // A lookup with no deadline never returns: the test's own limit is the red.
+  }, 5_000);
 
   it('the lookup AFTER the warm-up is bounded too — a cache that now knows the peer, a GetUsers that hangs', async () => {
     const cache = new Set<bigint>();
@@ -140,7 +141,8 @@ describe('chatOfMessage — the live chat of a short update (2026-10-29)', () =>
     });
     expect(got).toEqual({ chat: undefined, unresolved: true, via: null });
     expect(Date.now() - started).toBeLessThan(2_000);
-  });
+    // A lookup with no deadline never returns: the test's own limit is the red.
+  }, 5_000);
 
   it('with no deadline given, the listener’s own is the default — the warm-up’s thirty seconds', () => {
     expect(LOOKUP_DEADLINE_MS).toBe(30_000);
