@@ -8,7 +8,7 @@ import { logger } from '../../platform/logger';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { quietHour } from '../../platform/telegram/send';
 import { canLogInSql } from '../../platform/users/login';
-import { TELEGRAM_SERVICE_PEER } from '../crm/telegram-import';
+import { officialPeerSql } from '../crm/chat-rules';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import {
@@ -465,7 +465,9 @@ export function strangerCardText(title: string | null, phone: string | null): st
  * carries (the tray's own ask) and a hidden-number first contact (a rule with
  * no `peer_phone`, his Q18 ⭐). Never for a peer in his own contacts — a friend
  * or a colleague is not a lead (fit-7, `peer_contact`) — nor for an active
- * colleague's phone.
+ * colleague's phone, nor for one of Telegram's own accounts (`officialPeerSql`).
+ * The claim is given back once when the listener retires its own binding of
+ * a chat whose lead closed (`noteStranger`'s `reopened`): a new question.
  */
 export async function strangerCards(ownerUserId: string, now: Date): Promise<number> {
   const rows = await db.execute<{ id: string; peer_id: string; peer_title: string | null; peer_phone: string | null }>(sql`
@@ -473,8 +475,9 @@ export async function strangerCards(ownerUserId: string, now: Date): Promise<num
       FROM tg_chat_rules r
      WHERE r.manager_user_id = ${ownerUserId}
        AND r.decision = 'pending'
-       -- 777000, the service chat an old scan may have left pending, is no stranger to ask about.
-       AND r.peer_id <> ${TELEGRAM_SERVICE_PEER.toString()}::bigint
+       -- None of Telegram's own accounts is a stranger to ask about: 777000 an old scan may have left
+       -- pending, 489000 «Verification Codes» this card's own rule did before the classifiers knew it.
+       AND NOT ${officialPeerSql(sql`r.peer_id`)}
        AND r.created_at > ${new Date(now.getTime() - 24 * 3_600_000).toISOString()}::timestamptz
        AND NOT EXISTS (SELECT 1 FROM agent_conversations c
                         WHERE c.manager_user_id = r.manager_user_id AND c.peer_id = r.peer_id

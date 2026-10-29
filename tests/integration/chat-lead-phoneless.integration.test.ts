@@ -34,7 +34,7 @@ import { strangerCards } from '@/modules/wms/agent/jobs';
 import { noteStranger } from '@/modules/wms/agent/listener-hooks';
 import { JOB_AGENT_INBOUND, shouldStartAgentRun } from '@/modules/wms/agent/queues';
 import { leadForChat, ownerOfVerdict, phonelessLeadForChat, rekeyLeadChats } from '@/modules/wms/crm/chat-lead';
-import { decideChat, openLeadForChat, rulesFor } from '@/modules/wms/crm/chat-rules';
+import { decideChat, listCandidates, openLeadForChat, rulesFor } from '@/modules/wms/crm/chat-rules';
 import { storeIncoming } from '@/modules/wms/crm/telegram-accounts';
 import { toMessageRow, type ChatRule, type ClientPhones, type DialogPeer, type RawMessage } from '@/modules/wms/crm/telegram-import';
 import { decideIncoming } from '@/modules/wms/crm/telegram-live';
@@ -364,18 +364,30 @@ describe('a person’s answer on the tray outranks the machine (R2)', () => {
     expect(await ruleOf(peer)).toMatchObject({ decision: 'include', clientId, leadId: null });
   });
 
-  it('a ↩ on the tray takes the rule back to «pending» — the next line finds the lead the chat’s rows are on', async () => {
+  it('a ↩ on the tray is a person’s answer: the next line is not re-bound over it — the chat waits on the tray (2026-10-29 review)', async () => {
     const peer = nextPeer();
     const first = await liveLine(hidden(peer), line());
     const leadId = first.owner!.leadId!;
     const rule = (await ruleOf(peer))!;
     await decideChat({ id: rule.id, decision: 'pending' }, ctx());
-    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null });
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null, decidedBy: managerId });
     const before = (await phonelessLeads()).length;
-    const next = await liveLine(hidden(peer), line({ message: 'Yana savol' }));
-    expect(next.owner!.leadId).toBe(leadId);
+    // The listener's fresh map: the switch still says «lead» about a hidden stranger…
+    const next = await liveLine(hidden(peer), line({ message: 'Yana savol' }), await rulesFor(managerId));
+    expect(next.verdict).toMatchObject({ openLead: true });
+    // …and the door under the lock says no: nothing stored, nothing minted, his ↩ and its author stand.
+    expect(next.owner).toBeNull();
+    expect(next.written).toBeNull();
     expect((await phonelessLeads()).length).toBe(before);
-    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId });
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null, decidedBy: managerId });
+    // The tray lists it, and on a work number its own «Lid ochish» can now answer «lid» —
+    // the lead the chat's rows are on, recorded as his.
+    const pending = await listCandidates({ managerUserId: managerId, decision: 'pending' });
+    const row = pending.find((r) => r.id === rule.id);
+    expect(row).toMatchObject({ phone: null, workAccount: true });
+    expect((await openLeadForChat(rule.id, ctx())).leadId).toBe(leadId);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId, decidedBy: managerId });
+    expect((await rulesFor(managerId)).get(peer)).toMatchObject({ machine: false });
   });
 });
 
@@ -501,7 +513,7 @@ describe('the 2026-10-29 review — a question nobody answered is not an answer'
     expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null });
   });
 
-  it('…but a ↩ a PERSON gave is an answer: the client that ↩ took back is not followed', async () => {
+  it('…but a ↩ a PERSON gave is an answer: the client that ↩ took back is not followed — nor is a lead minted over it (re-anchored, 2026-10-29 review)', async () => {
     const peer = nextPeer();
     await storeIncoming({ clientId, managerUserId: managerId, row: toMessageRow(peer, line({ date: Math.floor(Date.now() / 1000) - 86_400 })) });
     const [r] = await db
@@ -509,8 +521,12 @@ describe('the 2026-10-29 review — a question nobody answered is not an answer'
       .values({ managerUserId: managerId, peerId: peer, decision: 'include', clientId, peerPhone: null, decidedBy: managerId })
       .returning({ id: tgChatRules.id });
     await decideChat({ id: r!.id, decision: 'pending' }, ctx());
+    const before = (await phonelessLeads()).length;
     const out = await liveLine(hidden(peer), line(), await rulesFor(managerId));
-    expect(out.owner).toMatchObject({ clientId: null, label: 'LID' });
+    // «Ask me again» is what the ↩ said: the line goes to neither the client nor a new lead, and the tray asks.
+    expect(out.owner).toBeNull();
+    expect((await phonelessLeads()).length).toBe(before);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', clientId: null, leadId: null, decidedBy: managerId });
   });
 });
 
@@ -607,14 +623,15 @@ describe('the 2026-10-29 review — the machine’s binding yields to the book a
     expect(control.owner).toMatchObject({ clientId: c.id, leadId: null });
   });
 
-  it('switched back to «Shaxsiy raqam»: the machine’s binding stores nothing, as for a visible stranger (probe D)', async () => {
+  it('switched back to «Shaxsiy raqam»: the chat the work number bound stays on its open lead — the switch governs new strangers only (probe D, re-anchored)', async () => {
     const hiddenPeer = nextPeer();
-    await liveLine(hidden(hiddenPeer), line());
-    const visiblePeer = nextPeer();
-    await liveLine(hidden(visiblePeer, { phone: `+99893${SUFFIX}64` }), line());
+    const bound = await liveLine(hidden(hiddenPeer), line());
     const rules = await rulesFor(managerId);
-    expect(decideIncoming(hidden(hiddenPeer), line(), [], rules, false)).toEqual({ store: false, reason: 'no_phone' });
-    expect(decideIncoming(hidden(visiblePeer, { phone: `+99893${SUFFIX}64` }), line(), [], rules, false)).toMatchObject({ store: false, ask: true });
+    // The first cut passed this line over, and the binding's row kept every question from being asked.
+    const back = await liveLine(hidden(hiddenPeer), line({ message: 'Shaxsiy raqamga yozdim' }), rules, { work: false });
+    expect(back.verdict).toMatchObject({ store: true, leadId: bound.owner!.leadId });
+    expect(back.owner).toMatchObject({ leadId: bound.owner!.leadId, clientId: null });
+    expect(back.written).not.toBeNull();
     // A person's «📵» binding is an answer, and stands on a personal number.
     const pressed = nextPeer();
     const [r] = await db

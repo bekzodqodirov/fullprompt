@@ -195,14 +195,16 @@ export function workModeSwitch(opts: {
  * number (a lead, or a tray question) since round 79; a hidden number too
  * since his «1 a» (2026-10-29): on a work number it is a lead, on a personal
  * one it is passed over, so a flip to «Ish raqami» must reach the next
- * hidden-number line as quickly as the next visible one — and so must a line
- * of a chat the listener bound to a lead by itself (`machine`), which stands
- * only on a work number. Deliberately not `suspectsStaleBook` — that one asks
- * whether the BOOK may be old, and a hidden number can never be found in a
- * book.
+ * hidden-number line as quickly as the next visible one. NOT a line of a chat
+ * the listener already bound to a lead (`ChatRule.machine`): the switch
+ * decides about NEW strangers only (the 2026-10-29 review), so that line is
+ * the binding's whatever the switch says, and reading the switch afresh for
+ * each of them would be a query per line for nothing. Deliberately not
+ * `suspectsStaleBook` — that one asks whether the BOOK may be old, and a
+ * hidden number can never be found in a book.
  */
 export function switchDecides(verdict: LiveVerdict): boolean {
-  if (verdict.store) return 'openLead' in verdict || ('leadId' in verdict && verdict.machine === true);
+  if (verdict.store) return 'openLead' in verdict;
   return 'ask' in verdict || verdict.reason === 'no_phone' || verdict.reason === 'not_a_client';
 }
 
@@ -224,13 +226,13 @@ export type LiveVerdict =
    */
   | { store: true; openLead: true; peer: { peerId: bigint; phone: string | null; title: string }; row: MessageRow }
   /**
-   * A chat somebody attached to a lead by hand, from the tray (0065). The
-   * lead already exists, so unlike `openLead` there is nothing to mint and
-   * nothing to name — only where to put the message. `machine`: the binding
-   * is the listener's own (a work number's hidden-number lead), which the
-   * switch decides (`switchDecides`).
+   * A chat somebody attached to a lead by hand, from the tray (0065) — or a
+   * door did (round 113's website rule), or the listener did (a work number's
+   * hidden-number lead), or a work number kept it on its lead by the phone
+   * (`keptOnLead`). The lead already exists, so unlike `openLead` there is
+   * nothing to mint and nothing to name — only where to put the message.
    */
-  | { store: true; leadId: string; row: MessageRow; machine?: true }
+  | { store: true; leadId: string; row: MessageRow }
   /**
    * A stranger on a PERSONAL number: a question, not an answer. Carries who
    * to ask ABOUT — a tray cannot offer an anonymous row — and deliberately
@@ -305,20 +307,27 @@ export function decideIncoming(
    * Messages is not a customer under any decision anybody could write down.
    *
    * A binding the LISTENER made by itself (`machine` — a work number's
-   * hidden-number lead, his «1 a») is nobody's answer, so it stands only
-   * while it is still the best fact about the chat (the 2026-10-29 review):
-   *  - on a WORK number: on a personal one nothing a stranger writes is
-   *    stored until a person answers, and a switch to «Shaxsiy raqam» made to
-   *    undo a mistake must undo it for these chats too;
+   * hidden-number lead, his «1 a», marked by 0139) is nobody's answer, so it
+   * stands only while it is still the best fact about the chat (the
+   * 2026-10-29 review):
    *  - while its lead is OPEN: a lost lead writing again is a new enquiry
    *    (round 79), and a won one is the client it became — both decided by
-   *    the hidden-number door again (`ownerOfVerdict`);
+   *    the hidden-number door again (`ownerOfVerdict`), and on a personal
+   *    number asked about afresh (chat-lead `settlePassedChat`);
    *  - until the phone BOOK claims the chat: a client of ours who wrote to the
    *    new number before it was saved in its contacts is that client the
    *    moment Telegram shows the number, not a «Telegram» lead for good — the
    *    line goes to the client and the binding is retired with it.
-   * A person's lead binding (the tray's «Yangi lid», the «📵» card) is an
-   * answer and outranks all three, as it always has.
+   * Whatever the SWITCH says: «Ish raqami / Shaxsiy raqam» decides about new
+   * strangers only. The first cut let the binding stand on a work number
+   * alone, and a switch turned back left a known lead's customer in a hole —
+   * not stored, and (a hidden number) asked about by nobody, because the
+   * binding's row stops every question the tray or the «📵» card would ask.
+   * A mistaken binding is undone by a person, per chat: the tray's ↩ and
+   * «hech qachon», the card's «🚫 Shaxsiy».
+   * A person's lead binding (the tray's «Yangi lid», the «📵» card) and
+   * another door's (round 113's website rule) are answers and outrank both,
+   * as they always have.
    */
   const rule = rules.get(peer.id);
   const machine = rule?.machine === true;
@@ -327,11 +336,9 @@ export function decideIncoming(
     !isTelegramOfficialPeer(peer) &&
     rule?.decision === 'include' &&
     rule.leadId &&
-    (!machine || (workAccount && rule.leadOpen !== false && !classifyDialog(peer, clients).keep))
+    (!machine || (rule.leadOpen !== false && !classifyDialog(peer, clients).keep))
   ) {
-    const leadRow = toMessageRow(peer.id, msg);
-    if (!isWorthKeeping(leadRow)) return { store: false, reason: 'empty' };
-    return machine ? { store: true, leadId: rule.leadId, row: leadRow, machine: true } : { store: true, leadId: rule.leadId, row: leadRow };
+    return keptOnLead(peer, msg, rule.leadId);
   }
 
   const verdict = classifyWithRules(peer, clients, rules);
@@ -361,6 +368,18 @@ export function decideIncoming(
   return machine
     ? { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row, retiresMachineRule: true }
     : { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
+}
+
+/**
+ * A line filed on a lead the chat already belongs to — a rule's, or the open
+ * lead a work number kept the chat on before the switch went back (chat-lead
+ * `settlePassedChat`, whose answer turns a passed-over line into this). The
+ * same «nothing in it» refusal every stored verdict makes.
+ */
+export function keptOnLead(peer: DialogPeer, msg: RawMessage, leadId: string): LiveVerdict {
+  const row = toMessageRow(peer.id, msg);
+  if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
+  return { store: true, leadId, row };
 }
 
 /**

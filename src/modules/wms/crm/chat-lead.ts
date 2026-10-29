@@ -1,8 +1,9 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { clients, leadStages, leads, tgAccounts, tgChatRules, tgMessages } from '../../platform/db/schema';
 import { phoneDigits } from '../../platform/clients/phone';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { logger } from '../../platform/logger';
 import { createLead, defaultStageId, insertLeadTx } from './service';
 import type { LiveVerdict } from './telegram-live';
 import { leadNameForChat, PHONELESS_LEAD_NAME } from './unknown-chat';
@@ -99,28 +100,104 @@ export async function leadForChat(
 /**
  * Who opened a hidden-number lead — its note on the card, and the reason on
  * the tray rule's audit row. The «📵» card's words are the ones that door has
- * always written.
+ * always written. `tray`: «Lid ochish» on «Qaysi chatlar» for a hidden number
+ * on a WORK account — the answer a person gives once a ↩ there has taken the
+ * listener's own binding back (the 2026-10-29 review: the work number no
+ * longer re-binds over a person's ↩, so the tray must be able to say «lid»).
  */
-export type PhonelessVia = 'agent_stranger' | 'work_account';
+export type PhonelessVia = 'agent_stranger' | 'work_account' | 'tray';
 
 const PHONELESS_NOTE: Record<PhonelessVia, string> = {
   agent_stranger: 'Telegram: raqami yashirin — AI sotuvchining «📵» kartasidan ochildi.',
   work_account: 'Telegram: raqami yashirin — ish raqamiga yozdi, lid o‘zi ochildi.',
+  tray: 'Telegram: raqami yashirin — «Qaysi chatlar»dan lid sifatida ochildi.',
 };
 
 /**
- * A rule row no PERSON wrote: a question the listener or a scan left
- * (`pending` with no `decided_by` — `noteStranger`, `recordCandidates`), or
- * the listener's own lead binding (`include` on a lead with no `decided_by` —
- * this file's work-number door). A person's answer always carries who gave
- * it: the tray's ↩ included (`decideChat` writes `decided_by` on «pending»
- * too). The 2026-10-29 review: «any row means somebody decided» turned a
- * known client's chat into a lead for good once his own «📵» card's question
- * was standing.
+ * The listener's mark on its OWN lead binding (0139, `bound_via`), read
+ * through the row's jsonb: the column is SQL-only this release (the schema's
+ * note on `tgChatRules`), so a server one migration behind reads NULL — «no
+ * machine binding» — and never answers 42703. Inside a select FROM
+ * `tg_chat_rules` the table's name is its row.
  */
-export function nobodyDecided(rule: { decision: string; decidedBy: string | null; clientId: string | null }): boolean {
-  return rule.decidedBy === null && rule.clientId === null && (rule.decision === 'pending' || rule.decision === 'include');
+export const boundViaSql = sql<string | null>`to_jsonb(${tgChatRules})->>'bound_via'`;
+
+/** The one value 0139's CHECK admits — written by `phonelessLeadForChat`'s machine door and nobody else. */
+const WORK_ACCOUNT_BINDING = 'work_account';
+
+/**
+ * Whether 0139 has landed — asked by the one writer of the mark, never by a
+ * reader (they read NULL). Held once true: a ledger does not go backwards. A
+ * false answer is asked again next time, because the listener does not wait
+ * for `migrate` and may be a few seconds ahead of it on deploy morning.
+ */
+let boundViaKnown = false;
+export async function boundViaReady(): Promise<boolean> {
+  if (boundViaKnown) return true;
+  try {
+    const rows = await db.execute<{ ok: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM pg_attribute
+         WHERE attrelid = to_regclass('public.tg_chat_rules') AND attname = 'bound_via' AND NOT attisdropped
+      ) AS ok`);
+    boundViaKnown = rows[0]?.ok === true;
+  } catch (err) {
+    logger.warn({ err }, '[chat-lead] bound_via not checked');
+    return false;
+  }
+  return boundViaKnown;
 }
+
+/** Tests: a server one migration behind, as far as this process knows. */
+export function __forgetBoundViaReady(): void {
+  boundViaKnown = false;
+}
+
+type RuleFacts = {
+  decision: string;
+  decidedBy: string | null;
+  clientId: string | null;
+  leadId: string | null;
+  boundVia: string | null;
+};
+
+/**
+ * The listener's own lead binding — and only it: an include on a lead, no
+ * client, no `decided_by`, AND the mark only its door writes (`boundVia`).
+ * The mark is the fact; the shape beside it is the belt (a person's write
+ * always carries `decided_by`, so a mark a person wrote over is no machine's).
+ * The shape alone is NOT the listener's: round 113's website door
+ * (`landSiteTag`) has written exactly that shape since it shipped, with no
+ * actor, and production holds such rows (the 2026-10-29 review's blocker).
+ */
+export function isMachineBinding(rule: RuleFacts): boolean {
+  return (
+    rule.boundVia === WORK_ACCOUNT_BINDING &&
+    rule.decision === 'include' &&
+    rule.decidedBy === null &&
+    rule.clientId === null &&
+    rule.leadId !== null
+  );
+}
+
+/**
+ * A rule row no PERSON wrote and no door answered: a question the listener or
+ * a scan left (`pending` with no `decided_by` — `noteStranger`,
+ * `recordCandidates`), or the listener's own lead binding
+ * (`isMachineBinding`). A person's answer always carries who gave it: the
+ * tray's ↩ included (`decideChat` writes `decided_by` on «pending» too). The
+ * 2026-10-29 review: «any row means somebody decided» turned a known client's
+ * chat into a lead for good once his own «📵» card's question was standing —
+ * and «no `decided_by` means nobody» turned a WEBSITE visitor's rule into
+ * nobody's.
+ */
+export function nobodyDecided(rule: RuleFacts): boolean {
+  if (rule.decision === 'pending') return rule.decidedBy === null && rule.clientId === null;
+  return isMachineBinding(rule);
+}
+
+/** The rule's columns plus its 0139 mark — what `nobodyDecided` reads. */
+const ruleWithMark = { ...getTableColumns(tgChatRules), boundVia: boundViaSql };
 
 /** The machine door found the chat is a client's after all — nothing it wrote may stay. */
 class KeptOnClient extends Error {}
@@ -150,17 +227,26 @@ class KeptOnClient extends Error {}
  * again is a new enquiry (round 79) — the rule is rebound to the new one.
  *
  * The machine door (`work_account`) does not write over a person's answer: a
- * chat somebody marked «hech qachon», or bound to a client, since the
- * listener read its rules answers null and nothing is minted — the caller
- * decides the line again on fresh rules. Nor over the phone book: a chat
- * nobody decided whose rows are a client's is that client's
- * (`keptClientOfChat`). A person's press (`agent_stranger`) is itself the
- * answer and takes the chat whatever the rule said.
+ * chat somebody marked «hech qachon», bound to a client, or put back in
+ * question with the tray's ↩ (a «pending» that carries who pressed it — the
+ * 2026-10-29 review: the next hidden line re-bound it and erased the ↩) since
+ * the listener read its rules answers null and nothing is minted — the caller
+ * decides the line again on fresh rules, and the chat waits on the tray. Nor
+ * over another door's binding (round 113's website rule), nor over the phone
+ * book: a chat nobody decided whose rows are a client's is that client's
+ * (`keptClientOfChat`). A person's press (`agent_stranger`, `tray`) is itself
+ * the answer and takes the chat whatever the rule said — the listener's own
+ * binding included, which it then records as the PERSON's.
  *
- * Its binding is the MACHINE's (`decided_by` NULL, read as `ChatRule.machine`):
- * nobody decided it, so `decideIncoming` lets it stand only on a work number,
- * while its lead is open, and until the book claims the chat. A press is a
- * person's and is recorded as theirs.
+ * Its binding is the MACHINE's — `decided_by` NULL and the 0139 mark
+ * `bound_via = 'work_account'` (`isMachineBinding`, read as
+ * `ChatRule.machine`), written in the same transaction and by no other door:
+ * nobody decided it, so `decideIncoming` lets it stand while its lead is open
+ * and until the book claims the chat; once its lead is closed a personal
+ * number asks about the chat afresh (`settlePassedChat`). A live «📵» card
+ * still asking about the chat is closed once the binding commits
+ * (`closeStrangerCardsFor`) — its question has been answered, by the switch.
+ * A press is a person's and is recorded as theirs.
  *
  * Named by `leadNameForChat` (title, else @username, else the placeholder —
  * never the chat id); owned, like every chat lead, by the manager whose
@@ -185,20 +271,36 @@ export async function phonelessLeadForChat(
       decidedBy: tgChatRules.decidedBy,
       clientId: tgChatRules.clientId,
       leadId: tgChatRules.leadId,
+      boundVia: boundViaSql,
       leadKind: leadStages.kind,
     })
     .from(tgChatRules)
     .leftJoin(leads, eq(leads.id, tgChatRules.leadId))
     .leftJoin(leadStages, eq(leadStages.id, leads.stageId))
     .where(where);
-  if (bound?.decision === 'include' && bound.leadId && bound.leadKind === 'open') return bound.leadId;
+  // The chat is on an open lead already. A PERSON's press over the listener's
+  // own binding goes on: it is that person's answer now, and is written so.
+  if (bound?.decision === 'include' && bound.leadId && bound.leadKind === 'open' && (machine || !isMachineBinding(bound))) {
+    return bound.leadId;
+  }
+  // A person's answer, or another door's binding, is never the machine's to write over.
+  if (machine && bound && !nobodyDecided(bound)) return null;
   // A client's chat whose number Telegram has since hidden is that client's,
   // not a new lead's (`keptClientOfChat`) — the machine door mints nothing
   // over it; `ownerOfVerdict` files the line on the client.
-  if (machine && (!bound || nobodyDecided(bound)) && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
+  if (machine && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
+  // The machine's binding must carry its mark, or it would read as a door's
+  // answer for good (never yielding to the book). One migration behind there
+  // is no mark to write, so the door mints nothing until 0139 lands — the
+  // line is passed over, the next one decided on the landed schema.
+  const markable = await boundViaReady();
+  if (machine && !markable) {
+    logger.warn({ managerUserId: input.managerUserId }, '[chat-lead] 0139 not applied — a hidden number on a work number is not bound until it is');
+    return null;
+  }
   const stageId = await defaultStageId();
   try {
-    return await db.transaction(async (tx) => {
+    const minted = await db.transaction(async (tx) => {
       await tx
         .insert(tgChatRules)
         .values({
@@ -209,7 +311,7 @@ export async function phonelessLeadForChat(
           peerPhone: null,
         })
         .onConflictDoNothing({ target: [tgChatRules.managerUserId, tgChatRules.peerId] });
-      const [rule] = await tx.select().from(tgChatRules).where(where).for('update');
+      const [rule] = await tx.select(ruleWithMark).from(tgChatRules).where(where).for('update');
       if (!rule) return null;
       const openKind = async (leadId: string) => {
         const [row] = await tx
@@ -220,9 +322,11 @@ export async function phonelessLeadForChat(
         return row?.kind === 'open';
       };
       const ruleLead = rule.leadId && (await openKind(rule.leadId)) ? rule.leadId : null;
-      if (rule.decision === 'include' && ruleLead) return ruleLead;
-      if (machine && (rule.decision === 'exclude' || (rule.decision === 'include' && rule.clientId))) return null;
-      if (machine && nobodyDecided(rule)) {
+      if (rule.decision === 'include' && ruleLead && (machine || !isMachineBinding(rule))) return { leadId: ruleLead, ruleId: rule.id, bound: false };
+      // The same refusal under the lock: a ↩, a «never», a client or another
+      // door's binding written since the pre-check is a person's answer.
+      if (machine && !nobodyDecided(rule)) return null;
+      if (machine) {
         // The book's answer, under the lock: the pre-check above ran on the
         // pool before it, and a row it may have inserted must not outlive a
         // refusal — the tray would ask about a client's chat.
@@ -317,11 +421,17 @@ export async function phonelessLeadForChat(
           clientId: null,
           // The label refreshed like a scan refreshes it: deciding from a stale name is deciding about the wrong person.
           peerTitle: input.title?.slice(0, 200) ?? rule.peerTitle,
-          // Nobody decided the listener's binding — the marker `ChatRule.machine` reads.
+          // Nobody decided the listener's binding — a person's press is theirs.
           decidedBy: machine ? null : actor.actorId,
           decidedAt: new Date(),
         })
         .where(eq(tgChatRules.id, rule.id));
+      // The mark `ChatRule.machine` reads, in the same transaction — the ONE
+      // writer of `bound_via` (0139): set by the machine's binding, cleared by
+      // a person's press over it.
+      if (markable) {
+        await tx.execute(sql`UPDATE tg_chat_rules SET bound_via = ${machine ? WORK_ACCOUNT_BINDING : null} WHERE id = ${rule.id}`);
+      }
       await writeAudit(tx, actor, {
         entityType: 'tg_chat_rule',
         entityId: rule.id,
@@ -329,13 +439,40 @@ export async function phonelessLeadForChat(
         before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
         after: { decision: 'include', clientId: null, leadId, reason: `${input.via}_phoneless` },
       });
-      return leadId;
+      return { leadId, ruleId: rule.id, bound: true };
     });
+    if (minted?.bound && machine) await closeStrangerCardsFor(input.managerUserId, minted.ruleId);
+    return minted?.leadId ?? null;
   } catch (err) {
     if (err instanceof KeptOnClient) return null;
     throw err;
   }
 }
+
+/**
+ * The «📵» card a personal number left standing for a chat the work number
+ * has now bound by itself (the 2026-10-29 review): its question is answered —
+ * by the switch — and a card that still offers «🆕 Yangi lid» about a chat
+ * that already IS a lead reads as a press waiting to happen. Closed the way
+ * every answered card is (bot-door `closeRuleCards`: `live: false`, its sent
+ * copies edited). A press that still arrives on a copy is a person's answer
+ * and wins over the binding (bot-door `strangerPress`). After the commit and
+ * best-effort: the binding stands whatever the cards say, and one migration
+ * behind the agent's tables are not there at all.
+ */
+async function closeStrangerCardsFor(managerUserId: string, ruleId: string): Promise<void> {
+  try {
+    const { agentTablesReady } = await import('../agent/config');
+    if (!(await agentTablesReady())) return;
+    const { closeStrangerCards } = await import('../agent/bot-door');
+    await closeStrangerCards(managerUserId, ruleId, STRANGER_CARD_BOUND);
+  } catch (err) {
+    logger.warn({ err, ruleId }, '[chat-lead] stranger card not closed after the work number bound the chat');
+  }
+}
+
+/** What a closed «📵» card says once the work number has opened the lead by itself. */
+export const STRANGER_CARD_BOUND = '🆕 Ish raqamiga yozdi — lid o‘zi ochildi. Shaxsiy bo‘lsa «Qaysi chatlar»da o‘zgartiring.';
 
 /**
  * The client a hidden number's chat was ALREADY kept on — by the phone it
@@ -358,7 +495,13 @@ export async function keptClientOfChat(
   peerId: bigint,
 ): Promise<{ clientId: string; clientCode: string } | null> {
   const [rule] = await db
-    .select({ decision: tgChatRules.decision, decidedBy: tgChatRules.decidedBy, clientId: tgChatRules.clientId })
+    .select({
+      decision: tgChatRules.decision,
+      decidedBy: tgChatRules.decidedBy,
+      clientId: tgChatRules.clientId,
+      leadId: tgChatRules.leadId,
+      boundVia: boundViaSql,
+    })
     .from(tgChatRules)
     .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)));
   if (rule && !nobodyDecided(rule)) return null;
@@ -381,15 +524,33 @@ export async function keptClientOfChat(
 }
 
 /**
- * The listener's own lead binding, taken back: the phone book has claimed the
- * chat (`LiveVerdict.retiresMachineRule`). Only a binding NOBODY decided — a
- * person's answer is never deleted by a machine. The chat then has no rule at
- * all, which is what it would have had if Telegram had shown the number from
- * the first line: the book files it, and a later hidden line goes where its
- * rows are (`keptClientOfChat`). The lead it was on stays on the funnel with
- * its lines — closing a card is a person's call. Audited with the reason.
+ * The listener's own lead binding, taken back — and only it (`isMachineBinding`,
+ * restated here in SQL over the 0139 mark): a person's answer is never deleted
+ * by a machine, and neither is another door's binding (round 113's website
+ * rule has the same shape and no mark). Two reasons:
+ *
+ *  - `book_match` — the phone book has claimed the chat
+ *    (`LiveVerdict.retiresMachineRule`). The chat then has no rule at all,
+ *    which is what it would have had if Telegram had shown the number from
+ *    the first line: the book files it, and a later hidden line goes where its
+ *    rows are (`keptClientOfChat`);
+ *  - `lead_closed` — its lead was won or lost and a PERSONAL number passed the
+ *    next line over (`settlePassedChat`): a closed lead writing again is a new
+ *    enquiry (round 79), and on a personal number a new stranger is a
+ *    question — which the binding's row, kept, would stop anybody from ever
+ *    asking (the stranger card wants a «pending» row, the tray lists one).
+ *    Asked only of a lead that is closed IN the statement, not in the
+ *    listener's ten-minute map.
+ *
+ * The lead it was on stays on the funnel with its lines — closing a card is
+ * a person's call. Audited with the reason.
  */
-export async function retireMachineBinding(managerUserId: string, peerId: bigint, ctx: AuditContext): Promise<boolean> {
+export async function retireMachineBinding(
+  managerUserId: string,
+  peerId: bigint,
+  ctx: AuditContext,
+  reason: 'book_match' | 'lead_closed' = 'book_match',
+): Promise<boolean> {
   return db.transaction(async (tx) => {
     const gone = await tx
       .delete(tgChatRules)
@@ -400,6 +561,12 @@ export async function retireMachineBinding(managerUserId: string, peerId: bigint
           eq(tgChatRules.decision, 'include'),
           isNull(tgChatRules.decidedBy),
           isNull(tgChatRules.clientId),
+          sql`${boundViaSql} = ${WORK_ACCOUNT_BINDING}`,
+          // Qualified by hand: a single-table statement renders drizzle's columns bare (#128).
+          reason === 'lead_closed'
+            ? sql`NOT EXISTS (SELECT 1 FROM leads l JOIN lead_stages s ON s.id = l.stage_id
+                               WHERE l.id = tg_chat_rules.lead_id AND s.kind = 'open')`
+            : undefined,
         ),
       )
       .returning({ id: tgChatRules.id, leadId: tgChatRules.leadId });
@@ -410,10 +577,79 @@ export async function retireMachineBinding(managerUserId: string, peerId: bigint
       entityId: row.id,
       action: 'delete',
       before: { decision: 'include', clientId: null, leadId: row.leadId },
-      after: { reason: 'book_match' },
+      after: { reason },
     });
     return true;
   });
+}
+
+/**
+ * The open lead a chat is already KEPT on by its own stored rows, with no
+ * person's answer over it — or null. The rows of a chat no rule names are on
+ * a lead for one reason only: a work number kept them (the phone path finds
+ * its lead by the number on every line and writes no rule), and a person's
+ * answer (a ↩, «never», a client) is a rule that outranks them.
+ */
+export async function keptLeadOfChat(managerUserId: string, peerId: bigint): Promise<string | null> {
+  const [rule] = await db
+    .select({
+      decision: tgChatRules.decision,
+      decidedBy: tgChatRules.decidedBy,
+      clientId: tgChatRules.clientId,
+      leadId: tgChatRules.leadId,
+      boundVia: boundViaSql,
+    })
+    .from(tgChatRules)
+    .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)));
+  if (rule && !nobodyDecided(rule)) return null;
+  // The newest row, by Telegram's own id inside a second (keptClientOfChat's order).
+  const [newest] = await db
+    .select({ leadId: tgMessages.leadId, clientId: tgMessages.clientId })
+    .from(tgMessages)
+    .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)))
+    .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
+    .limit(1);
+  // A row on a client too is the won lead's customer — the client's, not a lead's.
+  if (!newest?.leadId || newest.clientId) return null;
+  const [lead] = await db
+    .select({ kind: leadStages.kind })
+    .from(leads)
+    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
+    .where(eq(leads.id, newest.leadId));
+  return lead?.kind === 'open' ? newest.leadId : null;
+}
+
+/**
+ * A line the SWITCH passed over (`ask` — a visible stranger on a personal
+ * number; `no_phone` — a hidden one) on a chat that is no new stranger.
+ * His rule for the switch (the 2026-10-29 review): «Ish raqami / Shaxsiy
+ * raqam» decides about NEW strangers only — a chat the work number already
+ * kept goes on being kept after the switch goes back, or a known lead's
+ * customer would fall into a hole (not stored, and — a hidden number — never
+ * asked about either).
+ *
+ *  - the listener's own binding whose lead has CLOSED is retired
+ *    (`lead_closed`), so the chat is a new stranger's again: asked on the
+ *    tray, and on the AI's account by a fresh «📵» card (`reopened`);
+ *  - a chat kept on an OPEN lead by its own rows (`keptLeadOfChat`) — the
+ *    visible-number twin of the listener's binding, which writes no rule —
+ *    stays on that lead (`leadId`). The listener's binding itself never
+ *    reaches here: `decideIncoming` stores its lines whatever the switch says.
+ *
+ * Asked only for a line not kept; nothing about the line is read or written
+ * here but which chat it is.
+ */
+export async function settlePassedChat(
+  managerUserId: string,
+  peerId: bigint,
+  rule: { machine?: boolean; leadOpen?: boolean } | undefined,
+  ctx: AuditContext,
+): Promise<{ leadId: string | null; reopened: boolean }> {
+  if (rule?.machine === true && rule.leadOpen === false) {
+    const reopened = await retireMachineBinding(managerUserId, peerId, ctx, 'lead_closed');
+    if (reopened) return { leadId: null, reopened };
+  }
+  return { leadId: await keptLeadOfChat(managerUserId, peerId), reopened: false };
 }
 
 /** Where a kept line goes, and the word the listener's log prints for it. */

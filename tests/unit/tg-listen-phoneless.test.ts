@@ -47,7 +47,7 @@ describe('the listener files a kept line through ONE door', () => {
 
   it('the «📵» card is still noted only for a line the verdict did NOT keep — so a work number’s hidden-number lead gets none', () => {
     const notKept = handle.slice(handle.indexOf('if (!verdict.store) {'), handle.indexOf('const owner = await ownerOfVerdict('));
-    expect(notKept).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone');");
+    expect(notKept).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone', reopened);");
     expect(handle.slice(handle.indexOf('const owner = await ownerOfVerdict('))).not.toContain('strangerSeen(');
   });
 });

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentConversations, agentDrafts, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
@@ -541,10 +541,25 @@ async function keptQuestion(
   return question;
 }
 
-type RuleRow = typeof tgChatRules.$inferSelect;
+/** A rule as the stranger and echo cards judge it — with the 0139 mark of the listener's own binding. */
+type RuleRow = typeof tgChatRules.$inferSelect & { boundVia: string | null };
 type ConvIdentity = { clientId: string | null; strength: string | null; updatedAt: Date } | undefined;
 
 const tailOf = (id: string | null | undefined) => (id ?? '').slice(-8).toLowerCase();
+
+/**
+ * The rule a stranger or echo card names, read with its 0139 mark (chat-lead
+ * `boundViaSql` — NULL, never 42703, one migration behind): a press must tell
+ * the listener's own binding (nobody's answer) from a decision.
+ */
+async function ruleFor(ruleId: string): Promise<RuleRow | undefined> {
+  const { boundViaSql } = await import('../crm/chat-lead');
+  const [rule] = await db
+    .select({ ...getTableColumns(tgChatRules), boundVia: boundViaSql })
+    .from(tgChatRules)
+    .where(eq(tgChatRules.id, ruleId));
+  return rule;
+}
 
 async function convIdentity(staffId: string, peerId: bigint): Promise<ConvIdentity> {
   const [conv] = await db
@@ -674,6 +689,21 @@ async function closeRuleCards(
 }
 
 /**
+ * The stranger cards still asking about one chat, closed with `line` — for a
+ * door outside the bot whose own act answered their question: chat-lead's
+ * work-number binding (`phonelessLeadForChat`, the 2026-10-29 review — a card
+ * a personal number posted stayed live after the switch to «Ish raqami», and
+ * offered «🆕 Yangi lid» about a chat that already was one).
+ */
+export async function closeStrangerCards(staffId: string, ruleId: string, line: string): Promise<void> {
+  await closeRuleCards(staffId, 'AgentStranger', ruleId, () => line);
+}
+
+/** A Telegram account of Telegram's own (`officialChat`) — no answer but «Shaxsiy». */
+const OFFICIAL_CHAT_WORDS =
+  "Bu Telegram'ning o'z xizmat akkaunti (kodlar, bildirishnomalar) — mijoz ham, lid ham emas. Faqat «🚫 Shaxsiy» bosish mumkin.";
+
+/**
  * A chat ↩ leaves in question again gets a stranger card back when it has no
  * live one (review I1): the ✅ closed the first, the one-card-per-peer claim
  * is spent, and the listener stores nothing for a pending chat — without a
@@ -713,10 +743,21 @@ function decidedWords(rule: RuleRow): string {
 
 /**
  * The stranger card's buttons (§17.11): a lead, a client by its code (echoed
- * first), or personal. The card is an answer to a PENDING chat, and only to
- * one: once the chat is decided — here, or on the web tray, whose door closes
- * no card of the bot's — a press on it is late (a live copy nobody closed, a
- * backlog press), and a late press is never a second decision (review I1).
+ * first), or personal. The card is an answer to a chat still IN QUESTION,
+ * and only to one: once the chat is decided — here, or on the web tray, whose
+ * door closes no card of the bot's — a press on it is late (a live copy
+ * nobody closed, a backlog press), and a late press is never a second
+ * decision (review I1).
+ *
+ * In question = `pending`, or the listener's OWN binding (chat-lead
+ * `isMachineBinding` — a work number's hidden-number lead, his «1 a»): that
+ * binding is nobody's answer, so a press on its chat is the FIRST decision
+ * and wins (the 2026-10-29 review — it was refused «allaqachon hal
+ * qilingan», and the AI went on drafting for a chat he called private).
+ * «🚫 Shaxsiy» then also deletes what the listener stored on its own say-so
+ * (`purgeExcludedChat`, `excludeAndPurgeChat`'s rule), «🆕 Yangi lid» makes
+ * the binding his, «👤 Mijoz — kod» moves the chat onto the client. Telegram's
+ * own accounts (`officialChat`) take no answer but «Shaxsiy», in words.
  */
 async function strangerPress(
   staffId: string,
@@ -724,12 +765,19 @@ async function strangerPress(
   ruleId: string,
   echoedTail: string | undefined,
 ): Promise<PressAnswer> {
-  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  const rule = await ruleFor(ruleId);
   if (!rule || rule.managerUserId !== staffId) return { toast: 'Topilmadi' };
   const ctx = { actorId: staffId };
-  const { decideChat, openLeadForChat } = await import('../crm/chat-rules');
+  const { decideChat, officialChat, openLeadForChat, purgeExcludedChat } = await import('../crm/chat-rules');
+  const { isMachineBinding } = await import('../crm/chat-lead');
+  if (officialChat(rule.peerId) && (op === 'n' || op === 'k' || op === 'c')) {
+    await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
+    await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
+    return { toast: '⚠️ Telegram xizmati', reply: OFFICIAL_CHAT_WORDS };
+  }
+  const machine = isMachineBinding(rule);
   if (op === 'n' || op === 'k' || op === 'x') {
-    if (rule.decision !== 'pending') {
+    if (rule.decision !== 'pending' && !machine) {
       await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Bu chat boshqa joyda hal qilingan.');
       // The same answer again (a redelivered press) is not a refusal — it is done.
       if (op === 'n' && rule.decision === 'include' && rule.leadId && !rule.clientId) return { toast: '🆕 Lid allaqachon ochilgan' };
@@ -739,13 +787,20 @@ async function strangerPress(
   }
   if (op === 'x') {
     await decideChat({ id: ruleId, decision: 'exclude' }, ctx);
+    // The listener stored this chat on its own say-so — «Shaxsiy» takes that
+    // past too, as the conversation's own «qo'shma» does. A question's chat
+    // has nothing stored to take.
+    const purged = machine ? await purgeExcludedChat(ruleId, ctx) : null;
     await db
       .update(agentConversations)
       .set({ identityClientId: null, identityStrength: null, updatedAt: new Date() })
       .where(and(eq(agentConversations.managerUserId, staffId), eq(agentConversations.peerId, rule.peerId)));
     await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '🚫 Shaxsiy deb belgilandi.');
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '🚫 Chat shaxsiy deb belgilandi.');
-    return { toast: '🚫 Shaxsiy — saqlanmaydi' };
+    return {
+      toast: '🚫 Shaxsiy — saqlanmaydi',
+      ...(purged && purged.messages > 0 ? { reply: `🗑 Lidga saqlangan ${purged.messages} ta xabar o‘chirildi.` } : {}),
+    };
   }
   if (op === 'n') {
     try {
@@ -774,8 +829,9 @@ async function strangerPress(
     // naming the client the owner had just said this chat is NOT…
     const withdrawn = await withdrawTypedBind(staffId, rule, conv);
     // …and nothing it did not write: a chat decided since (here, on the web
-    // tray, even «Bu mijoz» for this very client) is that decision's.
-    if (!withdrawn && rule.decision !== 'pending') {
+    // tray, even «Bu mijoz» for this very client) is that decision's. The
+    // listener's own binding decided nothing.
+    if (!withdrawn && rule.decision !== 'pending' && !machine) {
       await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
       return { toast: 'Chat boshqa joyda hal qilingan', reply: decidedWords(rule) };
     }
@@ -803,8 +859,13 @@ async function strangerPress(
   // the web tray, before or after the code was typed — is newer than this
   // card (a backlog ✅ never undoes it). The pending rule's own clock is
   // asked too: the web tray may have put the chat back in question after the
-  // echo, and its last word is «ask again», not «this client».
-  if (rule.decision !== 'pending' || (rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime())) {
+  // echo, and its last word is «ask again», not «this client». The
+  // listener's own binding is no decision: its clock is the machine's, and
+  // the code he typed wins over it.
+  if (
+    (rule.decision !== 'pending' && !machine) ||
+    (rule.decision === 'pending' && rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime())
+  ) {
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
     return { toast: 'Chat boshqa joyda hal qilingan', reply: "Bu chat kod yozilgandan keyin boshqa joyda (Qaysi chatlar) hal qilingan — karta eskirgan." };
   }
@@ -841,15 +902,17 @@ function proofLine(proof: Awaited<ReturnType<typeof chatProof>>, chatPhone: stri
 async function codeEcho(staffId: string, ruleId: string, text: string): Promise<string> {
   const code = text.trim().toUpperCase();
   if (!/^[A-Z0-9]{2,10}$/u.test(code)) return 'Kod bitta so‘z bo‘lishi kerak, masalan GS777.';
-  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  const rule = await ruleFor(ruleId);
   if (!rule || rule.managerUserId !== staffId) return 'Topilmadi.';
   const conv = await convIdentity(staffId, rule.peerId);
-  // A code is asked about a chat still in question — or one the flow itself
-  // bound (a second code typed after a ✅, I1 B). A chat the web tray decided
-  // while the wait was armed is that decision's (review I1): no echo, no
-  // card whose ✅ could undo it.
+  // A code is asked about a chat still in question — the listener's own
+  // binding included (`strangerPress`) — or one the flow itself bound (a
+  // second code typed after a ✅, I1 B). A chat the web tray decided while
+  // the wait was armed is that decision's (review I1): no echo, no card whose
+  // ✅ could undo it.
   const ownBind = await typedBindStands(staffId, rule, conv);
-  if (rule.decision !== 'pending' && !ownBind) return decidedWords(rule);
+  const { isMachineBinding } = await import('../crm/chat-lead');
+  if (rule.decision !== 'pending' && !ownBind && !isMachineBinding(rule)) return decidedWords(rule);
   const [client] = await db
     .select({ id: clients.id, code: clients.clientCode, name: clients.name, phones: clients.phones })
     .from(clients)

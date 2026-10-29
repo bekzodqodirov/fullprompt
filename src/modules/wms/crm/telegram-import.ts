@@ -85,6 +85,14 @@ export function isTelegramServicePeer(peer: { id: bigint; isPrivate: boolean }):
 const TELEGRAM_OFFICIAL_PEERS: ReadonlySet<bigint> = new Set([489000n, 1271266957n]);
 
 /**
+ * Every id `isTelegramOfficialPeer` names one by one, and the bound of its round-thousand
+ * convention — exported for its SQL twin (chat-rules `officialPeerSql`), so a stored rule
+ * is fenced by the same list the live line is and a fourth account added here reaches both.
+ */
+export const TELEGRAM_OFFICIAL_PEER_IDS: readonly bigint[] = [TELEGRAM_SERVICE_PEER, ...TELEGRAM_OFFICIAL_PEERS];
+export const OFFICIAL_ROUND_ID_CEILING = 1_000_000n;
+
+/**
  * Is this a private chat with ANY of Telegram's own accounts — never a customer under any
  * decision anybody could write down? 777000 (`isTelegramServicePeer`), the two named above,
  * an account Telegram itself flags official (`User.support`), and Telegram Desktop's own
@@ -103,7 +111,7 @@ const TELEGRAM_OFFICIAL_PEERS: ReadonlySet<bigint> = new Set([489000n, 127126695
 export function isTelegramOfficialPeer(peer: { id: bigint; isPrivate: boolean; isOfficial?: boolean }): boolean {
   if (!peer.isPrivate) return false;
   if (isTelegramServicePeer(peer) || peer.isOfficial === true || TELEGRAM_OFFICIAL_PEERS.has(peer.id)) return true;
-  return peer.id > 0n && peer.id < 1_000_000n && peer.id % 1000n === 0n;
+  return peer.id > 0n && peer.id < OFFICIAL_ROUND_ID_CEILING && peer.id % 1000n === 0n;
 }
 
 /**
@@ -150,11 +158,13 @@ export interface ChatRule {
    */
   leadId: string | null;
   /**
-   * The listener's own binding and nobody's answer: an include on a lead with
-   * no `decided_by` — a work number's hidden-number lead (his «1 a»,
-   * 2026-10-29). It stands only while it is still the best fact about the
-   * chat (`decideIncoming`): on a work number, while its lead is open, and
-   * until the phone book claims the chat. Absent = a person's answer.
+   * The listener's own binding and nobody's answer: a work number's
+   * hidden-number lead (his «1 a», 2026-10-29), marked by 0139's `bound_via`
+   * (chat-lead `isMachineBinding` — an include on a lead with no
+   * `decided_by` is NOT enough: round 113's website rule is that too). It
+   * stands only while it is still the best fact about the chat
+   * (`decideIncoming`): while its lead is open, and until the phone book
+   * claims the chat — whatever the switch says since. Absent = an answer.
    */
   machine?: boolean;
   /** Is `leadId`'s lead still open? Read with the rule; absent = not known, read as open. */

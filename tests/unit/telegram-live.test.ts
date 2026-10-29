@@ -180,9 +180,9 @@ describe('deciding one live message', () => {
     expect(switchDecides({ store: false, reason: 'no_phone' })).toBe(true);
     expect(switchDecides({ store: false, ask: true, peerId: 1n, phone: '1', title: 'A' })).toBe(true);
     expect(switchDecides({ store: true, openLead: true, peer: { peerId: 1n, phone: null, title: 'A' }, row })).toBe(true);
-    // The listener's own binding stands only on a work number (2026-10-29 review), so its line is the switch's too.
-    expect(switchDecides({ store: true, leadId: 'l', row, machine: true })).toBe(true);
-    // Nothing the switch could change: a client, a hand-attached lead, a refusal that is not about acquaintance.
+    // Nothing the switch could change: a client, a lead a chat is already bound to — a person's,
+    // a door's or the listener's own, which the switch no longer decides (the switch governs NEW
+    // strangers only, 2026-10-29 review) — a refusal that is not about acquaintance.
     expect(switchDecides({ store: true, clientId: 'c', clientCode: 'GS1', row })).toBe(false);
     expect(switchDecides({ store: true, leadId: 'l', row })).toBe(false);
     for (const reason of ['excluded', 'is_bot', 'self', 'service', 'not_private', 'empty'] as const) {
@@ -208,15 +208,18 @@ describe('deciding one live message', () => {
     expect(decideIncoming(peer({ id: 489000n }), msg(), CLIENTS, new Map(), true)).toEqual({ store: false, reason: 'service' });
   });
 
-  it('the listener’s own lead binding stands only on a work number, while its lead is open, until the book claims the chat (2026-10-29 review)', () => {
+  it('the listener’s own lead binding stands while its lead is open, until the book claims the chat — whatever the switch says (2026-10-29 reviews)', () => {
     const bound = (over: Partial<ChatRule> = {}) =>
       new Map<bigint, ChatRule>([[42n, { peerId: 42n, decision: 'include', clientId: null, clientCode: null, leadId: 'l-1', machine: true, leadOpen: true, ...over }]]);
     const hidden = peer({ phone: null, firstName: 'Dilshod' });
-    // Work number, open lead, hidden number: the binding files it — and says it is the machine's.
-    expect(decideIncoming(hidden, msg(), CLIENTS, bound(), true)).toMatchObject({ store: true, leadId: 'l-1', machine: true });
-    // A personal number stores nothing a stranger writes until a person answers.
-    expect(decideIncoming(hidden, msg(), CLIENTS, bound(), false)).toEqual({ store: false, reason: 'no_phone' });
-    expect(decideIncoming(peer({ phone: '+998935550000' }), msg(), CLIENTS, bound(), false)).toMatchObject({ store: false, ask: true });
+    // Work number, open lead, hidden number: the binding files it.
+    expect(decideIncoming(hidden, msg(), CLIENTS, bound(), true)).toEqual({ store: true, leadId: 'l-1', row: expect.anything() });
+    // The switch turned back to «Shaxsiy raqam» governs NEW strangers only: the chat it already
+    // keeps stays on its lead — the first cut passed it over, and nobody was ever asked about it.
+    expect(decideIncoming(hidden, msg(), CLIENTS, bound(), false)).toEqual({ store: true, leadId: 'l-1', row: expect.anything() });
+    expect(decideIncoming(peer({ phone: '+998935550000' }), msg(), CLIENTS, bound(), false)).toMatchObject({ store: true, leadId: 'l-1' });
+    // …and on either number a closed lead is no binding: decided as a stranger, by the switch.
+    expect(decideIncoming(hidden, msg(), CLIENTS, bound({ leadOpen: false }), false)).toEqual({ store: false, reason: 'no_phone' });
     // A closed lead is decided again: a lost lead writing again is a new enquiry.
     expect(decideIncoming(hidden, msg(), CLIENTS, bound({ leadOpen: false }), true)).toMatchObject({ store: true, openLead: true, peer: { phone: null } });
     // The number now shows and it is a client's: the client, and the binding retired with it.
@@ -226,7 +229,7 @@ describe('deciding one live message', () => {
     // …on a personal number too: a client is kept on any account.
     expect(decideIncoming(peer(), msg(), CLIENTS, bound(), false)).toMatchObject({ clientId: 'c-777', retiresMachineRule: true });
     // A visible number nobody's book has: still the lead it was bound to — no second card.
-    expect(decideIncoming(peer({ phone: '+998935550000' }), msg(), CLIENTS, bound(), true)).toMatchObject({ store: true, leadId: 'l-1', machine: true });
+    expect(decideIncoming(peer({ phone: '+998935550000' }), msg(), CLIENTS, bound(), true)).toMatchObject({ store: true, leadId: 'l-1' });
     // A PERSON's lead binding is an answer and outranks all three, as it always has.
     const person = bound({ machine: false });
     expect(decideIncoming(hidden, msg(), CLIENTS, person, false)).toEqual({ store: true, leadId: 'l-1', row: expect.anything() });

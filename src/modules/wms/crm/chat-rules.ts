@@ -1,10 +1,11 @@
-import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, not, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   attachments,
   clients,
   leadStages,
   leads,
+  tgAccounts,
   tgChatRules,
   tgMessages,
   users,
@@ -12,8 +13,13 @@ import {
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
-import { leadForChat, phonelessLeadForChat } from './chat-lead';
-import { isTelegramOfficialPeer, TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
+import { boundViaSql, isMachineBinding, isWorkAccount, leadForChat, phonelessLeadForChat } from './chat-lead';
+import {
+  isTelegramOfficialPeer,
+  OFFICIAL_ROUND_ID_CEILING,
+  TELEGRAM_OFFICIAL_PEER_IDS,
+  type ChatRule,
+} from './telegram-import';
 
 /**
  * The chats a person has said yes or no to.
@@ -30,7 +36,26 @@ import { isTelegramOfficialPeer, TELEGRAM_SERVICE_PEER, type ChatRule } from './
 export class ChatRuleError extends Error {}
 
 /** A rule's chat is one of Telegram's own accounts (a rule is only ever a private chat). */
-const officialChat = (peerId: bigint) => isTelegramOfficialPeer({ id: peerId, isPrivate: true });
+export const officialChat = (peerId: bigint) => isTelegramOfficialPeer({ id: peerId, isPrivate: true });
+
+/**
+ * `officialChat` over a STORED peer id, in SQL — for the lists that must not
+ * offer one of Telegram's own accounts as somebody to answer about: the tray
+ * (`listCandidates`) and the AI's «📵» card sweep (agent jobs `strangerCards`).
+ * Both excluded 777000 alone, so «Verification Codes» (489000, a bank's login
+ * code), left pending by the card's own `noteStranger` before the classifiers
+ * learned the rest, was listed and carded (the 2026-10-29 review). The same
+ * ids and the same bound as the live predicate, from one list; Telegram's
+ * `support` flag is on no stored row, so an account known only by it is
+ * fenced where the live line sees it (the classifiers), not here.
+ */
+export function officialPeerSql(peerId: AnyColumn | SQL): SQL {
+  const named = sql.join(
+    TELEGRAM_OFFICIAL_PEER_IDS.map((id) => sql`${id.toString()}::bigint`),
+    sql`, `,
+  );
+  return sql`(${peerId} IN (${named}) OR (${peerId} > 0 AND ${peerId} < ${OFFICIAL_ROUND_ID_CEILING.toString()}::bigint AND ${peerId} % 1000 = 0))`;
+}
 
 /*
  * Telegram's own service chat (777000 — login codes, «new login», limitation
@@ -49,7 +74,9 @@ const officialChat = (peerId: bigint) => isTelegramOfficialPeer({ id: peerId, is
  * The rules the import and the listener consult, keyed by peer — with the
  * two facts `decideIncoming` needs about a lead binding the listener made by
  * itself (chat-lead `phonelessLeadForChat`): that nobody decided it
- * (`machine`), and whether its lead is still open (`leadOpen`).
+ * (`machine` — the 0139 mark, `isMachineBinding`; round 113's website rule
+ * has the same shape and is a door's answer), and whether its lead is still
+ * open (`leadOpen`).
  */
 export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatRule>> {
   const rows = await db
@@ -60,6 +87,7 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
       clientCode: clients.clientCode,
       leadId: tgChatRules.leadId,
       decidedBy: tgChatRules.decidedBy,
+      boundVia: boundViaSql,
       leadStageKind: leadStages.kind,
     })
     .from(tgChatRules)
@@ -77,7 +105,7 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
         clientId: r.clientId,
         clientCode: r.clientCode,
         leadId: r.leadId,
-        machine: r.decision === 'include' && r.decidedBy === null && r.clientId === null && r.leadId !== null,
+        machine: isMachineBinding(r),
         leadOpen: r.leadId ? r.leadStageKind === 'open' : undefined,
       },
     ]),
@@ -155,6 +183,8 @@ export interface CandidateRow {
   clientName: string | null;
   leadId: string | null;
   leadName: string | null;
+  /** The account is «Ish raqami» — where the tray may open a lead for a hidden number (`openLeadForChat`). */
+  workAccount: boolean;
 }
 
 /**
@@ -171,10 +201,11 @@ export async function listCandidates(filter: {
   decision?: 'pending' | 'include' | 'exclude';
 }): Promise<CandidateRow[]> {
   const where = [
-    // Never on the tray, whatever an old scan recorded: there is no answer to
-    // give about it but «never», and the cleanup script gives that one. The
-    // badge (`pendingCount`) counts through here, so it drops out of both.
-    ne(tgChatRules.peerId, TELEGRAM_SERVICE_PEER),
+    // Never on the tray, whatever an old scan or the «📵» card's own rule
+    // recorded: none of Telegram's own accounts (`officialPeerSql`) has an
+    // answer but «never», and the cleanup script gives that one. The badge
+    // (`pendingCount`) counts through here, so it drops out of both.
+    not(officialPeerSql(tgChatRules.peerId)),
     filter.managerUserId ? eq(tgChatRules.managerUserId, filter.managerUserId) : undefined,
     filter.decision ? eq(tgChatRules.decision, filter.decision) : undefined,
   ].filter(Boolean);
@@ -193,11 +224,14 @@ export async function listCandidates(filter: {
       clientName: clients.name,
       leadId: tgChatRules.leadId,
       leadName: leads.name,
+      workAccount: sql<boolean>`coalesce(${tgAccounts.workAccount}, false)`,
     })
     .from(tgChatRules)
     .innerJoin(users, eq(tgChatRules.managerUserId, users.id))
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
     .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
+    // One account per manager (`tg_accounts.manager_user_id` is unique), so the join adds no row.
+    .leftJoin(tgAccounts, eq(tgAccounts.managerUserId, tgChatRules.managerUserId))
     .where(and(...where))
     .orderBy(asc(tgChatRules.peerTitle));
 
@@ -370,11 +404,14 @@ export async function openLeadForChat(
   // a funnel card whose «conversation» is a login code.
   if (officialChat(rule.peerId)) throw new ChatRuleError('service_chat');
   const phone = (rule.peerPhone ?? '').trim();
-  // The tray's own button keeps the old refusal about a hidden number: it is
-  // a person's PERSONAL tray (a work number opens such a lead by itself, his
-  // «1 a»), and only the AI sotuvchi's «📵» card (his Q18 ⭐) passes
-  // `phoneless`.
-  if (!phone && opts.phoneless !== 'agent_stranger') throw new ChatRuleError('chat_no_phone');
+  // A hidden number, by name: the AI sotuvchi's «📵» card (his Q18 ⭐,
+  // `phoneless`), and the tray of a WORK number (his «1 a» — there a hidden
+  // stranger is a customer; the tray says so once a person's ↩ has taken the
+  // listener's own binding back, which the work number no longer re-binds
+  // over, the 2026-10-29 review). A PERSONAL number's tray keeps the old
+  // refusal: a lead nobody can ring is a row with a name in it.
+  const phonelessVia = phone ? null : (opts.phoneless ?? ((await isWorkAccount(rule.managerUserId)) ? 'tray' : null));
+  if (!phone && !phonelessVia) throw new ChatRuleError('chat_no_phone');
 
   let leadId: string;
   if (phone) {
@@ -403,7 +440,7 @@ export async function openLeadForChat(
     // rule and its audit row itself, in the same transaction as the lead. A
     // person's press is the answer, so it never comes back empty.
     const minted = await phonelessLeadForChat(
-      { managerUserId: rule.managerUserId, peerId: rule.peerId, title: rule.peerTitle, via: 'agent_stranger' },
+      { managerUserId: rule.managerUserId, peerId: rule.peerId, title: rule.peerTitle, via: phonelessVia! },
       ctx,
     );
     if (!minted) throw new ChatRuleError('chat_rule_not_found');

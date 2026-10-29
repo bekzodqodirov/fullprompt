@@ -974,6 +974,13 @@
       "when": 1785190000117,
       "tag": "0138_ai_sotuvchi",
       "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1785190000118,
+      "tag": "0139_chat_rule_bound_via",
+      "breakpoints": true
     }
   ]
 }
