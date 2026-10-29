@@ -121,6 +121,12 @@ export interface NumberSource {
   mode?: TravelMode;
   /** The unit it is said in; absent = any (the customer's, the tools', a fact's bare figure). */
   unit?: FigureUnit;
+  /**
+   * The one SHAPE of sentence it vouches for (second review): the company's minimum is a source for «eng
+   * kamida 100 kg», «Минимум — 1 куб», «от 1 кг», «1 kg dan qabul qilamiz» (`saidAsMinimum`) — never for «Sizning
+   * 100 kg yukingiz Toshkentga yetib keldi», a weight nobody stated. Absent = any sentence.
+   */
+  said?: 'minimum';
 }
 
 /** How cargo travels — the three roads a day count can be the time of. */
@@ -179,6 +185,22 @@ const FIGURE_SENTENCE = /[!?؟。！？\n]+|\.(?=\s|$)/gu;
 /** A figure's road: the one its clause names, else its sentence's, else the whole text's — or null. */
 function modeAt(text: string, index: number): TravelMode | null {
   return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? oneModeIn(text);
+}
+
+/** «Eng kamida», «kamida», «minimal», «минимум», «не менее», «at least» — a minimum said anywhere in a figure's sentence. */
+const MINIMUM_WORD =
+  /(?<![\p{L}])(?:eng\s+kam(?:ida)?|kamida|kamdan[\s-]kam|minimum\p{L}*|minimal\p{L}*|энг\s+кам(?:ида)?|камида|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|at\s+least)(?![\p{L}])/iu;
+/** …or the figure's own «from»: «от 1 кг», «from 1 kg» before it, «1 kg dan», «1 kubdan» after its unit. */
+const FROM_BEFORE = /(?<![\p{L}])(?:от|from)\s*$/iu;
+const FROM_AFTER = /^\s*(?:kub|kg|kilo|куб|кг|кило|m3|м3|cbm)\p{L}*?\s*(?:dan|дан)(?![\p{L}])/iu;
+
+/** A figure said as a MINIMUM — the only shape the company's minimum vouches for (`NumberSource.said`). */
+export function saidAsMinimum(text: string, index: number, end: number): boolean {
+  return (
+    MINIMUM_WORD.test(spanAt(text, index, FIGURE_SENTENCE)) ||
+    FROM_BEFORE.test(spanAt(text.slice(0, index), index, FIGURE_CLAUSE)) ||
+    FROM_AFTER.test(text.slice(end))
+  );
 }
 
 /** The two roads a person can CHOOSE between in a chat about price; rail is his, never the machine's. */
@@ -990,9 +1012,11 @@ export function sourceFor(
   found: FoundNumber,
   sources: readonly NumberSource[],
   mode: TravelMode | null = null,
+  minimum = false,
 ): NumberSource | null {
   const fits = (s: NumberSource) => {
     if (!sameValue(s.value, found.value)) return false;
+    if (s.said === 'minimum' && !minimum) return false;
     if (s.unit !== undefined && found.unit !== s.unit) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
@@ -1055,7 +1079,12 @@ export function placedLedger(
       source = sourceFor(asMoney, sources);
       if (source) found = asMoney;
     }
-    source ??= sourceFor(f, sources, f.kind === 'duration' || f.kind === 'measure' ? (modeAt(t, f.index) ?? askedMode) : null);
+    source ??= sourceFor(
+      f,
+      sources,
+      f.kind === 'duration' || f.kind === 'measure' ? (modeAt(t, f.index) ?? askedMode) : null,
+      f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length),
+    );
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
     return {
@@ -1128,8 +1157,10 @@ export function customerSources(texts: readonly { text: string; label: string }[
 export function factSources(text: string, label: string): NumberSource[] {
   const t = blanked(text, []);
   return extractNumbers(text).map((f): NumberSource => {
-    // The road a fact's day count is the time of — its own clause's, sentence's or the fact's.
-    const mode = f.kind === 'duration' ? modeAt(t, f.index) : null;
+    // The road a fact's day count is the time of — its own clause's, sentence's or the fact's; and so a measure's
+    // (second review): the seed's «Avto orqali eng kamida 1 kub yoki 100 kg» is the truck's minimum, and vouched
+    // for «Avia orqali eng kamida 100 kg» — the flight's is 1 kg.
+    const mode = f.kind === 'duration' || f.kind === 'measure' ? modeAt(t, f.index) : null;
     return {
       value: f.value,
       kind: f.kind === 'money' ? 'customer_money' : f.kind,
@@ -1138,6 +1169,8 @@ export function factSources(text: string, label: string): NumberSource[] {
       ...(mode ? { mode } : {}),
       // A fact's «15–25 kun» is days and its «100 kg» kilos — never minutes, cubes or cartons (review).
       ...(f.unit ? { unit: f.unit } : {}),
+      // …and a minimum it states vouches for a minimum, as the company's rule does (second review).
+      ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
     };
   });
 }

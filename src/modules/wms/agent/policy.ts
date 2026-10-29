@@ -1,5 +1,13 @@
 import { codeCandidates } from '../calc/channel-post';
-import { ASKING_DURATION, CURRENCY_AFTER_SRC, CURRENCY_BEFORE_SRC, normalizeDigits, SPELLED_DURATION_SRC, unverifiableNumeral } from './digits';
+import {
+  ASKING_DURATION,
+  CURRENCY_AFTER_SRC,
+  CURRENCY_BEFORE_SRC,
+  normalizeDigits,
+  SPELLED_DURATION_SRC,
+  unverifiableNumeral,
+  vagueDuration,
+} from './digits';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptName } from './locale';
 import {
@@ -228,6 +236,17 @@ interface PaidFirst {
   deny: string;
   /** The cargo handed over before the money — anywhere in the statement. */
   handFirst: string;
+  /**
+   * What, in ANY OTHER statement of the reply, takes the rule back (second review): it was asked of the next
+   * statement alone, and of its «not necessary» words alone, so «Оплата по прибытии груза в Ташкент, перед
+   * получением. Но можно и позже, когда вам удобно», «… olishdan oldin. Pul bo'lmasa, kelishib olamiz», «…
+   * before collection. That said, it's flexible» were the company's rule with credit offered beside it — the
+   * same takeback joined by a comma was refused. So: the cargo handed over before the money; a later or an
+   * earlier time beside the paying or the taking; an agreement, a wait for the money, «not strict», «not for
+   * you». Never the words alone: «Narxni keyinroq aytaman», «Расчёт пришлю чуть позже», «Darhol hisoblab
+   * beraman», «Груз выдаём на складе в Чукурсае», «Javobingizni kutamiz» say nothing about when he pays.
+   */
+  later: string;
 }
 
 /** The statement after the rule taking it back: «Shart emas.», «Но это не обязательно.», «Not required.» */
@@ -239,6 +258,7 @@ function onArrival(row: RegExp, p: PaidFirst): Matcher {
   const rule = new RegExp(`(?:${p.first})(?:[\\s,]+(?:${p.tail}))*[\\s,.!?…]*$`, 'iu');
   const deny = new RegExp(p.deny, 'iu');
   const handFirst = new RegExp(p.handFirst, 'iu');
+  const later = new RegExp(`(?<![\\p{L}])(?:${p.later})(?![\\p{L}])`, 'iu');
   return {
     test: (text) => {
       const statements = statementsFor(text);
@@ -251,42 +271,89 @@ function onArrival(row: RegExp, p: PaidFirst): Matcher {
           rows.every((m) => m.index + m[0].length <= tail.index) &&
           !deny.test(s) &&
           !handFirst.test(s) &&
-          !UNDONE_NEXT.test(statements[i + 1] ?? '');
+          !UNDONE_NEXT.test(statements[i + 1] ?? '') &&
+          !statements.some((o, k) => k !== i && later.test(o));
         return !paidFirst;
       });
     },
   };
 }
 
+/** The cargo handed over before the money, said anywhere: «to'lovdan oldin», «to'lovsiz», «до оплаты», «без оплаты», «without payment». */
+const UZ_UNPAID = `to${AP}?lov(?:dan|ni)?\\s+(?:oldin|avval|kutmasdan)|to${AP}?lamasdan|to${AP}?lovsiz|pulsiz`;
+const UZC_UNPAID = 'тўлов(?:дан|ни)?\\s+(?:олдин|аввал|кутмасдан)|тўламасдан|тўловсиз|пулсиз';
+const RU_UNPAID =
+  '(?<![\\p{L}])до\\s+(?:получения\\s+|поступления\\s+)?(?:оплат|денег|плат[её]ж|расч[её]т|средств)\\p{L}*|(?<![\\p{L}])без\\s+(?:пред)?оплат\\p{L}*';
+const EN_UNPAID = '(?<![\\p{L}])before\\s+(?:the\\s+|your\\s+|any\\s+)?payment|(?<![\\p{L}])without\\s+(?:any\\s+)?pay\\p{L}*';
+
 const PAID_FIRST_UZ: PaidFirst = {
   first:
     "(?<![\\p{L}])(?:olish|olib\\s+ketish|topshirish|topshirilish|berilish|chiqarish|chiqarilish)(?:ingiz|i)?dan\\s+(?:oldin|avval|ilgari)|(?<![\\p{L}])olmasdan\\s+(?:oldin|avval)",
   tail: `yuk\\p{L}*|so${AP}?m\\p{L}*|dollar\\p{L}*|naqd\\p{L}*|karta\\p{L}*|click|payme|o${AP}?tkazma\\p{L}*|bank\\p{L}*|orqali|yoki|va|ombor\\p{L}*|toshkent\\p{L}*|qilinadi|qilasiz|to${AP}?lanadi|to${AP}?laysiz|berasiz|amalga|oshiriladi|ham|esa`,
   deny: `${DENY_UZ}|(?<![\\p{L}])(?:shart|majburiy|keyinroq|kechroq)(?![\\p{L}])`,
-  handFirst: `to${AP}?lov(?:dan|ni)?\\s+(?:oldin|avval|kutmasdan)|to${AP}?lamasdan|to${AP}?lovsiz|pulsiz|(?<![\\p{L}])(?:darhol|darrov)(?![\\p{L}])`,
+  handFirst: `${UZ_UNPAID}|(?<![\\p{L}])(?:darhol|darrov)(?![\\p{L}])`,
+  later: [
+    UZ_UNPAID,
+    `(?:keyinroq|kechroq|keyin)\\s+ham\\s+(?:bo${AP}?ladi|mumkin)`,
+    `(?:keyinroq|kechroq|keyin)\\s+(?:ham\\s+)?(?:to${AP}?la\\p{L}*|o${AP}?tkaz\\p{L}*|yop(?:asiz|sangiz)|olib\\s+ket\\p{L}*)`,
+    `(?:to${AP}?la|o${AP}?tkaz|yop)\\p{L}*\\s+(?:[\\p{L}'‘’ʻ]+\\s+){0,2}(?:keyinroq|kechroq)`,
+    'kelishib|kelishamiz|kelishsak',
+    `qat${AP}?iy\\s+emas`,
+    '(?:avval|oldin|birinchi)\\s+(?:yukni\\s+)?olib\\s+ket\\p{L}*',
+    'siz(?:ga)?\\s+uchun\\s+emas',
+    `pul\\p{L}*\\s+(?:[\\p{L}'‘’ʻ]+\\s+){0,2}kut\\p{L}*`,
+    'muhlat\\p{L}*|nasiya|qarzga',
+  ].join('|'),
 };
 const PAID_FIRST_UZC: PaidFirst = {
   first:
     '(?<![\\p{L}])(?:олиш|олиб\\s+кетиш|топшириш|топширилиш|берилиш|чиқариш)(?:ингиз|и)?дан\\s+(?:олдин|аввал)|(?<![\\p{L}])олмасдан\\s+(?:олдин|аввал)',
   tail: 'юк\\p{L}*|сўм\\p{L}*|доллар\\p{L}*|нақд\\p{L}*|карта\\p{L}*|ўтказма\\p{L}*|банк\\p{L}*|орқали|ёки|ва|омбор\\p{L}*|тошкент\\p{L}*|қилинади|қиласиз|тўланади|тўлайсиз|берасиз|амалга|оширилади|ҳам|эса',
   deny: `${DENY_UZC}|(?<![\\p{L}])(?:шарт|мажбурий|кейинроқ|кечроқ)(?![\\p{L}])`,
-  handFirst: 'тўлов(?:дан|ни)?\\s+(?:олдин|аввал|кутмасдан)|тўламасдан|тўловсиз|пулсиз|(?<![\\p{L}])(?:дарҳол|дарров)(?![\\p{L}])',
+  handFirst: `${UZC_UNPAID}|(?<![\\p{L}])(?:дарҳол|дарров)(?![\\p{L}])`,
+  later: [
+    UZC_UNPAID,
+    '(?:кейинроқ|кечроқ|кейин)\\s+ҳам\\s+(?:бўлади|мумкин)',
+    '(?:кейинроқ|кечроқ|кейин)\\s+(?:ҳам\\s+)?(?:тўла\\p{L}*|ўтказ\\p{L}*|ёп(?:асиз|сангиз)|олиб\\s+кет\\p{L}*)',
+    '(?:тўла|ўтказ|ёп)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:кейинроқ|кечроқ)',
+    'келишиб|келишамиз|келишсак',
+    'қатъий\\s+эмас',
+    '(?:аввал|олдин|биринчи)\\s+(?:юкни\\s+)?олиб\\s+кет\\p{L}*',
+    'сиз(?:га)?\\s+учун\\s+эмас',
+    'пул\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}кут\\p{L}*',
+    'муҳлат\\p{L}*|насия|қарзга',
+  ].join('|'),
 };
 const PAID_FIRST_RU: PaidFirst = {
   first:
     '(?<![\\p{L}])(?:перед|до)\\s+(?:получением|получения|выдачей|выдачи)|(?<![\\p{L}])(?:перед\\s+тем|до\\s+того),?\\s+как\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)|(?<![\\p{L}])прежде\\s+чем\\s+(?:забрать|получить|забер\\p{L}*|получ\\p{L}*)',
   tail: 'груз\\p{L}*|товар\\p{L}*|посылк\\p{L}*|со|с|из|на|в|склад\\p{L}*|ташкент\\p{L}*|андижан\\p{L}*|сум\\p{L}*|наличн\\p{L}*|карт\\p{L}*|перевод\\p{L}*|через|или|и|ваш\\p{L}*|его|их',
   deny: `${DENY_RU}|(?<![\\p{L}])(?:необязательн\\p{L}*|позже|потом|когда\\s+(?:вам\\s+)?удобно|в\\s+любое\\s+время)(?![\\p{L}])`,
-  handFirst:
-    '(?<![\\p{L}])до\\s+(?:получения\\s+|поступления\\s+)?(?:оплат|денег|плат[её]ж|расч[её]т|средств)\\p{L}*|(?<![\\p{L}])без\\s+(?:пред)?оплат\\p{L}*|(?<![\\p{L}])(?:выдад|выда[её]м|отдад|отда[её]м|отпуст|можно\\s+(?:сразу\\s+)?(?:забрать|получить))\\p{L}*|(?<![\\p{L}])(?:сразу|немедленно)(?![\\p{L}])',
+  handFirst: `${RU_UNPAID}|(?<![\\p{L}])(?:выдад|выда[её]м|отдад|отда[её]м|отпуст|можно\\s+(?:сразу\\s+)?(?:забрать|получить))\\p{L}*|(?<![\\p{L}])(?:сразу|немедленно)(?![\\p{L}])`,
+  later: [
+    RU_UNPAID,
+    '(?:можно|можете|сможете)\\s+(?:(?:и|тоже|также|даже|оплатить|заплатить|платить|забрать|получить|груз)\\s+){0,2}(?:позже|потом|раньше|сразу)',
+    '(?:оплат|заплат|забрать|забер|выдад|выда[её]м|отдад|отда[её]м)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:позже|потом|раньше)',
+    'договорим\\p{L}*|договор[её]нност\\p{L}*',
+    'не\\s+строго|не\\s+для\\s+вас|ничего\\s+страшного',
+    'подожд\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:с\\s+)?(?:оплат|деньг|плат)\\p{L}*',
+    'отсрочк\\p{L}*|рассрочк\\p{L}*|в\\s+долг|в\\s+кредит',
+  ].join('|'),
 };
 const PAID_FIRST_EN: PaidFirst = {
   first:
     '(?<![\\p{L}])before\\s+(?:you\\s+)?(?:collect|pick|receiv|tak|get)\\p{L}*(?:\\s+up)?|(?<![\\p{L}])(?:before|prior\\s+to)\\s+(?:the\\s+)?(?:collection|pick-?up|release|handover|hand-over)',
   tail: 'the|your|it|them|cargo|goods|shipment|parcel|order|from|at|in|our|warehouse|tashkent|cash|card|transfer|bank|by|via|or|and|uzs',
   deny: `${DENY_EN}|(?<![\\p{L}])(?:without|later|whenever|optional|any\\s*time)(?![\\p{L}])`,
-  handFirst:
-    '(?<![\\p{L}])before\\s+(?:the\\s+|your\\s+|any\\s+)?payment|(?<![\\p{L}])without\\s+(?:any\\s+)?pay\\p{L}*|(?<![\\p{L}])(?:right\\s+away|immediately)(?![\\p{L}])|(?<![\\p{L}])(?:release|hand|give)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:first|now)(?![\\p{L}])',
+  handFirst: `${EN_UNPAID}|(?<![\\p{L}])(?:right\\s+away|immediately)(?![\\p{L}])|(?<![\\p{L}])(?:release|hand|give)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:first|now)(?![\\p{L}])`,
+  later: [
+    EN_UNPAID,
+    '(?:collect|pick)\\p{L}*(?:\\s+up)?\\s+(?:(?:it|them|the\\s+cargo|the\\s+goods|your\\s+cargo|your\\s+goods)\\s+)?first',
+    '(?:release|hand|give)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}first',
+    'wait\\p{L}*\\s+(?:\\p{L}+\\s+){0,4}(?:money|payment)',
+    'flexible|negotiable|not\\s+strict\\p{L}*|not\\s+for\\s+you',
+    'on\\s+credit|deferred|instal{1,2}ments?',
+  ].join('|'),
 };
 /** Paid by YOU, in the Uzbek rows' verbs: «berasiz», «qilasiz», «to'laysiz», «o'tkazsangiz», «yopasiz». */
 const UZ_YOU_PAY = `berasiz|bersangiz|qilasiz|qilsangiz|o${AP}?tkazasiz|o${AP}?tkazsangiz|to${AP}?laysiz|to${AP}?lasangiz|yopasiz|yopsangiz`;
@@ -342,8 +409,32 @@ interface FreeTerms {
 
 /** A «too» that closes its clause: «…, qolgani ham», «…, остальное тоже», «…, the rest too». */
 const ALSO_AT_END = /(?<![\p{L}])(?:ham|ҳам|тоже|также|too|also|as\s+well|likewise)\s*[.!?…]*\s*$/iu;
-/** …or a statement of its own after the free calculation: «Hisoblash bepul. Saqlash ham.» */
-const ALSO_ALONE = /^\s*(?:[\p{L}'‘’ʻ`-]+\s+){0,3}(?:ham|ҳам|тоже|также|too|also|as\s+well|likewise)\s*[.!?…]*\s*$/iu;
+/** …or a statement of its own after the free calculation: «Hisoblash bepul. Saqlash ham.», «Остальное — тоже.» */
+const ALSO_ALONE =
+  /^\s*(?:[\p{L}'‘’ʻ`-]+(?:\s*[—–]\s*|\s+-\s+|\s+)){0,3}(?:ham|ҳам|тоже|также|too|also|as\s+well|likewise)\s*[.!?…]*\s*$/iu;
+
+/**
+ * The rest of what carries the free calculation over to something else (second review). A «too» was read only
+ * where it closed a clause or stood alone in the next statement, and the review measured the free word lent on:
+ * «Hisoblash bepul, boshqa xizmatlarimiz ham shunday», «Расчёт бесплатный, как и все наши услуги», «The quote
+ * is free, and so is everything else» — a LIKENESS; «Hisoblash bepul. Bojxona rasmiylashtiruvi ham bizdan»,
+ * «Расчёт бесплатный. Растаможку тоже берём на себя», «The quote is free. Storage is on us as well» — a service,
+ * or «the rest», with its «too» or its «nothing charged» in any later statement. A later statement about
+ * calculating is the calculation still: «Yetkazish narxini ham hisoblab beraman», «Стоимость хранения тоже
+ * посчитаю». Nor does «too» alone: «Narxni hisoblash bepul. Tovar nomini ham yozing» asks for the goods' name.
+ */
+const LIKE_AFTER =
+  /(?<![\p{L}])(?:(?:ham|xuddi|ҳам|худди)\s+(?:[\p{L}'‘’ʻ]+\s+)?(?:shunday|шундай)|как\s+и(?!\s+(?:где|когда|куда|откуда|сколько|почему|зачем|что|какой|какие)(?![\p{L}]))|аналогичн\p{L}*|то\s+же\s+самое|so\s+(?:is|are|does|do)|(?:the\s+)?same\s+(?:goes|applies|for|with)|just\s+like|like\s+(?:all|every|the\s+rest)|likewise)(?![\p{L}])/iu;
+/** …and in the free statement's own rest, «kabi» and «singari» too: «Hisoblash bepul, boshqa xizmatlar kabi». */
+const LIKE_REST = new RegExp(`${LIKE_AFTER.source}|(?<![\\p{L}])(?:kabi|singari|каби|сингари)(?![\\p{L}])`, 'iu');
+const ALSO_WORD = /(?<![\p{L}])(?:ham|ҳам|тоже|также|too|also|as\s+well)(?![\p{L}])/iu;
+const OTHER_SERVICES =
+  /(?<![\p{L}])(?:qolgan\p{L}*|(?:boshqa|barcha|hamma)\s+(?:[\p{L}'‘’ʻ]+\s+)?xizmat\p{L}*|қолган\p{L}*|(?:бошқа|барча|ҳамма)\s+(?:\p{L}+\s+)?хизмат\p{L}*|остальн\p{L}*|(?:все|други\p{L}*)\s+(?:\p{L}+\s+)?услуг\p{L}*|everything\s+else|the\s+rest|(?:all|other)\s+(?:\p{L}+\s+)?services)(?![\p{L}])/iu;
+const NOTHING_CHARGED =
+  /(?<![\p{L}])(?:hech\s+narsa\s+(?:so['‘’ʻ`]?ramaymiz|olmaymiz)|pul\s+olmaymiz|(?:bizning\s+)?hisobimizdan|ҳеч\s+нарса\s+(?:сўрамаймиз|олмаймиз)|пул\s+олмаймиз|ҳисобимиздан|ничего\s+не\s+(?:берём|берем|возьмём|возьмем|просим)|за\s+наш\s+сч[её]т|(?:is|are)\s+on\s+us|on\s+the\s+house|free\s+of\s+charge|no\s+charge)(?![\p{L}])/iu;
+/** A statement about calculating — «hisoblab beraman», «посчитаю», «we will quote» — never «hisobimizdan», at our expense. */
+const CALCULATING =
+  /(?<![\p{L}])(?:hisob(?!(?:imiz|i|ingiz)?dan)\p{L}*|ҳисоб(?!(?:имиз|и|ингиз)?дан)\p{L}*|(?:рас|по|про|под)сч[иё]т\p{L}*|расч[её]т\p{L}*|calculat\p{L}*|quot\p{L}*|estimat\p{L}*)/iu;
 
 function freeUnlessCalc(t: FreeTerms): Matcher {
   const free = new RegExp(t.free, 'iu');
@@ -360,7 +451,17 @@ function freeUnlessCalc(t: FreeTerms): Matcher {
         const rest = named.replace(exempt, ' ');
         if (free.test(rest)) return true;
         if (rest === named) return false;
-        return rest.split(/[,，:;—–]/u).some((clause) => ALSO_AT_END.test(clause)) || ALSO_ALONE.test(statements[i + 1] ?? '');
+        const after = statements.slice(i + 1);
+        return (
+          rest.split(/[,，:;—–]/u).some((clause) => ALSO_AT_END.test(clause)) ||
+          LIKE_REST.test(rest) ||
+          ALSO_ALONE.test(after[0] ?? '') ||
+          after.some(
+            (o) =>
+              !CALCULATING.test(o) &&
+              (LIKE_AFTER.test(o) || ((service.test(o) || OTHER_SERVICES.test(o)) && (ALSO_WORD.test(o) || NOTHING_CHARGED.test(o)))),
+          )
+        );
       });
     },
   };
@@ -931,6 +1032,72 @@ function statesEstimate(clause: string): boolean {
 }
 
 /**
+ * A time that points BACK instead of stating a count (second review): «shuncha kunda», «shu muddatda», «o'sha
+ * kunga», «aytgan kuningizga», «в этот срок», «к нужному дню», «by then», «in that time» — and «o'z vaqtida»,
+ * «вовремя», «on time», the same deadline met. After «Necha kunda kerak?» it is whatever the customer names:
+ * «Necha kunda kerak? Shuncha kunda yetkazib beramiz» carried no count for G1 to refuse and no duration for G2
+ * to read, and a4e1b1c caught it only because G1 then refused every «necha kunda» — the very question the
+ * incident freed («Yuk qachon kerak, necha kunda yetib kelishi kerak?»).
+ */
+const BACKREF_TIME = new RegExp(
+  [
+    `(?<![\\p{L}])(?:shuncha|o${AP}?shancha)\\s+(?:kun|hafta|oy|soat)\\p{L}*`,
+    `(?<![\\p{L}])(?:shu|o${AP}?sha)\\s+(?:muddat|kun|vaqt|sana)\\p{L}*`,
+    `(?<![\\p{L}])(?:aytgan|xohlagan|istagan|so${AP}?ragan|belgilagan|kerakli)\\s+(?:kun|muddat|vaqt|sana)\\p{L}*`,
+    `(?<![\\p{L}])o${AP}?z\\s+vaqtida(?![\\p{L}])`,
+    '(?<![\\p{L}])шунча\\s+(?:кун|ҳафта|ой|соат)\\p{L}*',
+    '(?<![\\p{L}])(?:шу|ўша)\\s+(?:муддат|кун|вақт|сана)\\p{L}*',
+    '(?<![\\p{L}])(?:айтган|хоҳлаган|истаган|сўраган|белгилаган|керакли)\\s+(?:кун|муддат|вақт|сана)\\p{L}*',
+    '(?<![\\p{L}])ўз\\s+вақтида(?![\\p{L}])',
+    '(?<![\\p{L}])(?:в|за|к)\\s+(?:этот|тот|этому|тому|указанн\\p{L}*|нужн\\p{L}*|ваш\\p{L}*)\\s+(?:срок\\p{L}*|день|дню|дату|числу)(?![\\p{L}])',
+    '(?<![\\p{L}])в\\s+(?:эту|ту|нужную|вашу|указанную)\\s+дату(?![\\p{L}])',
+    '(?<![\\p{L}])(?:в\\s+срок|вовремя)(?![\\p{L}])',
+    '(?<![\\p{L}])за\\s+столько\\s+(?:же\\s+)?(?:дней|недель|часов)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:by\\s+then|on\\s+time|in\\s+(?:that|this)\\s+(?:time|period|timeframe)|within\\s+(?:that|this|your)\\s+(?:time|period|timeframe|deadline)|by\\s+(?:that|your|the)\\s+(?:date|deadline|day))(?![\\p{L}])',
+  ].join('|'),
+  'giu',
+);
+
+/** A question about the customer's own deadline — «necha kunda?», «через сколько дней?», «how many days?», «by when?». */
+const DEADLINE_QUESTION =
+  /(?<![\p{L}])(?:qachon\s+kerak|qaysi\s+kun(?:ga|gacha)|қачон\s+керак|через\s+сколько|за\s+сколько\s+(?:дней|недель|времени)|сколько\s+дней|к\s+какому\s+(?:числу|сроку|дню)|когда\s+(?:вам\s+)?(?:нужно|нужен|надо)|how\s+(?:many\s+days|soon|long)|by\s+when|when\s+do\s+you\s+need)(?![\p{L}])/iu;
+function asksDeadline(sentence: string): boolean {
+  if (DEADLINE_QUESTION.test(sentence)) return true;
+  return [...sentence.matchAll(SPELLED_DURATION_G)].some((m) => ASKING_DURATION.test(m[0]));
+}
+
+/**
+ * How the cargo USUALLY comes, in the present tense the future lists leave out — «Обычно груз приходит за пару
+ * дней», «Груз идёт несколько дней», «Cargo usually comes in a few days»: a habit is no promise of a day, and a
+ * vague count of one is still the time he reads.
+ */
+const HABITUAL_COMING =
+  /(?<![\p{L}])(?:(?:приход|прибыва|доставля|доход|отправля|отгружа)\p{L}*|(?:ид[её]т|ед[её]т|везут|возим)(?![\p{L}])|(?:comes|gets\s+there|reaches)(?![\p{L}]))/iu;
+
+/**
+ * A VAGUE count of days the cargo comes or goes in (second review): «Yukingiz taxminan bir necha kunda Toshkentga
+ * yetib keladi», «Груз придёт примерно через несколько дней», «We usually deliver within a couple of days». The
+ * incident took vague counts out of G1, since they state no figure to ask a source for, and G2 lets a HEDGED
+ * time pass because G1 checks its figure — a vague count has none, so a hedged one passed both: a delivery time
+ * the seeded transit fact («15–25 kunda») says is false, with ✅. a4e1b1c refused it in G1, as a numeral
+ * spelled out, and so does this — only where the cargo comes or goes. «Narxni bir necha daqiqada hisoblab
+ * beraman», «Расчёт займёт несколько дней», «Javob bir necha soatda keladi» stay what the incident made them.
+ */
+export function vagueTravelTime(text: string): boolean {
+  for (const { text: s } of askedSentencesOf(normalizeDigits(text))) {
+    const sending = SENDING_VERB.some((re) => re.test(s)) || WE_SEND.test(s);
+    if (!sending && !COMING_VERB.some((re) => re.test(s)) && !HABITUAL_COMING.test(s)) continue;
+    for (const { text: c } of clausesOf(s)) {
+      if ((!sending && !aboutCargo(c, s)) || zhPast(c)) continue;
+      for (const m of c.matchAll(SPELLED_DURATION_G)) {
+        if (!FREQUENCY.test(c.slice(0, m.index)) && vagueDuration(m[0])) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * G2 for a day count (P2, his §17.14 answer): «2 kunda yetib keladi» is a
  * promise; «taxminan 2-5 kunda yetib boradi» — the avia window he said the AI
  * may give — is an ESTIMATE and passes, with G1 checking the days against
@@ -945,8 +1112,11 @@ function statesEstimate(clause: string): boolean {
  * yetib keladi.» still promises.
  */
 export function timePromise(text: string): boolean {
-  for (const { text: s, asked } of askedSentencesOf(normalizeDigits(text))) {
-    const sending = SENDING_VERB.some((re) => re.test(s));
+  const sentences = askedSentencesOf(normalizeDigits(text));
+  const deadlineAsked = sentences.some(({ text: s, asked }) => asked && asksDeadline(s));
+  for (const { text: s, asked } of sentences) {
+    // OUR sending in the first person is a sending verb too: «Biz shu muddatda olib kelamiz» (second review).
+    const sending = SENDING_VERB.some((re) => re.test(s)) || WE_SEND.test(s);
     if (!sending && !COMING_VERB.some((re) => re.test(s))) continue;
     const certain = CERTAINTY.test(s);
     if (!certain && DISCLAIMER.test(s)) continue;
@@ -979,6 +1149,13 @@ export function timePromise(text: string): boolean {
       const covered = before && !finiteVerbIn(c) && !CONTRAST.test(c);
       // «您的货物5天前已经发出» — a trip that happened is no promise, whatever its count of days.
       if (zhPast(c)) continue;
+      // A time pointed BACK at (second review) — «shuncha kunda», «shu muddatda», «в этот срок», «by then» — is a
+      // promise as a count is: unhedged, or certain, or after he was asked how many days he needs, whatever hedges
+      // it — then it is HIS deadline, and nothing vouches that we meet it.
+      for (const m of c.matchAll(BACKREF_TIME)) {
+        if (asked && !certain && !WE_SEND.test(s)) continue;
+        if (certain || deadlineAsked || (!covered && !hedgedAt(c, m.index, m.index + m[0].length))) return true;
+      }
       for (const [start, end] of durationsIn(c)) {
         if (FREQUENCY.test(c.slice(0, start).replace(RANGE_START, ''))) continue;
         // A question whose count ASKS — «necha kunda kerak?», «几天到？» — states no time of ours (P5). A
@@ -1646,6 +1823,14 @@ export function nameWordsOf(texts: readonly string[]): string[] {
   return [...out].sort();
 }
 
+/**
+ * The company's own name, in Latin and in the Cyrillic's Latin shadow (second review): «Va alaykum assalom! GSR
+ * Logistics.» read «Logist» — a colleague's first name, three letters of case ending away — as a colleague
+ * named, and «⚠️ hodim ismi: Logist» sat on every greeting that said whose company it is. GSR LOGISTICS is the
+ * name the prompt gives the reply to say; it names nobody.
+ */
+const COMPANY_NAME = /(?<![\p{L}\p{N}])gsr(?:[\s-]*(?:logisti(?:cs?|ks|ka)))?(?![\p{L}\p{N}])/giu;
+
 /** Words of a full name that name nobody — «o'g'li», «qizi», «aka». */
 const NAME_FILLER = new Set(["o'g'li", "og'li", 'ogli', 'ugli', 'qizi', 'kizi', 'aka', 'opa']);
 
@@ -1700,7 +1885,7 @@ function staffNameHits(
   blocks: PolicyHit[],
   warnings: PolicyHit[],
 ): void {
-  const seen = [text.replace(APOSTROPHE, "'"), nameShadow(text)];
+  const seen = [text.replace(APOSTROPHE, "'"), nameShadow(text)].map((t) => t.replace(COMPANY_NAME, ' '));
   const customer = new Set(customerNames.flatMap((n) => nameShadow(n).toLowerCase().split(/\s+/u)).filter(Boolean));
   // A name the run's approved facts carry is the owner's own words (B9): the seeded «aloqa: Umriddin»
   // must not block the fact he seeded. A colleague the facts do not name still blocks.
@@ -2046,7 +2231,9 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
 
   // G1 — numbers. A numeral character inside a quoted address is the fact's spelling, not a figure:
   // Horgos's «金亿» beside any «kub» read as a spelled-out number (review D2).
-  const unverifiable = unverifiableNumeral(withoutQuotedHan(text, quotable, QUOTED_MIN_FIGURE));
+  // A vague count of days the cargo comes in is the same unreadable figure (second review, `vagueTravelTime`).
+  const unverifiable =
+    unverifiableNumeral(withoutQuotedHan(text, quotable, QUOTED_MIN_FIGURE)) ?? (vagueTravelTime(text) ? 'word_numeral' : null);
   if (unverifiable) blocks.push({ rule: 'G1', code: 'number_unverifiable', detail: unverifiable });
   const removeWhole = [...input.removeWhole, ...input.allowedUrls, ...input.mapUrls];
   // His «Temir yo'l mendan so'rasin» in the reply's OWN words (final review K18): a body that speaks of rail

@@ -427,6 +427,15 @@ const HAN_SPELLED_DURATION = new RegExp(`[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}
  */
 export const ASKING_DURATION = /^(?:necha|неча|چند)\s|^几/iu;
 
+/**
+ * A spelled duration (one `SPELLED_DURATION_SRC` match) whose count is VAGUE — «bir necha kun», «несколько
+ * дней», «a couple of days» — neither a count G1 refuses as a figure, nor a question (second review: where the
+ * cargo comes in it, policy.ts refuses it all the same, `vagueTravelTime`).
+ */
+export function vagueDuration(match: string): boolean {
+  return !SPELLED_DURATION.test(match) && !ASKING_DURATION.test(match);
+}
+
 /** A Chinese numeral run right beside money: «价格是三百», «三百美金» — `MONEY_OR_MEASURE` has «元» and «块» already. */
 const HAN_RUN = '[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+';
 const HAN_BESIDE_MONEY = new RegExp(
@@ -502,6 +511,30 @@ const PER_UNIT_PRICE = new RegExp(
 /** A currency named anywhere in a sentence — the test of `CURRENCY_ANYWHERE`, once. */
 const CURRENCY_NAMED = new RegExp(CURRENCY_ANYWHERE.source, 'iu');
 
+/** What cargo is weighed or sized in — the measure half of `MONEY_OR_MEASURE`, spelled as a whole token's; the first of `UNIT_TOKEN`'s units. */
+const MEASURE_UNITS = [
+  'kub\\p{L}*',
+  'куб\\p{L}*',
+  'kg',
+  'кг',
+  'kilo\\p{L}*',
+  'кило\\p{L}*',
+  'gramm?\\p{L}*',
+  'грамм?\\p{L}*',
+  'tonn\\p{L}*',
+  'тонн\\p{L}*',
+  'tons?',
+  'metr\\p{L}*',
+  'метр\\p{L}*',
+  'met(?:er|re)s?',
+  'm[23]',
+  'м[23]',
+  'cbm',
+  'cub(?:e|es|ic)',
+  'kilograms?',
+  'کیلو\\p{L}*',
+  'متر',
+];
 /**
  * The unit a spelled figure is a count OF (incident 2026-10-29) — a measure, a time, a percent, a thing
  * cargo comes in — as one whole token. Cubes, kilos and tonnes; days, weeks, months, hours, minutes; the
@@ -510,25 +543,7 @@ const CURRENCY_NAMED = new RegExp(CURRENCY_ANYWHERE.source, 'iu');
  */
 const UNIT_TOKEN = new RegExp(
   `^(?:${[
-    'kub\\p{L}*',
-    'куб\\p{L}*',
-    'kg',
-    'кг',
-    'kilo\\p{L}*',
-    'кило\\p{L}*',
-    'gramm?\\p{L}*',
-    'грамм?\\p{L}*',
-    'tonn\\p{L}*',
-    'тонн\\p{L}*',
-    'tons?',
-    'metr\\p{L}*',
-    'метр\\p{L}*',
-    'met(?:er|re)s?',
-    'm[23]',
-    'м[23]',
-    'cbm',
-    'cub(?:e|es|ic)',
-    'kilograms?',
+    ...MEASURE_UNITS,
     'kun\\p{L}*',
     'кун\\p{L}*',
     'hafta\\p{L}*',
@@ -581,13 +596,13 @@ const UNIT_TOKEN = new RegExp(
     'ماه',
     'ساعت',
     'دقیقه',
-    'کیلو\\p{L}*',
-    'متر',
     'کارتن',
     'جعبه',
   ].join('|')})[.,]?$`,
   'iu',
 );
+/** …and a measure alone, as one whole token. */
+const MEASURE_TOKEN = new RegExp(`^(?:${MEASURE_UNITS.join('|')})[.,]?$`, 'iu');
 
 /**
  * A word numeral RIGHT beside what it counts: a price word before its run (past one copula) or in the two
@@ -620,18 +635,26 @@ function numeralBesideUnit(normalized: string): boolean {
 const SENTENCE_BREAK = /[!?؟。！？\n;；]+|\.(?=\s|$)/u;
 const isComma = (token: string) => token === ',' || token === '，';
 
-function beside(sentence: string): boolean {
-  const tokens = sentence.match(TOKEN) ?? [];
-  const priced = CURRENCY_NAMED.test(sentence) || PER_UNIT_PRICE.test(sentence);
+/**
+ * Each spelled run of a statement's tokens that may be a figure, as [first, last]: its numerals and their
+ * «yarim», never a run that counts kinds, ways, things or thanks (`NOT_A_FIGURE`).
+ */
+function* figureRuns(tokens: readonly string[]): Generator<[number, number]> {
   for (let i = 0; i < tokens.length; i += 1) {
     if (!NUMERAL_TOKEN.test(tokens[i]!)) continue;
     let j = i;
     while (j + 1 < tokens.length && (NUMERAL_TOKEN.test(tokens[j + 1]!) || HALF_TOKEN.test(tokens[j + 1]!))) j += 1;
     const after = tokens[j + 1];
-    if (after !== undefined && NOT_A_FIGURE.test(after)) {
-      i = j;
-      continue;
-    }
+    if (after === undefined || !NOT_A_FIGURE.test(after)) yield [i, j];
+    i = j;
+  }
+}
+
+function beside(sentence: string): boolean {
+  const tokens = sentence.match(TOKEN) ?? [];
+  const priced = CURRENCY_NAMED.test(sentence) || PER_UNIT_PRICE.test(sentence);
+  for (const [i, j] of figureRuns(tokens)) {
+    const after = tokens[j + 1];
     if (priced) return true;
     // A price word before the run — past two copulas and one comma: «narxi esa besh yuz», «Narxi esa, besh yuz».
     let b = i - 1;
@@ -654,9 +677,63 @@ function beside(sentence: string): boolean {
     // …or right after it, past a classifier «ta».
     const next = after !== undefined && CLASSIFIER.test(after) ? tokens[j + 2] : after;
     if (next !== undefined && UNIT_TOKEN.test(next)) return true;
-    i = j;
   }
   return false;
+}
+
+/**
+ * …and the door the neighbour test stands BESIDE (second review). The package's rule was the whole reply: a
+ * word numeral anywhere in a text that names money or a measure anywhere. The incident narrowed it to the
+ * numeral's own neighbours, and the review measured prices spelled out passing on the gap — a noun between the
+ * unit and its price («3 kub yukingiz uchun besh yuz atrofida bo'ladi», «За ваши 3 куба выйдет примерно
+ * тысяча двести», «For your 3 m3 it will be around twelve hundred»), a total with no unit («Yukingiz 3 kub.
+ * Hammasi bo'lib to'rt yuz ellik chiqadi»), the price word on the heading above («Narx:\nming ikki yuz
+ * atrofida», «Цены за ваши 3 куба:\n• Авто — тысяча двести»), the currency a sentence back («Narx dollarda
+ * hisoblanadi. Sizning yukingizga besh yuz chiqadi»). So the old door again, in two widths. A reply that names
+ * a CURRENCY anywhere refuses a word numeral anywhere in it, as the package did. One that names only a price
+ * word or a measure — and every qualification question asks «necha kub, necha kg?» — refuses the numeral whose
+ * statement says what it prices: a measure before it, a total, or a heading above it that names a price, a
+ * total or a measure. A price word read across a statement stays what the fix round took away: «Narxni
+ * aytishim uchun ikki ma'lumot kerak: kub va kg» prices nothing, «Uch omborimiz bor: Ivu, Guanchjou va Xorgos.
+ * Yukingiz necha kub?» neither. A run that counts kinds, ways, things or thanks is no figure here either.
+ */
+function numeralInPricedReply(normalized: string): boolean {
+  const currency = CURRENCY_NAMED.test(normalized);
+  if (!currency && !MONEY_OR_MEASURE.test(normalized) && !MONEY_WORD.test(normalized)) return false;
+  for (const { text, heading } of statementsUnderHeadings(normalized)) {
+    const tokens = text.match(TOKEN) ?? [];
+    const headed =
+      heading !== null &&
+      (MONEY_WORD.test(heading) || TOTAL_WORD.test(heading) || (heading.match(TOKEN) ?? []).some((t) => MEASURE_TOKEN.test(t)));
+    const totalled = TOTAL_WORD.test(text);
+    for (const [i] of figureRuns(tokens)) {
+      if (currency || headed || totalled || tokens.slice(0, i).some((t) => MEASURE_TOKEN.test(t))) return true;
+    }
+  }
+  return false;
+}
+
+/** «Hammasi bo'lib», «jami», «итого», «всего», «в сумме», «in total», «all in», «altogether» — a sum said. */
+const TOTAL_WORD =
+  /(?<![\p{L}])(?:hammasi\s+bo['‘’ʻ`]?lib|jami(?:si)?|ҳаммаси\s+бўлиб|жами(?:си)?|итого|всего|в\s+сумме|в\s+общей\s+сложности|total\p{L}*|in\s+all|all\s+in|altogether|overall|مجموع\p{L}*|جمعا\p{M}*|جمعاً)(?![\p{L}])/iu;
+
+/**
+ * A text's statements (as `numeralBesideUnit` cuts them), each with the heading line it stands under — a line
+ * that ends on «:», «Narx:», «3 kub uchun narxlar:», «Цены за ваши 3 куба:» — until a blank line or the next
+ * heading. The heading itself is a statement of the heading above it.
+ */
+function statementsUnderHeadings(text: string): { text: string; heading: string | null }[] {
+  const out: { text: string; heading: string | null }[] = [];
+  let heading: string | null = null;
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') {
+      heading = null;
+      continue;
+    }
+    for (const piece of line.split(SENTENCE_BREAK)) if (piece.trim() !== '') out.push({ text: piece, heading });
+    if (/[:：]\s*$/u.test(line)) heading = line;
+  }
+  return out;
 }
 
 /**
@@ -681,7 +758,7 @@ export function unverifiableNumeral(normalized: string): UnverifiableNumeral | n
   if ((nearby && HAN_NUMERAL.test(normalized)) || HAN_BESIDE_MONEY.test(normalized)) return 'han_numeral';
   if (HAN_SPELLED_DURATION.test(normalized)) return 'han_numeral';
   // «narxi besh yuz» names no currency and is still a price spelled out; «besh kub» a measure.
-  if (numeralBesideUnit(normalized)) return 'word_numeral';
+  if (numeralBesideUnit(normalized) || numeralInPricedReply(normalized)) return 'word_numeral';
   if (NINE_FA.test(normalized) || SPELLED_DURATION.test(normalized.replace(ONE_MOMENT, ' '))) return 'word_numeral';
   return null;
 }

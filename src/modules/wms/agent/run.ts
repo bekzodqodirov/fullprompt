@@ -494,13 +494,16 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
  * flight's days), never as money, and in its own UNIT (review): unitless, its
  * «1 kub» vouched for «1 kg», its «100 kg» for «100 kub» and a count of 100
  * cartons, the flight's «2 kun» for «2 soatda». The flight's days vouch only
- * for a day count said of the flight (`sourceFor`).
+ * for a day count said of the flight (`sourceFor`). Each minimum is its road's
+ * and a MINIMUM's (second review): unmoded, the truck's «100 kg» vouched for
+ * «Avia orqali eng kamida 100 kg» (the flight takes 1 kg), and shapeless, for
+ * «Sizning 100 kg yukingiz Toshkentga yetib keldi» — a weight nobody stated.
  */
 const COMPANY_RULE = 'kompaniya qoidasi';
 const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
-  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', unit: 'm3' },
-  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', unit: 'kg' },
-  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg' },
+  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
+  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
+  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
   { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
   { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
