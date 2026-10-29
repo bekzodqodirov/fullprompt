@@ -355,10 +355,24 @@ describe('a late card says so (C11)', () => {
     expect(lateNote({ anchorSentAt: anchor, waitingSince: null, writtenAt: new Date(anchor.getTime() + LATE_CARD_MS), origin: 'pull' })).toBeNull();
   });
 
-  it('the incident: 23 minutes, after he answered the stranger card', () => {
+  it('the incident: 23 minutes, after he answered the stranger', () => {
     expect(lateNote({ anchorSentAt: anchor, waitingSince: null, writtenAt: tk('2026-10-29T18:10'), origin: 'pull' })).toBe(
-      '⏱ Mijoz 23 daqiqadan beri javob kutyapti («🆕 Yangi lid» yoki «👤 Mijoz — kod» bosilgandan keyin yozildi)',
+      '⏱ Mijoz 23 daqiqadan beri javob kutyapti (chat lid yoki mijoz deb belgilangandan keyin yozildi)',
     );
+  });
+
+  it('a pull is answered at two doors, so its cause names neither one’s buttons (review: the web tray’s «Bu mijoz» read as the bot’s «👤 Mijoz — kod»)', () => {
+    const note = lateNote({ anchorSentAt: anchor, waitingSince: null, writtenAt: tk('2026-10-29T18:10'), origin: 'pull' })!;
+    // The bot's stranger card, and the web tray on /suhbatlar/qaysi (messages/uz.json `crm.chatAdd`, `crm.chatOpenLead`).
+    const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { crm: Record<string, string> };
+    for (const button of ['🆕 Yangi lid', '👤 Mijoz — kod', uz.crm.chatAdd!, uz.crm.chatOpenLead!]) expect(note, button).not.toContain(button);
+    expect(note).toContain('lid yoki mijoz');
+  });
+
+  it('his ✅/❌ asking the newest line again is his press, never «the AI looked again» (review: a press-made run read as the sweep)', () => {
+    const note = lateNote({ anchorSentAt: anchor, waitingSince: null, writtenAt: tk('2026-10-29T17:57'), origin: 'redraft' });
+    expect(note).toBe('⏱ Mijoz 10 daqiqadan beri javob kutyapti (✅/❌ bosilganda chat o‘zgargani uchun qayta yozildi)');
+    expect(note).not.toContain('AI qayta tekshirganda');
   });
 
   it('the wait counts from the customer’s FIRST unanswered line, the cause from the job', () => {

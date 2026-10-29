@@ -65,7 +65,7 @@ vi.mock('@/modules/platform/settings/service', async (original) => {
 
 import type { CallModel, ModelResponse } from '@/modules/platform/ai/model';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { enqueue } from '@/modules/platform/jobs/boss';
+import { enqueue, getBoss } from '@/modules/platform/jobs/boss';
 import {
   agentConfig,
   agentConversations,
@@ -96,7 +96,7 @@ import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modul
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { createDraft } from '@/modules/wms/agent/drafts';
 import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
-import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
+import { agentSweep, retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
 import { handleInbound } from '@/modules/wms/agent/run';
@@ -191,16 +191,25 @@ async function owner(): Promise<Owner> {
 /** A draft and its card as the run writes them (`createDraft`), the card's copy then SENT to him. */
 async function draftFor(
   me: Owner,
-  over: { body?: string; withMemory?: boolean; lastOut?: string | null; ledger?: unknown[]; actions?: unknown[] } = {},
+  over: {
+    body?: string;
+    withMemory?: boolean;
+    lastOut?: string | null;
+    ledger?: unknown[];
+    actions?: unknown[];
+    /** Another line's draft, written by that line's run (the run's own ledger row). */
+    anchor?: bigint;
+    runId?: string;
+  } = {},
 ): Promise<{ draftId: string; card: number }> {
   const written = await createDraft({
-    runId: null,
+    runId: over.runId ?? null,
     managerUserId: me.id,
     peerId: me.peer,
     clientId,
     leadId: null,
     identityStrength: null,
-    anchorTgMessageId: me.anchor,
+    anchorTgMessageId: over.anchor ?? me.anchor,
     anchorEditedAt: null,
     kind: 'reply',
     body: over.body ?? MACHINE,
@@ -314,8 +323,8 @@ async function withModelKey<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** The customer writes again while he is on ✏️, and the run for it stands down for his edit (`createDraft` → 'editing'). */
-async function newerWhileEditing(me: Owner): Promise<bigint> {
+/** The customer's newer line, `agoMs` old (after the anchor, a minute old, by default — as the customer wrote it). */
+async function newerLine(me: Owner, agoMs = 30_000): Promise<bigint> {
   const newer = BigInt(nextMsg());
   await db.insert(tgMessages).values({
     clientId,
@@ -324,9 +333,14 @@ async function newerWhileEditing(me: Owner): Promise<bigint> {
     tgMessageId: newer,
     direction: 'in',
     body: 'Narxi qancha? Yiwu dan Toshkentga 5 kub',
-    // After the anchor (a minute old), as the customer wrote it.
-    sentAt: new Date(Date.now() - 30_000),
+    sentAt: new Date(Date.now() - agoMs),
   });
+  return newer;
+}
+
+/** The customer writes again while he is on ✏️, and the run for it stands down for his edit (`createDraft` → 'editing'). */
+async function newerWhileEditing(me: Owner, agoMs = 30_000): Promise<bigint> {
+  const newer = await newerLine(me, agoMs);
   await db.insert(agentRuns).values({
     managerUserId: me.id,
     peerId: me.peer,
@@ -338,6 +352,26 @@ async function newerWhileEditing(me: Owner): Promise<bigint> {
   });
   return newer;
 }
+
+/**
+ * A job for the line WAITING on pg-boss's real table — what the listener's
+ * `rethinkOnEdit` leaves 12 s out (longer behind a busy worker), sent by the
+ * real sender (the file's `enqueue` mock stands in for the app's sends only).
+ * An hour out, so no worker anywhere ever works it; afterAll deletes it.
+ */
+async function waitingJob(me: Owner, anchor: bigint, origin: AgentInboundJob['origin']): Promise<void> {
+  const real = await vi.importActual<typeof import('@/modules/platform/jobs/boss')>('@/modules/platform/jobs/boss');
+  await real.enqueue<AgentInboundJob>(
+    JOB_AGENT_INBOUND,
+    { managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(anchor), origin },
+    { retryLimit: 0, startAfter: 3_600 },
+  );
+}
+
+/** A model that fails the way a timeout or an overload does — the run around it is real. */
+const failing: CallModel = (async () => {
+  throw new Error('Request timed out.');
+}) as CallModel;
 
 /** The agent runs this test queued (the `enqueue` mock's calls). */
 const queuedRuns = () =>
@@ -385,6 +419,16 @@ afterAll(async () => {
     await db.delete(tgAccounts).where(inArray(tgAccounts.id, madeAccounts));
   }
   await db.execute(sql`DELETE FROM telegram_once WHERE key LIKE ${`m:${PREFIX}%`} OR key LIKE ${`q:${PREFIX}%`}`);
+  // The jobs `waitingJob` left on pg-boss's table, and the sender it started (agent-listen-queue's way).
+  const boss = await db.execute<{ job: boolean }>(sql`SELECT to_regclass('pgboss.job') IS NOT NULL AS job`);
+  if (boss[0]?.job) {
+    await db.execute(sql`
+      DELETE FROM pgboss.job
+       WHERE name = ${JOB_AGENT_INBOUND} AND data->>'peerId' LIKE ${`${PREFIX}%`}`);
+  }
+  await getBoss()
+    .stop({ graceful: false, wait: true })
+    .catch(() => undefined);
   await db.execute(sql`DELETE FROM telegram_chat_waits WHERE chat_id::text LIKE ${`${PREFIX}%`}`);
   await db.delete(clients).where(eq(clients.id, clientId));
   await db.delete(telegramLinks).where(inArray(telegramLinks.userId, madeUsers));
@@ -591,6 +635,33 @@ describe('a ✅ the row moved under is refused as a changed card, never sent (re
     expect(d.status).toBe('pending');
     expect(d.finalBody).toBe(`Mening matnim ${STAMP}`);
   });
+
+  it('his SECOND text lands between the ✅ on his first and its approval: nothing goes, the press says the card changed, and its new ✅ sends the second (review: the first went out under a card saying the second was sent)', async () => {
+    const me = await owner();
+    const { draftId } = await draftFor(me);
+    const firstText = `Birinchi matnim ${STAMP}`;
+    const secondText = `Ikkinchi, tuzatilgan matnim ${STAMP}`;
+    expect((await submitOwnText(actor(me.id), draftId, firstText, { actorId: me.id })).ok).toBe(true);
+    // The card's ✅ now — over his FIRST text — pressed in the bot while the page's ✏️ box saves the second.
+    const send = await cardSend(draftId);
+    betweenReadAndCas.once = async () => {
+      expect((await submitOwnText(actor(me.id), draftId, secondText, { actorId: me.id })).ok).toBe(true);
+    };
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), send!));
+    expect(betweenReadAndCas.once, 'the hook ran').toBeNull();
+    expect(toastOf(h.since(m).api)).toBe("Karta o'zgargan — yangi kartadagi ✅ ni bosing.");
+    expect(await outboxOf(draftId), 'neither text is queued').toBeNull();
+    const d = await draftOf(draftId);
+    expect(d.status).toBe('pending');
+    expect(d.finalBody).toBe(secondText);
+    // The card shows the second text, and ITS ✅ is the one that sends — the words he pressed are the words that go.
+    expect(String((await cardPayloadOf(draftId)).text)).toContain(secondText);
+    const again = await cardSend(draftId);
+    expect(again).not.toBe(send);
+    await h.handle(tg.callback(me.chat, nextMsg(), again!));
+    expect((await outboxOf(draftId))?.body).toBe(secondText);
+  });
 });
 
 describe('✅ after the customer wrote again while he was on ✏️ (review: the dead end)', () => {
@@ -605,9 +676,9 @@ describe('✅ after the customer wrote again while he was on ✏️ (review: the
     expect(toastOf(h.since(m).api)).toBe('Mijoz yana yozdi — yangi qoralama tayyorlanadi.');
     expect((await draftOf(a.draftId)).status).toBe('superseded');
     expect(await outboxOf(a.draftId)).toBeNull();
-    // Asked again at the next free attempt — 0 is the stand-down's.
+    // Asked again as HIS press, on the press's own attempt — 0 is the stand-down's, 1 the sweep's retry slot.
     const jobs = queuedRuns();
-    expect(jobs).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 1, origin: 'sweep' }]);
+    expect(jobs).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
     // The edit armed for the dead draft is gone, and he is told his next text will not land on it.
     expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
     expect(h.textsTo(me.chat, m)).toContain('✏️ Mijoz yana yozdi — yangi qoralama tayyorlanadi. Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.');
@@ -686,6 +757,169 @@ describe('✅ after the customer wrote again while he was on ✏️ (review: the
     await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
     expect((await draftOf(a.draftId)).status).toBe('rejected');
     expect(queuedRuns().map((j) => j.anchorTgMessageId)).toEqual([String(newer)]);
+  });
+});
+
+describe('the press promises only the card that is coming, and asks as itself (review of redraftNewest)', () => {
+  const COMING = 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.';
+  const runsOf = async (me: Owner, anchor: bigint) =>
+    (
+      await db
+        .select({ attempt: agentRuns.attempt, outcome: agentRuns.outcome })
+        .from(agentRuns)
+        .where(and(eq(agentRuns.managerUserId, me.id), eq(agentRuns.peerId, me.peer), eq(agentRuns.anchorTgMessageId, anchor)))
+    ).sort((x, y) => x.attempt - y.attempt);
+  const mine = (me: Owner) => queuedRuns().filter((j) => j.peerId === String(me.peer));
+
+  it('the customer EDITED the line and the listener’s edit job is still waiting: «yangi qoralama» — that job is the card, and nothing more is queued', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    // `applyEdit`'s stamp, and the job `rethinkOnEdit` leaves on the queue.
+    await db
+      .update(tgMessages)
+      .set({ editedAt: new Date() })
+      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, me.anchor)));
+    await waitingJob(me, me.anchor, 'edit');
+    const send = await cardSend(a.draftId);
+    const m = h.mark();
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    expect(toastOf(h.since(m).api)).toBe(COMING);
+    expect((await draftOf(a.draftId)).status).toBe('superseded');
+    expect(mine(me), 'the waiting job asks; a second would be a second bill').toEqual([]);
+    const card = String((await cardPayloadOf(a.draftId)).text);
+    expect(card).toContain('↪️ Mijoz yana yozdi — yangi qoralama.');
+    expect(card).not.toContain('o‘zingiz javob bering');
+  });
+
+  it('the newer message’s run began BEFORE this draft was written (a hand-back lands on its own worker) and is still in its model call: that run is the card — no second bill', async () => {
+    const me = await owner();
+    const newer = await newerLine(me);
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: newer,
+      attempt: 0,
+      createdAt: new Date(Date.now() - 20_000),
+    });
+    const a = await draftFor(me);
+    const send = await cardSend(a.draftId);
+    const m = h.mark();
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    expect(toastOf(h.since(m).api)).toBe(COMING);
+    expect(mine(me)).toEqual([]);
+    expect(await runsOf(me, newer)).toEqual([{ attempt: 0, outcome: 'reserved' }]);
+  });
+
+  it('…and the newer message’s card that THIS draft superseded is asked again, as his press, on its own attempt', async () => {
+    const me = await owner();
+    const newer = await newerLine(me);
+    const [run] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
+    const a = await draftFor(me);
+    expect((await draftOf(theirs.draftId)).status).toBe('superseded');
+    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'redrafting' });
+    expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
+  });
+
+  it('…but a card of it he already DECIDED is that line’s answer: «o‘zingiz javob bering», nothing queued', async () => {
+    const me = await owner();
+    const newer = await newerLine(me);
+    const [run] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
+    await db.update(agentDrafts).set({ status: 'approved' }).where(eq(agentDrafts.id, theirs.draftId));
+    const a = await draftFor(me);
+    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
+    expect(mine(me)).toEqual([]);
+  });
+
+  it('an errored first look the sweep will retry is the card too — promised, and not asked a second time beside the retry', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    const newer = await newerLine(me);
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: newer,
+      attempt: 0,
+      outcome: 'error',
+      error: 'Request timed out.',
+    });
+    const send = await cardSend(a.draftId);
+    const m = h.mark();
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    expect(toastOf(h.since(m).api)).toBe(COMING);
+    expect(mine(me)).toEqual([]);
+    expect(String((await cardPayloadOf(a.draftId)).text)).not.toContain('o‘zingiz javob bering');
+  });
+
+  it('a redraft his press asked for that then ERRORS gets the sweep’s one retry, on its own next attempt — and only one', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    const send = await cardSend(a.draftId);
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    const [asked] = mine(me);
+    expect(asked).toMatchObject({ anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' });
+    // The redraft's run fails (a timeout; a deploy's kill reads the same, K24) — three minutes ago, past the sweep's floor.
+    expect(await withModelKey(() => handleInbound(asked!, { callModel: failing }))).toMatchObject({ outcome: 'error' });
+    const aged = new Date(Date.now() - 3 * 60_000);
+    await db.update(agentRuns).set({ createdAt: aged }).where(and(eq(agentRuns.managerUserId, me.id), eq(agentRuns.anchorTgMessageId, newer)));
+    expect(await runsOf(me, newer)).toEqual([
+      { attempt: 0, outcome: 'stood_down' },
+      { attempt: 50, outcome: 'error' },
+    ]);
+    vi.mocked(enqueue).mockClear();
+    await withModelKey(() => agentSweep(new Date()));
+    expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 51, origin: 'sweep' }]);
+    // The retry failing too is the end of the AI's asking — the ordinary ClientWaiting nudge takes the line.
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: newer,
+      attempt: 51,
+      outcome: 'error',
+      error: 'Request timed out.',
+      createdAt: aged,
+    });
+    vi.mocked(enqueue).mockClear();
+    await withModelKey(() => agentSweep(new Date()));
+    expect(mine(me)).toEqual([]);
+  });
+
+  it('the card a press made, late, says it was HIS press — never «AI qayta tekshirganda»', async () => {
+    const me = await owner();
+    // The customer's first line twelve minutes ago, his newer one ten: the chat waited while he was on ✏️.
+    await db
+      .update(tgMessages)
+      .set({ sentAt: new Date(Date.now() - 12 * 60_000) })
+      .where(and(eq(tgMessages.managerUserId, me.id), eq(tgMessages.peerId, me.peer), eq(tgMessages.tgMessageId, me.anchor)));
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me, 10 * 60_000);
+    const send = await cardSend(a.draftId);
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), send!)));
+    const [asked] = mine(me);
+    expect(asked?.origin).toBe('redraft');
+    const out = await withModelKey(() => handleInbound(asked!, { callModel: composing('Qaysi tovar va necha kg?') }));
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const [b] = await db
+      .select()
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.anchorTgMessageId, newer)));
+    // The wait from his FIRST unanswered line (lateNote), the cause from the job.
+    expect((b!.policy as { notes: string[] }).notes[0]).toBe('⏱ Mijoz 12 daqiqadan beri javob kutyapti (✅/❌ bosilganda chat o‘zgargani uchun qayta yozildi)');
   });
 });
 

@@ -301,16 +301,22 @@ export const LATE_CARD_MS = 3 * 60_000;
 
 /**
  * Why a run started late, when its job says (queues `AgentInboundJob.origin`):
- * a pull follows his answer to the stranger card — the customer's lines were
- * not kept until then (bot-door `queuePull`, from «🆕 Yangi lid» and from a
- * confirmed «👤 Mijoz — kod»); the sweep's gap pass re-asks a message no run
- * took; an edit re-asks the anchor. A live or typing-wait run that is late
- * has no cause the job can name, and none is invented.
+ * a pull follows his answer to a stranger — the customer's lines were not
+ * kept until then (bot-door `queuePull`), and that answer is given at TWO
+ * doors: the bot's stranger card («🆕 Yangi lid», a confirmed «👤 Mijoz —
+ * kod») and the web tray on /suhbatlar/qaysi («Yangi lid», «Bu mijoz» —
+ * chat-rules `pullForAgent`), so the words name what both did, never one
+ * door's buttons; the sweep's gap pass re-asks a message no run took; an
+ * edit re-asks the anchor; his ✅/❌ on a card the chat had moved past asks
+ * the newest line again (decide `redraftNewest`) — his press, never «the AI
+ * looked again». A live or typing-wait run that is late has no cause the job
+ * can name, and none is invented.
  */
 const LATE_CAUSE: Partial<Record<AgentInboundJob['origin'], string>> = {
-  pull: '(«🆕 Yangi lid» yoki «👤 Mijoz — kod» bosilgandan keyin yozildi)',
+  pull: '(chat lid yoki mijoz deb belgilangandan keyin yozildi)',
   sweep: '(AI qayta tekshirganda yozildi)',
   edit: '(mijoz xabarini tahrirlagandan keyin)',
+  redraft: '(✅/❌ bosilganda chat o‘zgargani uchun qayta yozildi)',
 };
 
 /**

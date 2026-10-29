@@ -269,7 +269,8 @@ describe('a run drafts a reply and posts its card', () => {
     const out = await handleInbound({ ...job(a), origin: 'pull' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });
     expect(out).toMatchObject({ outcome: 'draft' });
     const d = await liveDraft();
-    const late = '⏱ Mijoz 23 daqiqadan beri javob kutyapti («🆕 Yangi lid» yoki «👤 Mijoz — kod» bosilgandan keyin yozildi)';
+    // A pull follows an answer given at either door — the bot's card or the web tray — and names neither one's buttons.
+    const late = '⏱ Mijoz 23 daqiqadan beri javob kutyapti (chat lid yoki mijoz deb belgilangandan keyin yozildi)';
     expect((d!.policy as { notes: string[] }).notes[0]).toBe(late);
     expect(((await cardOf(d!.id))!.payload as { text: string }).text).toContain(`ℹ️ ${late}`);
   });

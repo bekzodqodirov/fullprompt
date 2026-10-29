@@ -34,7 +34,7 @@ import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
-import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
+import { isFirstAsk, JOB_AGENT_INBOUND, nextRedraftAttempt, type AgentInboundJob } from './queues';
 import { isNudge } from './worthy';
 import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
@@ -214,15 +214,32 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
  * (`createDraft` → 'editing', the run's row `stood_down`/'editing') — he is
  * typing an answer — and nothing asked again: the sweep's gap pass reads «a
  * run exists» and goes on. So when that draft leaves the chat by a newer
- * message (`chatMoved` on ✅) or his ❌, the newest live inbound is queued
- * once more — the anchor itself when it was EDITED (an edit's job, its own
- * attempt from 100), otherwise the newer message, at the next free attempt
- * below 100 (the inbound UNIQUE is per attempt; the live hook's own job, if
- * it is still on its debounce, meets this one there and one of them stands
- * down as a duplicate). Only a stand-down for HIM is re-asked: a refusal, a
- * cap, a «no reply needed» or an error is that run's own answer (the sweep
- * retries an error itself). True = a card for the newer message is coming —
- * what the press may promise.
+ * message or an edit (`chatMoved` on ✅) or his ❌, the newest live inbound —
+ * the anchor itself while the EDITED line is still the newest — is queued
+ * once more as HIS press (origin `redraft`, never the sweep's: the late note
+ * and the `[agent] inbound` line name who asked), at attempt 0 when nothing
+ * ever asked the line (the live hook's job, if it is starting right now,
+ * meets this one at the inbound UNIQUE and one of them stands down as a
+ * duplicate) and otherwise at the press's own attempt band (queues
+ * `nextRedraftAttempt`) — never attempt 1, the sweep's one retry of a first
+ * look, or a redraft that errored would never be tried again.
+ *
+ * True = a card for that line is coming — what the press may promise; false
+ * is said to him as «o‘zingiz javob bering», so it must be as true (review):
+ *  - a run of the line still in flight, or a card of it still up, is the card;
+ *  - a job for the line still WAITING its turn is the card (jobs
+ *    `inboundJobsWaiting`): the listener's edit job sits 12 s out, longer
+ *    behind a busy worker, and the live hook's on its debounce;
+ *  - an errored ask the sweep will retry is the card (`isFirstAsk`, its window);
+ *  - a refusal, a cap, a «no reply needed», a notice, a card he already
+ *    decided, an error past its retry: that run's own answer — nothing comes.
+ * Which runs answer the line: for an edited anchor only those since the draft
+ * (the draft's own run answered the text before the edit); for a newer
+ * message EVERY run of it, whenever it began — a hand-back draft is written
+ * on its own worker and can land while the newer message's run is still in
+ * its model call, and asking that line again paid the model twice (review).
+ * Asked again: a run that stood down for his edit, or one whose card this
+ * very draft superseded (the hand-back that landed after it).
  */
 async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 'edited'): Promise<boolean> {
   // The sweep's own gate: with no model a queued run writes nothing, and the press must not promise a card.
@@ -244,8 +261,10 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
     .orderBy(desc(tgMessages.tgMessageId))
     .limit(1);
   if (!newest) return false;
+  // Past the edited line a newer message is the one to answer — asked about as a newer message.
+  const edited = how === 'edited' && newest.tgMessageId === d.anchorTgMessageId;
   const runs = await db
-    .select({ attempt: agentRuns.attempt, outcome: agentRuns.outcome, error: agentRuns.error, createdAt: agentRuns.createdAt })
+    .select({ id: agentRuns.id, attempt: agentRuns.attempt, outcome: agentRuns.outcome, error: agentRuns.error, createdAt: agentRuns.createdAt })
     .from(agentRuns)
     .where(
       and(
@@ -255,21 +274,34 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
         eq(agentRuns.anchorTgMessageId, newest.tgMessageId),
       ),
     );
-  // The draft's own run (an edited anchor's first draft) is no answer to the message as it stands now.
-  const since = runs.filter((r) => r.createdAt.getTime() >= d.createdAt.getTime());
-  if (since.some((r) => r.outcome === 'reserved' || r.outcome === 'draft')) return true;
-  if (since.some((r) => !(r.outcome === 'stood_down' && r.error === 'editing'))) return false;
-  if (how === 'edited' && since.length === 0) return false;
-  const job: AgentInboundJob =
-    how === 'edited'
-      ? { managerUserId: d.managerUserId, peerId: String(d.peerId), anchorTgMessageId: String(newest.tgMessageId), origin: 'edit' }
-      : {
-          managerUserId: d.managerUserId,
-          peerId: String(d.peerId),
-          anchorTgMessageId: String(newest.tgMessageId),
-          attempt: runs.length === 0 ? 0 : Math.max(...runs.filter((r) => r.attempt < 100).map((r) => r.attempt), -1) + 1,
-          origin: 'sweep',
-        };
+  const answering = edited ? runs.filter((r) => r.createdAt.getTime() >= d.createdAt.getTime()) : runs;
+  if (answering.some((r) => r.outcome === 'reserved')) return true;
+  const drafted = answering.filter((r) => r.outcome === 'draft').map((r) => r.id);
+  const cards = drafted.length
+    ? await db.select({ runId: agentDrafts.runId, status: agentDrafts.status }).from(agentDrafts).where(inArray(agentDrafts.runId, drafted))
+    : [];
+  if (cards.some((c) => c.status === 'pending' || c.status === 'editing')) return true;
+  const { ERRORED_RETRY_WINDOW_MS, inboundJobsWaiting } = await import('./jobs');
+  if ((await inboundJobsWaiting(d.managerUserId)).has(`${d.peerId}:${newest.tgMessageId}`)) return true;
+  // The sweep retries an errored ask that nothing asked after (jobs `agentSweep` step 4).
+  const top = Math.max(-1, ...runs.map((r) => r.attempt));
+  const retrying = (r: (typeof runs)[number]) =>
+    r.outcome === 'error' && isFirstAsk(r.attempt) && r.attempt === top && Date.now() - r.createdAt.getTime() < ERRORED_RETRY_WINDOW_MS;
+  if (answering.some(retrying)) return true;
+  const superseded = new Set(cards.filter((c) => c.status === 'superseded').map((c) => c.runId));
+  const askAgain = (r: (typeof runs)[number]) =>
+    (r.outcome === 'stood_down' && r.error === 'editing') || (r.outcome === 'draft' && superseded.has(r.id));
+  if (!answering.every(askAgain)) return false;
+  if (edited && answering.length === 0) return false;
+  const attempt = runs.length === 0 ? 0 : nextRedraftAttempt(runs.map((r) => r.attempt));
+  if (attempt === null) return false;
+  const job: AgentInboundJob = {
+    managerUserId: d.managerUserId,
+    peerId: String(d.peerId),
+    anchorTgMessageId: String(newest.tgMessageId),
+    attempt,
+    origin: 'redraft',
+  };
   await enqueue(JOB_AGENT_INBOUND, job, { retryLimit: 0, startAfter: 1 });
   return true;
 }
@@ -673,6 +705,19 @@ export async function decideDraft(
   }
 
   const approved = await db.transaction(async (tx) => {
+    // The row as it is approved, locked, must still be the card he pressed: the status read at the
+    // top (`editing` included, with no words of his) and the digest's own inputs — his words, the
+    // machine's, the actions — exactly as the press checked them (review: a second text of his
+    // landing between the read and here put the FIRST on the queue while the card, re-drawn from
+    // the row, said the second was being sent). The words that go are the words that were pressed.
+    const [held] = await tx
+      .select({ status: agentDrafts.status, finalBody: agentDrafts.finalBody, proposedBody: agentDrafts.proposedBody, actions: agentDrafts.actions })
+      .from(agentDrafts)
+      .where(eq(agentDrafts.id, draftId))
+      .for('update');
+    if (!held || held.status !== d.status || held.finalBody !== d.finalBody || cardDigest(digestBody(held), held.actions as ComposedAction[]) !== cardDigest(body, actions)) {
+      return false;
+    }
     const [row] = await tx
       .update(agentDrafts)
       .set({
@@ -685,9 +730,7 @@ export async function decideDraft(
         // only `runDraftActions` says 'done', when every one has (A10).
         ...(actions.length ? { actionStatus: 'pending', actionError: null } : {}),
       })
-      // The status read at the top — `editing` included (with no words of his: a text he typed
-      // since makes the row a different card, and the digest above was over the machine's).
-      .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status), d.finalBody === null ? isNull(agentDrafts.finalBody) : undefined))
+      .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status)))
       .returning({ id: agentDrafts.id });
     if (!row) return false;
     await tx.insert(agentOutbox).values({
@@ -722,7 +765,8 @@ export async function decideDraft(
   });
   if (!approved) {
     // The row moved under the press — his own words landed on it between the read and here (the
-    // `finalBody` guard above): the draft is live, the card is a different one, and «faol emas» is false.
+    // lock's check above): the draft is live, the card is a different one, and «faol emas» is false —
+    // «Karta o'zgargan — yangi kartadagi ✅ ni bosing», on the card his new words are on.
     const [after] = await db.select({ status: agentDrafts.status }).from(agentDrafts).where(eq(agentDrafts.id, draftId));
     return { ok: false, code: after?.status === 'pending' || after?.status === 'editing' ? 'stale_card' : 'not_live' };
   }

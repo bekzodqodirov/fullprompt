@@ -12,11 +12,14 @@ import { TELEGRAM_SERVICE_PEER } from '../crm/telegram-import';
 import { agentRunning, agentTablesReady, readAgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import {
+  EDIT_ATTEMPT_BASE,
   INBOUND_START_AFTER_S,
+  isFirstAsk,
   JOB_AGENT_HAND_BACK,
   JOB_AGENT_HUMAN_REPLY,
   JOB_AGENT_INBOUND,
   JOB_AGENT_SWEEP,
+  REDRAFT_ATTEMPT_BASE,
   type AgentHandBackJob,
   type AgentHumanReplyJob,
   type AgentInboundJob,
@@ -35,7 +38,8 @@ import {
  * a card that came 23 minutes after the customer's lines, and a log that
  * could not say whether the job waited in the queue or was born late). The
  * ORIGIN says who asked — the live hook, an edit, a stranger's pull answered
- * on the card, the sweep's gap pass or retry, a typing wait — and the clocks
+ * on the bot's card or the web tray, the sweep's gap pass or retry, a typing
+ * wait, his ✅/❌ asking again (`redraft`) — and the clocks
  * say how long it waited: `lagMs` past the moment it was allowed to start (a
  * busy or stopped worker), `queuedMs` since it was put on the queue. Both
  * from pg-boss's own columns (`includeMetadata`), the database's one clock;
@@ -122,6 +126,12 @@ export async function registerAgentWorkers(boss: PgBoss): Promise<void> {
  * writes after it — no live run is still that young-looking.
  */
 export const INTERRUPTED_RUN_MS = 5 * 60_000;
+
+/**
+ * How long an errored ask stays the sweep's to retry (step 4) — and so how
+ * long a press may count it as a card on its way (decide `redraftNewest`).
+ */
+export const ERRORED_RETRY_WINDOW_MS = 60 * 60_000;
 
 /**
  * His 14 (2026-10-24, «escalation wait 30 min»): a question the agent put to
@@ -340,37 +350,41 @@ export async function agentSweep(
       gap += 1;
     }
 
-    // 4. An errored run gets ONE more try (fit-15); a second failure lets the ordinary ClientWaiting nudge fire.
+    // 4. An errored ASK gets ONE more try (fit-15) — the first look, and his
+    //    press asking again (queues `isFirstAsk`: a redraft that errored was
+    //    never retried while it sat on the retry slot itself) — at the attempt
+    //    after it, and only while nothing asked the line since; a second
+    //    failure lets the ordinary ClientWaiting nudge fire.
     const errored = await db
-      .select({ peerId: agentRuns.peerId, anchor: agentRuns.anchorTgMessageId })
+      .select({ peerId: agentRuns.peerId, anchor: agentRuns.anchorTgMessageId, attempt: agentRuns.attempt })
       .from(agentRuns)
       .where(
         and(
           eq(agentRuns.managerUserId, config.ownerUserId),
           eq(agentRuns.trigger, 'inbound'),
           eq(agentRuns.outcome, 'error'),
-          eq(agentRuns.attempt, 0),
+          sql`(${agentRuns.attempt} = 0 OR (${agentRuns.attempt} >= ${REDRAFT_ATTEMPT_BASE} AND ${agentRuns.attempt} < ${EDIT_ATTEMPT_BASE} AND ${agentRuns.attempt} % 2 = 0))`,
           lt(agentRuns.createdAt, new Date(now.getTime() - 2 * 60_000)),
-          gt(agentRuns.createdAt, new Date(now.getTime() - 60 * 60_000)),
+          gt(agentRuns.createdAt, new Date(now.getTime() - ERRORED_RETRY_WINDOW_MS)),
           // `${agentRuns}.col`, never `${agentRuns.col}`: drizzle renders a
           // single-table select's columns unqualified, and inside the
           // subquery that would bind to r2 (#128).
           sql`NOT EXISTS (SELECT 1 FROM agent_runs r2 WHERE r2.manager_user_id = ${agentRuns}.manager_user_id
                 AND r2.peer_id = ${agentRuns}.peer_id AND r2.anchor_tg_message_id = ${agentRuns}.anchor_tg_message_id
-                AND r2.attempt = 1)`,
+                AND r2.trigger = 'inbound' AND r2.attempt > ${agentRuns}.attempt)`,
           sql`NOT EXISTS (SELECT 1 FROM tg_messages m2 WHERE m2.manager_user_id = ${agentRuns}.manager_user_id
                 AND m2.peer_id = ${agentRuns}.peer_id AND m2.direction = 'in'
                 AND m2.tg_message_id > ${agentRuns}.anchor_tg_message_id)`,
         ),
       );
     for (const e of errored) {
-      if (e.anchor === null) continue;
+      if (e.anchor === null || !isFirstAsk(e.attempt)) continue;
       if (waiting.has(`${e.peerId}:${e.anchor}`)) continue;
       await enqueue(JOB_AGENT_INBOUND, {
         managerUserId: config.ownerUserId,
         peerId: String(e.peerId),
         anchorTgMessageId: String(e.anchor),
-        attempt: 1,
+        attempt: e.attempt + 1,
         origin: 'sweep',
       } satisfies AgentInboundJob, { retryLimit: 0, startAfter: INBOUND_START_AFTER_S });
       waiting.add(`${e.peerId}:${e.anchor}`);

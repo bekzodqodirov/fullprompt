@@ -22,10 +22,41 @@ export interface AgentInboundJob {
   /** bigints travel as strings through pg-boss's JSON. */
   peerId: string;
   anchorTgMessageId: string;
-  /** 0 from the listener; the sweep's one retry of an errored run is 1 (fit-15). */
+  /** 0 from the listener; the sweep's one retry of an errored run is 1 (fit-15); his press asks from 50 (`nextRedraftAttempt`). */
   attempt?: number;
-  /** Why this job exists — the live hook, an edit of the newest inbound, a pull, the sweep. */
-  origin: 'live' | 'edit' | 'pull' | 'sweep' | 'typing_wait';
+  /**
+   * Why this job exists — the live hook, an edit of the newest inbound, a
+   * pull, the sweep, a typing wait, or his ✅/❌ on a card the chat had moved
+   * past (decide `redraftNewest`): that one is HIS press, never the sweep's,
+   * and the late note and the `[agent] inbound` line say so.
+   */
+  origin: 'live' | 'edit' | 'pull' | 'sweep' | 'typing_wait' | 'redraft';
+}
+
+/**
+ * The attempt numbers of one inbound line (`agent_runs_inbound_unique` is per
+ * anchor AND attempt), so no kind of asking takes another's slot:
+ *  - 0 is the first look (the live hook, a pull, the sweep's gap pass), and 1
+ *    its one retry by the sweep when it errored (fit-15);
+ *  - from `REDRAFT_ATTEMPT_BASE`, his press asking the line again: each ask
+ *    on an EVEN number and its own one retry on the odd number after it — a
+ *    press-made redraft used to take attempt 1, the retry slot, so one that
+ *    errored was never tried again;
+ *  - from `EDIT_ATTEMPT_BASE`, an edit of the anchor (run `attemptFor`).
+ */
+export const REDRAFT_ATTEMPT_BASE = 50;
+export const EDIT_ATTEMPT_BASE = 100;
+
+/** An attempt that is an ask of its own — the first look or a press — and so earns the sweep's one retry at `attempt + 1`. */
+export function isFirstAsk(attempt: number): boolean {
+  return attempt === 0 || (attempt >= REDRAFT_ATTEMPT_BASE && attempt < EDIT_ATTEMPT_BASE && attempt % 2 === 0);
+}
+
+/** The next press-made ask of a line, past every ask (and retry) of the band already on it; null when the band is spent. */
+export function nextRedraftAttempt(attempts: readonly number[]): number | null {
+  const top = Math.max(REDRAFT_ATTEMPT_BASE - 2, ...attempts.filter((a) => a >= REDRAFT_ATTEMPT_BASE && a < EDIT_ATTEMPT_BASE));
+  const next = top - (top % 2) + 2;
+  return next < EDIT_ATTEMPT_BASE ? next : null;
 }
 
 /** He (or a colleague on his account, or the CRM) answered this chat himself. */

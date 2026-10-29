@@ -17,7 +17,7 @@ import { AGENT_LIMITS } from './limits';
 import { detectLocale, dominantScript, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
-import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
+import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
 import { dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { namedOrigins } from './origin';
@@ -329,7 +329,12 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
   });
 }
 
-/** The attempt this job runs as: the sweep's retry is 1, an edit of the anchor gets its own from 100 (regression-10). */
+/**
+ * The attempt this job runs as: the job's own (0, the sweep's retry 1, his
+ * press's from 50 — queues `nextRedraftAttempt`), and an edit of the anchor
+ * its own from 100 (regression-10), counted here because the listener that
+ * queues an edit does not read the ledger.
+ */
 async function attemptFor(job: AgentInboundJob): Promise<number> {
   if (job.origin !== 'edit') return job.attempt ?? 0;
   const [row] = await db
@@ -340,10 +345,10 @@ async function attemptFor(job: AgentInboundJob): Promise<number> {
         eq(agentRuns.managerUserId, job.managerUserId),
         eq(agentRuns.peerId, BigInt(job.peerId)),
         eq(agentRuns.anchorTgMessageId, BigInt(job.anchorTgMessageId)),
-        gte(agentRuns.attempt, 100),
+        gte(agentRuns.attempt, EDIT_ATTEMPT_BASE),
       ),
     );
-  return 100 + Number(row?.n ?? 0);
+  return EDIT_ATTEMPT_BASE + Number(row?.n ?? 0);
 }
 
 const lastOutAsked = (ctx: AgentContext) => /[?؟？]\s*$/u.test(ctx.lastOut?.body ?? '');
