@@ -287,11 +287,11 @@ describe('a stranger’s chat: a lead, a client by its code, or personal (§17.1
     const ask = await agentPress(ownerId, 'k', ruleId, undefined);
     expect(ask.arm).toEqual({ kind: 'agent_code', payload: { ruleId } });
 
-    expect(await agentText(ownerId, ask.arm!, 'GS 777')).toContain('bitta so‘z');
-    expect(await agentText(ownerId, ask.arm!, `ZZ${SUFFIX}`)).toContain("bunday kod yo'q");
+    expect((await agentText(ownerId, ask.arm!, 'GS 777'))?.text).toContain('bitta so‘z');
+    expect((await agentText(ownerId, ask.arm!, `ZZ${SUFFIX}`))?.text).toContain("bunday kod yo'q");
     expect(await ownerCards('AgentCodeEcho')).toHaveLength(0);
 
-    expect(await agentText(ownerId, ask.arm!, `al${SUFFIX}`)).toContain('Tekshiring');
+    expect((await agentText(ownerId, ask.arm!, `al${SUFFIX}`))?.text).toContain('Tekshiring');
     const [echo] = await ownerCards('AgentCodeEcho');
     expect((echo!.payload as { text: string }).text).toContain(`AL${SUFFIX}`);
     expect((echo!.payload as { text: string }).text).toContain('+998901112233');
@@ -336,7 +336,7 @@ describe('a stranger’s chat: a lead, a client by its code, or personal (§17.1
   it('only the account holder answers the card; «🚫 Shaxsiy» excludes the chat', async () => {
     const ruleId = await strangerRule();
     expect((await agentPress(otherId, 'x', ruleId, undefined)).toast).toBe('Topilmadi');
-    expect((await agentText(otherId, { kind: 'agent_code', payload: { ruleId } }, `AL${SUFFIX}`))).toBe('Topilmadi.');
+    expect((await agentText(otherId, { kind: 'agent_code', payload: { ruleId } }, `AL${SUFFIX}`))?.text).toBe('Topilmadi.');
     await agentPress(ownerId, 'x', ruleId, undefined);
     const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
     expect(rule!.decision).toBe('exclude');
@@ -814,7 +814,7 @@ describe('a late press on the stranger card is never a second decision (review I
     const ask = await agentPress(ownerId, 'k', ruleId, undefined);
     // …the web tray answers, and only then is the code typed.
     await decideChat({ id: ruleId, decision: 'exclude' }, { actorId: ownerId });
-    expect(await agentText(ownerId, ask.arm!, `AL${SUFFIX}`)).toContain('shaxsiy');
+    expect((await agentText(ownerId, ask.arm!, `AL${SUFFIX}`))?.text).toContain('shaxsiy');
     expect(await ownerCards('AgentCodeEcho')).toHaveLength(0);
     expect((await agentPress(ownerId, 'k', ruleId, undefined)).arm).toBeUndefined();
     expect(await ruleOf(ruleId)).toMatchObject({ decision: 'exclude', clientId: null });
@@ -945,7 +945,7 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
     expect(asked.reply).toBe(PRICE_PROMPT);
     expect(asked.reply).toContain('bitim kartasiga hech narsa yozilmaydi');
     expect(asked.arm).toEqual({ kind: 'agent_price', payload: { requestId: id } });
-    const answered = await agentText(ownerId, { kind: 'agent_price', payload: { requestId: id } }, '1250');
+    const answered = (await agentText(ownerId, { kind: 'agent_price', payload: { requestId: id } }, '1250'))?.text;
     expect(answered).toBe(PRICE_DRAFTED);
     // Neither sentence promises the offer the bot no longer writes.
     for (const words of [asked.reply!, answered!]) expect(words).not.toMatch(/taklif/iu);
@@ -957,7 +957,7 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
     const price = { kind: 'agent_price' as const, payload: { requestId: id } };
     // No customer message stored in this chat: nothing to answer — and no price or answer is blamed.
     expect(await priceDraftFromText(ownerId, id, '1250')).toEqual({ ok: false, code: 'no_anchor' });
-    const noAnchor = await agentText(ownerId, price, '1250');
+    const noAnchor = (await agentText(ownerId, price, '1250'))?.text;
     expect(noAnchor).toContain("javob beriladigan xabari yo'q");
     expect(noAnchor).not.toMatch(/narxi yoki javobi topilmadi/u);
 
@@ -967,7 +967,7 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
       code: 'ambiguous_number',
       readings: { thousands: 1250, decimal: '1,25' },
     });
-    expect(await agentText(ownerId, price, '1.250')).toBe(`«1.250» — 1250 dollarmi yoki 1,25 dollarmi? Aniq yozing: 1250 yoki 1,25. ${PRICE_RETYPE}`);
+    expect((await agentText(ownerId, price, '1.250'))?.text).toBe(`«1.250» — 1250 dollarmi yoki 1,25 dollarmi? Aniq yozing: 1250 yoki 1,25. ${PRICE_RETYPE}`);
 
     // His own reply to this chat is being typed: the price waits for it.
     const [own] = await db
@@ -975,7 +975,7 @@ describe('«💵 Narx yozaman» says what it does — his 6 b, nothing is record
       .values({ managerUserId: ownerId, peerId: PEER, clientId, anchorTgMessageId: msgSeq, proposedBody: 'x', status: 'editing' })
       .returning({ id: agentDrafts.id });
     expect(await priceDraftFromText(ownerId, id, '1250')).toEqual({ ok: false, code: 'editing_open' });
-    expect(await agentText(ownerId, price, '1250')).toContain('siz yozayotgan javob bor');
+    expect((await agentText(ownerId, price, '1250'))?.text).toContain('siz yozayotgan javob bor');
     expect((await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).map((d) => d.id)).toEqual([own!.id]);
 
     // Six refusals, six sentences — none of them a raw code.
@@ -1073,7 +1073,7 @@ describe('a replaced answer takes no figure — the door asks what the send step
     // whatever the figure — the answer it would price no longer stands.
     expect(await priceDraftFromText(ownerId, root, '1250')).toEqual({ ok: false, code: 'recalculated' });
     expect(await priceDraftFromText(ownerId, root, '1.250')).toEqual({ ok: false, code: 'recalculated' });
-    const said = await agentText(ownerId, { kind: 'agent_price', payload: { requestId: root } }, '1250');
+    const said = (await agentText(ownerId, { kind: 'agent_price', payload: { requestId: root } }, '1250'))?.text;
     expect(said).not.toBe(PRICE_DRAFTED);
     expect(said).toContain('qayta hisoblayapti');
     expect(await db.select().from(agentDrafts).where(eq(agentDrafts.peerId, PEER))).toHaveLength(0);

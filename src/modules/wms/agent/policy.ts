@@ -39,6 +39,8 @@ export type PolicyCode =
   | 'too_long'
   | 'questions'
   | 'empty'
+  // Written by decideDraft's ✅ only, never by the checks below: a machine draft with no stored memory cannot be re-checked.
+  | 'memory_missing'
   | 'wrong_script'
   | 'other_client_code'
   | 'system_code'

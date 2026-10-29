@@ -6,15 +6,18 @@ import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { phoneSiblingClients } from '../client-cabinet/service';
+import { digestBody, hitWords } from './card';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
+import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { extractNumbers } from './numbers';
 import { knownNamesForMask } from './style';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
+import type { PolicyHit } from './policy';
 import type { DraftPolicyJson } from './types';
 
 /**
@@ -32,10 +35,25 @@ export interface PressAnswer {
   reply?: string;
   /** Inline buttons under `reply` — the question's own answer (the 📌 confirm, I3). */
   buttons?: { text: string; callback_data: string }[][];
+  /**
+   * A second message right after `reply`, on its own (C4): the draft's text
+   * as it stands, so he can long-press it, copy it and change it — the bot
+   * cannot put text into his typing box. A swipe-reply to it answers the
+   * wait like one to the prompt.
+   */
+  followUp?: string;
   /** A one-text wait the shell arms (and drops the other agent waits). */
   arm?: { kind: AgentWaitKind; payload: Record<string, string> };
   /** Drop this wait (the press answered it). */
   drop?: AgentWaitKind;
+  /** Drop the ✏️ wait only if it names THIS draft — a ✅ ended the edit it was armed for (C7). */
+  dropEditOf?: string;
+}
+
+/** What his typed text is answered with — words, and a button under them when the words lead to one. */
+export interface AgentTextAnswer {
+  text: string;
+  buttons?: { text: string; callback_data: string }[][];
 }
 
 const DECIDE_WORDS: Record<DecideRefusal, string> = {
@@ -45,7 +63,7 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   not_live: 'Bu qoralama endi faol emas.',
   editing: "Avval o'z matningizni yozing.",
   stale_card: "Karta o'zgargan — yangi kartadagi ✅ ni bosing.",
-  policy_block: "Qoidaga to'g'ri kelmaydi — ✏️ bilan o'zingiz yozing.",
+  policy_block: 'Bu matn shunday yuborilmaydi — «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing.',
   listener_behind: "Telegram ko'prigi (tinglovchi) yangilanmagan — xabar ketmaydi. Serverda tg-listen'ni qayta quring.",
   sending_disabled: "CRM'dan Telegramga yuborish o'chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o'zingiz yuboring.",
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
@@ -120,7 +138,7 @@ async function deciderFor(userId: string) {
  * further up the chat. Said on the press, in a message that stays.
  */
 export function humanTakeoverWords(withdrawn: { total: number; own: number } | undefined): { toast: string; reply?: string } {
-  const toast = '🙋 Suhbat 24 soat sizniki';
+  const toast = `🙋 Suhbat ${HUMAN_TAKEOVER_HOURS} soat sizniki`;
   if (!withdrawn || withdrawn.total === 0) return { toast };
   const own = withdrawn.own > 0 ? ` (${withdrawn.own} tasi — o‘zingiz yozgan matn)` : '';
   return {
@@ -146,14 +164,19 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
         return { toast: DECIDE_WORDS[r.code].slice(0, 190), reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined };
       }
       const soon = !r.sendAt || r.sendAt.getTime() <= Date.now() + 60_000;
-      return { toast: soon ? '✅ Yuborilmoqda' : `✅ ${hhmm(r.sendAt!)} da ketadi` };
+      // An edit he armed for this draft and did not use is over: the ✅ sent the card's words.
+      return { toast: soon ? '✅ Yuborilmoqda' : `✅ ${hhmm(r.sendAt!)} da ketadi`, dropEditOf: id };
     }
     case 'e': {
       const r = await decideDraft(actor, id, 'edit', {}, ctx);
       if (!r.ok) return { toast: DECIDE_WORDS[r.code].slice(0, 190) };
+      const [d] = await db.select({ finalBody: agentDrafts.finalBody, proposedBody: agentDrafts.proposedBody }).from(agentDrafts).where(eq(agentDrafts.id, id));
+      const current = d ? digestBody(d) : '';
       return {
         toast: '✏️',
-        reply: "✏️ Mijozga ketadigan javobni yozing — shu kartaga javob (reply) qilib yoki oddiy xabar bilan. Men uni kartaga qo'yaman, siz ✅ bosasiz.",
+        reply: EDIT_PROMPT,
+        // Telegram's own cap is 4 096; a text that long is a blocked one to shorten anyway.
+        ...(current ? { followUp: current.length > 4000 ? `${current.slice(0, 4000)}…` : current } : {}),
         arm: { kind: 'agent_edit', payload: { draftId: id } },
       };
     }
@@ -187,6 +210,27 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
 }
 
 /**
+ * ✏️'s question (2026-10-29): «O‘zim yozaman» and «oddiy xabar bilan» read as
+ * «I will answer the customer myself», and he did — in the customer's chat,
+ * which threw the draft away. So the words say WHERE: into this bot, not the
+ * customer's chat, as a reply to the card or a plain message while the wait
+ * lasts (agent-bot `AGENT_WAIT_TTL_MS`, 30 minutes), and that nothing reaches
+ * the customer before his ✅. Starts with «✏️»: the ladder's tests find it so.
+ */
+export const EDIT_PROMPT =
+  '✏️ Mijozga ketadigan to‘g‘ri matnni SHU BOTGA yozing — mijozning chatiga emas (shu kartaga javob qilib yoki 30 daqiqa ichida oddiy xabar bilan). Men uni kartaga qo‘yaman; mijozga faqat siz ✅ bosganda ketadi.';
+
+/** His words are on the card and may go — the button under this sentence is the card's own ✅. */
+export const OWN_TEXT_PLACED = '✏️ Matningiz kartaga qo‘yildi. Mijozga yuborish uchun ✅ Yuborish ni bosing.';
+
+/**
+ * A text typed at a draft that is no longer live — answered, rejected,
+ * expired, or retired by his own message in the customer's chat. Says that the
+ * text went nowhere: «faol emas» alone left him wondering whether it was kept.
+ */
+export const OWN_TEXT_NOT_LIVE = 'Bu qoralama endi faol emas — matningiz hech qayerga yozilmadi.';
+
+/**
  * His typed text, for the agent: a reply (swipe) to an agent card names its
  * own target; otherwise the one live agent wait does. Null = not the agent's.
  */
@@ -194,19 +238,50 @@ export async function agentText(
   staffId: string,
   target: { kind: AgentWaitKind; payload: Record<string, string> } | null,
   text: string,
-): Promise<string | null> {
+): Promise<AgentTextAnswer | null> {
   if (!target) return null;
   const actor = await deciderFor(staffId);
   const ctx = { actorId: staffId };
   if (target.kind === 'agent_edit') {
-    const r = await submitOwnText(actor, target.payload.draftId!, text, ctx);
-    return r.ok ? '✏️ Matningiz kartaga qo‘yildi — tekshirib ✅ bosing.' : DECIDE_WORDS[r.code];
+    const draftId = target.payload.draftId!;
+    const r = await submitOwnText(actor, draftId, text, ctx);
+    if (!r.ok) return { text: r.code === 'not_live' ? OWN_TEXT_NOT_LIVE : DECIDE_WORDS[r.code] };
+    // A ✅ only where the card draws one (C9): «tekshirib ✅ bosing» promised it over a text
+    // the owner subset had blocked, and the card's ✅ was an edited message somewhere above.
+    if (r.blocked || !r.digest) return { text: ownTextBlocked(r.blocks ?? []) };
+    return { text: OWN_TEXT_PLACED, buttons: [[{ text: '✅ Yuborish', callback_data: `ag:s:${draftId}:${r.digest}` }]] };
   }
   if (target.kind === 'agent_price') {
     const r = await priceDraftFromText(staffId, target.payload.requestId!, text);
-    return r.ok ? PRICE_DRAFTED : priceRefusalText(r, text);
+    return { text: r.ok ? PRICE_DRAFTED : priceRefusalText(r, text) };
   }
-  return codeEcho(staffId, target.payload.ruleId!, text);
+  return { text: await codeEcho(staffId, target.payload.ruleId!, text) };
+}
+
+/**
+ * His words are on the card and may NOT go, said with the reason and the way
+ * to type them again — the wait was consumed by this text (the redelivery
+ * rule), so «qayta yozing» names the two doors that still lead to the draft.
+ */
+export function ownTextBlocked(blocks: readonly PolicyHit[]): string {
+  const why = blocks.length > 0 ? blocks.map((b) => hitWords(b)).join('; ') : 'matn kartaga sig‘maydi (juda uzun)';
+  return `⛔ Matningiz kartaga qo‘yildi, lekin shunday yuborilmaydi: ${why}. Qisqartirib, kartaga javob (reply) qilib qayta yozing yoki «✏️ O‘zgartirish»ni qayta bosing.`;
+}
+
+/**
+ * Is the draft a ✏️ wait names still one his text would land on — his own,
+ * pending or editing (`submitOwnText`'s own test)? Asked by the text slot
+ * before it consumes a plain text (C8): a wait outlives its draft (nothing
+ * that retires a draft can reach the bot's waits), and a dead one must not
+ * swallow the next thing he types.
+ */
+export async function editStillLive(staffId: string, draftId: string | undefined): Promise<boolean> {
+  if (!draftId) return false;
+  const [d] = await db
+    .select({ status: agentDrafts.status })
+    .from(agentDrafts)
+    .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, staffId)));
+  return d?.status === 'pending' || d?.status === 'editing';
 }
 
 /** Which agent card a swipe-reply answers — resolved from HIS OWN notification row by `payload.tg` (reply-door's rule). */

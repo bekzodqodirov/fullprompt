@@ -147,3 +147,10 @@ export function sendJitterMs(random: () => number = Math.random): number {
   const [lo, hi] = AGENT_LIMITS.sendJitterMs;
   return Math.round(lo + (hi - lo) * Math.min(1, Math.max(0, random())));
 }
+
+/**
+ * How long 🙋 «Suhbat meniki» keeps the AI out of a chat (`human_until`,
+ * decide `decideDraft` 'human'). One home for the press that writes it and
+ * the words that promise it — the card's status line and the press's toast.
+ */
+export const HUMAN_TAKEOVER_HOURS = 24;

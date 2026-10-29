@@ -1,6 +1,9 @@
 import { CUT_MARK, STAFF_TEXT_CAP } from '../../platform/notifications/staff-html';
+import type { UnverifiableNumeral } from './digits';
+import type { AgentLocale, ScriptName } from './locale';
 import type { LedgerEntry, NumberKind } from './numbers';
 import type { PolicyCode, PolicyHit, PromiseCategory } from './policy';
+import type { AgentInboundJob } from './queues';
 
 /**
  * The card he approves from (spec §17.7, review leak-3).
@@ -25,6 +28,7 @@ export const POLICY_WORDS: Record<PolicyCode, string> = {
   too_long: 'juda uzun',
   questions: 'bittadan ko‘p savol',
   empty: 'javob bo‘sh',
+  memory_missing: 'qoralamaning tekshiruv ma’lumoti saqlanmagan — AI matnini qayta tekshirib bo‘lmaydi',
   wrong_script: 'mijoz yozgan alifboda emas',
   other_client_code: 'boshqa mijozning kodi',
   system_code: 'tizim kodi (partiya, yashik, prixod, bitim)',
@@ -65,13 +69,81 @@ const KIND_WORDS: Record<NumberKind, string> = {
   plain: 'son',
 };
 
+/**
+ * Why a figure could not be read, in words (`unverifiableNumeral`'s union).
+ * The base sentence's «(boshqa yozuvdagi son)» is right for one of the three
+ * only, so a known reason replaces it rather than following it.
+ */
+const UNVERIFIABLE_WORDS: Record<UnverifiableNumeral, string> = {
+  other_script_digit: 'raqam boshqa yozuvdagi belgi bilan yozilgan',
+  han_numeral: 'son xitoycha ieroglif bilan yozilgan',
+  word_numeral: 'son so‘z bilan yozilgan',
+};
+
+const SCRIPT_WORDS: Record<Exclude<ScriptName, 'none'>, string> = {
+  latin: 'lotin',
+  cyrillic: 'kirill',
+  arabic: 'arab',
+  han: 'xitoy',
+};
+
+const LANGUAGE_WORDS: Record<AgentLocale, string> = {
+  uz: 'o‘zbekcha (lotin)',
+  uz_cyrl: 'o‘zbekcha (kirill)',
+  ru: 'ruscha',
+  en: 'inglizcha',
+  fa: 'forscha',
+  zh: 'xitoycha',
+};
+
+/**
+ * `wrong_script`'s «latin→cyrillic» (what the customer writes → what the
+ * reply is in) or «uz_cyrl→latin» (the reply's language → its script), as
+ * words. A side the tables do not know is printed as it came, and so is a
+ * detail that is not a pair — the card never throws over a reason.
+ */
+function scriptPairWords(detail: string): string {
+  const sides = detail.split('→');
+  if (sides.length !== 2) return detail;
+  const word = (side: string) =>
+    (SCRIPT_WORDS as Record<string, string>)[side] ?? (LANGUAGE_WORDS as Record<string, string>)[side] ?? side;
+  return `${word(sides[0]!)} → ${word(sides[1]!)}`;
+}
+
+/**
+ * One block or warning as he reads it: the rule's words and, after them, what
+ * was found — a detail that is a CODE (a numeral's kind, a script pair, a
+ * promise's category) in words, any other detail (a figure, a client code, a
+ * phone) as it stands. Old stored drafts carry the same codes, so they read
+ * the same words on their next render.
+ */
 export function hitWords(hit: PolicyHit): string {
   const base = POLICY_WORDS[hit.code];
   if (hit.code === 'promise' && hit.detail) {
     return `${base}: ${PROMISE_WORDS[hit.detail as PromiseCategory] ?? hit.detail}`;
   }
+  if (hit.code === 'number_unverifiable' && hit.detail) {
+    const why = (UNVERIFIABLE_WORDS as Record<string, string>)[hit.detail];
+    return why ? `o‘qib bo‘lmaydigan raqam bor: ${why}` : `${base}: ${hit.detail}`;
+  }
+  if (hit.code === 'wrong_script' && hit.detail) return `${base}: ${scriptPairWords(hit.detail)}`;
+  if (hit.code === 'too_long' && hit.detail && /^\d+$/u.test(hit.detail)) return `${base}: ${hit.detail} belgi`;
   return hit.detail && hit.code !== 'canary' ? `${base}: ${hit.detail}` : base;
 }
+
+/**
+ * What a blocked card tells him to do, per surface (the incident of
+ * 2026-10-29: a card with no ✅ and no way named, so he answered the customer
+ * in Telegram himself and the drafted work was thrown away). TRUE to the
+ * flow: the bot's ✏️ arms a wait and his next text there becomes the card's
+ * body (bot-door `agentPress` 'e', decide `submitOwnText`); the page's ✏️
+ * opens a box on the page; a message he writes to the customer himself
+ * retires the draft (jobs `retireOnHumanReply`).
+ */
+export const BLOCK_REMEDY: Record<'bot' | 'web', string> = {
+  bot: '👉 «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing — men uni kartaga qo‘yaman, keyin ✅ Yuborish chiqadi. Mijozga Telegramda o‘zingiz yozsangiz, bu qoralama yopiladi.',
+  web: '👉 «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu yerda yozing — keyin ✅ Yuborish chiqadi. Mijozga Telegramda o‘zingiz yozsangiz, bu qoralama yopiladi.',
+};
 
 export interface CardInput {
   /** «GS777 · Ali Valiyev» or «Lid: Bobur» — who the customer is, first. */
@@ -94,6 +166,12 @@ export interface CardInput {
   lastOut: string | null;
   /** The customer's recent lines, oldest first — the ONLY clippable part. */
   customerLines: readonly string[];
+  /**
+   * The line under a blocked card's reasons that says what to do. Absent =
+   * the bot's (`BLOCK_REMEDY.bot`); null = none — a draft he is already
+   * editing says it in its status line.
+   */
+  remedy?: string | null;
 }
 
 export class CardTooLong extends Error {}
@@ -103,8 +181,10 @@ export function agentCardText(c: CardInput): string {
   if (c.statusLine) fixed.push(c.statusLine);
   for (const n of c.notes) fixed.push(`ℹ️ ${n}`);
   if (c.blocks.length > 0) {
-    fixed.push('⛔ ✅ yo‘q — tuzatish kerak:');
+    fixed.push('⛔ Bu matn shunday yuborilmaydi (✅ yo‘q). Sabab:');
     for (const b of c.blocks) fixed.push(`• ${hitWords(b)}`);
+    const remedy = c.remedy === undefined ? BLOCK_REMEDY.bot : c.remedy;
+    if (remedy) fixed.push(remedy);
   }
   for (const w of c.warnings) fixed.push(`⚠️ ${hitWords(w)}`);
   if (c.ownerQuestion) fixed.push(`❓ Sizdan savol: ${c.ownerQuestion}`);
@@ -198,3 +278,41 @@ export function cardExtra(draft: { id: string; body: string; actions: unknown[];
   };
 }
 
+
+/** A card written later than this after the customer's message says how long he has waited. */
+export const LATE_CARD_MS = 3 * 60_000;
+
+/**
+ * Why a run started late, when its job says (queues `AgentInboundJob.origin`):
+ * a pull follows his answer to the stranger card — the customer's lines were
+ * not kept until then (bot-door `queuePull`, from «🆕 Yangi lid» and from a
+ * confirmed «👤 Mijoz — kod»); the sweep's gap pass re-asks a message no run
+ * took; an edit re-asks the anchor. A live or typing-wait run that is late
+ * has no cause the job can name, and none is invented.
+ */
+const LATE_CAUSE: Partial<Record<AgentInboundJob['origin'], string>> = {
+  pull: '(«🆕 Yangi lid» yoki «👤 Mijoz — kod» bosilgandan keyin yozildi)',
+  sweep: '(AI qayta tekshirganda yozildi)',
+  edit: '(mijoz xabarini tahrirlagandan keyin)',
+};
+
+/**
+ * The note on a LATE card (2026-10-29: a card 23 minutes after the
+ * customer's lines looked like a fresh one, and nothing said why). Late is
+ * judged from the ANCHOR — the message the draft answers — at the moment the
+ * draft is written; the wait is counted from the customer's FIRST unanswered
+ * line, which is when he started waiting. Null when the card is not late.
+ */
+export function lateNote(input: {
+  anchorSentAt: Date;
+  waitingSince: Date | null;
+  writtenAt: Date;
+  origin: AgentInboundJob['origin'] | null;
+}): string | null {
+  if (input.writtenAt.getTime() - input.anchorSentAt.getTime() <= LATE_CARD_MS) return null;
+  const since = input.waitingSince && input.waitingSince < input.anchorSentAt ? input.waitingSince : input.anchorSentAt;
+  const minutes = Math.floor((input.writtenAt.getTime() - since.getTime()) / 60_000);
+  const wait = minutes < 120 ? `${minutes} daqiqadan` : `${Math.floor(minutes / 60)} soatdan`;
+  const cause = input.origin ? LATE_CAUSE[input.origin] : undefined;
+  return `⏱ Mijoz ${wait} beri javob kutyapti${cause ? ` ${cause}` : ''}`;
+}

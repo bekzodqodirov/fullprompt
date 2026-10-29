@@ -8,6 +8,7 @@ import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
+import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
@@ -442,6 +443,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     if (rail) notes.push(rail);
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
     if (tariffMismatch) notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+    // A card written long after the customer's message says so, first, with the job's reason
+    // when it has one (2026-10-29: a pull-made card 23 minutes late looked like a fresh one).
+    const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
+    if (late) notes.unshift(late);
 
     const written = await writeDraft({
       runId,

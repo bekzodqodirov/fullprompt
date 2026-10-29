@@ -106,7 +106,8 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         body={d.body}
         holder={d.managerUserId === viewerId}
         holderName={d.holderName}
-        canSend={!d.blocked && d.status === 'pending'}
+        // An `editing` draft he has written nothing for sends the machine's words — the bot's ✅ on it does too (decide).
+        canSend={!d.blocked && (d.status === 'pending' || (d.status === 'editing' && !d.ownText))}
         waitingInChat={d.waitingInChat}
       />
     </article>

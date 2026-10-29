@@ -43,6 +43,7 @@ import { __resetPresses } from '@/modules/platform/telegram/press';
 import { __resetBacklog } from '@/modules/platform/telegram/backlog';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
+import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
 const STAMP = String(Date.now()).slice(-7);
@@ -304,6 +305,39 @@ describe('a reply to an EARLIER prompt, or to the stranger card itself (review I
     const { card } = await strangerWithCard(me);
     await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`, { replyTo: card }));
     expect(await echoes(me)).toHaveLength(0);
+  });
+});
+
+describe('a ✏️ wait whose draft is gone does not eat his next text (C8)', () => {
+  it('✏️, then his own Telegram reply retires the draft: a plain text goes on down the ladder to the lookup', async () => {
+    const { me, draftId } = await owner();
+    await pressEdit(me, draftId);
+    expect(await retireOnHumanReply(me.id, (await draftOf(draftId)).peerId, 2n)).toBe(1);
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, `ZP${STAMP.slice(-5)}`));
+    const texts = h.textsTo(me.chat, m);
+    expect(texts.some((t) => t.includes('faol emas'))).toBe(false);
+    // The staff tail answered the code: the client's own name came back.
+    expect(texts.some((t) => t.includes(`Zinapoya mijoz ${STAMP}`))).toBe(true);
+    expect((await draftOf(draftId)).finalBody).toBeNull();
+    expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
+  });
+
+  it('…but a swipe-reply to the dead card still names the draft and is told its text went nowhere', async () => {
+    const { me, draftId } = await owner();
+    await pressEdit(me, draftId);
+    await retireOnHumanReply(me.id, (await draftOf(draftId)).peerId, 2n);
+    const card = await sentCopy(me, 'AgentDraft', { draftId });
+    const m = h.mark();
+    await h.handle(tg.text(me.chat, `Javob ${STAMP}`, { replyTo: card }));
+    expect(h.textsTo(me.chat, m)).toContain('Bu qoralama endi faol emas — matningiz hech qayerga yozilmadi.');
+  });
+
+  it('a LIVE draft’s wait still takes the plain text (the check asks the draft, not the clock)', async () => {
+    const { me, draftId } = await owner();
+    await pressEdit(me, draftId);
+    await h.handle(tg.text(me.chat, `Yuk yo‘lda ${STAMP}`));
+    expect((await draftOf(draftId)).finalBody).toBe(`Yuk yo‘lda ${STAMP}`);
   });
 });
 

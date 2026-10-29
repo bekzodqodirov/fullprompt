@@ -763,7 +763,8 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
     const first: BotButton[] = [];
     if (payload.blocked !== true && digest) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${digest}` });
-    first.push({ text: '✏️ O‘zim yozaman', callback_data: `ag:e:${id}` });
+    // His own word for it (2026-10-29): «O‘zim yozaman» read as «I will answer the customer myself».
+    first.push({ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` });
     return [first, [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }]];
   }
   const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gt, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db } from '../../platform/db/client';
@@ -19,8 +19,8 @@ import {
 import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
-import { cardDigest } from './card';
-import { LANDING_CLAIM } from './card-io';
+import { cardDigest, digestBody } from './card';
+import { LANDING_CLAIM, renderDraftCardFull } from './card-io';
 import { agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
@@ -28,7 +28,9 @@ import { ownerPolicyFor, policyFor } from './policy-input';
 import { keptFileSql } from './outbox-store';
 import { asksAnew, releaseAt } from './send-step';
 import { sendsToday } from './today';
+import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { isNudge } from './worthy';
+import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
 
 /**
@@ -75,6 +77,15 @@ export type DecideResult =
       status: string;
       sendAt?: Date;
       requestId?: string | null;
+      /**
+       * `submitOwnText`'s answer (C9): whether his words passed the owner
+       * subset, what blocked them if not, and the digest of the card they now
+       * stand on — the confirmation's own ✅ carries it, so the press is the
+       * card's press and `decideDraft` compares it like any other.
+       */
+      blocked?: boolean;
+      blocks?: PolicyHit[];
+      digest?: string;
       /**
        * 🙋's withdrawals, said on the press (ident fix F10): the approved
        * replies still waiting that it cancelled, and how many of them were HIS
@@ -385,7 +396,7 @@ export async function decideDraft(
       let held: string[] = [];
       let own = 0;
       if (decision === 'human') {
-        const until = new Date(Date.now() + 24 * 3_600_000);
+        const until = new Date(Date.now() + HUMAN_TAKEOVER_HOURS * 3_600_000);
         await tx
           .insert(agentConversations)
           .values({ managerUserId: d.managerUserId, peerId: d.peerId, humanUntil: until })
@@ -436,8 +447,11 @@ export async function decideDraft(
     return { ok: true, status, ...(decision === 'human' ? { withdrawn: { total: changed.held.length, own: changed.own } } : {}) };
   }
 
-  // ✅
-  if (d.status === 'editing') return { ok: false, code: 'editing' };
+  // ✅ — on an `editing` draft too, while he has written nothing for it (2026-10-29): ✏️ pressed and
+  // thought better of is the machine's text exactly as if ✏️ had not been pressed — the same digest,
+  // the same policy, the same CAS below on the status read here. His own words, once typed, are
+  // the body; a second ✏️ over them means he is changing them, and ✅ waits for the new ones.
+  if (d.status === 'editing' && d.finalBody !== null) return { ok: false, code: 'editing' };
   const body = (d.finalBody ?? d.proposedBody ?? '').trim();
   if (!body) return { ok: false, code: 'empty' };
   const actions = (d.actions ?? []) as ComposedAction[];
@@ -472,20 +486,22 @@ export async function decideDraft(
         })
       : null;
   if (!policy || !policy.ok) {
-    if (policy) {
-      await db
-        .update(agentDrafts)
-        .set({ blocked: true, policy: { ...p, blocks: policy.blocks, ledger: policy.ledger }, updatedAt: new Date() })
-        .where(eq(agentDrafts.id, draftId));
-      await refreshDraftCard(draftId);
-    }
-    return { ok: false, code: 'policy_block', detail: policy?.blocks.map((b) => b.code).join(',') };
+    // A machine draft with no stored memory (a legacy or hand-made row) cannot be checked again,
+    // so it cannot go — written as a block like any other, so the card loses its ✅ and SAYS why,
+    // instead of a button that answers «policy» to every press and shows nothing.
+    const blocks: PolicyHit[] = policy ? policy.blocks : [{ rule: 'G1', code: 'memory_missing' }];
+    await db
+      .update(agentDrafts)
+      .set({ blocked: true, policy: { ...p, blocks, ...(policy ? { ledger: policy.ledger } : {}) }, updatedAt: new Date() })
+      .where(eq(agentDrafts.id, draftId));
+    await refreshDraftCard(draftId);
+    return { ok: false, code: 'policy_block', detail: blocks.map((b) => b.code).join(',') };
   }
 
   const moved = await chatMoved(d);
   if (moved) {
     const status = moved === 'taken_over' ? 'taken_over' : 'superseded';
-    await db.update(agentDrafts).set({ status, updatedAt: new Date() }).where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, 'pending')));
+    await db.update(agentDrafts).set({ status, updatedAt: new Date() }).where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status)));
     await refreshDraftCard(draftId);
     return { ok: false, code: moved === 'taken_over' ? 'taken_over' : 'superseded' };
   }
@@ -540,7 +556,9 @@ export async function decideDraft(
         // only `runDraftActions` says 'done', when every one has (A10).
         ...(actions.length ? { actionStatus: 'pending', actionError: null } : {}),
       })
-      .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, 'pending')))
+      // The status read at the top — `editing` included (with no words of his: a text he typed
+      // since makes the row a different card, and the digest above was over the machine's).
+      .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status), d.finalBody === null ? isNull(agentDrafts.finalBody) : undefined))
       .returning({ id: agentDrafts.id });
     if (!row) return false;
     await tx.insert(agentOutbox).values({
@@ -568,7 +586,7 @@ export async function decideDraft(
       entityType: 'agent_draft',
       entityId: draftId,
       action: 'status_change',
-      before: { status: 'pending' },
+      before: { status: d.status },
       after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId },
     });
     return true;
@@ -659,11 +677,20 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
       updatedAt: new Date(),
     })
     .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['editing', 'pending'])))
-    .returning({ id: agentDrafts.id });
+    .returning();
   if (!row) return { ok: false, code: 'not_live' };
   await writeAudit(db, ctx, { entityType: 'agent_draft', entityId: draftId, action: 'update', after: { finalBody: true } });
   await refreshDraftCard(draftId);
-  return { ok: true, status: 'pending' };
+  // What the bot answers him (C9): a ✅ only where the card draws one — the policy passed AND the
+  // card can show his whole text (card-io `renderDraftCardFull`); the digest is the card's own.
+  const tooLong = renderDraftCardFull(row, null).tooLong;
+  return {
+    ok: true,
+    status: 'pending',
+    blocked: !policy.ok || tooLong,
+    blocks: policy.blocks,
+    digest: cardDigest(digestBody(row), (row.actions ?? []) as ComposedAction[]),
+  };
 }
 
 async function refreshDraftCard(draftId: string, notes: string[] = []): Promise<void> {

@@ -101,17 +101,24 @@ export async function handleAgentPress(
       for (const kind of AGENT_WAITS) if (kind !== out.arm.kind) dropWait(chatId, kind);
     }
     if (out.drop) dropWait(chatId, out.drop);
+    if (out.dropEditOf && readWait<{ draftId?: string }>(chatId, 'agent_edit')?.payload.draftId === out.dropEditOf) {
+      dropWait(chatId, 'agent_edit');
+    }
     await answerPress(ctx, out.toast);
     const prompt = out.reply
       ? await ctx.reply(out.reply, out.buttons ? { reply_markup: { inline_keyboard: out.buttons } } : undefined)
       : null;
+    // The draft's text on its own (✏️, C4), after the prompt: copied, changed and sent back —
+    // as a reply to it too, so it is one of the prompts the wait names.
+    const copy = out.followUp ? await ctx.reply(out.followUp) : null;
     if (out.arm) {
       // Armed AFTER its prompt, at the prompt's own date, naming the prompt
       // (the task waits' rule, Q5 a): a swipe-reply to THIS question — or to
       // an earlier one for the same target — answers it, and the task wait as
       // it stands now is recorded, so a question asked after this one is
       // known to be newer (I2).
-      const prompts = [...earlierPrompts, ...(prompt ? [String(prompt.message_id)] : [])].slice(-PROMPTS_KEPT);
+      const asked = [prompt, copy].filter((m): m is NonNullable<typeof m> => m !== null).map((m) => String(m.message_id));
+      const prompts = [...earlierPrompts, ...asked].slice(-PROMPTS_KEPT);
       armWait(
         chatId,
         out.arm.kind,
@@ -175,7 +182,7 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
   if (!plain && msg.replyToMessageId === null) return false;
   const staff = await staffForChat(chatId);
   if (!staff) return false;
-  const { agentCardFor, agentText } = await import('../../wms/agent/bot-door');
+  const { agentCardFor, agentText, editStillLive } = await import('../../wms/agent/bot-door');
   let target: { kind: AgentWait; payload: Record<string, string> } | null = null;
   if (msg.replyToMessageId !== null) {
     // A reply's target is the message it names — the agent prompt's too, newer task wait or not.
@@ -191,19 +198,28 @@ export async function agentTextSlot(ctx: Context, chatId: bigint, msg: AgentSlot
     target = plain;
   }
   if (!target) return false;
+  // A ✏️ wait whose draft is gone — his own message in the customer's chat
+  // retired it, the 24 h expiry, a ❌ on the page — is nobody's question any
+  // more (2026-10-29): it would eat his next text here (a code lookup, a
+  // question) with «faol emas». Dropped, and a PLAIN text goes on down the
+  // ladder; a swipe-reply still names the draft and is told it is closed.
+  if (target.kind === 'agent_edit' && msg.replyToMessageId === null && !(await editStillLive(staff.id, target.payload.draftId))) {
+    dropWait(chatId, 'agent_edit');
+    return false;
+  }
   // The wait is consumed before the effect (the redelivery rule): a kill after
   // the delete leaves nothing to answer twice.
   dropWait(chatId, target.kind);
   await flushWaitWrites();
   try {
-    const reply = await agentText(staff.id, target, msg.text);
+    const answer = await agentText(staff.id, target, msg.text);
     // What this text did, so a crash redelivery of it hears «answered» and
     // never «send it again» (final review K23 — the task wait's own rule,
     // judge Q5H-2 a): with the wait already consumed, the redelivered text
     // reaches the staff tail, which asks `handledAlready` first. Recorded
     // before the reply, whose own failure must not leave the text unmarked.
     await markOnce(await messageKey(ctx, 'wait'));
-    if (reply) await ctx.reply(reply);
+    if (answer) await ctx.reply(answer.text, answer.buttons ? { reply_markup: { inline_keyboard: answer.buttons } } : undefined);
   } catch (err) {
     logger.error({ err, kind: target.kind }, '[agent] text failed');
     await ctx.reply('Xatolik — qayta urinib ko‘ring.');

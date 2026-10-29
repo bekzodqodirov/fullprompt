@@ -6,7 +6,9 @@ import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf } from '../../platform/notifications/staff-html';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
-import { agentCardText, cardExtra, CardTooLong, digestBody } from './card';
+import { agentCardText, BLOCK_REMEDY, cardExtra, CardTooLong, digestBody } from './card';
+import { readAgentConfig } from './config';
+import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
 import { MAX_OPEN_PER_REQUESTER } from '../calc/service';
@@ -31,6 +33,24 @@ const SECTION_WORDS: Record<string, string> = {
 function hhmm(d: Date): string {
   const t = new Date(d.getTime() + 5 * 3_600_000);
   return `${String(t.getUTCDate()).padStart(2, '0')}.${String(t.getUTCMonth() + 1).padStart(2, '0')} ${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/** The time of day in Tashkent, «17:47» — what the line about his own reply names. */
+function clock(d: Date): string {
+  const t = new Date(d.getTime() + 5 * 3_600_000);
+  return `${String(t.getUTCHours()).padStart(2, '0')}:${String(t.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * Where a card is read and what the renderer knows besides the row. The
+ * bot's ✏️ arms a wait in the bot; the page's opens a box on the page — the
+ * words name the door the reader has. `humanPauseMin` is the config's
+ * `human_pause_min` (run `eligibilityFacts`: his own message keeps the AI out
+ * of the chat that long); absent, the line about his reply says nothing of it.
+ */
+export interface CardRenderOptions {
+  surface?: 'bot' | 'web';
+  humanPauseMin?: number | null;
 }
 
 const CANCEL_WORDS: Record<string, string> = {
@@ -136,7 +156,7 @@ function actionFailWords(code: string | null | undefined): string {
   return 'amal bajarilmadi — kartani tekshiring';
 }
 
-function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
+function statusLine(d: DraftRow, o: OutboxRow | null, opts: CardRenderOptions = {}): string | null {
   switch (d.status) {
     case 'pending':
       // A ✅ whose calculation the queue refused (K26): the draft waits, and says why, for as long as it stands.
@@ -144,15 +164,28 @@ function statusLine(d: DraftRow, o: OutboxRow | null): string | null {
       if (d.actionError === LANDING_CLAIM) return `⏳ Hisoblatish ${CALC_QUEUE_WORDS[LANDING_CLAIM]}.`;
       return d.actionStatus === 'failed' ? `⚠️ Hisoblatish navbatga tushmadi: ${calcQueueWords(d.actionError)}. Javob yuborilmadi.` : null;
     case 'editing':
-      return "✏️ O'z matningizni yozing (shu kartaga javob qilib yoki oddiy xabar bilan).";
+      // He pressed ✏️ in the BOT (the page's ✏️ is a box and writes no status) — the
+      // words say where the text goes, never «the customer's chat». A draft whose
+      // machine text could still go says so: its ✅ sends it (decide `decideDraft`).
+      if (opts.surface === 'web') return '✏️ Botda tahrir boshlangan — to‘g‘ri matnni botga yoki shu yerda «✏️ O‘zgartirish» bilan yozing.';
+      return d.blocked || d.finalBody !== null
+        ? '✏️ Matnni shu botga yozing (mijozning chatiga emas) — keyin ✅ chiqadi.'
+        : '✏️ Matnni shu botga yozing (mijozning chatiga emas) — yoki AI matnini ✅ bilan yuboring.';
     case 'rejected':
       return '❌ Rad etildi.';
     case 'superseded':
       return STALE_WORDS[((d.policy ?? {}) as { stale?: string }).stale ?? ''] ?? '↪️ Mijoz yana yozdi — yangi qoralama.';
     case 'expired':
       return '⌛ Muddati o‘tdi.';
-    case 'taken_over':
-      return "✋ O'zingiz javob berdingiz.";
+    case 'taken_over': {
+      // A PERSON decided it: his 🙋 stamps `decided_by` (decide `decideDraft`). No
+      // decider: he wrote to the customer himself and that retired the draft
+      // (jobs `retireOnHumanReply`, the sweep's step 2, decide `chatMoved`) —
+      // the convention outbox-store's `human_pressed_ms` already reads.
+      if (d.decidedBy) return `🙋 Suhbatni o‘zingizga oldingiz — AI bu chatga ${HUMAN_TAKEOVER_HOURS} soat yozmaydi.`;
+      const pause = opts.humanPauseMin ? ` Xabaringizdan keyin AI bu chatga ${opts.humanPauseMin} daqiqa yozmaydi.` : '';
+      return `✋ Siz mijozga Telegramda o‘zingiz yozdingiz (${clock(d.updatedAt)}) — AI javobi bekor qilindi.${pause}`;
+    }
     case 'approved': {
       if (!o) return d.actionStatus === 'failed' ? `⚠️ Bajarilmadi: ${actionFailWords(d.actionError)}.` : '✅ Tasdiqlandi.';
       switch (o.status) {
@@ -196,15 +229,27 @@ const TITLES: Record<string, string> = {
   hand_back: '🔁 VED qaytardi — mijozga savol',
 };
 
-/** The card's text from the stored draft (and its outbox row, once approved). */
-export function renderDraftCard(d: DraftRow, o: OutboxRow | null, extraNotes: string[] = []): string {
+/**
+ * The card's text from the stored draft (and its outbox row, once approved),
+ * and whether it had to be cut: a card that cannot show the whole reply is
+ * not one to approve from (card.ts), so `tooLong` is a block every writer of
+ * the card's buttons carries (`blocked` in `cardExtra`) — the text says «✅
+ * yo'q» and the keyboard must agree.
+ */
+export function renderDraftCardFull(
+  d: DraftRow,
+  o: OutboxRow | null,
+  extraNotes: string[] = [],
+  opts: CardRenderOptions = {},
+): { text: string; tooLong: boolean } {
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
   const card = p.card ?? { customerLabel: '—', lastOut: null, customerLines: [] };
+  const live = d.status === 'pending' || d.status === 'editing';
   const input = {
     customerLabel: card.customerLabel,
     title: TITLES[d.kind] ?? TITLES.reply!,
-    statusLine: statusLine(d, o),
-    blocks: d.status === 'pending' || d.status === 'editing' ? (p.blocks ?? []) : [],
+    statusLine: statusLine(d, o, opts),
+    blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
     notes: [...(p.notes ?? []), ...extraNotes],
     reply: d.finalBody ?? d.proposedBody ?? '',
@@ -214,15 +259,26 @@ export function renderDraftCard(d: DraftRow, o: OutboxRow | null, extraNotes: st
     ownerQuestion: d.needsOwner ? d.ownerQuestion : null,
     lastOut: card.lastOut,
     customerLines: card.customerLines,
+    // An editing draft's status line already says where to write.
+    remedy: d.status === 'editing' ? null : BLOCK_REMEDY[opts.surface ?? 'bot'],
   };
   try {
-    return agentCardText(input);
+    return { text: agentCardText(input), tooLong: false };
   } catch (err) {
     if (!(err instanceof CardTooLong)) throw err;
     // The reply is ≤ 700 by G4 and his own ≤ 4 000; a card this long carries
-    // a blocked machine reply nobody may send — said, never cut.
-    return agentCardText({ ...input, reply: `${input.reply.slice(0, 1500)}…`, ledger: [], customerLines: [], notes: [...input.notes, 'Javob juda uzun — ✅ yo‘q.'] });
+    // a reply nobody may send from it — said, never cut, and no ✅ is drawn.
+    const note = live ? 'Javob juda uzun — kartaga sig‘maydi, ✅ yo‘q. Qisqaroq matnni «✏️ O‘zgartirish» bilan yozing.' : 'Javob juda uzun — kartaga sig‘madi.';
+    return {
+      text: agentCardText({ ...input, reply: `${input.reply.slice(0, 1500)}…`, ledger: [], customerLines: [], notes: [...input.notes, note] }),
+      tooLong: true,
+    };
   }
+}
+
+/** The card's text alone — `renderDraftCardFull` for a reader that draws no buttons. */
+export function renderDraftCard(d: DraftRow, o: OutboxRow | null, extraNotes: string[] = [], opts: CardRenderOptions = {}): string {
+  return renderDraftCardFull(d, o, extraNotes, opts).text;
 }
 
 /**
@@ -234,12 +290,14 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d) return;
   const [o] = await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, draftId));
-  const text = renderDraftCard(d, o ?? null, extraNotes);
+  // The pause his own reply starts is the config's — read only for the one line that names it.
+  const humanPauseMin = d.status === 'taken_over' && !d.decidedBy ? ((await readAgentConfig())?.humanPauseMin ?? null) : null;
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
   const extra = {
-    ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: d.blocked, live, kind: d.kind }),
+    ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: d.blocked || tooLong, live, kind: d.kind }),
     // After he answered the agent's question himself and it went out, the
     // card offers to REMEMBER the answer (spec §7.1.4) — once.
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',

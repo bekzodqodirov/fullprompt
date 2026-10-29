@@ -17,7 +17,7 @@ import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, digestBody } from './card';
-import { renderDraftCard } from './card-io';
+import { renderDraftCardFull } from './card-io';
 import { agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
@@ -41,7 +41,10 @@ export interface WebDraft {
   status: string;
   kind: string;
   needsOwner: boolean;
+  /** No ✅: the policy blocked it, or the card cannot show the whole reply (card-io `renderDraftCardFull`). */
   blocked: boolean;
+  /** He wrote his own words for it — an `editing` draft WITHOUT them still sends the machine's on ✅ (decide). */
+  ownText: boolean;
   /** The text a ✏️ box opens with — his own, or the machine's. */
   body: string;
   /** `decideDraft`'s digest of what this card shows. */
@@ -78,6 +81,8 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
 
 function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
+  // The page lists live and approved drafts only, so no line here names his own reply's pause.
+  const card = renderDraftCardFull(d, o, [], { surface: 'web' });
   return {
     id: d.id,
     managerUserId: d.managerUserId,
@@ -85,10 +90,11 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     status: d.status,
     kind: d.kind,
     needsOwner: d.needsOwner,
-    blocked: d.blocked,
+    blocked: d.blocked || card.tooLong,
+    ownText: d.finalBody !== null,
     body: digestBody(d),
     digest: webDigest(d),
-    cardText: renderDraftCard(d, o),
+    cardText: card.text,
     chatHref: chatHrefOf(d),
     createdAt: d.createdAt,
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
