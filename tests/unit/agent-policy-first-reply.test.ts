@@ -289,11 +289,11 @@ describe('P7: the figures the prompt dictates are a source whatever the knowledg
     const mem = memoryFor(ctxOf(UZ, 'latin'), { compose: compose('uz', 'x'), tools: [], outcomes: [], usage }, [], 'gsr-t');
     const rule = mem.sources.filter((s) => s.label === 'kompaniya qoidasi');
     expect(rule).toEqual([
-      { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb' },
-      { value: 100, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb' },
-      { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air' },
-      { value: 2, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air' },
-      { value: 5, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air' },
+      { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', unit: 'm3' },
+      { value: 100, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', unit: 'kg' },
+      { value: 1, kind: 'measure', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'kg' },
+      { value: 2, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
+      { value: 5, kind: 'duration', label: 'kompaniya qoidasi', origin: 'kb', mode: 'air', unit: 'day' },
     ]);
   });
 
@@ -339,7 +339,7 @@ describe('P9: the CALCULATION being free is no free extra', () => {
     ['Narxni bepul hisoblab beraman.'],
     ['Нархни ҳисоблаш бепул.'],
     ['Расчёт бесплатный.'],
-    ['Посчитаем бесплатно.'],
+    ['Рассчитаем стоимость бесплатно.'],
     ['Расчёт стоимости доставки бесплатный.'],
     ['The quote is free.'],
     ['We calculate for free.'],
@@ -462,5 +462,313 @@ describe('the first reply to «Assalomu alaykum» gets its ✅ — on the memory
     const r = uz(reply);
     expect(r.ok).toBe(false);
     expect(blockCodes(r)).toContain(code);
+  });
+});
+
+/**
+ * The first round reviewed (two reviewers, every case re-run against the
+ * tree before and after): each softening above had opened a door beside the
+ * one it meant to open. Every sentence here was BLOCKED at a4e1b1c and
+ * PASSED once the round shipped — or passed on both trees and is a door of
+ * the same kind — and must block again; each pass beside it is the shape the
+ * round exists for, and must stay open.
+ */
+const uzc = (reply: string) => verdict(UZC, 'cyrillic', 'uz_cyrl', reply);
+const en = (reply: string) => verdict(['Hello', 'I have cargo', 'how much', 'from China'], 'latin', 'en', reply);
+
+describe('review — P10: «before the cargo is taken» exempts only the company rule’s own tail', () => {
+  it.each([
+    ['Оплата по прибытии, до выдачи платить не нужно.', 'a refusal after it'],
+    ['Оплата по прибытии, не обязательно перед получением.', 'a refusal before it'],
+    ['Оплата производится по прибытии груза, но не обязательно перед получением — можно и позже.', '«не обязательно … позже»'],
+    ['Оплата по прибытии, платить перед получением не нужно.', '«не нужно» after it'],
+    ['Груз выдадим до получения оплаты, оплата по прибытии.', '«до получения» the MONEY'],
+    ['Оплата при получении, а груз отдадим до получения оплаты.', 'handed over before the money'],
+    ['Оплатите по факту, груз можно забрать до оплаты, до получения денег мы его не держим.', '«можно забрать до оплаты»'],
+    ['Груз выдадим сразу, оплата по факту, перед получением просто позвоните.', 'the phrase is about a call'],
+    ['You pay on arrival, there is no need to pay before you collect.', '«no need»'],
+    ['Payment upon delivery, not before pickup.', '«not before»'],
+    ["Payment upon arrival, you don't have to pay before pickup, any time later is fine.", '«don’t have to … later»'],
+    ["Yuk kelganda to'laysiz, olishdan oldin to'lashingiz shart emas.", '«shart emas»'],
+    ['Pulni yuk kelgandan keyin berasiz, olib ketishdan oldin kerak emas.', '«kerak emas»'],
+    ['Юк келганда тўлайсиз, олишдан олдин тўлаш шарт эмас.', '«шарт эмас»'],
+    ["Pulni yukni olgandan keyin berasiz, olishdan oldin faqat imzo qo'yasiz.", 'paid after he TAKES it'],
+    ["To'lovni yukni olib ketgandan keyin qilasiz, topshirishdan oldin qo'ng'iroq qilamiz.", 'three words to its time (passed on both trees)'],
+    ['Оплата по прибытии, перед получением. Но это не обязательно.', 'the next statement takes it back'],
+    ["Yuk kelganda to'laysiz, yukni olishdan oldin. Shart emas.", 'the next statement takes it back'],
+    ['Оплата по прибытии, перед получением или после.', '«or after»'],
+    ['Payment upon arrival, before you collect it or after.', '«or after»'],
+    ["Yuk kelganda to'laysiz, yukni olishdan oldin yoki keyin.", '«yoki keyin»'],
+    ['Груз выдадим сразу, оплата по прибытии, перед получением.', 'the cargo handed over first'],
+    ['We release it right away, payment upon arrival, before you collect it.', 'the cargo handed over first'],
+    ['Оплата по прибытии, до получения денег.', '«до получения» the money, as the tail'],
+    ['Pulni yukni olgandan keyin berasiz, yukni olishdan oldin.', '«olgandan keyin» is after he takes it'],
+  ])('«%s» is still credit — %s', (text) => {
+    expect(promiseHits(text)).toContain('credit_release');
+  });
+
+  it.each([
+    ['Оплата по прибытии груза в Ташкент, перед получением.'],
+    ['Оплачиваете при получении в Ташкенте, перед тем как забрать груз.'],
+    ["To'lov yuk Toshkentga yetib kelganda, yukni olishdan oldin qilinadi."],
+    ["To'lovni yuk kelganda qilasiz, yukni olishdan oldin."],
+    ['Тўловни юк келганда қиласиз, юкни олишдан олдин.'],
+    ['Payment on arrival in Tashkent, before you collect the cargo.'],
+    ['Оплата по прибытии, перед получением, наличными или картой.'],
+    ["To'lovni yuk kelganda qilasiz, yukni olishdan oldin, naqd yoki karta orqali."],
+    ["Yuk tashish uchun to'lov yuk Toshkentga yetib kelganda, yukni olishdan oldin so'mda qilinadi; narx dollarda kelishiladi."],
+  ])('«%s» is the company’s rule, and no credit', (text) => {
+    expect(promiseHits(text)).not.toContain('credit_release');
+  });
+});
+
+describe('review — P9: only the calculation as a NOUN may be what is free', () => {
+  it.each([
+    ['Omborda saqlash bepul hisoblanadi.'],
+    ['Saqlash tekin hisoblanadi.'],
+    ['Yetkazish bepul hisoblanadi.'],
+    ['Uyingizga yetkazish bepul hisoblanadi.'],
+    ['Birinchi hafta saqlash bepul hisoblanadi, keyin pullik.'],
+    ['Omborda saqlash xizmati bepul hisoblanadi.'],
+    ['Toshkent ichida yetkazib berish bepul hisoblanadi.'],
+    ['Birinchi oy saqlash tekin hisoblanadi.'],
+    ['Saqlashni bepul hisoblaymiz.'],
+    ['Narxini hisoblab bepul yetkazib beramiz.'],
+    ['Hisoblab bepul saqlab beramiz.'],
+    ['Yetkazib berishni ham bepul hisoblab beramiz.'],
+    ['Hisoblash bepul, xuddi yetkazish kabi.'],
+    ['Hisoblash bepul, qolgani ham.'],
+    ['Омборда сақлаш бепул ҳисобланади.'],
+    ['Хранение посчитаем бесплатно.'],
+    ['Хранение на складе рассчитаем бесплатно.'],
+    ['Рассчитаем бесплатную доставку.'],
+    ['Рассчитаем бесплатную доставку по Ташкенту.'],
+    ['Бесплатно рассчитаем и доставим по Ташкенту.'],
+    // «Посчитать» is also «count as»: with no price for its object it says nothing of what is free.
+    ['Посчитаем бесплатно.'],
+    ['The estimated delivery is free.'],
+    ['Estimated shipping is free.'],
+    ['We estimate delivery is free.'],
+    ['We quote free delivery within Tashkent.'],
+    ['We calculate free storage for the first month.'],
+    ['Our pricing is free shipping included.'],
+    ['Narxni hisoblash bepul. Saqlash ham.'],
+    // «Hisoblanadi» is «is counted as», «посчитаем» «we will count as»: no calculation is the free thing.
+    ['Bu bepul hisoblanadi.'],
+    ['Hammasi tekin hisoblanadi.'],
+    ['Это посчитаем бесплатно.'],
+    ['Расчёт бесплатный. Хранение тоже.'],
+    ['The quote is free. Storage too.'],
+  ])('«%s» still promises a free service', (text) => {
+    expect(promiseHits(text)).toContain('free_extras');
+  });
+
+  it.each([
+    ['Hisoblash xizmati bepul, tovar nomi va hajmini yozing.'],
+    ['Yetkazish narxini hisoblash bepul.'],
+    ['Rastamojkani hisoblash bepul.'],
+    ['Бесплатный расчёт стоимости — напишите товар и объём.'],
+    ['Расчёт доставки бесплатный.'],
+    ['Расчёт таможенных платежей бесплатный.'],
+    ['A free quote: send the goods and the volume.'],
+    ['The calculation of the delivery cost is free.'],
+    ['Narxni hisoblash bepul. Tovar nomini ham yozing.'],
+    ['Narxni hisoblash bepul: tovar nomini va hajmini ham yozing.'],
+  ])('«%s» says the calculation is free, and passes', (text) => {
+    expect(promiseHits(text)).not.toContain('free_extras');
+  });
+});
+
+describe('review — P3: a price spelled out per unit, or with its currency past a comma', () => {
+  it.each([
+    ['Har kub uchun ikki yuz.'],
+    ["Yo'lkira kub uchun taxminan uch yuz."],
+    ['Bir kg uchun taxminan uch.'],
+    ["Avia bir kg uchun taxminan o'n yetti."],
+    ["Avia kg ga o'n yetti bo'ladi."],
+    ['Narx kub uchun yuz ellik atrofida, dollar bilan.'],
+    ['Narxi esa, besh yuz.'],
+    ["Hammasi bo'lib taxminan ikki ming, dollar hisobida."],
+    ["Sizning yukingiz ikki m³ bo'lsa ham olamiz."],
+    ['За куб примерно триста.'],
+    ['Доставка за один куб обойдётся в триста.'],
+    ['Итого примерно две тысячи, в долларах.'],
+    ['It comes to about two thousand, in US dollars.'],
+    // Passed on both trees: no word of Uzbek Cyrillic, no Russian teen, was a numeral at all.
+    ['Нархи беш юз доллар бўлади.'],
+    ['Ҳар куб учун икки юз доллар.'],
+    ['Авиа — семнадцать долларов за килограмм.'],
+    ['Narxi to´rt yuz.'],
+    ['Hajmi kub hisobida uch.'],
+    ['Цена за кило — семнадцать.'],
+    ["Kilosiga o'n yetti bo'ladi."],
+  ])('«%s» is a figure spelled out — refused', (text) => {
+    expect(unverifiableNumeral(normalizeDigits(text))).toBe('word_numeral');
+  });
+
+  it.each([
+    ['Ming rahmat, narxni aytishim uchun necha kub?'],
+    ["Ikki xil yo'l bor: avia va avto. Avia uchun kg kerak."],
+    ["Uch narsa kerak: tovar nomi, hajmi (kub) va og'irligi (kg)."],
+    ["Ikki yo'l bor: avia va avto, narxi dollarda."],
+    ['Два варианта: авиа и авто, цена в долларах.'],
+    ['Bir daqiqa, hozir aniqlab beraman.'],
+    ['Bir daqiqa kuting, narxni hisoblab aytaman.'],
+    ['Бир дақиқа, ҳозир аниқлаб бераман.'],
+    ["Ikki yo'l bor: avia va avto, narxi dollarda bo'ladi."],
+    ['Ming rahmat, narxni dollarda aytaman — yukingiz necha kub?'],
+    ['Есть два варианта: авиа и авто. Цена в долларах.'],
+    ['We have two options: air and truck. Prices are in US dollars.'],
+    // The words AFTER a run stop at its comma.
+    ['Omborimiz ikki, narxlari har xil.'],
+  ])('«%s» states no figure', (text) => {
+    expect(unverifiableNumeral(normalizeDigits(text))).toBeNull();
+  });
+
+  it('a minute as a time we give is still one', () => {
+    expect(unverifiableNumeral(normalizeDigits('Narxni bir daqiqada hisoblab beraman.'))).toBe('word_numeral');
+  });
+});
+
+describe('review — P7: a rule’s figure vouches only in its own unit and on its own road', () => {
+  const none: KbHit[] = [];
+  it.each([
+    ['Yukingiz taxminan 5 kunda yetib keladi.', '5'],
+    ['Yukingiz taxminan 2 kunda yetib keladi.', '2'],
+    ['Yukingiz taxminan 2-5 kunda yetib keladi.', '2'],
+    ['Mashina uchun eng kamida 1 kg kerak.', '1'],
+    ['100 kub yukni olamiz.', '100'],
+    ['Narxni 2 soatda hisoblab beraman.', '2'],
+    ['Sizning 100 ta karobkangiz omborga keldi.', '100'],
+  ])('«%s», with NO knowledge, has no source for %s', (reply, figure) => {
+    expect(blockCodes(verdict(UZ, 'latin', 'uz', reply, none))).toContain(`number_unsourced:${figure}`);
+  });
+
+  it.each([
+    ['Narxni 5 daqiqada hisoblab beraman.', '5'],
+    ['Narxni 15 daqiqada hisoblab beraman.', '15'],
+    ['Sizning 100 kub yukingiz omborga keldi.', '100'],
+    ['Mashina uchun eng kamida 100 kub kerak.', '100'],
+  ])('«%s», on the seeded knowledge, borrows no fact’s figure in another unit (%s)', (reply, figure) => {
+    expect(blockCodes(uz(reply))).toContain(`number_unsourced:${figure}`);
+  });
+
+  it('…nor in Russian', () => {
+    expect(blockCodes(verdict(RU, 'cyrillic', 'ru', 'Ваш груз придёт примерно за 2-5 дней.', none))).toContain('number_unsourced:2');
+  });
+
+  it.each([
+    ['Mashina uchun eng kamida 1 kub yoki 100 kg kerak.'],
+    ['Avia bilan eng kamida 1 kg, taxminan 2-5 kunda yetib boradi.'],
+  ])('«%s» says the rule as the prompt tells it', (reply) => {
+    expect(verdict(UZ, 'latin', 'uz', reply, none).ok).toBe(true);
+  });
+
+  it('…and so in Russian', () => {
+    expect(verdict(RU, 'cyrillic', 'ru', 'Минимум для машины — 1 куб или 100 кг.', none).ok).toBe(true);
+    expect(verdict(RU, 'cyrillic', 'ru', 'Авиа: от 1 кг, примерно 2-5 дней.', none).ok).toBe(true);
+  });
+
+  it('a day count naming no road is the truck’s: the transit fact still vouches for it', () => {
+    expect(uz('Assalomu alaykum! Yuk odatda 15–25 kunda keladi. Yukingiz necha kub?').ok).toBe(true);
+  });
+});
+
+describe('review — P1: the markers the model writes, and the price a marker must never swallow', () => {
+  it.each([
+    ["Narxni hisoblashim uchun yozing:\n1. **Tovar nomi**\n2. **Hajmi (kub)**"],
+    ["Narxni hisoblashim uchun yozing:\n1.Tovar nomi\n2.Hajmi\n3.Og'irligi"],
+    ["Narxni aytishim uchun 1) tovar nomi, 2) hajmi, 3) og'irligi kerak."],
+    ['Для расчёта стоимости напишите 1) товар 2) объём 3) вес.'],
+    ["Narxni hisoblashim uchun yozing:\n1 - tovar nomi\n2 - hajmi\n3 - og'irligi"],
+    ['Narxni hisoblashim uchun yozing:\n**1.** Tovar nomi\n**2.** Hajmi'],
+    ['Narxni hisoblashim uchun yozing:\n📦 1. Tovar nomi\n📏 2. Hajmi'],
+  ])('«%s» holds no figure', (text) => {
+    expect(extractNumbers(text)).toEqual([]);
+  });
+
+  it.each([
+    ["Ikki yo'l bor:\n1. Avia — narxi kg uchun 2. Avto — narxini hisoblab beraman.", 2],
+    ['Variantlar:\n1. Avia, kg narxi\n2. Avto, kub narxi 3. dollar atrofida', 3],
+    ['Narx: 1️⃣ avia kg 2️⃣ dollar', 2],
+    ['Варианты:\n1) авиа — цена за кг 2) доллара\n3) авто', 2],
+    ['Narx:\n1) avia\n2) dollar atrofida', 2],
+    ['Variantlar: 1) avia, narxi kg uchun 2) avto, narxi kub uchun', 2],
+  ])('«%s» keeps its price %d — and is refused', (text, price) => {
+    expect(extractNumbers(text).some((f) => f.value === price && f.kind === 'money')).toBe(true);
+    expect(uz(text).ok).toBe(false);
+  });
+
+  it('a dash between figures is a range, never a marker', () => {
+    expect(extractNumbers('Yuk:\n1 - 3 kunda').map((f) => f.value)).toEqual([1, 3]);
+  });
+});
+
+describe('review — P5: an asking count with OUR delivering verb, or a certainty, is a promise', () => {
+  it.each([
+    ["Necha kunda kerak bo'lsa, shuncha kunda albatta yetkazib beramiz, kelishdikmi?"],
+    ["Necha kunda kerak bo'lsa, albatta o'sha muddatda yetkazamiz?"],
+    ["Sizga necha kunda kerak bo'lsa, o'sha necha kunda yetkazib beramiz?"],
+    ['Неча кунда керак бўлса, шунча кунда албатта етказамиз?'],
+    ["Necha kunda kerak bo'lsa, albatta o'sha kunda yetib keladi?"],
+  ])('«%s»', (text) => {
+    expect(promiseHits(text)).toContain('dispatch_promise');
+  });
+
+  it('…while the customer’s own need, asked, still passes', () => {
+    expect(promiseHits('Yuk qachon kerak, necha kunda yetib kelishi kerak?')).toEqual([]);
+  });
+});
+
+describe('review — P6: every apostrophe people type is the one the rules spell', () => {
+  it('folds «`», «´», «′», «ʹ» as it folds «ʼ» — before NFKC makes a space of «´»', () => {
+    expect(normalizeDigits('bo`lmaydi to´laysiz bo′lmaydi boʹlmaydi vaʼda')).toBe("bo'lmaydi to'laysiz bo'lmaydi bo'lmaydi va'da");
+  });
+
+  it.each([
+    ['Hech qanday muammo bo`lmaydi.', 'guarantee'],
+    ['Hech qanday muammo bo´lmaydi.', 'guarantee'],
+    ['Hech qanday muammo bo′lmaydi.', 'guarantee'],
+    ['Yukni to`lovsiz olib ketishingiz mumkin.', 'credit_release'],
+    ['Pulni keyin to´laysiz.', 'credit_release'],
+    ['Sug`urta ham qilib beramiz.', 'free_extras'],
+    ['Sug´urta ham qilib beramiz.', 'free_extras'],
+  ])('«%s» is a %s, as it was with «\'» (passed on both trees)', (text, category) => {
+    expect(promiseHits(text)).toContain(category);
+  });
+});
+
+describe('review — G2 reads the vague count in its genitive', () => {
+  it('«в течение нескольких дней» is a dispatch promise; G1 still states no figure in it', () => {
+    expect(promiseHits('Отправим груз в течение нескольких дней.')).toContain('dispatch_promise');
+    expect(unverifiableNumeral(normalizeDigits('Расчёт займёт несколько дней.'))).toBeNull();
+  });
+});
+
+describe('review — the prompt says what the check now does', () => {
+  it('rule 3’s single question is a preference the card warns about, and the header says warnings do not stop a draft', () => {
+    const head = stableHead({ styleGuide: null, facts: [] });
+    expect(head).not.toMatch(/ko'pi bilan BITTA/u);
+    expect(head).toMatch(/Imkon qadar savol belgisi bitta bo'lsin — bir nechtasi ogohlantirish/u);
+    expect(head).toMatch(/"ogohlantirish" deyilgani to'xtatmaydi/u);
+  });
+});
+
+describe('review — the incident’s replies still pass whole', () => {
+  it.each([
+    ["Assalomu alaykum! Narxni hisoblashim uchun yozing:\n1. **Tovar nomi**\n2. **Hajmi (kub)**\n3. **Og'irligi (kg)**"],
+    ["Assalomu alaykum! Narxni aytishim uchun 1) tovar nomi, 2) hajmi, 3) og'irligi kerak."],
+    ['Bir daqiqa, hozir aniqlab beraman. Yukingiz necha kub va necha kg?'],
+    ["Assalomu alaykum! Ikki yo'l bor: avia va avto. Yukingiz necha kg?"],
+  ])('uz Latin: «%s»', (reply) => {
+    const r = uz(reply);
+    expect(blockCodes(r)).toEqual([]);
+    expect(r.ok).toBe(true);
+  });
+
+  it('ru and uz Cyrillic', () => {
+    expect(ru('Здравствуйте! Для расчёта стоимости напишите 1) товар 2) объём 3) вес.').ok).toBe(true);
+    expect(uzc('Ассалому алайкум! Бир дақиқа, ҳозир аниқлаб бераман. Юкингиз неча куб?').ok).toBe(true);
+    expect(en('Hello! The quote is free: what are the goods, the volume and the weight?').ok).toBe(true);
   });
 });

@@ -486,15 +486,18 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
  * he may retire or re-word: then the reply said the minimum it was told to
  * say and lost its ✅ for it. The company's rule is a source of its own,
  * whatever the knowledge holds — said as the kinds it is (a measure, the
- * flight's days), never as money.
+ * flight's days), never as money, and in its own UNIT (review): unitless, its
+ * «1 kub» vouched for «1 kg», its «100 kg» for «100 kub» and a count of 100
+ * cartons, the flight's «2 kun» for «2 soatda». The flight's days vouch only
+ * for a day count said of the flight (`sourceFor`).
  */
 const COMPANY_RULE = 'kompaniya qoidasi';
 const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
-  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb' },
-  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb' },
-  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
-  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
-  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
+  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', unit: 'm3' },
+  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', unit: 'kg' },
+  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg' },
+  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
+  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
 ];
 
 /** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */

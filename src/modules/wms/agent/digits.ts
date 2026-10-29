@@ -23,14 +23,21 @@
  * rule here spells the apostrophe «['‘’ʻ`]». So the kb's own disclaimer «bu
  * taxmin, vaʼda emas» was no disclaimer, and «muammo boʼlmaydi» — a guarantee
  * — was no guarantee: the same letter misread both ways. U+02BC is read as
- * the ASCII «'» the rules were written for, and only it — «ʻ» (U+02BB, «oʻ»,
- * «gʻ») is in every class already.
+ * the ASCII «'» the rules were written for. So are the other marks people
+ * type for it (review): the backtick, the acute «´» (which NFKC turns into a
+ * SPACE and a combining accent, cutting «to´laysiz» in two), the prime «′»
+ * and «ʹ» — «Hech qanday muammo bo`lmaydi», «Pulni keyin to´laysiz», «Sug`urta
+ * ham qilib beramiz» passed as no guarantee, no credit, no free insurance,
+ * and the reply is told to write as the customer writes. «ʻ» (U+02BB, «oʻ»,
+ * «gʻ») and «‘ ’» are in every class already, and are left as written.
  */
 
 const PERSIAN = 0x06f0; // ۰
 const ARABIC_INDIC = 0x0660; // ٠
 
 const NUMERAL = /\p{N}/u;
+/** U+02BC «ʼ» (the seed's), «`», «´», «′», «ʹ». */
+const APOSTROPHES: ReadonlySet<number> = new Set([0x02bc, 0x60, 0xb4, 0x2032, 0x02b9]);
 const PLAIN_DIGITS = /^[0-9]+$/u;
 
 /**
@@ -44,14 +51,15 @@ export function normalizeDigits(text: string): string {
   let out = '';
   for (const ch of text) {
     const code = ch.codePointAt(0)!;
-    if (code < 0x80) out += ch;
+    // «vaʼda», «bo`lmaydi», «to´laysiz» are «va'da», «bo'lmaydi», «to'laysiz»: every apostrophe people type,
+    // read as the one the rules spell — before NFKC, which makes a space of «´».
+    if (APOSTROPHES.has(code)) out += "'";
+    else if (code < 0x80) out += ch;
     else if (code >= PERSIAN && code <= PERSIAN + 9) out += String(code - PERSIAN);
     else if (code >= ARABIC_INDIC && code <= ARABIC_INDIC + 9) out += String(code - ARABIC_INDIC);
     // The Arabic decimal and thousands separators read as ASCII ones.
     else if (code === 0x066b) out += '.';
     else if (code === 0x066c) out += ',';
-    // «vaʼda» is «va'da»: the modifier-letter apostrophe the seed writes, read as the one the rules spell.
-    else if (code === 0x02bc) out += "'";
     else if (ch === '№') out += ch;
     else {
       const folded = ch.normalize('NFKC');
@@ -336,9 +344,22 @@ const HAN_NUMERAL = /[零〇一二两三四五六七八九十百千万亿壹贰�
  * the reply is told to write figures in digits anyway. Persian «نه» is left
  * out too: it is «no» far more often than «nine», and counts only right
  * before a unit (`NINE_FA`).
+ *
+ * Uzbek in Cyrillic was missing whole, and Russian had no teens, no «две»,
+ * no hundreds past three and no case forms (review): «Нархи беш юз доллар
+ * бўлади», «Ҳар куб учун икки юз доллар», «Авиа — семнадцать долларов за
+ * килограмм» were prices spelled out that nothing read.
  */
-const NUMERAL_WORDS =
-  "ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson|yuz|ming|два|три|четыре|пять|шесть|семь|восемь|девять|десять|двадцать|тридцать|сорок|пятьдесят|сто|двести|триста|тысяч[аи]?|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|hundred|thousand|دو|سه|چهار|پنج|شش|هفت|هشت|ده|بیست|سی|چهل|پنجاه|صد|هزار";
+const NUMERAL_WORDS = [
+  "ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson|yuz|ming",
+  'икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма|ўттиз|қирқ|эллик|олтмиш|етмиш|саксон|тўқсон|юз|минг',
+  'два|две|двух|три|тр[её]х|четыре|четыр[её]х|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти',
+  'одиннадцать|двенадцать|тринадцать|четырнадцать|пятнадцать|шестнадцать|семнадцать|восемнадцать|девятнадцать',
+  'двадцать|тридцать|сорок|пятьдесят|шестьдесят|семьдесят|восемьдесят|девяносто',
+  'сто|двести|двухсот|триста|тр[её]хсот|четыреста|пятьсот|шестьсот|семьсот|восемьсот|девятьсот|тысяч\\p{L}*',
+  'two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|hundred|thousand',
+  'دو|سه|چهار|پنج|شش|هفت|هشت|ده|بیست|سی|چهل|پنجاه|صد|هزار',
+].join('|');
 const NINE_FA = /(?<![\p{L}])نه\s+(?:روز|هفته|ماه|ساعت|دلار|تومان|افغانی|کیلو|متر)/u;
 
 /** A money or measure word nearby, in any of the six languages — the shipped list, read across the whole text (Chinese numerals only). */
@@ -362,7 +383,8 @@ const MONEY_OR_MEASURE =
 const UZ_NUM_DEFINITE =
   "bir|ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz";
 const UZ_CYRL_NUM_DEFINITE = 'бир|икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма|ўттиз';
-const RU_NUM_DEFINITE = 'од(?:ин|ну|ни)|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять';
+const RU_NUM_DEFINITE =
+  'од(?:ин|ну|ни|ного|ной)|два|две|двух|три|тр[её]х|четыре|четыр[её]х|пять|пяти|шесть|шести|семь|семи|восемь|восьми|девять|девяти|десять|десяти';
 const RU_NUM_TENS = 'двадцать|тридцать';
 const EN_NUM_DEFINITE = 'one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty';
 const FA_NUM_DEFINITE = 'یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده';
@@ -373,8 +395,9 @@ const HAN_UNIT = '个?(?:工作日|天|日|周|星期|月|小时)';
 function spelledDurationSrc(vague: boolean): string {
   const uz = vague ? `${UZ_NUM_DEFINITE}|necha|bir\\s+necha` : UZ_NUM_DEFINITE;
   const uzCyrl = vague ? `${UZ_CYRL_NUM_DEFINITE}|неча` : UZ_CYRL_NUM_DEFINITE;
+  // «Отправим груз в течение нескольких дней» is the vague count in its genitive (review).
   const ru = vague
-    ? `${RU_NUM_DEFINITE}|пар[уы]|несколько|полтор[аы]|${RU_NUM_TENS}`
+    ? `${RU_NUM_DEFINITE}|пар[уыа]|нескольк\\p{L}*|полтор[аы]|${RU_NUM_TENS}`
     : `${RU_NUM_DEFINITE}|полтор[аы]|${RU_NUM_TENS}`;
   const en = vague ? `${EN_NUM_DEFINITE}|a\\s+couple\\s+of|couple\\s+of|a\\s+few|few|several` : EN_NUM_DEFINITE;
   const fa = vague ? `${FA_NUM_DEFINITE}|چند` : FA_NUM_DEFINITE;
@@ -411,8 +434,8 @@ const HAN_BESIDE_MONEY = new RegExp(
   'u',
 );
 
-/** A text's words, as the word-numeral check reads its neighbours. */
-const TOKEN = /[\p{L}\p{M}'‘’ʻ`.\-]+|[$€¥£₽₸₺؋]/gu;
+/** A text's words, as the word-numeral check reads its neighbours — a comma is a token, «m³» (folded «m3») one word. */
+const TOKEN = /[\p{L}\p{M}'‘’ʻ`.\-]+(?:[23](?!\d))?|[$€¥£₽₸₺؋]|[,，]/gu;
 const NUMERAL_TOKEN = new RegExp(`^(?:bir[-–])?(?:${NUMERAL_WORDS})(?:[-–](?:${NUMERAL_WORDS}))*[.,]?$`, 'iu');
 /** «besh yarim», «два с половиной» — the half that goes on a spelled figure. */
 const HALF_TOKEN = /^(?:yarim|ярим|половин\p{L}*|half)[.,]?$/iu;
@@ -424,6 +447,60 @@ const COPULA =
   /^(?:is|are|was|will|be|of|about|around|approximately|roughly|это|будет|составит|составляет|примерно|около|esa|edi|bo['‘’ʻ`]?ladi|taxminan|тахминан|است|هست|حدود\p{L}*|تقریبا\p{L}*)$/iu;
 /** The classifier between a count and its thing — «uch ta karobka»; on its own it names nothing counted. */
 const CLASSIFIER = /^(?:ta|та|tadan|тадан)[.,]?$/iu;
+/** A per-unit word between a unit and its price: «kub uchun ikki yuz», «kg ga o'n yetti», «kub hisobida uch». */
+const PER_TOKEN = /^(?:uchun|учун|ga|га|hisobida|hisobda|ҳисобида|ҳисобда|за|per|each|for|по)[.,]?$/iu;
+
+/**
+ * What a spelled numeral counts when it counts no figure (review): a thanks — «Ming rahmat» — and kinds,
+ * ways, options, things, questions — «ikki xil yo'l», «uch narsa», «два варианта», «two options». Read on
+ * the word right after the run; such a run is no figure, whatever stands beside it.
+ */
+const NOT_A_FIGURE = new RegExp(
+  `^(?:${[
+    'rahmat\\p{L}*',
+    'raxmat\\p{L}*',
+    'раҳмат\\p{L}*',
+    'рахмат\\p{L}*',
+    'благодарност\\p{L}*',
+    'спасибо',
+    'xil\\p{L}*',
+    'хил\\p{L}*',
+    "yo['‘’ʻ`]?l(?:i|ni|dan|da|ga|lar\\p{L}*)?",
+    'йўл(?:и|ни|дан|да|га|лар\\p{L}*)?',
+    'variant\\p{L}*',
+    'вариант\\p{L}*',
+    'usul\\p{L}*',
+    'усул\\p{L}*',
+    'narsa\\p{L}*',
+    'нарса\\p{L}*',
+    'savol\\p{L}*',
+    'савол\\p{L}*',
+    'turdagi',
+    'турдаги',
+    'вид(?:а|ов)?',
+    'способ\\p{L}*',
+    'вопрос\\p{L}*',
+    'kinds?',
+    'types?',
+    'ways?',
+    'options?',
+    'things?',
+    'questions?',
+    'choices?',
+    'راه\\p{L}*',
+    'نوع',
+  ].join('|')})[.,:]?$`,
+  'iu',
+);
+
+/** A per-unit price anywhere in a sentence: «kub uchun», «kilosiga», «за один куб», «per kg». */
+const MEASURE_UNIT = '(?:kub\\p{L}*|куб\\p{L}*|kg|кг|kilo\\p{L}*|кило\\p{L}*|cbm|m3|м3|tonn\\p{L}*|тонн\\p{L}*|tons?)';
+const PER_UNIT_PRICE = new RegExp(
+  `(?<![\\p{L}])(?:${MEASURE_UNIT}\\s*(?:uchun|учун|ga|га)|kub(?:i)?ga|kilo(?:si)?ga|куб(?:и)?га|кило(?:си)?га|за\\s+(?:(?:один|одну|1)\\s+)?${MEASURE_UNIT}|(?:per|each|every|a)\\s+${MEASURE_UNIT})(?![\\p{L}])`,
+  'iu',
+);
+/** A currency named anywhere in a sentence — the test of `CURRENCY_ANYWHERE`, once. */
+const CURRENCY_NAMED = new RegExp(CURRENCY_ANYWHERE.source, 'iu');
 
 /**
  * The unit a spelled figure is a count OF (incident 2026-10-29) — a measure, a time, a percent, a thing
@@ -447,6 +524,8 @@ const UNIT_TOKEN = new RegExp(
     'metr\\p{L}*',
     'метр\\p{L}*',
     'met(?:er|re)s?',
+    'm[23]',
+    'м[23]',
     'cbm',
     'cub(?:e|es|ic)',
     'kilograms?',
@@ -519,32 +598,75 @@ const UNIT_TOKEN = new RegExp(
  * uch xil xizmat bor … kub» — a thanks, two kinds, three services, in a reply that asks for the cubes —
  * each lost their ✅ (incident 2026-10-29). «besh kub», «yuz dollar», «ikki hafta», «uch ta karobka», «три
  * куба» still block.
+ *
+ * The review found that neighbour test too narrow on both sides. A rate is written «Har kub uchun ikki yuz»,
+ * «Yo'lkira kub uchun taxminan uch yuz», «kg ga o'n yetti», «За куб примерно триста» — a per-unit word and
+ * a hedge between the unit and its price — and «Narxi esa, besh yuz» puts a comma between the price word and
+ * its figure; each passed as no figure at all. So a unit counts past a per-unit word and a copula, a price
+ * word past one comma; and a run in the same SENTENCE as a currency or a per-unit price — «Hammasi bo'lib
+ * taxminan ikki ming, dollar hisobida», «Доставка за один куб обойдётся в триста» — is a price spelled out
+ * wherever its commas fall. Only the words AFTER the run stop at a comma: «Ming rahmat, narxni…» is a thanks.
+ * A run that counts kinds, ways or things, or thanks (`NOT_A_FIGURE`), is no figure beside anything.
  */
 function numeralBesideUnit(normalized: string): boolean {
-  return normalized.split(NEIGHBOUR_BREAK).some(beside);
+  return normalized.split(SENTENCE_BREAK).some(beside);
 }
 
 /**
- * Where a word stops being a numeral's neighbour: a sentence's end or a comma. «Ming rahmat! Narxni aytishim
- * uchun…» read «rahmat Narxni» as the two words after «ming», and a thanks became a price spelled out.
+ * Where a word stops being a numeral's neighbour: a sentence's end. «Ming rahmat! Narxni aytishim uchun…»
+ * read «rahmat Narxni» as the two words after «ming», and a thanks became a price spelled out. A comma is
+ * a token of its own (`TOKEN`): what comes AFTER a run stops at it, a price word before it does not.
  */
-const NEIGHBOUR_BREAK = /[!?؟。！？\n,，;；]+|\.(?=\s|$)/u;
+const SENTENCE_BREAK = /[!?؟。！？\n;；]+|\.(?=\s|$)/u;
+const isComma = (token: string) => token === ',' || token === '，';
 
-function beside(part: string): boolean {
-  const tokens = part.match(TOKEN) ?? [];
+function beside(sentence: string): boolean {
+  const tokens = sentence.match(TOKEN) ?? [];
+  const priced = CURRENCY_NAMED.test(sentence) || PER_UNIT_PRICE.test(sentence);
   for (let i = 0; i < tokens.length; i += 1) {
     if (!NUMERAL_TOKEN.test(tokens[i]!)) continue;
     let j = i;
     while (j + 1 < tokens.length && (NUMERAL_TOKEN.test(tokens[j + 1]!) || HALF_TOKEN.test(tokens[j + 1]!))) j += 1;
+    const after = tokens[j + 1];
+    if (after !== undefined && NOT_A_FIGURE.test(after)) {
+      i = j;
+      continue;
+    }
+    if (priced) return true;
+    // A price word before the run — past two copulas and one comma: «narxi esa besh yuz», «Narxi esa, besh yuz».
     let b = i - 1;
-    while (b >= 0 && b >= i - 2 && COPULA.test(tokens[b]!)) b -= 1;
-    if ((b >= 0 && MONEY_WORD.test(tokens[b]!)) || MONEY_WORD.test(tokens.slice(j + 1, j + 3).join(' '))) return true;
-    const next = j + 1 < tokens.length && CLASSIFIER.test(tokens[j + 1]!) ? tokens[j + 2] : tokens[j + 1];
-    if ((i > 0 && UNIT_TOKEN.test(tokens[i - 1]!)) || (next !== undefined && UNIT_TOKEN.test(next))) return true;
+    let commas = 0;
+    while (b >= 0 && b >= i - 3) {
+      if (isComma(tokens[b]!)) commas += 1;
+      else if (!COPULA.test(tokens[b]!)) break;
+      if (commas > 1) break;
+      b -= 1;
+    }
+    if (b >= 0 && MONEY_WORD.test(tokens[b]!)) return true;
+    // …or in the two words after it, inside its clause.
+    const two = tokens.slice(j + 1, j + 3);
+    const cut = two.findIndex(isComma);
+    if (MONEY_WORD.test((cut === -1 ? two : two.slice(0, cut)).join(' '))) return true;
+    // A unit right before the run — past a per-unit word and a copula: «kub uchun taxminan uch yuz».
+    let u = i - 1;
+    while (u >= 0 && u >= i - 3 && (COPULA.test(tokens[u]!) || PER_TOKEN.test(tokens[u]!))) u -= 1;
+    if (u >= 0 && UNIT_TOKEN.test(tokens[u]!)) return true;
+    // …or right after it, past a classifier «ta».
+    const next = after !== undefined && CLASSIFIER.test(after) ? tokens[j + 2] : after;
+    if (next !== undefined && UNIT_TOKEN.test(next)) return true;
     i = j;
   }
   return false;
 }
+
+/**
+ * «Bir daqiqa», «бир дақиқа» opening a sentence is «one moment», not a time we give (review): «Bir daqiqa,
+ * hozir aniqlab beraman» lost its ✅ as a spelled-out duration, while «Одну минуту» never did. Only standing
+ * alone — at a sentence's head, followed by its comma or «kuting» / «hozir»: «Bir daqiqada hisoblab
+ * beraman» is a time all the same.
+ */
+const ONE_MOMENT =
+  /(?<=(?:^|[.!?\n])\s*)(?:bir|бир)\s+(?:daqiqa|soniya|minut|дақиқа|сония|минут)(?=\s*[,!.…—–-]|\s+(?:kuting|кутинг|hozir|ҳозир|iltimos|илтимос)(?![\p{L}]))/giu;
 
 export type UnverifiableNumeral = 'other_script_digit' | 'han_numeral' | 'word_numeral';
 
@@ -560,6 +682,6 @@ export function unverifiableNumeral(normalized: string): UnverifiableNumeral | n
   if (HAN_SPELLED_DURATION.test(normalized)) return 'han_numeral';
   // «narxi besh yuz» names no currency and is still a price spelled out; «besh kub» a measure.
   if (numeralBesideUnit(normalized)) return 'word_numeral';
-  if (NINE_FA.test(normalized) || SPELLED_DURATION.test(normalized)) return 'word_numeral';
+  if (NINE_FA.test(normalized) || SPELLED_DURATION.test(normalized.replace(ONE_MOMENT, ' '))) return 'word_numeral';
   return null;
 }

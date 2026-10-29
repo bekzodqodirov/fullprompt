@@ -57,7 +57,18 @@ export interface FoundNumber {
   perUnit?: boolean;
   /** Its FORM says what it is (an ordinal, an hour, a clock) — never read as money. */
   fixed?: boolean;
+  /** A measure's or a day count's unit, when its word says one — «1 kub» is no «1 kg» (`FigureUnit`). */
+  unit?: FigureUnit;
 }
+
+/**
+ * The unit a measure or a duration is written in. A source that names one
+ * vouches only for a figure in it (review): the company rule's «1 kub» stood
+ * behind «Mashina uchun eng kamida 1 kg kerak», its «100 kg» behind «Sizning
+ * 100 ta karobkangiz omborga keldi», the flight's «2 kun» behind «Narxni 2
+ * soatda hisoblab beraman».
+ */
+export type FigureUnit = 'm3' | 'kg' | 'tonne' | 'm2' | 'day' | 'week' | 'month' | 'hour' | 'minute';
 
 /**
  * What a money source IS (K21): the price of the whole load, a per-unit rate,
@@ -108,6 +119,8 @@ export interface NumberSource {
    * backed by the AVIA fact's five. Absent = said of no road in particular.
    */
   mode?: TravelMode;
+  /** The unit it is said in; absent = any (the customer's, the tools', a fact's bare figure). */
+  unit?: FigureUnit;
 }
 
 /** How cargo travels — the three roads a day count can be the time of. */
@@ -685,6 +698,24 @@ interface Reading {
   token: string | null;
   /** What follows the figure, its range, its scale word and its currency — where a per-unit word stands (K21). */
   rest: string;
+  /** A measure's or a duration's unit, as its word says. */
+  unit?: FigureUnit;
+}
+
+/** Which unit the word after a measure or a duration is — read on the tail `MEASURE_AFTER` / `DURATION_AFTER` matched. */
+const UNIT_OF: readonly (readonly [RegExp, FigureUnit])[] = [
+  [/^\s*(?:kub|куб|cbm|cubic|cubes?|m3|м3|m³|м³|立方|متر\s*مکعب)/iu, 'm3'],
+  [/^\s*(?:kg|кг|kilo|кило|公斤|千克|کیلو)/iu, 'kg'],
+  [/^\s*(?:tonn|тонн|tons?|吨)/iu, 'tonne'],
+  [/^\s*(?:m2|м2)/iu, 'm2'],
+  [/^\s*(?:(?:ish|иш)\s+|(?:рабоч|календарн)\p{L}*\s+|(?:business|working|calendar)\s+)?(?:kun|кун|день|дн|сут|sutka|day|天|日|روز|个?工作)/iu, 'day'],
+  [/^\s*(?:hafta|ҳафта|недел|week|周|星期|هفته)/iu, 'week'],
+  [/^\s*(?:soat|соат|час|hour|小时|ساعت)/iu, 'hour'],
+  [/^\s*(?:oy(?![\p{L}])|ой(?![\p{L}])|месяц|month|个月|ماه)/iu, 'month'],
+  [/^\s*(?:daqiqa|дақиқа|минут|minute|分钟|دقیقه)/iu, 'minute'],
+];
+function unitOf(tail: string): FigureUnit | undefined {
+  return UNIT_OF.find(([re]) => re.test(tail))?.[1];
 }
 
 /** The word beside a figure — before it, after it, after its range and its scale word. */
@@ -712,8 +743,8 @@ function readAt(text: string, start: number, end: number): Reading {
   if (PERCENT_AFTER.test(tail)) return at('percent');
   const money = MONEY_AFTER.exec(tail);
   if (money) return at('money', money[0], tail.slice(money[0].length));
-  if (MEASURE_AFTER.test(tail)) return at('measure');
-  if (DURATION_AFTER.test(tail)) return at('duration');
+  if (MEASURE_AFTER.test(tail)) return { ...at('measure'), unit: unitOf(tail) };
+  if (DURATION_AFTER.test(tail)) return { ...at('duration'), unit: unitOf(tail) };
   if (MONTH_AFTER.test(tail) && !(UZ_CYRL_TIMES.test(tail) && UZ_CYRL_LETTERS.test(text))) return at('date');
   if (COUNT_AFTER.test(tail)) return at('count');
   // «480 ming», «1,5 mln» with no unit: a scaled figure is money.
@@ -753,28 +784,66 @@ function blanked(text: string, removeWhole: readonly string[]): string {
  * «Narxi: 1.» stand as figures — a list of one is no list to prove itself.
  * «1.5 kub» is a decimal, and the item's figure after a marker is read as
  * ever.
+ *
+ * Reviewed both ways. The model writes markdown, so «**1.** Tovar», «1.
+ * **Tovar**», «📦 1. Tovar», «1.Tovar» and «1 - tovar» are markers too, and a
+ * «1)» or a keycap may open a list inside a sentence — «…uchun 1) tovar
+ * nomi, 2) hajmi», «напишите 1) товар 2) объём» — when its «2)» follows in
+ * that sentence. And a marker never swallows a PRICE: «narxi kg uchun 2.
+ * Avto», «цена за кг 2) доллара», «1️⃣ avia kg 2️⃣ dollar» each took the rate
+ * out of the ledger. So an item that is a currency is no item, a «1.»-style
+ * marker inside a line continues no list, and no marker continues after a
+ * price or a unit word.
  */
-const LIST_MARKER = /(?<![\p{L}\p{N}.,])(\(?)(\d{1,2})(\.(?!\d)|\)|️?⃣)(?=[ \t ]+[\p{L}\p{N}])/gu;
+const LIST_MARKER =
+  /(?<![\p{L}\p{N}.,])(\(?)(\d{1,2})(\.(?!\d)|\)|️?⃣|[ \t ]+[-–—](?=[ \t ]+[*_«"“(]*\p{L}))(?=[*_]*(?:[ \t ]+[*_«"“(]*[\p{L}\p{N}]|\p{L}))/gu;
 const ITEM_HEAD = /[\n:;：；]/u;
+/** What may stand between an item's head and its marker: spaces, markdown, an emoji. Never a line's end. */
+const DECORATION = /[ \t \r*_\p{Extended_Pictographic}\u{FE0F}\u{200D}]+$/u;
+const LAST_WORD = /([\p{L}$€¥£₽][\p{L}'‘’ʻ`]*)(?:\s+([\p{L}'‘’ʻ`]+))?$/u;
+/** A price word or a unit — a marker after it is the figure it prices: «kg 2️⃣», «цена за кг 2)», «kg uchun 2)». */
+const PRICE_OR_UNIT = new RegExp(`^(?:${UNIT_WORD}|m[23]|м[23])$|${MONEY_WORD.source}`, 'iu');
+const PER_WORD = /^(?:uchun|учун|ga|га|за|per|for|each|по)$/iu;
+
+function pricedBefore(head: string): boolean {
+  const m = LAST_WORD.exec(head);
+  if (!m) return false;
+  const [, first, second] = m;
+  if (second === undefined) return PRICE_OR_UNIT.test(first!);
+  return PRICE_OR_UNIT.test(second) || (PER_WORD.test(second) && PRICE_OR_UNIT.test(first!));
+}
 
 function listMarkerSpans(t: string): [number, number][] {
   const out: [number, number][] = [];
   let run: [number, number][] = [];
   let style = '';
+  // The run opened inside a sentence: its second item must stand in that sentence.
+  let inline = false;
   for (const m of t.matchAll(LIST_MARKER)) {
     const raw = t.slice(0, m.index);
-    const head = raw.replace(/[ \t \r]+$/u, '');
-    const atHead = head === '' || ITEM_HEAD.test(head.at(-1)!);
-    const afterGap = atHead || head.length < raw.length || head.endsWith(',') || head.endsWith('，');
+    const head = raw.replace(DECORATION, '');
+    const last = head.at(-1);
+    const atHead = last === undefined || ITEM_HEAD.test(last);
+    const spaced = head.length < raw.length;
+    const afterComma = last === ',' || last === '，';
     const at = m.index + m[1]!.length;
     const span: [number, number] = [at, at + m[2]!.length];
-    const shape = `${m[1]}${m[3]!.replace('️', '')}`;
+    const mark = m[3]!.trim().replace('️', '');
+    const shape = `${m[1]}${mark}`;
+    const dash = /^[-–—]$/u.test(mark);
+    // «1)», «(1)», «1️⃣» are written inside a line; «1.» and «1 -» only at its head.
+    const inlineStyle = mark === ')' || mark === '⃣';
     const value = Number(m[2]);
-    if (value === 1 && atHead) {
+    const end = m.index + m[0].length;
+    if (MONEY_AFTER.test(t.slice(end, end + 24))) continue;
+    const midLine = !dash && inlineStyle && spaced && !pricedBefore(head);
+    if (value === 1 && (atHead || midLine)) {
       if (run.length >= 2) out.push(...run);
       run = [span];
       style = shape;
-    } else if (run.length > 0 && value === run.length + 1 && shape === style && afterGap) {
+      inline = !atHead;
+    } else if (run.length > 0 && value === run.length + 1 && shape === style && (atHead || (!dash && afterComma) || midLine)) {
+      if (inline && run.length === 1 && /[.!?\n]/u.test(t.slice(run[0]![1], m.index))) continue;
       run.push(span);
     }
   }
@@ -862,6 +931,7 @@ export function extractNumbers(
       ...(kind === 'money' ? { currency: token !== null ? currencyOf(token) : currencyOfText() } : {}),
       ...(perUnit ? { perUnit } : {}),
       ...(fixed ? { fixed } : {}),
+      ...(kind === read.kind && read.unit ? { unit: read.unit } : {}),
     });
   }
   return out.sort((a, b) => a.index - b.index);
@@ -923,6 +993,7 @@ export function sourceFor(
 ): NumberSource | null {
   const fits = (s: NumberSource) => {
     if (!sameValue(s.value, found.value)) return false;
+    if (s.unit !== undefined && found.unit !== s.unit) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
     // His percent, day count or date is his wish or his guess, whatever form the reply figure takes.
@@ -935,8 +1006,13 @@ export function sourceFor(
     if (s.kind === 'plain' && s.origin === 'kb' && found.kind !== 'plain') return false;
     if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
-    // flight's five is a promise nobody made.
-    if (found.kind === 'duration' && mode !== null && s.mode !== undefined && s.mode !== mode) return false;
+    // flight's five is a promise nobody made. A day count naming NO road — and the customer asked none —
+    // is the truck's, the road the company is (review): «Yukingiz taxminan 5 kunda yetib keladi» passed on
+    // the flight's 2-5 days in every first chat, the commonest chat there is.
+    // A measure the same: the flight's «eng kamida 1 kg» is no truck's minimum («Mashina uchun eng kamida 1 kg»).
+    if ((found.kind === 'duration' || found.kind === 'measure') && s.mode !== undefined && s.mode !== (mode ?? 'road')) {
+      return false;
+    }
     if (found.kind === 'money') return moneyFits(found, s);
     if (found.kind === 'plain') return true;
     // A measure can be stated as a bare count of the same thing and vice versa.
@@ -979,7 +1055,7 @@ export function placedLedger(
       source = sourceFor(asMoney, sources);
       if (source) found = asMoney;
     }
-    source ??= sourceFor(f, sources, f.kind === 'duration' ? (modeAt(t, f.index) ?? askedMode) : null);
+    source ??= sourceFor(f, sources, f.kind === 'duration' || f.kind === 'measure' ? (modeAt(t, f.index) ?? askedMode) : null);
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
     return {
@@ -1060,6 +1136,8 @@ export function factSources(text: string, label: string): NumberSource[] {
       label,
       origin: 'kb',
       ...(mode ? { mode } : {}),
+      // A fact's «15–25 kun» is days and its «100 kg» kilos — never minutes, cubes or cartons (review).
+      ...(f.unit ? { unit: f.unit } : {}),
     };
   });
 }
