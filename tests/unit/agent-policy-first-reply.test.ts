@@ -1051,8 +1051,13 @@ describe('third review — a hundred, a thousand, a ten is a figure in any reply
     ['هفده دلار برای هر کیلو'],
     // A bare thousand in a reply that prices is the package's figure still.
     ['Narxi:\n1. ming\n2. ming besh yuz'],
+    ['Narx dollarda hisoblanadi. Taxminan ming chiqadi.'],
   ])('«%s» is a figure spelled out', (text) => {
     expect(unverifiableNumeral(normalizeDigits(text))).toBe('word_numeral');
+  });
+
+  it('…and a bare thousand in a reply that prices nothing is a word', () => {
+    expect(unverifiableNumeral(normalizeDigits("Bizda ming xil tovar bor, qaysi biri sizniki?"))).toBeNull();
   });
 
   it.each([
@@ -1142,6 +1147,8 @@ describe('third review — the payment rule is taken back by a softening in any 
     [`${E} We can wait for you to pay.`],
     [`${R} Оплату можно обсудить.`],
     [`${U} Doimiy mijozlarimizga boshqacha.`],
+    [`${R} Оплатить можно и позже.`],
+    [`${R} Но забрать можно и сразу.`],
   ])('«%s» is still credit', (text) => {
     expect(promiseHits(text)).toContain('credit_release');
   });
@@ -1161,6 +1168,9 @@ describe('third review — the payment rule is taken back by a softening in any 
     [`${R} Цену можно обсудить.`],
     [`${R} Сначала оплатите, а потом забирайте груз.`],
     [`${E} But when will you collect it?`],
+    // Paying EARLY is no credit — refused on HEAD as the bare «можно и раньше».
+    [`${R} Оплатить можно и раньше.`],
+    [`${R} Можете оплатить и раньше, если удобно.`],
   ])('«%s» is the company’s rule, and no credit', (text) => {
     expect(promiseHits(text)).not.toContain('credit_release');
   });
