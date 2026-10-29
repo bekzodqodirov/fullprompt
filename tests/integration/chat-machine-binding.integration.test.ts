@@ -285,7 +285,9 @@ describe('2/19 — the switch governs NEW strangers only', () => {
     const shown = await listenerLine(hidden(peer, { phone: `+99893${SUFFIX}81` }), line({ message: 'Raqam' }), { work: false });
     expect(shown.owner).toMatchObject({ leadId });
     expect((await rowsOf(peer)).every((r) => r.leadId === leadId)).toBe(true);
-    // Nothing turned it into a question: no tray row, no card.
+    // Nothing turned it into a question: no tray row, no card — and a «lead closed» retire asked
+    // off a stale map does not take a binding whose lead is open in the database.
+    expect(await retireMachineBinding(managerId, peer, ctx(), 'lead_closed')).toBe(false);
     expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId });
   });
 
