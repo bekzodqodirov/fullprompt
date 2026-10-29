@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { AGENT_WAIT_TTL_MS } from '@/modules/platform/telegram/agent-bot';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
+import { EDIT_PROMPT } from '@/modules/wms/agent/bot-door';
 import { agentCardText, BLOCK_REMEDY, hitWords, lateNote, LATE_CARD_MS, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCard, renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
 import { HUMAN_TAKEOVER_HOURS } from '@/modules/wms/agent/limits';
@@ -279,5 +281,13 @@ describe('the page draws ✅ by the bot’s rule (C7, C10 a)', () => {
 
   it('the page asks it', () => {
     expect(readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8')).toContain('canSend={pageDrawsSend(d)}');
+  });
+});
+
+describe('the ✏️ prompt promises what the wait does (C4)', () => {
+  it('«N daqiqa ichida» is the wait’s own length, and the prompt starts with ✏️ (the ladder finds it so)', () => {
+    expect(EDIT_PROMPT.startsWith('✏️')).toBe(true);
+    expect(EDIT_PROMPT).toContain(`${AGENT_WAIT_TTL_MS / 60_000} daqiqa ichida`);
+    expect(EDIT_PROMPT).toContain('mijozning chatiga emas');
   });
 });
