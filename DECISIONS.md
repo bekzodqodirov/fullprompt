@@ -5857,3 +5857,11 @@ lost since got its note written onto the closed card and then refused there for 
 The AI-VED estimate to the owner (his Q5 ⭐ c) moved into main's `runPrefillJob`: only when this run spoke, and
 best-effort — a copy the owner could not get must never make the worker tell the seller «the pass failed». 5 red
 proofs by string edit (M1-M5).
+
+1543. **The merged bundle outgrew V8's default heap — CI builds with the image's.** On the merged tree `next build`
+died in «Creating an optimized production build» at ~2,000 MB (V8's default here is 2,096 MB) and passed at the
+Dockerfile's `--max-old-space-size=3072` (#1223) — measured: one process peaked at ~4.0 GB of RSS and the static-page
+workers took the sum to ~6.2 GB. The image already builds with that heap, so production is unaffected; CI ran `pnpm
+build` with the default and would have gone red on a build the server never runs. The CI step carries the same
+`NODE_OPTIONS`, and `build-typecheck.test.ts` asserts the two numbers are equal (red-proven by deleting the step's
+env). A local build needs the same prefix (CLAUDE.md, footguns).

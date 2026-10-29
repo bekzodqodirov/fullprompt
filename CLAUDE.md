@@ -132,6 +132,10 @@ pnpm build && pnpm e2e  # 44 e2e
   Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
   install downloaded it), or each code change re-fetches it and a deploy dies
   on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
+- **`next build` needs more than V8's ~2 GB default heap** since the 2026-10-29
+  merge: run it as `NODE_OPTIONS=--max-old-space-size=3072 pnpm build`, the
+  image's own heap (Dockerfile) and CI's (#1543). Without it the build dies
+  with «JavaScript heap out of memory» while everything else is green.
 
 ## Where the truth lives
 
@@ -3125,7 +3129,7 @@ onward truck on the ROAD is «already here» too; the hook locks lines in line o
 origin (`untickFor`); three tests that held with their gate deleted were re-anchored, and the editor's routes
 are held at the CONTEXT (the service worker answers `/api/*`, `page.route` never sees it).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24 → 10-29; DECISIONS #1517-#1542 — renumbered from #1463-#1487 on the merge,
+**Round — AI sotuvchi, phase 1 (2026-10-24 → 10-29; DECISIONS #1517-#1543 — renumbered from #1463-#1487 on the merge,
 the TWENTY-SIXTH collision: main took #1455-#1516, 0136 `lead_client_many` and 0137 `plan_road` first, and its 0136
 carried this branch's own `when`; migration 0138 `ai_sotuvchi`, `when` …117 — ledger must reach 139; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
@@ -3210,7 +3214,9 @@ proofs. The trade, stated: a chat the customer really moved to the truck now cos
 **The merge (#1542)**: main's landing THROWS a queue refusal before it writes anything, so `landCalc` catches
 `CalcError` (K26 words, the claim released), and the agent's `lead` input asks `leadTakesJobs` before the note —
 the two seams a running test and a review of the merge found. The AI-VED estimate rides main's `runPrefillJob`,
-only when the run spoke, best-effort.
+only when the run spoke, best-effort. And the merged bundle outgrew V8's ~2 GB default: `next build` died here at
+~2,000 MB and passes at the Dockerfile's 3,072, so CI's build step carries the same `NODE_OPTIONS` (#1543, fenced in
+`build-typecheck.test.ts`).
 
 **Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
 it: 0137 (`plan_road`, `when` …116). Before
