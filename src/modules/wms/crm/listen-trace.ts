@@ -236,9 +236,15 @@ export function lastFour(value: bigint | string | null | undefined): string {
   return digits.slice(-4).padStart(4, '•');
 }
 
-/** Why the live path did not keep an inbound line — the verdict's own reason, plus the one the handler adds. */
+/**
+ * Why the live path did not keep an inbound line — the verdict's own reason,
+ * plus the two the handler adds: `unresolved` (Telegram named nobody) and
+ * `held` (a work number's hidden-number line whose chat a person's ↩ put back
+ * in question on the tray — the door does not bind it over his answer).
+ */
 export type PassReason =
   | 'unresolved'
+  | 'held'
   | 'not_private'
   | 'is_bot'
   | 'no_phone'
@@ -263,6 +269,8 @@ export function passedLine(input: { reason: PassReason | string; phone: string |
       return '  · o‘tkazildi: Telegram yozgan odamni aniqlab bermadi — AI ko‘rmadi';
     case 'no_phone':
       return '  · o‘tkazildi: yozgan odamning raqami yashirin — uni shu Telegram kontaktlariga raqami bilan saqlang';
+    case 'held':
+      return '  · o‘tkazildi: bu chat «Qaysi chatlar»da javobingizni kutyapti (↩) — o‘sha yerda «Lid ochish» yoki «hech qachon»';
     case 'not_a_client':
       return `  · o‘tkazildi: ${input.phone ? `…${lastFour(input.phone)}` : 'bu'} raqami mijozlar ro‘yxatida yo‘q — «Qaysi chatlar»da so‘raladi`;
     case 'excluded':

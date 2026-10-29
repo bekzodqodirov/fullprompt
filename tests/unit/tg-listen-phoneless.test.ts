@@ -37,10 +37,15 @@ describe('the listener files a kept line through ONE door', () => {
     expect(caught).toContain('if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);');
   });
 
-  it('a chat a person answered meanwhile is stored nowhere, and the fresh rules decide the next line', () => {
+  it('a chat a person answered meanwhile is stored nowhere, and its OWN fresh rule decides the next line', () => {
     const refused = handle.slice(handle.indexOf('if (!owner) {'), handle.indexOf('const written = await storeIncoming('));
     expect(refused, 'the refusal sits before the store').not.toBe('');
-    expect(refused).toContain('rules = await rulesFor(account.managerUserId);');
+    // One chat's entry, not the account's whole book of rules: a chat a ↩ holds comes here on
+    // EVERY line (the second 2026-10-29 review).
+    expect(refused).toContain('const fresh = await chatRuleFor(account.managerUserId, peer.id);');
+    expect(refused).toContain('if (fresh) rules.set(peer.id, fresh);');
+    expect(refused).toContain('else rules.delete(peer.id);');
+    expect(refused.slice(0, refused.indexOf('if (owner.rulesMoved)'))).not.toContain('rulesFor(');
     expect(refused).toContain('return null;');
     expect(catchUp.indexOf('if (!owner) continue;')).toBeLessThan(catchUp.indexOf('const written = await storeIncoming('));
   });

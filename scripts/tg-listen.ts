@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { pgClient } from '../src/modules/platform/db/client';
 import { getSetting } from '../src/modules/platform/settings/service';
-import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
+import { chatRuleFor, recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
@@ -49,7 +49,6 @@ import {
 import {
   bookIsStale,
   decideIncoming,
-  keptOnLead,
   newBook,
   shouldRefreshOnMiss,
   switchDecides,
@@ -80,7 +79,7 @@ import {
   siteTagAction,
   suspectsStaleBook,
 } from '../src/modules/wms/crm/site-assign-rules';
-import { isWorkAccount, keptLeadOfChat, ownerOfVerdict, settlePassedChat } from '../src/modules/wms/crm/chat-lead';
+import { isWorkAccount, ownerOfVerdict, settlePassedChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
@@ -771,21 +770,23 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
       // The switch decides about NEW strangers only (the 2026-10-29 review): a
-      // line it passed over on a chat the work number already kept stays on
-      // that lead, and a chat whose own binding's lead has closed is a new
-      // stranger again — asked, not left in a hole (`settlePassedChat`).
+      // chat whose own binding's lead has closed is a new stranger again —
+      // asked, not left in a hole — once the customer writes, never on the
+      // manager's own line (`settlePassedChat`). What is NOT new stands by
+      // its rule, which `decideIncoming` has already read.
       let reopened = false;
       if (!verdict.store && ('ask' in verdict || verdict.reason === 'no_phone')) {
-        const settled = await settlePassedChat(account.managerUserId, peer.id, rules.get(peer.id), {
-          actorId: account.managerUserId,
-          ip: null,
-          userAgent: null,
-        });
+        const settled = await settlePassedChat(
+          account.managerUserId,
+          peer.id,
+          rules.get(peer.id),
+          msg.out === true ? 'out' : 'in',
+          { actorId: account.managerUserId, ip: null, userAgent: null },
+        );
         if (settled.reopened) {
           reopened = true;
           rules = await rulesFor(account.managerUserId);
         }
-        if (settled.leadId) verdict = keptOnLead(peer, msg, settled.leadId);
       }
 
       if (!verdict.store) {
@@ -825,10 +826,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         userAgent: null,
       });
       if (!owner) {
-        // A hidden number's chat a person answered on the tray since these
-        // rules were read — «hech qachon», or a client's: nothing is minted
-        // over it, and the fresh rules decide the next line.
-        rules = await rulesFor(account.managerUserId);
+        // A hidden number's chat a person answered on the tray — a ↩ that
+        // put it back in question, «hech qachon», a client's — or another
+        // door bound: nothing is minted over it, and THIS chat's fresh rule
+        // decides its next line. Only its entry is read again: on a chat a
+        // ↩ holds every line comes here, and the account's whole book of
+        // rules was re-read each time for the same answer (the second
+        // 2026-10-29 review).
+        const fresh = await chatRuleFor(account.managerUserId, peer.id);
+        if (fresh) rules.set(peer.id, fresh);
+        else rules.delete(peer.id);
+        // In words on the AI's account, as every passed line is: a chat a
+        // question holds, or one marked «never» — a chat just bound decides
+        // its next line and needs none.
+        const why = fresh?.decision === 'pending' ? 'held' : fresh?.decision === 'exclude' ? 'excluded' : null;
+        if (why && origin === 'live' && msg.out !== true && (await agentHere().catch(() => false))) {
+          const line = passedLine({ reason: why, phone: null });
+          if (line) console.log(line);
+        }
         passed += 1;
         return null;
       }
@@ -1959,13 +1974,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // The same decision the live path makes, including the work-account
           // widening — a message that arrived during an outage is the same
           // message it would have been a minute earlier.
-          let verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
-          // A line the switch passes over on a chat a work number kept on an
-          // open lead stays on that lead, as on the live path (`keptLeadOfChat`).
-          if (!verdict.store && ('ask' in verdict || verdict.reason === 'no_phone')) {
-            const keptOn = await keptLeadOfChat(account.managerUserId, peer.id);
-            if (keptOn) verdict = keptOnLead(peer, msg, keptOn);
-          }
+          const verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
           if (!verdict.store) continue;
           // The same owners the live path resolves, through the same door —
           // and so the same mints: catch-up walks only chats that already have

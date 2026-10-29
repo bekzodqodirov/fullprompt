@@ -38,7 +38,15 @@ import {
   settlePassedChat,
   STRANGER_CARD_BOUND,
 } from '@/modules/wms/crm/chat-lead';
-import { listCandidates, officialPeerSql, openLeadForChat, recordCandidates, rulesFor } from '@/modules/wms/crm/chat-rules';
+import {
+  chatRuleFor,
+  decideChat,
+  listCandidates,
+  officialPeerSql,
+  openLeadForChat,
+  recordCandidates,
+  rulesFor,
+} from '@/modules/wms/crm/chat-rules';
 import { landSiteTag } from '@/modules/wms/crm/site-assign';
 import { storeIncoming } from '@/modules/wms/crm/telegram-accounts';
 import {
@@ -48,7 +56,7 @@ import {
   type DialogPeer,
   type RawMessage,
 } from '@/modules/wms/crm/telegram-import';
-import { decideIncoming, keptOnLead } from '@/modules/wms/crm/telegram-live';
+import { decideIncoming } from '@/modules/wms/crm/telegram-live';
 
 /**
  * The listener's own lead binding (his «1 a», a hidden number on a work
@@ -59,16 +67,22 @@ import { decideIncoming, keptOnLead } from '@/modules/wms/crm/telegram-live';
  *    a lead, no client, no `decided_by` — so «machine» had to become a mark
  *    of its own (0139 `bound_via`), written by the work-number door alone;
  *  - 2/19: the switch decides about NEW strangers only — a chat the work
- *    number kept stays on its open lead after «Shaxsiy raqam», by its rule
- *    (hidden) or its rows (visible), and a closed lead's chat is asked about
- *    afresh instead of falling into a hole;
+ *    number bound stays on its open lead after «Shaxsiy raqam», by its RULE,
+ *    and a closed lead's chat is asked about afresh instead of falling into
+ *    a hole. Never by its ROWS (the second review): a visible number a work
+ *    number kept by the number is the tray's question again, which the tray
+ *    can ask and answer onto the same lead, and nothing is stored while a
+ *    question about the chat stands;
  *  - 1/18: the binding closes the «📵» card a personal number posted, and a
- *    press on its chat is still a person's answer that wins;
- *  - 9: Telegram's own accounts are neither listed on the tray nor carded.
+ *    press on its chat is still a person's answer that wins — «🚫 Shaxsiy»
+ *    taking what the listener kept with it, never a client's lines;
+ *  - 9: Telegram's own accounts are neither listed on the tray nor carded;
+ *  - 10: a line the door refused re-reads its own chat's rule, not the book.
  *
  * The listener is a gramjs closure no test can import: `listenerLine`
- * restates its live line in its order (decide → settle a passed line → own →
- * store, or the tray/card notes), and tests/unit/chat-rule-bound-via.test.ts
+ * restates its live line in its order (decide → settle a passed INBOUND line
+ * → own → store, or the tray/card notes — the card's only for the customer's
+ * own line, as `strangerSeen` asks it), and tests/unit/chat-rule-bound-via.test.ts
  * pins that the listener runs exactly that order. Rules and leads are
  * CONFIGURATION for the listener (#183) and go in afterAll; fixture people
  * are deactivated, never deleted (the audit FK).
@@ -113,25 +127,26 @@ async function setWork(work: boolean) {
 
 /**
  * The listener's live line (tg-listen `handleMessage`), on fresh rules: decided;
- * a line the switch passed over settled (`settlePassedChat`); stored on its owner,
- * or — not kept — the tray question and the «📵» card's note, as `strangerSeen` asks
- * them on the agent owner's account.
+ * a line the switch passed over settled (`settlePassedChat`, by its direction);
+ * stored on its owner, or — not kept — the tray question and the «📵» card's note,
+ * as `strangerSeen` asks them on the agent owner's account: never for his own line.
  */
 async function listenerLine(peer: DialogPeer, msg: RawMessage, opts: { work: boolean; book?: ClientPhones[] }) {
   const rules = await rulesFor(managerId);
-  let verdict = decideIncoming(peer, msg, opts.book ?? [], rules, opts.work);
+  const verdict = decideIncoming(peer, msg, opts.book ?? [], rules, opts.work);
   let reopened = false;
   if (!verdict.store && ('ask' in verdict || verdict.reason === 'no_phone')) {
-    const settled = await settlePassedChat(managerId, peer.id, rules.get(peer.id), ctx());
+    const settled = await settlePassedChat(managerId, peer.id, rules.get(peer.id), msg.out === true ? 'out' : 'in', ctx());
     reopened = settled.reopened;
-    if (settled.leadId) verdict = keptOnLead(peer, msg, settled.leadId);
   }
   if (!verdict.store) {
     const user = { contact: false, deleted: false };
     if ('ask' in verdict) {
       await recordCandidates(managerId, [{ peerId: verdict.peerId, title: verdict.title, phone: verdict.phone }]);
-      await noteStranger({ managerUserId: managerId, peerId: peer.id, title: verdict.title, verdict: 'ask', user, reopened });
-    } else if (verdict.reason === 'no_phone') {
+      if (msg.out !== true) {
+        await noteStranger({ managerUserId: managerId, peerId: peer.id, title: verdict.title, verdict: 'ask', user, reopened });
+      }
+    } else if (verdict.reason === 'no_phone' && msg.out !== true) {
       await noteStranger({ managerUserId: managerId, peerId: peer.id, title: 'Yashirin', verdict: 'no_phone', user, reopened });
     }
     return { verdict, owner: null, written: null, reopened };
@@ -173,7 +188,7 @@ async function cards(ruleId: string, type = 'AgentStranger') {
 const live = (n: { payload: unknown }) => (n.payload as { live?: unknown }).live !== false;
 const textOf = (n: { payload: unknown }) => String((n.payload as { text?: unknown }).text ?? '');
 
-async function closeLead(leadId: string, kind: 'won' | 'lost') {
+async function closeLead(leadId: string, kind: 'won' | 'lost' | 'open') {
   const [stage] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, kind)).limit(1);
   await db.update(leads).set({ stageId: stage!.id }).where(eq(leads.id, leadId));
 }
@@ -291,7 +306,7 @@ describe('2/19 — the switch governs NEW strangers only', () => {
     expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId });
   });
 
-  it('a VISIBLE chat a work number kept on its lead (rows, no rule) stays there too — a fresh stranger is still asked', async () => {
+  it('a VISIBLE chat a work number kept by the number is the tray’s question again on a personal number — answered onto the same lead (the second review)', async () => {
     await setWork(true);
     const peer = nextPeer();
     const phone = `+99893${SUFFIX}82`;
@@ -301,28 +316,50 @@ describe('2/19 — the switch governs NEW strangers only', () => {
 
     await setWork(false);
     const back = await listenerLine(hidden(peer, { phone }), line({ message: 'Yana' }), { work: false });
-    expect(back.verdict).toMatchObject({ store: true, leadId });
-    expect(back.written).not.toBeNull();
-    expect(await ruleOf(peer)).toBeUndefined();
+    // Not kept by its rows (which no tray lists and no «hech qachon» could stop): the tray
+    // asks, and nothing of the line is stored until somebody answers — a personal number, unchanged.
+    expect(back.verdict).toMatchObject({ store: false, ask: true });
+    expect(await rowsOf(peer)).toHaveLength(1);
+    const asked = (await listCandidates({ managerUserId: managerId, decision: 'pending' })).find((r) => r.peerId === peer.toString());
+    expect(asked).toMatchObject({ phone, workAccount: false });
+    // …and its «Lid ochish» files the chat on the lead it was kept on — by the number, no second lead.
+    expect((await openLeadForChat(asked!.id, ctx())).leadId).toBe(leadId);
+    const next = await listenerLine(hidden(peer, { phone }), line({ message: 'Endi saqlanadi' }), { work: false });
+    expect(next.owner).toMatchObject({ leadId, clientId: null });
+    expect((await rowsOf(peer)).every((r) => r.leadId === leadId)).toBe(true);
 
     // The control: a stranger nobody kept is the tray's question, as on every personal number.
     const fresh = nextPeer();
-    const asked = await listenerLine(hidden(fresh, { phone: `+99893${SUFFIX}83` }), line(), { work: false });
-    expect(asked.verdict).toMatchObject({ store: false, ask: true });
+    const control = await listenerLine(hidden(fresh, { phone: `+99893${SUFFIX}83` }), line(), { work: false });
+    expect(control.verdict).toMatchObject({ store: false, ask: true });
     expect(await ruleOf(fresh)).toMatchObject({ decision: 'pending' });
     expect(await rowsOf(fresh)).toHaveLength(0);
   });
 
-  it('a person’s answer outranks the rows: a ↩ or «never» on the kept chat is not overridden', async () => {
+  it('nothing is stored while a question about the chat stands — a lost lead reopened after its chat was asked about again (the second review)', async () => {
     await setWork(true);
     const peer = nextPeer();
-    const phone = `+99893${SUFFIX}84`;
-    await listenerLine(hidden(peer, { phone }), line(), { work: true });
+    const first = await listenerLine(hidden(peer), line(), { work: true });
+    const leadId = first.owner!.leadId!;
+    await closeLead(leadId, 'lost');
     await setWork(false);
-    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerPhone: phone, decidedBy: managerId });
-    const out = await listenerLine(hidden(peer, { phone }), line({ message: 'Yana' }), { work: false });
-    expect(out.verdict).toMatchObject({ store: false, ask: true });
+    const asked = await listenerLine(hidden(peer), line({ message: 'Yana yuk bor' }), { work: false });
+    expect(asked.reopened).toBe(true);
+    const question = (await ruleOf(peer))!;
+    expect(question).toMatchObject({ decision: 'pending', leadId: null, decidedBy: null });
+    await strangerCards(managerId, new Date());
+    expect((await cards(question.id)).filter(live)).toHaveLength(1);
+
+    // A person moves the lead back to open: a fact about the LEAD, not an answer about the chat.
+    await closeLead(leadId, 'open');
+    const later = await listenerLine(hidden(peer), line({ message: 'Javob bering' }), { work: false });
+    expect(later.verdict).toEqual({ store: false, reason: 'no_phone' });
     expect(await rowsOf(peer)).toHaveLength(1);
+    expect(await ruleOf(peer)).toMatchObject({ id: question.id, decision: 'pending' });
+    expect((await cards(question.id)).filter(live)).toHaveLength(1);
+    // The card's answer is the person's — and «🆕 Yangi lid» files the chat on the lead its lines are on.
+    expect((await agentPress(managerId, 'n', question.id, undefined)).toast).toContain('Lid ochildi');
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'include', leadId, decidedBy: managerId });
   });
 
   it('a CLOSED lead’s chat on a personal number is a new stranger again: the binding is retired and the «📵» card asks once more', async () => {
@@ -356,6 +393,36 @@ describe('2/19 — the switch governs NEW strangers only', () => {
     expect(await cards(fresh.id)).toHaveLength(1);
     // Nothing of the line was stored, and the lost lead keeps its own lines.
     expect((await rowsOf(peer)).every((r) => r.leadId === leadId)).toBe(true);
+  });
+
+  it('the manager’s OWN line on a closed lead’s chat retires nothing — the customer’s next line does, and the card comes (the second review)', async () => {
+    await setWork(true);
+    const peer = nextPeer();
+    const first = await listenerLine(hidden(peer), line(), { work: true });
+    const leadId = first.owner!.leadId!;
+    const bound = (await ruleOf(peer))!;
+    // The one-card claim a personal number's card spent before the switch went to work.
+    await db
+      .insert(agentConversations)
+      .values({ managerUserId: managerId, peerId: peer, strangerCardAt: new Date(Date.now() - 3_600_000) })
+      .onConflictDoUpdate({
+        target: [agentConversations.managerUserId, agentConversations.peerId],
+        set: { strangerCardAt: new Date(Date.now() - 3_600_000) },
+      });
+    await closeLead(leadId, 'lost');
+    await setWork(false);
+
+    const mine = await listenerLine(hidden(peer), line({ message: 'Assalomu alaykum, yukingiz bormi?', out: true }), { work: false });
+    expect(mine.reopened).toBe(false);
+    expect(await ruleOf(peer)).toMatchObject({ id: bound.id, decision: 'include', leadId });
+    expect(await markOf(peer)).toBe('work_account');
+
+    const theirs = await listenerLine(hidden(peer), line({ message: 'Ha, 5 kub bor' }), { work: false });
+    expect(theirs.reopened).toBe(true);
+    const fresh = (await ruleOf(peer))!;
+    expect(fresh).toMatchObject({ decision: 'pending', leadId: null, decidedBy: null });
+    await strangerCards(managerId, new Date());
+    expect(await cards(fresh.id)).toHaveLength(1);
   });
 });
 
@@ -417,6 +484,57 @@ describe('1/18 — the binding closes the card, and a press on its chat is still
   });
 });
 
+describe('«🚫 Shaxsiy» takes what was kept on the listener’s say-so — never a client’s lines, never past a person’s answer (the second review)', () => {
+  it('a question still standing while a work number kept the chat by its number: the press excludes AND deletes those lines', async () => {
+    await setWork(false);
+    const peer = nextPeer();
+    await listenerLine(hidden(peer), line(), { work: false });
+    const question = (await ruleOf(peer))!;
+    expect(question).toMatchObject({ decision: 'pending', decidedBy: null });
+    await setWork(true);
+    const shown = await listenerLine(hidden(peer, { phone: `+99893${SUFFIX}86` }), line({ message: 'Raqamim ko‘rinadi' }), { work: true });
+    expect(shown.owner).toMatchObject({ clientId: null, label: 'LID' });
+    expect(await rowsOf(peer)).toHaveLength(1);
+    expect(await ruleOf(peer)).toMatchObject({ id: question.id, decision: 'pending' });
+
+    const press = await agentPress(managerId, 'x', question.id, undefined);
+    expect(press.toast).toContain('Shaxsiy');
+    expect(press.reply).toContain('1 ta xabar o‘chirildi');
+    expect(await rowsOf(peer)).toHaveLength(0);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'exclude', decidedBy: managerId });
+  });
+
+  it('a chat with a CLIENT’s line among what is stored is excluded, and its history stays', async () => {
+    await setWork(false);
+    const peer = nextPeer();
+    // A client's chat whose number Telegram has since hidden: its old line is the client's.
+    await storeIncoming({ clientId, managerUserId: managerId, row: toMessageRow(peer, line({ date: Math.floor(Date.now() / 1000) - 86_400 })) });
+    await listenerLine(hidden(peer), line(), { work: false });
+    const question = (await ruleOf(peer))!;
+    expect(question).toMatchObject({ decision: 'pending', decidedBy: null });
+    const press = await agentPress(managerId, 'x', question.id, undefined);
+    expect(press.toast).toContain('Shaxsiy');
+    expect(press.reply).toBeUndefined();
+    expect(await rowsOf(peer)).toHaveLength(1);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'exclude' });
+  });
+
+  it('a chat a PERSON put back in question (↩) keeps its lines — his lead binding’s lines were kept on his say-so', async () => {
+    await setWork(true);
+    const peer = nextPeer();
+    const first = await listenerLine(hidden(peer), line(), { work: true });
+    const ruleId = (await ruleOf(peer))!.id;
+    // His own «Yangi lid» first, then his ↩: both answers, neither the listener's.
+    await agentPress(managerId, 'n', ruleId, undefined);
+    await decideChat({ id: ruleId, decision: 'pending' }, ctx());
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', decidedBy: managerId });
+    const press = await agentPress(managerId, 'x', ruleId, undefined);
+    expect(press.reply).toBeUndefined();
+    expect((await rowsOf(peer)).map((r) => r.leadId)).toEqual([first.owner!.leadId]);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'exclude' });
+  });
+});
+
 describe('10 — a tray ↩ is a person’s answer, and a personal tray still opens no hidden lead', () => {
   it('a personal number’s tray refuses «Lid ochish» for a hidden number, as before', async () => {
     await setWork(false);
@@ -429,6 +547,36 @@ describe('10 — a tray ↩ is a person’s answer, and a personal tray still op
       workAccount: false,
     });
     await expect(openLeadForChat(r!.id, ctx())).rejects.toThrow('chat_no_phone');
+  });
+
+  it('a line the door refused re-reads its OWN chat’s rule — `chatRuleFor` is exactly `rulesFor`’s entry for it (the second review)', async () => {
+    await setWork(true);
+    const machinePeer = nextPeer();
+    await listenerLine(hidden(machinePeer), line(), { work: true });
+    const heldPeer = nextPeer();
+    await listenerLine(hidden(heldPeer), line(), { work: true });
+    await decideChat({ id: (await ruleOf(heldPeer))!.id, decision: 'pending' }, ctx());
+    const closedPeer = nextPeer();
+    const closed = await listenerLine(hidden(closedPeer), line(), { work: true });
+    await closeLead(closed.owner!.leadId!, 'won');
+    const clientPeer = nextPeer();
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: clientPeer, decision: 'include', clientId, decidedBy: managerId });
+    const neverPeer = nextPeer();
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: neverPeer, decision: 'exclude', decidedBy: managerId });
+
+    const all = await rulesFor(managerId);
+    for (const peer of [machinePeer, heldPeer, closedPeer, clientPeer, neverPeer]) {
+      expect(await chatRuleFor(managerId, peer), String(peer)).toEqual(all.get(peer));
+    }
+    expect(all.get(machinePeer)).toMatchObject({ machine: true, leadOpen: true });
+    expect(all.get(heldPeer)).toMatchObject({ decision: 'pending', machine: false });
+    expect(all.get(closedPeer)).toMatchObject({ machine: true, leadOpen: false });
+    expect(all.get(clientPeer)).toMatchObject({ clientCode });
+    expect(await chatRuleFor(managerId, nextPeer())).toBeUndefined();
+    // The held chat's next hidden line on the work number: refused under his ↩, and its own entry says why.
+    const next = await listenerLine(hidden(heldPeer), line({ message: 'Yana' }), { work: true });
+    expect(next.owner).toBeNull();
+    expect(await chatRuleFor(managerId, heldPeer)).toMatchObject({ decision: 'pending' });
   });
 });
 
@@ -457,6 +605,9 @@ describe('9 — Telegram’s own accounts are neither on the tray nor carded', (
     expect(n.reply).toContain('Telegram');
     expect(n.reply).not.toContain('service_chat');
     expect((await agentPress(managerId, 'c', r!.id, 'deadbeef')).reply).toContain('Telegram');
+    // An old echo card's ↩ takes its bind back and asks nothing: no fresh «📵» card (the second review).
+    expect((await agentPress(managerId, 'b', r!.id, undefined)).toast).toContain('Bekor');
+    expect(await cards(r!.id)).toHaveLength(0);
     expect((await agentPress(managerId, 'x', r!.id, undefined)).toast).toContain('Shaxsiy');
     expect((await ruleOf(489000n))!.decision).toBe('exclude');
   });

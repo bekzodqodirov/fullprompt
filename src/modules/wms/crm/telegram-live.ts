@@ -228,9 +228,8 @@ export type LiveVerdict =
   /**
    * A chat somebody attached to a lead by hand, from the tray (0065) — or a
    * door did (round 113's website rule), or the listener did (a work number's
-   * hidden-number lead), or a work number kept it on its lead by the phone
-   * (`keptOnLead`). The lead already exists, so unlike `openLead` there is
-   * nothing to mint and nothing to name — only where to put the message.
+   * hidden-number lead). The lead already exists, so unlike `openLead` there
+   * is nothing to mint and nothing to name — only where to put the message.
    */
   | { store: true; leadId: string; row: MessageRow }
   /**
@@ -370,13 +369,8 @@ export function decideIncoming(
     : { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
 }
 
-/**
- * A line filed on a lead the chat already belongs to — a rule's, or the open
- * lead a work number kept the chat on before the switch went back (chat-lead
- * `settlePassedChat`, whose answer turns a passed-over line into this). The
- * same «nothing in it» refusal every stored verdict makes.
- */
-export function keptOnLead(peer: DialogPeer, msg: RawMessage, leadId: string): LiveVerdict {
+/** A line filed on the lead its chat's rule names — the same «nothing in it» refusal every stored verdict makes. */
+function keptOnLead(peer: DialogPeer, msg: RawMessage, leadId: string): LiveVerdict {
   const row = toMessageRow(peer.id, msg);
   if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
   return { store: true, leadId, row };

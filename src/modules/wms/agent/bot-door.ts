@@ -712,6 +712,10 @@ const OFFICIAL_CHAT_WORDS =
 async function reopenStrangerCard(staffId: string, ruleId: string): Promise<void> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule || rule.decision !== 'pending') return;
+  // One of Telegram's own accounts is no stranger to ask about (the sweep's
+  // `officialPeerSql`): an old echo card's ↩ takes its bind back and posts nothing.
+  const { officialChat } = await import('../crm/chat-rules');
+  if (officialChat(rule.peerId)) return;
   const [live] = await db
     .select({ id: notifications.id })
     .from(notifications)
@@ -754,10 +758,13 @@ function decidedWords(rule: RuleRow): string {
  * binding is nobody's answer, so a press on its chat is the FIRST decision
  * and wins (the 2026-10-29 review — it was refused «allaqachon hal
  * qilingan», and the AI went on drafting for a chat he called private).
- * «🚫 Shaxsiy» then also deletes what the listener stored on its own say-so
- * (`purgeExcludedChat`, `excludeAndPurgeChat`'s rule), «🆕 Yangi lid» makes
- * the binding his, «👤 Mijoz — kod» moves the chat onto the client. Telegram's
- * own accounts (`officialChat`) take no answer but «Shaxsiy», in words.
+ * «🆕 Yangi lid» makes the binding his, «👤 Mijoz — kod» moves the chat onto
+ * the client. «🚫 Shaxsiy» on ANY chat no person answered — the binding, or
+ * a question beside which a work number kept the lines by the number — also
+ * deletes what was stored of it on the listener's say-so, a lead's lines and
+ * never a client's (`storedOnLeadsOnly`; `purgeExcludedChat`,
+ * `excludeAndPurgeChat`'s rule). Telegram's own accounts (`officialChat`)
+ * take no answer but «Shaxsiy», in words.
  */
 async function strangerPress(
   staffId: string,
@@ -769,7 +776,7 @@ async function strangerPress(
   if (!rule || rule.managerUserId !== staffId) return { toast: 'Topilmadi' };
   const ctx = { actorId: staffId };
   const { decideChat, officialChat, openLeadForChat, purgeExcludedChat } = await import('../crm/chat-rules');
-  const { isMachineBinding } = await import('../crm/chat-lead');
+  const { isMachineBinding, nobodyDecided, storedOnLeadsOnly } = await import('../crm/chat-lead');
   if (officialChat(rule.peerId) && (op === 'n' || op === 'k' || op === 'c')) {
     await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
@@ -786,11 +793,16 @@ async function strangerPress(
     }
   }
   if (op === 'x') {
+    // What is stored of a chat no person had answered was kept on the
+    // listener's say-so — its own binding, or a work number's lead by the
+    // number while this card's question still stood (the second 2026-10-29
+    // review: «saqlanmaydi» answered and the lines stayed) — and «Shaxsiy»
+    // takes that past too, as the conversation's own «qo'shma» does. Never
+    // a client's line (`storedOnLeadsOnly`), and never past a person's answer
+    // (a ↩ is one). Asked BEFORE the press writes its own.
+    const purgeable = nobodyDecided(rule) && (await storedOnLeadsOnly(staffId, rule.peerId));
     await decideChat({ id: ruleId, decision: 'exclude' }, ctx);
-    // The listener stored this chat on its own say-so — «Shaxsiy» takes that
-    // past too, as the conversation's own «qo'shma» does. A question's chat
-    // has nothing stored to take.
-    const purged = machine ? await purgeExcludedChat(ruleId, ctx) : null;
+    const purged = purgeable ? await purgeExcludedChat(ruleId, ctx) : null;
     await db
       .update(agentConversations)
       .set({ identityClientId: null, identityStrength: null, updatedAt: new Date() })

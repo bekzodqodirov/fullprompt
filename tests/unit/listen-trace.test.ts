@@ -323,6 +323,9 @@ describe('passedLine — why the AI did not see a line, never who', () => {
     expect(passedLine({ reason: 'not_a_client', phone: '+998 90 123 45 67' })).toContain('…4567 raqami mijozlar ro‘yxatida yo‘q');
     expect(passedLine({ reason: 'excluded', phone: null })).toContain('«olinmasin»');
     expect(passedLine({ reason: 'unresolved', phone: null })).toContain('aniqlab bermadi');
+    // A chat a person's ↩ holds on the tray: where to answer it, in his words.
+    expect(passedLine({ reason: 'held', phone: '998901234567' })).toContain('«Qaysi chatlar»da javobingizni kutyapti (↩)');
+    expect(passedLine({ reason: 'held', phone: '998901234567' })).not.toMatch(/\d{3}/);
   });
 
   it('only the stranger the tray already lists is shown by a number — and by four digits', () => {
@@ -369,9 +372,10 @@ describe('the listener asks through it (source shape)', () => {
     expect(unresolved.indexOf('isTelegramServiceNotice(bare, msg.out === true)')).toBeLessThan(unresolved.indexOf("passedLine({ reason: 'unresolved'"));
   });
 
-  it('every passedLine is behind the agent-account gate — exactly two call sites, both gated', () => {
+  it('every passedLine is behind the agent-account gate — exactly three call sites, all gated', () => {
+    // The third: a work number's hidden-number line the door refused under a person's ↩ (the second 2026-10-29 review).
     const sites = [...src.matchAll(/passedLine\(\{/g)].map((m) => m.index!);
-    expect(sites).toHaveLength(2);
+    expect(sites).toHaveLength(3);
     for (const at of sites) {
       expect(src.slice(Math.max(0, at - 260), at)).toMatch(/msg\.out !== true && \(await agentHere\(\)\.catch\(\(\) => false\)\)/);
     }

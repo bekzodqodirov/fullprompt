@@ -79,7 +79,25 @@ export function officialPeerSql(peerId: AnyColumn | SQL): SQL {
  * open (`leadOpen`).
  */
 export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatRule>> {
-  const rows = await db
+  const rows = await ruleRows(eq(tgChatRules.managerUserId, managerUserId));
+  return new Map(rows.map((r) => [r.peerId, toChatRule(r)]));
+}
+
+/**
+ * ONE chat's rule, in `rulesFor`'s own shape — for the listener's map after a
+ * line the work number's door refused (chat-lead `phonelessLeadForChat`
+ * answered null): the refusal is about this chat alone, so its entry is read
+ * again and not the account's whole book of rules. That re-read ran once per
+ * LINE of a chat a person's ↩ holds on the tray (the second 2026-10-29
+ * review) — every rule of the account, for the same answer each time.
+ */
+export async function chatRuleFor(managerUserId: string, peerId: bigint): Promise<ChatRule | undefined> {
+  const [row] = await ruleRows(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId))!);
+  return row ? toChatRule(row) : undefined;
+}
+
+function ruleRows(where: SQL) {
+  return db
     .select({
       peerId: tgChatRules.peerId,
       decision: tgChatRules.decision,
@@ -94,22 +112,19 @@ export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatR
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
     .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
     .leftJoin(leadStages, eq(leads.stageId, leadStages.id))
-    .where(eq(tgChatRules.managerUserId, managerUserId));
+    .where(where);
+}
 
-  return new Map(
-    rows.map((r) => [
-      r.peerId,
-      {
-        peerId: r.peerId,
-        decision: r.decision as ChatRule['decision'],
-        clientId: r.clientId,
-        clientCode: r.clientCode,
-        leadId: r.leadId,
-        machine: isMachineBinding(r),
-        leadOpen: r.leadId ? r.leadStageKind === 'open' : undefined,
-      },
-    ]),
-  );
+function toChatRule(r: Awaited<ReturnType<typeof ruleRows>>[number]): ChatRule {
+  return {
+    peerId: r.peerId,
+    decision: r.decision as ChatRule['decision'],
+    clientId: r.clientId,
+    clientCode: r.clientCode,
+    leadId: r.leadId,
+    machine: isMachineBinding(r),
+    leadOpen: r.leadId ? r.leadStageKind === 'open' : undefined,
+  };
 }
 
 export interface CandidateInput {

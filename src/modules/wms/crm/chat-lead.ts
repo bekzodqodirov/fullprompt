@@ -534,11 +534,12 @@ export async function keptClientOfChat(
  *    which is what it would have had if Telegram had shown the number from
  *    the first line: the book files it, and a later hidden line goes where its
  *    rows are (`keptClientOfChat`);
- *  - `lead_closed` — its lead was won or lost and a PERSONAL number passed the
- *    next line over (`settlePassedChat`): a closed lead writing again is a new
- *    enquiry (round 79), and on a personal number a new stranger is a
- *    question — which the binding's row, kept, would stop anybody from ever
- *    asking (the stranger card wants a «pending» row, the tray lists one).
+ *  - `lead_closed` — its lead was won or lost and a PERSONAL number passed
+ *    the chat's next INBOUND line over (`settlePassedChat`): a closed lead
+ *    writing again is a new enquiry (round 79), and on a personal number a
+ *    new stranger is a question — which the binding's row, kept, would stop
+ *    anybody from ever asking (the stranger card wants a «pending» row, the
+ *    tray lists one).
  *    Asked only of a lead that is closed IN the statement, not in the
  *    listener's ten-minute map.
  *
@@ -584,72 +585,63 @@ export async function retireMachineBinding(
 }
 
 /**
- * The open lead a chat is already KEPT on by its own stored rows, with no
- * person's answer over it — or null. The rows of a chat no rule names are on
- * a lead for one reason only: a work number kept them (the phone path finds
- * its lead by the number on every line and writes no rule), and a person's
- * answer (a ↩, «never», a client) is a rule that outranks them.
+ * Whether «🚫 Shaxsiy» may take what is stored of a chat with it: there are
+ * stored lines, and every one of them is on a LEAD — none on a client. Asked
+ * by the stranger card's press (agent bot-door `strangerPress`) only for a
+ * chat no person had answered (`nobodyDecided`): its lines were kept on the
+ * listener's say-so — its own binding, a work number's lead by the number
+ * while a personal number's question about the same chat still stood, or a
+ * binding whose closed lead was retired (`settlePassedChat`) — and the press
+ * that says «this chat is private» says so of them too (the 2026-10-29
+ * review: «saqlanmaydi» answered while the lines stayed). A line on a client
+ * is a client's history, which a press about a stranger is never the door
+ * to delete: the tray's purge after «hech qachon» stays that (#388).
  */
-export async function keptLeadOfChat(managerUserId: string, peerId: bigint): Promise<string | null> {
-  const [rule] = await db
+export async function storedOnLeadsOnly(managerUserId: string, peerId: bigint): Promise<boolean> {
+  const [row] = await db
     .select({
-      decision: tgChatRules.decision,
-      decidedBy: tgChatRules.decidedBy,
-      clientId: tgChatRules.clientId,
-      leadId: tgChatRules.leadId,
-      boundVia: boundViaSql,
+      lines: sql<number>`count(*)::int`,
+      onClient: sql<number>`count(*) FILTER (WHERE ${tgMessages.clientId} IS NOT NULL)::int`,
     })
-    .from(tgChatRules)
-    .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)));
-  if (rule && !nobodyDecided(rule)) return null;
-  // The newest row, by Telegram's own id inside a second (keptClientOfChat's order).
-  const [newest] = await db
-    .select({ leadId: tgMessages.leadId, clientId: tgMessages.clientId })
     .from(tgMessages)
-    .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)))
-    .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
-    .limit(1);
-  // A row on a client too is the won lead's customer — the client's, not a lead's.
-  if (!newest?.leadId || newest.clientId) return null;
-  const [lead] = await db
-    .select({ kind: leadStages.kind })
-    .from(leads)
-    .innerJoin(leadStages, eq(leadStages.id, leads.stageId))
-    .where(eq(leads.id, newest.leadId));
-  return lead?.kind === 'open' ? newest.leadId : null;
+    .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)));
+  return (row?.lines ?? 0) > 0 && row?.onClient === 0;
 }
 
 /**
  * A line the SWITCH passed over (`ask` — a visible stranger on a personal
- * number; `no_phone` — a hidden one) on a chat that is no new stranger.
- * His rule for the switch (the 2026-10-29 review): «Ish raqami / Shaxsiy
- * raqam» decides about NEW strangers only — a chat the work number already
- * kept goes on being kept after the switch goes back, or a known lead's
- * customer would fall into a hole (not stored, and — a hidden number — never
- * asked about either).
+ * number; `no_phone` — a hidden one), asked whether its chat is a new
+ * stranger's again: the listener's own binding whose lead has CLOSED is
+ * retired (`lead_closed`), so the chat is asked about on the tray, and on the
+ * AI's account by a fresh «📵» card (`reopened` — its claim given back).
  *
- *  - the listener's own binding whose lead has CLOSED is retired
- *    (`lead_closed`), so the chat is a new stranger's again: asked on the
- *    tray, and on the AI's account by a fresh «📵» card (`reopened`);
- *  - a chat kept on an OPEN lead by its own rows (`keptLeadOfChat`) — the
- *    visible-number twin of the listener's binding, which writes no rule —
- *    stays on that lead (`leadId`). The listener's binding itself never
- *    reaches here: `decideIncoming` stores its lines whatever the switch says.
+ * The switch decides about NEW strangers only (his rule, the 2026-10-29
+ * review), and what is NOT new is decided by a RULE, never by rows: the
+ * listener's binding stands while its lead is open whatever the switch says
+ * (`decideIncoming`), a person's or a door's answer as always. A visible
+ * number a work number kept on its lead by the number (the phone path writes
+ * no rule) is a personal number's tray question again — that question CAN be
+ * asked, and the tray's «Lid ochish» files the chat on the same open lead
+ * (`leadForChat` finds it by the number). The first cut kept such a chat by
+ * its rows, which no tray lists and no «hech qachon» could stop, and kept it
+ * while a question about it was still standing (the second review).
  *
- * Asked only for a line not kept; nothing about the line is read or written
- * here but which chat it is.
+ * An INBOUND line only: a closed lead WRITING again is the new enquiry, the
+ * manager's own line is not — and its `reopened` would be spent, because the
+ * card's note (`noteStranger`) is never asked about a line of his own (the
+ * second review: the claim was not given back, the card never came).
+ *
+ * Nothing about the line is read or written here but which chat it is.
  */
 export async function settlePassedChat(
   managerUserId: string,
   peerId: bigint,
   rule: { machine?: boolean; leadOpen?: boolean } | undefined,
+  direction: 'in' | 'out',
   ctx: AuditContext,
-): Promise<{ leadId: string | null; reopened: boolean }> {
-  if (rule?.machine === true && rule.leadOpen === false) {
-    const reopened = await retireMachineBinding(managerUserId, peerId, ctx, 'lead_closed');
-    if (reopened) return { leadId: null, reopened };
-  }
-  return { leadId: await keptLeadOfChat(managerUserId, peerId), reopened: false };
+): Promise<{ reopened: boolean }> {
+  if (direction !== 'in' || rule?.machine !== true || rule.leadOpen !== false) return { reopened: false };
+  return { reopened: await retireMachineBinding(managerUserId, peerId, ctx, 'lead_closed') };
 }
 
 /** Where a kept line goes, and the word the listener's log prints for it. */

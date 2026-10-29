@@ -15,7 +15,10 @@ import { describe, expect, it } from 'vitest';
  *    2026-10-29 review's blocker, from the other direction);
  *  - the listener runs the live line in the order the integration file
  *    restates (`listenerLine`): a line the switch passed over is settled
- *    BEFORE it is called not kept, on both the live and the catch-up path.
+ *    BEFORE it is called not kept, by the line's DIRECTION (the manager's own
+ *    line retires nothing — the second review) — and its rows never keep it,
+ *    on the live path or the catch-up (the second review: a chat kept by its
+ *    rows had no tray question and no «hech qachon»).
  */
 const ROOT = resolve(__dirname, '../..');
 
@@ -110,22 +113,23 @@ describe('the listener settles a line the switch passed over before calling it n
   const handle = between(listener, 'const handleMessage = async', 'const rethinkOnEdit = async');
   const catchUp = between(listener, 'const catchUp = async', 'const CATCHUP_RETRY_MS');
 
-  it('live: after the site tag, before the not-kept branch, and its answer filed on the lead', () => {
-    const settle = handle.indexOf('await settlePassedChat(account.managerUserId, peer.id, rules.get(peer.id),');
+  it('live: after the site tag, before the not-kept branch, by the line’s direction — and a retire re-reads the rules', () => {
+    const settle = handle.indexOf('await settlePassedChat(');
     expect(settle).toBeGreaterThan(handle.indexOf('await applySiteTag(peer, msg, verdict)'));
     expect(settle).toBeLessThan(handle.indexOf('if (!verdict.store) {'));
     const step = handle.slice(settle, handle.indexOf('if (!verdict.store) {'));
-    expect(step).toContain('if (settled.leadId) verdict = keptOnLead(peer, msg, settled.leadId);');
+    expect(step).toContain("msg.out === true ? 'out' : 'in',");
     expect(step).toContain('rules = await rulesFor(account.managerUserId);');
+    // The step decides nothing about the line: what is not a new stranger stands by its rule.
+    expect(step).not.toMatch(/\bverdict\s*=/);
     // The retired binding's chat is a new question — the card's claim is given back with it.
     expect(handle).toContain("await strangerSeen(peer, msg.out === true, 'ask', reopened);");
     expect(handle).toContain("await strangerSeen(peer, msg.out === true, 'no_phone', reopened);");
   });
 
-  it('catch-up: a kept chat’s missed lines go on its lead too', () => {
-    const kept = catchUp.indexOf('await keptLeadOfChat(account.managerUserId, peer.id)');
-    expect(kept).toBeGreaterThan(catchUp.indexOf('decideIncoming(peer, msg, book.clients, rules, workMode.work)'));
-    expect(kept).toBeLessThan(catchUp.indexOf('if (!verdict.store) continue;'));
-    expect(catchUp).toContain('if (keptOn) verdict = keptOnLead(peer, msg, keptOn);');
+  it('rows never keep a passed line — the catch-up decides exactly as before, and nothing names a rows road', () => {
+    expect(catchUp).toMatch(/const verdict = decideIncoming\(peer, msg, book\.clients, rules, workMode\.work\);\s*if \(!verdict\.store\) continue;/);
+    expect(listener).not.toMatch(/keptLeadOfChat|keptOnLead/);
+    expect(src(CHAT_LEAD)).not.toMatch(/keptLeadOfChat/);
   });
 });
