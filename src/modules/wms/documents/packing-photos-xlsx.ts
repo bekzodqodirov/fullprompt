@@ -13,10 +13,12 @@ import {
   warehouses,
 } from '../../platform/db/schema';
 import { getStorage } from '../../platform/files/storage';
+import { runPooled } from '../../../components/pooled';
+import { SHEET_PHOTO_PX, fitInBox, sheetPhoto, sheetPhotoKey, type SheetPhoto } from './sheet-photo';
 import { aboardFilter } from '../scanning/unload';
 import { compositionMode, paperLines, truckSegments } from '../receipts/composition-math';
 import { lotTrucksFor, paperCompositionsFor } from '../receipts/lot-composition';
-import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingProductCell } from './composition-cells';
+import { ESTIMATE_FILL, estimateNote, packingBoxesCell, packingPiecesCell, packingProductCell } from './composition-cells';
 
 /**
  * Packing list WITH photos (owner's request, feedback round 8): after loading,
@@ -84,6 +86,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   sheet.columns = [
     { header: DOC.code, key: 'code', width: 14 },
     { header: DOC.product, key: 'product', width: 40 },
+    // His 8.5: the pieces BEFORE the carton count, blank when unknown.
+    { header: DOC.pieces, key: 'pieces', width: 10 },
     { header: DOC.boxes, key: 'boxCount', width: 10 },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
@@ -113,19 +117,17 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
   ]);
   sheet.getRow(1).font = { bold: true, size: 13 };
 
-  // exceljs embeds png/jpeg only; thumbs are webp — convert.
-  const thumbs = new Map<string, Buffer>();
-  if (photoRows.length) {
-    const sharp = (await import('sharp')).default;
-    for (const att of photoRows) {
-      try {
-        const bytes = await getStorage().get(att.thumb200Key ?? att.storageKey);
-        thumbs.set(att.id, await sharp(bytes).jpeg({ quality: 70 }).toBuffer());
-      } catch {
-        /* photo unavailable — leave the cell empty */
-      }
+  // The 800-px copy, fitted into its cell (`sheet-photo.ts` — his «hira
+  // korinyabti»); four at a time, as every other photo pipe here.
+  const thumbs = new Map<string, SheetPhoto>();
+  await runPooled(photoRows, 4, async (att) => {
+    try {
+      const bytes = await getStorage().get(sheetPhotoKey(att));
+      thumbs.set(att.id, await sheetPhoto(bytes, SHEET_PHOTO_PX.document));
+    } catch {
+      /* photo unavailable — leave the cell empty */
     }
-  }
+  });
 
   // Lot tarkibi: a composed lot prints one row per line on this truck —
   // frozen while the truck is ticked «hujjat yuborildi».
@@ -134,7 +136,7 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
     lotTrucksFor(db, lotIds),
   ]);
 
-  const PHOTO_START_COL = 7; // zero-based: right after the date column
+  const PHOTO_START_COL = 8; // zero-based: right after the date column (pinned by a test reading the anchors)
   let rowNo = 3;
   for (const { lot, clientCode, marking, receivedAt, loaded } of rows) {
     const kg = (Number(lot.totalWeightKg) / lot.boxCount) * Number(loaded);
@@ -164,7 +166,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
         const row = sheet.getRow(rowNo);
         row.values = {
           code,
-          product: packingProductCell(line),
+          product: packingProductCell(line, { zh: lot.productNameZh, ru: lot.productNameRu }),
+          pieces: packingPiecesCell(line),
           boxCount: packingBoxesCell(line, mode, i === 0, Number(loaded)),
           kg: line.kg,
           m3: line.m3 ?? '',
@@ -182,6 +185,8 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       sheet.getRow(rowNo).values = {
         code,
         product: `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`,
+        // An uncomposed lot states no count anywhere — blank, his 8.5.
+        pieces: '',
         boxCount: Number(loaded),
         kg: Number(kg.toFixed(1)),
         m3: Number(m3.toFixed(3)),
@@ -200,15 +205,18 @@ export async function buildPackingPhotosXlsx(batchId: string): Promise<Buffer | 
       const thumb = thumbs.get(photoId);
       if (!thumb) return;
       const imageId = workbook.addImage({
-        buffer: thumb as unknown as ExcelJS.Buffer,
+        buffer: thumb.buffer as unknown as ExcelJS.Buffer,
         extension: 'jpeg',
       });
       sheet.addImage(imageId, {
         tl: { col: PHOTO_START_COL + i + 0.1, row: photoRow - 1 + 0.1 },
-        ext: { width: 78, height: 72 },
+        ext: fitInBox(thumb),
       });
     });
   }
 
-  return Buffer.from(await workbook.xlsx.writeBuffer());
+  // STORED, not deflated: JPEG does not shrink under deflate, and exceljs's
+  // default ran pure-JS deflate over every photograph on the one Node process
+  // — 9 s of CPU at 1,200 photos for ~1 % of size (the review).
+  return Buffer.from(await workbook.xlsx.writeBuffer({ zip: { compression: 'STORE' } }));
 }

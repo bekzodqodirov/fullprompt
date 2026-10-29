@@ -71,7 +71,62 @@ export type CalcWarningKind =
    * percentage, no «yo'q», no per-unit amount. Never a blocker — the VED
    * answers «yo'q» and it is gone.
    */
-  | 'excise_unanswered';
+  | 'excise_unanswered'
+  /**
+   * A row the BOOK filled (round 2's auto-fill puts a 📖 baza on every
+   * matching row at every save) whose price or unit is no longer the book's
+   * row of today (docs/SAKKIZ-R2.md §7.2.6). `bazaStale` reads the CURRENT
+   * book row's date, so a filled row whose book moved would read fresh while
+   * holding the old price — this says it moved. Only where today's book row
+   * exists: a row with no book answer has nothing to have moved from.
+   */
+  | 'baza_dictionary_moved'
+  /**
+   * The AI pick RECODED a row (§7.4, law-money-4): it chose a declaration from
+   * a heading's list, and the declaration's own code — and with it the duty
+   * law — is now the row's. That is a model choice of LAW, the kind the
+   * grouping model already makes and the ✅ already confirms, so the ✅ must
+   * record that a person looked at a code the machine chose. Derived from the
+   * row's `baza_reason`, whose only writer is the pick (`AI_RECODE_PREFIX`).
+   */
+  | 'ai_recode';
+
+/**
+ * The first words of the pick's `baza_reason` when it changed the row's code —
+ * «AI kodni o‘zgartirdi: 6403 → 6403991000 · <the model's reason>». ONE home:
+ * the pick writes it, the `ai_recode` warning and the seal's E1 counter read
+ * it. At the START of the reason so the save's 300-character cut can never
+ * drop it.
+ */
+export const AI_RECODE_PREFIX = 'AI kodni o‘zgartirdi: ';
+
+/** Did the AI pick recode this row? — the one reading of the prefix. */
+export function aiRecoded(bazaReason: string | null | undefined): boolean {
+  return (bazaReason ?? '').startsWith(AI_RECODE_PREFIX);
+}
+
+/**
+ * The reason a writer leaves on a row whose CODE it does not move (review
+ * P2-LAW-2): `posted` — null for a person, the pick's own words for the
+ * machine — with the AI recode mark carried over.
+ *
+ * The mark rides in `baza_reason`, the PRICE's column, but the fact it
+ * records is about the CODE: the model chose the tariff line. A writer that
+ * nulled the reason with the price it re-typed, cleared or refilled erased
+ * the `ai_recode` warning without any ✅, dropped the group out of E1's AI
+ * count, and let the seal teach the model's code to the memory as a person's.
+ * So the mark stays as long as the code does — stripped to «6403 →
+ * 6403991000», because the model's words after it explained a declaration
+ * the row no longer wears. A writer that MOVES the code posts its own reason
+ * (a person's recode clears the mark: the code is theirs now).
+ */
+export function keepRecodeMark(stored: string | null | undefined, posted: string | null): string | null {
+  if (!aiRecoded(stored) || aiRecoded(posted)) return posted;
+  const rest = stored!.slice(AI_RECODE_PREFIX.length);
+  const words = rest.indexOf(' · ');
+  const mark = AI_RECODE_PREFIX + (words === -1 ? rest : rest.slice(0, words));
+  return posted ? `${mark} · ${posted}` : mark;
+}
 
 /** A law as the book or a group states it — the five columns that price a duty. */
 export interface LawFacts {
@@ -117,6 +172,10 @@ export interface WarningGroupFacts {
     bazaUsd: number | null;
     bazaBasis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' | null;
     dictionaryBaza: { bazaUsd: number; basis: 'unit' | 'kg' | 'm3' | 'm2' | 'juft' | 'litr' } | null;
+    /** The pick's own words on this row — read for `AI_RECODE_PREFIX` only.
+     * REQUIRED (#790): an optional one would let a caller forget it and the
+     * recode would never be recorded. */
+    bazaReason: string | null;
   }[];
 }
 
@@ -213,6 +272,23 @@ export function warningsForGroup(facts: WarningGroupFacts): CalcWarningKind[] {
   if (facts.items.some((i) => i.bazaSource === 'memory' && i.bazaUsd !== null)) {
     out.push('baza_from_memory');
   }
+  // The book's own half (round 2): a 📖 row is the book's word AS OF its
+  // fill, and the book is versioned by date — so a correction typed into it
+  // this morning reaches no open job by itself. Price AND unit, as
+  // `baza_off_dictionary` compares them.
+  if (
+    facts.items.some(
+      (i) =>
+        i.bazaSource === 'dictionary' &&
+        i.bazaUsd !== null &&
+        i.dictionaryBaza !== null &&
+        (i.bazaUsd !== i.dictionaryBaza.bazaUsd || i.bazaBasis !== i.dictionaryBaza.basis),
+    )
+  ) {
+    out.push('baza_dictionary_moved');
+  }
+  // The pick chose the CODE as well as the row (round 2's heading search).
+  if (facts.items.some((i) => aiRecoded(i.bazaReason))) out.push('ai_recode');
   // A blind confirm is a CONJUNCTION and each clause earns its place: the
   // model actually proposed this group (`mergeProposals` mints orphan groups
   // with `aiProposed: false`), it said so itself with low confidence, and the

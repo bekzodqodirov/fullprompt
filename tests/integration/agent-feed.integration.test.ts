@@ -1110,7 +1110,7 @@ describe('a landing that used to throw half-way', () => {
     // STRING (a hand edit, an old import) made it throw «cannot extract
     // elements from a scalar» for every arrival with a phone. The row stands
     // only for the one call: three other readers of the client book still
-    // throw on it (stated, DECISIONS #1468).
+    // throw on it (stated, DECISIONS #1558).
     const [bad] = await db
       .insert(clients)
       .values({ clientCode: `AGT${STAMP}S`, name: NAME('skalar telefon'), phones: '+998 90 000 00 00' as unknown as string[] })

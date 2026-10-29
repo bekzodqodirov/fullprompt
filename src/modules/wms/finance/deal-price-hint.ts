@@ -11,6 +11,8 @@
  * measure — m³ first, then kg, else the whole quote. Only a dollar quote is
  * compared: a so'm quote has no honest dollar figure without a rate.
  */
+import { ownDealOf } from './truck-deal';
+
 export const PRICE_DEVIATION_LIMIT = 0.05;
 
 export interface DealQuote {
@@ -48,9 +50,15 @@ export function needsConfirmation(typedUsd: number, expectedUsd: number | null):
  * bolsa tepasida umumiy bitim qiymatlari korinsin». The price box is ONE per
  * client (his 1c), while the client's goods aboard may belong to several
  * prixods and several deals — and the deal block used to appear only when
- * all of them shared ONE deal (`soleDealOf`), so the commonest busy client
- * saw nothing at all. Each deal now gets its share of the cargo, and the
- * screen prints the sum on top.
+ * all of them shared ONE deal (R3a's sole deal), so the commonest busy
+ * client saw nothing at all. Each deal now gets its share of the cargo, and
+ * the screen prints the sum on top.
+ *
+ * Only the client's OWN deals (`ownDealOf`): a prixod re-assigned to this
+ * client still names its old client's deal, and that job's quote, floor and
+ * upsale are not this client's — such a lot reads as unlinked here, exactly
+ * as the price door treats it. `clientId` is required: an optional one would
+ * fail open.
  */
 export interface DealShare {
   dealId: string;
@@ -61,17 +69,26 @@ export interface DealShare {
 }
 
 export function dealSharesOf(
-  lots: { dealId: string | null; dealCode: string | null; m3: number; kg: number; receiptId: string }[],
+  lots: {
+    dealId: string | null;
+    dealClientId: string | null;
+    dealCode: string | null;
+    m3: number;
+    kg: number;
+    receiptId: string;
+  }[],
+  clientId: string,
 ): { shares: DealShare[]; receipts: number; unlinkedReceipts: number } {
   const byDeal = new Map<string, DealShare & { ids: Set<string> }>();
   const unlinked = new Set<string>();
   for (const lot of lots) {
-    if (!lot.dealId) {
+    const dealId = ownDealOf(lot, clientId);
+    if (!dealId) {
       unlinked.add(lot.receiptId);
       continue;
     }
-    const share = byDeal.get(lot.dealId) ?? {
-      dealId: lot.dealId,
+    const share = byDeal.get(dealId) ?? {
+      dealId,
       dealCode: lot.dealCode,
       m3: 0,
       kg: 0,
@@ -81,7 +98,7 @@ export function dealSharesOf(
     share.m3 += lot.m3;
     share.kg += lot.kg;
     share.ids.add(lot.receiptId);
-    byDeal.set(lot.dealId, share);
+    byDeal.set(dealId, share);
   }
   const shares = [...byDeal.values()].map(({ ids, ...share }) => ({
     ...share,

@@ -50,6 +50,18 @@ export function violatedCheck(err: unknown): string | null {
   return pg?.constraint_name ?? pg?.cause?.constraint_name ?? null;
 }
 
+/**
+ * The UNIQUE constraint a 23505 names, or null — `violatedCheck`'s twin, so a
+ * caller translates the one key its own race can hit and nothing else.
+ */
+export function violatedUnique(err: unknown): string | null {
+  type PgError = { code?: string; constraint_name?: string };
+  const pg = err as (PgError & { cause?: PgError }) | null;
+  const code = pg?.code ?? pg?.cause?.code;
+  if (code !== '23505') return null;
+  return pg?.constraint_name ?? pg?.cause?.constraint_name ?? null;
+}
+
 const BUSY = new Set(['40P01', '40001', '55P03']);
 /**
  * A deadlock, a serialisation failure or a lock timeout: «boshqa o'zgarish

@@ -1,0 +1,563 @@
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { db } from '../../platform/db/client';
+import {
+  agentCalcLinks,
+  agentConversations,
+  agentDrafts,
+  attachments,
+  calcRequests,
+  clients,
+  clientTelegramLinks,
+  leads,
+  tgChatRules,
+  tgMessageFlags,
+  tgMessages,
+  tgPeerIndex,
+  users,
+} from '../../platform/db/schema';
+import { phoneSiblingClients } from '../client-cabinet/service';
+import { parseManualFacts } from '../calc/intake-manual';
+import { phoneFingerprint } from '../crm/peer-index';
+import { normalizeDigits } from './digits';
+import { AGENT_LIMITS } from './limits';
+import { dominantScript, type AgentLocale, type ScriptName } from './locale';
+
+/**
+ * What one run may know (spec §17.5, review leak-1): THIS chat and nothing
+ * else. The first design searched his out messages to OTHER customers for
+ * «similar situations» — their names, factories, discounts — and a colleague
+ * whose number sits in the client book is a «customer» to the classifier. So
+ * there is no cross-chat read here at all; style comes from the guide he
+ * approved, masked.
+ *
+ * Everything is keyed by (account, Telegram person). The identity comes from
+ * the SERVER — the chat's own stored classification — never from the model or
+ * from anything the customer typed.
+ */
+
+export type IdentityStrength = 'phone' | 'cabinet' | 'rule' | 'typed_code' | 'lead';
+
+export interface ChatIdentity {
+  clientId: string | null;
+  /**
+   * The chat's lead — or, beside a client, the WON lead that client came by
+   * (final review K25): the chat's rows stay filed under the lead after the
+   * win (`storeIncoming` stamps both, `rekeyLeadChats` adds the client), and
+   * what he told the agent about this customer while it was a lead («👤 Faqat
+   * shu mijoz», a scope-'lead' fact) must still be read here. Every writer
+   * that files a row prefers the client, so it is the knowledge search that
+   * reads the pair.
+   */
+  leadId: string | null;
+  strength: IdentityStrength | null;
+  /** The chat's client and its phone siblings (fit-12), the chat's own first. */
+  codes: { id: string; clientCode: string }[];
+  customerName: string | null;
+  /** The customer's own manager — the one name a reply may carry (G6). */
+  managerName: string | null;
+  /**
+   * May the agent speak about cargo and money here? Only when the CHAT itself
+   * proves the client — its phone on the card, or the customer's own cabinet
+   * link (his Q19 ⭐, review I1). A bind a person made by hand is not proof.
+   */
+  cargoAllowed: boolean;
+}
+
+export interface ChatMessage {
+  /** «#n» — the index the model cites; resolved back by the server, never trusted. */
+  ref: string;
+  id: string;
+  tgMessageId: bigint;
+  direction: 'in' | 'out';
+  body: string;
+  media: 'photo' | 'voice' | 'audio' | 'document' | 'other' | null;
+  fileName: string | null;
+  sentAt: Date;
+  autoSent: boolean;
+  editedAt: Date | null;
+}
+
+export interface MeasureCandidate {
+  /** «w1», «v1» — what the yo'lkira tool takes instead of a figure (money-2). */
+  ref: string;
+  kind: 'weight' | 'volume';
+  value: number;
+  messageRef: string;
+}
+
+export interface AgentContext {
+  managerUserId: string;
+  peerId: bigint;
+  messages: ChatMessage[];
+  anchor: ChatMessage | null;
+  /** Inbound since our last out message, oldest first. */
+  burst: ChatMessage[];
+  lastOut: ChatMessage | null;
+  identity: ChatIdentity;
+  storedLocale: AgentLocale | null;
+  customerScript: ScriptName | null;
+  measures: MeasureCandidate[];
+  openCalcs: { requestId: string; section: string | null; createdAt: Date; status: string }[];
+  /** The chat's include rule names a lead or a client the screen decided. */
+  ruleDecision: string | null;
+  /**
+   * What we last QUOTED this chat (review R1): the road of the newest draft
+   * he approved in the last week, and the flight's cargo when it was one.
+   * The flight's address is his (fourth set «2») for as long as the flight is
+   * the chat's road, and the customer's words cannot say so — «mashina» names
+   * the goods as often as the truck. Null = nothing quoted in the week.
+   */
+  lastQuote: LastQuote | null;
+}
+
+/** A road a run priced or asked: the flight, the truck, or both in one reply. */
+export type QuotedRoad = 'air' | 'road' | 'both';
+
+/** What the card tells him so he can give the flight's address. */
+export interface AviaCargo {
+  kg: number | null;
+  origin: string | null;
+}
+
+export interface LastQuote {
+  road: QuotedRoad;
+  air: AviaCargo | null;
+  at: Date;
+  /**
+   * What went to the customer — the outbox row's body, else the draft's own
+   * (review #1538): the chat's copy of it is that quote's ECHO, and its road
+   * is the one stored here, not the one its words happen to name («Tikuv
+   * mashinasi 30 kg avia orqali …»).
+   */
+  text: string | null;
+  /** The Telegram id the quote's outbox row went out as — its echo in the chat, by identity (#1539). Null until sent. */
+  tgMessageId: bigint | null;
+  /**
+   * He rewrote it with ✏️ (#1539): what went out is HIS text, whose road the
+   * stored memory — the model's — does not know. Its echo is read by its words.
+   */
+  edited: boolean;
+}
+
+/** Pure: a stored draft's memory as a quote, or null — a memory written before it, or one that quoted nothing. */
+export function lastQuoteOf(
+  memory: unknown,
+  at: Date,
+  sent: { text?: string | null; tgMessageId?: bigint | null; edited?: boolean } = {},
+): LastQuote | null {
+  const m = (memory ?? {}) as { quotedRoad?: unknown; quotedAir?: unknown };
+  if (m.quotedRoad !== 'air' && m.quotedRoad !== 'road' && m.quotedRoad !== 'both') return null;
+  const a = (m.quotedAir ?? null) as { kg?: unknown; origin?: unknown } | null;
+  const air = a && typeof a === 'object'
+    ? { kg: typeof a.kg === 'number' ? a.kg : null, origin: typeof a.origin === 'string' ? a.origin : null }
+    : null;
+  return { road: m.quotedRoad, air, at, text: sent.text ?? null, tgMessageId: sent.tgMessageId ?? null, edited: sent.edited === true };
+}
+
+export function mediaOf(contentType: string | null, fileName: string | null): ChatMessage['media'] {
+  if (!contentType) return null;
+  if (contentType.startsWith('image/')) return 'photo';
+  if (contentType.startsWith('audio/')) return /voice/iu.test(fileName ?? '') || contentType.includes('ogg') ? 'voice' : 'audio';
+  return 'document';
+}
+
+/** A message as the chat context holds it — digits read, clipped (money-11): what a sent text must be compared in (#1539). */
+export function chatForm(body: string): string {
+  return clip(normalizeDigits(body), AGENT_LIMITS.contextMessageChars);
+}
+
+function clip(text: string, max: number): string {
+  const chars = [...text];
+  return chars.length <= max ? text : `${chars.slice(0, max).join('')}…`;
+}
+
+const last9 = (raw: unknown): string | null => {
+  const d = (typeof raw === 'string' ? raw : '').replace(/\D/gu, '');
+  return d.length >= 9 ? d.slice(-9) : null;
+};
+
+export type ChatProof = 'phone' | 'cabinet';
+
+/**
+ * What the CHAT ITSELF carries that says it is one of these clients' person
+ * (his Q19 ⭐: «no cargo or balance until the chat's phone is on the card»;
+ * review I1). Three things count, and nothing a person typed or picked:
+ *
+ *  - the chat's phone (the tray's `peer_phone`) on one of the cards — the
+ *    client's or a phone sibling's (fit-12, the cabinet's «same person»);
+ *  - the listener's hashed peer index naming that number — the only phone a
+ *    lookback-attached chat carries (0064 stores no number, by design);
+ *  - a LINKED cabinet: the customer shared their own Telegram-verified number
+ *    with the company bot, and a private chat's id is the person's id.
+ *
+ * A hidden number has none of the first two, so a hand-made bind on one stays
+ * closed by construction until the customer links the cabinet.
+ */
+export async function chatProof(
+  managerUserId: string,
+  peerId: bigint,
+  clientIds: readonly string[],
+  peerPhone: string | null,
+): Promise<ChatProof | null> {
+  if (clientIds.length === 0) return null;
+  const cards = await db.select({ phones: clients.phones }).from(clients).where(inArray(clients.id, [...clientIds]));
+  const tails = new Set<string>();
+  const prints = new Set<string>();
+  for (const card of cards) {
+    for (const raw of Array.isArray(card.phones) ? (card.phones as unknown[]) : []) {
+      const tail = last9(raw);
+      if (!tail) continue;
+      tails.add(tail);
+      const print = phoneFingerprint(tail);
+      if (print) prints.add(print);
+    }
+  }
+  const chat = last9(peerPhone);
+  if (chat && tails.has(chat)) return 'phone';
+  if (prints.size > 0) {
+    const [indexed] = await db
+      .select({ hash: tgPeerIndex.phoneHash })
+      .from(tgPeerIndex)
+      .where(and(eq(tgPeerIndex.managerUserId, managerUserId), eq(tgPeerIndex.peerId, peerId)));
+    if (indexed && prints.has(indexed.hash)) return 'phone';
+  }
+  const [link] = await db
+    .select({ id: clientTelegramLinks.id })
+    .from(clientTelegramLinks)
+    .where(
+      and(
+        eq(clientTelegramLinks.telegramChatId, peerId),
+        eq(clientTelegramLinks.status, 'linked'),
+        inArray(clientTelegramLinks.clientId, [...clientIds]),
+      ),
+    )
+    .limit(1);
+  return link ? 'cabinet' : null;
+}
+
+/**
+ * The chat's identity, decided by the server.
+ *
+ * A chat with NO rule row was given its client by the listener's own phone
+ * classifier — that is proof — unless the chat's rows came through a LEAD
+ * (final review K9): on a work account the listener opens a stranger's chat
+ * as a lead with no rule at all, and a seller who wins that lead by attaching
+ * an existing code (winLead's attach adds no phone) has `rekeyLeadChats` put
+ * the client on those rows. Such a client is a bind a person made, and the
+ * chat must prove it exactly like a rule's — the lead's phone (the number the
+ * listener opened it by) on the card, the peer index, or the cabinet.
+ *
+ * EVERY rule-derived bind is checked against the
+ * chat (review I1), whoever made it: the echo flow's typed code, the web
+ * tray's «Bu mijoz» (a stranger card exists only because the number was NOT
+ * on any card, leak-4), a lookback attach, and messages a rule stored before
+ * it was taken back (↩, a second code, the web tray's «pending» or
+ * «Shaxsiy») — their `client_id` / `lead_id` outlive the decision.
+ *
+ * Such leftovers are HISTORY, not identity: when the rule no longer includes
+ * the chat, a stored client stands only if the chat itself proves it, and a
+ * stored lead not at all. «It serves no cargo» was not enough — the client's
+ * id still scoped the knowledge search, named the customer in the prompt,
+ * and carried a calculation approved later onto that client's deal (review
+ * I1/I7).
+ */
+export async function chatIdentity(managerUserId: string, peerId: bigint): Promise<ChatIdentity & { ruleDecision: string | null }> {
+  const [newest] = await db
+    .select({ clientId: tgMessages.clientId, leadId: tgMessages.leadId })
+    .from(tgMessages)
+    .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId)))
+    .orderBy(desc(tgMessages.sentAt))
+    .limit(1);
+  const [rule] = await db
+    .select({ decision: tgChatRules.decision, clientId: tgChatRules.clientId, leadId: tgChatRules.leadId, peerPhone: tgChatRules.peerPhone })
+    .from(tgChatRules)
+    .where(and(eq(tgChatRules.managerUserId, managerUserId), eq(tgChatRules.peerId, peerId)))
+    .limit(1);
+  const [conv] = await db
+    .select({ strength: agentConversations.identityStrength, clientId: agentConversations.identityClientId })
+    .from(agentConversations)
+    .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
+
+  let clientId = newest?.clientId ?? null;
+  // The lead the chat's rows came through: the newest row's for a lead chat;
+  // beside a client, the newest row that names ANY lead — our own reply is
+  // filed under the client alone, so «the newest row» would forget the lead
+  // the moment the agent answered once (K9, K25).
+  const [leadRow] = clientId
+    ? await db
+        .select({ leadId: tgMessages.leadId })
+        .from(tgMessages)
+        .where(and(eq(tgMessages.managerUserId, managerUserId), eq(tgMessages.peerId, peerId), isNotNull(tgMessages.leadId)))
+        .orderBy(desc(tgMessages.sentAt))
+        .limit(1)
+    : [{ leadId: newest?.leadId ?? null }];
+  const leadById = async (id: string) => {
+    const [row] = await db
+      .select({ id: leads.id, name: leads.name, ownerId: leads.ownerId, phone: leads.phone, clientId: leads.clientId })
+      .from(leads)
+      .where(eq(leads.id, id));
+    return row;
+  };
+  let lead = leadRow?.leadId ? await leadById(leadRow.leadId) : undefined;
+  // Beside a client, only the lead that WAS this client — the win (K25).
+  let leadId = lead && (!clientId || lead.clientId === clientId) ? lead.id : null;
+  let strength: IdentityStrength | null = null;
+  let codes: { id: string; clientCode: string }[] = clientId ? await phoneSiblingClients(clientId) : [];
+  // An include written AFTER the stored rows is the chat's owner from the
+  // moment it is written (ident fix F1): the tray's «Qo'shish» on another
+  // code, its «Yangi lid» from a stale tab, a card's «Chatni qo'shish». The
+  // listener files the NEXT message under it, and until that message the rows
+  // still name the customer the chat was taken from — whose name, codes and
+  // card a ✅ would otherwise carry. The same person is not a move: a phone
+  // sibling of the stored client (fit-12), or the lead that client was won
+  // from (K25).
+  if (rule?.decision === 'include') {
+    if (rule.clientId && !codes.some((c) => c.id === rule.clientId)) {
+      clientId = rule.clientId;
+      codes = await phoneSiblingClients(clientId);
+      leadId = lead && lead.clientId === clientId ? lead.id : null;
+    } else if (!rule.clientId && rule.leadId && rule.leadId !== leadId) {
+      lead = await leadById(rule.leadId);
+      const won = Boolean(clientId) && lead?.clientId === clientId;
+      if (!won) {
+        clientId = null;
+        codes = [];
+      }
+      leadId = lead?.id ?? null;
+    }
+  }
+  let customerName: string | null = null;
+  let managerId: string | null = null;
+  let cargoAllowed = false;
+  // Only the chat's own proof is asked of a rule-derived client, once — and of
+  // a rule-less one whose rows came through a lead, by the number the lead was
+  // opened by (K9).
+  const proofPhone = rule ? rule.peerPhone : lead ? lead.phone : null;
+  const proof = clientId && (rule || lead) ? await chatProof(managerUserId, peerId, codes.map((x) => x.id), proofPhone) : null;
+  if (rule && rule.decision !== 'include' && proof === null) {
+    // Taken back: the stored messages name nobody this chat now is.
+    clientId = null;
+    leadId = null;
+    codes = [];
+  }
+  if (clientId) {
+    const [c] = await db
+      .select({ name: clients.name, managerId: clients.salesManagerId })
+      .from(clients)
+      .where(eq(clients.id, clientId));
+    customerName = c?.name ?? null;
+    managerId = c?.managerId ?? null;
+    if (!rule && lead) {
+      // A lead a person turned into this client: proven by the chat, or not at all (K9).
+      cargoAllowed = proof !== null;
+      strength = proof ?? 'lead';
+    } else if (!rule) {
+      strength = 'phone';
+      cargoAllowed = true;
+    } else {
+      const named = rule.decision === 'include' && rule.clientId === clientId;
+      const typed = named && conv?.strength === 'typed_code' && conv.clientId === clientId;
+      cargoAllowed = proof !== null;
+      strength = typed ? 'typed_code' : named ? 'rule' : (proof ?? 'rule');
+    }
+  } else if (leadId) {
+    strength = 'lead';
+    customerName = lead?.name ?? null;
+    managerId = lead?.ownerId ?? null;
+  }
+  let managerName: string | null = null;
+  if (managerId) {
+    const [u] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, managerId));
+    managerName = u?.name ?? null;
+  }
+  return { clientId, leadId, strength, codes, customerName, managerName, cargoAllowed, ruleDecision: rule?.decision ?? null };
+}
+
+/**
+ * Is the chat no longer the customer a reply was written for — a draft
+ * waiting for his ✅, or an approved one waiting to leave? The client by any
+ * of the chat's phone-sibling codes (fit-12); with no client on the reply,
+ * its lead, which a WON lead still is (`chatIdentity` keeps it beside its
+ * client, K25). A reply that named nobody names nobody to change. ONE rule
+ * for the ✅ (decide.ts) and for the tray's withdrawal (drafts
+ * `withdrawMovedReplies`), so the two cannot disagree about who is the same
+ * person (ident fix F11).
+ */
+export function bindMoved(
+  was: { clientId: string | null; leadId: string | null },
+  now: Pick<ChatIdentity, 'codes' | 'leadId'>,
+): boolean {
+  if (!was.clientId && !was.leadId) return false;
+  if (was.clientId) return !now.codes.some((c) => c.id === was.clientId);
+  return now.leadId !== was.leadId;
+}
+
+/** The chat's live messages, newest `limit`, oldest first — deleted ones never (leak-8). */
+export async function chatMessages(managerUserId: string, peerId: bigint, limit: number = AGENT_LIMITS.contextMessages): Promise<ChatMessage[]> {
+  const rows = await db
+    .select({
+      id: tgMessages.id,
+      tgMessageId: tgMessages.tgMessageId,
+      direction: tgMessages.direction,
+      body: tgMessages.body,
+      hasMedia: tgMessages.hasMedia,
+      sentAt: tgMessages.sentAt,
+      editedAt: tgMessages.editedAt,
+      autoSent: tgMessageFlags.autoSent,
+    })
+    .from(tgMessages)
+    .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
+    .where(
+      and(
+        eq(tgMessages.managerUserId, managerUserId),
+        eq(tgMessages.peerId, peerId),
+        isNull(tgMessageFlags.deletedAt),
+      ),
+    )
+    .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
+    .limit(limit);
+  rows.reverse();
+  const ids = rows.filter((r) => r.hasMedia).map((r) => r.id);
+  const files = ids.length
+    ? await db
+        .select({ entityId: attachments.entityId, contentType: attachments.contentType, fileName: attachments.fileName })
+        .from(attachments)
+        .where(and(eq(attachments.entityType, 'tg_message'), inArray(attachments.entityId, ids)))
+        .orderBy(asc(attachments.createdAt))
+    : [];
+  const fileOf = new Map(files.map((f) => [f.entityId, f]));
+
+  let total = 0;
+  const out: ChatMessage[] = [];
+  // Newest kept when the history is longer than the budget (money-11).
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const r = rows[i]!;
+    const body = chatForm(r.body ?? '');
+    if (total + body.length > AGENT_LIMITS.contextTotalChars && out.length > 0) break;
+    total += body.length;
+    const f = fileOf.get(r.id);
+    out.unshift({
+      ref: '',
+      id: r.id,
+      tgMessageId: r.tgMessageId,
+      direction: r.direction === 'out' ? 'out' : 'in',
+      body,
+      media: r.hasMedia ? (mediaOf(f?.contentType ?? null, f?.fileName ?? null) ?? 'other') : null,
+      fileName: f?.fileName ?? null,
+      sentAt: r.sentAt,
+      autoSent: r.autoSent === true,
+      editedAt: r.editedAt,
+    });
+  }
+  out.forEach((m, i) => (m.ref = `#${i + 1}`));
+  return out;
+}
+
+/** The figures a customer stated, each as a REFERENCE the yo'lkira tool can take (money-2). */
+export function measureCandidates(messages: readonly ChatMessage[]): MeasureCandidate[] {
+  const out: MeasureCandidate[] = [];
+  let w = 0;
+  let v = 0;
+  for (const m of messages) {
+    if (m.direction !== 'in' || !m.body) continue;
+    const facts = parseManualFacts(m.body);
+    if (Number(facts.weightKg) > 0) out.push({ ref: `w${++w}`, kind: 'weight', value: Number(facts.weightKg), messageRef: m.ref });
+    if (Number(facts.volumeM3) > 0) out.push({ ref: `v${++v}`, kind: 'volume', value: Number(facts.volumeM3), messageRef: m.ref });
+  }
+  return out;
+}
+
+/** The dominant script of the customer's last five inbound messages with ≥ 3 letters (fit-6). */
+export function customerScriptOf(messages: readonly ChatMessage[]): ScriptName | null {
+  const texts = messages
+    .filter((m) => m.direction === 'in' && [...m.body.matchAll(/\p{L}/gu)].length >= 3)
+    .slice(-5)
+    .map((m) => m.body);
+  if (texts.length === 0) return null;
+  const s = dominantScript(texts.join('\n'));
+  return s === 'none' ? null : s;
+}
+
+/** The whole context for a run. */
+/** The newest draft he APPROVED this week that priced or asked a road (review R1) — a pending or rejected one quoted nobody. */
+export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promise<LastQuote | null> {
+  const [quoted] = await db
+    .select({
+      memory: sql<unknown>`${agentDrafts.policy}->'memory'`,
+      at: agentDrafts.createdAt,
+      text: sql<string | null>`coalesce((SELECT o.body FROM agent_outbox o WHERE o.draft_id = ${agentDrafts}.id ORDER BY o.queued_at DESC LIMIT 1), ${agentDrafts.finalBody}, ${agentDrafts.proposedBody})`,
+      tgMessageId: sql<string | null>`(SELECT o.tg_message_id::text FROM agent_outbox o WHERE o.draft_id = ${agentDrafts}.id AND o.tg_message_id IS NOT NULL ORDER BY o.queued_at DESC LIMIT 1)`,
+      edited: sql<boolean>`(${agentDrafts.finalBody} IS NOT NULL AND ${agentDrafts.finalBody} IS DISTINCT FROM ${agentDrafts.proposedBody})`,
+    })
+    .from(agentDrafts)
+    .where(
+      and(
+        eq(agentDrafts.managerUserId, managerUserId),
+        eq(agentDrafts.peerId, peerId),
+        eq(agentDrafts.status, 'approved'),
+        gte(agentDrafts.createdAt, new Date(Date.now() - 7 * 86_400_000)),
+        sql`${agentDrafts.policy}->'memory'->>'quotedRoad' IS NOT NULL`,
+      ),
+    )
+    .orderBy(desc(agentDrafts.createdAt))
+    .limit(1);
+  return quoted
+    ? lastQuoteOf(quoted.memory, quoted.at, {
+        text: quoted.text,
+        tgMessageId: quoted.tgMessageId === null ? null : BigInt(quoted.tgMessageId),
+        edited: quoted.edited === true,
+      })
+    : null;
+}
+
+export async function loadContext(managerUserId: string, peerId: bigint, anchorTgMessageId: bigint | null): Promise<AgentContext> {
+  const [identity, messages] = await Promise.all([chatIdentity(managerUserId, peerId), chatMessages(managerUserId, peerId)]);
+  const lastOutIndex = messages.map((m) => m.direction).lastIndexOf('out');
+  const lastOut = lastOutIndex >= 0 ? messages[lastOutIndex]! : null;
+  const burst = messages.slice(lastOutIndex + 1).filter((m) => m.direction === 'in');
+  const anchor =
+    anchorTgMessageId === null
+      ? ([...messages].reverse().find((m) => m.direction === 'in') ?? null)
+      : (messages.find((m) => m.tgMessageId === anchorTgMessageId) ?? null);
+  const [conv] = await db
+    .select({ locale: agentConversations.locale })
+    .from(agentConversations)
+    .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)));
+  const calcs = await db
+    .select({
+      requestId: agentCalcLinks.requestId,
+      section: calcRequests.section,
+      completedAt: calcRequests.completedAt,
+      returnReason: calcRequests.returnReason,
+      createdAt: agentCalcLinks.createdAt,
+    })
+    .from(agentCalcLinks)
+    .innerJoin(calcRequests, eq(calcRequests.id, agentCalcLinks.requestId))
+    .where(and(eq(agentCalcLinks.managerUserId, managerUserId), eq(agentCalcLinks.peerId, peerId)))
+    .orderBy(desc(agentCalcLinks.createdAt))
+    .limit(5);
+  const lastQuote = await lastQuoteFor(managerUserId, peerId);
+  return {
+    managerUserId,
+    peerId,
+    messages,
+    anchor,
+    burst,
+    lastOut,
+    identity,
+    storedLocale: (conv?.locale as AgentLocale | null) ?? null,
+    customerScript: customerScriptOf(messages),
+    measures: measureCandidates(messages),
+    openCalcs: calcs.map((c) => ({
+      requestId: c.requestId,
+      section: c.section ?? null,
+      createdAt: c.createdAt,
+      // Words, never the answer's amount (leak-10): the model learns that a
+      // price exists, not what it is.
+      status: c.completedAt ? (c.returnReason ? 'returned' : 'answered') : 'open',
+    })),
+    ruleDecision: identity.ruleDecision,
+    lastQuote,
+  };
+}
+

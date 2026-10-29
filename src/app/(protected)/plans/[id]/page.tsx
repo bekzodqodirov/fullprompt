@@ -24,6 +24,7 @@ import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { planRoadReady, roadOfVersion } from '@/modules/wms/planning/road';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -79,6 +80,10 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
     [...new Set(lines.map(({ line }) => line.lotId))],
     plan.originWarehouseId,
   );
+  // Yo'ldagi yuk (docs/YOLDAGI-YUK.md §9): each line's road part, and after
+  // the approval what of it is still awaited, came, or never came.
+  const roadByLine = current ? await roadOfVersion(db, await planRoadReady(), current.id) : new Map();
+  const approved = current?.agentVerdict === 'approved';
 
   return (
     <div className="mx-auto max-w-lg space-y-4 md:max-w-3xl">
@@ -156,6 +161,20 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
             </span>
             <span className="font-semibold">
               {line.plannedBoxCount}/{lot.boxCount} 📦
+              {roadByLine.has(line.id) && (
+                <span className="block text-right text-2xs font-semibold text-brand-700" data-testid="plan-road-part">
+                  🚚 {t('roadPart', { n: roadByLine.get(line.id)!.part })}
+                  {approved && roadByLine.get(line.id)!.owed > 0 && (
+                    <> · {t('roadAwaited', { n: roadByLine.get(line.id)!.owed })}</>
+                  )}
+                  {approved && roadByLine.get(line.id)!.came > 0 && (
+                    <> · {t('roadCame', { n: roadByLine.get(line.id)!.came })}</>
+                  )}
+                  {roadByLine.get(line.id)!.missed > 0 && (
+                    <span className="text-warn"> · {t('roadMissed', { n: roadByLine.get(line.id)!.missed })}</span>
+                  )}
+                </span>
+              )}
             </span>
             <span className="whitespace-nowrap text-ink-500">
               {line.plannedKg} kg · {line.plannedM3} m³

@@ -132,6 +132,10 @@ pnpm build && pnpm e2e  # 44 e2e
   Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
   install downloaded it), or each code change re-fetches it and a deploy dies
   on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
+- **`next build` needs more than V8's ~2 GB default heap** since the 2026-10-29
+  merge: run it as `NODE_OPTIONS=--max-old-space-size=3072 pnpm build`, the
+  image's own heap (Dockerfile) and CI's (#1543). Without it the build dies
+  with «JavaScript heap out of memory» while everything else is green.
 
 ## Where the truth lives
 
@@ -159,6 +163,10 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; R3 designed (`docs/SAKKIZ-R3.md`); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
+| The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
+| A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 
 ## State — 2026-08-23
 
@@ -2962,7 +2970,274 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Latest migration: 0135** (`load_mode`, `when` …114; ledger must reach **136**). Before
+**Round — Sakkiz band, round 1 (2026-10-21; DECISIONS #1455-#1462; NO
+migration; spec `docs/SAKKIZ-BAND.md`, his answers §11).** The VED rota: free
+first, then fewest handed TODAY, then longest wait, then id, picked INSIDE both
+landing transactions under `pg_advisory_xact_lock(hashtext('ved-rota'))`
+(`nextVedAssigneeInTx(tx, pool)`; his «faqat Murodga» = the NULL tie, reproduced
+`[9,0,0]` → `[3,3,3]`); admins holding the `ved_manager` ROLE join (5.7). The
+bot: `analyzeIntake` answers `{ok}|{ok:false, failure: AiReadFailure}` (twelve
+named, `AI_READ_FAILURE`, «🔄 AI qayta o'qisin»), 16k `max_tokens` because the
+heavy model's thinking counts inside it, own single retry, 150 s; typed goods
+lines read without the model (`readGoodsLines`, narrow, LAST in order);
+`readGoodsFile` = every sheet / content-sniffed XLSX, Excel 97 (OUR BIFF8 value
+reader `deals/xls.ts` over SheetJS's `cfb` — the full SheetJS reader is
+CVE-laden on npm and its fixed host is unreachable), HTML, XML, CSV in
+cp1251/GBK/UTF-16; the best sheet's goods, the rest + header-less sheets to the
+model as text; the header needs ≥2 cells and prefers word-like name columns. The
+collector: picture-files shown, HEIC/voice refused in words, 12 photos, 3 PDFs,
+a second invoice ASKED (`c:inv_add`/`c:inv_replace`), first message may be
+material (`looksLikeMaterial`), a phone is phone-shaped, an analysis lands only
+under its token (`settleAnalysis`) and keeps what arrived meanwhile, the confirm
+needs `stage === 'review'`, per-line answers live in `answers`, not material.
+Excel photos: `documents/sheet-photo.ts` — 800 px documents, 400 px stock, JPEG
+88, fitted into the box. The queued AI pass says when it stands down. ORACLE:
+LibreOffice is installed here — make a file with exceljs, save it as «MS Excel
+97», read it back. «шт» in packing lists (8.5) waited for round 8 — the other session's Uch band shipped it (#1470).
+
+**Then reviewed as built, and the fixes reviewed five more times (#1463-#1468).**
+Five lenses found 28 real defects of 31; each fix round's review then found
+regressions in the PREVIOUS round's fixes (35, then 41 items), because a free-text
+reader fixed one complaint at a time reopens the one before. So the readers now
+have a **regression corpus**: `tests/unit/fixtures/intake-corpus.json` (+ `.ts`
+for the cases that need code to build a file), run by
+`tests/unit/intake-corpus.test.ts` — every input any reviewer or prober ever ran,
+with the answer they said is right (~2,100 cases). `intake-corpus-known.ts` is a
+RATCHET: a known-failing case runs as `it.fails`, so one that starts passing is
+red until its id leaves the list, and a live case that starts failing is red as a
+regression. **Any change to `intake.ts`, `intake-manual.ts`, `units.ts`,
+`goods-import.ts`, `goods-file.ts`, `xls.ts`, `calc-intake.ts` or the collector
+in `staff-handlers.ts` runs the WHOLE corpus first.** Rounds 4-6 fixed against it
+(373 → 12 → 0; the probers found 134, then 65, then 85 regressions). The round-6
+probers' finds are RECORDED as known (the stopping rule) — except COMMON ones:
+the sub-rule behind a common regression is undone and the undo probed (#1466).
+144 known — all rare but «Redmi 13C» vs «Redmi 13» — each with its rule and
+severity. `otherName` compares a name's letters per script, its NUMBERS as a
+multiset however written («600*600mm» = «600×600 мм»; «iPhone 14» ≠ «iPhone
+15») and a model's TIER words after its number («iPhone 15» ≠ «iPhone 15 Pro»). Lead calls (#1465): a lead is never named by a phone (code or nobody),
+a numbered title over a one-column list is passed over, R3-C1 keeps both lines
+when their figures disagree. `pnpm typecheck` runs tsc with a **4 GB heap** — the
+program needs ~2.6 GB (#1467). `figureRow` (intake-manual.ts) is the ONE home of
+«a word and figures is a packing-list row».
+
+**Round — Sakkiz band, round 2 (2026-10-27; DECISIONS #1503-#1511 — renumbered from #1479-#1487 on the merge,
+the TWENTY-FOURTH collision; NO migration of its own — it deploys after main's 0136 and 0137, ledger 138; spec `docs/SAKKIZ-R2.md`, §15-§17
+are the reviews).** Item 2, his 2.1 b 2.2 b 2.3 a 2.4 c 2.5 b 2.6 b 2.7 b 2.9 c and
+«a a / b a / c a / d a». A baza-less row gets a 📊 MEDIAN of real China declarations of
+its exact code (`estimate.ts` pure, `estimate-read.ts` one sequential statement per
+(code, batch) under a budget) — **chat and lenta only, written onto no row** (fenced by
+`estimate-wire`); the reply prints «Aniq» (no fee) and a whole-or-absent «Taxminiy».
+The zone is guessed for the reply only (`guessZone`, two tiers, never stored, yolkira
+too); yolkira answers from the tariff on its own queue `calc.tariff-reply`; `sayOnce`
+= one machine message per request; the pass stands down at ANY step for a close or a
+person (clock before every model call). Σ m³ stored at the INSERT, labelled by
+derivation (`Workspace.volumeFromLines`); brutto ASKED, netto never a freight brutto
+(`totalWeightFrom`). `saveTable`'s fill = memory → dictionary → import, a machine save
+under `expectRev`; heading (4-6 digit) search with the AI recode + `ai_recode` warning;
+`batchesForCodes` per-code chooser; every answered model call counts. The «Готово» box
+says the bot's figures are not official. Built as kernel K + four worktree packages;
+three relayed finding lists had been CUT in transit, so a late pass re-read every
+item from its file: 119 checked, 59 still there, 53 fixed, 6 refused in writing (#1511:
+lists travel as FILES). Main's Uch band (0136) was merged in before the push — the VED
+rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
+`recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
+
+**Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
+0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
+deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
+refuted). (1) The card's price links to its calculation through ONE home, `calcWorkspaceHref` (ved.docs only,
+fenced), and only when the card's number IS the writer's (`quoteWriterFor`/`writerWroteCard`). (2) A coded
+request from the bot or a chat is a NEW card written with its note in ONE commit (`landCodedRequest`;
+`cardOfNote` = the retry; the round-111 shell taken over once); a colleague's client (a sender with `crm.leads`,
+Q3 b) is a LEAD in the sender's funnel, unbound, the client in the side table `lead_about_client` (#1381);
+neither phone joiner joins it. 0136 drops `leads_client_unique`; «Yutildi» onto a code with a lead opens a new
+deal; a won lead's jobs split by SALE (`calc/win-split.ts`: chain + «outranked» edges in
+`answerFloorStandsSql`'s own terms — without the second a dead Готово answer STANDS again on its new deal,
+measured) in ONE transaction (requests → lead FOR UPDATE, re-read, `changed`; per-opening token → uuidv5 deal
+ids; `rekeyLeadCalcJobsTx` by anchor; the won stage inside). `upsale_paid` keeps a paid prixod on its deal;
+`lead_closed` refuses a job on a won lead. (3) One-line tarkib (`MIN_LINES` 1, readers' own `MIN_STORED_LINES`),
+the vouch term (`tarkibVouchesSql`), `tnved_would_vanish`, «шт» on Packing (rasmlar), the packing list and the
+agent file. Stated, not built: #1476 (Q8 — a truck price over two deals of one client — asked; answered «c»,
+built in the next round). Deploy MUST rebuild tg-listen (`inboundMatch` changed).
+
+**Round — Q8 «c», a two-deal truck's price (2026-10-28; DECISIONS #1512-#1516 — renumbered from #1491-#1495 on
+the merge, the TWENTY-FIFTH collision: #131's road plan and Sakkiz R2 took #1479-#1511 first; NO migration, ledger 138).** His «javobim C» («logist o'zi tanlaydi»). When two or more of a client's OWN deals
+ride one truck, the person setting the truck price CHOOSES the deal; one deal is derived (R3a), one deal beside
+deal-less cargo stays null, «bitimsiz» only for a deal-less part. ONE pure rule `finance/truck-deal.ts`
+(`dealCandidatesOf` / `truckDealDecision` / `shownDealChoice` / `unpricedDealsOf`, `ownDealOf` for every pricing
+reader) over ONE query `dealCandidateRows` (batches/lots.ts, the money riders) read by the price door on the pool
+AND inside its transaction (`cargoAboard(…, tx)`), the «Narx» tab and the client ledger; the choice is required at
+every door (`deal_choice_required`), the form posts the key it drew (`dealsSeen` → `deals_changed`), «bitimsiz» is
+read before any uuid lookup, audit `dealVia`. One confirmation per press on such a truck, and on any further price
+for a client priced here; «Bu mashinadagi narxlar»; the deal card's `otherDealPrices` (trucks from the riders).
+Review found a deferral paying the OTHER deal's cartons (KPI on unpaid cargo) — `settleChargesFully` +
+`paidCargo` now let a deferral pay its own deal's cartons only. Stated: moveCharge keeps its own deal, a re-file
+never moves a price's deal, one client's prices on one truck are paid together, the logist lacks `finance.manage`
+(asked). e2e `m9zzzg-narx-bitim`. CI caught `upsale-fifo-wire` naming the FIFO walk's callers by the old name
+(fixed, both names count); the round's own screenshots caught three display seams (fixed, pinned).
+
+**Round — narx taklifi PDF bilan (2026-10-27; DECISIONS #1479-#1480; NO migration, ledger 137).** His
+«narx taklifi text bolib sotuvchi telegramiga kelyabti pdf ham birga kelsin … shu telegramni ozini jonatish
+imkoni uchun»: the seller's `CalcOffer` row carries `offerId` (`recordOffer` + `releaseOffer`), and the drain's
+`deliverWithSheet` builds the sheet at send time (dynamic import of `wms/calc/offer-sheet-file.ts`, the ONE
+assembler the by-id PDF route uses too) and sends `sendDocument` with the offer text as the CAPTION — one
+message, one forward. A 400 about the file sends the words alone; a 429 pauses; a caption over 1024 goes text
+first, sheet in reply. Pinned by `offer-sheet-telegram.integration.test.ts` (6 red proofs). His two other items
+of that message were ASKED, not built: plan cargo still on the road to the origin warehouse (questions on what
+counts as «yo'lda», approval before arrival, the short-load case), and «files do not download on the phone» —
+measured green in a phone-shaped Chromium with the service worker (#1480), so the device/browser is asked.
+
+**Round — yuklab olish havolasi (2026-10-27; DECISIONS #1481-#1482; NO migration).** His answer «2 download
+unsuccessful … 3 c»: the system opened from a Telegram «↗️ Ochish» runs in Telegram's in-app browser, which
+hands a file's address to the phone's download manager — no cookie, every file route 401/403. A file press now
+asks `POST /api/dl` (cookie, JSON only) for a 10-minute signed link (`platform/auth/download-link.ts`, HMAC of
+a key derived from `SESSION_SECRET`; none, short, or a value the repo publishes = no links, plain address as
+before) and follows it; `GET /api/dl/<token>` asks the REAL file route on 127.0.0.1 as the link's person
+(delegated-user header + the process's internal key, honoured only together in `getSessionUser`, `canLogIn`
+re-asked) — no door re-implemented. One capture-phase listener (`components/download-links.tsx`) in the
+protected layout; desktop new-tab links under a mouse stay native; the print sheet's no-share fallback asks
+`signedDownloadUrl`; the SW never caches `/api/dl/`. Pinned by `download-link.test.ts`,
+`download-link-session.integration.test.ts`, e2e `m9zzzg-yuklab-olish` (5 red proofs). The server's
+`SESSION_SECRET` must be a real random value (CHANGELOG gives the check).
+
+**Round — yo'ldagi yuk (2026-10-27; DECISIONS #1483-#1490; migration 0137 `plan_road` — ledger must reach
+138; spec `docs/YOLDAGI-YUK.md`).** His «horgos planda yoldagi yuklarni ham qoshish degan check bolsin»,
+answers 1a 2a 3a 4a 5a. Designed, judged by four lenses BEFORE code (34 objections, 5 blockers — v2 absorbed
+them), built, reviewed as built. `plan_line_road` (part / owed / missed) + `plan_road_claims`, ONE writer
+`wms/planning/road.ts` (fenced by `road-wire.test.ts`). A pending plan reserves nothing on the road either;
+the approval owes what the shelf lacks, refuses an owed part the road cannot give, under `roadLock(W)` (the
+approval first, the landing hook last — #1484). The landing reserves owed cartons onto the truck in its own
+tx at every landing door (never `count_over`); a carton a truck already landed is never landed again by it
+(the stale-scan blocker, a general fix). The count door and the phone claim free cartons of an owed lot;
+`road_not_landed` names the inbound truck; the sync lands before it loads. «Yuklash tugadi»/cancel move owed
+into MISSED (never erased — the count door's number stays the shelf part); depart refuses `road_owed_open`;
+the presser, Telegram and the register's ⤵️ say what did not come; a claimed carton given back «tayyor»
+re-arms its arrival notice. The verdict is a claim (two presses = one truck). Readers: the editor's box
+(`roadOn`, `roadStock` merged into one `lots`, ✓ = shelf, 🚚 = road, resubmit reopens ticked), the plan view,
+the loading snapshot (`roadOwed`, `roadCodes`), board/batch card, the agent sheet's «В пути» block, the annul
+refusal. `RoadOn` is a branded REQUIRED argument minted only by the probe. 13 integration + 13 unit + 5 e2e,
+14 red proofs. **Reviewed as built** (#1491-#1497, four lenses, 9 findings, all fixed — spec §11 binds): a claim
+never takes the truck's own plan cargo (`claimableForSql` — a removed carton was claimed twice and the road's own
+cartons landed free), takes `min(owed, k)` at the line's lock, «already landed here» is three facts (shelf / this
+truck not sent back — `notSentBackSql`, shared with the count ledger, which fixed over → undo → over on EVERY
+server / reserved onto a truck leaving here), the agent sheet's «Не пришло» block, the snapshot's
+`roadShelf`/`roadInbound` judged on the phone by `roadScanVerdict`, the editor's untick clamping against the
+answer and naming picks it cannot show. **Then the FIXES were reviewed** (#1498-#1502, 10 of 11 upheld): my
+#1495 refused the Horgos cross-dock's own cartons from a snapshot older than the landing — online the server
+decides, offline only this phone's own landing goes in (`roadScanVerdict(…, {online, queuedUnloads})`); the
+onward truck on the ROAD is «already here» too; the hook locks lines in line order; the untick names its
+origin (`untickFor`); three tests that held with their gate deleted were re-anchored, and the editor's routes
+are held at the CONTEXT (the service worker answers `/api/*`, `page.route` never sees it).
+
+**Round — AI sotuvchi, phase 1 (2026-10-24 → 10-29; DECISIONS #1517-#1543 — renumbered from #1463-#1487 on the merge,
+the TWENTY-SIXTH collision: main took #1455-#1516, 0136 `lead_client_many` and 0137 `plan_road` first, and its 0136
+carried this branch's own `when`; migration 0138 `ai_sotuvchi`, `when` …117 — ledger must reach 139; spec
+`docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
+ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
+holds his session) enqueues `agent.inbound`; the app's worker drafts (`wms/agent/run.ts`, a closed toolset, THIS chat
+only); the card reaches the staff bot (`ag:` callbacks, digest on ✅) and `/suhbatlar/ai`; `decideDraft` (holder only)
+writes «approved» + an `agent_outbox` row in one tx; the listener's agent pump sends it verify → read → typing → send
+on the row's own clock (`send-step.ts` pure, `outbox-store.ts`, `gramjs-adapter.ts`). `tg_outbox` and the human path are
+untouched; no existing table gains a column; `agentTablesReady()` guards every new read. THE RULES WITH ONE HOME: the
+number policy (`numbers.ts`/`digits.ts`/`policy.ts` — figures by kind AND origin `tool|kb|customer`, money named
+anywhere, six locales, every block removes ✅); the account guard (`crm/account-guard.ts` — a restriction pauses the
+ACCOUNT, human sends too; only send methods move `flood_until`; «Tekshirdim» clears; `sendContextFor` carries the hold to
+every composer); the identity fence (`context.ts chatIdentity` — a hand-made bind serves no cargo/balance/client facts
+until the chat proves its phone); the fuses (`limits.ts AGENT_LIMITS`). His §17.14: truck minimum 1 m³ OR 100 kg; avia
+kg × `agent_config.avia_usd_per_kg` (17), 1 kg, no ceiling, 2-5 days; rail → him; certificate never asked; «from
+China» = priced from our warehouses + both sentences enforced; 💵 = his figure to the customer only, nothing on the card
+(6 b). Built as a kernel + packages in worktrees, reviewed as built five times (send/leak/regression lenses, two fix
+workflows with two skeptics per package, a final six-lens review). FOUND BY ITS OWN TESTS: a v7 id's HEAD is its clock
+(an echo card bound by `id.slice(0, 8)` confirmed a later code — use the tail); `jsonb` reorders keys (a digest over
+stored actions failed every first ✅ — canonical JSON). TRAPS AGAIN: an agent overwrote a shared scratchpad helper
+(name helpers by owner); `cmd ; git commit` committed a lint error. DEPLOY: rebuild tg-listen; seed the knowledge
+(`scripts/agent-seed-kb.ts` through `migrate`); on the page pick the owner, press the session confirm, then `/agent on`.
+NOT verifiable here: every gramjs call against a real account — watch the first day in the tg-listen logs.
+**The final review's 34 (#1530) and his fourth set (#1531-#1533):** the seed carries his three China warehouses
+verbatim (Ivu, Guanchjou/Foshan, Xorgos — no Qashqar; the GS reminder inside each fact; a newer seed version
+retires the untouched older one); an Uzbek/Russian reply quoting a Chinese address read as Chinese and was refused
+`wrong_script` until the script was measured without the Han a fact the run read holds (`withoutQuotedHan`,
+`memory.quotableHan`) — found by MEASURING a real address reply, no test had one. Avia (his «2»): K32's warehouse
+sentences are withdrawn for the flight, `withAviaRule` asks HIM «Avia: N kg, qayerdan: …», and an avia-only reply
+stating a Chinese mobile or street address is refused `avia_address`. Telegram's 777000 is never kept by any door
+(`isTelegramServicePeer`); the send step asks `bindMoved` like the ✅.
+**Then that delta was reviewed (#1534-#1535)**, each finding reproduced as a failing test first: `avia_address` is
+anchored on HIS warehouses (`warehouseAddressTexts` — the `china_address_` seed key an edit keeps — read in
+`policyFor`; their phones and five-character street pieces), not on «Chinese with 市 in it», which refused
+«从哪个城市发货»; the follow-up «manzil?» one burst after an avia quote ran no tool and went out with the Yiwu address
+(`askedModeOf` now drives `aviaOnly` and the card's question); a refused truck estimate is still a truck chat; the
+model's question stands only when it names the flight AND the address (`/air/` matched «chair»); a Chinese reply is
+measured whole, and a numeral inside a quoted stretch of ≥3 characters is the fact's («金亿»). Two sentences said more
+than he did: «avia cargo does not go to these warehouses» (he said only that he gives the address) and «Narx
+omborlarimizdan» served into avia chats (it is the truck's: «Avto (mashina) narxi»). And a client called «Aka» made
+every «aka» in his style a customer's name — `isAddressWord` (#1534), found by the full run on a fresh database.
+777000 rows written BEFORE the fix (#1536): the three tray doors that make a chat a card's refuse `service_chat`, the
+tray and the stranger cards never list it, and `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then
+`--apply`, counts only) excludes and purges what stands — a deploy step.
+**Reviewed again (#1537, R1-R9)**: the chat's road is what WE quoted, never the customer's words («Tikuv mashinasi»
+named the truck in the goods, a flight quoted by us left the guard off, «air fryer» and a refused avia turned it on):
+`chatRoadOf` = this run's tools → the burst's own choice, refusals read per statement → our newest priced line or
+`lastQuoteFor` (the newest APPROVED draft of the week whose stored memory names a road; `memoryFor` writes
+`quotedRoad`/`quotedAir`). `withAviaGuard` runs after the policy on both run paths (fenced), so a held draft always
+asks him; the card names where the cargo STARTS. Anchors are the facts' own Chinese pieces with the admin chain cut,
+pieces two facts or the GS reminder share dropped, generic forwarder words filtered, plus phones and house numbers
+beside a street word in any script; an owner-added warehouse fact counts by what it says (`isReceivingAddressFact`),
+a fact naming the flight does not. Bare «air» is no road any more. 24 red proofs; two fixtures stayed green first.
+**And reviewed a third time (#1538)**: road-shaped WORDS still decided — the goods («Tikuv mashinalari»), a bare
+«kargo» (the company — it also ended the rail rule), negations anywhere in the clause, our quote's last statement —
+and the approved quote's own echo always outranked its stored road (`at` = createdAt, the send is later). Now
+`roadChoiceIn` (numbers.ts) reads only a road CHOSEN, refusals attached to the road word; `pricedRoadOf` reads our
+priced line at its money figures; `chatRoadOf` = tools, then the NEWEST evidence, the echo recognised by
+`LastQuote.text` (the outbox body). The card's cargo is the new shipment; arrival questions and given addresses ask
+nothing. Anchors: `GENERIC_CHARS` = what every Chinese address is made of, 4-char pieces only of a street, shared
+street pieces kept (a warehouse typed twice no longer cancels itself), house numbers only before 号/栋 and only beside a
+street word, a flight fact = chooses the flight alone or names an airport. 22 red proofs.
+**A fourth look (#1539)** and **a fifth (#1540)** — each reviewed the previous one's own fixes, and each found most of
+its defects IN them. The design answer to a word list that will always miss a phrasing is the WARNING `avia_maybe`
+(policy.ts): the flight was spoken of (`aviaSpokenOf` in run.ts — the customer's lines, our PRICED lines, the quote he
+approved, this reply), the rule did not decide it is the chat's road, and the reply states our China address → ✅
+stays, the card asks him to look; NOTHING said later settles it (#1541). Echo by identity
+(`LastQuote.tgMessageId`, `edited`; compared in `chatForm`). The rules that cost a review each: a refusal is a WHOLE
+word and never a question («Avia bilan ketmaydimi?» asks for the flight — `statementsOf` keeps each statement's «?»),
+a concession or double negation chooses (`CHOSEN_ANYWAY`); the address rule is NOT gated on rail, and `railAsked`
+reads statements with `railRefusedIn`; our priced line is read by its clause's choice, then its opening road word
+(`LABEL`), never a goods word; «kargo orqali» is the company; Tashkent is another leg only as the pickup; a flight
+fact must DECLARE itself one and name no truck. 31 + 32 red proofs.
+**A sixth (#1541)** hunted only for the SILENT leak — a chat where the flight is plain and the address goes out with
+neither the block nor the look — and found sixteen: words the lists lacked (Uzbek Cyrillic, «на самолёте», «авиой»,
+«Aviya», 走飞机 / 航班, Persian «با هواپیما», «with plane»), our line pricing the flight in the NEXT sentence or offering it
+with no price or under «Air:», and #1540's own «a truck chosen settles it» — the truck word was a leg to our warehouse,
+the delivery in Andijan, a past shipment, a refusal missed («фура не успеет») or the goods. The settling is GONE
+(`aviaSpokenOf`: once spoken, always looked at; `ourLineOffersAir`), `PROHIBITS` is the one «what the flight does not
+carry» sentence, the air words are one vocabulary (`AIR_CORE`/`AIR_TAIL_CHOICE`/`AIR_SCRIPTS`) for both readers. 13 red
+proofs. The trade, stated: a chat the customer really moved to the truck now costs him one glance.
+**The merge (#1542)**: main's landing THROWS a queue refusal before it writes anything, so `landCalc` catches
+`CalcError` (K26 words, the claim released), and the agent's `lead` input asks `leadTakesJobs` before the note —
+the two seams a running test and a review of the merge found. The AI-VED estimate rides main's `runPrefillJob`,
+only when the run spoke, best-effort. And the merged bundle outgrew V8's ~2 GB default: `next build` died here at
+~2,000 MB and passes at the Dockerfile's 3,072, so CI's build step carries the same `NODE_OPTIONS` (#1543, fenced in
+`build-typecheck.test.ts`).
+
+**Hotfix — «AI habarni ko'rmayapti» (2026-10-29; DECISIONS #1544; NO migration, 139 stands).** Live day one: a
+client in the book wrote to his NEW client-only number (+998902405077, two private dialogs) and nothing happened
+anywhere. gramjs builds a private text from `UpdateShortMessage` (sender by id alone) and `getChat()` answers from
+an empty in-memory cache, short-circuiting its own dialog walk — the line became `not_private`, silently.
+`crm/listen-trace.ts` `chatOfMessage` (cache → ONE shared, paced, deadlined dialogs page via `sharedWarmer` → cache
+again → `getEntity`; a cached peer that failed is never escalated, NEVER gramjs's per-message walk) is the live
+handler's door, run INSIDE the sender's `serialised` queue (keyed on the bare user id) so a slow lookup cannot be
+overtaken, with 777000 still checked when unresolved; `passedLine` names the REASON an inbound live line was not
+kept, on the AGENT's account only, never the chat. Catch-up warms through the same warmer and counts unopenable
+chats in one line (an old number's chats must NOT hold `caughtUp`, or every ✅ is refused for ever). DIAGNOSIS LESSON: the first SQL to ask on «the AI saw
+nothing» is which number is listened (`tinglayapman: … · <phone> · …` heads every start) — his 777000 line read
+«AI o'chirilmadi» and steered everybody toward «it saw the message». The rest of that diagnosis (the stranger
+card's window on the rule's birth, the week walk dropping strangers with no tray row, Business auto-replies read
+as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
+for a card) is owed as the next round; his number should be switched to «Ish raqami».
+
+**Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
+it: 0137 (`plan_road`, `when` …116). Before
+it: 0136 (`lead_client_many`, `when` …115). Before
+it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
 it: 0132 (`cost_freight_basis`, `when` …111). Before
@@ -3102,7 +3377,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **136** since 0135 (135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **139** since 0138 (138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3118,6 +3393,9 @@ migration of its own, it rides with 0133) is checked by BOTH the count (134) and
 `/api/version`; a code-only round after it is checked by `/api/version` alone
 (anything short of the journal means
 a migration did not land — read the `migrate` container's own output).
+**Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
+the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
+must read **137**, and the yo'ldagi-yuk round (0137) **138**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

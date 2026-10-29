@@ -17,7 +17,7 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
+import { threadCalcAnalyze, threadCalcSend, threadMaterial } from '@/modules/wms/calc/from-thread';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 
 /**
@@ -37,8 +37,10 @@ let msgA2 = '';
 let msgB1 = '';
 let msgFile = '';
 let msgLead = '';
+let msgTwoWays = '';
 const madeRequests: string[] = [];
 const madeNotes: string[] = [];
+const madeLeads: string[] = [];
 
 const seller = (id: string): Actor =>
   ({
@@ -128,9 +130,24 @@ beforeAll(async () => {
   msgB1 = await message({ manager: managerB, body: 'kolleganing xabari', sentAt: '2026-08-25T10:02:00Z' });
   msgFile = await message({ manager: managerA, body: null, hasMedia: true, sentAt: '2026-08-25T10:03:00Z' });
   msgLead = await message({ manager: managerA, body: 'lead savoli', leadId, sentAt: '2026-08-25T10:04:00Z' });
+  msgTwoWays = await message({
+    manager: managerA,
+    body: 'Kurtka 300 dona 1.2 kub\nShim 200 dona 1.6 kub\nJami 3500 kg, 2,500 kub',
+    sentAt: '2026-08-25T10:05:00Z',
+  });
 });
 
 afterAll(async () => {
+  // Every job on this client's deals and these leads, not only the ones the
+  // helper saw — a red proof's second request would otherwise stay queued.
+  const cards = [
+    ...(await db.select({ id: deals.id }).from(deals).where(eq(deals.clientId, clientId))).map((d) => d.id),
+    leadId,
+    ...madeLeads,
+  ];
+  for (const row of await db.select({ id: calcRequests.id }).from(calcRequests).where(inArray(calcRequests.entityId, cards))) {
+    if (!madeRequests.includes(row.id)) madeRequests.push(row.id);
+  }
   if (madeRequests.length > 0) {
     await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, madeRequests));
     const rows = await db
@@ -145,11 +162,18 @@ afterAll(async () => {
     }
   }
   if (madeNotes.length > 0) await db.delete(crmActivities).where(inArray(crmActivities.id, madeNotes));
-  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead]));
+  await db.delete(tgMessages).where(inArray(tgMessages.id, [msgA1, msgA2, msgB1, msgFile, msgLead, msgTwoWays]));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, dealId));
   await db.delete(crmActivities).where(eq(crmActivities.entityId, leadId));
+  if (madeLeads.length > 0) {
+    await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
+    await db.delete(leads).where(inArray(leads.id, madeLeads));
+  }
   await db.delete(leads).where(eq(leads.id, leadId));
-  await db.delete(deals).where(eq(deals.id, dealId));
+  // The per-request deals the client door opened, and the fixture's own.
+  const opened = await db.select({ id: deals.id }).from(deals).where(eq(deals.clientId, clientId));
+  if (opened.length > 0) await db.delete(crmActivities).where(inArray(crmActivities.entityId, opened.map((d) => d.id)));
+  await db.delete(deals).where(eq(deals.clientId, clientId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(users).set({ active: false }).where(inArray(users.id, [managerA, managerB]));
   await pgClient.end();
@@ -225,9 +249,79 @@ describe('landing', () => {
     expect(count).toHaveLength(1);
   });
 
-  it('a client entity falls back to the bot’s landing rule — the open deal', async () => {
-    const { res } = await send(seller(managerA), { kind: 'client', id: clientId }, [msgA1]);
-    expect(res).toMatchObject({ kind: 'deal', id: dealId });
+  it('a client entity opens a NEW deal per request, and a retried press lands on it again', async () => {
+    // His 2026-10-27 «har so'rovga yangi bitim»: a client names no job, so
+    // each request is its own deal — never the client's open one.
+    const { res, noteId } = await send(seller(managerA), { kind: 'client', id: clientId }, [msgA1]);
+    expect(res.kind).toBe('deal');
+    expect(res.id).not.toBe(dealId);
+    const retried = await threadCalcSend(
+      seller(managerA),
+      { entity: { kind: 'client', id: clientId }, section: 'podklyuch', messageIds: [msgA1], noteId },
+      { actorId: managerA, ip: null, userAgent: null },
+    );
+    expect(retried).toMatchObject({ kind: 'deal', id: res.id, queued: true });
+    const jobs = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteId));
+    expect(jobs).toHaveLength(1);
+  });
+
+  it('a lead’s CLIENT thread lands on the lead while it is open, and on a new deal of its client once won', async () => {
+    const lstage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') });
+    const wstage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'won') });
+    const [bound] = await db
+      .insert(leads)
+      .values({ name: `Thread bound ${SUFFIX}`, stageId: lstage!.id, createdBy: managerA, ownerId: managerA, clientId })
+      .returning();
+    madeLeads.push(bound!.id);
+    const open = await send(seller(managerA), { kind: 'lead_client', id: bound!.id }, [msgA1]);
+    expect(open.res).toMatchObject({ kind: 'lead', id: bound!.id });
+    await db.update(leads).set({ stageId: wstage!.id }).where(eq(leads.id, bound!.id));
+    const won = await send(seller(managerA), { kind: 'lead_client', id: bound!.id }, [msgA1]);
+    expect(won.res.kind).toBe('deal');
+    expect(won.res.id).not.toBe(dealId);
+    const deal = await db.query.deals.findFirst({ where: eq(deals.id, won.res.id) });
+    expect(deal!.clientId).toBe(clientId);
+  });
+
+  it('a CLOSED lead’s own chat is refused before the model reads it', async () => {
+    // The card draws no 🧮 there (`leadTakesJobs`); a posted analyse is
+    // refused in words, before a paid model call on a job that cannot land.
+    const before = await db.query.leads.findFirst({ where: eq(leads.id, leadId) });
+    const lost = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'lost') });
+    await db.update(leads).set({ stageId: lost!.id }).where(eq(leads.id, leadId));
+    try {
+      await expect(
+        threadCalcAnalyze(seller(managerA), { entity: { kind: 'lead', id: leadId }, section: 'rastamojka', messageIds: [msgLead] }),
+      ).rejects.toMatchObject({ code: 'lead_closed' });
+    } finally {
+      await db.update(leads).set({ stageId: before!.stageId }).where(eq(leads.id, leadId));
+    }
+  });
+
+  it('a cube typed two ways is named missing in the preview and NOT summed from the lines at the landing (P3-R2)', async () => {
+    const actor = seller(managerA);
+    const entity = { kind: 'deal' as const, id: dealId };
+    const preview = await threadCalcAnalyze(actor, { entity, section: 'yolkira', messageIds: [msgTwoWays] });
+    expect(preview.facts.volumeM3 ?? null).toBeNull();
+    expect(preview.facts.volumeAmbiguous).toBe(true);
+    expect(preview.missing).toContain('volumeM3');
+
+    const land = async (facts: typeof preview.facts) => {
+      const noteId = randomUUID();
+      madeNotes.push(noteId);
+      await threadCalcSend(
+        actor,
+        { entity, section: 'yolkira', messageIds: [msgTwoWays], noteId, facts },
+        { actorId: actor.id, ip: null, userAgent: null },
+      );
+      const request = await db.query.calcRequests.findFirst({ where: eq(calcRequests.noteId, noteId) });
+      madeRequests.push(request!.id);
+      return request!.volumeM3 === null ? null : Number(request!.volumeM3);
+    };
+    // The preview the browser posts back, as it was drawn: the column stays empty.
+    expect(await land(preview.facts)).toBeNull();
+    // The control: the same lines with no two-way cube ARE summed.
+    expect(await land({ ...preview.facts, volumeAmbiguous: undefined })).toBe(2.8);
   });
 
   it('a retried confirm refuses on the pre-minted note id', async () => {

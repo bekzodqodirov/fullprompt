@@ -1,5 +1,6 @@
 import { aliasedTable, and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { planRoadReady, roadOwedByTruck } from '../planning/road';
 import { batches, factories, pickupStops, warehouses } from '../../platform/db/schema';
 import { warehouseScopeEither, type ScopedActor } from '../../platform/rbac/scope';
 import { tashkentDay } from '../../platform/time/tashkent';
@@ -74,6 +75,8 @@ export interface BoardTruck extends CardPlacement {
   hasPlan: boolean;
   /** Forming and loading: the header's numbers (7a). Null = nothing on the pointer. */
   load: { loaded: LoadMeasure; planned: LoadMeasure } | null;
+  /** Yo'ldagi yuk: cartons its plan still owes from the road (docs/YOLDAGI-YUK.md §9); 0 = none. */
+  roadOwed: number;
   /** Departed: what RODE (`riderLoad`). */
   rode: LoadMeasure | null;
   /** First and last carton of the CURRENT cargo (6c), ISO; null before the first scan. */
@@ -212,7 +215,7 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
   const idsOf = (statuses: readonly string[]) => rows.filter((r) => statuses.includes(r.status)).map((r) => r.id);
   const loadingIds = idsOf(['forming', 'loading']);
   const departedIds = idsOf(['in_transit', 'arrived']);
-  const [totals, rode, dates, road, awaiting] = await Promise.all([
+  const [totals, rode, dates, road, awaiting, owed] = await Promise.all([
     batchLoadTotals(loadingIds),
     riderLoad(departedIds),
     loadDates(idsOf(['loading', 'in_transit', 'arrived'])),
@@ -220,6 +223,7 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
     actor.permissions.has('plans.manage')
       ? qrlessUncountedByTruck(db, loadingIds)
       : Promise.resolve(new Map<string, unknown>()),
+    planRoadReady().then((on) => roadOwedByTruck(db, on, loadingIds)),
   ]);
   const mayPin = actor.permissions.has('batches.vehicle_info');
   const today = tashkentDay(now);
@@ -293,6 +297,7 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       driverPhone: r.driverPhone,
       hasPlan: Boolean(r.hasPlan),
       load: column === 'forming' || column === 'loading' ? (totals.get(r.id) ?? null) : null,
+      roadOwed: owed.get(r.id) ?? 0,
       rode: rider ? { boxes: rider.boxCount, kg: rider.kg, m3: rider.m3 } : null,
       loadFrom: date?.from ?? null,
       loadTo: date?.to ?? null,

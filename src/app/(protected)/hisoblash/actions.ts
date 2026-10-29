@@ -85,6 +85,9 @@ export interface TableSaveFields {
    * authority: a person sealed one, a quarterly file merely contains the
    * other. */
   memoryFilled?: number[];
+  /** Rows the `calc_bazas` book filled — round 2's fill (the bar says «📖 N
+   * qator» once it lands); always empty in the kernel. */
+  dictionaryFilled?: number[];
   /** Old rows whose seller's unit word moved a number to its own column. */
   unitsMoved?: { seq: number; to: string; note: string }[];
   /** Rows whose seller's word is a carton count or unknown — the VED answers. */
@@ -399,6 +402,7 @@ async function runTable(
     alreadySaved: result.alreadySaved,
     importFilled: result.importFilled,
     memoryFilled: result.memoryFilled,
+    dictionaryFilled: result.dictionaryFilled,
     rev: result.rev,
   };
 }
@@ -427,6 +431,7 @@ export async function deleteItemAction(id: string, itemId: string): Promise<Tabl
       alreadySaved: 0,
       importFilled: [],
       memoryFilled: [],
+      dictionaryFilled: [],
       unitsMoved: [],
       sellerUnitUnresolved: [],
       basisStamped: [],
@@ -931,11 +936,15 @@ function threadCalcGate(
 ): CalcFormState | null {
   if (!canReadTg(actor)) return { error: 'forbidden' };
   if (!canWriteDeal(actor.permissions)) return { error: 'forbidden' };
-  if (entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)) {
+  // A lead's CLIENT thread (0136) is the lead's door while it is open; once
+  // won it mints the client a deal — still a terms door, because the lead
+  // side below demands `crm.leads`, which is one of the terms permissions.
+  const onLead = entity.kind === 'lead' || entity.kind === 'lead_client';
+  if (!onLead && !mayEditDealTerms(actor.permissions)) {
     return { error: 'deal_terms_only' };
   }
   if (!isCalcSection(section)) return { error: 'bad_section' };
-  if (entity.kind === 'lead' && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
+  if (onLead && !actor.permissions.has('crm.leads')) return { error: 'forbidden' };
   return null;
 }
 

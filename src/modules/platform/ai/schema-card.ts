@@ -50,6 +50,9 @@ export const EXCLUDED_TABLES = [
   'sessions', 'login_attempts', 'tg_accounts', 'telegram_links',
   'client_telegram_links', 'driver_devices', 'call_recorder_devices',
   'tg_peer_index', 'tg_outbox', 'audit_log', 'settings', 'ai_questions',
+  // AI sotuvchi (0138): customer conversations, the owner's drafts, the agent's ledger.
+  'agent_config', 'agent_conversations', 'agent_runs', 'agent_drafts', 'agent_outbox', 'kb_facts',
+  'agent_calc_links', 'tg_account_guard', 'tg_account_floods', 'tg_message_flags', 'tg_peer_pulls',
 ] as const;
 
 /** Column-granted tables: the row is business data, one column is a secret. */
@@ -82,6 +85,7 @@ const TRAPS = `Правила этой базы — запрос, который
 - leads/deals: справочники стадий lead_stages/deal_stages несут kind ('open'/'won'/'lost'); created_at — когда обратился, closed_at — когда решили; месяц продаж считают по closed_at.
 - numeric приходит СТРОКОЙ — приводи ::numeric при арифметике в выводе не нужно, но сравнивай числа в SQL, не в голове.
 - users и lead_sources: выбирай ТОЛЬКО именованные колонки (SELECT * там запрещён правами).
+- load_plan_lines.planned_box_count может включать коробки, обещанные «из пути» (ещё на машине, едущей на склад плана; таблица плана в пути тебе не выдана) — это план, а не груз на складе: что погружено, считай по box_movements.
 - День компании — Asia/Tashkent: для «сегодня/за месяц» считай границы дня в этой зоне.
 - Ответ обрезается на ${'{ROW_CAP}'} строках — агрегируй в SQL, не тяни сырьё.`;
 

@@ -220,9 +220,22 @@ export async function sourceIdForKey(key: string | null): Promise<string | null>
  */
 export async function inboundMatch(
   phone: string,
+  /**
+   * The bot's stranger join keeps its own clause: only a lead not yet won
+   * onto a code (`client_id` NULL) — a coded person's request is the
+   * per-request rule's (docs/UCH-BAND.md §2; judge product-11: the stranger
+   * join asks THIS rule rather than restating it).
+   */
+  opts: { unboundOnly?: boolean } = {},
 ): Promise<{ id: string; ownerId: string | null } | null> {
   const digits = inboundPhoneDigits(phone);
   if (!digits) return null;
+  // A lead ABOUT a colleague's client (0136) carries that client's phone;
+  // a stranger's message or an advert from the same person is not that
+  // lead's enquiry, and joining it would hand it to the wrong seller (judge
+  // deploy-4). Asked first, on the pool; one migration behind it is absent.
+  const { leadAboutReady } = await import('./lead-about');
+  const aboutOn = await leadAboutReady();
   const open = await db
     .select({ id: leadStages.id })
     .from(leadStages)
@@ -241,6 +254,8 @@ export async function inboundMatch(
           open.map((row) => row.id),
         ),
         gt(leads.updatedAt, since),
+        opts.unboundOnly ? sql`${leads}.client_id IS NULL` : undefined,
+        aboutOn ? sql`NOT EXISTS (SELECT 1 FROM lead_about_client la WHERE la.lead_id = ${leads}.id)` : undefined,
       ),
     )
     .limit(2);

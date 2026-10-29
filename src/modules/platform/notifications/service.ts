@@ -21,12 +21,13 @@ import { buttonsFor, type BotButton } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
-import { groupDigits, h } from '../telegram/format';
+import { groupDigits, h, visibleLength } from '../telegram/format';
 import {
   botCall,
   editText,
   isBotFailure,
   isPermanentFailure,
+  sendDocument,
   sendText,
   type SendResult,
 } from '../telegram/send';
@@ -1164,6 +1165,65 @@ async function deliverStaffMessage(
   return sendText({ chatId, html: message.html, replyMarkup: keyboardOf(rows), silent });
 }
 
+/** Telegram's ceiling on a caption, counted as it counts (`visibleLength`). */
+const CAPTION_MAX = 1024;
+
+/**
+ * The seller's offer WITH its sheet (his 2026-10-27: «narx taklifi text bolib
+ * sotuvchi telegramiga kelyabti pdf ham birga kelsin telegramga shu
+ * telegramni ozini jonatish imkoni uchun»): the PDF, with the offer text as
+ * its caption — ONE message, so a forward carries both to the customer.
+ *
+ * Null means «not this kind, or no sheet to print» and the text goes as it
+ * always did: the sheet is an addition, never the delivery (round C's photo
+ * rule). The sheet is built HERE, at send time, through a dynamic import
+ * (platform never imports wms statically — the boss.ts crossing), because a
+ * PDF in the queue's jsonb is bytes in a table read every minute.
+ *
+ * A refusal that is about the FILE (a 400 — too big, a shape Telegram will
+ * not take) sends the text alone; any other failure is returned as it is, so
+ * the drain pauses on a 429 and retries the row on a 5xx with the sheet again.
+ * A caption over Telegram's 1024 (a very long client name) goes as the text
+ * and then the sheet in reply to it — two messages, but nothing cut.
+ */
+async function deliverWithSheet(
+  type: string,
+  chatId: bigint,
+  message: StaffMessage,
+  payload: Record<string, unknown>,
+  silent: boolean,
+): Promise<SendResult | null> {
+  if (type !== 'CalcOffer' || typeof payload.offerId !== 'string') return null;
+  let file: { bytes: Uint8Array; fileName: string } | null = null;
+  try {
+    const { offerSheetFile } = await import('../../wms/calc/offer-sheet-file');
+    file = await offerSheetFile(payload.offerId);
+  } catch (err) {
+    logger.warn({ err, offerId: payload.offerId }, 'offer sheet not built — the text goes alone');
+    return null;
+  }
+  if (!file) return null;
+  const document = { bytes: file.bytes, filename: file.fileName, contentType: 'application/pdf' };
+  const keyboard = keyboardOf(message.urlRow ? [message.urlRow] : null);
+
+  if (visibleLength(message.html) <= CAPTION_MAX) {
+    const res = await sendDocument({ chatId, document, captionHtml: message.html, replyMarkup: keyboard, silent });
+    if (res.ok || res.status !== 400) return res;
+    logger.warn({ description: res.description, offerId: payload.offerId }, 'telegram refused the offer sheet — the text goes alone');
+    return null;
+  }
+  const text = await deliverStaffMessage(chatId, message, null, silent);
+  if (!text.ok) return text;
+  const sheet = await sendDocument({
+    chatId,
+    document,
+    silent,
+    ...(text.messageId !== null ? { replyToMessageId: text.messageId } : {}),
+  });
+  if (!sheet.ok) logger.warn({ description: sheet.description, offerId: payload.offerId }, 'offer sheet after a long text not sent');
+  return text;
+}
+
 /**
  * Show a colleague the customer's OWN message before our sentence about it
  * (round C, contract 2): a photo of a damaged carton or a voice note is not
@@ -1337,6 +1397,43 @@ async function taskCopyLive(
 }
 
 /**
+ * An AI sotuvchi card corrected after its send (identity review): the purge
+ * that blanked a chat's cards, a decision that closed a stranger or echo
+ * card, a draft card re-rendered — each edits the copies that carry `tg`,
+ * and a copy this drain had CLAIMED ('sending') carried none yet, so it went
+ * out with the words and buttons it was claimed with: a purged customer's
+ * lines, a live «🆕 Yangi lid» on a decided chat, «💵 Narx yozaman» on an
+ * answer whose link is gone. Asked once the copy's `tg` is written — the
+ * order is the argument, as `retireIfClosedInFlight`'s: a writer that commits
+ * after the merge finds the copy by `tg` and edits it itself — by the payload
+ * its own UPDATE returned, which a merge landed before it is in (a payload it
+ * READ before the merge would not be, and neither side would edit) — one that
+ * committed before this read is seen by it. The row as it stands is rendered
+ * by the drain's own composer (the payload is the whole card — platform asks
+ * no wms) and the copy just sent is edited only when that differs from what
+ * went out. Best-effort: the copy is sent, and an edit is a courtesy.
+ */
+async function correctAgentCopyInFlight(
+  notificationId: string,
+  type: string,
+  sent: { html: string; rows: BotButton[][] },
+  tg: { chatId: number; messageId: number },
+  locale: string | null,
+): Promise<void> {
+  const [row] = await db
+    .select({ payload: notifications.payload })
+    .from(notifications)
+    .where(eq(notifications.id, notificationId));
+  if (!row) return;
+  const now = row.payload as Record<string, unknown>;
+  const message = composeStaffMessage(type, now, locale);
+  const rows = [...(buttonsFor(type, now) ?? []), ...(message.urlRow ? [message.urlRow] : [])];
+  if (message.html === sent.html && JSON.stringify(rows) === JSON.stringify(sent.rows)) return;
+  const res = await editText({ chatId: tg.chatId, messageId: tg.messageId, html: message.html, replyMarkup: keyboardOf(rows) });
+  if (!res.ok) logger.warn({ notificationId, description: res.description }, 'agent card copy not corrected after its send');
+}
+
+/**
  * The second half of the send-time check, asked AFTER the row reads 'sent'
  * with its message id (review tasks-1). A door that closed or moved the task
  * while this copy was in flight — the author's «🗑 Bekor qilish» seconds after
@@ -1488,6 +1585,8 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
     const sendPayload = live.payload ?? payload;
 
     let res: SendResult;
+    // What went out — the text and every keyboard row — for the agent card's after-send check.
+    let sentAs: { html: string; rows: BotButton[][] } | null = null;
     try {
       // Inline buttons ride on the send, by type (staff bot, round 35): a
       // task lands with its buttons, a debtor request with «Ruxsat / Yo‘q».
@@ -1496,9 +1595,17 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       // claimed row behind it in «sending» until the reclaim charged them.
       const buttons = buttonsFor(notification.type, sendPayload);
       const message = composeStaffMessage(notification.type, payload, recipient.locale);
+      sentAs = { html: message.html, rows: [...(buttons ?? []), ...(message.urlRow ? [message.urlRow] : [])] };
       res =
         (await forwardOriginal(notification.id, link.telegramChatId, payload)) ??
         (await forwardSources(notification.id, link.telegramChatId, payload)) ??
+        (await deliverWithSheet(
+          notification.type,
+          link.telegramChatId,
+          message,
+          payload,
+          sendsSilently(notification.type, payload, now),
+        )) ??
         (await deliverStaffMessage(
           link.telegramChatId,
           message,
@@ -1545,6 +1652,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
       if (tg) {
         await retireIfClosedInFlight(notification.id, notification.type, sendPayload, notification.userId).catch(
           (err: unknown) => logger.warn({ err, notificationId: notification.id }, 'task copy after-send check failed'),
+        );
+      }
+      // An agent card closed or purged while this copy was in flight (identity review) — never a
+      // forward, which is the customer's own message and no card to edit.
+      if (tg && sentAs && notification.type.startsWith('Agent') && payload.forwardFrom === undefined && payload.forwards === undefined) {
+        await correctAgentCopyInFlight(notification.id, notification.type, sentAs, tg, recipient.locale).catch((err: unknown) =>
+          logger.warn({ err, notificationId: notification.id }, 'agent card after-send check failed'),
         );
       }
       continue;

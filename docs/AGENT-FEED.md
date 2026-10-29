@@ -10,8 +10,8 @@ every lead it pushed (outcomes).
 Code: `src/modules/wms/crm/agent-source.ts` (the key), `inbound.ts` (the
 landing and its belt), `agent-feed.ts` (the feeds), `agent-feed-door.ts` (the
 GET door), `first-contact.ts` / `inbound-notify.ts` (the clock),
-`platform/settings/reason-list.ts` (the setting's parser). Decisions #1455-#1459,
-the first review's corrections #1460-#1466, and the second's #1467-#1472.
+`platform/settings/reason-list.ts` (the setting's parser). Decisions #1545-#1549,
+the first review's corrections #1550-#1556, and the second's #1557-#1562.
 
 ---
 
@@ -129,7 +129,7 @@ The ordinary webhook door (docs/ADS.md §5.3) on the `agent` source.
   whose «🆕» never came (§5). Only a database failure half-way does that
   now: no text the body carries — an emoji at a cut, a lone surrogate, a NUL,
   a body nested too deep, an id too long for the index — makes a write refuse
-  any more (#1467, #1473, #1476). A cause that repeated on every attempt
+  any more (#1557, #1563, #1566). A cause that repeated on every attempt
   would answer 503 to every retry and add one lenta note each; one is known,
   and no real body reaches it: a body of tens of megabytes (§5).
 - Caps (counted over the arrivals ledger, dropped arrivals included):
@@ -192,7 +192,7 @@ else.
 Adverts, the form and the bot are unchanged: a client's phone through an
 advert still lands on the client's card (`client`), only for ACTIVE clients.
 The fixes of the second, third and fourth reviews reach every door, and
-none changes what a landing that worked did (#1467-#1469, #1473, #1476): an
+none changes what a landing that worked did (#1557-#1559, #1563, #1566): an
 external id too long for the ledger's unique index is stored under its
 SHA-256 (it used to fail the ledger row after the lead), text is cut in
 the UTF-16 units it always was but never through an emoji, and a lone
@@ -402,14 +402,14 @@ suppression list; it never receives the client book.
 - A landing that fails half-way (the database, after the lead's INSERT)
   leaves the lead; the agent's retry joins it (`joined`, «🔁 Qayta yozdi»
   for a lead never announced). No text the body carries causes one any more
-  (#1467, #1473, #1476), and one SIZE still does: `ref` is the whole body,
+  (#1557, #1563, #1566), and one SIZE still does: `ref` is the whole body,
   nothing caps a route handler's body, and postgres refuses a jsonb past its
   limits (measured in postgres, not through the route: an array of twenty
   million zeros, 40 MB of JSON, is refused; ten million is stored). Such a body lands its lead and then fails its ledger
   row on every attempt — on this door a 503 each time, on every other a 200
   with an orphan. Only a key holder can send it, and the agent's own bodies are
   a few kilobytes; the cure is to write the ledger row first, deferred
-  (#1473, #1477). A narrower case stays: the ledger row COMMITS and its
+  (#1563, #1567). A narrower case stays: the ledger row COMMITS and its
   answer is lost on the way back (the connection dies in between). The agent
   is told 503, its retry is a replay answered 200, and nothing announces that
   arrival again: no «🆕», no contact clock, so the outcomes row reads

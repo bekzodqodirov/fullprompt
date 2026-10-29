@@ -26,6 +26,7 @@ export interface LotCheckFace {
   askable: boolean;
   byDocument: boolean;
   documentStale: boolean;
+  documentOtherName: boolean;
   person: {
     by: string | null;
     day: string;
@@ -159,6 +160,13 @@ export function LotCheckPanel({
       ),
     );
   }
+  if (face.documentOtherName && asking) {
+    lines.push(
+      <p key="doc-other" className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="lot-check-face-document-other">
+        🧩 {t('documentOtherName')}
+      </p>,
+    );
+  }
   if (face.state === 'none' && face.askable) {
     lines.push(
       <p key="none" className="font-semibold text-ink-700" data-testid="lot-check-face-none">
@@ -229,8 +237,9 @@ export function LotCheckPanel({
                 ✅ {t('confirm')}
               </button>
               {/* Where the two other answers go — the ✏️ form is drawn for
-                  `receipts.edit` alone, so the VED is sent to the logist
-                  (the lot tarkibi's own `lines_count` sentence). */}
+                  `receipts.edit` alone, so the VED writes a one-line 🧩 for
+                  the papers and asks the logist to rename the lot itself
+                  (his 2026-10-27: a tarkib may be ONE line). */}
               <p className="text-xs text-ink-500" data-testid="lot-check-other">
                 {canRename ? t('otherAnswers') : t('otherAnswersAskLogist')}
               </p>

@@ -69,7 +69,8 @@ describe('the Telegram ladder', () => {
     const body = between(HANDLERS, "bot.on('message:text'", 'type StaffTailCtx');
     const draft = body.indexOf('const draft = activeDraft(chatId)');
     const reply = body.indexOf('threadReplyFromBot(chatId, {');
-    const doorB = body.indexOf('ctx.message.forward_origin');
+    // Door B's own branch — the agent slot above it only READS the field (I2 c).
+    const doorB = body.indexOf('if (ctx.message.forward_origin) {');
     const wait = body.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(draft).toBeGreaterThan(0);
     expect(reply, 'reply block after the draft').toBeGreaterThan(draft);

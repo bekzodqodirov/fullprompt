@@ -30,6 +30,8 @@ import { mayBroadcast } from '@/modules/platform/broadcast/service';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { mayOpenMyClients } from '@/modules/platform/clients/card-door';
 import { maySeeStaffMoney } from '@/modules/wms/staff/door';
+import { mayRunAgent } from '@/modules/wms/agent/config';
+import { AGENT_PAGE, agentDoorsFor } from '@/modules/wms/agent/web-door';
 
 /**
  * The menu by job (2026-09-26, docs/NAV-WORKSPACES.md).
@@ -129,6 +131,10 @@ const GATES: Record<string, (a: Actor) => boolean> = {
   '/bitimlar/etaplar': (a) => has(a, 'crm.manage'),
   '/suhbatlar/shablonlar': (a) => canReadTg(a),
   '/suhbatlar/ulash': (a) => has(a, 'crm.leads', 'clients.manage'),
+  // suhbatlar/ai/page.tsx: `mayRunAgent(actor, config)`. With no config only
+  // the super_admin ROLE passes; the configured-owner case is its own test
+  // below, because it is a fact in agent_config and not in the actor.
+  '/suhbatlar/ai': (a) => mayRunAgent(a, null),
   '/admin/taqsimot': (a) => adminLayout(a) && has(a, 'admin.settings.manage'),
 
   '/hisoblash': (a) => has(a, 'ved.docs'),
@@ -328,6 +334,33 @@ describe('a tab is a promise that the page opens', () => {
       visibleWorkspaces(actorFor(roles)).flatMap((ws) => ws.tabs.map((tab) => tab.href));
     expect(tabs(['super_admin'])).toContain('/admin/xabarlar');
     expect(tabs(['admin'])).not.toContain('/admin/xabarlar');
+  });
+});
+
+describe('the AI sotuvchi’s tab is a server door (fit-11)', () => {
+  const offered = (actor: Actor, ownerUserId: string | null) =>
+    visibleWorkspaces({ ...actor, doors: agentDoorsFor(actor, { ownerUserId }) }).flatMap((ws) =>
+      ws.tabs.map((tab) => tab.href),
+    );
+
+  it('opens for the super_admin ROLE with nobody configured, and for nobody else', () => {
+    expect(offered(actorFor(['super_admin']), null)).toContain(AGENT_PAGE);
+    expect(offered(actorFor(['admin']), null)).not.toContain(AGENT_PAGE);
+    expect(offered(actorFor(['admin', 'sales_manager']), null)).not.toContain(AGENT_PAGE);
+  });
+
+  it('opens for the configured owner on his «bir admin va sotuvchi» account — and the page agrees', () => {
+    const his = actorFor(['admin', 'sales_manager']);
+    expect(offered(his, his.id)).toContain(AGENT_PAGE);
+    expect(mayRunAgent(his, { ownerUserId: his.id })).toBe(true);
+    // A colleague holding the same roles is not the owner.
+    expect(offered(his, '11111111-1111-1111-1111-111111111111')).not.toContain(AGENT_PAGE);
+  });
+
+  it('draws nothing for a caller that never asked for doors (absent means none)', () => {
+    expect(visibleWorkspaces(actorFor(['super_admin'])).flatMap((ws) => ws.tabs.map((t) => t.href))).not.toContain(
+      AGENT_PAGE,
+    );
   });
 });
 

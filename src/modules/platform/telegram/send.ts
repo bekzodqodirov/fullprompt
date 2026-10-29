@@ -453,6 +453,47 @@ export async function sendAnimation(msg: AnimationMessage): Promise<SendResult &
   return { ...verdict(answer, usedFallback), fileId };
 }
 
+export interface DocumentMessage {
+  chatId: ChatId;
+  /** Bytes WE made or read from our storage — uploaded, like a photo's. */
+  document: { bytes: Buffer | Uint8Array; filename: string; contentType: string };
+  /** Safe HTML; its VISIBLE length must be ≤ 1024 — the caller checks. */
+  captionHtml?: string;
+  replyMarkup?: unknown;
+  silent?: boolean;
+  replyToMessageId?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * One file with its caption — `sendPhoto`'s shape for a document. A caption
+ * travels WITH the file, so a person who forwards the message forwards both
+ * (the offer sheet, his 2026-10-27 «shu telegramni ozini jonatish imkoni
+ * uchun»). A refusal comes back as `ok:false`: the caller decides whether the
+ * words go alone.
+ */
+export async function sendDocument(msg: DocumentMessage): Promise<SendResult> {
+  const base: Record<string, unknown> = {
+    chat_id: chatValue(msg.chatId),
+    ...(msg.captionHtml ? { caption: msg.captionHtml, parse_mode: 'HTML' } : {}),
+    ...(msg.silent ? { disable_notification: true } : {}),
+    ...deliveryFields(msg),
+    ...(msg.replyMarkup ? { reply_markup: msg.replyMarkup } : {}),
+  };
+  const doc = msg.document;
+  const toForm = (body: Record<string, unknown>) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(body)) {
+      form.append(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+    }
+    // Copied into a plain ArrayBuffer, as sendPhoto does.
+    form.append('document', new Blob([new Uint8Array(doc.bytes)], { type: doc.contentType }), doc.filename);
+    return form;
+  };
+  const { answer, usedFallback } = await sendWithFallbacks('sendDocument', base, 'caption', msg.timeoutMs ?? 60_000, toForm);
+  return verdict(answer, usedFallback);
+}
+
 /** «Not modified» is the edit having nothing to do — success, not a refusal. */
 function editVerdict(answer: CallAnswer): SendResult {
   if (!answer.ok && /message is not modified/i.test(answer.description)) {

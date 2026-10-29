@@ -1,9 +1,10 @@
 import 'dotenv/config';
-import { and, asc, eq, gte, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  auditLog,
   calcRequestItems,
   calcRequests,
   clients,
@@ -16,6 +17,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
+import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
 import {
   intakeNoteText,
   intakeSummaryText,
@@ -26,6 +28,7 @@ import {
 } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land';
+import { openCalcRequest } from '@/modules/wms/calc/service';
 
 /**
  * «Hisoblatish» — the owner's own design for the AI intake: staff send the
@@ -42,6 +45,9 @@ const STAMP = String(Date.now()).slice(-6);
 const FILE_START = new Date();
 let actorId: string;
 const madeLeads: string[] = [];
+const madeUsers: string[] = [];
+/** Clients whose seller this file mints — retired with him, or the owner picker's own test reads a client it cannot render. */
+const madeOwnedClients: string[] = [];
 
 beforeAll(async () => {
   actorId = (await db.select().from(users).limit(1))[0]!.id;
@@ -77,6 +83,8 @@ afterAll(async () => {
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
     await db.delete(leads).where(inArray(leads.id, madeLeads));
   }
+  if (madeOwnedClients.length) await db.update(clients).set({ active: false }).where(inArray(clients.id, madeOwnedClients));
+  if (madeUsers.length) await db.update(users).set({ active: false }).where(inArray(users.id, madeUsers));
   await pgClient.end();
 });
 
@@ -236,7 +244,7 @@ describe('facts the person typed', () => {
 });
 
 describe('where a confirmed intake lands', () => {
-  it('a coded client gets a DEAL; the same client twice reuses the open one', async () => {
+  it('a coded client gets a NEW deal per request, and a retried note lands on its own card', async () => {
     const code = `HC${STAMP}`;
     const [client] = await db
       .insert(clients)
@@ -245,8 +253,9 @@ describe('where a confirmed intake lands', () => {
 
     expect((await resolveIntakeClient({ code: code.toLowerCase() }))?.id).toBe(client!.id);
 
+    const noteId = uuidv4();
     const first = await landIntake({
-      noteId: uuidv4(),
+      noteId,
       section: 'podklyuch',
       facts: { weightKg: 100, volumeM3: 2, goods: [{ name: 'Chexol' }] },
       steps: ['AI: 1 guruh'],
@@ -258,6 +267,10 @@ describe('where a confirmed intake lands', () => {
       leadPhone: null,
     });
     expect(first.kind).toBe('deal');
+    expect(first.outcome).toBe('deal');
+    // Named so one client's several jobs read apart on every picker.
+    const firstDeal = await db.query.deals.findFirst({ where: eq(deals.id, first.id) });
+    expect(firstDeal!.title).toBe('Podklyuch — Chexol');
 
     // The note landed on that deal with the AI's working on it.
     const notes = await db
@@ -268,12 +281,12 @@ describe('where a confirmed intake lands', () => {
     expect(notes[0]!.note).toContain('Hisoblatish');
     expect(notes[0]!.note).toContain('AI: 1 guruh');
 
-    // A second request from the same client joins the SAME open deal rather
-    // than opening a second one beside it.
+    // A second request from the same client is a NEW job and a new deal (his
+    // 2026-10-27, «har so'rovga yangi bitim» — they used to pile into one).
     const second = await landIntake({
       noteId: uuidv4(),
       section: 'rastamojka',
-      facts: { weightKg: 50, volumeM3: 1, goods: [{ name: 'Sumka' }] },
+      facts: { weightKg: 50, volumeM3: 1, goods: [] },
       steps: [],
       fileCount: 0,
       collectedBy: actorId,
@@ -282,9 +295,124 @@ describe('where a confirmed intake lands', () => {
       leadName: code,
       leadPhone: null,
     });
-    expect(second.id).toBe(first.id);
+    expect(second.id).not.toBe(first.id);
+    const secondDeal = await db.query.deals.findFirst({ where: eq(deals.id, second.id) });
+    // No goods typed: the code and the day tell it apart (judge product-18).
+    expect(secondDeal!.title).toMatch(new RegExp(`^Rastamojka — ${code} · \\d{2}\\.\\d{2}$`));
+
+    // The SAME note again (a retried «Saqlash»): its own card, no third deal,
+    // and the job it already queued is answered, not opened twice (conc-1/13).
+    const retried = await landIntake({
+      noteId,
+      section: 'podklyuch',
+      facts: { weightKg: 100, volumeM3: 2, goods: [{ name: 'Chexol' }] },
+      steps: [],
+      fileCount: 1,
+      collectedBy: actorId,
+      collectedByName: 'Bot xodim',
+      client: { id: client!.id, clientCode: code, name: client!.name },
+      leadName: code,
+      leadPhone: null,
+    });
+    expect(retried.id).toBe(first.id);
+    expect(retried.outcome).toBe('retried');
+    expect(retried.requestId).toBe(first.requestId);
     const dealRows = await db.select().from(deals).where(eq(deals.clientId, client!.id));
-    expect(dealRows).toHaveLength(1);
+    expect(dealRows).toHaveLength(2);
+    const jobs = await db.select().from(calcRequests).where(eq(calcRequests.noteId, noteId));
+    expect(jobs).toHaveLength(1);
+  });
+
+  it('a colleague’s client lands as a LEAD in the sender’s funnel, and a second request joins it (6.8 b)', async () => {
+    const [seller] = await db
+      .insert(users)
+      .values({ phone: `+99896${STAMP}5`, fullName: `Hamkasb ${STAMP}`, passwordHash: 'x' })
+      .returning();
+    madeUsers.push(seller!.id);
+    const code = `HK${STAMP}`;
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: code, name: 'Hamkasb mijozi', phones: [], salesManagerId: seller!.id })
+      .returning();
+    madeOwnedClients.push(client!.id);
+    const land = (noteId: string) =>
+      landIntake({
+        noteId,
+        section: 'rastamojka',
+        facts: { weightKg: 20, volumeM3: 1, goods: [{ name: 'Lampa' }] },
+        steps: [],
+        fileCount: 0,
+        collectedBy: actorId,
+        collectedByName: 'Bot xodim',
+        client: { id: client!.id, clientCode: code, name: client!.name },
+        leadName: code,
+        leadPhone: null,
+      });
+    const first = await land(uuidv4());
+    expect(first.kind).toBe('lead');
+    expect(first.outcome).toBe('about');
+    expect(first.about?.sellerName).toBe(`Hamkasb ${STAMP}`);
+    madeLeads.push(first.id);
+    const [lead] = await db.select().from(leads).where(eq(leads.id, first.id));
+    // In the SENDER's funnel, unbound — so it stays on his call list.
+    expect(lead!.ownerId).toBe(actorId);
+    expect(lead!.clientId).toBeNull();
+    const about = (await db.execute(sql`
+      SELECT client_id::text AS client_id FROM lead_about_client WHERE lead_id = ${first.id}::uuid`)) as unknown as {
+      client_id: string;
+    }[];
+    expect(about[0]?.client_id).toBe(client!.id);
+    // No deal was opened on the colleague's client.
+    expect(await db.select().from(deals).where(eq(deals.clientId, client!.id))).toHaveLength(0);
+
+    const second = await land(uuidv4());
+    expect(second.id).toBe(first.id);
+    expect(second.outcome).toBe('about_joined');
+  });
+
+  it('a stranger’s request never joins a lead ABOUT a client, even on that client’s phone (deploy-4)', async () => {
+    const [seller] = await db
+      .insert(users)
+      .values({ phone: `+99896${STAMP}6`, fullName: `Hamkasb2 ${STAMP}`, passwordHash: 'x' })
+      .returning();
+    madeUsers.push(seller!.id);
+    const phone = `+99893${STAMP}7`;
+    const code = `HP${STAMP}`;
+    const [client] = await db
+      .insert(clients)
+      .values({ clientCode: code, name: 'Telefonli hamkasb mijozi', phones: [phone], salesManagerId: seller!.id })
+      .returning();
+    madeOwnedClients.push(client!.id);
+    const about = await landIntake({
+      noteId: uuidv4(),
+      section: 'rastamojka',
+      facts: { weightKg: 20, volumeM3: 1, goods: [{ name: 'Lampa' }] },
+      steps: [],
+      fileCount: 0,
+      collectedBy: actorId,
+      collectedByName: 'Bot xodim',
+      client: { id: client!.id, clientCode: code, name: client!.name },
+      leadName: code,
+      leadPhone: null,
+    });
+    madeLeads.push(about.id);
+    const [aboutLead] = await db.select().from(leads).where(eq(leads.id, about.id));
+    expect(aboutLead!.phone).toBe(phone);
+    const stranger = await landIntake({
+      noteId: uuidv4(),
+      section: 'yolkira',
+      facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 80, volumeM3: 1, goods: [] },
+      steps: [],
+      fileCount: 0,
+      collectedBy: actorId,
+      collectedByName: 'Bot xodim',
+      client: null,
+      leadName: 'Notanish',
+      leadPhone: phone,
+    });
+    madeLeads.push(stranger.id);
+    expect(stranger.kind).toBe('lead');
+    expect(stranger.id).not.toBe(about.id);
   });
 
   it('a stranger gets a LEAD, and their second request joins it', async () => {
@@ -410,5 +538,115 @@ describe('where a confirmed intake lands', () => {
     ]);
     expect(await resolveIntakeClient({ phone: shared })).toBeNull();
     expect(await resolveIntakeClient({ code: `ZZ${STAMP}` })).toBeNull();
+  });
+});
+
+/**
+ * His 2.7 b (docs/SAKKIZ-R2.md §8.2.3): with no total typed, the INSERT
+ * stores the Σ of the door-routed lines — all of them or none — because the
+ * checklist no longer asks a total the lines give, and MR-9's upsale scales
+ * on the stored cube. Through the seller's card door, the one with an m³ box
+ * a person leaves empty.
+ */
+describe('the cube the landing stores', () => {
+  async function landOnLead(
+    volumeM3: number | null,
+    lines: (number | null)[],
+    extra: { volumeAmbiguous?: boolean } = {},
+  ) {
+    const stage = await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') });
+    const [lead] = await db
+      .insert(leads)
+      .values({ name: `R2 kub ${STAMP}`, stageId: stage!.id, createdBy: actorId })
+      .returning();
+    madeLeads.push(lead!.id);
+    const opened = await openCalcRequest(
+      {
+        entityType: 'lead',
+        entityId: lead!.id,
+        section: 'rastamojka',
+        weightKg: 400,
+        volumeM3,
+        items: lines.map((m3, i) => ({ name: `Tovar ${STAMP}-${i + 1}`, quantity: 100, volumeM3: m3 })),
+        source: 'card',
+        ...extra,
+      },
+      { actorId },
+    );
+    const [row] = await db.select({ m3: calcRequests.volumeM3 }).from(calcRequests).where(eq(calcRequests.id, opened.id));
+    return { leadId: lead!.id, m3: row!.m3 === null ? null : Number(row!.m3) };
+  }
+
+  it('lines of 1.2 and 1.6 m³ and an empty box store 2.8 — and the audit row says where it came from', async () => {
+    const landed = await landOnLead(null, [1.2, 1.6]);
+    expect(landed.m3).toBe(2.8);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).toMatchObject({ volumeFromLines: true });
+    // Every key the INSERT records has its words on the History tab — an
+    // unlabelled one prints as raw camelCase (review P3-2).
+    for (const key of Object.keys(audit!.after as Record<string, unknown>)) {
+      expect(AUDIT_FIELD_LABELS, key).toHaveProperty(key);
+    }
+  });
+
+  it('a figure that is no number (∞) is a blank, the checklist’s own reading — the lines answer (P3-5)', async () => {
+    expect((await landOnLead(Number.POSITIVE_INFINITY, [1.2, 1.6])).m3).toBe(2.8);
+  });
+
+  it('a cube the seller typed two ways is not summed under — the column stays empty for the VED to ask (P3-R2)', async () => {
+    expect((await landOnLead(null, [1.2, 1.6], { volumeAmbiguous: true })).m3).toBeNull();
+  });
+
+  it('…and the bot’s landing carries that to the INSERT', async () => {
+    const land = async (facts: CalcFacts) => {
+      const target = await landIntake({
+        noteId: uuidv4(),
+        section: 'yolkira',
+        facts,
+        steps: [],
+        fileCount: 0,
+        collectedBy: actorId,
+        collectedByName: 'Bot xodim',
+        client: null,
+        leadName: `R2 ikki xil kub ${STAMP}`,
+        leadPhone: null,
+      });
+      madeLeads.push(target.id);
+      const [row] = await db
+        .select({ m3: calcRequests.volumeM3 })
+        .from(calcRequests)
+        .where(eq(calcRequests.entityId, target.id))
+        .orderBy(desc(calcRequests.requestedAt))
+        .limit(1);
+      return row!.m3 === null ? null : Number(row!.m3);
+    };
+    const goods = [
+      { name: `Kurtka ${STAMP}`, quantity: 300, volumeM3: 1.2 },
+      { name: `Shim ${STAMP}`, quantity: 200, volumeM3: 1.6 },
+    ];
+    const base: CalcFacts = { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 3500, volumeM3: null, goods };
+    expect(await land(base)).toBe(2.8);
+    expect(await land({ ...base, volumeAmbiguous: true })).toBeNull();
+  });
+
+  it('a typed total wins over the lines, and says nothing of them', async () => {
+    const landed = await landOnLead(5, [1.2, 1.6]);
+    expect(landed.m3).toBe(5);
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(eq(auditLog.entityId, landed.leadId))
+      .orderBy(desc(auditLog.id))
+      .limit(1);
+    expect(audit!.after).not.toHaveProperty('volumeFromLines');
+  });
+
+  it('one line without a cube stores none — a partial Σ is not the truck', async () => {
+    expect((await landOnLead(null, [1.2, null])).m3).toBeNull();
   });
 });

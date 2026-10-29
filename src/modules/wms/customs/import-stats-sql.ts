@@ -42,6 +42,81 @@ export function chinaOriginSql(col: SQL): SQL {
 }
 
 /**
+ * A declaration's own code — the ten digits the file writes. Anything shorter
+ * is a HEADING (4-6 digits, or 7-9 half-typed), and a heading answers only
+ * the questions that can stand a range: the AI pick's candidates and the
+ * VED's 📥 list. The statistics, the 📊 median and the model-free auto-fill
+ * stay exact, because a heading-wide series mixes subheadings priced
+ * nothing alike (docs/SAKKIZ-R2.md §7.4). Here and not in import-baza.ts so
+ * this file can ask it without importing the service; import-baza re-exports
+ * it, one home.
+ */
+export function isFullCode(code: string): boolean {
+  return /^\d{10}$/.test(code);
+}
+
+/**
+ * «Which of the file's rows are this code's» — ONE rule for the candidate
+ * list and the batch chooser (#513).
+ *
+ * A full code is matched exactly. A heading is a btree RANGE, both bounds
+ * bound as TEXT: «6403» → `BETWEEN '6403' AND '6403999999'`, which is every
+ * ten-digit code that starts with it and nothing else, and which the
+ * `(batch_id, tnved_code)` index reads as one range scan. Deliberately NOT
+ * `LIKE '6403%'` and NOT `COLLATE "C"`: either forfeits the index on the
+ * database's default collation, and `C.UTF-8` here against `en_US.utf8` on
+ * another server would be two oracles for one statement (#653). Digits sort
+ * the same under both, so the range itself is collation-proof.
+ */
+export function codeMatchSql(r: SQL, code: string): SQL {
+  if (isFullCode(code)) return sql`${r}.tnved_code = ${code}`;
+  const { lo, hi } = codeBounds(code);
+  return sql`${r}.tnved_code BETWEEN ${lo} AND ${hi}`;
+}
+
+/**
+ * The two TEXT bounds of a code's rows — where «a heading is a range» is
+ * written down once: a full code is both of its own bounds, a heading runs
+ * from itself to itself padded with nines. `codeMatchSql` spells them into a
+ * predicate; the batch chooser binds them per code into ONE `VALUES` list, so
+ * a save asking fifty codes plans one statement rather than fifty
+ * (review P2-10).
+ */
+export function codeBounds(code: string): { lo: string; hi: string } {
+  return isFullCode(code) ? { lo: code, hi: code } : { lo: code, hi: code.padEnd(10, '9') };
+}
+
+/**
+ * The code's rows in ONE batch, scoped to China by D3 — the three CTEs
+ * statement 1 and statement 3 both stand on, so the previous quarter is
+ * measured by exactly the rule the current one is. The code is matched
+ * EXACTLY: a heading-wide series would mix subheadings (moved here out of
+ * import-stats.ts so round 2's median read stands on the same scope, K9).
+ *
+ * `named_any` is NULL — not false — when the batch holds no row of the code:
+ * «this file names no country» and «this file has nothing of this code» are
+ * different facts, and only the first is a reason to say the previous
+ * quarter's split differs.
+ */
+export function codeScopeCtes(batchId: string, code: string): SQL {
+  // `cn` is decided ONCE per row: both the origin counts and the scope ask
+  // the same question, and the country patterns are the costly part of the
+  // read — measured on a synthetic 130k-row code (jit off, work_mem 16MB),
+  // statement 1 took ~450 ms asking it three times per row, ~330 ms once.
+  return sql`base AS (
+      SELECT r.unit, r.price_per_unit_usd AS p, r.weight_per_unit_kg AS w, r.origin_country AS o,
+             (r.origin_country IS NOT NULL AND ${chinaOriginSql(sql`r.origin_country`)}) AS cn
+        FROM customs_import_rows r
+       WHERE r.batch_id = ${batchId}::uuid AND r.tnved_code = ${code}
+    ), na AS (
+      SELECT bool_or(o IS NOT NULL) AS named_any FROM base
+    ), scoped AS (
+      SELECT b.* FROM base b CROSS JOIN na
+       WHERE NOT na.named_any OR b.cn
+    )`;
+}
+
+/**
  * The select-list pieces of ONE series over the price column `price`:
  * the count, the extremes, the 99-step `percentile_disc` ladder (every step
  * a price some declaration carries — D1) and, for a small sample, every
@@ -113,6 +188,17 @@ export function candidateStatement(
   // knowable without a name, and every row still carries `nameSim` 0 so the
   // AUTO-fill's threshold can never be met by accident.
   const sim = needle === null ? sql`0::real` : sql`word_similarity(${needle}, r.name_norm)`;
+  // The similarity is the costly half of the scan, and the score needs it
+  // too — but postgres shares no common subexpression, so `${sim}` written
+  // into both the select list and the score is computed TWICE per row
+  // (review perf-1: ~1.8× on a heading, measured). Both branches therefore
+  // compute it ONCE in an inner select fenced by `OFFSET 0` (without the
+  // fence the planner pulls the subquery up and splices the expression back
+  // into every reference), and the score reads the column.
+  const simOnce = sql`SELECT r.id, r.tnved_code, r.name, r.unit, r.price_per_unit_usd,
+                r.weight_per_unit_kg, r.declared_at, r.sender, r.origin_country,
+                ${sim} AS name_sim
+           FROM customs_import_rows r`;
   // The row's accepted units, as a postgres list — a JS array bound into a
   // raw fragment is not one. An empty list matches nothing, honestly.
   const accepts =
@@ -124,15 +210,21 @@ export function candidateStatement(
         )})`;
   const score = sql`CASE
              WHEN ${wantWeight} AND r.unit = 'dona' AND r.weight_per_unit_kg IS NOT NULL
-               THEN 0.7 * ${sim}
+               THEN 0.7 * r.name_sim
                   + 0.3 * (1 - LEAST(1, abs(${w}::numeric - r.weight_per_unit_kg)
                                         / GREATEST(${w}::numeric, 0.01)))
-             ELSE ${sim}
+             ELSE r.name_sim
            END`;
 
-  if (!named) {
+  // The named series is a STATISTIC, read with `=` below: on a heading it
+  // would be computed over nothing and, worse, take the LIST down with it —
+  // the materialized scan it rides is exact too. So a heading never gets the
+  // named branch, whoever asks (review P2-6; the dialog's own guard is
+  // `suggestImportBaza`'s `named`).
+  if (!named || !isFullCode(input.tnvedCode)) {
     return sql`
     SELECT r.id::text AS id,
+           r.tnved_code,
            r.name,
            r.unit,
            r.price_per_unit_usd,
@@ -140,28 +232,33 @@ export function candidateStatement(
            r.declared_at::text AS declared_at,
            r.sender,
            r.origin_country,
-           ${sim} AS name_sim,
+           r.name_sim,
            ${score} AS score,
            -- The count rides the same scan: the screen must be able to say
            -- «200 declarations · the 50 closest» rather than imply that the
            -- page it shows is the whole file.
            count(*) OVER () ::int AS total
-      FROM customs_import_rows r
-     WHERE r.batch_id = ${batchId}::uuid
-       AND r.tnved_code = ${input.tnvedCode}
+      FROM (${simOnce}
+             WHERE r.batch_id = ${batchId}::uuid
+               -- A full code exactly; a heading (round 2) by its btree
+               -- range, each row then carrying its own code for the list
+               -- and the AI pick.
+               AND ${codeMatchSql(sql`r`, input.tnvedCode)}
+            OFFSET 0) r
      ORDER BY (${accepts}) DESC, score DESC, r.declared_at DESC NULLS LAST
      LIMIT ${limit}`;
   }
 
   return sql`
     WITH scored AS MATERIALIZED (
-      SELECT r.id, r.name, r.unit, r.price_per_unit_usd, r.weight_per_unit_kg,
-             r.declared_at, r.sender, r.origin_country,
-             ${sim} AS name_sim,
-             ${score} AS score
-        FROM customs_import_rows r
-       WHERE r.batch_id = ${batchId}::uuid
-         AND r.tnved_code = ${input.tnvedCode}
+      SELECT r.*, ${score} AS score
+        FROM (${simOnce}
+               WHERE r.batch_id = ${batchId}::uuid
+                 -- EXACT, never a heading range: the name-matched series is
+                 -- a statistic, and a heading-wide one mixes subheadings
+                 -- (§7.4). The caller asks for it only on a full code.
+                 AND r.tnved_code = ${input.tnvedCode}
+              OFFSET 0) r
     ), nna AS (
       -- D3: the country filter applies only when the file names countries at
       -- all — decided over the whole code in this batch, never per unit.
@@ -186,6 +283,7 @@ export function candidateStatement(
        ORDER BY q.unit, q.price, ${exemplarOrderSql(sql`s`)}
     )
     SELECT r.id::text AS id,
+           r.tnved_code,
            r.name,
            r.unit,
            r.price_per_unit_usd,

@@ -13,6 +13,7 @@ import { UpdateBanner } from '@/components/update-banner';
 import { SchemaBanner } from '@/components/schema-banner';
 import { isAnalyst } from '@/modules/platform/ai/tools';
 import { NavProgress } from '@/components/nav-progress';
+import { DownloadLinks } from '@/components/download-links';
 import {
   MobileNav,
   Sidebar,
@@ -26,6 +27,7 @@ import { Dock } from '@/components/dock';
 import { canReadTg } from '@/modules/wms/crm/conversations';
 import { mayHaveThreads } from '@/modules/wms/crm/thread-door';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { agentNavDoors } from '@/modules/wms/agent/web-door';
 import { primaryItems } from '@/modules/platform/rbac/nav';
 import { REPORT_GROUPS } from '@/modules/platform/rbac/workspaces';
 import { frequentFor, workspacesFor, type FrequentRow } from '@/modules/platform/nav/usage';
@@ -69,7 +71,9 @@ export default async function ProtectedLayout({ children }: { children: React.Re
   const label = async (namespace: string, key: string) =>
     (await getTranslations(namespace as 'home'))(key as 'receiving');
 
-  const viewer = { permissions: actor.permissions, roles: actor.roles };
+  // `doors`: pages a server fact opens (the AI sotuvchi's — its configured
+  // owner need not hold the super_admin role, review fit-11).
+  const viewer = { permissions: actor.permissions, roles: actor.roles, doors: await agentNavDoors(actor) };
 
   // The menu by job (2026-09-26, docs/NAV-WORKSPACES.md): ONE model for the
   // sidebar, the ••• sheet and the tab strip, so none of them can offer a
@@ -185,6 +189,10 @@ export default async function ProtectedLayout({ children }: { children: React.Re
           navigation hook: a boundary here hydrates late, and a listener that
           attaches late misses the taps it exists for. */}
       <NavProgress />
+      {/* Every file link goes through a short-lived signed address, so a
+          download works where the login cookie does not travel — Telegram's
+          in-app browser hands files to the phone's download manager. */}
+      <DownloadLinks />
       <header className="sticky top-0 z-30 border-b border-line bg-surface-raised/95 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-1 px-3">
           <Link href="/" className="flex items-center gap-2 font-extrabold tracking-tight">

@@ -21,7 +21,16 @@ import { redeliveryReady } from './redelivery-ready';
  * so a hydrated wait is never an already-used one.
  */
 
-export type WaitKind = 'task' | 'staff_entry' | 'ad_visit' | 'cabinet_link';
+export type WaitKind =
+  | 'task'
+  | 'staff_entry'
+  | 'ad_visit'
+  | 'cabinet_link'
+  // The AI sotuvchi's three one-text answers (0138): the owner's edited reply,
+  // his price, the client code he opened for a stranger.
+  | 'agent_edit'
+  | 'agent_price'
+  | 'agent_code';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {

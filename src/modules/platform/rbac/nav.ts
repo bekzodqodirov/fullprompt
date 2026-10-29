@@ -460,6 +460,14 @@ export const NAV: NavGroupSpec[] = [
 export interface Viewer {
   permissions: Set<string> | { has(code: string): boolean };
   roles: string[];
+  /**
+   * Pages a SERVER fact opens for this person — neither a permission nor a
+   * role, so this pure module cannot know it (the AI sotuvchi's page opens for
+   * whoever the configured owner is, `wms/agent/web-door.ts`). Only a tab
+   * marked `door` reads it, and absent means «none»: a caller that forgot to
+   * ask draws less, never more.
+   */
+  doors?: ReadonlySet<string>;
 }
 
 /**

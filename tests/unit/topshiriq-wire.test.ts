@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FOUNDERS, MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
+import { FOUNDERS, MUTE_GROUPS, UNMUTABLE_TYPES } from '@/modules/platform/notifications/mutes';
 import { TASK_COPY_TYPES, TASK_LIST_TYPE } from '@/modules/platform/notifications/retire-tasks';
 import { DELETE_RULES } from '@/modules/platform/files/service';
 import { TASK_ERROR_CODES } from '@/modules/platform/tasks/service';
@@ -157,7 +157,8 @@ describe('the command menu offers the round’s doors and the ladder answers the
 });
 
 describe('every notification type the code sends is mutable (tests-completeness-11)', () => {
-  const grouped = new Set<string>(Object.values(MUTE_GROUPS).flat());
+  // The AI sotuvchi's cards are unmutable ON PURPOSE (mutes.ts UNMUTABLE_TYPES, his Q16 ⭐).
+  const grouped = new Set<string>([...Object.values(MUTE_GROUPS).flat(), ...UNMUTABLE_TYPES]);
   const consts = new Map<string, string>();
   for (const f of SRC) {
     for (const m of f.text.matchAll(/export const ([A-Z_]+) = '([A-Za-z]+)';/g)) consts.set(m[1]!, m[2]!);

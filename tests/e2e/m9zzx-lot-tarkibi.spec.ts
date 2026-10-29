@@ -115,6 +115,17 @@ test('the VED composes on the phone: the document first, the remainder per measu
   documentId = (await chip.getAttribute('data-id'))!;
   expect(documentId).toMatch(/^[0-9a-f-]{36}$/);
 
+  // ONE row to begin with (his 2026-10-27: a tarkib may be one good) — no
+  // alohida/aralash to choose and no carton cell until there is a second
+  // good, and «Bitta tovar» offers to fill the row from the lot.
+  await expect(page.getByTestId('tarkib-line')).toHaveCount(1);
+  await expect(page.getByTestId('tarkib-mode-separate')).toHaveCount(0);
+  await expect(page.getByTestId('tarkib-one-good')).toBeVisible();
+  await page.getByTestId('tarkib-add-line').click();
+  await expect(page.getByTestId('tarkib-line')).toHaveCount(2);
+  await expect(page.getByTestId('tarkib-mode-separate')).toBeVisible();
+  await expect(page.getByTestId('tarkib-one-good')).toHaveCount(0);
+
   await line(page, 0).getByTestId('tarkib-name').fill('Клавиатура');
   await line(page, 0).getByTestId('tarkib-pieces').fill('500');
   await line(page, 0).getByTestId('tarkib-cartons').fill('50');

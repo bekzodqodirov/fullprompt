@@ -185,7 +185,7 @@ describe('the model is asked only about what nobody has coded (P2.10d)', () => {
         : []),
     ];
 
-    await aiPrefill(id, ctx(), { pick: async () => [], configured: true });
+    await aiPrefill(id, ctx(), { pick: async () => ({ answers: [], usage: null }), configured: true });
 
     // Only the two lines nobody had coded were shown to the model.
     expect(asked.flat().map((g) => g.name)).not.toContain(remembered);

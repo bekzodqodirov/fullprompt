@@ -63,8 +63,11 @@ describe('the gates and the forged-post fences', () => {
     expect(body).toContain('canWriteDeal(actor.permissions)');
     // 17a / G4 a: a deal thread and a client chat (whose landing may mint a
     // deal) are the seller's doors — the read fence keeps both halves.
-    expect(body).toContain("entity.kind !== 'lead' && !mayEditDealTerms(actor.permissions)");
-    expect(body).toContain("entity.kind === 'lead' && !actor.permissions.has('crm.leads')");
+    // A lead's CLIENT thread (0136) stands with the lead: the lead side
+    // demands `crm.leads`, itself a terms permission (deal-terms-wire pins it).
+    expect(body).toContain("const onLead = entity.kind === 'lead' || entity.kind === 'lead_client';");
+    expect(body).toContain('!onLead && !mayEditDealTerms(actor.permissions)');
+    expect(body).toContain("onLead && !actor.permissions.has('crm.leads')");
     expect(body).toContain('isCalcSection(section)');
   });
 

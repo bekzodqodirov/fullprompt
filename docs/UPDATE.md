@@ -353,6 +353,83 @@ deploydan keyin to‘g‘ri son — repo’dagi fayllar soni
    xabarlar ro‘yxatidagi xatoni o‘qing va
    `docker compose logs --since 10m app | grep staff-group` ni yuboring.
 
+## Uch band (2026-10-27, 0136) — tekshiruv tartibi
+
+Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
+(repo’dagi fayllar soni: `ls src/modules/platform/db/migrations/*.sql | wc -l`).
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build` —
+   **tg-listen ham qayta qurilsin**: sayt va reklama lidlarining «shu raqamdagi
+   lidga qo‘shish» qoidasi o‘zgardi.
+3. Sonni o‘qing — **137**. Kam chiqsa, `docker compose run --rm migrate` ning
+   o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
+   bor» demasligi va yangi bitim ochishi kerak.
+
+## «AI habarni ko‘rmayapti» tuzatishi (2026-10-29, migratsiyasiz)
+
+Migratsiya yo‘q — son **139** bo‘lib qoladi, shuning uchun son yangilanishni ko‘rsatmaydi (to‘rtinchi tuzoq).
+O‘zgarish asosan **tg-listen**da, demak u albatta qayta qurilishi kerak.
+
+1. Zaxira (§1).
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. Tinglovchi yangi kodda ekanini logdan bilasiz:
+   `docker compose --profile telegram logs --since 5m tg-listen | grep catch-up`
+   Endi 8 ta uzun «Could not find the input entity» xatosi o‘rniga **bitta** qator chiqadi:
+   «catch-up: N ta saqlangan suhbat bu Telegram akkauntda ochilmadi …». Eski matn chiqsa, tg-listen qayta
+   qurilmagan.
+5. Mijoz yozganda logda `GS… ← in` yoki «· o‘tkazildi …: <sabab>» qatori chiqadi:
+   `docker compose --profile telegram logs --since 5m tg-listen | tail -20`
+
+## AI sotuvchi (2026-10-29, 0138) — tekshiruv tartibi
+
+Bu raundda migratsiya bor: **0138** — deploydan keyin son **139** bo‘ladi
+(repo’dagi fayllar soni: `ls src/modules/platform/db/migrations/*.sql | wc -l`).
+Uch band (0136) va yo‘ldagi yuk (0137) hali deploy qilinmagan bo‘lsa, shu deploy
+ularni ham olib keladi — son baribir **139**. Yangi kalit kerak emas: AI
+yordamchining kaliti va Telegram sozlamalari `.env`’da allaqachon bor.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin avval `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build` —
+   **tg-listen albatta qayta qurilsin**: AI sotuvchining javoblarini u yuboradi.
+   Eski tinglovchi bilan sahifada «tinglovchi yangilanmagan» chiqadi va ✅
+   ishlamaydi.
+3. Sonni o‘qing — **139**. Kam chiqsa, `docker compose run --rm migrate` ning
+   o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Bilimlar (uchta Xitoy omborining manzili, AI qoidalari). Birinchi buyruq
+   faqat ko‘rsatadi, ikkinchisi yozadi:
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts
+   docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts --apply
+   ```
+
+6. Telegram’ning xizmat chati (777000 — kirish kodlari, ogohlantirishlar)
+   CRM’da saqlanib qolgan bo‘lsa, uni tozalash. Birinchi buyruq faqat sanaydi,
+   ikkinchisi tozalaydi:
+
+   ```bash
+   docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts
+   docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts --apply
+   ```
+
+7. Tinglovchi ishlayaptimi — bir daqiqa qarang (chiqish: Ctrl+C):
+   `docker compose --profile telegram logs -f tg-listen`
+8. Saytda: **Suhbatlar → AI sotuvchi → Sozlamalar** — akkaunt egasini tanlang
+   va seansni tasdiqlang; keyin staff botda `/agent on`. AI soya rejimida
+   ishlaydi: siz ✅ bosmaguningizcha mijozga hech narsa ketmaydi. Darhol
+   to‘xtatish: botda `/agent off`.
+
+**0138 dan PASTGA qaytish**: avval botda `/agent off`. AI sotuvchi jadvallari
+bazada qoladi, eski kod ularni o‘qimaydi — boshqa hech narsa qilish shart emas.
+
 ## Agar biror narsa buzilsa
 
 Avvalgi ishlaydigan holatga qaytish (kod):
@@ -361,6 +438,22 @@ Avvalgi ishlaydigan holatga qaytish (kod):
 git log --oneline -5                 # ishlagan commit'ni toping
 git checkout <commit>
 docker compose --profile https up -d --build
+```
+
+**0136 dan (uch band) PASTGA qaytishdan oldin — o‘qing.** Migratsiya bir
+tomonlama: «bir mijozga bitta lid» indeksi olib tashlangan, va bir mijozda ikki
+lid bo‘lsa uni qayta qo‘yib bo‘lmaydi — eski kod indekssiz ham ishlaydi. Lekin
+eski kod **bitta qatorli tarkibni ko‘rmaydi** (lot butun holda hujjatga chiqadi)
+va «hamkasb mijozi haqidagi lid»ni oddiy lid deb biladi. Qaytishdan oldin
+sanang va soni nol bo‘lmasa, menga yuboring:
+
+```bash
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM (SELECT lot_id FROM lot_composition_lines GROUP BY lot_id HAVING count(*) = 1) x"
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM batch_sent_compositions WHERE jsonb_array_length(lines) = 1"
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM lead_about_client"
 ```
 
 **0132 dan (yo‘lkira tarifi bo‘yicha taqsimlash) PASTGA qaytishdan oldin —

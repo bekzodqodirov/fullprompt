@@ -42,12 +42,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   // Content decides, not the file name (the driver-APK lesson, #284). The
   // reader lives beside the parser now, because the staff bot's invoice path
   // needs the same two steps (#513).
-  const rows = await workbookRows(await file.arrayBuffer());
-  if (!rows || rows.length === 0) {
+  const sheet = await workbookRows(await file.arrayBuffer());
+  if (!sheet || sheet.rows.length === 0) {
     return NextResponse.json({ error: 'not_xlsx' }, { status: 400 });
   }
 
-  const { goods } = parseGoods(rows);
+  // The merged positions travel with the rows: a carton's weight or a line
+  // total merged over two lines is counted once (R3-S3).
+  const { goods } = parseGoods(sheet.rows, sheet.covered ?? null);
   if (goods.length === 0) return NextResponse.json({ error: 'no_goods' }, { status: 400 });
 
   // Memory first (Phase 1.5): a product the book already knows never goes
@@ -61,8 +63,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   let groups: TnvedGrouping['groups'] | null = null;
   let aiError: string | null = null;
   try {
+    // The parsed weight and volume ride along (round 2, §7.5) — a hint about
+    // material and purpose for the model, never a price. A sheet has no
+    // measure pair and its note is the reader's own, so both are null.
     groups = (await proposeGoodsGrouping(
-      goods.map((g) => ({ name: g.description, quantity: g.quantity, unit: g.unit })),
+      goods.map((g) => ({
+        name: g.description,
+        quantity: g.quantity,
+        unit: g.unit,
+        weightKg: g.weightKg,
+        volumeM3: g.volumeM3,
+        measure: null,
+        note: null,
+      })),
     )).groups;
   } catch (err) {
     // DEALS.md answer 6c: without the key (or on any AI failure) the file

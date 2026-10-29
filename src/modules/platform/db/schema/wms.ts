@@ -1106,6 +1106,51 @@ export const loadPlanLines = pgTable(
 );
 
 /**
+ * A plan line's ROAD part (0137, docs/YOLDAGI-YUK.md): cartons promised from a
+ * truck still on its way to the plan's origin. A side table, never a column on
+ * `load_plan_lines` (#1381). No row = no road part. Written only by
+ * `wms/planning/road.ts`; read behind `planRoadReady()`.
+ */
+export const planLineRoad = pgTable(
+  'plan_line_road',
+  {
+    lineId: uuid('line_id')
+      .primaryKey()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    /** The road part as promised at submit — the ceiling, never rewritten. */
+    roadBoxCount: integer('road_box_count').notNull(),
+    /** Still to be reserved onto the truck; 0 until the approval. */
+    roadOwed: integer('road_owed').notNull().default(0),
+    /** What the truck's loading ended without (4a) — kept, never erased. */
+    roadMissed: integer('road_missed').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'plan_line_road_count_check',
+      sql`${t.roadBoxCount} > 0 AND ${t.roadOwed} >= 0 AND ${t.roadMissed} >= 0 AND ${t.roadOwed} + ${t.roadMissed} <= ${t.roadBoxCount}`,
+    ),
+    index('plan_line_road_owed_idx').on(t.lineId).where(sql`${t.roadOwed} > 0`),
+  ],
+);
+
+/** Which carton each road claim reserved, and off which truck it landed (NULL = from the shelf at loading). */
+export const planRoadClaims = pgTable(
+  'plan_road_claims',
+  {
+    lineId: uuid('line_id')
+      .notNull()
+      .references(() => loadPlanLines.id, { onDelete: 'cascade' }),
+    boxId: uuid('box_id')
+      .notNull()
+      .references(() => boxes.id),
+    inboundBatchId: uuid('inbound_batch_id').references(() => batches.id),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.lineId, t.boxId] }), index('plan_road_claims_box_idx').on(t.boxId)],
+);
+
+/**
  * Scan facts (W4/W5/W8) — append-only. `clientEventUuid` is the offline
  * idempotency key; crate-scan fan-out rows get derived UUIDs (uuid5).
  */
@@ -1272,10 +1317,12 @@ export const clientTransactions = pgTable(
     batchId: uuid('batch_id').references(() => batches.id),
     /**
      * The job this charge is for, when it was raised from one. A charge posted
-     * from batch pricing carries it only when the client's cargo on that truck
-     * is one deal's and nothing else (R3a, derived server-side by
-     * `cargoAboard`); null otherwise — which is a correct answer, not a
-     * gap: a deferral cannot cover money nobody tied to a job.
+     * from batch pricing carries it when the client's cargo on that truck is
+     * one deal's and nothing else (R3a, derived server-side by `cargoAboard`),
+     * or — two or more of his deals aboard — the deal the person setting the
+     * price CHOSE (Q8 «c», `truckDealDecision`); null for a deal beside
+     * deal-less cargo or a chosen «bitimsiz» — which is a correct answer, not
+     * a gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */
@@ -1829,7 +1876,9 @@ export const leads = pgTable(
     index('leads_person_idx').on(t.personId),
     index('leads_next_action_idx').on(t.nextActionAt),
     index('leads_closed_idx').on(t.closedAt),
-    uniqueIndex('leads_client_unique').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
+    // 0136: a code may carry MANY leads (his 2026-10-27, «yutildi» into an
+    // existing code). The unique index of 0021 is gone, one-way.
+    index('leads_client_idx').on(t.clientId).where(sql`${t.clientId} IS NOT NULL`),
   ],
 );
 
@@ -2198,6 +2247,27 @@ export const leadFtl = pgTable('lead_ftl', {
   markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Which client a lead is ABOUT when it is not the client's own (0136, 6.8 b):
+ * a request a seller sends for a COLLEAGUE's client lands as a lead in the
+ * sender's funnel, unbound (`leads.client_id` NULL, so it stays on his call
+ * list). A side table, never a column on `leads` (#1381). Read behind
+ * `leadAboutReady()` (crm/lead-about.ts) — one migration behind it is absent.
+ */
+export const leadAboutClient = pgTable(
+  'lead_about_client',
+  {
+    leadId: uuid('lead_id')
+      .primaryKey()
+      .references(() => leads.id, { onDelete: 'cascade' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('lead_about_client_client_idx').on(t.clientId)],
+);
+
 export const dealFtl = pgTable('deal_ftl', {
   dealId: uuid('deal_id')
     .primaryKey()
@@ -2377,6 +2447,8 @@ export const tgMessages = pgTable(
     index('tg_messages_client_idx').on(t.clientId, t.sentAt),
     // The round-20 scoped reads lead with the manager (migration 0048).
     index('tg_messages_manager_idx').on(t.managerUserId, t.clientId, t.sentAt),
+    // A delete names message ids, not chats (0138, the agent's «deleted for both sides»).
+    index('tg_messages_manager_message_idx').on(t.managerUserId, t.tgMessageId),
   ],
 );
 

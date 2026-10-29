@@ -51,11 +51,29 @@ export interface PickAnswer {
   reason: string;
 }
 
+/**
+ * What one pick call came back with — the answers, and what the call cost.
+ *
+ * The usage rides BESIDE the answers rather than through a callback (K5):
+ * `onUsage` was called without `await`, so no caller could ever make the
+ * ledger write finish before the pass returned, and nothing in the toolchain
+ * would have said so (an async function is accepted where `void` is expected,
+ * and lint has no `no-misused-promises`). The answers' own shape is untouched
+ * — law 1's fence (`ai-advisory.test.ts`) asserts exactly its three keys.
+ */
+export interface PickOutcome {
+  /** null = not available, refused, or unreadable; [] = nothing to ask. */
+  answers: PickAnswer[] | null;
+  /** null = the model never answered (no key, a timeout, a network error). */
+  usage: PickUsage | null;
+}
+
 const SYSTEM = `Ты — помощник декларанта карго-компании GSR LOGISTICS.
 
 Тебе дают товар из заявки клиента и НЕСКОЛЬКО реальных строк из базы
-таможенных деклараций с ТЕМ ЖЕ кодом ТН ВЭД. Твоя задача — выбрать ОДНУ
-строку, которая описывает тот же товар, или не выбрать ни одной.
+таможенных деклараций с тем же кодом или из той же товарной позиции; у каждой
+строки свой код — выбирай строку, чей код подходит товару. Твоя задача —
+выбрать ОДНУ строку, которая описывает тот же товар, или не выбрать ни одной.
 
 Ты НЕ называешь цену и НЕ придумываешь её. Ты выбираешь НОМЕР строки.
 Цену возьмёт система из выбранной строки.
@@ -69,17 +87,22 @@ reason — одна короткая строка на узбекском: по�
 почему ни одной). Это читает человек.`;
 
 /**
- * Ask the model to choose. Returns null when it is not available at all —
+ * Ask the model to choose. Answers null when it is not available at all —
  * the caller then leaves those bazas empty, which is the owner's own rule:
  * «agar to'g'ri bo'lmasa baza yo'q deb VED hodimi o'zi qo'yadi».
  */
 export async function pickImportRows(
   rows: PickRequest[],
-  opts: { timeoutMs?: number; onUsage?: (usage: PickUsage) => void } = {},
-): Promise<PickAnswer[] | null> {
-  if (!aiConfigured()) return null;
+  opts: { timeoutMs?: number } = {},
+): Promise<PickOutcome> {
+  if (!aiConfigured()) return { answers: null, usage: null };
   const asking = rows.filter((r) => r.candidates.length > 0);
-  if (asking.length === 0) return [];
+  if (asking.length === 0) return { answers: [], usage: null };
+
+  // Set the moment the model has answered, so every exit after that — a
+  // refusal, an unparseable answer — still carries what the call cost, as the
+  // callback this replaced reported it before any of them.
+  let usage: PickUsage | null = null;
 
   const listing = asking
     .map((r) => {
@@ -88,7 +111,11 @@ export async function pickImportRows(
           (c, i) =>
             `   [${i}] ${c.name.slice(0, 200)} — $${c.pricePerUnitUsd}/${c.basis}` +
             (c.weightPerUnitKg !== null ? ` · ${c.weightPerUnitKg} kg/dona` : '') +
-            (c.unitMatches ? '' : ' (единица не совпадает)'),
+            (c.unitMatches ? '' : ' (единица не совпадает)') +
+            // A heading's list (round 2): each declaration names its OWN code
+            // where it differs from the row's, because choosing it chooses
+            // that code — and with it the duty law.
+            (c.tnvedCode !== r.tnvedCode ? ` (код ${c.tnvedCode})` : ''),
         )
         .join('\n');
       return `Строка ${r.seq}: «${r.name}» (код ${r.tnvedCode})\n${lines}`;
@@ -139,15 +166,15 @@ export async function pickImportRows(
       '[calc-prefill pick] model tokens',
     );
     // …and told to the caller, which is the one that knows WHICH request to
-    // bill. A callback rather than a widened return: the answer's shape is
-    // law 1's own fence («seq, candidate, reason» and nothing else) and
-    // `ai-advisory.test.ts` asserts exactly those three keys.
-    opts.onUsage?.({
+    // bill — beside the answers (`PickOutcome`), never inside them: the
+    // answer's shape is law 1's own fence («seq, candidate, reason» and
+    // nothing else) and `ai-advisory.test.ts` asserts exactly those three keys.
+    usage = {
       model: ANALYST_MODEL,
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
-    });
-    if (response.stop_reason === 'refusal') return null;
+    };
+    if (response.stop_reason === 'refusal') return { answers: null, usage };
     const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = picksSchema.parse(JSON.parse(raw));
 
@@ -169,10 +196,10 @@ export async function pickImportRows(
       }
       out.push({ seq: p.row, candidate: p.candidate, reason: p.reason.slice(0, 300) });
     }
-    return out;
+    return { answers: out, usage };
   } catch (err) {
     // Never fatal: the bazas stay empty and the VED fills them.
     logger.warn({ err }, 'calc prefill pick failed');
-    return null;
+    return { answers: null, usage };
   }
 }

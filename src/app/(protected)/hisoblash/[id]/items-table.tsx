@@ -161,6 +161,8 @@ interface LastSave {
   alreadySaved: number;
   importFilled: number[];
   memoryFilled: number[];
+  /** Round 2's book fill — carried now, drawn when it lands (K7). */
+  dictionaryFilled: number[];
   unitsMoved: { seq: number; to: string; note: string }[];
   sellerUnitUnresolved: { seq: number; word: string }[];
   basisStamped: { seq: number; basis: BazaBasis }[];
@@ -176,6 +178,7 @@ const EMPTY_SAVE: LastSave = {
   alreadySaved: 0,
   importFilled: [],
   memoryFilled: [],
+  dictionaryFilled: [],
   unitsMoved: [],
   sellerUnitUnresolved: [],
   basisStamped: [],
@@ -199,6 +202,7 @@ function lastSaveOf(result: TableSaveFields): LastSave {
     alreadySaved: result.alreadySaved ?? 0,
     importFilled: result.importFilled ?? [],
     memoryFilled: result.memoryFilled ?? [],
+    dictionaryFilled: result.dictionaryFilled ?? [],
     unitsMoved: result.unitsMoved ?? [],
     sellerUnitUnresolved: result.sellerUnitUnresolved ?? [],
     basisStamped: result.basisStamped ?? [],
@@ -565,15 +569,25 @@ export function ItemsTable({
 
   /** The picker's one writer: amount, basis and provenance land TOGETHER —
    * setDraft deliberately drops the provenance, because a hand-typed number
-   * is the VED's own. */
+   * is the VED's own. A declaration from a HEADING's list (round 2) brings
+   * its own ten-digit code, drafted with the pick: the save prices the row
+   * under the code the declaration was filed under, in one press. A recode
+   * a PERSON chooses here carries no `bazaReason` and raises no `ai_recode`
+   * — the person chose it. The 📥 stays open over a code the pick drafted
+   * (`rowDirtyForPicker`), so a re-pick REPLACES that code: one under the
+   * stored code takes any drafted code back off, or the row would keep the
+   * first pick's code under the second pick's declaration. */
   const pickImport = useCallback(
-    (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis }) => {
+    (itemId: string, row: { id: string; pricePerUnitUsd: number; basis: BazaBasis; tnvedCode: string }) => {
       setLastSave(null);
       setDraftState((prev) => {
         const item = itemById.get(itemId);
         if (!item) return prev;
+        const rest: ItemDraft = { ...prev.drafts[itemId] };
+        delete rest.tnvedCode;
         return withRowDraft(prev, item, {
-          ...prev.drafts[itemId],
+          ...rest,
+          ...(row.tnvedCode !== (item.tnvedCode ?? '') ? { tnvedCode: row.tnvedCode } : {}),
           bazaValue: String(row.pricePerUnitUsd),
           bazaBasis: row.basis,
           importRowId: row.id,
@@ -1985,6 +1999,7 @@ export function ItemsTable({
         lastSave.alreadySaved > 0 ||
         lastSave.importFilled.length > 0 ||
         lastSave.memoryFilled.length > 0 ||
+        lastSave.dictionaryFilled.length > 0 ||
         lastSave.unitsMoved.length > 0 ||
         lastSave.sellerUnitUnresolved.length > 0 ||
         lastSave.basisStamped.length > 0) ? (
@@ -2015,6 +2030,11 @@ export function ItemsTable({
               : '',
             lastSave.memoryFilled.length > 0
               ? `🧠 ${t('table.memoryFilled', { count: lastSave.memoryFilled.length })}: ${lastSave.memoryFilled.join(', ')}`
+              : '',
+            // Round 2: every Saqlash fills from the book too — named, like the
+            // other two sources, or a 📖 price would arrive unannounced.
+            lastSave.dictionaryFilled.length > 0
+              ? `📖 ${t('table.dictionaryFilled', { count: lastSave.dictionaryFilled.length })}: ${lastSave.dictionaryFilled.join(', ')}`
               : '',
             // The heal and the stamp name every row they touched, each with
             // its own words — a moved number the VED cannot find is a number
@@ -2807,6 +2827,18 @@ function BlockFooter({
           {group.warnings.includes('excise_unanswered') ? (
             <span className="ml-2 text-2xs text-warn" data-testid="calc-excise-unanswered">
               ⚠ {t('warnings.exciseUnanswered')}
+            </span>
+          ) : null}
+          {/* Round 2's two, on the same terms: the ✅ records them, so the
+              block must SAY them before it is pressed. */}
+          {group.warnings.includes('baza_dictionary_moved') ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-baza-dictionary-moved">
+              ⚠ {t('warnings.bazaDictionaryMoved')}
+            </span>
+          ) : null}
+          {group.warnings.includes('ai_recode') ? (
+            <span className="ml-2 text-2xs text-warn" data-testid="calc-ai-recode">
+              ⚠ {t('warnings.aiRecode')}
             </span>
           ) : null}
           {pullable && book && !dirty ? (

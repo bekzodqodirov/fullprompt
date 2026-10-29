@@ -4,6 +4,7 @@ import { attachments, tgAccounts, tgMessages, tgOutbox, users } from '../../plat
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getSetting } from '../../platform/settings/service';
 import { getStorage } from '../../platform/files/storage';
+import { readGuard } from './account-guard';
 import { bridgeState } from './telegram-live';
 import { storeIncoming } from './telegram-accounts';
 import { MAX_TG_FILE_BYTES, MAX_TG_PHOTO_BYTES } from './telegram-import';
@@ -96,6 +97,22 @@ export async function conversationManagers(clientId: string): Promise<string[]> 
   return rows.map((r) => r.name);
 }
 
+/**
+ * May a reply be QUEUED in this chat, now? One answer for the door
+ * (`queueReply`), the thread's ↩ (`canReplyNow`) and every composer that asks
+ * `canQueue(sendContextFor(…))`: the account's own hold — a restriction's
+ * pause, or a send-path wait Telegram ordered (`tg_account_guard`, review
+ * ban-1 / S1) — rides in the SendContext, so a reply the pump would never
+ * claim is refused in words instead of sitting «navbatda».
+ */
+export async function replyVerdict(
+  input: { clientId: string; managerUserId: string; peerId: bigint | null; now?: Date },
+  body = 'x',
+  hasAttachment = false,
+): Promise<SendVerdict> {
+  return canQueue(body, await sendContextFor(input), DEFAULT_LIMITS, hasAttachment);
+}
+
 const minuteAgo = (now: Date) => new Date(now.getTime() - 60_000);
 const dayAgo = (now: Date) => new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
@@ -116,12 +133,17 @@ export async function sendContextFor(input: {
   const [enabled, account] = await Promise.all([
     getSetting('tg_sending_enabled'),
     db
-      .select({ status: tgAccounts.status, lastSeenAt: tgAccounts.lastSeenAt })
+      .select({ id: tgAccounts.id, status: tgAccounts.status, lastSeenAt: tgAccounts.lastSeenAt })
       .from(tgAccounts)
       .where(eq(tgAccounts.managerUserId, input.managerUserId))
       .limit(1)
       .then((rows) => rows[0] ?? null),
   ]);
+  // The account's hold (0138) — `readGuard` answers «nothing wrong» on a
+  // database one migration behind, so this costs today's behaviour nothing.
+  // The pump reads the same row before every claim (`pumpGate`), so what it
+  // would hold is what the composer refuses.
+  const guard = account ? await readGuard(account.id) : null;
 
   const counted = async (since: Date, peerId?: bigint) => {
     const where = [
@@ -162,9 +184,11 @@ export async function sendContextFor(input: {
     // flag somebody could set: they must have written to US, on THIS account.
     clientHasWrittenFirst: inbound.length > 0,
     sendingEnabled: enabled === true,
-    // Held on the account row by the listener when Telegram tells it to wait.
-    floodWaitUntil: null,
+    // A send-path wait Telegram ordered, persisted by the listener (only the
+    // send methods move it, S9) — the pump claims nothing on the account until then.
+    floodWaitUntil: guard?.floodUntil && guard.floodUntil.getTime() > now.getTime() ? guard.floodUntil : null,
     bridgeLive: account !== null && bridgeState(account, now) === 'live',
+    accountPaused: guard?.pausedAt != null,
   };
 }
 
@@ -230,12 +254,13 @@ export async function queueReply(
   const peerId = await peerForClient(input.clientId, input.managerUserId);
   if (peerId === null) throw new OutboxError('never_wrote_first');
 
-  const sendCtx = await sendContextFor({
-    clientId: input.clientId,
-    managerUserId: input.managerUserId,
-    peerId,
-  });
-  const verdict = canQueue(body, sendCtx, DEFAULT_LIMITS, attachmentId !== null);
+  // The account's own pause and Telegram's wait as well as `canQueue` (S1): a
+  // reply the listener will not claim is refused here, never left «navbatda».
+  const verdict = await replyVerdict(
+    { clientId: input.clientId, managerUserId: input.managerUserId, peerId },
+    body,
+    attachmentId !== null,
+  );
   if (!verdict.ok) throw new OutboxError(verdict.reason);
 
   const [row] = await db
@@ -371,14 +396,11 @@ export async function cancelQueued(id: string, ctx: AuditContext): Promise<void>
 export async function canReplyNow(clientId: string, actorId: string): Promise<boolean> {
   const account = await replyAccountFor(clientId, actorId);
   if (!account) return false;
-  const verdict = canQueue(
-    'x',
-    await sendContextFor({
-      clientId,
-      managerUserId: account.managerUserId,
-      peerId: account.peerId,
-    }),
-  );
+  const verdict = await replyVerdict({
+    clientId,
+    managerUserId: account.managerUserId,
+    peerId: account.peerId,
+  });
   return verdict.ok;
 }
 
@@ -465,11 +487,31 @@ export async function recoverInFlight(managerUserId: string): Promise<number> {
   return rows.length;
 }
 
-/** Put a claimed job back when a rate limit says "not yet" — not a failure. */
-export async function releaseClaim(id: string): Promise<void> {
-  // `attempts` is deliberately NOT decremented: it counts trips through the
-  // sender, and a row that keeps bouncing off a limit is worth noticing.
-  await db.update(tgOutbox).set({ status: 'queued' }).where(eq(tgOutbox.id, id));
+/**
+ * Put a claimed job back AS IF IT WAS NEVER CLAIMED — the claim's own
+ * `attempts + 1` (`claimNext`) taken back with it (final review K4, K22).
+ *
+ * The ONE way a claim goes back to the queue, for every bounce that says
+ * nothing about the REPLY: a rate limit's «not yet», the account's send slot
+ * holding the turn (a wait or a restriction the send ahead of it met, often
+ * the agent's), Telegram saying the ACCOUNT is limited or must wait, a
+ * session that ended, a database that blinked before the call. Counting
+ * those spent the reply's retries on the account's trouble — two minutes of
+ * a held slot is forty claims, and two bounces off the minute's limit were
+ * enough — and the reply then failed for good on the first ordinary network
+ * blip after it (`markAttemptFailed` against MAX_ATTEMPTS). `attempts`
+ * counts tries of THIS reply, and a claim that called nothing tried nothing.
+ * (The old «a row bouncing off a limit is worth noticing» had no reader but
+ * the chat pulse's token, which a bounce every three seconds only woke.)
+ *
+ * Only a row still in 'sending' moves, so a second call — the listener's
+ * catch running again after a database blip — takes nothing back twice.
+ */
+export async function giveClaimBack(id: string): Promise<void> {
+  await db
+    .update(tgOutbox)
+    .set({ status: 'queued', attempts: sql`greatest(${tgOutbox.attempts} - 1, 0)` })
+    .where(and(eq(tgOutbox.id, id), eq(tgOutbox.status, 'sending')));
 }
 
 export async function markSent(id: string, tgMessageId: bigint | null): Promise<void> {
@@ -578,9 +620,16 @@ export async function loadOutboxFile(
  * unique (manager, peer, tg_message_id) index refuses the duplicate, and for
  * a photo the attachment is already claimed onto the row, so the thread shows
  * the copy we uploaded rather than a second download.
+ *
+ * A LEAD's chat too (review regression-2): the agent answers leads, and an
+ * echo built from a client id alone stored a lead's reply with no owner at
+ * all — `storeIncoming` takes the lead and, for a lead since won, fills the
+ * client beside it. The human queue's rows always name a client and keep
+ * passing exactly what they passed.
  */
 export async function recordSent(input: {
-  clientId: string;
+  clientId: string | null;
+  leadId?: string | null;
   managerUserId: string;
   peerId: bigint;
   tgMessageId: bigint;
@@ -591,6 +640,7 @@ export async function recordSent(input: {
 }): Promise<void> {
   const echoId = await storeIncoming({
     clientId: input.clientId,
+    leadId: input.leadId ?? null,
     managerUserId: input.managerUserId,
     row: {
       peerId: input.peerId,

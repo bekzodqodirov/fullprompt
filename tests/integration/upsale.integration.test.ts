@@ -981,7 +981,9 @@ describe('a correction retires the released offer', () => {
     const job = await sealedJob();
     await recordOffer({ versionId: job.versionId }, { clientPriceUsd: job.floor + 500, locale: 'uz' }, sellerCtx());
     const { lastReleasedOfferFor } = await import('@/modules/wms/calc/workspace');
-    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: true });
+    // A seal-anchored offer names its JOB through the version (0093) — the
+    // card's «Narx» links that job (his 2026-10-27).
+    expect(await lastReleasedOfferFor('deal', dealId)).toMatchObject({ price: job.floor + 500, stands: true, requestId: job.requestId });
 
     const next = await corrected(job.requestId);
 

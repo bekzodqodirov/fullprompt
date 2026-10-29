@@ -45,6 +45,7 @@ import { allLabelVariants } from './client-labels';
 import { buttonLabel } from './limits';
 import { editMarkup, editText } from './send';
 
+import { getSetting, SETTING_DEFAULTS } from '../settings/service';
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 import { isBacklog } from './lifecycle';
@@ -375,7 +376,20 @@ export type BotCallback =
    * resolver a swipe-reply uses, so nothing can be forged and a deploy between
    * the send and the press loses nothing.
    */
-  | { kind: 'thread_reply' };
+  | { kind: 'thread_reply' }
+  /**
+   * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
+   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
+   * calculation request (p) or a tray rule (n k x c b); the digest rides only
+   * on ✅ and names what the card SHOWED, so a press on a card that has since
+   * changed is refused (leak-3). `ag:` collides with nothing: `a:` is
+   * anchored to `[01]:`.
+   */
+  | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
+
+/** ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed · ↩ not that client · 📌 general · 👤 own · ✖ skip. */
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z'] as const;
+export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
  * What a REPEAT of each press does (Q5 a, judge T14) — a Record over the
@@ -413,6 +427,12 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   draft_pick: 'prompt',
   forward: 'keyed',
   thread_reply: 'prompt',
+  // Every agent press is decided by a CAS in its service: a draft that is no
+  // longer pending, a rule already decided, an offer already written. The 📌
+  // general fact's yes is the one two-press op, and its second press is a
+  // button on the QUESTION carrying the arm's token (I3) — a press on the
+  // card, redelivered or tapped twice into a bot that was down, only asks.
+  agent: 'cas',
 };
 
 /** ⏰'s four answers. */
@@ -493,6 +513,16 @@ const CALC_STEPS = [
   'save',
   'more',
   'cancel',
+  // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
+  // failure; answer «a second invoice arrived» — add its lines or replace.
+  'reread',
+  'inv_add',
+  'inv_replace',
+  // «Boshqa zavodning tovarlarimi?» (round-1 review, c4): a PDF or a sheet
+  // the model reads, beside an Excel list — another factory's goods to add,
+  // or the same goods, read for their totals.
+  'other_add',
+  'other_same',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
@@ -612,6 +642,15 @@ export function parseCallback(data: string): BotCallback | null {
       verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
     };
   }
+  const agent = /^ag:([a-z]):([0-9a-f-]{36})(?::([0-9a-f]{8}))?$/.exec(data);
+  if (agent && (AGENT_OPS as readonly string[]).includes(agent[1]!)) {
+    return {
+      kind: 'agent',
+      op: agent[1] as AgentOp,
+      id: agent[2]!,
+      ...(agent[3] ? { digest: agent[3] } : {}),
+    };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {
@@ -654,6 +693,8 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   if (type === 'TaskReassigned' && taskId && payload.offerSources === true) {
     return [[{ text: '📤 Manbani yangi odamga yuborish', callback_data: `tf:${taskId}` }]];
   }
+  const agentRows = agentButtons(type, payload);
+  if (agentRows) return agentRows;
   if (type === 'DebtApprovalRequested' && typeof payload.approvalId === 'string') {
     return [
       [
@@ -698,6 +739,61 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The AI sotuvchi's cards (0138). A draft card draws its four controls only
+ * while the draft is live, and ✅ only when the policy found nothing (leak-3)
+ * — with the digest of what the card shows. After he answered a question the
+ * agent asked him, the card offers to remember the answer. Every row drawn is
+ * one `parseCallback` accepts (#939: an unparsed press spins for 15 s).
+ */
+function agentButtons(type: string, payload: Record<string, unknown>): BotButton[][] | null {
+  const id = typeof payload.draftId === 'string' && UUID.test(payload.draftId) ? payload.draftId : null;
+  if (type === 'AgentDraft' && id) {
+    if (payload.kbAsk === true) {
+      return [
+        [
+          { text: '📌 Umumiy qoida', callback_data: `ag:g:${id}` },
+          { text: '👤 Faqat shu mijoz', callback_data: `ag:u:${id}` },
+        ],
+        [{ text: '✖ Saqlamaslik', callback_data: `ag:z:${id}` }],
+      ];
+    }
+    if (payload.live !== true) return null;
+    const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
+    const first: BotButton[] = [];
+    if (payload.blocked !== true && digest) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${digest}` });
+    first.push({ text: '✏️ O‘zim yozaman', callback_data: `ag:e:${id}` });
+    return [first, [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }]];
+  }
+  const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;
+  // A purged answer card (`live: false`) offers no price: its link went with the chat.
+  if (type === 'AgentCalcAnswered' && requestId && payload.priceable === true && payload.live !== false) {
+    return [[{ text: '💵 Narx yozaman', callback_data: `ag:p:${requestId}` }]];
+  }
+  const ruleId = typeof payload.ruleId === 'string' && UUID.test(payload.ruleId) ? payload.ruleId : null;
+  // A stranger or echo card that was answered is closed (`live: false`): its
+  // buttons would be a second decision about a chat already decided (I1).
+  if ((type === 'AgentStranger' || type === 'AgentCodeEcho') && payload.live === false) return null;
+  if (type === 'AgentStranger' && ruleId) {
+    return [
+      [
+        { text: '🆕 Yangi lid', callback_data: `ag:n:${ruleId}` },
+        { text: '👤 Mijoz — kod', callback_data: `ag:k:${ruleId}` },
+      ],
+      [{ text: '🚫 Shaxsiy', callback_data: `ag:x:${ruleId}` }],
+    ];
+  }
+  if (type === 'AgentCodeEcho' && ruleId && typeof payload.clientId === 'string' && UUID.test(payload.clientId)) {
+    // Both buttons carry the ECHOED client's id TAIL (the random end — a v7 id's
+    // head is its clock, shared by rows minted the same minute): a second code
+    // typed later re-points the chat, and this older card must neither confirm
+    // the newer one nor take it back.
+    const tail = payload.clientId.slice(-8).toLowerCase();
+    return [[{ text: '✅ Ha, shu mijoz', callback_data: `ag:c:${ruleId}:${tail}` }, { text: '↩ Yo‘q', callback_data: `ag:b:${ruleId}:${tail}` }]];
+  }
+  return null;
+}
 
 export type CallbackButton = { text: string; callback_data: string };
 export type UrlButton = { text: string; url: string };
@@ -1239,6 +1335,23 @@ export async function assistantFromBot(
 }
 
 /**
+ * The company's client-code prefix («GS»), as the customer readers
+ * (`parseClientHint`, `looksLikeMaterial`) take it: a code is the COMPANY's
+ * shape, not any letters before digits. Read once per handler call, on the
+ * pool and never inside a transaction (#714). An unreadable setting answers
+ * the shipped default and says so in the log — the reader still has a shape,
+ * and the database being down fails the landing on its own anyway.
+ */
+export async function clientCodePrefix(): Promise<string> {
+  try {
+    return String((await getSetting('client_code_prefix')) ?? '').trim();
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] client_code_prefix unreadable — the default is used');
+    return SETTING_DEFAULTS.client_code_prefix;
+  }
+}
+
+/**
  * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
  * client the typed hint names, deal or lead, what the note says — lives in
  * wms and is tested there; this is the crossing.
@@ -1257,39 +1370,53 @@ export async function landCollectedIntake(
   requestId?: string | null;
   /** Why not, when it did not (audit A38) — the bot turns it into a sentence. */
   queueError?: string | null;
+  /** Whether the machine's reply was queued — the ✅'s wording (judge concurrency-8). */
+  replyQueued?: boolean;
+  /** What the landing did — the ✅'s words (docs/UCH-BAND.md §7). */
+  outcome?: string;
+  /** On a lead about a colleague's client: whose client it is. */
+  about?: { clientCode: string; sellerName: string | null } | null;
 } | null> {
-  const { activeIntake } = await import('./calc-intake');
+  const { activeIntake, intakeClientLabel } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
   const { landIntake, resolveIntakeClient } = await import('../../wms/calc/intake-land');
 
-  const hint = parseClientHint(state.clientHintRaw);
+  const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
   return landIntake({
     noteId: state.noteId,
     section: state.section,
     facts: state.facts,
-    steps: state.steps,
+    // The bot's own notes (the lines an Excel kept out) ahead of the model's,
+    // as the lenta has always carried them; the summary prints them apart.
+    steps: [...state.notes, ...state.steps],
     // Law 11: the words themselves go onto the card, not only what the
-    // parser made of them.
-    material: state.material,
+    // parser made of them — the per-line answers included, labelled, since
+    // they are kept out of the material the totals are read from.
+    material: [...state.material, ...state.answers],
     fileCount: state.fileCount,
     collectedBy: staffId,
     collectedByName: staffName,
     client,
-    // A prospect's card is named by whatever staff typed; the phone, when
-    // one was typed, is what a second request will find it by.
-    leadName: state.clientHintRaw.trim() || 'Hisoblatish (nomsiz)',
+    // A prospect's card is named by whatever staff typed — on ONE line, the
+    // phone left to its own column (round-2 review, C8/C9: a two-line hint
+    // named the lead «Ali aka\n+998 …»); the phone, when one was typed, is
+    // what a second request will find it by. Only the lines that ARE the
+    // hint's phone or code leave the name — judged against what THIS hint
+    // took (round-3 review, R3-C4), so «Ali aka 2» keeps its «2».
+    leadName: intakeClientLabel(state.clientHintRaw, hint) ?? 'Hisoblatish (nomsiz)',
     leadPhone: hint?.phone ?? null,
     // Only the AI door offers the toggle; every other collection lands the
     // column's own default, which is what it landed before this round.
     hasCertificate: state.hasCertificate,
     // The AI podklyuch door's «qayerdan?» answer; every other door has none.
     freightZone: state.route?.zone ?? null,
-    // What the reading cost, so the day's AI budget counts the most
-    // expensive call on this path rather than the two cheap ones.
-    usage: state.usage,
+    // What every reading cost, so the day's AI budget counts the most
+    // expensive call on this path rather than the two cheap ones — every
+    // answered one, a re-read after «➕ Yana ma'lumot» included (2.9 c).
+    usages: state.usages,
   });
 }
 

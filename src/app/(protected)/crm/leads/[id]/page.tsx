@@ -3,7 +3,10 @@ import { eq } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import { quoteLockedFor } from '@/modules/wms/crm/service';
+import { quoteWriterFor, writerWroteCard } from '@/modules/wms/crm/service';
+import { calcWorkspaceHref, wonDealsOfLead } from '@/modules/wms/calc/card-door';
+import { leadTakesJobs } from '@/modules/wms/calc/service';
+import { canWriteDeal } from '@/modules/wms/deals/service';
 import { clients, leads } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
@@ -58,8 +61,15 @@ export default async function LeadPage({
   const lead = await db.query.leads.findFirst({ where: eq(leads.id, id) });
 
   if (!lead) notFound();
-  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2).
-  const quoteLocked = (await quoteLockedFor('lead', id)) !== null;
+  // A sealed VED calculation locks the quote on this card (docs/VED.md law 2)
+  // — `quoteLockedFor`'s rule, read once: locked while the writer stands, and
+  // the job that wrote the number linked for the VED (his 2026-10-27).
+  const writer = await quoteWriterFor('lead', id);
+  const quoteLocked = writer?.stands === true;
+  const quoteCalcHref = writerWroteCard(writer, lead.quotedAmount) ? calcWorkspaceHref(actor, writer.requestId) : null;
+  // A WON lead's jobs moved to their deals; the card says where (a card
+  // link, not the breakdown — drawn for whoever the deal card admits).
+  const wonDeals = await wonDealsOfLead(id);
   // The thread's filter and the calls' filter live on the same URL; a link
   // that changes one must carry the other (#514 — a literal string drops it).
   const cardHref = (patch: { hodim?: string | null; chodim?: string | null }) => {
@@ -80,6 +90,7 @@ export default async function LeadPage({
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
   const tf = await getTranslations('ftl');
+  const tcalc = await getTranslations('calc');
   // LTL / FTL (0135): null = the server is one migration behind (no control, no chip).
   const loadMode = await leadLoadMode(lead.id);
   const [sources, stages, managers, custom, codePrefix, lostReasonList] = await Promise.all([
@@ -95,6 +106,11 @@ export default async function LeadPage({
     getSetting('client_code_prefix'),
     activeLostReasonLabels(),
   ]);
+
+  // The lead's own stage KIND, whatever its `active` flag — the question the
+  // server's refusal asks (`leadTakesJobs`), so the card never offers a form
+  // the server refuses, nor hides one it would take.
+  const takesJobs = await leadTakesJobs(lead.id);
 
   const update = updateLeadAction.bind(null, id);
   const convert = convertLeadAction.bind(null, id);
@@ -179,6 +195,11 @@ export default async function LeadPage({
               clientId={threadSource.kind === 'client' ? threadSource.clientId : null}
               // A lead the chat itself opened (round 82) shows that chat here.
               leadId={lead.id}
+              // «Hisoblatishga yuborish» from the client's chat drawn HERE lands
+              // on this lead while it is open (judge product-5), never on a
+              // second card; the server decides by the lead's stage.
+              calcTarget={threadSource.kind === 'client' ? { kind: 'lead_client', id: lead.id } : undefined}
+              leadTakesJobs={takesJobs}
               hodim={hodim}
               // `who` and not `id`: this page already has an `id` (the lead's).
               hrefFor={(who) => cardHref({ hodim: who })}
@@ -223,7 +244,25 @@ export default async function LeadPage({
             : ''
         }
         nextAction={[lead.nextActionAt, lead.nextActionNote].filter(Boolean).join(' · ')}
+        quoteCalcHref={quoteCalcHref}
       />
+      {wonDeals.length > 0 ? (
+        <p className="card !py-2 text-sm [overflow-wrap:anywhere]" data-testid="lead-calc-won-deal">
+          {tcalc('kartaWonDeal')}{' '}
+          {wonDeals.map((deal, i) => (
+            <span key={deal.id}>
+              {i > 0 ? ', ' : ''}
+              {canWriteDeal(actor.permissions) ? (
+                <Link href={`/bitimlar/${deal.id}`} className="font-mono font-semibold text-brand-700 underline">
+                  {deal.code}
+                </Link>
+              ) : (
+                <span className="font-mono font-semibold">{deal.code}</span>
+              )}
+            </span>
+          ))}
+        </p>
+      ) : null}
       {/* FTL shows, LTL — the default — stays silent; never an empty fact,
           which CardFacts would list as «To'ldirilmagan» on every lead (0135). */}
       {loadMode === 'ftl' ? (
@@ -280,6 +319,7 @@ export default async function LeadPage({
             fall back to its first option and Save would revive it. */}
         <LeadForm
           quoteLocked={quoteLocked}
+          quoteCalcHref={quoteCalcHref}
           load={loadMode ? { initial: loadMode, office: mayRevertFtl(actor) } : null}
           action={update}
           sources={personPickableSources(sources, lead.sourceId).map((row) => ({
@@ -314,6 +354,7 @@ export default async function LeadPage({
         entityId={id}
         revalidate={`/crm/leads/${id}`}
         clientName={lead.company || lead.name}
+        takesJobs={takesJobs}
       />
       <TasksPanel
         entityType="lead"
