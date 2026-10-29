@@ -6,6 +6,7 @@ import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
   clients,
+  tgAccountGuard,
   tgAccounts,
   tgMessages,
   tgOutbox,
@@ -15,9 +16,11 @@ import { setSetting } from '@/modules/platform/settings/service';
 import { deleteAttachment, saveAttachment } from '@/modules/platform/files/service';
 import { disconnectAccount, listListenablePhones } from '@/modules/wms/crm/telegram-accounts';
 import {
+  canReplyNow,
   cancelQueued,
   claimNext,
   clientHasWritten,
+  giveClaimBack,
   loadOutboxFile,
   markAttemptFailed,
   markSent,
@@ -28,8 +31,8 @@ import {
   dismissFailed,
   recordSent,
   recoverInFlight,
-  releaseClaim,
   replyAccountFor,
+  replyVerdict,
   sendContextFor,
   wasSentWithPhoto,
 } from '@/modules/wms/crm/outbox';
@@ -172,6 +175,52 @@ describe('once the client has written', () => {
     await db.update(tgAccounts).set({ lastSeenAt: new Date() }).where(eq(tgAccounts.id, accountId));
   });
 
+  it('refuses in words while the account is paused or under Telegram’s send wait — the pump would claim neither (S1)', async () => {
+    const reply = () => queueReply({ clientId, managerUserId: managerId, body: 'Ertaga' }, ctx());
+    await db
+      .insert(tgAccountGuard)
+      .values({ accountId, pausedAt: new Date(), pausedKind: 'peer_flood', pauseReason: 'PEER_FLOOD' })
+      .onConflictDoUpdate({
+        target: tgAccountGuard.accountId,
+        set: { pausedAt: new Date(), pausedKind: 'peer_flood', pauseReason: 'PEER_FLOOD', floodUntil: null },
+      });
+    try {
+      await expect(reply()).rejects.toThrow('account_paused');
+      // The hold rides in the one SendContext every composer asks (canQueue(sendContextFor(…))).
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: true });
+      // The thread draws no ↩ for a reply that cannot leave.
+      expect(await canReplyNow(clientId, managerId)).toBe(false);
+      // The company switch still says first what is wrong with sending at all.
+      await setSetting('tg_sending_enabled', false, managerId);
+      expect(await replyVerdict({ clientId, managerUserId: managerId, peerId: PEER })).toEqual({
+        ok: false,
+        reason: 'sending_disabled',
+      });
+      await setSetting('tg_sending_enabled', true, managerId);
+
+      // Telegram's own wait on SendMessage: the word every composer already says.
+      const until = new Date(Date.now() + 30 * 60_000);
+      await db
+        .update(tgAccountGuard)
+        .set({ pausedAt: null, pausedKind: null, floodUntil: until })
+        .where(eq(tgAccountGuard.accountId, accountId));
+      await expect(reply()).rejects.toThrow('flood_wait');
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: false, floodWaitUntil: until });
+
+      // A wait that has ended holds nothing: the reply queues, and the pump takes it.
+      await db
+        .update(tgAccountGuard)
+        .set({ floodUntil: new Date(Date.now() - 1000) })
+        .where(eq(tgAccountGuard.accountId, accountId));
+      expect(await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER })).toMatchObject({ accountPaused: false, floodWaitUntil: null });
+      expect(await canReplyNow(clientId, managerId)).toBe(true);
+      await expect(reply()).resolves.toMatchObject({ id: expect.any(String) });
+    } finally {
+      await setSetting('tg_sending_enabled', true, managerId);
+      await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
+    }
+  });
+
   it('reports a live bridge and a client who wrote first', async () => {
     const sendCtx = await sendContextFor({ clientId, managerUserId: managerId, peerId: PEER });
     expect(sendCtx.clientHasWrittenFirst).toBe(true);
@@ -199,14 +248,13 @@ describe('the listener taking a job', () => {
     expect(claimed[0]!.peerId).toBe(PEER);
   });
 
-  it('puts a job back when a rate limit says “not yet”', async () => {
+  it('puts a job back when a rate limit says “not yet” — with the claim’s attempt (K22’s follow-up)', async () => {
     const [row] = await db.select().from(tgOutbox).where(eq(tgOutbox.clientId, clientId));
-    await releaseClaim(row!.id);
+    await giveClaimBack(row!.id);
     const again = await claimNext(managerId);
     expect(again?.id).toBe(row!.id);
-    // Attempts still counts up: a row bouncing off a limit for ever is worth
-    // being able to see.
-    expect(again?.attempts).toBe(2);
+    // Nothing was tried: the minute's limit was the account's, and `attempts` counts this reply's tries.
+    expect(again?.attempts).toBe(1);
   });
 
   it('marks a sent message with Telegram’s own id', async () => {
@@ -257,6 +305,51 @@ describe('when sending goes wrong', () => {
     // waiting for. Neither is safe to do silently, so a person is told.
     expect(row!.status).toBe('failed');
     expect(row!.lastError).toContain('listener restarted');
+  });
+});
+
+describe('a bounce about the ACCOUNT gives the claim back (final review K4, K22)', () => {
+  it('a held slot or a restriction spends none of the reply’s retries — the first real blip after it still re-queues', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'qaytariladi' }, ctx());
+    // Ticks of a held slot: claimed, refused before any call, given back — the pump's SlotHeld branch.
+    for (let i = 0; i < 10; i += 1) {
+      const job = await claimNext(managerId);
+      expect(job?.id).toBe(id);
+      await giveClaimBack(id);
+    }
+    const [held] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(held!.status).toBe('queued');
+    expect(held!.attempts, 'nothing was ever tried').toBe(0);
+    // The hold lapses; the first real try meets one network blip — re-queued, exactly as with no hold at all.
+    const job = await claimNext(managerId);
+    expect(job?.attempts).toBe(1);
+    await markAttemptFailed(id, 'socket hang up', false, MAX_ATTEMPTS);
+    const [after] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(after!.status).toBe('queued');
+  });
+
+  it('takes back only a claim that stands: a replay, or a row that is no longer sending, moves nothing', async () => {
+    await db.delete(tgOutbox).where(eq(tgOutbox.clientId, clientId));
+    const { id } = await queueReply({ clientId, managerUserId: managerId, body: 'bir marta' }, ctx());
+    await claimNext(managerId);
+    await claimNext(managerId).then((none) => expect(none).toBeNull());
+    // One real try that met a network blip: re-queued, and it stays counted.
+    await markAttemptFailed(id, 'socket hang up', false, MAX_ATTEMPTS);
+    const [tried] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    await claimNext(managerId);
+    await giveClaimBack(id);
+    // The listener's catch running twice after a database blip takes back one claim, not two.
+    await giveClaimBack(id);
+    const [back] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(back!.status).toBe('queued');
+    expect(back!.attempts, 'the real try stays; the bounce’s claim does not').toBe(tried!.attempts);
+    const job = await claimNext(managerId);
+    await markSent(job!.id, 123456789n);
+    await giveClaimBack(id);
+    const [sent] = await db.select().from(tgOutbox).where(eq(tgOutbox.id, id));
+    expect(sent!.status, 'a message that left stays sent').toBe('sent');
+    expect(sent!.attempts).toBe(tried!.attempts + 1);
   });
 });
 

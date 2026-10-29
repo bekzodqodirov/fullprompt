@@ -53,7 +53,11 @@ jobs:
       # into the live company. The browser suite signs in as these accounts.
       - run: pnpm db:seed:demo
       - run: pnpm test
+      # The image's heap (Dockerfile; DECISIONS #1223, #1543): the bundle has
+      # outgrown V8's ~2 GB default, and CI must build what the server builds.
       - run: pnpm build
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
       - name: Install Playwright chromium
         # Its own short leash + bounded retries. The old `a || a` retry was
         # unreachable: `timeout-minutes` kills the STEP, so one hung attempt

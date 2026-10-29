@@ -5,6 +5,7 @@ import { db, pgClient } from '../src/modules/platform/db/client';
 import { users } from '../src/modules/platform/db/schema';
 import { saveAccount } from '../src/modules/wms/crm/telegram-accounts';
 import { sessionKey } from '../src/modules/wms/crm/telegram-session';
+import { TELEGRAM_DEVICE } from '../src/modules/wms/crm/telegram-device';
 
 /**
  * Store a manager's Telegram login, once, so the bridge can reconnect.
@@ -62,6 +63,9 @@ async function main() {
 
   const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
     connectionRetries: 3,
+    // The session minted here is the one the listener reuses: it must be
+    // born with the same device name it will announce on every connect.
+    ...TELEGRAM_DEVICE,
   });
   await client.start({
     phoneNumber: async () => tgPhone,

@@ -21,7 +21,7 @@ import { recordAiPass } from './ai-cost';
 import type { AiUsage } from '../tnved/service';
 import { queueCalcPrefill } from './prefill-queue';
 import { dealTitleFor } from './deal-title';
-import { CalcError, calcOpenRefusal } from './service';
+import { CalcError, calcOpenRefusal, leadTakesJobs } from './service';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -447,6 +447,13 @@ export async function landIntake(input: {
   collectedByName: string;
   /** Resolved client, when the typed code or phone named exactly one. */
   client: { id: string; clientCode: string; name: string } | null;
+  /**
+   * The lead this job already belongs to — the AI sotuvchi's door, where the
+   * chat itself names the lead (tg_messages.lead_id). Without it a hidden-
+   * number stranger's request would open a SECOND lead beside the one the
+   * conversation lives on.
+   */
+  lead?: { id: string; name: string; ownerId: string | null } | null;
   /** What staff typed as the customer's name when there is no code yet. */
   leadName: string;
   leadPhone: string | null;
@@ -497,9 +504,15 @@ export async function landIntake(input: {
     } else {
       const refused = await calcOpenRefusal(input.collectedBy, items.length);
       if (refused) throw new CalcError(refused);
+      // The AI sotuvchi's lead takes a job only while it is open — refused
+      // BEFORE the note is written, as the chat's 🧮 and the card refuse it;
+      // otherwise the note lands on a closed card and the queue refuses it
+      // there for ever.
+      if (input.lead && !(await leadTakesJobs(input.lead.id))) throw new CalcError('lead_closed');
       // A prospect who asked before already has a card; a second request
-      // belongs on it rather than beside it.
-      const existing = input.leadPhone ? await openLeadForPhone(input.leadPhone) : null;
+      // belongs on it rather than beside it — and the AI sotuvchi's door names
+      // the lead its chat lives on, which is that card by construction.
+      const existing = input.lead ?? (input.leadPhone ? await openLeadForPhone(input.leadPhone) : null);
       if (existing) {
         target = { kind: 'lead', id: existing.id, label: existing.name, leadOwnerId: existing.ownerId, outcome: 'lead_joined' };
       } else {

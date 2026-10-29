@@ -92,7 +92,7 @@ export default async function ConversationsPage({
 
       {/* Are messages actually arriving? The list growing is the only other
           evidence, and "nobody wrote today" looks identical to a dead bridge. */}
-      <TelegramBridgeStatus />
+      <TelegramBridgeStatus viewer={actor} />
 
       {/* Offered to whoever may decide, ALWAYS. It used to appear only while
           something was waiting, on the reasoning that an empty link is an

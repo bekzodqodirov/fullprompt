@@ -39,6 +39,13 @@ export interface BubbleMessage {
   fwdFrom?: string | null;
   /** What this message answers; null = it answers nothing. */
   quoted?: { body: string | null; direction: string; hasMedia: boolean } | null;
+  /**
+   * The AI sotuvchi sent it (an `agent_outbox` row carries its Telegram id,
+   * derived at render — `wms/agent/web-thread.ts`). The customer never sees
+   * the mark; the person reading the CRM must, or an approved machine reply
+   * reads as something a colleague typed.
+   */
+  agent?: boolean;
 }
 
 /** «1,4 MB» — a name with no size is not something anybody can decide to open. */
@@ -62,6 +69,7 @@ export function TelegramBubble({
   clientLabel,
   mediaLabel,
   labels,
+  agentLabel,
 }: {
   message: BubbleMessage;
   /** What to call the other side — the client's own name is not in the row. */
@@ -74,6 +82,8 @@ export function TelegramBubble({
    * be a third overlay on a drawer — the thread screen is where they live.
    */
   labels?: { reply: string; share: string; forwarded: string; hidden: string };
+  /** The 🤖's name for a screen reader and a hover («AI sotuvchi yubordi»). */
+  agentLabel?: string;
 }) {
   const out = message.direction === 'out';
   const media =
@@ -92,7 +102,14 @@ export function TelegramBubble({
       <div className="mb-0.5 flex justify-between gap-3 text-xs text-ink-500">
         {/* Truncated: a manager's full name wrapped to a second line inside a
             narrow bubble on a phone, pushing the message itself down. */}
-        <span className="truncate">{out ? message.manager : clientLabel}</span>
+        <span className="truncate">
+          {out && message.agent && (
+            <span className="mr-1" data-testid="tg-bubble-agent" title={agentLabel} aria-label={agentLabel}>
+              🤖
+            </span>
+          )}
+          {out ? message.manager : clientLabel}
+        </span>
         <span className="whitespace-nowrap">
           {new Date(message.sentAt).toLocaleString('ru-RU', {
             dateStyle: 'short',

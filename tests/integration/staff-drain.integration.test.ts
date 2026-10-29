@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { clients, issueApprovals, notifications, telegramLinks, users, warehouses } from '@/modules/platform/db/schema';
@@ -34,6 +34,7 @@ interface Call {
 let calls: Call[] = [];
 let answers: { status: number; json: unknown }[] = [];
 let nextMessageId = 100;
+let duringSend: (() => Promise<void>) | null = null;
 
 const mine: string[] = [];
 const parked = new Set<string>();
@@ -114,6 +115,8 @@ beforeEach(() => {
   __setTelegramTransport(async (url, init) => {
     const method = url.slice(url.lastIndexOf('/') + 1);
     calls.push({ method, body: JSON.parse(String(init.body)) as Record<string, unknown> });
+    // A writer that commits WHILE the drain holds a row (the purge, a card close).
+    if (method === 'sendMessage' && duringSend) await duringSend();
     const next = answers.shift() ?? { status: 200, json: { ok: true, result: { message_id: (nextMessageId += 1) } } };
     return new Response(JSON.stringify(next.json), { status: next.status });
   });
@@ -121,6 +124,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   __setTelegramTransport(null);
+  duringSend = null;
   // Each case's rows go with it: a row one case left pending (the paused
   // run, the counted failure) would be the NEXT case's first send and eat
   // the answer that case queued for its own row.
@@ -403,5 +407,46 @@ describe('a debtor question already DECIDED is never sent with live buttons (rou
     expect(sends()).toHaveLength(1);
     expect(JSON.stringify(sends()[0]!.body.reply_markup)).toContain('a:1:');
     expect((await rowOf(id)).status).toBe('sent');
+  });
+});
+
+describe('an agent card closed while its copy was in flight is corrected after the send (identity review)', () => {
+  const RULE = '0f1e2d3c-4b5a-4968-8776-655443322110';
+  const edits = () => calls.filter((c) => c.method === 'editMessageText');
+
+  it('the purge that ran mid-send: the copy just sent is edited to the blank card, its buttons gone', async () => {
+    const id = await queue(staffId, 'AgentStranger', { ruleId: RULE, text: `🆕 Yangi odam yozdi: Notanish ${STAMP}` });
+    // The purge (or a card close) commits while this row is 'sending': its own edit found no `tg`.
+    duringSend = async () => {
+      await db
+        .update(notifications)
+        .set({ payload: sql`${notifications.payload} || ${JSON.stringify({ text: '🗑 Suhbat shaxsiy deb o‘chirildi.', live: false })}::jsonb` })
+        .where(eq(notifications.id, id));
+    };
+    await drain();
+    // What went out is what was claimed — the live card…
+    expect(sends()).toHaveLength(1);
+    expect(JSON.stringify(sends()[0]!.body.reply_markup)).toContain(`ag:n:${RULE}`);
+    // …and the drain puts the card as it now stands onto that very copy.
+    const tg = (await rowOf(id)).payload as { tg?: { chatId: number; messageId: number } };
+    expect(edits()).toHaveLength(1);
+    expect(edits()[0]!.body).toMatchObject({ chat_id: CHAT, message_id: tg.tg!.messageId });
+    expect(String(edits()[0]!.body.text)).toContain('Suhbat shaxsiy deb o‘chirildi');
+    expect(String(edits()[0]!.body.text)).not.toContain('Notanish');
+    expect(edits()[0]!.body.reply_markup).toBeUndefined();
+  });
+
+  it('a card nobody touched in flight is not edited, and neither is any other message', async () => {
+    await queue(staffId, 'AgentStranger', { ruleId: RULE, text: `🆕 Yangi odam yozdi: Notanish ${STAMP}` });
+    const task = await queue(staffId, 'TaskAssigned', { taskId: TASK_ID, text: `🆕 Yangi vazifa ${STAMP}` });
+    duringSend = async () => {
+      await db
+        .update(notifications)
+        .set({ payload: sql`${notifications.payload} || ${JSON.stringify({ text: `boshqa matn ${STAMP}` })}::jsonb` })
+        .where(eq(notifications.id, task));
+    };
+    await drain();
+    expect(sends()).toHaveLength(2);
+    expect(edits()).toHaveLength(0);
   });
 });

@@ -314,6 +314,23 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       const closed = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN).closed;
       if (closed) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: closed });
     }
+    // The AI-VED's estimate, «rasmiy emas», to the AI sotuvchi's owner when
+    // the agent sent this job (his Q5 ⭐ c) — a no-op otherwise. Only when
+    // THIS run spoke: a closed request has its official answer, and a
+    // re-delivery has already announced. Best-effort, like the lenta note: a
+    // pass the seller has been told about must never be followed by «the pass
+    // failed» because the owner's copy could not be written.
+    const customs = typeof out.customsUsd === 'number' ? out.customsUsd : null;
+    const freight = typeof out.freightUsd === 'number' ? out.freightUsd : null;
+    if (spoke && (customs !== null || freight !== null)) {
+      const parts = [
+        customs !== null ? `rastamojka ≈ $${customs.toFixed(2)}` : null,
+        freight !== null ? `yo'lkira ≈ $${freight.toFixed(2)}` : null,
+      ].filter(Boolean);
+      await import('../agent/calc-loop')
+        .then((m) => m.announceAgentCalcSafe(requestId, 'estimate', { amountText: parts.join(', ') }))
+        .catch((err) => logger.warn({ err, requestId }, '[calc-prefill] agent estimate not announced'));
+    }
     // His answer 2a: the SAME text onto the card's lenta. Two audiences
     // for one answer — the seller reads it on a phone and forgets it, the
     // VED opens the card tomorrow and needs to see what the machine told

@@ -302,11 +302,35 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
 };
 
 /**
+ * Types NO mute silences — not a group, not even «all» (0138, the AI
+ * sotuvchi, his Q16 ⭐). The agent's cards are the other half of its off
+ * switch: drafted replies whose cards were muted would leave customers
+ * waiting with nothing on any screen saying why, so the way to stop them is
+ * «/agent off», never a /profile tick. `TgAccountPaused` is the alarm that a
+ * manager's Telegram was limited — the one message whose silence costs the
+ * account — and `AgentForcedOff` says the machine stopped itself. Delivered to their own people only (the agent owner; the account's
+ * manager and the super_admins), so nobody else's chat fills with them.
+ */
+export const UNMUTABLE_TYPES = [
+  'AgentDraft',
+  'AgentNotice',
+  'AgentCapReached',
+  'AgentCalcAnswered',
+  'AgentCodeEcho',
+  'AgentStranger',
+  'TgAccountPaused',
+  'AgentForcedOff',
+] as const;
+
+export type UnmutableType = (typeof UNMUTABLE_TYPES)[number];
+
+/**
  * Is this person silencing this type? By name, or because the list holds its
  * group's founders — so a type that JOINS a group after somebody ticked it
  * stays silenced for them, and growing a group never un-mutes it.
  */
 export function isTelegramMuted(muted: unknown, type: string): boolean {
+  if ((UNMUTABLE_TYPES as readonly string[]).includes(type)) return false;
   if (!Array.isArray(muted)) return false;
   if (muted.includes('all') || muted.includes(type)) return true;
   for (const group of Object.keys(MUTE_GROUPS) as MuteGroup[]) {

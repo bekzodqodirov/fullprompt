@@ -873,6 +873,10 @@ export async function returnCalcRequest(
   } catch (err) {
     logger.error({ err, id }, '[calc] return task creation failed');
   }
+  // The AI sotuvchi hears it LAST (review regression-3): the seller's task
+  // above is the VED's own work and must not wait behind the agent's.
+  // Best-effort and queued, never a model run under the VED's button.
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'returned', { reason: trimmed.slice(0, 500) });
 }
 
 /** The currencies the fold offers — the answer is typed as the VED read it. */
@@ -990,6 +994,9 @@ export async function finishCalcRequest(
       linkLine(row.entityType, row.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, id }, '[calc] done notify failed'));
+  // The AI sotuvchi's own «javob keldi» (0138, regression-5): its own type, no
+  // exceptUserId — a no-op unless the agent sent this job. Never throws.
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(id, 'done', { amountText: `${amount} ${currency}` });
   // The CARD's row: the seller reads the card's History tab, so this one
   // carries the figure and nothing of the VED's reasoning.
   await writeAudit(db, ctx, {

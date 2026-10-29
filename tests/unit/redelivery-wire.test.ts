@@ -16,6 +16,7 @@ const HANDLERS = read(`${T}/staff-handlers.ts`);
 const TASKS = read(`${T}/task-handlers.ts`);
 const CABINET = read(`${T}/client-cabinet.ts`);
 const STAFF_BOT = read(`${T}/staff-bot.ts`);
+const AGENT = read(`${T}/agent-bot.ts`);
 
 const found = (text: string, needle: string, what = needle) => {
   const at = text.indexOf(needle);
@@ -240,6 +241,28 @@ describe('(9) a consumed wait’s DELETE reaches the table before the effect', (
     between(HANDLERS, 'takeStaffEntry(chatId, ctx.message.date)', 'await flushWaitWrites()', 'linkStaffChat(staff.id, chatId)');
     between(CABINET, 'dropPendingLink(chatId);', 'await flushWaitWrites()', 'completeClientLink(pending.linkId');
     between(TASKS, 'takeTaskPendingFor(chatId, press.taskId)', 'await flushWaitWrites()', "completeTaskFromBot(chatId, press.taskId, ''");
+    // The AI sotuvchi's one text slot (✏️ text, 💵 figure, typed code) is a wait consumer too.
+    between(AGENT, 'dropWait(chatId, target.kind)', 'await flushWaitWrites()', 'agentText(staff.id, target, msg.text)');
+  });
+
+  it('every wait consumer MARKS the message it handled, after the effect (final review K23)', () => {
+    // A crash redelivery finds the wait already consumed and reaches the
+    // staff tail, which answers «handled» only for a marked message — an
+    // unmarked one hears «lost — send again» and the resend goes to the AI.
+    const mark = "await markOnce(await messageKey(ctx, 'wait'))";
+    const consumers: [string, string, string][] = [
+      ['staff-handlers (answer)', HANDLERS, 'answerPendingText(ctx, chatId, pendingTask'],
+      ['staff-handlers (result)', HANDLERS, 'completeTaskFromBot(chatId, pendingTask.taskId'],
+      ['agent-bot (text slot)', AGENT, 'agentText(staff.id, target, msg.text)'],
+    ];
+    for (const [name, text, effect] of consumers) {
+      const at = found(text, effect, name);
+      const marked = text.indexOf(mark, at);
+      expect(marked, `${name}: no mark after its effect`).toBeGreaterThan(at);
+      // …in the same branch: before the next wait is read, i.e. before the function's own end.
+      const nextFn = text.slice(at).search(/\n(?:export )?(?:async )?function /);
+      if (nextFn > -1) expect(marked - at, `${name}: the mark sits in another function`).toBeLessThan(nextFn);
+    }
   });
 });
 

@@ -1,5 +1,167 @@
 # CHANGELOG
 
+## 2026-10-24 → 10-29 — AI sotuvchi: mijozlarga javobni AI tayyorlaydi, siz tasdiqlaysiz, sizning akkauntingizdan ketadi
+
+Sizning so'zingiz: «Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban havfini
+minimum qilsin». Yangi migratsiya bor (**0138**): deploydan keyin baza hisobi **139** bo'lishi kerak.
+
+### Qanday ishlaydi
+- Telegram akkauntingizga mijoz yoki lid yozganda, AI javobni o'zi yubormaydi, faqat **qoralama** tayyorlaydi. U staff botga kartochka bo'lib keladi:
+  - mijoz nima yozgani;
+  - AI nima javob bermoqchi (fors yoki xitoy tilida bo'lsa, ostida o'zbekcha tarjimasi);
+  - javobdagi har bir raqam qayerdan olingani.
+- Kartochkadagi tugmalar:
+  - **✅ Yuborish** — javobni yuboradi;
+  - **✏️ O'zim yozaman** — o'z matningizni yozasiz;
+  - **❌ Kerak emas** — qoralama tashlanadi;
+  - **🙋 Suhbat meniki** — bu chat 24 soat sizniki, AI aralashmaydi.
+- Shu kartochkalar sayt sahifasida ham bor: **Suhbatlar → AI sotuvchi**. Bo'limlar: Kutilmoqda · Savollar · Bilimlar · Sozlamalar.
+- Faqat **akkaunt egasi**, ya'ni siz tasdiqlaysiz. Boshqa admin ham tasdiqlay olmaydi.
+- Javob sizning shaxsiy akkauntingizdan, tirik odamdek ketadi: avval chatni o'qiydi, «yozmoqda…» chiqadi, keyin xabar boradi. Yuborilgan javob CRM chatida 🤖 belgisi bilan ko'rinadi.
+
+### Ban xavfidan himoya
+- **Chegaralar:** bitta chatga AI xabarlari orasida kamida 20 soniya, soatiga 20 tadan, kuniga 80 tadan ko'p emas.
+- **Birinchi 14 kun:** kuniga o'zingiz odatda yozadigan sondan ko'p yuborilmaydi.
+- **Kechasi** (22:00–08:00): mijoz oxirgi 2 soatda yozgan bo'lsa, javob darhol ketadi. Aks holda ertalab 08:30 da ketadi.
+- **Mijoz yangi xabar yuborsa**, tasdiqlangan javob yuborilmaydi va yangi qoralama tayyorlanadi. Bu ovozli xabar, rasm yoki fayl bo'lsa ham shunday. O'zingiz yozib qo'ysangiz ham yuborilmaydi.
+- **Telegram cheklov qo'ysa** (spam, flood), o'sha akkauntdan yuborish butunlay to'xtaydi, CRM javoblari ham. AI o'chadi, sizga va super adminlarga xabar keladi.
+  - Telegram'ni tekshirib bo'lgach, **Suhbatlar** sahifasidagi ko'prik panelida **«Tekshirdim»** ni bosasiz.
+  - To'xtab turgan paytda CRM'dagi yozish oynasi buni ochiq aytadi, xabar «navbatda» deb osilib qolmaydi.
+- **«/agent off»** botda AI'ni darhol o'chiradi: navbatdagi javoblar bekor bo'ladi, qoralamalar yopiladi.
+- **Telegram'ning o'zidan rasmiy xabar kelsa** (777000 xizmat akkaunti — qoidalar, cheklov haqida ogohlantirish), AI o'sha zahoti o'zi o'chadi va sizga xabar keladi. Sizning kirish kodlaringiz (Telegram Desktop'ga, yangi telefonga kirganingizda) AI'ni o'chirmaydi. Bu xizmat chati hech qachon CRM'ga saqlanmaydi va AI uni o'qimaydi.
+  - Avvaldan saqlanib qolgan bo'lsa ham: «Qaysi chatlar» ro'yxatida ko'rinmaydi, uni mijozga yoki lidga qo'shib bo'lmaydi. Eskidan qolgan xabarlarni bir marta tozalash buyrug'i bor (pastda, deploy qadamlarida).
+- **AI sizdan keyin turadi:** AI'ning daqiqalik va kunlik chegaralari CRM'dan o'zingiz yuborgan xabarlarni ham sanaydi. Sizning CRM javoblaringiz uchun chegaralar avvalgidek.
+- **Kechasi** (22:00–08:00) AI kartochkalari telefoningizni ovoz bilan bezovta qilmaydi, jim keladi.
+- **AI sizga savol bersa** (❓ Sizdan savol) va 30 daqiqa javob bermasangiz, bot bir marta eslatadi. Kechasi eslatmaydi: ertalab 08:00 dan keyin hammasini bitta xabarda eslatadi.
+
+### AI nima qiladi va nima qilmaydi
+- **Narx, muddat yoki sana** faqat tizimdan olinadi:
+  - avto yo'lkira — saytdagi kalkulyator bo'yicha;
+  - avia — kg × 17 $;
+  - bilimlar sahifasidagi ma'lumotlar.
+  - Mijoz o'zi aytgan narx («90$ qilib bering») hech qachon qaytarib aytilmaydi.
+  - Manbasi yo'q raqam bo'lsa, ✅ tugmasi chiqmaydi.
+- **Va'dalar to'xtatiladi:** «chegirma qilamiz», «arzon qilamiz», «ertaga albatta jo'natamiz», «keyin to'laysiz» kabi gaplar bo'lsa ham ✅ chiqmaydi.
+- **Boshqa mijoz** haqida hech narsa aytilmaydi: kodi, yuki, telefoni, ismi.
+- **Hodimning to'liq ismi** javobda bo'lsa, javob to'xtatiladi. Faqat bitta so'z (masalan ism) bo'lsa, ogohlantirish chiqadi.
+- **Yuk va qarz** faqat chat raqami shu mijoz kartasida bo'lsa aytiladi (sizning 19a javobingiz).
+- **«Siz botmisiz?»** deb so'rashsa, qoralama yozilmaydi va sizga xabar keladi. Ovozli xabar va pushtu tilidagi xabarga ham shunday.
+- **Notanish odam yozsa**, bitta kartochka keladi:
+  - tugmalar: **🆕 Yangi lid / 👤 Mijoz — kod / 🚫 Shaxsiy**;
+  - raqami yashirin bo'lsa ham keladi, «📵» belgisi bilan;
+  - kontaktlaringizdagi odamlar uchun kelmaydi.
+
+### Sizning javoblaringiz bo'yicha
+- **Avto:** 1 kubdan VA 100 kg dan kam yukka narx aytilmaydi. Mijozga «1 kub yoki 100 kg dan boshlab tashiymiz» deyiladi.
+- **Avia:**
+  - narxi kg × 17 $, hisob 1 kg dan, yuqori chegara yo'q;
+  - faqat haqiqiy kg hisobga olinadi, hajm (kub) emas;
+  - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
+  - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
+  - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz.
+  - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi. «Yuk qayerda?» (yuk holati) degan savol uchun manzil so'ralmaydi.
+  - **Suhbat qaysi yo'lda ekanini endi biz aytgan narx belgilaydi**, mijozning so'zlari emas. Avval tizim suhbatdagi so'zlardan taxmin qilardi va ikki tomonga xato qilardi:
+    - mijoz tovarni «Tikuv **mashina**si» deb yozsa yoki biz avia narxini aytganimizda mijoz «avia» so'zini hech yozmagan bo'lsa, avia suhbati mashinaniki deb o'qilardi va ombor manzili ketib qolishi mumkin edi;
+    - «Avia qimmat ekan, kerak emas», «300 ta **air fryer**» yoki o'tgan haftadagi avia savoli esa mashina suhbatida ham avia savolini chiqarardi.
+    - Endi tartib shunday: shu safar AI hisoblagan narx; bo'lmasa eng **oxirgi** dalil — mijozning o'zi tanlagan yo'li, biz aytgan narxli xabar yoki siz ✅ bilan tasdiqlagan qoralama (7 kun ichida). Siz tasdiqlagan javob mijozga ketgach, u qaysi yo'l uchun hisoblangan bo'lsa, o'sha yo'l hisoblanadi.
+    - Mijozning so'zidan faqat **tanlov** olinadi: «avia bilan», «mashinada», «fura bilan», «oddiy kargo bilan». Tovar nomi («tikuv mashinasi», «avtozapchast», «samolyot o'yinchoq», «aviator ko'zoynak») va kompaniya so'zi («kargongiz», «kargo manzili») yo'l hisoblanmaydi.
+    - Rad etish faqat yo'l so'zining yonida bo'lsa olinadi: «aviada emas», «avia qimmat ekan», «mashinada uzoq ekan», «не авиа». «Avia narxi qimmat emas ekan, shu bilan yuboraman» — bu avia tanlovi.
+    - Bizning narxli xabarimiz **narx turgan joyidan** o'qiladi. «Avia bilan 30 kg — 510 $ … power bank faqat avto bilan ketadi» — bu avia narxi.
+    - Hali narx aytilmagan avia suhbatida ham («Guanchjoudan avia bilan yubormoqchiman» → «Manzil qayerga?») qoida ishlaydi.
+    - «Kargo narxini ayting» endi temir yo'l suhbatini mashina suhbatiga aylantirmaydi.
+  - **To'xtatish va savol endi bitta qoida**: avia javob ombor manzili sabab to'xtatilsa, kartochka albatta sizdan manzilni so'raydi. Avval to'xtatilgan qoralama savolsiz qolishi mumkin edi.
+  - Kartochkada yuk qayerdan **chiqishi** yoziladi, mijoz so'ragan ombor emas. Mijoz yangi yuk haqida yozsa («Yana 80 kg, endi Guanchjoudan»), kartochka eskisini emas, **yangisini** yozadi.
+  - «Rahmat, manzilni oldim», «mening manzilim: …», «Manzil: Andijon, …», «Toshkentda qayerga kelib olaman?», «yukim qayerga keldi / keladi?», «куда доставите?» degan xabarlar manzil so'rovi hisoblanmaydi.
+  - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi.
+    - **Bilimlarga o'zingiz yangi qabul omborini qo'shsangiz** (ombor so'zi va xitoycha ko'cha yoki xitoy telefoni bo'lsa), u ham hisobga olinadi. Bitta omborni ikki marta yozsangiz ham, manzil tanilaveradi.
+    - Ombor bilimiga «avia yuklar bu yerga emas» deb yozsangiz ham, u mashina ombori sifatida qo'riqlanadi.
+    - Bilimga o'zingiz yozgan **avia** manzil (yoki aeroport ombori) esa to'xtatilmaydi, uni AI aytishi mumkin.
+  - Manzil bo'lagi bo'linib yozilsa ham («荷花南街 2255号»), lotinchada yozilsa ham («Hehua South Street 2255»), omborning nomi yoki qabul qiluvchi firma yozilsa ham («霍尔果斯金亿国际物流中心») taniladi.
+  - Quyidagilar manzil emas va to'xtatilmaydi:
+    - viloyat, shahar, tuman yoki butun mahalla nomi: «从浙江省义乌市空运» (Chjeszyan, Ivudan avia), «佛山市南海区发货», «稠江街道» (Ivudagi butun tuman — u yerdagi boshqa yetkazib beruvchining manzili ham);
+    - «…路与…路交叉口» (ko'chalar kesishmasi), «…米» (metr), «28号» (sana) kabi har manzilda bo'ladigan so'zlar;
+    - xitoylik mijozga «qaysi shahardan jo'natasiz?» (从哪个城市发货) degan oddiy savol;
+    - «168 kg» yoki «2255 kg» kabi og'irlik: raqam faqat ko'cha so'zi yonida bo'lsa uy raqami hisoblanadi.
+  - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.
+  - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
+  - **Yangi: «avia ham gapirilgan» ogohlantirishi.** Tizim so'zlardan yo'lni har doim to'g'ri o'qiy olmaydi. Shuning uchun suhbatda avia gapirilgan bo'lsa-yu, tizim uni avia suhbati deb aniq bilolmasa va javobda Xitoy omborimizning manzili bo'lsa, ✅ qoladi, lekin kartochkada shunday yoziladi: «avia ham gapirilgan va javobda Xitoy omborimizning manzili bor — yuk avia bo'lsa, manzilni o'zingiz yozing (✏️)». Xato o'qilgan suhbat sizga bir qarashga tushadi, manzil esa jimgina ketib qolmaydi.
+    - Bu ogohlantirish javobning o'zini ham o'qiydi: «30 kg mashinaga kam, avia bilan yuborishingiz mumkin» + ombor manzili.
+    - Suhbatda avia bir marta aytilgan bo'lsa, keyingi gaplar ogohlantirishni o'chirmaydi. Mijoz keyin mashinani tanlagan bo'lsa ham, kartochka bir marta qarashni so'raydi. Avval «mashina» so'zi ogohlantirishni o'chirib qo'yardi. Lekin bu so'z ko'pincha boshqa narsa haqida bo'ladi:
+      - yukni omborimizga yoki aeroportdan o'zi olib borishi («Yukni omborga o'zim mashinada olib boraman»);
+      - O'zbekiston ichida yetkazish («Andijonga mashinada yetkazib berasizlarmi?»);
+      - oldingi yuki («oldingi safar mashinada yuborgandim»);
+      - mashinadan voz kechish («фура не успеет», «mashinada ulgurmaymiz»);
+      - tovar nomi («fura ehtiyot qismlari»).
+      Endi bunday suhbatda manzil jimgina ketib qolmaydi.
+    - Bizning xabarimiz ham hisobga olinadi:
+      - narx bir jumlada, avia keyingi jumlada bo'lsa («1 kg uchun 17 $. Avia bilan 2–5 kunda keladi.»);
+      - narxsiz taklif («Avia bilan yuborsangiz 2–5 kunda keladi»);
+      - «Air:» sarlavhasi.
+    - «O'yinchoq samolyotlar», «aviamodel» kabi tovar nomlari va bizning «power bank avia bilan ketmaydi» jumlamiz avia gapirildi deb hisoblanmaydi.
+  - **Mijoz so'zlarini o'qish yanada aniqlashdi:**
+    - Savol aviadan voz kechish emas: «Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia qimmatmi?», «Авиа дорого выйдет?» — bu avia so'rovi, manzil to'xtatiladi.
+    - Narxiga qaramay tanlash ham tanlov: «Avia qimmat bo'lsa ham mayli», «Пусть авиа дорого», «Без авиа никак», «Aviasiz bo'lmaydi».
+    - Temir yo'ldan voz kechib avia tanlansa («Poyezd kerak emas, avia bilan», «Не поездом, а самолётом»), endi bu avia suhbati: manzil to'xtatiladi va kartochka sizdan avia manzilini so'raydi. Avval temir yo'l so'zi avia himoyasini butunlay o'chirib qo'yardi.
+    - «Железки» (temir buyumlar) endi temir yo'l hisoblanmaydi, «по железке» esa hisoblanadi.
+    - Avia so'zlari kengaydi: «по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派».
+    - Yana qo'shildi:
+      - o'zbekcha kirillda: «Самолёт билан», «хаво йули»;
+      - ruscha: «на самолёте», «авиой», «Авио доставка», «воздухом»;
+      - xato yozilganlari: «Aviya», «samolet», «xavo yo'li»;
+      - xitoycha: 走飞机, 航班, 用飞机寄;
+      - forscha: «با هواپیما», «با طیاره»;
+      - inglizcha: «with plane», «air please».
+    - «Kargo orqali», «kargo bilan» — bu kompaniya, yo'l emas: «kargo orqali avia yuboraman» avia suhbati.
+    - «Avto», «Avto bo'lsin», «Toshkentga mashinada yuboraman» — mashina tanlovi. Toshkentda yukni olib ketish esa boshqa bosqich.
+    - Biz aytgan narxli xabar tovar nomiga qarab emas, yo'l so'ziga qarab o'qiladi: «Mashinada: o'yinchoq samolyotlar 3 kub — 640 $» mashina narxi, «Avia: avtozapchast 30 kg — 510 $» avia narxi.
+    - Siz ✏️ bilan qayta yozgan narx sizning so'zlaringiz bo'yicha o'qiladi.
+  - **Kartochkadagi avia yuki aniqroq:** mijoz og'irlikni tuzatsa («Kechirasiz, 35 kg ekan, qayerga yuboray?»), yangi og'irlik yoziladi va jo'nash joyi saqlanadi. «Har biri 2.5 kg» (bitta dona) yoki «50 kg bo'lsa qancha?» (taxmin) yuk og'irligi hisoblanmaydi. «Shenzhendan emas» degan joy jo'nash joyi deb yozilmaydi.
+  - **Ombor bilimlari:** «Avia uchun manzilni men o'zim beraman», «aeroportga yaqin», «机场北路» yoki «avto va avia yuklar uchun» deb yozilgan ombor mashina ombori sifatida qo'riqlanadi. Faqat o'zini avia qabul joyi deb e'lon qilgan bilim («Avia ombori: …», «Склад для авиа: …») AI tomonidan aytilishi mumkin.
+- **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
+- **Avtoda «Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+  - Bilimdagi shu qoida endi «**Avto (mashina) narxi** Xitoydagi omborlarimizdan hisoblanadi» deb yozilgan, chunki siz uni mashina haqida aytgansiz. Avval «Narx» deb yozilgani uchun avia suhbatida ham ishlatilib qolishi mumkin edi.
+- **Xitoy omborlarining manzili** (siz yuborgan ro'yxat): AI mijoz so'ragan omborning manzilini, qabul qiluvchisini va telefonini **bilimdagidek** beradi. Xitoycha qismi o'zgartirilmaydi va tarjima qilinmaydi, chunki uni xitoylik yetkazib beruvchi o'qiydi. Har manzil bilan birga eslatma ketadi: «Yuklaringizni jo'natishdan oldin GS kodini (markirovka) yozishni unutmang» va xitoycha «发货前请不要忘记标注GS编码（唛头）».
+  - Omborlar: **Ivu (YW)**, **Guanchjou (GZ)** — ombor Foshan shahrida, **Xorgos (HRG)**.
+  - Mijoz qaysi omborni aytmasa, AI qaysi shahardan jo'natishini so'raydi.
+  - **Qashqar** endi manzil sifatida aytilmaydi, chunki u sizning ro'yxatingizda yo'q.
+  - Xorgos qatoridan «距你966.0公里» («sizdan 966 km») olib tashlandi: bu xarita ilovasi siz turgan joydan hisoblagan masofa, mijoz uchun noto'g'ri.
+  - Avval o'zbekcha yoki ruscha javobda xitoycha manzil bo'lsa, tizim javobni «boshqa alifboda» deb to'xtatar edi. Endi bilimdan aynan ko'chirilgan xitoycha qism hisobga olinmaydi. AI o'zi xitoycha yozsa, avvalgidek to'xtatiladi.
+  - Xitoylik mijozga xitoycha javobda manzil bo'lsa ham to'xtatilmaydi.
+  - Xorgos ombori nomidagi «金亿» belgisi (bu belgi «yuz million» ham degani) endi yozilgan son deb hisoblanmaydi. AI narxni xitoycha so'z bilan yozsa (masalan «五百美元»), avvalgidek to'xtatiladi.
+- **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
+- **Chat bog'langan lid yopilgan bo'lsa** (yutilgan yoki yo'qotilgan), ✅ bosganda hisob yuborilmaydi va yopiq kartaga hech narsa yozilmaydi. Kartochkada sababi yoziladi: «bu chatning lidi yopilgan — 🙋 bosing va mijozga o'zingiz javob bering».
+- **Podklyuch va rastamojka:**
+  1. AI mijozdan ma'lumotlarni to'liq yig'adi.
+  2. ✅ bosganingizda botdagi «Hisoblatish» navbatiga yuboradi.
+  3. VED javob berganda sizga «💵 Hisob javobi keldi — narx bersangiz bo'ladi» kartasi keladi.
+  4. **«💵 Narx yozaman»** ni bosib narxni yozasiz. U mijozga uning tilida bitta jumla bo'lib ketadi, bitim kartasiga hech narsa yozilmaydi (6b).
+  - «1.250» deb yozsangiz, bot «1250 dollarmi yoki 1,25 dollarmi?» deb so'raydi.
+- **Bilimlar sahifasi:** AI biladigan hamma ma'lumot shu yerda. Ularni qo'shasiz, tuzatasiz yoki o'chirasiz. Narx bilimga yozilmaydi.
+
+### Deploydan keyin (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `docker compose build migrate`, keyin `docker compose up -d --build` va `docker compose --profile telegram up -d --build tg-listen`.
+   **Tinglovchi (tg-listen) albatta qayta qurilishi kerak.** Aks holda sahifada «tinglovchi yangilanmagan» chiqadi va ✅ ishlamaydi.
+3. Baza hisobi **139** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
+4. Bilimlarni kiritish (Xitoy omborlari manzillari ham shu yerda, qo'lda yozish shart emas):
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
+   - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.
+5. Telegram xizmat chatidan (777000, kirish kodlari) eskidan saqlanib qolgan narsalarni tozalash:
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts` — har akkauntda nechta xabar borligini sanaydi, hech narsani o'zgartirmaydi, xabar matnini ko'rsatmaydi;
+   - nima chiqqanini menga yuboring; keyin shu buyruq oxiriga `--apply` qo'shib tozalaysiz. «Tozalash kerak emas» chiqsa, hech narsa qilish shart emas.
+6. **Suhbatlar → AI sotuvchi → Sozlamalar** da:
+   - o'z akkauntingizni tanlang;
+   - «Eski serverda Telegram sessiyasi yo'q qilindi» ni bosing;
+   - avia narxi 17 ekanini tekshiring;
+   - keyin AI'ni yoqing (yoki botda `/agent on`).
+7. CRM'dan Telegramga yuborish (Sozlamalar) yoqiq bo'lishi kerak. U o'chiq bo'lsa ✅ «yuborish o'chirilgan» deydi.
+
+### Hali yo'q (keyingi bosqichlar)
+- Avtomatik rejim (tasdiqsiz yuborish).
+- Kampaniyalar.
+- WhatsApp, Gmail va qo'ng'iroqlar.
+- Mijoz yuborgan fayllarni hisob eslatmasiga ko'chirish. Hozircha eslatma chatga havola beradi.
+
 ## 2026-10-28 — Mashina narxi qaysi bitimga yoziladi: narx qo'yuvchi tanlaydi (Q8 «c»)
 
 Savol: «bitta mijozning yuki bitta mashinada ikki xil bitim bo'yicha kelsa, mashinaga qo'yilgan narx qaysi bitimga yoziladi?» Sizning javobingiz: **«C — logist o'zi tanlaydi»**. Migratsiya yo'q, migratsiyalar soni o'zgarmaydi.

@@ -7,6 +7,7 @@ import { sendStaffMessage } from '../notifications/service';
 import { offerStaffCommands } from './commands';
 import { editMarkup, editText, sendText, sendTextBriefRetry, sendTyping } from './send';
 import { answerPress } from './press';
+import { agentTextSlot, handleAgentPress } from './agent-bot';
 import { isBacklog } from './lifecycle';
 import { HANDLED_SENTENCE, tellBacklogOnce } from './backlog';
 import { claimOnce, handledAlready, markOnce, messageKey, pressKey, type OnceKey } from './once';
@@ -359,6 +360,12 @@ export function registerStaffBot(bot: Bot): void {
     if (parsed.kind === 'calc') {
       await answerPress(ctx);
       await handleCalcCallback(ctx as unknown as CalcReplyCtx, chatId, parsed.step);
+      return;
+    }
+
+    // The AI sotuvchi's cards (0138) — every op answered by its own shell.
+    if (parsed.kind === 'agent') {
+      await handleAgentPress(ctx, chatId, parsed);
       return;
     }
 
@@ -992,6 +999,27 @@ export function registerStaffBot(bot: Bot): void {
       const staff = await staffForChat(chatId);
       if (!staff) return next();
       await draftText(ctx, chatId, draft);
+      return;
+    }
+
+    // The AI sotuvchi's ONE text slot (0138, regression-6): his edited reply,
+    // his price, a stranger's code — BELOW every live collector (one
+    // collector at a time) and ABOVE the reply door and `takeTaskPending`
+    // (which deletes on read). A swipe-reply names its own target, a newer
+    // task wait wins over an older agent wait, and a forward is Door B's
+    // (review I2) — all decided inside the slot.
+    if (
+      !escapesIntake(ctx.message.text) &&
+      (await agentTextSlot(ctx, chatId, {
+        text: ctx.message.text,
+        dateSec: ctx.message.date,
+        replyToMessageId:
+          ctx.message.reply_to_message && ctx.message.reply_to_message.from?.id === ctx.me.id
+            ? ctx.message.reply_to_message.message_id
+            : null,
+        forwarded: Boolean(ctx.message.forward_origin),
+      }))
+    ) {
       return;
     }
 

@@ -967,6 +967,13 @@
       "when": 1785190000116,
       "tag": "0137_plan_road",
       "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "7",
+      "when": 1785190000117,
+      "tag": "0138_ai_sotuvchi",
+      "breakpoints": true
     }
   ]
 }

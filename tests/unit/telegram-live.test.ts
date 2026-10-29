@@ -122,6 +122,25 @@ describe('deciding one live message', () => {
     });
   });
 
+  it("never keeps Telegram's own service chat (777000) — not by number, not by any rule, not on a work account", () => {
+    // Its lines are login codes and account notices. A kept chat is one the AI
+    // sotuvchi reads, so a login code would reach a model's context and a card.
+    // The number is the client's ON PURPOSE: the book is matched on numbers.
+    const service = peer({ id: 777000n, phone: '+998901234567' });
+    expect(decideIncoming(service, msg({ message: 'Login code: 12345' }), CLIENTS)).toEqual({ store: false, reason: 'service' });
+    expect(decideIncoming(service, msg(), CLIENTS, new Map(), true)).toEqual({ store: false, reason: 'service' });
+    const asClient = new Map<bigint, ChatRule>([
+      [service.id, { peerId: service.id, decision: 'include', clientId: 'c-777', clientCode: 'GS777', leadId: null }],
+    ]);
+    expect(decideIncoming(service, msg(), CLIENTS, asClient)).toEqual({ store: false, reason: 'service' });
+    const asLead = new Map<bigint, ChatRule>([
+      [service.id, { peerId: service.id, decision: 'include', clientId: null, clientCode: null, leadId: 'lead-1' }],
+    ]);
+    expect(decideIncoming(service, msg(), CLIENTS, asLead)).toEqual({ store: false, reason: 'service' });
+    // A GROUP whose number reads the same is a group, judged as one.
+    expect(decideIncoming(peer({ id: 777000n, isPrivate: false }), msg(), CLIENTS)).toMatchObject({ store: false, reason: 'not_private' });
+  });
+
   it('refuses a peer whose number Telegram will not show us', () => {
     expect(decideIncoming(peer({ phone: null }), msg(), CLIENTS)).toEqual({
       store: false,

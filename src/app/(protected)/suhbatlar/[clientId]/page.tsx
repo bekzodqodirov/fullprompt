@@ -25,6 +25,9 @@ import { ThreadManagers } from '@/components/thread-managers';
 import { TelegramShare } from '@/components/telegram-share';
 import { shareTargets } from '@/modules/wms/crm/share';
 import { mayEditDealTerms } from '@/modules/wms/deals/door';
+import { agentSentIds, cancellable, waitingAgentReplies } from '@/modules/wms/agent/web-thread';
+import { AgentWaitingBubble, agentSendAtLabel } from '@/components/agent-waiting-bubble';
+import { AgentCancelButton } from '@/components/agent-cancel-button';
 
 /**
  * One client's conversation, read the way it happened — and opened where it
@@ -91,6 +94,13 @@ export default async function ConversationPage({
     chatPulseForClient(actor, clientId, { sibling: false }),
   ]);
   if (!client) notFound();
+  // The AI sotuvchi's marks (0138): which of these bubbles it sent, and which
+  // approved replies are still on their way — one statement each for the
+  // page, never one per bubble.
+  const [agentSent, agentWaiting] = await Promise.all([
+    agentSentIds(messages),
+    waitingAgentReplies({ clientId }, viewer),
+  ]);
   const t = await getTranslations('crm');
   const tc = await getTranslations('common');
   const tq = await getTranslations('quick');
@@ -138,7 +148,7 @@ export default async function ConversationPage({
         labels={{ who: t('whoTalked'), all: t('allManagers') }}
       />
 
-      {messages.length === 0 && queued.length === 0 ? (
+      {messages.length === 0 && queued.length === 0 && agentWaiting.length === 0 ? (
         <p className="card text-center text-sm text-ink-500">{t('conversationsEmpty')}</p>
       ) : (
         // `min-h-0` is what lets it shrink: a flex item will not go below its
@@ -152,6 +162,22 @@ export default async function ConversationPage({
               purpose: a queued reply is not a delivered one, and a client
               waiting on an answer nobody sent is the worst thing this feature
               can produce. */}
+          {[...agentWaiting].reverse().map((row) => {
+            const at = agentSendAtLabel(row.nextStepAt);
+            return (
+              <AgentWaitingBubble
+                key={row.id}
+                body={row.body}
+                text={at ? t('agentWaitingAt', { time: at }) : t('agentSending')}
+                action={
+                  row.managerUserId === actor.id && cancellable(row) ? (
+                    <AgentCancelButton outboxId={row.id} />
+                  ) : undefined
+                }
+              />
+            );
+          })}
+
           {[...queued].reverse().map((row) => (
             <OutboxBubble
               key={row.id}
@@ -164,7 +190,8 @@ export default async function ConversationPage({
           {messages.map((msg) => (
             <TelegramBubble
               key={msg.id}
-              message={msg}
+              message={{ ...msg, agent: agentSent.has(msg.id) }}
+              agentLabel={t('agentSent')}
               clientLabel={t('telegramClient')}
               mediaLabel={t('telegramMedia')}
               // Only HERE. The card panel and the dock show the same bubbles
