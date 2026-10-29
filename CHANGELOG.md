@@ -1,5 +1,39 @@
 # CHANGELOG
 
+## 2026-10-29 — «AI habarni ko'rmayapti»: mijoz xabari endi yo'qolmaydi, yo'qolsa sababi logda
+
+Sizning so'zingiz: «telegramni uladim aini yoqdim va habar keldi telegramga lekin hech nima ozgarmadi». Migratsiya
+yo'q — baza hisobi **139** bo'lib qoladi. Yangilangani `/api/version` va tinglovchi logidagi yangi qatorlar bilan
+tekshiriladi.
+
+### Nima tuzatildi
+- **Telegram mijozni darhol tanitmasa, xabar tashlab yuborilmaydi.** Tizim qayta ishga tushgandan keyin mijoz
+  yozsa, Telegram ba'zan xabar bilan birga uning kimligini bermaydi. Ayniqsa yangi raqamda shunday bo'ladi. Ilgari
+  bunday xabar jimgina o'tkazib yuborilardi. Endi tizim chatni oxirgi chatlar ro'yxatidan va Telegram'ning o'zidan
+  qayta so'raydi. Telegram cheklov qo'ygan paytda unga qayta-qayta so'rov yubormaydi, shuning uchun ban xavfi
+  oshmaydi. Bitta mijozning ketma-ket xabarlari tartibi ham buzilmaydi.
+- **AI ko'rmagan xabarning sababi logda yoziladi.** Bu faqat AI ulangan raqamda ishlaydi. Xabar matni ham, kim
+  yozgani ham yozilmaydi. Faqat tizimda yo'q notanish odamning raqami oxirgi 4 xonasi bilan ko'rsatiladi:
+  - «raqami yashirin» — mijozni shu Telegram kontaktlariga raqami bilan saqlang;
+  - «…4567 raqami mijozlar ro'yxatida yo'q» — mijoz tizimda boshqa raqam bilan yozilgan yoki umuman yo'q;
+  - «olinmasin deb belgilangan» — Suhbatlar → Qaysi chatlar'da o'zgartiriladi;
+  - «Telegram bu chatni aniqlab bermadi».
+- Tizim ishga tushganda eski suhbatlar ochilmasa, endi 8 ta uzun xato o'rniga bitta qator chiqadi: «N ta saqlangan
+  suhbat bu Telegram akkauntda ochilmadi». Bu odatda boshqa raqamdan qolgan suhbatlar.
+- Telegram'ning kirish kodi haqidagi qator endi «mijoz xabari emas, AI sozlamasiga tegilmadi» deydi. Ilgari «AI
+  o'chirilmadi» deyilardi va bu «AI xabarni ko'rdi» deb o'qilardi.
+
+### Siz qilishingiz kerak
+- Bu raqam faqat mijozlar uchun bo'lsa: **Suhbatlar → Ulash** sahifasida «Bu raqam qanday ishlatiladi?» savoliga
+  **«Ish raqami»** ni tanlang. Shunda notanish odam yozsa, o'zi lid ochiladi va AI unga ham qoralama tayyorlaydi.
+  «Shaxsiy raqam» bo'lsa, notanish odam «Qaysi chatlar» ro'yxatida sizning javobingizni kutadi.
+
+### Keyingi raund (shu tekshiruvda topilgan, hali tuzatilmagan)
+- Kechagi notanish odam bugun yana yozsa, «yangi odam yozdi» kartasi kelmaydi.
+- Raqam ulangan kuni u ulanishidan oldin yozgan notanish odamlar «Qaysi chatlar»ga tushmaydi.
+- Telegram Business'ning avtomatik javobi sizning javobingiz deb o'qiladi.
+- AI nega javob yozmaganini sahifada ko'rib bo'lmaydi.
+
 ## 2026-10-24 → 10-29 — AI sotuvchi: mijozlarga javobni AI tayyorlaydi, siz tasdiqlaysiz, sizning akkauntingizdan ketadi
 
 Sizning so'zingiz: «Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban havfini

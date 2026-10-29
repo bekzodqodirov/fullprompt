@@ -277,7 +277,9 @@ describe('the send path’s review fixes, as wired', () => {
     expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask')");
     expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");
     // The live line, a pull and the site sweep all carry the user's flags; nothing else reads them.
-    expect(source.match(/listenPeer\(await msg\.getChat\?\.\(\)\)/g)).toHaveLength(3);
+    // The live line resolves its chat through `chatOfMessage` first (2026-10-29: a short update's bare peer).
+    expect(source.match(/listenPeer\(await msg\.getChat\?\.\(\)\)/g)).toHaveLength(2);
+    expect(source.match(/listenPeer\(resolved\.chat\)/g)).toHaveLength(1);
   });
 });
 

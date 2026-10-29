@@ -5865,3 +5865,40 @@ workers took the sum to ~6.2 GB. The image already builds with that heap, so pro
 build` with the default and would have gone red on a build the server never runs. The CI step carries the same
 `NODE_OPTIONS`, and `build-typecheck.test.ts` asserts the two numbers are equal (red-proven by deleting the step's
 env). A local build needs the same prefix (CLAUDE.md, footguns).
+
+## «AI habarni ko‘rmayapti» — a live line from a bare peer, and a log that says why (2026-10-29; NO migration, ledger 139)
+
+1544. **A customer who writes after an ordinary restart could resolve to nobody, and nothing said so.** His report
+the day phase 1 went live: a client in the book wrote to the NEW number he bought for clients («bu telegramni
+clientlar bilan gaplashish uchun yangi oldim»), and nothing happened — no `GS… ← in`, no tray row, no card, no line
+in any log. gramjs builds a private text from an `UpdateShortMessage`, which names the sender by id ALONE, and
+`Message.getChat()` (pinned 2.26.x, `tl/custom/chatGetter.js`) answers from the in-memory entity cache: with no chat
+object it short-circuits its own fallback (`!this._chat || …` never reaches `getInputChat()`, the walk of the newest
+hundred dialogs). The cache is empty at every start and the dialog walks that fill it run once a day (the index) or
+once per connect (the week) — so `peerFromChat(undefined)` was a peer with id 0, `not_private`, counted with the
+groups. A new number caches almost nothing, which is why his was the first to show it. `chatOfMessage`
+(`crm/listen-trace.ts`) asks the cache; when the cache does not know the peer, ONE shared page of the newest dialogs
+(`sharedWarmer`: callers share it, the next waits a 10 s gap — 120 s after a failure, which is how a FLOOD_WAIT over
+gramjs's own threshold arrives — and none outlives 30 s) and the cache again, then Telegram by the bare peer; a
+peer the cache already knew whose lookup failed is answered at once, never escalated. Never gramjs's own
+per-message walk: the review of the first cut found it knocked twice per line inside a flood, on a personal
+account. A private line queues on its SENDER'S id before the lookup, so the slow path cannot let the same person's
+next line (a photo, whose update carries the user) overtake it — and an unresolved line from 777000 still reaches
+the notice check (K33). Catch-up warms the cache through the same warmer before it walks (the same bare-id failure
+printed eight gramjs paragraphs on his every start);
+a chat this account cannot open at all — after a change of number every chat the old one kept is one — is counted
+in ONE line, and still does not hold `caughtUp`: his eight old chats would otherwise refuse every ✅ for ever.
+`passedLine` prints why an INBOUND LIVE line was not kept, only on the account the AI speaks from: «raqami yashirin —
+kontaktlarga saqlang», «…4567 raqami mijozlar ro‘yxatida yo‘q», ««olinmasin» deb belgilangan», «Telegram yozgan odamni
+aniqlab bermadi». The REASON and never the chat — the verdicts a private line gets carry no identity by contract
+(`LiveVerdict`) and the agent may run on a personal session; the one number printed, by its last four digits, is
+the stranger the tray already lists. The 777000 login line no longer says «AI o‘chirilmadi», which read as
+«the AI is on and saw it» — to him and to this diagnosis's first reviewer. Reviewed as built by two lenses (gramjs semantics,
+regressions/privacy): ten findings, all folded in above. 10 red proofs by string edit, every one red first time
+(the warm-up, the no-escalation rule, the pacing, the failure gap, the deadline, the identity-free lines, the
+queue order, the K33 path, both log gates). STATED to him: a number used only for
+clients should be switched to «Ish raqami» on /suhbatlar/ulash, or every new customer waits on the tray; and the
+other defects the same diagnosis found (the stranger card's 24-hour window keyed on the rule's birth, the week walk
+dropping strangers without a tray row, the agent switchable on with no linked bot, a card written into a dead
+notification row, Telegram Business auto-replies read as his own, refusals invisible on the page, the supervisor's
+start order) are the next round, not this hotfix.
