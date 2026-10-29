@@ -5843,3 +5843,17 @@ destination of a leg, the bazaar, «olib bor…», «привез…», delivery
 STATED, not built: reading a road is still a word list and the next phrasing will be missed — what this round makes
 sure of is that a miss ends in a look and not in silence wherever the flight was named at all; a chat that never
 names the flight in any form leaves the guard to the quote he approved, as before.
+
+1542. **The merge with main — two defects in the seam, found by a running test and a review of the merge.**
+Main's per-request landing (docs/UCH-BAND.md) refuses BEFORE it writes a card or a note: `calcOpenRefusal` and
+`landCodedRequest` THROW the queue's code (`too_many_open`, `too_many_items`, `note_taken`) where `landIntake` used to
+return it as `queueError`. The AI sotuvchi's `landCalc` awaited it with no catch, so on an owner with twenty open
+jobs the ✅ became an error page or «Xatolik», the draft stayed claimed for two minutes, and the card never said
+«sizda 20 ta ochiq so‘rov bor» (K26). It catches `CalcError` now and hands the code to the card; with no note
+written, the next ✅ lands the job afresh. And this branch's `lead` input — the lead the chat lives on — skipped
+main's «a closed lead takes no job» check, which every other door asks BEFORE writing: a chat whose lead was won or
+lost since got its note written onto the closed card and then refused there for ever, under «sababi noma'lum».
+`landIntake` asks `leadTakesJobs` before the note, and the card says `lead_closed` in words (🙋 is what ends it).
+The AI-VED estimate to the owner (his Q5 ⭐ c) moved into main's `runPrefillJob`: only when this run spoke, and
+best-effort — a copy the owner could not get must never make the worker tell the seller «the pass failed». 5 red
+proofs by string edit (M1-M5).

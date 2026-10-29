@@ -217,10 +217,10 @@ async function landCalc(
   if (await intakeNoteExists(noteId)) {
     const [req] = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.noteId, noteId));
     if (req) return { queued: true, requestId: req.id, queueError: null };
-    // The note landed and the QUEUE refused (final review K26): twenty open
-    // requests, or a server mid-deploy. `landIntake` writes the note and moves
-    // the stage before it asks the queue, so this ✅ is the job asked again —
-    // never «already landed» for ever over a job no VED will ever see.
+    // The note landed and the QUEUE refused (final review K26): a server
+    // mid-deploy. `landIntake` writes the note and moves the stage before it
+    // asks the queue, so this ✅ is the job asked again — never «already
+    // landed» for ever over a job no VED will ever see.
     if (!(await claimLanding(d.id))) return { queued: false, requestId: null, queueError: 'in_flight' };
     return requeueLanded(noteId, action, actor);
   }
@@ -255,6 +255,12 @@ async function landCalc(
     lead = l ?? null;
   }
   const { landIntake } = await import('../calc/intake-land');
+  const { CalcError } = await import('../calc/service');
+  // The landing refuses BEFORE it writes a card or a note when the sender has
+  // twenty requests open (docs/UCH-BAND.md: a coded client gets a new deal per
+  // request, and a refused mint must leave no empty deal behind). That is the
+  // queue's own refusal, for the card to say in words; with no note written,
+  // the next ✅ lands the job afresh (K26).
   const target = await landIntake({
     noteId,
     section: action.section,
@@ -279,7 +285,11 @@ async function landCalc(
     // customer's answer, which the AI no longer asks for.
     hasCertificate: true,
     freightZone: freightZoneOf(action),
+  }).catch((err: unknown) => {
+    if (err instanceof CalcError) return { refused: err.code } as const;
+    throw err;
   });
+  if ('refused' in target) return { queued: false, requestId: null, queueError: target.refused };
   return { queued: target.queued === true && Boolean(target.requestId), requestId: target.requestId ?? null, queueError: target.queueError ?? null };
 }
 

@@ -214,8 +214,8 @@ function scripted(steps: { name: string; input: Record<string, unknown> }[]): Ca
 }
 
 /** A pending podklyuch draft carrying a calc_submit — the model scripted (CI has no key). */
-async function calcDraft(p: bigint): Promise<string> {
-  const { tgId: anchor } = await message(p, { body: 'Xitoydan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona' });
+async function calcDraft(p: bigint, owner: { clientId?: string | null; leadId?: string | null } = {}): Promise<string> {
+  const { tgId: anchor } = await message(p, { body: 'Xitoydan Toshkentga podklyuch kerak: 3 kub 500 kg, kurtka 100 dona', ...owner });
   const out = await handleInbound(
     { managerUserId: ownerId, peerId: String(p), anchorTgMessageId: String(anchor), origin: 'live' },
     {
@@ -665,8 +665,27 @@ describe('a calculation the queue refused lands on a later ✅ (K26)', () => {
     expect((second as { requestId?: string }).requestId).toBe(landed[0]!.id);
     // The AI VED hodimi is handed the re-asked job like a first landing.
     expect(queued.some((q) => q.name === JOB_CALC_PREFILL && (q.data as { requestId?: string }).requestId === landed[0]!.id)).toBe(true);
-    // The note was written once, on the first press.
+    // The note was written once — by the ✅ that landed: the landing refuses before it writes a card or a note.
     expect(await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(draftId)))).toHaveLength(1);
+  });
+
+  it('a chat whose lead was won or lost since is refused in words, and nothing is written on the closed card', async () => {
+    const p = PEERS[31]!;
+    // The test above leaves twenty jobs open, and that refusal is asked first.
+    await db
+      .update(calcRequests)
+      .set({ completedAt: new Date(), completedBy: vedId, completedVia: 'task' })
+      .where(and(eq(calcRequests.requestedBy, ownerId), isNull(calcRequests.completedAt)));
+    const l = await lead(`Yopiq lid ${SUFFIX}`, `+99891${SUFFIX}44`, null);
+    const draftId = await calcDraft(p, { clientId: null, leadId: l });
+    const [lost] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'lost')).limit(1);
+    await db.update(leads).set({ stageId: lost!.id, lostReason: 'test' }).where(eq(leads.id, l));
+    const pressed = await decideDraft(actor(), draftId, 'send', {}, ctx());
+    expect(pressed).toEqual({ ok: false, code: 'calc_not_queued', detail: 'lead_closed' });
+    expect(await draftRow(draftId)).toMatchObject({ status: 'pending', actionStatus: 'failed', actionError: 'lead_closed' });
+    expect(renderDraftCard(await draftRow(draftId), null)).toContain('lidi yopilgan');
+    expect(await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(draftId)))).toHaveLength(0);
+    expect(await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.entityId, l))).toHaveLength(0);
   });
 });
 

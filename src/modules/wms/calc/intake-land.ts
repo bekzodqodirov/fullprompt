@@ -21,7 +21,7 @@ import { recordAiPass } from './ai-cost';
 import type { AiUsage } from '../tnved/service';
 import { queueCalcPrefill } from './prefill-queue';
 import { dealTitleFor } from './deal-title';
-import { CalcError, calcOpenRefusal } from './service';
+import { CalcError, calcOpenRefusal, leadTakesJobs } from './service';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -504,6 +504,11 @@ export async function landIntake(input: {
     } else {
       const refused = await calcOpenRefusal(input.collectedBy, items.length);
       if (refused) throw new CalcError(refused);
+      // The AI sotuvchi's lead takes a job only while it is open — refused
+      // BEFORE the note is written, as the chat's 🧮 and the card refuse it;
+      // otherwise the note lands on a closed card and the queue refuses it
+      // there for ever.
+      if (input.lead && !(await leadTakesJobs(input.lead.id))) throw new CalcError('lead_closed');
       // A prospect who asked before already has a card; a second request
       // belongs on it rather than beside it — and the AI sotuvchi's door names
       // the lead its chat lives on, which is that card by construction.

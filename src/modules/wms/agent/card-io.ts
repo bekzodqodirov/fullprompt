@@ -90,6 +90,8 @@ const CALC_QUEUE_WORDS: Record<string, string> = {
   too_many_open: `sizda ${MAX_OPEN_PER_REQUESTER} ta ochiq so‘rov bor — VED birortasiga javob bergach ✅ ni qayta bosing`,
   too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq) — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   not_found: 'karta topilmadi — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
+  // The chat's lead was won or lost after it was bound (calc `leadTakesJobs`).
+  lead_closed: 'bu chatning lidi yopilgan (yutilgan yoki yo‘qotilgan) — 🙋 bosing va mijozga Telegramda o‘zingiz javob bering',
   // Another press is landing this very job (decide `claimLanding`).
   [LANDING_CLAIM]: 'hozir navbatga qo‘yilmoqda — bir daqiqadan keyin kartani qarang',
   note_taken: 'bu material allaqachon boshqa so‘rovda',

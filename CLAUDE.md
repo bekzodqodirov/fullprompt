@@ -3125,7 +3125,7 @@ onward truck on the ROAD is «already here» too; the hook locks lines in line o
 origin (`untickFor`); three tests that held with their gate deleted were re-anchored, and the editor's routes
 are held at the CONTEXT (the service worker answers `/api/*`, `page.route` never sees it).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24 → 10-29; DECISIONS #1517-#1541 — renumbered from #1463-#1487 on the merge,
+**Round — AI sotuvchi, phase 1 (2026-10-24 → 10-29; DECISIONS #1517-#1542 — renumbered from #1463-#1487 on the merge,
 the TWENTY-SIXTH collision: main took #1455-#1516, 0136 `lead_client_many` and 0137 `plan_road` first, and its 0136
 carried this branch's own `when`; migration 0138 `ai_sotuvchi`, `when` …117 — ledger must reach 139; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
@@ -3207,6 +3207,10 @@ the delivery in Andijan, a past shipment, a refusal missed («фура не ус
 (`aviaSpokenOf`: once spoken, always looked at; `ourLineOffersAir`), `PROHIBITS` is the one «what the flight does not
 carry» sentence, the air words are one vocabulary (`AIR_CORE`/`AIR_TAIL_CHOICE`/`AIR_SCRIPTS`) for both readers. 13 red
 proofs. The trade, stated: a chat the customer really moved to the truck now costs him one glance.
+**The merge (#1542)**: main's landing THROWS a queue refusal before it writes anything, so `landCalc` catches
+`CalcError` (K26 words, the claim released), and the agent's `lead` input asks `leadTakesJobs` before the note —
+the two seams a running test and a review of the merge found. The AI-VED estimate rides main's `runPrefillJob`,
+only when the run spoke, best-effort.
 
 **Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
 it: 0137 (`plan_road`, `when` …116). Before

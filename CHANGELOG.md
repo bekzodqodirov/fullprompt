@@ -129,6 +129,7 @@ minimum qilsin». Yangi migratsiya bor (**0138**): deploydan keyin baza hisobi *
   - Xitoylik mijozga xitoycha javobda manzil bo'lsa ham to'xtatilmaydi.
   - Xorgos ombori nomidagi «金亿» belgisi (bu belgi «yuz million» ham degani) endi yozilgan son deb hisoblanmaydi. AI narxni xitoycha so'z bilan yozsa (masalan «五百美元»), avvalgidek to'xtatiladi.
 - **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
+- **Chat bog'langan lid yopilgan bo'lsa** (yutilgan yoki yo'qotilgan), ✅ bosganda hisob yuborilmaydi va yopiq kartaga hech narsa yozilmaydi. Kartochkada sababi yoziladi: «bu chatning lidi yopilgan — 🙋 bosing va mijozga o'zingiz javob bering».
 - **Podklyuch va rastamojka:**
   1. AI mijozdan ma'lumotlarni to'liq yig'adi.
   2. ✅ bosganingizda botdagi «Hisoblatish» navbatiga yuboradi.
