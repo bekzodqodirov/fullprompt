@@ -3234,6 +3234,29 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1545-#1549; NO migration, 139 stands).** His
+«oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
+ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
+packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
+reviewed again. POLICY (#1545): list markers are dropped from figures (in-order runs of ≥2, one style, never a
+currency item, never after a price/unit word) and the prompt asks for «•»; `questions` is a WARNING; word numerals
+block beside their unit only; G1 keeps its own definite-duration list (G2 still reads «bir necha kunda»); an asking
+«?» is no dispatch promise; `normalizeDigits` folds ʼ ` ´ ′ ʹ; the prompt's own figures are company-rule sources WITH
+unit and road (a figure naming no road is the truck's); a kb address number vouches for a plain figure only;
+«hisoblash bepul» and «оплата … перед получением» are narrow exemptions. Probe ANY change there with
+`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1546): «✏️ O‘zgartirish», the remedy line, reasons in
+words, `cardDrawsSend` the one ✅ rule (bot AND page), ✅ on an editing draft without own text sends the machine
+text, `redraftNewest`, a dead ✏️ wait falls through, the inline ✅ under his own text, `fitCard` stages,
+`memory_missing`, ✋ (his Telegram reply, its own time) vs 🙋 (`HUMAN_TAKEOVER_HOURS`), the late-card note; the bot's
+copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1547): `workModeSwitch`
+(30 s, shared read, fresh read for a line about to be stored), the start line names the mode, the web tray's
+holder press queues the pull, `[agent] inbound` carries origin/lag, the gap/retry passes skip a waiting job, lookup
+deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1548): `no_phone` on a work account → `open_lead` through
+ONE door `phonelessLeadForChat` (the rule row is the fence, `decided_by NULL` = the listener's own binding, which
+YIELDS to a person, the book, a closed lead and the switch); `isTelegramOfficialPeer` fences Telegram's own
+accounts. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
+listener was down are not fetched. Deploy MUST rebuild tg-listen.
+
 **Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before

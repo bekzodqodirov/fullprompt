@@ -5902,3 +5902,90 @@ other defects the same diagnosis found (the stranger card's 24-hour window keyed
 dropping strangers without a tray row, the agent switchable on with no linked bot, a card written into a dead
 notification row, Telegram Business auto-replies read as his own, refusals invisible on the page, the supervisor's
 start order) are the next round, not this hotfix.
+
+## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; NO migration, ledger 139)
+
+1545. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
+evening as #1544: a customer wrote «Assalomu alaykum», the card came with «✏️ O‘zim yozaman · ❌ · 🙋» and no ✅,
+and he answered in Telegram himself. The card draws ✅ only while `payload.blocked !== true` — the policy refused the
+draft. A read-only investigation (four tracers, each verified by a skeptic) found the refusals an ordinary opener
+meets, then probed them through the real `checkAgentReply` with sources built as `memoryFor` builds them: prompt
+rule 3 TOLD the model to ask several things as «bitta raqamlangan ro'yxat» and `calc_checklist` printed `1) …`,
+while `extractNumbers` read every list marker as a figure — as MONEY once «narx» stood anywhere — so «1. Tovar nomi
+2. Kub 3. Kg» was «manbasi yo‘q raqam: 1 $ … 3 $»; two «?» were a hard block though the spec's own table
+(AI-SOTUVCHI.md:378) sends G4 to «qoralama»; a word numeral ANYWHERE blocked once «kub» or «kg» stood ANYWHERE
+(«Ming rahmat! … necha kub?»); «necha kunda», «bir necha daqiqada», «несколько дней» were spelled durations;
+«Yuk necha kunda kerak?» — a question TO the customer — was our dispatch promise. He chose «a»: soften exactly
+these, keep every dangerous refusal. Built so that each softening keeps the door beside it shut, because the
+first cut's own review showed three of them opening doors (blockers, fixed and pinned): list markers are DROPPED
+(a `fixed` figure still needs an equal-valued source) only in an in-order run of at least two in one style, never
+with a currency for an item and never after a price or unit word, and the prompt asks for «•»; `questions` is a
+warning; a word numeral blocks beside its unit, past copulas and per-unit words («kub uchun uch», «Narxi esa, besh
+yuz»), and «xil / yo'l / variant / rahmat» is no figure; G1 has its own definite-duration list while G2 keeps
+«bir necha kunda yetib keladi»; a «?» statement is exempt from the dispatch promise only for an ASKING count with no
+certainty word and no first-person delivery verb; `normalizeDigits` folds ʼ ` ´ ′ ʹ to «'» before NFKC (the seed's
+«vaʼda emas» is a disclaimer, and «muammo boʼlmaydi» — a guarantee that PASSED before — blocks); the figures the
+prompt dictates (minimum 1 m³ / 100 kg, avia 1 kg and 2-5 days) are company-rule sources whatever the kb holds,
+each with its UNIT and road, and a source with a mode vouches only for a figure on that road (a figure naming none
+is the truck's); a kb address number («29号», «3栋», «168米») vouches only for a plain figure — «taxminan 29 kunda
+yetib keladi» passed on Guangzhou's street number before; «the calculation is free» is exempt only as the
+calculation NOUN beside the free word, with no service stem anywhere in the statement; the Russian «оплата по
+прибытии, перед получением» is exempt only when the paid-first phrase is the statement's tail with no deny, no
+hand-over-first and no taking-back next statement. 136 cases in `tests/unit/agent-policy-first-reply.test.ts`
+plus the review's, end-to-end first replies in uz Latin / ru / uz Cyrillic / en with `ok === true`, and the
+dangerous neighbours on the same memory blocked with their codes; ~40 red proofs by string edit.
+
+1546. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
+said «⛔ ✅ yo‘q — tuzatish kerak:» and its reasons printed codes («word_numeral», «latin→cyrillic», «1 $»);
+nothing said that ✏️ is the way out or where to type, and «✏️ O‘zim yozaman» beside «🙋 O‘zim javob beraman» on
+the page read as «answer him yourself». Now: «⛔ Bu matn shunday yuborilmaydi (✅ yo‘q). Sabab:», the reasons in
+words, and one remedy line true to the flow; the button is «✏️ O‘zgartirish» (his own word for it); the prompt
+says «SHU BOTGA — mijozning chatiga emas» and the AI's text follows as its own copyable message, recorded on the
+card's row so the chat purge blanks it too (leak-9); ONE rule `cardDrawsSend({blocked, status, ownText})` decides
+the ✅ for the bot and the page; ✅ on an editing draft with no own text sends the machine text through the same
+digest, policy and chatMoved checks (CAS on the read status and `final_body IS NULL`), and when the chat moved
+`redraftNewest` asks the newest customer line again or says «bu javob ketmaydi» — never a promised card that does
+not come; a dead ✏️ wait lets his next text fall through to the rest of the bot; after his own text the bot answers
+with an inline ✅ carrying the card's digest and names the actions ✅ will also run; a crowded card loses parts in
+a fixed order (`fitCard`: our last message cut first, keeping ✅) and only a reply that cannot be shown loses ✅;
+a machine draft with no stored memory is blocked in words (`memory_missing`). A taken-over draft says WHO: «✋ Siz
+mijozga Telegramda o‘zingiz yozdingiz (HH:MM) — AI javobi bekor qilindi», the time of his first outgoing message
+after the anchor that is not the AI's own send, plus the real pause the run applies after his message
+(`human_pause_min`), against «🙋 Suhbatni o‘zingizga oldingiz — AI bu chatga 24 soat yozmaydi» (one constant,
+`HUMAN_TAKEOVER_HOURS`, for the write, the card and the toast). A draft written > 3 min after its anchor says
+«⏱ Mijoz N daqiqadan beri javob kutyapti» and why when the job's origin knows (pull / sweep / edit).
+
+1547. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
+was waiting upstream; the most likely road was a stranger card answered by hand. Four things fixed. The work-account
+switch is read by its own 30-second shared clock (`workModeSwitch` — concurrent lines share one read; a line about
+to be STORED on the switch's say-so reads it afresh), because the stale-book branch was its only reader and every
+stranger's miss refresh pushed that clock back; the start line names the mode and a change prints one line. A
+web-tray answer to a pending chat on the AI's account queues the same pull the bot's door does — only when the
+HOLDER presses, as the bot requires. The `[agent] inbound` line carries origin, attempt, lagMs and queuedMs from
+pg-boss's own columns (`includeMetadata` on that worker), no identity. The gap and retry passes skip an anchor with
+a waiting job (created/retry — not active, or a killed process's job would hold the recovery for 15 min). And the
+live lookups (#1544) got a deadline ABOVE gramjs's own 60 s flood sleep (`lookupDeadlineMs` = threshold + 15 s):
+the first cut's 30 s would have passed over a line Telegram was only making us wait for.
+
+1548. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
+yashirgan odam yangi raqamingizga yozsa — ⭐ a) avtomatik lid va AI darhol javob», he answered «1 a». #1544's
+`unknownChatAction` comment argued «a lead nobody can ring is a row with a name in it»; on a number bought only for
+customers the Telegram chat IS the contact. On a work account `no_phone` → `open_lead`; a personal account is
+unchanged. ONE minting door, `phonelessLeadForChat`, shared with the «📵» card's «🆕 Yangi lid»: the chat's
+`tg_chat_rules` row is the fence (inserted pending if absent, held FOR UPDATE for the mint, committed `include`
+with `decided_by NULL` — the listener's own binding), a bound chat is one read, three lines at once mint one lead
+(proven by a held row), the same Telegram user's OPEN lead on another account is reused, and the name is never
+empty or an id (display name → @username → «Telegram (raqam yashirin)», with invisible filler characters
+stripped). The machine binding YIELDS: to a person's answer on the tray, to the client book once the phone shows
+(the binding is retired, audited `book_match`), to a client the chat's rows already belong to, to a closed lead
+(a lost lead's next enquiry opens a new one, as a visible number's does), and to the switch turned back to
+«Shaxsiy raqam». The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
+accounts are fenced beyond 777000 (`isTelegramOfficialPeer`: 489000, «Replies», the `support` flag, early
+round-thousand ids). Backfill still stops at a new stranger; catch-up never sees a stranger it never stored.
+STATED: a colleague or a contact writing with a hidden number becomes a lead too (nothing can see the phone); a
+hidden-number stranger's lines written while the listener was down are not fetched.
+
+1549. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
+two lenses (regression, safety) with the findings fixed and red-proven before the cherry-pick, then the merged
+delta was reviewed again for what no single package could see (the interactions, customer safety on the merged
+policy, the owner's live day walked through the real functions).

@@ -397,7 +397,7 @@ mijozga bitta qisqa xabar («Hozir Bekzod akaga yetkazaman»), keyin jim.
    yozaman») — `client_holding_sent_at`. `shadow` da mijozga hech narsa.
 3. Egasiga xodimlar botida: mijoz konteksti (kim, nima so'radi, oxirgi 3 xabar) + agentning
    taklif javobi + tugmalar:
-   **✅ Shunday yubor** · **✏️ O'zim yozaman** (keyingi matn xabari = javob,
+   **✅ Shunday yubor** · **✏️ O'zim yozaman** (2026-10-29 dan: «✏️ O‘zgartirish», DECISIONS #1546; keyingi matn xabari = javob,
    `telegram_chat_waits` orqali 10 daqiqalik bardoshli kutish) · **🙋 O'zim bog'lanaman**
    (`taken_over`, suhbat `human` rejimga).
 4. Javobdan keyin agent uni persona uslubida qayta yozadi (ma'no o'zgarmaydi), yuboradi, va
@@ -733,7 +733,8 @@ no URL except an approved kb fact's (the Tashkent map link), no @mention, no den
 - Card `AgentDraft` (new mute group `agent`, its own FOUNDERS, night-silent): customer (name · code
   or «lid»), their last ≤ 3 messages clipped, the proposed reply, warnings, the proposed action
   (e.g. «📦 Hisoblatishga: podklyuch · 5 kub · 800 kg · …»). Buttons `ag:s|e|r|h:<uuid>`:
-  ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman.
+  ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman (as built: ✅ Yuborish · ✏️ O‘zgartirish ·
+  ❌ Kerak emas · 🙋 Suhbat meniki — #1546).
 - ✅ → `decideDraft` (CAS pending→approved), re-validate (newer inbound → superseded and a fresh run;
   he wrote meanwhile → taken_over), insert the tg_outbox row (status 'agent', peer pinned, client or
   lead, queued_by = the approver, answers = the anchor), execute the approved action, audit.

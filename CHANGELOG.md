@@ -1,5 +1,54 @@
 # CHANGELOG
 
+## 2026-10-29 (kechqurun) — «✅ Yuborish» oddiy javobda ham chiqadi; raqami yashirin mijoz ham lid bo'ladi
+
+Sizning so'zingiz: «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», javobingiz **«A»**
+va **«1 a»**. Migratsiya yo'q — baza hisobi **139** bo'lib qoladi. Yangilangani `/api/version` va tinglovchining
+birinchi qatori bilan tekshiriladi.
+
+### Nima tuzatildi — AI javobi
+- **Oddiy salomlashuv va savol javoblari endi to'xtatilmaydi.** Quyidagilar sababsiz to'xtatilayotgan edi:
+  - AI «1. Tovar nomi 2. Necha kub» deb so'rasa, tizim ro'yxat raqamlarini pul deb o'qirdi;
+  - javobda ikkita savol bo'lsa;
+  - «Ming rahmat» yoki «uch narsa kerak» kabi so'z bilan yozilgan son bo'lsa;
+  - «necha kunda», «bir necha daqiqada» kabi gap bo'lsa;
+  - mijozga «yuk necha kunda kerak?» deb so'ralsa, bu bizning va'damiz deb o'qilardi.
+
+  Endi bular o'tadi. AI ham raqamlangan ro'yxat o'rniga «•» belgisi bilan yozadi. Ikkita savol bo'lsa kartada
+  faqat ⚠️ ogohlantirish chiqadi, ✅ joyida qoladi.
+- **Xavfli narsalar avvalgidek to'xtatiladi:** manbasiz narx, «N kunda yetkazamiz» va'dasi, chegirma, kafolat,
+  qarzga berish, bepul xizmat, boshqa mijozning kodi, begona telefon, tizim kodi. Har bir yumshatish yonida shu
+  eshik yopiq qolganini alohida tekshiruvchi buzishga urinib sinadi.
+- Yo'l-yo'lakay ikkita teskari teshik ham yopildi. Ilgari «taxminan 29 kunda yetib keladi» Guanchjou manzilidagi
+  «29» uy raqami tufayli o'tib ketardi. «muammo boʼlmaydi» kafolati esa boshqacha apostrof bilan yozilsa
+  sezilmasdi. Endi ikkalasi ham to'xtatiladi.
+
+### Nima tuzatildi — karta
+- Tugma nomi endi **«✏️ O'zgartirish»**. Bosganingizda bot to'g'ri matnni **shu botga** yozishni aytadi, mijoz
+  chatiga emas. Keyin AI matnini alohida xabar qilib yuboradi, uni nusxalab tuzatsangiz bo'ladi.
+- ✅ chiqmasa, kartada sababi oddiy so'z bilan va nima qilish kerakligi yoziladi.
+- Botga matningizni yozganingizdan keyin, o'sha javobning tagida **«✅ Yuborish»** tugmasi chiqadi. ✅ bilan
+  birga yana nima bajarilishi ham shu yerda yoziladi.
+- Mijozga Telegramda o'zingiz yozsangiz, kartada **«Siz mijozga Telegramda o'zingiz yozdingiz (soat) — AI javobi
+  bekor qilindi»** deb yoziladi. 🙋 bossangiz, boshqacha yoziladi: «AI bu chatga 24 soat yozmaydi».
+- ✏️ ni adashib bossangiz, ✅ baribir AI matnini yuboradi, agar u to'xtatilmagan bo'lsa.
+- Karta kech kelsa, unda **«⏱ Mijoz N daqiqadan beri javob kutyapti»** deb va iloji bo'lsa sababi bilan yoziladi.
+
+### Nima tuzatildi — tinglovchi
+- **«Ish raqami» yoqilganini tinglovchi 30 soniya ichida sezadi.** Ilgari ba'zan hech sezmay qolardi. Ishga
+  tushganda birinchi qatorda raqam turi ham yoziladi: «ish raqami» yoki «shaxsiy raqam».
+- «Qaysi chatlar»da notanish odamga **«Yangi lid»**ni o'zingiz bossangiz, AI uning birinchi xabarlariga ham javob
+  tayyorlaydi.
+- **Raqamini yashirgan odam ish raqamingizga yozsa, tizim avtomatik lid ochadi** (sizning «1 a»). Lid nomi uning
+  Telegramdagi ismi bo'ladi, ismi bo'lmasa «Telegram (raqam yashirin)». Bitta odamga bitta lid ochiladi. Raqami
+  keyin ko'rinib, mijozlar ro'yxatidagi mijoz bo'lib chiqsa, chat o'sha mijozga o'tadi. Raqam yashirin ekan, AI unga
+  yuki va balansi haqida gapirmaydi. «Shaxsiy raqam»da hammasi avvalgidek qoladi.
+
+### Bilib qo'ying
+- Raqamini yashirgan hodim ish raqamingizga yozsa, u ham lid bo'lib ochiladi: tizim uning raqamini ko'ra olmaydi.
+- Tinglovchi to'xtab turgan paytda raqami yashirin odam yozgan bo'lsa, o'sha xabarlar keyin olinmaydi. Lid u yana
+  yozganda ochiladi.
+
 ## 2026-10-29 — «AI habarni ko'rmayapti»: mijoz xabari endi yo'qolmaydi, yo'qolsa sababi logda
 
 Sizning so'zingiz: «telegramni uladim aini yoqdim va habar keldi telegramga lekin hech nima ozgarmadi». Migratsiya
