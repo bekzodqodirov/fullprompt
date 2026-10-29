@@ -6386,6 +6386,7 @@
       "listener_behind": "Telegram tinglovchisi yangilanmagan — xabar ketmaydi.",
       "sending_disabled": "CRM’dan Telegramga yuborish o‘chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o‘zingiz yuboring.",
       "superseded": "Mijoz yana yozdi — yangi qoralama tayyorlanadi.",
+      "superseded_no_draft": "Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.",
       "taken_over": "Siz allaqachon o‘zingiz javob bergansiz.",
       "budget_spent": "Bugungi AI yuborish chegarasi tugadi — matnni o‘zingiz yuboring.",
       "calc_not_queued": "Hisoblatish navbatga tushmadi — javob yuborilmadi.",

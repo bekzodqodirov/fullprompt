@@ -591,10 +591,20 @@ export async function decideDraft(
       .set({ status, updatedAt: new Date() })
       .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.status, d.status)))
       .returning({ id: agentDrafts.id });
-    await refreshDraftCard(draftId);
-    if (moved === 'taken_over') return { ok: false, code: 'taken_over' };
-    // «Yangi qoralama tayyorlanadi» only where one is coming (`redraftNewest`); otherwise he is told to answer.
+    if (moved === 'taken_over') {
+      await refreshDraftCard(draftId);
+      return { ok: false, code: 'taken_over' };
+    }
+    // «Yangi qoralama tayyorlanadi» only where one is coming (`redraftNewest`); otherwise the press AND
+    // the card tell him to answer (card-io STALE_WORDS `no_redraft`).
     const coming = retired ? await redraftQuietly(d, moved === 'anchor_edited' ? 'edited' : 'newer') : false;
+    if (retired && !coming) {
+      await db
+        .update(agentDrafts)
+        .set({ policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale: 'no_redraft' })}::jsonb` })
+        .where(eq(agentDrafts.id, draftId));
+    }
+    await refreshDraftCard(draftId);
     return { ok: false, code: 'superseded', detail: coming ? 'redrafting' : 'no_draft' };
   }
 

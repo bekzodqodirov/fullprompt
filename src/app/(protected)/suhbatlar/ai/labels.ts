@@ -39,6 +39,8 @@ export type AgentErrorCode =
   | CancelRefusal
   | RetireRefusal
   | PriceRefusal
+  // `superseded` with no newer card coming (decide `redraftNewest`) — web-actions `agentDecideAction`.
+  | 'superseded_no_draft'
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -53,6 +55,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   listener_behind: 'errors.listener_behind',
   sending_disabled: 'errors.sending_disabled',
   superseded: 'errors.superseded',
+  superseded_no_draft: 'errors.superseded_no_draft',
   taken_over: 'errors.taken_over',
   budget_spent: 'errors.budget_spent',
   calc_not_queued: 'errors.calc_not_queued',

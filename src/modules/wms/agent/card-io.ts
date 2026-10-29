@@ -95,6 +95,9 @@ const CANCEL_WORDS: Record<string, string> = {
 const STALE_WORDS: Record<string, string> = {
   recalc: '🔄 VED qayta hisoblayapti — bu narx endi amal qilmaydi. Yangi javob kelganda narx bering.',
   avia_rate: '💱 Avia tarifi o‘zgardi — bu narx eskirdi. Mijozga o‘zingiz javob bering.',
+  // ✅ found the customer's newer message and no run will draft it (decide `redraftNewest`):
+  // «— yangi qoralama» would promise a card that never comes.
+  no_redraft: '↪️ Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.',
 };
 
 /**

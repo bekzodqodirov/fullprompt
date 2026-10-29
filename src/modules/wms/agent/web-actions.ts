@@ -108,7 +108,8 @@ export async function agentDecideAction(
   if (decision !== 'send' && decision !== 'reject' && decision !== 'human') return { ok: false, error: 'bad_value' };
   return run(async ({ actor, ctx }) => {
     const r = await decideDraft(actor, draftId, decision, { digest: decision === 'send' ? digest : undefined }, ctx);
-    if (!r.ok) return { ok: false, error: r.code };
+    // The customer wrote again and nothing will draft it: «a new draft is coming» would be false here too.
+    if (!r.ok) return { ok: false, error: r.code === 'superseded' && r.detail === 'no_draft' ? 'superseded_no_draft' : r.code };
     revalidatePath('/suhbatlar', 'layout');
     return { ok: true, sendAt: r.sendAt?.toISOString() };
   });

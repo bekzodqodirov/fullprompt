@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readFileSync } from 'node:fs';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,6 +20,25 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   ...(await original<typeof import('@/modules/platform/jobs/boss')>()),
   enqueue: vi.fn(async () => {}),
+}));
+
+/**
+ * The page's door, for its ✅: a signed-in person is a session the test does
+ * not have, so the actor it reads, the request's meta and the page refresh
+ * are stood in for; everything behind them is the page's own action.
+ */
+const webActor: { current: { id: string; roles: string[]; permissions: Set<string> } | null } = { current: null };
+vi.mock('@/modules/platform/rbac/authorize', async (original) => ({
+  ...(await original<typeof import('@/modules/platform/rbac/authorize')>()),
+  getActor: async () => webActor.current,
+}));
+vi.mock('@/modules/platform/auth/session', async (original) => ({
+  ...(await original<typeof import('@/modules/platform/auth/session')>()),
+  requestMeta: async () => ({ ip: null, userAgent: null }),
+}));
+vi.mock('next/cache', async (original) => ({
+  ...(await original<typeof import('next/cache')>()),
+  revalidatePath: () => {},
 }));
 
 /**
@@ -80,7 +100,9 @@ import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
 import { handleInbound } from '@/modules/wms/agent/run';
+import { agentDecideAction } from '@/modules/wms/agent/web-actions';
 import type { PolicyMemory } from '@/modules/wms/agent/policy-input';
+import { errorKey } from '@/app/(protected)/suhbatlar/ai/labels';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
 const STAMP = String(Date.now()).slice(-7);
@@ -589,6 +611,7 @@ describe('✅ after the customer wrote again while he was on ✏️ (review: the
     // The edit armed for the dead draft is gone, and he is told his next text will not land on it.
     expect(readWait(BigInt(me.chat), 'agent_edit')).toBeNull();
     expect(h.textsTo(me.chat, m)).toContain('✏️ Mijoz yana yozdi — yangi qoralama tayyorlanadi. Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.');
+    expect(String((await cardPayloadOf(a.draftId)).text)).toContain('↪️ Mijoz yana yozdi — yangi qoralama.');
     // The job runs: a new card for the newer message, as promised.
     const out = await withModelKey(() => handleInbound(jobs[0]!, { callModel: composing('Qaysi tovar va necha kg?') }));
     expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
@@ -611,6 +634,10 @@ describe('✅ after the customer wrote again while he was on ✏️ (review: the
       await h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!));
       expect(toastOf(h.since(m).api)).toBe(SUPERSEDED_NO_DRAFT);
       expect(h.textsTo(me.chat, m)).toContain(`✏️ ${SUPERSEDED_NO_DRAFT} Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.`);
+      // The card says it too, for as long as it stands — never «— yangi qoralama».
+      const card = String((await cardPayloadOf(a.draftId)).text);
+      expect(card).toContain('↪️ Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.');
+      expect(card).not.toContain('yangi qoralama');
     } finally {
       if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
     }
@@ -629,6 +656,26 @@ describe('✅ after the customer wrote again while he was on ✏️ (review: the
     const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
     expect(r).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
     expect(queuedRuns()).toEqual([]);
+  });
+
+  it('the page’s ✅ says the same: «bu javob ketmaydi» — a label of its own, not «a new draft is coming»', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await db.update(agentDrafts).set({ status: 'editing' }).where(eq(agentDrafts.id, a.draftId));
+    await newerWhileEditing(me);
+    const saved = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    webActor.current = { id: me.id, roles: ['super_admin'], permissions: new Set<string>() };
+    try {
+      const digest = (await cardSend(a.draftId))!.split(':')[3]!;
+      expect(await agentDecideAction(a.draftId, 'send', digest)).toEqual({ ok: false, error: 'superseded_no_draft' });
+    } finally {
+      webActor.current = null;
+      if (saved !== undefined) process.env.ANTHROPIC_API_KEY = saved;
+    }
+    expect(errorKey('superseded_no_draft')).toBe('errors.superseded_no_draft');
+    const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { agentAi: { errors: Record<string, string> } };
+    expect(uz.agentAi.errors.superseded_no_draft).toBe(SUPERSEDED_NO_DRAFT);
   });
 
   it('❌ on the draft he had opened for editing asks the newer message again too', async () => {

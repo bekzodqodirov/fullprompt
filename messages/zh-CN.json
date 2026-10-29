@@ -6386,6 +6386,7 @@
       "listener_behind": "Telegram 监听程序未更新 — 消息不会发出。",
       "sending_disabled": "已关闭从 CRM 发送到 Telegram（设置）——回复不会发出。请复制文本自行发送。",
       "superseded": "客户又发了消息 — 正在准备新草稿。",
+      "superseded_no_draft": "客户又发了消息 — 这条回复不会发出。请亲自回复新消息。",
       "taken_over": "您已经亲自回复了。",
       "budget_spent": "今天 AI 发送上限已用完 — 请自己发送这段文字。",
       "calc_not_queued": "计算未进入队列 — 回复未发送。",
