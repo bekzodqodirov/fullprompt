@@ -538,12 +538,9 @@ const NOTHING_CHARGED =
   /(?<![\p{L}])(?:hech\s+narsa\s+(?:so['‘’ʻ`]?ramaymiz|olmaymiz)|pul\s+olmaymiz|(?:bizning\s+)?hisobimiz(?:dan|ga)|sovg['‘’ʻ`]?a\p{L}*|tekinga|ҳеч\s+нарса\s+(?:сўрамаймиз|олмаймиз)|пул\s+олмаймиз|ҳисобимиз(?:дан|га)|совға\p{L}*|ничего\s+не\s+(?:берём|берем|возьмём|возьмем|просим|стоит)|(?:за|на)\s+(?:наш|свой)\s+сч[её]т|дари(?:м|ть)|в\s+подарок|не\s+оплачива\p{L}*|(?:платить|оплачивать)\s+не\s+нужно|(?:is|are)\s+on\s+us|on\s+the\s+house|free\s+of\s+charge|no\s+(?:extra\s+)?charge|at\s+no\s+(?:extra\s+)?cost|at\s+our\s+(?:own\s+)?expense|(?:won['’]t|will\s+not|doesn['’]t|does\s+not)\s+cost|costs?\s+nothing|complimentary)(?![\p{L}])/iu;
 /** …and «we cover» — said of a service, never of the whole country: «We cover the packing», «We cover all of Uzbekistan». */
 const WE_COVER = /(?<![\p{L}])(?:we\s+(?:cover|pay\s+for)|covered\s+by\s+us)(?![\p{L}])/iu;
-/**
- * A statement about calculating — «hisoblab beraman», «посчитаю», «we will quote» — never «hisobimizdan», «hisobimizga»,
- * «hisobingizga»: our or your ACCOUNT (third review: «Yetkazishni ham hisobimizga olamiz» was skipped as calculating).
- */
+/** A statement about calculating — «hisoblab beraman», «посчитаю», «we will quote» — never «hisobimizdan», at our expense. */
 const CALCULATING =
-  /(?<![\p{L}])(?:hisob(?!(?:imiz|ingiz)|i?dan)\p{L}*|ҳисоб(?!(?:имиз|ингиз)|и?дан)\p{L}*|(?:рас|по|про|под)сч[иё]т\p{L}*|расч[её]т\p{L}*|calculat\p{L}*|quot\p{L}*|estimat\p{L}*)/iu;
+  /(?<![\p{L}])(?:hisob(?!(?:imiz|i|ingiz)?dan)\p{L}*|ҳисоб(?!(?:имиз|и|ингиз)?дан)\p{L}*|(?:рас|по|про|под)сч[иё]т\p{L}*|расч[её]т\p{L}*|calculat\p{L}*|quot\p{L}*|estimat\p{L}*)/iu;
 /** …and telling him a PRICE is calculating it: «Yetkazish narxini ham aytaman», «Стоимость доставки тоже скажу». */
 const PRICE_TOLD = new RegExp(
   `(?<![\\p{L}])(?:narx\\p{L}*|нарх\\p{L}*|стоимост\\p{L}*|цен[аеуыой]\\p{L}*|price\\p{L}*|cost\\p{L}*)(?![\\p{L}])[^.!?]*?(?<![\\p{L}])(?:ayt(?:aman|amiz|ib\\s+beraman|ib\\s+beramiz)|ma${AP}?lum\\s+qilaman|айт(?:аман|амиз|иб\\s+бераман)|скажу|скажем|сообщу|сообщим|назову|назов[её]м|напишу|tell\\s+you|let\\s+you\\s+know|send\\s+you|include)(?![\\p{L}])|(?<![\\p{L}])(?:ayt(?:aman|amiz)|айт(?:аман|амиз)|скажу|сообщу|назову|tell\\s+you)(?![\\p{L}])[^.!?]*?(?<![\\p{L}])(?:narx\\p{L}*|нарх\\p{L}*|стоимост\\p{L}*|цен[аеуыой]\\p{L}*|price\\p{L}*|cost\\p{L}*)(?![\\p{L}])`,
