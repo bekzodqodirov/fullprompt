@@ -58,6 +58,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   calc_not_queued: 'errors.calc_not_queued',
   calc_in_flight: 'errors.calc_in_flight',
   identity_changed: 'errors.identity_changed',
+  window_closed: 'errors.window_closed',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',

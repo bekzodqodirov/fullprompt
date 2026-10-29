@@ -31,6 +31,7 @@ export function doorViews(
         : null,
     webhookUrl: `${o.appUrl}/api/leads/in/${door.key}`,
     on: Boolean(door.secret),
+    machine: isAgentSource(door.key),
     secret: o.canManage ? door.secret : null,
     assignUrl: door.key === 'sayt' ? `${o.appUrl}/api/lead/assign` : null,
   }));

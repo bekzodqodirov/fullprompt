@@ -167,6 +167,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
+| **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 
 ## State — 2026-08-23
 

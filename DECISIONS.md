@@ -6288,3 +6288,101 @@ Red proofs (5), all by string edit with a hash-verified restore, all red: no has
 fence asking one spelling (a second lead), the bot's fence asking one spelling, every long id hashed up front (the
 control's raw spelling lost), the limit counted in UTF-16 units instead of UTF-8 bytes (the unit test's emoji and
 Cyrillic cases).
+
+### The merge review — the seams with main (2026-10-29, after `Merge origin/main into agent-feed`; NO migration, ledger 139)
+
+One reviewer over the merge (`2ac5bf7c`, main `a4e1b1c8`), probing where the agent's door meets main's AI sotuvchi
+(0138) and main's listener: two defects, one spec defect in the agent's own repository, three nits, seven
+suspicions — each verified here before it was fixed or refuted. The question the review was asked first — can an
+agent-sourced lead be contacted without a person approving the exact message — is answered NO, by reading and by
+the reviewer's probe: `decideDraft` is the one writer of `agent_outbox` and needs the account holder's ✅ on the
+card's digest, mode `auto` is refused by every writer (`auto_not_in_phase1`), and `tg_outbox` is written by a person
+typing in the CRM alone (`queueReply`, client chats only). So there was no blocker to fix.
+
+1568. **An away message is no first contact.** `contactEvidenceSql`'s Telegram branch counted every outgoing
+`tg_messages` row on the lead, and main's listener (0138) stores a Telegram Business away or greeting message — or a
+business bot's answer — as one, flagging it `tg_message_flags.auto_sent` in `afterStored` for BOTH directions
+(`wasAutoSent` reads `offline` / `via_business_bot_id`, and our own away message is ours). So the account's robot was
+a seller's first contact: the agent's outcomes feed reported `contact_kind: "telegram"` for a lead nobody had
+written to (the reviewer's probe, over HTTP), and — main's own path — the same row silenced the owner's 15-minute
+«⏰ tegilmagan» reminder about an advert lead. The rule's own header says contact is what a PERSON does. The branch
+now skips a row whose flag says `auto_sent`. The flag table is 0138's, so the clause is built only when
+`flagsReady()` says it is there — the SAME predicate its writer asks (`markAutoSent` → `agentTablesReady`), so a
+database where the listener writes the flag is exactly one where the rule reads it — and `flags` is a REQUIRED
+argument of `contactEvidenceSql` (a default fails open one way or the other: 42P01 for the sweep, the landing and the
+button one migration behind, or the robot counted). All four readers ask it: the stamp, the claim (both of its
+evidence clauses), `contactedRecently`, `alreadyContacted`. Pinned on both paths it reached — the advert reminder
+(an auto-sent row stamps nothing and the owner IS reminded; the same row unflagged stamps `telegram` and silences
+him) and the agent feed (`contacted_at` null over the outcomes page, then set once the flag is gone) — plus a unit
+fence on the guard (no flag table named when `flags` is false; no literal `flags: true/false` in the module). Red
+proofs (2): the clause dropped (all three new tests red), the claim's evidence built with `false` (the claim half
+red). STATED: the listener writes the flag a moment after the row (after the media is saved) and the stamp never
+moves a contact later, so a sweep inside that moment still counts the robot — milliseconds for a text message,
+reasoned, not reproduced; and that our own away message's outgoing copy carries `offline` is read from Telegram's
+schema and gramjs, not observed on a live account.
+
+1569. **An agent lead's AI reply waits for the agent's playbook window.** After the owner's ✅ an AI-sotuvchi reply
+goes out on the AI's own clock: `releaseAt` held only 22:00-08:00 (released 08:30), with no weekday, and sent at once
+at night when the customer wrote within two hours — the reviewer's probe approved a reply at 19:56 Tashkent and it
+was queued for 19:56. The client-finding agent's binding outreach rule (clientScrapper CLAUDE.md, its
+`docs/sotuv-playbook.md` §2.2-§2.3, §5.2) allows a message to its prospects Monday-Saturday 10:00-17:00, never on
+Sunday, Friday 12:00-14:00 avoided, quiet hours 18:00-10:00 even for approved follow-ups, and counts every message
+outside 10:00-17:00 as a warning. Two owner decisions met for the first time in this merge, so the owner is asked
+(CHANGELOG): ⭐ (a) the playbook window for chats whose lead came from the agent, (b) no AI drafts for agent leads
+until a seller has written by hand, (c) keep the night rule and amend the playbook. Built as ⭐ (a) on his standing
+«qolgani sen aytgandek» of 2026-10-29, the smallest change that leaves main's behaviour for every other chat:
+`releaseAt(now, lastInboundAt, window)` takes the chat's window as a REQUIRED argument; `sendWindowFor`
+(`agent/send-window.ts`, one home) says `agent_lead` for a chat bound to a LEAD (no client) whose own source is
+`agent`, `default` otherwise — a client chat (the lead won) and a lead an agent push only JOINED keep the night;
+the ✅ (`decideDraft`) and every send step (`sendFactsFor` → `SendFacts.sendWindow`) ask it, the step waits with
+the new reason `agent_window` (`applyAgentOutcome` treats it as the night: the release moves the approval's clock
+and restarts the choreography). Window in `AGENT_LIMITS.agentLeadWindow`; no «wrote within two hours» exception.
+A reply past its read still finishes its choreography a few seconds past 17:00 (S3's rule, unchanged). One new
+refusal: a ✅ whose next opening is more than a day after the customer's message — Saturday after 17:00, Sunday
+before 10:00 — is `window_closed`, said in words on the bot and the page (all four bundles), and queues nothing and
+lands no calculation: the step would only cancel it `anchor_too_old` on Monday, after the card had promised
+«10:00 da ketadi». Pinned by the unit window walk (literal wall-clock moments: the probe's Thursday 19:56 → Friday
+10:00 where the default chat goes at once, Saturday → Monday, Sunday → Monday, Friday 12:10 → 14:00, the first and
+last minute) and the integration file over `decideDraft` and `sendFactsFor` (the probe moment, the refusal with no
+outbox row and the draft still pending, a hold Sunday → Monday, nothing held inside the window, a reply carried past
+17:00 waiting `agent_window` while the advert lead's goes; every case with an advert-lead control). Red proofs (5):
+the agent branch removed from `releaseAt`, `sendWindowFor` never answering `agent_lead`, the refusal removed, the
+step reading `default`, the Friday break dropped — each red. STATED: the AI's draft carries no opt-out line (that
+line is for a first touch, which the AI never makes) and may quote avia (kg × the owner's rate) before density is
+known; neither changed. docs/AI-SOTUVCHI.md §17.4 and §17.8, docs/AGENT-FEED.md §2a.
+
+1570. **Verified, stated, deferred.** FIXED (suspected, verified): the lead form only HIDES «Agent (qidiruv)»
+(`personPickableSources`), so a hand-posted `sourceId` naming it tagged a hand-made lead as the agent's — counted in
+the agent's figures on /crm/tahlil and, since #1569, holding its AI replies to the agent's window. `createLead`
+(a person's, not `system`) and `updateLead` (a move ONTO it; the record's own source is re-posted by the form, #171,
+and kept) refuse it `source_not_pickable`; the lead form shows the generic error, the only path is a forged post.
+Red proofs (2): the refusal removed (both tests red), the own-source exception removed (the edit test red). FIXED
+(nit): the agent door's webhook fold printed the person's hint («a form a PERSON fills in … Google Ads, YouTube,
+TikTok, your site») on a door only a machine posts to, inviting the owner to paste the key that READS the agent feeds
+into an advert platform; `doorViews` marks the door `machine` and the fold prints `doorWebhookHintAgent` (the agent
+server's `.env`, `CRM_AGENT_KEY`, never an advert platform) in all four bundles; red-proven. FIXED (nit):
+AGENT-FEED.md's decision index named only the first two reviews; CLAUDE.md's truth table had no row for the agent
+feed, and «agent» names two different things here (the client-finding service: source `agent`, `/api/agent/*`,
+`crm/agent-feed.ts`; the AI sotuvchi: `agent_*`, `/agent on`, `wms/agent/**`) — both say so now, and AI-SOTUVCHI.md
+§17.4 says what the AI does with an agent lead. FIXED (spec defect, the agent's repository): the +90 renumber had been
+applied only here, so clientScrapper's 02, 05, 06 and 07 cited #1455-#1477, which now name main's Sakkiz band, Uch
+band, Q8 and AI-sotuvchi entries — renumbered there, with a fence (`tests/test_spec_erp_citations.py`: every spec
+citation from #1400 up is in this block, #1545-#1570). STATED (suspected, verified by reading): an AI-approved reply
+and a seller's own message both reach the outcomes as `contact_kind: "telegram"` — a person approved the exact
+words, and the feed is not meant to tell them apart (AGENT-FEED.md §2a). STATED (suspected, verified): agent leads
+count as «routed» units in the website door's roster (`site-assign.ts` `routed`) and in the fewest-first rota —
+the roster's own rationale («the same people work both streams») holds for them; the owner can give agent leads a
+team of their own on the taqsimot screen (§0 step 3). REFUTED for this door (suspected): a nameless push would land
+as `agent · <tail>` and the AI's prompt prints a lead's name — but the agent never pushes without a name
+(clientScrapper `crm_push.build_payload` raises `PayloadError("name")` first), and the same fallback has named every
+nameless advert arrival on main. REFUTED as a defect (suspected): an about-lead (0136 `lead_about_client`) whose
+client card later drops the copied phone leaves that phone out of the suppression set — the client book is the
+truth, and a phone removed from a card stops appearing by the rule §3.1 already states; the won-lead branch keeps a
+lead's phone because attaching never copied it onto the card, which an about-lead's did. DEFERRED, ASKED
+(suspected, verified by reading): the AI sotuvchi's mute — a recipient's final answer (`USER_IS_BLOCKED`, privacy,
+account gone: `muteConversation`) or the owner's 🔇 — reaches neither the suppression feed nor the belt
+(`suppressionTailsSql` reads client cards, people and leads only), so a prospect who blocked the owner's account
+after an AI reply can be proposed again next month on a fresh `cs:` id. The same holds for a person's own blocked
+reply since the CRM's Telegram bridge shipped; the door that exists is the seller closing the lead «Qayta
+qilinmasin», which the feed already carries. Adding a block as suppression is a change to what the feed means
+(its `kind` set is the agent's contract), so it is asked of the owner, not built (CHANGELOG, AGENT-FEED.md §5).

@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { addOfficeMinutes, officeClock } from '../../platform/time/office-hours';
+import { agentTablesReady } from '../agent/config';
 import { AGENT_SOURCE_KEY } from './agent-source';
 
 /**
@@ -17,7 +18,11 @@ import { AGENT_SOURCE_KEY } from './agent-source';
  *  1. a CALL on the lead — outgoing, or incoming and answered (a missed ring
  *     is not a conversation) — with two minutes for a phone whose clock runs
  *     early; any colleague's, because the customer was reached either way;
- *  2. a Telegram message SENT to the lead's chat, by whoever's account;
+ *  2. a Telegram message SENT to the lead's chat, by whoever's account —
+ *     but never one the ACCOUNT's own robot wrote: a Telegram Business away
+ *     or greeting message, or a business bot's answer, is flagged
+ *     `auto_sent` by the listener (0138's `tg_message_flags`, both
+ *     directions), and nobody reached the customer by it;
  *  3. a NOTE on the lead — but only by the person the lead is for (its owner,
  *     or the seller the arrival was handed to; anybody when it is nobody's).
  *     The owner's own «@Aziz qo'ng'iroq qil» written after the reminder is a
@@ -142,9 +147,23 @@ export function contactEvidenceSql(o: {
   ownerId: SQL;
   /** Whom the arrival was handed to (`lead_intakes.assigned_user_id`). */
   assignedId: SQL;
+  /**
+   * 0138's `tg_message_flags` is here (`flagsReady()`). REQUIRED, not
+   * optional: a default would fail open in one direction or the other — read
+   * the table on a database one migration behind (42P01 for every reader:
+   * the sweep, the landing, the button), or count an away message as a
+   * conversation on a database that has the flag.
+   */
+  flags: boolean;
 }): SQL {
   const responsible = (actor: SQL) =>
     sql`((${o.ownerId} IS NULL AND ${o.assignedId} IS NULL) OR ${actor} = ${o.ownerId} OR ${actor} = ${o.assignedId})`;
+  // The account's own robot is not a person (rule 2). Only the listener can
+  // tell — gramjs carries `offline` / `via_business_bot_id` and the stored row
+  // does not — so the flag is the one witness, written a moment after the row.
+  const notAutoSent = o.flags
+    ? sql`AND NOT EXISTS (SELECT 1 FROM tg_message_flags tf WHERE tf.message_id = tm.id AND tf.auto_sent)`
+    : sql``;
   return sql`(
     SELECT cl.started_at AS at, 'call'::text AS kind, cl.user_id AS by
       FROM call_logs cl
@@ -157,6 +176,7 @@ export function contactEvidenceSql(o: {
      WHERE tm.lead_id = ${o.leadId}
        AND tm.direction = 'out'
        AND tm.sent_at >= ${o.since}
+       ${notAutoSent}
     UNION ALL
     SELECT ca.created_at, 'note'::text, ca.created_by
       FROM crm_activities ca
@@ -198,28 +218,39 @@ export function contactEvidenceSql(o: {
   )`;
 }
 
+/**
+ * May the rule read 0138's `tg_message_flags`? The SAME question its writer
+ * asks (`markAutoSent` → `agentTablesReady`), so a database where the
+ * listener writes the flag is exactly one where the rule reads it.
+ */
+export const flagsReady = (): Promise<boolean> => agentTablesReady();
+
 /** The rule over an arrival `i` joined to its lead `l` — the sweep's shape. */
-const ARRIVAL_EVIDENCE = contactEvidenceSql({
-  leadId: sql`i.lead_id`,
-  since: sql`i.created_at`,
-  ownerId: sql`l.owner_id`,
-  assignedId: sql`i.assigned_user_id`,
-});
+const arrivalEvidence = (flags: boolean) =>
+  contactEvidenceSql({
+    leadId: sql`i.lead_id`,
+    since: sql`i.created_at`,
+    ownerId: sql`l.owner_id`,
+    assignedId: sql`i.assigned_user_id`,
+    flags,
+  });
 
 /**
  * The same rule over an EARLIER arrival `e` on the same lead — the claim's
  * «has the owner already been told about this wait» (below).
  */
-const EARLIER_EVIDENCE = contactEvidenceSql({
-  leadId: sql`e.lead_id`,
-  since: sql`e.created_at`,
-  ownerId: sql`l.owner_id`,
-  assignedId: sql`e.assigned_user_id`,
-});
+const earlierEvidence = (flags: boolean) =>
+  contactEvidenceSql({
+    leadId: sql`e.lead_id`,
+    since: sql`e.created_at`,
+    ownerId: sql`l.owner_id`,
+    assignedId: sql`e.assigned_user_id`,
+    flags,
+  });
 
 /** The FIRST contact for arrival `i` (a LATERAL body): earliest wins. */
-export function firstContactSql(): SQL {
-  return sql`(SELECT ev.at, ev.kind, ev.by FROM ${ARRIVAL_EVIDENCE} ev ORDER BY ev.at, ev.kind LIMIT 1)`;
+export function firstContactSql(flags: boolean): SQL {
+  return sql`(SELECT ev.at, ev.kind, ev.by FROM ${arrivalEvidence(flags)} ev ORDER BY ev.at, ev.kind LIMIT 1)`;
 }
 
 /**
@@ -238,12 +269,13 @@ export function firstContactSql(): SQL {
  */
 export async function stampFirstContacts(now: Date = new Date(), leadId?: string): Promise<number> {
   const at = now.toISOString();
+  const flags = await flagsReady();
   const rows = await db.execute<{ id: string }>(sql`
     WITH found AS (
       SELECT i.id, fc.at, fc.kind, fc.by
         FROM lead_intakes i
         JOIN leads l ON l.id = i.lead_id
-        CROSS JOIN LATERAL ${firstContactSql()} fc
+        CROSS JOIN LATERAL ${firstContactSql(flags)} fc
        WHERE i.contact_clock_at IS NOT NULL
          AND (
            (i.contact_clock_at >= ${at}::timestamptz - interval '8 days'
@@ -313,6 +345,7 @@ export interface UntouchedArrival {
  */
 export async function claimUntouched(now: Date = new Date()): Promise<UntouchedArrival[]> {
   const at = now.toISOString();
+  const flags = await flagsReady();
   const rows = await db.execute<{
     id: string;
     lead_id: string;
@@ -330,7 +363,7 @@ export async function claimUntouched(now: Date = new Date()): Promise<UntouchedA
                    AND e.contact_alerted_at IS NOT NULL
                    AND e.contacted_at IS NULL
                    AND e.created_at >= ${at}::timestamptz - make_interval(hours => ${REMIND_WITHIN_HOURS})
-                   AND NOT EXISTS (SELECT 1 FROM ${EARLIER_EVIDENCE} ev)
+                   AND NOT EXISTS (SELECT 1 FROM ${earlierEvidence(flags)} ev)
               ) AS told
          FROM lead_intakes i
          JOIN leads l ON l.id = i.lead_id
@@ -344,7 +377,7 @@ export async function claimUntouched(now: Date = new Date()): Promise<UntouchedA
           AND i.created_at >= ${at}::timestamptz - make_interval(hours => ${REMIND_WITHIN_HOURS})
           AND i.contacted_at IS NULL
           AND i.contact_alerted_at IS NULL
-          AND NOT EXISTS (SELECT 1 FROM ${ARRIVAL_EVIDENCE} ev)
+          AND NOT EXISTS (SELECT 1 FROM ${arrivalEvidence(flags)} ev)
           AND (
             i.contact_due_at + make_interval(mins => ${DEVICE_GRACE_MINUTES}) <= ${at}::timestamptz
             OR NOT EXISTS (
@@ -389,6 +422,7 @@ export async function contactedRecently(
     since: sql`${since}::timestamptz`,
     ownerId: sql`${ownerId}::uuid`,
     assignedId: sql`${ownerId}::uuid`,
+    flags: await flagsReady(),
   });
   const rows = await db.execute<{ hit: number }>(sql`SELECT 1 AS hit FROM ${evidence} ev LIMIT 1`);
   return rows.length > 0;
@@ -400,8 +434,9 @@ export async function contactedRecently(
  * evidence, never a second reading of it.
  */
 export async function alreadyContacted(leadId: string): Promise<boolean> {
+  const flags = await flagsReady();
   const rows = await db.execute<{ contacted: boolean }>(sql`
-    SELECT (i.contacted_at IS NOT NULL OR EXISTS (SELECT 1 FROM ${ARRIVAL_EVIDENCE} ev)) AS contacted
+    SELECT (i.contacted_at IS NOT NULL OR EXISTS (SELECT 1 FROM ${arrivalEvidence(flags)} ev)) AS contacted
       FROM lead_intakes i
       JOIN leads l ON l.id = i.lead_id
      WHERE i.lead_id = ${leadId}

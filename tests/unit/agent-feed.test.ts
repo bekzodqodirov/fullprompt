@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   clampLimit,
@@ -211,5 +213,20 @@ describe('the doors screen', () => {
     expect(agent!.webhookUrl).toBe('https://erp.test/api/leads/in/agent');
     expect(tiktok!.formUrl).toBe('https://erp.test/ariza?manba=tiktok');
     expect(tiktok!.botUrl).toBe('https://t.me/gsr_bot?start=ad_tiktok');
+  });
+
+  it('the agent’s webhook hint is the machine’s — its key goes to the agent server, never to an advert platform', () => {
+    const views = doorViews(rows, { ...o, canManage: true });
+    expect(views.map((door) => door.machine)).toEqual([false, true, false]);
+    const doors = readFileSync(resolve(__dirname, '../../src/app/(protected)/crm/(pages)/kelganlar/doors.tsx'), 'utf8');
+    expect(doors).toContain("{door.machine ? t('doorWebhookHintAgent') : t('doorWebhookHint')}");
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const crm = (JSON.parse(readFileSync(resolve(__dirname, `../../messages/${locale}.json`), 'utf8')) as {
+        crm: Record<string, string>;
+      }).crm;
+      expect(crm.doorWebhookHintAgent, locale).toContain('CRM_AGENT_KEY');
+      // The person's hint names advert platforms; the machine's names none as a destination.
+      expect(crm.doorWebhookHintAgent, locale).not.toContain('Google Ads');
+    }
   });
 });

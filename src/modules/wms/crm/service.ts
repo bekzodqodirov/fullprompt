@@ -30,6 +30,7 @@ import { ftlReady, leadIsFtl, notifyFtlMarked, setLeadFtlTx } from '../ftl/servi
 import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
 import type { LoadMode } from '../ftl/sql';
 import { aboutClientsOf } from './lead-about';
+import { isAgentSource } from './agent-source';
 
 /**
  * The funnel's own board-order table (0075).
@@ -532,8 +533,24 @@ export interface SystemOpts {
   system?: true;
 }
 
+/**
+ * The client-finding agent's source is written by the agent's door alone
+ * (docs/AGENT-FEED.md §1). The lead form hides it (`personPickableSources`),
+ * so a posted `sourceId` naming it — on a person's create, or on an edit that
+ * moves a lead ONTO it — is a forged post (#514): refused here, because a
+ * hand-made lead tagged «Agent (qidiruv)» counts in the agent's figures on
+ * /crm/tahlil and holds its AI replies to the agent's window (DECISIONS #1569).
+ * The record's OWN source is never refused: the form re-posts it (#171).
+ */
+async function refuseAgentSourceByHand(sourceId: string | undefined, currentId: string | null): Promise<void> {
+  if (!sourceId || sourceId === currentId) return;
+  const [row] = await db.select({ key: leadSources.key }).from(leadSources).where(eq(leadSources.id, sourceId));
+  if (isAgentSource(row?.key)) throw new CrmError('source_not_pickable');
+}
+
 export async function createLead(input: LeadInput, ctx: AuditContext, opts?: SystemOpts) {
   if (!ctx.actorId && !opts?.system) throw new CrmError('unauthenticated');
+  if (!opts?.system) await refuseAgentSourceByHand(input.sourceId, null);
   const stageId = input.stageId || (await defaultStageId());
   // A lead cannot be BORN decided (round 107). Won demands the convert dialog
   // — a client and a deal — and lost demands a written reason; the create form
@@ -614,6 +631,7 @@ export async function updateLead(id: string, input: LeadInput, ctx: AuditContext
   if (!ctx.actorId) throw new CrmError('unauthenticated');
   const before = await db.query.leads.findFirst({ where: eq(leads.id, id) });
   if (!before) throw new CrmError('not_found');
+  await refuseAgentSourceByHand(input.sourceId, before.sourceId);
   // The business columns, WITHOUT `updatedAt`: a fresh Date never equals the
   // stored one, so diffing a value set that carries it always reports a change.
   const movedStage = (input.stageId || before.stageId) !== before.stageId;

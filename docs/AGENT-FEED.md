@@ -10,8 +10,17 @@ every lead it pushed (outcomes).
 Code: `src/modules/wms/crm/agent-source.ts` (the key), `inbound.ts` (the
 landing and its belt), `agent-feed.ts` (the feeds), `agent-feed-door.ts` (the
 GET door), `first-contact.ts` / `inbound-notify.ts` (the clock),
-`platform/settings/reason-list.ts` (the setting's parser). Decisions #1545-#1549,
-the first review's corrections #1550-#1556, and the second's #1557-#1562.
+`platform/settings/reason-list.ts` (the setting's parser), and on the AI
+sotuvchi's side `agent/send-window.ts` (§2a). Decisions #1545-#1549, the first
+review's corrections #1550-#1556, the second's #1557-#1562, the third's
+#1563-#1565, the fourth's #1566-#1567, and the merge review's #1568-#1570.
+
+Two different things are called «agent» in this repository. THIS document is
+the client-finding agent — a separate service, the lead source `agent`,
+`/api/agent/*`, `crm/agent-feed.ts`. The AI sotuvchi (docs/AI-SOTUVCHI.md —
+the `agent_*` tables, `/agent on`, `src/modules/wms/agent/**`) is the shadow
+salesperson on the owner's own Telegram account; §2a says what it does with a
+lead this agent brought.
 
 ---
 
@@ -53,6 +62,14 @@ Agent orqali kelgan lid sotuvchiga odatdagidek darhol Telegram xabari bilan
 boradi, lekin **15 daqiqalik «⏰ tegilmagan» eslatmasi bu lidlar uchun
 yuborilmaydi** (kuniga 25 tagacha bo'lishi mumkin). Birinchi aloqa vaqti
 baribir o'lchanadi: /crm/tahlil va agentning o'zi shuni o'qiydi.
+Telegram Business'ning avtomatik javobi («hozir javob bera olmayman») birinchi
+aloqa hisoblanmaydi — uni odam yozmagan.
+
+Agent topgan odam **sizning** (AI sotuvchi ulangan) Telegram akkauntingizga
+yozsa, AI tayyorlagan javob ✅ bosilgandan keyin ham faqat **dushanba–shanba
+10:00–17:00** da ketadi (yakshanba va juma 12:00–14:00 — yo'q). Shanba kechqurun
+yoki yakshanba ertalab ✅ bossangiz, bot «javob ketmaydi» deydi — ish vaqtida
+o'zingiz yozasiz.
 
 ---
 
@@ -202,6 +219,39 @@ was a lead the daily caps never counted); a client card whose `phones` is not
 a list is read as no phones (one such card failed every arrival with a
 phone); and a delivery of an `external_id` already in flight waits for it.
 
+## 2a. The AI sotuvchi and an agent lead
+
+The client-finding agent never writes to anyone. The AI sotuvchi (docs/
+AI-SOTUVCHI.md) does not write FIRST either: it drafts only in answer to a
+message the customer sent to the owner's own connected account, in a chat
+already tied to a client or a lead, and nothing it drafts leaves without the
+owner's ✅ on that exact text (`decideDraft`, the one writer of
+`agent_outbox`; mode `auto` is refused by every writer). An agent prospect
+reaches it only by writing to the owner's account — and the chat then joins
+the agent's open lead by phone (the tray's «🆕 Yangi lid», a work-number
+account, or «Chatni qo'shish» on the card).
+
+What changes for that chat (#1569, the owner's ⭐ (a) of the merge review,
+owed to him as a confirmation): a chat bound to a LEAD whose source is
+`agent` obeys the agent's playbook window instead of the night —
+**Monday-Saturday 10:00-17:00 Tashkent, never Sunday, Friday 12:00-14:00
+avoided**, with no «the customer wrote within two hours» exception. The ✅ is
+held to the next opening, and every send step asks the same window, so a
+reply carried past 17:00 by a gap waits for the next working morning. A ✅
+whose next opening is more than a day after the customer's message (Saturday
+after 17:00, Sunday before 10:00) is refused in words (`window_closed`) and
+queues nothing — the step would only cancel it as `anchor_too_old`. A chat
+bound to a CLIENT (the lead won), and a lead from any other door — an agent
+push that JOINED an advert lead included — keeps the night rule exactly as
+before. The AI's draft carries no opt-out line (that line is for a first
+touch, which the AI never makes) and may quote avia (kg × the owner's rate)
+before density is known; both stated, neither changed.
+
+Its sent reply is an outgoing message on the lead, so the outcomes feed
+reports it as `contact_kind: "telegram"` — exactly like a seller's own
+message: a person approved the exact words (stated: the feed cannot tell the
+two apart, and is not meant to).
+
 ## 3. The feeds
 
 Both: `GET`, header `X-GSR-Key` (the same key as the door), never in the URL.
@@ -330,7 +380,7 @@ Exactly these 15 fields, nothing else:
 | `lost_reason` | the TEXT chosen at the move (≤ 200 chars) **only when it is a label**: one of the owner's lost-reason dictionary rows (active or retired) or a label of `agent_no_contact_reasons`, compared as in §3.1. A seller's free text — what a lost lead carries before the dictionary exists, and where a name or a number gets written down — is `null` |
 | `no_contact` | `true` when the lead is lost with a reason `agent_no_contact_reasons` lists — the ERP's own answer, so the agent needs no copy of the setting |
 | `closed_at` | when the lead was decided |
-| `contacted_at`, `contact_kind` | the FIRST contact after the arrival: `call` / `telegram` / `note` / `stage` / `followup` |
+| `contacted_at`, `contact_kind` | the FIRST contact after the arrival: `call` / `telegram` / `note` / `stage` / `followup`. A Telegram Business away or greeting message — the account's own robot, flagged `auto_sent` by the listener — is never one (#1568) |
 | `quoted_volume_m3` | the lead's kub (number) |
 | `at` | when the row last moved: `max(arrival, first contact, any change on the lead, its decision)` |
 
@@ -377,6 +427,12 @@ suppression list; it never receives the client book.
   once (pushes 404 until the agent's `.env` is updated).
 - A lead revived out of `lost` leaves the suppression set — correct: somebody
   decided to work it again.
+- A prospect who BLOCKED the owner's account (an AI reply or a person's
+  answered `USER_IS_BLOCKED`) is not suppressed by that alone: the AI
+  sotuvchi mutes the chat for itself, and the suppression set reads client
+  cards, people and leads only. The lead stays open until a seller closes it
+  — «Qayta qilinmasin» is the door that reaches the feed; after 30 days a new
+  agent push on that phone opens a new lead (#1570, asked of the owner).
 - The same company on a new phone number is a new phone here.
 - A free-text lost reason (before the dictionary exists) never leaves:
   `lost_reason` is null and `no_contact` still answers.
@@ -393,6 +449,14 @@ suppression list; it never receives the client book.
   the lead, a note, a stage move, a cleared follow-up, the «📞 Bog'landim»
   button. A seller writing from a personal account whose chat sits on the tray
   undecided is a contact the feed does not report.
+- The account's own robot (a Telegram Business away / greeting message, a
+  business bot's answer) is not contact (#1568) — but the listener flags it a
+  moment AFTER it stores the row (after the media is saved), and the minute
+  sweep stamps the earliest evidence and never un-stamps: a sweep that runs
+  inside that moment counts the robot. Reasoned, not reproduced; an away
+  message is text, so the moment is milliseconds. That the away message's OWN
+  outgoing copy carries `offline` is read from Telegram's schema and gramjs,
+  not observed on a live account.
 - The fallback clause (§6) is permanent: anybody holding the «Boshqa» door's
   key can post an arrival with `utm_source: clientscrapper` and a `cs:` id,
   and it appears in the outcomes — ignore rows whose `external_id` you never

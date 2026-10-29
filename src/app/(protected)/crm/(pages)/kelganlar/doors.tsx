@@ -35,6 +35,13 @@ export interface DoorView {
   /** Whether the webhook is switched on — for every reader of the screen. */
   on: boolean;
   /**
+   * The webhook is a MACHINE's (the client-finding agent's door): its hint
+   * says where the key goes — the agent server's `.env` — and never «a form a
+   * person fills in», which would send the owner to paste the key that READS
+   * the agent feeds into an advert platform (the merge review).
+   */
+  machine: boolean;
+  /**
    * The key itself, ONLY for `admin.settings.manage` (`door-views.ts`): a
    * prop of this component is in the page's data whether or not it renders.
    */
@@ -83,7 +90,9 @@ export function InboundDoors({
                 {t('doorWebhook')} · {door.on ? t('doorOn') : t('doorOff')}
               </summary>
               <div className="mt-1.5 space-y-1.5">
-                <p className="text-xs text-ink-500">{t('doorWebhookHint')}</p>
+                <p className="text-xs text-ink-500" data-testid="door-webhook-hint">
+                  {door.machine ? t('doorWebhookHintAgent') : t('doorWebhookHint')}
+                </p>
                 {door.secret && (
                   <>
                     <Copyable label="URL" value={door.webhookUrl} />

@@ -69,6 +69,18 @@ test('it is on the funnel, and on the arrivals ledger', async ({ page }) => {
   await expect(row).toBeVisible();
   await expect(row).toContainText('instagram');
 
+  // The client-finding agent's door is a machine's: its webhook fold says its
+  // key goes to the agent's server, never «a form a person fills in» — the
+  // hint that would send the owner to paste the feeds' key into an advert
+  // platform (DECISIONS #1570). Opened and read, never toggled.
+  await page.getByTestId('doors-panel').click();
+  const agentDoor = page.getByTestId('inbound-doors').locator('li').filter({ hasText: 'Agent (qidiruv)' });
+  await agentDoor.locator('summary').click();
+  await expect(agentDoor.getByTestId('door-webhook-hint')).toContainText('CRM_AGENT_KEY');
+  const instagramDoor = page.getByTestId('inbound-doors').locator('li').filter({ hasText: 'Instagram' }).first();
+  await instagramDoor.locator('summary').click();
+  await expect(instagramDoor.getByTestId('door-webhook-hint')).not.toContainText('CRM_AGENT_KEY');
+
   // …and the card itself carries what they wrote, on the lenta, where the
   // second and the tenth message will go too.
   await row.getByRole('link', { name: NAME }).click();

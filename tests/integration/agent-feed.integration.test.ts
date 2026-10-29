@@ -15,6 +15,8 @@ import {
   lostReasons,
   roles,
   settings,
+  tgMessageFlags,
+  tgMessages,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
@@ -41,6 +43,7 @@ import {
   sourceWebhookSecret,
 } from '@/modules/wms/crm/inbound';
 import { claimUntouched, stampFirstContacts } from '@/modules/wms/crm/first-contact';
+import { markAutoSent } from '@/modules/wms/crm/message-flags';
 import { CONTACT_NOTE } from '@/modules/wms/crm/inbound-notify';
 import { addActivity, moveLead } from '@/modules/wms/crm/service';
 import { attachClient } from '@/modules/wms/crm/people';
@@ -333,6 +336,8 @@ afterAll(async () => {
      WHERE payload ->> 'intakeId' IN (SELECT id::text FROM lead_intakes WHERE name LIKE ${`${PREFIX}%`})`);
   await db.delete(leadIntakes).where(like(leadIntakes.name, `${PREFIX}%`));
   if (leadIds.length) {
+    // tg_message_flags follows its message (ON DELETE CASCADE).
+    await db.delete(tgMessages).where(inArray(tgMessages.leadId, leadIds));
     await db.delete(crmActivities).where(inArray(crmActivities.entityId, leadIds));
     await db.delete(leads).where(inArray(leads.id, leadIds));
   }
@@ -776,6 +781,43 @@ describe('the contact clock of an agent lead', () => {
     const intake = await intakeByExt(ext('stamp'));
     expect(intake.contactedAt).not.toBeNull();
     expect(intake.contactKind).toBe('note');
+  });
+});
+
+describe('the account’s own robot (0138’s auto_sent)', () => {
+  it('a Telegram Business away message is no first contact in the outcomes feed — a person’s message is', async () => {
+    const landed = await landInboundLead({
+      channel: 'webhook',
+      sourceKey: 'agent',
+      externalId: ext('away'),
+      name: NAME('away agent'),
+      phone: phone(),
+    });
+    expect(landed.outcome).toBe('created');
+    const [away] = await db
+      .insert(tgMessages)
+      .values({
+        leadId: landed.leadId!,
+        managerUserId: adminId,
+        peerId: BigInt(930_000_000 + Number(STAMP)),
+        tgMessageId: 1n,
+        direction: 'out',
+        body: 'Hozir javob bera olmayman, tez orada yozaman',
+        sentAt: new Date(),
+      })
+      .returning({ id: tgMessages.id });
+    await markAutoSent(away!.id);
+    await stampFirstContacts(new Date(), landed.leadId!);
+    const robot = (await agentOutcome(ext('away')))!;
+    expect(robot.contacted_at, 'the robot reached nobody').toBeNull();
+    expect(robot.contact_kind).toBeNull();
+
+    // The control: the same row, unflagged, is a seller's message.
+    await db.delete(tgMessageFlags).where(eq(tgMessageFlags.messageId, away!.id));
+    await stampFirstContacts(new Date(), landed.leadId!);
+    const person = (await agentOutcome(ext('away')))!;
+    expect(person.contacted_at).not.toBeNull();
+    expect(person.contact_kind).toBe('telegram');
   });
 });
 
