@@ -167,6 +167,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
+| **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 
 ## State — 2026-08-23
 
@@ -3234,24 +3235,24 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1545-#1549; NO migration, 139 stands).** His
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1575; NO migration, 139 stands; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
-reviewed again. POLICY (#1545): list markers are dropped from figures (in-order runs of ≥2, one style, never a
+reviewed again. POLICY (#1571): list markers are dropped from figures (in-order runs of ≥2, one style, never a
 currency item, never after a price/unit word) and the prompt asks for «•»; `questions` is a WARNING; word numerals
 block beside their unit only; G1 keeps its own definite-duration list (G2 still reads «bir necha kunda»); an asking
 «?» is no dispatch promise; `normalizeDigits` folds ʼ ` ´ ′ ʹ; the prompt's own figures are company-rule sources WITH
 unit and road (a figure naming no road is the truck's); a kb address number vouches for a plain figure only;
 «hisoblash bepul» and «оплата … перед получением» are narrow exemptions. Probe ANY change there with
-`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1546): «✏️ O‘zgartirish», the remedy line, reasons in
+`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1572): «✏️ O‘zgartirish», the remedy line, reasons in
 words, `cardDrawsSend` the one ✅ rule (bot AND page), ✅ on an editing draft without own text sends the machine
 text, `redraftNewest`, a dead ✏️ wait falls through, the inline ✅ under his own text, `fitCard` stages,
 `memory_missing`, ✋ (his Telegram reply, its own time) vs 🙋 (`HUMAN_TAKEOVER_HOURS`), the late-card note; the bot's
-copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1547): `workModeSwitch`
+copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1573): `workModeSwitch`
 (30 s, shared read, fresh read for a line about to be stored), the start line names the mode, the web tray's
 holder press queues the pull, `[agent] inbound` carries origin/lag, the gap/retry passes skip a waiting job, lookup
-deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1548): `no_phone` on a work account → `open_lead` through
+deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1574): `no_phone` on a work account → `open_lead` through
 ONE door `phonelessLeadForChat` (the rule row is the fence, `decided_by NULL` = the listener's own binding, which
 YIELDS to a person, the book, a closed lead and the switch); `isTelegramOfficialPeer` fences Telegram's own
 accounts. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the

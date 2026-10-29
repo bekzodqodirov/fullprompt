@@ -5903,9 +5903,493 @@ dropping strangers without a tray row, the agent switchable on with no linked bo
 notification row, Telegram Business auto-replies read as his own, refusals invisible on the page, the supervisor's
 start order) are the next round, not this hotfix.
 
-## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; NO migration, ledger 139)
+## The client-finding agent's door and its two feeds (2026-10-24, merged with main 2026-10-29; NO migration of its own, ledger 139 after the merge — numbered #1545-#1567, renumbered from #1455-#1477 on the merge: main's «Sakkiz band» round 1 and the rounds after it took #1455-#1544 first; spec `docs/AGENT-FEED.md`, written from the agent's own spec `clientScrapper/docs/spec/05-erp-integration.md` Part A)
 
-1545. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
+The owner's split of 2026-10-23: a separate agent finds Uzbek importers of Chinese goods on the open internet,
+he approves them, and the ERP takes them as leads — the sellers write, the agent never does. The ERP's half is
+one door, one belt, one silent clock and two read-only feeds, all on the `agent` source's own webhook key.
+
+1545. **`agent` is a source key only its webhook may claim, and a stale copy lands as `dropped/suppressed`.**
+`'agent'` joined `INBOUND_SOURCE_KEYS` with a seeded `KEYED` row («Agent (qidiruv)», 90) — and a source-shape
+fence now demands a seeded row for EVERY key, because `sourceIdForKey` falls back to «Boshqa» silently and the
+door 404s with nothing anywhere saying why. `inboundSourceKey(raw, channel)` is the one coercion: unknown →
+`other`, and `agent` through any channel but `webhook` → `other`, because `/ariza?manba=agent` and `ad_agent` are
+PEOPLE and must not inherit the machine's belt, its unreminded clock or a row in its outcomes (the spec only hid
+the doors screen's links; the links were the cosmetic half). The belt runs after the replay fence and the caps,
+before step (0): a phone in the client book — active OR inactive, wider than step (0) on purpose, a former client
+is still ours — or on a lead lost with a listed reason is recorded `dropped/suppressed` and nobody is told, not
+the client's manager and not the office. Adverts and the form keep today's behaviour (the tiktok control test).
+`AGENT_SOURCE_KEY` lives in a zero-import module (`agent-source.ts`) re-exported by inbound.ts: the spec put it
+in inbound.ts, and `first-contact.ts` (which needs it) sits under inbound.ts through inbound-notify.ts — a
+constant read at load across that circle is a TDZ ReferenceError the day the order flips.
+
+1546. **An agent lead's clock starts with no due time — measured, never reminded.** The memo's «skip the clock»
+was wrong for this contract: `stampFirstContacts` only stamps clocked arrivals, so the outcomes feed could never
+report a contact. `startContactClock(intakeId, now, remind)`; `remind = !isReminderExempt(sourceKey)`, the exempt
+set being `{agent}`. `claimUntouched` already refuses a NULL `contact_due_at`, so no new predicate. Checked, the
+spec's UNVERIFIED (its open question 7): /crm/tahlil's «Birinchi aloqa» reads `contact_clock_at`/`contacted_at`
+and never the due time, so agent leads ARE in a seller's median and late counts — stated in AGENT-FEED.md.
+
+1547. **The feeds: hashes of tails, one derived table for the feed and the belt, a cursor at postgres's
+precision.** `suppressionTailsSql(labels)` is the ONE sentence `(tail, kind, at, id, n)` that both
+`suppressionPage` and the belt's `isSuppressedTail` read (#513). Two defects in the spec's own code, both
+red-proven: (a) its keyset `(at, id)` is not unique — one client with two phones is two rows with one instant
+and one id, so a page edge between them skipped the second phone (the twenty-phone fixture card proves it); the
+key is `(at, id, n)` with `n` = the phone's ordinal on the card; (b) its cursor went through `new Date()` and
+was cut to MILLISECONDS while postgres keeps microseconds, so the row the cursor names compared GREATER than its
+own cursor and was read again — at `limit=1` a walk that never ends. The cursor carries `to_char(… 'US')` text
+and is passed back verbatim; `decodeCursor` refuses a rolled date («02-30»). Two smaller ones: a lost lead's
+instant is `max(closed_at, updated_at)` (not `coalesce`, which hid a later edit from the delta), and reasons are
+normalised the same way on both sides (trim, collapse whitespace, lower — `'  Test   sabab '` matches). The
+setting `agent_no_contact_reasons` (`;`-list, default «Qayta qilinmasin») is parsed by
+`platform/settings/reason-list.ts` because the settings validator needs it and platform never imports wms; an
+empty list is refused at the save. The GET door is one function (`agent-feed-door.ts`) for both routes: 404
+off/wrong key (the `X-ERP-Key` name alone is not read), 400 `bad_cursor`/`bad_since`, 503 `unavailable` — also
+when the KEY LOOKUP itself fails, because a 404 there would trip the agent's breaker and tell the owner his key
+is wrong. Outcomes carry exactly 14 fields and no name, phone, note, owner or price; `lost_reason` is clipped at
+200 (free text before the dictionary). Stated, not fixed: the ETag can never match (the body carries
+`generated_at`), and a contact whose evidence is older than the agent's last read (a late calls-app upload) is
+not re-read by cursor alone — AGENT-FEED.md tells the agent to re-read 30 days weekly.
+
+1548. **(SUPERSEDED by #1553 — every door but the agent's keeps the firm as it was.)** **The plain webhook's `company` / `firma` goes to `leads.company`, for every door.** Read by lower-cased
+name the way `known` skips it (`{Firma: …}` would otherwise vanish from the note AND be missed), `company` before
+`firma`, cut at `leadSchema`'s 200. A behaviour change beyond the agent, stated: a website or connector that
+already posts `company` now fills the card's own field instead of a note line and a mapping-screen pair — a
+mapping somebody made on that question would stop receiving it (the value is not lost; the card shows it). Also
+stated: every door collapses the note's line breaks and cuts at 1000 characters, so the agent's multi-line note
+reaches the lenta as one paragraph — documented for the agent, not changed here.
+
+Red proofs, all by string edit (sixteen, each restored and verified by hash): the lost branch, the phone
+position in the keyset, the millisecond cursor, the ORDER BY, the `since` predicate, the reason normalisation,
+the belt (deleted, and widened to every source), the webhook-only claim, the reminder forced on, the clock
+skipped, the fallback clause, the firm, the cursor check, the hash length, the seeded row. Two first stayed GREEN
+and were re-anchored: the ORDER BY (the fixtures' storage order matched the feed's — their instants now run
+against insertion order), and «never claimed» under a forced reminder (the test kept the landed due time in the
+future — it now puts any landed due time 45 minutes in the past and keeps NULL as NULL).
+
+1549. **Found by LOOKING at the settings screen: the refusal asked for a date.** A blank
+`agent_no_contact_reasons` was refused with `settings.badValue`, written for the unpriced-cargo ban («enter a date
+(YYYY-MM-DD) or an instant»). The sentence is now chosen per setting (`BAD_VALUE_TEXT` in the settings page,
+`badValueReasons` ×4 for this key); every other key keeps its sentence. STATED, not fixed: `lead_assign_origins`
+(round 113) is refused with the same date sentence today.
+
+### The four-lens review of the branch (2026-10-24, same day; NO migration, ledger 136)
+
+Security, feed correctness, regression and contract lenses ran over the built branch; every confirmed finding was
+verified again here before it was fixed, each fix red-proven by string edit.
+
+1550. **The belt asks the app's own phone rule, so it is never narrower than the client check below it.** Three
+lenses found it independently: the belt and the feed matched nine-digit tails while the landing's step (0)
+(`activeClientsByPhone` → `phonesMatch`) matches a card of seven or eight digits by suffix — so an agent push on a
+truncated card number landed as `client`, wrote «📣 agent» on the card and pushed the client's manager, the exact
+thing the belt exists to stop (probed: «📣 Mijoz … reklamadan yozdi · Agent (qidiruv)»). `isSuppressedTail` now
+answers `t.tail = tail9 OR (length(t.tail) IN (7,8) AND right(tail9, length(t.tail)) = t.tail)` over the same
+derived table, every client active or not. The table grew three sources of tails: the WHOLE value's last nine
+(what `phonesMatch` reads, so belt ⊇ step 0 by construction); each part of a value that holds several numbers
+(«A / B», «A +B», two spaces — the client form splits on commas only, and the last nine of «A / B» is only B);
+and, inside a part of more than fifteen digits (E.164 stops at 15; the importer keeps a multi-number cell as one
+run), whole 12-digit `998…` or whole 9-digit numbers. And a lead that BECAME a client is the client book too:
+winLead's attach-by-code links the lead and copies no phone onto the card, so that person's number was in neither
+set (kind `client`; one kind per lead keeps `(at, id, n)` unique, `n` = the record's distinct tails in order).
+The contract lens's suspicion about `crm_people.phones` held on reading: the person behind several codes keeps a
+phone list seeded from the card and edited apart from it (`savePerson`), so a client's second number may live there
+alone — a person who holds a code is the client book too. `partners.phone` is NOT: a counterparty is a supplier
+of ours, not a buyer, and the agent screens out forwarders itself. The one-row walk's «nothing twice» became a
+MULTISET comparison: one phone on a card and on its person is two entries with one hash, by contract.
+The FEED stays nine digits: the agent asserts `rule == "hmac-sha256(secret, last9digits) hex[0:20]"` (05 §B.2)
+and its gate hashes nine, so a short card is the belt's alone — the agent should keep a phone it pushed when the
+outcome is `dropped/suppressed`, said in AGENT-FEED.md §3.1 and owed to the agent side. MEASURED on the way: the
+new set-returning functions plan at a thousand rows each, so a twenty-card book passed `jit_above_cost` and every
+page and every agent arrival paid ~0.8 s of compilation (the one-row walk timed out at 20 s); both reads run under
+`withoutJit` (#1039), the setting read before it (#714).
+
+1551. **The per-phone cap is per family, and a push the belt cannot check lands nowhere.** `inboundCount` counted
+every source, so three agent pushes on one number (three firms sharing a phone) capped that person's own form
+enquiry for 24 hours, silently (probed: form → `dropped/capped`). The count now splits: an agent arrival counts
+only agent rows, everybody else's only non-agent rows — which is exactly what every non-agent door counted before
+the agent existed. An agent arrival with no phone of nine digits skipped the belt and step (0) and became a lead;
+it is `dropped/no_phone` now, after the replay fence (a re-send writes no second row). The belt stays after the
+caps, the spec's order: with the families split, a client writing through an advert no longer turns the agent's
+push into `capped`.
+
+1552. **A lost reason leaves only as a LABEL, and the ERP answers «no contact» itself.** The outcomes shipped
+`leads.lost_reason` verbatim; before the dictionary exists that is a seller's free text, and «Akmal aka
+(direktor) +998 90 111 22 33 …» reached the agent's database (probed), against «never a name, a phone». The text
+leaves only when it equals a dictionary row (active or retired — the owner's word either way) or a listed
+`agent_no_contact_reasons` label; otherwise null. The agent's spec classified lost rows by mirroring the setting
+by hand with its own normalisation (`strip().lower()`, no whitespace collapse), so a «Qayta  qilinmasin» lead was
+suppressed here and `lost_other` there: the row carries `no_contact`, computed by the feed's own `listedSql` — a
+fifteenth field, additive (the agent's `parse_outcome` ignores unknown keys). And the two sides normalised
+differently: JS `\s`/`trim()` collapse U+00A0 and the other Unicode spaces, postgres `\s`/`btrim` do not (C.UTF-8,
+measured), so a reason typed with a no-break space never suppressed. `normaliseReason` (reason-list.ts) is the one
+rule and `REASON_SPACE_RUN_PG` its postgres spelling (JS's class written out, collapse first, then trim); an
+integration test holds the two to one answer over awkward strings.
+
+1553. **Every door but the agent's keeps a posted firm exactly where it was (supersedes #1548).** Taking
+`company`/`firma` out of `fromPlain`'s note lines and pairs moved the firm of every website or connector arrival
+onto `leads.company` — and only on a CREATED lead: a joined or client arrival lost it everywhere but
+`lead_intakes.ref`, the seller's push and the keyword routes stopped seeing it, and an existing mapping keyed
+`company` went quiet (probed against origin/main's parser as the control). #1548 said «the value is not lost»; it
+was. The keys are back in the note and the pairs for every door, `fromPlain` still READS `company`, and only the
+agent's landing writes it onto the card; the agent's own firm is therefore in its note too, so a joined push
+shows it. Every non-agent door's note, pairs and card are origin/main's, pinned by a tiktok integration test.
+
+1554. **The outcomes feed reports a contact made after the first week, and tells the agent where to resume.** An
+agent arrival is never reminded, so «has anybody called» stopped being asked after `stampFirstContacts`' 7-day
+window and a day-9 contact stayed null for ever; for reminder-exempt sources the unstamped look-back is
+`EXEMPT_CONTACT_LOOKBACK_DAYS` (90), every other source's week unchanged (a tiktok control). A cursor read alone is
+not complete — `contacted_at` is the evidence's time and evidence surfaces late (an offline calls phone, a
+Telegram account's connect-time week), and a row whose transaction commits after a read can carry an `at` the read
+passed — so AGENT-FEED.md says: by cursor AND `since = now − 8 days` nightly, `since = now − 90 days` weekly. Both
+feeds answer `resume`: the last row's own cursor even on the last page (where `next` is null), the sent cursor on
+an empty page — a walk that ended used to hold only the previous page's `next`. `since` must be a full ISO
+instant: `Date.parse` read «0» and «1» as 2000/2001 and rolled «02-30» into March (round 99's trap, one parameter
+from the cursor that already refused it); microseconds are kept.
+
+1555. **The doors screen stops SENDING keys it only hid, and a keyless caller never learns the feed is down.**
+`InboundDoors` is a client component; `secret: door.secret` went into the page data for every `crm.manage` holder
+while only `admin.settings.manage` saw the fold. Pre-existing for the advert doors (write-only keys); the agent key
+also READS the feeds — HMACs of every client tail, and nine digits enumerate — so it was the client book in the
+page data of anybody the owner lets into funnel settings (seeded: only admin/super_admin hold `crm.manage`, so the
+leak needs a grant). `doorViews` (kelganlar/door-views.ts) decides on the server: `secret` only under `canManage`,
+`on` for everyone; the page is fenced to build through it. A change on a live screen for every door, stated:
+what any viewer SEES is unchanged, what a non-settings viewer's browser RECEIVES loses the keys. Confirmed by code
+and Next's prop serialisation, not rendered in a browser. The GET door answered 503 to a caller with no key when
+the key lookup failed; it is the same 404 as every refusal unless `X-GSR-Key` was sent.
+
+1556. **A person never meets the agent's source.** `/ariza?manba=agent` used to fall back to «Sayt» (the key was
+unknown) and became «Boshqa» once the key existed; `formSourceKey` gives the form «Sayt» again. The seeded
+«Agent (qidiruv)» was offered by the new-lead form and the lead card's ✏️ form, so a seller could tag a hand-made
+lead as the agent's and /crm/tahlil would count it: `personPickableSources` drops it, keeping the record's OWN
+source (a select that cannot render the stored value posts «—» and erases it, #171); the board filter, tahlil and
+settings keep it. Its seeded sort order is 190, off the first seed's «O‘zi keldi» (90).
+STATED, not changed: a `joined` push reports a non-agent lead's stage, kub and decision (the agent proposed that
+phone; the join leaves a visible note); a funnel stage whose kind the owner flips moves leads in and out of both
+feeds with no `at` (the weekly re-read and the nightly full pull catch it); the fallback clause and the cross-source
+replay fence trust whoever holds the «Boshqa» key (ids carry the agent's own company uuid); suppression entries
+group per card; a Chinese mobile's last nine can suppress an unrelated Uzbek number (fail-closed, the app's rule);
+no rate limit on bad-key GETs, as on the POST door; a contact from a personal Telegram account whose chat sits on
+the tray is not reported. ASKED of him: whether agent leads belong in /crm/tahlil's per-seller late counts, and
+whether they should be booked on «Bugun qo'ng'iroq» (25 a day on the call list and the 08:00 digest).
+Red proofs, all by string edit and restored by hash (21): the belt's suffix clause; the split parts; the chunks;
+the converted leads; the per-family cap; the no-phone drop; the verbatim reason; `no_contact`; postgres's own
+`\s`; the 90-day look-back; `resume`; `since` by `Date.parse` alone; the rolled date; the keyless 503; the keys sent
+to everybody; a page building a key itself; the firm on every door's card; the firm out of the note; the form
+offering `agent`; the pickers offering it. One first stayed GREEN: deleting the day check of `parseSince` left
+«02-30» refused, because the month check alone catches a rolled day — re-done by removing the whole round trip.
+
+### The second review — the fixes reviewed as built (2026-10-24, same day; NO migration, ledger 136)
+
+Two lenses (the fixes, and the rest of the branch) over `f2d96526`; every finding and suspicion verified here
+before it was fixed or refuted, each fix red-proven by string edit with a hash-verified restore.
+
+1557. **A landing never stands half-written: every cut that reaches jsonb counts code points.** Pre-existing on
+EVERY door, found through the agent's: `trim()` cut the name at 120 and `capturePairs` a value at 300 in UTF-16
+units, so an emoji at the edge left a lone surrogate, and jsonb refuses one (22P02). The refusal came AFTER the
+lead's own INSERT — `createLead`'s audit row for the name, the ledger's `fields` for a pair — so the lead stood with
+an owner and today's date, no ledger row, no «🆕», no clock, no outcomes row, and the replay fence open (probed by
+the reviewer through the route). The same cut sat one call further down, unseen by the review: `addActivity`
+audits `note.slice(0, 200)`, and the landing's lenta note puts an emoji at 199-200 as easily. And a JSON body may
+carry a lone half outright (`"\ud83d"` is valid JSON). `platform/text/clip.ts` holds the rule: `clipCodePoints`
+(no mark — `clipText` is the same rule with an ellipsis), `wellFormed` (lone halves → U+FFFD), `wellFormedJson`
+(the stored `ref`, keys too). Applied to the landing's name/note/push phone, the card's phone (it rides into the
+audit), `normalizeKey`, `capturePairs` and `addActivity`'s excerpt — a change for every door and every typed note
+in the app, and harmless: a well-formed string is unchanged and a cut moves by at most one character. Pinned by
+integration tests at each edge (agent door, plus a tiktok control for the body-carried half) and unit tests.
+
+1558. **A client card whose `phones` is not a list no longer fails every arrival.** `activeClientsByPhone` (the
+landing's step 0, every door) ran `jsonb_array_elements_text(phones)` over every active card, and one card holding
+a jsonb string or object made it throw «cannot extract elements from a scalar» for every arrival with a phone;
+`clients.phones` has no CHECK. It now reads such a value as no phones, the feed's own guard; the JS arbiter already
+answered «no» for it. STATED, not fixed: three other readers of the client book have the same unguarded call —
+`platform/clients/search.ts`, `wms/search/service.ts` (⌘K) and the clients XLSX — and fail loudly to a person, not
+silently for a stranger. NOT verified: whether production holds such a value (gsr_dev was not touched); the owner
+can count it read-only with `SELECT count(*) FROM clients WHERE jsonb_typeof(phones) <> 'array'`, and a CHECK can
+follow in a later migration.
+
+1559. **One delivery of an id at a time, and the agent's own door says when it failed.** The replay fence is a
+SELECT at the start of the landing and the ledger's ON CONFLICT at its end, so two deliveries of one
+`(channel, external_id)` in flight both passed and both created a lead; the index kept one ledger row and the
+other lead stood unannounced and outside the outcomes (the reviewer measured it with the first held on a lock;
+pinned here deterministically with an uncommitted ledger row on the same id). `landInboundLead` chains deliveries
+per id in the process: the second waits, then meets the fence as a replay. Every door that can repeat an id lands
+in the app process (the webhook, the Meta worker under pg-boss, the bot); the site door in tg-listen keeps its own
+`serialised`. Harmless for live doors: only a second copy of an id still in flight waits. Then the answer: the
+agent door answered `200 {"ok":true}` to a landing that threw, the agent's spec maps that to `sent`, and the push
+was never re-sent or flagged. The `agent` door alone now answers `503 {"error":"unavailable"}` when the landing
+throws, and when the key lookup throws while `X-GSR-Key` was sent (the GET feeds' rule) — first-review #27, which
+was a 500 page. A retry is fenced: every throw is at or before the ledger row (`announce` has its own catch), and a
+row that committed answers the retry as a replay. Every advert door keeps its constant 200 — a platform reads a
+5xx as «send it again» for hours; the «Boshqa» fallback is such a door. STATED: a landing that throws after its
+lead was written (now only a database failure) leaves that lead, and the retry JOINS it — outcome `joined`, a
+«🔁 Qayta yozdi» for a lead never announced. The structural cure (claim the ledger row first) touches every door's
+caps and arrivals screen and was not taken. AGENT-FEED.md §1 no longer promises «always 200» nor «a re-send after
+a timeout is safe» without saying when.
+
+1560. **The suppression tails read one number as one number.** Three findings on #1550's table: (a) a split part
+shorter than nine digits («+998 90/283-65-94» → «2836594») was a tail, and the belt matched it by suffix — a
+hundred strangers' numbers `phonesMatch` never reads; a part yields its tail only from nine digits up, so the only
+short tails left are whole values, the case the app's rule matches. (b) The 9-digit chunking fired on runs the
+998 branch had cut already — three 998 numbers are 36 digits, a multiple of nine — putting «998902836»-shaped
+garbage in the feed and the belt, each a valid Uzbek mobile; it runs only when the run is not made of 998
+numbers. (c) A person's rows carried the person's own instant, while tying a code to a person writes the CARD
+(`attachClient`), so the person's numbers entered every delta in the past; their `at` now includes the newest
+`updated_at` of the cards that hold it. And the belt's cost (~240 ms an agent arrival at 2,000 clients / 40,000
+leads, measured here; 8× the pre-fix shape): the derived table takes the arrival's last seven digits and every
+branch keeps only the phone texts whose digits contain them — a superset filter by construction (a tail is a run
+of its text's digits and holds the last seven of anything it matches) — ~90 ms. What is left is one digit pass
+over every lead's phone, linear in history, which only an index could remove. The feed's own tests read ONE page,
+so on a long-lived database (#653) the fixtures fell off it (7 of 31 red on the reviewer's shaped copy): the full
+set is walked, the paging tests compare this run's own rows, and the two walks have a 60 s budget (12 s on a
+17,000-entry copy).
+
+1561. **/crm/tahlil's median reads every source by one rule.** #1554 stamps an unstamped agent arrival for 90
+days, so a day-30 call entered a seller's first-contact median, while an advert's day-9 call never could (its
+sweep stops at a week) — the screen's number came to depend on which door a lead used, beyond the owner question
+#1556 asked (the late counts). The median and its count take a contact within `CONTACT_LOOKBACK_DAYS` (7, now
+named, the sweep's own literal) of the clock; later ones stay in the late counts. For every non-agent source this
+filters nothing: nothing stamps them later. The contact worker's comment («a quiet minute costs two index probes»)
+was false since #1554 and now states the 90-day agent branch and its cost (50-80 ms a run at ~4,500 untouched agent
+arrivals, past `jit_above_cost` above ~5,000); the sweep was left without `withoutJit` — at ~25 pushes a day the
+set stays far below it, and compose's `jit=off` applies once postgres is recreated.
+
+1562. **What only the documents could fix, and what was refuted.** AGENT-FEED.md §3: `resume` is null on an empty
+page when no cursor was sent (keep the old one); a FULL suppression pull starts from neither `since` nor `cursor`
+and only such a walk may delete what it did not see (a walk resumed without `since` is labelled `full` and holds
+the tail); `limit` below 1 is 1; an offset's `+` must be `%2B`; the POST door also reads a body `key` when no header
+is sent; a stage-kind flip is caught only by a monthly read with neither `since` nor `cursor`; the per-family cap
+covers the agent's own door, not the «Boshqa» fallback; each suppression page recomputes the set (pull with
+`limit=5000`). VERIFIED, not changed: the Meta worker runs in the app process with one worker per queue, so its
+jobs are serial and also inside the chain; Next keeps a route handler running after its caller disconnects (it
+never reads `request.signal`) — reasoned, not measured on a live server. STATED: the doors screen's RSC payload for
+a `crm.manage`-only viewer was not rendered (no seeded role has that shape; `doorViews` is unit-tested); production's
+share of split or run phone shapes is unknown. Red proofs (16), all by string edit and hash-verified restore, all
+red: the name's cut, a pair value's cut, the key's cut, the activity excerpt's cut, the stored `ref`, the card's
+phone, the scalar guard, the in-flight chain, the agent door's 503 on a landing, its 503 on a key lookup, the
+short part, the 998 garbage, the person's instant, the belt's narrowing (wrong digits → the belt tests red), the
+median window, and the one-page full set (on a 17,000-entry copy: 6 red).
+
+### The third review — the fixes reviewed again (2026-10-24, same day; NO migration, ledger 136)
+
+Two lenses (the live doors, and the agent's door) over `23fe1736`; every finding and suspicion verified here
+before it was fixed or refuted, each fix red-proven by string edit with a hash-verified restore.
+
+1563. **A cut keeps the UTF-16 budget it always had, and a NUL is storable on every door.** #1557's code-point cut
+was a REGRESSION for the live doors: `normalizeKey` spelled a question longer than 80 units with an emoji in its
+first 80 one unit longer than the old `slice` had, and a `lead_field_map` row saved through the screen before the
+deploy holds the old spelling — so every later Meta, Google or webhook arrival with that question missed its
+mapping in silence: no kub on the card, a volume rule deaf to it, the question listed again as unmapped (the
+reviewer measured it: `quoted_volume_m3` NULL, the control without the emoji `25.000`). The same cut let a name grow
+past the ✏️ form's `max(200)` and a mapped answer past a text field's `maxLength`, both counted in units.
+`clipUnits` (platform/text/clip.ts) cuts `storableText(text).slice(0, max)` and only backs off a high half left at
+the edge, so every string the old cut could store comes out the same and only the case that used to throw changes
+(an emoji that does not fit is left out whole); `normalizeKey`, `capturePairs`, the landing's `trim` and
+`addActivity`'s excerpt use it. Second: **NUL** passed every helper, and postgres refuses it in a text column
+(22021) and as `\u0000` in jsonb (22P05) — after `createLead` had committed (the lenta note, or the ledger's `ref`
+/ `fields`). On the agent's door that was a 503 for ever, an orphan lead and one more note per retry, never in the
+outcomes; on **the public form, with no key and no external id, every such submission was a routed lead booked for
+today that the daily caps never saw** (they count the ledger; five phones → five leads, `inboundCount` 0). Older
+than this branch, like the lone half. `storableText` makes NUL U+FFFD beside the lone half — one unit for one, no
+cut moves — and covers the name, note, company, the card's phone, every pair and the stored body. Pinned through
+the agent's real route (NUL in the note, an extra key, a nested ref, a pair outside the note's cut, the name, the
+firm, the phone, a key; each 200, created, one note, its retry a replay, in the outcomes), on the tiktok door, and
+through `submitArizaAction` (a ledger row the caps count); the field-map regression maps the old 80-unit spelling
+and lands the whole question. The structural cure — claim the ledger row first — would close the class for any
+input postgres refuses next; it touches every door's caps and replay fence and was again not taken.
+
+1564. **The stored body never throws, and the replay key is spelled as postgres stores it.** `ref` is the whole
+body, and `wellFormedJson`'s replacer function cost the serialiser stack: a key nested 3,000-6,000 levels deep
+stored before #1557 and threw `RangeError` inside `record()` after the lead and its note (measured here: 4,162
+levels plain, 2,227 with the replacer). `storableJson` now runs `JSON.stringify` untouched and rewrites the two
+escapes jsonb refuses (`\u0000`, a lone `\udXXX` — since ES2019 a pair is never escaped) in its OUTPUT, counting
+the backslashes before each so a typed `\\u0000` stays text: byte for byte what `JSON.stringify` writes for any
+body that needs nothing, and as deep. What no serialiser writes is decided BEFORE the first write (`storedRef`)
+and kept as `{"_truncated":true}` — the ref is a trail, the arrival is the record. The external id is
+`storableText`-ed before the chain key and the fence: postgres.js already turns a lone half into U+FFFD on the
+wire (probed), so two ids differing only there were one stored id and two chain keys; and a NUL in it made the
+replay SELECT throw on every attempt. `inboundLanded` (the bot's fence) asks the same spelling.
+
+1565. **Verified, stated, deferred.** VERIFIED: the bundle may hold several copies of `inbound.ts`, and the chain is
+per copy — but every channel that carries an id has ONE lander (`webhook` the route, `meta` the Meta worker in the
+app process, `telegram` the cabinet bot; `site` lives in tg-listen with its own `serialised`), so each channel's
+deliveries meet in one map; the comment said «this process» and now says why that holds. With NUL and the lone half
+handled, `createLead`'s INSERT can no longer be refused by input (`leads.name/phone/company` are text), so
+`routeInboundOwner`'s counter bumped before it inflates only on a database failure. STATED, reasoned, not
+reproduced: a ledger INSERT that commits while its answer is lost is answered 503, its retry is a replay, and that
+arrival is never announced or clocked (the same window on every door since 0113); after a half-way failure a retry
+still makes a second lead when the orphan was moved to won/lost meanwhile or the phone hit the agent's cap.
+DEFERRED, the nit: the per-id chain has no bound on its wait, so a first landing that never settles holds every
+later delivery of that id until a restart (each waiter holds its request only). A timeout would reopen the
+two-leads race for a slow-but-alive first attempt and cannot be red-proven without a test-only knob or fake timers
+under a live database driver; left as designed and written into AGENT-FEED.md §5. NOT MEASURED: how many
+`lead_field_map` keys on the live server are affected — moot now, since every key the old cut stored is spelled the
+same again (`SELECT key FROM lead_field_map WHERE key ~ '[\U00010000-\U0010FFFF]'` lists the candidates). AGENT-FEED.md
+§1 fixed in four places: the no-header database failure is a `500` with an EMPTY body; a failed landing is 503
+whichever way the key came; the limits are UTF-16 units and a multi-code-point emoji can lose its tail; the 503 row
+says a lead may already stand. Red proofs (12), all by string edit and hash-verified restore, all red: the key cut
+by code points, the cut's back-off, NUL kept, the refused escapes kept, a replacer function, the ref's catch, the id
+as sent, the bot fence's id as sent, `trim` by `slice`, the phone as sent, the pair value by `slice`, the activity
+excerpt by `slice`.
+
+### The fourth review — one more half-written landing (2026-10-24, same day; NO migration, ledger 136)
+
+One reviewer over `a4f9f433`, probing the landing again; one defect, four nits, three suspicions — each verified
+here before it was fixed or refuted.
+
+1566. **An external id too long for the ledger's unique index lands whole.** #1565 said `createLead` can no longer be
+refused by input, and that holds — but the input that remained passes `createLead` and kills the ledger row:
+`lead_intakes_external_idx` (0066) is a btree on `(channel, external_id)`, a btree row holds 2,704 bytes, and
+nothing bounded the id (`fromGoogle`'s `lead_id` and `fromPlain`'s `external_id`/`id` only trim it). About 2.7 KB of
+incompressible bytes made the INSERT fail with 54000 AFTER the lead and its lenta note: on the agent's door a 503 on
+every attempt and one more note per retry, never in the outcomes; on every other webhook door a 200 with an
+unannounced lead the per-phone and per-source caps never counted (the reviewer: six Google posts, six leads routed
+and booked, `inboundCount` 0). Older than this branch (main's `record()` and parser are the same), and only a key
+holder can send it. The cure keeps every spelling main could store: `record()` writes the row under the id as sent
+and, only when postgres refuses it with 54000 AND the id is over `INDEX_SAFE_ID_BYTES` (2,048 UTF-8 bytes), writes it
+again as `sha256:` + the hex digest of the id's UTF-8 bytes (`oversizeIdSpelling`); both replay fences — the
+landing's and the bot's `inboundLanded` — ask both spellings for such an id (`externalIdSpellings`). A pure length
+threshold (the reviewer's suggestion) was not taken, because the index compresses before it measures: MEASURED here,
+it takes 2,684 random bytes on every channel but `telegram` (2,680) and a repetitive id of 50 KB, so any threshold
+would re-spell ids main stored fine — and the instruction for this branch is that every non-agent door behaves as on
+main except where main crashed. At or under 2,048 bytes an id is always taken, so its own spelling is its only one.
+A hashed id never starts with `cs:`, so the outcomes feed does not show it; the agent's ids are 46 bytes. Pinned
+through the agent's real route (three posts: 200 ×3, one lead, one note, the ledger row under the hash computed in
+the test from its definition, `inboundLanded` true), on the Google door (created, a replay, the per-phone cap counts
+it), and the control: a 2,6xx-byte random id and a 20,000-byte repetitive one on the `telegram` channel are stored
+as sent and replayed. Found on the way, a test-fixture trap: `phone()` reaches 48 by the end of the agent-feed file,
+and 50-69 are the twenty-phone card's, so four more calls turned two later arrivals into `client` and `capped` —
+the new tests take their own four tails.
+
+1567. **Verified, stated, deferred.** WORDING (nit, verified by reading): `clip.ts` and #1563 said every string the old
+cut could store comes out spelled as before; true for what the old cut could store in JSONB and for every spelling
+the field map matches, but a cut that left a high half dangling, stored in a TEXT column (postgres.js writes the lone
+half as U+FFFD; probed, `'a\ud800'` reads back `a�`), is now one unit shorter without that trailing U+FFFD:
+`lead_intakes.name` on an arrival that created no lead, a lenta note at its 1,000-unit edge, a field-map key saved
+through the screen (the INSERT ran, then its audit row threw). None is a key an arrival matched — the arrival's own
+`fields` threw on it. The comment says so now. STATED (nit, reasoned and accepted): because the id is
+`storableText`-ed, two ids that differ only by NUL against U+FFFD, or by which lone half, are one id — the second is
+a replay — and the outcomes feed hands back the stored U+FFFD spelling; main never stored a NUL id and already merged
+lone halves through the driver. And `storableJson` makes two keys of one object that differ only there one key;
+postgres keeps the last value, as `JSON.parse` does (probed: `{"\u0000":1,"\ud800":2}` stores `{"�": 2}`). Both are
+in AGENT-FEED.md §1 and the comment. DEFERRED (nit): `parseMeasure` (round 97) lets `0.0004` through as a positive
+volume that `toFixed(3)` stores as `0.000`, reads `-5` as 5 and `1e400` as 1, and stores `99999.9999` as
+`100000.000` — main's behaviour on every door, never a throw; changing it changes what every advert stores, so it
+is asked of the owner rather than built (CHANGELOG). CONFIRMED IN PRINCIPLE, DEFERRED: `ref` has no size bound, no
+route handler body is capped (no `request_body` in the Caddyfiles `docker-compose.yml` generates), and postgres refuses a jsonb past its limits —
+measured in postgres, an array of twenty million zeros (40 MB of JSON) fails `invalid memory alloc request size`,
+ten million is stored; such a body would land its lead and fail its ledger row on every attempt. Key holders only;
+the agent's bodies are a few KB. The cure is the one #1563 deferred (claim the ledger row first); a body cap would
+change what non-agent doors store below the refusal. REFUTED: Meta's `leadgen_id` lands through `landInboundLead`
+and is covered by #1566; the bot's `tg:<chat>:<message>` is ours; the website's tag matches `LEAD_TAG_RE`
+(`GSR-[A-Z0-9]{5,16}`) before it is ever an id. READ, NOT PROBED IN A BUNDLE: the per-copy chain (#1565) — the five
+callers of `landInboundLead` are the route (`webhook`), the Meta worker (`meta`), the cabinet bot (`telegram`), the
+site door in tg-listen (`site`) and the public form (no id), so each id-carrying channel still has one lander.
+Red proofs (5), all by string edit with a hash-verified restore, all red: no hashed retry (503 ×3), the landing's
+fence asking one spelling (a second lead), the bot's fence asking one spelling, every long id hashed up front (the
+control's raw spelling lost), the limit counted in UTF-16 units instead of UTF-8 bytes (the unit test's emoji and
+Cyrillic cases).
+
+### The merge review — the seams with main (2026-10-29, after `Merge origin/main into agent-feed`; NO migration, ledger 139)
+
+One reviewer over the merge (`2ac5bf7c`, main `a4e1b1c8`), probing where the agent's door meets main's AI sotuvchi
+(0138) and main's listener: two defects, one spec defect in the agent's own repository, three nits, seven
+suspicions — each verified here before it was fixed or refuted. The question the review was asked first — can an
+agent-sourced lead be contacted without a person approving the exact message — is answered NO, by reading and by
+the reviewer's probe: `decideDraft` is the one writer of `agent_outbox` and needs the account holder's ✅ on the
+card's digest, mode `auto` is refused by every writer (`auto_not_in_phase1`), and `tg_outbox` is written by a person
+typing in the CRM alone (`queueReply`, client chats only). So there was no blocker to fix.
+
+1568. **An away message is no first contact.** `contactEvidenceSql`'s Telegram branch counted every outgoing
+`tg_messages` row on the lead, and main's listener (0138) stores a Telegram Business away or greeting message — or a
+business bot's answer — as one, flagging it `tg_message_flags.auto_sent` in `afterStored` for BOTH directions
+(`wasAutoSent` reads `offline` / `via_business_bot_id`, and our own away message is ours). So the account's robot was
+a seller's first contact: the agent's outcomes feed reported `contact_kind: "telegram"` for a lead nobody had
+written to (the reviewer's probe, over HTTP), and — main's own path — the same row silenced the owner's 15-minute
+«⏰ tegilmagan» reminder about an advert lead. The rule's own header says contact is what a PERSON does. The branch
+now skips a row whose flag says `auto_sent`. The flag table is 0138's, so the clause is built only when
+`flagsReady()` says it is there — the SAME predicate its writer asks (`markAutoSent` → `agentTablesReady`), so a
+database where the listener writes the flag is exactly one where the rule reads it — and `flags` is a REQUIRED
+argument of `contactEvidenceSql` (a default fails open one way or the other: 42P01 for the sweep, the landing and the
+button one migration behind, or the robot counted). All four readers ask it: the stamp, the claim (both of its
+evidence clauses), `contactedRecently`, `alreadyContacted`. Pinned on both paths it reached — the advert reminder
+(an auto-sent row stamps nothing and the owner IS reminded; the same row unflagged stamps `telegram` and silences
+him) and the agent feed (`contacted_at` null over the outcomes page, then set once the flag is gone) — plus a unit
+fence on the guard (no flag table named when `flags` is false; no literal `flags: true/false` in the module). Red
+proofs (2): the clause dropped (all three new tests red), the claim's evidence built with `false` (the claim half
+red). STATED: the listener writes the flag a moment after the row (after the media is saved) and the stamp never
+moves a contact later, so a sweep inside that moment still counts the robot — milliseconds for a text message,
+reasoned, not reproduced; and that our own away message's outgoing copy carries `offline` is read from Telegram's
+schema and gramjs, not observed on a live account.
+
+1569. **An agent lead's AI reply waits for the agent's playbook window.** After the owner's ✅ an AI-sotuvchi reply
+goes out on the AI's own clock: `releaseAt` held only 22:00-08:00 (released 08:30), with no weekday, and sent at once
+at night when the customer wrote within two hours — the reviewer's probe approved a reply at 19:56 Tashkent and it
+was queued for 19:56. The client-finding agent's binding outreach rule (clientScrapper CLAUDE.md, its
+`docs/sotuv-playbook.md` §2.2-§2.3, §5.2) allows a message to its prospects Monday-Saturday 10:00-17:00, never on
+Sunday, Friday 12:00-14:00 avoided, quiet hours 18:00-10:00 even for approved follow-ups, and counts every message
+outside 10:00-17:00 as a warning. Two owner decisions met for the first time in this merge, so the owner is asked
+(CHANGELOG): ⭐ (a) the playbook window for chats whose lead came from the agent, (b) no AI drafts for agent leads
+until a seller has written by hand, (c) keep the night rule and amend the playbook. Built as ⭐ (a) on his standing
+«qolgani sen aytgandek» of 2026-10-29, the smallest change that leaves main's behaviour for every other chat:
+`releaseAt(now, lastInboundAt, window)` takes the chat's window as a REQUIRED argument; `sendWindowFor`
+(`agent/send-window.ts`, one home) says `agent_lead` for a chat bound to a LEAD (no client) whose own source is
+`agent`, `default` otherwise — a client chat (the lead won) and a lead an agent push only JOINED keep the night;
+the ✅ (`decideDraft`) and every send step (`sendFactsFor` → `SendFacts.sendWindow`) ask it, the step waits with
+the new reason `agent_window` (`applyAgentOutcome` treats it as the night: the release moves the approval's clock
+and restarts the choreography). Window in `AGENT_LIMITS.agentLeadWindow`; no «wrote within two hours» exception.
+A reply past its read still finishes its choreography a few seconds past 17:00 (S3's rule, unchanged). One new
+refusal: a ✅ whose next opening is more than a day after the customer's message — Saturday after 17:00, Sunday
+before 10:00 — is `window_closed`, said in words on the bot and the page (all four bundles), and queues nothing and
+lands no calculation: the step would only cancel it `anchor_too_old` on Monday, after the card had promised
+«10:00 da ketadi». Pinned by the unit window walk (literal wall-clock moments: the probe's Thursday 19:56 → Friday
+10:00 where the default chat goes at once, Saturday → Monday, Sunday → Monday, Friday 12:10 → 14:00, the first and
+last minute) and the integration file over `decideDraft` and `sendFactsFor` (the probe moment, the refusal with no
+outbox row and the draft still pending, a hold Sunday → Monday, nothing held inside the window, a reply carried past
+17:00 waiting `agent_window` while the advert lead's goes; every case with an advert-lead control). Red proofs (5):
+the agent branch removed from `releaseAt`, `sendWindowFor` never answering `agent_lead`, the refusal removed, the
+step reading `default`, the Friday break dropped — each red. STATED: the AI's draft carries no opt-out line (that
+line is for a first touch, which the AI never makes) and may quote avia (kg × the owner's rate) before density is
+known; neither changed. docs/AI-SOTUVCHI.md §17.4 and §17.8, docs/AGENT-FEED.md §2a.
+
+1570. **Verified, stated, deferred.** FIXED (suspected, verified): the lead form only HIDES «Agent (qidiruv)»
+(`personPickableSources`), so a hand-posted `sourceId` naming it tagged a hand-made lead as the agent's — counted in
+the agent's figures on /crm/tahlil and, since #1569, holding its AI replies to the agent's window. `createLead`
+(a person's, not `system`) and `updateLead` (a move ONTO it; the record's own source is re-posted by the form, #171,
+and kept) refuse it `source_not_pickable`; the lead form shows the generic error, the only path is a forged post.
+Red proofs (2): the refusal removed (both tests red), the own-source exception removed (the edit test red). FIXED
+(nit): the agent door's webhook fold printed the person's hint («a form a PERSON fills in … Google Ads, YouTube,
+TikTok, your site») on a door only a machine posts to, inviting the owner to paste the key that READS the agent feeds
+into an advert platform; `doorViews` marks the door `machine` and the fold prints `doorWebhookHintAgent` (the agent
+server's `.env`, `CRM_AGENT_KEY`, never an advert platform) in all four bundles; red-proven. FIXED (nit):
+AGENT-FEED.md's decision index named only the first two reviews; CLAUDE.md's truth table had no row for the agent
+feed, and «agent» names two different things here (the client-finding service: source `agent`, `/api/agent/*`,
+`crm/agent-feed.ts`; the AI sotuvchi: `agent_*`, `/agent on`, `wms/agent/**`) — both say so now, and AI-SOTUVCHI.md
+§17.4 says what the AI does with an agent lead. FIXED (spec defect, the agent's repository): the +90 renumber had been
+applied only here, so clientScrapper's 02, 05, 06 and 07 cited #1455-#1477, which now name main's Sakkiz band, Uch
+band, Q8 and AI-sotuvchi entries — renumbered there, with a fence (`tests/test_spec_erp_citations.py`: every spec
+citation from #1400 up is in this block, #1545-#1570). STATED (suspected, verified by reading): an AI-approved reply
+and a seller's own message both reach the outcomes as `contact_kind: "telegram"` — a person approved the exact
+words, and the feed is not meant to tell them apart (AGENT-FEED.md §2a). STATED (suspected, verified): agent leads
+count as «routed» units in the website door's roster (`site-assign.ts` `routed`) and in the fewest-first rota —
+the roster's own rationale («the same people work both streams») holds for them; the owner can give agent leads a
+team of their own on the taqsimot screen (§0 step 3). REFUTED for this door (suspected): a nameless push would land
+as `agent · <tail>` and the AI's prompt prints a lead's name — but the agent never pushes without a name
+(clientScrapper `crm_push.build_payload` raises `PayloadError("name")` first), and the same fallback has named every
+nameless advert arrival on main. REFUTED as a defect (suspected): an about-lead (0136 `lead_about_client`) whose
+client card later drops the copied phone leaves that phone out of the suppression set — the client book is the
+truth, and a phone removed from a card stops appearing by the rule §3.1 already states; the won-lead branch keeps a
+lead's phone because attaching never copied it onto the card, which an about-lead's did. DEFERRED, ASKED
+(suspected, verified by reading): the AI sotuvchi's mute — a recipient's final answer (`USER_IS_BLOCKED`, privacy,
+account gone: `muteConversation`) or the owner's 🔇 — reaches neither the suppression feed nor the belt
+(`suppressionTailsSql` reads client cards, people and leads only), so a prospect who blocked the owner's account
+after an AI reply can be proposed again next month on a fresh `cs:` id. The same holds for a person's own blocked
+reply since the CRM's Telegram bridge shipped; the door that exists is the seller closing the lead «Qayta
+qilinmasin», which the feed already carries. Adding a block as suppression is a change to what the feed means
+(its `kind` set is the agent's contract), so it is asked of the owner, not built (CHANGELOG, AGENT-FEED.md §5).
+
+## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; NO migration, ledger 139; numbered past main's #1545-#1570, the TWENTY-SEVENTH collision)
+
+1571. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
 evening as #1544: a customer wrote «Assalomu alaykum», the card came with «✏️ O‘zim yozaman · ❌ · 🙋» and no ✅,
 and he answered in Telegram himself. The card draws ✅ only while `payload.blocked !== true` — the policy refused the
 draft. A read-only investigation (four tracers, each verified by a skeptic) found the refusals an ordinary opener
@@ -5935,7 +6419,7 @@ hand-over-first and no taking-back next statement. 136 cases in `tests/unit/agen
 plus the review's, end-to-end first replies in uz Latin / ru / uz Cyrillic / en with `ok === true`, and the
 dangerous neighbours on the same memory blocked with their codes; ~40 red proofs by string edit.
 
-1546. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
+1572. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
 said «⛔ ✅ yo‘q — tuzatish kerak:» and its reasons printed codes («word_numeral», «latin→cyrillic», «1 $»);
 nothing said that ✏️ is the way out or where to type, and «✏️ O‘zim yozaman» beside «🙋 O‘zim javob beraman» on
 the page read as «answer him yourself». Now: «⛔ Bu matn shunday yuborilmaydi (✅ yo‘q). Sabab:», the reasons in
@@ -5955,7 +6439,7 @@ after the anchor that is not the AI's own send, plus the real pause the run appl
 `HUMAN_TAKEOVER_HOURS`, for the write, the card and the toast). A draft written > 3 min after its anchor says
 «⏱ Mijoz N daqiqadan beri javob kutyapti» and why when the job's origin knows (pull / sweep / edit).
 
-1547. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
+1573. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
 was waiting upstream; the most likely road was a stranger card answered by hand. Four things fixed. The work-account
 switch is read by its own 30-second shared clock (`workModeSwitch` — concurrent lines share one read; a line about
 to be STORED on the switch's say-so reads it afresh), because the stale-book branch was its only reader and every
@@ -5967,7 +6451,7 @@ a waiting job (created/retry — not active, or a killed process's job would hol
 live lookups (#1544) got a deadline ABOVE gramjs's own 60 s flood sleep (`lookupDeadlineMs` = threshold + 15 s):
 the first cut's 30 s would have passed over a line Telegram was only making us wait for.
 
-1548. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
+1574. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
 yashirgan odam yangi raqamingizga yozsa — ⭐ a) avtomatik lid va AI darhol javob», he answered «1 a». #1544's
 `unknownChatAction` comment argued «a lead nobody can ring is a row with a name in it»; on a number bought only for
 customers the Telegram chat IS the contact. On a work account `no_phone` → `open_lead`; a personal account is
@@ -5985,7 +6469,7 @@ round-thousand ids). Backfill still stops at a new stranger; catch-up never sees
 STATED: a colleague or a contact writing with a hidden number becomes a lead too (nothing can see the phone); a
 hidden-number stranger's lines written while the listener was down are not fetched.
 
-1549. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
+1575. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
 two lenses (regression, safety) with the findings fixed and red-proven before the cherry-pick, then the merged
 delta was reviewed again for what no single package could see (the interactions, customer safety on the merged
 policy, the owner's live day walked through the real functions).

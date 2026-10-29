@@ -747,6 +747,7 @@
       "unpriced_gate_since": "Shu vaqtdan keyin mashinada O‘zbekistonga yetib kelgan, narxi yozilmagan yuk mijozga faqat ruxsat bilan beriladi (sana yoki vaqt; bo‘sh = taqiq o‘chiq)",
       "fx_residue_auto": "Hisob o‘z valyutasida 0 ga tushganda dollar qoldig‘ini tizim o‘zi «kurs farqi» bilan yopsinmi. «Yo‘q» — yangi yozuv qo‘shilmaydi, borlari yuritilaveradi.",
       "lead_assign_origins": "Saytdan «kimga yozsin?» deb so'rashga ruxsat berilgan sahifalar (bo'sh joy bilan, har biri https://…)",
+      "agent_no_contact_reasons": "Shu sabab bilan yopilgan lid raqamini mijoz topuvchi agent boshqa hech qachon taklif qilmaydi («;» bilan ajrating, katta-kichik harf farqsiz)",
       "kpi_expense_category_id": "Sotuvchilarga KPI to‘lovi yoziladigan xarajat turi (faqat kassa). «Hodimlar» sahifasida tanlanadi.",
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
@@ -756,7 +757,8 @@
     },
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
-    "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi."
+    "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi.",
+    "badValueReasons": "Qiymat noto‘g‘ri — kamida bitta sabab yozing («;» bilan, har biri 80 belgidan oshmasin). Hech narsa saqlanmadi."
   },
   "audit": {
     "title": "Audit jurnali",
@@ -2795,6 +2797,7 @@
     "doorBot": "Telegram bot",
     "doorWebhook": "Platformaning o'z formasi",
     "doorWebhookHint": "Faqat odam ilovadan chiqmay to'ldiradigan forma uchun (Google Ads, YouTube, TikTok konnektor, saytingiz). Kalitni platformaning sozlamalariga qo'yasiz.",
+    "doorWebhookHintAgent": "Faqat mijoz topuvchi agent uchun — kalitni agent serveridagi .env faylga (CRM_AGENT_KEY) qo'ying. Reklama platformasiga yoki boshqa joyga qo'ymang: shu kalit agentning ikki ro'yxatini ham o'qiydi.",
     "doorKey": "Kalit",
     "doorOn": "yoqilgan",
     "doorOff": "o'chirilgan",
@@ -6392,6 +6395,7 @@
       "calc_not_queued": "Hisoblatish navbatga tushmadi — javob yuborilmadi.",
       "calc_in_flight": "Hisoblatish hozir navbatga qo‘yilmoqda — bir daqiqadan keyin qarang.",
       "identity_changed": "Chat endi boshqa mijozga bog‘langan (yoki hech kimga) — bu javob ketmaydi.",
+      "window_closed": "Bu lidni mijoz topuvchi agent topgan: unga faqat dushanba–shanba 10:00–17:00 da yoziladi, o‘sha paytgacha mijozning xabari 24 soatdan eskiradi — javob navbatga qo‘yilmadi. Ish vaqtida o‘zingiz yozing.",
       "empty": "Matn bo‘sh.",
       "not_ready": "Baza hali yangilanmagan.",
       "forbidden": "Ruxsat yo‘q.",

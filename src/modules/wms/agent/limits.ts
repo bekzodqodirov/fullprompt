@@ -104,6 +104,14 @@ export const AGENT_LIMITS = {
   nightReleaseAt: '08:30',
   nightFreshMs: 2 * 60 * 60_000,
   /**
+   * A chat whose LEAD came from the client-finding agent (source `agent`, docs/AGENT-FEED.md §2) obeys that
+   * agent's outreach playbook instead of the night: Telegram Monday-Saturday 10:00-17:00 Tashkent, never on
+   * Sunday, Friday 12:00-14:00 avoided (clientScrapper docs/sotuv-playbook.md §2.2-§2.3; its §5.2 counts every
+   * message outside 10:00-17:00 as a warning). No «wrote within two hours» exception: the prospect is somebody
+   * the agent FOUND, and a reply he approves at 19:56 is a message at 19:56 (the merge review's probe).
+   */
+  agentLeadWindow: { days: [1, 2, 3, 4, 5, 6], fromHour: 10, toHour: 17, fridayBreak: [12, 14] } as const,
+  /**
    * A reply past its read may finish into the night only this soon after its last step: the read pause and
    * the typing take seconds, so a longer gap means a wait (a flood, a restart) stood between them, and the
    * send is a new message at night (review S3's follow-up).

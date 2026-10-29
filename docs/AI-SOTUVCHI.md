@@ -397,7 +397,7 @@ mijozga bitta qisqa xabar («Hozir Bekzod akaga yetkazaman»), keyin jim.
    yozaman») — `client_holding_sent_at`. `shadow` da mijozga hech narsa.
 3. Egasiga xodimlar botida: mijoz konteksti (kim, nima so'radi, oxirgi 3 xabar) + agentning
    taklif javobi + tugmalar:
-   **✅ Shunday yubor** · **✏️ O'zim yozaman** (2026-10-29 dan: «✏️ O‘zgartirish», DECISIONS #1546; keyingi matn xabari = javob,
+   **✅ Shunday yubor** · **✏️ O'zim yozaman** (2026-10-29 dan: «✏️ O‘zgartirish», DECISIONS #1572; keyingi matn xabari = javob,
    `telegram_chat_waits` orqali 10 daqiqalik bardoshli kutish) · **🙋 O'zim bog'lanaman**
    (`taken_over`, suhbat `human` rejimga).
 4. Javobdan keyin agent uni persona uslubida qayta yozadi (ma'no o'zgarmaydi), yuboradi, va
@@ -734,7 +734,7 @@ no URL except an approved kb fact's (the Tashkent map link), no @mention, no den
   or «lid»), their last ≤ 3 messages clipped, the proposed reply, warnings, the proposed action
   (e.g. «📦 Hisoblatishga: podklyuch · 5 kub · 800 kg · …»). Buttons `ag:s|e|r|h:<uuid>`:
   ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman (as built: ✅ Yuborish · ✏️ O‘zgartirish ·
-  ❌ Kerak emas · 🙋 Suhbat meniki — #1546).
+  ❌ Kerak emas · 🙋 Suhbat meniki — #1572).
 - ✅ → `decideDraft` (CAS pending→approved), re-validate (newer inbound → superseded and a fresh run;
   he wrote meanwhile → taken_over), insert the tg_outbox row (status 'agent', peer pinned, client or
   lead, queued_by = the approver, answers = the anchor), execute the approved action, audit.
@@ -888,6 +888,11 @@ tg_outbox row, within human_pause_min); the newest live inbound is the anchor, �
 < 5 s after our out row, not a repeat of the peer's last 3 [ban-4]; account not paused; mode shadow; session
 exclusivity confirmed [ban-9]; the listener is current [regression-3].
 
+**A lead the client-finding agent brought** (source `agent`, docs/AGENT-FEED.md) is eligible like any other
+lead — the agent never writes to anyone, and nothing the AI drafts reaches the prospect without his ✅ — but
+it is the agent's prospect, so its reply obeys the agent's playbook window instead of the night (§17.8,
+DECISIONS #1569). The AI does not know the source; only the send window does.
+
 ### 17.5 The brain
 
 - Model `STAFF_MODEL` (the style proposal: `ANALYST_MODEL`); the stable head (persona, rules, approved style
@@ -939,6 +944,15 @@ live head again → CAS 'sending' → `invoke(SendMessage{randomId, noWebpage, m
 (lead-aware). Abort after the read → MarkDialogUnread [regression-12]. Ambiguous failure → 'unknown', never
 re-sent. Caps in `AGENT_LIMITS` (fuses, not Telegram's numbers): ≥ 20 s per chat, 10-25 s jitter between agent
 sends, ≤ 20/hour, ≤ 80/day, the 14-day ramp, ≤ 12 per chat per day [ban-11].
+
+The quiet hours have one home, `releaseAt(now, lastInboundAt, window)` (send-step.ts), asked by the ✅ AND
+by every step; `sendWindowFor` (send-window.ts) says which: a chat bound to a LEAD whose source is `agent`
+obeys `AGENT_LIMITS.agentLeadWindow` — Monday-Saturday 10:00-17:00 Tashkent, never Sunday, Friday
+12:00-14:00 avoided, no «wrote within two hours» exception — and every other chat the night (22:00-08:00,
+released 08:30). A ✅ whose next window is more than a day after the customer's message (Saturday evening,
+Sunday morning) is refused `window_closed` and queues nothing: the step would only cancel it
+`anchor_too_old`. A reply past its read still finishes its choreography a few seconds past 17:00 (S3's
+rule). DECISIONS #1569; the owner's ⭐ (a) of the merge review, owed to him as a confirmation.
 
 ### 17.9 Ban protection (every account)
 

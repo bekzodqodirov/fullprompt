@@ -29,7 +29,9 @@ import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { keptFileSql } from './outbox-store';
+import { AGENT_LIMITS } from './limits';
 import { asksAnew, releaseAt } from './send-step';
+import { sendWindowFor } from './send-window';
 import { sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
@@ -73,6 +75,13 @@ export type DecideRefusal =
   | 'calc_not_queued'
   | 'calc_in_flight'
   | 'identity_changed'
+  /**
+   * An agent-sourced lead's chat (`sendWindowFor`): the playbook's next open
+   * window is more than a day after the customer's message, so the send step
+   * would only cancel the reply as `anchor_too_old` — said at the press, and
+   * nothing is queued (a ✅ on Saturday evening; Sunday is no window).
+   */
+  | 'window_closed'
   | 'empty';
 
 export type DecideResult =
@@ -177,6 +186,15 @@ async function identityMoved(d: typeof agentDrafts.$inferSelect): Promise<boolea
 async function budgetLeft(managerUserId: string, startedAt: Date | null, now: Date): Promise<number> {
   const { used, ceiling } = await sendsToday(managerUserId, startedAt, now);
   return ceiling - used;
+}
+
+/** When the customer's question this draft answers was sent — the clock `anchor_too_old` reads at the send. */
+async function anchorSentAt(d: typeof agentDrafts.$inferSelect): Promise<Date | null> {
+  const [row] = await db
+    .select({ sentAt: tgMessages.sentAt })
+    .from(tgMessages)
+    .where(and(eq(tgMessages.managerUserId, d.managerUserId), eq(tgMessages.peerId, d.peerId), eq(tgMessages.tgMessageId, d.anchorTgMessageId)));
+  return row?.sentAt ?? null;
 }
 
 async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date | null> {
@@ -623,6 +641,16 @@ export async function decideDraft(
     await refreshDraftCard(draftId, ["↩ Chat endi boshqa mijozga bog'langan (yoki bog'lanmagan) — bu javob ketmaydi."]);
     return { ok: false, code: 'identity_changed' };
   }
+  // Which quiet hours this chat obeys (the merge review): an agent-sourced
+  // lead's reply waits for the agent's playbook window, and one that would
+  // reach it only after its question is a day old is refused here, before a
+  // calculation is landed for a reply that cannot go.
+  const chatWindow = await sendWindowFor(d);
+  const sendAt = releaseAt(now, await lastInboundAt(d), chatWindow);
+  if (chatWindow === 'agent_lead') {
+    const asked = await anchorSentAt(d);
+    if (asked && sendAt.getTime() - asked.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return { ok: false, code: 'window_closed' };
+  }
   if ((await budgetLeft(d.managerUserId, config!.startedAt, now)) <= 0) return { ok: false, code: 'budget_spent' };
 
   // The calculation first — the reply promises it (regression-4).
@@ -644,7 +672,6 @@ export async function decideDraft(
     requestId = landed.requestId;
   }
 
-  const sendAt = releaseAt(now, await lastInboundAt(d));
   const approved = await db.transaction(async (tx) => {
     const [row] = await tx
       .update(agentDrafts)

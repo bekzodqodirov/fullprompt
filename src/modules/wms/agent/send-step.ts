@@ -86,6 +86,11 @@ export interface SendFacts {
   peerHasWritten: boolean;
   /** The chat's newest inbound — how long the customer has been waiting, which is what the night asks (S3). */
   lastInboundAt: Date | null;
+  /**
+   * Which quiet hours the chat obeys (`sendWindowFor`): the night, or — for a lead the client-finding agent
+   * brought — that agent's playbook window. Read at THIS tick, like every other fact.
+   */
+  sendWindow: SendWindow;
   conversationMuted: boolean;
   ruleExcluded: boolean;
   /** Today's identity decision for the chat differs from the draft's (leak-4). */
@@ -127,6 +132,8 @@ export type FinalRefusal =
 export type WaitReason =
   | 'flood_wait'
   | 'night'
+  /** An agent-sourced lead's chat outside Monday-Saturday 10:00-17:00 (`AGENT_LIMITS.agentLeadWindow`). */
+  | 'agent_window'
   | 'not_caught_up'
   | 'chat_gap'
   | 'account_gap'
@@ -190,9 +197,11 @@ export function agentSendVerdict(
   // there is the stranger of the two. Seconds, not «after the read»: a wait of hours after the read (a
   // SendMessage flood, a restart's catch-up) leaves no «typing…» on anybody's screen, and the reply that
   // comes out of it at 00:30 is a new message at night like any other.
+  // An agent-sourced lead's chat asks its playbook window the same way, at the same place (the merge review):
+  // a reply carried past 17:00 by a gap or a flood waits for the next working morning.
   if (!finishingChoreography(row, now)) {
-    const release = releaseAt(f.now, f.lastInboundAt);
-    if (release.getTime() > now) return wait('night', release);
+    const release = releaseAt(f.now, f.lastInboundAt, f.sendWindow);
+    if (release.getTime() > now) return wait(f.sendWindow === 'agent_lead' ? 'agent_window' : 'night', release);
   }
   if (!f.caughtUp) return wait('not_caught_up', new Date(now + 10_000));
   if (f.lastChatSendAt && now - f.lastChatSendAt.getTime() < AGENT_LIMITS.perChatGapMs) {
@@ -542,14 +551,74 @@ export function isTashkentNight(now: Date): boolean {
 }
 
 /**
+ * Which quiet hours a chat obeys. 'agent_lead' = a chat bound to a LEAD whose
+ * source is the client-finding agent (docs/AGENT-FEED.md §2): somebody the
+ * agent FOUND, whom the agent's playbook allows a message only Monday-Saturday
+ * 10:00-17:00. Every other chat — a client, a lead from any other door — is
+ * 'default', the night rule, exactly as before.
+ */
+export type SendWindow = 'default' | 'agent_lead';
+
+/** Tashkent wall clock (UTC+5, no daylight saving): weekday 0 = Sunday, and the minute of the day. */
+function tashkentClock(now: Date): { day: number; minute: number; dayStartMs: number } {
+  const local = new Date(now.getTime() + 5 * 3_600_000);
+  const dayStartMs = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - 5 * 3_600_000;
+  return { day: local.getUTCDay(), minute: local.getUTCHours() * 60 + local.getUTCMinutes(), dayStartMs };
+}
+
+/**
+ * The agent lead window's open stretches of one Tashkent weekday, in minutes
+ * of the day: none on Sunday, 10:00-17:00 on a working day, and on Friday the
+ * 12:00-14:00 the playbook says to avoid taken out.
+ */
+function agentLeadStretches(day: number): Array<[number, number]> {
+  const w = AGENT_LIMITS.agentLeadWindow;
+  if (!(w.days as readonly number[]).includes(day)) return [];
+  const from = w.fromHour * 60;
+  const to = w.toHour * 60;
+  if (day !== 5) return [[from, to]];
+  return [
+    [from, w.fridayBreak[0] * 60],
+    [w.fridayBreak[1] * 60, to],
+  ];
+}
+
+/** Is a message to an agent-sourced lead allowed at this moment? */
+export function inAgentLeadWindow(now: Date): boolean {
+  const { day, minute } = tashkentClock(now);
+  return agentLeadStretches(day).some(([a, b]) => minute >= a && minute < b);
+}
+
+/** The first moment at or after `now` that the agent lead window is open. */
+export function nextAgentLeadWindow(now: Date): Date {
+  if (inAgentLeadWindow(now)) return now;
+  const { day, minute, dayStartMs } = tashkentClock(now);
+  for (let ahead = 0; ahead <= 7; ahead++) {
+    const stretches = agentLeadStretches((day + ahead) % 7);
+    for (const [from] of stretches) {
+      if (ahead > 0 || from > minute) return new Date(dayStartMs + ahead * 86_400_000 + from * 60_000);
+    }
+  }
+  // Unreachable while any weekday has a stretch; a window configured empty holds the reply a week.
+  return new Date(dayStartMs + 7 * 86_400_000);
+}
+
+/**
  * When a ✅ may start sending (his Q14 ⭐): immediately by day; at night
  * immediately only when the customer wrote within the last two hours (he is
  * awake and waiting), else at 08:30 — in shadow every send is his own act,
  * and the hold exists so a 3 a.m. reply does not wake a customer who wrote
  * yesterday afternoon. Asked at the press AND by the send verdict (S3), so a
  * reply approved by day and carried into the night by a wait obeys it too.
+ *
+ * An agent-sourced lead's chat ('agent_lead') is held instead to the agent's
+ * playbook window — Monday-Saturday 10:00-17:00, no Sunday, Friday 12:00-14:00
+ * avoided — with NO «wrote within two hours» exception (the merge review:
+ * approved at 19:56, it went at 19:56). `window` is REQUIRED: a default would
+ * fail open on the one chat the rule exists for.
  */
-export function releaseAt(now: Date, lastInboundAt: Date | null): Date {
+export function releaseAt(now: Date, lastInboundAt: Date | null, window: SendWindow): Date {
+  if (window === 'agent_lead') return nextAgentLeadWindow(now);
   if (!isTashkentNight(now)) return now;
   if (lastInboundAt && now.getTime() - lastInboundAt.getTime() <= AGENT_LIMITS.nightFreshMs) return now;
   return nextTashkentMorning(now);

@@ -5,8 +5,10 @@ import { AGENT_LIMITS, dailySendCeiling, HUMAN_LIMITS, typingMs } from '@/module
 import {
   agentSendVerdict,
   choreographyPlan,
+  inAgentLeadWindow,
   isTashkentNight,
   liveHeadVerdict,
+  nextAgentLeadWindow,
   nextTashkentMorning,
   releaseAt,
   runAgentStep,
@@ -53,6 +55,7 @@ const facts: SendFacts = {
   newerSubstantiveInbound: false,
   peerHasWritten: true,
   lastInboundAt: new Date(now.getTime() - 10 * 60_000),
+  sendWindow: 'default',
   conversationMuted: false,
   ruleExcluded: false,
   identityChanged: false,
@@ -351,10 +354,64 @@ describe('the night (his Q14 ⭐)', () => {
 
   it('sends at once by day, at night only when the customer wrote within two hours', () => {
     const night = new Date('2026-10-24T18:00:00Z'); // 23:00 Tashkent
-    expect(releaseAt(now, null)).toEqual(now);
-    expect(releaseAt(night, new Date(night.getTime() - 30 * 60_000))).toEqual(night);
-    expect(releaseAt(night, new Date(night.getTime() - 3 * 3_600_000))).toEqual(new Date('2026-10-25T03:30:00Z'));
+    expect(releaseAt(now, null, 'default')).toEqual(now);
+    expect(releaseAt(night, new Date(night.getTime() - 30 * 60_000), 'default')).toEqual(night);
+    expect(releaseAt(night, new Date(night.getTime() - 3 * 3_600_000), 'default')).toEqual(new Date('2026-10-25T03:30:00Z'));
     expect(nextTashkentMorning(new Date('2026-10-25T01:00:00Z'))).toEqual(new Date('2026-10-25T03:30:00Z'));
+  });
+});
+
+/**
+ * An agent-sourced lead's chat (the merge review): the client-finding agent's
+ * playbook window, Monday-Saturday 10:00-17:00 Tashkent, no Sunday, Friday
+ * 12:00-14:00 avoided — and no «wrote within two hours» exception. Every date
+ * below is a literal wall-clock moment, never computed from the rule.
+ */
+describe('the agent lead window (clientScrapper playbook §2.2-§2.3)', () => {
+  const T = (iso: string) => new Date(`${iso}+05:00`);
+
+  it('is open Monday-Saturday 10:00-17:00 and nowhere else', () => {
+    expect(inAgentLeadWindow(T('2026-10-27T10:00:00'))).toBe(true); // Tuesday, the first minute
+    expect(inAgentLeadWindow(T('2026-10-27T16:59:59'))).toBe(true);
+    expect(inAgentLeadWindow(T('2026-10-27T17:00:00'))).toBe(false); // the last minute is 16:59
+    expect(inAgentLeadWindow(T('2026-10-27T09:59:59'))).toBe(false);
+    expect(inAgentLeadWindow(T('2026-10-31T11:00:00'))).toBe(true); // Saturday
+    expect(inAgentLeadWindow(T('2026-11-01T11:00:00'))).toBe(false); // Sunday
+    expect(inAgentLeadWindow(T('2026-10-30T12:30:00'))).toBe(false); // Friday prayer
+    expect(inAgentLeadWindow(T('2026-10-30T14:00:00'))).toBe(true);
+    expect(inAgentLeadWindow(T('2026-10-29T12:30:00'))).toBe(true); // Thursday has no break
+  });
+
+  it('holds to the next opening: tomorrow 10:00, Monday after Saturday evening, 14:00 on a Friday noon', () => {
+    // The review's probe: Thursday 19:56, the customer wrote half an hour ago — Friday 10:00, not «now».
+    const probe = T('2026-10-29T19:56:00');
+    expect(releaseAt(probe, new Date(probe.getTime() - 30 * 60_000), 'agent_lead')).toEqual(T('2026-10-30T10:00:00'));
+    // …where every other chat goes at once (it is not yet 22:00).
+    expect(releaseAt(probe, new Date(probe.getTime() - 30 * 60_000), 'default')).toEqual(probe);
+    expect(nextAgentLeadWindow(T('2026-10-27T08:00:00'))).toEqual(T('2026-10-27T10:00:00'));
+    expect(nextAgentLeadWindow(T('2026-10-31T17:30:00'))).toEqual(T('2026-11-02T10:00:00')); // Sat → Mon
+    expect(nextAgentLeadWindow(T('2026-11-01T12:00:00'))).toEqual(T('2026-11-02T10:00:00')); // Sun → Mon
+    expect(nextAgentLeadWindow(T('2026-10-30T12:10:00'))).toEqual(T('2026-10-30T14:00:00'));
+    expect(nextAgentLeadWindow(T('2026-10-30T23:00:00'))).toEqual(T('2026-10-31T10:00:00')); // Fri night → Sat
+    // Inside the window it is now — to the millisecond.
+    const open = T('2026-10-28T11:22:33');
+    expect(releaseAt(open, null, 'agent_lead')).toEqual(open);
+  });
+
+  it('the send step waits on it too — `agent_window`, never the night’s two-hour exception', () => {
+    const evening = T('2026-10-29T19:56:00');
+    const f = {
+      ...facts,
+      now: evening,
+      anchorSentAt: new Date(evening.getTime() - 30 * 60_000),
+      lastInboundAt: new Date(evening.getTime() - 30 * 60_000),
+      sendWindow: 'agent_lead' as const,
+    };
+    const pressed = { ...row, queuedAt: new Date(evening.getTime() - 60_000) };
+    expect(agentSendVerdict(pressed, f)).toEqual({ ok: false, final: false, reason: 'agent_window', until: T('2026-10-30T10:00:00') });
+    expect(agentSendVerdict(pressed, { ...f, sendWindow: 'default' })).toEqual({ ok: true });
+    // Inside the window nothing changes.
+    expect(agentSendVerdict(row, { ...facts, sendWindow: 'agent_lead' })).toEqual({ ok: true });
   });
 });
 

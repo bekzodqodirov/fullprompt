@@ -1,8 +1,17 @@
 import { getTranslations } from 'next-intl/server';
-import { getAllSettings, SETTING_DEFAULTS } from '@/modules/platform/settings/service';
+import { getAllSettings, SETTING_DEFAULTS, type SettingKey } from '@/modules/platform/settings/service';
 import { updateSettingAction } from './actions';
 import { redirect } from 'next/navigation';
 import { getActor } from '@/modules/platform/rbac/authorize';
+
+/**
+ * The refusal's words, per setting. `badValue` was written for the
+ * unpriced-cargo ban and asks for a DATE — under the agent's reason list that
+ * sentence would send the owner looking for a calendar.
+ */
+const BAD_VALUE_TEXT: Partial<Record<SettingKey, 'badValueReasons'>> = {
+  agent_no_contact_reasons: 'badValueReasons',
+};
 
 export default async function SettingsPage({
   searchParams,
@@ -56,7 +65,7 @@ export default async function SettingsPage({
                   )}
                   {bad === key && (
                     <p role="alert" className="mt-1 text-sm font-semibold text-bad" data-testid="setting-bad">
-                      {t('badValue')}
+                      {t(BAD_VALUE_TEXT[key] ?? 'badValue')}
                     </p>
                   )}
                 </div>

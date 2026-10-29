@@ -276,7 +276,7 @@ writes with `actorId: null` where a system branch exists.
 - A new mute group `agent` with its own FOUNDERS (putting the type into `alerts`
   makes it born muted for the owner); profile checkbox + i18n; the literal
   `Record<MuteGroup, boolean>` objects in tests fail only `pnpm typecheck`.
-- ✏️ «O'zim yozaman» (since #1546 «✏️ O‘zgartirish»): `telegram_chat_waits` has PK `(chat_id, kind)` and a CHECK
+- ✏️ «O'zim yozaman» (since #1572 «✏️ O‘zgartirish»): `telegram_chat_waits` has PK `(chat_id, kind)` and a CHECK
   of four kinds — reusing `'task'` means an edit wait and a Bajarildi/💬 wait
   cannot coexist; a new kind needs a migration. Six things in the text ladder
   can take the owner's text before the wait. Recommendation: his typed text
