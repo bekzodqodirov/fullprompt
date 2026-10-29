@@ -613,10 +613,12 @@ async function checklist(input: Record<string, unknown>, env: ToolEnv): Promise<
   // No certificate question (his 9): the company obtains it itself.
   const missing = missingFields(section, facts, new Map()).map((f) => FIELD_LABEL[f]);
   const complete = missing.length === 0;
+  // The gaps as «•» lines, never «1) … 2) …» (incident 2026-10-29): the model copies the shape it is handed,
+  // and a list's own numbers read as figures nobody vouched for.
   const text = complete
     ? `To'liq. ${section}: ${JSON.stringify(facts)}. Endi actions ichida calc_submit taklif qil va mijozga «hisoblatishga yubordim, javob kelishi bilan aytaman» de.` +
       (fromOurWarehouse ? " Yuk omborimiz yo'q joydan: narx Xitoydagi omborimizdan hisoblanadi, zavoddan omborgacha olib kelish alohida — VEDga shunday yoziladi." : '')
-    : `Yetishmaydi (hammasini BITTA raqamlangan xabarda so'ra, savol belgisi faqat oxirida): ${missing.map((m, i) => `${i + 1}) ${m}`).join('; ')}`;
+    : `Yetishmaydi (hammasini BITTA xabarda, "•" bilan ro'yxat qilib so'ra — raqamlama; savol belgisi faqat oxirida):\n${missing.map((m) => `• ${m}`).join('\n')}`;
   return {
     ok: true,
     text,

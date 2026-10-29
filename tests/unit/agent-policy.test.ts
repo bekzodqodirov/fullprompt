@@ -148,10 +148,19 @@ describe('G2: what may never be promised, in six languages (money-8)', () => {
 });
 
 describe('G4, G5, G6: shape, script, whose things', () => {
-  it('blocks a long reply and a second question', () => {
+  it('blocks a long reply and an empty one; a second question only WARNS (incident 2026-10-29)', () => {
     expect(codes({ body: 'a'.repeat(701) })).toContain('too_long');
-    expect(codes({ body: 'Qancha kub? Qayerdan?' })).toContain('questions');
-    expect(codes({ body: 'چند کیلو؟ از کجا؟', language: 'fa', customerScript: 'arabic' })).toContain('questions');
+    expect(codes({ body: '   ' })).toContain('empty');
+    // The spec's G4 row sends it to his eye, never past his ✅: «Qanday yuk? Necha kub?» is the commonest opener.
+    for (const patch of [
+      { body: 'Qancha kub? Qayerdan?' },
+      { body: 'چند کیلو؟ از کجا؟', language: 'fa' as const, customerScript: 'arabic' as const, hasGloss: true },
+    ]) {
+      const r = check(patch);
+      expect(r.blocks.map((b) => b.code)).not.toContain('questions');
+      expect(r.warnings).toContainEqual({ rule: 'G4', code: 'questions', detail: '2' });
+    }
+    expect(check({ body: 'Qancha kub? Qayerdan?' }).ok).toBe(true);
   });
 
   it('answers in the customer’s script — uz-Cyrl and ru are one script', () => {

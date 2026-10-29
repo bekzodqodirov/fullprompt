@@ -478,6 +478,25 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   }
 }
 
+/**
+ * The figures the PROMPT dictates (incident 2026-10-29): rule 8 tells the
+ * model the truck takes «eng kamida 1 kub yoki 100 kg», rule 9 the flight
+ * «eng kamida 1 kg … taxminan 2-5 kun» — from `AGENT_LIMITS`, the numbers the
+ * tools obey. Their only source in the policy was the seeded knowledge, which
+ * he may retire or re-word: then the reply said the minimum it was told to
+ * say and lost its ✅ for it. The company's rule is a source of its own,
+ * whatever the knowledge holds — said as the kinds it is (a measure, the
+ * flight's days), never as money.
+ */
+const COMPANY_RULE = 'kompaniya qoidasi';
+const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
+  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb' },
+  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb' },
+  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
+  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
+  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air' },
+];
+
 /** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
 export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
   // His «Temir yo'l mendan so'rasin»: in a chat about rail no figure the
@@ -499,6 +518,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // payment fact names money, and joined to the rest it made every street
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
+  sources.push(...COMPANY_RULE_SOURCES);
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
   const { mapUrls, allowedUrls } = splitUrls(urls);
   return {

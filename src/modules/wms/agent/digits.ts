@@ -17,6 +17,14 @@
  * So the whole text is compatibility-folded (NFKC) as well: a numeral that
  * folds to plain digits IS those digits, every other one (½, Ⅳ, ⓫) is left
  * as it was and reported.
+ *
+ * One spelling of the Uzbek apostrophe too (incident 2026-10-29): the seed
+ * writes «vaʼda», «maʼlumot» with U+02BC, NFKC leaves it alone, and every
+ * rule here spells the apostrophe «['‘’ʻ`]». So the kb's own disclaimer «bu
+ * taxmin, vaʼda emas» was no disclaimer, and «muammo boʼlmaydi» — a guarantee
+ * — was no guarantee: the same letter misread both ways. U+02BC is read as
+ * the ASCII «'» the rules were written for, and only it — «ʻ» (U+02BB, «oʻ»,
+ * «gʻ») is in every class already.
  */
 
 const PERSIAN = 0x06f0; // ۰
@@ -42,6 +50,8 @@ export function normalizeDigits(text: string): string {
     // The Arabic decimal and thousands separators read as ASCII ones.
     else if (code === 0x066b) out += '.';
     else if (code === 0x066c) out += ',';
+    // «vaʼda» is «va'da»: the modifier-letter apostrophe the seed writes, read as the one the rules spell.
+    else if (code === 0x02bc) out += "'";
     else if (ch === '№') out += ch;
     else {
       const folded = ch.normalize('NFKC');
@@ -318,20 +328,20 @@ const OTHER_DIGIT = /(?![0-9〇])\p{N}/u;
 const HAN_NUMERAL = /[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]{1,}/u;
 
 /**
- * Word numerals in the six languages, beside a money or measure word, are a
- * number spelled out — «yuz dollar», «сто долларов», «صد دلار», «二百美元».
- * Not a whole number parser: the point is to notice that a figure is there.
- * «One» is left out in every language — «bir kub», «один раз», «one box» are
- * the indefinite article as often as a count, and the reply is told to write
- * figures in digits anyway. Persian «نه» is left out too: it is «no» far more
- * often than «nine», and counts only right before a unit (`NINE_FA`).
+ * Word numerals in the six languages, beside a money, measure or time word,
+ * are a number spelled out — «yuz dollar», «besh kub», «ikki hafta», «сто
+ * долларов», «صد دلار». Not a whole number parser: the point is to notice
+ * that a figure is there. «One» is left out in every language — «bir kub»,
+ * «один раз», «one box» are the indefinite article as often as a count, and
+ * the reply is told to write figures in digits anyway. Persian «نه» is left
+ * out too: it is «no» far more often than «nine», and counts only right
+ * before a unit (`NINE_FA`).
  */
 const NUMERAL_WORDS =
   "ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|qirq|ellik|oltmish|yetmish|sakson|to['‘’ʻ`]?qson|yuz|ming|два|три|четыре|пять|шесть|семь|восемь|девять|десять|двадцать|тридцать|сорок|пятьдесят|сто|двести|триста|тысяч[аи]?|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|forty|fifty|hundred|thousand|دو|سه|چهار|پنج|شش|هفت|هشت|ده|بیست|سی|چهل|پنجاه|صد|هزار";
-const WORD_NUMERAL = new RegExp(`(?:^|[^\\p{L}])(?:${NUMERAL_WORDS})(?=$|[^\\p{L}])`, 'iu');
 const NINE_FA = /(?<![\p{L}])نه\s+(?:روز|هفته|ماه|ساعت|دلار|تومان|افغانی|کیلو|متر)/u;
 
-/** A money or measure word nearby, in any of the six languages — the shipped list, read across the whole text. */
+/** A money or measure word nearby, in any of the six languages — the shipped list, read across the whole text (Chinese numerals only). */
 const MONEY_OR_MEASURE =
   /(?:\$|usd|dollar|долл|so'm|sum|сум|сўм|yuan|юан|元|美元|块|دلار|تومان|افغانی|kub|куб|м3|m3|m³|kg|кг|公斤|千克|立方|کیلو|متر)/iu;
 
@@ -341,27 +351,58 @@ const MONEY_OR_MEASURE =
  * could not ask its source and G2's day rule never saw a day count — «Yukingiz bir haftada yetib keladi»
  * passed both. Here «bir» / «один» / «a» DO count: beside a unit of time they are a count of it, not
  * an article. A unit alone needs its preposition — «на этой неделе» and «har kuni» are no duration.
+ *
+ * Two lists (incident 2026-10-29). The VAGUE and the asking quantifiers — «necha», «bir necha», «неча»,
+ * «несколько», «пару», «a few», «several», «چند», «几» — state no count, so G1 has no figure in them to
+ * ask a source for: «Yuk necha kunda kelishi yo'nalishga bog'liq», «Narxni bir necha daqiqada hisoblab
+ * beraman», «Расчёт займёт несколько дней» each lost their ✅ as a spelled-out number. G2 reads the
+ * other list, the whole one (`SPELLED_DURATION_SRC`, policy.ts): «bir necha kunda yetib keladi» is still a
+ * dispatch promise, however vague its count.
  */
-const UZ_NUM =
-  "bir|ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz|necha|bir\\s+necha";
-const UZ_CYRL_NUM = 'бир|икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма|ўттиз|неча';
-const RU_NUM =
-  'од(?:ин|ну|ни)|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять|пар[уы]|несколько|полтор[аы]|двадцать|тридцать';
-const EN_NUM = 'one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty|a\\s+couple\\s+of|couple\\s+of|a\\s+few|few|several';
-const FA_NUM = 'یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده|چند';
-const HAN_DURATION = '[一二两三四五六七八九十几半]+个?(?:工作日|天|日|周|星期|月|小时)';
-export const SPELLED_DURATION_SRC = [
-  `(?<![\\p{L}])(?:${UZ_NUM})(?:[-–\\s]+(?:${UZ_NUM}))*\\s+(?:ish\\s+)?(?:kun|hafta|oy|soat|daqiqa|sutka)(?:lar)?(?:i(?:da|ga|dan|ni|ning|gacha)?|da|ga|dan|ni|ning|gacha|lik|cha)?(?![\\p{L}])`,
-  `(?<![\\p{L}])(?:${UZ_CYRL_NUM})(?:[-–\\s]+(?:${UZ_CYRL_NUM}))*\\s+(?:иш\\s+)?(?:кун|ҳафта|ой|соат|дақиқа)(?:лар)?(?:и(?:да|га|дан|ни|нинг|гача)?|да|га|дан|ни|нинг|гача|лик|ча)?(?![\\p{L}])`,
-  `(?<![\\p{L}])(?:${RU_NUM})(?:[-–\\s]+(?:${RU_NUM}))*\\s+(?:(?:рабоч|календарн)\\p{L}*\\s+)?(?:дн(?:я|ей)|день|сут(?:ки|ок)|недел[иьяю]|месяц(?:а|ев)?|час(?:а|ов)?)(?![\\p{L}])`,
-  '(?<![\\p{L}])(?:через|в\\s+течение|в\\s+пределах)\\s+(?:недел[юи]|месяц[а]?|сутки|суток|день|дня|час[а]?)(?![\\p{L}])',
-  `(?<![\\p{L}])(?:${EN_NUM})(?:[-–\\s]+(?:or\\s+)?(?:${EN_NUM}))*\\s+(?:(?:business|working|calendar)\\s+)?(?:days?|weeks?|months?|hours?)(?![\\p{L}])`,
-  '(?<![\\p{L}])(?:in|within)\\s+(?:a|an)\\s+(?:day|week|month|hour)(?![\\p{L}])',
-  `(?<![\\p{L}])(?:${FA_NUM})\\s+(?:روز|هفته|ماه|ساعت)`,
-  HAN_DURATION,
-].join('|');
-const SPELLED_DURATION = new RegExp(SPELLED_DURATION_SRC, 'iu');
-const HAN_SPELLED_DURATION = new RegExp(HAN_DURATION, 'u');
+const UZ_NUM_DEFINITE =
+  "bir|ikki|uch|to['‘’ʻ`]?rt|besh|olti|yetti|sakkiz|to['‘’ʻ`]?qqiz|o['‘’ʻ`]n|yigirma|o['‘’ʻ`]ttiz";
+const UZ_CYRL_NUM_DEFINITE = 'бир|икки|уч|тўрт|беш|олти|етти|саккиз|тўққиз|ўн|йигирма|ўттиз';
+const RU_NUM_DEFINITE = 'од(?:ин|ну|ни)|два|две|три|четыре|пять|шесть|семь|восемь|девять|десять';
+const RU_NUM_TENS = 'двадцать|тридцать';
+const EN_NUM_DEFINITE = 'one|two|three|four|five|six|seven|eight|nine|ten|twenty|thirty';
+const FA_NUM_DEFINITE = 'یک|دو|سه|چهار|پنج|شش|هفت|هشت|نه|ده';
+const HAN_DIGITS = '一二两三四五六七八九十半';
+const HAN_ANY = '一二两三四五六七八九十几半';
+const HAN_UNIT = '个?(?:工作日|天|日|周|星期|月|小时)';
+
+function spelledDurationSrc(vague: boolean): string {
+  const uz = vague ? `${UZ_NUM_DEFINITE}|necha|bir\\s+necha` : UZ_NUM_DEFINITE;
+  const uzCyrl = vague ? `${UZ_CYRL_NUM_DEFINITE}|неча` : UZ_CYRL_NUM_DEFINITE;
+  const ru = vague
+    ? `${RU_NUM_DEFINITE}|пар[уы]|несколько|полтор[аы]|${RU_NUM_TENS}`
+    : `${RU_NUM_DEFINITE}|полтор[аы]|${RU_NUM_TENS}`;
+  const en = vague ? `${EN_NUM_DEFINITE}|a\\s+couple\\s+of|couple\\s+of|a\\s+few|few|several` : EN_NUM_DEFINITE;
+  const fa = vague ? `${FA_NUM_DEFINITE}|چند` : FA_NUM_DEFINITE;
+  // A run that holds a numeral of its own: «十几天» is ten-odd days, «几天» how many (or a few).
+  const han = vague ? `[${HAN_ANY}]+${HAN_UNIT}` : `[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}`;
+  return [
+    `(?<![\\p{L}])(?:${uz})(?:[-–\\s]+(?:${uz}))*\\s+(?:ish\\s+)?(?:kun|hafta|oy|soat|daqiqa|sutka)(?:lar)?(?:i(?:da|ga|dan|ni|ning|gacha)?|da|ga|dan|ni|ning|gacha|lik|cha)?(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:${uzCyrl})(?:[-–\\s]+(?:${uzCyrl}))*\\s+(?:иш\\s+)?(?:кун|ҳафта|ой|соат|дақиқа)(?:лар)?(?:и(?:да|га|дан|ни|нинг|гача)?|да|га|дан|ни|нинг|гача|лик|ча)?(?![\\p{L}])`,
+    `(?<![\\p{L}])(?:${ru})(?:[-–\\s]+(?:${ru}))*\\s+(?:(?:рабоч|календарн)\\p{L}*\\s+)?(?:дн(?:я|ей)|день|сут(?:ки|ок)|недел[иьяю]|месяц(?:а|ев)?|час(?:а|ов)?)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:через|в\\s+течение|в\\s+пределах)\\s+(?:недел[юи]|месяц[а]?|сутки|суток|день|дня|час[а]?)(?![\\p{L}])',
+    `(?<![\\p{L}])(?:${en})(?:[-–\\s]+(?:or\\s+)?(?:${en}))*\\s+(?:(?:business|working|calendar)\\s+)?(?:days?|weeks?|months?|hours?)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:in|within)\\s+(?:a|an)\\s+(?:day|week|month|hour)(?![\\p{L}])',
+    `(?<![\\p{L}])(?:${fa})\\s+(?:روز|هفته|ماه|ساعت)`,
+    han,
+  ].join('|');
+}
+
+/** Every spelled duration, the vague and the asking ones included — what G2 judges as a promise. */
+export const SPELLED_DURATION_SRC = spelledDurationSrc(true);
+/** …and the ones that state a count — what G1 refuses as a figure it cannot source. */
+const SPELLED_DURATION = new RegExp(spelledDurationSrc(false), 'iu');
+const HAN_SPELLED_DURATION = new RegExp(`[${HAN_ANY}]*[${HAN_DIGITS}][${HAN_ANY}]*${HAN_UNIT}`, 'u');
+
+/**
+ * A spelled duration whose count ASKS (P5): «necha kunda», «неча кун», «چند روز», «几天» — never «bir
+ * necha» (a few), which states a count, however vague. Read on the text of one `SPELLED_DURATION_SRC` match.
+ */
+export const ASKING_DURATION = /^(?:necha|неча|چند)\s|^几/iu;
 
 /** A Chinese numeral run right beside money: «价格是三百», «三百美金» — `MONEY_OR_MEASURE` has «元» and «块» already. */
 const HAN_RUN = '[零〇一二两三四五六七八九十百千万亿壹贰叁肆伍陆柒捌玖拾佰仟]+';
@@ -373,24 +414,133 @@ const HAN_BESIDE_MONEY = new RegExp(
 /** A text's words, as the word-numeral check reads its neighbours. */
 const TOKEN = /[\p{L}\p{M}'‘’ʻ`.\-]+|[$€¥£₽₸₺؋]/gu;
 const NUMERAL_TOKEN = new RegExp(`^(?:bir[-–])?(?:${NUMERAL_WORDS})(?:[-–](?:${NUMERAL_WORDS}))*[.,]?$`, 'iu');
-/** Words that stand between a price word and its figure without changing whose figure it is: «narxi esa besh yuz». */
-const COPULA = /^(?:is|are|was|will|be|of|это|будет|составит|составляет|esa|edi|bo['‘’ʻ`]?ladi|است|هست)$/iu;
+/** «besh yarim», «два с половиной» — the half that goes on a spelled figure. */
+const HALF_TOKEN = /^(?:yarim|ярим|половин\p{L}*|half)[.,]?$/iu;
+/**
+ * Words that stand between a price word and its figure without changing whose figure it is: «narxi esa besh
+ * yuz», and a hedge — «Narxi taxminan uch yuz bo'ladi» is a price spelled out all the same.
+ */
+const COPULA =
+  /^(?:is|are|was|will|be|of|about|around|approximately|roughly|это|будет|составит|составляет|примерно|около|esa|edi|bo['‘’ʻ`]?ladi|taxminan|тахминан|است|هست|حدود\p{L}*|تقریبا\p{L}*)$/iu;
+/** The classifier between a count and its thing — «uch ta karobka»; on its own it names nothing counted. */
+const CLASSIFIER = /^(?:ta|та|tadan|тадан)[.,]?$/iu;
 
 /**
- * A word numeral with a price word RIGHT beside it — the word before its run (past one copula) or the two
- * after. The package read the price words across the whole text, so «Narxni aytish uchun ikki narsa
- * kerak», «The price depends on two things», «Для расчёта цены нужно три вещи» — a count of things in a
- * sentence about price — were each refused as a spelled-out figure (fix round).
+ * The unit a spelled figure is a count OF (incident 2026-10-29) — a measure, a time, a percent, a thing
+ * cargo comes in — as one whole token. Cubes, kilos and tonnes; days, weeks, months, hours, minutes; the
+ * cartons, pieces and places of `COUNT_UNIT` (numbers.ts) that are cargo's own, never «xil» («ikki xil
+ * yo'l» is two kinds of road) nor a bare «ta» («ikki ta narsa» is two things).
  */
-function numeralBesideMoney(normalized: string): boolean {
-  const tokens = normalized.match(TOKEN) ?? [];
+const UNIT_TOKEN = new RegExp(
+  `^(?:${[
+    'kub\\p{L}*',
+    'куб\\p{L}*',
+    'kg',
+    'кг',
+    'kilo\\p{L}*',
+    'кило\\p{L}*',
+    'gramm?\\p{L}*',
+    'грамм?\\p{L}*',
+    'tonn\\p{L}*',
+    'тонн\\p{L}*',
+    'tons?',
+    'metr\\p{L}*',
+    'метр\\p{L}*',
+    'met(?:er|re)s?',
+    'cbm',
+    'cub(?:e|es|ic)',
+    'kilograms?',
+    'kun\\p{L}*',
+    'кун\\p{L}*',
+    'hafta\\p{L}*',
+    'ҳафта\\p{L}*',
+    'oy(?:da|ga|dan|ni|ning|lik|cha|i\\p{L}*|lar\\p{L}*)?',
+    'ой(?:да|га|дан|ни|нинг|лик|ча|и\\p{L}*|лар\\p{L}*)?',
+    'soat\\p{L}*',
+    'соат\\p{L}*',
+    'daqiqa\\p{L}*',
+    'дақиқа\\p{L}*',
+    'sutka\\p{L}*',
+    'дн(?:я|ей|ям|ях)',
+    'день',
+    'сут(?:ки|ок)',
+    'недел\\p{L}*',
+    'месяц\\p{L}*',
+    'час(?:а|ов)?',
+    'минут\\p{L}*',
+    'days?',
+    'weeks?',
+    'months?',
+    'hours?',
+    'minutes?',
+    'foiz\\p{L}*',
+    'фоиз\\p{L}*',
+    'процент\\p{L}*',
+    'percent',
+    'karobka\\p{L}*',
+    'korobka\\p{L}*',
+    'quti\\p{L}*',
+    'қути\\p{L}*',
+    'коробк\\p{L}*',
+    'коробок',
+    'dona\\p{L}*',
+    'дона\\p{L}*',
+    'шт\\p{L}*',
+    'штук\\p{L}*',
+    'mesta',
+    'мест\\p{L}*',
+    'box(?:es)?',
+    'cartons?',
+    'pieces?',
+    'pcs',
+    'pallet\\p{L}*',
+    'паллет\\p{L}*',
+    'poddon\\p{L}*',
+    'поддон\\p{L}*',
+    'روز',
+    'هفته',
+    'ماه',
+    'ساعت',
+    'دقیقه',
+    'کیلو\\p{L}*',
+    'متر',
+    'کارتن',
+    'جعبه',
+  ].join('|')})[.,]?$`,
+  'iu',
+);
+
+/**
+ * A word numeral RIGHT beside what it counts: a price word before its run (past one copula) or in the two
+ * after; or a unit — a measure, a time, a percent, a carton (`UNIT_TOKEN`) — the token before the run or
+ * the one after it (past a classifier «ta»). The package read the price words across the whole text, so
+ * «Narxni aytish uchun ikki narsa kerak» was a spelled-out figure (fix round); and it read a measure word
+ * across the whole text too, so «Ming rahmat! … necha kub va necha kg?», «Ikki xil yo'l bor: … kg», «Bizda
+ * uch xil xizmat bor … kub» — a thanks, two kinds, three services, in a reply that asks for the cubes —
+ * each lost their ✅ (incident 2026-10-29). «besh kub», «yuz dollar», «ikki hafta», «uch ta karobka», «три
+ * куба» still block.
+ */
+function numeralBesideUnit(normalized: string): boolean {
+  return normalized.split(NEIGHBOUR_BREAK).some(beside);
+}
+
+/**
+ * Where a word stops being a numeral's neighbour: a sentence's end or a comma. «Ming rahmat! Narxni aytishim
+ * uchun…» read «rahmat Narxni» as the two words after «ming», and a thanks became a price spelled out.
+ */
+const NEIGHBOUR_BREAK = /[!?؟。！？\n,，;；]+|\.(?=\s|$)/u;
+
+function beside(part: string): boolean {
+  const tokens = part.match(TOKEN) ?? [];
   for (let i = 0; i < tokens.length; i += 1) {
     if (!NUMERAL_TOKEN.test(tokens[i]!)) continue;
     let j = i;
-    while (j + 1 < tokens.length && NUMERAL_TOKEN.test(tokens[j + 1]!)) j += 1;
+    while (j + 1 < tokens.length && (NUMERAL_TOKEN.test(tokens[j + 1]!) || HALF_TOKEN.test(tokens[j + 1]!))) j += 1;
     let b = i - 1;
-    if (b >= 0 && COPULA.test(tokens[b]!)) b -= 1;
+    while (b >= 0 && b >= i - 2 && COPULA.test(tokens[b]!)) b -= 1;
     if ((b >= 0 && MONEY_WORD.test(tokens[b]!)) || MONEY_WORD.test(tokens.slice(j + 1, j + 3).join(' '))) return true;
+    const next = j + 1 < tokens.length && CLASSIFIER.test(tokens[j + 1]!) ? tokens[j + 2] : tokens[j + 1];
+    if ((i > 0 && UNIT_TOKEN.test(tokens[i - 1]!)) || (next !== undefined && UNIT_TOKEN.test(next))) return true;
     i = j;
   }
   return false;
@@ -408,8 +558,8 @@ export function unverifiableNumeral(normalized: string): UnverifiableNumeral | n
   const nearby = MONEY_OR_MEASURE.test(normalized);
   if ((nearby && HAN_NUMERAL.test(normalized)) || HAN_BESIDE_MONEY.test(normalized)) return 'han_numeral';
   if (HAN_SPELLED_DURATION.test(normalized)) return 'han_numeral';
-  // «narxi besh yuz» names no currency and is still a price spelled out.
-  if ((nearby && WORD_NUMERAL.test(normalized)) || numeralBesideMoney(normalized)) return 'word_numeral';
+  // «narxi besh yuz» names no currency and is still a price spelled out; «besh kub» a measure.
+  if (numeralBesideUnit(normalized)) return 'word_numeral';
   if (NINE_FA.test(normalized) || SPELLED_DURATION.test(normalized)) return 'word_numeral';
   return null;
 }

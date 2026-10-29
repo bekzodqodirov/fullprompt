@@ -735,6 +735,53 @@ function blanked(text: string, removeWhole: readonly string[]): string {
   return t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
 }
 
+/**
+ * A list's own numbers are no figures (incident 2026-10-29). Prompt rule 3
+ * asked for «bitta raqamlangan ro'yxat» and calc_checklist wrote «1) … 2) …»,
+ * and every marker read as a bare figure — as MONEY in a reply that names
+ * money anywhere — so the commonest first reply, «Narxni hisoblashim uchun
+ * yozing: 1. Tovar nomi 2. Hajmi (kub) …», lost its ✅ as «manbasi yo‘q
+ * raqam: 1 $». A marker is taken OUT, not marked `fixed`: a fixed figure
+ * still asks a source of its own value, and nothing vouches for a «4».
+ *
+ * A marker is a one- or two-digit number with «.», «)» or a keycap after it
+ * and a word — or the item's own figure, «1. 500 $» — after that. The list's
+ * FIRST item stands where an item starts: a line's head, after «:» or «;».
+ * The rest may follow a comma or a space too («…: 1) tovar nomi, 2) necha
+ * kub», «1️⃣ tovar 2️⃣ hajmi»), in the same style. And the markers count 1, 2,
+ * 3 in order, two at least: a lone «5.», a «2)» no «1)» came before, a
+ * «Narxi: 1.» stand as figures — a list of one is no list to prove itself.
+ * «1.5 kub» is a decimal, and the item's figure after a marker is read as
+ * ever.
+ */
+const LIST_MARKER = /(?<![\p{L}\p{N}.,])(\(?)(\d{1,2})(\.(?!\d)|\)|️?⃣)(?=[ \t ]+[\p{L}\p{N}])/gu;
+const ITEM_HEAD = /[\n:;：；]/u;
+
+function listMarkerSpans(t: string): [number, number][] {
+  const out: [number, number][] = [];
+  let run: [number, number][] = [];
+  let style = '';
+  for (const m of t.matchAll(LIST_MARKER)) {
+    const raw = t.slice(0, m.index);
+    const head = raw.replace(/[ \t \r]+$/u, '');
+    const atHead = head === '' || ITEM_HEAD.test(head.at(-1)!);
+    const afterGap = atHead || head.length < raw.length || head.endsWith(',') || head.endsWith('，');
+    const at = m.index + m[1]!.length;
+    const span: [number, number] = [at, at + m[2]!.length];
+    const shape = `${m[1]}${m[3]!.replace('️', '')}`;
+    const value = Number(m[2]);
+    if (value === 1 && atHead) {
+      if (run.length >= 2) out.push(...run);
+      run = [span];
+      style = shape;
+    } else if (run.length > 0 && value === run.length + 1 && shape === style && afterGap) {
+      run.push(span);
+    }
+  }
+  if (run.length >= 2) out.push(...run);
+  return out;
+}
+
 /** Whether a text names money anywhere — read after the phones and links are out: «gsrlogistics.uz/narxlar» names none. */
 export function namesMoney(text: string): boolean {
   return MONEY_WORD.test(blanked(text, []));
@@ -764,8 +811,10 @@ export function extractNumbers(
     return textCurrency;
   };
   const out: FoundNumber[] = [];
-  const taken: [number, number][] = [];
+  // A list's markers are out before anything is read: never a figure, never a date's day.
+  const taken: [number, number][] = listMarkerSpans(t);
   for (const m of t.matchAll(DATE_RE)) {
+    if (taken.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
     const day = Number(m[1]);
     const month = Number(m[2]);
     // «1.50 kg», «12.50 $» are figures with a unit, not the first of May.
@@ -880,6 +929,10 @@ export function sourceFor(
     if (COMPANY_KINDS.has(s.kind) && !companySaid(s)) return false;
     // His clock, his hour, his order number — said as the same fixed figure — and nothing bare of his.
     if (s.kind === 'plain' && !companySaid(s)) return s.fixed === true && found.fixed === true;
+    // A fact's bare figure is a house, a building, a distance in an address — «29号», «3栋», «168米» — and
+    // vouches for that address said again, never for a time or a count of the same value: «Yukingiz taxminan
+    // 29 kunda yetib keladi» passed on Guangzhou's house number (incident 2026-10-29, the fail-open side).
+    if (s.kind === 'plain' && s.origin === 'kb' && found.kind !== 'plain') return false;
     if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
     // flight's five is a promise nobody made.
