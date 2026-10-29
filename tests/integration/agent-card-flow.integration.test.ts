@@ -839,6 +839,28 @@ describe('the press promises only the card that is coming, and asks as itself (r
     ]);
   });
 
+  it('…and if a second edit’s job answered the line while it waited, the job that waited stands down — one run for one text, never a second bill on 101', async () => {
+    const me = await owner();
+    const [own] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    await draftFor(me, { runId: own!.id });
+    await editAnchor(me);
+    await typing(me, new Date());
+    const later: AgentInboundJob[] = [];
+    const editJob: AgentInboundJob = { managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(me.anchor), origin: 'edit' };
+    await withModelKey(() => handleInbound(editJob, { callModel: composing('Qaysi tovar?'), enqueue: async (j) => void later.push(j) }));
+    await typing(me, null);
+    // He edits once more; that edit's job runs first and answers the words as they now stand.
+    expect(await withModelKey(() => handleInbound({ ...editJob }, { callModel: composing('Qaysi tovar?') }))).toMatchObject({ outcome: 'draft' });
+    expect(await withModelKey(() => handleInbound(later[0]!, { callModel: composing('Qaysi tovar?') }))).toEqual({ outcome: 'stood_down', reason: 'duplicate' });
+    expect(await runsOf(me, me.anchor)).toEqual([
+      { attempt: 0, outcome: 'draft' },
+      { attempt: 100, outcome: 'draft' },
+    ]);
+  });
+
   it('his press’s own redraft that meets typing stays HIS: the late card it writes names his press, not «a wait»', async () => {
     const me = await owner();
     await db
