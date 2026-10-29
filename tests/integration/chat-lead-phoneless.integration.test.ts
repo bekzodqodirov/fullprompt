@@ -460,9 +460,45 @@ describe('the 2026-10-29 review — a question nobody answered is not an answer'
     const work = await liveLine(hidden(peer), line({ message: 'Endi ish raqami' }), await rulesFor(managerId));
     expect(work.owner).toEqual({ clientId, leadId: null, label: `YP${SUFFIX}`, rulesMoved: false });
     expect((await phonelessLeads()).length).toBe(before);
-    // The question stays a question — no binding over the client's chat.
+    // The question stays a question — no binding over the client's chat —
+    // and the door, asked directly, refuses before it opens a transaction.
     expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null });
+    const tx = vi.spyOn(db, 'transaction');
     expect(await leadForChat(managerId, { peerId: peer, phone: null, title: 'X' }, ctx())).toBeNull();
+    expect(tx).not.toHaveBeenCalled();
+    tx.mockRestore();
+  });
+
+  it('the book’s answer is asked again UNDER the lock — a client row that landed while the door waited wins', async () => {
+    // The door's first look runs on the pool before the lock. A third transaction holds the
+    // chat's question row while the door waits on it, and the client's row lands meanwhile.
+    const peer = nextPeer();
+    await db.insert(tgChatRules).values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerTitle: 'Savol', peerPhone: null });
+    const before = (await phonelessLeads()).length;
+    let held!: () => void;
+    let release!: () => void;
+    const holding = new Promise<void>((resolve) => (held = resolve));
+    const released = new Promise<void>((resolve) => (release = resolve));
+    const holder = db.transaction(async (tx) => {
+      await tx.select().from(tgChatRules).where(and(eq(tgChatRules.managerUserId, managerId), eq(tgChatRules.peerId, peer))).for('update');
+      held();
+      await released;
+    });
+    await holding;
+    const door = leadForChat(managerId, { peerId: peer, phone: null, title: 'Kutyapman' }, ctx());
+    for (let i = 0; i < 200; i += 1) {
+      const [w] = await db.execute<{ n: number }>(sql`
+        SELECT count(*)::int AS n FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%tg_chat_rules%'`);
+      if ((w?.n ?? 0) >= 1) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    await storeIncoming({ clientId, managerUserId: managerId, row: toMessageRow(peer, line()) });
+    release();
+    await holder;
+    expect(await door).toBeNull();
+    expect((await phonelessLeads()).length).toBe(before);
+    expect(await ruleOf(peer)).toMatchObject({ decision: 'pending', leadId: null });
   });
 
   it('…but a ↩ a PERSON gave is an answer: the client that ↩ took back is not followed', async () => {
