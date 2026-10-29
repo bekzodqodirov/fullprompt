@@ -6495,7 +6495,8 @@ The switch (his «1 a» was about NEW strangers): a chat the work number bound s
 «Shaxsiy raqam» — `decideIncoming` no longer asks the switch for it and `switchDecides` drops it; the first cut
 passed its lines over, and the binding's row kept every question (the tray's, the «📵» card's) from ever being
 asked. The visible-number twin — a chat kept on an open lead by its own rows, which the phone path writes no rule
-for — stays there too (`keptLeadOfChat`, on the live line and the catch-up). Chosen over «re-ask»: a hidden number
+for — stays there too (`keptLeadOfChat`, on the live line and the catch-up; REVERSED by #1577: rows never decide,
+that chat is the tray's question again). Chosen over «re-ask»: a hidden number
 cannot be asked on most accounts at all (the tray refuses `chat_no_phone`; only the agent owner gets a card), so a
 re-ask would have been the same hole on every other account. A binding whose lead CLOSED is retired on a personal
 number (`retireMachineBinding(…, 'lead_closed')`, the closed lead checked in the statement, not in the ten-minute
@@ -6513,4 +6514,55 @@ flag is on no stored row), and a stale card's buttons answer in words instead of
 string edit, plus one that stayed green by design: the ↩ pre-check stripped alone (the lock's re-check holds; both
 stripped is red). The flipped-back hidden chat has two roads too — its binding (`decideIncoming`) and its rows
 (`keptLeadOfChat`): stripping the first is red in the unit test and green in the integration through the second,
-both stripped is red.
+both stripped is red. (Since #1577 the rows road is gone and the binding is the one road.)
+
+1577. **Rows never keep a line the switch passed over; the manager's own line retires nothing; «🚫 Shaxsiy» takes
+the listener's leftovers.** An adversarial verifier re-ran the reviewers' probes against #1576 (all seven findings
+held) and then probed what the fix newly let through — seven more, each reproduced, re-verified here against the
+code:
+
+- **The rows road was a door with no way out (defect).** #1576 made a VISIBLE chat a work number had kept by its
+  number (the phone path writes no rule) go on being stored on a personal number by its ROWS (`keptLeadOfChat`).
+  At 0b3f32d that line was a tray question, which a person could answer or refuse; on HEAD it was stored with no
+  rule at all — no tray row, no «hech qachon» (a lead's thread is read-only, `excludeChatForClient` is a client's),
+  the AI drafting on — until somebody happened to close the lead. The visible path has no binding to be consistent
+  WITH (the task's own condition), and the question it falls back to CAN be asked: the tray lists it and its «Lid
+  ochish» files the chat on the same open lead, because `leadForChat` finds a lead by its number. So `keptLeadOfChat`
+  is DELETED, on the live line and the catch-up; what is not a new stranger stands by a RULE (the listener's own
+  binding, a person's, a door's) and never by rows. «A personal number unchanged» is his «1 a» word for word.
+- **The same road stored lines while a question stood (defect).** `nobodyDecided` reads a pending row nobody
+  wrote as «no answer», so `keptLeadOfChat` filed lines beside a live «📵» card and a pending tray row — a lapse
+  retire whose lead a person then reopened, a scan's pending row beside work-era rows. Gone with the road: such a
+  line is passed over, the question stands, and the card's «🆕 Yangi lid» files the chat on the lead its lines are
+  on (`phonelessLeadForChat`'s `onRows` — no second lead).
+- **«🚫 Shaxsiy» left what the listener kept (defect, and F's second half).** #1576 purged on «Shaxsiy» only over
+  the listener's own binding. A question standing while a work number kept the chat by its number (a card from the
+  personal-number days, the number shown on the work number) and a lapse-retired binding's lines were both kept on
+  the listener's say-so, and «saqlanmaydi» answered while they stayed. Now «Shaxsiy» on ANY chat no person answered
+  (`nobodyDecided` — the binding, or a pending row nobody wrote) deletes what is stored of it when every stored line
+  is a LEAD's (`storedOnLeadsOnly`): a client's line is a client's history, and a press about a stranger is never
+  the door to it (the tray's purge after «hech qachon» stays that, #388). A person's ↩ is an answer: nothing past it
+  is purged. The machine case narrows by the same guard, stated.
+- **The manager's own line spent `reopened` (nit).** The lapse retire ran on an outgoing line too, and the card's
+  note is never asked about his own line (`strangerSeen` returns on `out`), so the claim was not given back and the
+  card never came. `settlePassedChat` takes the line's DIRECTION and retires on an inbound line only — a closed lead
+  WRITING again is the new enquiry, the manager's line is not.
+- **An echo card's ↩ on one of Telegram's own accounts posted a «📵» card (nit).** `reopenStrangerCard` asks
+  `officialChat` first; the ↩ still takes its typed bind back.
+- **A ↩'d hidden chat on a work number re-read the whole book per line, silently (nit).** The refusal is about one
+  chat, so the listener re-reads that chat's rule alone (`chatRuleFor`, `rulesFor`'s shape from one `toChatRule`)
+  and swaps its entry; on the AI's account it says why (`passedLine` `held`: «javobingizni kutyapti (↩)»).
+  DECIDED, as asked: a ↩ on a work number does NOT hold a VISIBLE number — a visible chat's lead is the NUMBER's
+  (`leadForChat` finds it every line, round 79), a hidden chat's lead is the RULE's; a ↩ takes the rule back and
+  cannot take back a number. Lines between a ↩ and its answer are not stored — the same promise a personal
+  number's question has always made (round 79).
+- REFUSED, with reasons: the live «📵» card when the number is shown on a work number (F's first half) — the rule
+  is still `pending`, so every press on that card is a first answer that works (🆕 → the same lead by its rows, 👤,
+  🚫 now with the purge above), and the web tray closes no bot card by design either (review I1); the deploy-morning
+  window with 0139 absent (G) — the verifier's own «acceptable as stated»: tg-listen does not wait for `migrate`, the
+  window is the migration's seconds, and a test of it would have to drop a column from a database other test files
+  share.
+
+13 red proofs by string edit, restored byte-identical: the rows road (the harness restating the listener, the live
+and the catch-up fences), the direction guard (behaviour and fence), the official ↩, the three purge guards, the
+own-chat re-read (fence and parity), the `held` words and their gated call site.

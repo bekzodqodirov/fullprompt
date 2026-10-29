@@ -3235,7 +3235,7 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1576; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1577; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
@@ -3256,8 +3256,10 @@ deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1574): `no_phone` on a
 ONE door `phonelessLeadForChat` (the rule row is the fence; the listener's own binding is marked by 0139's
 `bound_via = 'work_account'` — SQL-only, read through `to_jsonb(row)` (`boundViaSql`), because round 113's website
 rule has the same shape with no `decided_by` either — and YIELDS to a person, the book and a closed lead, never to
-the switch: the switch governs NEW strangers only, and a chat a work number kept stays on its open lead by its rule
-or its rows, `settlePassedChat`, #1576); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
+the switch: the switch governs NEW strangers only, and a chat the work number bound stays on its open lead by its
+RULE — never by its rows, a visible number it kept by the number is the tray's question again (#1576, #1577);
+«🚫 Shaxsiy» on a chat no person answered also deletes its lines when all are a lead's, `storedOnLeadsOnly`;
+a closed lead's binding retires on an INBOUND line only, `settlePassedChat`); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
 is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
 listener was down are not fetched. Deploy MUST rebuild tg-listen.
 

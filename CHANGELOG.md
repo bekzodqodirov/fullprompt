@@ -49,16 +49,24 @@ va **«1 a»**. Bitta migratsiya (0139) — deploydan keyin baza hisobi **140** 
   chatini «tizim o'zi ochgan lid» deb o'qib qo'yardi: shaxsiy raqamda bunday mijozning keyingi xabarlari
   saqlanmay qolardi. Endi tizim o'zi ochgan lidda alohida belgi bor, sayt lidlari esa avvalgidek ishlaydi.
 - **«Shaxsiy raqam»ga qaytarsangiz, ochilgan lidlar yo'qolmaydi.** Tugma faqat YANGI notanish odamga ta'sir qiladi.
-  Ish raqami paytida lid bo'lib ochilgan chatlarning xabarlari o'sha ochiq lidga tushaveradi, raqami yashirin
-  bo'lsa ham, ko'rinsa ham. Lid yutilgan yoki yo'qotilgan bo'lsa, odam yana yozganda u yangi notanish hisoblanadi:
-  «Qaysi chatlar»da so'raladi va AI egasiga yangi «📵» karta keladi.
+  Raqami yashirin odam ish raqamiga yozib lid o'zi ochilgan bo'lsa, uning xabarlari o'sha ochiq lidga tushaveradi
+  (keyin raqami ko'rinsa ham). Raqami ko'rinib turgan odam esa shaxsiy raqamda avvalgidek «Qaysi chatlar»da
+  so'raladi: «Lid ochish» bossangiz, chat o'sha raqamdagi eski lidga tushadi — ikkinchi lid ochilmaydi. Javob
+  berilmaguncha uning xabarlari saqlanmaydi (shaxsiy raqamning qoidasi). Lid yutilgan yoki yo'qotilgan bo'lsa, odam
+  o'zi yana yozganda u yangi notanish hisoblanadi: «Qaysi chatlar»da so'raladi va AI egasiga yangi «📵» karta keladi
+  (siz birinchi yozsangiz — hali emas).
 - **«📵» karta ish raqamida o'zi yopiladi.** Odam avval shaxsiy raqamga yozib karta kelgan bo'lsa, keyin raqam «Ish
   raqami» bo'lib lid o'zi ochilsa, karta «lid o'zi ochildi» deb yopiladi. Shunday chatda tugmalar baribir ishlaydi:
   «🚫 Shaxsiy» chatni o'chiradi va lidga saqlangan xabarlarni ham o'chiradi; «👤 Mijoz — kod» chatni mijozga
   o'tkazadi; «🆕 Yangi lid» lidni sizniki qilib yozadi.
+- **«🚫 Shaxsiy» bosilsa, tizim o'zi saqlagan xabarlar ham o'chadi.** Hali hech kim javob bermagan chatda tizim
+  xabarlarni o'zi lidga saqlagan bo'lsa (masalan, odam raqamini ko'rsatib ish raqamiga yozgan), «🚫 Shaxsiy»
+  ularni ham o'chiradi. Mijozga tegishli xabarlar hech qachon shu tugma bilan o'chmaydi; siz o'zingiz ↩ qilgan
+  chatning xabarlari ham o'chmaydi.
 - **«Qaysi chatlar»dagi ↩ endi ustidan yozilmaydi.** Ish raqamida tizim ochgan lidni ↩ bilan qaytarsangiz, keyingi
-  xabar uni qayta lidga bog'lamaydi — chat sizning javobingizni kutadi. Ish raqamida raqami yashirin odam uchun
-  «Lid ochish» tugmasi endi shu sahifada ham bor.
+  xabar uni qayta lidga bog'lamaydi — chat sizning javobingizni kutadi (shu orada xabarlari saqlanmaydi). Ish
+  raqamida raqami yashirin odam uchun «Lid ochish» tugmasi endi shu sahifada ham bor. Raqami ko'rinib turgan odamga
+  ↩ ta'sir qilmaydi: ish raqamida u avvalgidek raqami bo'yicha lidga tushaveradi.
 - **Telegramning o'z akkauntlari** (kodlar keladigan «Verification Codes» va boshqalar) «Qaysi chatlar»da
   ko'rsatilmaydi va ular haqida «📵» karta kelmaydi. Eski karta qolgan bo'lsa, tugmasi «Telegram xizmati — mijoz
   emas» deb javob beradi.
