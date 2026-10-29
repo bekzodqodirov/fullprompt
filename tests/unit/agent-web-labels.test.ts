@@ -26,7 +26,7 @@ import {
  * every locale (#163, review build-13 (2)). The maps in `labels.ts` are the
  * source of truth outside the bundles: the compiler makes each complete over
  * its union, this makes each value exist in all four bundles, and the three
- * maps that restate a 0136 CHECK are compared with the schema's own text.
+ * maps that restate a 0138 CHECK are compared with the schema's own text.
  */
 
 type Tree = { [key: string]: string | Tree };
@@ -69,7 +69,7 @@ describe('the AI sotuvchi page’s runtime labels', () => {
     expect(AGENT_SECTIONS.every((s) => SECTION_KEYS[s] !== undefined)).toBe(true);
   });
 
-  it('names every value the 0136 CHECKs admit — category, kb scope, kb source, pause kind', () => {
+  it('names every value the 0138 CHECKs admit — category, kb scope, kb source, pause kind', () => {
     const schema = readFileSync(join(__dirname, '../../src/modules/platform/db/schema/agent.ts'), 'utf8');
     const listOf = (check: string) => {
       const at = schema.indexOf(`'${check}'`);

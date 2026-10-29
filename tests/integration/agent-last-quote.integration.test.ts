@@ -51,8 +51,8 @@ describe('lastQuoteFor — the newest approved quote of the week', () => {
     ]);
 
     let q = await lastQuoteFor(who!.id, PEER);
-    // Its text is what he approved (review #1484) — the chat's copy of it is that quote's echo; he
-    // rewrote it, so its words are his (#1485); nothing went out yet, so it has no Telegram id.
+    // Its text is what he approved (review #1538) — the chat's copy of it is that quote's echo; he
+    // rewrote it, so its words are his (#1539); nothing went out yet, so it has no Telegram id.
     expect(q).toMatchObject({ road: 'air', air: { kg: 30, origin: 'Shenzhen' }, text: 'Avia: 30 kg — taxminan 510 $.', edited: true, tgMessageId: null });
     // …and once queued, what the outbox row carries is what went to the customer.
     const [quoted] = await db.select({ id: agentDrafts.id }).from(agentDrafts).where(sql`${agentDrafts.peerId} = ${PEER.toString()}::bigint AND ${agentDrafts.finalBody} IS NOT NULL`);

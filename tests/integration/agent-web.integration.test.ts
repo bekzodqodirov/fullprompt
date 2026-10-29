@@ -105,7 +105,7 @@ async function waitingReply(over: { readDone?: boolean; status?: string; tgMessa
 
 beforeAll(async () => {
   snapshot = await readAgentConfig();
-  if (!snapshot) throw new Error('0136 is not applied on this database');
+  if (!snapshot) throw new Error('0138 is not applied on this database');
   superAdminId = await userWithRole('super_admin');
   holderId = await userWithRole('sales_manager', [superAdminId]);
   otherId = await userWithRole('accountant', [superAdminId, holderId]);

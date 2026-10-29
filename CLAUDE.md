@@ -2963,8 +2963,8 @@ CN destination is inland (no hub test), ONE arrived column (`columnOf` splits on
 filter hides everything bound for China (`routeFilterOf` = a `kg`/`kz` leg; a map walk over every pair proves no
 road into China has one, and refuses an unclassed new map code).
 
-**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1463-#1487 — numbered past the open
-`telegram-customs-ai-issues` branch's #1455-#1462; migration 0136 `ai_sotuvchi` — ledger must reach 137; spec
+**Round — AI sotuvchi, phase 1 (2026-10-24; DECISIONS #1517-#1541 — numbered past the open
+`telegram-customs-ai-issues` branch's #1455-#1462; migration 0138 `ai_sotuvchi` — ledger must reach 139; spec
 `docs/AI-SOTUVCHI.md` §17 + §17.14).** His «Telegram businessdagi bot emas mening shaxsiy account seansimdan
 ishlatsin ai va ban havfini minimum qilsin». SHADOW only: the listener (`scripts/tg-listen.ts`, the one process that
 holds his session) enqueues `agent.inbound`; the app's worker drafts (`wms/agent/run.ts`, a closed toolset, THIS chat
@@ -2986,7 +2986,7 @@ stored actions failed every first ✅ — canonical JSON). TRAPS AGAIN: an agent
 (name helpers by owner); `cmd ; git commit` committed a lint error. DEPLOY: rebuild tg-listen; seed the knowledge
 (`scripts/agent-seed-kb.ts` through `migrate`); on the page pick the owner, press the session confirm, then `/agent on`.
 NOT verifiable here: every gramjs call against a real account — watch the first day in the tg-listen logs.
-**The final review's 34 (#1476) and his fourth set (#1477-#1479):** the seed carries his three China warehouses
+**The final review's 34 (#1530) and his fourth set (#1531-#1533):** the seed carries his three China warehouses
 verbatim (Ivu, Guanchjou/Foshan, Xorgos — no Qashqar; the GS reminder inside each fact; a newer seed version
 retires the untouched older one); an Uzbek/Russian reply quoting a Chinese address read as Chinese and was refused
 `wrong_script` until the script was measured without the Han a fact the run read holds (`withoutQuotedHan`,
@@ -2994,7 +2994,7 @@ retires the untouched older one); an Uzbek/Russian reply quoting a Chinese addre
 sentences are withdrawn for the flight, `withAviaRule` asks HIM «Avia: N kg, qayerdan: …», and an avia-only reply
 stating a Chinese mobile or street address is refused `avia_address`. Telegram's 777000 is never kept by any door
 (`isTelegramServicePeer`); the send step asks `bindMoved` like the ✅.
-**Then that delta was reviewed (#1480-#1481)**, each finding reproduced as a failing test first: `avia_address` is
+**Then that delta was reviewed (#1534-#1535)**, each finding reproduced as a failing test first: `avia_address` is
 anchored on HIS warehouses (`warehouseAddressTexts` — the `china_address_` seed key an edit keeps — read in
 `policyFor`; their phones and five-character street pieces), not on «Chinese with 市 in it», which refused
 «从哪个城市发货»; the follow-up «manzil?» one burst after an avia quote ran no tool and went out with the Yiwu address
@@ -3003,11 +3003,11 @@ model's question stands only when it names the flight AND the address (`/air/` m
 measured whole, and a numeral inside a quoted stretch of ≥3 characters is the fact's («金亿»). Two sentences said more
 than he did: «avia cargo does not go to these warehouses» (he said only that he gives the address) and «Narx
 omborlarimizdan» served into avia chats (it is the truck's: «Avto (mashina) narxi»). And a client called «Aka» made
-every «aka» in his style a customer's name — `isAddressWord` (#1480), found by the full run on a fresh database.
-777000 rows written BEFORE the fix (#1482): the three tray doors that make a chat a card's refuse `service_chat`, the
+every «aka» in his style a customer's name — `isAddressWord` (#1534), found by the full run on a fresh database.
+777000 rows written BEFORE the fix (#1536): the three tray doors that make a chat a card's refuse `service_chat`, the
 tray and the stranger cards never list it, and `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then
 `--apply`, counts only) excludes and purges what stands — a deploy step.
-**Reviewed again (#1483, R1-R9)**: the chat's road is what WE quoted, never the customer's words («Tikuv mashinasi»
+**Reviewed again (#1537, R1-R9)**: the chat's road is what WE quoted, never the customer's words («Tikuv mashinasi»
 named the truck in the goods, a flight quoted by us left the guard off, «air fryer» and a refused avia turned it on):
 `chatRoadOf` = this run's tools → the burst's own choice, refusals read per statement → our newest priced line or
 `lastQuoteFor` (the newest APPROVED draft of the week whose stored memory names a road; `memoryFor` writes
@@ -3016,7 +3016,7 @@ asks him; the card names where the cargo STARTS. Anchors are the facts' own Chin
 pieces two facts or the GS reminder share dropped, generic forwarder words filtered, plus phones and house numbers
 beside a street word in any script; an owner-added warehouse fact counts by what it says (`isReceivingAddressFact`),
 a fact naming the flight does not. Bare «air» is no road any more. 24 red proofs; two fixtures stayed green first.
-**And reviewed a third time (#1484)**: road-shaped WORDS still decided — the goods («Tikuv mashinalari»), a bare
+**And reviewed a third time (#1538)**: road-shaped WORDS still decided — the goods («Tikuv mashinalari»), a bare
 «kargo» (the company — it also ended the rail rule), negations anywhere in the clause, our quote's last statement —
 and the approved quote's own echo always outranked its stored road (`at` = createdAt, the send is later). Now
 `roadChoiceIn` (numbers.ts) reads only a road CHOSEN, refusals attached to the road word; `pricedRoadOf` reads our
@@ -3025,27 +3025,27 @@ priced line at its money figures; `chatRoadOf` = tools, then the NEWEST evidence
 nothing. Anchors: `GENERIC_CHARS` = what every Chinese address is made of, 4-char pieces only of a street, shared
 street pieces kept (a warehouse typed twice no longer cancels itself), house numbers only before 号/栋 and only beside a
 street word, a flight fact = chooses the flight alone or names an airport. 22 red proofs.
-**A fourth look (#1485)** and **a fifth (#1486)** — each reviewed the previous one's own fixes, and each found most of
+**A fourth look (#1539)** and **a fifth (#1540)** — each reviewed the previous one's own fixes, and each found most of
 its defects IN them. The design answer to a word list that will always miss a phrasing is the WARNING `avia_maybe`
 (policy.ts): the flight was spoken of (`aviaSpokenOf` in run.ts — the customer's lines, our PRICED lines, the quote he
 approved, this reply), the rule did not decide it is the chat's road, and the reply states our China address → ✅
-stays, the card asks him to look; NOTHING said later settles it (#1487). Echo by identity
+stays, the card asks him to look; NOTHING said later settles it (#1541). Echo by identity
 (`LastQuote.tgMessageId`, `edited`; compared in `chatForm`). The rules that cost a review each: a refusal is a WHOLE
 word and never a question («Avia bilan ketmaydimi?» asks for the flight — `statementsOf` keeps each statement's «?»),
 a concession or double negation chooses (`CHOSEN_ANYWAY`); the address rule is NOT gated on rail, and `railAsked`
 reads statements with `railRefusedIn`; our priced line is read by its clause's choice, then its opening road word
 (`LABEL`), never a goods word; «kargo orqali» is the company; Tashkent is another leg only as the pickup; a flight
 fact must DECLARE itself one and name no truck. 31 + 32 red proofs.
-**A sixth (#1487)** hunted only for the SILENT leak — a chat where the flight is plain and the address goes out with
+**A sixth (#1541)** hunted only for the SILENT leak — a chat where the flight is plain and the address goes out with
 neither the block nor the look — and found sixteen: words the lists lacked (Uzbek Cyrillic, «на самолёте», «авиой»,
 «Aviya», 走飞机 / 航班, Persian «با هواپیما», «with plane»), our line pricing the flight in the NEXT sentence or offering it
-with no price or under «Air:», and #1486's own «a truck chosen settles it» — the truck word was a leg to our warehouse,
+with no price or under «Air:», and #1540's own «a truck chosen settles it» — the truck word was a leg to our warehouse,
 the delivery in Andijan, a past shipment, a refusal missed («фура не успеет») or the goods. The settling is GONE
 (`aviaSpokenOf`: once spoken, always looked at; `ourLineOffersAir`), `PROHIBITS` is the one «what the flight does not
 carry» sentence, the air words are one vocabulary (`AIR_CORE`/`AIR_TAIL_CHOICE`/`AIR_SCRIPTS`) for both readers. 13 red
 proofs. The trade, stated: a chat the customer really moved to the truck now costs him one glance.
 
-**Latest migration: 0136** (`ai_sotuvchi`, `when` …115; ledger must reach **137**). Before
+**Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
 it: 0135 (`load_mode`, `when` …114). Before
 it: 0134 (`staff_group`, `when` …113). Before
 it: 0133 (`pickup_close`, `when` …112). Before
@@ -3186,7 +3186,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **137** since 0136 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **137** since 0138 (136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

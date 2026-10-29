@@ -404,7 +404,7 @@ export function registerBotHandlers(bot: Bot): void {
     await askStaffPhone(ctx, chatId);
   });
 
-  // «/agent» (0136): the AI sotuvchi's kill switch, beside /hodim and for the
+  // «/agent» (0138): the AI sotuvchi's kill switch, beside /hodim and for the
   // same reason — before registerStaffBot, so no collector or wait eats it.
   registerAgentCommand(bot);
 

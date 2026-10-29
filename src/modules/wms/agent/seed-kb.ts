@@ -173,7 +173,7 @@ export async function seededKeys(): Promise<Set<string>> {
  * keys it inserted.
  */
 export async function seedKb(facts: readonly SeedFact[] = SEED_FACTS): Promise<string[]> {
-  if (!(await agentTablesReady())) throw new Error('kb_facts does not exist yet — run the migrations first (0136).');
+  if (!(await agentTablesReady())) throw new Error('kb_facts does not exist yet — run the migrations first (0138).');
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('agent_seed_kb'))`);
     const inserted: string[] = [];

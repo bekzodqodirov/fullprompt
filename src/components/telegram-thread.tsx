@@ -33,7 +33,7 @@ function asManager(value: string | undefined): string | undefined {
   return value && UUID.test(value) ? value : undefined;
 }
 
-/** The AI sotuvchi's approved replies still on their way, drawn like the queue (0136). */
+/** The AI sotuvchi's approved replies still on their way, drawn like the queue (0138). */
 function agentWaitingBubbles(
   rows: readonly WaitingAgentReply[],
   viewerId: string,

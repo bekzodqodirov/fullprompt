@@ -262,7 +262,7 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
     // A piece of a warehouse's street address, copied without its spaces.
     expect(statesChinaAddress('浙江省 义乌市 稠江街道 荷花南街', ANCHORS)).toBe(true);
     expect(statesChinaAddress('地址：义乌市稠江街道荷花南街', ANCHORS)).toBe(true);
-    // The subdistrict alone is every supplier's in it (review #1484) — «稠江街道贝村路88号» is not ours.
+    // The subdistrict alone is every supplier's in it (review #1538) — «稠江街道贝村路88号» is not ours.
     expect(statesChinaAddress('浙江省 义乌市 稠江街道', ANCHORS)).toBe(false);
     expect(statesChinaAddress('义乌市稠江街道贝村路88号', ANCHORS)).toBe(false);
     expect(statesChinaAddress('Umriddin, +998 95 018 30 33', ANCHORS)).toBe(false);
@@ -416,9 +416,9 @@ describe('which chat is a flight\'s — the review of the follow-up (review R1-R
   it('R1: «air» is a road only as «air freight» / «by air»; «kargo» is the truck only as «oddiy / yig\'ma kargo»', () => {
     for (const t of ['by air', 'via air', 'air freight', 'air-cargo', 'aircargo', 'avia bilan', 'авиа', '空运']) expect(namesMode(t, 'air'), t).toBe(true);
     for (const t of ['air fryer', 'Air Max krossovka', 'air conditioner']) expect(namesMode(t, 'air'), t).toBe(false);
-    // …and as the way a thing goes — «kargoda», «kargo bilan», «kargo orqali» (#1485): «Kargo bilan necha kunda?» asks the truck's days.
+    // …and as the way a thing goes — «kargoda», «kargo bilan», «kargo orqali» (#1539): «Kargo bilan necha kunda?» asks the truck's days.
     for (const t of ['oddiy kargo bilan', 'обычным карго', "yig'ma kargo", 'kargoda', 'Kargo bilan necha kunda?', 'kargo orqali']) expect(namesMode(t, 'road'), t).toBe(true);
-    // A bare «kargo» is the COMPANY (review #1484): «kargongiz», «kargo manzili», «Kargo narxini ayting».
+    // A bare «kargo» is the COMPANY (review #1538): «kargongiz», «kargo manzili», «Kargo narxini ayting».
     for (const t of ['avia kargo bilan', 'авиа-карго', 'avia kargoda', 'Kargongizga qayerga yuboraman?', 'Kargo narxini ayting']) expect(namesMode(t, 'road'), t).toBe(false);
   });
 
@@ -536,7 +536,7 @@ describe('what reads as our warehouse — the review of the anchors (review R5-R
   });
 });
 
-describe('the road is what we quoted, whatever the words name — the third review (#1484)', () => {
+describe('the road is what we quoted, whatever the words name — the third review (#1538)', () => {
   const yiwu = () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`;
   const blocked = (ctx: AgentContext) => judge(ctx, 'latin', 'uz', yiwu()).includes('avia_address');
   const asked = (ctx: AgentContext) => rule(compose('uz'), [], ctx).needsOwner;
@@ -731,7 +731,7 @@ describe('written down for the model', () => {
     expect(reminderPiece(addressAnchorsOf(SEED_FACTS.filter((f) => f.key.startsWith(WAREHOUSE_ADDRESS_SEED)).map((f) => f.answer)))).toBe(false);
     expect(reminderPiece(addressAnchorsOf([answer('china_address_yiwu@1')], [GS_REMINDER]))).toBe(false);
     // The house numbers a street address names — never a phone's digits.
-    // «168米» is a distance, not a house number (review #1484).
+    // «168米» is a distance, not a house number (review #1538).
     expect(ANCHORS.houseNumbers).toEqual(['2255']);
   });
 
@@ -753,7 +753,7 @@ describe('written down for the model', () => {
   });
 });
 
-describe('the fourth review (#1485): the words that pick a road, our quote by its identity, our warehouses by their streets', () => {
+describe('the fourth review (#1539): the words that pick a road, our quote by its identity, our warehouses by their streets', () => {
   const yiwu = () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`;
   const blocked = (ctx: AgentContext) => judge(ctx, 'latin', 'uz', yiwu()).includes('avia_address');
   const warned = (ctx: AgentContext) => verdict(ctx, 'latin', 'uz', yiwu()).warnings.some((w) => w.code === 'avia_maybe');
@@ -900,7 +900,7 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
     const quotedOnly = ctxOf('Ivu manzilini bering', 'latin', [said('30 kg yoki 1 kub, qancha?', 1), said('Mashina 1 kub 250$.', 2, 'out')], kg30, AIR_QUOTE);
     expect(blocked(quotedOnly)).toBe(false);
     expect(warned(quotedOnly)).toBe(true);
-    // A truck the customer chose after the quote does not take the flight off the table (#1487): the
+    // A truck the customer chose after the quote does not take the flight off the table (#1541): the
     // later «truck» is as often another leg, a past shipment or a refusal the words missed — he looks once.
     expect(warned(ctxOf('Mashinada yuboraman. Ivu manzilini bering', 'latin', [said('30 kg kiyim, qancha?', 1), said('Taxminan 510 $.', 2, 'out')], kg30, AIR_QUOTE))).toBe(true);
     // Avia asked about, alongside: «Avia bilan ham bormi?».
@@ -916,7 +916,7 @@ describe('the fourth review (#1485): the words that pick a road, our quote by it
   });
 });
 
-describe('the fifth review (#1486): a question asks for the road, a concession chooses it, rail turned down is the flight\'s', () => {
+describe('the fifth review (#1540): a question asks for the road, a concession chooses it, rail turned down is the flight\'s', () => {
   const yiwu = () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`;
   const gz = () => `Assalomu alaykum! ${answer('china_address_guangzhou@1')}`;
   const ruYiwu = 'Здравствуйте! Адрес склада в Иу: 浙江省义乌市稠江街道荷花南街2255号，周先生，小周 13429089596.';
@@ -1098,7 +1098,7 @@ describe('the fifth review (#1486): a question asks for the road, a concession c
   });
 });
 
-describe('the sixth review (#1487): no chat where the flight is clearly the road passes our address in silence', () => {
+describe('the sixth review (#1541): no chat where the flight is clearly the road passes our address in silence', () => {
   const ADDR = {
     uz: () => `Assalomu alaykum! ${answer('china_address_yiwu@1')}`,
     uz_cyrl: () => 'Ассалому алайкум! Иву (YW) қабул омбори: 浙江省 义乌市 稠江街道 荷花南街 2255号，周先生，小周 13429089596.',

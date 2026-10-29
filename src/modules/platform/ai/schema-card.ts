@@ -50,7 +50,7 @@ export const EXCLUDED_TABLES = [
   'sessions', 'login_attempts', 'tg_accounts', 'telegram_links',
   'client_telegram_links', 'driver_devices', 'call_recorder_devices',
   'tg_peer_index', 'tg_outbox', 'audit_log', 'settings', 'ai_questions',
-  // AI sotuvchi (0136): customer conversations, the owner's drafts, the agent's ledger.
+  // AI sotuvchi (0138): customer conversations, the owner's drafts, the agent's ledger.
   'agent_config', 'agent_conversations', 'agent_runs', 'agent_drafts', 'agent_outbox', 'kb_facts',
   'agent_calc_links', 'tg_account_guard', 'tg_account_floods', 'tg_message_flags', 'tg_peer_pulls',
 ] as const;

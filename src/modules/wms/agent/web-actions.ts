@@ -201,7 +201,7 @@ export async function agentSessionAction(): Promise<AgentActionResult> {
   });
 }
 
-/** The three numbers — bounded by the 0136 CHECKs; a non-integer is refused, never rounded. */
+/** The three numbers — bounded by the 0138 CHECKs; a non-integer is refused, never rounded. */
 export async function agentNumbersAction(values: {
   humanPauseMin: string;
   dailyDraftCap: string;

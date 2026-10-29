@@ -91,7 +91,7 @@ export interface DeciderActor {
   permissions: ReadonlySet<string>;
 }
 
-const NOTE_NS = '4f1c2b1e-0136-4a51-9c1e-5a6d7e8f9a0b';
+const NOTE_NS = '4f1c2b1e-0138-4a51-9c1e-5a6d7e8f9a0b';
 /** The intake note's id for a draft — the landing is re-runnable without a second note (build-6). */
 export const noteIdFor = (draftId: string) => uuidv5(draftId, NOTE_NS);
 

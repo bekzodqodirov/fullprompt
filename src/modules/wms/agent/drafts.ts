@@ -17,7 +17,7 @@ import type { ComposeReply } from './run';
 /**
  * The drafts and their cards (spec §17.7).
  *
- * ONE live draft per chat (0136's partial UNIQUE): a newer customer message
+ * ONE live draft per chat (0138's partial UNIQUE): a newer customer message
  * SUPERSEDES the pending one and its card is re-pointed at the new draft and
  * edited in place, so his chat with the bot holds one card per customer, not
  * a scroll of stale ones (fit-9). An 'editing' draft is never superseded —

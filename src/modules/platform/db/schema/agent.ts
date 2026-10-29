@@ -20,7 +20,7 @@ import { clients, users } from './platform';
 import { calcOffers, calcRequests, leads, tgAccounts, tgMessages } from './wms';
 
 /**
- * AI sotuvchi (0136, docs/AI-SOTUVCHI.md §17) — a file of its own, like debt.ts,
+ * AI sotuvchi (0138, docs/AI-SOTUVCHI.md §17) — a file of its own, like debt.ts,
  * so the round's eleven tables do not sit in the middle of wms.ts.
  *
  * Nothing that existed before gains a column (review build-10): every fact the
@@ -295,7 +295,7 @@ export const agentOutbox = pgTable(
 /**
  * What the agent may say as fact. A general fact is the company's; a client or
  * lead fact is that customer's alone and is never offered in another chat.
- * The trigram index is created in SQL (0136): drizzle has no gin_trgm_ops.
+ * The trigram index is created in SQL (0138): drizzle has no gin_trgm_ops.
  */
 export const kbFacts = pgTable(
   'kb_facts',

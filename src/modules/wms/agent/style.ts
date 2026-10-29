@@ -151,7 +151,7 @@ export async function knownNamesForMask(parts = true): Promise<string[]> {
   return [...names];
 }
 
-/** The proposal, stored for his press. Refused when the 0136 table is absent. */
+/** The proposal, stored for his press. Refused when the 0138 table is absent. */
 export async function storeStyleProposal(text: string): Promise<void> {
   if (!(await agentTablesReady())) throw new AgentConfigError('not_ready');
   const clean = text.trim();

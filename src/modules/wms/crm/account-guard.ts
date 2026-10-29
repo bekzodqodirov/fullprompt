@@ -7,7 +7,7 @@ import { AGENT_LIMITS } from '../agent/limits';
 import { floodEnds, isSendFloodMethod, SEND_FLOOD_METHODS, type PauseKind } from './telegram-guard';
 
 /**
- * The account's guard row (0136): its pause, the wait Telegram ordered, and
+ * The account's guard row (0138): its pause, the wait Telegram ordered, and
  * the stamps a current listener writes. Every connected account has one the
  * first time anything is written; no row reads as «nothing wrong».
  *

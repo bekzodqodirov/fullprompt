@@ -57,7 +57,7 @@ export async function GET(request: Request) {
     pendingFor(clientId, viewer),
   ]);
   if (!client) return NextResponse.json({ error: 'not_found' }, { status: 404 });
-  // The AI sotuvchi's marks, the page's own two statements (0136).
+  // The AI sotuvchi's marks, the page's own two statements (0138).
   const [agentSent, agentWaiting] = await Promise.all([
     agentSentIds(messages),
     waitingAgentReplies({ clientId }, viewer),

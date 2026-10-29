@@ -149,7 +149,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
     />
   );
 
-  // 0136 has not landed: the page exists (the menu offers it to a
+  // 0138 has not landed: the page exists (the menu offers it to a
   // super_admin), the agent does not — say so, never a 42P01.
   if (!config) {
     return (

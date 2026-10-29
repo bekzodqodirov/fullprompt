@@ -344,7 +344,7 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
-    // The AI sotuvchi's cards (0136) — every op answered by its own shell.
+    // The AI sotuvchi's cards (0138) — every op answered by its own shell.
     if (parsed.kind === 'agent') {
       await handleAgentPress(ctx, chatId, parsed);
       return;
@@ -974,7 +974,7 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
-    // The AI sotuvchi's ONE text slot (0136, regression-6): his edited reply,
+    // The AI sotuvchi's ONE text slot (0138, regression-6): his edited reply,
     // his price, a stranger's code — BELOW every live collector (one
     // collector at a time) and ABOVE the reply door and `takeTaskPending`
     // (which deletes on read). A swipe-reply names its own target, a newer

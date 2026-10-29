@@ -26,7 +26,7 @@ export type WaitKind =
   | 'staff_entry'
   | 'ad_visit'
   | 'cabinet_link'
-  // The AI sotuvchi's three one-text answers (0136): the owner's edited reply,
+  // The AI sotuvchi's three one-text answers (0138): the owner's edited reply,
   // his price, the client code he opened for a stranger.
   | 'agent_edit'
   | 'agent_price'

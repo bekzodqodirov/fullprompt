@@ -6159,7 +6159,7 @@
     "title": "AI 销售",
     "stateRunning": "运行中 — 每条回复都由您确认",
     "stateOff": "已关闭",
-    "notReady": "数据库尚未更新（迁移 0136）— 更新后才会出现 AI 销售。",
+    "notReady": "数据库尚未更新（迁移 0138）— 更新后才会出现 AI 销售。",
     "section": {
       "kutilmoqda": "待确认",
       "savollar": "问题",

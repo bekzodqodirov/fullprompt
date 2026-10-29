@@ -11,7 +11,7 @@ import { codeCandidates } from '../calc/channel-post';
  * What the agent may say as FACT (spec §7.1, review leak-2, money-9).
  *
  * A general fact is the company's and is read in every chat; a client or lead
- * fact is that customer's alone (`scope`, three CHECKs in 0136 — a lead's fact
+ * fact is that customer's alone (`scope`, three CHECKs in 0138 — a lead's fact
  * must never read as a general one). A fact is never a price: a money figure
  * in the kb is refused at the WRITE («Narx bilimga yozilmaydi — ✏️ Narx yozaman
  * orqali»), and the policy never counts a kb number as money anyway.

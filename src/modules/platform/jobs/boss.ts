@@ -123,7 +123,7 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   // The staff group (0134): what the bot says there, and the Saturday rating + the month's champion.
   ['staff-group', async (b) => (await import('../telegram/staff-group-posts')).registerStaffGroupWorker(b)],
   ['staff-rating', async (b) => (await import('../../wms/staff/rating')).registerStaffRatingWorkers(b)],
-  // The AI sotuvchi (0136): a customer's message drafted, his own reply
+  // The AI sotuvchi (0138): a customer's message drafted, his own reply
   // retiring the draft, and the one-minute sweep.
   ['agent', async (b) => (await import('../../wms/agent/jobs')).registerAgentWorkers(b)],
 ];

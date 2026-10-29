@@ -70,7 +70,7 @@ export function isPashto(text: string): boolean {
  * (a star). «железн…» also matches iron goods («железные изделия») — a false
  * positive only puts the question to him, which is the safe direction; but
  * «железки» alone is the hardware a customer sends, so the slang counts only
- * as «по / на железке» (#1486).
+ * as «по / на железке» (#1540).
  */
 const RAIL =
   /temir[\s-]?y[ou]['‘’ʻ`]?l(?!duz)|po(?:ye|e|y)zd|темир[\s-]?й[ўу]л|поезд(?!к)|(?<!\p{L})ж\s?[./]?\s?д\.?(?!\p{L})|железнодорож|железн\p{L}*\s+дорог|(?:по|на)\s+железк|вагон|vagon|(?<!\p{L})rail(?:way|road)?s?(?!\p{L})|(?<!\p{L})trains?(?!\p{L})|قطار|راه[\s‌]?آهن|铁路|火车|班列/iu;

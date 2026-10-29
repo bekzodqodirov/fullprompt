@@ -261,7 +261,7 @@ async function clearChats() {
 
 beforeAll(async () => {
   snapshot = await readAgentConfig();
-  if (!snapshot) throw new Error('0136 is not applied on this database');
+  if (!snapshot) throw new Error('0138 is not applied on this database');
   sendingBefore = (await getSetting('tg_sending_enabled')) === true;
   ownerId = await makeUser(`AI ident egasi ${SUFFIX}`, 'super_admin', '01');
   sellerId = await makeUser(`AI ident sotuvchi ${SUFFIX}`, 'sales_manager', '02');

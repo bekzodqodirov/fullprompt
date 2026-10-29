@@ -75,10 +75,10 @@ interface DockThread {
     files: { id: string; fileName: string; sizeBytes: number }[];
     fwdFrom: string | null;
     quoted: { body: string | null; direction: string; hasMedia: boolean } | null;
-    /** The AI sotuvchi sent it (0136). */
+    /** The AI sotuvchi sent it (0138). */
     agent?: boolean;
   }[];
-  /** Approved AI replies still on their way (0136) — absent from a route one release behind. */
+  /** Approved AI replies still on their way (0138) — absent from a route one release behind. */
   agentWaiting?: { id: string; body: string; nextStepAt: string; mayCancel: boolean }[];
   /** Replies still in the queue — the drawer must not swallow them. */
   pending: {
@@ -351,7 +351,7 @@ export function Dock({
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
-    // Telegram limited the account (0136); the words name the bridge panel's «Tekshirdim» button.
+    // Telegram limited the account (0138); the words name the bridge panel's «Tekshirdim» button.
     account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),

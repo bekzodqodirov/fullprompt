@@ -627,7 +627,7 @@ where `docs/AI-SOTUVCHI-REVIEW.md` and this section disagree, the review's fix w
 - **Only the agent owner's account** (`agent_config.owner_user_id`, chosen on /agent, empty = off).
 - **Pilot = every client and lead chat** on that account that passes eligibility (§16.4).
 
-### 16.2 Migration 0136 `ai_sotuvchi` (additive)
+### 16.2 Migration 0138 `ai_sotuvchi` (additive)
 
 - `agent_config` — a single row (id = 1): mode ('off'|'shadow'|'auto', default 'off'),
   owner_user_id (FK users, null), human_pause_min (120), daily_draft_cap (150),
@@ -841,7 +841,7 @@ number first contact ⭐ a «📵» card; 19 a typed-code bind ⭐ no cargo/bala
 - **No new column on any existing table** [build-10]; new facts live in new tables; readers of new tables ask
   `agentTablesReady()` (caches TRUE only) so a database one migration behind answers as today.
 
-### 17.2 Migration 0136 `ai_sotuvchi`
+### 17.2 Migration 0138 `ai_sotuvchi`
 
 New tables: `agent_config` (singleton: mode, owner_user_id, session_exclusive_at/by, human_pause_min 120,
 daily_draft_cap 150, daily_token_cap, started_at, style_guide/_proposed/approved_at/by, updated_by/at),
@@ -975,7 +975,7 @@ inbound gets a run.
   GS code is opened. `pnpm exec tsx scripts/agent-seed-kb.ts` through `migrate`.
 - `scripts/agent-style.ts` proposes the masked style guide; `scripts/agent-census.ts` counts (read-only).
 - `scripts/tg-service-chat-cleanup.ts` (through `migrate`, dry run then `--apply`, counts only): Telegram's own
-  777000 chat as kept BEFORE the doors refused it — «hech qachon» and its stored messages purged (DECISIONS #1482).
+  777000 chat as kept BEFORE the doors refused it — «hech qachon» and its stored messages purged (DECISIONS #1536).
 - `/suhbatlar/ai`: Kutilmoqda · Savollar · Bilimlar · Sozlamalar (mode, owner, session confirm, pause + clear,
   budget left, ochiq hisoblar N/20, `agentStats`, style guide). 🤖 on AI-sent bubbles in the thread, the card
   panel and the dock; an approved-but-waiting AI reply shown as «🤖 08:30 da ketadi» and cancellable by him.
@@ -1042,7 +1042,7 @@ mijozga avia manzilini yozing (✏️)» on his card whatever the model composed
 goods, stands), and an avia-only reply that states a Chinese mobile or a Chinese street address is refused
 `avia_address` (a reply quoting the truck as well may give the truck's warehouse).
 
-**Reviewed as built (DECISIONS #1481).** `avia_address` is anchored on the receiving warehouses as the knowledge
+**Reviewed as built (DECISIONS #1535).** `avia_address` is anchored on the receiving warehouses as the knowledge
 states them at the policy's run (`warehouseAddressTexts`, the `china_address_` seed key, which an edit keeps): one of
 their contacts' phones, or a five-character piece of their street address that carries a street character — never
 «any Chinese with 市 in it». The flight's chat is the chat's one road (`askedModeOf`), so a «manzil?» one burst after
@@ -1052,7 +1052,7 @@ the flight AND the address. A Chinese reply is measured whole for its script; a 
 three or more characters is the fact's spelling (Horgos's «金亿»). `china_warehouse_price@1` is the truck's («Avto
 (mashina) narxi …»), and nothing claims where avia cargo is received — he said only that its address is his.
 
-**Reviewed again (DECISIONS #1483).** The road is what WE quoted, not what the customer's words name — `chatRoadOf`
+**Reviewed again (DECISIONS #1537).** The road is what WE quoted, not what the customer's words name — `chatRoadOf`
 asks, in order, what this run priced or asked (a podklyuch or yo'lkira checklist is a truck asked), the customer's own
 choice in this burst (newest statement first; a road turned down in the same statement is no choice, a flight turned
 down is the truck), and the newer of our newest priced line that names its road and the last quote he approved
@@ -1064,7 +1064,7 @@ characters — plus its phones and its house numbers, which count beside a stree
 adds on the page is anchored by what it says (`isReceivingAddressFact`); a fact that names the flight is not. Bare
 English «air» is no road («air fryer»).
 
-**Reviewed a third time (DECISIONS #1484).** The road is a road CHOSEN, never one named: `roadChoiceIn` reads a road
+**Reviewed a third time (DECISIONS #1538).** The road is a road CHOSEN, never one named: `roadChoiceIn` reads a road
 word only in a form that picks it («avia bilan», «mashinada», «fura», «oddiy kargo», «машиной», «by truck»), never the
 goods («tikuv mashinasi», «avtozapchast», «aviator») or the company (a bare «kargo»), and a refusal only when it is
 attached to its road word («aviada emas», «avia qimmat ekan», not «… qimmat emas»). Our priced line is read at its
@@ -1075,11 +1075,11 @@ and an address he gives ask nothing. The anchors carry no generic address words,
 street, house numbers only before 号/栋 and beside a street word; two facts for one warehouse keep their street; a
 fact is the flight's when it chooses the flight alone or names an airport.
 
-**The fourth, fifth and sixth reviews (DECISIONS #1485-#1487).** A word list will always miss a phrasing, so a misread
+**The fourth, fifth and sixth reviews (DECISIONS #1539-#1541).** A word list will always miss a phrasing, so a misread
 must cost him a glance and never a flight sent to a truck's warehouse in silence: the WARNING `avia_maybe` — the
 flight was spoken of (by the customer, by a line of ours that prices or offers it, by the quote he approved, or by the
 reply itself), the chat was not decided to be the flight's, and the reply gives one of our China addresses — keeps
-the ✅ and asks him to look, and nothing said later settles it (#1487 took back #1486's «a later truck choice settles
+the ✅ and asks him to look, and nothing said later settles it (#1541 took back #1540's «a later truck choice settles
 it»: that truck word was most often another leg, the delivery in Uzbekistan, a past shipment, a refusal the words
 missed or the goods). A line of ours that only says what the flight does not carry is no flight. The approved
 quote's echo is known by the Telegram id it went out as; a quote he rewrote is read by his words. A refusal is a

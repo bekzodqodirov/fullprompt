@@ -36,7 +36,7 @@ export interface AgentOutboxRow {
   readDone: boolean;
   queuedAt: Date;
   /**
-   * When the night rule held this approval to the morning (0136), or null. The approval's age counts from
+   * When the night rule held this approval to the morning (0138), or null. The approval's age counts from
    * here (review S2): a reply approved at 23:00 and promised for 08:30 is not «six hours old» at 08:30.
    */
   releaseAt: Date | null;

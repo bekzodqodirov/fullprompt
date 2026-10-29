@@ -125,15 +125,15 @@ export interface LastQuote {
   at: Date;
   /**
    * What went to the customer — the outbox row's body, else the draft's own
-   * (review #1484): the chat's copy of it is that quote's ECHO, and its road
+   * (review #1538): the chat's copy of it is that quote's ECHO, and its road
    * is the one stored here, not the one its words happen to name («Tikuv
    * mashinasi 30 kg avia orqali …»).
    */
   text: string | null;
-  /** The Telegram id the quote's outbox row went out as — its echo in the chat, by identity (#1485). Null until sent. */
+  /** The Telegram id the quote's outbox row went out as — its echo in the chat, by identity (#1539). Null until sent. */
   tgMessageId: bigint | null;
   /**
-   * He rewrote it with ✏️ (#1485): what went out is HIS text, whose road the
+   * He rewrote it with ✏️ (#1539): what went out is HIS text, whose road the
    * stored memory — the model's — does not know. Its echo is read by its words.
    */
   edited: boolean;
@@ -161,7 +161,7 @@ export function mediaOf(contentType: string | null, fileName: string | null): Ch
   return 'document';
 }
 
-/** A message as the chat context holds it — digits read, clipped (money-11): what a sent text must be compared in (#1485). */
+/** A message as the chat context holds it — digits read, clipped (money-11): what a sent text must be compared in (#1539). */
 export function chatForm(body: string): string {
   return clip(normalizeDigits(body), AGENT_LIMITS.contextMessageChars);
 }

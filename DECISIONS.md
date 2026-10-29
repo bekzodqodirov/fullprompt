@@ -4532,22 +4532,22 @@ Red-proven by string edit four ways: arrivals at a Chinese warehouse sent to `in
 `column === 'inland'`; `cn_transit` counted as Irkeshtam; a ninth map code. The third first stayed GREEN — the
 edit named the Chinese leg `cn`, which no segment is called — and was redone on the real key.
 
-## AI sotuvchi, phase 1 — the shadow salesperson on his own account (2026-10-24; migration 0136 `ai_sotuvchi`, ledger 137; spec `docs/AI-SOTUVCHI.md` §17 + his answers §17.14; pre-code review `docs/AI-SOTUVCHI-REVIEW.md`; numbered from #1463 because the open `telegram-customs-ai-issues` branch holds #1455-#1462)
+## AI sotuvchi, phase 1 — the shadow salesperson on his own account (2026-10-24; migration 0138 `ai_sotuvchi`, ledger 139; spec `docs/AI-SOTUVCHI.md` §17 + his answers §17.14; pre-code review `docs/AI-SOTUVCHI-REVIEW.md`; numbered from #1517 because the open `telegram-customs-ai-issues` branch holds #1455-#1462)
 
-1463. **The agent speaks from HIS personal session, through the listener, and only in shadow.** His override of the
+1517. **The agent speaks from HIS personal session, through the listener, and only in shadow.** His override of the
 spec's Telegram Business channel («Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va
 ban havfini minimum qilsin») decides the whole shape: the one process that holds the session (`scripts/tg-listen.ts`)
 is the only one that calls Telegram, the model runs in the app's pg-boss worker (`agent.inbound`, enqueued by the
 listener with a 12-second start-after), and every reply is a DRAFT he approves — mode `off|shadow`, with `auto` in the
 CHECK and refused by every writer. The approved reply lives in a NEW table `agent_outbox`, never in `tg_outbox`, so the
 human CRM reply path and its tests stay byte-identical (review regression-1/2/3/8), and **no existing table gains a
-column** (build-10): 0136 is eleven new tables, one index on `tg_messages` and the widened `telegram_chat_waits` kind
+column** (build-10): 0138 is eleven new tables, one index on `tg_messages` and the widened `telegram_chat_waits` kind
 CHECK; every reader of a new table asks `agentTablesReady()`, which caches TRUE only, so a database one migration
 behind answers every existing read as today. The mode cannot leave `off` until the configured owner's account is
 connected and HIS press confirms the old server's copy of the session is gone (`session_exclusive_at`, ban-9) — he
 answered that it is (§17.14), and the press stays his and audited.
 
-1464. **Only the account holder decides, and the ✅ says which text it approves.** `decideDraft` is the one decision
+1518. **Only the account holder decides, and the ✅ says which text it approves.** `decideDraft` is the one decision
 function for the bot and the web; anyone else, a super_admin included, is refused (leak-5). The ✅ button carries an
 8-hex FNV digest of the card's body and actions, re-computed at the press, so a card that changed under his thumb
 answers `stale_card` (leak-3). Found while merging: `jsonb` reorders object keys, so a digest over `JSON.stringify` of
@@ -4559,7 +4559,7 @@ listener is not current (`agent_pump_at` fresh AND `caught_up_at` for this proce
 pump would cancel the row as final a minute later — the refusal hands him the text to send himself), and over the
 day's send budget; then ONE transaction writes «approved» and the outbox row with a `random_id` minted once.
 
-1465. **The number policy reads every figure by kind and by where it came from.** G1 (`numbers.ts`, `digits.ts`,
+1519. **The number policy reads every figure by kind and by where it came from.** G1 (`numbers.ts`, `digits.ts`,
 `policy.ts`): digits are NFKC-folded first (Persian, Arabic-Indic, full-width, superscripts, circled); any other
 numeral beside a money or measure word is unverifiable; a figure is money when a currency or price word is anywhere in
 its text, in six languages (uz Latin and Cyrillic, ru, en, fa, zh — «AQSH dollari», «1,5 mln so'm», «USD480», «480
@@ -4575,7 +4575,7 @@ system shape, a foreign phone, the canary; **a colleague's FULL name blocks, a s
 stated exception to leak-3's «every failure blocks», because a false block costs him a rewrite and he reads every card
 (asked of him); a name the run's own used facts carry (the seeded «Umriddin») is allowed. Every block removes the ✅.
 
-1466. **A run stands down more often than it drafts.** The worker drafts only if the anchor is still the chat's
+1520. **A run stands down more often than it drafts.** The worker drafts only if the anchor is still the chat's
 newest live inbound after the 12-second debounce (+8 s per peer typing, capped at 90 s, 60 s for a greeting-only
 burst); `draftWorthy` skips media-only, closings and nudges, and a voice-only burst, Pashto or «siz botmisiz?» gives no
 draft but an `AgentNotice` (his Q3/Q4 ⭐). Eligibility (pure): a private chat with a real user, naming a client or a
@@ -4585,7 +4585,7 @@ anchor ≤ 24 h old and not auto-sent. The day's budget is reserved under an adv
 sweep retries an errored run once. A rail question forces the question to him («temir yo'l narxini siz aytasiz», his
 7), and in a rail burst no machine money source exists, so no figure can pass.
 
-1467. **The send path is a state machine on the row's own clock, built not to look like a machine.** Steps: verify
+1521. **The send path is a state machine on the row's own clock, built not to look like a machine.** Steps: verify
 (the pure `agentSendVerdict` + the live head via GetHistory) → ReadHistory → SetTyping ≤ 3 calls → verify the live
 head again → claim `sending` → `SendMessage{randomId, noWebpage}` → markSent + the thread's copy. An answer lost after
 the hand-off is `unknown` and is NEVER re-sent (ban-5); a process killed mid-send recovers its row as `unknown`. Fuses
@@ -4599,7 +4599,7 @@ sleep in GetHistory must not delay a person's reply), and both pumps send throug
 send's completion, re-checking the head and the guard inside it. Aborting after the read step gives the chat its
 unread badge back (MarkDialogUnread), whoever ended the reply.
 
-1468. **A restriction pauses the ACCOUNT — and a pause is a thing a person clears, and the composer says so.** Every
+1522. **A restriction pauses the ACCOUNT — and a pause is a thing a person clears, and the composer says so.** Every
 Telegram error is classified (`tgErrorKind`): PEER_FLOOD / USER_RESTRICTED / FROZEN_* pause that account's guard row
 (human sends too, any manager's account), switch the agent off when it speaks from there, cancel queued agent rows and
 alarm the manager and every super_admin; two send-path floods in 24 h, or two customers blocking the account within 7
@@ -4613,7 +4613,7 @@ super_admin), and **one home tells the composer**: `sendContextFor` reads the gu
 the send wait, `canQueue` refuses both in words, and the queue door asks the same — the web and the send package had
 each built half of it in a different place, and the door's half never reached the composers.
 
-1469. **A hand-made bind serves nothing until the chat proves it (his Q19 a).** `chatIdentity` grants cargo, balance
+1523. **A hand-made bind serves nothing until the chat proves it (his Q19 a).** `chatIdentity` grants cargo, balance
 and the client's own knowledge facts only when the chat itself proves the client: the tray's phone on that client's
 card or a phone sibling's, the hashed peer index, or a linked cabinet chat. A bind someone picked — a typed code, the
 web tray's «Bu mijoz» — is the owner saying who it is, so the name and codes are used, but nothing private is read
@@ -4624,7 +4624,7 @@ its clock, shared by every row minted in the same minute, so an older echo card 
 knowledge base's fact references take the tail for the same reason. A withdrawn bind cancels the chat's approved sends
 still queued under that client and re-opens the stranger card.
 
-1470. **Strangers get one card, a hidden number too, a contact none.** On the agent owner's account only: a visible
+1524. **Strangers get one card, a hidden number too, a contact none.** On the agent owner's account only: a visible
 phone the tray would ask about, or a hidden number from a real person who is not in his contacts (the listener writes
 the phone-less pending rule; nothing about the message is stored), gets ONE card per peer — [🆕 Yangi lid] [👤 Mijoz —
 kod] [🚫 Shaxsiy] — never with the message text (his Q18 ⭐). A contact is a friend or a colleague, not a lead (fit-7).
@@ -4632,7 +4632,7 @@ kod] [🚫 Shaxsiy] — never with the message text (his Q18 ⭐). A contact is 
 refusing `chat_no_phone`. Lid / mijoz queue a one-peer pull (≤ 50 messages, ≤ 24 h, one at a time) and the newest
 inbound gets a run. A press on a decided card decides nothing.
 
-1471. **The calculation loop goes through the bot's own door, and his price goes to the customer only.** A
+1525. **The calculation loop goes through the bot's own door, and his price goes to the customer only.** A
 podklyuch / rastamojka job is collected in ONE numbered question (`calc_checklist`), landed on his ✅ through
 `landIntake` (the same queue and the same AI-VED pre-pass as the bot's «Hisoblatish»; the reply is queued only after
 the landing queued — regression-4), linked by `agent_calc_links` at the chain root. The answer (Готово, a seal, a
@@ -4645,7 +4645,7 @@ locales, his figure the only money source); «1.250» is asked back («1250 doll
 recalculation retires the pending price drafts on the replaced request, cancels the approved ones still waiting, and
 the door refuses a figure typed on a replaced answer.
 
-1472. **His answers to the second and third sets, built (§17.14).** The truck's minimum is 1 m³ OR 100 kg — below
+1526. **His answers to the second and third sets, built (§17.14).** The truck's minimum is 1 m³ OR 100 kg — below
 both no figure is quoted, nor is the job sent to hisoblatish, and the reply says the minimum. Avia is $17 per ACTUAL
 kg (`agent_config.avia_usd_per_kg`, editable on the page, NULL = not quoted), from 1 kg, no upper limit, «taxminan 2-5
 kun, reys bo'lsa 2 kun», hedged like the truck (his «2b» retired the review's volumetric refusal the same evening).
@@ -4657,7 +4657,7 @@ blocks it (`warehouse_condition`); the podklyuch landing gets the cn zone and sa
 such a job appends both sentences after his figure. Every one of these is a seed fact he can read and edit on the
 page.
 
-1473. **The knowledge base learns only what he approved, and he can see it.** `kb_facts`: general / client / lead,
+1527. **The knowledge base learns only what he approved, and he can see it.** `kb_facts`: general / client / lead,
 written only by `writeKbFact` (a fence allows the insert nowhere else): money is refused, a general fact carrying a
 customer's name (tokens of the client, the lead and the peer's title), a code (book-checked even when written «GS 555»)
 or a phone is refused; a general fact needs a second press, keyed so one redelivered press cannot be two. The seed
@@ -4667,7 +4667,7 @@ address he gave (the map link only when asked, once per chat per 7 days), transi
 qoidalari» shows the agent's fixed rules with the numbers read from `AGENT_LIMITS` / `agent_config`, never typed twice
 (his «gsrwmsda bilimlar turadigan page»).
 
-1474. **The agent's slot in the staff bot's text ladder takes only what is addressed to it.** One slot, below every
+1528. **The agent's slot in the staff bot's text ladder takes only what is addressed to it.** One slot, below every
 live collector and above the reply door and `takeTaskPending` (which deletes on read). A swipe-reply names its own
 target — a reply to a non-agent message is never taken by an agent wait; a forwarded message goes to Door B; a task
 wait armed after the agent's is the newer one and wins; arming an agent wait while a collector or a task wait is live
@@ -4675,7 +4675,7 @@ is refused in words. «/agent off» is the kill switch (holder or super_admin): 
 every live draft expired in one transaction, and their cards say so. The agent's cards and the restriction alarm are
 UNMUTABLE (his Q16 ⭐ — the alarm's helper is typed by that list, so a new alarm cannot be mutable by accident).
 
-1475. **Process.** Designed, judged by six lenses before code (78 objections, none refuted), built as a kernel by the
+1529. **Process.** Designed, judged by six lenses before code (78 objections, none refuted), built as a kernel by the
 lead and packages in parallel worktrees, then reviewed as built three times: three reviewers over the merged core
 (send / leaks / regressions: 4 blockers-equivalent, 15 defects), a fix workflow of three packages each reviewed by two
 skeptics (38 findings, all confirmed and fixed or handed across with an exact patch), his answers package (16), a
@@ -4688,7 +4688,7 @@ commit with a lint error a `&&` would have stopped (#803's trap, again). Not ver
 ReadHistory, SetTyping, MarkDialogUnread, SendMessage with randomId), a real flood and a real restriction, deletes and
 typing updates, and the model's own drafting quality on his chats.
 
-1476. **The final review, as built: 34 findings kept, and the shape most of them share.** Six lenses (ban, leak,
+1530. **The final review, as built: 34 findings kept, and the shape most of them share.** Six lenses (ban, leak,
 money, regression, deploy, his own answers) over the whole build, two skeptics per finding. Most were ONE rule
 restated in two places that had drifted: the same-text fuse fingerprinted every other customer's row with THIS
 chat's names, so a reply greeting each customer by name never tripped it (K1 — each stored row is now folded with
@@ -4708,7 +4708,7 @@ red-proven in three packages; the fixes were then reviewed again (38 findings, f
 refusal words live in two maps (platform cannot import wms), a 777000 notice that arrives while the listener is
 down is not seen, and his own login codes deliberately do not switch the agent off.
 
-1477. **Telegram's service chat (777000) is never kept — by number, by rule, or on a work account.** Its lines are
+1531. **Telegram's service chat (777000) is never kept — by number, by rule, or on a work account.** Its lines are
 login codes and account notices; it is no bot by Telegram's flag and may show a number, so on a work account it
 would mint a lead, and a kept chat is one the AI sotuvchi READS — a login code in a model's context and on a card.
 ONE predicate, `isTelegramServicePeer` (a PRIVATE chat with 777000 — a group whose number reads the same is a
@@ -4720,7 +4720,7 @@ customer wrote again — it asks `bindMoved` now, the ✅'s own rule. `ownerPoli
 null and asks the blocks alone. A fa/zh draft with no Uzbek gloss carries its own code, `gloss_missing`, instead of
 `empty` (the card read «javob bo'sh» beside a full reply). «поездка» and «железные стеллажи» are no rail question.
 
-1478. **The China receiving warehouses, his fourth set, verbatim.** `china_points@4` names his three — Ivu (YW),
+1532. **The China receiving warehouses, his fourth set, verbatim.** `china_points@4` names his three — Ivu (YW),
 Guanchjou (GZ, the warehouse is in Foshan) and Xorgos (HRG); Qashqar is not on his card and is no longer named —
 and each address is a fact of its own, in the Chinese he sent (the supplier reads it; never translated, never
 re-spelled), with its contact and his GS-code reminder in both languages INSIDE the fact, so a reply that quotes an
@@ -4734,7 +4734,7 @@ still counts. Prompt rule 5 forbade staff phones — which the addresses are —
 fact's, as G6 already treated it. And a newer seed version retires the untouched older one (`seedKb`): two answers
 to «where do I send it» would both sit in every prompt; his own edited copy is an 'owner' row and is never touched.
 
-1479. **Avia: the address is his (fourth set «2»), and K32 is withdrawn for the flight.** «yukini infosini menga
+1533. **Avia: the address is his (fourth set «2»), and K32 is withdrawn for the flight.** «yukini infosini menga
 bersang men adres beraman telegramda sorasin». The avia figure still goes out (kg × his rate, hedged), but avia cargo
 does not go to the receiving warehouses, so the tool states no warehouse sentence and no address. Three halves,
 each red-proven: `withAviaRule` puts «Avia: N kg, qayerdan: … — mijozga avia manzilini yozing (✏️)» on his card
@@ -4746,7 +4746,7 @@ test, not a new one: in a rail chat the model may call the avia tool, the rail r
 and the card asked him for an avia address about a flight nobody was quoted — `withAviaRule` stands down in a rail
 chat (`railChat`, the memory's own rule).
 
-1480. **A form of address names nobody.** The full run on a fresh database found it, not a new test: two test files
+1534. **A form of address names nobody.** The full run on a fresh database found it, not a new test: two test files
 mint a client called «Aka», and from then on every 📌 style rule carrying «aka» was refused as naming a customer —
 and with name parts on, a client «Jasur aka» masked «aka» out of his style samples, so «Ha, bo'ladi aka.» lost the
 word that makes it his. `knownNamesForMask` leaves out a whole name made only of forms of address and any such part
@@ -4754,7 +4754,7 @@ word that makes it his. `knownNamesForMask` leaves out a whole name made only of
 client, so its answer no longer depends on which file ran first. A real customer called «Aka» is not protected by
 the mask any more; a name that is a form of address is said to everyone in the chat anyway.
 
-1481. **The flight's address, reviewed (D1-D8).** #1478-#1479 were reviewed as built and eight findings were each
+1535. **The flight's address, reviewed (D1-D8).** #1532-#1533 were reviewed as built and eight findings were each
 reproduced as a failing test before the fix, and each fix red-proven by string edit. **The rule is now anchored on
 his warehouses, not on what Chinese looks like** (D3): the first `avia_address` refused any Chinese stretch carrying
 市 or 路 or any Chinese mobile, which is «从哪个城市发货» and «空运路线» — an ordinary question to a Chinese
@@ -4776,7 +4776,7 @@ address). In the script check a Chinese reply is measured whole (D1: without its
 words and the reminder outweighed «您好»), and a numeral inside a quoted stretch is the fact's spelling (D2: Horgos's
 «金亿» beside any «kub» read as a spelled-out figure) — but a stretch shorter than three characters is never a
 quotation, or «1亿 dollar» would pass because the facts hold a «亿». **And two sentences said more than he did**:
-#1479 and the prompt, the tool and `china_points@4` claimed avia cargo «does not go to» the receiving warehouses
+#1533 and the prompt, the tool and `china_points@4` claimed avia cargo «does not go to» the receiving warehouses
 (D7) — he said only that he gives the flight's address; and «Narx Xitoydagi omborlarimizdan» (his third set,
 answering the truck question) was served into avia chats as if it priced the flight too (D6) — it says «Avto
 (mashina) narxi» now. Both seed facts were edited in place, not versioned: neither has ever been seeded anywhere.
@@ -4785,7 +4785,7 @@ qayerda?» — where the cargo IS — so an avia customer asking for status put 
 for «where to SEND» now (`SEND_ASK`: an address word, «qayerga», «куда», «寄到哪» …). And the three-character
 minimum is the FIGURE check's alone: the script check takes out a quoted «义乌» as before.
 
-1482. **Telegram's service chat, the rows kept before the fix.** #1476 stopped every door from KEEPING 777000 (login
+1536. **Telegram's service chat, the rows kept before the fix.** #1530 stopped every door from KEEPING 777000 (login
 codes, «new login», limitation notices); nothing went back for what an older scan or listener had already written —
 a `pending` tray rule, a decision, stored messages on a work account's own lead. Three doors could still make such a
 rule a card's in one press: `decideChat`'s include, «🆕 Yangi lid» (`openLeadForChat`) and «Chatni qo'shish»
@@ -4804,7 +4804,7 @@ open; the bot's stranger-card press would print the bare code, but no stranger c
 the cleanup turns any old one into «already decided»; every OTHER chat-rule refusal still prints as a code on both
 screens, as before.
 
-1483. **The flight's road is what we QUOTED, reviewed again (R1-R9).** #1481's fix was reviewed as built and the
+1537. **The flight's road is what we QUOTED, reviewed again (R1-R9).** #1535's fix was reviewed as built and the
 chat-level guess of the road was wrong both ways. It read «the newest message that names a road», and a customer's
 words do not say which road the chat is on: «Tikuv mashinasi 30 kg, avia bilan qancha?» names the truck in the
 GOODS, «Автозапчасти» does too, a customer who asked «eng tez qanday?» and was quoted the flight by us never said
@@ -4843,10 +4843,10 @@ its LONGEST quoted piece wherever it starts (R8): the model glues its own words 
 string edit; two stayed GREEN first, both fixtures: the avia fact under test carried no warehouse word, so the avia
 clause was never asked, and the week-old quote was always outranked by a newer one. STATED: an answer he types
 straight into Telegram with no road word leaves no quote behind (only an approved draft does); reading a refusal is
-a word list, not a parse; a customer whose name is a form of address is not masked (#1480).
+a word list, not a parse; a customer whose name is a form of address is not masked (#1534).
 
-1484. **The road a person CHOSE and the price we gave — the third review.** #1483 was reviewed as built and all
-fifteen findings survived both refuters. #1483 still read the road from road-shaped WORDS: «Tikuv mashinalarini
+1538. **The road a person CHOSE and the price we gave — the third review.** #1537 was reviewed as built and all
+fifteen findings survived both refuters. #1537 still read the road from road-shaped WORDS: «Tikuv mashinalarini
 qayerga yuboray?» chose the truck by naming the goods, a bare «kargo» — the COMPANY («kargongiz», «kargo manzilini
 tashlang», «Kargo narxini ayting») — was a road word, a negation anywhere in the clause refused the road («Avia qimmat
 emas, yuboraman» read as turning the flight down), and our own priced line was read by its LAST statement, so an avia
@@ -4882,8 +4882,8 @@ proofs by string edit; one fixture (the old truck quote) had to become the echo 
 Latin and Cyrillic spellings of Guangzhou and Horgos (no three-digit number, and the pinyin names are in no fact)
 pass; reading a choice is a word list, not a parse.
 
-1485. **The fourth review — the words people use, our quote by its identity, and a look when avia was spoken of.**
-#1484 was reviewed as built (four lenses, verify-to-refute) and fourteen findings held. The road still came from
+1539. **The fourth review — the words people use, our quote by its identity, and a look when avia was spoken of.**
+#1538 was reviewed as built (four lenses, verify-to-refute) and fourteen findings held. The road still came from
 words that pick nothing: the goods («avto chexol»), the factory's leg («Zavoddan mashinada olib kelasizmi?»), the
 Tashkent end, a toy («toy trucks»); a refusal with a word between («Avia juda qimmat ekan», «Авиа нам не подходит»)
 read as CHOOSING the flight; a bare «Mashina bo'lsin» chose nothing. Our quote's echo was matched by its text alone,
@@ -4900,8 +4900,8 @@ outbox row's) and `edited` (`finalBody` differs from `proposedBody`); `askedMode
 `aviaCargoOf` keeps a corrected weight's origin and drops a load-added one's. 31 red proofs; one (the rail rule)
 stayed green until its test asked one statement that names rail and turns the truck down.
 
-1486. **The fifth review — a question asks for the road, a concession chooses it, rail turned down is the flight's.**
-#1485's own delta was reviewed (three lenses, two refuters each), and most of what held came from #1485 itself.
+1540. **The fifth review — a question asks for the road, a concession chooses it, rail turned down is the flight's.**
+#1539's own delta was reviewed (three lenses, two refuters each), and most of what held came from #1539 itself.
 **A refusal was a prefix, not a word**: «qimmat» matched «qimmatmi», «bo'lmaydi» «bo'lmaydimi», so a customer ASKING
 for the flight («Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia narxi balandmi?») read as turning it down,
 and the new warning, which read refusals as «not spoken of», was blind to the same misread. A refusal is a whole word
@@ -4916,10 +4916,10 @@ gated on rail (rail still drops the machine's money); `railAsked` reads statemen
 statement turned down (`railRefusedIn`) or a later road chosen ends it; `railQuoted` asks for a figure in the rail
 word's own sentence; «железки» alone is hardware («по железке» is the rail). **Words**: everyday «by air» joined the
 flight («по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派»); «kargo bilan / orqali /
--da» chooses no road again — #1485 had made it the truck, and «kargo orqali avia yuboraman» lost its block — though it
+-da» chooses no road again — #1539 had made it the truck, and «kargo orqali avia yuboraman» lost its block — though it
 still names the truck for a days question; «Avto», «Avto bo'lsin» choose the truck, and only Tashkent as the pickup
 («Toshkentda», «Toshkentdan») is another leg, never Tashkent reached. **Our priced line** is read by the road its
-clause CHOOSES, then the road word it opens with (`LABEL`), never a road word inside the goods — #1485 had read
+clause CHOOSES, then the road word it opens with (`LABEL`), never a road word inside the goods — #1539 had read
 «o'yinchoq samolyotlar 3 kub — 640 $» as a flight and «Avia: avtozapchast 30 kg — 510 $» as a truck — a clause priced
 by the cube is the truck's, and the walk to a neighbouring clause stops at another price. `askedModeOf` decides by
 choices, the one road named only as the last resort, so «Tovar: tikuv mashinalari» after «Avia bilan necha kunda?»
@@ -4937,14 +4937,14 @@ case ended in «?» (so the question mark hid the word end), the rail refusal ne
 price walk never had a road past another price, and the what-if always carried «?». STATED, not built: reading a choice is a word list; the Latin and Cyrillic spellings of Horgos and Guangzhou pass; a chat
 whose words name no road leaves the flight's guard to the quote he approved.
 
-1487. **The sixth review — a hunt for the silent leak, and #1486's «a truck chosen settles it» taken back.**
-The review asked one question of #1486: is there a chat in which the flight is plainly the road and our China
+1541. **The sixth review — a hunt for the silent leak, and #1540's «a truck chosen settles it» taken back.**
+The review asked one question of #1540: is there a chat in which the flight is plainly the road and our China
 address goes out with NEITHER the `avia_address` block NOR the `avia_maybe` look? Both outcomes are his rule; only the
 silence is a defect. Finders wrote chats in the six languages, every candidate was run through `verdict()` by a
 reproducer, and sixteen leaks held. **Three families.** (1) **Words the lists did not have**: Uzbek in Cyrillic
 («Самолёт билан», «Самолёт орқали», «хаво йули»), Russian «на самолёте», «авиой», «Авио доставка», «воздухом», the
 Latin misspellings «Aviya», «aviyada», «samolet», «xavo yo'li», Chinese 走飞机 / 坐航班 / 用飞机寄, Persian «با
-هواپیما», «با طیاره», English «with plane» and «air please». (2) **#1486's settling rule**: a truck word after the
+هواپیما», «با طیاره», English «with plane» and «air please». (2) **#1540's settling rule**: a truck word after the
 flight ended the look, and a truck word is very often not this shipment's road — the leg to our warehouse or from the
 airport («Yukni omborga o'zim mashinada olib boraman», «Сам привезу на склад на машине», «Aeroportdan o'zim mashinada
 olib ketaman»), the delivery inside Uzbekistan («Andijonga mashinada yetkazib berasizlarmi?»), a past shipment
@@ -4956,7 +4956,7 @@ OFFER with no price («Avia bilan yuborsangiz 2–5 kunda keladi»), and the lab
 read. **What changed.** `aviaSpokenOf` no longer settles: once the flight is on the table — the customer's line in
 any form, a line of ours that prices or OFFERS it (`ourLineOffersAir`), the quote he approved, a run that priced both
 — nothing said later takes it off. A chat the customer really moved to the truck now costs one glance, which is the
-trade #1485 made the warning for; #1486 had spent it to buy quiet on the commonest chats where it is needed. A line
+trade #1539 made the warning for; #1540 had spent it to buy quiet on the commonest chats where it is needed. A line
 that only says what the flight does not carry (the seeded «Avia orqali litiy batareya … yuborilmaydi») is still no
 flight: `PROHIBITS` (numbers.ts) is the one sentence for that, asked by the offer and by `pricedRoadOf`'s new walk to
 the nearest other sentence (`neighbourSentenceRoad`). The by-the-cube fallback yields to a line that speaks of the

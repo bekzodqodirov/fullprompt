@@ -57,7 +57,7 @@ export async function TelegramBridgeStatus({
 
   const t = await getTranslations('crm');
   /**
-   * A PAUSED account (0136, review regression-11): Telegram said the account
+   * A PAUSED account (0138, review regression-11): Telegram said the account
    * is limited (PEER_FLOOD, a restriction, a freeze), and every send from it
    * — the CRM's human replies included — waits until a person who looked
    * says so. A heartbeat cannot show it (the listener is alive and running),

@@ -6159,7 +6159,7 @@
     "title": "AI seller",
     "stateRunning": "running — you approve every reply",
     "stateOff": "off",
-    "notReady": "The database is not updated yet (migration 0136) — the AI seller appears after the update.",
+    "notReady": "The database is not updated yet (migration 0138) — the AI seller appears after the update.",
     "section": {
       "kutilmoqda": "Waiting",
       "savollar": "Questions",

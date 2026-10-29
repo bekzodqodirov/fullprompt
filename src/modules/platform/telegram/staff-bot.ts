@@ -377,7 +377,7 @@ export type BotCallback =
    */
   | { kind: 'thread_reply' }
   /**
-   * The AI sotuvchi's buttons (0136, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
+   * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
    * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
    * calculation request (p) or a tray rule (n k x c b); the digest rides only
    * on ✅ and names what the card SHOWED, so a press on a card that has since
@@ -730,7 +730,7 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * The AI sotuvchi's cards (0136). A draft card draws its four controls only
+ * The AI sotuvchi's cards (0138). A draft card draws its four controls only
  * while the draft is live, and ✅ only when the policy found nothing (leak-3)
  * — with the digest of what the card shows. After he answered a question the
  * agent asked him, the card offers to remember the answer. Every row drawn is

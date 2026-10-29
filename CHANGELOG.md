@@ -3,7 +3,7 @@
 ## 2026-10-24 — AI sotuvchi: mijozlarga javobni AI tayyorlaydi, siz tasdiqlaysiz, sizning akkauntingizdan ketadi
 
 Sizning so'zingiz: «Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban havfini
-minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi **137** bo'lishi kerak.
+minimum qilsin». Yangi migratsiya bor (**0138**): deploydan keyin baza hisobi **139** bo'lishi kerak.
 
 ### Qanday ishlaydi
 - Telegram akkauntingizga mijoz yoki lid yozganda, AI javobni o'zi yubormaydi, faqat **qoralama** tayyorlaydi. U staff botga kartochka bo'lib keladi:
@@ -141,7 +141,7 @@ minimum qilsin». Yangi migratsiya bor (**0136**): deploydan keyin baza hisobi *
 1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
 2. `docker compose build migrate`, keyin `docker compose up -d --build` va `docker compose --profile telegram up -d --build tg-listen`.
    **Tinglovchi (tg-listen) albatta qayta qurilishi kerak.** Aks holda sahifada «tinglovchi yangilanmagan» chiqadi va ✅ ishlamaydi.
-3. Baza hisobi **137** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
+3. Baza hisobi **139** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
 4. Bilimlarni kiritish (Xitoy omborlari manzillari ham shu yerda, qo'lda yozish shart emas):
    - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
    - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.

@@ -53,7 +53,7 @@ describe('the pump asks the gate before every claim (ban-1)', () => {
     expect(held.slice(0, held.indexOf('return;') + 'return;'.length)).toMatch(/\)\s*\{\s*return;$/);
   });
 
-  it('K22: the slot remembers a restriction only where 0136 can hold the pause that retires it', () => {
+  it('K22: the slot remembers a restriction only where 0138 can hold the pause that retires it', () => {
     const note = body('const noteSlotRestricted = () => {', 'const noteSlotFailure =');
     expect(note).toContain('if (tablesKnownReady) slotRestrictedAt = new Date();');
     // The one writer of the note: a person's send's failure and the agent's own both go through it.

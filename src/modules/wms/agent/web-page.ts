@@ -416,7 +416,7 @@ export interface PausedAccount {
  * Every paused Telegram account, by account id — for the /suhbatlar bridge
  * panel (review regression-11). A pause is a property of the ACCOUNT, any
  * manager's (his Q13 ⭐), so this reads them all; who may clear one is the
- * panel's and the service's question. Empty when 0136 has not landed, and on
+ * panel's and the service's question. Empty when 0138 has not landed, and on
  * a read that fails — the bridge panel must render regardless.
  */
 export async function pausedAccounts(): Promise<Map<string, PausedAccount>> {

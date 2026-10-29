@@ -246,7 +246,7 @@ const AGENT_CONFIG_TTL_MS = 30_000;
  */
 const PUMP_STAMP_MS = 15_000;
 
-/** The 0136 probe while it still answers «no» — asked at most this often. */
+/** The 0138 probe while it still answers «no» — asked at most this often. */
 const TABLES_RECHECK_MS = 60_000;
 
 /** «The customer is typing» is written at most this often per chat. */
@@ -395,7 +395,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   );
 
   /**
-   * Does 0136 exist here? The kernel's probe caches only TRUE, so on a
+   * Does 0138 exist here? The kernel's probe caches only TRUE, so on a
    * database one migration behind it would ask on every tick; the answer
    * «no» is re-asked once a minute instead. Every agent path, and every new
    * read in the human pump, goes through this first — on an old schema the
@@ -1510,7 +1510,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     // — the pause and the wait read from the guard row each tick, so a
     // restart cannot forget them. Cheap enough to ask every tick, and the
     // switch has to be able to stop sending WITHOUT anybody restarting a
-    // process on a server. On a database without 0136 there is no guard row
+    // process on a server. On a database without 0138 there is no guard row
     // and this is exactly the old two checks.
     const guard = ready ? await readGuard(account.id) : null;
     // The guard row holds the pause now: the slot's own note of the restriction has done its work.
@@ -1712,7 +1712,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // claim, human rows included — and the row goes back to the queue with
       // its claim given back (final review K4: `claimNext` had counted it):
       // the reply is fine, the account is not, and «Tekshirdim» must find the
-      // reply with every retry it had. On a database without 0136 there is
+      // reply with every retry it had. On a database without 0138 there is
       // nowhere to keep a pause, so the old answer (the row fails,
       // permanently) stands below.
       if (kind.kind === 'restricted' && (await tablesReady())) {
@@ -1730,7 +1730,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         await giveClaimBack(job.id);
         // The wait itself, persisted UNCAPPED on the guard row (ban-2): the
         // in-memory clock above stays as the fast path, capped as it always
-        // was, and is all a database without 0136 gets. It only ever reaches
+        // was, and is all a database without 0138 gets. It only ever reaches
         // here past gramjs's own 60-second sleep.
         await accountFlooded(alarmAccount, {
           method: job.attachmentId ? 'messages.SendMedia' : 'messages.SendMessage',

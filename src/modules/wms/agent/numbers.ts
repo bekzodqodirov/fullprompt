@@ -123,10 +123,10 @@ export type TravelMode = 'air' | 'road' | 'rail';
  * cargo», «by air»; «aviator» is sunglasses. A bare «kargo» / «карго» is the
  * COMPANY («kargongiz», «kargo manzili», «Kargo narxini ayting»), never a road
  * — it once turned an avia follow-up into the truck's and ended the rail rule
- * (review #1484) — so only «oddiy / yig'ma kargo», «kargo bilan», «kargoda»,
- * «обычным карго» NAME it (#1485: «Kargo bilan necha kunda?» asks the truck's
+ * (review #1538) — so only «oddiy / yig'ma kargo», «kargo bilan», «kargoda»,
+ * «обычным карго» NAME it (#1539: «Kargo bilan necha kunda?» asks the truck's
  * time), and only the first two CHOOSE it: «kargo orqali avia yuboraman» is the
- * company the flight goes through (#1486). «Aviamodel» is a toy.
+ * company the flight goes through (#1540). «Aviamodel» is a toy.
  */
 const MODE_WORDS: Record<TravelMode, RegExp> = {
   air: /(?<![\p{L}])(?:avi(?:y)?a(?!tor|model)\p{L}*|avya\p{L}*|ави[ао](?!тор|модел)\p{L}*|sam[ao]l[yi]?[oe]t\p{L}*|сам[оа]л[её]т\p{L}*|sam[ao]l[yi]?[oe]t(?:da|ga)|sam[ao]l[yi]?[oe]t\s+(?:bilan|orqali)|сам[оа]л[её]т(?:ом|да|га|е)|сам[оа]л[её]т\s+(?:билан|орқали|оркали)|на\s+сам[оа]л[её]те|воздухом|air(?:freight|cargo)|air[\s-]+(?:freight\p{L}*|cargo|ship\p{L}*|deliver\p{L}*|mail|transport\p{L}*|express|parcel\p{L}*)|air[\s-]?(?:freighted|shipped)|(?:by|via)\s+air|(?:by|via|with|on)\s+(?:an?\s+)?(?:air)?plane|air(?=\s*(?:please|pls|plz)(?![\p{L}]))|flights?|по\s+воздуху|воздушн\p{L}*\s+(?:пут\p{L}*|транспорт\p{L}*|доставк\p{L}*)|[hx]avo\s+(?:yo['‘’ʻ`]?l\p{L}*|orqali|transport\p{L}*)|[ҳх]аво\s+(?:й[ўу]л\p{L}*|орқали|оркали)|plane)(?![\p{L}])|هوایی|هواپیما|با\s+(?:هواپیما|طیاره|طياره)|هوا[یي]ی|هوائی|ایر\s*کارگو|空运|空運|空派|空快|空邮|航空|航班|(?:走|坐|用)飞机|飞机(?:运|发|寄)|飞机/iu,
@@ -172,7 +172,7 @@ function modeAt(text: string, index: number): TravelMode | null {
 export type ChosenRoad = 'air' | 'road';
 
 /**
- * A road CHOSEN in a statement (review #1484) — its word in a form that picks
+ * A road CHOSEN in a statement (review #1538) — its word in a form that picks
  * the road: «avia bilan», «aviada», «mashinada», «fura», «avto bilan», «oddiy
  * kargo», «машиной», «by truck», «空运», a «Mashina» standing alone. Never the
  * goods («tikuv mashinasi», «avto chexol», «avtozapchast», «toy trucks»,
@@ -196,8 +196,8 @@ const REFUSABLE: Record<ChosenRoad, string> = {
  * «Aviada emas», «avia kerak emas», «avia qimmat ekan» (not «… qimmat emas»),
  * «mashinada uzoq ekan», «авиа не надо», «too expensive» — with a word or three
  * between them («Avia juda qimmat ekan», «Авиа нам не подходит», «Flights are
- * too expensive for us», #1485), never «avia bilan muammo yo'q». A refusal is
- * a whole word (#1486): «qimmatmi», «bo'lmaydimi», «ketmaydimi», «emasmi» ASK
+ * too expensive for us», #1539), never «avia bilan muammo yo'q». A refusal is
+ * a whole word (#1540): «qimmatmi», «bo'lmaydimi», «ketmaydimi», «emasmi» ASK
  * about the road — and so does «qimmat ekanmi».
  */
 const REFUSE_AFTER = String.raw`(?:\s+(?:narxi|ham|esa|bilan|orqali|juda|ancha|biz|bizga|menga|uchun|нам|мне|для|нас|is|are|for|us|очень|слишком|sal|ko['‘’ʻ\u0060]?p|it|takes?)){0,3}\s*,?\s*(?:kerak\s+emas|kerakmas|emas|shart\s+emas|(?<!muammo\s)yo['‘’ʻ\u0060]?q|qimmat(?:\s+ekan)?(?!\s+emas)|baland(?!\s+emas)|uzoq(?:\s+ekan)?(?!\s+emas)|sekin|to['‘’ʻ\u0060]?g['‘’ʻ\u0060]?ri\s+kelmaydi|bo['‘’ʻ\u0060]?lmaydi|ketmaydi|не\s+(?:надо|нужн\p{L}*|подходит|устраивает|интересует)|дорог\p{L}*|долго|не\s+успе\p{L}*|ulgurmay\p{L}*|kech\s+qol\p{L}*|ko['‘’ʻ\u0060]?p\s+vaqt(?:\s+ketadi)?|(?:too\s+)?(?:expensive|slow|long)|太贵|太慢|太久|来不及|不行|دیر|گرون\p{L}*)(?![\p{L}])(?!\s+\p{L}*mi(?![\p{L}]))`;
@@ -213,7 +213,7 @@ const REFUSES: Record<ChosenRoad, RegExp> = { air: refusalOf('air', '空运|航�
 const refusalSpans = (road: ChosenRoad, statement: string): [number, number][] =>
   [...statement.matchAll(new RegExp(REFUSES[road].source, 'giu'))].map((m) => [m.index, m.index + m[0].length]);
 /**
- * Rail turned down in a statement (#1486) — «Poyezd kerak emas», «Temir yo'l
+ * Rail turned down in a statement (#1540) — «Poyezd kerak emas», «Temir yo'l
  * uzoq ekan», «Не поездом», read with the refusal words of the two roads: a
  * chat that turns rail down for the flight is the flight's, never his rail
  * question.
@@ -225,7 +225,7 @@ export function railRefusedIn(statement: string): boolean {
 }
 
 /**
- * A road chosen IN SPITE of a word that sounds like a refusal (#1486): a
+ * A road chosen IN SPITE of a word that sounds like a refusal (#1540): a
  * concession («Avia qimmat bo'lsa ham mayli», «Пусть авиа дорого», «даже если
  * дорого», «baribir avia»), a double negation («Без авиа никак», «Aviasiz
  * bo'lmaydi»), or a QUESTION about it («Авиа дорого выйдет?», «Is air freight
@@ -234,17 +234,17 @@ export function railRefusedIn(statement: string): boolean {
 const CHOSEN_ANYWAY =
   /(?<![\p{L}])(?:пусть|даже\s+если|хоть|хотя|even\s+if|even\s+though|hatto|garchi|baribir|всё\s+равно|все\s+равно|anyway)(?![\p{L}])|bo['‘’ʻ`]?lsa\s*(?:ham|-?da)(?![\p{L}])|ham\s+mayli|(?:без|without)\s+\p{L}+(?:\s+\p{L}+)?\s+(?:никак|нельзя|не\s+получится|no\s+way)|\p{L}+siz\s+(?:bo['‘’ʻ`]?lmaydi|iloji\s+yo['‘’ʻ`]?q|mumkin\s+emas)|[?？؟]\s*$/iu;
 /**
- * A statement about ANOTHER leg (#1485): the factory or the supplier bringing
+ * A statement about ANOTHER leg (#1539): the factory or the supplier bringing
  * the goods to our warehouse («Zavod yukni mashinada olib keladi», «Поставщик
  * привезёт на машине», «工厂用卡车运到»), the pickup in Tashkent («Toshkentda
  * mashinaga ortib berasizlarmi?», «Toshkentdan olib ketaman»). A truck there
  * is not the road of this shipment; a flight never is a local leg, so the
  * flight is still read. Tashkent REACHED — «Toshkentga mashinada», «до
- * Ташкента» — is where this shipment goes, and its truck is chosen (#1486).
+ * Ташкента» — is where this shipment goes, and its truck is chosen (#1540).
  * So is the leg to our warehouse or from the airport («Yukni omborga o'zim
  * mashinada olib boraman», «Сам привезу на склад на машине»), the delivery
  * inside Uzbekistan («Andijonga mashinada yetkazib berasizlarmi?») and a PAST
- * shipment («oldingi safar mashinada yuborgandim») (#1487).
+ * shipment («oldingi safar mashinada yuborgandim») (#1541).
  */
 const OTHER_LEG =
   /zavod|fabrik|завод|фабрик|поставщик|postavshik|ta['‘’ʻ`]?minotchi|supplier|factory|vendor|工厂|厂家|供应商|(?:toshkent|тошкент)(?:da|dan|да|дан)(?![\p{L}])|в\s+ташкенте|из\s+ташкента|in\s+tashkent|from\s+tashkent|aeroport\p{L}*|аэропорт\p{L}*|airport|机场|omborga|omboringizga|skladga|skladingizga|на\s+склад|to\s+(?:your|the)\s+warehouse|你们仓库|到仓库|bozor\p{L}*|рын(?:ок|к\p{L}*)|market|olib\s+bor\p{L}*|привез\p{L}*|bring\s+it|yetkazib\s+ber\p{L}*|доставк\p{L}*\s+по|до\s+дома|uyga\p{L}*|oldingi|avvalgi|o['‘’ʻ`]?tgan\s+safar|прошл\p{L}*\s+раз|в\s+прошлый|раньше|last\s+time|previous|上次|以前/iu;
@@ -252,14 +252,14 @@ const OTHER_LEG =
 const SEND_VERB = /yubor|jo['‘’ʻ`]?nat|отправ|вышл|пошл|send|ship|寄|发/iu;
 
 /**
- * The road one statement CHOOSES (review #1484): 'air' or 'road' when it picks
+ * The road one statement CHOOSES (review #1538): 'air' or 'road' when it picks
  * one; 'not_air' / 'not_road' when it only turns one down («Avia qimmat ekan»
  * — the flight refused, so the truck); 'both' when it compares them («avia va
  * mashinada qancha?»), unless one of the two is followed by the sending verb
  * («Fura 20 kun ekan, avia bilan yuboramiz»); null when no road is chosen.
  */
 export function roadChoiceIn(statement: string): ChosenRoad | 'both' | 'not_air' | 'not_road' | null {
-  // A concession, a double negation or a question chooses the road its refusal-sounding words name (#1486).
+  // A concession, a double negation or a question chooses the road its refusal-sounding words name (#1540).
   const anyway = CHOSEN_ANYWAY.test(statement);
   const spans = { air: anyway ? [] : refusalSpans('air', statement), road: anyway ? [] : refusalSpans('road', statement) };
   const refused = { air: spans.air.length > 0, road: spans.road.length > 0 };
@@ -302,7 +302,7 @@ function clausesOf(text: string, index: number): { text: string; start: number }
  * down is the other one — «Mashinada bo'lmaydi, 30 kg — 510 $» priced the
  * flight), else its LABEL — the road word it opens with («Mashina 1 kub
  * 250$», «Avto (mashina) narxi», «Avia: 30 kg»). Never a road word inside the
- * goods («o'yinchoq samolyotlar», «avtozapchast», «tikuv mashinasi», #1486).
+ * goods («o'yinchoq samolyotlar», «avtozapchast», «tikuv mashinasi», #1540).
  */
 const LABEL = /^[\s(«"'*•\-–—]*(avto|mashina|fura|avia|авто|машина|фура|авиа|truck|air)(?![\p{L}])/iu;
 function clauseRoad(clause: string): ChosenRoad | 'both' | null {
@@ -317,7 +317,7 @@ function clauseRoad(clause: string): ChosenRoad | 'both' | null {
 const BY_THE_CUBE = /\d\s*(?:kub|куб|m³|m3|м³|cbm|立方)/iu;
 
 /**
- * The road OUR priced line quoted (review #1484, #1485), read at each money
+ * The road OUR priced line quoted (review #1538, #1539), read at each money
  * figure: its own clause, else the nearest clause before it in the sentence
  * that names a road («Mashinada 1 kubdan kam olinmaydi, faqat avia: 30 kg —
  * taxminan 510 $» quoted the flight; «Avto (mashina) narxi: 3 kub — taxminan
@@ -332,7 +332,7 @@ export function pricedRoadOf(text: string): ChosenRoad | 'both' | null {
   for (const f of money) {
     const clauses = clausesOf(text, f.index);
     const at = Math.max(0, clauses.findLastIndex((c) => c.start <= f.index));
-    // Its own clause by the cube is the truck's; the walk to its neighbours stops at another price (#1486).
+    // Its own clause by the cube is the truck's; the walk to its neighbours stops at another price (#1540).
     const own = clauses[at]!;
     const pricesElse = (c: { text: string; start: number }) =>
       money.some((g) => g !== f && g.index >= c.start && g.index < c.start + c.text.length);
@@ -361,7 +361,7 @@ export function pricedRoadOf(text: string): ChosenRoad | 'both' | null {
 
 /**
  * The road of the nearest OTHER sentence of our line that names one — «1 kg
- * uchun 17 $. Avia bilan 2–5 kunda keladi.» priced the flight (#1487). A
+ * uchun 17 $. Avia bilan 2–5 kunda keladi.» priced the flight (#1541). A
  * sentence that only says what a road does not carry («Avia orqali … yuborilmaydi»)
  * is no road named.
  */
@@ -391,7 +391,7 @@ export const PROHIBITS =
 
 /**
  * The flight is SPOKEN of in this text — chosen, asked about, or turned down
- * (#1485, #1486). Wider than a choice on purpose: it is what makes a China
+ * (#1539, #1540). Wider than a choice on purpose: it is what makes a China
  * address in a reply his question even when the chat's road could not be
  * decided (`avia_maybe`), and a refusal the words misread («Avia qimmatmi?»)
  * must still be seen. The flight's own words only, never the goods («o'yinchoq
@@ -405,7 +405,7 @@ export function airMentionIn(text: string): boolean {
 
 /**
  * The statements of a text, each with what ENDS it — the question mark a
- * refusal's reading turns on (#1486) — cut where `boundary` cuts.
+ * refusal's reading turns on (#1540) — cut where `boundary` cuts.
  */
 export function statementsOf(text: string, boundary: RegExp): string[] {
   const out: string[] = [];

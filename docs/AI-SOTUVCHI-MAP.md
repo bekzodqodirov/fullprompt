@@ -300,7 +300,7 @@ writes with `actorId: null` where a system branch exists.
   style guide probably do not belong there (a second, unreviewed door).
 - No new `package.json` scripts (the deps layer would need npm, #1228); one-off
   scripts run as `pnpm exec tsx scripts/x.ts` through `migrate`.
-- Migrations: next is **0136** (journal `when` …115, ledger 137) and the next
+- Migrations: next is **0138** (journal `when` …117, ledger 139) and the next
   decision is **#1455** — valid only for this checkout; re-read both tails after
   every pull (23 collisions so far).
 - `gsr_ai_reader` already reads `tg_messages` table-wide (0080); the schema-card

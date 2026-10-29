@@ -50,7 +50,7 @@ async function main(): Promise<number> {
   const sampleOnly = args.includes('--sample');
   const config = await readAgentConfig();
   if (!config) {
-    console.error('agent_config does not exist yet — run the migrations first (0136).');
+    console.error('agent_config does not exist yet — run the migrations first (0138).');
     return 1;
   }
   if (!config.ownerUserId) {

@@ -4,7 +4,7 @@ import { agentTablesReady } from '../agent/config';
 
 /**
  * Two facts about a stored message that Telegram tells only the listener
- * (0136's `tg_message_flags`, a table beside tg_messages — never a column on
+ * (0138's `tg_message_flags`, a table beside tg_messages — never a column on
  * it, review build-10). Both are written for EVERY connected account, not
  * only the agent's: the thread, the context and the corpus all skip a
  * message the customer took back.
@@ -41,7 +41,7 @@ export async function markAutoSent(messageRowId: string): Promise<void> {
 /**
  * Deleted for both sides (review leak-8). `UpdateDeleteMessages` names
  * message ids and no chat — a private chat's ids are unique inside one
- * account's message box, which is why 0136 indexes tg_messages by (manager,
+ * account's message box, which is why 0138 indexes tg_messages by (manager,
  * tg message id). The FIRST delete time stands: Telegram re-delivers after a
  * reconnect, and a moved timestamp would read as a second deletion.
  *

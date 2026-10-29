@@ -48,7 +48,7 @@ export interface PolicyMemory {
   hasGloss?: boolean;
   /** An avia quote and no truck's (his fourth set «2»): no China address in the reply. Absent = not one. */
   aviaOnly?: boolean;
-  /** Avia was spoken of, the road not decided to be it (#1485): a China address in the reply warns. Absent = not spoken of. */
+  /** Avia was spoken of, the road not decided to be it (#1539): a China address in the reply warns. Absent = not spoken of. */
   aviaMentioned?: boolean;
   /** The Chinese characters of the facts the run read — a verbatim address is the fact's script (his fourth set). Absent = none. */
   quotableHan?: string;
@@ -168,7 +168,7 @@ export async function policyFor(input: {
     sendCounts(input.managerUserId, input.peerId, input.body, input.strip),
     getSetting('client_code_prefix'),
     // Read now, not remembered: the address he corrects this morning is the one an older draft's ✅ refuses.
-    // …and whenever the reply itself speaks of the flight (#1486): the warning reads the reply too.
+    // …and whenever the reply itself speaks of the flight (#1540): the warning reads the reply too.
     input.memory.aviaOnly === true || input.memory.aviaMentioned === true || airMentionIn(input.body)
       ? warehouseAddressTexts()
       : Promise.resolve([]),

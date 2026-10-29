@@ -94,7 +94,7 @@ export default async function ConversationPage({
     chatPulseForClient(actor, clientId, { sibling: false }),
   ]);
   if (!client) notFound();
-  // The AI sotuvchi's marks (0136): which of these bubbles it sent, and which
+  // The AI sotuvchi's marks (0138): which of these bubbles it sent, and which
   // approved replies are still on their way — one statement each for the
   // page, never one per bubble.
   const [agentSent, agentWaiting] = await Promise.all([

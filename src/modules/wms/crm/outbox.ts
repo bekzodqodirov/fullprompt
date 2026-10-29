@@ -139,7 +139,7 @@ export async function sendContextFor(input: {
       .limit(1)
       .then((rows) => rows[0] ?? null),
   ]);
-  // The account's hold (0136) — `readGuard` answers «nothing wrong» on a
+  // The account's hold (0138) — `readGuard` answers «nothing wrong» on a
   // database one migration behind, so this costs today's behaviour nothing.
   // The pump reads the same row before every claim (`pumpGate`), so what it
   // would hold is what the composer refuses.

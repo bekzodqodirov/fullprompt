@@ -6159,7 +6159,7 @@
     "title": "AI sotuvchi",
     "stateRunning": "ishlayapti — har bir javobni o‘zingiz tasdiqlaysiz",
     "stateOff": "o‘chiq",
-    "notReady": "Baza hali yangilanmagan (0136 migratsiyasi) — AI sotuvchi yangilanishdan keyin paydo bo‘ladi.",
+    "notReady": "Baza hali yangilanmagan (0138 migratsiyasi) — AI sotuvchi yangilanishdan keyin paydo bo‘ladi.",
     "section": {
       "kutilmoqda": "Kutilmoqda",
       "savollar": "Savollar",

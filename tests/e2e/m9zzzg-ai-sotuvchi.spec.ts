@@ -61,7 +61,7 @@ test.beforeAll(async () => {
   const sql = database();
   try {
     const [config] = await sql<ConfigRow[]>`SELECT * FROM agent_config WHERE id = 1`;
-    if (!config) throw new Error('agent_config is missing — is 0136 applied?');
+    if (!config) throw new Error('agent_config is missing — is 0138 applied?');
     snapshot = config;
     const [seller] = await sql<{ id: string }[]>`SELECT id FROM users WHERE phone = ${SELLER}`;
     const [client] = await sql<{ id: string }[]>`SELECT id FROM clients WHERE client_code = 'GS777'`;

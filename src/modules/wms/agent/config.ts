@@ -16,7 +16,7 @@ import { canLogInSql } from '../../platform/users/login';
  * Telegram connection here.
  *
  * Phase 1 is SHADOW only (§17.1): every reply waits for his ✅. `auto` is in
- * the 0136 CHECK for the phase that earns it, and refused by every writer.
+ * the 0138 CHECK for the phase that earns it, and refused by every writer.
  */
 
 export type AgentMode = 'off' | 'shadow';
@@ -42,7 +42,7 @@ export interface AgentConfig {
 let ready = false;
 
 /**
- * Does 0136 exist? Caches TRUE only (the `redeliveryReady` idiom): on deploy
+ * Does 0138 exist? Caches TRUE only (the `redeliveryReady` idiom): on deploy
  * morning the code is up before the migration lands, and every agent reader
  * asks this first so a «no» is today's behaviour, never a 42P01.
  */
@@ -87,7 +87,7 @@ function toConfig(row: typeof agentConfig.$inferSelect): AgentConfig {
   };
 }
 
-/** The config, or null when 0136 has not landed. */
+/** The config, or null when 0138 has not landed. */
 export async function readAgentConfig(handle: Db | Tx = db): Promise<AgentConfig | null> {
   if (!(await agentTablesReady())) return null;
   const [row] = await handle.select().from(agentConfig).where(eq(agentConfig.id, 1));
@@ -287,7 +287,7 @@ export async function confirmSessionExclusive(actor: AgentActor, ctx: AuditConte
   });
 }
 
-/** The numbers on /suhbatlar/ai — the holder or a super_admin; each bounded by the 0136 CHECKs. */
+/** The numbers on /suhbatlar/ai — the holder or a super_admin; each bounded by the 0138 CHECKs. */
 export async function setAgentNumbers(
   actor: AgentActor,
   values: { humanPauseMin?: number; dailyDraftCap?: number; dailyTokenCap?: number },

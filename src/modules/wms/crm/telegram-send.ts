@@ -62,7 +62,7 @@ export interface SendContext {
   bridgeLive: boolean;
   /**
    * Telegram limited the account and a person has not yet said they looked
-   * (0136 `tg_account_guard.paused_at`, review regression-11). Optional: a
+   * (0138 `tg_account_guard.paused_at`, review regression-11). Optional: a
    * context built without it is one from before the guard existed.
    */
   accountPaused?: boolean;

@@ -619,7 +619,7 @@ export async function purgeExcludedChat(
   // different (and refused) act — exclude it first, on the same screen.
   if (rule.decision !== 'exclude') throw new ChatRuleError('not_excluded');
 
-  // The AI sotuvchi's copies of this chat go first (0136, review leak-9): its
+  // The AI sotuvchi's copies of this chat go first (0138, review leak-9): its
   // drafts, runs, outbox rows, calc links, the facts born in it and the
   // cards' quoted text — «o'chirildi» must mean every copy.
   const { purgeAgentChat } = await import('../agent/purge');

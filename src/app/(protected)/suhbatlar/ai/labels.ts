@@ -102,7 +102,7 @@ export const PAUSE_KIND_KEYS: Record<PauseKind, string> = {
   blocks: 'pause.blocks',
 };
 
-/** The 0136 category CHECK, verbatim. */
+/** The 0138 category CHECK, verbatim. */
 export const CATEGORY_KEYS: Record<'greeting' | 'status' | 'faq' | 'qualification' | 'price' | 'complaint' | 'other', string> = {
   greeting: 'category.greeting',
   status: 'category.status',
@@ -117,7 +117,7 @@ export function categoryKey(category: string): string {
   return (CATEGORY_KEYS as Record<string, string>)[category] ?? CATEGORY_KEYS.other;
 }
 
-/** The 0136 kb scope and source CHECKs, verbatim. */
+/** The 0138 kb scope and source CHECKs, verbatim. */
 export const SCOPE_KEYS: Record<'general' | 'client' | 'lead', string> = {
   general: 'scope.general',
   client: 'scope.client',

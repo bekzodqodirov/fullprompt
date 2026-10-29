@@ -1236,7 +1236,7 @@ export async function resolveChatStates<T extends ChatStateSeed>(
   );
 
   /**
-   * An approved AI sotuvchi reply on its way out (0136, review regression-7)
+   * An approved AI sotuvchi reply on its way out (0138, review regression-7)
    * — keyed by the DIALOG, which also covers a lead's chat. Asked only when
    * the table exists, so a database one migration behind answers as today.
    * `agent` (approved, held to its step clock), `sending` and `sent` count,

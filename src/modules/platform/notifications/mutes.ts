@@ -302,7 +302,7 @@ export const FOUNDERS: Readonly<Record<MuteGroup, readonly string[]>> = {
 };
 
 /**
- * Types NO mute silences — not a group, not even «all» (0136, the AI
+ * Types NO mute silences — not a group, not even «all» (0138, the AI
  * sotuvchi, his Q16 ⭐). The agent's cards are the other half of its off
  * switch: drafted replies whose cards were muted would leave customers
  * waiting with nothing on any screen saying why, so the way to stop them is
