@@ -206,9 +206,21 @@ describe('G10, G11: the same text to many, an estimate said as one', () => {
     expect(textFingerprint('Salom Ali! 5 kub', ['Ali'])).toBe(textFingerprint('salom  Vali! 7 kub', ['Vali']));
   });
 
-  it('blocks a fingerprint sent to more than three other customers', () => {
-    expect(codes({ fingerprintPeers: 4 })).toContain('fingerprint');
-    expect(codes({ fingerprintPeers: 3 })).not.toContain('fingerprint');
+  it('blocks a fingerprint sent to more than three other customers — when it carries a figure, a phone, a link or length', () => {
+    const tashkent = 'Toshkent omborimiz: Chuqursoy, 5-uy.';
+    expect(codes({ body: tashkent, fingerprintPeers: 4 })).toContain('fingerprint');
+    expect(codes({ body: tashkent, fingerprintPeers: 3 })).not.toContain('fingerprint');
+    expect(codes({ body: 'Aloqa: +998 95 018 30 33', allowedPhones: ['+998950183033'], fingerprintPeers: 4 })).toContain('fingerprint');
+    expect(codes({ body: 'Manzil: https://yandex.uz/maps/-/CXQr78ni', askedLocation: true, fingerprintPeers: 4 })).toContain('fingerprint');
+    expect(codes({ body: `Va alaykum assalom! ${'Qanday yordam bera olaman? '.repeat(7)}`, fingerprintPeers: 4 })).toContain('fingerprint');
+  });
+
+  it('…and only WARNS for a short reply with none of them — his «a»: the commonest greeting keeps its ✅', () => {
+    const r = check({ body: 'Va alaykum assalom! Qanday yordam bera olaman?', fingerprintPeers: 4 });
+    expect(r.blocks.map((b) => b.code)).not.toContain('fingerprint');
+    expect(r.warnings).toContainEqual({ rule: 'G10', code: 'fingerprint', detail: '4' });
+    expect(r.ok).toBe(true);
+    expect(check({ body: 'Va alaykum assalom! Qanday yordam bera olaman?', fingerprintPeers: 3 }).warnings).toEqual([]);
   });
 
   it('an estimate must say «taxminan» and «boj va QQS alohida»', () => {

@@ -81,6 +81,11 @@ export const AGENT_LIMITS = {
   maxReplyChars: 700,
   /** G10: the same text fingerprint to more peers than this in 24 h blocks ✅ (ban-6). */
   fingerprintPeers: 3,
+  /**
+   * …unless the reply is at most this long and carries no figure, phone or link: then the repeat is a warning and
+   * the ✅ stays (his «a», 2026-10-29 — the commonest greeting went to a fifth chat by noon).
+   */
+  sameTextWarnChars: 160,
   /** G10: a link in at most one AI message per chat per 7 days, and this many per day overall. */
   urlPerChatDays: 7,
   urlPerDay: 10,

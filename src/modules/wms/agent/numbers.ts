@@ -209,12 +209,13 @@ function lastModeBefore(text: string, index: number): TravelMode | null {
 }
 
 /**
- * «Eng kamida», «kamida», «minimal», «минимум», «не менее», «at least» — a minimum said anywhere in a figure's
+ * «Eng kamida», «eng oz», «kamida», «minimal», «… va undan ko'p», «минимум», «не менее», «… и более», «at least»,
+ * «… or more» — a minimum said anywhere in a figure's
  * sentence; and its threshold, «меньше», «менее», «less than», «under», «kamroq» (third review): «Если меньше 1
  * куба или 100 кг, то не принимаем» is the minimum said the other way round.
  */
 const MINIMUM_WORD =
-  /(?<![\p{L}])(?:eng\s+kam(?:ida)?|kamida|kamdan[\s-]kam|kamroq|minimum\p{L}*|minimal\p{L}*|энг\s+кам(?:ида)?|камида|камроқ|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|меньше|менее|at\s+least|less\s+than|under)(?![\p{L}])/iu;
+  /(?<![\p{L}])(?:eng\s+(?:kam(?:ida)?|oz)|kamida|kamdan[\s-]kam|kamroq|minimum\p{L}*|minimal\p{L}*|энг\s+(?:кам(?:ида)?|оз)|камида|камроқ|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|меньше|менее|at\s+least|less\s+than|under|(?:va|ва)\s+(?:undan|ундан)\s+(?:ko['‘’ʻ`]?p(?:roq)?|ortiq|yuqori|кўп(?:роқ)?|ортиқ|юқори)|и\s+(?:более|больше|выше)|(?:or|and)\s+(?:more|above|over))(?![\p{L}])/iu;
 /**
  * …or the figure's own «from»: «от 1 кг», «from 1 kg» before it, «1 kg dan», «1 kubdan» after its unit — and over
  * a pair (third review): «Biz 1 kub yoki 100 kg dan qabul qilamiz», «Принимаем от 1 куба или 100 кг», «We accept
@@ -663,8 +664,12 @@ const MONTH_AFTER = new RegExp(
 const UZ_CYRL_TIMES = /^\s*марта(?![\p{L}])/iu;
 const UZ_CYRL_LETTERS = /[ўқғҳ]/iu;
 
-/** A range: «15-25 kun», «15 dan 25 gacha», «15 до 25». The unit after the second number names both. */
-const RANGE_TAIL = /^\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
+/**
+ * A range: «15-25 kun», «15 dan 25 gacha», «15 дан 25 кунгача», «15 до 25». The unit after the second number names
+ * both. The Uzbek Cyrillic «дан» was missing (fourth check), so «Авто карго одатда 15 дан 25 кунгача келади» read
+ * its 15 as a bare figure and the kb's own transit days lost their ✅.
+ */
+const RANGE_TAIL = /^\s*(?:[-–—~]|dan|дан|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
 
 /**
  * A scale word after a figure is part of it: «1,5 mln so'm» is 1 500 000 and
@@ -693,6 +698,14 @@ const SCALES: readonly (readonly [RegExp, number])[] = [
  */
 const PRICE_VERB_BEFORE =
   /(?<![\p{L}])(?:сто(?:ит|ят|ить|ило|ила|или|ил)|обойд[её]тся|обойдутся)\s+(?:(?:всего|около|примерно|только|лишь)\s+)?$/iu;
+/**
+ * …and the TOTAL's heading right before a bare figure (fourth check): «Hisob:\nJami: 800», «Итого — 2255», «Your
+ * quote:\nTotal: 168», «5 kub uchun jami 800 bo'ladi», «Total comes to 800» name no currency and are the price of
+ * the load all the same — read as bare figures, the customer's own 800 kg or an address's «2255号» vouched for
+ * them. A money figure needs a money source. Only right before the figure: «jami 3 ta savol» is a count.
+ */
+const TOTAL_BEFORE =
+  /(?<![\p{L}])(?:jami|жами|итого|total)(?:\s+(?:bo['‘’ʻ`]?ladi|bo['‘’ʻ`]?lib|chiqadi|бўлади|получается|выйдет|составит|составляет|comes\s+to|is|will\s+be|of|amounts?\s+to))?\s*[:：—–=-]?\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly)\s+)?$/iu;
 
 /**
  * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
@@ -933,6 +946,18 @@ function listMarkerSpans(t: string): [number, number][] {
   return out;
 }
 
+/**
+ * «1688» beside the marketplaces it is one of (fourth check): «Tovar havolasini (1688, Taobao) yuborsangiz ham
+ * bo'ladi», «ссылку с 1688 или Taobao», «1688.com» — a NAME, never a figure, so it asks no source. Only beside
+ * another marketplace, a link or a site, and only bare: «1688 $», «Narxi 1688» (no marketplace beside it) are figures.
+ */
+const MARKETPLACE =
+  "(?:taobao|tmall|alibaba|aliexpress|ali\\s*express|pinduoduo|pdd|jd\\.com|wechat|淘宝|天猫|阿里巴巴|拼多多|京东|таобао|алибаба|алиэкспресс)";
+const MARKET_LINK = '(?:sayt\\p{L}*|havola\\p{L}*|link\\p{L}*|site|сайт\\p{L}*|ссылк\\p{L}*|платформ\\p{L}*|platform\\p{L}*|marketplace\\p{L}*)';
+const MARKET_JOIN = "\\s*(?:[,/;]|\\s(?:yoki|va|или|и|or|and|ёки|ва))?\\s*";
+const MARKET_NAME_AFTER = new RegExp(`^(?:\\.com(?![\\p{L}])|${MARKET_JOIN}${MARKETPLACE}|\\s*(?:dagi|dan|da|ga)?\\s*${MARKET_LINK})`, 'iu');
+const MARKET_NAME_BEFORE = new RegExp(`(?:${MARKETPLACE}|${MARKET_LINK})${MARKET_JOIN}(?:\\(\\s*)?$`, 'iu');
+
 /** Whether a text names money anywhere — read after the phones and links are out: «gsrlogistics.uz/narxlar» names none. */
 export function namesMoney(text: string): boolean {
   return MONEY_WORD.test(blanked(text, []));
@@ -997,9 +1022,17 @@ export function extractNumbers(
     const read = readAt(t, start, end);
     const value = parseFigure(m[0]) * read.scale;
     if (!Number.isFinite(value)) continue;
+    if (
+      m[0] === '1688' &&
+      !glued &&
+      read.kind === 'plain' &&
+      (MARKET_NAME_AFTER.test(after) || MARKET_NAME_BEFORE.test(t.slice(Math.max(0, start - 40), start)))
+    ) {
+      continue;
+    }
     const before = t.slice(Math.max(0, start - 24), start);
     const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
-    const priced = PRICE_VERB_BEFORE.test(before);
+    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
       glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
@@ -1106,6 +1139,51 @@ export function sourceFor(
   return sources.find(fits) ?? null;
 }
 
+/**
+ * A small COUNT the reply makes good itself (fourth check): «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou va
+ * Xorgos», «2 xil yo'l bor: avto va avia», «4 ta ma'lumot kerak: tovar nomi, kub, kg va shahar», «Есть 2
+ * варианта: авто и авиа», «There are 2 options: truck and air». Prompt rule 1 asked for digits and the knowledge
+ * counts in words, so each was «manbasi yo‘q raqam» while «uchta» passed — and a plain «3» passed only when an
+ * address's «3栋» happened to stand behind it. The list right after it, opened by a colon, holding EXACTLY that many
+ * items, is its source; nothing else is. Never a count of cartons or cargo, nor of something that came — «3 ta
+ * karobka keldi: …» is a status nobody stated —, never a figure with a unit, a currency or a «per», never one the
+ * list does not match, and never past nine.
+ */
+export const LISTED_COUNT = 'javobdagi ro‘yxat';
+const LISTED_HEAD = /^\s*((?:[\p{L}'‘’ʻ`-]+\s+){0,4}?[\p{L}'‘’ʻ`-]+)\s*[:：]/u;
+const LISTED_NOT =
+  /(?<![\p{L}])(?:karob\p{L}*|korob\p{L}*|коробк\p{L}*|коробок|quti\p{L}*|қути\p{L}*|box\p{L}*|carton\p{L}*|mesta|мест\p{L}*|joy(?:i)?|yuk\p{L}*|юк\p{L}*|груз\p{L}*|cargo|goods|shipments?|posilka\p{L}*|посылк\p{L}*|parcels?|packages?|paket\p{L}*|пакет\p{L}*|pallet\p{L}*|паллет\p{L}*|qop\p{L}*|қоп\p{L}*|мешк\p{L}*|мешок|bags?|sacks?|partiya\p{L}*|парти\p{L}*|mashina\p{L}*|машин\p{L}*|fura\p{L}*|фур\p{L}*|trucks?)(?![\p{L}])/iu;
+const LIST_END = /[.!?؟。！？\n]|$/u;
+const LIST_JOIN = /\s*[,،，;/]\s*|\s+(?:va|ва|и|and|or|yoki|ёки|или|hamda|ҳамда|yoxud|&)\s+/iu;
+const BULLET_LINE = /^[ \t]*(?:[•·▪●◦\-–—*]|\d{1,2}[.)]|\p{Extended_Pictographic})/u;
+
+function listItems(after: string): number {
+  const line = after.slice(0, after.search(/\n|$/u));
+  const tail = line.slice(0, line.search(LIST_END));
+  if (tail.trim() !== '') return tail.split(LIST_JOIN).filter((x) => x.trim() !== '').length;
+  // The items on lines of their own, each with its bullet: «4 ta ma'lumot kerak:\n• tovar nomi\n• kub …».
+  if (line.trim() !== '') return 0;
+  let n = 0;
+  for (const l of after.split('\n').slice(1)) {
+    if (!BULLET_LINE.test(l)) break;
+    n += 1;
+  }
+  return n;
+}
+
+function listedCount(t: string, f: FoundNumber): boolean {
+  if (f.fixed === true || f.perUnit === true || !Number.isInteger(f.value) || f.value < 2 || f.value > 9) return false;
+  const end = f.index + f.raw.length;
+  if (MONEY_GLUED_AFTER.test(t.slice(end)) || MONEY_GLUED_BEFORE.test(t.slice(Math.max(0, f.index - 12), f.index))) return false;
+  const read = readAt(t, f.index, end);
+  if (read.kind !== 'plain' && read.kind !== 'count') return false;
+  const head = LISTED_HEAD.exec(t.slice(end));
+  if (!head) return false;
+  const words = head[1]!;
+  if (LISTED_NOT.test(words) || ARRIVED.test(words) || MONEY_WORD.test(words)) return false;
+  return listItems(t.slice(end + head[0].length)) === f.value;
+}
+
 /** A ledger line and where its figure stands in the (digit-normalised) text — the policy reads clauses around it. */
 export interface PlacedEntry extends LedgerEntry {
   index: number;
@@ -1145,12 +1223,18 @@ export function placedLedger(
       f.kind === 'duration' || f.kind === 'measure' ? (modeAt(t, f.index) ?? askedMode) : null,
       f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length),
     );
+    // A count the reply's own list makes good — read as a count, whatever money the text names.
+    let listed = false;
+    if (source === null && listedCount(t, f)) {
+      listed = true;
+      found = { ...f, kind: 'count' };
+    }
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
     return {
       raw: money ? `${f.raw} ${currency ? CURRENCY_LABEL[currency] : '(valyuta noma’lum)'}` : f.raw,
       kind: found.kind,
-      source: source?.label ?? null,
+      source: listed ? LISTED_COUNT : (source?.label ?? null),
       ...(money ? { currency } : {}),
       index: f.index,
       end: f.index + f.raw.length,

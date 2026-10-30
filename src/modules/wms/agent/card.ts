@@ -128,6 +128,10 @@ export function hitWords(hit: PolicyHit): string {
   }
   if (hit.code === 'wrong_script' && hit.detail) return `${base}: ${scriptPairWords(hit.detail)}`;
   if (hit.code === 'too_long' && hit.detail && /^\d+$/u.test(hit.detail)) return `${base}: ${hit.detail} belgi`;
+  // How many OTHER chats got the same words in 24 h — the count is the point of the line (G10, his «a»).
+  if (hit.code === 'fingerprint' && hit.detail && /^\d+$/u.test(hit.detail)) {
+    return `bir xil matn 24 soatda yana ${hit.detail} ta chatga ketgan`;
+  }
   return hit.detail && hit.code !== 'canary' ? `${base}: ${hit.detail}` : base;
 }
 
