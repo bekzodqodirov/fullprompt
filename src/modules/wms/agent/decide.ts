@@ -21,6 +21,7 @@ import {
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
+import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
@@ -32,7 +33,7 @@ import { keptFileSql } from './outbox-store';
 import { AGENT_LIMITS } from './limits';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
-import { sendsToday } from './today';
+import { capReached, dayRunCounts, OUTBOX_GOING, sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { isFirstAsk, JOB_AGENT_INBOUND, nextRedraftAttempt, type AgentInboundJob } from './queues';
 import { isNudge } from './worthy';
@@ -130,6 +131,27 @@ export function mintRandomId(): bigint {
 }
 
 /**
+ * Was the customer's line edited after the draft read it? `anchorEditedAt` is
+ * the edit the draft was written over (null: none). One test for the ✅
+ * (`chatMoved`) and the ❌ (`decideDraft`): a ❌ on a ✏️-opened draft whose line
+ * the customer EDITED asks the edited line again, as the ✅ does (review: the
+ * edit's own run stood down for his ✏️, the ❌ looked only for a NEWER line,
+ * and the customer's changed question was drafted by nobody).
+ */
+function editedSince(d: typeof agentDrafts.$inferSelect, editedAt: Date | null): boolean {
+  return editedAt !== null && (!d.anchorEditedAt || editedAt.getTime() > d.anchorEditedAt.getTime());
+}
+
+/** The anchor's own edit stamp read now — `editedSince`'s input for a press that does not run `chatMoved`. */
+async function anchorEditedNow(d: typeof agentDrafts.$inferSelect): Promise<boolean> {
+  const [anchor] = await db
+    .select({ editedAt: tgMessages.editedAt })
+    .from(tgMessages)
+    .where(and(eq(tgMessages.managerUserId, d.managerUserId), eq(tgMessages.peerId, d.peerId), eq(tgMessages.tgMessageId, d.anchorTgMessageId)));
+  return anchor !== undefined && editedSince(d, anchor.editedAt);
+}
+
+/**
  * Has the chat moved past the draft since it was written? Re-asked at the ✅
  * from the stored rows; the pump asks the live head again before every step.
  * A newer inbound counts by `asksAnew` — the head's own rule — so a photo, a
@@ -144,7 +166,7 @@ async function chatMoved(d: typeof agentDrafts.$inferSelect): Promise<'supersede
     .from(tgMessages)
     .where(and(eq(tgMessages.managerUserId, d.managerUserId), eq(tgMessages.peerId, d.peerId), eq(tgMessages.tgMessageId, d.anchorTgMessageId)));
   if (!anchor) return 'superseded';
-  if (anchor.editedAt && (!d.anchorEditedAt || anchor.editedAt.getTime() > d.anchorEditedAt.getTime())) return 'anchor_edited';
+  if (editedSince(d, anchor.editedAt)) return 'anchor_edited';
   const newer = await db
     .select({
       id: tgMessages.id,
@@ -217,8 +239,12 @@ async function lastInboundAt(d: typeof agentDrafts.$inferSelect): Promise<Date |
  */
 export interface RedraftAnswer {
   line: 'edited' | 'newer';
-  /** coming: a card for that line is on its way; none: nothing will draft it — he answers; answered: its card is approved. */
-  next: 'coming' | 'none' | 'answered';
+  /**
+   * coming: a card for that line is on its way; none: nothing will draft it — he answers; answered: its
+   * card is approved and its reply went or is going; capped: only a run that has not reserved yet could
+   * draft it, and the chat is at a daily cap — that run would be refused, so nothing comes and he answers.
+   */
+  next: 'coming' | 'none' | 'answered' | 'capped';
 }
 
 /**
@@ -252,9 +278,18 @@ export interface RedraftAnswer {
  *    down for his ✏️ — the old error kept the line from ever being asked
  *    again): asked again when that ask stood down for his edit, or drafted a
  *    card this very draft superseded (the hand-back that landed after it);
- *    `answered` when its card is approved; `none` for a refusal, a cap, a «no
- *    reply needed», a notice, a card he rejected or let expire, an error past
- *    its retry — that ask's own answer, nothing comes.
+ *    `answered` when its card is approved AND that reply went or is still
+ *    going (`OUTBOX_GOING`); `none` for a refusal, a cap, a «no reply
+ *    needed», a notice, a card he rejected or let expire, an approved reply
+ *    he cancelled or that failed or expired (it reached nobody — like a card
+ *    he rejected, it is that ask's answer), an error past its retry — that
+ *    ask's own answer, nothing comes;
+ *  - a card only a run that has not RESERVED yet can write — a waiting job,
+ *    the sweep's retry, the press's own queueing — is promised only while the
+ *    chat is under the reservation's caps, read as the reservation reads them
+ *    (today `capReached`): over one, that run is refused `capped`, and the
+ *    day's one cap notice has usually been spent already (review). `capped`,
+ *    and nothing is queued.
  * Which runs answer the line: for an edited anchor only those since the draft
  * (the draft's own run answered the text before the edit); for a newer
  * message EVERY run of it, whenever it began — a hand-back draft is written
@@ -302,20 +337,27 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
   if (answering.some((r) => r.outcome === 'reserved')) return { line, next: 'coming' };
   const drafted = answering.filter((r) => r.outcome === 'draft').map((r) => r.id);
   const cards = drafted.length
-    ? await db.select({ runId: agentDrafts.runId, status: agentDrafts.status }).from(agentDrafts).where(inArray(agentDrafts.runId, drafted))
+    ? await db
+        .select({ runId: agentDrafts.runId, status: agentDrafts.status, sendStatus: agentOutbox.status })
+        .from(agentDrafts)
+        .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id))
+        .where(inArray(agentDrafts.runId, drafted))
     : [];
   if (cards.some((c) => c.status === 'pending' || c.status === 'editing')) return { line, next: 'coming' };
-  if (jobs.has(`${d.peerId}:${newest.tgMessageId}`)) return { line, next: 'coming' };
+  // Every card below is a run that has not reserved yet: promised only under the caps that run meets.
+  const day = await dayRunCounts(tashkentDayStart(tashkentDay(new Date())).toISOString(), { managerUserId: d.managerUserId, peerId: d.peerId });
+  const coming: RedraftAnswer['next'] = capReached(day, config) ? 'capped' : 'coming';
+  if (jobs.has(`${d.peerId}:${newest.tgMessageId}`)) return { line, next: coming };
   // The sweep retries an errored ask that nothing asked after (jobs `agentSweep` step 4).
   const top = Math.max(-1, ...runs.map((r) => r.attempt));
   const retrying = (r: (typeof runs)[number]) =>
     r.outcome === 'error' && isFirstAsk(r.attempt) && r.attempt === top && Date.now() - r.createdAt.getTime() < ERRORED_RETRY_WINDOW_MS;
-  if (answering.some(retrying)) return { line, next: 'coming' };
+  if (answering.some(retrying)) return { line, next: coming };
   // The line's newest ask — by when it was asked; an edit's 100 + n can be older than a press's 50.
   const last = [...answering].sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime() || x.attempt - y.attempt).at(-1);
   if (last) {
     const card = last.outcome === 'draft' ? cards.find((c) => c.runId === last.id) : undefined;
-    if (card?.status === 'approved') return { line, next: 'answered' };
+    if (card?.status === 'approved' && (OUTBOX_GOING as readonly (string | null)[]).includes(card.sendStatus)) return { line, next: 'answered' };
     const askAgain = (last.outcome === 'stood_down' && last.error === 'editing') || card?.status === 'superseded';
     if (!askAgain) return { line, next: 'none' };
   } else if (edited) {
@@ -323,6 +365,7 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
   }
   const attempt = runs.length === 0 ? 0 : nextRedraftAttempt(runs.map((r) => r.attempt));
   if (attempt === null) return { line, next: 'none' };
+  if (coming === 'capped') return { line, next: 'capped' };
   const job: AgentInboundJob = {
     managerUserId: d.managerUserId,
     peerId: String(d.peerId),
@@ -341,16 +384,18 @@ async function redraftNewest(d: typeof agentDrafts.$inferSelect, how: 'newer' | 
  * table, so the three say one thing. A newer message with a card coming
  * keeps the card's ordinary «↪️ Mijoz yana yozdi — yangi qoralama».
  */
-export type SupersededDetail = 'redrafting' | 'no_draft' | 'edited_redrafting' | 'edited_no_draft' | 'answered';
+export type SupersededDetail = 'redrafting' | 'no_draft' | 'capped' | 'edited_redrafting' | 'edited_no_draft' | 'edited_capped' | 'answered';
 const SUPERSEDED_AS: Record<RedraftAnswer['line'], Record<RedraftAnswer['next'], { detail: SupersededDetail; stale: SupersededStale | null }>> = {
   newer: {
     coming: { detail: 'redrafting', stale: null },
     none: { detail: 'no_draft', stale: 'no_redraft' },
+    capped: { detail: 'capped', stale: 'capped' },
     answered: { detail: 'answered', stale: 'answered' },
   },
   edited: {
     coming: { detail: 'edited_redrafting', stale: 'edited' },
     none: { detail: 'edited_no_draft', stale: 'edited_no_redraft' },
+    capped: { detail: 'edited_capped', stale: 'edited_capped' },
     answered: { detail: 'answered', stale: 'answered' },
   },
 };
@@ -626,8 +671,10 @@ export async function decideDraft(
     await refreshDraftCard(draftId);
     // Each cancelled reply's own card says it will not go (card-io's CANCEL_WORDS `taken_over`).
     for (const held of changed.held) await refreshDraftCard(held);
-    // ❌ on a draft he had opened for editing: a newer message that stood down for that edit is asked again.
-    if (decision === 'reject' && d.status === 'editing') await redraftQuietly(d, 'newer');
+    // ❌ on a draft he had opened for editing: a line that stood down for that edit is asked again — the
+    // customer's EDITED line itself when he edited it after the draft (`editedSince`, chatMoved's own test),
+    // else a newer message. `redraftNewest('edited')` moves on to a newer message when there is one.
+    if (decision === 'reject' && d.status === 'editing') await redraftQuietly(d, (await anchorEditedNow(d)) ? 'edited' : 'newer');
     return { ok: true, status, ...(decision === 'human' ? { withdrawn: { total: changed.held.length, own: changed.own } } : {}) };
   }
 

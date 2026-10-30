@@ -93,12 +93,14 @@ import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
-import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
+import { decideDraft, mintRandomId, submitOwnText } from '@/modules/wms/agent/decide';
 import { createDraft } from '@/modules/wms/agent/drafts';
 import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, SUPERSEDED_WORDS, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
 import { agentSweep, retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
+import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
+import { CANCELLED_BY_HOLDER } from '@/modules/wms/agent/web-thread';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { agentDecideAction } from '@/modules/wms/agent/web-actions';
 import type { PolicyMemory } from '@/modules/wms/agent/policy-input';
@@ -351,6 +353,42 @@ async function newerWhileEditing(me: Owner, agoMs = 30_000): Promise<bigint> {
     error: 'editing',
   });
   return newer;
+}
+
+/**
+ * `n` more of today's counted inbound runs on this chat (run `reserve` counts
+ * every outcome but refused / capped / notice), each on a line of its own —
+ * the earlier questions of a busy day.
+ */
+async function fillChatDay(me: Owner, n: number): Promise<void> {
+  if (n <= 0) return;
+  await db.insert(agentRuns).values(
+    Array.from({ length: n }, () => ({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound' as const,
+      anchorTgMessageId: BigInt(nextMsg()),
+      attempt: 0,
+      outcome: 'draft' as const,
+    })),
+  );
+}
+
+/** The approval's outbox row (decide `decideDraft` writes it with the approval), in the state its send reached. */
+async function queuedReply(me: Owner, draftId: string, anchor: bigint, status: 'agent' | 'sent' | 'cancelled' | 'failed' | 'expired', lastError?: string): Promise<void> {
+  await db.insert(agentOutbox).values({
+    draftId,
+    managerUserId: me.id,
+    peerId: me.peer,
+    clientId,
+    body: 'Qaysi tovar?',
+    randomId: mintRandomId(),
+    answersTgMessageId: anchor,
+    queuedBy: me.id,
+    status,
+    ...(status === 'sent' ? { sentAt: new Date() } : {}),
+    lastError: lastError ?? null,
+  });
 }
 
 /**
@@ -999,7 +1037,9 @@ describe('the press promises only the card that is coming, and asks as itself (r
       .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'draft' })
       .returning({ id: agentRuns.id });
     const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
+    // Approved and queued are one fact (regression-8): the approval's outbox row, still waiting its turn.
     await db.update(agentDrafts).set({ status: 'approved' }).where(eq(agentDrafts.id, theirs.draftId));
+    await queuedReply(me, theirs.draftId, newer, 'agent');
     const a = await draftFor(me);
     webActor.current = { id: me.id, roles: ['super_admin'], permissions: new Set<string>() };
     try {
@@ -1020,6 +1060,158 @@ describe('the press promises only the card that is coming, and asks as itself (r
     expect(uz.agentAi.errors.superseded_edited_no_draft).toBe(SUPERSEDED_WORDS.edited_no_draft);
     expect(uz.agentAi.errors.superseded_no_draft).toBe(SUPERSEDED_WORDS.no_draft);
     expect(uz.agentAi.errors.superseded).toBe(SUPERSEDED_WORDS.redrafting);
+  });
+
+  it('…but an approved reply he CANCELLED, or that failed or expired, reached nobody: the line is his to answer — never «javob allaqachon tasdiqlangan»', async () => {
+    for (const [status, lastError] of [
+      ['cancelled', CANCELLED_BY_HOLDER],
+      ['failed', 'PEER_ID_INVALID'],
+      ['expired', 'approval_too_old'],
+    ] as const) {
+      const me = await owner();
+      const newer = await newerLine(me);
+      const [run] = await db
+        .insert(agentRuns)
+        .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0, outcome: 'draft' })
+        .returning({ id: agentRuns.id });
+      const theirs = await draftFor(me, { anchor: newer, runId: run!.id, body: 'Qaysi tovar?' });
+      // The draft stays 'approved' whatever became of its send — web-thread `cancelAgentReply`, the send step's cancel and a failure all write the outbox row alone.
+      await db.update(agentDrafts).set({ status: 'approved' }).where(eq(agentDrafts.id, theirs.draftId));
+      await queuedReply(me, theirs.draftId, newer, status, lastError);
+      const a = await draftFor(me);
+      const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+      expect(r, status).toEqual({ ok: false, code: 'superseded', detail: 'no_draft' });
+      expect(mine(me), status).toEqual([]);
+      const card = String((await cardPayloadOf(a.draftId)).text);
+      expect(card, status).toContain('↪️ Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.');
+      expect(card, status).not.toContain('allaqachon tasdiqlangan');
+    }
+  });
+
+  it('❌ on a ✏️-opened draft whose line the customer EDITED asks the edited line again — the edit’s own run stood down for his ✏️, and nobody else will', async () => {
+    const me = await owner();
+    // The draft's own run (attempt 0), then the card.
+    const [own] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const a = await draftFor(me, { runId: own!.id });
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    // The customer edits the greeting into a question; the listener's edit job meets his ✏️ and stands down.
+    await editAnchor(me);
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: me.anchor,
+      attempt: 100,
+      outcome: 'stood_down',
+      error: 'editing',
+    });
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
+    expect((await draftOf(a.draftId)).status).toBe('rejected');
+    const asked = mine(me);
+    expect(asked).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(me.anchor), attempt: 50, origin: 'redraft' }]);
+    // The job runs: a card for the customer's changed words.
+    expect(await withModelKey(() => handleInbound(asked[0]!, { callModel: composing('Qaysi tovar va necha kg?') }))).toMatchObject({ outcome: 'draft' });
+    const live = await db
+      .select({ anchor: agentDrafts.anchorTgMessageId })
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.status, 'pending')));
+    expect(live).toEqual([{ anchor: me.anchor }]);
+  });
+
+  it('a chat at its daily run cap: ✅ says no card comes and why — and queues nothing, because the run it would queue is refused at its reservation', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    // The newer line's stood-down run is one of today's twelve for this chat.
+    await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 1);
+    const m = h.mark();
+    await withModelKey(async () => h.handle(tg.callback(me.chat, nextMsg(), (await cardSend(a.draftId))!)));
+    expect(toastOf(h.since(m).api)).toBe(SUPERSEDED_WORDS.capped);
+    expect(SUPERSEDED_WORDS.capped).not.toContain('tayyorlanadi');
+    expect(mine(me)).toEqual([]);
+    expect((await draftOf(a.draftId)).status).toBe('superseded');
+    const card = String((await cardPayloadOf(a.draftId)).text);
+    expect(card).toContain('↪️ Mijoz yana yozdi — bu javob ketmaydi. Bugungi AI chegarasi tugagan — yangi xabariga o‘zingiz javob bering.');
+    expect(card).not.toContain('yangi qoralama');
+    // The premise, by the run itself: the redraft the press would have queued is refused at its reservation.
+    const would: AgentInboundJob = { managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' };
+    expect(await withModelKey(() => handleInbound(would, { callModel: composing('Qaysi tovar?') }))).toEqual({ outcome: 'capped', reason: 'chat_runs' });
+  });
+
+  it('…one run under the cap, the same press queues the line — the cap is the reservation’s own count, not one less', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 2);
+    const r = await withModelKey(async () =>
+      decideDraft(actor(me.id), a.draftId, 'send', { digest: (await cardSend(a.draftId))!.split(':').at(-1)! }, { actorId: me.id }),
+    );
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'redrafting' });
+    expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
+  });
+
+  it('the day’s draft cap and token cap count too, and an EDIT’s waiting job at the cap is said as an edit — the page in its own label', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    await editAnchor(me);
+    await waitingJob(me, me.anchor, 'edit');
+    // The day's draft cap (every chat's inbound runs) at what is already there — zero is the page's own floor.
+    await db.update(agentConfig).set({ dailyDraftCap: 0 }).where(eq(agentConfig.id, 1));
+    webActor.current = { id: me.id, roles: ['super_admin'], permissions: new Set<string>() };
+    try {
+      const digest = (await cardSend(a.draftId))!.split(':').at(-1)!;
+      expect(await withModelKey(() => agentDecideAction(a.draftId, 'send', digest))).toEqual({ ok: false, error: 'superseded_edited_capped' });
+    } finally {
+      webActor.current = null;
+    }
+    expect(mine(me)).toEqual([]);
+    expect(String((await cardPayloadOf(a.draftId)).text)).toContain('↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Bugungi AI chegarasi tugagan — unga o‘zingiz javob bering.');
+    // The token cap: under the draft cap again, over the tokens.
+    const b = await owner();
+    const bd = await draftFor(b);
+    await h.handle(tg.callback(b.chat, nextMsg(), `ag:e:${bd.draftId}`));
+    await newerWhileEditing(b);
+    await db.update(agentConfig).set({ dailyTokenCap: 0 }).where(eq(agentConfig.id, 1));
+    const r = await withModelKey(async () =>
+      decideDraft(actor(b.id), bd.draftId, 'send', { digest: (await cardSend(bd.draftId))!.split(':').at(-1)! }, { actorId: b.id }),
+    );
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'capped' });
+    expect(mine(b)).toEqual([]);
+    // The page's labels are the bot's sentences.
+    expect(errorKey('superseded_capped')).toBe('errors.superseded_capped');
+    expect(errorKey('superseded_edited_capped')).toBe('errors.superseded_edited_capped');
+    const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { agentAi: { errors: Record<string, string> } };
+    expect(uz.agentAi.errors.superseded_capped).toBe(SUPERSEDED_WORDS.capped);
+    expect(uz.agentAi.errors.superseded_edited_capped).toBe(SUPERSEDED_WORDS.edited_capped);
+  });
+
+  it('❌ at the cap asks nothing — the redraft it would queue is refused, and «❌ Rad etildi» promised no card', async () => {
+    const me = await owner();
+    const [own] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: me.anchor, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const a = await draftFor(me, { runId: own!.id });
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    await editAnchor(me);
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: me.anchor,
+      attempt: 100,
+      outcome: 'stood_down',
+      error: 'editing',
+    });
+    await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 2);
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
+    expect((await draftOf(a.draftId)).status).toBe('rejected');
+    expect(mine(me)).toEqual([]);
   });
 
   it('an errored first look the sweep will retry is the card too — promised, and not asked a second time beside the retry', async () => {

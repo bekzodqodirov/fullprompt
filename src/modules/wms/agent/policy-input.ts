@@ -11,6 +11,7 @@ import { warehouseAddressTexts } from './kb';
 import { GS_REMINDER } from './seed-kb';
 import { addressAnchorsOf, checkAgentReply, checkOwnerReply, codeCandidatesIn, textFingerprint, type PolicyHit, type PolicyResult } from './policy';
 import { AGENT_LIMITS } from './limits';
+import { OUTBOX_GOING } from './today';
 
 /**
  * The policy's inputs that are FACTS ABOUT THE WORLD (who else got this text,
@@ -132,7 +133,7 @@ async function sendCounts(managerUserId: string, peerId: bigint, body: string, s
     .where(
       and(
         eq(agentOutbox.managerUserId, managerUserId),
-        inArray(agentOutbox.status, ['agent', 'sending', 'sent', 'unknown']),
+        inArray(agentOutbox.status, [...OUTBOX_GOING]),
         gte(agentOutbox.queuedAt, new Date(Date.now() - 7 * 86_400_000)),
       ),
     );

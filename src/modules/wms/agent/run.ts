@@ -18,7 +18,7 @@ import { detectLocale, dominantScript, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
 import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
-import { dayRunCounts } from './today';
+import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
@@ -318,10 +318,8 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
-    const { runs, chat, tokens } = await dayRunCounts(dayStart, { managerUserId: job.managerUserId, peerId: BigInt(job.peerId) }, tx);
-    if (!(runs < config.dailyDraftCap)) return 'capped:daily_draft_cap';
-    if (!(chat < AGENT_LIMITS.runsPerChatPerDay)) return 'capped:chat_runs';
-    if (!(tokens < config.dailyTokenCap)) return 'capped:daily_token_cap';
+    const cap = capReached(await dayRunCounts(dayStart, { managerUserId: job.managerUserId, peerId: BigInt(job.peerId) }, tx), config);
+    if (cap) return `capped:${cap}`;
     const rows = await tx
       .insert(agentRuns)
       .values({

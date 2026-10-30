@@ -104,8 +104,11 @@ export const SUPERSEDED_NO_DRAFT = 'Mijoz yana yozdi — bu javob ketmaydi. Yang
 export const SUPERSEDED_WORDS: Record<SupersededDetail, string> = {
   redrafting: DECIDE_WORDS.superseded,
   no_draft: SUPERSEDED_NO_DRAFT,
+  // A run would draft the line, and the chat is at a daily cap that run meets (decide `capReached`): no card comes.
+  capped: 'Mijoz yana yozdi — bu javob ketmaydi. Bugungi AI chegarasi tugagan, yangi qoralama bo‘lmaydi — yangi xabariga o‘zingiz javob bering.',
   edited_redrafting: 'Mijoz xabarini tahrirladi — yangi qoralama tayyorlanadi.',
   edited_no_draft: 'Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.',
+  edited_capped: 'Mijoz xabarini tahrirladi — bu javob ketmaydi. Bugungi AI chegarasi tugagan, yangi qoralama bo‘lmaydi — unga o‘zingiz javob bering.',
   answered: 'Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
 };
 

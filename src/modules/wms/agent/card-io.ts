@@ -86,7 +86,7 @@ const CANCEL_WORDS: Record<string, string> = {
 };
 
 /** The `policy.stale` a ✅ writes when it finds the chat moved (decide `SUPERSEDED_AS`). */
-export type SupersededStale = 'no_redraft' | 'edited' | 'edited_no_redraft' | 'answered';
+export type SupersededStale = 'no_redraft' | 'capped' | 'edited' | 'edited_no_redraft' | 'edited_capped' | 'answered';
 
 /**
  * A draft retired with a reason of its own (`policy.stale`). The figure on it
@@ -103,9 +103,12 @@ const STALE_WORDS: Record<SupersededStale | 'recalc' | 'avia_rate', string> = {
   // ✅ found the customer's newer message and no run will draft it:
   // «— yangi qoralama» would promise a card that never comes.
   no_redraft: '↪️ Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.',
+  // …and a run would draft it, but the chat is at a daily cap: that run is refused, so nothing comes (decide `capReached`).
+  capped: '↪️ Mijoz yana yozdi — bu javob ketmaydi. Bugungi AI chegarasi tugagan — yangi xabariga o‘zingiz javob bering.',
   // ✅ found the line EDITED — the customer changed his words, he did not write again.
   edited: '↪️ Mijoz xabarini tahrirladi — yangi qoralama.',
   edited_no_redraft: '↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.',
+  edited_capped: '↪️ Mijoz xabarini tahrirladi — bu javob ketmaydi. Bugungi AI chegarasi tugagan — unga o‘zingiz javob bering.',
   // ✅ found the newest line's own card already approved: telling him to answer it would be answering twice.
   answered: '↪️ Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
 };

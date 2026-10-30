@@ -108,8 +108,10 @@ async function run(work: (g: Gate) => Promise<AgentActionResult | void>): Promis
 const SUPERSEDED_ERROR: Record<SupersededDetail, string> = {
   redrafting: 'superseded',
   no_draft: 'superseded_no_draft',
+  capped: 'superseded_capped',
   edited_redrafting: 'superseded_edited',
   edited_no_draft: 'superseded_edited_no_draft',
+  edited_capped: 'superseded_edited_capped',
   answered: 'superseded_answered',
 };
 
