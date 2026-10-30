@@ -95,7 +95,7 @@ import { POLICY_WORDS } from '@/modules/wms/agent/card';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { decideDraft, mintRandomId, submitOwnText } from '@/modules/wms/agent/decide';
 import { createDraft } from '@/modules/wms/agent/drafts';
-import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, SUPERSEDED_WORDS, agentPress, ownTextPlaced } from '@/modules/wms/agent/bot-door';
+import { EDIT_PROMPT, OWN_TEXT_PLACED, SUPERSEDED_NO_DRAFT, SUPERSEDED_WORDS, agentPress, ownTextPlaced, releaseEdit } from '@/modules/wms/agent/bot-door';
 import { agentSweep, retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
 import { JOB_AGENT_INBOUND, type AgentInboundJob } from '@/modules/wms/agent/queues';
@@ -1119,6 +1119,140 @@ describe('the press promises only the card that is coming, and asks as itself (r
       .from(agentDrafts)
       .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.status, 'pending')));
     expect(live).toEqual([{ anchor: me.anchor }]);
+  });
+
+  it('❌ on a ✏️-opened draft that is back on PENDING — his own words typed, or a ✏️ elsewhere let it go — still asks the line that stood down for that ✏️: nobody else will', async () => {
+    // His own words: ✏️, the customer writes, he types, then the card's ❌.
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    expect((await submitOwnText(actor(me.id), a.draftId, `O‘z matnim ${STAMP}`, { actorId: me.id })).ok).toBe(true);
+    expect((await draftOf(a.draftId)).status).toBe('pending');
+    const m = h.mark();
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
+    expect(toastOf(h.since(m).api)).toBe('❌ Rad etildi');
+    expect((await draftOf(a.draftId)).status).toBe('rejected');
+    const asked = mine(me);
+    expect(asked).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
+    // The job runs: the customer's newer question gets its card.
+    expect(await withModelKey(() => handleInbound(asked[0]!, { callModel: composing('Qaysi tovar va necha kg?') }))).toMatchObject({ outcome: 'draft' });
+    const live = await db
+      .select({ anchor: agentDrafts.anchorTgMessageId })
+      .from(agentDrafts)
+      .where(and(eq(agentDrafts.managerUserId, me.id), eq(agentDrafts.peerId, me.peer), eq(agentDrafts.status, 'pending')));
+    expect(live).toEqual([{ anchor: newer }]);
+
+    // The customer EDITED the line while he was on ✏️, the edit's run stood down, then his words and ❌.
+    const b = await owner();
+    const [own] = await db
+      .insert(agentRuns)
+      .values({ managerUserId: b.id, peerId: b.peer, trigger: 'inbound', anchorTgMessageId: b.anchor, attempt: 0, outcome: 'draft' })
+      .returning({ id: agentRuns.id });
+    const bd = await draftFor(b, { runId: own!.id });
+    await h.handle(tg.callback(b.chat, nextMsg(), `ag:e:${bd.draftId}`));
+    await editAnchor(b);
+    await db.insert(agentRuns).values({
+      managerUserId: b.id,
+      peerId: b.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: b.anchor,
+      attempt: 100,
+      outcome: 'stood_down',
+      error: 'editing',
+    });
+    expect((await submitOwnText(actor(b.id), bd.draftId, `O‘z matnim ${STAMP}`, { actorId: b.id })).ok).toBe(true);
+    await withModelKey(() => h.handle(tg.callback(b.chat, nextMsg(), `ag:r:${bd.draftId}`)));
+    expect((await draftOf(bd.draftId)).status).toBe('rejected');
+    expect(mine(b)).toEqual([{ managerUserId: b.id, peerId: String(b.peer), anchorTgMessageId: String(b.anchor), attempt: 50, origin: 'redraft' }]);
+
+    // A second ✏️ elsewhere put it back on pending with no words of his (bot-door `releaseEdit`).
+    const c = await owner();
+    const cd = await draftFor(c);
+    await h.handle(tg.callback(c.chat, nextMsg(), `ag:e:${cd.draftId}`));
+    const cNewer = await newerWhileEditing(c);
+    await releaseEdit(c.id, cd.draftId);
+    expect((await draftOf(cd.draftId)).status).toBe('pending');
+    await withModelKey(() => h.handle(tg.callback(c.chat, nextMsg(), `ag:r:${cd.draftId}`)));
+    expect((await draftOf(cd.draftId)).status).toBe('rejected');
+    expect(mine(c)).toEqual([{ managerUserId: c.id, peerId: String(c.peer), anchorTgMessageId: String(cNewer), attempt: 50, origin: 'redraft' }]);
+  });
+
+  it('…but ❌ on a draft nothing stood down for asks nothing: a newer line still in its run, or one its run refused, is that run’s own answer', async () => {
+    // The newer line's run is still in its model call — that run is the card.
+    const me = await owner();
+    const a = await draftFor(me);
+    const newer = await newerLine(me);
+    await db.insert(agentRuns).values({ managerUserId: me.id, peerId: me.peer, trigger: 'inbound', anchorTgMessageId: newer, attempt: 0 });
+    await withModelKey(() => h.handle(tg.callback(me.chat, nextMsg(), `ag:r:${a.draftId}`)));
+    expect((await draftOf(a.draftId)).status).toBe('rejected');
+    expect(mine(me)).toEqual([]);
+    expect(await runsOf(me, newer)).toEqual([{ attempt: 0, outcome: 'reserved' }]);
+    // The newer line's run refused it — not asked again.
+    const b = await owner();
+    const bd = await draftFor(b);
+    const bNewer = await newerLine(b);
+    await db.insert(agentRuns).values({
+      managerUserId: b.id,
+      peerId: b.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: bNewer,
+      attempt: 0,
+      outcome: 'refused',
+      error: 'muted',
+    });
+    await withModelKey(() => h.handle(tg.callback(b.chat, nextMsg(), `ag:r:${bd.draftId}`)));
+    expect((await draftOf(bd.draftId)).status).toBe('rejected');
+    expect(mine(b)).toEqual([]);
+  });
+
+  it('two presses at once on a draft the chat moved past: the one that lost the status check never says «o‘zingiz javob bering» beside the winner’s redraft', async () => {
+    // ✅ and ✅ (the bot and the page, or a press redelivered): the winner retires the draft and asks the line once.
+    const me = await owner();
+    const a = await draftFor(me);
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${a.draftId}`));
+    const newer = await newerWhileEditing(me);
+    const digest = (await cardSend(a.draftId))!.split(':').at(-1)!;
+    let inner: unknown = null;
+    betweenReadAndCas.once = async () => {
+      inner = await decideDraft(actor(me.id), a.draftId, 'send', { digest }, { actorId: me.id });
+    };
+    const outer = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', { digest }, { actorId: me.id }));
+    expect(betweenReadAndCas.once, 'the hook ran').toBeNull();
+    expect(inner).toEqual({ ok: false, code: 'superseded', detail: 'redrafting' });
+    expect(outer).toEqual({ ok: false, code: 'not_live' });
+    expect(mine(me)).toEqual([{ managerUserId: me.id, peerId: String(me.peer), anchorTgMessageId: String(newer), attempt: 50, origin: 'redraft' }]);
+    expect(String((await cardPayloadOf(a.draftId)).text)).toContain('↪️ Mijoz yana yozdi — yangi qoralama.');
+
+    // ✅ and ❌ at once: the ❌ wins and asks the line; the ✅ is told the draft is gone, in the bot's words.
+    const b = await owner();
+    const bd = await draftFor(b);
+    await h.handle(tg.callback(b.chat, nextMsg(), `ag:e:${bd.draftId}`));
+    const bNewer = await newerWhileEditing(b);
+    betweenReadAndCas.once = async () => {
+      inner = await decideDraft(actor(b.id), bd.draftId, 'reject', {}, { actorId: b.id });
+    };
+    const m = h.mark();
+    await withModelKey(async () => h.handle(tg.callback(b.chat, nextMsg(), (await cardSend(bd.draftId))!)));
+    expect(betweenReadAndCas.once, 'the hook ran').toBeNull();
+    expect(inner).toEqual({ ok: true, status: 'rejected' });
+    expect(toastOf(h.since(m).api)).toBe('Bu qoralama endi faol emas.');
+    expect(mine(b)).toEqual([{ managerUserId: b.id, peerId: String(b.peer), anchorTgMessageId: String(bNewer), attempt: 50, origin: 'redraft' }]);
+
+    // His own words land in that gap instead: the draft is still live, so the card changed — nothing retired, nothing asked.
+    const c = await owner();
+    const cd = await draftFor(c);
+    await h.handle(tg.callback(c.chat, nextMsg(), `ag:e:${cd.draftId}`));
+    await newerWhileEditing(c);
+    const cDigest = (await cardSend(cd.draftId))!.split(':').at(-1)!;
+    betweenReadAndCas.once = async () => {
+      expect((await submitOwnText(actor(c.id), cd.draftId, `O‘z matnim ${STAMP}`, { actorId: c.id })).ok).toBe(true);
+    };
+    const r = await withModelKey(() => decideDraft(actor(c.id), cd.draftId, 'send', { digest: cDigest }, { actorId: c.id }));
+    expect(betweenReadAndCas.once, 'the hook ran').toBeNull();
+    expect(r).toEqual({ ok: false, code: 'stale_card' });
+    expect((await draftOf(cd.draftId)).status).toBe('pending');
+    expect(mine(c)).toEqual([]);
   });
 
   it('a chat at its daily run cap: ✅ says no card comes and why — and queues nothing, because the run it would queue is refused at its reservation', async () => {

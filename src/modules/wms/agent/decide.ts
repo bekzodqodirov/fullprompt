@@ -671,10 +671,14 @@ export async function decideDraft(
     await refreshDraftCard(draftId);
     // Each cancelled reply's own card says it will not go (card-io's CANCEL_WORDS `taken_over`).
     for (const held of changed.held) await refreshDraftCard(held);
-    // ❌ on a draft he had opened for editing: a line that stood down for that edit is asked again — the
-    // customer's EDITED line itself when he edited it after the draft (`editedSince`, chatMoved's own test),
-    // else a newer message. `redraftNewest('edited')` moves on to a newer message when there is one.
-    if (decision === 'reject' && d.status === 'editing') await redraftQuietly(d, (await anchorEditedNow(d)) ? 'edited' : 'newer');
+    // ❌: a line that stood down for his ✏️ on this draft (or whose card this draft superseded) is asked
+    // again — the customer's EDITED line itself when he edited it after the draft (`editedSince`,
+    // chatMoved's own test), else a newer message; `redraftNewest('edited')` moves on to a newer message
+    // when there is one. Whatever the draft's status NOW (review): ✏️ ends on 'pending' once he types his
+    // words (`submitOwnText`) or opens another draft (bot-door `releaseEdit`), and the line that stood
+    // down while it was open is still drafted by nobody. The ledger decides, as on ✅ — a draft nothing
+    // stood down for asks nothing (a line still in its run, or one its run answered, is that run's).
+    if (decision === 'reject') await redraftQuietly(d, (await anchorEditedNow(d)) ? 'edited' : 'newer');
     return { ok: true, status, ...(decision === 'human' ? { withdrawn: { total: changed.held.length, own: changed.own } } : {}) };
   }
 
@@ -741,12 +745,20 @@ export async function decideDraft(
       await refreshDraftCard(draftId);
       return { ok: false, code: 'taken_over' };
     }
+    // Another press moved the row first (review: two presses at once — the bot and the page, a press
+    // redelivered): THAT press decided the draft and said what comes, so this one never looked for a
+    // card and must not answer «o‘zingiz javob bering» beside the winner's redraft. The approval's own
+    // lost compare-and-set below, verbatim: still live is a changed card (his words landed), else gone.
+    if (!retired) {
+      const [after] = await db.select({ status: agentDrafts.status }).from(agentDrafts).where(eq(agentDrafts.id, draftId));
+      return { ok: false, code: after?.status === 'pending' || after?.status === 'editing' ? 'stale_card' : 'not_live' };
+    }
     // «Yangi qoralama tayyorlanadi» only where one is coming (`redraftNewest`); otherwise the press AND
     // the card tell him to answer — and an edit is said as an edit (card-io STALE_WORDS).
     const line = moved === 'anchor_edited' ? 'edited' : 'newer';
-    const found: RedraftAnswer = retired ? await redraftQuietly(d, line) : { line, next: 'none' };
+    const found: RedraftAnswer = await redraftQuietly(d, line);
     const said = SUPERSEDED_AS[found.line][found.next];
-    if (retired && said.stale) {
+    if (said.stale) {
       await db
         .update(agentDrafts)
         .set({ policy: sql`coalesce(${agentDrafts.policy}, '{}'::jsonb) || ${JSON.stringify({ stale: said.stale })}::jsonb` })
