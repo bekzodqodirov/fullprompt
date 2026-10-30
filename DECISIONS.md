@@ -6596,3 +6596,41 @@ as origin `redraft`; a job that waits for typing keeps its attempt and its asker
 down as a duplicate of its own draft — a card that never came, before this round too). Words are true to the case:
 «Mijoz xabarini tahrirladi …», «… javob allaqachon tasdiqlangan», and the pull cause names both doors.
 
+1580. **The last independent check, and where the policy stops.** A check of the merged tree (#1575) wrote 293
+ordinary first replies and 303 dangerous ones and ran both through the real `checkAgentReply`: 274 ordinary passed,
+and four of this round's own softenings had reopened doors a4e1b1c had shut — the pay-first exemption with a part
+payment or «the rest later» beside it, «几»/«چند» before a tag question, a vague arrival time with no verb («Bir
+necha kun ichida Toshkentda»), and «hisoblash bepul» next to «берём на себя». Fixed, and the fixes checked again
+three times (each round's verifier found regressions in the previous round's fixes — #1463's pattern): the
+exemption is refused when the statement names a part of the money (a part of the CARGO is not), and taken back by a
+later statement offering the rest, a shortfall release or a sale-day settlement (the rule said again is not);
+a tag question (可以吗, خوب است, xo'pmi, ok) does not make an earlier clause asked; an arrival place is a trip's
+subject; WE_COVER reads Russian and Uzbek. On the ordinary side, the owner's own bug in a new shape: the prompt says
+«write numbers in digits», so «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou va Xorgos» was an unsourced 3 —
+`listedCount` sources a count 2-9 of a whitelisted noun that the reply itself enumerates exactly (never cargo,
+boxes, trucks, money or an arrival), and the prompt now says counts of options go in words; «15 дан 25 кунгача» is
+a range; a trailing «bu taxmin» / «это примерно» hedges the days unless a contrast, the price or an exactness
+stands between; «eng oz», «va undan ko'p», «or more» say a minimum; «1688» beside a marketplace and no money is a
+name. **G10 is softened** under his «a»: the same text to more than three other chats in 24 h WARNS (✅ stays, the
+card says how many chats) when the reply is ≤ 160 characters with no figure, word numeral, phone or link —
+otherwise it still blocks; on a client-only number every new chat opens with the same greeting, and the fuse was
+removing ✅ from exactly the reply he reported. Closed on the way (they passed on both trees): a bare figure under
+«Jami / Итого / Total» is money, a client code glued to its marking («GS778MANIKEN») is a code, «точно» is
+certainty. MEASURED at the end: the 62-reply ordinary corpus 62/62 before and after, the 303-case safety corpus
+0 newly passing and 41 newly blocked (all dangerous), the last verifier's 62 inputs as expected.
+**The stopping rule** (#1466): the policy is a word-list fence and every list misses a phrasing; it is the SECOND
+fence, behind his own reading of every card in phase 1. STATED, passing on both trees and left open on purpose
+(each fix is another list that blocks ordinary replies): credit said in words the rows lack («после реализации»,
+month-end settlement, «ishonchga», «pay whenever»), discounts said softly («narxda yon beramiz», «по себестоимости»,
+«negotiable»), customs/duty promises outside the rows, «yo'qolmaydi» / «qoplab beramiz», a price lock, per-unit
+shapes with no price word («Куб у нас по 800»), spelled numbers with case endings («yuzdan»), a per-kg rate quoted
+per cube, an arrival claim with no figure for a lead with no cargo, «Truck freight takes 15–25 days» unhedged.
+
+1581. **A press promises only the card that is coming.** The same check found three more on the card: ❌ on a ✏️
+draft whose ANCHOR the customer had edited re-asked nothing (the edited question got no card from anyone); ✅/❌
+said «yangi qoralama tayyorlanadi» and queued a run for a chat already at a run cap (no card ever came — the press
+now reads the same counts `reserve()` uses and says «bu javob ketmaydi» instead); and «javob allaqachon
+tasdiqlangan» was read off the draft's status alone, so a reply he approved and then cancelled told him not to
+answer the customer — now only an outbox row that is live or sent counts as answered. A press that loses the status
+check answers «not live», never «o‘zingiz javob bering».
+

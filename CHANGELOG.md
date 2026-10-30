@@ -84,6 +84,16 @@ va **«1 a»**. Bitta migratsiya (0139) — deploydan keyin baza hisobi **140** 
 - Mijoz xabarini tahrirlasa, kartada «mijoz yana yozdi» emas, **«Mijoz xabarini tahrirladi»** deb yoziladi.
 - «GSR Logistics» so'zi endi «hodim ismi» deb ogohlantirish chiqarmaydi.
 
+- **Oxirgi tekshiruvdan keyin.** Raqam bilan yozilgan son, masalan «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou
+  va Xorgos», endi javobning o'zidagi ro'yxat bilan tasdiqlanadi va ✅ chiqadi. Ham «bu taxmin» oxirida turgan
+  muddat, ham «15 дан 25 кунгача» o'tadi.
+- **Bir xil salom ko'p mijozga ketsa ham ✅ qoladi.** Kartada faqat «bir xil matn yana N ta chatga ketgan» degan
+  ogohlantirish chiqadi. Bu faqat narx, telefon yoki havola bo'lmagan qisqa matnga tegishli. Uzun yoki raqamli matn
+  avvalgidek to'xtatiladi, chunki bu Telegram ban xavfiga qarshi qoida.
+- Kartadagi tugmalar ham to'g'rilandi: ❌ bosilganda mijoz tahrirlagan savolga yangi qoralama yoziladi; kunlik
+  limit tugagan chatda «yangi qoralama tayyorlanadi» deb aldamaydi; siz bekor qilgan javob «allaqachon tasdiqlangan»
+  deb hisoblanmaydi.
+
 ### Bilib qo'ying
 - «O'n yillik tajriba», «ikki yuz», «ming» kabi so'z bilan yozilgan katta son javobda bo'lsa, ✅ chiqmaydi. Raqam
   bilan yozilgani kabi u ham manba so'raydi. «Ming rahmat» va «ikki xil yo'l» o'tadi.

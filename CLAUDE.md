@@ -3235,7 +3235,7 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1579; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1581; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
@@ -3261,7 +3261,10 @@ RULE — never by its rows, a visible number it kept by the number is the tray's
 «🚫 Shaxsiy» on a chat no person answered also deletes its lines when all are a lead's, `storedOnLeadsOnly`;
 a closed lead's binding retires on an INBOUND line only, `settlePassedChat`); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
 is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
-listener was down are not fetched. Deploy MUST rebuild tg-listen.
+listener was down are not fetched. LAST CHECK (#1580-#1581): two corpora measured both ways (62 ordinary first
+replies, 303 dangerous) — keep them green on ANY policy change; G10's same-text fuse only WARNS on a short reply
+with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
+phrasings are in #1580. Deploy MUST rebuild tg-listen.
 
 **Latest migration: 0139** (`chat_rule_bound_via`, `when` …118; ledger must reach **140**). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before

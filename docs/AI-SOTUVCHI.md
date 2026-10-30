@@ -917,7 +917,7 @@ Digits normalised (Persian, Arabic-Indic, full-width; any other numeral beside m
 [leak-7]; G1 by kind and source [money-1]; G2 closed promise table × six locales [money-8]; G4 ≤ 700 chars,
 ≤ 1 of [?؟？]; G5 the dominant script of the last 5 inbound [fit-6]; G6 other clients' codes, system shapes,
 foreign phones, staff names, a canary from the system prompt; no denial of being an AI; no URL except an
-approved kb fact's, no @mention; G10 the fingerprint (> 3 peers / 24 h) and URL caps [ban-6]; G11 a yo'lkira
+approved kb fact's, no @mention; G10 the fingerprint (> 3 peers / 24 h) and URL caps [ban-6] — since 2026-10-29 (his «a», DECISIONS #1580) the fingerprint only WARNS on a reply of ≤ 160 characters with no figure, word numeral, phone or link; G11 a yo'lkira
 figure carries the approximation word and «boj, QQS alohida» in its locale. His own ✏️ text passes the owner
 subset (length, other-client codes as a warning) — his words are his.
 
