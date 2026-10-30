@@ -13,6 +13,7 @@ import { AGENT_LOCALES, dominantScript, scriptOf, type AgentLocale, type ScriptN
 import {
   airMentionIn,
   extractNumbers,
+  LISTED_COUNT,
   namesMode,
   ledgerLine,
   phoneDigits,
@@ -325,12 +326,12 @@ const CONTRAST_OPEN =
  * and a statement that tells or asks («Остальное уточним позже») is about the talk.
  */
 const REMAINDER = new RegExp(
-  `(?<![\\p{L}])(?:остат(?:ок|ка|ку|ком)|остальн(?:ое|ую|ой)(?!\\s+(?:информаци|данн|вопрос|детал|подробност)\\p{L}*)|qolgan(?:i|ini|ida)|qolgan\\s+(?:qism|pul|summa|to${AP}?lov)\\p{L}*|қолган(?:и|ини|ида)|қолган\\s+(?:қисм|пул|сумма|тўлов)\\p{L}*|(?:the\\s+)?(?:rest|balance|remainder)(?!\\s+of\\s+(?:the\\s+|your\\s+)?(?:details|information|questions|info))|what['’]s\\s+left)(?![\\p{L}])`,
+  `(?<![\\p{L}])(?:остат(?:ок|ка|ку|ком)|остальн(?:ое|ую|ой)(?!\\s+(?:информаци|данн|вопрос|детал|подробност)\\p{L}*)|qolgan(?:i|ini|ida)|qolgan\\s+(?:qism|pul|summa|to${AP}?lov)\\p{L}*|қолган(?:и|ини|ида)|қолган\\s+(?:қисм|пул|сумма|тўлов)\\p{L}*|(?:the\\s+)?(?:rest|balance|remainder)(?!\\s+of\\s+(?!(?:the\\s+|your\\s+)?(?:money|payment|amount|sum|cost|bill|invoice|fees?|charges?|it|that)(?![\\p{L}])))|what['’]s\\s+left)(?![\\p{L}])`,
   'iu',
 );
 /** After the goods are SOLD — «когда продадите», «после реализации», «sotib bo'lgach», «once you've sold». */
 const AFTER_SALE_SRC = [
-  '(?<![\\p{L}])(?:когда|как\\s+только|после\\s+того,?\\s+как)\\s+(?:вы\\s+)?(?:прода(?!в)|реализу|реализо)\\p{L}*',
+  '(?<![\\p{L}])(?:когда|как(?:\\s+только)?|после\\s+того,?\\s+как)\\s+(?:вы\\s+)?(?:(?:рас)?прода(?!в)|реализу|реализо)\\p{L}*',
   '(?<![\\p{L}])(?:после|по\\s+мере)\\s+(?:продажи|реализации)(?![\\p{L}])',
   `(?<![\\p{L}])sot(?:ib\\s+bo${AP}?lgach|ib\\s+bo${AP}?l(?:gan(?:ingiz)?dan)\\s+(?:keyin|so${AP}?ng)|(?:il)?(?:gan(?:ingiz)?dan)\\s+(?:keyin|so${AP}?ng)|(?:il)?gach|ganingizda)(?![\\p{L}])`,
   '(?<![\\p{L}])сот(?:иб\\s+бўлгач|иб\\s+бўл(?:ган(?:ингиз)?дан)\\s+(?:кейин|сўнг)|(?:ил)?(?:ган(?:ингиз)?дан)\\s+(?:кейин|сўнг)|(?:ил)?гач|ганингизда)(?![\\p{L}])',
@@ -347,27 +348,93 @@ const AFTER_SALE = new RegExp(AFTER_SALE_SRC, 'iu');
 const ABOUT_THE_TALK =
   /(?<![\p{L}])(?:уточн\p{L}*|расскаж\p{L}*|объясн\p{L}*|обсуд\p{L}*|напиш\p{L}*|сообщ\p{L}*|скаж\p{L}*|aniqla\p{L}*|tushuntir\p{L}*|aytaman|aytamiz|yozaman|yozamiz|yozing|аниқла\p{L}*|тушунтир\p{L}*|айтаман|ёзаман|clarify|explain|discuss|tell\s+you|let\s+you\s+know)(?![\p{L}])/iu;
 /**
- * Short of money, said as a condition (fourth check): «Если не хватит — отдадим», «Pul yetmasa ham olib ketasiz»,
- * «If you're short, no worries — take it anyway», «Whatever you can't cover, we'll carry over to the next
- * shipment», «Не хватит — добавите со следующей партией». Read with what follows it: a refusal there is the rule
- * said again — «Pul bo'lmasa, yuk berilmaydi», «Если денег не будет, груз не выдадим».
+ * …and what WE send or count (fifth check): «Qolganini keyin hisoblab beraman», «Qolganini keyin yuboraman»,
+ * «Остальное пришлю позже», «I'll send the rest later», «I'll send you the rest of the photos later» — the rest of
+ * the quote, the photos, the files; we send a customer no money. In the first person only: «Qolgan pulni keyin
+ * yuborasiz», «You can send the rest later» are his paying later.
  */
-const SHORT_OF_MONEY = new RegExp(
-  `(?<![\\p{L}])(?:не\\s+хват\\p{L}*|денег\\s+(?:не\\s+будет|нет|не\\s+хват\\p{L}*)|не\\s+будет\\s+денег|нет\\s+денег|pul(?:ingiz)?\\s+(?:yetmasa|yetmay\\p{L}*|bo${AP}?lmasa|yo${AP}?q\\s+bo${AP}?lsa)|пул(?:ингиз)?\\s+(?:етмаса|етмай\\p{L}*|бўлмаса|йўқ\\s+бўлса)|you(?:['’]re|\\s+are)\\s+short|short\\s+(?:of|on)\\s+(?:money|cash|funds)|can['’]?t\\s+(?:cover|pay)|cannot\\s+(?:cover|pay)|not\\s+enough\\s+(?:money|cash))(?![\\p{L}])`,
+const OURS_TO_SEND = new RegExp(
+  [
+    `(?<![\\p{L}])(?:(?:yubor|jo${AP}?nat|tashla)(?:aman|amiz|ib\\s+beraman|ib\\s+beramiz)|hisoblab\\s+(?:beraman|beramiz)|hisoblayman|hisoblaymiz|ko${AP}?rsat(?:aman|amiz))(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:(?:юбор|жўнат|ташла)(?:аман|амиз|иб\\s+бераман|иб\\s+берамиз)|ҳисоблаб\\s+(?:бераман|берамиз)|ҳисоблайман|ҳисоблаймиз|кўрсат(?:аман|амиз))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:пришл(?:ю|ём|ем)|вышл(?:ю|ем)|перешл(?:ю|ём|ем)|отправлю|отправим|скин(?:у|ем)|посчита(?:ю|ем)|рассчита(?:ю|ем)(?!ся)|покаж(?:у|ем))(?![\\p{L}])',
+    "(?<![\\p{L}])(?:i|we)(?:['’]ll|\\s+will|\\s+shall|\\s+can)\\s+(?:also\\s+|then\\s+)?(?:send|forward|share|show|e-?mail|calculate|work\\s+out|count)(?![\\p{L}])|(?<![\\p{L}])let\\s+me\\s+(?:send|calculate|work\\s+out)(?![\\p{L}])",
+  ].join('|'),
   'iu',
 );
-/** «No worries», «ничего страшного», «hechqisi yo'q» — said beside the shortfall, never a refusal of it. */
+/** The money SETTLED — «тогда и рассчитаемся», «hisob-kitob qilamiz», «we'll settle up» — the payment said without its word. */
+const SETTLE = new RegExp(
+  `(?<![\\p{L}])(?:рассчита(?:емся|етесь|ться|ешься)|расплат\\p{L}*|hisob-?kitob\\p{L}*|hisoblash(?:amiz|asiz)|ҳисоб-?китоб\\p{L}*|ҳисоблаш(?:амиз|асиз)|settle\\p{L}*|square\\s+up|pay\\s+(?:us\\s+)?back)(?![\\p{L}])`,
+  'iu',
+);
+/**
+ * The money LEFT owed, in its own words (fifth check): «Разницу доплатите со следующей партией», «Anything
+ * outstanding can go on your next shipment» — beside the NEXT shipment, credit for the rest.
+ */
+const LEFTOVER = new RegExp(
+  `(?<![\\p{L}])(?:разниц\\p{L}*|доплат\\p{L}*|долг\\p{L}*|недостающ\\p{L}*|outstanding|owed|owing|the\\s+difference|shortfall|qarz\\p{L}*|farq\\p{L}*|yetmagan\\p{L}*|қарз\\p{L}*|фарқ\\p{L}*|етмаган\\p{L}*)(?![\\p{L}])`,
+  'iu',
+);
+const NEXT_SHIPMENT = new RegExp(
+  `(?<![\\p{L}])(?:следующ\\p{L}*\\s+(?:парти|отправк|поставк|рейс|машин|груз)\\p{L}*|next\\s+(?:shipment|load|consignment|batch|order|truck|delivery)|keyingi\\s+(?:yuk|partiya|mashina|reys|jo${AP}?nat)\\p{L}*|кейинги\\s+(?:юк|партия|машина|рейс|жўнат)\\p{L}*)(?![\\p{L}])`,
+  'iu',
+);
+/**
+ * Short of money, said as a condition (fourth check): «Если не хватит — отдадим», «Pul yetmasa ham olib ketasiz»,
+ * «If you're short, no worries — take it anyway», «Whatever you can't cover, we'll carry over to the next
+ * shipment», «Не хватит — добавите со следующей партией», «Pulingiz kam bo'lsa ham, yukni beramiz». Read with what
+ * follows it: a refusal there, or the cargo HELD, is the rule said again — «Pul bo'lmasa, yuk berilmaydi», «Если
+ * денег не будет, груз не выдадим», «Pul yetmasa, yuk omborda turadi», «…the cargo stays in our warehouse».
+ */
+const SHORT_OF_MONEY = new RegExp(
+  `(?<![\\p{L}])(?:не\\s+хват\\p{L}*|денег\\s+(?:не\\s+будет|нет|не\\s+хват\\p{L}*|мало)|не\\s+будет\\s+денег|нет\\s+денег|мало\\s+денег|pul(?:ingiz)?\\s+(?:yetmasa|yetmay\\p{L}*|bo${AP}?lmasa|yo${AP}?q\\s+bo${AP}?lsa|kam\\s+bo${AP}?lsa)|пул(?:ингиз)?\\s+(?:етмаса|етмай\\p{L}*|бўлмаса|йўқ\\s+бўлса|кам\\s+бўлса)|you(?:['’]re|\\s+are)\\s+short|short\\s+(?:of|on)\\s+(?:money|cash|funds)|can['’]?t\\s+(?:cover|pay)|cannot\\s+(?:cover|pay)|not\\s+enough\\s+(?:money|cash))(?![\\p{L}])`,
+  'iu',
+);
+/**
+ * «No worries», «ничего страшного», «hechqisi yo'q» — and the reassurance said with its own negation (fifth check):
+ * «не переживайте», «xavotir olmang», «don't worry». Said beside the shortfall, never a refusal of it: «Если не
+ * хватит — не переживайте, отдадим» read its «не» as the rule said again.
+ */
 const NO_WORRIES = new RegExp(
-  `(?<![\\p{L}])(?:no\\s+(?:worries|problem|big\\s+deal)|ничего\\s+страшного|hech\\s*qisi\\s+yo${AP}?q|muammo\\s+(?:emas|yo${AP}?q)|ҳеч\\s*қиси\\s+йўқ|муаммо\\s+(?:эмас|йўқ))(?![\\p{L}])`,
+  `(?<![\\p{L}])(?:no\\s+(?:worries|problem|big\\s+deal)|ничего\\s+страшного|hech\\s*qisi\\s+yo${AP}?q|muammo\\s+(?:emas|yo${AP}?q)|ҳеч\\s*қиси\\s+йўқ|муаммо\\s+(?:эмас|йўқ)|не\\s+(?:пере)?(?:живайте|волнуйтесь|беспокойтесь)|не\\s+(?:беда|проблема|страшно)|xavotir\\s+olmang|tashvish(?:lan)?mang|ҳавотир\\s+олманг|ташвиш(?:лан)?манг|(?:don['’]t|do\\s+not|no\\s+need\\s+to)\\s+worry|never\\s+mind)(?![\\p{L}])`,
   'giu',
 );
+/** The cargo HELD for the money — «yuk omborda turadi», «груз останется на складе», «the goods wait at the warehouse». */
+const CARGO_HELD = new RegExp(
+  [
+    `(?<![\\p{L}])(?:yuk|tovar)\\p{L}*\\s+(?:[\\p{L}'‘’ʻ]+\\s+){0,2}(?:turadi|qoladi|kutadi|saqlanadi)(?![\\p{L}])`,
+    `(?<![\\p{L}])ombor(?:imiz)?da\\s+(?:[\\p{L}'‘’ʻ]+\\s+){0,2}(?:turadi|qoladi|kutadi|saqlanadi)(?![\\p{L}])`,
+    `(?<![\\p{L}])to${AP}?la(?:maguncha|nmaguncha)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:юк|товар)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:туради|қолади|кутади|сақланади)(?![\\p{L}])|(?<![\\p{L}])омбор(?:имиз)?да\\s+(?:\\p{L}+\\s+){0,2}(?:туради|қолади|кутади|сақланади)(?![\\p{L}])|(?<![\\p{L}])тўла(?:магунча|нмагунча)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:груз|товар)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:остан\\p{L}*|подожд[её]т|жд[её]т|полежит|лежит|постоит|хранится|будет\\s+(?:ждать|лежать|храниться))(?![\\p{L}])|(?<![\\p{L}])(?:остан|полежит|лежит|постоит|храни|подожд[её]т|жд[её]т)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}на\\s+склад\\p{L}*|(?<![\\p{L}])до\\s+полной\\s+оплаты',
+    "(?<![\\p{L}])(?:cargo|goods|shipment|it|they|everything)\\s+(?:\\p{L}+\\s+){0,2}(?:stays?|waits?|remains?|(?:is|are|will\\s+be)\\s+(?:held|kept|stored))(?![\\p{L}])|(?<![\\p{L}])(?:stays?|waits?|remains?|held|kept|stored)\\s+(?:\\p{L}+\\s+){0,3}warehouse|(?<![\\p{L}])until\\s+(?:it['’]s\\s+|it\\s+is\\s+|you['’]ve\\s+|you\\s+have\\s+)?(?:fully\\s+|completely\\s+)?paid|(?<![\\p{L}])until\\s+(?:full\\s+)?payment",
+  ].join('|'),
+  'iu',
+);
+/** …never held WITH HIM: «yuk sizda qoladi», «груз останется у вас», «it stays with you» is the cargo released. */
+const WITH_YOU = new RegExp(
+  `(?<![\\p{L}])(?:sizda|qo${AP}?lingizda|сизда|қўлингизда|у\\s+вас|при\\s+вас|в\\s+ваших\\s+руках|with\\s+you|yours|in\\s+your\\s+hands)(?![\\p{L}])`,
+  'iu',
+);
 const ANY_DENY = new RegExp(`${DENY_UZ}|${DENY_UZC}|${DENY_RU}|${DENY_EN}`, 'iu');
-/** The money left over, or a shortfall carried on — what makes the company's rule credit for the rest. */
+/** At most four words left beside a match — an elliptical «Tovarni sotib bo'lgach ham bo'ladi», never a story. */
+function fewWordsBeside(o: string, re: RegExp): boolean {
+  return o.replace(new RegExp(re.source, 'giu'), ' ').split(/[^\p{L}\p{N}'‘’ʻ`]+/u).filter(Boolean).length <= 4;
+}
+/**
+ * The money left over, or a shortfall carried on — what makes the company's rule credit for the rest. Only the
+ * MONEY's rest (fifth check): a rest WE send or count is the quote's or the files'; a sale with neither the money,
+ * its rest nor an elliptical «then» beside it — «Ko'p mijozlar tovarni sotib bo'lgach yana buyurtma beradi» — is
+ * a story about other customers.
+ */
 function leftOnCredit(o: string): boolean {
-  if (REMAINDER.test(o) && REMAINDER_LATER.test(o) && !ABOUT_THE_TALK.test(o)) return true;
-  if (AFTER_SALE.test(o) && !ABOUT_THE_TALK.test(o)) return true;
+  const ours = ABOUT_THE_TALK.test(o) || OURS_TO_SEND.test(o);
+  if (REMAINDER.test(o) && REMAINDER_LATER.test(o) && !ours) return true;
+  if (AFTER_SALE.test(o) && !ours && (PAY_TOPIC.test(o) || SETTLE.test(o) || REMAINDER.test(o) || fewWordsBeside(o, AFTER_SALE))) return true;
+  if (NEXT_SHIPMENT.test(o) && (LEFTOVER.test(o) || REMAINDER.test(o)) && !ours) return true;
   if (!SHORT_OF_MONEY.test(o)) return false;
-  return !ANY_DENY.test(o.replace(new RegExp(SHORT_OF_MONEY.source, 'giu'), ' ').replace(NO_WORRIES, ' '));
+  const rest = o.replace(new RegExp(SHORT_OF_MONEY.source, 'giu'), ' ').replace(NO_WORRIES, ' ');
+  return !ANY_DENY.test(rest) && !(CARGO_HELD.test(rest) && !WITH_YOU.test(rest));
 }
 
 /** Whether the statement `piece` of `text` is a question — its own «?» after it. */
@@ -376,12 +443,31 @@ function asks(text: string, piece: string): boolean {
   return at !== -1 && /^\s*[!.…]*[?؟？]/u.test(text.slice(at + piece.length));
 }
 
+/**
+ * A part of the CARGO, never of the money (fifth check): «Если груз придёт частями, оплата по прибытии каждой
+ * партии, перед получением», «If it comes in two trucks, payment is on arrival of each part», «Yuk ikki qismda
+ * kelsa, har bir qismi kelganda to'laysiz» — a split load paid in full before each part is collected. Taken out
+ * before `part` reads the statement; «Pulning bir qismini yuk kelganda to'laysiz» keeps its part.
+ */
+const CARGO_PART = new RegExp(
+  [
+    `(?<![\\p{L}])(?:yuk|tovar|partiya|mashina)\\p{L}*ning\\s+(?:bir\\s+)?(?:qism|yarm)\\p{L}*`,
+    `(?<![\\p{L}])har\\s+bir\\s+qism\\p{L}*|(?<![\\p{L}])qism(?:i|lari|lar)?\\s+kel\\p{L}*|(?<![\\p{L}])(?:ikki|uch|bir\\s+necha|\\d+)\\s+qism(?:da|ga)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:юк|товар|партия|машина)\\p{L}*нинг\\s+(?:бир\\s+)?(?:қисм|ярм)\\p{L}*|(?<![\\p{L}])ҳар\\s+бир\\s+қисм\\p{L}*|(?<![\\p{L}])қисм(?:и|лари|лар)?\\s+кел\\p{L}*|(?<![\\p{L}])(?:икки|уч|бир\\s+неча|\\d+)\\s+қисм(?:да|га)(?![\\p{L}])',
+    '(?<![\\p{L}])част(?:ь|и|ью|ями)\\s+(?:груз|товар|парти|машин|посылк|отправк)\\p{L}*',
+    '(?<![\\p{L}])(?:при(?:д[её]т|дут|ход|быв|буд)|доставля|отправля|везут|ед[еу]т)\\p{L}*\\s+(?:\\p{L}+\\s+)?частями|(?<![\\p{L}])частями\\s+(?:\\p{L}+\\s+)?(?:при(?:д[её]т|дут|ход|быв|буд)|доставля|отправля)\\p{L}*|(?<![\\p{L}])кажд\\p{L}*\\s+(?:част|парти)\\p{L}*',
+    '(?<![\\p{L}])(?:each|every)\\s+(?:part|portion|batch|shipment|truck)s?(?![\\p{L}])|(?<![\\p{L}])part\\s+of\\s+(?:the\\s+|your\\s+)?(?:cargo|goods|shipment|load|order|consignment)(?![\\p{L}])|(?<![\\p{L}])(?:arriv|com|ship|deliver)\\p{L}*\\s+(?:\\p{L}+\\s+)?in\\s+(?:\\p{L}+|\\d+)\\s+(?:parts|portions|batches)(?![\\p{L}])|(?<![\\p{L}])parts?\\s+(?:arriv|com)\\p{L}*',
+  ].join('|'),
+  'iu',
+);
+
 function onArrival(row: RegExp, p: PaidFirst): Matcher {
   const every = new RegExp(row.source, `${row.flags.replace('g', '')}g`);
   const rule = new RegExp(`(?:${p.first})(?:[\\s,]+(?:${p.tail}))*[\\s,.!?…]*$`, 'iu');
   const deny = new RegExp(p.deny, 'iu');
   const handFirst = new RegExp(p.handFirst, 'iu');
   const part = new RegExp(`(?<![\\p{L}])(?:${p.part})(?![\\p{L}])`, 'iu');
+  const cargoPart = new RegExp(CARGO_PART.source, 'giu');
   const word = (src: string) => new RegExp(`(?<![\\p{L}])(?:${src})(?![\\p{L}])`, 'iu');
   const later = word(p.later);
   const anchor = word(p.anchor);
@@ -407,7 +493,7 @@ function onArrival(row: RegExp, p: PaidFirst): Matcher {
           rows.every((m) => m.index + m[0].length <= tail.index) &&
           !deny.test(s) &&
           !handFirst.test(s) &&
-          !part.test(s) &&
+          !part.test(s.replace(cargoPart, ' ')) &&
           !UNDONE_NEXT.test(statements[i + 1] ?? '') &&
           !statements.some((o, k) => k !== i && takenBack(text, o));
         return !paidFirst;
@@ -429,7 +515,8 @@ const PAID_FIRST_UZ: PaidFirst = {
   tail: `yuk\\p{L}*|so${AP}?m\\p{L}*|dollar\\p{L}*|naqd\\p{L}*|karta\\p{L}*|click|payme|o${AP}?tkazma\\p{L}*|bank\\p{L}*|orqali|yoki|va|ombor\\p{L}*|toshkent\\p{L}*|qilinadi|qilasiz|to${AP}?lanadi|to${AP}?laysiz|berasiz|amalga|oshiriladi|ham|esa`,
   deny: `${DENY_UZ}|(?<![\\p{L}])(?:shart|majburiy|keyinroq|kechroq)(?![\\p{L}])`,
   handFirst: `${UZ_UNPAID}|(?<![\\p{L}])(?:darhol|darrov)(?![\\p{L}])`,
-  part: `yarm\\p{L}*|qism\\p{L}*|bir\\s+qism\\p{L}*|avans\\p{L}*|oldindan\\s+to${AP}?lov\\p{L}*|bo${AP}?lib\\s+to${AP}?la\\p{L}*|qisman`,
+  // «Qolgan qismini … olishdan oldin» is the rest paid BEFORE he takes it — no credit (fifth check); «ozginasini» is a part.
+  part: `yarm\\p{L}*|(?<!qolgan\\s+)qism\\p{L}*|avans\\p{L}*|oldindan\\s+to${AP}?lov\\p{L}*|bo${AP}?lib\\s+to${AP}?la\\p{L}*|qisman|ozgina\\p{L}*|bir\\s+oz`,
   later: [
     `(?:keyinroq|kechroq|keyin)\\s+ham\\s+(?:bo${AP}?ladi|mumkin)`,
     `(?:keyinroq|kechroq|keyin)\\s+(?:ham\\s+)?(?:to${AP}?la\\p{L}*|o${AP}?tkaz\\p{L}*|yop(?:asiz|sangiz)|olib\\s+ket\\p{L}*)`,
@@ -452,7 +539,7 @@ const PAID_FIRST_UZC: PaidFirst = {
   tail: 'юк\\p{L}*|сўм\\p{L}*|доллар\\p{L}*|нақд\\p{L}*|карта\\p{L}*|ўтказма\\p{L}*|банк\\p{L}*|орқали|ёки|ва|омбор\\p{L}*|тошкент\\p{L}*|қилинади|қиласиз|тўланади|тўлайсиз|берасиз|амалга|оширилади|ҳам|эса',
   deny: `${DENY_UZC}|(?<![\\p{L}])(?:шарт|мажбурий|кейинроқ|кечроқ)(?![\\p{L}])`,
   handFirst: `${UZC_UNPAID}|(?<![\\p{L}])(?:дарҳол|дарров)(?![\\p{L}])`,
-  part: 'ярм\\p{L}*|қисм\\p{L}*|аванс\\p{L}*|бўлиб\\s+тўла\\p{L}*|қисман',
+  part: 'ярм\\p{L}*|(?<!қолган\\s+)қисм\\p{L}*|аванс\\p{L}*|бўлиб\\s+тўла\\p{L}*|қисман|озгина\\p{L}*|бир\\s+оз',
   later: [
     '(?:кейинроқ|кечроқ|кейин)\\s+ҳам\\s+(?:бўлади|мумкин)',
     '(?:кейинроқ|кечроқ|кейин)\\s+(?:ҳам\\s+)?(?:тўла\\p{L}*|ўтказ\\p{L}*|ёп(?:асиз|сангиз)|олиб\\s+кет\\p{L}*)',
@@ -475,7 +562,8 @@ const PAID_FIRST_RU: PaidFirst = {
   tail: 'груз\\p{L}*|товар\\p{L}*|посылк\\p{L}*|со|с|из|на|в|склад\\p{L}*|ташкент\\p{L}*|андижан\\p{L}*|сум\\p{L}*|наличн\\p{L}*|карт\\p{L}*|перевод\\p{L}*|через|или|и|ваш\\p{L}*|его|их',
   deny: `${DENY_RU}|(?<![\\p{L}])(?:необязательн\\p{L}*|позже|потом|когда\\s+(?:вам\\s+)?удобно|в\\s+любое\\s+время)(?![\\p{L}])`,
   handFirst: `${RU_UNPAID}|(?<![\\p{L}])(?:выдад|выда[её]м|отдад|отда[её]м|отпуст|можно\\s+(?:сразу\\s+)?(?:забрать|получить))\\p{L}*|(?<![\\p{L}])(?:сразу|немедленно)(?![\\p{L}])`,
-  part: 'частичн\\p{L}*|част(?:ь|и|ью|ями)|половин\\p{L}*|аванс\\p{L}*|остат(?:ок|ка|ку)|долями|по\\s+частям',
+  // «Остаток … перед получением» is the rest paid before he takes it (fifth check), and «наполовину» half of it.
+  part: 'частичн\\p{L}*|част(?:ь|и|ью|ями)|половин\\p{L}*|наполовину|аванс\\p{L}*|долями|по\\s+частям',
   later: [
     // «Можно и позже», «можно и раньше» — the time alone, its verb left to the rule before it; with its verb
     // before it, paying takes it back only later and taking only earlier: «Оплатить можно и раньше» is the rule.
@@ -505,7 +593,8 @@ const PAID_FIRST_EN: PaidFirst = {
   tail: 'the|your|it|them|cargo|goods|shipment|parcel|order|from|at|in|our|warehouse|tashkent|cash|card|transfer|bank|by|via|or|and|uzs',
   deny: `${DENY_EN}|(?<![\\p{L}])(?:without|later|whenever|optional|any\\s*time)(?![\\p{L}])`,
   handFirst: `${EN_UNPAID}|(?<![\\p{L}])(?:right\\s+away|immediately)(?![\\p{L}])|(?<![\\p{L}])(?:release|hand|give)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}(?:first|now)(?![\\p{L}])`,
-  part: 'half|part|partial(?:ly)?|portion|deposit|advance|balance|remainder|rest|installments?|instalments?',
+  // «Pay the balance / the rest before you collect» is the whole amount due, or the rest of it before he takes it.
+  part: 'half|part|partial(?:ly)?|portion|deposit|advance|installments?|instalments?',
   later: [
     '(?:collect|pick)\\p{L}*(?:\\s+up)?\\s+(?:(?:it|them|the\\s+cargo|the\\s+goods|your\\s+cargo|your\\s+goods)\\s+)?first',
     '(?:release|hand|give)\\p{L}*\\s+(?:\\p{L}+\\s+){0,2}first',
@@ -778,10 +867,10 @@ export const PROMISE_TABLE: Record<PromiseCategory, readonly Matcher[]> = {
     /便宜(?:些|一点|一些)|给(?:你|您)便宜|算(?:你|您)?便宜|降价|少收|打\d+折/u,
   ],
   guarantee: [
-    /kafolat|garantiya|muammo\s+bo['‘’ʻ]?lmaydi|muammosiz/iu,
-    /кафолат|муаммо\s+бўлмайди/iu,
-    /гарант|без\s+проблем|100\s?%\s+(будет|придет|доставим)/iu,
-    /guarantee|no\s+problem\b|definitely\s+(arrive|deliver)/iu,
+    guaranteeRow(/kafolat|garantiya|muammo\s+bo['‘’ʻ]?lmaydi|muammosiz/iu),
+    guaranteeRow(/кафолат|муаммо\s+бўлмайди/iu),
+    guaranteeRow(/гарант|без\s+проблем|100\s?%\s+(будет|придет|доставим)/iu),
+    guaranteeRow(/guarantee|no\s+problem\b|definitely\s+(arrive|deliver)/iu),
     /تضمین|ضمانت|بدون\s+مشکل/u,
     /保证|担保|肯定没问题|百分之百/u,
   ],
@@ -1025,8 +1114,29 @@ const HEDGE_BEFORE_FIGURE = /(?:около|about|around|~|约(?![定好])|حدو
 const HEDGE_AFTER_FIGURE =
   /^(?:\s*[-–—~]\s*\d+(?:[.,]\d+)?)?\s*\p{L}*\s*(?:atrofida|chamasi\p{L}*|左右|примерно|приблизительно|or\s+so\b)/iu;
 
+/**
+ * «Not a guarantee» is the disclaimer in its other natural word (fifth check): «Truck freight takes 15–25 days;
+ * that's an estimate, not a guarantee», «Yuk 15–25 kunda keladi, bu taxmin, kafolat emas», «Груз идёт 15–25 дней
+ * — это ориентир, а не гарантия» each lost their ✅ as a GUARANTEE. Taken out of the text before the guarantee row
+ * and the certainty words read it; «kafolat beramiz», «гарантируем», «guaranteed» are promises still.
+ */
+const NOT_GUARANTEE_SRC = [
+  `(?<![\\p{L}])kafolat\\p{L}*\\s+(?:emas|yo${AP}?q|bera\\s+olmay\\p{L}*|berolmay\\p{L}*|bermay\\p{L}*)(?![\\p{L}])|(?<![\\p{L}])kafolatlanmagan(?![\\p{L}])`,
+  '(?<![\\p{L}])кафолат\\p{L}*\\s+(?:эмас|йўқ|бера\\s+олмай\\p{L}*|беролмай\\p{L}*|бермай\\p{L}*)(?![\\p{L}])',
+  '(?<![\\p{L}])(?:а\\s+)?не\\s+гарант\\p{L}*|(?<![\\p{L}])гаранти\\p{L}*\\s+(?:нет|не\\s+(?:да|мож)\\p{L}*)|(?<![\\p{L}])(?:не\\s+(?:мож|могу)\\p{L}*|нельзя)\\s+гарантир\\p{L}*|(?<![\\p{L}])без\\s+гаранти\\p{L}*',
+  "(?<![\\p{L}])(?:not\\s+(?:a\\s+)?guarantee(?:d)?|no\\s+guarantees?|(?:can['’]?t|cannot|can\\s+not|won['’]?t|don['’]?t)\\s+guarantee|isn['’]t\\s+(?:a\\s+)?guarantee(?:d)?)(?![\\p{L}])",
+].join('|');
+const NOT_GUARANTEE = new RegExp(NOT_GUARANTEE_SRC, 'giu');
+function withoutNotGuarantee(text: string): string {
+  return text.replace(NOT_GUARANTEE, ' ');
+}
+/** A guarantee row, read with «not a guarantee» taken out. */
+function guaranteeRow(re: RegExp): Matcher {
+  return { test: (text) => re.test(withoutNotGuarantee(text)) };
+}
+
 /** The system's own disclaimer — «Yuk 15-20 kunda yetib keladi (va'da emas).» — says the whole sentence is no promise. */
-const DISCLAIMER = /va['‘’ʻ]?da\s+emas|ваъда\s+эмас|не\s+обещани|not\s+a\s+promise/iu;
+const DISCLAIMER = new RegExp(`va['‘’ʻ]?da\\s+emas|ваъда\\s+эмас|не\\s+обещани|not\\s+a\\s+promise|${NOT_GUARANTEE_SRC}`, 'iu');
 
 /**
  * …and its other half said alone, after the figure (fourth check): «Yuk 15–25 kunda yetib keladi, bu taxmin», «Avto
@@ -1050,8 +1160,52 @@ const ESTIMATE_SAID = new RegExp(
 /** …and the words that make it a promise again, hedged or not: «taxminan 2 kunda ALBATTA yetib boradi». */
 // «Точно» too (fourth check): «Груз точно будет через 15–25 дней» passed, its uz «albatta» and en «guaranteed» twins
 // did not — never the hedge «Точно сказать не могу», «точно не знаю», nor «не точно».
+// «Kechikmaydi», «без задержек», «no delays» (fifth check): «Yuk 15–25 kunda keladi, bu taxmin, lekin kechikmaydi».
 const CERTAINTY =
-  /albatta|shubhasiz|kafolat|албатта|шубҳасиз|кафолат|обязательно|непременно|гарантир|(?<![\p{L}])(?<!не\s)точно(?![\p{L}])(?!\s+(?:не(?![\p{L}])|сказать|скажу|знаю|известно|неизвестно))|definitely|certainly|guarantee|for\s+sure|\bpromise|حتما|حتماً|قطعا|قطعاً|تضمین|一定|肯定|保证|绝对|100\s*%/iu;
+  /(?<![\p{L}])(?:kechikma(?:ydi|ymiz|sdan)|кечикма(?:йди|ймиз|сдан)|без\s+(?:задерж|опоздани)\p{L}*|no\s+delays?|without\s+(?:any\s+)?delays?|won['’]t\s+be\s+(?:late|delayed))(?![\p{L}])|albatta|shubhasiz|kafolat|албатта|шубҳасиз|кафолат|обязательно|непременно|гарантир|(?<![\p{L}])(?<!не\s)точно(?![\p{L}])(?!\s+(?:не(?![\p{L}])|сказать|скажу|знаю|известно|неизвестно))|definitely|certainly|guarantee|for\s+sure|\bpromise|حتما|حتماً|قطعا|قطعاً|تضمین|一定|肯定|保证|绝对|100\s*%/iu;
+
+/**
+ * A time made EXACT beside its figure (fifth check): «Yuk 15–25 kunda aniq keladi, bu taxmin», «срок точный»,
+ * «arrives in exactly 15–25 days» — no hedge after it can take that back. Never the exact word denied or said of
+ * something else: «Aniq aytolmayman», «Точный срок назвать не могу», «I can't say exactly», «aniq narx», «точная
+ * цена», «the exact quote».
+ */
+const SURE_WORD = /(?<![\p{L}])(?:aniq|аниқ|точн(?:о|ый|ая|ое|ые|ую|ого|ом)|exact(?:ly)?|precise(?:ly)?|ровно)(?![\p{L}])/giu;
+const SURE_DENIED_BEFORE = /(?:(?<![\p{L}])(?:не|not|no|cannot)|n['’]t)(?:\s+[\p{L}'‘’ʻ`]+){0,2}\s+$/iu;
+const SURE_DENIED_AFTER =
+  /^(?:\s+[\p{L}'‘’ʻ`]+){0,3}?\s+(?:emas|yo['‘’ʻ`]?q|qiyin|noma['‘’ʻ`]?lum|эмас|йўқ|қийин|номаълум|не|нет|нельзя|сложно|трудно|неизвестн\p{L}*|unknown|not)(?![\p{L}])|^(?:\s+[\p{L}'‘’ʻ`]+){0,3}?\s+\p{L}*(?:ma(?:yman|ymiz|yapman|yapmiz)|олмай\p{L}*|olmay\p{L}*|bilmay\p{L}*|билмай\p{L}*)(?![\p{L}])/iu;
+const SURE_OF_ELSE =
+  /^\s+(?:[\p{L}'‘’ʻ`]+\s+)?(?:narx\p{L}*|hisob\p{L}*|summa\p{L}*|ma['‘’ʻ`]?lumot\p{L}*|manzil\p{L}*|javob\p{L}*|kub\p{L}*|og['‘’ʻ`]?irlik\p{L}*|hajm\p{L}*|nom\p{L}*|нарх\p{L}*|ҳисоб\p{L}*|цен\p{L}*|расч[её]т\p{L}*|сумм\p{L}*|стоимост\p{L}*|адрес\p{L}*|информаци\p{L}*|данн\p{L}*|объ[её]м\p{L}*|вес\p{L}*|price\p{L}*|quote\p{L}*|cost\p{L}*|amount\p{L}*|address\p{L}*|figure\p{L}*|volume\p{L}*|weight\p{L}*|information|details|name)(?![\p{L}])/iu;
+function timeSure(text: string): boolean {
+  for (const m of text.matchAll(SURE_WORD)) {
+    const after = text.slice(m.index + m[0].length);
+    if (SURE_DENIED_BEFORE.test(text.slice(0, m.index)) || SURE_DENIED_AFTER.test(after) || SURE_OF_ELSE.test(after)) continue;
+    return true;
+  }
+  return false;
+}
+
+/** The PRICE as what an estimate is said of: «Narxi bu taxmin», «это примерно по цене», «an estimate on cost». */
+const PRICE_SUBJECT =
+  /(?<![\p{L}])(?:narx\p{L}*|нарх\p{L}*|summa\p{L}*|сумм\p{L}*|цен\p{L}*|стоимост\p{L}*|price\p{L}*|cost\p{L}*|rate|tariff\p{L}*|quote\p{L}*)(?![\p{L}])/iu;
+const ESTIMATE_SAID_G = new RegExp(ESTIMATE_SAID.source, 'giu');
+/**
+ * Whether an estimate said in the sentence — «…, bu taxmin», «это примерно» (fourth check) — hedges the figure at
+ * [from, to). It hedged the WHOLE sentence, and the fifth check measured what that let through: «Narxi bu taxmin,
+ * muddat esa aniq: yuk 15–25 kunda keladi», «Это примерно по цене; груз придёт через 15–25 дней без задержек»,
+ * «That's an estimate for the price, but the cargo arrives in exactly 15–25 days», «Yuk 15–25 kunda aniq keladi,
+ * bu taxmin». So only where nothing stands between it and the figure that turns away from it (a contrast), names
+ * another subject (the price) or makes the time exact — and the figure's own clause makes it exact neither.
+ */
+function estimateCovers(sentence: string, estimates: readonly [number, number][], clause: string, from: number, to: number): boolean {
+  if (timeSure(clause)) return false;
+  return estimates.some(([a, b]) => {
+    const between = a >= to ? sentence.slice(to, a) : b <= from ? sentence.slice(b, from) : '';
+    const own = sentence.slice(b).split(CLAUSE_CUT)[0] ?? '';
+    return !CONTRAST.test(between) && !PRICE_SUBJECT.test(between) && !PRICE_SUBJECT.test(own) && !timeSure(between);
+  });
+}
+const CLAUSE_CUT = /[,—–;:，、،；：]/u;
 
 /**
  * OUR sending in the first person — «yetkazamiz», «jo'natamiz», «yetkazib beramiz», «olib kelamiz»,
@@ -1067,8 +1221,9 @@ const WE_SEND =
  * «?» belongs to the tag, not to the count: the clause before it STATES a time. The asking-count door (P5) let
  * these through; a4e1b1c refused each. Read on the sentence's LAST clause, whole.
  */
+// «怎么样», «您看呢», «چطوره» too (fifth check): «几天就到，怎么样？», «چند روزه می‌رسد، چطوره؟».
 const TAG_QUESTION =
-  /^\s*(?:(?:可以|好|行|对|是|没问题|没事)(?:吗|吧|么|不)?|好不好|行不行|可以不可以|对不对|是不是|خوب(?:\s*(?:است|ه))?|قبول(?:\s*(?:است|ه|دارید))?|باشه|درسته|موافق(?:ید|ی)?|اوکی|xo['‘’ʻ`]?pmi|maqulmi|bo['‘’ʻ`]?ladimi|to['‘’ʻ`]?g['‘’ʻ`]?rimi|maylimi|kelishdikmi|yaxshimi|хўпми|маъқулми|бўладими|тўғрими|майлими|хорошо|ладно|договорились|ид[её]т|устраивает|подходит|верно|ок(?:ей)?|okay|ok|alright|all\s+right|fine|deal|right|sounds?\s+good|good)\s*$/iu;
+  /^\s*(?:(?:可以|好|行|对|是|没问题|没事)(?:吗|吧|么|不)?|好不好|行不行|可以不可以|对不对|是不是|怎么样|怎样|如何|(?:您|你)看(?:呢|怎么样|行吗)?|چطور(?:ه|\s*است)?|خوب(?:\s*(?:است|ه))?|قبول(?:\s*(?:است|ه|دارید))?|باشه|درسته|موافق(?:ید|ی)?|اوکی|xo['‘’ʻ`]?pmi|maqulmi|bo['‘’ʻ`]?ladimi|to['‘’ʻ`]?g['‘’ʻ`]?rimi|maylimi|kelishdikmi|yaxshimi|хўпми|маъқулми|бўладими|тўғрими|майлими|хорошо|ладно|договорились|ид[её]т|устраивает|подходит|верно|ок(?:ей)?|okay|ok|alright|all\s+right|fine|deal|right|sounds?\s+good|good)\s*$/iu;
 
 /** «Har 3 kunda», «каждые 3 дня», «every 3 days», «每3天» — right before the figure, a timetable and not a promise. */
 const FREQUENCY = /(?:(?<![\p{L}])(?:har|ҳар|каждые|каждый|каждую|every|هر)\s*|每\s*)$/iu;
@@ -1391,8 +1546,9 @@ const TRIP_SUBJECT =
  * Where the cargo comes, or whose it then is — the trip's end, said with no verb at all. Never «у вас», «sizda»:
  * «Если у вас есть пара дней, лучше авто» asks about his time.
  */
+// Every city of Uzbekistan (fifth check): «Через пару дней — и всё в Самарканде».
 const ARRIVAL_PLACE =
-  /(?<![\p{L}])(?:toshkent\p{L}*|тошкент\p{L}*|ташкент\p{L}*|tashkent|andijon\p{L}*|андижон\p{L}*|андижан\p{L}*|andijan|sizniki|qo['‘’ʻ`]?lingiz\p{L}*|сизники|қўлингиз\p{L}*|на\s+месте|на\s+склад\p{L}*|в\s+ваших\s+руках|yours|with\s+you|in\s+your\s+hands|at\s+your\s+(?:door|place|warehouse))(?![\p{L}])/iu;
+  /(?<![\p{L}])(?:toshkent\p{L}*|тошкент\p{L}*|ташкент\p{L}*|tashkent|andijon\p{L}*|андижон\p{L}*|андижан\p{L}*|andijan|samarqand\p{L}*|samarkand\p{L}*|самарқанд\p{L}*|самарканд\p{L}*|farg['‘’ʻ`]?ona\p{L}*|fergana|фарғона\p{L}*|фергана\p{L}*|фергане|namangan\p{L}*|наманган\p{L}*|buxoro\p{L}*|bukhara|бухоро\p{L}*|бухар\p{L}*|qo['‘’ʻ`]?qon\p{L}*|kokand|қўқон\p{L}*|коканд\p{L}*|navoiy\p{L}*|navoi|навоий\p{L}*|навои|nukus\p{L}*|нукус\p{L}*|qarshi\p{L}*|karshi|қарши\p{L}*|карши|termiz\p{L}*|termez|термиз\p{L}*|термез\p{L}*|jizzax\p{L}*|jizzakh|жиззах\p{L}*|джизак\p{L}*|guliston\p{L}*|гулистон\p{L}*|гулистан\p{L}*|urganch\p{L}*|urgench|урганч\p{L}*|ургенч\p{L}*|sizniki|qo['‘’ʻ`]?lingiz\p{L}*|сизники|қўлингиз\p{L}*|на\s+месте|на\s+склад\p{L}*|в\s+ваших\s+руках|yours|with\s+you|in\s+your\s+hands|at\s+your\s+(?:door|place|warehouse))(?![\p{L}])/iu;
 /** …and the supplier as one — his trip to our warehouse, never ours. */
 const SUPPLIER_SUBJECT =
   /(?<![\p{L}])(?:yetkazib\s+beruvchi\p{L}*|етказиб\s+берувчи\p{L}*|поставщик\p{L}*|продав\p{L}*|supplier\p{L}*|vendor\p{L}*)(?![\p{L}])/iu;
@@ -1421,8 +1577,9 @@ export function timePromise(text: string): boolean {
     const sending = SENDING_VERB.some((re) => re.test(s)) || WE_SEND.test(s);
     if (!asked && DEADLINE_MET.test(s) && !DISCLAIMER.test(s)) return true;
     if (!sending && !COMING_VERB.some((re) => re.test(s))) continue;
-    const certain = CERTAINTY.test(s);
-    if (!certain && (DISCLAIMER.test(s) || ESTIMATE_SAID.test(s))) continue;
+    const certain = CERTAINTY.test(withoutNotGuarantee(s));
+    if (!certain && DISCLAIMER.test(s)) continue;
+    const estimates: [number, number][] = certain ? [] : [...s.matchAll(ESTIMATE_SAID_G)].map((m) => [m.index, m.index + m[0].length]);
     // A DATE is the same promise as a day count in another shape (final review K14): cargo_status hands the
     // model «taxminan 05.11 – 09.11», and «Yukingiz 09.11 da albatta yetib keladi» restated the window as a
     // dated promise — G1 found the date sourced and the day rule saw no duration. A certainty word beside a
@@ -1432,8 +1589,9 @@ export function timePromise(text: string): boolean {
     let estimated = false;
     const clauses = clausesOf(s);
     const tagged = asked && clauses.length > 1 && TAG_QUESTION.test(clauses.at(-1)!.text);
-    for (const [ci, { text: c }] of clauses.entries()) {
+    for (const [ci, { text: c, at }] of clauses.entries()) {
       const before = estimated;
+      const saidEstimate = (start: number, end: number) => estimateCovers(s, estimates, c, at + start, at + end);
       estimated ||= statesEstimate(c);
       // A date only where the clause ITSELF says the cargo comes or goes — «Yukingiz 03.11 da omborga keldi,
       // …» is a fact about a day that passed, and its past verb is no verb of these lists. Chinese writes the
@@ -1442,7 +1600,7 @@ export function timePromise(text: string): boolean {
       // estimate cargo_status gave, said as one.
       if (!zhPast(c) && (SENDING_VERB.some((re) => re.test(c)) || (COMING_VERB.some((re) => re.test(c)) && aboutCargo(c, s)))) {
         for (const [start, end] of datesIn(c)) {
-          if (!hedgedAt(c, start, end) && !DATE_EXPECTED.test(c)) return true;
+          if (!hedgedAt(c, start, end) && !DATE_EXPECTED.test(c) && !saidEstimate(start, end)) return true;
         }
       }
       // A sending verb whose object is the answer or the quote is no time of the cargo's (third review): «Narxni bir
@@ -1460,6 +1618,7 @@ export function timePromise(text: string): boolean {
       // promise as a count is: unhedged, or certain, or after he was asked how many days he needs, whatever hedges
       // it — then it is HIS deadline, and nothing vouches that we meet it.
       for (const m of c.matchAll(BACKREF_TIME)) {
+        if (saidEstimate(m.index, m.index + m[0].length)) continue;
         if (asked && !certain && !WE_SEND.test(s)) continue;
         if (servesPurposeOrIf(c, m.index, m.index + m[0].length)) continue;
         if (certain || deadlineAsked || (!covered && !hedgedAt(c, m.index, m.index + m[0].length))) return true;
@@ -1472,8 +1631,10 @@ export function timePromise(text: string): boolean {
         // shuncha kunda albatta yetkazib beramiz, kelishdikmi?» promises whatever time he names.
         const askedHere = asked && !(tagged && ci < clauses.length - 1);
         if (askedHere && !certain && !WE_SEND.test(s) && ASKING_DURATION.test(c.slice(start, end))) continue;
-        // A certainty word anywhere in the sentence makes it a promise again, estimate or not.
-        if (certain) return true;
+        // A certainty word anywhere in the sentence makes it a promise again, estimate or not — and an exact time in
+        // the figure's own clause does too (fifth check): «Yuk taxminan aniq 15 kunda keladi».
+        if (certain || timeSure(c)) return true;
+        if (saidEstimate(start, end)) continue;
         if (!covered && !hedgedAt(c, start, end)) return true;
       }
     }
@@ -2154,7 +2315,16 @@ export function codeCandidatesIn(text: string): string[] {
   // A code glued to its marking (fourth check): «GS778MANIKEN» — the marking convention itself — is one run of
   // twelve, never a candidate, so another client's code passed inside it while «GS778 …», «GS-778» were refused.
   // Its leading letters and digits are a candidate of their own.
-  const glued = shadows.flatMap((s) => [...s.matchAll(/(?<![\p{L}\p{N}])(\p{L}{1,4}\d{1,6})(?=\p{L})/gu)].map((m) => m[1]!));
+  // …and so is a code at the END of one, or with its hyphen before the letters (fifth check): «MANIKENGS778»,
+  // «GS-778MANIKEN». At a run's end the code's letters could be any of the last four, so each is asked — only in a
+  // marking written in capitals, as markings are: «iPhone15», «bags20» end in no code.
+  const glued = shadows.flatMap((s) => [
+    ...[...s.matchAll(/(?<![\p{L}\p{N}])(\p{L}{1,4}\d{1,6})(?=\p{L})/gu)].map((m) => m[1]!),
+    ...[...s.matchAll(/(?<![\p{L}\p{N}])(\p{L}{1,4})-(\d{1,6})(?=\p{L})/gu)].map((m) => `${m[1]!}${m[2]!}`),
+    ...[...s.matchAll(/(?<![\p{L}\p{N}])\p{Lu}(\p{Lu}+)(\d{1,6})(?![\p{L}\p{N}])/gu)].flatMap((m) =>
+      [1, 2, 3, 4].filter((k) => k <= m[1]!.length).map((k) => `${m[1]!.slice(-k)}${m[2]!}`),
+    ),
+  ]);
   return [...new Set([...codeCandidates(shadows), ...codeCandidates(glued)])];
 }
 
@@ -2608,7 +2778,9 @@ export function checkAgentReply(input: PolicyInput): PolicyResult {
     const hit: PolicyHit = { rule: 'G10', code: 'fingerprint', detail: String(input.fingerprintPeers) };
     const plain =
       [...trimmed].length <= AGENT_LIMITS.sameTextWarnChars &&
-      placed.length === 0 &&
+      // A count the reply's own list vouches for is the greeting's qualification question, no figure (fifth check):
+      // «Va alaykum assalom! 3 narsa kerak: tovar nomi, kub va kg» kept its ✅ only with the count in words.
+      placed.every((e) => e.source === LISTED_COUNT) &&
       unverifiable === null &&
       [...text.matchAll(PHONE_RE)].length === 0 &&
       urls.length === 0;

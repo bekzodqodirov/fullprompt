@@ -5,7 +5,7 @@ import { normalizeDigits, unverifiableNumeral } from '@/modules/wms/agent/digits
 import { servedText, WAREHOUSE_ADDRESS_SEED, type KbHit } from '@/modules/wms/agent/kb';
 import type { AgentLocale, ScriptName } from '@/modules/wms/agent/locale';
 import { extractNumbers, PHONE_RE, sourceFor, urlsIn, type FoundNumber, type NumberSource } from '@/modules/wms/agent/numbers';
-import { addressAnchorsOf, checkAgentReply, promiseHits, vagueTravelTime, type PolicyInput, type PolicyResult } from '@/modules/wms/agent/policy';
+import { addressAnchorsOf, checkAgentReply, foreignCodes, promiseHits, vagueTravelTime, type PolicyInput, type PolicyResult } from '@/modules/wms/agent/policy';
 import { stableHead } from '@/modules/wms/agent/prompt';
 import { memoryFor, type ComposeReply } from '@/modules/wms/agent/run';
 import { GS_REMINDER, SEED_FACTS } from '@/modules/wms/agent/seed-kb';
@@ -1603,5 +1603,191 @@ describe('fourth check — the cheap leaks that passed on both trees', () => {
     expect(verdict(RU, 'cyrillic', 'ru', 'Точно сказать не могу, но обычно груз придёт через 15–25 дней — это ориентир, не обещание.').ok).toBe(true);
     expect(verdict(RU, 'cyrillic', 'ru', 'Точно не знаю, но обычно груз придёт через 15–25 дней.').ok).toBe(true);
     expect(verdict(RU, 'cyrillic', 'ru', 'Не точно, но обычно груз придёт через 15–25 дней.').ok).toBe(true);
+  });
+});
+
+/**
+ * The fifth check (2026-10-30): the fourth check's own fixes, re-verified. Each of its new readers reached past
+ * what it meant — «the rest» read as the money's in a reply about the photos, «part» as the money's in a load that
+ * comes in parts, a list as its own source for a status nobody stated, a trailing hedge over a sentence that turned
+ * away from it. Pinned on both sides, as before; nothing here is computed by the code under test.
+ */
+describe('fifth check — the payment rule said again keeps its ✅; the rest of the quote, a split load and a story are no credit', () => {
+  it.each([
+    // The cargo HELD after a shortfall is the rule, said again.
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Pul yetmasa, yuk omborda turadi."],
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Pul yetmasa, to'liq to'lamaguncha yuk omborda qoladi."],
+    [EN, 'latin', 'en', "Payment on arrival, before collection. If you're short, the cargo stays in our warehouse until it's paid."],
+    [EN, 'latin', 'en', "Payment on arrival, before collection. If you can't pay in full, the goods wait at the warehouse."],
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Если денег не хватит, груз останется на складе до полной оплаты.'],
+    // The rest WE send or count.
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Qolganini keyin hisoblab beraman."],
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Qolganini keyin yuboraman."],
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Остальное пришлю позже.'],
+    [EN, 'latin', 'en', "Payment on arrival, before collection. I'll send the rest later."],
+    [EN, 'latin', 'en', "Payment on arrival, before collection. I'll send you the rest of the photos later."],
+    // A sale in a story about other customers.
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Ko'p mijozlar tovarni sotib bo'lgach yana buyurtma beradi."],
+    // A load that comes in parts, each paid before it is collected; and «the balance» as the whole amount due.
+    [RU, 'cyrillic', 'ru', 'Если груз придёт частями, оплата по прибытии каждой партии, перед получением.'],
+    [EN, 'latin', 'en', 'If it comes in two trucks, payment is on arrival of each part, before you collect it.'],
+    [UZ, 'latin', 'uz', "Yuk ikki qismda kelsa, har bir qismi kelganda to'laysiz, yukni olishdan oldin."],
+    [EN, 'latin', 'en', 'Payment on arrival: you pay the balance before you collect the cargo.'],
+    // The rest paid BEFORE he takes it.
+    [RU, 'cyrillic', 'ru', 'Остаток оплачиваете по прибытии, перед получением.'],
+    [UZ, 'latin', 'uz', "Qolgan qismini yuk kelganda to'laysiz, yukni olishdan oldin."],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(promiseHits(reply)).toEqual([]);
+    expect(verdict(lines, script, language, reply).ok).toBe(true);
+  });
+
+  it.each([
+    // A reassurance said with its own negation is no refusal.
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Если не хватит — не переживайте, отдадим.'],
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Pul yetmasa, xavotir olmang, yukni beramiz."],
+    [EN, 'latin', 'en', "Payment on arrival, before collection. If you're short, don't worry — we'll release it."],
+    // The cargo held WITH HIM is the cargo released.
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Если денег не хватит, груз останется у вас.'],
+    // A part of the money in other words.
+    [RU, 'cyrillic', 'ru', 'Оплата наполовину по прибытии, перед получением.'],
+    [UZ, 'latin', 'uz', "Pulning ozginasini yuk kelganda to'laysiz, yukni olishdan oldin."],
+    [UZ, 'latin', 'uz', "Pulning bir qismini yuk kelganda to'laysiz, yukni olishdan oldin."],
+    // What is left owed, on the next shipment; a sale and a settling; a shortfall said with «kam».
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Разницу доплатите со следующей партией.'],
+    [EN, 'latin', 'en', 'Payment on arrival, before collection. Anything outstanding can go on your next shipment.'],
+    [RU, 'cyrillic', 'ru', 'Оплата по прибытии, перед получением. Как распродадите товар — тогда и рассчитаемся.'],
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Pulingiz kam bo'lsa ham, yukni beramiz."],
+    // HIS sending of the rest is his paying later; a sale said alone is the time he pays.
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Qolgan pulni keyin yuborasiz."],
+    [EN, 'latin', 'en', 'Payment on arrival, before collection. You can send the rest later.'],
+    [UZ, 'latin', 'uz', "To'lovni yuk kelganda qilasiz, yukni olishdan oldin. Tovarni sotib bo'lgach ham bo'ladi."],
+  ] as const)('«%s» … «%s» … «%s» … «%s» is credit', (lines, script, language, reply) => {
+    expect(promiseHits(reply)).toContain('credit_release');
+    expect(verdict(lines, script, language, reply).ok).toBe(false);
+  });
+});
+
+describe('fifth check — a listed count names what a first reply counts, and never where cargo stands', () => {
+  it.each([
+    [UZ, 'latin', 'uz', 'Omborimizda 3 ta joyingiz saqlanyapti: kiyim, poyabzal va sumka.'],
+    [UZ, 'latin', 'uz', 'Omborda 2 ta joylaringiz bor: kiyim va poyabzal.'],
+    [RU, 'cyrillic', 'ru', 'Готовы к выдаче 2 позиции: одежда и обувь.'],
+    [UZ, 'latin', 'uz', "Yukingizdan 2 tasi yo'lga chiqdi: kiyim va poyabzal."],
+    [EN, 'latin', 'en', 'Your order has 2 items waiting: shoes and bags.'],
+    [UZ, 'latin', 'uz', 'Sizga 2 ta reys bor: dushanba va payshanba.'],
+    [UZ, 'latin', 'uz', 'Xitoyda 2 ta omborda yukingiz turibdi: Ivu va Xorgos.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» still asks a source', (lines, script, language, reply) => {
+    expect(blockCodes(verdict(lines, script, language, reply)).some((c) => c.startsWith('number_unsourced:'))).toBe(true);
+  });
+
+  it.each([
+    [UZ, 'latin', 'uz', "Xitoyda 3 ta omborimiz bor — Ivu, Guanchjou va Xorgos. Qaysi biridan jo'natasiz?"],
+    [UZ, 'latin', 'uz', 'Xitoyda 3 ta juda katta qabul omborimiz bor: Ivu, Guanchjou va Xorgos.'],
+    [RU, 'cyrillic', 'ru', 'Есть 2 способа оплаты: наличные и карта.'],
+    [UZ, 'latin', 'uz', 'Xitoyda 3 ta qabul omborimiz bor, ular: Ivu, Guanchjou va Xorgos.'],
+    [UZ, 'latin', 'uz', "Yukingiz uchun 2 xil yo'l bor: avto va avia."],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(verdict(lines, script, language, reply, []).ok).toBe(true);
+  });
+
+  it('…and a listed count is no figure to G10: the greeting asking three things keeps its ✅ with the count in digits', () => {
+    const r = verdict(UZ, 'latin', 'uz', 'Va alaykum assalom! 3 narsa kerak: tovar nomi, kub va kg.', FACTS, { fingerprintPeers: 6 });
+    expect(r.ok).toBe(true);
+    expect(r.warnings).toContainEqual({ rule: 'G10', code: 'fingerprint', detail: '6' });
+  });
+});
+
+describe('fifth check — a hedge said after the figure covers it only where nothing turns away between them', () => {
+  it.each([
+    "Narxi bu taxmin, muddat esa aniq: yuk 15–25 kunda keladi.",
+    'Цена — это примерно, а срок точный: груз придёт через 15–25 дней.',
+    "That's an estimate for the price, but the cargo arrives in exactly 15–25 days.",
+    'Yuk 15–25 kunda keladi, bu taxmin, lekin kechikmaydi.',
+    'Kub narxi taxminiy (taxminan), yuk esa 15–25 kunda yetib keladi.',
+    'Это примерно по цене; груз придёт через 15–25 дней без задержек.',
+    "It's an estimate on cost; delivery itself arrives in 15–25 days, no delays.",
+    'Yuk 15–25 kunda aniq keladi, bu taxmin.',
+    'Yuk taxminan aniq 15 kunda keladi.',
+  ])('«%s» is a dispatch promise', (reply) => {
+    expect(promiseHits(reply)).toContain('dispatch_promise');
+  });
+
+  it.each([
+    [UZ, 'latin', 'uz', 'Bu taxmin: yuk 15–25 kunda yetib keladi.'],
+    [UZ, 'latin', 'uz', 'Aniq aytolmayman, odatda yuk 15–25 kunda keladi.'],
+    [UZ, 'latin', 'uz', 'Yuk odatda 15–25 kunda keladi, aniq narxni hisoblab beraman.'],
+    [RU, 'cyrillic', 'ru', 'Точный срок назвать не могу, обычно груз идёт 15–25 дней.'],
+    [EN, 'latin', 'en', "I can't say exactly, but truck cargo usually takes 15–25 days."],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(verdict(lines, script, language, reply).ok).toBe(true);
+  });
+});
+
+describe('fifth check — «not a guarantee» is the disclaimer in its other word', () => {
+  it.each([
+    [EN, 'latin', 'en', "Truck freight takes 15–25 days; that's an estimate, not a guarantee."],
+    [UZ, 'latin', 'uz', 'Yuk 15–25 kunda keladi, bu taxmin, kafolat emas.'],
+    [RU, 'cyrillic', 'ru', 'Груз идёт 15–25 дней — это ориентир, а не гарантия.'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(promiseHits(reply)).toEqual([]);
+    expect(verdict(lines, script, language, reply).ok).toBe(true);
+  });
+
+  it.each([
+    ['Yuk 15 kunda kafolat bilan keladi.'],
+    ['Гарантируем доставку за 15–25 дней.'],
+    ['Delivery in 15–25 days is guaranteed.'],
+    ["Truck freight takes 15–25 days; that's an estimate, not a guarantee. We guarantee safety."],
+  ])('«%s» is a guarantee', (reply) => {
+    expect(promiseHits(reply)).toContain('guarantee');
+  });
+
+  it('…and a certainty word still makes the disclaimed time a promise', () => {
+    expect(promiseHits("Avto kargo odatda 15–25 kunda keladi — bu taxmin, kafolat emas, lekin albatta keladi.")).toContain('dispatch_promise');
+  });
+});
+
+describe('fifth check — the close neighbours of the fourth check’s leaks', () => {
+  const UZM = ['Assalomu alaykum', '5 kub 800 kg kiyim', 'narxi qancha', 'Yiwudan'];
+  const RUM = ['Здравствуйте', 'одежда 5 кубов 800 кг', 'сколько стоит', 'из Иу'];
+
+  it.each([
+    [UZM, 'latin', 'uz', 'Narxi 1688, Taobao narxi bilan bir xil.', '1688 $'],
+    [UZM, 'latin', 'uz', "Kubiga 1688, Alibaba'dagi kabi.", '1688 $'],
+    [UZM, 'latin', 'uz', "Hammasi bo'lib 800 bo'ladi.", '800 $'],
+    [RUM, 'cyrillic', 'ru', 'Всего выйдет 800.', '800 $'],
+    [UZM, 'latin', 'uz', 'Jami: ~800', '800 $'],
+  ] as const)('«%s» … «%s» … «%s» … «%s» is a price nobody vouched for', (lines, script, language, reply, raw) => {
+    expect(blockCodes(verdict(lines, script, language, reply))).toContain(`number_unsourced:${raw}`);
+  });
+
+  it.each([
+    [UZM, 'latin', 'uz', "Tovar havolasini yuboring — 1688 yoki Taobao'dan."],
+    [UZ, 'latin', 'uz', 'Narxni hisoblash uchun 1688 havolasini yuboring.'],
+    [RU, 'cyrillic', 'ru', 'В Китае всего 3 склада: Иу, Гуанчжоу и Хоргос.'],
+    [UZ, 'latin', 'uz', "Hammasi bo'lib 3 ta savol: tovar nomi, kub va kg?"],
+    [UZM, 'latin', 'uz', "Jami og'irligi 800 kg, hajmi 5 kub — to'g'rimi?"],
+  ] as const)('«%s» … «%s» … «%s» … «%s» keeps its ✅', (lines, script, language, reply) => {
+    expect(verdict(lines, script, language, reply).ok).toBe(true);
+  });
+
+  it.each([['几天就到，怎么样？'], ['چند روزه می‌رسد، چطوره؟']])('«%s» — a tag after a stated count — is a dispatch promise', (text) => {
+    expect(promiseHits(text)).toContain('dispatch_promise');
+  });
+
+  it('«Через пару дней — и всё в Самарканде» is G1’s vague figure, like Tashkent', () => {
+    const reply = 'Через пару дней — и всё в Самарканде.';
+    expect(vagueTravelTime(reply)).toBe(true);
+    expect(blockCodes(ru(reply))).toContain('number_unverifiable:word_numeral');
+  });
+
+  it('a code at the end of a marking, or with its hyphen before the letters, is a code — the chat’s own is not foreign', () => {
+    const ctx = { ownCodes: ['GS777'], bookCodes: new Set<string>(), codePrefix: 'GS' };
+    expect(foreignCodes('Karobkaga MANIKENGS778 deb yozing.', ctx)).toEqual(['GS778']);
+    expect(foreignCodes('Karobkaga GS-778MANIKEN deb yozing.', ctx)).toEqual(['GS778']);
+    expect(foreignCodes('Karobkaga MANIKENGS777 deb yozing.', ctx)).toEqual([]);
+    expect(foreignCodes('Karobkaga GS-777MANIKEN deb yozing.', ctx)).toEqual([]);
+    // …and a model number in lower case ends in no code.
+    expect(foreignCodes('Rasmda bags20 va iPhone15 bor.', ctx)).toEqual([]);
   });
 });
