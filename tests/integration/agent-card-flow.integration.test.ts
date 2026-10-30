@@ -1190,6 +1190,25 @@ describe('the press promises only the card that is coming, and asks as itself (r
     expect(uz.agentAi.errors.superseded_edited_capped).toBe(SUPERSEDED_WORDS.edited_capped);
   });
 
+  it('…and an errored first look the sweep would retry, on a chat at its cap, is no card either — the retry is refused the same way', async () => {
+    const me = await owner();
+    const a = await draftFor(me);
+    const newer = await newerLine(me);
+    await db.insert(agentRuns).values({
+      managerUserId: me.id,
+      peerId: me.peer,
+      trigger: 'inbound',
+      anchorTgMessageId: newer,
+      attempt: 0,
+      outcome: 'error',
+      error: 'Request timed out.',
+    });
+    await fillChatDay(me, AGENT_LIMITS.runsPerChatPerDay - 1);
+    const r = await withModelKey(() => decideDraft(actor(me.id), a.draftId, 'send', {}, { actorId: me.id }));
+    expect(r).toEqual({ ok: false, code: 'superseded', detail: 'capped' });
+    expect(mine(me)).toEqual([]);
+  });
+
   it('❌ at the cap asks nothing — the redraft it would queue is refused, and «❌ Rad etildi» promised no card', async () => {
     const me = await owner();
     const [own] = await db
