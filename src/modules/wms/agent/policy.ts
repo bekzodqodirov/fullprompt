@@ -417,6 +417,30 @@ const WITH_YOU = new RegExp(
   'iu',
 );
 const ANY_DENY = new RegExp(`${DENY_UZ}|${DENY_UZC}|${DENY_RU}|${DENY_EN}`, 'iu');
+/** His paying named — the money, its rest or its difference: «to'laysiz», «оплатите», «доплачивать», «pay». */
+const PAY_LEFT = /(?<![\p{L}])(?:до|за|у|о|рас)?плач\p{L}*/iu;
+function paysIn(o: string): boolean {
+  return PAY_TOPIC.test(o) || LEFTOVER.test(o) || PAY_LEFT.test(o);
+}
+/**
+ * A HOLD denied is the cargo released (sixth check): «груз не задержим», «не будем держать», «yukni ushlab
+ * turmaymiz», «we won't hold the cargo», «we won't keep you waiting». Read before a «not» counts as a refusal.
+ */
+const HOLD_DENIED = new RegExp(
+  [
+    '(?<![\\p{L}])не\\s+(?:будем\\s+|станем\\s+)?(?:за|у)?держ\\p{L}*|(?<![\\p{L}])не\\s+(?:будем\\s+|станем\\s+)?ждать(?![\\p{L}])',
+    `(?<![\\p{L}])(?:ushlab\\s+turma|ushlama|saqlab\\s+turma|to${AP}?xtatma|qoldirma|kutib\\s+turma|kutma)(?:ymiz|ydi|yman|ysiz|ymaymiz)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:ушлаб\\s+турма|ушлама|сақлаб\\s+турма|тўхтатма|қолдирма|кутиб\\s+турма|кутма)(?:ймиз|йди|йман|йсиз)(?![\\p{L}])',
+    "(?<![\\p{L}])(?:won['’]t|will\\s+not|wouldn['’]t|don['’]t|do\\s+not|not\\s+going\\s+to)\\s+(?:\\p{L}+\\s+)?(?:hold|keep|withhold|detain|delay)(?:s|ing)?(?![\\p{L}])",
+  ].join('|'),
+  'iu',
+);
+/** …and paying denied — «to'lash shart emas», «платить не обязательно», «no need to pay» — read in its clause. */
+const PAY_NOT_NEEDED = new RegExp(
+  `(?<![\\p{L}])(?:shart\\s+emas|kerak\\s+emas|majburiy\\s+emas|шарт\\s+эмас|керак\\s+эмас|мажбурий\\s+эмас|не\\s+обязательно|необязательно|не\\s+нужно|не\\s+надо|не\\s+требуется|(?:don['’]t|do\\s+not|won['’]t|will\\s+not)\\s+(?:need|have)\\s+to|no\\s+need|not\\s+(?:required|necessary|needed|mandatory))(?![\\p{L}])`,
+  'iu',
+);
+const CREDIT_CLAUSE_CUT = /[,—–;:]|(?<![\p{L}])(?:а|но|lekin|ammo|and|but)(?![\p{L}])/iu;
 /** At most four words left beside a match — an elliptical «Tovarni sotib bo'lgach ham bo'ladi», never a story. */
 function fewWordsBeside(o: string, re: RegExp): boolean {
   return o.replace(new RegExp(re.source, 'giu'), ' ').split(/[^\p{L}\p{N}'‘’ʻ`]+/u).filter(Boolean).length <= 4;
@@ -428,12 +452,25 @@ function fewWordsBeside(o: string, re: RegExp): boolean {
  * a story about other customers.
  */
 function leftOnCredit(o: string): boolean {
-  const ours = ABOUT_THE_TALK.test(o) || OURS_TO_SEND.test(o);
+  // What we send or count is ours only where HIS paying is not in the same statement (sixth check): «Когда продадите
+  // товар, тогда оплатите, реквизиты пришлю», «Pay the rest once you've sold the goods, I'll send the details»,
+  // «Разницу доплатите со следующей партией, я посчитаю» were credit with a «we send» beside it.
+  const ours = (ABOUT_THE_TALK.test(o) || OURS_TO_SEND.test(o)) && !paysIn(o);
   if (REMAINDER.test(o) && REMAINDER_LATER.test(o) && !ours) return true;
   if (AFTER_SALE.test(o) && !ours && (PAY_TOPIC.test(o) || SETTLE.test(o) || REMAINDER.test(o) || fewWordsBeside(o, AFTER_SALE))) return true;
   if (NEXT_SHIPMENT.test(o) && (LEFTOVER.test(o) || REMAINDER.test(o)) && !ours) return true;
   if (!SHORT_OF_MONEY.test(o)) return false;
   const rest = o.replace(new RegExp(SHORT_OF_MONEY.source, 'giu'), ' ').replace(NO_WORRIES, ' ');
+  // A refusal there, or the cargo held, is the rule said again — but only a refusal OF the handover (sixth check).
+  // Any «not» read as one: a hold denied is the cargo released («груз не задержим», «yukni ushlab turmaymiz», «we
+  // won't hold the cargo»), paying denied is credit («hammasini to'lash shart emas», «всю сумму платить не
+  // обязательно», «no need to pay it all»), and a handover said with no «not» and no payment beside it releases the
+  // cargo whatever else the statement holds («Pul yetmasa ham yukni beramiz, qolgani omborda turadi», «we'll release
+  // most of it and the rest stays in our warehouse»).
+  if (HOLD_DENIED.test(rest)) return true;
+  const clauses = rest.split(CREDIT_CLAUSE_CUT);
+  if (clauses.some((c) => PAY_NOT_NEEDED.test(c) && paysIn(c))) return true;
+  if (!paysIn(rest) && clauses.some((c) => HANDOVER_TOPIC.test(c) && !ANY_DENY.test(c) && !CARGO_HELD.test(c))) return true;
   return !ANY_DENY.test(rest) && !(CARGO_HELD.test(rest) && !WITH_YOU.test(rest));
 }
 
@@ -1072,7 +1109,8 @@ const SENDING_VERB: readonly RegExp[] = [
   new RegExp(uzSending(`${UZ_YOURS}|${UZ_NEG}|${UZ_PAST}`), 'iu'),
   new RegExp(uzcSending(`${UZC_YOURS}|${UZC_NEG}|${UZC_PAST}`), 'iu'),
   new RegExp(ruSending(true), 'iu'),
-  /\b(?:arrive|arrives|deliver|delivers|ship|ships|reach|reaches|dispatch)\b|get\s+there|will\s+be\s+(?:shipped|delivered|dispatched|sent)\b/iu,
+  // «Delivery» the noun too (sixth check), as «доставка» and «yetkazib berish» are: «…delivery is definitely in 15 days».
+  /\b(?:arrive|arrives|deliver|delivers|delivery|deliveries|ship|ships|reach|reaches|dispatch)\b|get\s+there|will\s+be\s+(?:shipped|delivered|dispatched|sent)\b/iu,
   /می‌?\s?رسد|میرسد|می‌?\s?رسه|ارسال\s+(?:می|خواه)|تحویل\s+می|می‌?\s?فرستیم|خواهد\s+رسید/u,
   /到达|送到|运到|到货|发货|发出|寄出|运出|出发|能到|会到|送达|抵达/u,
 ];
@@ -1153,6 +1191,9 @@ const ESTIMATE_SAID = new RegExp(
     '\\(\\s*(?:taxminan|taxminiy|тахминан|тахминий|примерно|приблизительно|ориентировочно|approx(?:imately)?\\.?|roughly|estimated?)\\s*\\)',
     '(?<![\\p{L}])это\\s+(?:лишь\\s+|только\\s+)?(?:примерно|приблизительно|ориентир\\p{L}*|оценка|прогноз)(?![\\p{L}])',
     "(?<![\\p{L}])(?:this|that|it)(?:\\s+is|['’]s)\\s+(?:only\\s+|just\\s+)?(?:an?\\s+)?(?:rough\\s+)?(?:estimate|approximation|approximate)(?![\\p{L}])",
+    // The hedge alone, last, after a comma (sixth check): «It arrives in 15–25 days, approximately», «Yuk 15–25 kunda
+    // keladi, taxminan», «Груз придёт через 15–25 дней, примерно» — the kb's days with the adverb moved to the end.
+    '[,—–]\\s*(?:taxminan|тахминан|примерно|приблизительно|ориентировочно|approximately|roughly|more\\s+or\\s+less)\\s*[.!…]*\\s*$',
   ].join('|'),
   'iu',
 );
@@ -2317,15 +2358,32 @@ export function codeCandidatesIn(text: string): string[] {
   // Its leading letters and digits are a candidate of their own.
   // …and so is a code at the END of one, or with its hyphen before the letters (fifth check): «MANIKENGS778»,
   // «GS-778MANIKEN». At a run's end the code's letters could be any of the last four, so each is asked — only in a
-  // marking written in capitals, as markings are: «iPhone15», «bags20» end in no code.
+  // marking written in capitals, as markings are: «iPhone15», «bags20» end in no code. The book is asked about each,
+  // and only the book's answer makes one foreign (sixth check, `tailCodes`).
+  return [...new Set([...spelledCodes(shadows), ...codeCandidates(tailCodes(shadows))])];
+}
+
+/** Every candidate but the run-end guess below: the spellings themselves, and the code glued before its marking. */
+function spelledCodes(shadows: readonly string[]): string[] {
   const glued = shadows.flatMap((s) => [
     ...[...s.matchAll(/(?<![\p{L}\p{N}])(\p{L}{1,4}\d{1,6})(?=\p{L})/gu)].map((m) => m[1]!),
     ...[...s.matchAll(/(?<![\p{L}\p{N}])(\p{L}{1,4})-(\d{1,6})(?=\p{L})/gu)].map((m) => `${m[1]!}${m[2]!}`),
-    ...[...s.matchAll(/(?<![\p{L}\p{N}])\p{Lu}(\p{Lu}+)(\d{1,6})(?![\p{L}\p{N}])/gu)].flatMap((m) =>
+  ]);
+  return [...codeCandidates(shadows), ...codeCandidates(glued)];
+}
+
+/**
+ * The code at a capital run's END — «MANIKENGS778» — whose letters could be any of the run's last four. A guess,
+ * and the sixth check measured what it guessed: «BAGS20», «LEGGINGS2024», «RINGS5» end in the prefix and digits
+ * just as a marking does. So it names another client only when the client book holds that very code; the prefix
+ * and digits alone, which every other spelling answers to, are not enough here.
+ */
+function tailCodes(shadows: readonly string[]): string[] {
+  return shadows.flatMap((s) =>
+    [...s.matchAll(/(?<![\p{L}\p{N}])\p{Lu}(\p{Lu}+)(\d{1,6})(?![\p{L}\p{N}])/gu)].flatMap((m) =>
       [1, 2, 3, 4].filter((k) => k <= m[1]!.length).map((k) => `${m[1]!.slice(-k)}${m[2]!}`),
     ),
-  ]);
-  return [...new Set([...codeCandidates(shadows), ...codeCandidates(glued)])];
+  );
 }
 
 /** Codes in a text that are not this chat's: a book code, or the prefix followed by digits. */
@@ -2335,10 +2393,13 @@ export function foreignCodes(
 ): string[] {
   const own = new Set(ctx.ownCodes.map((c) => c.toUpperCase()));
   const prefix = ctx.codePrefix.trim().toUpperCase();
+  const shadows = scriptShadows(normalizeDigits(text));
+  const spelled = new Set(spelledCodes(shadows));
+  const tailOnly = new Set(codeCandidates(tailCodes(shadows)).filter((c) => !spelled.has(c)));
   const out = new Set<string>();
   for (const c of codeCandidatesIn(text)) {
     if (own.has(c)) continue;
-    const prefixed = prefix !== '' && c.startsWith(prefix) && /^\d+$/u.test(c.slice(prefix.length));
+    const prefixed = !tailOnly.has(c) && prefix !== '' && c.startsWith(prefix) && /^\d+$/u.test(c.slice(prefix.length));
     if (ctx.bookCodes.has(c) || prefixed) out.add(c);
   }
   return [...out];

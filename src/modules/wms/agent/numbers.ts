@@ -1179,16 +1179,36 @@ const LISTED_HEAD =
   /^\s*((?:[\p{L}'‘’ʻ`-]+\s+){0,6}?[\p{L}'‘’ʻ`-]+)(?:\s*,\s*(?:ular|bular|улар|булар|они|это|they\s+are|these\s+are))?\s*(?:[:：]|[—–](?=\s))/iu;
 const LISTED_NOUN = new RegExp(
   [
-    `(?<![\\p{L}])(?:ombor\\p{L}*|sklad\\p{L}*|yo${AP}?l(?:i|lar|lari|imiz|larimiz)?|variant\\p{L}*|savol\\p{L}*|narsa\\p{L}*|ma${AP}?lumot\\p{L}*|usul\\p{L}*|shahar\\p{L}*|qadam\\p{L}*|bosqich\\p{L}*|xizmat\\p{L}*|hujjat\\p{L}*|shart\\p{L}*|tur(?:i|lari)?|xil)(?![\\p{L}])`,
-    '(?<![\\p{L}])(?:омбор\\p{L}*|склад\\p{L}*|йўл(?:и|лар|лари|имиз)?|вариант\\p{L}*|савол\\p{L}*|нарса\\p{L}*|маълумот\\p{L}*|усул\\p{L}*|шаҳар\\p{L}*|қадам\\p{L}*|босқич\\p{L}*|хизмат\\p{L}*|ҳужжат\\p{L}*|шарт\\p{L}*|хил)(?![\\p{L}])',
-    '(?<![\\p{L}])(?:вариант\\p{L}*|способ\\p{L}*|вопрос\\p{L}*|вещ\\p{L}*|пункт\\p{L}*|шаг\\p{L}*|этап\\p{L}*|город\\p{L}*|услуг\\p{L}*|документ\\p{L}*|услови\\p{L}*|маршрут\\p{L}*|пут(?:ь|и|ей)|вид(?:а|ов)?|тип(?:а|ов)?|данн(?:ых|ые))(?![\\p{L}])',
-    '(?<![\\p{L}])(?:warehouses?|options?|ways?|questions?|things?|details?|steps?|routes?|roads?|city|cities|services?|documents?|conditions?|types?|kinds?|choices?|methods?)(?![\\p{L}])',
+    `(?<![\\p{L}])(?:ombor\\p{L}*|sklad\\p{L}*|yo${AP}?l(?:i|lar|lari|imiz|larimiz)?|variant\\p{L}*|savol\\p{L}*|usul\\p{L}*|shahar\\p{L}*|qadam\\p{L}*|bosqich\\p{L}*|xizmat\\p{L}*|hujjat\\p{L}*|shart\\p{L}*|tur(?:i|lari)?|xil)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:омбор\\p{L}*|склад\\p{L}*|йўл(?:и|лар|лари|имиз)?|вариант\\p{L}*|савол\\p{L}*|усул\\p{L}*|шаҳар\\p{L}*|қадам\\p{L}*|босқич\\p{L}*|хизмат\\p{L}*|ҳужжат\\p{L}*|шарт\\p{L}*|хил)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:вариант\\p{L}*|способ\\p{L}*|вопрос\\p{L}*|шаг\\p{L}*|этап\\p{L}*|город\\p{L}*|услуг\\p{L}*|документ\\p{L}*|услови\\p{L}*|маршрут\\p{L}*|пут(?:ь|и|ей)|вид(?:а|ов)?|тип(?:а|ов)?)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:warehouses?|options?|ways?|questions?|steps?|routes?|roads?|city|cities|services?|documents?|conditions?|types?|kinds?|choices?|methods?)(?![\\p{L}])',
   ].join('|'),
   'iu',
 );
+/**
+ * …and the nouns a list of HIS goods would count as well — things, details, items of information (sixth check):
+ * «You have 2 things in our warehouse: shoes and bags», «У вас на складе 2 вещи: …», «Toshkentda 2 ta narsangiz
+ * bor: …» were a status nobody stated, vouched for by its own list. Only what the reply ASKS him for: «3 narsa
+ * kerak: …», «нужны 3 вещи: …», «I need 3 things: …», «4 ta ma'lumot kerak: …».
+ */
+const LISTED_ITEM = new RegExp(
+  [
+    `(?<![\\p{L}])(?:narsa\\p{L}*|ma${AP}?lumot\\p{L}*|нарса\\p{L}*|маълумот\\p{L}*)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:вещ\\p{L}*|пункт\\p{L}*|данн(?:ых|ые))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:things?|details?)(?![\\p{L}])',
+  ].join('|'),
+  'iu',
+);
+const LISTED_ASKS = new RegExp(
+  `(?<![\\p{L}])(?:kerak\\p{L}*|zarur\\p{L}*|lozim|bering|yuboring|yozing|ayting|so${AP}?ra\\p{L}*|керак\\p{L}*|зарур\\p{L}*|беринг|юборинг|ёзинг|айтинг|сўра\\p{L}*|нуж\\p{L}*|надо|необходим\\p{L}*|требу\\p{L}*|напишите|пришлите|скажите|укажите|сообщите|need\\p{L}*|require\\p{L}*|please|send|tell|let\\s+me\\s+know|ask\\p{L}*)(?![\\p{L}])`,
+  'iu',
+);
 /** Where cargo stands, or that it moved — said before the count or in its head, a status no list may vouch for. */
+// …and IN a warehouse (sixth check): «По вашему заказу 2 позиции на складе: …», «Omborimizda sizning 2 ta narsangiz
+// bor: …», «2 things in our warehouse: …» — never the warehouses counted: «Xitoyda 3 ta omborimiz bor: …».
 const LISTED_STATUS = new RegExp(
-  `(?<![\\p{L}])(?:saqlan\\p{L}*|yo${AP}?lga\\s+chiq\\p{L}*|jo${AP}?natil\\p{L}*|turib\\p{L}*|tayyor\\p{L}*|сақлан\\p{L}*|йўлга\\s+чиқ\\p{L}*|жўнатил\\p{L}*|туриб\\p{L}*|тайёр\\p{L}*|готов\\p{L}*|выдач\\p{L}*|отправлен\\p{L}*|хран\\p{L}*|waiting|ready|stored|shipped|dispatched|on\\s+the\\s+way|in\\s+stock)(?![\\p{L}])`,
+  `(?<![\\p{L}])(?:saqlan\\p{L}*|yo${AP}?lga\\s+chiq\\p{L}*|jo${AP}?natil\\p{L}*|turib\\p{L}*|tayyor\\p{L}*|сақлан\\p{L}*|йўлга\\s+чиқ\\p{L}*|жўнатил\\p{L}*|туриб\\p{L}*|тайёр\\p{L}*|готов\\p{L}*|выдач\\p{L}*|отправлен\\p{L}*|хран\\p{L}*|waiting|ready|stored|shipped|dispatched|on\\s+the\\s+way|in\\s+stock|ombor\\p{L}*?da(?:n|gi)?|омбор\\p{L}*?да(?:н|ги)?|(?:на|в)\\s+склад\\p{L}*|склад(?:е|ах)|(?:in|at)\\s+(?:the\\s+|our\\s+|your\\s+)?warehouses?)(?![\\p{L}])`,
   'iu',
 );
 /** The ways to PAY are a count of ways: «2 способа оплаты: наличные и карта», «3 ta to'lov usuli: …». */
@@ -1225,9 +1245,9 @@ function listedCount(t: string, f: FoundNumber): boolean {
   const head = LISTED_HEAD.exec(t.slice(end));
   if (!head) return false;
   const words = head[1]!;
-  if (!LISTED_NOUN.test(words)) return false;
-  if (LISTED_NOT.test(words) || ARRIVED.test(words) || LISTED_STATUS.test(words) || MONEY_WORD.test(words.replace(PAY_WAYS, ' '))) return false;
   const sentence = t.slice(Math.max(0, t.slice(0, f.index).search(/[^.!?؟。！？\n]*$/u)), f.index);
+  if (!LISTED_NOUN.test(words) && !(LISTED_ITEM.test(words) && LISTED_ASKS.test(`${sentence} ${words}`))) return false;
+  if (LISTED_NOT.test(words) || ARRIVED.test(words) || LISTED_STATUS.test(words) || MONEY_WORD.test(words.replace(PAY_WAYS, ' '))) return false;
   if (LISTED_STATUS.test(sentence) || ARRIVED.test(sentence)) return false;
   return listItems(t.slice(end + head[0].length)) === f.value;
 }
