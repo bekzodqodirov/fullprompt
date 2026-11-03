@@ -6386,3 +6386,230 @@ after an AI reply can be proposed again next month on a fresh `cs:` id. The same
 reply since the CRM's Telegram bridge shipped; the door that exists is the seller closing the lead «Qayta
 qilinmasin», which the feed already carries. Adding a block as suppression is a change to what the feed means
 (its `kind` set is the agent's contract), so it is asked of the owner, not built (CHANGELOG, AGENT-FEED.md §5).
+
+## Sakkiz band, round 3 — the collection survives a deploy, the questions are one table, and «➕ Shu so‘rovga qo‘shish» (2026-11-03; numbered past main's #1570; migration 0139 `calc_intake_durable`, renamed from 0137 and then 0138 on two merges — the TWENTY-SEVENTH collision — ledger 140; spec `docs/SAKKIZ-R3.md`, §20 is the round as built; his answers 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b in `docs/SAKKIZ-BAND.md` §11, and «14 a, qolgani seni taklifing» to the spec's seven questions)
+
+**#1571 — The collection is a ROW behind memory, and every change reaches it before
+Telegram can drop its update (the lead's ruling L1).** His 1.8 c: an unfinished
+«Hisoblatish» waits 24 hours, and a deploy must not lose it. Memory stays the reader (the
+0130 waits idiom — every read on the ladder synchronous) and `telegram_calc_intakes` is
+written behind it, debounced per chat: 1 s of quiet, at most 5 s
+(`INTAKE_WRITE_QUIET_MS` / `INTAKE_WRITE_MAX_MS`). The first draft scheduled a chain step
+per change; probed at the poller's real cadence (an awaited Telegram call after every
+update) the step runs DURING the await, so 20 messages made 20 full-state UPSERTs. The
+debounce alone was not enough: grammy confirms a batch with the `getUpdates` that follows
+it (read in grammy's own `bot.js`, K-review spec-2), so a change left to the timer belonged
+to an update Telegram had already dropped. L1: ONE grammy API transformer
+(`flushBeforeConfirm`) awaits `flushIntakeWrites()` before every `getUpdates`, bounded by
+`INTAKE_CONFIRM_FLUSH_MS` (2 s); a false or timed-out flush is logged once and the poll
+goes ahead, because blocking it would stop the cabinet and the whole staff side for a
+database blip. The K-fix draft — «end every collector message with a flush» — was REFUSED:
+one UPSERT per message beside every reply, holding only on the paths that remember to call
+it; the transformer covers every writer of the batch with one write. A failed write keeps
+the chat DIRTY and is retried (the waits idiom's «log once and forget» would have lost the
+change with its update confirmed); each dirty chat remembers the update it came from, so
+the stop confirms only through the update before the oldest unwritten one and then SEALS
+the store — a late effect in the old process never overwrites what the new one hydrated.
+A redelivered message is applied once (`takenUpTo`, written in the same patch as its
+effect; a file's attachment id is `uuidv5(noteId:messageId)` — K's review found an album
+part minting a random one). The bot hydrates every row before its first `getUpdates`
+(`Promise.allSettled`, a `.catch` each, retried in the background); a job reads through
+`loadIntake`, which waits for the hydrate and throws `IntakesNotReady` so pg-boss
+redelivers. Pinned by `calc-store-durable` and the durable blocks of `bot-redelivery`; the
+transformer's red proof calls `prev` before the flush and finds the old row. P1's own review
+reproduced, with a held row lock, a per-chat flush that answered true before its chat's
+newest change was in the row — fixed and red-proven.
+
+**#1572 — It WAITS 24 hours but HOLDS the chat for 30 minutes.** The judge's blocker
+regression-1: a collection that owned the chat for a day would have refused every lookup,
+note, task and the assistant for a day. After `HOLD_MS` (30 min, the old TTL) without his
+action it is PARKED and takes no free text, file or contact; the four refusing doors ask
+`holdingIntake`, and `intake-holds-wire` classifies every `activeIntake(` call as a
+«presence» or a «holds» question — a list only the merged tree could fill (P2's nine sites,
+P3's three, P4's ten). It resumes on «▶️ Davom etamiz», on its own buttons or on a reply to
+its table or echo; a table-shaped text sent while it is parked gets one pause line, never a
+silent add. One reminder after 2 h idle (`REMIND_AFTER_MS`), silent in the bot's one night
+(22:00-08:00, his 1.17 ⭐ — a second night window would disagree with every other silent
+message, #513), outside the notification mutes because it is his own open work, its claim
+released on any failure but 403/400. At 24 h ONE end path (`expireIntake`) deletes first
+and then says «⌛ … o‘chirildi» once (1.18 ⭐; an empty collection ends without a word);
+nothing is ended for 2 minutes after boot. Q5 a: a backlog message dated after a hydrated
+collection opened, while it was holding, is that collection's, and none reaches the AI. A
+landing cut between the note and the request is finished on the SAME card by the sweep or
+the next «Tasdiqlash» (Uch band's `cardOfNote` / `rootRequestOfNote`), at most
+`RESUME_TRIES` (3) times. The merge met main's AI sotuvchi (0138), whose three one-text
+waits a parked collection must not override (REG-2, COMP-5): `otherCollectorLive(chatId)`
+is the ONE predicate that a parked collection's presses, «▶️ Davom etamiz» and its rule-3
+replies ask — a task draft, a zametka capture, a task's or the agent's wait — answered in
+words, nothing written. Red: `activeIntake` put back into the agent ladder's `busy` refuses
+✏️ beside a parked collection (REG-1).
+
+**#1573 — The reading is a JOB.** «Bo‘ldi» enqueues `calc.intake-read` (4 workers, 300 s
+expiry, 2 retries) and returns; before, the reading ran inside the bot process and a
+deploy left the seller on «⏳» for ever. The job runs under ONE wall clock that ends before
+pg-boss's expiry (the hydrate wait and the 30 s file budget inside one SUM pin), reads the
+model-sized copy each photo got AT ARRIVAL (the job resizes nothing), calls the model,
+settles against the live collection, STORES its reply and only then sends it: a retry,
+pg-boss's expiry race or a Telegram 429 re-sends the stored reply and never pays the model
+twice; a 429 past the brief retry enqueues a delivery-only follow-up at `retry_after + 1`;
+the last attempt says «Tahlil qilib bo‘lmadi» once, and never over a stored reply. Every
+answered reading is billed the moment the model answers, on the collection's note
+(`ai_calc_passes.intake_note_id`) — an abandoned paid reading counts against the day — and
+the landing only attaches those rows to its request. A deploy mid-call costs one call spent
+at Anthropic and not counted (durability-20, said to him). P2's review: a stored but
+undelivered reply keeps the reading's token until it is out, or P1's sweep released a
+reading that had succeeded (adv-2); a STOPPING process never calls the model and holds the
+attempt open until pg-boss's expiry hands it to the next process (adv-3). The merged review
+added that a press minted before this boot with no job id is dead, not live (dur-3). 42 red
+proofs in the package.
+
+**#1574 — One table, one echo per answer, one undo (his 1.10 c, 1.11 c).** After the
+reading the bot sends ONE table: every line ✅ or ⚠️ with what it still owes under it, the
+brutto, cube and route rows, and how to answer. It is EDITED in place as answers arrive
+(latest wins, hash-skipped, «message is not modified» is success); over 4096 characters the
+✅ rows collapse first, identical reasons group, and only then are ⚠️ rows cut. One pure
+address parser (`line-address.ts` `parseTableAnswer`): «3:», «3-qator», «строка 3», a name
+in either script, «jami»; a row's number is its `seq`, the number the VED's screen and the
+2.8 b ask print; a short answer with a unit («40 juft») goes to the one open row it fits;
+what it cannot place is ASKED in words, never guessed. A table answer is never material:
+the line-table scout reproduced «3: 50 dona\n5: 20 kg», typed after the old summary,
+becoming a 20 kg shipment on the next «Bo‘ldi». A number whose words name ANOTHER row is
+`name_mismatch` (regression-3 — «1. Kurtka 300 dona» never overwrites row 1), and in the
+material stage only «N:» and «N-qator» address a row. Every answer message gets ONE echo —
+what it wrote or refused, what is still missing, the confirm — with «↩️ Shu javobni bekor
+qilish», which undoes that message alone and never a row a later answer changed (it names
+it). «✖️ Bekor qilish» asks once when there is something to lose. The one-line loop, its
+three-round cap and the per-line «⏭» are retired. The table's name example is a word the
+ANSWER PARSER reads as that row alone (PF-4, `nameWordFor`), so the table never teaches an
+answer it would refuse. A red proof stayed GREEN first: ten names owing one figure grouped
+into one reason and fitted even with the 40-character cap removed; fifteen 227-character
+names, each owing a different figure, made it red.
+
+**#1575 — The add door: one writer, four outcomes, and a job for the save (his 1.9 a).**
+«➕ Shu so‘rovga qo‘shish» stands under the landing's ✅ and under every machine message
+about a request that is not closed; a reply to the AI answer opens the same door
+(`calc_add`, and the ladder STOPS there — no Door B, no armed task, no assistant,
+regression-2); a forward or a plain file gets the offer while he has an own open request
+from the last 7 days. The door opens an ADD collection on the stored request. «✅ Qo‘shish»
+freezes it, flushes, and enqueues `calc.amend-save` (120 s, 3 retries; no singleton key —
+pg-boss 10.4.2 dedupes nothing on a standard queue — so an in-process fence per note and a
+`loadIntake` fence instead). ONE writer, `amendRequest` (wms/calc/amend.ts), reads on the
+pool and runs one short transaction per branch: **open** (nobody but the machine and this
+seller moved the request: `handsoff_rev = rev`, no group ✅) — the change goes into the rows
+through `saveTable` under a compare-and-set and the pass is queued again after the commit;
+**started / closed** — nothing written, the change goes to the job's thread in words, and
+the echo already said «📝 VED ga yuboriladi» (product-fit-18); **waiting** — a pass is
+running, so the addition is STORED and the pass's settle writes it
+(`requeueWaitingAmendments`), keeping the promise «AI tugatgach yoziladi»; **noted** — a
+file or text that changes no row goes onto the card and to the VED, with no re-pass. The
+row, the card note and the thread message commit together (durability-5), so a redelivered
+job redoes only what is missing. The door never writes a price, rate, zone, certificate or
+an existing code (1.16 ⭐), nor totals read from new material (a top-up's packing list may
+be the whole truck's); Σ m³ follows by arithmetic, a typed total becomes «yangilansinmi?»,
+and the re-run does not price the road on it. A file stating a different figure for a
+stored row asks his own 1.13 c buttons — qo‘shilsin / o‘rniga / VED hal qilsin — and is
+never written on its own (product-fit-17); «differs» is measured at the column's own scale,
+not P4's first 0.5 % tolerance. A returned request opens a NEW seeded collection (1.19 ⭐),
+landed by Uch band's rule. An unreachable queue makes `amendStanding` throw and every caller
+fail closed in words: read as «busy» it would have told the seller about a pass nobody knew
+existed.
+
+**#1576 — 2.8 b: the law's count is asked after the AI answer, and the machine says when it
+was the last to touch the request.** His 1.14 a: every unit the code's law pins and the row
+does not state — dona, juft, and kg / m² / litr when a floor or excise is in that unit —
+through `lawAsksOf` over the VED's own `lineNeeds`, with no unit filter; the «❓» block
+names rows by `seq` (at most `LAW_ASKS_NAMED`, 8), sits in the reply's never-cut part and is
+asked once per answer. «VED boshlagan» (1.15 ⭐) is read off the revision clock:
+`handsoff_rev` moves WITH `rev` inside every machine save and every seller addition
+(`advanceHandsOffInTx`), never in the settle, so a pass killed half-way leaves no false
+«started» (durability-6); `handsoff-writers` (TypeScript's parser over all of src) allows
+exactly two writers. A request landed before the deploy has no stamp and reads as started.
+A pass owed is a TICKET on the request row (`ai_pass_rev` / `_at` / `_job`): «busy» is «that
+pg-boss job is alive», never a time window, and only that job's settle clears it. P5's
+review found that the rule «a job pg-boss does not know is dead» made a pass queued a second
+earlier read dead and sent the seller a false «VED allaqachon ishlayapti» (adv-4): a ticket
+is live for `TICKET_SEND_WINDOW_S` (60 s) before a missing job clears it. His 1.20 ⭐: the
+re-run HE started reaches him past his mute — still through the drain, one `pending` row
+with `direct: true`, never a second sender. The lenta's «❓ Sotuvchidan so‘raldi» is written
+only when the seller's copy reaches somebody (p5-adv-2: it claimed an ask nobody received);
+what to say instead is asked of him. Uch band's retried landing returned before the queue,
+so its ✅ promised a VED answer no pass was owed for; it now queues through the ticket
+(`atRev: 0`). Measured, not assumed: on a fully coded, grouped request the grouping claim's
+own revision clause is the only refusal (S4b went red where the spec expected green).
+
+**#1577 — The VED never answers over a screen a seller's addition changed (P6, §0.1(10)).**
+«Готово», a group's ✅ (desktop and phone), «✅ Hammasini» and «Muhrlash» take the revision
+their screen was drawn at (`sawRev`, a required number) and refuse `amended_since` when an
+APPLIED addition is newer — keyed on `calc_amendments`, so the VED's own saves, a
+colleague's and the machine's never trip it (his 2b stands), and a waiting or to_ved one
+trips nothing (asked of him). «Готово» locks the row before it closes: measured on a pair of
+throwaway tables, in READ COMMITTED a bare UPDATE whose NOT EXISTS waits on the add door's
+row lock re-checks the ROW once the writer commits but keeps the statement's snapshot for
+the subquery — it closed (1 row) where lock-then-UPDATE refused (0 rows), and the
+integration race case is red without the lock. The fold presses with the revision it was
+OPENED at (`foldRev`: any refresh advances the prop while the typed amount survives), and
+the page hands it `min(row.rev, workspace.rev)` (the header is printed from the row read
+first) — both can only refuse more. A `sawRev` outside 0…2147483647 is `validation` (a NaN
+is never exceeded, a huge number is a 22P02 white page). The merged review carried it to the
+desktop table's save (lmp-1): the grid posts its `revAtPress`, `saveTable` refuses
+`amended_since` under the lock, and the typed cells survive the reload; the per-cell form is
+asked of him. 158 presses in 28 integration files were re-anchored, each a compile error
+until it named its revision; opened in a browser as the VED at 1280×900 (ru) and 360×800
+(uz), document width equal to the viewport.
+
+**#1578 — Migration 0139 `calc_intake_durable`, renamed twice: the twenty-seventh
+collision.** Additive, nothing backfilled: `telegram_calc_intakes` (one row per chat, the
+note id unique as the collection's identity; no index on `expires_at`, because every write
+changes it and an index would rule out HOT updates on a table of one row per staff chat),
+`calc_amendments` (outcome `waiting | applied | to_ved | noted`, `rev` exactly when applied,
+three indexes), `calc_requests.handsoff_rev` plus the ticket's three columns with their pair
+CHECK, and `ai_calc_passes.intake_note_id` with the anchor CHECK widened. `gsr_ai_reader` is
+granted nothing on the new tables. Code ahead of the migration is the memory-only store
+(`intakeTableReady` caches only TRUE). K wrote it as 0137 (`when` …117); main's 0137
+`plan_road` (…116) made it 0138 on the first merge; main's 0138 `ai_sotuvchi` had taken
+…117 as well, so on the second merge it is 0139 at …118, and the ledger must reach 140 —
+`migration-journal.test.ts` refuses a wrong order or a hole either way.
+
+**#1579 — The merged round reviewed, and what only the merged tree showed.** First the six
+packages' 101 handoff items were classified against the merged code: 44 already done, 33
+spec text (§20 records the round as built), 12 code (built — two of them comments only — with
+4 red proofs), 8 owned by the review, 4 decisions asked of him. Then four lenses (durability, regression,
+product, law-money-perf) and a completeness pass over `origin/main...HEAD` at e086975: 30
+verified (27 confirmed, 3 partial), 28 fixed, 2 rejected in writing (PF-13 needs a route
+refusal §2 does not word and a change in a corpus file — its own round; lmp-4 is main's:
+the card chat's 🧮 reading has no budget gate and no bill). 35 red proofs by string edit,
+restored by sha256. The headline is a silent loss in the add door's own openings (dur-1):
+`deliverNextStep`'s stage patch marked the reply TAKEN before its answer was applied, so a
+flush and a restart dropped the redelivered answer in silence — and a pin in
+`calc-amend-bot` asserted exactly that early mark (f553fa8); only the answer's own write
+takes it now. Also: a second reply to the ➕ answer was asked «Qaysi qatorga?» (PF-1); an
+addition decided while it waited was never told (dur-4); a replied file's parts are now each
+fenced in the patch that adds them (dur-2). `calc-r3-review-bot` drives the table-answer
+path through the bot the server runs, unmocked (COMP-1).
+
+**#1580 — PROCESS.** (1) **Kernel, then packages.** K moved the collector's halves out of
+`staff-handlers.ts` in three commits, behaviour unchanged but for three stated presses; two
+lenses reviewed it (13 confirmed, all fixed); main's 0137 was merged in and ruling L1 was
+written, and every package branched from that commit. (2) **Six packages in worktrees, two
+at a time** (4 CPUs, #1339), each built, reviewed by two lenses (spec and adversary: 120
+findings, 101 fixed, 19 rejected with reasons) and fixed — 262 red proofs. (3) **What no
+package could see.** The cherry-picks (P1 → P2 → P3 → P5 → P4 → P6) recorded 30 seams in the
+merge ledger, none visible inside a package: two homes of `INTAKE_HYDRATE_WAIT_MS` (the copy
+controlled nothing), two re-enqueues of the save job and two renderers of the add table's
+keyboard (#513 each — one home kept), a static import cycle `calc-amend` ↔
+`calc-intake-sweep` that existed only merged (now a dynamic import), fence lists only the
+merged tree could fill, and tests written against K's no-wait stub that P1's hydrate wait
+timed out (marked hydrated; no assertion changed). The CI-order run after the main merge
+then found three units red that no package could have (agent-fences,
+agent-estimate-announce, intake-holds-wire — the AI sotuvchi's seams, #1572). (4) **The
+weekly usage limit stopped the merge** on 2026-10-28, after the P5 pick (330c2ce) and before
+P4's. It resumed on 2026-11-03 IN PLACE — from the merge ledger and the branch as it stood,
+never `checkout -B` (#1339) — picked P4 and P6, merged main 901c280 (the AI sotuvchi, the
+tg-listen hotfix, the agent feed, Q8 «c»), which moved the migration a second time, and only
+then ran the merged review. (5) **A red-proof runner can lie.** P1's first runner fed `-t` a
+test name with parentheses, which vitest reads as a regex, matched no test and printed
+GREEN; those results were thrown away, and the runner now refuses a proof in which no test
+ran — P3's also refuses an empty replacement and one whose new text already occurs (#815).
+(6) STATED at the docs commit: §17.6's drills (crash, parking, add-save, deploy, flood,
+boot-window, stop, stalled-storage, graceful; the worst-case state size and UPSERT time)
+and the Playwright suite on the merged tree are not recorded as run in this file.

@@ -42,7 +42,8 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   `wms.ts`, `workspace.ts` and the journal, which merged cleanly.
 - DECISIONS numbers are `#R3-1…`. On 0373bd2 the tail is #1487; main's tail on 2026-10-28 is
   #1511, so round 3 starts at #1512 unless main moves again; the lead renumbers at the merge
-  after fetching the tail. (re-check laws-print-3, K-review spec-5)
+  after fetching the tail. (re-check laws-print-3, K-review spec-5) **As shipped: #1571-#1580**
+  (main's tail was #1570 on 2026-11-03, after the agent feed; §20).
 - **Judged before code** by five lenses (durability, regression, product-fit, law-money,
   performance) with refuters: 87 objections, 63 confirmed, 12 partial, 12 refuted. Every
   confirmed and partial objection is absorbed below; §18 lists each id, its verdict and what
@@ -5580,7 +5581,83 @@ move; every amended spot carries «(re-check <id>)».
 9. `CALC_STEP_REPEAT` is a Record over the step union; the existing pins re-anchored.
 10. The doubted-totals wording: one, picked by the cross pass (X8), verbatim everywhere.
 
-## 20. The merged round's review, fixed (2026-11-03, as built)
+## 20. As built (2026-11-03)
+
+Round 3 SHIPPED on r3-work at the fix stage f553fa8 plus this docs commit: kernel K, P1-P6
+cherry-picked P1 → P2 → P3 → P5 → P4 → P6 with the merge's seams fixed (the merge ledger's 30
+entries), main `901c280` merged (the AI sotuvchi's 0138, the tg-listen hotfix, the agent feed,
+Q8 «c»), the packages' 101 handoff items worked, and the merged review fixed (§20.2).
+DECISIONS **#1571-#1580**; migration **0139** `calc_intake_durable` (idx 139, `when`
+1785190000118), ledger **140**; CHANGELOG 2026-11-03 is the owner's Uzbek entry. Where a
+section above carries «(As built, …)», that note is the shipped rule and overrides the line
+it follows; §20.1 collects the differences that change what a reader of §0-§13 would expect.
+
+### 20.1 What differs from the judged spec, and why
+
+1. **The collection's openings take nothing** (P1 + the merged review dur-1). §6.2's
+   `takenUpTo` was advanced by any non-quiet write; the add door's opening by a reply then
+   marked the reply TAKEN before its answer was applied, so a flush and a restart dropped the
+   redelivered answer in silence. Only the answer's own write takes it now (`notTaking`,
+   calc-store.ts); a pin that asserted the early mark was re-anchored (f553fa8).
+2. **`ownsPress` is fed by a recorder, not by each sender** (P1). `collectorScope` installs a
+   per-update transformer that records every grammy `sendMessage` carrying a `c:` button, so
+   K's frozen senders are covered unedited; the table, prompt and offers message ids count too
+   (P1 review ADV-3).
+3. **A read with no moment never ends a collection during the boot grace** (P1 review SPEC-6),
+   instead of threading a moment through every door; `RESUME_TRIES` = 3 bounds a landing's
+   resume (SPEC-2); the hydrate retries (`hydrateWithRetry`: 0.5 s, 1.5 s, then every 30 s);
+   jsonb-unstorable text (NUL, lone surrogates) is mended before the write and 22P02 / 22P05 /
+   23514 / 23505 are logged once and never retried (ADV-2).
+4. **A stored but undelivered reply keeps the reading's token** until it is out (P2 review
+   adv-2, §7.2.4); a stopping process never calls the model and holds the attempt open for the
+   next process (`handOn`, adv-3); the press refuses when its flush answers false, and the job
+   id is stamped only after the notice is out (adv-10, adv-14); a press minted before this boot
+   with no job id is dead (merged review dur-3).
+5. **The add door's file path refuses while the save runs**, with the text ladder's words
+   «⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.» (the merge; P4 could not touch K's file
+   door).
+6. **One home where two were built** (the merge, #513): `INTAKE_HYDRATE_WAIT_MS` in
+   calc-store.ts (calc-read re-exports it); one re-enqueue of an untold save
+   (`requeueAmendSave`, called by P1's hydrate through a dynamic import); P3's `amendKeyboard`
+   (P4's duplicate deleted); P5's `lawAsksInputOfStored` for every stored-request ask; P3's
+   `tableContext` / `tableHashOf` for the job's delivery and every later edit; and
+   `calc-amend` reaches `pressResume` by a dynamic import (a cycle that existed only merged).
+7. **The model is told to list restated lines that carry their own figures** (P4 review adv-2,
+   §9.4): without it the model dropped exactly the lines law-money-5's conflict path reads. The
+   corpus stayed green.
+8. **A conflict is measured at the column's own scale**, through `doorRow` first (P4 review
+   spec-3, spec-8), not by the first draft's 0.5 % tolerance.
+9. **`amendStanding` keeps its throw** when pg-boss cannot be read (the merge, §9.3): every
+   caller fails closed in words; read as «busy» it would tell the seller about a pass nobody
+   knows exists.
+10. **The ticket's send window** (P5 review p5-spec-1, p5-adv-4, §10.2.1): a ticket whose job
+    pg-boss does not know yet is live for `TICKET_SEND_WINDOW_S` (60 s) — «a missing job is
+    cleared at once» broke the rule's own «one pass» and sent a false «VED allaqachon
+    ishlayapti». A test that deletes a job to fake a dead pass also ages `ai_pass_at`.
+11. **Stale totals fold every applied addition** up to the pass's own (p5-adv-1, §10.2.9), not
+    one amendment's `totalsStale`; and the lenta's «❓ Sotuvchidan so‘raldi» is written only when
+    the seller's copy reaches somebody (p5-adv-2, §2.5) — no words were invented for «nobody
+    was asked» (§20.4, 1.22).
+12. **«Готово» locks the row, then updates** (P6 review p6-spec-1, §10A.2): measured, a bare
+    UPDATE with the predicate in its WHERE lets the race through in READ COMMITTED; the fold
+    presses with `foldRev` and the page hands it `min(row.rev, workspace.rev)` (p6-adv-1,
+    p6-adv-2); `sawRev` is validated 0…2147483647 and `via` is required.
+13. **The desktop table's save is a fifth door** (merged review lmp-1): the grid posts its
+    `revAtPress` and `saveTable` refuses `amended_since` under the lock when an APPLIED addition
+    is newer — keyed on `calc_amendments`, so between two VEDs the desktop stays last-writer-wins
+    (his 2b). The per-cell form is asked (§20.4, 1.24).
+14. **One predicate beside a parked collection** (merged review REG-2, COMP-5): main's AI
+    sotuvchi (0138) arrived with three one-text waits of its own; `otherCollectorLive` answers
+    for them beside §2.7's task / zametka words, with one sentence §2 did not fix (§20.4, 1.26).
+15. **The migration is 0139**, renamed twice (header, §13): `when` …118 after main's 0137
+    `plan_road` (…116) and 0138 `ai_sotuvchi` (…117); every count a person reads is 140.
+16. **Test files named and placed differently** where the rule needs a database: P4's
+    `amend-offer` is an integration file, its press tests that read a notification row are
+    `calc-amend-bot.integration`; P1's «a failed hydrate never starts polling early» is
+    `tests/unit/bot-start-order.test.ts` (grammy mocked); P6 adds the fixture
+    `tests/fixtures/calc-saw-rev.ts` (158 presses in 28 files re-anchored through it).
+
+### 20.2 The merged round's review, fixed
 
 Four lenses over `origin/main...HEAD` at e086975 (durability, regression, product, law-money-perf)
 plus a completeness pass: 30 verified (27 confirmed, 3 partial). Each behavioural fix below has a
@@ -5650,3 +5727,70 @@ writers), and cases added to `intake-table`, `calc-intake-sweep`, `calc-amend-pr
 - Rejected, with reasons in ship's fix-ledger.json: PF-13 (route-refusal words not fixed by §2; the
   «A - B» reader is a corpus file — its own round) and lmp-4 (pre-existing on main: the thread
   door's reading has no budget gate and no billing — its own round).
+
+### 20.3 Not recorded as run at this commit
+
+- §17.6's drills: the worst-case state size and one UPSERT's time against the stop's budget,
+  the write count over a real 20-message forward, the 50-row hydrate, the ROOT-duplicate query
+  on the shaped copy, and the crash, parking, add-save, deploy, flood, boot-window, stop,
+  stalled-storage and graceful drills (`docker kill` / SIGTERM). Their behaviour is pinned by
+  the integration files (`calc-store-durable`, `bot-redelivery`, `calc-read-job`,
+  `amend-save-job`, `calc-pass-settle`, `calc-r3-review-bot`), not measured on a running stack.
+- Playwright on the merged tree. P6's browser check (the four doors refusing at 1280×900 ru and
+  360×800 uz, document width equal to the viewport) ran on P6's own branch.
+- The bot against real Telegram: every bot path here ran on a stand-in bot (this container
+  cannot reach Telegram). The first real collection, «Bo‘ldi», table answer and «➕» after the
+  deploy are the proof — CHANGELOG 2026-11-03 asks him for one.
+- Gates at the fix stage, each on its own: typecheck, lint, the whole of `tests/unit`
+  (535 files, 9260 tests), `intake-corpus.test.ts` alone (2404 tests; ratchet unchanged, 142
+  known), and the integration suite (284 files: 283 green, the one red re-anchored in f553fa8
+  and green on its rerun). The full vitest and Playwright in CI's order are the lead's push
+  gate.
+
+### 20.4 Questions for the owner (asked when the round shipped; ⭐ = what is built)
+
+Numbered after his round-3 list (1.14-1.20). The Uzbek wording he receives is the CHANGELOG
+entry of 2026-11-03.
+
+**1.21 A seller's «waiting» addition and the VED's «Готово»** (P6 review p6-adv-5). An addition
+stored while the AI is still computing is promised «AI tugatgach so‘rovga avtomatik yoziladi».
+If the VED presses «Готово» in that window, the job closes over goods already promised; the
+waiting addition goes to the VED as a note and the seller is told the request was closed.
+- a) ⭐ As built (§10A rule 2): only an addition already WRITTEN into the rows stops the VED's
+  four doors; a waiting one reaches the VED as a note and the seller is told.
+- b) «Готово» is refused while a waiting addition exists («sotuvchi qo‘shimcha kutmoqda — AI
+  tugashini kuting») — safer for the price, but it can hold the VED's answer for the whole AI
+  pass (minutes, up to 30 after a deploy).
+
+**1.22 An ask that reached nobody** (P5 review p5-adv-2). When the law's count is asked of the
+seller, the lenta says «❓ Sotuvchidan so‘raldi: 2, 5-qator o‘lchovi». When his copy reaches
+nobody (no linked bot, or the AI answers muted), the lenta now says nothing.
+- a) ⭐ No line, as built: the lenta never claims an ask nobody received.
+- b) The VED sees «❓ Qonun 2, 5-qator o‘lchovini so‘raydi — sotuvchiga yetib bormadi (bot
+  ulanmagan yoki o‘chirilgan)».
+
+**1.23 «ha» / «ok» / «tasdiq» in the table stage** (P3 review adv-19, a nit). Today such a word
+gets «⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona»…».
+- a) ⭐ Unchanged: the table's closing line already names the button, and the word writes
+  nothing either way.
+- b) A short answer of its own: «Tasdiqlash uchun «✅ Tasdiqlash» tugmasini bosing.» (needs a
+  yes-word list and a sentence §2 does not fix).
+
+**1.24 The desktop save refused whole, or cell by cell** (merged review lmp-1, partial).
+- a) ⭐ As built: the whole save is refused («Sotuvchi qo‘shimcha yubordi — sahifani yangilang
+  …»), the typed cells are kept for after the reload, nothing is lost; between two VEDs the
+  desktop stays last-writer-wins (his 2b).
+- b) Only the cells the seller changed are refused and the VED's other cells save at once
+  (the grid would have to post, per cell, what it saw).
+
+**1.25 A seeded re-send's stale brutto** (merged review COMP-4). A returned request re-sent
+through «➕» with a NEW line shows its old brutto as ⚠️ «yangilansinmi?».
+- a) ⭐ As built: the table asks; a «✅ Tasdiqlash» without an answer lands the old brutto (the
+  warning is the bot's table only).
+- b) The new request lands without that brutto, and the VED asks for it.
+
+**1.26 The words of a parked collection's refusal beside the AI sotuvchi's wait** (merged review
+REG-2, COMP-5). «Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi)
+— keyin qayta bosing.»
+- a) ⭐ As built.
+- b) Other words — his.

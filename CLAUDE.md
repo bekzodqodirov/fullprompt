@@ -163,7 +163,8 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
-| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; R3 designed (`docs/SAKKIZ-R3.md`); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; **round 3 SHIPPED** (`docs/SAKKIZ-R3.md`, #1571-#1580); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
+| Round 3 of the eight items — the «Hisoblatish» collection that survives a deploy, the reading as a job, one table / echo / undo, «➕ Shu so‘rovga qo‘shish», the law's count after the AI answer, the VED's doors refusing a screen a seller's addition overtook | `docs/SAKKIZ-R3.md` — agreed 2026-10-27 (his 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b, then «14 a, qolgani seni taklifing»), **round 3 SHIPPED** (DECISIONS #1571-#1580, migration 0139, ledger 140); §0 binding, §2 the exact Uzbek words, §6.2.2 the lead's ruling L1, §20 as built + his six new questions 1.21-1.26 |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
@@ -3043,6 +3044,41 @@ lists travel as FILES). Main's Uch band (0136) was merged in before the push —
 rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
 `recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
 
+**Round — Sakkiz band, round 3 (2026-11-03; DECISIONS #1571-#1580, numbered past main's #1570; migration 0139
+`calc_intake_durable` — renamed from 0137 and then 0138 on two merges, the TWENTY-SEVENTH collision — ledger must
+reach 140; spec `docs/SAKKIZ-R3.md`, §20 = as built + his six new questions).** Item 1B + 2.8 b, his 1.8 c 1.9 a
+1.10 c 1.11 c 2.8 b and «14 a, qolgani seni taklifing». The «Hisoblatish» collection is a ROW
+(`telegram_calc_intakes`) written behind memory (`calc-store.ts`, debounced per chat 1 s / 5 s), and ruling L1:
+ONE grammy API transformer (`flushBeforeConfirm`) flushes every dirty chat before each `getUpdates`, because grammy
+confirms a batch with the next one — bounded 2 s, never blocking the poll; a failed write stays dirty, the stop
+confirms only through the oldest unwritten update and SEALS the store, `takenUpTo` applies a redelivery once, the
+hydrate runs before polling and a job waits in `loadIntake` (`IntakesNotReady`). It WAITS 24 h but HOLDS the chat
+30 min (`HOLD_MS`): parked, it takes no text, file or contact, the doors ask `holdingIntake` and
+`intake-holds-wire` classifies every `activeIntake(`; one 2 h reminder (silent at night), one end path
+`expireIntake`, and `otherCollectorLive` is the one predicate beside a parked collection (a task or zametka draft,
+a task's or the AI sotuvchi's one-text wait). «Bo‘ldi» enqueues `calc.intake-read` (4 workers, 300 s): store THEN
+send, never the model twice, billed when the model answers on `ai_calc_passes.intake_note_id`. ONE table edited in
+place, `parseTableAnswer` (`line-address.ts`: number, name, «jami»; the row's `seq`), one echo per answer with
+«↩️ Shu javobni bekor qilish»; a table answer is never material; the per-line loop and ⏭ are gone. «➕ Shu
+so‘rovga qo‘shish» (`ca:`/`cg:`/`cf:`, a reply to the AI answer, the offer on a forward or file within 7 days) →
+an ADD collection → `calc.amend-save` → ONE writer `amendRequest` (wms/calc/amend.ts) with four outcomes in
+`calc_amendments`: open (`handsoff_rev = rev`, no ✅) writes through `saveTable` and re-queues the pass,
+started/closed → the job's thread as text, waiting → stored and written at the pass's settle, noted → the card and
+the VED; never a price, rate, zone, certificate or existing code; a returned request's ➕ = a seeded NEW
+collection. 2.8 b: `lawAsksOf` over `lineNeeds` (every pinned unit, 1.14 a), the ❓ block by seq; `handsoff_rev`
+moves inside every machine save (`advanceHandsOffInTx`; `handsoff-writers` allows two writers); a pass owed is a
+TICKET (`ai_pass_rev/_at/_job` — busy = its pg-boss job alive, a 60 s send window); the re-run he started goes past
+his mute via `direct`. The VED's four doors and (lmp-1) the desktop `saveTable` take `sawRev` and refuse
+`amended_since` on an APPLIED addition newer than the screen; «Готово» locks the row first (READ COMMITTED,
+measured: the bare UPDATE closed, lock-then-UPDATE refused), the fold presses with `foldRev`, the page
+`min(row.rev, workspace.rev)`. Built as kernel K + P1-P6 in worktrees (each reviewed twice: 120 findings, 101
+fixed), cherry-picked P1 → P2 → P3 → P5 → P4 → P6 (30 seams in the merge ledger, none visible to a package); the
+weekly limit stopped the merge after P5 on 10-28 and it resumed IN PLACE on 11-03, merged main 901c280, then a
+four-lens review: 30 verified, 28 fixed — the headline (dur-1) an add door opened by a reply marking the reply
+taken before its answer, so a restart lost it in silence. Ratchet unchanged (142 known). STATED at the docs commit:
+§17.6's drills and Playwright on the merged tree are not recorded as run. OWED to him: 1.21-1.26 (spec §20.4,
+CHANGELOG 2026-11-03).
+
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
 deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
@@ -3235,7 +3271,8 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Latest migration: 0138** (`ai_sotuvchi`, `when` …117; ledger must reach **139**). Before
+**Latest migration: 0139** (`calc_intake_durable`, `when` …118; ledger must reach **140**). Before
+it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
 it: 0135 (`load_mode`, `when` …114). Before
@@ -3378,7 +3415,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **139** since 0138 (138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **140** since 0139 (139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
