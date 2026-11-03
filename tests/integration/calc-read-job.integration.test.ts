@@ -719,6 +719,11 @@ describe('the sweep’s questions (§7.2.2, §6.2.13)', () => {
     expect(tg.sent.map((s) => s.text)).toEqual([waiting.pendingReply!.text]);
     expect(activeIntake(chatId)!.pendingReply).toBeNull();
     expect(model.analyze).toHaveBeenCalledTimes(1);
+    // The sweep has no job payload: the stored reply carries the press's
+    // notice, so a table that came late is not left under «⏳» (§2.6; reviews
+    // spec-5, adv-11).
+    expect(waiting.pendingReply!.noticeMessageId).toBe(41);
+    await vi.waitFor(() => expect(tg.edits).toEqual([{ messageId: 41, text: '✅ O‘qildi — natija pastda ⬇️' }]));
   });
 });
 

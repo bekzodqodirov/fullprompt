@@ -421,7 +421,10 @@ Enter sends; «satr» is the text line, and «;» splits a segment like a newlin
     `⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan` (`FIELD_LABEL.weightKg`); a
     doubted weight reads the doubt row below. (re-check laws-print-9)
   - volume: `✅ Hajm: {m3} m³` + ` (qatorlardan)` when R2's `factsVolumeM3` derived it /
-    `⚠️ umumiy hajmi (kub) — yozilmagan`;
+    `⚠️ umumiy hajmi (kub) — yozilmagan`; (as built, P3 review p3-spec-8: the row prints R2's `volumeText` —
+    `{m3} m³ (qatorlardan)` for a Σ of the lines, `{v} kub` for a typed or read cube; the
+    block above shows the Σ case, and `intake-table.test.ts` asserts `✅ Hajm: 12 kub` for a
+    typed one)
   - non-rastamojka: `✅ Yo‘nalish: {from} → {to}`, or one `⚠️ qaysi shahardan — yozilmagan`
     / `⚠️ qaysi shaharga — yozilmagan` per missing end.
   - `goods` (in `REQUIRED_FIELDS` on every section) is not an `Umumiy` row: with no line
@@ -447,7 +450,10 @@ Enter sends; «satr» is the text line, and «;» splits a segment like a newlin
     «✅ Qo‘shish»). The examples are built from THIS table: the first ⚠️ line's
     number and its first unit (`figureLabel(300|150, unit)`), the first ⚠️ line's first name
     word, and `jami 3500 kg` only when the weight row is ⚠️ (else `jami 12 kub` when only
-    the volume is).
+    the volume is). (As built, P3 review p3-spec-8: the figures are `exampleFigure`'s, one fixed
+    value per unit — `30 dona`, `40 juft`, `150 kg`, `120 m²`, `2 m³`, `50 litr` (intake.ts
+    `EXAMPLE_VALUE`); which ⚠️ row lends the NAME word is the merged review's PF-4 and is left
+    to its fix.)
   - In an add collection, two more ↳ reasons can make a row ⚠️:
     - a CONFLICT (law-money-5, product-fit-17): the new material restates a stored row with a
       different figure, or with a figure in a field the row has empty —
@@ -515,6 +521,14 @@ Several:
   | `name_mismatch` | `{n}-qator «{row}», siz «{typed}» yozdingiz — yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing; shu qator bo‘lsa faqat sonini yozing: «{n}: {example}».` (regression-3) |
   | `line` + `LineAnswerRefusal` | `{n}-qator: ` + `LINE_REFUSAL[reason](detail)` (R1's words, unchanged) |
 
+  (As built, P3 review adv-8, adv-12, adv-18 — words §2 did not have:) a target whose
+  buttons do not fit under `MAX_OFFERS` reads
+  `{n}-qator: {question} Yozib javob bering, masalan «{n}: {figure}».`; an answer refused
+  because a reading landed under it reads
+  `⚠️ Jadval yangilandi — javobni yangi jadvalga qarab qayta yozing.`; and in the collecting
+  stage (`material`) the echo ends with the save guard's own sentence
+  `Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.` and carries no confirm.
+
 - **In an add collection whose request the VED has started** (`standingAtOpen === 'started'`,
   product-fit-18), nothing will be written to the job, so the echo never says «yozildi»:
   `📝 VED ga yuboriladi: 3-qator «Sumka»: 50 dona` (several: `📝 VED ga yuboriladi:` + the
@@ -576,6 +590,9 @@ Several:
   An entry the last reading placed nowhere (`index: -1`) is reverted in `lineAnswers` alone,
   and the echo gains `⚠️ «Sumka» oxirgi o‘qishda topilmadi — javobi o‘chirildi.`
 - Second press (`undone`): the press is answered `Allaqachon bekor qilingan`.
+- (As built, P3 review spec-2, spec-4:) the undo of a «📨 VED» echo puts back only the
+  conflict's choice (nothing was written), and an entry placed nowhere keeps the
+  `↩️ Bekor qilindi:` head with its «oxirgi o‘qishda topilmadi» line.
 - No live collection, another collection, or an unknown tag:
   `Bu tugma eskirgan.` (the press answer and a reply).
 
@@ -658,6 +675,25 @@ sends one of these by chat id. While the job runs, the collection is frozen: a t
 gets `⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.`, and «✖️ Bekor qilish» gets
 `⏳ Qo‘shimcha yozilmoqda — endi bekor qilib bo‘lmaydi.`. If the queue refuses the job:
 `Qo‘shib bo‘lmadi — «✅ Qo‘shish» ni qayta bosing.` and the collection is kept.
+
+(As built, P4 review adv-2, adv-3, adv-5, adv-8, adv-10, adv-11, p4-spec-1, p4-spec-2 —
+words this section did not have:)
+- a press on a frozen collection: `⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.`;
+- a transient failure at the door: `Hozir ochib bo‘lmadi — birozdan keyin qayta bosing.` (a
+  press) / `Hozir ochib bo‘lmadi — birozdan keyin qayta yuboring.` (a reply or a file);
+- a reply that could not be checked:
+  `Hozir tekshirib bo‘lmadi — bu javob hech qayerga yozilmadi, qayta yuboring.`;
+- a reply to a request returned since:
+  `Bu so‘rov qaytarilgan — yangi so‘rov ochildi, javobingiz yozilmadi. Jadvalga qarab qayta yozing.`;
+- a waited addition `saveTable` refuses: to the seller
+  `📨 Kutib turgan qo‘shimchangizni so‘rovga avtomatik yozib bo‘lmadi — {AMEND_REFUSAL} Qo‘shimcha VED ga yuborildi, o‘zgartirishni VED o‘zi kiritadi:`
+  + the lines; in the thread
+  `➕ Kutib turgan qo‘shimchani so‘rovga avtomatik yozib bo‘lmadi — o‘zgartirishni kiriting:`
+  + the lines;
+- a seeded collection's re-read row with another figure:
+  `⚠️ N ta qator so‘rovdagi bilan bir xil, lekin boshqa son bilan o‘qildi — so‘rovdagi qoldi: «Sumka» (faylda 500 dona). Fayldagi to‘g‘ri bo‘lsa, shu qatorga javob yozing.`;
+- replied or media material taken into an add collection moves it to `material` with the
+  collector's «Bo‘ldi» prompt, never left unread under the table.
 
 | `AmendOutcome` | Words |
 |---|---|
@@ -796,6 +832,12 @@ before the totals:
 - At most 8 rows, then `· … yana {n} ta qator — «➕» jadvalida`.
 - The LENTA rendering carries one line under the heading instead:
   `❓ Sotuvchidan so‘raldi: 2, 5-qator o‘lchovi (qonun so‘raydi).` (re-check laws-print-23)
+  (As built, P5 review p5-adv-2, p5-adv-5: the line is written ONLY when the seller's copy
+  reaches him — jobs.ts `sellerHears`: he can log in, his chat is linked and he has not muted
+  the answers, or a muted seller on a `direct` amend re-run; otherwise the lenta carries no
+  asks line at all (`PrefillOutcome.lentaUnasked`). It names at most `LAW_ASKS_NAMED` (8)
+  seqs and ends «, …» past them. Telling the VED «the law asks, nobody asked the seller»
+  would need words of his: asked, none invented.)
 - A re-run pass's heading: R2's title with ` · ${RERUN_WORD}` (`RERUN_WORD = 'qayta hisob'`,
   reply-heads.ts) after the title phrase and before the labels:
   `🤖 AI-VED · taxminiy rastamojka · qayta hisob · GS777 · B-000067`; podklyuch
@@ -819,7 +861,10 @@ before the totals:
 - The queue refused: `Tahlilni boshlab bo‘lmadi — «Bo‘ldi» ni qayta bosing.` + `doneKeyboard`.
 - A second press while a reading is live (not stale): `⏳ Tahlil davom etmoqda — natijani kuting.`
   (today's words).
-- After delivery the notice is edited to `✅ O‘qildi — natija pastda ⬇️` (best-effort).
+- After delivery the notice is edited to `✅ O‘qildi — natija pastda ⬇️` (best-effort). (As built: on
+  every delivery path — the job's, its delivery-only follow-up's and the sweep's late
+  `deliverStoredReply`, which reads the notice's id off the stored reply,
+  `pendingReply.noticeMessageId`; P2 reviews spec-5, adv-11.)
 - Material arrived while it read: today's
   `Tahlil paytida yana {n} ta xabar/fayl keldi — ular hali o‘qilmagan.\nHammasini birga o‘qish uchun «Bo‘ldi» ni yana bosing.`
 - A stored file storage cannot return in time (missing, or not answering within the job's
@@ -832,6 +877,10 @@ before the totals:
   wait, and the stored table is sent by the delivery-only follow-up at Telegram's
   `retry_after`, or by the sweep's `deliver_pending` (durability-16). The seller then gets
   the table late, never «bo‘lmadi» about a reading that worked.
+- (As built, P2 reviews adv-7, adv-8:) Telegram refusing the table as a MESSAGE (a 400 not
+  about the chat, e.g. too long) says the same «Tahlil qilib bo‘lmadi …» and the collection is
+  back at its material; a job's «bo‘lmadi» is sent with the brief retry, and one that still
+  fails edits the job's notice into the same sentence + `doneKeyboard`.
 
 ### 2.7 The reminder and the end (P1)
 
@@ -951,7 +1000,7 @@ staff-handlers.ts:1109) only: after this round a restart does not lose the colle
 |---|---|---|
 | **Mid-collection, graceful deploy** (stage section, client, material or review) | Everything. Each change is in memory at once, and is written to `telegram_calc_intakes` after one second of quiet (at most five seconds while changes keep coming). The graceful stop (`stopTelegramBot`) awaits `flushIntakeWrites()` with whatever is left of its 5 s budget before the confirm (not a fixed 1 s: a collection is the whole state, up to megabytes), then SEALS the store (`sealIntakeWrites`): from then on this process writes no row, so a late effect of an update still in flight can never overwrite what the new process hydrates. **A change still unwritten when the flush ends (too slow, or a write that failed) keeps its update UNCONFIRMED** — while that update is still in the batch grammy is handling (in flight, or the batch's next update held): the stop confirms only through the update before `oldestUnwrittenUpdate()` (durability-10, regression-25). The first draft confirmed anyway and lost the seller's last minutes. An update whose batch has ENDED is confirmed by grammy's own next `getUpdates`, so that call first awaits the store's flush (§6.2.2, the lead's ruling L1): every change of the batch is in the row before Telegram can drop its update. A write that fails even then (the database down) is retried by the timer, and if the stop comes first it is logged lost — the new process could not have hydrated it either (K-review spec-2). A failed write keeps its chat dirty and is retried, never dropped. The new process hydrates every row before its first `getUpdates`. An update that was still in flight past the 3 s budget, or held back by an unwritten change, is unconfirmed, so it is redelivered. If its effect reached the flushed row, `takenUpTo` drops it as `seen`. Otherwise it is applied once. | Messages written DURING the outage come as the backlog. A text or file dated after the collection opened, while it was holding, is that collection's (`intakeTakes`). A press on its buttons works. The 2 h / 24 h clocks are the seller's own actions, so the downtime counts as idle. |
 | **Mid-collection, crash** (not a deploy) | Everything except the changes of the last second or so (the write's quiet window). Telegram redelivers up to 20 handled updates (grammy confirms a batch only on the next `getUpdates`). An update whose effect is in the row is `seen` and dropped. An update whose effect was lost is applied once. A file is saved under `uuidv5(noteId:messageId)`, so its re-run finds the attachment and mints no second one (durability-1, regression-6). | Nothing doubled: no text twice in the material, no file counted twice, no «ikkinchi invoys» question about the same file. A press redelivered acts only on its own collection: a cancel cannot end a newer collection, and a restart that would open the collection already live resumes it (durability-2). |
-| **Mid-reading** (after «Bo‘ldi», before the table) | The job is on `calc.intake-read`. Its handler runs under ONE wall clock that ends before pg-boss's 300 s expiry: files ≤ 30 s, model ≤ 150 s, delivery ≤ 70 s (performance-1). A killed process leaves the job `active` until the expiry, and pg-boss maintenance (every 120 s) fails it and re-delivers. The new process finds the collection (the job waits for this process's hydrate first, and reads memory only — durability-9), the token still matches, and the model is called AGAIN. That is a second paid call: Anthropic charges both, but the killed call wrote no `ai_calc_passes` row (the bill is recorded only after the model answers), so the ledger and the day's soft budget count ONE (durability-20). | «⏳ AI o‘qiyapti…» lasts longer: up to ~7 minutes after a deploy (expiry + one maintenance + the read), and then the table arrives. A second «Bo‘ldi» in that window says «Tahlil davom etmoqda». If the job dies for good, the sweep sees its pg-boss state, releases the token and says «Tahlil qilib bo‘lmadi …» (the 2 h reminder is the backstop). |
+| **Mid-reading** (after «Bo‘ldi», before the table) | The job is on `calc.intake-read`. Its handler runs under ONE wall clock that ends before pg-boss's 300 s expiry: files ≤ 30 s, model ≤ 150 s, delivery ≤ 70 s (performance-1). A killed process leaves the job `active` until the expiry, and pg-boss maintenance (every 120 s) fails it and re-delivers. The new process finds the collection (the job waits for this process's hydrate first, and reads memory only — durability-9), the token still matches, and the model is called AGAIN. That is a second paid call: Anthropic charges both, but the killed call wrote no `ai_calc_passes` row (the bill is recorded only after the model answers), so the ledger and the day's soft budget count ONE (durability-20). (As built, P2 review adv-3: a process that is stopping never calls the model and never sends a stored reply; the attempt is held open to its own deadline, so it dies with the process and the expiry hands it to the new one.) | «⏳ AI o‘qiyapti…» lasts longer: up to ~7 minutes after a deploy (expiry + one maintenance + the read), and then the table arrives. A second «Bo‘ldi» in that window says «Tahlil davom etmoqda». If the job dies for good, the sweep sees its pg-boss state, releases the token and says «Tahlil qilib bo‘lmadi …» (the 2 h reminder is the backstop). |
 | **Mid-reading, after the reply was stored** | The job stores the reply DURABLY (a flush of THIS chat that must succeed) before it sends. If the store is sealed or the write failed, it does not send: it throws, and the redelivery sends. A redelivery re-sends the stored reply and never calls the model or re-decides. A Telegram flood wait longer than the brief retry is not a failure: the job enqueues a delivery-only follow-up at `retry_after + 1 s` and returns, so no retry is spent inside one flood wait (durability-16). | The table arrives once, possibly late. Never «Tahlil qilib bo‘lmadi» about a reading that worked. The one exception: a kill in the milliseconds between Telegram's 200 and the clearing of `pendingReply` sends it twice. Telegram offers no idempotent send; stated. |
 | **Mid-question** (table stage, waiting for answers) | The table stage is a collection like any other. | An answer typed during the outage is a backlog text dated after the collection opened. It is applied when the bot is back, with its echo. |
 | **The 2.8 b ask, before an answer** | The ask is in the AI answer, a `notifications` row with `payload.tg` — no wait to lose. | A reply to it written during the outage reaches the reply door after the restart (backlog replies already do: «a swipe-reply names its own target»). The add collection opens and the answer is applied. |
@@ -2109,6 +2158,13 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
      (`isBacklog(date) ? date * 1000 : now`), the 0130 rule that judges a wait by the message
      date: an answer written at 23 h 50 m and processed at 24 h 10 m still belongs to its
      collection (durability-12 c).
+   - (As built, P1 review SPEC-6, ADV-8:) the moment is OPTIONAL and means something. A
+     message's own moment (`intakeMomentOf(date)`) ends an expired collection at once, as
+     above. NO moment is a presence read at now, which inside the boot's grace
+     (`BOOT_GRACE_MS`, now in calc-store.ts and re-exported by the sweep) answers «none» for
+     an expired collection WITHOUT ending it: the sweep ends it after the grace, so a backlog
+     message written before the 24 h ran out still reaches it. No caller passes `Date.now()`
+     for a presence read. A PRESS during the outage still cannot be dated (§3, stated).
 7. **Parking — waits 24 h, holds 30 min** (regression-1).
    - `intakeHolds(state, atMs) = atMs - state.touchedAt < HOLD_MS`.
    - `holdingIntake(chatId)` = the live collection when it holds now. It is asked by the four
@@ -2136,6 +2192,12 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
        state read and `pressResume` (a collection's own button un-parks it); calc-read.ts's
        settle and release (§7.2.4.6, §7.2.4.8); `landCollectedIntake` (staff-bot.ts:1296);
        `pressAdd`'s «another collection» check;
+       (as built, the fence over the MERGED tree: P2's nine calc-read.ts sites —
+       `pressAnalyse`, `refuseStart`, `readOnce`, `deliver`, `settleDelivered`,
+       `clearPending`, `lastAttemptFailed`, `releaseDeadReading`, `deliverStoredReply` — P3's
+       three in calc-dialog.ts — `commitWrites`, `drawTable`, `pressUndo` — and P4's ten in
+       calc-amend.ts, each with its reason in intake-holds-wire.test.ts; each asks whether ITS
+       token, answer or note is still the collection's);
      - «holds»: the text ladder, the file ladder and the voice/audio handler (K3's three
        `!late` checks, now one `intakeTakes` verdict); the four doors; the orphan guard.
      A «holds» site must also ask `holdingIntake(` or `intakeTakes(`: one that asks
@@ -2169,7 +2231,9 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     loading, and the backlog met half-restored memory: the very failure the order pin exists
     for (regression-20, durability-11). `markIntakesHydrated()` resolves `intakesHydrated`
     for the jobs (durability-9); a hydrate that failed still resolves it, because memory is
-    then the only truth this process has.
+    then the only truth this process has. (As built, P1 review ADV-7: the collections' member is
+    `hydrateWithRetry(hydrateIntakes).catch(…)` — a database a moment late is waited out,
+    then restored in the background; redelivery-wire (6) pins that text.)
     - It loads every row with `expires_at > now() - interval '24 hours'`; memory wins on an
       existing key. A row already expired is loaded so that the sweep ends it WITH the line
       (durability-12 b); the first draft loaded only unexpired rows and nothing ever deleted
@@ -2179,7 +2243,9 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
       - a new-request collection is over when a ROOT `calc_requests` row carries its note id
         («landed»): `rootRequestOfNote`'s predicate (`note_id = … AND supersedes_request_id IS
         NULL`, the WHERE of K2's `rootOfNoteSql`), asked in ONE statement over the hydrated
-        note ids — one home for «landed», shared with the sweep's `landingState` (rule 15). A
+        note ids (as built, P1 review SPEC-5: ONE fragment, service.ts `rootNotesWhereSql(noteIds)`,
+        which `rootOfNoteSql` wraps with its ORDER BY … LIMIT 1 and `endedCollections` asks
+        over every hydrated note) — one home for «landed», shared with the sweep's `landingState` (rule 15). A
         note on a card with NO request is a landing cut off halfway (durability-3): the
         collection is KEPT, and the sweep resumes it (rule 13) (re-check p1-p2-1);
       - an add collection is over when its `calc_amendments` row exists AND
@@ -2258,9 +2324,16 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
     - On `release_reading`: P2's `releaseDeadReading(chatId, state)`.
     - On `release_saving`: P4's `releaseDeadSave(chatId, state)` — `saving: null` (quiet) and
       «Qo‘shib bo‘lmadi — «✅ Qo‘shish» ni qayta bosing.» (§2.4's last-attempt words)
-      (re-check v2-6).
+      (re-check v2-6). (As built, P4 review adv-4, p4-spec-14: `releaseDeadSave` settles by the
+      RECORD, `calc_amendments` by note id — a committed addition gets its missing re-pass or
+      ping, is told and its collection ended; words not delivered leave it frozen for the
+      next tick; only with no row is it let go with «Qo‘shib bo‘lmadi». A finished save job
+      whose words were not delivered leaves the collection frozen ON PURPOSE: `savingAlive`
+      answers false for it, and this release is what tells the seller.)
     - On `resume_landing`: rule 15's resume, by chat id.
-    - On `deliver_pending`: P2's `deliverStoredReply` (bounded, like the job's step 7).
+    - On `deliver_pending`: P2's `deliverStoredReply` (bounded, like the job's step 7). (As
+      built: «alive» is §7.2.2's as-built liveness; the late delivery also points the press's
+      notice down.)
     - Then, once per tick, P4's `requeueWaitingAmendments()`: a stored «waiting» addition
       whose request has no live ticket is enqueued again. This covers a settle whose own
       enqueue was lost (§9.5).
@@ -2449,7 +2522,9 @@ blocks:
   `hydrateWaits` rejects, `hydrateIntakes` resolves 200 ms later → polling starts after BOTH,
   and the rejection is logged, not unhandled.
   **Red proof:** `Promise.all` (the first draft) → polling starts before `hydrateIntakes`
-  finishes.
+  finishes. (As built: pinned in `tests/unit/bot-start-order.test.ts` with grammy's `Bot`
+  mocked — mocking grammy in bot-redelivery.integration, whose harness runs the real `Bot`,
+  would break every other case there; P1 handoff.)
 - «the backlog sentence keeps «Hisoblatish» only where nothing survived»: a chat with a
   hydrated collection (opened before this boot) gets the sentence without it; a chat with
   none, and I20b's chat (a collection a late press opened after boot), get today's
@@ -2486,7 +2561,10 @@ blocks:
   written at arrival (the rest of the file is K's move and stays frozen).
 - `src/modules/platform/telegram/calc-intake.ts`: ONE hunk in `analyzeCollected`, the
   budget's `- state.usages.length` (:1483) and the `usages` append (:1571), §7.2.10
-  (re-check p1-p2-16).
+  (re-check p1-p2-16). (As built, P2 review spec-9: two more hunks there — `analyzeCollected`'s
+  `timeoutMs <= 0 → { ok: false, failure: 'timeout' }` arm, the job's leash under 30 s, kept
+  AHEAD of the budget arm for every branch, the add branch included (the outcome is computed
+  before the branch); and `IntakeState.usages` made optional.)
 - `src/modules/wms/calc/intake-land.ts`: the §7.2.9 lines — Uch band (round 4 and 8, shipped,
   docs/UCH-BAND.md)'s landing, §14.
 - `src/modules/platform/telegram/staff-bot.ts`: ONE hunk, `landCollectedIntake` stops
@@ -2572,6 +2650,15 @@ blocks:
      (staff-handlers.ts:1801-1803, `stage: 'material'` included) plus K4's fields, quiet:
      `{ analysing: null, analysingAt: null, analysingJob: null, stage: 'material',
      readingSaidDead: true }` (re-check p1-p2-24). The sweep asks both (§6.2.13).
+   - (As built, P2 reviews spec-6, adv-4, adv-5:) `readingAlive` is also true while the
+     token's run is in THIS process's in-flight set, whatever pg-boss says of the job (the
+     expiry race's retry, turned away by the fence, completes at once), and while a reply
+     stored for the token waits for its delivery (`pendingReply.token === analysing`);
+     `releaseDeadReading` re-checks both. `pendingDeliveryAlive` is true while this process
+     runs the token or its `:deliver` fence, else asks the follow-up job (`pendingReply.jobId`)
+     or, when there is none, the reading's own `analysingJob`; `deliverStoredReply` returns
+     when this process is running the token. Otherwise the sweep sent a stored reply beside
+     the job's own retry — twice.
 3. **The press** (`pressAnalyse`):
    - The guards stay in order (live reading, client/section stage, pending invoice, `aiGoods`
      'ask', empty). «Live» = `analysing !== null && now - analysingAt <= ANALYSIS_STALE_MS`;
@@ -2588,6 +2675,15 @@ blocks:
    - On throw: `updateIntake(chatId, { analysing: null, analysingAt: null, analysingJob: null }, { quiet: true })`
      and §2.6's words. Otherwise every later press says «Tahlil davom etmoqda» for nothing
      (round-1 review c3's stranded lock).
+   - (As built, P2 reviews adv-10, adv-14, adv-1:) the first patch sets `analysingJob: null`
+     (never the previous reading's id); `analysingAt` is re-stamped and `analysingJob` stored
+     (quiet) only once the notice is out — a notice that hung past the enqueue grace with the
+     id already stored read to the sweep as a dead job — and a collection cancelled meanwhile
+     enqueues nothing. `flushIntakeWrites(chatId)` answering false (sealed, or the write
+     failed) refuses the start exactly like a refused enqueue: the token released,
+     `Tahlilni boshlab bo‘lmadi …` + `doneKeyboard`. That refusal and the pendingInvoice /
+     `aiGoods` 'ask' re-asks join `ownMessageIds` (`sayOwn`), or their buttons answered
+     «Bu tugma eskirgan.».
    - The handler never calls the model: `bot-ai-dispatch` pins no `analyzeCollected(` in
      `pressAnalyse`.
 4. **The job** (`runIntakeRead(data, retryCount)`):
@@ -2609,6 +2705,14 @@ blocks:
       ever (#915: a dead stream is a hang). `files.missing > 0` → §2.6's sentence joins `notes`
       — K's `analyzeCollected` already does it (`filesMissingNote`, K-review U2), so P2 only
       hands it `files`.
+      (As built, P2 review adv-3: a process that is stopping, `isStopping()` (lifecycle.ts),
+      never calls the model — asked after the files, before the leash — and, with the durable
+      store on, never sends a stored reply — asked after the flush, before the send. The
+      attempt is held open (`handOn`, polling the clock every second) until the handler's own
+      deadline, so it dies with the process and pg-boss's expiry hands it to the next
+      process, which sends from the durable row or reads again (the stated second paid
+      call). Only past the deadline does it throw (`HandedOn`). A false flush in a process
+      that is NOT stopping still throws `ReplyNotStored` at once.)
    4. `analysed = await analyzeCollected(state, files, { timeoutMs: leash })` (R2's version:
       `totalsAnswer` merged under CONC-2; K5 makes it return `IntakeState & { answered:
       AnsweredUsage[] }`, `answered = outcome.answered ?? []`, `AnsweredUsage` from
@@ -2621,6 +2725,11 @@ blocks:
       literal typechecks against K15's third anchor member, `{ kind: 'intake'; requestId:
       string | null; intakeNoteId: string }` (re-check p1-p2-19). A collection abandoned after
       this point is billed — R2 §8.2.7's stated hole closes.
+      (As built, P2 review adv-12: from the model's answer to the stored reply — the laws,
+      the table's context, `settleAnalysis`, `intakeNextStep`, the store's write — a throw is
+      the reading's END: logged, the token released with «Tahlil qilib bo‘lmadi …» once,
+      never rethrown. Every step there is deterministic; rethrown, each retry paid the model
+      again for the same answer.)
    6. `laws = await intakeLaws(analysed)` (pool). `live = activeIntake(chatId)`.
       `outcome = settleAnalysis(live, state, analysed, token)`:
       - `gone` → return (billed, nothing sent);
@@ -2635,6 +2744,16 @@ blocks:
         sending.** The redelivery in the new process sends from a durable row. Sending from
         memory alone would send the table a second time after the redelivery
         (durability-1's sibling).
+      - (As built, P2 review adv-2, and the merge:) the stored patch keeps `analysing: token`
+        (`settleAnalysis` itself still returns null) until the reply is OUT — released by
+        `settleDelivered`, `clearPending` (the chat refused it) or `saidDead` (Telegram
+        refused the message). Every door that asks `state.analysing` — the save, ⏭, the
+        sweep's `pressResume`, the certificate, a pick, an offer, a line answer, the table's
+        edit — therefore refuses while a stored reply waits: an older table's «Tasdiqlash»
+        landed facts the seller had never seen. The laws and the table's context are one
+        read, calc-dialog's `tableContext(analysed)`, taken BEFORE the live read, and the step
+        is `intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale })`, so an
+        add collection's stale totals reach the job's table (merge ledger).
    7. **Deliver** (bounded, §7.2.1):
       `sent = await sendTextBriefRetry({ chatId, text: pendingReply.text, replyMarkup: pendingReply.keyboard, timeoutMs: 10_000 })`.
       - `sent.ok` → `updateIntake(chatId, { pendingReply: null, tableMessageId: sent.messageId, tableHash, ownMessageIds+ }, { quiet: true })`;
@@ -2652,6 +2771,16 @@ blocks:
         sends it.
       - Anything else (5xx, network) → throw: pg-boss re-delivers, and step 2 re-sends the
         stored reply WITHOUT a model call.
+      - (As built, P2 reviews spec-4, adv-6, adv-8:) the send happens only while the reply is
+        still the collection's (`pendingReply.token`, re-read after the flush).
+        `tableMessageId` / `tableHash` (calc-dialog's one `tableHashOf`) are recorded only
+        when the delivered reply is still the collection's AND is not the «arrived» words,
+        decided by the stored text, never by the stage at delivery. A 403, or a 400 whose
+        description is about the CHAT (`CHAT_GONE`), clears in silence; any other 400
+        (Telegram refused the MESSAGE, e.g. too long) releases the collection to `'material'`
+        and says §2.6's «Tahlil qilib bo‘lmadi …» (+ the notice edit when that send fails).
+        The stored reply carries the notice's id, so the sweep's late delivery points it down
+        too.
    8. **Last attempt** (`retryCount >= INTAKE_READ_RETRY`, `job.retryCount` from
       `includeMetadata`, §7.2.2; in the worker's catch, the `customs/jobs.ts:66-104` shape):
       when a `pendingReply` for THIS token is stored, the
@@ -2662,6 +2791,12 @@ blocks:
       `readingSaidDead`), and never rethrow. Before the last attempt: rethrow. An attempt
       that dies by EXPIRY never reaches this catch. That is why the sweep's
       `releaseDeadReading` exists (§7.2.2).
+      (As built, P2 reviews spec-3, adv-7: «once» is held by the release patch clearing the
+      token BEFORE the send is awaited — every caller asks first whether the token is still
+      the collection's; `readingSaidDead` is a belt for a hydrated row, not the mechanism.
+      From a job the «bo‘lmadi» is sent with `sendTextBriefRetry`, and a send that still fails
+      edits the job's notice into the same sentence + `doneKeyboard`; the sweep's release
+      sends once with plain `sendText` and has no notice to edit.)
    - A MODEL failure is not an exception (`analyzeIntake` returns words): it settles into the
      table with `AI_READ_FAILURE`'s line, as today.
 5. **Delivery is direct, not through the notification drain** (the `answerWithAssistant`
@@ -2740,7 +2875,10 @@ blocks:
 - material arriving while it runs → the arrived words.
 - the last attempt with a throwing sender → the token is released, the stage is back at
   `'material'` (re-check p1-p2-24), and «Tahlil qilib bo‘lmadi» is sent. **Red proof:** drop
-  the `retryCount` check → nothing is sent.
+  the `retryCount` check → nothing is sent. (As built, P2 review spec-10: the last attempt failing BEFORE a
+  reply was stored → released, `'material'`, «bo‘lmadi»; failing at DELIVERY → nothing said,
+  the reply left for `deliver_pending` — §7.2.4 step 8's rule, both pinned in
+  calc-read-job.integration.test.ts.)
 - a 429 with `retry_after` 30 at delivery → ONE delivery-only follow-up enqueued with
   `startAfter` 31, nothing thrown, no «bo‘lmadi»; the follow-up sends the stored table and
   calls no model (durability-16).
@@ -2809,7 +2947,10 @@ blocks:
   guard is narrowed to `if (state.stage !== 'review') {` (K11 step 2, re-anchoring
   intake-round1.test.ts:204), and the `LOST_TOTALS_ANSWER` re-export is dropped.
   `LOST_TOTALS_ANSWER`, `TOTALS_NOT_READ` and `TotalsAsk` themselves retire in calc-dialog.ts
-  and calc-intake.ts, where K6 left them (re-check kernel-5, v2-2).
+  and calc-intake.ts, where K6 left them (re-check kernel-5, v2-2). (As built, P3 review p3-spec-6: a THIRD
+  hunk — the `cert_y` / `cert_n` branch's body moved into calc-dialog.ts `pressCertificate`,
+  so the press edits the echo or the table it came from (product-fit-20); recorded in
+  p3-foreign-hunks.json and taken at the P3 pick.)
 - Tests:
   - new: `line-address.test.ts`, `intake-table.test.ts`, `calc-dialog.test.ts`,
     `calc-undo.test.ts`;
@@ -3075,7 +3216,9 @@ blocks:
    - **Code on a stored row** (an add collection): an EMPTY code is written; a different code
      is NOT written and the segment reads `code_kept` (⭐ of Question 3). The amend diff
      names it to the VED (§9.5).
-   - A stored row with a conflict (§2.1): any answer to that row resolves it.
+   - A stored row with a conflict (§2.1): any answer to that row resolves it. (As built, P3
+     review spec-1: only an answer to the conflicted FIGURE resolves it — a «📨 VED» choice
+     included; an answer to another field of the row leaves the conflict open.)
    - Each write records its `before` into the echo (`IntakeEcho`, `tag` = 8 random hex).
      `echoes` keeps the last 30.
    - `offers` (bare/ambiguous buttons) carry `target: TableTarget`; `pressPick` applies
@@ -3119,6 +3262,9 @@ blocks:
    - else the first UNCLAIMED line of that name;
    - else nowhere.
    - A line is claimed once (round-3 review R3-C5's rule, which only `lineDone` had).
+   - (As built, P3 review spec-10, adv-6:) an answer the last reading placed somewhere claims
+     before one it placed nowhere (`-1`); within each, the list's order. An orphan's name
+     fallback took the line a later correction held by its index.
    - **Its placement is WRITTEN BACK** (regression-7, round 4's C-r2 lesson that
      `carryLineDone` held): `placeByName` returns the entries with each `index` rewritten
      to where it landed (`-1` when nowhere this reading, the name kept for a later one), and
@@ -3245,7 +3391,9 @@ blocks:
 - freight-only rows unmarked;
 - the closing line's three forms, and the «Bilmagan qatoringizni VED to‘ldiradi» line;
 - the examples built from the table (first ⚠️ row's number and unit);
-- ten 227-character names → ≤ 4096 and every ⚠️ row present.
+- ten 227-character names → ≤ 4096 and every ⚠️ row present. (As built, P3 review p3-spec-8: FIFTEEN
+  227-character names with distinct needs — ten that share one need fit uncapped, so the red
+  proof could not go red.)
   **Red proof:** no 40-point cap → over 4096;
 - 60 rows with 3 ⚠️ → the ✅ collapse line with ranges.
   **Red proof:** collapse ⚠️ rows too → one disappears;
@@ -3481,6 +3629,11 @@ export async function amendStanding(requestId: string): Promise<{
   the save job's minutes that it is stored), and the redelivered pass's settle (its
   `unfinished` stand-down, F rule 2) calls `requeueWaitingAmendments(requestId)`, which writes
   it then (re-check p4-18);
+  (as built, the merge: `ticketStanding` reads pg-boss and THROWS when the queue is
+  unreachable; `amendStanding` lets it throw, and every caller fails closed in words — the
+  door's `Hozir ochib bo‘lmadi — birozdan keyin qayta bosing.`, the save job's
+  `amendRequest` throwing before it writes so pg-boss retries. Read as `busy`, it would tell
+  the seller «AI hali hisoblayapti» about a pass nobody knows exists)
 - `handsoff_rev IS NULL` → `started` (a request from before this deploy, or a correction);
 - `prefillStanding(id, handsoff_rev)`: `ok` → `open`; `touched` / `confirmed` → `started`;
   `closed` → `closed`.
@@ -3499,6 +3652,12 @@ export async function amendStanding(requestId: string): Promise<{
   — the request form's heading «Эти товары уже есть в заявке — НЕ повторяй их в goods,
   перечисли только новые:» and its «…и ещё N строк» tail say «заявки», not «таблицы»;
   `knownGoods` stays the invoice's. A prompt change: the corpus runs. (re-check p4-16)
+  (As built, P4 review p4-spec-1, p4-spec-2: the request block reads «Эти товары уже есть в
+  заявке — НЕ повторяй их в goods, перечисли только новые. Исключение: если в материале у
+  такого товара СВОИ цифры (количество, вес или объём), укажи его в goods с этими цифрами из
+  материала — не придумывай их:» and its tail «…и ещё N строк этой заявки — для них то же
+  правило.». The words above told the model to drop exactly the restated lines the conflict
+  path reads.)
 - The NEW lines = `pickGoods` over the new material, MINUS any line `sameGoodsLine(kept, read)`
   matches against a kept row — `pickGoods`' own `carried` rule (calc-intake.ts:1259-1260: the
   same whole name, or `namesMeet` with `figuresAgree`), so a top-up read as «Куртка женская
@@ -4031,7 +4190,10 @@ lands as a second row.
 1. **The ticket marks a pass owed, and names its job.** `prefill-queue.ts` holds the one
    home, `ticketStanding(requestId): Promise<'live' | 'none'>`. It reads `ai_pass_rev`,
    `ai_pass_job` and `section`, and asks `jobState(passQueueOf(section), ai_pass_job)` (both
-   K15). A terminal or missing job is cleared there
+   K15). A terminal or missing job is cleared there (as built, P5 reviews p5-spec-1, p5-adv-4: a
+   TERMINAL job is cleared there at once; a MISSING one only once the ticket is older than
+   `TICKET_SEND_WINDOW_S` (60 s, prefill-queue.ts) — younger, it is its own send in flight,
+   and clearing it let a second press queue a second pass)
    (`… WHERE id = $id AND ai_pass_job = $deadJob`) and answers `'none'`. (re-check p5-p6-7)
    `queueCalcPrefill`:
    ```sql
@@ -4226,7 +4388,11 @@ lands as a second row.
    p5-p6-9)
 9. **Freight is not priced on a stale total** (law-money-1). `aiPrefill`'s `opts` gains
    `pass?: string` (absent = `'landing'`); jobs.ts passes `{ ...expected, pass }`. For
-   `pass = 'amend:<id>'`, `aiPrefill` reads that amendment's `change.totalsStale`. When the
+   `pass = 'amend:<id>'`, `aiPrefill` reads that amendment's `change.totalsStale`. (As built,
+   P5 review p5-adv-1: it folds `change.totalsStale` over every APPLIED amendment of the
+   request up to and including that one, in rev order, dropping a key a later `change.cargo`
+   carries — an addition's `totalsStale` names only what IT changed, so the second re-run
+   after a stale cube priced the road on it.) When the
    section prices the road and a total it needs is stale, the reply's freight line is §2.5's
    «yangilanmagan» words, in both renderings — and so is `tariffOnly`'s (prefill.ts:592,
    handed the pass), which prices a yolkira road from the STORED totals through `roadOf(ws)`
@@ -4277,7 +4443,10 @@ lands as a second row.
   `expectRev` → :463's grouping runs over the person's save; (b) drop BOTH the claim's `rev`
   clause (workspace.ts:2975) and `applyProposal`'s compare (:1681) → :750's stale
   `proposeGroups` writes over the VED's save. Dropping the claim's clause alone stays green —
-  `applyProposal`'s compare and `stillOurs` (prefill.ts:361-367) still refuse — stated;
+  `applyProposal`'s compare and `stillOurs` (prefill.ts:361-367) still refuse — stated; (as
+  built, P5 review p5-spec-3: MEASURED red on a fully coded request (S4b) — nothing after the
+  claim compares there, so the clause is load-bearing; P5's two calc-prefill-once cases live
+  in this file);
 - a tariff pass → the stamp is unchanged (it writes nothing);
 - the ticket: an enqueue that throws → cleared, `false`; `atRev` ≠ `rev` → no row, `false`; a
   live ticket → a second `queueCalcPrefill` enqueues nothing and answers `true`; a dead ticket
@@ -4374,7 +4543,9 @@ seller-written figures as «what stood on the screen».
 - `messages/{ru,uz,zh-CN,en}.json`: one key.
 - Tests: new `amended-since.integration.test.ts`, `amended-since-wire.test.ts`. Re-anchored:
   the ~160 calls of the four doors in 31 test files pass the request's live rev (each is a
-  compile error until it does, rule 3).
+  compile error until it does, rule 3). (As built, P6 review p6-spec-5: and the new fixture
+  `tests/fixtures/calc-saw-rev.ts` — `sawRev` / `sawRevOfGroup` — which every re-anchored press
+  uses, and any later test of the four doors needs.)
 
 ### 10A.2 Rules
 1. **One predicate**, `amended-since.ts`:
@@ -4398,9 +4569,22 @@ seller-written figures as «what stood on the screen».
      `new CalcError('amended_since')`. Only `finishCalcRequest` passes it; `returnCalcRequest`
      and the task/lines closes do not. The task close, `retireTaskCopiesSoon` and
      `kickPriceChannel` stay after the UPDATE, on the pool (#714).
+     (As built, P6 review p6-spec-1 — a deviation, measured: in READ COMMITTED an UPDATE that
+     waits for the add door's row lock re-checks only the ROW after the writer commits; its
+     NOT EXISTS keeps the statement's original snapshot and cannot see the amendment
+     committed meanwhile. So `endRequest`, only when `notAmendedSince` is passed, runs
+     `SELECT … FOR UPDATE` first and the UPDATE as its own statement, in one short
+     transaction; the task close, `retireTaskCopiesSoon` and `kickPriceChannel` stay after it
+     on the pool. On a throwaway pair of tables the bare UPDATE closed (1 row) and
+     lock-then-UPDATE refused (0 rows); in the app the race case goes red with the lock
+     removed.)
 2. **Keyed on `calc_amendments`, not on any `rev` move**, so the VED's own saves (and the
    machine's) never trip it. Only a seller's APPLIED addition does. A `to_ved`, `noted` or
-   `waiting` row changed no row, so it trips nothing.
+   `waiting` row changed no row, so it trips nothing. (As built, P6 review p6-adv-5 — the trade,
+   stated: a 'waiting' addition, promised «AI tugatgach so‘rovga avtomatik yoziladi», trips none
+   of the four doors, so «Готово» can close over goods the system has already promised to
+   write; the settle then sends the waiting row to_ved 'closed' and the seller is told. Put to
+   him as a question; spec-sanctioned until he answers.)
 3. **`sawRev` is a REQUIRED argument** of the four doors (`number` — never optional, never
    null). An optional one fails open (the phase-C lesson, #790), and making it required turns
    every caller into a compile error that names itself.
@@ -4413,6 +4597,15 @@ seller-written figures as «what stood on the screen».
      (re-check v3-4);
      page.tsx passes `sawRev={workspace?.rev ?? row.rev}` to `CalcActions` (a server-behind
      page has no workspace, so the row's own clock, §10A.1).
+   - (As built, P6 reviews p6-adv-2, p6-adv-1 — two recorded deviations:) page.tsx passes
+     `drawnRev = workspace ? Math.min(row.rev, workspace.rev) : row.rev`, the OLDER of the
+     two clocks, because the header's route/kg/m³, the checklist and the read-only goods
+     table are printed from `row`, read before `loadWorkspace` — the newer clock fails OPEN
+     for an addition committed between the two reads, the older only ever refuses. And the
+     «Готово» fold presses with `foldRev ?? sawRev`, where `foldRev` is the prop's value
+     when the fold was OPENED (cleared on success and on close): a refresh moves the prop
+     while the typed amount survives in state. The four workspace call sites keep
+     `workspace.rev`. Pinned in amended-since-wire.test.ts.
    - A page from an old build cannot call the new build's actions at all (server action ids
      are per build), so there is no «posted none» case to read.
    - No door without a screen calls these four: each has one caller (actions.ts:188, :565,
@@ -4424,6 +4617,9 @@ seller-written figures as «what stood on the screen».
    - ru: `Продавец прислал дополнение — обновите страницу, изменение записано в «Вопрос-ответ».`
    - en: `The seller sent an addition — reload the page; the change is written in the Q&A thread.`
    - zh-CN: `销售员发送了补充——请刷新页面，变更已写在问答中。`
+   (As built: ru and en name the thread as the page's own heading does, `threads.calcTitle`
+   — ru `… изменение записано в «Вопросы и ответы».`, en `… the change is written under
+   «Questions».`; uz and zh-CN already matched it. P6 review p6-spec-2.)
    The refusal changes nothing. The reloaded page shows the rows as written and the thread
    message with the change lines.
 
@@ -4570,7 +4766,7 @@ unchanged. P5: their jobs carry no `pass`, so K's `'landing'` stays; the file mo
 | `bot-ai-dispatch.test.ts` analysis half | P2 | «dispatches the analysis off the middleware chain» becomes «the press enqueues `JOB_CALC_INTAKE_READ` and calls no model». |
 | R2's `totals-question.test.ts` | P3 (`pressDone`: P2) | R2's `totalsQuestion` is retired (§8.2 rule 1): an unaddressed bare figure goes to the single open totals target by its own unit, on every section, and WHICH totals rows are ⚠️ is `missingFields` minus `LINE_FIELDS` (regression-22). So `:130` («every freight section asks, on every door; rastamojka never does»; `:110` is now inside `pressDone`) is re-anchored to «rastamojka's ⚠️ totals are `missingFields` minus `LINE_FIELDS`» — brutto and m³ ⚠️ when absent, MR-9's rule (re-check corpus-mig-seam-11, p3-5). The question-stage drives become table drives: a bare «3500» with only the weight row ⚠️ → kg; «jami 3500». `:342` (the cube typed two ways) moves to `intakeTableText`: its ⚠️ row, never «to‘liq» (re-check corpus-mig-seam-13). The late-pass blocks keep their rules, re-driven through the table: CONC-2 (:373-515) — a table answer carries R2's `at` mark, `totalsDoubts` stays the one rule and the table reads it; answer «jami 3500 kg», then ➕ and a FORWARDED «brutto 4200 kg» (typed, it is a totals address and a new answer, §8.2 rule 5), «Bo‘ldi» → ⚠️ with both figures, never 3500 in silence (re-check corpus-mig-seam-11, p3-3, v2-4); P3-R7 (:201). The concurrency-5 block (:516-615) is re-anchored onto `orphanAnswerSentence`: :575 asserts §2.8's new sentence for a WORDED figure (it asserted `LOST_TOTALS_ANSWER`, the one sentence P3 retires); :536, :549, :562 keep their gates (`messageId !== null`, Door B's replay, `waitDeclined`) and their `not.toContain`, re-pointed at §2.8's sentence (`LOST_TOTALS_ANSWER` and its import retire; re-check v2-3); REG-3 stays — :586 keeps `BARE_FIGURE_NOT_FOUND` for a BARE figure («777», «150», «12», «3500») unchanged, its «never «to‘plam topilmadi»» becoming «never «Ochiq hisoblatish yo‘q»»; :602 (the worded/bare shape test) is unchanged, calc-intake.ts re-exporting `totalsAnswerShape` from `totals-shape.ts`; :608 (other words reach the assistant) holds (re-check corpus-mig-seam-12). `pressDone` (:108-114) drives the job (P2, above). |
 | R2's `intake-usage.integration.test.ts` and `intake-own-budget.test.ts` | P2 | Reason: the ledger now holds a collection's readings from the moment the model answered, so R2's concurrency-11 subtraction (`aiCalcBudgetLeft() - state.usages.length`, calc-intake.ts:1483) and its append (:1571) go in the same commit, or every reading counts twice (§7.2.10). intake-usage: :177 → «billed by the job on the day the model answered (`createdAt = at`, concurrency-11's day kept), on the note anchor, then attached»; :191 «a bill that cannot be written costs that row alone …» → «a failing attach never skips the queue»; :156 and :186 hold, driven through the job. intake-own-budget: «two unlanded readings spend the last two calls» → «a collection with one billed reading and the ledger saying 1 left reads once more»; **red proof:** restore the subtraction → refused `'budget'` (re-check corpus-mig-seam-10). |
-| R2's `calc-prefill-once.integration.test.ts` | K + P5 | K: the three direct `sayOnce` calls take `'landing'` (the three worker-driven tests are unchanged; re-check v3-3); CONC-1 (`whileOpen`, :210), CONC-4 (the muted claim row, :231) and perf-5 (the `requested_at - 1 day` floor, :261) keep their assertions. P5 adds: a second pass key speaks once more; an `amend:*` pass whose request closed mid-run sends no reply (re-check corpus-mig-seam-2). |
+| R2's `calc-prefill-once.integration.test.ts` | K + P5 | K: the three direct `sayOnce` calls take `'landing'` (the three worker-driven tests are unchanged; re-check v3-3); CONC-1 (`whileOpen`, :210), CONC-4 (the muted claim row, :231) and perf-5 (the `requested_at - 1 day` floor, :261) keep their assertions. P5 adds: a second pass key speaks once more; an `amend:*` pass whose request closed mid-run sends no reply (re-check corpus-mig-seam-2). (As built, P5 review p5-spec-3: those two live ONCE, in calc-pass-settle.integration (§10.3); calc-prefill-once is unchanged by P5 — the settle compares `ai_pass_job::text`, so its 'j1'..'j3' jobs match nothing and raise no 22P02.) |
 | `calc-prefill-standdown.test.ts`, `calc-prefill-wire.test.ts`, `calc-prefill.integration.test.ts` (:463, :750, :806, :851; :305-307), `ai-reply.test.ts`, `prefill-reply.test.ts`, `stored-volume.integration` (:99-105), `estimate.test.ts`, `customs-estimate.integration.test.ts` (:536) (re-check v3-1, v3-4) | K + P5 | K: standdown's `toHaveBeenCalledWith('r1', …)` gain `'landing'` second (`call[1]`→`call[2]`, `call[2]`→`call[3]`); wire's :172 → `sayOnce(requestId, 'landing', {`. P5: each as F §10.1 lists it (wire's `pass`, the ticket pins, standdown's `pass: 'landing'` and the `prefill-queue` mock, the two chain-less integration cases, the audience-keyed tails — estimate's words pin and the two `out.text` tail pins, re-check v3-1) (re-check p5-p6-4). |
 | `redelivery-wire.test.ts` | K + P1 | The ladder asks `intakeTakes` (K); (8) and (10) read `collectorSource()`, and (10) also requires `pressKey(ctx, ` for every step `CALC_STEP_REPEAT` classes `'keyed'` (K12, re-check corpus-mig-seam-18); the hydrate order is `Promise.allSettled` with one `.catch` per hydrate (P1, regression-20, durability-11). |
 | `bot-lifecycle.test.ts` (the stop) | K | The flush budget is the rest of the 5 s and an `unwritten()` number confirms through the update before it; the dep is OPTIONAL (default `() => null`), so its five calls compile unchanged and every existing expectation holds (re-check p1-p2-8). |
@@ -4589,6 +4785,10 @@ unchanged. P5: their jobs carry no `pass`, so K's `'landing'` stays; the file mo
 | `ai-rastamojka-bot.test.ts` (the vocabulary list) | K | Gains `cert_y`, `cert_n`, `resume`; `cert` and `skip` stay parseable. |
 | `topshiriq-buttons.test.ts` | K | No test reads `CALC_STEPS` (private, staff-bot.ts:462). Its derived callback scan (:106-110, the #939 fence) adds K16's `CALC_COLLECTOR_FILES` to its three sources, or the moved calc keyboards and `cf:` leave the fence. The per-step class is fenced by `CALC_STEP_REPEAT`'s `Record<CalcStep, …>` type itself and by `redelivery-wire.test.ts` (10) (above) (re-check corpus-mig-seam-18). |
 | `calc-error-words.test.ts` | P6 | Unchanged; it sees `amended_since` once `amended-since.ts` throws it literally (§12) (re-check corpus-mig-seam-20). |
+| `calc-r3-kernel.test.ts` K2 twin fence (as built) | P2 | The needle `recordAiPass(` → `attachIntakePasses(`: billing moved to the job (§7.2.10), the landing only attaches (P2 review spec-7). |
+| corpus c0767 (as built) | P2 | `out.usages` → `out.answered`; «counted against the day's budget» is proven by intake-billing.integration.test.ts's first test, as c0767's comment says (P2 review spec-7). |
+| `calc-r3-kernel.test.ts` «a twin of one note runs nothing after the transaction» (as built) | P5 | from-thread.ts's twin exit is a BLOCK that queues through the ticket with `atRev: 0` and returns (§10.2.1 rule 1): the fence accepts the block form, requires every queue in it to carry `atRev: 0` and to return, and the door's own queue after it. **Red proof K1:** drop `atRev: 0` → red (P5 review p5-spec-4). |
+| `feed.integration.test.ts` (as built) | P5 | `asks: null, pass: 'landing'` on four renderer inputs — the two REQUIRED fields (#790). The `atRev: 0` sites the kernel fence does not read (intake-land `retried()`, from-thread's root branch) are pinned behaviourally in calc-pass-settle (F7/F8) (P5 review p5-spec-4, p5-adv-3). |
 | `intake-corpus.test.ts` routing (new cases, P3) | P3 | c1524-c1526's inputs as table-stage and material-stage ROUTING cases (no row patched), beside their goods-reader cases, which are unchanged. |
 | The derived re-anchor list (K16) | K | Whatever the grep finds beyond this table joins it, with a reason, before K is cut. |
 
@@ -5086,7 +5286,9 @@ says what was built for each. (re-check laws-print-23)
    - Shared files, hunks apart: `calc-intake.ts` (P3's retired fields and helpers,
      :22-662 today, and `analyzeCollected`'s BASE branch; P2's budget/usages lines in it,
      :1483/:1571; P4's ADD branch beside P3's — `analyzeCollected` is at :1464 today, ~:1385
-     after K3's store move) (re-check p3-4); `staff-bot.ts` (P5's `buttonsFor` branch,
+     after K3's store move) (re-check p3-4); (as built, P2 review spec-9: P2's hunks there are also the leash-0 arm
+     ahead of the budget arm — kept for EVERY branch, P4's add branch included — and
+     `IntakeState.usages` made optional); `staff-bot.ts` (P5's `buttonsFor` branch,
      :642-709, re-check v3-4; P2's `landCollectedIntake` line, :1334); `intake-land.ts` (K's `retried()`:
      P2's attach line, then P5's queue / stage move / `replyQueued` — on a conflict keep both,
      in that order; re-check corpus-mig-seam-25); `intake-corpus.test.ts` (P2's c0012/c0774

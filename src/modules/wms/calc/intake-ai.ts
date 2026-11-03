@@ -677,12 +677,13 @@ const FACTS_JSON_SCHEMA = {
 
 /**
  * What a document stating only the NETTO of the whole shipment becomes —
- * per section, because only the freight sections ASK the brutto
- * (`totalsQuestion`, review P3-R3). There the netto must not pass for it: the
+ * per section, because only the freight sections must have the BRUTTO (the
+ * table's ⚠️ brutto row, `totalsMissing` in intake.ts; R2's retired
+ * `totalsQuestion`, review P3-R3). There the netto must not pass for it: the
  * truck is priced on what it carries with the packaging, so null, and the
- * question comes. A customs job is never asked (customs prices the lines),
- * so null there landed every netto-only invoice with no weight at all — a
- * chip asking for ever, and a single line's derived weight with no source.
+ * table asks. Customs prices the lines, so a null there landed every
+ * netto-only invoice with no weight at all — a chip asking for ever, and a
+ * single line's derived weight with no source.
  * There the netto stands as the total, and the reading SAYS it is netto,
  * on the lenta the VED reads — and in `weight_netto` (review PF-3), so the
  * single line's copied weight, the summary and the Telegram line call it

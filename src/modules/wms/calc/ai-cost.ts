@@ -52,9 +52,10 @@ export async function recordAiPass(
     inputTokens?: number | null;
     outputTokens?: number | null;
     /**
-     * When the call was MADE, for a bill written later than it was spent (the
-     * intake bills at the landing, judge concurrency-11) — the day's count
-     * reads this column. Absent = now, the column's own default.
+     * When the call was MADE: a reading's bill is dated when the model
+     * ANSWERED (the reading job, docs/SAKKIZ-R3.md §7.2.10; judge
+     * concurrency-11) — the day's count reads this column. Absent = now, the
+     * column's own default.
      */
     createdAt?: Date | null;
   },

@@ -323,6 +323,21 @@ export async function calcOpenRefusal(
 }
 
 /**
+ * «A ROOT request carries one of these notes» — the WHERE alone, over any
+ * number of notes: the one home of «landed» (docs/SAKKIZ-R3.md §6.2.10). The
+ * one-note reader below adds its own ORDER BY and LIMIT to it, and the bot's
+ * hydrate (`endedCollections`, intake-ended.ts) asks it over every hydrated
+ * note at once, so the two can never mean different things by «landed».
+ * Never called with no notes (`IN ()` is not SQL): both callers have one or more.
+ */
+export function rootNotesWhereSql(noteIds: readonly string[]): SQL {
+  return sql`note_id IN (${sql.join(
+    noteIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  )}) AND supersedes_request_id IS NULL`;
+}
+
+/**
  * The ROOT request of a note — the one a landing opened on it, never a
  * correction (a correction copies its parent's `note_id` by design,
  * `recalcFromSealed`). A WHERE fragment that carries its own ORDER BY and
@@ -331,7 +346,7 @@ export async function calcOpenRefusal(
  * (#513).
  */
 export function rootOfNoteSql(noteId: string): SQL {
-  return sql`note_id = ${noteId}::uuid AND supersedes_request_id IS NULL ORDER BY requested_at LIMIT 1`;
+  return sql`${rootNotesWhereSql([noteId])} ORDER BY requested_at LIMIT 1`;
 }
 
 /**

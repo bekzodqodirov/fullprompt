@@ -138,9 +138,19 @@ export interface IntakeState {
   /**
    * A reading's reply stored before it was sent (P2): `at` = when it was
    * stored; `jobId` = the delivery-only follow-up's job, when a flood wait sent
-   * the delivery there (durability-16).
+   * the delivery there (durability-16); `noticeMessageId` = the press's
+   * «⏳ AI o‘qiyapti…», so whoever delivers the reply late — the sweep has no
+   * job payload — still points it down (§2.6; reviews spec-5, adv-11).
+   * Optional: a row stored before it existed reads as no notice.
    */
-  pendingReply: { token: string; text: string; keyboard: InlineKeyboard | null; at: number; jobId: string | null } | null;
+  pendingReply: {
+    token: string;
+    text: string;
+    keyboard: InlineKeyboard | null;
+    at: number;
+    jobId: string | null;
+    noticeMessageId?: number | null;
+  } | null;
   /** The table answers the seller was told, for the undo (P3). */
   echoes: IntakeEcho[];
   /** What staff typed to name the customer — a code, a phone, or a name. */

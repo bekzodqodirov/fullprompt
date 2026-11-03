@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { cardOfNote, rootRequestOfNote } from './intake-land';
+import { rootNotesWhereSql } from './service';
 
 /**
  * Is a durable «Hisoblatish» collection over? (docs/SAKKIZ-R3.md §6.2.10, §6.2.15.)
@@ -12,10 +13,11 @@ import { cardOfNote, rootRequestOfNote } from './intake-land';
  * dynamic import (platform never imports wms statically).
  *
  * «Landed» has ONE meaning, Uch band's (docs/UCH-BAND.md): a ROOT
- * `calc_requests` row carries the note id — `rootRequestOfNote`'s predicate,
- * the WHERE of `rootOfNoteSql` (service.ts). A note that reached its card
- * with no request beside it is a landing cut off halfway (durability-3): the
- * collection is KEPT, and the sweep finishes it on the note's own card.
+ * `calc_requests` row carries the note id — `rootNotesWhereSql` (service.ts),
+ * the WHERE `rootOfNoteSql` and `rootRequestOfNote` also read. A note that
+ * reached its card with no request beside it is a landing cut off halfway
+ * (durability-3): the collection is KEPT, and the sweep finishes it on the
+ * note's own card.
  */
 
 export interface EndedCheck {
@@ -43,14 +45,13 @@ export async function endedCollections(rows: readonly EndedCheck[]): Promise<End
   const fresh = rows.filter((r) => !r.amend).map((r) => r.noteId);
   const adds = rows.filter((r) => r.amend).map((r) => r.noteId);
   if (fresh.length > 0) {
-    // `rootOfNoteSql`'s predicate over many notes at once (its own form ends
-    // in ORDER BY … LIMIT 1, for one note); `rootRequestOfNote` below is the
-    // same question for one, and the integration test holds the two together.
+    // The ONE «landed» WHERE (service.ts `rootNotesWhereSql`), over many notes
+    // at once; `rootOfNoteSql` is the same fragment for one note with its own
+    // ORDER BY … LIMIT 1, so the hydrate and the landing cannot disagree.
     const landed = (await db.execute(sql`
       SELECT DISTINCT note_id::text AS note_id
         FROM calc_requests
-       WHERE note_id IN (${sql.join(fresh.map((id) => sql`${id}::uuid`), sql`, `)})
-         AND supersedes_request_id IS NULL`)) as unknown as { note_id: string }[];
+       WHERE ${rootNotesWhereSql(fresh)}`)) as unknown as { note_id: string }[];
     for (const row of landed) verdict.ended.add(row.note_id);
   }
   if (adds.length > 0) {

@@ -12,7 +12,7 @@ import type { AmendBase, AmendBaseItem, AmendSubmission } from '@/modules/wms/ca
 import { THREAD_TEXT_MAX } from '@/modules/platform/notifications/thread-ref';
 import { amendSubmissionOf, AMEND_REFUSAL } from '@/modules/platform/telegram/calc-amend';
 import { endIntake, startIntake } from '@/modules/platform/telegram/calc-store';
-import { sameGoodsLine } from '@/modules/platform/telegram/calc-intake';
+import { placeByName, sameGoodsLine } from '@/modules/platform/telegram/calc-intake';
 import { knownGoodsText } from '@/modules/wms/calc/intake-ai';
 
 /**
@@ -362,6 +362,33 @@ describe('amendSubmissionOf — what an add collection hands the writer', () => 
       }),
     );
     expect(same.rowAnswers[0]).toMatchObject({ sum: { stored: 300, read: 200 } });
+  });
+
+  it('a code the seller typed over the VED’s: kept off the row, carried in the answer, named in codesKept (P3 review adv-11)', () => {
+    // The stored row's code is the VED's; the seller's «2: 6402990000».
+    const stored = [
+      item(1, { name: 'Kurtka', quantity: 300 }),
+      item(2, { name: 'Krossovka', weightKg: 12.5, tnvedCode: '6403990000' }),
+    ];
+    const s = startIntake(-424243n, 'rastamojka', { ai: true, staffId: id(50), amend: base(stored) });
+    endIntake(-424243n);
+    const answered = [{ index: 1, name: 'Krossovka', patch: { tnvedCode: '6402990000' }, itemId: id(2) }];
+    // The re-read puts the answer back by item id and draws the stored code.
+    const placed = placeByName(
+      [
+        { name: 'Kurtka', quantity: 300, itemId: id(1), seq: 1 },
+        { name: 'Krossovka', weightKg: 12.5, tnvedCode: '6403990000', itemId: id(2), seq: 2 },
+      ],
+      answered,
+    );
+    expect(placed.goods[1]!.tnvedCode).toBe('6403990000');
+    expect(placed.entries[0]!.patch.tnvedCode).toBe('6402990000');
+    const out = amendSubmissionOf(Object.assign(s, { facts: { goods: placed.goods }, lineAnswers: placed.entries }));
+    expect(out.rowAnswers).toEqual([{ itemId: id(2), patch: { tnvedCode: '6402990000' } }]);
+    const change = amendDiff(base(stored), out, NOTE);
+    expect(change.codesKept).toEqual([{ seq: 2, name: 'Krossovka', typed: '6402990000', stored: '6403990000' }]);
+    expect(change.edits).toEqual([]);
+    expect(amendChangeText(change, 0)).toContain('· 2-qator «Krossovka»: sotuvchi kodi 6402990000 (so‘rovda 6403990000 — VED hal qiladi)');
   });
 
   it('the route only from a table answer, present keys only', () => {

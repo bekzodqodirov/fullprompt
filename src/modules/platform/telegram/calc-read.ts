@@ -490,7 +490,7 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
       text = step.text;
       keyboard = step.keyboard;
     }
-    pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null };
+    pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null, noticeMessageId: data.noticeMessageId };
     // The token is HELD until the reply is out (review adv-2): every door that
     // asks «is a reading running?» — «Tasdiqlash», ⏭, the certificate, a line
     // answer, the table's edit — asks `analysing`, and a reading stored but
@@ -764,17 +764,16 @@ export async function releaseDeadReading(chatId: bigint, state: IntakeState): Pr
  * never re-run for it. Never while this process is delivering it already (a
  * retry, a follow-up): the table would arrive twice (reviews spec-6, adv-5).
  *
- * The notice above it is NOT pointed down on this path: its id travels in the
- * job's payload only, and K4's `pendingReply` carries none (reviews spec-5,
- * adv-11 — handed to the lead), so «⏳ AI o‘qiyapti…» stays above a table that
- * came late. Stated, not hidden.
+ * The notice above it is pointed down here too: the sweep has no job payload,
+ * so the stored reply carries the notice's id (reviews spec-5, adv-11) — a
+ * table that came late is still not left under «⏳ AI o‘qiyapti…».
  */
 export async function deliverStoredReply(chatId: bigint, state: IntakeState): Promise<void> {
   const live = activeIntake(chatId);
   const reply = live?.pendingReply;
   if (!live || !reply || live.noteId !== state.noteId) return;
   if (runningHere(reply.token)) return;
-  const job = { chatId: String(chatId), noteId: live.noteId, token: reply.token, noticeMessageId: null };
+  const job = { chatId: String(chatId), noteId: live.noteId, token: reply.token, noticeMessageId: reply.noticeMessageId ?? null };
   // No job, so no deadline to wait for: a stopping process hands nothing on.
   await deliver(chatId, reply, job, Date.now());
 }

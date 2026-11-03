@@ -111,6 +111,17 @@ export type TableFormState =
     };
 
 /**
+ * The server-behind line, said the same way by every door here: the postgres
+ * code (42P01 a missing table, 42703 a missing column) and, in `err`'s own
+ * message, the relation — never one migration's number, which named 0085 for
+ * every missing table long after 0085 was everyone's (review p6-adv-4).
+ */
+function logServerBehind(err: unknown): void {
+  const code = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : null;
+  logger.error({ err, code }, '[calc] server behind — a migration not applied');
+}
+
+/**
  * Every door into the queue.
  *
  * All four VED actions gate on `ved.docs` — the queue's own grant — and every
@@ -137,10 +148,12 @@ async function run(
     await work({ actorId: who.id, ...meta });
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
-    // Deploy morning: the app can be a release ahead of the migration, and
-    // this module's columns landed in 0085 (#472's rule).
+    // Deploy morning: the app can be a release ahead of the migration (#472's
+    // rule). This module's tables began in 0085 and keep growing (0139's
+    // calc_amendments is read by four of these doors), so the line names the
+    // code and leaves the relation to postgres's own message in `err`.
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     // …and 0125's widened basis CHECKs (the dictionary's m³ baza comes
@@ -317,7 +330,7 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCa
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     throw err;
@@ -389,7 +402,7 @@ async function runTable(
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code, seq: err.seq };
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     if (isBehindOnBasisCheck(err)) {
