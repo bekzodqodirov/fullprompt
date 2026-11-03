@@ -9,7 +9,7 @@ import {
   type TableAmend,
   type TableInput,
 } from '@/modules/wms/calc/intake';
-import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
+import { parseLineAnswer, parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { nameWordFor, parseTableAnswer } from '@/modules/wms/calc/line-address';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
@@ -452,6 +452,12 @@ describe('the fix review of the review’s fixes (docs/SAKKIZ-R3.md §20.2)', ()
     ['a model number stays in the name it teaches (W-9)', ['iPhone 15', 'iPhone 15 Pro'], null],
     ['«Xiaomi 14 Ultra», «Shina 205 55 R16»', ['Xiaomi 14 Ultra', 'Shina 205 55 R16'], null],
     ['«Monitor 24 dyuym» beside «Monitor 27 dyuym»', ['Monitor 24 dyuym', 'Monitor 27 dyuym'], null],
+    // The fix review's check (CHK-1): a name holding «N <unit>» taught an example
+    // the parser refused «repeated», or read with a second figure.
+    ['«Futbolka 2 dona to‘plam» (CHK-1)', ['Futbolka 2 dona to‘plam', 'Futbolka oq'], null],
+    ['«Paket 100 dona qora» beside «… oq» (CHK-1)', ['Paket 100 dona qora', 'Paket 100 dona oq'], null],
+    ['«Paypoq 10 juft qora» beside «… oq» (CHK-1)', ['Paypoq 10 juft qora', 'Paypoq 10 juft oq'], null],
+    ['«Kafel 2 kub qadoq» (CHK-1)', ['Kafel 2 kub qadoq', 'Kafel oq'], null],
   ] as const) {
     it(`the taught name example parses back to ITS row: ${label}`, () => {
       const laws = law === 'kg' ? new Map([['8467210000', needLawOf({ dutyMode: 'specific', dutyUnit: 'kg', dutySpecific: 1, dutyFree: false })]]) : noLaws;
@@ -472,8 +478,18 @@ describe('the fix review of the review’s fixes (docs/SAKKIZ-R3.md §20.2)', ()
       });
       expect(segment!.at, example).toEqual({ line: row!.no });
       expect(segment!.totals, example).toBeNull();
+      // Only the example's own figure — never a second one the name carried (CHK-1).
+      const word = nameWordFor(rows, row!)!;
+      expect(segment!.answer, example).toEqual(parseLineAnswer(example.slice(word.length + 1)));
     });
   }
+
+  it('a name holding «N <unit>» teaches its words without the pair, and still teaches one (CHK-1)', () => {
+    const rows = tableRowsOf(input(['Paket 100 dona qora', 'Paket 100 dona sariq']));
+    expect(rows.map((r) => nameWordFor(rows, r))).toEqual(['Paket qora', 'Paket sariq']);
+    const kafel = tableRowsOf(input(['Kafel 2 kub qadoq', 'Kafel oq']));
+    expect(nameWordFor(kafel, kafel[0]!)).toBe('Kafel qadoq');
+  });
 
   it('«iPhone 15 Pro», never «iPhone Pro» — the row’s own name (W-9)', () => {
     expect(nameWordFor(tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro'])), tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro']))[1]!)).toBe(

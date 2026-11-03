@@ -821,7 +821,7 @@ export const NAME_ROWS_TRIED = 3;
 const EXAMPLE_VALUE: Record<NeedUnit, number> = {
   dona: 30, '1000_dona': 3000, kg: 150, m3: 2, m2: 120, juft: 40, litr: 50, sm3: 1500,
 };
-const exampleFigure = (unit: NeedUnit) =>
+export const exampleFigure = (unit: NeedUnit) =>
   unit === '1000_dona' ? figureLabel(EXAMPLE_VALUE[unit], 'dona') : figureLabel(EXAMPLE_VALUE[unit], unit);
 
 /** The field a conflict names, in the seller's word, for «so‘rovda og‘irlik yo‘q». */

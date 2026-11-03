@@ -13,7 +13,7 @@
  * platform homes, never from calc-intake.ts, which imports staff-bot and so
  * the whole database (re-check p3-10, p3-16).
  */
-import type { AmbiguousTotal } from './intake';
+import { exampleFigure, type AmbiguousTotal } from './intake';
 import { looksLikeMaterial, parseLineAnswer, parseManualFacts, type LineAnswer } from './intake-manual';
 import type { NeedUnit } from './needs';
 import { unitOf } from './units';
@@ -552,39 +552,67 @@ const NAME_WORDS_TAUGHT = 3;
  * A run starts with a word of three letters («100% paxta futbolka» gave «100
  * 30 dona», which reads as row 100 — review adv-20) and keeps the model's
  * numbers between its words: «iPhone Pro» taught for «iPhone 15 Pro» named
- * goods no row holds (fix review W-9). Each candidate is judged AS the
- * example reads — with its figure after it, so a number inside the run is
- * the name's, as `nameParts` reads it — and by every rule `readSegment` asks
- * before the name: a totals word first («Jami to‘plam 30 dona» is refused
- * «totals_unit»; «TOTAL drel 150 kg» was read as the brutto) and a carton
- * word («Qop polipropilen 30 dona» — no_address) are no example (fix review
- * FR-6). The rows' names are folded once per call (fix review FR-3: a
- * rowName per row per candidate per ⚠️ row was seconds on a 500-row table).
+ * goods no row holds (fix review W-9). A number with its unit word after it
+ * is a FIGURE inside the name, and the pair is left out of the run: «Paket
+ * 100 dona qora» taught «Paket 100 dona qora 30 dona», which the parser
+ * refuses «repeated» — and «Paypoq 10 juft qora 30 dona» wrote 10 juft as a
+ * measure beside the 30 (the fix review's check, CHK-1). The candidates are
+ * prefiltered by every rule `readSegment` asks before the name — a totals
+ * word first («Jami to‘plam 30 dona» is refused «totals_unit»; «TOTAL drel
+ * 150 kg» was read as the brutto), a carton word («Qop polipropilen 30 dona»
+ * — no_address), an address — and the name match over the folded rows (fix
+ * review FR-6); the one that names this row alone is then read back by
+ * `parseTableAnswer` itself, exactly as the ✍️ line draws it (`exampleFigure`
+ * of the row's first need), and taught only when it lands on this row with
+ * the example's own figure and nothing else. The parser is the arbiter: a
+ * rule restated here beside it is how W-9's fix taught what CHK-1 found. The
+ * rows' names are folded once per call (fix review FR-3: a rowName per row
+ * per candidate per ⚠️ row was seconds on a 500-row table), and the parser
+ * reads only a candidate that already named this row alone — at most
+ * NAME_WORDS_TAUGHT per call.
  */
 export function nameWordFor(rows: readonly TableRow[], row: TableRow): string | null {
   const tokens = row.name.match(/(?<![\p{L}\p{N}])[\p{L}\p{N}][\p{L}\p{N}'’‘ʻ`-]*/gu) ?? [];
   const isWord = (t: string) => /^\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}$/u.test(t);
   const candidates: string[] = [];
   const run: string[] = [];
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i += 1) {
+    const token = tokens[i]!;
+    if (/^\d+$/u.test(token) && unitOf(tokens[i + 1]) !== null) {
+      i += 1; // «100 dona»: a figure in the name, never part of the example's name
+      continue;
+    }
     if (isWord(token)) {
       run.push(token);
       candidates.push(run.join(' '));
       if (candidates.length >= NAME_WORDS_TAUGHT) break;
     } else if (run.length > 0 && /^\d+$/u.test(token)) run.push(token);
   }
+  // The figure the ✍️ line draws after the name (intake.ts `answerHow`), and
+  // what that figure alone reads as — the answer the example must carry.
+  const figure = exampleFigure(row.needs[0] ?? 'dona');
+  const expected = JSON.stringify(parseLineAnswer(figure));
+  const ref: TableRef = { rows, open: [], preferred: [], stage: 'review' };
   let names: RowName[] | null = null;
   for (const candidate of candidates) {
-    // The example as `answerHow` builds it: the name, then a figure — any
-    // figure's tokens are units and numbers before units, which the name
-    // rules drop alike.
-    const example = `${candidate} 1 dona`;
+    const example = `${candidate} ${figure}`;
     if (addressOf(example, 'review') !== null || totalsLead(example) !== null) continue;
     const parts = nameParts(example);
     if (parts.carton || !hasName(parts)) continue;
     names ??= rows.map((r) => rowName(r.name));
     const named = rows.filter((_, i) => namesRow(parts, names![i]!) && holdsModel(parts, names![i]!));
-    if (named.length === 1 && named[0]!.no === row.no) return candidate;
+    if (named.length !== 1 || named[0]!.no !== row.no) continue;
+    const read = parseTableAnswer(example, ref);
+    const [segment] = read.segments;
+    const lands =
+      !read.material &&
+      read.segments.length === 1 &&
+      segment!.refused === null &&
+      segment!.at !== null &&
+      'line' in segment!.at &&
+      segment!.at.line === row.no &&
+      JSON.stringify(segment!.answer) === expected;
+    if (lands) return candidate;
   }
   return null;
 }
