@@ -12,7 +12,7 @@ import {
   type IntakeEcho,
   type IntakeState,
 } from './calc-intake';
-import { activeIntake, endIntake, noteOwnMessage, updateIntake } from './calc-store';
+import { activeIntake, endIntake, holdingIntake, noteOwnMessage, nothingNewToRead, updateIntake } from './calc-store';
 import {
   aiConfirmKeyboard,
   CLIENT_QUESTION,
@@ -308,6 +308,9 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
         }
       : null,
     tail: tableTail(state, tc.intake),
+    // A seeded collection's stale brutto too (fix review FR-4): `amend` is
+    // null there, and the stale list rode only inside it.
+    totalsStale: tc.stale,
     nameWord: tc.nameWord,
   };
 }
@@ -876,7 +879,11 @@ function missingLines(state: IntakeState, tc: TableContext): string[] {
   // Collecting again after «➕ Yana ma’lumot»: the confirm waits for «Bo‘ldi»
   // (the save guard's own words), so the echo never points at a press that
   // would be refused (review adv-18).
-  if (state.stage !== 'review') return ['Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.'];
+  // Nothing sent after it on rows of its own (fix review W-11): the confirm is
+  // not refused, so the echo does not point at «Bo‘ldi».
+  if (state.stage !== 'review' && !(state.stage === 'material' && nothingNewToRead(state))) {
+    return ['Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.'];
+  }
   const input = tableInputOf(state, tc);
   const rows = tc.intake.tableRowsOf(input);
   const open = tc.intake.tableOpenOf(input);
@@ -1781,6 +1788,20 @@ export async function pressUndo(ctx: PressCtx & { api?: EditApi }, chatId: bigin
     await answerPress(ctx, ANALYSING);
     await ctx.reply(ANALYSING);
     return;
+  }
+  // A PARKED collection's undo beside a task draft, a zametka or a one-text
+  // wait (fix review W-15): its write is a non-quiet patch, so the collection
+  // held the chat again and filed the other's next line as its material —
+  // the REG-2 predicate the dispatcher's own steps ask. Dynamic: the sweep
+  // imports this file.
+  if (!holdingIntake(chatId)) {
+    const { otherCollectorLive } = await import('./calc-intake-sweep');
+    const busy = otherCollectorLive(chatId);
+    if (busy) {
+      await answerPress(ctx, busy);
+      await ctx.reply(busy);
+      return;
+    }
   }
   await answerPress(ctx);
   const tc = await tableContext(state);

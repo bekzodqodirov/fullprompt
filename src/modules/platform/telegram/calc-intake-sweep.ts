@@ -130,8 +130,9 @@ export interface SweepFacts {
  *    press is landing it right now;
  *  - 24 hours since the seller's last action end it (said, unless it is
  *    empty) — not in the boot's grace, when the backlog may still revive it;
- *  - a dead reading's token is released; a stored reply nobody delivered is
- *    sent; a dead save is released;
+ *  - a dead reading's token is released (a pre-boot one not in the grace,
+ *    when its redelivered press may still take it over); a stored reply
+ *    nobody delivered is sent; a dead save is released;
  *  - two hours idle reminds it once per idle stretch — not an empty one, not
  *    one frozen by a save, not one being read.
  */
@@ -143,7 +144,16 @@ export function sweepAction(state: IntakeState, now: number, facts: SweepFacts):
     if (facts.sinceBootMs < BOOT_GRACE_MS) return 'none';
     return intakeIsEmpty(state) ? 'end_silent' : 'end_said';
   }
-  if (state.analysing !== null && !facts.readingAlive) return 'release_reading';
+  if (state.analysing !== null && !facts.readingAlive) {
+    // A job-less token minted before this boot — a «Bo‘ldi» the old process
+    // was still answering (dur-3): the backlog carries that press, which
+    // takes the token over. Released only past the grace (fix review
+    // fdur-7): a tick first said «Tahlil qilib bo‘lmadi» just before the
+    // redelivered press said «AI o‘qiyapti».
+    const bootMs = now - facts.sinceBootMs;
+    if (facts.sinceBootMs < BOOT_GRACE_MS && state.analysingJob === null && (state.analysingAt ?? 0) < bootMs) return 'none';
+    return 'release_reading';
+  }
   if (
     state.pendingReply !== null &&
     now - state.pendingReply.at >= PENDING_REPLY_STALE_MS &&
@@ -500,43 +510,46 @@ export function otherCollectorLive(chatId: bigint): string | null {
  * A press is the seller's action, so it un-parks the collection (a touch).
  * Not while a task draft, a zametka capture or a one-text wait is live
  * (`otherCollectorLive`): those work while the collection is parked, and the
- * person finishes one thing first.
+ * person finishes one thing first. True = resumed; false = refused or nothing
+ * to resume, said — a caller that would write into it does not (fix review
+ * FR-1).
  */
-export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<void> {
+export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<boolean> {
   const state = activeIntake(chatId);
   if (!state) {
     await ctx.reply(NO_COLLECTION);
-    return;
+    return false;
   }
   // A reading is running (the restart question can be reached during the
   // «AI o‘qiyapti» minutes): the live stage's honest prompt is the reading's
   // own — a stale summary's «✅ Tasdiqlash» would only answer this same line.
   if (state.analysing) {
     await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
-    return;
+    return false;
   }
   const busy = otherCollectorLive(chatId);
   if (busy) {
     await ctx.reply(busy);
-    return;
+    return false;
   }
   // The touch: the seller pressed, so the collection holds the chat again.
   updateIntake(chatId, {});
   if (state.stage === 'section') {
     await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
-    return;
+    return true;
   }
   if (state.stage === 'client') {
     await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
-    return;
+    return true;
   }
   if (state.stage === 'material') {
     // The press ctx carries the api in production (grammy's own); a prompt
     // that cannot be edited is sent fresh, which is all a test's fake does.
     await showIntakePrompt(ctx as CalcPressCtx & { api: EditApi }, chatId, state);
-    return;
+    return true;
   }
   await deliverNextStep(ctx, chatId, state);
+  return true;
 }
 
 /**

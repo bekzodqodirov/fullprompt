@@ -725,6 +725,14 @@ export interface TableInput {
   /** Notes + AI words + certificate, already rendered — fixed, never cut. */
   tail: string;
   /**
+   * Totals the collection's lines left behind (calc-dialog `staleTotalsOf`):
+   * an add collection's (`amendTotalsStale`, also on `amend`) and a SEEDED
+   * one's brutto under a line added beyond the returned rows (review COMP-4).
+   * Out of `amend` because a seeded collection has none (fix review FR-4: the
+   * stale brutto was computed and never drawn).
+   */
+  totalsStale?: readonly ('weightKg' | 'volumeM3')[];
+  /**
    * The words of a row's name the ANSWER PARSER reads as naming that row alone
    * among `rows` — line-address.ts `nameWordFor`, handed in by the caller
    * because line-address cannot be imported here (it imports intake-manual,
@@ -769,19 +777,23 @@ function totalsMissing(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): C
 /** A conflict is open while the seller has not answered it. */
 const openConflicts = (amend: TableAmend | null) => (amend?.conflicts ?? []).filter((c) => c.choice === null);
 
+/** The stale totals, wherever the caller put them (`TableInput.totalsStale`, `TableAmend.totalsStale`). */
+const staleTotalsIn = (input: Pick<TableInput, 'amend' | 'totalsStale'>) =>
+  new Set([...(input.totalsStale ?? []), ...(input.amend?.totalsStale ?? [])]);
+
 /**
  * Every ⚠️ target of the table, in its order: the lines (a need, or an
  * unanswered conflict), the totals, the route. What an unaddressed answer may
  * mean (`TableRef.open`), and what the echo's «Yana {k} ta» counts.
  */
-export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend'>): TableTarget[] {
+export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend' | 'totalsStale'>): TableTarget[] {
   const conflicted = new Set(openConflicts(input.amend).map((c) => c.itemId));
   const goods = input.facts.goods ?? [];
   const lines: TableTarget[] = tableRowsOf(input)
     .filter((r) => r.needs.length > 0 || conflicted.has(goods[r.index]?.itemId ?? ''))
     .map((r) => ({ line: r.no }));
   const missing = totalsMissing(input);
-  const stale = new Set(input.amend?.totalsStale ?? []);
+  const stale = staleTotalsIn(input);
   const totals: TableTarget[] = (['weightKg', 'volumeM3'] as const)
     .filter((f) => missing.includes(f) || stale.has(f))
     .map((f) => ({ totals: f }));
@@ -801,6 +813,9 @@ export function numberRanges(nos: readonly number[]): string {
   }
   return out.join(', ');
 }
+
+/** How many ⚠️ rows `answerHow` asks for a name of its own — the example needs one, not the best. */
+export const NAME_ROWS_TRIED = 3;
 
 /** A figure for the table's examples, per unit — «2: 40 juft», «Shapka 30 dona» (§2.1 literally). */
 const EXAMPLE_VALUE: Record<NeedUnit, number> = {
@@ -888,7 +903,13 @@ export function intakeTableText(input: TableInput): string {
 
   const missing = totalsMissing(input);
   const doubted = new Set(input.ambiguous.map((a) => a.field));
-  const stale = new Set(input.amend?.totalsStale ?? []);
+  const stale = staleTotalsIn(input);
+  // «yangi tovar qo‘shildi» only when a line WAS added (fix review W-2): a
+  // stored row's corrected weight that was copied from the brutto (lmp-2), or
+  // a stored row's corrected m³ under a typed total, leaves the total stale
+  // with nothing added — and the table said a new item came. A seeded
+  // collection's total is stale only by an added line.
+  const staleWhy = !input.amend || rows.some((r) => r.seq === null) ? 'yangi tovar qo‘shildi, yangilansinmi?' : 'yangilansinmi?';
   const totalsRows: string[] = [];
   const field = (f: 'weightKg' | 'volumeM3', ok: string, staleWords: string) => {
     if (doubted.has(f)) return `⚠️ ${FIELD_LABEL[f]} — ikki xil yozilgan (pastda)`;
@@ -900,12 +921,12 @@ export function intakeTableText(input: TableInput): string {
     field(
       'weightKg',
       `✅ ${weightLabel(input.section, input.facts)}: ${fmt(Number(input.facts.weightKg))} kg`,
-      '⚠️ umumiy brutto og‘irligi (kg) — yangi tovar qo‘shildi, yangilansinmi? «jami … kg»',
+      `⚠️ umumiy brutto og‘irligi (kg) — ${staleWhy} «jami … kg»`,
     ),
     field(
       'volumeM3',
       `✅ Hajm: ${volumeText(input.facts)}`,
-      '⚠️ umumiy hajmi (kub) — yangi tovar qo‘shildi, yangilansinmi? «jami … kub»',
+      `⚠️ umumiy hajmi (kub) — ${staleWhy} «jami … kub»`,
     ),
   );
   if (input.section !== 'rastamojka') {
@@ -1005,15 +1026,16 @@ export function intakeTableText(input: TableInput): string {
   // rows for the lines after the cut (review PF-5): hung under the LAST row of
   // its group, it was the first thing the cut took, and a 60-row clothing
   // table said what every row lacked nowhere.
+  // The ✅ rows' one line stays out of the cut too (fix review W-12): one
+  // entry of the cut list standing for all of them, it went first, and the
+  // count line called it one row — «… va yana 10 ta qator» with 19 hidden.
+  // Now the count is the ⚠️ rows the cut took, and nothing else is hidden.
   const reasons = [...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`);
   const bare = (e: TableEntry) => (e.warn && e.need && grouped.has(e.need) ? entryText(e, false) : entryText(e, true));
-  const cutRows = [
-    ...entries.filter((e) => e.warn).map(bare),
-    ...(okCount > 0
-      ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`]
-      : []),
-  ];
-  return fitTelegram(head, cutRows, [...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
+  const cutRows = entries.filter((e) => e.warn).map(bare);
+  const okLine =
+    okCount > 0 ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`] : [];
+  return fitTelegram(head, cutRows, [...okLine, ...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
 }
 
 /**
@@ -1043,7 +1065,7 @@ function answerHow(
         asked
           .slice(0, LINES_NAMED)
           .map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`)
-          .join(', ') + (asked.length > LINES_NAMED ? `, va yana ${asked.length - LINES_NAMED} ta` : '');
+          .join(', ') + (asked.length > LINES_NAMED ? ` va yana ${asked.length - LINES_NAMED} ta` : '');
       return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
     }
     // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
@@ -1066,10 +1088,18 @@ function answerHow(
   // next ⚠️ row's when it has one, so the two examples show two rows; else
   // another's; none (two rows of one name) → the numbered example only. It
   // starts with a letter: «100% paxta futbolka» gave «100 30 dona», which
-  // reads as row 100 (review adv-20).
-  const named = [...needing.slice(1), ...needing.slice(0, 1)]
-    .map((r) => ({ row: r, word: input.nameWord(rows, r) }))
-    .find((c) => c.word !== null);
+  // reads as row 100 (review adv-20). At most NAME_ROWS_TRIED rows are asked,
+  // and the first that answers ends the search (fix review FR-3): every ⚠️
+  // row asked, each over every row, was 8 s of the one process on a 500-row
+  // table where no row has a name of its own.
+  let named: { row: TableRow; word: string } | null = null;
+  for (const r of [...needing.slice(1, NAME_ROWS_TRIED), ...needing.slice(0, 1)]) {
+    const word = input.nameWord(rows, r);
+    if (word !== null) {
+      named = { row: r, word };
+      break;
+    }
+  }
   const examples = [
     ...(numbered ? [numbered] : []),
     ...(named ? [`${named.word} ${exampleFigure(named.row.needs[0]!)}`] : []),

@@ -431,6 +431,14 @@ describe('the change lines (§2.4) — one home for the seller, the thread and t
     ]);
   });
 
+  it('a total left stale with NO line added does not say a new item came (fix review W-2)', () => {
+    const corrected = { ...change(), adds: [] };
+    const lines = amendChangeText(corrected, 0);
+    expect(lines).toContain('· ⚠️ umumiy brutto yangilanmagan');
+    expect(lines.join('\n')).not.toContain('yangi tovar qo‘shildi');
+    expect(amendChangeText(change(), 0)).toContain('· ⚠️ umumiy brutto yangilanmagan — yangi tovar qo‘shildi');
+  });
+
   it('as SAVED — a measure the law dropped is «yozilmadi», never «yozildi» (regression-16)', () => {
     const lines = amendChangeText(change(), 0, { measuresDropped: [2], measuresCleared: [], basisConflict: [] });
     expect(lines[0]).toBe('· 2-qator «Krossovka»: 40 juft — yozilmadi (kod juft so‘ramaydi)');

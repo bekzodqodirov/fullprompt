@@ -365,11 +365,14 @@ export function activeIntake(chatId: bigint, atMs?: number): IntakeState | null 
  * its card's label in `clientHintRaw` (`doorHint`), which is no reason to
  * remind him at 2 h and say «⌛ … o‘chirildi» at 24 h about a press he made
  * and left. His row answers, conflict choices and totals answers are content
- * — the ones a button writes reach no `answers` line.
+ * — the ones a button writes reach no `answers` line. So is a certificate
+ * answer that differs from the one the collection opened with (a seeded
+ * collection's «📄 Sertifikat», fix review FR-10): it changes the duty.
  */
 export function intakeIsEmpty(state: IntakeState): boolean {
   const hint = state.clientHintRaw.trim();
   return (
+    (state.certificateAtOpen == null || state.hasCertificate === state.certificateAtOpen) &&
     state.material.length === 0 &&
     state.fileCount === 0 &&
     state.answers.length === 0 &&
@@ -379,6 +382,18 @@ export function intakeIsEmpty(state: IntakeState): boolean {
     state.totalsAnswer.volumeM3 === null &&
     (hint === '' || hint === (state.doorHint ?? '').trim())
   );
+}
+
+/**
+ * Nothing new was collected on a collection that carries rows of its own — an
+ * add collection's stored rows, a seeded one's returned rows (review PF-8):
+ * its table is what there is to read. One home for «Bo‘ldi» (back to the
+ * table, calc-read `pressAnalyse`), the save guard and the echo (fix review
+ * W-11: after «➕ Yana ma’lumot» and nothing sent, the save said «Yangi
+ * ma’lumot hali o‘qilmagan» about nothing).
+ */
+export function nothingNewToRead(state: Pick<IntakeState, 'amend' | 'seed' | 'material' | 'fileCount'>): boolean {
+  return (state.amend !== null || state.seed !== null) && state.material.length === 0 && state.fileCount === 0;
 }
 
 /**
@@ -620,6 +635,12 @@ export interface IntakeMessage {
  * Pure; the ONE verdict the text, file and voice doors share (§6.2.8):
  *  1. at or below `takenUpTo` → 'seen': applied before a crash, or by the old
  *     process before its flush — dropped in silence;
+ *  1b. the message that OPENED it (`openedBy`) → 'take' (fix review fdur-2):
+ *     a crash between the open and its effect redelivers it as backlog, dated
+ *     in the second before `openedAt` whenever the open crossed a second —
+ *     rule 2 called it written before the collection and the file was lost
+ *     under the «kept» sentence. A press-opened collection's `openedBy` is a
+ *     bot message, which no incoming message carries;
  *  2. a backlog message written before the collection opened → 'pass': it
  *     cannot have been written for it (a collection a late press opened takes
  *     no backlog, I20b);
@@ -630,6 +651,7 @@ export interface IntakeMessage {
  */
 export function intakeTakes(state: IntakeState, msg: IntakeMessage): 'take' | 'seen' | 'pass' {
   if (msg.messageId <= state.takenUpTo) return 'seen';
+  if (state.openedBy !== null && msg.messageId === state.openedBy) return 'take';
   if (isBacklog(msg.date) && msg.date < Math.floor(state.openedAt / 1000)) return 'pass';
   if (msg.replyTo !== null && state.ownMessageIds.includes(msg.replyTo)) return 'take';
   if (!intakeHolds(state, msg.date * 1000)) return 'pass';

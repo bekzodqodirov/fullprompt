@@ -288,12 +288,14 @@ export async function threadReplyFromBot(
     if (verdict.kind === 'calc_add') {
       // platform → platform, but calc-amend imports this door back: dynamic.
       const { openAmendFromReply } = await import('./calc-amend');
-      await openAmendFromReply(chatId, verdict.requestId, {
+      const landed = await openAmendFromReply(chatId, verdict.requestId, {
         text: input.text,
         date: input.messageDate,
         messageId: input.incomingMessageId,
       });
-      if (pending?.kind === 'reply') dropTaskPending(chatId);
+      // A «💬» wait the door refused beside stays: its words said «avval …
+      // javobni yozing» (fix review FR-1).
+      if (landed && pending?.kind === 'reply') dropTaskPending(chatId);
       return { text: null };
     }
 

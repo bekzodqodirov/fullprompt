@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   intakeTableText,
+  NAME_ROWS_TRIED,
   tableOpenOf,
   tableRowsOf,
   type CalcFacts,
@@ -379,7 +380,8 @@ describe('over Telegram’s 4096 (§2.1, product-fit-10)', () => {
       },
     });
     expect(text.length).toBeLessThanOrEqual(MAX);
-    expect(text).toMatch(/✍️ So‘ralgan: 1-qator soni \(dona\), .*, va yana 242 ta\. Yozing: «1: 30 dona»\./u);
+    // « va yana N ta», no comma before «va» — §2.2's and the echo's own (fix review W-8).
+    expect(text).toMatch(/✍️ So‘ralgan: 1-qator soni \(dona\), .*8-qator soni \(dona\) va yana 242 ta\. Yozing: «1: 30 dona»\./u);
     expect(text).not.toContain('(qisqartirildi)');
   });
 
@@ -391,5 +393,151 @@ describe('over Telegram’s 4096 (§2.1, product-fit-10)', () => {
     expect(text).toContain('   ↳ 1–60: soni (dona) — boj kamida $2/dona');
     expect(text.match(/↳/gu)).toHaveLength(1);
     expect(text).not.toContain('va yana');
+  });
+});
+
+describe('the fix review of the review’s fixes (docs/SAKKIZ-R3.md §20.2)', () => {
+  const MAX = 4096;
+  /** The name example the ✍️ line teaches (the one that is no number and no total), or null. */
+  const nameExample = (text: string): string | null => {
+    const line = text.split('\n').find((l) => l.startsWith('✍️ Bir xabarda')) ?? '';
+    return [...line.matchAll(/«([^»]+)»/gu)].map((m) => m[1]!).find((e) => !/^\d/u.test(e) && !e.startsWith('jami')) ?? null;
+  };
+  const refOf = (input: TableInput) => {
+    const open = tableOpenOf(input);
+    return { rows: tableRowsOf(input), open, preferred: open, stage: 'review' as const };
+  };
+  const input = (names: string[], over: Partial<TableInput> = {}): TableInput => ({
+    section: 'rastamojka',
+    laws: noLaws,
+    clientLabel: null,
+    fileCount: 0,
+    ambiguous: [],
+    amend: null,
+    tail: '',
+    nameWord: nameWordFor,
+    facts: { weightKg: 500, volumeM3: 2, goods: names.map((name) => ({ name })) },
+    ...over,
+  });
+
+  it('a 500-row table asks for a name at most NAME_ROWS_TRIED times (FR-3: every ⚠️ row, each over every row, was seconds)', () => {
+    let calls = 0;
+    const counting: TableInput['nameWord'] = (rows, row) => {
+      calls += 1;
+      return nameWordFor(rows, row);
+    };
+    // The worst shape: no row has a name of its own within three words.
+    const names = Array.from({ length: 500 }, (_, i) => `Futbolka erkaklar paxta ${['qora', 'oq'][i % 2]} ${i + 1}`);
+    const text = intakeTableText(input(names, { nameWord: counting }));
+    expect(calls).toBeLessThanOrEqual(NAME_ROWS_TRIED);
+    expect(text.length).toBeLessThanOrEqual(MAX);
+  });
+
+  it('the first row that answers ends the search — the next ⚠️ row’s name, as before', () => {
+    let calls = 0;
+    const counting: TableInput['nameWord'] = (rows, row) => {
+      calls += 1;
+      return nameWordFor(rows, row);
+    };
+    const text = intakeTableText(input(['Kurtka', 'Shapka', 'Sumka', 'Shim'], { nameWord: counting }));
+    expect(calls).toBe(1);
+    expect(nameExample(text)).toBe('Shapka 30 dona');
+  });
+
+  for (const [label, names, law] of [
+    ['a totals word first («Jami …») is no example (FR-6)', ['Sumka', 'Jami to‘plam'], null],
+    ['«Brutto …» neither', ['Stol', 'Brutto plyonka'], null],
+    ['«TOTAL drel 150 kg» was read as the brutto (FR-6)', ['Sumka', 'TOTAL drel'], 'kg'],
+    ['a carton word first («Qop …», «Quti …») is no example (FR-6)', ['Sumka', 'Qop polipropilen', 'Quti karton'], null],
+    ['a model number stays in the name it teaches (W-9)', ['iPhone 15', 'iPhone 15 Pro'], null],
+    ['«Xiaomi 14 Ultra», «Shina 205 55 R16»', ['Xiaomi 14 Ultra', 'Shina 205 55 R16'], null],
+    ['«Monitor 24 dyuym» beside «Monitor 27 dyuym»', ['Monitor 24 dyuym', 'Monitor 27 dyuym'], null],
+  ] as const) {
+    it(`the taught name example parses back to ITS row: ${label}`, () => {
+      const laws = law === 'kg' ? new Map([['8467210000', needLawOf({ dutyMode: 'specific', dutyUnit: 'kg', dutySpecific: 1, dutyFree: false })]]) : noLaws;
+      const goods = names.map((name, i) => ({ name, ...(law === 'kg' && i === 1 ? { tnvedCode: '8467210000' } : {}) }));
+      const tableInput = input([...names], { laws, facts: { weightKg: 3500, volumeM3: 2, goods } });
+      const text = intakeTableText(tableInput);
+      const example = nameExample(text);
+      if (example === null) return;
+      const parsed = parseTableAnswer(example, refOf(tableInput));
+      expect(parsed.segments, example).toHaveLength(1);
+      const [segment] = parsed.segments;
+      expect(segment!.refused, example).toBeNull();
+      // The row whose taught words the example carries — the one it was built for.
+      const rows = tableRowsOf(tableInput);
+      const row = rows.find((r) => {
+        const word = nameWordFor(rows, r);
+        return word !== null && example.startsWith(`${word} `);
+      });
+      expect(segment!.at, example).toEqual({ line: row!.no });
+      expect(segment!.totals, example).toBeNull();
+    });
+  }
+
+  it('«iPhone 15 Pro», never «iPhone Pro» — the row’s own name (W-9)', () => {
+    expect(nameWordFor(tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro'])), tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro']))[1]!)).toBe(
+      'iPhone 15 Pro',
+    );
+    const rows = tableRowsOf(input(['Sumka', 'Jami to‘plam', 'TOTAL drel', 'Qop polipropilen']));
+    expect(rows.slice(1).map((r) => nameWordFor(rows, r))).toEqual([null, null, null]);
+  });
+
+  it('a cut table counts the ⚠️ rows the cut took, and the ✅ rows stay in their one line (W-12)', () => {
+    const long = (n: number) => `Kiyim ${n} ${'x'.repeat(220)}`;
+    const goods = [
+      ...Array.from({ length: 30 }, (_, i) => ({ name: long(i + 1), weightKg: 10, tnvedCode: '6110200000' })),
+      ...Array.from({ length: 30 }, (_, i) => ({ name: long(i + 31), weightKg: 10, tnvedCode: '6403990000' })),
+      ...Array.from({ length: 10 }, (_, i) => ({ name: long(i + 61), quantity: 5, weightKg: 10 })),
+    ];
+    const text = table({
+      laws: new Map([
+        ['6110200000', FUTBOLKA],
+        ['6403990000', KROSSOVKA],
+      ]),
+      facts: { weightKg: 3500, volumeM3: 12, goods },
+    });
+    expect(text.length).toBeLessThanOrEqual(MAX);
+    const shownWarn = [...text.matchAll(/^⚠️ (\d+)\. /gmu)].length;
+    const cut = /… va yana (\d+) ta qator/u.exec(text);
+    expect(cut, 'the table was cut').not.toBeNull();
+    expect(Number(cut![1])).toBe(60 - shownWarn);
+    expect(text).toContain('✅ yana 10 ta qator to‘liq: 61–70');
+  });
+
+  it('a SEEDED table asks its stale brutto (FR-4): «yangilansinmi?», never «✅ … Ma’lumot to‘liq»', () => {
+    const tableInput = input(['Sumka', 'Krossovka', 'Shim'], {
+      section: 'podklyuch',
+      facts: {
+        weightKg: 500,
+        volumeM3: 2,
+        fromCity: 'Yiwu',
+        toCity: 'Toshkent',
+        goods: [
+          { name: 'Sumka', quantity: 10, weightKg: 5 },
+          { name: 'Krossovka', quantity: 20, weightKg: 5 },
+          { name: 'Shim', quantity: 5, weightKg: 5 },
+        ],
+      },
+      totalsStale: ['weightKg'],
+    });
+    const text = intakeTableText(tableInput);
+    expect(text).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangi tovar qo‘shildi, yangilansinmi? «jami … kg»');
+    expect(text).not.toContain('Ma’lumot to‘liq');
+    expect(tableOpenOf(tableInput)).toContainEqual({ totals: 'weightKg' });
+  });
+
+  it('an add table whose brutto is stale with NO line added does not say a new item came (W-2)', () => {
+    const amend: TableAmend = { cardLabel: 'B-00123', storedCount: 1, totalsStale: ['weightKg'], conflicts: [], askedSeqs: null };
+    const stored = { name: 'Palto', quantity: 30, weightKg: 800, seq: 1, itemId: 'i1' };
+    const corrected = table({ section: 'podklyuch', facts: { weightKg: 500, volumeM3: 2, fromCity: 'Yiwu', toCity: 'Toshkent', goods: [stored] }, amend });
+    expect(corrected).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangilansinmi? «jami … kg»');
+    expect(corrected).not.toContain('yangi tovar qo‘shildi');
+    const added = table({
+      section: 'podklyuch',
+      facts: { weightKg: 500, volumeM3: 2, fromCity: 'Yiwu', toCity: 'Toshkent', goods: [stored, { name: 'Shim', quantity: 5, weightKg: 5 }] },
+      amend,
+    });
+    expect(added).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangi tovar qo‘shildi, yangilansinmi? «jami … kg»');
   });
 });

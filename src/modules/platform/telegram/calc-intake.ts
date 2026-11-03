@@ -115,6 +115,13 @@ export interface IntakeState {
    * said goodbye to. Optional — a row written before this field reads as none.
    */
   doorHint?: string | null;
+  /**
+   * The certificate answer the collection opened with — a seeded one's,
+   * carried from the returned request (fix review FR-10): a press that
+   * changes it is the seller's content (`intakeIsEmpty`). Optional — a row
+   * written before this field reads as none.
+   */
+  certificateAtOpen?: boolean | null;
   /** Seqs the law asks a count for (P5's `lawAsksOf`), when an add collection opens (P4). */
   askedSeqs: number[] | null;
   /**
@@ -137,7 +144,7 @@ export interface IntakeState {
   standingAtOpen: 'open' | 'started' | 'busy' | null;
   /** The message that drew the LIVE `offers` (P3): a pick from any other message is stale. */
   offersMessageId: number | null;
-  /** Messages taken through a `cf:` offer press (P4): older than `takenUpTo` by nature (last 20). */
+  /** Messages taken through a `cf:` offer press (P4), one per album part: older than `takenUpTo` by nature (calc-amend `REPLIED_TAKEN_KEPT`). */
   repliedTaken: number[];
   /** The table, for edit-in-place (P3). */
   tableMessageId: number | null;
@@ -1595,8 +1602,13 @@ function addReading(
   const fresh: GoodsList = [];
   const conflicts: IntakeState['conflicts'] = [];
   const restated: { name: string; figures: { read: number; unit: string }[] }[] = [];
+  // Keyed once, as `pickGoods` keys its invoice (fix review DRILL-1):
+  // `sameGoodsLine` keys BOTH names on every call, so a 500-line Excel over a
+  // 1000-row request was a million keyings — 12 s of the one process.
+  const keptKeyed = kept.map((k) => ({ row: k, names: goodsNameKeys(k.name) }));
   for (const read of picked.goods) {
-    const match = kept.find((k) => sameGoodsLine(k, read));
+    const readNames = goodsNameKeys(read.name);
+    const match = keptKeyed.find((k) => sameLine(k.row, k.names, read, readNames))?.row;
     if (!match) {
       fresh.push(read);
       continue;

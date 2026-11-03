@@ -32,6 +32,21 @@ afterEach(() => {
 
 const sec = (ms: number) => Math.floor(ms / 1000);
 
+describe('the message that OPENED the collection, redelivered (fix review fdur-2)', () => {
+  it('is taken even dated in the second before the opening — the backlog opener is its own', () => {
+    const t0 = Date.now() - 60_000;
+    markBoot(new Date());
+    const state = collection({ openedAt: t0, touchedAt: t0, openedBy: 7_701 });
+    expect(intakeTakes(state, { date: sec(t0) - 1, messageId: 7_701, replyTo: null })).toBe('take');
+    // Any other backlog message from before it opened still passes, and the
+    // opener once taken is seen.
+    expect(intakeTakes(state, { date: sec(t0) - 1, messageId: 7_700, replyTo: null })).toBe('pass');
+    expect(intakeTakes({ ...state, takenUpTo: 7_701 }, { date: sec(t0) - 1, messageId: 7_701, replyTo: null })).toBe('seen');
+    // A press-opened collection's opener is a bot message: no incoming one matches it.
+    expect(intakeTakes({ ...state, openedBy: null }, { date: sec(t0) - 1, messageId: 7_701, replyTo: null })).toBe('pass');
+  });
+});
+
 describe('a hydrated collection takes the backlog written after it opened (Q5 a)', () => {
   it('opened at T0, booted at T1: a message at T0+5 is taken, one at T0−5 is not', () => {
     const t0 = Date.now() - 20 * 60_000;

@@ -538,30 +538,52 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
   return { raw, at: { line: kept[0]!.no }, refused: null, answer, totals: null, route: null, ...plain };
 }
 
-/** At most this many leading words make an example name — past three it is no example anyone types. */
+/** At most this many leading WORDS make an example name — past three it is no example anyone types. */
 const NAME_WORDS_TAUGHT = 3;
 
 /**
  * The words of `row`'s name a typed answer names it by ALONE among `rows`, by
- * `readSegment`'s own rule (`namesRow`, then `holdsModel`): the shortest
- * leading run of its words — «Kurtka» when it is the only kurtka, «Kurtka
- * qishki ayollar» beside «Kurtka qishki erkaklar» — or null when no run of up
- * to three does. What the table's ✍️ line teaches (intake.ts `answerHow`,
- * review PF-4): its example «Kurtka 30 dona» over two kurtka rows was the
- * parser's own «name_many». A word starts with a letter and has three of them
- * («100% paxta futbolka» gave «100 30 dona», which reads as row 100 — review
- * adv-20).
+ * `readSegment`'s own rule: the shortest leading run of its words — «Kurtka»
+ * when it is the only kurtka, «Kurtka qishki ayollar» beside «Kurtka qishki
+ * erkaklar» — or null when no run of up to three words does. What the
+ * table's ✍️ line teaches (intake.ts `answerHow`, review PF-4): its example
+ * «Kurtka 30 dona» over two kurtka rows was the parser's own «name_many».
+ *
+ * A run starts with a word of three letters («100% paxta futbolka» gave «100
+ * 30 dona», which reads as row 100 — review adv-20) and keeps the model's
+ * numbers between its words: «iPhone Pro» taught for «iPhone 15 Pro» named
+ * goods no row holds (fix review W-9). Each candidate is judged AS the
+ * example reads — with its figure after it, so a number inside the run is
+ * the name's, as `nameParts` reads it — and by every rule `readSegment` asks
+ * before the name: a totals word first («Jami to‘plam 30 dona» is refused
+ * «totals_unit»; «TOTAL drel 150 kg» was read as the brutto) and a carton
+ * word («Qop polipropilen 30 dona» — no_address) are no example (fix review
+ * FR-6). The rows' names are folded once per call (fix review FR-3: a
+ * rowName per row per candidate per ⚠️ row was seconds on a 500-row table).
  */
 export function nameWordFor(rows: readonly TableRow[], row: TableRow): string | null {
-  const words = row.name.match(/(?<![\p{L}\p{N}])\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}/gu) ?? [];
-  for (let k = 1; k <= Math.min(words.length, NAME_WORDS_TAUGHT); k += 1) {
-    const candidate = words.slice(0, k).join(' ');
-    const parts = nameParts(candidate);
-    if (!hasName(parts)) continue;
-    const named = rows.filter((r) => {
-      const name = rowName(r.name);
-      return namesRow(parts, name) && holdsModel(parts, name);
-    });
+  const tokens = row.name.match(/(?<![\p{L}\p{N}])[\p{L}\p{N}][\p{L}\p{N}'’‘ʻ`-]*/gu) ?? [];
+  const isWord = (t: string) => /^\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}$/u.test(t);
+  const candidates: string[] = [];
+  const run: string[] = [];
+  for (const token of tokens) {
+    if (isWord(token)) {
+      run.push(token);
+      candidates.push(run.join(' '));
+      if (candidates.length >= NAME_WORDS_TAUGHT) break;
+    } else if (run.length > 0 && /^\d+$/u.test(token)) run.push(token);
+  }
+  let names: RowName[] | null = null;
+  for (const candidate of candidates) {
+    // The example as `answerHow` builds it: the name, then a figure — any
+    // figure's tokens are units and numbers before units, which the name
+    // rules drop alike.
+    const example = `${candidate} 1 dona`;
+    if (addressOf(example, 'review') !== null || totalsLead(example) !== null) continue;
+    const parts = nameParts(example);
+    if (parts.carton || !hasName(parts)) continue;
+    names ??= rows.map((r) => rowName(r.name));
+    const named = rows.filter((_, i) => namesRow(parts, names![i]!) && holdsModel(parts, names![i]!));
     if (named.length === 1 && named[0]!.no === row.no) return candidate;
   }
   return null;

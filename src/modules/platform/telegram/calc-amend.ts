@@ -300,9 +300,9 @@ type Stored = NonNullable<Awaited<ReturnType<typeof import('../../wms/calc/servi
  * the two modules a cycle — whichever loads first sees the other half-built
  * (a stand-in for this file was bypassed by the sweep that way).
  */
-async function resume(sp: Parameters<typeof import('./calc-intake-sweep').pressResume>[0], chatId: bigint): Promise<void> {
+async function resume(sp: Parameters<typeof import('./calc-intake-sweep').pressResume>[0], chatId: bigint): Promise<boolean> {
   const { pressResume } = await import('./calc-intake-sweep');
-  await pressResume(sp, chatId);
+  return pressResume(sp, chatId);
 }
 
 /**
@@ -375,10 +375,26 @@ async function openDoor(
   // would offer to wipe it.
   const sameRequest = live !== null && (returned ? (live.seededFrom ?? null) === requestId : live.amend?.requestId === requestId);
   if (live && sameRequest) {
-    // This request's own add collection: a resume (P1 un-parks it there).
-    await sp.answer(ADD_REFUSAL.sameLive);
-    await sp.reply(ADD_REFUSAL.sameLive);
-    await resume(sp, chatId);
+    // This request's own add collection: a resume (P1 un-parks it there) —
+    // not beside a one-text wait, the REG-2 predicate `pressResume` asks
+    // (fix review FR-1): its refusal was said and then ignored, so a reply
+    // heard «… davom eting», «Avval … keyin qayta bosing» and «✅ … yozildi»,
+    // the collection held the chat again and filed the text the wait asked
+    // for. Refused BEFORE anything is said or written. (A collection OPENED
+    // beside a wait is regression-2's own: the reply names its answer.)
+    const { otherCollectorLive } = await import('./calc-intake-sweep');
+    const busy = otherCollectorLive(chatId);
+    if (busy) {
+      await refuse(sp, busy);
+      return null;
+    }
+    // A reading running: the resume says «kuting», never «davom eting» first.
+    if (!live.analysing) {
+      await sp.answer(ADD_REFUSAL.sameLive);
+      await sp.reply(ADD_REFUSAL.sameLive);
+    }
+    // Not resumed (the reading's own word said): nothing is taken into it.
+    if (!(await resume(sp, chatId))) return null;
     return { state: activeIntake(chatId) ?? live, opened: false };
   }
   if (live) {
@@ -522,7 +538,7 @@ async function openSeeded(
   const sum = volumeIsLinesSum(stored.base.volumeM3, stored.base.items);
   // The certificate is a customs question (review PF-7): a returned yo‘lkira
   // request carries no certificate line and no «📄 Sertifikat» button.
-  startIntake(chatId, stored.base.section, { ai: sectionParts(stored.base.section).customs, staffId, amend: null, openedBy });
+  const opening = startIntake(chatId, stored.base.section, { ai: sectionParts(stored.base.section).customs, staffId, amend: null, openedBy });
   // Quiet, as the add door's (dur-1): the opening is no answer to anything.
   const state = updateIntake(
     chatId,
@@ -543,6 +559,7 @@ async function openSeeded(
       // The certificate answer the request carried — never the collector's
       // optimistic default, which would leave the additional duty out.
       ...(certificate !== null ? { hasCertificate: certificate } : {}),
+      certificateAtOpen: certificate ?? opening.hasCertificate,
     },
     { quiet: true },
   );
@@ -588,10 +605,14 @@ export async function pressAdd(
     });
     if (out && mode === 'replied') {
       await takeReplied(chatId, sp, out.state, original);
-    } else if (out?.opened && mode === 'restart' && original && !original.from?.is_bot) {
+    } else if (out && mode === 'restart' && original && !original.from?.is_bot) {
       // The «🗑 Ha» of a question asked about a file (PF-3): the file the
       // offer was pressed under is this collection's first material, as the
       // offer's own press would have made it — never dropped without a word.
+      // A redelivered «🗑 Ha» RESUMES the collection it opened (fix review
+      // fdur-3): a stop between the open and the take wrote the open alone,
+      // and the take keyed on `opened` never ran. `repliedTaken` fences a
+      // second take; `out` is null for every other outcome.
       await takeReplied(chatId, sp, out.state, original);
     }
   } catch (err) {
@@ -631,6 +652,9 @@ async function awaitReading(chatId: bigint, sp: Speaker, state: IntakeState): Pr
   const moved = updateIntake(chatId, { stage: 'material' }) ?? { ...state, stage: 'material' as const };
   await showIntakePrompt(sp, chatId, moved);
 }
+
+/** How many taken messages `repliedTaken` keeps — one per album part. */
+export const REPLIED_TAKEN_KEPT = 200;
 
 /**
  * The message a `cf:` offer replies to, as the add collection's material: its
@@ -676,12 +700,19 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
   // Every part already taken — a redelivered press after everything landed:
   // its «Bo‘ldi» prompt again, if the reading is still owed, and nothing else.
   if (parts.every((p) => state.repliedTaken.includes(p.messageId))) {
+    // The album's memory died with the process that took its first parts
+    // (fix review fdur-4): `parts` is the original alone, and whether the
+    // rest were taken is not known — said, as the take below says it.
+    if (group && !album) noteOwnMessage(chatId, (await sp.reply('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.')).message_id);
     if (state.stage === 'material') await showIntakePrompt(sp, chatId, state);
     return;
   }
   const staffId = state.staffId;
   const text = (original.text ?? original.caption ?? '').trim();
-  const mark = (taken: number[], id: number) => [...taken, id].slice(-20);
+  // One id per PART since dur-2 (fix review fdur-8): twenty was two albums,
+  // and the oldest album's evicted marks let a re-tap of its offer take
+  // every part again. A collection holds far fewer than this.
+  const mark = (taken: number[], id: number) => [...taken, id].slice(-REPLIED_TAKEN_KEPT);
   let live = state;
   let files = 0;
   // Each part is fenced in the SAME patch that adds its file (review dur-2):
@@ -731,33 +762,35 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
  * message, and the text through the collector's own answer path — never a
  * second one. Everything is said by chat id, so the reply door answers
  * HANDLED with no text (regression-2: «2: 40 juft» must reach neither Door B,
- * nor an armed «Bajarildi», nor the paid assistant).
+ * nor an armed «Bajarildi», nor the paid assistant). False = the door
+ * refused (said) or failed, and nothing was opened for it — the reply door
+ * keeps a «💬» wait the refusal's own words name (fix review FR-1).
  */
 export async function openAmendFromReply(
   chatId: bigint,
   requestId: string,
   msg: { text: string | null; date: number; messageId: number },
-): Promise<void> {
+): Promise<boolean> {
   const sp = messageSpeaker(chatId);
   const before = activeIntake(chatId)?.noteId ?? null;
   try {
     // The opening takes nothing (dur-1): only the answer's own write below
     // takes this message.
     const out = await notTaking(() => openDoor(chatId, requestId, sp, { openedBy: msg.messageId, restart: false, restartKey: null }));
-    if (!out) return;
+    if (!out) return false;
     // A RETURNED request opened a NEW collection (⭐ of Question 6): its rows
     // are numbered afresh, or it waits for the customer — an answer addressed
     // by the old request's row numbers is not applied to it.
     if (!out.state.amend) {
       noteOwnMessage(chatId, (await sp.reply(ADD_REFUSAL.seededReply)).message_id);
-      return;
+      return true;
     }
     // No `takenUpTo` here (dur-1): the answer's own write takes this message
     // in the same patch (the collector scope), so a write lost in a crash is
     // redone on the redelivery and one that landed is never applied twice.
     const state = out.state;
     const text = msg.text?.trim();
-    if (!text) return;
+    if (!text) return true;
     await routeCollectorText(sp, chatId, state, text, {
       date: msg.date,
       messageId: msg.messageId,
@@ -766,10 +799,12 @@ export async function openAmendFromReply(
       // reply to somebody else's (regression-5's rule reads null as that).
       replyTo: null,
     });
+    return true;
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] reply to the AI answer failed');
     abandonOpened(chatId, before, msg.messageId);
     await sp.reply(isServerBehind(err) ? AMEND_REFUSAL.server_behind : ADD_REFUSAL.messageFailed).catch(() => {});
+    return false;
   }
 }
 
@@ -794,9 +829,16 @@ export async function openAmendFromMedia(
     );
     if (!out) return;
     // The file's own non-quiet patch takes this message (dur-1), never a mark
-    // before the file is saved.
+    // before the file is saved — and it carries the WHOLE effect (fix review
+    // FR-5): the caption and the move to 'material' rode in later patches,
+    // after the «AI o‘qiydi» send, so a stop in that send left the message
+    // taken with the caption lost and the file unread under the stored
+    // table's «✅ Qo‘shish», which the save guard lets through. As
+    // `takeReplied` and the collector's own file door do.
     let live = out.state;
-    let took = false;
+    const caption = message.caption?.trim();
+    const unread: Partial<IntakeState> = live.stage === 'client' || live.stage === 'section' ? {} : { stage: 'material' };
+    const withCaption = caption ? { material: [...live.material, caption] } : {};
     const file = fileOf(message);
     if (file) {
       const saved = await saveIntakeFile({ message }, live.noteId, live.staffId, file).catch((err: unknown) => {
@@ -808,16 +850,12 @@ export async function openAmendFromMedia(
         return;
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);
-      live = updateIntake(chatId, { ...read.patch, fileCount: live.fileCount + 1 }) ?? live;
-      took = true;
+      live = updateIntake(chatId, { ...read.patch, ...unread, fileCount: live.fileCount + 1, ...withCaption }) ?? live;
       if (read.say) await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+    } else if (caption) {
+      live = updateIntake(chatId, { ...unread, ...withCaption }) ?? live;
     }
-    const caption = message.caption?.trim();
-    if (caption) {
-      live = updateIntake(chatId, { material: [...live.material, caption] }) ?? live;
-      took = true;
-    }
-    if (took) await awaitReading(chatId, sp, live);
+    if (file || caption) await awaitReading(chatId, sp, live);
   } catch (err) {
     // The photo must not vanish without a word (refuseMediaReply has answered
     // the handler already).

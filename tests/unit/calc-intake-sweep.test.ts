@@ -459,6 +459,18 @@ describe('sweepAction, the order of its answers (pure)', () => {
     expect(sweepAction(base(), now, facts({ landing: 'note_only', pressLandingMs: 10_000 }))).toBe('remind');
     expect(sweepAction(base(), now, facts({ landing: 'note_only', pressLandingMs: 60_000 }))).toBe('resume_landing');
   });
+  it('a job-less reading token minted before THIS boot waits out the grace — its redelivered «Bo‘ldi» takes it over (fix review fdur-7)', () => {
+    const boot = now - 30_000;
+    const sinceBootMs = now - boot;
+    const dead = { readingAlive: false, sinceBootMs };
+    const preBoot = base({ analysing: 'tok', analysingJob: null, analysingAt: boot - 5_000 });
+    expect(sweepAction(preBoot, now, facts(dead))).toBe('none');
+    // Past the grace nobody is coming for it.
+    expect(sweepAction(preBoot, now, facts({ readingAlive: false, sinceBootMs: BOOT_GRACE_MS + 1 }))).toBe('release_reading');
+    // One minted in this boot, or one that carries a job, is released as before.
+    expect(sweepAction(base({ analysing: 'tok', analysingJob: null, analysingAt: boot + 5_000 }), now, facts(dead))).toBe('release_reading');
+    expect(sweepAction(base({ analysing: 'tok', analysingJob: 'job-1', analysingAt: boot - 5_000 }), now, facts(dead))).toBe('release_reading');
+  });
 });
 
 describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', () => {

@@ -635,12 +635,12 @@ export function amendChangeText(
     const stored = c.stored === null ? 'so‘rovda yo‘q' : `so‘rovda ${Number(c.stored.toFixed(4))}`;
     lines.push(`· ${c.seq}-qator «${clip(c.name)}»: faylda ${figureText(c.read, c.unit)} (${stored}) — sotuvchi tanlamadi, VED hal qiladi`);
   }
+  // «yangi tovar qo‘shildi» only when a line was (fix review W-2): a stored
+  // row's weight copied from the brutto and corrected (lmp-2), or a stored
+  // row's m³ under a typed total, leaves the total behind with nothing added.
+  const why = change.adds.length > 0 ? ' — yangi tovar qo‘shildi' : '';
   for (const field of change.totalsStale) {
-    lines.push(
-      field === 'weightKg'
-        ? '· ⚠️ umumiy brutto yangilanmagan — yangi tovar qo‘shildi'
-        : '· ⚠️ umumiy hajm yangilanmagan — yangi tovar qo‘shildi',
-    );
+    lines.push(field === 'weightKg' ? `· ⚠️ umumiy brutto yangilanmagan${why}` : `· ⚠️ umumiy hajm yangilanmagan${why}`);
   }
   if (fileCount > 0) lines.push(`· 📎 ${fileCount} ta fayl kartadagi lentada`);
 
@@ -1269,6 +1269,9 @@ export async function redoAmendment(row: CalcAmendmentRow, staffId: string): Pro
 /** How long a stored «waiting» addition is handed back before it is only logged. */
 export const WAITING_REQUEUE_HOURS = 24;
 
+/** The rows past `WAITING_REQUEUE_HOURS` this process has named in the log already. */
+const namedStale = new Set<string>();
+
 /**
  * Every stored «waiting» addition (of one request, or all) whose machine pass
  * is gone — and every addition decided but never told (dur-4) — handed back
@@ -1290,6 +1293,7 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
       noteId: calcAmendments.noteId,
       staffId: calcAmendments.staffId,
       chatId: calcAmendments.chatId,
+      outcome: calcAmendments.outcome,
       fresh: sql<boolean>`${calcAmendments.createdAt} > now() - make_interval(hours => ${WAITING_REQUEUE_HOURS}::int)`,
     })
     .from(calcAmendments)
@@ -1301,23 +1305,44 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
         // «AI tugatgach so‘rovga avtomatik yoziladi» was never followed by a
         // word. Handed back, the job answers `duplicate`, says the words once
         // and stamps them. Five minutes old at least: a fresh save's own job
-        // is still telling it.
+        // is still telling it. And only while no collection holds its note
+        // (fix review fdur-5, fdur-6): a FRESH save whose words failed keeps
+        // its collection frozen, and the sweep's dead-save settle tells it —
+        // the fresh words with their lines, then the collection ended. Handed
+        // back too, it was told twice (no claim between the two tellers), or
+        // told as a WAITED run, «Kutib turgan …» with no lines, and the
+        // collection left frozen. Qualified by the TABLE (#128): a bare column
+        // here binds to the subquery's own note_id.
         or(
           eq(calcAmendments.outcome, 'waiting'),
           and(
             isNull(calcAmendments.outcomeSentAt),
             sql`${calcAmendments.createdAt} < now() - interval '5 minutes'`,
+            sql`NOT EXISTS (SELECT 1 FROM telegram_calc_intakes t WHERE t.note_id = ${calcAmendments}.note_id)`,
           ),
         ),
         isNotNull(calcAmendments.staffId),
         requestId ? eq(calcAmendments.requestId, requestId) : undefined,
       ),
     );
-  const stale = all.filter((r) => !r.fresh);
-  if (stale.length > 0) {
+  // Named ONCE per process (fix review FR-7): past the day nothing hands such
+  // a row back, and every 5-minute tick wrote the same warning for ever. Split
+  // by what is owed: a waiting addition was never written, a decided one was
+  // written and only its words were never delivered.
+  const stale = all.filter((r) => !r.fresh && !namedStale.has(r.id));
+  for (const r of stale) namedStale.add(r.id);
+  const waiting = stale.filter((r) => r.outcome === 'waiting');
+  const untold = stale.filter((r) => r.outcome !== 'waiting');
+  if (waiting.length > 0) {
     logger.warn(
-      { amendmentIds: stale.map((r) => r.id) },
-      '[calc-amend] additions older than a day (waiting, or decided and never told) — not requeued; the VED must enter them',
+      { amendmentIds: waiting.map((r) => r.id) },
+      '[calc-amend] waiting additions older than a day — not requeued; the VED must enter them',
+    );
+  }
+  if (untold.length > 0) {
+    logger.warn(
+      { amendmentIds: untold.map((r) => r.id) },
+      '[calc-amend] additions decided over a day ago whose words never reached the seller — not requeued; written, only the reply is owed',
     );
   }
   const rows = all.filter((r) => r.fresh);

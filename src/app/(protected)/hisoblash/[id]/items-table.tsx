@@ -54,9 +54,11 @@ import {
   refreshWait,
   REFRESH_WAIT_MS,
   rowDirtyForPicker,
+  sawRevFor,
   settleDrafts,
   shouldRefresh,
   syncBase,
+  typedAtNext,
   type BaseField,
   type ClockProbe,
   type FieldChange,
@@ -80,7 +82,7 @@ import {
   type StoredDrafts,
 } from '@/modules/wms/calc/draft-store';
 import { pasteItems } from '@/modules/wms/calc/send-rows';
-import { isBuildStale, reloadFresh } from '@/components/build-check';
+import { isBuildStale, reloadCure, runReload } from '@/components/build-check';
 import {
   confirmAllAction,
   confirmGroupAction,
@@ -798,6 +800,19 @@ export function ItemsTable({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheet, drafts, newRows, workspace]);
 
+  /** The rev the oldest draft still held was TYPED over (fix review FR-9) —
+   * what the grid's save posts as `sawRev`. The screen's own rev moves under
+   * held drafts (the Q&A pulse, the B6 probe refresh onto a seller's
+   * addition) while the desktop cell draws the draft over the new value, so
+   * posting it let lmp-1's addition be overwritten by a VED who never saw
+   * it. Null = nothing held; set when the first draft is typed. The phone
+   * sheet keeps the screen's rev: it shows what changed under it first. */
+  const typedAtRev = useRef<number | null>(null);
+  const holdsDrafts = Object.keys(drafts).length > 0 || newRows.length > 0;
+  useLayoutEffect(() => {
+    typedAtRev.current = typedAtNext(typedAtRev.current, holdsDrafts, workspace.rev);
+  }, [holdsDrafts, workspace.rev]);
+
   /* ---- the current state, for code that resumes after an await ---- */
   const latest = useRef<Latest | null>(null);
   useLayoutEffect(() => {
@@ -1066,9 +1081,12 @@ export function ItemsTable({
     items: TableItemEdit[],
     adds: TableNewItem[],
     posted: { drafts: Map<string, ItemDraft>; ghosts: Map<number, NewRow> },
+    /** The rev the posted drafts were typed over, when older than the screen's (the grid's save, FR-9). */
+    typedAt?: number | null,
   ): Promise<TableFormState> => {
     const now = latest.current;
     const revAtPress = now?.workspaceRev ?? workspace.rev;
+    const sawRev = sawRevFor(revAtPress, typedAt);
     // The other drafted rows' stored values at the press — the re-base may
     // move a base only where nothing foreign already stood under it.
     const atPress: Record<string, RowBase> = {};
@@ -1104,7 +1122,7 @@ export function ItemsTable({
       // The revision this screen was drawn at: a seller's addition written
       // after it refuses the save, the drafts kept (review lmp-1) — never a
       // colleague's save, which stays last-writer-wins (his 2b).
-      const result = await saveTableAction(id, { items, adds, sawRev: revAtPress });
+      const result = await saveTableAction(id, { items, adds, sawRev });
       if (!result.ok) {
         // A REFUSAL wrote nothing (one transaction), so the stamp it minted
         // would vouch for a save that never happened — put back what stood.
@@ -1185,7 +1203,7 @@ export function ItemsTable({
       adds.push(built.add);
       postedGhosts.set(row.key, row);
     }
-    const result = await send(items, adds, { drafts: postedDrafts, ghosts: postedGhosts });
+    const result = await send(items, adds, { drafts: postedDrafts, ghosts: postedGhosts }, typedAtRev.current);
     if (!result.ok) setTableError({ code: result.error, seq: result.seq });
   };
 
@@ -1980,12 +1998,12 @@ export function ItemsTable({
             {t.has(`errors.${tableError.code}`)
               ? t(`errors.${tableError.code}` as 'errors.not_ready')
               : tableError.code}
-            {tableError.code === 'stale_build' ? (
+            {reloadCure(tableError.code) ? (
               <button
                 type="button"
                 className="btn-primary ml-2 !min-h-8"
                 data-testid="calc-reload"
-                onClick={() => void reloadFresh()}
+                onClick={() => runReload(reloadCure(tableError.code)!)}
               >
                 {t('reloadPage')}
               </button>

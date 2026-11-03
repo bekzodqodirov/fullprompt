@@ -19,6 +19,7 @@ import {
   flushIntakeWrites,
   loadIntake,
   noteOwnMessage,
+  nothingNewToRead,
   updateIntake,
 } from './calc-store';
 import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
@@ -178,7 +179,7 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     // (review PF-8): «Hali hech narsa yuborilmadi» there pointed at the save's
     // «avval «Bo‘ldi» ni bosing», and the two refusals pointed at each other.
     // Nothing new to read: back to its table.
-    if (state.amend || state.seed) {
+    if (nothingNewToRead(state)) {
       const back = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' as const };
       await deliverNextStep(ctx, chatId, back);
       return;

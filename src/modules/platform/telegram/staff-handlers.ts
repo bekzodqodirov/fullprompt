@@ -71,6 +71,7 @@ import {
   intakeMomentOf,
   intakeTakes,
   noteOwnMessage,
+  nothingNewToRead,
   ownsPress,
   startIntake,
   updateIntake,
@@ -1596,7 +1597,7 @@ export async function handleCalcCallback(
     return;
   }
 
-  const state = activeIntake(chatId);
+  let state = activeIntake(chatId);
   if (!state) {
     // A «Saqlash» redelivered after a restart lands here too: never «type it
     // by hand» about a job that may already be on its card (judge conc-13).
@@ -1616,6 +1617,17 @@ export async function handleCalcCallback(
     if (!answer.ok) {
       await ctx.reply(answer.text);
       return;
+    }
+    // The zone's write is a non-quiet patch too (fix review FR-2): the
+    // REG-2 guard below asks only 'own' steps, and a zone is a 'prompt' one,
+    // so a parked podklyuch at «qayerdan?» held the chat again beside a task
+    // draft and took the draft's next line as its customer.
+    if (!holdingIntake(chatId)) {
+      const busy = otherCollectorLive(chatId);
+      if (busy) {
+        await ctx.reply(busy);
+        return;
+      }
     }
     const { route } = answer;
     updateIntake(chatId, { route, stage: 'client' });
@@ -1716,7 +1728,12 @@ export async function handleCalcCallback(
     return;
   }
   // A reading the seller was shown is the table ('review'); anything else
-  // holds material nobody has read yet.
+  // holds material nobody has read yet — unless nothing was sent after «➕
+  // Yana ma’lumot» on a collection that carries rows of its own (fix review
+  // W-11): there is nothing to read, and the table pressed is the one he saw.
+  if (state.stage === 'material' && nothingNewToRead(state)) {
+    state = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' };
+  }
   if (state.stage !== 'review') {
     await ctx.reply('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard });
     return;

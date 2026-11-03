@@ -265,6 +265,67 @@ describe('a waited addition decided but never told (review dur-4)', () => {
   });
 });
 
+describe('the untold net leaves a row its collection still holds to the sweep’s settle (fix review fdur-5, fdur-6)', () => {
+  const decided = async (id: string, noteId: string) =>
+    db.insert(calcAmendments).values({
+      id: randomUUID(),
+      requestId: id,
+      noteId,
+      staffId: sellerId,
+      chatId: -9_700_997n,
+      outcome: 'noted',
+      rev: null,
+      submission: submission({ material: ['1: 50 dona'] }),
+      change: {},
+      createdAt: new Date(Date.now() - 10 * 60_000),
+    });
+
+  it('a FRESH save whose words failed (its collection frozen) is not handed back as a waited run', async () => {
+    const id = await request();
+    const noteId = randomUUID();
+    await decided(id, noteId);
+    // The frozen collection's durable row, as the store writes it.
+    const chat = -9_700_996n;
+    await db.execute(sql`
+      INSERT INTO telegram_calc_intakes (chat_id, staff_id, note_id, state, opened_at, touched_at, expires_at)
+      VALUES (${String(chat)}::bigint, ${sellerId}::uuid, ${noteId}::uuid, '{"stage":"review"}'::jsonb, now(), now(), now() + interval '1 day')`);
+    try {
+      expect(await requeueWaitingAmendments(id)).toBe(0);
+    } finally {
+      await db.execute(sql`DELETE FROM telegram_calc_intakes WHERE chat_id = ${String(chat)}::bigint`);
+    }
+    // Its collection gone, the net is its only teller again.
+    expect(await requeueWaitingAmendments(id)).toBe(1);
+  });
+
+  it('a row past the day is named in the log ONCE, by what is owed (fix review FR-7)', async () => {
+    const { logger } = await import('@/modules/platform/logger');
+    const id = await request();
+    await db.insert(calcAmendments).values({
+      id: randomUUID(),
+      requestId: id,
+      noteId: randomUUID(),
+      staffId: sellerId,
+      chatId: -9_700_995n,
+      outcome: 'to_ved',
+      rev: null,
+      submission: submission({}),
+      change: {},
+      createdAt: new Date(Date.now() - 30 * 3_600_000),
+    });
+    const warn = vi.spyOn(logger, 'warn');
+    try {
+      expect(await requeueWaitingAmendments(id)).toBe(0);
+      expect(await requeueWaitingAmendments(id)).toBe(0);
+      const named = warn.mock.calls.filter((c) => String(c[1] ?? '').includes('older than a day') || String(c[1] ?? '').includes('over a day ago'));
+      expect(named).toHaveLength(1);
+      expect(String(named[0]![1])).toContain('words never reached the seller');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe('a PARKED table’s own answer is the pause line, never the paid assistant (review PF-10)', () => {
   const chat = BigInt(-9_700_500);
   const parked = () => {
@@ -305,9 +366,18 @@ describe('a line added beyond a returned request’s rows leaves its brutto behi
     expect((await tableContext(state)).stale).toEqual([]);
     const added = updateIntake(chat, { facts: { ...state.facts, goods: [...seed, { name: 'Shim', quantity: 5 }] } }, { quiet: true })!;
     expect((await tableContext(added)).stale).toEqual(['weightKg']);
+    // The TABLE the seller reads asks it (fix review FR-4): the stale list
+    // was computed and rode only inside `amend`, null on a seeded collection,
+    // so the drawn table read «✅ Og‘irlik (brutto): 500 kg … Ma’lumot to‘liq».
+    const drawn = await drawnTable(added);
+    expect(drawn.text).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangi tovar qo‘shildi, yangilansinmi? «jami … kg»');
+    expect(drawn.text).not.toContain('✅ Og‘irlik (brutto): 500 kg');
+    expect(drawn.text).not.toContain('Ma’lumot to‘liq');
+    expect(drawn.open).toContainEqual({ totals: 'weightKg' });
     // …and once he answers the brutto, it stands.
     const answered = updateIntake(chat, { totalsAnswer: { ...added.totalsAnswer, weightKg: 620 } }, { quiet: true })!;
     expect((await tableContext(answered)).stale).toEqual([]);
+    expect((await drawnTable(answered)).text).not.toContain('yangilansinmi');
     endIntake(chat);
   });
 
@@ -321,9 +391,23 @@ describe('a line added beyond a returned request’s rows leaves its brutto behi
     const goods = (stored.facts.goods ?? []).map((g) => ({ ...g, weightKg: 800 }));
     const state = updateIntake(chat, { stage: 'review', facts: { ...stored.facts, goods } }, { quiet: true })!;
     expect((await tableContext(state)).stale).toContain('weightKg');
+    // No line was ADDED (fix review W-2): the brutto is asked, and the table
+    // does not say a new item came.
+    const drawn = await drawnTable(state);
+    expect(drawn.text).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangilansinmi? «jami … kg»');
+    expect(drawn.text).not.toContain('yangi tovar qo‘shildi');
     endIntake(chat);
   });
 });
+
+/** The table the seller is SENT over a state — the reading's own renderer, its laws and stale totals. */
+async function drawnTable(state: Parameters<typeof import('@/modules/platform/telegram/calc-dialog').tableContext>[0]) {
+  const { tableContext, intakeNextStep } = await import('@/modules/platform/telegram/calc-dialog');
+  const tc = await tableContext(state);
+  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
+  // The parser's targets as a SEEDED table has them (no `amend`).
+  return { text: step.text, open: tc.intake.tableOpenOf({ section: state.section, facts: state.facts, laws: tc.laws, amend: null, totalsStale: tc.stale }) };
+}
 
 describe('the redo’s «was the re-pass answered» probe is the seller’s own row (review lmp-3)', () => {
   it('a CalcPrefilled for somebody else naming the same pass does not stand for his answer', async () => {
