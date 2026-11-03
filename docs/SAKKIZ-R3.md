@@ -5744,7 +5744,11 @@ the lead. Tests: `calc-fixrev-bot` (integration, through the bot), `calc-r3-revi
   is a figure inside the name and is left out («Paket 100 dona qora» → «Paket qora 30 dona»);
   the candidate is prefiltered by `readSegment`'s rules before the name (a totals word, a carton
   word, an address) and then `parseTableAnswer` reads it exactly as drawn (`exampleFigure` of the
-  row's first need) — taught only when it lands on that row with that figure alone.
+  row's first need) — taught only when it lands on that row with that figure alone. The parser
+  reads with `nameWordFor`'s own fold (`readTable(…, nameOf)`) and a table's names are folded once
+  per render (`FOLDED_ROWS`): the read-back's own fold per candidate had been 0.4-1.2 s a render on
+  1000 long customs descriptions (the verify's PERF-1); re-measured, equal to 408a7d7. «1.5 litr»
+  and «1 200 dona» leave the name whole (`FIGURE_IN_NAME`).
 - **One predicate beside a parked collection, everywhere** (FR-1, FR-2, W-15): the add door's
   same-request resume, the zone press and «↩️» ask `otherCollectorLive` before anything is said
   or written; `pressResume` returns whether it resumed (a reading running: «⏳ Tahlil davom
@@ -5784,8 +5788,7 @@ the lead. Tests: `calc-fixrev-bot` (integration, through the bot), `calc-r3-revi
 - **The bot against real Telegram:** every bot path ran on a stand-in bot (this container cannot
   reach Telegram). The first real collection, «Bo‘ldi», table answer and «➕» after the deploy are
   the proof — CHANGELOG 2026-11-03 asks him for one.
-- **Gates on the final tree**, each on its own, in CI's order on a fresh database: typecheck 0,
-  lint 0, vitest 821 files / 12851 tests, 0 failed (947987b), build 0, Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent). At d6fd6e6 (before #1581's fixes) the same order
+- **Gates on the final tree**, each on its own: typecheck 0, lint 0, unit 537 files / 9295 tests and integration 285 files / 3559 tests (0 failed, each on a fresh database), build 0 — at 14355e4. The whole CI order at 947987b (before #1581's PERF-1 fix, which touches only line-address.ts and two unit test files): vitest 821 files / 12851 tests, build 0, Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent), and GitHub's CI green. At d6fd6e6 (before #1581's fixes) the same order
   gave 819 files / 12803 tests and Playwright 488 passed, 1 skipped.
 
 ### 20.4 Questions for the owner (asked when the round shipped; ⭐ = what is built)

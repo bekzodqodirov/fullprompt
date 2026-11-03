@@ -6620,8 +6620,8 @@ a 50-row hydrate 90-395 ms; the root-duplicate re-read an index scan, 0.03-0.05 
 `amendRequest` 152 ms on 30 rows, 387 ms on 300. The process drills on a running stack
 (`docker kill`, SIGTERM, stalled storage) were NOT run — this container runs no compose stack;
 their behaviour is pinned by the integration files. Playwright on the merged tree in CI's
-order: 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at d6fd6e6, and
-488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at the final tree (#1581).
+order: 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at d6fd6e6 and again at
+947987b (#1581).
 
 **#1581 — The fixes reviewed before production, and the one fix that regressed.** His «3 ni
 ozini merge qil va productionga chiqaz» made the fixes of #1579 the last code before his
@@ -6653,11 +6653,20 @@ qora 30 dona»), and `parseTableAnswer` itself is the ARBITER — the example is
 ✍️ line draws it (`exampleFigure`, now exported from intake.ts) and taught only when it lands
 on its row with that figure alone. A rule restated beside the parser is how W-9's fix taught
 what the parser refuses; red proofs: the pair-skip stripped → 1 red, both guards stripped →
-5. Rejected, in writing: FR-8 (§20's stated pause rule), W-4/W-14 (words only — the owner's
+5. The lead's fix was then verified by three more lenses with refuters. Correctness: 84,910
+drawn examples over 123,000 generated tables plus a 48,542-example grid, 0 failures, where
+408a7d7 failed 3,080 of the same tables. Coverage: no common loss against 408a7d7 or f553fa8.
+Performance found that the read-back had re-created FR-3 one layer down (PERF-1): the parser
+folded every row name again per candidate, 0.4-1.2 s a render on 1000 long customs
+descriptions. So the parser takes the caller's fold (`readTable(…, nameOf)`, `parseTableAnswer`
+is its default-fold door) and a table's names are folded once per render (`FOLDED_ROWS`, a
+WeakMap keyed by the rows array that `answerHow` hands every call). Re-measured, the new code
+matches 408a7d7 in every shape (1000 rows: 120-145 ms a render). `FIGURE_IN_NAME` takes
+«1.5 litr» and «1 200 dona» whole, so no stray «1» is left in a name; `name-word-fold.test.ts`
+pins the shared fold as source shape (no timing threshold). Three more red proofs. Rejected, in writing: FR-8 (§20's stated pause rule), W-4/W-14 (words only — the owner's
 1.26 now names both doors and the button a 30-minute-old chat does not show), W-6/W-10 (a new
 sentence §2 does not fix), W-7 (a harness artefact), W-13 (main's AI sotuvchi strings, pinned
 verbatim). Stated, not fixed: a text reply to the ➕ answer of a collection being READ past
 30 minutes is answered «⏳ Tahlil davom etmoqda» and not added (CHK-N1); the net's NOT EXISTS
 is as true as the durable row, which production flushes within 5 s while the net reads rows
-five minutes old (CHK-N2). Final tree, in CI's order on a fresh database: vitest 821 files / 12851 tests, 0 failed (947987b); build 0;
-Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent).
+five minutes old (CHK-N2). Final tree (14355e4), each gate on its own on a fresh database: typecheck 0, lint 0, unit 537 files / 9295 tests and integration 285 files / 3559 tests with 0 failed, build 0 (the bundle's foreign hosts the known ones); at 947987b the whole CI order ran, vitest 821 files / 12851 tests with 0 failed, build 0 and Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent), and GitHub's CI on 947987b was green; the final head is CI's run.

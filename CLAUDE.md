@@ -3081,10 +3081,12 @@ O(n²) on the one process (4.5-17 s a render at 500-1000 rows → `NAME_ROWS_TRI
 (DRILL-1, 12-16 s → ms), the add door's resume ignoring its own refusal (FR-1), and a seeded table that never drew
 the stale brutto COMP-4 computed (FR-4 — its test read `tableContext()`, not the table). An independent check then
 found one fix that regressed (CHK-1, W-9's digits taught «Paket 100 dona qora 30 dona», refused «repeated»): a
-number with its unit word leaves the run, and `parseTableAnswer` is the ARBITER of every taught name example. The
+number with its unit word leaves the run, and `parseTableAnswer` is the ARBITER of every taught name example —
+reading with the caller's fold, once per render (`readTable(…, nameOf)`, `FOLDED_ROWS`; its own fold per candidate
+was PERF-1, 0.4-1.2 s a render). The
 drills measured the worst collection at 0.72 MiB / UPSERT 28 ms max (beyond every cap 2.58 MiB / 98 ms) — inside
-the 2 s confirm and the stop's 1 s flush; the process drills on a running stack were NOT run. Final tree in CI's
-order: vitest 821 files / 12851 tests, 0 failed (947987b), Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent). OWED to him: 1.21-1.26 (spec §20.4, CHANGELOG 2026-11-03).
+the 2 s confirm and the stop's 1 s flush; the process drills on a running stack were NOT run. Gates:
+at 14355e4 unit 9295 + integration 3559 tests green, build 0; at 947987b the whole CI order, vitest 12851 tests and Playwright 488 passed, 1 skipped. OWED to him: 1.21-1.26 (spec §20.4, CHANGELOG 2026-11-03).
 
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
