@@ -47,6 +47,18 @@ const PRESENCE: Record<string, string> = {
   'calc-dialog.ts:commitWrites': 'an answer’s write and its echo’s id, on the collection it answered',
   'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
   'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',
+  // The add door (P4, §9.2, §9.6): a parked collection is still one the door
+  // would wipe or resume, and the save job reads only its own note's.
+  'calc-amend.ts:openDoor': 'the «another collection» check — a parked one is asked about too (restart / resume)',
+  'calc-amend.ts:openAdd': 'the collection the door just opened, read back',
+  'calc-amend.ts:openSeeded': 'the seeded collection the door just opened, read back',
+  'calc-amend.ts:pressAdd': 'which collection stood before the press, to let go only one it opened',
+  'calc-amend.ts:openAmendFromReply': 'which collection stood before the reply, to let go only one it opened',
+  'calc-amend.ts:openAmendFromMedia': 'which collection stood before the file, to let go only one it opened',
+  'calc-amend.ts:abandonOpened': 'ends only the collection this door opened',
+  'calc-amend.ts:releaseSaving': 'the save job’s own frozen collection, by note id',
+  'calc-amend.ts:endIfOurs': 'the save job’s own collection, by note id',
+  'calc-amend.ts:redo': 'the save job’s own collection, by note id',
   'calc-store.ts:holdingIntake': 'the holds predicate itself',
   'calc-store.ts:loadIntake': 'a job’s read, after this process hydrated',
   'calc-store.ts:collectionSurvived': 'the backlog sentence: did a collection survive the restart',

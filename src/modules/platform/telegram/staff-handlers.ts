@@ -718,6 +718,13 @@ export function registerStaffBot(bot: Bot): void {
       await capturePart(ctx, chatId, capture, owner.id);
       return;
     }
+    // An add collection frozen while its save runs (P4) takes nothing more —
+    // the text ladder's own guard, for a file (§9.6): filed after the press,
+    // it would join a collection the job ends without reading it.
+    if (state.saving) {
+      await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+      return;
+    }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
     const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {

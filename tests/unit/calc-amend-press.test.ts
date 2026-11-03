@@ -37,7 +37,12 @@ vi.mock('@/modules/wms/calc/amend', async (original) => ({
   returnedClientHint: async () => stub.hint,
   requestHasCertificate: async () => stub.certificate,
 }));
-vi.mock('@/modules/wms/calc/law-asks', () => ({ lawAsksOf: () => stub.asks }));
+// The ask itself is P5's (law-asks.test); here only its answer is stood in —
+// the stored request's adapter (`lawAsksInputOfStored`) is the real one.
+vi.mock('@/modules/wms/calc/law-asks', async (original) => ({
+  ...(await original<typeof import('@/modules/wms/calc/law-asks')>()),
+  lawAsksOf: () => stub.asks,
+}));
 vi.mock('@/modules/platform/telegram/once', async (original) => ({
   ...(await original<typeof import('@/modules/platform/telegram/once')>()),
   claimOnce: async () => stub.claimed,
@@ -67,9 +72,9 @@ vi.mock('@/modules/platform/telegram/calc-intake-sweep', async (original) => ({
   pressResume: vi.fn(async () => {}),
 }));
 
-import { ADD_REFUSAL, amendKeyboard, pressAdd, STANDING_LINE } from '@/modules/platform/telegram/calc-amend';
+import { ADD_REFUSAL, pressAdd, STANDING_LINE } from '@/modules/platform/telegram/calc-amend';
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
-import { deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { deliverNextStep, intakeNextStep } from '@/modules/platform/telegram/calc-dialog';
 import { pressResume } from '@/modules/platform/telegram/calc-intake-sweep';
 import { refuseWhileCapturing } from '@/modules/platform/telegram/note-capture';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
@@ -261,7 +266,11 @@ describe('the open', () => {
     expect(p.texts()).toEqual([]);
     expect(vi.mocked(deliverNextStep)).toHaveBeenCalledTimes(1);
     expect(vi.mocked(deliverNextStep).mock.calls[0]![2]).toMatchObject({ amend: { requestId: REQ }, stage: 'review' });
-    expect(amendKeyboard(state.standingAtOpen).inline_keyboard.flat().map((b) => [b.text, b.callback_data])).toEqual([
+    // The table P3's renderer draws for this state (the merged tree, P4
+    // handoff item 1): the add head, and the add keyboard — one home for both.
+    const table = intakeNextStep(state, new Map(), await import('@/modules/wms/calc/intake'));
+    expect(table.text.split('\n')[0]).toBe('➕ Qo‘shimcha · B-000067 · 🛃 Rastamojka');
+    expect(table.keyboard!.inline_keyboard.flat().map((b) => [b.text, b.callback_data])).toEqual([
       ['✅ Qo‘shish', 'c:save'],
       ['➕ Yana ma’lumot', 'c:more'],
       ['✖️ Bekor qilish', 'c:cancel'],
@@ -275,7 +284,8 @@ describe('the open', () => {
     const p = await press(id);
     expect(p.texts()).toEqual([STANDING_LINE.started]);
     expect(activeIntake(id)!.standingAtOpen).toBe('started');
-    expect(amendKeyboard('started').inline_keyboard[0]![0]).toEqual({ text: '📨 VED ga yuborish', callback_data: 'c:save' });
+    const table = intakeNextStep(activeIntake(id)!, new Map(), await import('@/modules/wms/calc/intake'));
+    expect(table.keyboard!.inline_keyboard[0]![0]).toEqual({ text: '📨 VED ga yuborish', callback_data: 'c:save' });
   });
 
   it('a machine pass running: the busy line', async () => {

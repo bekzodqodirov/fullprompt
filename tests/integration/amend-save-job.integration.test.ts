@@ -50,6 +50,7 @@ import {
   endIntake,
   IntakesNotReady,
   loadIntake,
+  markIntakesHydrated,
   startIntake,
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
@@ -90,6 +91,10 @@ beforeAll(async () => {
   clientId = client!.id;
   openDealStage = (await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') }))!.id;
   process.env.TELEGRAM_BOT_TOKEN = 'amend-job-token';
+  // P1's real `loadIntake` waits for this process's hydrate — with a bot
+  // token set, its whole window on every job here. The file stands in for the
+  // start's mark; the hydrate wait itself is the `loadIntake` stand-in case.
+  markIntakesHydrated();
   __setTelegramTransport(async (url, init) => {
     if (url.endsWith('/sendMessage') && typeof init.body === 'string') {
       if (failSends > 0) {
@@ -324,6 +329,44 @@ describe('the press and the job', () => {
     expect(activeIntake(c.chatId)!.material).toEqual(before);
   });
 
+
+  it('a file while the save runs → the frozen words, nothing filed (the text ladder’s guard, for a file, §9.6)', async () => {
+    const c = await addCollection();
+    await press(c.chatId);
+    const before = { fileCount: activeIntake(c.chatId)!.fileCount, material: [...activeIntake(c.chatId)!.material] };
+    const handlers: { filter: unknown; fn: (ctx: unknown, next: () => Promise<void>) => Promise<void> }[] = [];
+    const fake = {
+      on: (filter: unknown, fn: (ctx: unknown, next: () => Promise<void>) => Promise<void>) => void handlers.push({ filter, fn }),
+      command: () => undefined,
+      callbackQuery: () => undefined,
+      use: () => undefined,
+    };
+    registerStaffBot(fake as never);
+    const onFile = handlers.find((h) => Array.isArray(h.filter) && (h.filter as string[]).includes('message:document'));
+    expect(onFile, 're-anchor: the file door moved').toBeDefined();
+    const replies: string[] = [];
+    let passed = false;
+    await onFile!.fn(
+      {
+        chat: { id: Number(c.chatId), type: 'private' },
+        from: { id: 1 },
+        message: {
+          document: { file_id: 'f-1', file_unique_id: 'u-1', file_name: 'yana.xlsx', mime_type: 'application/vnd.ms-excel' },
+          caption: 'yana 20 dona',
+          date: Math.floor(Date.now() / 1000),
+          message_id: 503,
+        },
+        reply: async (text: string) => (replies.push(text), { message_id: 504 }),
+      },
+      async () => {
+        passed = true;
+      },
+    );
+    expect(replies).toEqual(['⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.']);
+    expect(passed).toBe(false);
+    expect(activeIntake(c.chatId)!.fileCount).toBe(before.fileCount);
+    expect(activeIntake(c.chatId)!.material).toEqual(before.material);
+  });
   it('two runs of one save job in one process (the expiry race) → one write, one card note, the words once', async () => {
     const c = await addCollection();
     const job = await press(c.chatId);

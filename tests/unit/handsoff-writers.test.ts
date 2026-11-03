@@ -79,6 +79,30 @@ function sqlWritesStamp(text: string): boolean {
 
 type Site = { file: string; fn: string; how: string; text: string };
 
+/**
+ * A READER's answer that says «no stamp» — `handsoffRev: null` in an object
+ * literal the function RETURNS — named here, by file and function, with its
+ * reason. Only that exact shape at a named site is passed: a `null` in a
+ * `.set(…)`, or in a patch built to be spread into one, is still a writer.
+ * (P4's `amendStanding` met this fence only at the merge; P5's tree could
+ * not hold amend.ts.)
+ */
+const RESULT_SITES: Record<string, string> = {
+  'src/modules/wms/calc/amend.ts · amendStanding': 'the standing of a request that does not exist — no row, so no stamp to read',
+};
+const resultSitesSeen = new Set<string>();
+
+/** Is this `handsoffRev: null` the returned answer of a listed reader? */
+function returnedNull(n: ts.PropertyAssignment, file: { path: string }): boolean {
+  if (n.initializer.kind !== ts.SyntaxKind.NullKeyword) return false;
+  const object = n.parent;
+  if (!ts.isObjectLiteralExpression(object) || !ts.isReturnStatement(object.parent)) return false;
+  const site = `${file.path} · ${enclosing(n)}`;
+  if (!(site in RESULT_SITES)) return false;
+  resultSitesSeen.add(site);
+  return true;
+}
+
 function stampWriters(): Site[] {
   const out: Site[] = [];
   visitAll((n, file) => {
@@ -86,9 +110,12 @@ function stampWriters(): Site[] {
     // inside `.values(…)` / `.set(…)`: a patch built first and spread in is
     // the commonest refactor of a write, and it hid a third writer (review
     // p5-adv-6). Only a READ is not one: a value taken from a `handsoffRev`
-    // (a select's column, a row mapped onward), and the schema's own column.
+    // (a select's column, a row mapped onward), a listed reader's returned
+    // «no stamp» (`RESULT_SITES`), and the schema's own column.
     if ((ts.isPropertyAssignment(n) || ts.isShorthandPropertyAssignment(n)) && n.name.getText() === 'handsoffRev') {
-      const read = ts.isPropertyAssignment(n) && ts.isPropertyAccessExpression(n.initializer) && n.initializer.name.text === 'handsoffRev';
+      const read =
+        ts.isPropertyAssignment(n) &&
+        ((ts.isPropertyAccessExpression(n.initializer) && n.initializer.name.text === 'handsoffRev') || returnedNull(n, file));
       if (!read && !file.path.startsWith('src/modules/platform/db/schema/')) {
         out.push({ file: file.path, fn: enclosing(n), how: 'drizzle', text: n.getText() });
       }
@@ -105,6 +132,10 @@ function stampWriters(): Site[] {
 
 describe('the hands-off stamp has exactly two writers', () => {
   const writers = stampWriters();
+
+  it('every listed reader’s «no stamp» answer was found (a stale entry hides a moved one)', () => {
+    expect(Object.keys(RESULT_SITES).filter((k) => !resultSitesSeen.has(k))).toEqual([]);
+  });
 
   it('the landing’s INSERT (0) and `advanceHandsOffInTx` — nothing else in src/ writes the column', () => {
     expect(writers.map((w) => `${w.file} · ${w.fn} · ${w.how}`).sort()).toEqual([

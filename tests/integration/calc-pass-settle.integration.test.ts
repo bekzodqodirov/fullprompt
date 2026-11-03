@@ -90,6 +90,8 @@ import {
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
 import { TICKET_SEND_WINDOW_S, queueCalcPrefill, ticketStanding } from '@/modules/wms/calc/prefill-queue';
 import { sayOnce } from '@/modules/wms/calc/say-once';
+import { amendStanding } from '@/modules/wms/calc/amend';
+import { replyVerdictFor } from '@/modules/platform/telegram/reply-door';
 import {
   JOB_CALC_PREFILL,
   JOB_CALC_TARIFF_REPLY,
@@ -493,6 +495,8 @@ describe('every machine save stamps itself; the settle only clears (§10.2.2-3)'
     expect(await ticketStanding(id)).toBe('none');
     expect((await passOf(id)).aiPassJob).toBeNull();
     expect(await prefillStanding(id, p.handsoffRev)).toBe('ok');
+    // …and over the merged tree, P4's own answer: the add door reads it open.
+    expect((await amendStanding(id)).standing).toBe('open');
   });
 
   it('a tariff pass writes nothing — its stamp is unchanged', async () => {
@@ -672,6 +676,10 @@ describe('his ⭐ of Question 7: the re-run reaches a seller who muted the AI’
     const [row] = await db.select().from(notifications).where(eq(notifications.id, rerun[0]!.id));
     expect(row!.status).toBe('sent');
     expect((row!.payload as { tg?: unknown }).tg).toEqual({ chatId: CHAT, messageId: nextMessageId });
+    // …and P4's reply door reads that sent row as the add door on THIS
+    // request — a reply «2: 40 juft» to it opens the add collection there
+    // (the merged tree; calc-amend-bot.integration walks the handler chain).
+    expect(await replyVerdictFor(BigInt(CHAT), nextMessageId, mutedId)).toEqual({ kind: 'calc_add', requestId: id });
     // The landing's muted row was never sent.
     const [mutedRow] = await db.select().from(notifications).where(eq(notifications.id, landing[0]!.id));
     expect(mutedRow!.status).toBe('muted');

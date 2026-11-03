@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Context, MiddlewareFn, Transformer } from 'grammy';
 import { v4 as uuidv4 } from 'uuid';
@@ -1050,34 +1049,22 @@ export interface UntoldAmendment {
 
 /**
  * Hydrate keeps an add collection whose amendment was written but never told,
- * and sends its save job again with the job's own options — the redelivery
- * finds the row (`duplicate`) and redoes only what is missing (§9.5). No
- * `singletonKey`: pg-boss 10.4.2 dedupes only on a non-standard queue; a
- * duplicate job is harmless for the same reason.
+ * and sends its save job again — through the add door's own re-enqueue
+ * (calc-amend.ts `requeueAmendSave`, the one home of the save job's shape and
+ * options), with the submission the row records. The redelivery finds the row
+ * (`duplicate`) and redoes only what is missing (§9.5). No `singletonKey`:
+ * pg-boss 10.4.2 dedupes only on a non-standard queue; a duplicate job is
+ * harmless for the same reason.
  */
 async function resendSave(add: UntoldAmendment): Promise<void> {
   const chat = [...store.collections].find(([, s]) => s.noteId === add.noteId);
   if (!chat) return;
   const [chatKey, state] = chat;
-  const jobId = randomUUID();
   try {
-    const { enqueue } = await import('../jobs/boss');
-    const { JOB_CALC_AMEND_SAVE } = await import('./calc-amend');
-    const token = state.saving?.token ?? randomUUID();
-    await enqueue(
-      JOB_CALC_AMEND_SAVE,
-      {
-        chatId: chatKey,
-        staffId: state.staffId,
-        requestId: add.requestId,
-        noteId: add.noteId,
-        submission: add.submission,
-        amendmentId: null,
-        savingToken: token,
-      },
-      { id: jobId, expireInSeconds: 120, retryLimit: 3 },
-    );
-    updateIntake(BigInt(chatKey), { saving: { token, at: Date.now(), jobId } }, { quiet: true });
+    const { requeueAmendSave } = await import('./calc-amend');
+    if (!(await requeueAmendSave(BigInt(chatKey), state, { submission: add.submission }))) {
+      logger.warn({ noteId: add.noteId }, '[calc-intake] untold addition not sent again');
+    }
   } catch (err) {
     logger.warn({ err, noteId: add.noteId }, '[calc-intake] untold addition not sent again');
   }

@@ -29,7 +29,6 @@ import {
   type PressCtx,
 } from './calc-dialog';
 import { fileOf, readIntakeFile, saveIntakeFile, type BotFile } from './calc-files';
-import { pressResume } from './calc-intake-sweep';
 import { CLIENT_QUESTION } from './calc-keyboards';
 import { isBacklog } from './lifecycle';
 import { activeCapture, refuseWhileCapturing } from './note-capture';
@@ -139,21 +138,6 @@ const AMEND_SAVE_DEADLINE_MS = 110_000;
 export const AMEND_SAVE_RETRIES = 3;
 /** How far back a request may be offered to a forward or a file (product-fit-16). */
 export const ADD_OFFER_DAYS = 7;
-
-/**
- * The add table's keyboard: «✅ Qo‘shish» — or, when the VED has started on
- * the job, «📨 VED ga yuborish», because nothing will be written into it
- * (product-fit-18). No certificate toggle: an addition never changes it.
- */
-export function amendKeyboard(standingAtOpen: IntakeState['standingAtOpen']): InlineKeyboard {
-  return {
-    inline_keyboard: [
-      [{ text: standingAtOpen === 'started' ? '📨 VED ga yuborish' : '✅ Qo‘shish', callback_data: 'c:save' }],
-      [{ text: '➕ Yana ma’lumot', callback_data: 'c:more' }],
-      [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
-    ],
-  };
-}
 
 /** The ✅ landing reply's inline markup, or null = today's persistent-keyboard re-send. */
 export function landedReplyMarkup(target: { queued?: boolean; requestId?: string | null }): InlineKeyboard | null {
@@ -307,6 +291,17 @@ async function refuse(sp: Speaker, words: string, extra?: Record<string, unknown
 type Stored = NonNullable<Awaited<ReturnType<typeof import('../../wms/calc/service').storedRequestFacts>>>;
 
 /**
+ * The sweep's «▶️», reached dynamically: calc-intake-sweep.ts imports this
+ * file statically (the frozen save's release), so a static import back made
+ * the two modules a cycle — whichever loads first sees the other half-built
+ * (a stand-in for this file was bypassed by the sweep that way).
+ */
+async function resume(sp: Parameters<typeof import('./calc-intake-sweep').pressResume>[0], chatId: bigint): Promise<void> {
+  const { pressResume } = await import('./calc-intake-sweep');
+  await pressResume(sp, chatId);
+}
+
+/**
  * The door's checks, in §2.4's order, and the open — or the resume, or the
  * one question. Null = refused (said); otherwise the live collection.
  * `restart`: the `cg:` press, which ends the other collection (its claim
@@ -374,7 +369,7 @@ async function openDoor(
     // This request's own add collection: a resume (P1 un-parks it there).
     await sp.answer(ADD_REFUSAL.sameLive);
     await sp.reply(ADD_REFUSAL.sameLive);
-    await pressResume(sp, chatId);
+    await resume(sp, chatId);
     return { state: activeIntake(chatId) ?? live, opened: false };
   }
   if (live) {
@@ -390,7 +385,7 @@ async function openDoor(
     // ended the other collection and opened this one (or a newer one stands).
     if (opts.restartKey && !(await claimOnce(db, opts.restartKey))) {
       await sp.answer();
-      await pressResume(sp, chatId);
+      await resume(sp, chatId);
       return null;
     }
     endIntake(chatId);
@@ -436,18 +431,13 @@ async function openAdd(
     return null;
   }
   const atOpen = standing.standing;
-  const { lawAsksOf } = await import('../../wms/calc/law-asks');
+  const { lawAsksInputOfStored, lawAsksOf } = await import('../../wms/calc/law-asks');
   const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
   const base = stored.base;
-  const bookLaws = new Map(
-    base.items.filter((i) => i.tnvedCode && i.law).map((i) => [i.tnvedCode!, i.law!] as const),
-  );
-  const asks = lawAsksOf({
-    section: base.section,
-    facts: stored.facts,
-    bookLaws,
-    confirmedSeqs: new Set(base.items.filter((i) => i.confirmed).map((i) => i.seq)),
-  });
+  // The stored request's ask through P5's ONE adapter (#513): the 2.8 b ask,
+  // this table and the VED's chips read the same rows (calc-pass-settle pins
+  // the adapter against the pass's own, performance-9).
+  const asks = lawAsksOf(lawAsksInputOfStored(stored));
   const sum = volumeIsLinesSum(base.volumeM3, base.items);
   const facts: IntakeState['facts'] = {
     ...stored.facts,
@@ -975,19 +965,33 @@ async function enqueueSave(job: AmendSaveJob, jobId: string): Promise<void> {
 }
 
 /**
- * The hydrate's half of durability-4 (P1's `hydrateIntakes` calls it for an
- * add collection whose amendment exists and was never told, or that was
- * frozen with no amendment yet): the job again, with the save job's own
- * options and a fresh job id — the old one may be `completed` or `failed`,
- * and pg-boss refuses a second job under a used id. A duplicate is harmless:
- * it answers `duplicate` off the note id and redoes only what is missing.
- * Answers false when there is nothing to re-enqueue or the queue refused.
+ * The hydrate's half of durability-4 (P1's `hydrateIntakes` calls it, through
+ * calc-store's `resendSave`, for an add collection whose amendment exists and
+ * was never told): the job again, with the save job's own options and a
+ * fresh job id — the old one may be `completed` or `failed`, and pg-boss
+ * refuses a second job under a used id. A duplicate is harmless: it answers
+ * `duplicate` off the note id and redoes only what is missing. ONE home for
+ * the save job's shape and options (#513).
+ *
+ * `stored`: the submission the amendment's row RECORDS — what was committed —
+ * sent in place of one rebuilt from the collection; and with it a collection
+ * whose freeze never reached its row (the store wrote it after the job
+ * committed) is frozen again under a fresh token. Answers false when there is
+ * nothing to re-enqueue or the queue refused.
  */
-export async function requeueAmendSave(chatId: bigint, state: IntakeState): Promise<boolean> {
-  if (!state.amend || !state.saving) return false;
+export async function requeueAmendSave(
+  chatId: bigint,
+  state: IntakeState,
+  stored?: { submission: unknown },
+): Promise<boolean> {
+  if (!state.amend || (!state.saving && !stored)) return false;
   const jobId = randomUUID();
-  const job = saveJobOf(chatId, state, state.amend, state.saving.token);
-  updateIntake(chatId, { saving: { ...state.saving, jobId } }, { quiet: true });
+  const token = state.saving?.token ?? randomUUID();
+  const job: AmendSaveJob = {
+    ...saveJobOf(chatId, state, state.amend, token),
+    ...(stored ? { submission: stored.submission as AmendSubmission | null } : {}),
+  };
+  updateIntake(chatId, { saving: { token, at: state.saving?.at ?? Date.now(), jobId } }, { quiet: true });
   try {
     await enqueueSave(job, jobId);
     return true;
