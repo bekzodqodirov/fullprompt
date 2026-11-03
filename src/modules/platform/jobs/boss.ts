@@ -129,6 +129,9 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   // The staff group (0134): what the bot says there, and the Saturday rating + the month's champion.
   ['staff-group', async (b) => (await import('../telegram/staff-group-posts')).registerStaffGroupWorker(b)],
   ['staff-rating', async (b) => (await import('../../wms/staff/rating')).registerStaffRatingWorkers(b)],
+  // The AI sotuvchi (0138): a customer's message drafted, his own reply
+  // retiring the draft, and the one-minute sweep.
+  ['agent', async (b) => (await import('../../wms/agent/jobs')).registerAgentWorkers(b)],
 ];
 
 /** Run each registration at most once per process, whatever failed before. */
@@ -205,8 +208,13 @@ export interface EnqueueOptions {
    * (`jobState`) — «busy» is then a fact about a job, never a time window.
    */
   id?: string;
-  /** Seconds before the job may be fetched — a delivery that waits out
-   * Telegram's `retry_after` instead of spending a retry inside it. */
+  /**
+   * Seconds before the job may be claimed — the AI sotuvchi's debounce
+   * (docs/AI-SOTUVCHI.md §17.3: a customer's burst of three lines is one
+   * question, so the worker looks after twelve quiet seconds), and a
+   * delivery that waits out Telegram's `retry_after` instead of spending a
+   * retry inside it (docs/SAKKIZ-R3.md K15).
+   */
   startAfter?: number;
 }
 

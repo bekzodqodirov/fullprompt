@@ -151,7 +151,7 @@ export async function pruneTelegramRedelivery(): Promise<{ once: number; waits: 
   // A «Hisoblatish» collection a day past its end is one no process will ever
   // end with its line (the hydrate reaches back 24 hours), and it holds a
   // customer's name and phone (docs/SAKKIZ-R3.md §6.2.17). Its own probe: one
-  // migration behind, 0138's table is not there while 0130's are.
+  // migration behind, 0139's table is not there while 0130's are.
   const intakes = (await intakeTableReady())
     ? await db.execute<{ chat_id: string }>(sql`
         DELETE FROM telegram_calc_intakes WHERE expires_at < now() - interval '1 day' RETURNING chat_id::text AS chat_id`)

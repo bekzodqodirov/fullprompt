@@ -48,12 +48,19 @@ const SUMMARY = 'src/modules/wms/reports/owner-summary.ts';
 const WORKSPACE = 'src/modules/wms/calc/workspace.ts';
 
 describe('ONE carton × FIFO reader (a, b, c)', () => {
-  it('only paid-cartons and the client card call settleCharges — the declaration is not a call', () => {
-    const callers = SRC.filter((f) => /(?<!function\s)\bsettleCharges\(/.test(f.code)).map((f) => f.path);
+  // Either door into the walk counts: since his Q8 «c» paid-cartons asks
+  // `settleChargesFully` (which also says what a DEFERRAL settled) and
+  // `settleCharges` is that walk's owed half — so fifo.ts calling its own
+  // twin is the home, not a reader.
+  it('only paid-cartons and the client card call the FIFO walk — the declaration is not a call', () => {
+    const callers = SRC.filter(
+      (f) => f.path !== 'src/modules/wms/finance/fifo.ts' && /(?<!function\s)\bsettleCharges(Fully)?\(/.test(f.code),
+    ).map((f) => f.path);
     expect(callers.sort()).toEqual([
       'src/modules/wms/finance/client-cargo.ts',
       'src/modules/wms/finance/paid-cartons.ts',
     ]);
+    expect(read('src/modules/wms/finance/paid-cartons.ts')).toContain('settleChargesFully(');
   });
 
   it('the KPI is a fold of paidCargo, with the words-only tag off', () => {

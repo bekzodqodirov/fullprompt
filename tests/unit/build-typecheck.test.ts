@@ -68,4 +68,15 @@ describe('the image build has the heap for it', () => {
     // hand the compiler's heap to them as well.
     expect(dockerfile).not.toMatch(/^ENV [^\n]*max-old-space-size/m);
   });
+
+  it('CI builds with the same heap as the image (#1543)', () => {
+    // The merge of 2026-10-29 took the bundle past V8's default: the image's
+    // 3,072 MB built it, CI's default died at ~2,000 — a check of a build the
+    // server never runs.
+    const image = Number(/^RUN NODE_OPTIONS=--max-old-space-size=(\d+) pnpm build$/m.exec(dockerfile)?.[1] ?? 0);
+    const ci = readFileSync('.github/workflows/ci.yml', 'utf8');
+    const step = /^\s+- run: pnpm build\n\s+env:\n\s+NODE_OPTIONS: --max-old-space-size=(\d+)$/m.exec(ci)?.[1];
+    expect(image).toBeGreaterThanOrEqual(3072);
+    expect(Number(step ?? 0)).toBe(image);
+  });
 });

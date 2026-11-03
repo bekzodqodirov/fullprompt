@@ -143,7 +143,7 @@ const store: IntakeStore = (globalForIntakes.calcIntakes ??= {
 const key = (chatId: bigint | number | string) => String(chatId);
 
 /**
- * Does 0138's table exist? (#472.) Code ahead of the migration is today's
+ * Does 0139's table exist? (#472.) Code ahead of the migration is today's
  * memory-only store: no write, no throw. Caches TRUE only, so the store comes
  * back the moment the migration lands (`redelivery-ready.ts`'s shape).
  */

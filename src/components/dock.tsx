@@ -10,6 +10,8 @@ import { autogrow, sendOnEnter, useCoarsePointer } from '@/components/composer';
 import { ReplyTemplates, type ReplyTemplate } from '@/components/reply-templates';
 import { OutboxBubble } from '@/components/outbox-bubble';
 import { TelegramBubble } from '@/components/telegram-bubble';
+import { AgentWaitingBubble, agentSendAtLabel } from '@/components/agent-waiting-bubble';
+import { AgentCancelButton } from '@/components/agent-cancel-button';
 import { sendReplyAction } from '@/modules/wms/crm/reply-actions';
 import { completeTaskAction } from '@/modules/platform/tasks/actions';
 // A TYPE from the pure module the route builds its answer with: the JSON
@@ -56,6 +58,8 @@ interface DockThread {
   client: { id: string; code: string; name: string };
   canReply: boolean;
   reason: string | null;
+  /** When Telegram's send wait ends (ISO), beside a `flood_wait` reason — absent from a route one release behind. */
+  floodUntil?: string | null;
   managers: string[];
   /** Already filled for this client — `{ism}`/`{kod}` resolved server-side. */
   templates: ReplyTemplate[];
@@ -71,7 +75,11 @@ interface DockThread {
     files: { id: string; fileName: string; sizeBytes: number }[];
     fwdFrom: string | null;
     quoted: { body: string | null; direction: string; hasMedia: boolean } | null;
+    /** The AI sotuvchi sent it (0138). */
+    agent?: boolean;
   }[];
+  /** Approved AI replies still on their way (0138) — absent from a route one release behind. */
+  agentWaiting?: { id: string; body: string; nextStepAt: string; mayCancel: boolean }[];
   /** Replies still in the queue — the drawer must not swallow them. */
   pending: {
     id: string;
@@ -290,6 +298,9 @@ export function Dock({
       void refreshThread(target);
     } else {
       setSendError(result.error ?? 'error');
+      // An account hold the press met with none at load: the thread is read
+      // again, so the drawer says it in full — a wait WITH its end.
+      if (result.error === 'flood_wait' || result.error === 'account_paused') void refreshThread(target);
     }
   }
 
@@ -324,16 +335,28 @@ export function Dock({
     void loadTasks();
   }
 
+  // Telegram's send wait, said with its end (the card composer's words): the
+  // route carries it beside a `flood_wait` it refused on; one the press met
+  // with none at load has no end to say; one ending within the minute is the minute.
+  const floodAt = thread?.floodUntil ? new Date(thread.floodUntil) : null;
+  const floodWhen = floodAt ? agentSendAtLabel(floodAt) : null;
+  const floodWords = !floodAt
+    ? t('replyFloodWaitUnknown')
+    : floodWhen
+      ? t('replyFloodWait', { when: floodWhen })
+      : t('replyRateLimited');
   const reasons: Record<string, string> = {
     no_chat: t('replyNoChat'),
     not_your_conversation: t('replyNotYours'),
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
+    // Telegram limited the account (0138); the words name the bridge panel's «Tekshirdim» button.
+    account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),
     rate_chat: t('replyRateLimited'),
-    flood_wait: t('replyRateLimited'),
+    flood_wait: floodWords,
   };
 
   // The COUNT, not the listed rows: `myDay` caps each bucket at 40, so the
@@ -485,10 +508,27 @@ export function Dock({
                       </Link>
                     </div>
                     <div className="flex min-h-0 flex-1 flex-col-reverse gap-1.5 overflow-y-auto p-3">
+                      {/* FIRST in a reversed box = the newest end, under the last message. */}
+                      {(thread.agentWaiting ?? []).map((row) => {
+                        const at = agentSendAtLabel(new Date(row.nextStepAt));
+                        return (
+                          <AgentWaitingBubble
+                            key={row.id}
+                            body={row.body}
+                            text={at ? t('agentWaitingAt', { time: at }) : t('agentSending')}
+                            action={
+                              row.mayCancel ? (
+                                <AgentCancelButton outboxId={row.id} onDone={() => void refreshThread(thread.client.id)} />
+                              ) : undefined
+                            }
+                          />
+                        );
+                      })}
                       {thread.messages.map((m) => (
                         <TelegramBubble
                           key={m.id}
                           message={{ ...m, sentAt: new Date(m.sentAt) }}
+                          agentLabel={t('agentSent')}
                           clientLabel={thread.client.name}
                           mediaLabel={t('telegramMedia')}
                         />
@@ -504,7 +544,9 @@ export function Dock({
                           }}
                         />
                       ))}
-                      {thread.messages.length === 0 && thread.pending.length === 0 && (
+                      {thread.messages.length === 0 &&
+                        thread.pending.length === 0 &&
+                        (thread.agentWaiting ?? []).length === 0 && (
                         <p className="text-center text-sm text-ink-500">
                           {t('conversationsEmpty')}
                         </p>
@@ -594,7 +636,9 @@ export function Dock({
                             ` · ${thread.managers.join(', ')}`}
                         </p>
                       )}
-                      {sendError && (
+                      {/* A press the hold refused, once the re-read thread names that hold
+                          itself: the grey line above says it — said twice, it reads as two problems. */}
+                      {sendError && (thread.canReply || thread.reason !== sendError) && (
                         <p className="mt-1 text-center text-xs font-semibold text-bad">
                           {reasons[sendError] ?? tc('error')}
                         </p>

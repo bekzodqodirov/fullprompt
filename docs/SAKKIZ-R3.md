@@ -23,15 +23,16 @@ in §1, the plan in §10 «R3») plus his 2.8 b. His answers are binding (§0).
   flushed before grammy confirms a batch, not after every message); every package branches
   from the commit that wrote THIS sentence, not from e0f9b61. Gates at e0f9b61 on a database of its own: typecheck, lint, the full vitest
   (726 files, 10717 tests).
-- **Migration `calc_intake_durable` is 0138** (K-review spec-5; renamed at the merge of main
-  `e669e7d`, 2026-10-28). main had moved past 0136: it holds the other session's `0137_plan_road`
-  (`when` 1785190000116, journal idx 137). K took `when` 1785190000117 under the name
-  `0137_calc_intake_durable.sql` / idx 137, because the branch had no 0137 of main's and the
-  journal fence refuses a hole; the merge of main into r3-work renamed it
-  `0138_calc_intake_durable.sql` (idx 138, `when` …117 unchanged). The ledger must reach
-  **139**. A «0137» below that names this round's migration means 0138 (the spec's older lines
-  are kept as they were judged); every count a person reads after the deploy is **139**. 0136 is
-  Uch band's `lead_client_many` (`when` …115, DECISIONS #1469-#1478), one-way. R2 adds none (R2
+- **Migration `calc_intake_durable` is 0139** (K-review spec-5; renamed TWICE). K wrote it as
+  `0137_calc_intake_durable.sql` (idx 137, `when` 1785190000117); the merge of main `e669e7d`
+  (2026-10-28) renamed it 0138 after the other session's `0137_plan_road` (`when` …116); and
+  the merge of main `901c280` (2026-11-03) renamed it **0139** (idx 139, `when` 1785190000118)
+  after the AI sotuvchi's `0138_ai_sotuvchi`, which had taken the same `when` …117 — the
+  twenty-seventh collision. main's 0138 touches no table this round touches (it re-creates
+  `telegram_chat_waits_kind_check` and adds the agent tables). The ledger must reach **140**.
+  A «0137»/«0138» below that names this round's migration means 0139 (the older lines are kept
+  as they were judged); every count a person reads after the deploy is **140**. 0136 is Uch
+  band's `lead_client_many` (`when` …115, DECISIONS #1469-#1478), one-way. R2 adds none (R2
   §11). (re-check kernel-1)
 - **Base after the merge:** main `e669e7d` (PR #127, rounds 1-2 of «Sakkiz band», merged
   2026-10-28) carries R2's late fixes after 0373bd2 — the second merge with main (`69a4330`:
@@ -4619,7 +4620,7 @@ corpus-mig-seam-20)
 ## 13. Migration 0137 `calc_intake_durable` (additive) (re-check kernel-1) — 0138 after the merge, ledger 139 (K-review spec-5)
 
 ```sql
--- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0138 — after main's 0137_plan_road.
+-- Sakkiz band round 3 (docs/SAKKIZ-R3.md), migration 0139 — after main's 0138_ai_sotuvchi.
 -- His 1.8 c: an unfinished «Hisoblatish» waits 24 hours and survives a deploy. His 1.9 a:
 -- what arrives after the job landed joins THAT job while the VED has not started. His 2.8 b: the law's missing count is asked after the AI
 -- answer. Nothing is backfilled. gsr_ai_reader (0080, allowlist default-deny) is granted

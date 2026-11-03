@@ -282,9 +282,9 @@ export interface Workspace {
    */
   rev: number;
   /**
-   * The revision the machine's pass or the seller's own addition left (0138).
+   * The revision the machine's pass or the seller's own addition left (0139).
    * Equal to `rev` = no person has written since; null = not known (a request
-   * before 0138, a correction). Read off the same first query as `rev`.
+   * before 0139, a correction). Read off the same first query as `rev`.
    */
   handsoffRev: number | null;
   /** Is there an ANTHROPIC key on this server at all? The ✨ button is not
@@ -2339,6 +2339,9 @@ async function announceSeal(
     text: `🧮 Hisob tayyor: $${totals.totalUsd.toFixed(2)}\n${link}`,
     exceptUserId: ctx.actorId ?? null,
   });
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(requestId, 'sealed', {
+    amountText: `$${totals.totalUsd.toFixed(2)}`,
+  });
 
   if (totals.discountUsd > 0 || input.bandOverrideMin !== null) {
     // WHO hears about a concession (round 112, his «4c»): the owner, the
@@ -2851,6 +2854,7 @@ export async function recalcFromSealed(
       linkLine(card.entityType, card.entityId),
     exceptUserId: ctx.actorId,
   }).catch((err) => logger.error({ err, newId }, '[calc] recalc notify failed'));
+  await (await import('../agent/calc-loop')).announceAgentCalcSafe(newId, 'recalc');
   // The old price's channel post gets its «qayta hisoblanmoqda» mark — derived
   // by the drain's reconcile from the graph this insert just changed; the
   // kick only makes it soon (his F).

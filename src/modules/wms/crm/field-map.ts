@@ -2,6 +2,7 @@ import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { customFields, leadFieldMap, leadIntakes } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { clipUnits } from '../../platform/text/clip';
 import { CrmError } from './service';
 
 /**
@@ -51,9 +52,16 @@ const MAX_VALUE = 300;
 /** The names a shared secret travels under — never stored, never mapped. */
 const SECRET_KEYS = new Set(['google_key', 'key', 'secret', 'token']);
 
-/** One spelling per question: the map and the arrivals must agree. */
+/**
+ * One spelling per question: the map and the arrivals must agree — and with
+ * the rows saved before this release, so the cut keeps the UTF-16 budget the
+ * old `slice` had and only backs off a half emoji at the edge, which
+ * `lead_intakes.fields` (jsonb) refused (`clipUnits`; a cut by code points
+ * spelled a long emoji question one unit longer than its saved mapping, and
+ * every later arrival missed it: third review, 2026-10-24).
+ */
 export function normalizeKey(key: string): string {
-  return key.trim().toLowerCase().slice(0, MAX_KEY);
+  return clipUnits(key.trim().toLowerCase(), MAX_KEY);
 }
 
 /**
@@ -65,7 +73,11 @@ export function capturePairs(pairs: FieldPair[] | null | undefined): FieldPair[]
   const out: FieldPair[] = [];
   for (const pair of pairs) {
     const key = normalizeKey(String(pair.key ?? ''));
-    const value = String(pair.value ?? '').trim().slice(0, MAX_VALUE);
+    // For the same jsonb: a 300-character evidence line with an emoji at the
+    // edge (or a NUL anywhere) made the arrival's ledger row throw — after its
+    // lead was written — on every door (reviews, 2026-10-24). The old budget,
+    // so a mapped text answer still fits the field's own `maxLength`.
+    const value = clipUnits(String(pair.value ?? '').trim(), MAX_VALUE);
     if (!key || !value) continue;
     if (SECRET_KEYS.has(key)) continue;
     out.push({ key, value });

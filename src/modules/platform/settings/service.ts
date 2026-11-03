@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { settings } from '../db/schema';
 import { parseDayOrInstant } from '../time/tashkent';
 import { originsSettingValid } from '../http/origins';
+import { reasonListValid } from './reason-list';
 
 /**
  * Typed settings registry (spec §17). Values live as JSONB rows in
@@ -302,6 +303,15 @@ export const SETTING_DEFAULTS = {
    * is what covers that.
    */
   lead_assign_origins: 'https://gsrlogistics.uz https://www.gsrlogistics.uz',
+  /**
+   * Lost reasons that mean «never again» to the client-finding agent
+   * (2026-10-23, docs/AGENT-FEED.md). `;`-separated labels, matched
+   * case-insensitively against `leads.lost_reason` — the TEXT chosen at the
+   * move, so a renamed reason keeps suppressing under its old spelling only
+   * while that spelling stays listed here. Read by /api/agent/suppression and
+   * by the agent door's landing belt; nothing else.
+   */
+  agent_no_contact_reasons: 'Qayta qilinmasin',
 };
 
 export type SettingKey = keyof typeof SETTING_DEFAULTS;
@@ -317,6 +327,7 @@ export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];
 export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boolean>> = {
   unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
   lead_assign_origins: originsSettingValid,
+  agent_no_contact_reasons: reasonListValid,
 };
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {

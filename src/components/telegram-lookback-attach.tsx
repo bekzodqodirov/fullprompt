@@ -21,12 +21,15 @@ export function LookbackAttach({
   clientId,
   leadId,
   label,
+  serviceChatLabel,
 }: {
   peerId: string;
   phone: string;
   clientId: string | null;
   leadId: string | null;
   label: string;
+  /** `service_chat` in words: Telegram's own 777000 chat belongs to no card. */
+  serviceChatLabel: string;
 }) {
   const [state, submit, pending] = useActionState<LookbackState, FormData>(attachChatAction, {});
   const pathname = usePathname();
@@ -46,7 +49,11 @@ export function LookbackAttach({
       >
         {label}
       </button>
-      {state.error && <span className="text-xs font-semibold text-bad">{state.error}</span>}
+      {state.error && (
+        <span className="text-xs font-semibold text-bad">
+          {state.error === 'service_chat' ? serviceChatLabel : state.error}
+        </span>
+      )}
     </form>
   );
 }

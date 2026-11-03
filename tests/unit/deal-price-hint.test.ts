@@ -30,8 +30,9 @@ describe('the deal price beside the truck price (his item 7, 2026-09-26)', () =>
 });
 
 describe('several prixods and deals for one client (2026-09-26, item 5)', () => {
-  const lot = (dealId: string | null, receiptId: string, m3: number, kg: number) => ({
+  const lot = (dealId: string | null, receiptId: string, m3: number, kg: number, dealClientId: string | null = 'C') => ({
     dealId,
+    dealClientId: dealId ? dealClientId : null,
     dealCode: dealId ? `B-${dealId}` : null,
     m3,
     kg,
@@ -39,7 +40,7 @@ describe('several prixods and deals for one client (2026-09-26, item 5)', () => 
   });
 
   it('splits the cargo by deal and counts the prixods', () => {
-    const got = dealSharesOf([lot('1', 'r1', 2, 100), lot('1', 'r2', 3, 150), lot('2', 'r3', 5, 500)]);
+    const got = dealSharesOf([lot('1', 'r1', 2, 100), lot('1', 'r2', 3, 150), lot('2', 'r3', 5, 500)], 'C');
     expect(got.receipts).toBe(3);
     expect(got.unlinkedReceipts).toBe(0);
     expect(got.shares).toEqual([
@@ -53,17 +54,32 @@ describe('several prixods and deals for one client (2026-09-26, item 5)', () => 
       ['1', { amount: 1000, currency: 'USD', m3: 10, kg: null }],
       ['2', { amount: 600, currency: 'USD', m3: 5, kg: null }],
     ]);
-    const { shares } = dealSharesOf([lot('1', 'r1', 5, 0), lot('2', 'r2', 5, 0)]);
+    const { shares } = dealSharesOf([lot('1', 'r1', 5, 0), lot('2', 'r2', 5, 0)], 'C');
     // Half of deal 1 (500) and all of deal 2 (600).
     expect(expectedForDeals(quotes, shares, 0)).toBe(1100);
   });
 
   it('says nothing when part of the cargo has no deal or no dollar quote', () => {
     const quotes = new Map([['1', { amount: 1000, currency: 'USD', m3: 10, kg: null }]]);
-    const { shares, unlinkedReceipts } = dealSharesOf([lot('1', 'r1', 5, 0), lot(null, 'r2', 1, 0)]);
+    const { shares, unlinkedReceipts } = dealSharesOf([lot('1', 'r1', 5, 0), lot(null, 'r2', 1, 0)], 'C');
     expect(unlinkedReceipts).toBe(1);
     expect(expectedForDeals(quotes, shares, unlinkedReceipts)).toBeNull();
     const som = new Map([['1', { amount: 1000, currency: 'UZS', m3: 10, kg: null }]]);
-    expect(expectedForDeals(som, dealSharesOf([lot('1', 'r1', 5, 0)]).shares, 0)).toBeNull();
+    expect(expectedForDeals(som, dealSharesOf([lot('1', 'r1', 5, 0)], 'C').shares, 0)).toBeNull();
+  });
+
+  it('reads another client’s deal as unlinked — its quote is not this client’s to be compared with', () => {
+    // A prixod re-assigned to C still names its old client Z's deal: the
+    // price door calls that cargo deal-less (`ownDealOf`), so the shares, the
+    // sum and the quotes loaded for them must too (review: the «bitimsiz»
+    // 5 % check compared C's price with Z's quote).
+    const quotes = new Map([
+      ['1', { amount: 1000, currency: 'USD', m3: 10, kg: null }],
+      ['F', { amount: 9999, currency: 'USD', m3: 1, kg: null }],
+    ]);
+    const got = dealSharesOf([lot('1', 'r1', 5, 0), lot('F', 'r2', 1, 0, 'Z')], 'C');
+    expect(got.shares.map((share) => share.dealId)).toEqual(['1']);
+    expect(got.unlinkedReceipts).toBe(1);
+    expect(expectedForDeals(quotes, got.shares, got.unlinkedReceipts)).toBeNull();
   });
 });

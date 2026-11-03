@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { recordVisit } from '@/modules/platform/nav/usage';
+import { agentNavDoors } from '@/modules/wms/agent/web-door';
 
 /**
  * «I opened this tab» — the automatic half of «Tez-tez» (0111).
@@ -20,6 +21,9 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { href?: unknown } | null;
   const href = typeof body?.href === 'string' ? body.href : null;
   if (!href || href.length > 64) return new NextResponse(null, { status: 204 });
-  await recordVisit(actor.id, { permissions: actor.permissions, roles: actor.roles }, href);
+  // The same viewer the layout drew the strip for — a tab its doors opened
+  // is a tab the strip offered (the AI sotuvchi's page).
+  const viewer = { permissions: actor.permissions, roles: actor.roles, doors: await agentNavDoors(actor) };
+  await recordVisit(actor.id, viewer, href);
   return new NextResponse(null, { status: 204 });
 }

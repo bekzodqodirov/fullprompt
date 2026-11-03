@@ -39,7 +39,7 @@ const clearTicket = (requestId: string, job: string) => sql`
  * §10.2.1)? The ONE home for «busy»: the add door's standing asks it, and so
  * does the sender before it queues a second pass.
  *
- * A pass stands when the request carries a ticket (`ai_pass_job`, 0138) and
+ * A pass stands when the request carries a ticket (`ai_pass_job`, 0139) and
  * pg-boss still has THAT job waiting or running. It is a fact about a job,
  * never a time window: under a deep queue a window cleared «busy» before the
  * landing's pass had even started (the first draft's 35 minutes), and the

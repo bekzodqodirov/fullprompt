@@ -455,7 +455,7 @@ describe('(g)-(i) the doors that never write', () => {
     expect(note.note).toContain(`· 1-qator «Krossovka ${SUFFIX}»: sotuvchi kodi 6402990000 (so‘rovda 6403990000 — VED hal qiladi)`);
   });
 
-  it('(i) no stamp (a request from before 0138, or a correction) → `started`', async () => {
+  it('(i) no stamp (a request from before 0139, or a correction) → `started`', async () => {
     const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
     await db.update(calcRequests).set({ handsoffRev: null }).where(eq(calcRequests.id, r.requestId));
     expect((await amendStanding(r.requestId)).standing).toBe('started');

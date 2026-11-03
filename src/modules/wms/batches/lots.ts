@@ -1,9 +1,9 @@
 import { cache } from 'react';
 import { asc, eq, ne, sql, and } from 'drizzle-orm';
-import { db } from '../../platform/db/client';
+import { db, type Db, type Tx } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
-import { leftBehindSql, riderFilter, rodeLaterSql } from './riders';
-import { soleDealOf } from '../finance/pricing-view';
+import { leftBehindSql, riderFilter, riderRowsSql, rodeLaterSql } from './riders';
+import { dealCandidatesOf, type DealCandidates } from '../finance/truck-deal';
 
 /**
  * What rode this truck, one row per LOT — the goods, not the client (owner,
@@ -53,6 +53,13 @@ export interface BatchLot {
   dealId: string | null;
   dealCode: string | null;
   dealTitle: string | null;
+  /**
+   * Whose job the receipt's deal is. A prixod re-assigned to another client
+   * keeps its old deal link (`assignReceiptClient`), and the pricing readers
+   * treat such a lot as deal-less for its new client (`ownDealOf`); the lot
+   * row itself still prints the stored link, which is how somebody sees it.
+   */
+  dealClientId: string | null;
   /**
    * The calculation this lot's prixod is linked to (0119, «🧮 Bitim hisobi»)
    * and whether a PERSON confirmed it — a guess and an answer read differently
@@ -107,6 +114,7 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       dealId: deals.id,
       dealCode: deals.code,
       dealTitle: deals.title,
+      dealClientId: deals.clientId,
       calcRequestId: receipts.calcRequestId,
       calcLinkConfirmedAt: receipts.calcLinkConfirmedAt,
       onBatch: sql<number>`count(*)`,
@@ -174,6 +182,7 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       dealId: row.dealId,
       dealCode: row.dealCode,
       dealTitle: row.dealTitle,
+      dealClientId: row.dealClientId,
       calcRequestId: row.calcRequestId,
       calcLinkConfirmed: row.calcLinkConfirmedAt !== null,
       onBatch,
@@ -192,32 +201,89 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
 });
 
 /**
- * Is this client's cargo aboard this truck, and the deal a price set here is
- * ALSO written to (owner's R3a) — `soleDealOf` over the deals of the client's
- * cargo aboard, read by the same rider rule as `batchLots` (the screen that
- * announces it), so the page and the ledger cannot answer differently. A deal
- * whose client is not this one is never written: the receipt's link is
- * somebody else's data and no price may reach another client's job through it.
+ * The deals a client's cargo rides a truck under — one row per (truck,
+ * client, receipt deal, that deal's client) over the money riders
+ * (`riderRowsSql`: the live pointer before departure, the rides after it, a
+ * void box never). The ONE read behind every question about a truck price's
+ * deal: the price door before its transaction and again inside it (`tx`),
+ * the «Narx» tab once per truck for all its clients, and the client ledger's
+ * truck select once over the trucks it offers — so no screen can draw a
+ * question the door would answer differently (#513). `dealCandidatesOf`
+ * folds the rows into the answer.
+ *
+ * `clientId` null reads every client on the trucks (the «Narx» tab).
+ */
+export interface DealCandidateRow {
+  batchId: string;
+  clientId: string;
+  dealId: string | null;
+  dealClientId: string | null;
+}
+
+export async function dealCandidateRows(
+  batchIds: string[],
+  clientId: string | null,
+  handle: Db | Tx = db,
+): Promise<DealCandidateRow[]> {
+  if (batchIds.length === 0) return [];
+  const list = sql.join(
+    batchIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  // Many trucks of ONE client (the ledger lists every truck he ever rode):
+  // start from his own cartons, every ride of theirs, kept to the listed
+  // trucks — the same rows as the trucks' riders filtered to him, without
+  // walking every other client's cartons on those trucks (review). One truck
+  // (the price door, the «Narx» tab) starts from the truck.
+  const riders =
+    clientId && batchIds.length > 1
+      ? sql`SELECT ro.batch_id, ro.box_id FROM (${riderRowsSql({
+          boxes: sql`SELECT ob.id FROM boxes ob
+                       JOIN receipt_lots ol ON ol.id = ob.lot_id
+                       JOIN receipts orr ON orr.id = ol.receipt_id
+                      WHERE orr.client_id = ${clientId}::uuid`,
+        })}) ro WHERE ro.batch_id IN (${list})`
+      : riderRowsSql({ batches: list });
+  const rows = (await handle.execute(sql`
+    SELECT DISTINCT rr.batch_id, r.client_id, r.deal_id, d.client_id AS deal_client_id
+      FROM (${riders}) rr
+      JOIN boxes cb ON cb.id = rr.box_id
+      JOIN receipt_lots cl ON cl.id = cb.lot_id
+      JOIN receipts r ON r.id = cl.receipt_id
+      LEFT JOIN deals d ON d.id = r.deal_id
+     WHERE r.client_id IS NOT NULL ${clientId ? sql`AND r.client_id = ${clientId}::uuid` : sql``}
+  `)) as unknown as { batch_id: string; client_id: string; deal_id: string | null; deal_client_id: string | null }[];
+  return [...rows].map((row) => ({
+    batchId: row.batch_id,
+    clientId: row.client_id,
+    dealId: row.deal_id,
+    dealClientId: row.deal_client_id,
+  }));
+}
+
+/**
+ * Is this client's cargo aboard this truck, and which deals a price set here
+ * may be written to (`dealCandidatesOf` — R3a's one derived deal, or his Q8
+ * «c» choice between several). A deal whose client is not this one is never
+ * a candidate: the receipt's link is somebody else's data and no price may
+ * reach another client's job through it.
  *
  * `aboard` is the price door's refusal (0104, U31 claim 1): a truck price for a
  * client with nothing on the truck names no cargo. The pricing screen draws a
  * form only for riders, so it refuses a stale or hand-built post — and the
  * card form's truck select and «🚚 Ko'chirish», which cannot mint a no-cargo
  * price at birth.
+ *
+ * Takes the handle so the price door asks it AGAIN inside its transaction,
+ * after the truck lock, with the very same statement (#714: never the pool
+ * from inside a transaction).
  */
 export async function cargoAboard(
   batchId: string,
   clientId: string,
-): Promise<{ aboard: boolean; dealId: string | null }> {
-  const rows = await db
-    .selectDistinct({ dealId: receipts.dealId, dealClientId: deals.clientId })
-    .from(boxes)
-    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-    .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-    .leftJoin(deals, eq(receipts.dealId, deals.id))
-    .where(and(riderFilter(batchId), ne(boxes.status, 'void'), eq(receipts.clientId, clientId)));
-  const aboard = rows.length > 0;
-  const dealId = soleDealOf(rows);
-  if (!dealId) return { aboard, dealId: null };
-  return { aboard, dealId: rows.find((row) => row.dealId === dealId)?.dealClientId === clientId ? dealId : null };
+  handle: Db | Tx = db,
+): Promise<{ aboard: boolean; dealId: string | null; candidates: DealCandidates }> {
+  const rows = await dealCandidateRows([batchId], clientId, handle);
+  const candidates = dealCandidatesOf(rows, clientId);
+  return { aboard: rows.length > 0, dealId: candidates.sole, candidates };
 }

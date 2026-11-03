@@ -1317,10 +1317,12 @@ export const clientTransactions = pgTable(
     batchId: uuid('batch_id').references(() => batches.id),
     /**
      * The job this charge is for, when it was raised from one. A charge posted
-     * from batch pricing carries it only when the client's cargo on that truck
-     * is one deal's and nothing else (R3a, derived server-side by
-     * `cargoAboard`); null otherwise — which is a correct answer, not a
-     * gap: a deferral cannot cover money nobody tied to a job.
+     * from batch pricing carries it when the client's cargo on that truck is
+     * one deal's and nothing else (R3a, derived server-side by `cargoAboard`),
+     * or — two or more of his deals aboard — the deal the person setting the
+     * price CHOSE (Q8 «c», `truckDealDecision`); null for a deal beside
+     * deal-less cargo or a chosen «bitimsiz» — which is a correct answer, not
+     * a gap: a deferral cannot cover money nobody tied to a job.
      */
     dealId: uuid('deal_id').references(() => deals.id),
     /** Which cash box the payment landed in (Phase 2.4 cash flow). */
@@ -2445,6 +2447,8 @@ export const tgMessages = pgTable(
     index('tg_messages_client_idx').on(t.clientId, t.sentAt),
     // The round-20 scoped reads lead with the manager (migration 0048).
     index('tg_messages_manager_idx').on(t.managerUserId, t.clientId, t.sentAt),
+    // A delete names message ids, not chats (0138, the agent's «deleted for both sides»).
+    index('tg_messages_manager_message_idx').on(t.managerUserId, t.tgMessageId),
   ],
 );
 
@@ -2835,16 +2839,16 @@ export const calcRequests = pgTable(
      */
     rev: integer('rev').notNull().default(0),
     /**
-     * The revision the machine's pass or the seller's own addition left (0138,
+     * The revision the machine's pass or the seller's own addition left (0139,
      * his 1.9 a). Equal to `rev` = no person has written since, which is «VED
      * hali boshlamagan»; behind it for good once a person saves. NULL = not
-     * known (requests before 0138, corrections — a correction is the VED's
+     * known (requests before 0139, corrections — a correction is the VED's
      * job). The landing writes 0, rev's own default. One mover:
      * `advanceHandsOffInTx`, inside the save that earns it.
      */
     handsoffRev: integer('handsoff_rev'),
     /**
-     * A machine pass owed or running (0138): the revision it was queued at,
+     * A machine pass owed or running (0139): the revision it was queued at,
      * when, and its own pg-boss job — «busy» is «that job is alive», never a
      * time window. Set by `queueCalcPrefill` on whichever queue the section
      * names and cleared by that queue's settle. Neither moves `rev`.
@@ -3921,7 +3925,7 @@ export const aiCalcPasses = pgTable(
     kind: text('kind').notNull(),
     /**
      * A collection's model reading is billed when the model answers, before
-     * any request exists (0138): the collection's note anchors it, and the
+     * any request exists (0139): the collection's note anchors it, and the
      * landing fills `request_id` (`attachIntakePasses`). 'intake' only.
      */
     intakeNoteId: uuid('intake_note_id'),
@@ -3939,7 +3943,7 @@ export const aiCalcPasses = pgTable(
       'ai_calc_passes_kind_check',
       sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
     ),
-    // One anchor per kind (0119's two rules, 0138's third: an intake reading
+    // One anchor per kind (0119's two rules, 0139's third: an intake reading
     // may stand on its note alone until the landing). Safe beside the FK:
     // CASCADE, not SET NULL (#809).
     check(
@@ -3958,7 +3962,7 @@ export const aiCalcPasses = pgTable(
 );
 
 /**
- * What a seller added to a landed request, and what became of it (0138, his
+ * What a seller added to a landed request, and what became of it (0139, his
  * 1.9 a): written into the rows ('applied'), handed to the VED ('to_ved'),
  * stored until the running machine pass ends ('waiting'), or only filed on the
  * card ('noted'). The note id is the once-key, inserted in the save's own

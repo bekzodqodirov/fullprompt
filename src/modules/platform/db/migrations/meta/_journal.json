@@ -972,7 +972,14 @@
       "idx": 138,
       "version": "7",
       "when": 1785190000117,
-      "tag": "0138_calc_intake_durable",
+      "tag": "0138_ai_sotuvchi",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1785190000118,
+      "tag": "0139_calc_intake_durable",
       "breakpoints": true
     }
   ]

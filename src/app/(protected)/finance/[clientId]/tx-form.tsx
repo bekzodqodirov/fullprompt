@@ -1,9 +1,13 @@
 'use client';
 
 import { useActionState, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import { latestTxDate } from '@/modules/wms/finance/dates';
+import { shownDealChoice } from '@/modules/wms/finance/truck-deal';
 import { useTranslations } from 'next-intl';
+import { TruckDealSelect, questionValues, type TruckDealQuestion } from '@/components/truck-deal-select';
+import { truckDealErrorKey } from '@/components/truck-deal-errors';
 import { addTransactionAction, type TxFormState } from '../actions';
 import { CompensationForm, type LostChargeOption, type LostReceiptOption } from './compensation-form';
 
@@ -53,7 +57,20 @@ export function TxForm({
    * then newest. A price that names a truck covers that truck's prixods; one
    * that names neither a truck nor a deal covers nothing (said below).
    */
-  trips: { batchId: string; code: string; unpriced: boolean; crossesBorder: boolean }[];
+  trips: {
+    batchId: string;
+    code: string;
+    unpriced: boolean;
+    crossesBorder: boolean;
+    /**
+     * Which deal a charge on this truck is written to (Q8 «c»), from the
+     * price door's own read: the one deal derived and said, or — two or more
+     * of the client's deals aboard — the question, required. `key` is posted
+     * back, so the door refuses an answer to a question the cargo no longer
+     * asks.
+     */
+    deal: { key: string; sole: { id: string; code: string } | null; question: TruckDealQuestion | null };
+  }[];
   /**
    * The lost-cargo door's data (0105) — loaded by the page only for the kassa
    * holders (`canRefund`), who alone may write a compensation.
@@ -63,15 +80,29 @@ export function TxForm({
   const t = useTranslations('finance');
   const tc = useTranslations('common');
   const [type, setType] = useState<'payment' | 'charge' | 'refund' | 'compensation'>('payment');
+  const router = useRouter();
   const [batchId, setBatchId] = useState('');
   const [dealId, setDealId] = useState('');
+  // The truck's deal, chosen under the question it was chosen for.
+  const [choice, setChoice] = useState<{ deal: string; seen: string } | null>(null);
   const picked = trips.find((trip) => trip.batchId === batchId);
+  // A CHARGE naming a truck takes its deal from that truck's cargo — derived,
+  // or chosen between the client's deals aboard; the ledger's own deal list
+  // stays for payments and for a price with no truck.
+  const truckDeal = type === 'charge' && picked ? picked.deal : null;
+  const shown = truckDeal?.question ? shownDealChoice(choice, truckDeal.key, questionValues(truckDeal.question)) : '';
   // China cargo priced on a local leg covers nothing of the road (Q1).
   const localLeg = Boolean(picked && !picked.crossesBorder && trips.some((trip) => trip.crossesBorder));
-  const [state, formAction, pending] = useActionState<TxFormState, FormData>(
-    addTransactionAction,
-    {},
-  );
+  const [state, formAction, pending] = useActionState<TxFormState, FormData>(async (prev, formData) => {
+    const result = await addTransactionAction(prev, formData);
+    // The cargo's deals moved since the page was drawn: redraw the question,
+    // never answer it for the person.
+    if (result.error === 'deals_changed') {
+      setChoice(null);
+      router.refresh();
+    }
+    return result;
+  }, {});
   // The truck and the job are CONTROLLED (they drive the local-leg and
   // deal hints), so React's reset after a saved form does not reach them:
   // the next payment silently carried the last one's deal (review). Cleared
@@ -82,6 +113,7 @@ export function TxForm({
     if (state.ok) {
       setBatchId('');
       setDealId('');
+      setChoice(null);
     }
   }
 
@@ -220,7 +252,13 @@ export function TxForm({
           aria-label={t('txTruck')}
           className="input"
           value={batchId}
-          onChange={(event) => setBatchId(event.target.value)}
+          onChange={(event) => {
+            setBatchId(event.target.value);
+            // A deal picked for another truck (or for no truck) must never
+            // ride along silently onto this one.
+            setDealId('');
+            setChoice(null);
+          }}
           data-testid="tx-truck"
         >
           <option value="">— {t('txTruck')}</option>
@@ -242,7 +280,21 @@ export function TxForm({
           {t('txLocalLegHint')}
         </p>
       )}
-      {deals.length > 0 && (
+      {truckDeal && <input type="hidden" name="dealsSeen" value={truckDeal.key} />}
+      {truckDeal?.question && (
+        <TruckDealSelect
+          question={truckDeal.question}
+          value={shown}
+          stale={choice !== null && shown === ''}
+          onChange={(value) => setChoice(value ? { deal: value, seen: truckDeal.key } : null)}
+        />
+      )}
+      {truckDeal?.sole && (
+        <p className="text-xs text-ink-500" data-testid="tx-truck-deal">
+          → {t('priceAlsoToDeal', { code: truckDeal.sole.code })}
+        </p>
+      )}
+      {!truckDeal && deals.length > 0 && (
         <select
           name="dealId"
           aria-label={t('forDeal')}
@@ -284,7 +336,9 @@ export function TxForm({
                             ? t('clientNotAboard')
                             : state.error === 'internal_batch'
                               ? t('internalBatchRefused')
-                              : tc('error')}
+                              : truckDealErrorKey(state.error)
+                                ? t(truckDealErrorKey(state.error)!)
+                                : tc('error')}
         </p>
       )}
       <button type="submit" disabled={pending} className="btn-primary w-full disabled:opacity-60">

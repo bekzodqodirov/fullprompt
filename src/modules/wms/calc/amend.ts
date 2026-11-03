@@ -94,7 +94,7 @@ export async function amendStanding(requestId: string): Promise<{
   // even started, the addition applied, and the pass then told the seller
   // «VED allaqachon ishlayapti» about his own addition.
   if ((await ticketStanding(requestId)) === 'live') return { standing: 'busy', ...facts };
-  // No stamp: a request from before 0138, or a correction (the VED's job).
+  // No stamp: a request from before 0139, or a correction (the VED's job).
   if (row.handsoffRev === null) return { standing: 'started', ...facts };
   const stand = await prefillStanding(requestId, row.handsoffRev);
   const standing: AmendStanding =

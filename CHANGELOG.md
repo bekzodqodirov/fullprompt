@@ -1,5 +1,286 @@
 # CHANGELOG
 
+## 2026-10-24 → 10-29 — Mijoz topuvchi agent uchun eshik: lidlar CRMga tushadi, agent ikki ro'yxatni o'qiydi
+
+Sizning 23-oktabrdagi qaroringiz: alohida dastur (agent) internetdan Xitoydan yuk olib keladigan firmalarni topadi, siz tasdiqlaysiz, lid CRMga tushadi va sotuvchilar o'zlari yozadi. Agent hech kimga yozmaydi. (Bu «agent» — AI sotuvchi emas: AI sotuvchi sizning Telegram akkauntingizdagi yordamchi, u ham siz ✅ bosmaguningizcha hech kimga yozmaydi — pastda.) **Migratsiya yo'q** — bu eshik o'z migratsiyasini qo'shmaydi: deploydan keyin baza hisobi asosiy shoxdagidek **139** bo'ladi, yangilangani esa `/api/version` dagi build vaqtidan tekshiriladi.
+
+### Nima qo'shildi
+- **Yangi manba «Agent (qidiruv)».** «Kelgan arizalar → Reklama havolalari» ro'yxatida chiqadi. Unda forma va bot havolasi yo'q — bu eshik faqat mashina uchun. Kimdir forma manzilida `manba=agent` yozsa ham ariza «Sayt» bo'lib, bot havolasida yozsa «Boshqa» bo'lib tushadi — agentniki bo'lib emas.
+- **Mijozlarimizga agent yetib bormaydi.** Agent yuborgan raqam mijozlar kitobida bo'lsa (faol yoki faol bo'lmagan mijoz, yoki mijozning «Odam» kartasida), mijozga aylangan lidda bo'lsa (yutilgan yoki mavjud mijoz kodiga biriktirilgan) yoki «Qayta qilinmasin» sababi bilan yopilgan lidda bo'lsa — lid ochilmaydi, hech kimga xabar bormaydi, «Kelgan arizalar» ro'yxatida «Olinmadi · suppressed» bo'lib yoziladi. Mijoz kartasidagi raqam qisqa yozilgan bo'lsa ham (7–8 raqam), bitta qatorga ikki raqam yozilgan bo'lsa ham («A / B») tizim uni taniydi. Raqamsiz yoki 9 raqamdan qisqa raqamli agent arizasi ham hech kimga bormaydi («Olinmadi · no_phone»). Reklama va formadan kelgan arizalar avvalgidek ishlaydi.
+- **Agent sizning mijozlaringizning kunlik chegarasini «yemaydi».** Bitta raqamga kuniga 3 tadan ortiq ariza kelsa, qolgani olinmaydi — bu avvalgidek. Endi agent arizalari faqat agentning o'z chegarasiga sanaladi: agent bir raqamni uch marta yuborgan bo'lsa ham, o'sha odam o'zi formadan yozsa ariza odatdagidek tushadi.
+- **Agent lidlariga 15 daqiqalik «⏰ tegilmagan» eslatmasi bormaydi** (kuniga 25 tagacha bo'lishi mumkin). Sotuvchiga «🆕 Yangi lid · Agent (qidiruv)» xabari esa darhol boradi, va birinchi aloqa vaqti baribir o'lchanadi (/crm/tahlil).
+- **Agent o'qiydigan ikki ro'yxat** — faqat agentning kaliti bilan ochiladi:
+  1. «Taklif qilinmasin» ro'yxati: mijozlar va «Qayta qilinmasin» lidlarning raqamlari — raqamning o'zi emas, shifrlangan izi (agentga mijozlar kitobi berilmaydi).
+  2. Natijalar ro'yxati: agent yuborgan har bir lid nima bo'ldi — ochildimi, qaysi etapda, yutildimi yoki qaysi sabab bilan yo'qotildi, sotuvchi qachon bog'landi (bir haftadan keyin bog'lansa ham — 90 kungacha). Ism, telefon, izoh, sotuvchi ismi va narx bu ro'yxatga chiqmaydi. Yo'qotish sababi faqat **ro'yxatdagi sabab** bo'lsa chiqadi; sotuvchi o'zi qo'lda yozgan matn (unda ism yoki telefon bo'lishi mumkin) chiqmaydi.
+- **Yangi sozlama `agent_no_contact_reasons`** (Boshqaruv → Sozlamalar): qaysi yo'qotish sababi «bu raqamga boshqa hech qachon» degani. Standart: `Qayta qilinmasin`. Bir nechta bo'lsa `;` bilan yozasiz; katta-kichik harf farqi yo'q.
+- Agent yuborgan firma nomi lidning **«Kompaniya»** maydoniga yoziladi (izohda ham turadi). Boshqa platformalar (sayt, Zapier va h.k.) uchun hech narsa o'zgarmadi: ular yuborgan `company`/`firma` avvalgidek izohga tushadi.
+- «Agent (qidiruv)» manbasi lid ochish formasida tanlanmaydi — uni faqat agent yozadi (agent ochgan lidning o'z kartasida esa ko'rinib turadi).
+- «Kelgan arizalar» sahifasi platforma kalitlarini endi faqat sozlamalarni o'zgartira oladigan odamga yuboradi. Avval kalit ko'rinmasa ham sahifa ichida boshqa CRM boshqaruvchilariga ham borardi.
+
+### Ikkinchi tekshiruvdan keyin tuzatilganlar (barcha arizalar uchun)
+- **Ariza yarmida to'xtab qolmaydi.** Ism, izoh yoki forma javobida emoji (masalan 🔥) aynan chegarada turgan bo'lsa (ism 120, javob 300 belgi), tizim lidni ochardi-yu, keyin arizani yozolmay qolardi: lid sotuvchiga xabarsiz, «Kelgan arizalar»da yozuvsiz osilib qolardi. Bu reklama, forma va agent — hammasida bor edi. Endi emoji hech qachon yarmidan kesilmaydi.
+- **Bitta noto'g'ri saqlangan mijoz kartasi hamma arizani to'xtatmaydi.** Kartadagi telefonlar ro'yxat emas, bitta matn bo'lib saqlangan bo'lsa (qo'lda yoki eski importdan), telefonli har qanday ariza xato berardi. Endi bunday karta «telefonsiz» o'qiladi. Serveringizda shunday karta bor-yo'qligini bilmayman — xohlasangiz bitta faqat o'qiydigan so'rov bilan sanab beraman.
+- **Bitta ariza tez-tez ikki marta kelsa, ikkita lid ochilmaydi.** Agent yoki platforma birinchi javobni kutmay qayta yuborsa, ikkinchisi endi birinchisini kutadi va «takror» hisoblanadi.
+- **Agent eshigida xato bo'lsa, agent buni biladi:** bazada muammo bo'lsa agent «keyinroq qayta yuboring» javobini oladi va o'zi qayta yuboradi. Reklama eshiklari avvalgidek har doim «qabul qilindi» deydi.
+- Agent mijozlarimizni tanishda endi xato qilmaydi: bir qatorga yozilgan raqamning bo'lagi («90/283-65-94» dagi «2836594») boshqa yuzlab raqamlarni to'smaydi, uchta raqam bitta qatorga qo'shilib ketgan bo'lsa ham faqat o'sha uch raqam taniladi, «Odam» kartasiga kod biriktirilgan zahoti uning raqamlari agentga darhol boradi. Tekshiruv ham taxminan 3 marta tezlashdi.
+- **/crm/tahlil:** sotuvchining «Birinchi aloqa» o'rtacha vaqti hamma manba uchun bitta qoida bilan hisoblanadi — bir haftadan keyingi aloqa «kech» soniga kiradi, o'rtacha vaqtga kirmaydi (reklama lidlari uchun hech narsa o'zgarmadi).
+
+### Uchinchi tekshiruvdan keyin tuzatilganlar (barcha arizalar uchun)
+- **Ko'rinmaydigan «nol» belgili ariza endi yo'qolmaydi.** Ba'zi dasturlar matnga ko'rinmaydigan maxsus belgi (NUL) qo'shib yuboradi. Shunday ariza kelsa, tizim lidni ochardi-yu, arizani yozolmay qolardi: lid sotuvchiga xabarsiz, «Kelgan arizalar»da yozuvsiz qolardi. Sayt formasida (`/ariza`) bu yanada yomon edi: kimdir shu belgini qo'shib ko'p ariza yuborsa, kunlik chegara (bir raqamga 3 ta, bir manbaga 200 ta) ularni sanamasdi — voronka keraksiz lidlarga to'lib ketishi mumkin edi. Bu xato hozirgi serveringizda ham bor. Endi bunday belgi «�» bo'lib saqlanadi, ariza odatdagidek yoziladi va chegara uni sanaydi. Agent eshigida esa bunday ariza endi «keyinroq qayta yuboring» javobini abadiy olmaydi.
+- **Ikkinchi tekshiruvdagi bir tuzatish eski «Forma savollari» bog'lashlarini buzardi — tuzatildi.** Instagram/Facebook formasidagi savol uzun bo'lsa va boshida emoji bo'lsa (masalan «📦 yukingiz taxminan necha kub…»), ilgari bog'langan savol yangi arizalarda tanilmay qolardi: lidda kub bo'sh chiqardi, kub bo'yicha taqsimot qoidasi ishlamasdi. Bu tuzatish hali deploy qilinmagan edi, shuning uchun sizga ta'sir qilmagan. Endi savol, ism va javoblar avvalgidek bir xil uzunlikda kesiladi, eski bog'lashlaringiz ishlayveradi — hech narsani qayta bog'lash shart emas. Chegarada sig'magan emoji yarmidan kesilmaydi, butunlay tushib qoladi.
+- Juda chuqur (minglab qavatli) qo'shimcha ma'lumot yuborilsa ham ariza yoziladi; faqat o'sha qo'shimcha ma'lumot saqlanmaydi.
+
+### To'rtinchi tekshiruvdan keyin tuzatilganlar (barcha arizalar uchun)
+- **Juda uzun «ariza raqami» bilan kelgan ariza endi yo'qolmaydi.** Har bir platforma arizaga o'z raqamini qo'shib yuboradi — xuddi shu ariza qayta kelsa, tizim uni shu raqamdan taniydi. Kalitga ega platforma (Google, Zapier, sayt yoki agent) juda uzun raqam yuborsa (taxminan 2 700 belgidan uzun), tizim lidni ochardi-yu, arizani yozolmay qolardi: lid sotuvchiga xabarsiz, «Kelgan arizalar»da yozuvsiz qolardi va kunlik chegara uni sanamasdi; agent eshigida esa har qayta yuborishda lentaga yana bitta izoh qo'shilardi. Bu xato hozirgi serveringizda ham bor, lekin amalda bunday raqam yuboradigan platforma yo'q (Google, Meta, bot va agent raqamlari 100 belgidan qisqa). Endi baza sig'dira olmaydigan raqam uning qisqa izi (sha256) bo'lib yoziladi, ariza odatdagidek tushadi, qayta kelsa «takror» hisoblanadi. Baza sig'diradigan har qanday raqam avvalgidek yoziladi — hech narsa o'zgarmaydi.
+- **Hali qolgan, amalda uchramaydi:** kalitli platforma o'nlab megabaytlik (taxminan 40 MB) ariza yuborsa, xuddi shu holat bo'ladi. Oddiy ariza bir necha kilobayt, agentniki ham. To'liq yechim — arizani lid ochishdan oldin yozish — keyingi navbatda.
+- **Sizga yana bir savol** (pastdagi ikkitasidan tashqari): formadagi «kub» yoki «kg» javobi juda kichik (masalan `0.0004`) bo'lsa, lidda «0 kub» chiqadi; manfiy son (`-5`) esa 5 bo'lib yoziladi. Bu barcha eshiklarda hozirgi serveringizdagi holat, xato bermaydi, shuning uchun o'zgartirmadim. ⭐ Tavsiyam: 0.0005 dan kichik va manfiy javobni yozmaslik (lidda kub bo'sh qoladi, javob izohda turadi). Rozimisiz?
+
+### Asosiy shox bilan birlashtirilgandan keyingi tekshiruv (2026-10-29)
+- **Telegram Business'ning avtomatik javobi endi «bog'landi» hisoblanmaydi.** Akkauntingizda «hozir javob bera olmayman» kabi avtomatik javob yoqilgan bo'lsa, u ham chiquvchi xabar bo'lib saqlanadi. Tizim uni sotuvchining birinchi aloqasi deb hisoblardi: agent natijalar ro'yxatida «bog'landi» chiqardi, **reklama lidlarida esa 15 daqiqalik «⏰ tegilmagan» eslatmasi umuman kelmasdi** — aslida hech kim yozmagan bo'lsa ham. Endi avtomatik javob hisobga olinmaydi; odamning o'zi yozgan xabar avvalgidek hisoblanadi.
+- **AI sotuvchi va agent topgan odam.** Agent hech kimga yozmaydi, AI sotuvchi ham birinchi bo'lib yozmaydi: u faqat sizning akkauntingizga mijozning o'zi yozganda javob tayyorlaydi va **siz ✅ bosmaguningizcha hech narsa yubormaydi**. Endi agent topgan odamga AI javobi ✅ dan keyin ham faqat **dushanba–shanba 10:00–17:00** da ketadi (yakshanba va juma 12:00–14:00 — yo'q; agentning savdo qoidalaridagidek). Kechqurun bosilgan ✅ ertasi kuni 10:00 da ketadi; shanba kechqurun yoki yakshanba ertalab bosilsa, bot «javob ketmaydi — ish vaqtida o'zingiz yozing» deydi. Boshqa barcha mijoz va lidlar uchun hech narsa o'zgarmadi (tungi 22:00–08:00 qoida avvalgidek). **Sizga savol:** ⭐ shunday qolsinmi (a), yoki AI agent lidlariga umuman javob tayyorlamasin, sotuvchi o'zi yozguncha (b), yoki agent lidlari ham oddiy tungi qoidada bo'lsin va agentning qoidasini o'zgartiramiz (c)? Hozir ⭐ (a) qilib qo'ydim.
+- **Sizga yana bir savol:** agent topgan odam sizning akkauntingizni **bloklasa** (AI yoki sotuvchi javobi «bloklagan» deb qaytsa), tizim hozir buni agentga «taklif qilinmasin» deb aytmaydi — lid ochiq qoladi va bir oydan keyin agent shu firmani yana taklif qilishi mumkin. ⭐ (a) hozirgidek: blokni ko'rgan odam lidni «Qayta qilinmasin» sababi bilan yopadi — agent buni darhol biladi; (b) bloklagan raqam o'zi avtomatik «taklif qilinmasin» ro'yxatiga tushsin (agent bilan kelishuvni o'zgartiradi). Qaysi biri?
+- «Kelgan arizalar» sahifasida agent eshigi ostidagi izoh to'g'rilandi: endi «kalitni agent serveridagi `.env` ga qo'ying, reklama platformasiga qo'ymang» deydi (avval reklama formalari uchun yozilgan izoh chiqardi).
+
+### Siz qiladigan besh qadam (batafsil: `docs/AGENT-FEED.md` §0)
+1. **CRM → ⋯ → Kelgan arizalar → Reklama havolalari → «Agent (qidiruv)» → «Platformaning o'z formasi» → «Yoqish va kalit yaratish».** Kalitni agent serveridagi `.env` ga qo'ying, chatga yozmang.
+2. **CRM → ⋯ → CRM sozlamalari → «Yo'qotish sabablari»**: «Qayta qilinmasin» qo'shing. Ro'yxat hozir bo'sh bo'lsa, birinchi sabab qo'shilgan zahoti faqat ro'yxatdagi sabablarni tanlash mumkin bo'ladi — jamoa ishlatadigan boshqa sabablarni ham o'sha zahoti qo'shing.
+3. **Boshqaruv → Arizalar taqsimoti**: manba `agent` uchun ikki qoida — «Kub (dan)» = 1 bo'lgani yuk bo'yicha sotuvchilarga, kubsizi qolganlarga.
+4. Agent sinov arizasini yuborgach, **«Forma savollari»**da `kub` savolini **Kub (m³)** ga bog'lang.
+5. **Boshqaruv → Sozlamalar → `agent_no_contact_reasons`** 2-qadamdagi sabab bilan bir xil ekanini tekshiring.
+
+### Bilib qo'ying
+- Kalitni qayta yaratsangiz eskisi darhol ishlamay qoladi — agent `.env` dagi kalit yangilanmaguncha lid yubora olmaydi.
+- Ro'yxatdagi yo'qotish sababining nomini keyin o'zgartirmang: kerak bo'lsa eskisini o'chirib, yangisini qo'shing va sozlamaga ham yozing. Aks holda o'sha sabab bilan yopilgan lidlar agent ro'yxatidan chiqib ketadi.
+- Agent yozgan izoh lid lentasida bitta paragraf bo'lib ko'rinadi (qatorlar birlashadi) — barcha arizalardagidek.
+- **Sizga ikki savol:** (1) agent lidlari /crm/tahlil dagi sotuvchining «kech bog'landi» sonlariga kirsinmi (hozir kiradi; bir haftadan keyingi aloqa faqat «kech» soniga kiradi, o'rtacha vaqtga kirmaydi — reklama lidlaridagidek; ⭐ tavsiyam — kirsin, lekin tahlilda manba bo'yicha ajratib ko'rasiz)? (2) agent lidlari «Bugun qo'ng'iroq» ro'yxatiga va 08:00 dagi xabarga tushsinmi (hozir tushadi — kuniga 25 tagacha qator; ⭐ tavsiyam — tushsin, chunki sotuvchi aynan shu ro'yxatdan ishlaydi)?
+
+## 2026-10-29 — «AI habarni ko'rmayapti»: mijoz xabari endi yo'qolmaydi, yo'qolsa sababi logda
+
+Sizning so'zingiz: «telegramni uladim aini yoqdim va habar keldi telegramga lekin hech nima ozgarmadi». Migratsiya
+yo'q — baza hisobi **139** bo'lib qoladi. Yangilangani `/api/version` va tinglovchi logidagi yangi qatorlar bilan
+tekshiriladi.
+
+### Nima tuzatildi
+- **Telegram mijozni darhol tanitmasa, xabar tashlab yuborilmaydi.** Tizim qayta ishga tushgandan keyin mijoz
+  yozsa, Telegram ba'zan xabar bilan birga uning kimligini bermaydi. Ayniqsa yangi raqamda shunday bo'ladi. Ilgari
+  bunday xabar jimgina o'tkazib yuborilardi. Endi tizim chatni oxirgi chatlar ro'yxatidan va Telegram'ning o'zidan
+  qayta so'raydi. Telegram cheklov qo'ygan paytda unga qayta-qayta so'rov yubormaydi, shuning uchun ban xavfi
+  oshmaydi. Bitta mijozning ketma-ket xabarlari tartibi ham buzilmaydi.
+- **AI ko'rmagan xabarning sababi logda yoziladi.** Bu faqat AI ulangan raqamda ishlaydi. Xabar matni ham, kim
+  yozgani ham yozilmaydi. Faqat tizimda yo'q notanish odamning raqami oxirgi 4 xonasi bilan ko'rsatiladi:
+  - «raqami yashirin» — mijozni shu Telegram kontaktlariga raqami bilan saqlang;
+  - «…4567 raqami mijozlar ro'yxatida yo'q» — mijoz tizimda boshqa raqam bilan yozilgan yoki umuman yo'q;
+  - «olinmasin deb belgilangan» — Suhbatlar → Qaysi chatlar'da o'zgartiriladi;
+  - «Telegram bu chatni aniqlab bermadi».
+- Tizim ishga tushganda eski suhbatlar ochilmasa, endi 8 ta uzun xato o'rniga bitta qator chiqadi: «N ta saqlangan
+  suhbat bu Telegram akkauntda ochilmadi». Bu odatda boshqa raqamdan qolgan suhbatlar.
+- Telegram'ning kirish kodi haqidagi qator endi «mijoz xabari emas, AI sozlamasiga tegilmadi» deydi. Ilgari «AI
+  o'chirilmadi» deyilardi va bu «AI xabarni ko'rdi» deb o'qilardi.
+
+### Siz qilishingiz kerak
+- Bu raqam faqat mijozlar uchun bo'lsa: **Suhbatlar → Ulash** sahifasida «Bu raqam qanday ishlatiladi?» savoliga
+  **«Ish raqami»** ni tanlang. Shunda notanish odam yozsa, o'zi lid ochiladi va AI unga ham qoralama tayyorlaydi.
+  «Shaxsiy raqam» bo'lsa, notanish odam «Qaysi chatlar» ro'yxatida sizning javobingizni kutadi.
+
+### Keyingi raund (shu tekshiruvda topilgan, hali tuzatilmagan)
+- Kechagi notanish odam bugun yana yozsa, «yangi odam yozdi» kartasi kelmaydi.
+- Raqam ulangan kuni u ulanishidan oldin yozgan notanish odamlar «Qaysi chatlar»ga tushmaydi.
+- Telegram Business'ning avtomatik javobi sizning javobingiz deb o'qiladi.
+- AI nega javob yozmaganini sahifada ko'rib bo'lmaydi.
+
+## 2026-10-24 → 10-29 — AI sotuvchi: mijozlarga javobni AI tayyorlaydi, siz tasdiqlaysiz, sizning akkauntingizdan ketadi
+
+Sizning so'zingiz: «Telegram businessdagi bot emas mening shaxsiy account seansimdan ishlatsin ai va ban havfini
+minimum qilsin». Yangi migratsiya bor (**0138**): deploydan keyin baza hisobi **139** bo'lishi kerak.
+
+### Qanday ishlaydi
+- Telegram akkauntingizga mijoz yoki lid yozganda, AI javobni o'zi yubormaydi, faqat **qoralama** tayyorlaydi. U staff botga kartochka bo'lib keladi:
+  - mijoz nima yozgani;
+  - AI nima javob bermoqchi (fors yoki xitoy tilida bo'lsa, ostida o'zbekcha tarjimasi);
+  - javobdagi har bir raqam qayerdan olingani.
+- Kartochkadagi tugmalar:
+  - **✅ Yuborish** — javobni yuboradi;
+  - **✏️ O'zim yozaman** — o'z matningizni yozasiz;
+  - **❌ Kerak emas** — qoralama tashlanadi;
+  - **🙋 Suhbat meniki** — bu chat 24 soat sizniki, AI aralashmaydi.
+- Shu kartochkalar sayt sahifasida ham bor: **Suhbatlar → AI sotuvchi**. Bo'limlar: Kutilmoqda · Savollar · Bilimlar · Sozlamalar.
+- Faqat **akkaunt egasi**, ya'ni siz tasdiqlaysiz. Boshqa admin ham tasdiqlay olmaydi.
+- Javob sizning shaxsiy akkauntingizdan, tirik odamdek ketadi: avval chatni o'qiydi, «yozmoqda…» chiqadi, keyin xabar boradi. Yuborilgan javob CRM chatida 🤖 belgisi bilan ko'rinadi.
+
+### Ban xavfidan himoya
+- **Chegaralar:** bitta chatga AI xabarlari orasida kamida 20 soniya, soatiga 20 tadan, kuniga 80 tadan ko'p emas.
+- **Birinchi 14 kun:** kuniga o'zingiz odatda yozadigan sondan ko'p yuborilmaydi.
+- **Kechasi** (22:00–08:00): mijoz oxirgi 2 soatda yozgan bo'lsa, javob darhol ketadi. Aks holda ertalab 08:30 da ketadi.
+- **Mijoz yangi xabar yuborsa**, tasdiqlangan javob yuborilmaydi va yangi qoralama tayyorlanadi. Bu ovozli xabar, rasm yoki fayl bo'lsa ham shunday. O'zingiz yozib qo'ysangiz ham yuborilmaydi.
+- **Telegram cheklov qo'ysa** (spam, flood), o'sha akkauntdan yuborish butunlay to'xtaydi, CRM javoblari ham. AI o'chadi, sizga va super adminlarga xabar keladi.
+  - Telegram'ni tekshirib bo'lgach, **Suhbatlar** sahifasidagi ko'prik panelida **«Tekshirdim»** ni bosasiz.
+  - To'xtab turgan paytda CRM'dagi yozish oynasi buni ochiq aytadi, xabar «navbatda» deb osilib qolmaydi.
+- **«/agent off»** botda AI'ni darhol o'chiradi: navbatdagi javoblar bekor bo'ladi, qoralamalar yopiladi.
+- **Telegram'ning o'zidan rasmiy xabar kelsa** (777000 xizmat akkaunti — qoidalar, cheklov haqida ogohlantirish), AI o'sha zahoti o'zi o'chadi va sizga xabar keladi. Sizning kirish kodlaringiz (Telegram Desktop'ga, yangi telefonga kirganingizda) AI'ni o'chirmaydi. Bu xizmat chati hech qachon CRM'ga saqlanmaydi va AI uni o'qimaydi.
+  - Avvaldan saqlanib qolgan bo'lsa ham: «Qaysi chatlar» ro'yxatida ko'rinmaydi, uni mijozga yoki lidga qo'shib bo'lmaydi. Eskidan qolgan xabarlarni bir marta tozalash buyrug'i bor (pastda, deploy qadamlarida).
+- **AI sizdan keyin turadi:** AI'ning daqiqalik va kunlik chegaralari CRM'dan o'zingiz yuborgan xabarlarni ham sanaydi. Sizning CRM javoblaringiz uchun chegaralar avvalgidek.
+- **Kechasi** (22:00–08:00) AI kartochkalari telefoningizni ovoz bilan bezovta qilmaydi, jim keladi.
+- **AI sizga savol bersa** (❓ Sizdan savol) va 30 daqiqa javob bermasangiz, bot bir marta eslatadi. Kechasi eslatmaydi: ertalab 08:00 dan keyin hammasini bitta xabarda eslatadi.
+
+### AI nima qiladi va nima qilmaydi
+- **Narx, muddat yoki sana** faqat tizimdan olinadi:
+  - avto yo'lkira — saytdagi kalkulyator bo'yicha;
+  - avia — kg × 17 $;
+  - bilimlar sahifasidagi ma'lumotlar.
+  - Mijoz o'zi aytgan narx («90$ qilib bering») hech qachon qaytarib aytilmaydi.
+  - Manbasi yo'q raqam bo'lsa, ✅ tugmasi chiqmaydi.
+- **Va'dalar to'xtatiladi:** «chegirma qilamiz», «arzon qilamiz», «ertaga albatta jo'natamiz», «keyin to'laysiz» kabi gaplar bo'lsa ham ✅ chiqmaydi.
+- **Boshqa mijoz** haqida hech narsa aytilmaydi: kodi, yuki, telefoni, ismi.
+- **Hodimning to'liq ismi** javobda bo'lsa, javob to'xtatiladi. Faqat bitta so'z (masalan ism) bo'lsa, ogohlantirish chiqadi.
+- **Yuk va qarz** faqat chat raqami shu mijoz kartasida bo'lsa aytiladi (sizning 19a javobingiz).
+- **«Siz botmisiz?»** deb so'rashsa, qoralama yozilmaydi va sizga xabar keladi. Ovozli xabar va pushtu tilidagi xabarga ham shunday.
+- **Notanish odam yozsa**, bitta kartochka keladi:
+  - tugmalar: **🆕 Yangi lid / 👤 Mijoz — kod / 🚫 Shaxsiy**;
+  - raqami yashirin bo'lsa ham keladi, «📵» belgisi bilan;
+  - kontaktlaringizdagi odamlar uchun kelmaydi.
+
+### Sizning javoblaringiz bo'yicha
+- **Avto:** 1 kubdan VA 100 kg dan kam yukka narx aytilmaydi. Mijozga «1 kub yoki 100 kg dan boshlab tashiymiz» deyiladi.
+- **Avia:**
+  - narxi kg × 17 $, hisob 1 kg dan, yuqori chegara yo'q;
+  - faqat haqiqiy kg hisobga olinadi, hajm (kub) emas;
+  - muddati «taxminan 2–5 kun, reys bo'lsa 2 kun».
+  - Narxni **Bilimlar → AI qoidalari** da o'zingiz o'zgartirasiz.
+  - **Avia manzilini AI aytmaydi** (sizning «yukini infosini menga bersang men adres beraman» javobingiz). Avia narxini aytganda kartochkada sizdan so'raydi, masalan: «❓ Avia: 30 kg, qayerdan: Shenzhen — mijozga avia manzilini yozing (✏️)». ✏️ bilan manzilni o'zingiz yozasiz.
+  - Mijoz avia narxini eshitgandan keyin keyingi xabarda «manzil qayerga?» deb so'rasa ham shunday: AI ombor manzilini bermaydi, kartochkada sizdan so'raydi. Mijoz kg aytmagan bo'lsa, kartochkada «og'irligi aytilmagan» deb yoziladi. «Yuk qayerda?» (yuk holati) degan savol uchun manzil so'ralmaydi.
+  - **Suhbat qaysi yo'lda ekanini endi biz aytgan narx belgilaydi**, mijozning so'zlari emas. Avval tizim suhbatdagi so'zlardan taxmin qilardi va ikki tomonga xato qilardi:
+    - mijoz tovarni «Tikuv **mashina**si» deb yozsa yoki biz avia narxini aytganimizda mijoz «avia» so'zini hech yozmagan bo'lsa, avia suhbati mashinaniki deb o'qilardi va ombor manzili ketib qolishi mumkin edi;
+    - «Avia qimmat ekan, kerak emas», «300 ta **air fryer**» yoki o'tgan haftadagi avia savoli esa mashina suhbatida ham avia savolini chiqarardi.
+    - Endi tartib shunday: shu safar AI hisoblagan narx; bo'lmasa eng **oxirgi** dalil — mijozning o'zi tanlagan yo'li, biz aytgan narxli xabar yoki siz ✅ bilan tasdiqlagan qoralama (7 kun ichida). Siz tasdiqlagan javob mijozga ketgach, u qaysi yo'l uchun hisoblangan bo'lsa, o'sha yo'l hisoblanadi.
+    - Mijozning so'zidan faqat **tanlov** olinadi: «avia bilan», «mashinada», «fura bilan», «oddiy kargo bilan». Tovar nomi («tikuv mashinasi», «avtozapchast», «samolyot o'yinchoq», «aviator ko'zoynak») va kompaniya so'zi («kargongiz», «kargo manzili») yo'l hisoblanmaydi.
+    - Rad etish faqat yo'l so'zining yonida bo'lsa olinadi: «aviada emas», «avia qimmat ekan», «mashinada uzoq ekan», «не авиа». «Avia narxi qimmat emas ekan, shu bilan yuboraman» — bu avia tanlovi.
+    - Bizning narxli xabarimiz **narx turgan joyidan** o'qiladi. «Avia bilan 30 kg — 510 $ … power bank faqat avto bilan ketadi» — bu avia narxi.
+    - Hali narx aytilmagan avia suhbatida ham («Guanchjoudan avia bilan yubormoqchiman» → «Manzil qayerga?») qoida ishlaydi.
+    - «Kargo narxini ayting» endi temir yo'l suhbatini mashina suhbatiga aylantirmaydi.
+  - **To'xtatish va savol endi bitta qoida**: avia javob ombor manzili sabab to'xtatilsa, kartochka albatta sizdan manzilni so'raydi. Avval to'xtatilgan qoralama savolsiz qolishi mumkin edi.
+  - Kartochkada yuk qayerdan **chiqishi** yoziladi, mijoz so'ragan ombor emas. Mijoz yangi yuk haqida yozsa («Yana 80 kg, endi Guanchjoudan»), kartochka eskisini emas, **yangisini** yozadi.
+  - «Rahmat, manzilni oldim», «mening manzilim: …», «Manzil: Andijon, …», «Toshkentda qayerga kelib olaman?», «yukim qayerga keldi / keladi?», «куда доставите?» degan xabarlar manzil so'rovi hisoblanmaydi.
+  - Avia javobida bizning uchta qabul omborimizdan birining manzili yoki telefoni bo'lsa, ✅ chiqmaydi. Bu Bilimlardagi manzillar bo'yicha tekshiriladi. Manzilni Bilimlarda tuzatsangiz, tekshiruv yangisini taniydi.
+    - **Bilimlarga o'zingiz yangi qabul omborini qo'shsangiz** (ombor so'zi va xitoycha ko'cha yoki xitoy telefoni bo'lsa), u ham hisobga olinadi. Bitta omborni ikki marta yozsangiz ham, manzil tanilaveradi.
+    - Ombor bilimiga «avia yuklar bu yerga emas» deb yozsangiz ham, u mashina ombori sifatida qo'riqlanadi.
+    - Bilimga o'zingiz yozgan **avia** manzil (yoki aeroport ombori) esa to'xtatilmaydi, uni AI aytishi mumkin.
+  - Manzil bo'lagi bo'linib yozilsa ham («荷花南街 2255号»), lotinchada yozilsa ham («Hehua South Street 2255»), omborning nomi yoki qabul qiluvchi firma yozilsa ham («霍尔果斯金亿国际物流中心») taniladi.
+  - Quyidagilar manzil emas va to'xtatilmaydi:
+    - viloyat, shahar, tuman yoki butun mahalla nomi: «从浙江省义乌市空运» (Chjeszyan, Ivudan avia), «佛山市南海区发货», «稠江街道» (Ivudagi butun tuman — u yerdagi boshqa yetkazib beruvchining manzili ham);
+    - «…路与…路交叉口» (ko'chalar kesishmasi), «…米» (metr), «28号» (sana) kabi har manzilda bo'ladigan so'zlar;
+    - xitoylik mijozga «qaysi shahardan jo'natasiz?» (从哪个城市发货) degan oddiy savol;
+    - «168 kg» yoki «2255 kg» kabi og'irlik: raqam faqat ko'cha so'zi yonida bo'lsa uy raqami hisoblanadi.
+  - Mijoz bir xabarda ham avia, ham mashina narxini so'rasa, mashina uchun ombor manzilini berish mumkin.
+  - Avia'da «omborimizga yuborsangiz…» jumlasi endi talab qilinmaydi.
+  - **Yangi: «avia ham gapirilgan» ogohlantirishi.** Tizim so'zlardan yo'lni har doim to'g'ri o'qiy olmaydi. Shuning uchun suhbatda avia gapirilgan bo'lsa-yu, tizim uni avia suhbati deb aniq bilolmasa va javobda Xitoy omborimizning manzili bo'lsa, ✅ qoladi, lekin kartochkada shunday yoziladi: «avia ham gapirilgan va javobda Xitoy omborimizning manzili bor — yuk avia bo'lsa, manzilni o'zingiz yozing (✏️)». Xato o'qilgan suhbat sizga bir qarashga tushadi, manzil esa jimgina ketib qolmaydi.
+    - Bu ogohlantirish javobning o'zini ham o'qiydi: «30 kg mashinaga kam, avia bilan yuborishingiz mumkin» + ombor manzili.
+    - Suhbatda avia bir marta aytilgan bo'lsa, keyingi gaplar ogohlantirishni o'chirmaydi. Mijoz keyin mashinani tanlagan bo'lsa ham, kartochka bir marta qarashni so'raydi. Avval «mashina» so'zi ogohlantirishni o'chirib qo'yardi. Lekin bu so'z ko'pincha boshqa narsa haqida bo'ladi:
+      - yukni omborimizga yoki aeroportdan o'zi olib borishi («Yukni omborga o'zim mashinada olib boraman»);
+      - O'zbekiston ichida yetkazish («Andijonga mashinada yetkazib berasizlarmi?»);
+      - oldingi yuki («oldingi safar mashinada yuborgandim»);
+      - mashinadan voz kechish («фура не успеет», «mashinada ulgurmaymiz»);
+      - tovar nomi («fura ehtiyot qismlari»).
+      Endi bunday suhbatda manzil jimgina ketib qolmaydi.
+    - Bizning xabarimiz ham hisobga olinadi:
+      - narx bir jumlada, avia keyingi jumlada bo'lsa («1 kg uchun 17 $. Avia bilan 2–5 kunda keladi.»);
+      - narxsiz taklif («Avia bilan yuborsangiz 2–5 kunda keladi»);
+      - «Air:» sarlavhasi.
+    - «O'yinchoq samolyotlar», «aviamodel» kabi tovar nomlari va bizning «power bank avia bilan ketmaydi» jumlamiz avia gapirildi deb hisoblanmaydi.
+  - **Mijoz so'zlarini o'qish yanada aniqlashdi:**
+    - Savol aviadan voz kechish emas: «Aviada bo'lmaydimi?», «Avia bilan ketmaydimi?», «Avia qimmatmi?», «Авиа дорого выйдет?» — bu avia so'rovi, manzil to'xtatiladi.
+    - Narxiga qaramay tanlash ham tanlov: «Avia qimmat bo'lsa ham mayli», «Пусть авиа дорого», «Без авиа никак», «Aviasiz bo'lmaydi».
+    - Temir yo'ldan voz kechib avia tanlansa («Poyezd kerak emas, avia bilan», «Не поездом, а самолётом»), endi bu avia suhbati: manzil to'xtatiladi va kartochka sizdan avia manzilini so'raydi. Avval temir yo'l so'zi avia himoyasini butunlay o'chirib qo'yardi.
+    - «Железки» (temir buyumlar) endi temir yo'l hisoblanmaydi, «по железке» esa hisoblanadi.
+    - Avia so'zlari kengaydi: «по воздуху», «havo yo'li bilan», «samalyot», «by airplane», «air shipment», «空派».
+    - Yana qo'shildi:
+      - o'zbekcha kirillda: «Самолёт билан», «хаво йули»;
+      - ruscha: «на самолёте», «авиой», «Авио доставка», «воздухом»;
+      - xato yozilganlari: «Aviya», «samolet», «xavo yo'li»;
+      - xitoycha: 走飞机, 航班, 用飞机寄;
+      - forscha: «با هواپیما», «با طیاره»;
+      - inglizcha: «with plane», «air please».
+    - «Kargo orqali», «kargo bilan» — bu kompaniya, yo'l emas: «kargo orqali avia yuboraman» avia suhbati.
+    - «Avto», «Avto bo'lsin», «Toshkentga mashinada yuboraman» — mashina tanlovi. Toshkentda yukni olib ketish esa boshqa bosqich.
+    - Biz aytgan narxli xabar tovar nomiga qarab emas, yo'l so'ziga qarab o'qiladi: «Mashinada: o'yinchoq samolyotlar 3 kub — 640 $» mashina narxi, «Avia: avtozapchast 30 kg — 510 $» avia narxi.
+    - Siz ✏️ bilan qayta yozgan narx sizning so'zlaringiz bo'yicha o'qiladi.
+  - **Kartochkadagi avia yuki aniqroq:** mijoz og'irlikni tuzatsa («Kechirasiz, 35 kg ekan, qayerga yuboray?»), yangi og'irlik yoziladi va jo'nash joyi saqlanadi. «Har biri 2.5 kg» (bitta dona) yoki «50 kg bo'lsa qancha?» (taxmin) yuk og'irligi hisoblanmaydi. «Shenzhendan emas» degan joy jo'nash joyi deb yozilmaydi.
+  - **Ombor bilimlari:** «Avia uchun manzilni men o'zim beraman», «aeroportga yaqin», «机场北路» yoki «avto va avia yuklar uchun» deb yozilgan ombor mashina ombori sifatida qo'riqlanadi. Faqat o'zini avia qabul joyi deb e'lon qilgan bilim («Avia ombori: …», «Склад для авиа: …») AI tomonidan aytilishi mumkin.
+- **Temir yo'l:** narxni AI aytmaydi, sizdan so'raydi.
+- **Avtoda «Xitoydan»** desa (yoki omborimiz yo'q xitoy shahrini aytsa), narx omborlarimizdan aytiladi. Javobda ikki jumla bo'lishi shart: «yukni omborimizga yuborsangiz…» va «zavoddan omborgacha olib kelish alohida hisoblanadi».
+  - Bilimdagi shu qoida endi «**Avto (mashina) narxi** Xitoydagi omborlarimizdan hisoblanadi» deb yozilgan, chunki siz uni mashina haqida aytgansiz. Avval «Narx» deb yozilgani uchun avia suhbatida ham ishlatilib qolishi mumkin edi.
+- **Xitoy omborlarining manzili** (siz yuborgan ro'yxat): AI mijoz so'ragan omborning manzilini, qabul qiluvchisini va telefonini **bilimdagidek** beradi. Xitoycha qismi o'zgartirilmaydi va tarjima qilinmaydi, chunki uni xitoylik yetkazib beruvchi o'qiydi. Har manzil bilan birga eslatma ketadi: «Yuklaringizni jo'natishdan oldin GS kodini (markirovka) yozishni unutmang» va xitoycha «发货前请不要忘记标注GS编码（唛头）».
+  - Omborlar: **Ivu (YW)**, **Guanchjou (GZ)** — ombor Foshan shahrida, **Xorgos (HRG)**.
+  - Mijoz qaysi omborni aytmasa, AI qaysi shahardan jo'natishini so'raydi.
+  - **Qashqar** endi manzil sifatida aytilmaydi, chunki u sizning ro'yxatingizda yo'q.
+  - Xorgos qatoridan «距你966.0公里» («sizdan 966 km») olib tashlandi: bu xarita ilovasi siz turgan joydan hisoblagan masofa, mijoz uchun noto'g'ri.
+  - Avval o'zbekcha yoki ruscha javobda xitoycha manzil bo'lsa, tizim javobni «boshqa alifboda» deb to'xtatar edi. Endi bilimdan aynan ko'chirilgan xitoycha qism hisobga olinmaydi. AI o'zi xitoycha yozsa, avvalgidek to'xtatiladi.
+  - Xitoylik mijozga xitoycha javobda manzil bo'lsa ham to'xtatilmaydi.
+  - Xorgos ombori nomidagi «金亿» belgisi (bu belgi «yuz million» ham degani) endi yozilgan son deb hisoblanmaydi. AI narxni xitoycha so'z bilan yozsa (masalan «五百美元»), avvalgidek to'xtatiladi.
+- **Kelib chiqish sertifikati** so'ralmaydi: hisob «kompaniya o'zi oladi» deb yuboriladi.
+- **Chat bog'langan lid yopilgan bo'lsa** (yutilgan yoki yo'qotilgan), ✅ bosganda hisob yuborilmaydi va yopiq kartaga hech narsa yozilmaydi. Kartochkada sababi yoziladi: «bu chatning lidi yopilgan — 🙋 bosing va mijozga o'zingiz javob bering».
+- **Podklyuch va rastamojka:**
+  1. AI mijozdan ma'lumotlarni to'liq yig'adi.
+  2. ✅ bosganingizda botdagi «Hisoblatish» navbatiga yuboradi.
+  3. VED javob berganda sizga «💵 Hisob javobi keldi — narx bersangiz bo'ladi» kartasi keladi.
+  4. **«💵 Narx yozaman»** ni bosib narxni yozasiz. U mijozga uning tilida bitta jumla bo'lib ketadi, bitim kartasiga hech narsa yozilmaydi (6b).
+  - «1.250» deb yozsangiz, bot «1250 dollarmi yoki 1,25 dollarmi?» deb so'raydi.
+- **Bilimlar sahifasi:** AI biladigan hamma ma'lumot shu yerda. Ularni qo'shasiz, tuzatasiz yoki o'chirasiz. Narx bilimga yozilmaydi.
+
+### Deploydan keyin (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `docker compose build migrate`, keyin `docker compose up -d --build` va `docker compose --profile telegram up -d --build tg-listen`.
+   **Tinglovchi (tg-listen) albatta qayta qurilishi kerak.** Aks holda sahifada «tinglovchi yangilanmagan» chiqadi va ✅ ishlamaydi.
+3. Baza hisobi **139** ekanini va `curl -s https://gsrwms.uz/api/version` yangi vaqtni ko'rsatishini tekshiring.
+4. Bilimlarni kiritish (Xitoy omborlari manzillari ham shu yerda, qo'lda yozish shart emas):
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/agent-seed-kb.ts`;
+   - so'ng shu buyruq oxiriga `--apply` qo'shib haqiqiy kiritish.
+5. Telegram xizmat chatidan (777000, kirish kodlari) eskidan saqlanib qolgan narsalarni tozalash:
+   - avval sinov uchun: `docker compose run --rm migrate pnpm exec tsx scripts/tg-service-chat-cleanup.ts` — har akkauntda nechta xabar borligini sanaydi, hech narsani o'zgartirmaydi, xabar matnini ko'rsatmaydi;
+   - nima chiqqanini menga yuboring; keyin shu buyruq oxiriga `--apply` qo'shib tozalaysiz. «Tozalash kerak emas» chiqsa, hech narsa qilish shart emas.
+6. **Suhbatlar → AI sotuvchi → Sozlamalar** da:
+   - o'z akkauntingizni tanlang;
+   - «Eski serverda Telegram sessiyasi yo'q qilindi» ni bosing;
+   - avia narxi 17 ekanini tekshiring;
+   - keyin AI'ni yoqing (yoki botda `/agent on`).
+7. CRM'dan Telegramga yuborish (Sozlamalar) yoqiq bo'lishi kerak. U o'chiq bo'lsa ✅ «yuborish o'chirilgan» deydi.
+
+### Hali yo'q (keyingi bosqichlar)
+- Avtomatik rejim (tasdiqsiz yuborish).
+- Kampaniyalar.
+- WhatsApp, Gmail va qo'ng'iroqlar.
+- Mijoz yuborgan fayllarni hisob eslatmasiga ko'chirish. Hozircha eslatma chatga havola beradi.
+
+## 2026-10-28 — Mashina narxi qaysi bitimga yoziladi: narx qo'yuvchi tanlaydi (Q8 «c»)
+
+Savol: «bitta mijozning yuki bitta mashinada ikki xil bitim bo'yicha kelsa, mashinaga qo'yilgan narx qaysi bitimga yoziladi?» Sizning javobingiz: **«C — logist o'zi tanlaydi»**. Migratsiya yo'q, migratsiyalar soni o'zgarmaydi.
+
+### Endi qanday ishlaydi
+- Mijozning yuki bitta mashinada **ikki yoki undan ko'p bitimga** tegishli bo'lsa, «Narx» oynasida narx qatorining tepasida **«Narx qaysi bitimga yoziladi»** degan tanlov chiqadi. Bitim tanlanmaguncha narxni saqlab bo'lmaydi.
+- Ro'yxatda har bir bitim shu mashinadagi ulushi bilan turadi: kod, tovar, foiz, kub, kg. Masalan: «B-00124 · Klaviatura · 33 % · 2 m³ · 200 kg». Muddatli bitim oldida ⏳ belgisi turadi.
+- Mashinada bitimga ulanmagan yuk ham bo'lsa, ro'yxatda **«Bitimsiz»** varianti ham chiqadi. Faqat bitimli yuk bo'lsa, «Bitimsiz» chiqmaydi, chunki siz «a» variantini tanlamadingiz.
+- **Har saqlashda bitta ogohlantirish chiqadi:**
+  - «Bu narx faqat B-00124 bitimining ulushi uchunmi (33 %)?»;
+  - bitim muddatli bo'lsa: «yuk topshirishda qarz deb to'xtatilmaydi»;
+  - mashinada shu mijozga avval narx qo'yilgan bo'lsa: «allaqachon narx bor: $500 → B-00124 · bu narx qo'shimcha hisob bo'ladi».
+- Har bir bitimga o'z narxi alohida qo'yiladi: avval biri, keyin ikkinchisi. Saqlangandan keyin tanlov bo'shaydi, narxi hali qo'yilmagan bitim ro'yxatda birinchi turadi.
+- Mijoz kartasida **«Bu mashinadagi narxlar»** ro'yxati chiqadi. Unda qaysi narx qaysi bitimga yozilgani va qaysi bitimning bu mashinada hali narxi yo'qligi ko'rinadi.
+- Mashinada mijozning faqat **bitta bitimi** bo'lsa, hammasi avvalgidek: narx o'sha bitimga o'zi yoziladi, hech narsa so'ralmaydi.
+- **Bitta bitim bilan bitimsiz yuk** birga bo'lsa ham avvalgidek: narx bitimga yozilmaydi, hech narsa so'ralmaydi. Savolingiz ikki bitim haqida edi.
+- Mijoz kartasidagi **«Pul»** oynasida narx mashinaga yozilsa, xuddi shu tanlov chiqadi va xuddi shu qoida ishlaydi. Bitimning yuki shu mashinada bo'lmasa, narxni unga yozib bo'lmaydi.
+- **Bitim kartasida**, foyda bo'limida, shu bitimning mashinasidagi narx boshqa bitimga yozilgan bo'lsa, shunday yoziladi: «YW-001 mashinasidagi narx ($500) B-00124 bitimiga yozilgan — bu bitimning daromadida yo'q».
+- Sahifa ochiq turganda prixod boshqa bitimga o'tkazilsa, saqlash rad etiladi: «bitimlar o'zgardi». Sahifa yangilanadi, tanlovni qaytadan qilasiz. Tizim siz tanlamagan bitimga narx yozmaydi.
+
+### Pul bo'yicha tuzatish
+- Narx **muddatli** bitimga yozilsa, muddat endi faqat **o'sha bitimning** yukini «to'langan» qiladi. Avval, tekshiruvda topildi: shu mashinadagi boshqa bitimning yuki ham «to'langan» bo'lib qolardi va uning sotuvchisiga to'lanmagan yuk uchun KPI haqi yozilardi.
+
+### Bilib qo'ying (qilinmagan)
+- **«🚚 Ko'chirish»** narxni o'z bitimi bilan ko'chiradi (avvalgi qoida), bitimni qayta so'ramaydi.
+- Prixod keyin boshqa bitimga o'tkazilsa, qo'yilgan narxning bitimi o'zgarmaydi.
+- Bitta mijozning bitta mashinadagi bir nechta narxi KPI va upsale uchun birga to'langan hisoblanadi. A ulushi to'lansa ham, B ulushi to'lanmaguncha A yuki «to'langan» bo'lmaydi. Bu avval ham shunday edi.
+- Muddatli bitimga yozilgan narx yuk topshirishda (kassada) qarz deb to'xtatilmaydi, qaysi yuk uchun yozilgan bo'lishidan qat'i nazar. Tanlov va ogohlantirish buni aytadi.
+- Avvalgi bitimsiz narxlar o'zgarmaydi. Ular ro'yxatda «bitimsiz narx bu mijozning butun yukini qoplaydi» deb ko'rsatiladi. Bitimga yozish kerak bo'lsa, narxni bekor qilib, qaytadan bitim bo'yicha kiritasiz.
+- **Kim tanlaydi:** «Narx» oynasini moliya huquqi (`finance.manage`) borlar ochadi: VED, buxgalter va admin. Logist bu oynani hozir ochmaydi. Shuning uchun alohida savol berdim.
+
 ## 2026-10-27 — 8 band, 2-raund: bot rastamojka va yo'lkirani ko'proq hollarda o'zi hisoblaydi
 
 **Bu raundning o'zida migratsiya yo'q.** U asosiy shoxga boshqa sessiyaning «Uch band» (migratsiya 0136) va «Yo'ldagi yuk» (migratsiya 0137) ishlaridan keyin qo'shildi. Shuning uchun deploydan keyin **migratsiyalar soni 138** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. **tg-listen ham qayta qurilsin** (Uch band shuni talab qiladi).

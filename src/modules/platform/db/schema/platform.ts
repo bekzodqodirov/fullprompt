@@ -502,7 +502,7 @@ export const telegramChatWaits = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.chatId, t.kind] }),
-    check('telegram_chat_waits_kind_check', sql`${t.kind} IN ('task', 'staff_entry', 'ad_visit', 'cabinet_link')`),
+    check('telegram_chat_waits_kind_check', sql`${t.kind} IN ('task', 'staff_entry', 'ad_visit', 'cabinet_link', 'agent_edit', 'agent_price', 'agent_code')`),
     check('telegram_chat_waits_window_check', sql`${t.expiresAt} > ${t.armedAt}`),
     check('telegram_chat_waits_payload_check', sql`jsonb_typeof(${t.payload}) = 'object'`),
     index('telegram_chat_waits_expires_idx').on(t.expiresAt),
@@ -510,7 +510,7 @@ export const telegramChatWaits = pgTable(
 );
 
 /**
- * An unfinished «🧮 Hisoblatish» collection, written behind memory (0138,
+ * An unfinished «🧮 Hisoblatish» collection, written behind memory (0139,
  * his 1.8 c: it waits 24 hours and a deploy loses nothing). One per chat;
  * memory stays the reader and this row only has to survive the process
  * (telegram/calc-store.ts is the one writer). The note id is the collection's

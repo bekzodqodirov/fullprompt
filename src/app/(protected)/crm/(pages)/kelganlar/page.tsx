@@ -9,6 +9,7 @@ import { Panel } from '@/components/panel';
 import { MetaLine } from '@/components/board-meta';
 import { getBotUsername } from '@/modules/platform/telegram/bot';
 import { InboundDoors, type DoorView } from './doors';
+import { doorViews } from './door-views';
 
 /**
  * Everything an advert sent us, including what it did NOT turn into.
@@ -47,16 +48,8 @@ export default async function ArrivalsPage() {
   ]);
 
   const appUrl = (process.env.APP_URL ?? '').replace(/\/$/, '');
-  const doors: DoorView[] = doorRows.map((door) => ({
-    key: door.key,
-    name: door.name,
-    formUrl: `${appUrl}/ariza?manba=${door.key}`,
-    // The bot's third door only exists once the bot has a name to link to.
-    botUrl: botName ? `https://t.me/${botName}?start=ad_${door.key}` : null,
-    webhookUrl: `${appUrl}/api/leads/in/${door.key}`,
-    secret: door.secret,
-    assignUrl: door.key === 'sayt' ? `${appUrl}/api/lead/assign` : null,
-  }));
+  const canManage = actor.permissions.has('admin.settings.manage');
+  const doors: DoorView[] = doorViews(doorRows, { appUrl, botName, canManage });
 
   /**
    * Arrivals and money, per source, joined in JS over two grouped queries.
@@ -91,7 +84,7 @@ export default async function ArrivalsPage() {
 
       <Panel title={`🔗 ${t('doors')}`} testId="doors-panel">
         <p className="mb-2 text-xs text-ink-500">{t('doorsHint')}</p>
-        <InboundDoors doors={doors} canManage={actor.permissions.has('admin.settings.manage')} />
+        <InboundDoors doors={doors} canManage={canManage} />
       </Panel>
 
       {results.length > 0 && (

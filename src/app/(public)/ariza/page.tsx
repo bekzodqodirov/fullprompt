@@ -1,4 +1,4 @@
-import { INBOUND_SOURCE_KEYS } from '@/modules/wms/crm/inbound';
+import { formSourceKey } from '@/modules/wms/crm/inbound';
 import { ArizaForm } from './form';
 
 /**
@@ -37,7 +37,7 @@ export default async function ArizaPage({
   };
 
   const asked = one('manba').toLowerCase();
-  const source = (INBOUND_SOURCE_KEYS as readonly string[]).includes(asked) ? asked : 'sayt';
+  const source = formSourceKey(asked);
 
   const utm: Record<string, string> = {};
   for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content']) {

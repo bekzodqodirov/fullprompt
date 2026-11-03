@@ -227,7 +227,7 @@ describe('the two adapters (performance-9, p5-p6-12)', () => {
 
   it('a person has written since the machine (`handsoffRev !== rev`) → null, nothing is asked', () => {
     expect(lawAsksInputOf(ws({ handsoffRev: 4 }))).toBeNull();
-    // A request from before 0138 (or a correction) carries no stamp at all.
+    // A request from before 0139 (or a correction) carries no stamp at all.
     expect(lawAsksInputOf(ws({ handsoffRev: null }))).toBeNull();
   });
 });

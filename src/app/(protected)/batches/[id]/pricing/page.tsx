@@ -6,7 +6,7 @@ import { db } from '@/modules/platform/db/client';
 import { currencies, deals } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
-import { balancesForClients, batchCharges, batchTripCoverage } from '@/modules/wms/finance/service';
+import { balancesForClients, batchCharges, batchTripCoverage, truckDealHeads } from '@/modules/wms/finance/service';
 import {
   batchCarriageOf,
   batchClientCostBreakdown,
@@ -20,7 +20,9 @@ import {
   type LotLandedCost,
 } from '@/modules/wms/costing/service';
 import { costSightFor } from '@/modules/wms/costing/cost-sight';
-import { batchLots, type BatchLot } from '@/modules/wms/batches/lots';
+import { batchLots, dealCandidateRows, type BatchLot } from '@/modules/wms/batches/lots';
+import { dealCandidatesOf, ownDealOf, unpricedDealsOf, type DealCandidates } from '@/modules/wms/finance/truck-deal';
+import type { TruckDealQuestion } from '@/components/truck-deal-select';
 import {
   batchTabHref,
   mayOpenBatchCard,
@@ -238,9 +240,32 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const dealPriceSight = !internal && upsaleScopeFor(actor) === 'all';
   // EVERY deal the client's cargo aboard belongs to, not only a sole one —
   // a busy client's three prixods on two deals used to show no deal at all.
+  // The client's OWN deals only (`ownDealOf`): a prixod re-assigned to him
+  // still names its old client's job, whose quote is not his to read here.
   const groupDealIds = [
-    ...new Set(view.clients.flatMap((group) => group.lots.map((lot) => lot.dealId)).filter((x): x is string => Boolean(x))),
+    ...new Set(
+      view.clients
+        .flatMap((group) => group.lots.map((lot) => ownDealOf(lot, group.clientId)))
+        .filter((x): x is string => Boolean(x)),
+    ),
   ];
+  // «Narx qaysi bitimga yoziladi» (his Q8 «c»): the price door's own read,
+  // once for the truck — the question drawn here is the one the door asks,
+  // by construction (`dealCandidateRows`, `dealCandidatesOf`).
+  const candidateRows = internal ? [] : await dealCandidateRows([id], null);
+  const candidatesOf = new Map<string, DealCandidates>(
+    view.clients.map((group) => [
+      group.clientId,
+      dealCandidatesOf(
+        candidateRows.filter((row) => row.clientId === group.clientId),
+        group.clientId,
+      ),
+    ]),
+  );
+  // Each offered deal's «⏳ muddatli» and whether it already carries a price
+  // of its own off any truck — for the clients who are asked.
+  const askedDealIds = [...candidatesOf.values()].filter((c) => c.ambiguous).flatMap((c) => c.deals);
+  const dealHeads = await truckDealHeads(askedDealIds);
   const [dealQuotes, dealFigures] =
     dealPriceSight && groupDealIds.length > 0
       ? await Promise.all([
@@ -355,6 +380,110 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   const dealLinks = canWriteDeal(actor.permissions);
   const today = tashkentDay();
   const currencyCodes = currencyRows.map((c) => c.code);
+
+  // This client's live prices on this truck, newest first, each with the job
+  // it went to — prices and codes only, both sights (the «Narx» cell already
+  // prints their sum to both).
+  const pricedHereOf = (clientId: string) =>
+    charges
+      .filter((row) => row.tx.clientId === clientId && row.tx.type === 'charge')
+      .map((row) => ({ id: row.tx.id, usd: Number(row.tx.amountUsd ?? 0), dealId: row.tx.dealId, dealCode: row.dealCode }));
+
+  // The question for a client whose cargo here rides under two or more of
+  // his deals (Q8 «c») — each deal named like every deal picker names one,
+  // with THIS truck's share of his cargo (by m³, else kg), and «⏳» for a
+  // live «muddat». Null when nobody has to choose.
+  const askFor = (
+    group: { clientId: string; lots: BatchLot[] },
+    candidates: DealCandidates,
+    shares: { dealId: string; dealCode: string | null; m3: number; kg: number; receipts: number }[],
+  ): TruckDealQuestion | null => {
+    if (!candidates.ambiguous) return null;
+    // The share's basis is the client's, one for all his deals here: m³ when
+    // EVERY one of them has it, else kg, else none — a deal whose volume was
+    // never measured beside one that was would read «0 %» (review).
+    const own = shares.filter((share) => candidates.deals.includes(share.dealId));
+    const basis = own.length > 0 && own.every((share) => share.m3 > 0) ? 'm3' : own.every((share) => share.kg > 0) ? 'kg' : null;
+    const total = own.reduce((sum, share) => sum + (basis === 'm3' ? share.m3 : basis === 'kg' ? share.kg : 0), 0);
+    const priced = new Set(pricedHereOf(group.clientId).map((row) => row.dealId));
+    const options = candidates.deals.map((dealId) => {
+      const head = dealHeads.get(dealId);
+      const share = shares.find((row) => row.dealId === dealId);
+      const names = [
+        ...new Set(
+          group.lots
+            .filter((lot) => ownDealOf(lot, group.clientId) === dealId)
+            .map((lot) => lot.productNameRu?.trim() || lot.productNameZh),
+        ),
+      ];
+      const code = head?.code ?? share?.dealCode ?? '—';
+      const pct = share && basis && total > 0 ? Math.round(((basis === 'm3' ? share.m3 : share.kg) / total) * 100) : null;
+      // What tells the deals apart comes first — the goods and the share —
+      // or a closed select at 360 px shows two codes and nothing else (UX-4).
+      const label = [
+        code,
+        names.length > 0 ? `${names[0]}${names.length > 1 ? ` +${names.length - 1}` : ''}` : null,
+        // Spelled like the lot rows above it («1 m³ · 100 kg»), and the
+        // share kept whole with its sign (a no-break space) at 360 px.
+        pct !== null ? `${pct}\u00a0%` : null,
+        share && share.m3 > 0 ? `${Number(share.m3.toFixed(2))} m³` : null,
+        share && share.kg > 0 ? `${Number(share.kg.toFixed(1))} kg` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      return { id: dealId, code, label, pct, deferred: head?.deferred ?? false, priced: priced.has(dealId) };
+    });
+    // After the first deal's part, the deal still without a price here is
+    // listed first — the press that usually comes next (UX-6). The question's
+    // KEY keeps its own order; this is display only.
+    options.sort((a, b) => Number(a.priced) - Number(b.priced) || a.code.localeCompare(b.code));
+    return { none: candidates.none, options: options.map(({ priced: _priced, ...option }) => option) };
+  };
+
+  // «Bu mashinadagi narxlar»: where each price for this client on this truck
+  // went, and — for a client who is asked — which of his deals here has no
+  // price of its own yet. After the first deal's part every count on the
+  // truck says «priced» (a truck price covers ALL the client's cartons
+  // aboard), so this line is the only place the second deal's missing part
+  // shows (review). A deal with a price of its own off any truck is covered
+  // by that price and says so instead of «narx yo'q» (a second bill).
+  const pricedHereBlock = (group: { clientId: string }) => {
+    const rows = pricedHereOf(group.clientId);
+    const candidates = candidatesOf.get(group.clientId)!;
+    const missing = unpricedDealsOf(candidates, rows, (dealId) => dealHeads.get(dealId)?.cardPriced ?? false);
+    if (rows.length === 0 && !candidates.ambiguous) return null;
+    return (
+      <div className="space-y-0.5 text-xs" data-testid="pricing-priced-here">
+        <p className="font-semibold text-ink-700">{t('pricedHereTitle')}</p>
+        {rows.map((row) => (
+          <p key={row.id} data-testid="pricing-priced-here-row">
+            <span className="num font-semibold">{money(row.usd)}</span> →{' '}
+            <span className="font-mono">{row.dealCode ?? t('pricedHereNoDeal')}</span>
+            {row.dealId && !candidates.deals.includes(row.dealId) && (
+              <span className="text-warn" data-testid="pricing-priced-here-gone">
+                {' '}
+                ⚠ {t('pricedHereGone')}
+              </span>
+            )}
+          </p>
+        ))}
+        {/* In the order the deals are listed above, by code — not by id. */}
+        {[...missing]
+          .sort((a, b) => (dealHeads.get(a.dealId)?.code ?? '').localeCompare(dealHeads.get(b.dealId)?.code ?? ''))
+          .map(({ dealId, why, loud }) => (
+            <p
+              key={dealId}
+              className={loud ? 'font-semibold text-warn' : 'text-ink-500'}
+              data-testid="pricing-priced-here-missing"
+              data-why={why}
+            >
+              <span className="font-mono">{dealHeads.get(dealId)?.code ?? '—'}</span> —{' '}
+              {why === 'card' ? t('pricedHereCardPrice') : why === 'whole' ? t('pricedHereWhole') : t('pricedHereMissing')}
+            </p>
+          ))}
+      </div>
+    );
+  };
 
   const fateWords = (fate: { lost: number; missing: number; leftBehind: number }) =>
     [
@@ -999,7 +1128,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
             )}
             {(() => {
               if (!dealPriceSight) return null;
-              const split = dealSharesOf(group.lots);
+              const split = dealSharesOf(group.lots, group.clientId);
               if (split.shares.length === 0) return null;
               const usdOf = (amount: number, currency: string | null) =>
                 currency === 'USD' ? money(amount) : `${amount.toFixed(2)} ${currency ?? ''}`;
@@ -1095,22 +1224,39 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 ↪ {t('continuationClient', { n: followsOf(group)!.n, total: followsOf(group)!.total, codes: followsOf(group)!.codes })}
               </p>
             )}
-            {!internal && (
-              <PricingForm
-                clientId={group.clientId}
-                batchId={id}
-                secondBill={(() => {
-                  const follows = followsOf(group);
-                  return follows ? { n: follows.n, codes: follows.codes } : null;
-                })()}
-                currencies={currencyCodes}
-                today={today}
-                expectedUsd={(() => {
-                  const split = dealSharesOf(group.lots);
-                  return expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts);
-                })()}
-              />
-            )}
+            {!internal && pricedHereBlock(group)}
+            {!internal &&
+              (() => {
+                const split = dealSharesOf(group.lots, group.clientId);
+                const candidates = candidatesOf.get(group.clientId)!;
+                const asked = askFor(group, candidates, split.shares);
+                return (
+                  <PricingForm
+                    clientId={group.clientId}
+                    batchId={id}
+                    secondBill={(() => {
+                      const follows = followsOf(group);
+                      return follows ? { n: follows.n, codes: follows.codes } : null;
+                    })()}
+                    currencies={currencyCodes}
+                    today={today}
+                    expectedAll={expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts)}
+                    expectedByDeal={
+                      asked
+                        ? Object.fromEntries(
+                            split.shares.map((share) => {
+                              const quote = quoteOf.get(share.dealId);
+                              return [share.dealId, quote ? expectedPriceFor(quote, { m3: share.m3, kg: share.kg }) : null];
+                            }),
+                          )
+                        : {}
+                    }
+                    dealsSeen={candidates.key}
+                    question={asked}
+                    pricedHere={pricedHereOf(group.clientId).map((row) => ({ usd: row.usd, dealCode: row.dealCode }))}
+                  />
+                );
+              })()}
           </div>
         );
       })}

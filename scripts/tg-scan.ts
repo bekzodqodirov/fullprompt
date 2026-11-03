@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db, pgClient } from '../src/modules/platform/db/client';
 import { clients, users } from '../src/modules/platform/db/schema';
 import { recordCandidates, rulesFor, type CandidateInput } from '../src/modules/wms/crm/chat-rules';
+import { TELEGRAM_DEVICE } from '../src/modules/wms/crm/telegram-device';
 import {
   peerFromChat,
   peerTitle,
@@ -72,6 +73,7 @@ async function main() {
   // a one-off a person sits through; it does not need a stored login.
   const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
     connectionRetries: 3,
+    ...TELEGRAM_DEVICE,
   });
   await client.start({
     phoneNumber: async () => tgPhone,

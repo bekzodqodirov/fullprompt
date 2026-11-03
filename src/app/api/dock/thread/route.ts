@@ -15,6 +15,7 @@ import {
 } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
 import { templatesFor } from '@/modules/wms/crm/templates';
+import { agentSentIds, cancellable, waitingAgentReplies } from '@/modules/wms/agent/web-thread';
 
 /**
  * One client's thread for the dock, with the same honest reply verdict the
@@ -56,20 +57,30 @@ export async function GET(request: Request) {
     pendingFor(clientId, viewer),
   ]);
   if (!client) return NextResponse.json({ error: 'not_found' }, { status: 404 });
+  // The AI sotuvchi's marks, the page's own two statements (0138).
+  const [agentSent, agentWaiting] = await Promise.all([
+    agentSentIds(messages),
+    waitingAgentReplies({ clientId }, viewer),
+  ]);
 
   let reason: string | null = null;
+  // When a send-path wait Telegram ordered ends — the guard row's, uncapped
+  // (ban-2), so it can be hours: the drawer says the end, the card composer's
+  // words exactly. Only beside the refusal it explains.
+  let floodUntil: string | null = null;
   if (!account) {
     reason = managers.length === 0 ? 'no_chat' : 'not_your_conversation';
   } else {
-    const verdict = canQueue(
-      'x',
-      await sendContextFor({
-        clientId,
-        managerUserId: account.managerUserId,
-        peerId: account.peerId,
-      }),
-    );
-    if (!verdict.ok) reason = verdict.reason;
+    const context = await sendContextFor({
+      clientId,
+      managerUserId: account.managerUserId,
+      peerId: account.peerId,
+    });
+    const verdict = canQueue('x', context);
+    if (!verdict.ok) {
+      reason = verdict.reason;
+      if (verdict.reason === 'flood_wait') floodUntil = context.floodWaitUntil?.toISOString() ?? null;
+    }
   }
 
   // Filled HERE, against the resolved client — the browser is never told a
@@ -87,6 +98,7 @@ export async function GET(request: Request) {
     templates,
     canReply: reason === null,
     reason,
+    floodUntil,
     managers,
     messages: messages.map((m) => ({
       id: m.id,
@@ -103,6 +115,14 @@ export async function GET(request: Request) {
       files: m.files,
       fwdFrom: m.fwdFrom,
       quoted: m.quoted,
+      agent: agentSent.has(m.id),
+    })),
+    agentWaiting: agentWaiting.map((row) => ({
+      id: row.id,
+      body: row.body,
+      nextStepAt: row.nextStepAt.toISOString(),
+      // The cancel is its holder's alone — the action asks again.
+      mayCancel: row.managerUserId === actor.id && cancellable(row),
     })),
     pending: pending.map((row) => ({
       id: row.id,

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
   attachments,
@@ -10,8 +10,10 @@ import {
 } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { getStorage } from '../../platform/files/storage';
+import { logger } from '../../platform/logger';
 import { leadForChat } from './chat-lead';
-import type { ChatRule } from './telegram-import';
+import { createLead } from './service';
+import { TELEGRAM_SERVICE_PEER, type ChatRule } from './telegram-import';
 
 /**
  * The chats a person has said yes or no to.
@@ -26,6 +28,18 @@ import type { ChatRule } from './telegram-import';
  */
 
 export class ChatRuleError extends Error {}
+
+/*
+ * Telegram's own service chat (777000 — login codes, «new login», limitation
+ * notices) is no customer under any answer. The classifiers have refused to
+ * keep it since the AI sotuvchi round, but a tray rule written BEFORE that
+ * (a scan's `pending`, even a decision) is still a row these doors can be
+ * pressed on, and every one of them that makes a chat a card's —
+ * `decideChat`'s include, «Yangi lid», «Chatni qo'shish» — would start
+ * keeping a stream of login codes the agent then reads. Each refuses it in
+ * words (`service_chat`) before writing anything; «hech qachon» stays open,
+ * because that is the right answer and what the cleanup script writes.
+ */
 
 /** The rules the import and the listener consult, keyed by peer. */
 export async function rulesFor(managerUserId: string): Promise<Map<bigint, ChatRule>> {
@@ -142,6 +156,10 @@ export async function listCandidates(filter: {
   decision?: 'pending' | 'include' | 'exclude';
 }): Promise<CandidateRow[]> {
   const where = [
+    // Never on the tray, whatever an old scan recorded: there is no answer to
+    // give about it but «never», and the cleanup script gives that one. The
+    // badge (`pendingCount`) counts through here, so it drops out of both.
+    ne(tgChatRules.peerId, TELEGRAM_SERVICE_PEER),
     filter.managerUserId ? eq(tgChatRules.managerUserId, filter.managerUserId) : undefined,
     filter.decision ? eq(tgChatRules.decision, filter.decision) : undefined,
   ].filter(Boolean);
@@ -165,7 +183,7 @@ export async function listCandidates(filter: {
     .innerJoin(users, eq(tgChatRules.managerUserId, users.id))
     .leftJoin(clients, eq(tgChatRules.clientId, clients.id))
     .leftJoin(leads, eq(tgChatRules.leadId, leads.id))
-    .where(where.length > 0 ? and(...where) : undefined)
+    .where(and(...where))
     .orderBy(asc(tgChatRules.peerTitle));
 
   // `peerId` is a bigint and this crosses to a client component; it goes as a
@@ -194,6 +212,9 @@ export async function decideChat(
 ): Promise<void> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, input.id));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  if (input.decision === 'include' && rule.peerId === TELEGRAM_SERVICE_PEER) {
+    throw new ChatRuleError('service_chat');
+  }
 
   const clientId = input.decision === 'include' ? (input.clientId ?? null) : null;
   if (input.decision === 'include' && !clientId) throw new ChatRuleError('client_required');
@@ -225,6 +246,43 @@ export async function decideChat(
     before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
     after: { decision: input.decision, clientId, leadId: null },
   });
+
+  await withdrawAgentRepliesOf(rule);
+}
+
+/**
+ * The rule doors' one hook into the AI sotuvchi (final review K7, ident fix
+ * F1/F11): a decision that makes the chat somebody else's — the tray's «↩»,
+ * «Shaxsiy», another client, «Yangi lid» from a stale tab, a card's «Chatni
+ * qo'shish» — takes back the agent's replies written for whoever it was,
+ * asked of the chat's identity AFTER the write by the ✅'s own rule (drafts
+ * `withdrawMovedReplies`, context `bindMoved`): the same person — a phone
+ * sibling, the client a won lead became — keeps everything, exactly as the
+ * ✅ would let it through. Without it the web tray's undo left an approval
+ * held for the morning to go out with the old client's name and codes into a
+ * chat bound to nobody, and the send step's own identity check compares the
+ * stored rows, which still name that client.
+ *
+ * After the rule is written, so a ✅ pressed in between asks the NEW rule
+ * (decide.ts re-asks the chat's identity) or — committed before it — is
+ * cancelled here (drafts first, then the waiting rows). Best-effort: the
+ * decision stands whatever the agent's tables say, and on a server one
+ * migration behind they are not there at all.
+ */
+async function withdrawAgentRepliesOf(rule: { id?: string; managerUserId: string; peerId: bigint }): Promise<void> {
+  try {
+    const { agentTablesReady } = await import('../agent/config');
+    if (!(await agentTablesReady())) return;
+    const { withdrawMovedReplies } = await import('../agent/drafts');
+    await withdrawMovedReplies({
+      managerUserId: rule.managerUserId,
+      peerId: rule.peerId,
+      why: 'identity_changed: the chat was decided again on the tray',
+      note: '↩ Chat qayta hal qilindi — bu javob ketmaydi.',
+    });
+  } catch (err) {
+    logger.warn({ err, ruleId: rule.id, peerId: String(rule.peerId) }, '[chat-rules] agent replies not withdrawn');
+  }
 }
 
 /**
@@ -250,19 +308,22 @@ export async function decideChat(
 export async function openLeadForChat(
   ruleId: string,
   ctx: AuditContext,
+  opts: { phoneless?: 'agent_stranger' } = {},
 ): Promise<{ leadId: string }> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule) throw new ChatRuleError('chat_rule_not_found');
+  // Ahead of the phone: 777000 may well show one (42777), and a lead on it is
+  // a funnel card whose «conversation» is a login code.
+  if (rule.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
   const phone = (rule.peerPhone ?? '').trim();
   // The same refusal `unknownChatAction` makes about `no_phone`: a lead
-  // nobody can ring is a row with a name in it.
-  if (!phone) throw new ChatRuleError('chat_no_phone');
+  // nobody can ring is a row with a name in it. The tray's own button keeps
+  // it; only the AI sotuvchi's «📵» card (his Q18 ⭐) passes `phoneless`.
+  if (!phone && opts.phoneless !== 'agent_stranger') throw new ChatRuleError('chat_no_phone');
 
-  const leadId = await leadForChat(
-    rule.managerUserId,
-    { phone, title: rule.peerTitle },
-    ctx,
-  );
+  const leadId = phone
+    ? await leadForChat(rule.managerUserId, { phone, title: rule.peerTitle }, ctx)
+    : await phonelessLeadFor(rule, ctx);
 
   await db
     .update(tgChatRules)
@@ -280,9 +341,41 @@ export async function openLeadForChat(
     entityId: ruleId,
     action: 'update',
     before: { decision: rule.decision, clientId: rule.clientId, leadId: rule.leadId },
-    after: { decision: 'include', clientId: null, leadId },
+    after: { decision: 'include', clientId: null, leadId, ...(phone ? {} : { reason: 'agent_stranger_phoneless' }) },
   });
+  await withdrawAgentRepliesOf(rule);
   return { leadId };
+}
+
+/**
+ * The name a hidden-number lead gets when Telegram gave no title either — a
+ * placeholder, never a person's name, so the 📌 general fact's name check
+ * leaves it out (its words «Telegram», «raqam» are not anybody's name).
+ */
+export const PHONELESS_LEAD_NAME = 'Telegram (raqam yashirin)';
+
+/**
+ * A lead for a hidden-number first contact (his Q18 ⭐: a «📵» card's «🆕
+ * Yangi lid»). There is no number to look an open lead up by — which is the
+ * rule `leadForChat` keeps from minting twice — so the RULE's own lead is
+ * that fence: a second press (or a redelivered one) finds the lead the first
+ * press wrote onto this rule and mints nothing. Named by the peer's Telegram
+ * title; owned, like every chat lead, by the manager whose account it is.
+ */
+async function phonelessLeadFor(rule: typeof tgChatRules.$inferSelect, ctx: AuditContext): Promise<string> {
+  if (rule.leadId) {
+    const [existing] = await db.select({ id: leads.id }).from(leads).where(eq(leads.id, rule.leadId));
+    if (existing) return existing.id;
+  }
+  const lead = await createLead(
+    {
+      name: (rule.peerTitle ?? '').trim() || PHONELESS_LEAD_NAME,
+      ownerId: rule.managerUserId,
+      note: "Telegram: raqami yashirin — AI sotuvchining «📵» kartasidan ochildi.",
+    },
+    { ...ctx, actorId: ctx.actorId ?? rule.managerUserId },
+  );
+  return lead.id;
 }
 
 /**
@@ -310,6 +403,10 @@ export async function attachPeerToCard(
   },
   ctx: AuditContext,
 ): Promise<void> {
+  // No card may own it, so the question of WHICH card does not arise. The
+  // upsert below would otherwise turn a stale `pending` (or a person's
+  // «never») into an include in one press.
+  if (input.peerId === TELEGRAM_SERVICE_PEER) throw new ChatRuleError('service_chat');
   const clientId = input.clientId ?? null;
   const leadId = input.leadId ?? null;
   // The CHECK says the same thing in the database; saying it here too is what
@@ -345,6 +442,7 @@ export async function attachPeerToCard(
     action: 'update',
     after: { decision: 'include', clientId, leadId, reason: 'attached_from_card' },
   });
+  await withdrawAgentRepliesOf({ id: row!.id, managerUserId: input.managerUserId, peerId: input.peerId });
 }
 
 /**
@@ -520,6 +618,12 @@ export async function purgeExcludedChat(
   // Only an excluded chat: purging an INCLUDED client's conversation is a
   // different (and refused) act — exclude it first, on the same screen.
   if (rule.decision !== 'exclude') throw new ChatRuleError('not_excluded');
+
+  // The AI sotuvchi's copies of this chat go first (0138, review leak-9): its
+  // drafts, runs, outbox rows, calc links, the facts born in it and the
+  // cards' quoted text — «o'chirildi» must mean every copy.
+  const { purgeAgentChat } = await import('../agent/purge');
+  await purgeAgentChat(rule.managerUserId, rule.peerId);
 
   const rows = await db
     .select({ id: tgMessages.id })

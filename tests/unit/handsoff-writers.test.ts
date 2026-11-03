@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 /**
  * «Has a person been here since the machine?» (his 1.9 a) is ONE column,
- * `calc_requests.handsoff_rev` (0138), and its meaning is the whole of who
+ * `calc_requests.handsoff_rev` (0139), and its meaning is the whole of who
  * may write it (docs/SAKKIZ-R3.md §10.3, durability-6, law-money-2): the
  * landing writes 0, and only the machine's own chained saves — and the
  * seller's own additions — move it, inside the transaction that moved the

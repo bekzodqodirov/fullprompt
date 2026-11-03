@@ -22,12 +22,34 @@ import { TelegramBubble } from './telegram-bubble';
 import { ThreadManagers } from './thread-managers';
 import { TelegramReply } from './telegram-reply';
 import { ThreadCalc } from './thread-calc';
+import { agentSentIds, cancellable, waitingAgentReplies, type WaitingAgentReply } from '@/modules/wms/agent/web-thread';
+import { AgentWaitingBubble, agentSendAtLabel } from './agent-waiting-bubble';
+import { AgentCancelButton } from './agent-cancel-button';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** A manager id off the URL, or nothing — never a string the uuid column refuses. */
 function asManager(value: string | undefined): string | undefined {
   return value && UUID.test(value) ? value : undefined;
+}
+
+/** The AI sotuvchi's approved replies still on their way, drawn like the queue (0138). */
+function agentWaitingBubbles(
+  rows: readonly WaitingAgentReply[],
+  viewerId: string,
+  t: (key: string, values?: Record<string, string>) => string,
+) {
+  return [...rows].reverse().map((row) => {
+    const at = agentSendAtLabel(row.nextStepAt);
+    return (
+      <AgentWaitingBubble
+        key={row.id}
+        body={row.body}
+        text={at ? t('agentWaitingAt', { time: at }) : t('agentSending')}
+        action={row.managerUserId === viewerId && cancellable(row) ? <AgentCancelButton outboxId={row.id} /> : undefined}
+      />
+    );
+  });
 }
 
 /**
@@ -142,6 +164,10 @@ export async function TelegramThread({
     if (rows.length === 0 && !chosen) return null;
     const pulse = await chatPulseForLead(actor, leadId);
     const newestIn = rows.find((row) => row.direction === 'in')?.id ?? null;
+    const [agentSent, agentWaiting] = await Promise.all([
+      agentSentIds(rows),
+      waitingAgentReplies({ leadId }, viewer),
+    ]);
     return (
       <section
         id={LEAD_THREAD_ANCHOR}
@@ -172,10 +198,12 @@ export async function TelegramThread({
               card mounted (a phone draws the rail first and the chat far
               below it). */}
           {newestIn && <LeadChatReadSentinel leadId={leadId} newest={newestIn} />}
+          {agentWaitingBubbles(agentWaiting, actor.id, t as never)}
           {rows.map((row) => (
             <TelegramBubble
               key={row.id}
-              message={row}
+              message={{ ...row, agent: agentSent.has(row.id) }}
+              agentLabel={t('agentSent')}
               clientLabel={t('telegramClient')}
               mediaLabel={t('telegramMedia')}
             />
@@ -215,6 +243,10 @@ export async function TelegramThread({
   // answered from this very panel must see that the answer is still waiting —
   // otherwise the panel looks exactly as it did before they typed.
   const queued = await pendingFor(threadClientId, viewer);
+  const [agentSent, agentWaiting] = await Promise.all([
+    agentSentIds(rows),
+    waitingAgentReplies({ clientId: threadClientId }, viewer),
+  ]);
 
   // The baseline for the pulse, computed in the SAME render that drew the
   // rows above — the poller compares against what this screen shows, never
@@ -265,6 +297,7 @@ export async function TelegramThread({
         />
       )}
       <div className="flex max-h-96 flex-col-reverse gap-1.5 overflow-y-auto">
+        {agentWaitingBubbles(agentWaiting, actor.id, t as never)}
         {[...queued].reverse().map((row) => (
           <OutboxBubble
             key={row.id}
@@ -275,7 +308,8 @@ export async function TelegramThread({
         {rows.map((row) => (
           <TelegramBubble
             key={row.id}
-            message={row}
+            message={{ ...row, agent: agentSent.has(row.id) }}
+            agentLabel={t('agentSent')}
             clientLabel={t('telegramClient')}
             mediaLabel={t('telegramMedia')}
           />

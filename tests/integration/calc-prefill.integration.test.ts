@@ -54,7 +54,7 @@ let batchId = '';
 const madeRequests: string[] = [];
 const madeKeys: string[] = [];
 const ctx = () => ({ actorId });
-/** The request's hands-off stamp (0138) — moved only by the machine's chained saves. */
+/** The request's hands-off stamp (0139) — moved only by the machine's chained saves. */
 const handsOffOf = async (id: string) =>
   (await db.select({ h: calcRequests.handsoffRev }).from(calcRequests).where(eq(calcRequests.id, id)))[0]?.h ?? null;
 

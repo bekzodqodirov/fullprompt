@@ -19,6 +19,7 @@ import {
   contactClockFrom,
   contactDueAt,
   contactedRecently,
+  isReminderExempt,
   REMIND_WITHIN_HOURS,
   stampFirstContacts,
 } from './first-contact';
@@ -152,9 +153,15 @@ async function pushTo(
  * landing's own INSERT — and caught on `isServerBehind`: on a database one
  * migration behind, the arrival must still be RECORDED (it is the replay
  * fence), and only the measurement is lost (#472).
+ *
+ * `remind` false (the agent's door, `isReminderExempt`) starts the SAME clock
+ * with no due time: the first contact is still stamped and measured, and
+ * `claimUntouched` never sees the row. Not «skip the clock» — without a clock
+ * `stampFirstContacts` never writes `contacted_at`, and the agent's outcomes
+ * feed could never report that a manager reached the company.
  */
-async function startContactClock(intakeId: string, now: Date): Promise<void> {
-  const minutes = Number(await getSetting('inbound_contact_minutes')) || 0;
+async function startContactClock(intakeId: string, now: Date, remind: boolean): Promise<void> {
+  const minutes = remind ? Number(await getSetting('inbound_contact_minutes')) || 0 : 0;
   const clock = contactClockFrom(now);
   const due = contactDueAt(clock, minutes);
   try {
@@ -183,7 +190,7 @@ export async function announceArrival(a: LandedArrival, now: Date = new Date()):
 
   if (a.outcome !== 'client' && a.leadId) {
     const live = a.outcome === 'joined' && (await contactedRecently(a.leadId, a.ownerId, now));
-    if (!live) await startContactClock(a.intakeId, now);
+    if (!live) await startContactClock(a.intakeId, now, !isReminderExempt(a.sourceKey));
   }
 
   const recipients = await recipientsFor(a.ownerId, a.outcome === 'client' ? 'no_manager' : 'unowned');

@@ -1,5 +1,6 @@
 import {
   classifyWithRules,
+  isTelegramServicePeer,
   isWorthKeeping,
   toMessageRow,
   type ChatRule,
@@ -117,6 +118,7 @@ export type LiveVerdict =
         | 'not_a_client'
         | 'excluded'
         | 'self'
+        | 'service'
         | 'empty';
     };
 
@@ -169,7 +171,7 @@ export function decideIncoming(
    * Messages is not a customer under any decision anybody could write down.
    */
   const rule = rules.get(peer.id);
-  if (!peer.isSelf && rule?.decision === 'include' && rule.leadId) {
+  if (!peer.isSelf && !isTelegramServicePeer(peer) && rule?.decision === 'include' && rule.leadId) {
     const leadRow = toMessageRow(peer.id, msg);
     if (!isWorthKeeping(leadRow)) return { store: false, reason: 'empty' };
     return { store: true, leadId: rule.leadId, row: leadRow };

@@ -8,6 +8,7 @@ import {
   type ClientPhones,
   type DialogPeer,
   mediaBackfillPlan,
+  scanVerdict,
 } from '@/modules/wms/crm/telegram-import';
 
 /**
@@ -31,6 +32,14 @@ const peer = (over: Partial<DialogPeer> = {}): DialogPeer => ({
 });
 
 describe('whose conversations are ours to keep', () => {
+  it("never keeps or asks about Telegram's own service chat (777000), even when its number is a client's", () => {
+    const service = peer({ id: 777000n });
+    expect(classifyDialog(service, CLIENTS)).toEqual({ keep: false, reason: 'service' });
+    // The tray scan neither files it automatically nor puts it on the list.
+    expect(scanVerdict(service, CLIENTS, new Map())).toBe('skip');
+    expect(scanVerdict(peer({ id: 777000n, phone: '+998935550000' }), CLIENTS, new Map())).toBe('skip');
+  });
+
   it('keeps a private chat whose number is in the client book', () => {
     expect(classifyDialog(peer(), CLIENTS)).toEqual({
       keep: true,

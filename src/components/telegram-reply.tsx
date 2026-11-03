@@ -6,6 +6,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { templatesFor } from '@/modules/wms/crm/templates';
 import { conversationManagers, replyAccountFor, sendContextFor } from '@/modules/wms/crm/outbox';
 import { canQueue } from '@/modules/wms/crm/telegram-send';
+import { agentSendAtLabel } from './agent-waiting-bubble';
 import { TelegramReplyBox } from './telegram-reply-box';
 
 /**
@@ -65,27 +66,35 @@ export async function TelegramReply({
     );
   }
 
-  const verdict = account
-    ? canQueue(
-        // A single character, only to get past the empty check: this asks
-        // "could a reply go at all", not "is this particular text allowed".
-        'x',
-        await sendContextFor({
-          clientId,
-          managerUserId: account.managerUserId,
-          peerId: account.peerId,
-        }),
-      )
-    : ({ ok: false, reason: 'not_your_conversation' } as const);
+  const context = await sendContextFor({
+    clientId,
+    managerUserId: account.managerUserId,
+    peerId: account.peerId,
+  });
+  // A single character, only to get past the empty check: this asks "could a
+  // reply go at all", not "is this particular text allowed".
+  const verdict = canQueue('x', context);
+  // A send-path wait Telegram ordered is persisted UNCAPPED (the guard row,
+  // ban-2) and can last hours: said with its end, never as «wait a minute».
+  // One ending within the minute reads as the minute it is; one the box only
+  // meets at the press (none stood at render) has no end to say.
+  const floodWhen = context.floodWaitUntil ? agentSendAtLabel(context.floodWaitUntil) : null;
+  const floodWords = !context.floodWaitUntil
+    ? t('replyFloodWaitUnknown')
+    : floodWhen
+      ? t('replyFloodWait', { when: floodWhen })
+      : t('replyRateLimited');
 
   const reasons: Record<string, string> = {
     sending_disabled: t('replyDisabled'),
     never_wrote_first: t('replyNeverWrote'),
     bridge_down: t('replyBridgeDown'),
+    // Telegram limited the account (0138); the words name the bridge panel's «Tekshirdim» button.
+    account_paused: t('replyAccountPaused'),
     rate_minute: t('replyRateLimited'),
     rate_day: t('replyRateLimited'),
     rate_chat: t('replyRateLimited'),
-    flood_wait: t('replyRateLimited'),
+    flood_wait: floodWords,
     not_your_conversation: t('replyNotYours'),
     too_long: t('replyTooLong'),
     empty: t('replyEmpty'),

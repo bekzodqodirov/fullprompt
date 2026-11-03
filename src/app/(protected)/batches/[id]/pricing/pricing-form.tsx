@@ -1,11 +1,15 @@
 'use client';
 
 import { useActionState, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { addTransactionAction, type TxFormState } from '@/app/(protected)/finance/actions';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price-hint';
+import { shownDealChoice } from '@/modules/wms/finance/truck-deal';
+import { TruckDealSelect, questionValues, type TruckDealQuestion } from '@/components/truck-deal-select';
+import { truckDealErrorKey } from '@/components/truck-deal-errors';
 
 /**
  * One client's negotiated price for this batch → a ledger charge.
@@ -31,32 +35,79 @@ import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price
  * an earlier truck — one price for the whole road (owner, 2026-09-30, 1a/4a:
  * «ogohlantirish bilan qolsin»). A price here is then a second bill, so the
  * press asks first, in any currency; one confirmation covers both questions.
+ *
+ * `question` (his Q8 «c», 2026-10-27: «logist o'zi tanlaydi»): two or more of
+ * the client's deals ride this truck, so the person chooses which one the
+ * price goes to (`TruckDealSelect`), and every such press asks once — the
+ * price is THAT deal's part, a «muddatli» deal lets it through the handover,
+ * and the 5 % check compares with the chosen deal's own expected part
+ * (`expectedByDeal`, the owner's and the accountant's sight only — law 4).
+ * `dealsSeen` is the question the page drew, posted always, so a prixod
+ * re-filed before the press is refused (`deals_changed`) and redrawn, never
+ * answered for somebody. `pricedHere` — the client's live prices already on
+ * this truck — makes ANY further price here ask once: a second bill is
+ * always a question, not a habit.
  */
 export function PricingForm({
   clientId,
   batchId,
   currencies,
   today,
-  expectedUsd = null,
+  expectedAll = null,
+  expectedByDeal = {},
   secondBill = null,
+  dealsSeen,
+  question = null,
+  pricedHere = [],
 }: {
   clientId: string;
   batchId: string;
   currencies: string[];
   today: string;
-  expectedUsd?: number | null;
+  /** The deals' price for ALL this client's cargo here (null when unknown). */
+  expectedAll?: number | null;
+  /** Each candidate deal's own expected part here (an ambiguous client only). */
+  expectedByDeal?: Record<string, number | null>;
   secondBill?: { n: number; codes: string } | null;
+  dealsSeen: string;
+  question?: TruckDealQuestion | null;
+  pricedHere?: { usd: number; dealCode: string | null }[];
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
+  const router = useRouter();
   const [amount, setAmount] = useState('');
+  // The deal chosen, with the question it was chosen under (`shownDealChoice`).
+  const [choice, setChoice] = useState<{ deal: string; seen: string } | null>(null);
+  const shown = question ? shownDealChoice(choice, dealsSeen, questionValues(question)) : '';
+  const chosen = question?.options.find((option) => option.id === shown) ?? null;
+  // The figure the 5 % check compares with: the chosen deal's own part, or —
+  // «bitimsiz», or a client with nothing to choose — the whole cargo's.
+  const expectedUsd = question ? (shown === '' ? null : shown === 'none' ? expectedAll : (expectedByDeal[shown] ?? null)) : expectedAll;
   // Prices here are dollars (the ledger's unit); the first active currency
   // in the dictionary was CNY, which turned «150» into ¥150 = $20.
   const [currency, setCurrency] = useState(currencies.includes('USD') ? 'USD' : (currencies[0] ?? ''));
   const [txDate, setTxDate] = useState(today);
-  // The price the person was asked about; changing it asks again.
-  const [asked, setAsked] = useState<{ amount: string; pct: number | null } | null>(null);
+  // The question the person was asked, as asked: drawn only while the
+  // amount, the currency and the deal are still those, and printing the
+  // figures it was asked with — a warning about deal A must never be
+  // confirmed onto deal B (review).
+  const [asked, setAsked] = useState<{
+    amount: string;
+    currency: string;
+    deal: string;
+    seen: string;
+    pct: number | null;
+    usd: number | null;
+  } | null>(null);
   const confirmed = useRef(false);
+  // Anything that changes the question takes back both the alert and a
+  // «baribir saqlash» that never reached the action (a press the browser
+  // refused leaves the flag armed for the NEXT press — review).
+  const reask = () => {
+    setAsked(null);
+    confirmed.current = false;
+  };
   const formRef = useRef<HTMLFormElement>(null);
   const [state, formAction, pending] = useActionState<TxFormState, FormData>(
     async (prev, formData) => {
@@ -64,6 +115,14 @@ export function PricingForm({
       if (result.ok) {
         setAmount('');
         setAsked(null);
+        // The next price for this client is usually the OTHER deal's part —
+        // chosen again, never carried over.
+        setChoice(null);
+      }
+      if (result.error === 'deals_changed') {
+        setChoice(null);
+        setAsked(null);
+        router.refresh();
       }
       confirmed.current = false;
       return result;
@@ -81,9 +140,19 @@ export function PricingForm({
         if (confirmed.current) return;
         const typed = parseTypedMoney(amount);
         const deviates = currency === 'USD' && typed !== null && needsConfirmation(typed, expectedUsd);
-        if (!secondBill && !deviates) return;
+        // On a two-deal truck every press asks once (Q8 «c»): what the price
+        // now means is the deal's part, and the person says so.
+        const choiceAsks = question !== null && shown !== '';
+        if (!secondBill && !deviates && !choiceAsks && pricedHere.length === 0) return;
         event.preventDefault();
-        setAsked({ amount, pct: deviates ? Math.round((deviationOf(typed!, expectedUsd!) ?? 0) * 100) : null });
+        setAsked({
+          amount,
+          currency,
+          deal: shown,
+          seen: dealsSeen,
+          pct: deviates ? Math.round((deviationOf(typed!, expectedUsd!) ?? 0) * 100) : null,
+          usd: deviates ? expectedUsd : null,
+        });
       }}
       className="flex flex-wrap items-center gap-2"
       data-testid="pricing-form"
@@ -91,6 +160,18 @@ export function PricingForm({
       <input type="hidden" name="clientId" value={clientId} />
       <input type="hidden" name="batchId" value={batchId} />
       <input type="hidden" name="type" value="charge" />
+      <input type="hidden" name="dealsSeen" value={dealsSeen} />
+      {question && (
+        <TruckDealSelect
+          question={question}
+          value={shown}
+          stale={choice !== null && shown === ''}
+          onChange={(value) => {
+            setChoice(value ? { deal: value, seen: dealsSeen } : null);
+            reask();
+          }}
+        />
+      )}
       <input
         name="txDate"
         type="date"
@@ -98,7 +179,10 @@ export function PricingForm({
         className="input !w-40 shrink-0"
         value={txDate}
         max={latestTxDate()}
-        onChange={(event) => setTxDate(event.target.value)}
+        onChange={(event) => {
+          setTxDate(event.target.value);
+          reask();
+        }}
         required
       />
       <input
@@ -110,7 +194,7 @@ export function PricingForm({
         value={amount}
         onChange={(event) => {
           setAmount(event.target.value);
-          setAsked(null);
+          reask();
         }}
         required
       />
@@ -119,7 +203,10 @@ export function PricingForm({
         aria-label={t('currency')}
         className="input !w-24 shrink-0"
         value={currency}
-        onChange={(event) => setCurrency(event.target.value)}
+        onChange={(event) => {
+          setCurrency(event.target.value);
+          reask();
+        }}
       >
         {currencies.map((c) => (
           <option key={c}>{c}</option>
@@ -128,19 +215,47 @@ export function PricingForm({
       <button type="submit" disabled={pending} className="btn-primary shrink-0 px-4 disabled:opacity-60">
         {pending ? '…' : state.ok && amount === '' ? '✅' : `🧾 ${t('setPrice')}`}
       </button>
-      {asked && asked.amount === amount && (
+      {asked && asked.amount === amount && asked.currency === currency && asked.deal === shown && asked.seen === dealsSeen && (
         <div role="alert" className="w-full space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
           {secondBill && (
             <p className="font-semibold text-warn" data-testid="pricing-second-bill">
               ⚠ {t('secondBillWarn', { n: secondBill.n, codes: secondBill.codes })}
             </p>
           )}
-          {asked.pct !== null && (
-            <p className="font-semibold text-warn">
+          {question && asked.deal === 'none' && (
+            <p className="font-semibold text-warn" data-testid="pricing-deal-ask">
+              ⚠ {t('truckDealAskNone')}
+            </p>
+          )}
+          {chosen && (
+            <p className="font-semibold text-warn" data-testid="pricing-deal-ask">
+              ⚠{' '}
+              {chosen.pct !== null
+                ? t('truckDealAsk', { code: chosen.code, pct: chosen.pct })
+                : t('truckDealAskNoShare', { code: chosen.code })}
+            </p>
+          )}
+          {chosen?.deferred && (
+            <p className="font-semibold text-warn" data-testid="pricing-deal-ask-deferred">
+              ⏳ {t('truckDealDeferred', { code: chosen.code })}
+            </p>
+          )}
+          {pricedHere.length > 0 && (
+            <p className="font-semibold text-warn" data-testid="pricing-priced-here-ask">
+              ⚠{' '}
+              {t('pricedHereAsk', {
+                list: pricedHere
+                  .map((row) => `$${row.usd.toFixed(2)} → ${row.dealCode ?? t('pricedHereNoDeal')}`)
+                  .join(' · '),
+              })}
+            </p>
+          )}
+          {asked.pct !== null && asked.usd !== null && (
+            <p className="font-semibold text-warn" data-testid="pricing-deviation-pct">
               ⚠{' '}
               {t(asked.pct > 0 ? 'priceAboveDeal' : 'priceBelowDeal', {
                 pct: Math.abs(asked.pct),
-                usd: `$${expectedUsd!.toFixed(2)}`,
+                usd: `$${asked.usd.toFixed(2)}`,
               })}
             </p>
           )}
@@ -154,20 +269,25 @@ export function PricingForm({
               className="btn-primary px-3 disabled:opacity-60"
               data-testid="pricing-deviation-confirm"
               onClick={() => {
+                // Armed only for a press the browser will send: a form it
+                // refuses (an empty deal, a date past today) fires no submit,
+                // and the flag would wave the next press through unasked.
+                const form = formRef.current;
+                if (!form || !form.reportValidity()) return;
                 confirmed.current = true;
-                formRef.current?.requestSubmit();
+                form.requestSubmit();
               }}
             >
               {t('priceConfirmAnyway')}
             </button>
-            <button type="button" className="btn-secondary px-3" onClick={() => setAsked(null)}>
+            <button type="button" className="btn-secondary px-3" onClick={reask}>
               {tc('cancel')}
             </button>
           </div>
         </div>
       )}
       {state.error && (
-        <p role="alert" className="w-full text-sm font-semibold text-bad">
+        <p role="alert" className="w-full text-sm font-semibold text-bad" data-testid="pricing-form-error" data-error={state.error}>
           {state.error === 'fx_missing'
             ? t('fxMissing')
             : state.error === 'validation'
@@ -178,7 +298,9 @@ export function PricingForm({
                   ? t('clientNotAboard')
                   : state.error === 'batch_cancelled'
                     ? t('batchCancelledRefused')
-                    : tc('error')}
+                    : truckDealErrorKey(state.error)
+                      ? t(truckDealErrorKey(state.error)!)
+                      : tc('error')}
         </p>
       )}
     </form>

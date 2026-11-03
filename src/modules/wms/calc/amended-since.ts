@@ -25,10 +25,10 @@ import { CalcError } from './service';
  *
  * Qualified by its own alias: the fragment is ANDed into an UPDATE of
  * `calc_requests`, which has a `rev` of its own (#128's shape). The
- * `outcome` clause is not what keeps a `to_ved` row out — 0138's CHECK
+ * `outcome` clause is not what keeps a `to_ved` row out — 0139's CHECK
  * already leaves every other row's `rev` NULL, and the red proof that dropped
  * the clause stayed green for that reason — it is what lets the planner read
- * 0138's partial index (an index-only scan; without it, the request index and
+ * 0139's partial index (an index-only scan; without it, the request index and
  * a filter, measured).
  */
 export function amendedSinceSql(requestId: string, sawRev: number): SQL {

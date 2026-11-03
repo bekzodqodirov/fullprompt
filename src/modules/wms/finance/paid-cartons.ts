@@ -1,7 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { settlesUsd } from './ledger-kinds';
 import { deferredPerDealSql } from './service';
-import { fifoOrder, settleCharges, type FifoCharge } from './fifo';
+import { fifoOrder, settleChargesFully, type FifoCharge } from './fifo';
 import { uncoveredCtes, unpricedScopeSql, type Exec, type UnpricedScope } from './unpriced';
 import { MONEY_EPSILON } from '../calc/upsale';
 import { receivedMonthSql } from '../staff/cargo';
@@ -170,6 +170,9 @@ export async function paidCargo(exec: Exec, scope: UnpricedScope, opts: { elsewh
 
   // 5. Settle each client, once.
   const owed = new Map<string, number>();
+  // How much of each charge a DEFERRAL settled (not money), and the deal that
+  // deferral belongs to — the charge's own deal (fifo.ts step 2).
+  const deferredBy = new Map<string, { usd: number; dealId: string | null }>();
   for (const clientId of clientIds) {
     const own = ledger.filter((row) => row.client_id === clientId);
     const charges: FifoCharge[] = own
@@ -182,7 +185,7 @@ export async function paidCargo(exec: Exec, scope: UnpricedScope, opts: { elsewh
         dealId: row.deal_id,
         coversReceipts: [...(coversReceipts.get(row.id) ?? [])],
       }));
-    const settled = settleCharges(charges, {
+    const { owed: settled, deferred } = settleChargesFully(charges, {
       generalUsd: own.reduce((sum, row) => sum + settlesUsd({ type: row.type, amountUsd: Number(row.amount_usd) }), 0),
       compensations: own
         .filter((row) => row.type === 'compensation' && row.receipt_id)
@@ -192,6 +195,9 @@ export async function paidCargo(exec: Exec, scope: UnpricedScope, opts: { elsewh
         .map((row) => ({ dealId: row.deal_id, owedUsd: Number(row.owed) })),
     });
     for (const [id, left] of settled) owed.set(id, left);
+    for (const [id, usd] of deferred) {
+      deferredBy.set(id, { usd, dealId: charges.find((charge) => charge.id === id)?.dealId ?? null });
+    }
   }
 
   // The settled charges — what the upsale's hint and its «own invoice» clause
@@ -212,7 +218,17 @@ export async function paidCargo(exec: Exec, scope: UnpricedScope, opts: { elsewh
     });
   }
 
-  // 6. A carton is paid when something covers it and everything covering it is settled.
+  // 6. A carton is paid when something covers it and everything covering it is
+  //    settled — by money, or by a deferral of the carton's OWN deal. A truck
+  //    price covers every carton of the client aboard whatever their deal, and
+  //    one written to a deferred deal (Q8 «c») must not make the other deal's
+  //    cartons paid: that deferral was decided about its own job only
+  //    (fifo.ts), and the KPI pays a seller on these cartons (review).
+  const settledFor = (chargeId: string, cartonDeal: string | null) => {
+    if ((owed.get(chargeId) ?? Infinity) > MONEY_EPSILON) return false;
+    const by = deferredBy.get(chargeId);
+    return !by || by.usd <= MONEY_EPSILON || by.dealId === cartonDeal;
+  };
   const cartons = rows.map((c): PaidCarton => {
     const covering = (c.charges ?? '').split(',').filter(Boolean);
     return {
@@ -225,7 +241,7 @@ export async function paidCargo(exec: Exec, scope: UnpricedScope, opts: { elsewh
       m3: Number(c.m3),
       covering,
       covered: covering.length > 0,
-      paid: covering.length > 0 && covering.every((id) => (owed.get(id) ?? Infinity) <= MONEY_EPSILON),
+      paid: covering.length > 0 && covering.every((id) => settledFor(id, c.deal_id)),
       elsewhere: Boolean(c.elsewhere),
     };
   });

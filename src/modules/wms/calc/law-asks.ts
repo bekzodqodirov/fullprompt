@@ -66,7 +66,7 @@ export function lawAsksOf(stored: LawAsksInput): LawAsk[] {
  * already loaded, never a second read (performance-9).
  *
  * Null when a PERSON has written since the machine (`handsoffRev !== rev`,
- * 0138): the VED is on the job, and asking the seller a figure over the
+ * 0139): the VED is on the job, and asking the seller a figure over the
  * VED's own screen would be two people asking one customer (p5-p6-12).
  *
  * `bookLaws` is empty on purpose: after the pass's sweep every coded row sits

@@ -5,13 +5,13 @@ import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
+  giveClaimBack,
   loadOutboxFile,
   markAttemptFailed,
   markSent,
   OUTBOX_CHANNEL,
   recordSent,
   recoverInFlight,
-  releaseClaim,
   sentCounts,
   wasSentWithPhoto,
 } from '../src/modules/wms/crm/outbox';
@@ -58,11 +58,13 @@ import {
 import {
   peerFromChat,
   peerIdFromUpdate,
+  peerTitle,
   tgMediaPlan,
   toMessageRow,
   type DialogPeer,
   type RawMessage,
 } from '../src/modules/wms/crm/telegram-import';
+import { chatOfMessage, lastFour, passedLine, sharedWarmer, userIdOf } from '../src/modules/wms/crm/listen-trace';
 import {
   confirmSiteTagOnCard,
   landSiteTag,
@@ -78,6 +80,74 @@ import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
+import { enqueue } from '../src/modules/platform/jobs/boss';
+import { TELEGRAM_DEVICE } from '../src/modules/wms/crm/telegram-device';
+import { FloodRecordingLogger } from '../src/modules/wms/crm/telegram-logger';
+import { floodEnds, isSendFloodMethod, pumpGate, tgErrorKind } from '../src/modules/wms/crm/telegram-guard';
+import { readGuard, stampAgentPump } from '../src/modules/wms/crm/account-guard';
+import {
+  accountFlooded,
+  accountRestricted,
+  agentTelegramNotice,
+  announceSessionDeadToOthers,
+  type AlarmAccount,
+} from '../src/modules/wms/crm/account-alarm';
+import { markAutoSent, markDeleted, wasAutoSent } from '../src/modules/wms/crm/message-flags';
+import {
+  agentRunning,
+  agentTablesReady,
+  readAgentConfig,
+  type AgentConfig,
+} from '../src/modules/wms/agent/config';
+import {
+  INBOUND_START_AFTER_S,
+  JOB_AGENT_HUMAN_REPLY,
+  JOB_AGENT_INBOUND,
+  shouldStartAgentRun,
+  type AgentHumanReplyJob,
+  type AgentInboundJob,
+} from '../src/modules/wms/agent/queues';
+import {
+  agentSendVerdict,
+  runAgentStep,
+  slotHold,
+  verdictOutcome,
+  type AgentOutboxRow,
+  type SendTurn,
+  type StepOutcome,
+  type WaitReason,
+} from '../src/modules/wms/agent/send-step';
+import {
+  agentStepStore,
+  applyAgentOutcome,
+  badgeRestored,
+  badgesToRestore,
+  dueAgentRow,
+  recoverAgentInFlight,
+  type OutcomeReport,
+} from '../src/modules/wms/agent/outbox-store';
+import { agentTelegramOver } from '../src/modules/wms/agent/gramjs-adapter';
+import { isNudge } from '../src/modules/wms/agent/worthy';
+import {
+  isNewestInbound,
+  isTelegramServiceNotice,
+  noteStranger,
+  stampPeerTyping,
+  strangerUserOf,
+  telegramNoticeKind,
+  type StrangerUser,
+  type TelegramNoticeKind,
+} from '../src/modules/wms/agent/listener-hooks';
+import {
+  claimPeerPull,
+  finishPeerPull,
+  newestInboundSince,
+  PULL_GAP_MS,
+  PULL_MESSAGES,
+  PULL_WINDOW_MS,
+  releaseStalePulls,
+} from '../src/modules/wms/agent/peer-pulls';
+import { onAgentOutboxSettled } from '../src/modules/wms/agent/settle-hooks';
 
 /**
  * The live bridge: a client's message reaches the CRM within seconds.
@@ -142,6 +212,56 @@ const USERNAME_REFRESH_MS = 20 * 60_000;
  */
 const INDEX_EVERY_MS = 24 * 60 * 60 * 1000;
 
+/** How many of the newest dialogs warm the entity cache before catch-up (one GetDialogs page). */
+const CATCHUP_WARM_DIALOGS = 100;
+/** The shortest time between two warm-ups; a line inside it waits for the next one. */
+const WARM_GAP_MS = 10_000;
+/** After a failed warm-up (a thrown FLOOD_WAIT is over 60 s by gramjs's own threshold). */
+const WARM_FAIL_GAP_MS = 120_000;
+/** A warm-up given up on: gramjs `invoke` has no timeout of its own. */
+const WARM_DEADLINE_MS = 30_000;
+
+/**
+ * How a stored message reached this process — the agent's hook asks
+ * (`shouldStartAgentRun`, spec §17.3.1). Only a LIVE inbound may start a
+ * run: catch-up, the connect-time week and the site sweep's replay are
+ * history, and an answer to a message a day old is the shape that reads as
+ * a robot. A one-peer pull asks ONCE, at its end, for the newest line.
+ */
+type ListenOrigin = 'live' | 'catch_up' | 'backfill' | 'site_sweep' | 'pull';
+
+/**
+ * The peer as the deciding code sees it, plus what the gramjs USER says about
+ * itself — in his contacts, deleted — which `peerFromChat` leaves out because
+ * nothing that decides storing may read it. Only the stranger card's hook
+ * does (`noteStranger`, his Q18 ⭐).
+ */
+type ListenPeer = DialogPeer & { user?: StrangerUser | null };
+
+const listenPeer = (chat: unknown): ListenPeer => ({ ...peerFromChat(chat as never), user: strangerUserOf(chat) });
+
+/**
+ * How long the agent's settings are trusted inside the message handler: a
+ * busy chat must not cost a query per line, and a switch flipped on the
+ * screen reaches the hook within half a minute (the worker's sweep picks up
+ * what arrived in between).
+ */
+const AGENT_CONFIG_TTL_MS = 30_000;
+
+/**
+ * How often «a pump that knows agent_outbox is running here» is written
+ * (regression-3). The app refuses ✅ unless the stamp is under two minutes
+ * old (`AGENT_LIMITS.pumpFreshMs`), so a quarter of a minute keeps it fresh
+ * with room for a slow tick, without an UPDATE on every knock.
+ */
+const PUMP_STAMP_MS = 15_000;
+
+/** The 0138 probe while it still answers «no» — asked at most this often. */
+const TABLES_RECHECK_MS = 60_000;
+
+/** «The customer is typing» is written at most this often per chat. */
+const TYPING_STAMP_MS = 5_000;
+
 /**
  * Download an incoming photo, VOICE/AUDIO message or FILE and pin it to its
  * row (owner, item 15: "rasimlarni ko'radigan bo'lsa ham yaxshi edi"; then
@@ -201,6 +321,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const { NewMessage, Raw } = await import('telegram/events');
   const { EditedMessage } = await import('telegram/events/EditedMessage');
 
+  /** Who an account alarm names, and whose agent it may switch off. */
+  const alarmAccount: AlarmAccount = {
+    id: account.id,
+    managerUserId: account.managerUserId,
+    managerName: account.managerName,
+  };
+
+  /**
+   * A FLOOD_WAIT gramjs slept through (≤ 60 s) — a row now, not a silence
+   * (ban-2). Fire-and-forget from inside gramjs's invoke loop, and never
+   * allowed to throw back into it.
+   */
+  const onFloodSleep = (sleep: { seconds: number; method: string }) => {
+    void accountFlooded(alarmAccount, { ...sleep, source: 'sleep' }).catch((err: unknown) => {
+      console.error('flood yozilmadi:', err instanceof Error ? err.message : err);
+    });
+  };
+
   const client = new TelegramClient(new StringSession(account.session), apiId, apiHash, {
     // Infinity, NOT -1. GramJS uses this as a loop bound
     // (`for (attempt = 0; attempt < retries; …)` in MTProtoSender), so -1
@@ -208,6 +346,12 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     // and no socket is ever opened. Infinity is the library's own default and
     // is what "reconnect for ever" actually spells — a warehouse link drops.
     connectionRetries: Infinity,
+    // One honest device name on every connect (ban-12), never the kernel
+    // version of whichever machine the container landed on.
+    ...TELEGRAM_DEVICE,
+    // gramjs keeps its 60-second flood sleep (ban-2's DEVIATION); this
+    // logger is how a sleep becomes a ledger row the agent's fuse can count.
+    baseLogger: new FloodRecordingLogger(onFloodSleep),
   });
   // `connect()` reports failure by returning false rather than by throwing,
   // so ignoring its result is how a listener ends up cheerfully doing nothing.
@@ -259,6 +403,60 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   console.log(
     `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
   );
+
+  /**
+   * Does 0138 exist here? The kernel's probe caches only TRUE, so on a
+   * database one migration behind it would ask on every tick; the answer
+   * «no» is re-asked once a minute instead. Every agent path, and every new
+   * read in the human pump, goes through this first — on an old schema the
+   * listener runs exactly the code it ran before (regression-3 b).
+   */
+  let tablesKnownReady = false;
+  let tablesCheckedAt = 0;
+  const tablesReady = async (): Promise<boolean> => {
+    if (tablesKnownReady) return true;
+    if (Date.now() - tablesCheckedAt < TABLES_RECHECK_MS) return false;
+    tablesCheckedAt = Date.now();
+    tablesKnownReady = await agentTablesReady();
+    return tablesKnownReady;
+  };
+
+  /** The agent's settings as the message handler sees them — cached, never a query per line. */
+  let agentConfigCache: { at: number; value: AgentConfig | null } | null = null;
+  const agentConfigSoon = async (): Promise<AgentConfig | null> => {
+    if (agentConfigCache && Date.now() - agentConfigCache.at < AGENT_CONFIG_TTL_MS) return agentConfigCache.value;
+    const value = (await tablesReady()) ? await readAgentConfig() : null;
+    agentConfigCache = { at: Date.now(), value };
+    return value;
+  };
+  /** Is the agent speaking from THIS account right now (by the cached settings)? */
+  const agentHere = async (): Promise<boolean> => {
+    const config = await agentConfigSoon();
+    return agentRunning(config) && config.ownerUserId === account.managerUserId;
+  };
+
+  /**
+   * Telegram itself wrote to this account (his ⭐2, final review K33): the
+   * agent goes off at once when it speaks from here, and the alarm says so in
+   * words (`agentTelegramNotice`) — unless the line is his own login traffic
+   * (`telegramNoticeKind`), which switches nothing off and costs nothing of
+   * the waiting work. Not the cached settings — a notice minutes after the
+   * switch was flipped on must not slip through a stale cache — and nothing
+   * of the message is stored, logged or forwarded by this: only its KIND
+   * arrives here, and the line goes on to `handleMessage` exactly as it
+   * always did. A database one migration behind has no agent to switch off.
+   * A failure is a logged line, never a downed bridge.
+   */
+  const telegramNoticeSeen = async (kind: TelegramNoticeKind) => {
+    try {
+      if (!(await tablesReady())) return;
+      const { agentOff } = await agentTelegramNotice(alarmAccount, kind);
+      if (agentOff) console.error('TELEGRAM XIZMATI (777000) XABAR YUBORDI — AI sotuvchi o‘chirildi');
+      else if (kind === 'login') console.log('  🔑 Telegram (777000): kirish kodi yoki yangi kirish — mijoz xabari emas, AI sozlamasiga tegilmadi');
+    } catch (err) {
+      console.error('Telegram xizmati xabari AI ni o‘chirmadi:', err instanceof Error ? err.message : err);
+    }
+  };
 
   /**
    * A website visitor's tag, turned into the chat's rule BEFORE the message
@@ -332,8 +530,8 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * second after it must not race each other past the rule the first one is
    * writing. Different conversations still run side by side.
    */
-  const inFlightByPeer = new Map<string, Promise<void>>();
-  const serialised = (key: string, work: () => Promise<void>) => {
+  const inFlightByPeer = new Map<string, Promise<unknown>>();
+  const serialised = <T>(key: string, work: () => Promise<T>): Promise<T | undefined> => {
     const prior = inFlightByPeer.get(key) ?? Promise.resolve();
     // Never rejects: `work` catches its own errors, and a rejected link here
     // would be an unhandled rejection that takes the whole bridge down.
@@ -345,6 +543,21 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     return next;
   };
 
+  /**
+   * One page of the newest dialogs into gramjs's entity cache, shared and
+   * paced (`sharedWarmer`): every live line whose chat the cache cannot name
+   * awaits the SAME call (`chatOfMessage`), the next one waits out a gap — a
+   * longer one after a failure, which is how a FLOOD_WAIT over gramjs's own
+   * sleep threshold arrives — and none outlives its deadline, so catch-up
+   * and a stranger's line never hang on it. A failure is an empty answer
+   * here — the line is then named «aniqlab bermadi» in the log.
+   */
+  const warmDialogs = sharedWarmer(() => client.getDialogs({ limit: CATCHUP_WARM_DIALOGS }), {
+    gapMs: WARM_GAP_MS,
+    failGapMs: WARM_FAIL_GAP_MS,
+    deadlineMs: WARM_DEADLINE_MS,
+  });
+
   client.addEventHandler(async (event: { message?: unknown }) => {
     try {
       const msg = event.message as RawMessage & {
@@ -354,15 +567,52 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         date: number;
         media?: unknown;
         getChat?: () => Promise<unknown>;
+        readonly inputChat?: unknown;
+        peerId?: unknown;
       };
       // The CHAT, not the sender. An outgoing private message has no sender at
       // all in GramJS, so reading the sender drops every reply we send while
       // the client's half keeps arriving — see `peerFromChat` and
       // `telegram-peer.test.ts`. The chat is the same person either way, and
       // it is what the import iterates, so both paths reduce a conversation
-      // identically.
-      const peer: DialogPeer = peerFromChat((await msg.getChat?.()) as never);
-      await serialised(peer.id.toString(), () => handleMessage(peer, msg));
+      // identically. Asked through `chatOfMessage`, because a short update
+      // names a customer by id alone and `getChat()` answers from an empty
+      // cache with nothing at all (2026-10-29, his new number).
+      const decide = async (peer: ListenPeer) => {
+        // Before anything else decides about the line: an official notice switches the agent off first.
+        if (isTelegramServiceNotice(peer, msg.out === true)) await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
+        return handleMessage(peer, msg, 'live');
+      };
+      const bareUser = userIdOf(msg.peerId);
+      if (bareUser === 0n) {
+        // A group's or a channel's line carries its chat; nothing to look up.
+        const peer = listenPeer((await chatOfMessage(msg)).chat);
+        await serialised(peer.id.toString(), () => decide(peer));
+        return;
+      }
+      // A private line queues on its sender's id BEFORE the lookup: the slow
+      // path (a shared warm-up) must not let the same person's next line — a
+      // photo, whose update carries the user — overtake it into the chain
+      // (the review of this fix: a site tag and its photo, decided backwards).
+      await serialised(bareUser.toString(), async () => {
+        try {
+          const resolved = await chatOfMessage(msg, { warm: warmDialogs, getEntity: (p) => client.getEntity(p as never) });
+          if (!resolved.unresolved) return await decide(listenPeer(resolved.chat));
+          // Telegram's own account is known by its id alone (K33): a notice
+          // that cannot be resolved must still switch the agent off.
+          const bare = { id: bareUser, isPrivate: true, isSelf: false };
+          if (isTelegramServiceNotice(bare, msg.out === true)) {
+            await telegramNoticeSeen(telegramNoticeKind(msg.message ?? ''));
+          } else if (msg.out !== true && (await agentHere().catch(() => false))) {
+            const line = passedLine({ reason: 'unresolved', phone: null });
+            if (line) console.log(line);
+          }
+          return null;
+        } catch (err) {
+          console.error('xabar ishlanmadi:', err instanceof Error ? err.message : err);
+          return null;
+        }
+      });
     } catch (err) {
       // One bad event must not take the bridge down: it would stop receiving
       // for every client because of one malformed message.
@@ -370,10 +620,91 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     }
   }, new NewMessage({}));
 
-  const handleMessage = async (
-    peer: DialogPeer,
-    msg: RawMessage & { id: number; out?: boolean; message?: string | null },
+  /**
+   * What a NEW stored row tells the agent (spec §17.3.1), after its media
+   * is saved: the customer's own robot is flagged FIRST (ban-4 — the worker
+   * reads the flag when the job arrives), then the pure decision says whether
+   * this line starts a run or retires one. The listener only enqueues; the
+   * worker decides what a human reply means. A failure here is a missed
+   * draft, never a downed bridge.
+   */
+  const afterStored = async (
+    writtenId: string,
+    row: { peerId: bigint; tgMessageId: bigint; direction: 'in' | 'out' },
+    msg: unknown,
+    origin: ListenOrigin,
   ) => {
+    try {
+      if (wasAutoSent(msg)) await markAutoSent(writtenId);
+      // A pull stores a whole day of the chat; it asks for ONE run, for its
+      // newest line, when it is done — not one per message it walked.
+      if (origin === 'pull') return;
+      const config = await agentConfigSoon();
+      const decision = shouldStartAgentRun({
+        origin,
+        direction: row.direction,
+        accountManagerUserId: account.managerUserId,
+        agentOwnerUserId: config?.ownerUserId ?? null,
+        agentOn: agentRunning(config),
+        stored: true,
+      });
+      if (decision === 'run') {
+        // Only a live line reaches 'run' here (the origin rule above).
+        await enqueue<AgentInboundJob>(
+          JOB_AGENT_INBOUND,
+          {
+            managerUserId: account.managerUserId,
+            peerId: row.peerId.toString(),
+            anchorTgMessageId: row.tgMessageId.toString(),
+            origin: 'live',
+          },
+          { startAfter: INBOUND_START_AFTER_S, retryLimit: 0 },
+        );
+      } else if (decision === 'human_reply') {
+        await enqueue<AgentHumanReplyJob>(
+          JOB_AGENT_HUMAN_REPLY,
+          {
+            managerUserId: account.managerUserId,
+            peerId: row.peerId.toString(),
+            tgMessageId: row.tgMessageId.toString(),
+          },
+          { retryLimit: 0 },
+        );
+      }
+    } catch (err) {
+      console.error('AI navbatiga qo‘yilmadi:', err instanceof Error ? err.message : err);
+    }
+  };
+
+  /**
+   * A stranger's line on the AGENT OWNER's account (his Q18 ⭐, review fit-7):
+   * whether they are in his contacts, and for a hidden number the pending rule
+   * the «📵» card acts on (`noteStranger`). Inbound only — a stranger's
+   * message, not his — and only while the agent speaks from here; every other
+   * account, and this one with the agent off, does exactly what it did. Never
+   * a word of the message. A failure is a missed card, never a lost message.
+   */
+  const strangerSeen = async (peer: ListenPeer, out: boolean, verdict: 'ask' | 'no_phone') => {
+    if (out || !peer.user) return;
+    try {
+      if (!(await agentHere())) return;
+      await noteStranger({
+        managerUserId: account.managerUserId,
+        peerId: peer.id,
+        title: peerTitle(peer),
+        verdict,
+        user: peer.user,
+      });
+    } catch (err) {
+      console.error('notanish belgisi yozilmadi:', err instanceof Error ? err.message : err);
+    }
+  };
+
+  const handleMessage = async (
+    peer: ListenPeer,
+    msg: RawMessage & { id: number; out?: boolean; message?: string | null },
+    origin: ListenOrigin,
+  ): Promise<string | null> => {
     try {
       const now = Date.now();
       if (bookIsStale(book, now)) {
@@ -401,6 +732,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
 
       if (!verdict.store) {
+        // Why the AI did not see it, in words, on the account it speaks from
+        // (`passedLine`): only an inbound LIVE line, never a word of it.
+        if (origin === 'live' && msg.out !== true && (await agentHere().catch(() => false))) {
+          const line = passedLine({
+            reason: 'ask' in verdict ? 'not_a_client' : verdict.reason,
+            phone: 'ask' in verdict ? verdict.phone : null,
+          });
+          if (line) console.log(line);
+        }
         if ('ask' in verdict) {
           // A stranger on a PERSONAL number. The tray gets who to ask about
           // and nothing else — not one word of what was said (round 79).
@@ -408,11 +748,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
             { peerId: verdict.peerId, title: verdict.title, phone: verdict.phone },
           ]);
           asked += 1;
-          return;
+          await strangerSeen(peer, msg.out === true, 'ask');
+          return null;
         }
-        // Counted, never named. This is the manager's private life.
+        // A hidden number on the agent owner's account gets the «📵» card's
+        // rule; everywhere else it stays what it was —
+        if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone');
+        // counted, never named. This is the manager's private life.
         passed += 1;
-        return;
+        return null;
       }
 
       // A stranger on a WORK number opens a lead, and the conversation is
@@ -459,9 +803,37 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
             console.error('media olinmadi:', err instanceof Error ? err.message : err);
           });
         }
+        await afterStored(written, verdict.row, msg, origin);
       }
+      return written;
     } catch (err) {
       console.error('xabar ishlanmadi:', err instanceof Error ? err.message : err);
+      return null;
+    }
+  };
+
+  /**
+   * An edit of the customer's NEWEST line is a new question in the old
+   * message's place (regression-10): the draft written against its first
+   * words is re-thought. An edit of an older line rewrites the record and
+   * asks nothing of the reply.
+   */
+  const rethinkOnEdit = async (peerId: bigint, tgMessageId: bigint) => {
+    try {
+      if (!(await agentHere())) return;
+      if (!(await isNewestInbound(account.managerUserId, peerId, tgMessageId))) return;
+      await enqueue<AgentInboundJob>(
+        JOB_AGENT_INBOUND,
+        {
+          managerUserId: account.managerUserId,
+          peerId: peerId.toString(),
+          anchorTgMessageId: tgMessageId.toString(),
+          origin: 'edit',
+        },
+        { startAfter: INBOUND_START_AFTER_S, retryLimit: 0 },
+      );
+    } catch (err) {
+      console.error('tahrir AI ga yetmadi:', err instanceof Error ? err.message : err);
     }
   };
 
@@ -484,11 +856,53 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         tgMessageId: BigInt(msg.id),
         body: msg.message?.trim() ? msg.message : null,
       });
-      if (applied) console.log('  ✎ tahrir qabul qilindi');
+      if (applied) {
+        console.log('  ✎ tahrir qabul qilindi');
+        await rethinkOnEdit(peer.id, BigInt(msg.id));
+      }
     } catch (err) {
       console.error('tahrir ishlanmadi:', err instanceof Error ? err.message : err);
     }
   }, new EditedMessage({}));
+
+  // Deletes (review leak-8). A message deleted for both sides used to stay in
+  // tg_messages for good, and the agent's context would have presented it as
+  // said — his own mis-sent lines included. Telegram names only the message
+  // ids; a private chat's ids are unique inside this account's box, so the
+  // stored rows are found by (manager, id). Deletes made while this listener
+  // was down are not learned (stated in the spec).
+  client.addEventHandler(async (update: unknown) => {
+    try {
+      const gone = (update as { messages?: unknown }).messages;
+      if (!Array.isArray(gone) || gone.length === 0) return;
+      if (!(await tablesReady())) return;
+      const ids = gone.filter((id): id is number => typeof id === 'number').map((id) => BigInt(id));
+      const marked = await markDeleted(account.managerUserId, ids);
+      if (marked > 0) console.log(`  🗑 ${marked} ta xabar o‘chirilgan`);
+    } catch (err) {
+      console.error("o'chirish belgisi yozilmadi:", err instanceof Error ? err.message : err);
+    }
+  }, new Raw({ types: [Api.UpdateDeleteMessages] }));
+
+  // «The customer is typing» (fit-9) — only on the account the agent speaks
+  // from, and only for a chat already kept (`stampPeerTyping`). Telegram
+  // repeats the update every few seconds while somebody types, so one write
+  // per chat per few seconds says everything the worker needs.
+  const typingStampedAt = new Map<string, number>();
+  client.addEventHandler(async (update: unknown) => {
+    try {
+      const typing = update as { userId?: { toString(): string }; action?: { className?: string } };
+      if (!typing.userId || typing.action?.className === 'SendMessageCancelAction') return;
+      const key = typing.userId.toString();
+      const last = typingStampedAt.get(key) ?? 0;
+      if (Date.now() - last < TYPING_STAMP_MS) return;
+      if (!(await agentHere())) return;
+      typingStampedAt.set(key, Date.now());
+      await stampPeerTyping(account.managerUserId, BigInt(key));
+    } catch (err) {
+      console.error('yozmoqda belgisi yozilmadi:', err instanceof Error ? err.message : err);
+    }
+  }, new Raw({ types: [Api.UpdateUserTyping] }));
 
   // "The manager has read this chat" — round 88, and the reason the warning
   // can finally stop lying. Telegram ALREADY knows this: opening a dialog on
@@ -519,6 +933,19 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     }
   }, new Raw({ types: [Api.UpdateReadHistoryInbox] }));
 
+  // Telegram's notices about the account itself — the API terms, a
+  // limitation, a popup — need not arrive as a message from 777000 at all:
+  // the API delivers them as `updateServiceNotification`, which a client is
+  // expected to file into the 777000 chat ITSELF (K33's follow-up). gramjs
+  // turns no such update into a NewMessage, so it is matched by class like
+  // the reads above, or his ⭐2 «off at once on any official notice» hears
+  // only the login codes. Always a notice, never login traffic, and never
+  // kept: the update IS the notice.
+  // One that came while this listener was down is not learned (stated).
+  client.addEventHandler(async () => {
+    await telegramNoticeSeen('notice');
+  }, new Raw({ types: [Api.UpdateServiceNotification] }));
+
   // The manager renamed their own @handle (round 113). Written at once rather
   // than at the next refresh: a released handle can be registered by a
   // stranger, and the website must not go on sending visitors to it.
@@ -544,6 +971,20 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const recovered = await recoverInFlight(account.managerUserId);
   if (recovered > 0) {
     console.log(`⚠ ${recovered} ta xabar yuborilayotganda uzilib qolgan — tekshiring`);
+  }
+  // The agent's half of the same question, with the stricter answer: an AI
+  // reply that was being sent when the process died is 'unknown' and never
+  // re-sent (ban-5) — its card asks him to look. A one-peer pull that was
+  // half-walked is simply owed again (storing is idempotent).
+  if (await tablesReady()) {
+    try {
+      const unknown = await recoverAgentInFlight(account.managerUserId);
+      for (const id of unknown) await onAgentOutboxSettled(id).catch(() => undefined);
+      if (unknown.length > 0) console.log(`⚠ ${unknown.length} ta AI javobi yuborilayotganda uzilib qolgan — tekshiring`);
+      await releaseStalePulls(account.managerUserId);
+    } catch (err) {
+      console.error('AI navbati tiklanmadi:', err instanceof Error ? err.message : err);
+    }
   }
 
   // Held in this process rather than in the database: it is a fact about THIS
@@ -637,6 +1078,12 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     } catch (err) {
       console.error('ogohlantira olmadim:', err instanceof Error ? err.message : err);
     }
+    // And the colleagues who can still reach him (ban-10): the bot's chat
+    // with a manager may live on the very account that just died, and a
+    // banned account's own person is the one who may never read it.
+    await announceSessionDeadToOthers(alarmAccount, reason).catch((err: unknown) => {
+      console.error('ogohlantira olmadim:', err instanceof Error ? err.message : err);
+    });
   };
 
   const noteDbFailure = async (err: unknown) => {
@@ -657,6 +1104,433 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     if (dbDownSince && dbAlertSent) void alertOwner('baza qaytdi, hammasi joyida.');
     dbDownSince = null;
     dbAlertSent = false;
+  };
+
+  /* ---------------------------------------------------------------- *
+   * The agent's replies (spec §17.8) — after the human rows, on the
+   * row's own clock, one reply in flight per account.
+   * ---------------------------------------------------------------- */
+
+  /**
+   * True once this process has walked every stored chat's gap (catch-up,
+   * below). Until then tg_messages may be missing the very line that makes
+   * an approved reply wrong — gramjs never recovers an update gap (ban-3) —
+   * so an agent row waits for it, and the stamp tells the app so.
+   */
+  let caughtUp = false;
+
+  /**
+   * A wait Telegram ordered on one of the AGENT's own reads or cosmetic calls
+   * — GetHistory for the verify step or a pull, ReadHistory, SetTyping
+   * (review S9). Those no longer move the guard's `flood_until`, which would
+   * stop every person's reply for a wait on a method they never call; the
+   * agent's own calls wait it out here instead: rows by the verdict's flood
+   * clock, pulls and badges by `agentHeld()`. In memory, like the human
+   * pump's clock: a restart forgets it, and Telegram says it again.
+   */
+  let agentHoldUntil: Date | null = null;
+  const agentHeld = () => agentHoldUntil !== null && agentHoldUntil.getTime() > Date.now();
+  const laterOf = (a: Date | null, b: Date | null) => (!a ? b : !b ? a : a.getTime() >= b.getTime() ? a : b);
+
+  const stepStore = agentStepStore({
+    accountId: account.id,
+    caughtUp: () => caughtUp,
+    memoryFloodUntil: () => laterOf(floodWaitUntil, agentHoldUntil),
+  });
+
+  /**
+   * One send at a time on this account, and no two closer than
+   * `MIN_SEND_GAP_MS` — whoever sends (review S10). The gap used to be kept by
+   * the NOTIFY knock alone and measured from when a pump STARTED, so the
+   * three-second interval could put a person's reply and the agent's ~100 ms
+   * apart. Every Telegram send — the human queue's message or file, the
+   * agent's reply — goes through here, and the gap runs from the last SEND.
+   * A chain, not a flag: the agent's tick runs beside the human pump (S12),
+   * and the two must queue for the slot, never race for it.
+   *
+   * And a send that queued here has waited: what it checked before it came —
+   * the flood clock, the pause, the chat's live head — can have changed in
+   * the meantime, and the send ahead of it is exactly what changes it. So the
+   * turn asks again (`slotHold`) from what the sends ahead of it wrote down
+   * INSIDE the slot, before they let the next one through: a send-method wait
+   * (`floodWaitUntil`, a person's and the agent's alike), a restriction
+   * (`slotRestrictedAt`, until the guard row is seen to hold it), and when
+   * each chat was last sent to (`peerSentAt`) — so the agent's reply never
+   * follows a person's CRM reply into the chat its head check saw clean. A
+   * refused turn makes no call and throws `SlotHeld`.
+   */
+  const MIN_SEND_GAP_MS = 1200;
+  let lastSendAt = 0;
+  let sendTail: Promise<unknown> = Promise.resolve();
+  let slotRestrictedAt: Date | null = null;
+  const peerSentAt = new Map<string, number>();
+  class SlotHeld extends Error {
+    constructor(
+      readonly reason: WaitReason,
+      readonly until: Date,
+    ) {
+      super(`slot_held: ${reason}`);
+    }
+  }
+  /** What a send's failure means for the ACCOUNT, written before the slot lets the next send go. */
+  const noteSlotFlood = (seconds: number) => {
+    floodWaitUntil = laterOf(floodWaitUntil, computeFloodWait(seconds));
+  };
+  /**
+   * A restriction a send met, held by the slot until the guard row is seen to
+   * hold the pause — and only where there IS a guard row (final review K22).
+   * One migration behind, nothing writes the pause and nothing clears this
+   * note (`guard` is null below), the restricted reply fails the old way, and
+   * a two-minute hold would only bounce every later person's reply off the
+   * slot: today's path is to try them, and on an old schema the listener runs
+   * today's paths (regression-3 b).
+   */
+  const noteSlotRestricted = () => {
+    if (tablesKnownReady) slotRestrictedAt = new Date();
+  };
+  const noteSlotFailure = (err: unknown) => {
+    const kind = tgErrorKind(err);
+    if (kind.kind === 'flood') noteSlotFlood(kind.seconds);
+    else if (kind.kind === 'restricted') noteSlotRestricted();
+  };
+  const sendSlot = <T>(turn: { peerId: bigint | null; headAt: Date | null }, work: () => Promise<T>): Promise<T> => {
+    const run = async () => {
+      const wait = lastSendAt + MIN_SEND_GAP_MS - Date.now();
+      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      const peerAt = turn.peerId === null ? undefined : peerSentAt.get(turn.peerId.toString());
+      const hold = slotHold(
+        {
+          now: new Date(),
+          floodUntil: floodWaitUntil,
+          restrictedAt: slotRestrictedAt,
+          peerSentAt: peerAt === undefined ? null : new Date(peerAt),
+        },
+        turn.headAt,
+      );
+      // Refused before the call: no SendMessage, so nothing for the gap to count either.
+      if (hold) throw new SlotHeld(hold.reason, hold.until);
+      try {
+        return await work();
+      } catch (err) {
+        noteSlotFailure(err);
+        throw err;
+      } finally {
+        lastSendAt = Date.now();
+        if (turn.peerId !== null) {
+          // A chat's stamp matters only against a head read seconds before; older ones are dropped here.
+          for (const [peer, at] of peerSentAt) if (lastSendAt - at > 10 * 60_000) peerSentAt.delete(peer);
+          peerSentAt.set(turn.peerId.toString(), lastSendAt);
+        }
+      }
+    };
+    const next = sendTail.then(run, run);
+    sendTail = next.catch(() => undefined);
+    return next;
+  };
+
+  const agentTg = agentTelegramOver(client, { Api, helpers });
+
+  /**
+   * The agent's send step's turn of the slot: its claim and its SendMessage
+   * run inside it (`runAgentStep`'s `sendTurn`). The step classifies its own
+   * errors into an outcome, so what the outcome says about the account is
+   * noted here, inside the slot, the way a person's send's error is. A held
+   * turn is a WAIT: the row is stepped again, and its head read anew.
+   */
+  const agentTurn: SendTurn = async (turn, send) => {
+    try {
+      return await sendSlot(turn, async () => {
+        const outcome = await send();
+        if (outcome.kind === 'flooded') noteSlotFlood(outcome.seconds);
+        else if (outcome.kind === 'failed' && outcome.error.kind === 'restricted') noteSlotRestricted();
+        return outcome;
+      });
+    } catch (err) {
+      if (err instanceof SlotHeld) return { kind: 'wait', nextStepAt: err.until, reason: err.reason };
+      throw err;
+    }
+  };
+
+  /**
+   * An outcome Telegram already produced and the database has not taken yet
+   * — the agent's `unsettled`. Held only for a database that is not there
+   * (`isDbUnreachable`); every write in `applyAgentOutcome` names the states
+   * it may move from, so applying it again is safe. Above all a 'sent': the
+   * message is in the customer's Telegram, and only this object knows.
+   */
+  let agentUnsettled: { row: AgentOutboxRow; outcome: StepOutcome; at: Date } | null = null;
+
+  /**
+   * Give a chat its unread badge back (regression-12) and record that it
+   * was: the pump's own aborts call this at once, and `badgesToRestore`
+   * finds the replies somebody else ended after their read («off», a forced
+   * «off»). A dead session cannot mark anything — the row is only recorded.
+   * Cosmetic either way: a refusal here is logged, never retried.
+   */
+  const restoreBadge = async (rowId: string, peerId: bigint, lastError: string | null) => {
+    if (!isSessionDead(lastError ?? '')) {
+      await agentTg.markUnread(peerId).catch((err: unknown) => {
+        console.error("o'qilmagan belgisi qaytmadi:", err instanceof Error ? err.message : err);
+      });
+    }
+    await badgeRestored(rowId);
+  };
+
+  /**
+   * Write one outcome. `at` is the instant Telegram gave it — kept with a
+   * held outcome and passed again on the replay, so the flood ledger's
+   * one-row-per-wait key recognises the replay (review S7) instead of
+   * counting one FLOOD_WAIT twice and switching the agent off for it.
+   * `telegram: false` while the account is paused (S8), or while a wait on
+   * the agent's own read holds it: the outcome is written, and a badge it
+   * owes waits for `badgesToRestore` — after «Tekshirdim», whose day it
+   * counts from — rather than costing a call now.
+   */
+  const settleAgentOutcome = async (
+    row: AgentOutboxRow,
+    outcome: StepOutcome,
+    opts: { at: Date; telegram: boolean },
+  ) => {
+    // A wait on the agent's own read or cosmetic call holds the agent, never a person (S9).
+    if (outcome.kind === 'flooded' && !isSendFloodMethod(outcome.method)) {
+      agentHoldUntil = laterOf(agentHoldUntil, floodEnds(outcome.seconds, opts.at));
+    }
+    let report: OutcomeReport;
+    try {
+      report = await applyAgentOutcome(row, outcome, alarmAccount, opts.at);
+      agentUnsettled = null;
+      noteDbOk();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (isDbUnreachable(message)) {
+        agentUnsettled = { row, outcome, at: opts.at };
+        await noteDbFailure(err);
+        return;
+      }
+      agentUnsettled = null;
+      // A row left 'sending' by this is recovered as 'unknown' on the next
+      // start — never re-sent, which is the side to err on.
+      console.error(`AI javobi (${row.id.slice(0, 8)}) holati yozilmadi:`, message);
+      return;
+    }
+    if (outcome.kind === 'sent') {
+      sent += 1;
+      console.log(`  🤖 → ${row.id.slice(0, 8)} yuborildi`);
+    } else if (report.final) {
+      const why = 'reason' in outcome ? ` (${outcome.reason})` : '';
+      console.log(`  🤖 ${row.id.slice(0, 8)}: ${outcome.kind}${why}`);
+    }
+    // The question was read on his phone and nothing went (regression-12):
+    // the badge comes back, so the chat still asks for him — now, or after
+    // the pause from the row `badgesToRestore` still finds.
+    if (report.markUnread && opts.telegram && !agentHeld()) await restoreBadge(row.id, row.peerId, null);
+    if (report.sessionDead) {
+      console.error(`SESSION o‘lgan: ${report.sessionDead} — qayta ulanish kerak`);
+      await announceSessionDead(report.sessionDead);
+      void stop(report.sessionDead, 'signed_out');
+    }
+  };
+
+  /**
+   * One stranger's chat pulled in (spec §17.11), at most one per tick and
+   * `PULL_GAP_MS` apart. The rules are re-read FIRST: the app wrote this
+   * chat's include rule a moment ago, the in-memory map is ten minutes old,
+   * and a pull decided against it would put the whole day on the tray.
+   */
+  let lastPullAt = 0;
+  let pulling = false;
+  /**
+   * Off the pump's own flight: a day of a stranger's chat can carry photos
+   * to download, and a read must never hold a person's reply in the queue.
+   * Single-flight of its own, so pulls stay one at a time.
+   */
+  const startPull = () => {
+    if (pulling || Date.now() - lastPullAt < PULL_GAP_MS || agentHeld()) return;
+    pulling = true;
+    void pullTick()
+      .catch((err: unknown) => {
+        console.error('suhbat tortilmadi:', err instanceof Error ? err.message : err);
+      })
+      .finally(() => {
+        pulling = false;
+      });
+  };
+  const pullTick = async () => {
+    const pull = await claimPeerPull(account.managerUserId);
+    if (!pull) return;
+    lastPullAt = Date.now();
+    let storedCount = 0;
+    try {
+      rules = await rulesFor(account.managerUserId);
+      const since = new Date(Date.now() - PULL_WINDOW_MS);
+      for await (const msg of client.iterMessages(helpers.returnBigInt(pull.peerId.toString()), {
+        limit: PULL_MESSAGES,
+      })) {
+        // Newest first; the first line past the window ends the walk.
+        if (msg.date * 1000 < since.getTime()) break;
+        const peer = listenPeer(await msg.getChat?.());
+        const written = await serialised(peer.id.toString(), () => handleMessage(peer, msg as never, 'pull'));
+        if (written) storedCount += 1;
+      }
+      await finishPeerPull(pull.id, { storedCount, error: null });
+      console.log(`  ⤓ suhbat tortildi: ${storedCount} ta xabar`);
+      // ONE run, for the newest line — the live hook ran for none of them.
+      const config = await readAgentConfig();
+      const anchor = await newestInboundSince(account.managerUserId, pull.peerId, since);
+      const decision = shouldStartAgentRun({
+        origin: 'pull',
+        direction: 'in',
+        accountManagerUserId: account.managerUserId,
+        agentOwnerUserId: config?.ownerUserId ?? null,
+        agentOn: agentRunning(config),
+        stored: anchor !== null,
+      });
+      if (anchor !== null && decision === 'run') {
+        await enqueue<AgentInboundJob>(
+          JOB_AGENT_INBOUND,
+          {
+            managerUserId: account.managerUserId,
+            peerId: pull.peerId.toString(),
+            anchorTgMessageId: anchor.toString(),
+            origin: 'pull',
+          },
+          { retryLimit: 0 },
+        );
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const kind = tgErrorKind(err);
+      if (kind.kind === 'flood') {
+        // A read's wait: the ledger has it, and the agent's calls wait it out — a person's replies do not (S9).
+        const at = new Date();
+        agentHoldUntil = laterOf(agentHoldUntil, floodEnds(kind.seconds, at));
+        await accountFlooded(
+          alarmAccount,
+          { method: 'messages.GetHistory', seconds: kind.seconds, source: 'raise' },
+          at,
+        ).catch(() => undefined);
+      }
+      // Not this chat's fault — a wait Telegram ordered, a database blip, a
+      // connection going down under a stop: the pull is owed again (storing
+      // is idempotent). Anything else is the chat's answer, written down.
+      if (kind.kind === 'flood' || kind.kind === 'db' || client.connected === false) {
+        console.error('suhbat tortish keyinga qoldi:', message);
+        await releaseStalePulls(account.managerUserId).catch(() => undefined);
+        return;
+      }
+      console.error('suhbat tortilmadi:', message);
+      await finishPeerPull(pull.id, { storedCount, error: message }).catch(() => undefined);
+    }
+  };
+
+  /**
+   * The agent's share of a tick: a held outcome first, then the one row
+   * whose clock is due, and only when no row was stepped, a pull. Every
+   * Telegram call a step makes is decided by `runAgentStep` from facts read
+   * NOW — including the switch, the pause and the flood clock.
+   *
+   * `steps: false` is the tick a refused gate still runs: the due row's
+   * verdict is asked on its own, and what can no longer be sent is cancelled
+   * in the database — no step, so no send and no read of the chat.
+   * `telegram: false` on top of it while the account is PAUSED (review S8):
+   * nothing here calls Telegram, not a pull, not a badge.
+   */
+  type TickOpts = { pulls: boolean; telegram: boolean; steps: boolean };
+  const agentTick = async (opts: TickOpts) => {
+    try {
+      await agentTickBody(opts);
+    } catch (err) {
+      // Only a database that is not there feeds the outage alarm; anything
+      // else the agent's half throws is a logged line, never «baza yo'q» in
+      // the manager's Saved Messages.
+      const message = err instanceof Error ? err.message : String(err);
+      if (isDbUnreachable(message)) await noteDbFailure(err);
+      else console.error('AI navbati:', message);
+    }
+  };
+  const agentTickBody = async (opts: TickOpts) => {
+    if (!(await tablesReady())) return;
+    if (agentUnsettled) {
+      await settleAgentOutcome(agentUnsettled.row, agentUnsettled.outcome, {
+        at: agentUnsettled.at,
+        telegram: opts.telegram,
+      });
+      return;
+    }
+    // A wait on the agent's own read holds every agent call as well (S9).
+    const telegram = opts.telegram && !agentHeld();
+    if (telegram) {
+      const [badge] = await badgesToRestore(account.managerUserId, new Date());
+      if (badge) {
+        await restoreBadge(badge.id, badge.peerId, badge.lastError);
+        return;
+      }
+    }
+    const row = await dueAgentRow(account.managerUserId, new Date());
+    if (row) {
+      if (!opts.steps || !opts.telegram) {
+        const now = new Date();
+        const refused = verdictOutcome(row, agentSendVerdict(row, await stepStore.facts(row, now)));
+        if (refused) await settleAgentOutcome(row, refused, { at: now, telegram });
+        return;
+      }
+      const outcome = await runAgentStep(row, {
+        tg: agentTg,
+        store: stepStore,
+        classify: tgErrorKind,
+        isNudge,
+        sendTurn: agentTurn,
+      });
+      await settleAgentOutcome(row, outcome, { at: new Date(), telegram });
+      return;
+    }
+    if (opts.pulls && telegram) startPull();
+  };
+
+  /**
+   * The agent's tick runs BESIDE the human pump, never inside its flight
+   * (review S12): gramjs sleeps through a wait of up to a minute inside an
+   * invoke (`floodSleepThreshold`, ban-2's deviation), and an agent
+   * GetHistory or SetTyping sleeping there held a person's freshly queued
+   * reply for the whole of it. Single-flight of its own — one agent step at a
+   * time per account — and the two meet only at `sendSlot`, which keeps the
+   * sends one at a time and apart.
+   */
+  let agentTicking = false;
+  const startAgentTick = (opts: TickOpts) => {
+    if (agentTicking) return;
+    agentTicking = true;
+    void agentTick(opts).finally(() => {
+      agentTicking = false;
+    });
+  };
+
+  /** A CRM reply on the agent's account retires the chat's live draft — the worker decides how. */
+  const crmReplied = async (peerId: bigint, tgMessageId: bigint) => {
+    try {
+      if (!(await agentHere())) return;
+      await enqueue<AgentHumanReplyJob>(
+        JOB_AGENT_HUMAN_REPLY,
+        { managerUserId: account.managerUserId, peerId: peerId.toString(), tgMessageId: tgMessageId.toString() },
+        { retryLimit: 0 },
+      );
+    } catch (err) {
+      console.error('AI navbatiga qo‘yilmadi:', err instanceof Error ? err.message : err);
+    }
+  };
+
+  /** «A current listener runs here» for the app's ✅ (regression-3) — throttled, and at once when catch-up ends. */
+  let lastStampAt = 0;
+  let stampedCaughtUp: boolean | null = null;
+  const stampTick = async () => {
+    if (stampedCaughtUp === caughtUp && Date.now() - lastStampAt < PUMP_STAMP_MS) return;
+    try {
+      await stampAgentPump(account.id, caughtUp);
+      lastStampAt = Date.now();
+      stampedCaughtUp = caughtUp;
+    } catch (err) {
+      console.error('pump belgisi yozilmadi:', err instanceof Error ? err.message : err);
+    }
   };
 
   const pump = async () => {
@@ -697,13 +1571,62 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       return;
     }
 
-    // Cheap enough to ask every tick, and the switch has to be able to stop
-    // sending WITHOUT anybody restarting a process on a server.
-    if ((await getSetting('tg_sending_enabled')) !== true) return;
-    if (floodWaitUntil && floodWaitUntil.getTime() > Date.now()) return;
+    const ready = await tablesReady();
+    if (ready) await stampTick();
+
+    // The gate before EVERY claim, a person's reply included (review ban-1):
+    // the company switch, the account's pause, and the wait Telegram ordered
+    // — the pause and the wait read from the guard row each tick, so a
+    // restart cannot forget them. Cheap enough to ask every tick, and the
+    // switch has to be able to stop sending WITHOUT anybody restarting a
+    // process on a server. On a database without 0138 there is no guard row
+    // and this is exactly the old two checks.
+    const guard = ready ? await readGuard(account.id) : null;
+    // The guard row holds the pause now: the slot's own note of the restriction has done its work.
+    if (guard?.pausedAt) slotRestrictedAt = null;
+    const gate = pumpGate({
+      sendingEnabled: (await getSetting('tg_sending_enabled')) === true,
+      pausedAt: guard?.pausedAt ?? null,
+      floodUntil:
+        guard?.floodUntil && (!floodWaitUntil || guard.floodUntil.getTime() > floodWaitUntil.getTime())
+          ? guard.floodUntil
+          : floodWaitUntil,
+      now: new Date(),
+    });
+    if (!gate.ok) {
+      // A switch or a pause makes an approved AI reply WRONG to send, not
+      // late: the agent's own verdict cancels it, and no step is taken. While
+      // the account is PAUSED nothing on that tick calls Telegram — not a
+      // pull, not a badge (S8). The switch alone stops sending and nothing
+      // else: a pull and a badge are reads, and «Yangi lid» on a stranger's
+      // card still pulls the chat with sending off. A flood wait makes it
+      // late, and everything waits.
+      if (gate.reason !== 'flood_wait') {
+        const paused = guard?.pausedAt != null;
+        startAgentTick({ pulls: !paused, telegram: !paused, steps: false });
+      }
+      return;
+    }
+    // A turn the slot would refuse is never claimed (final review K22): a
+    // restriction the send ahead of this one met, which the guard row does
+    // not hold yet. Claimed anyway, the slot throws `SlotHeld`, and every tick
+    // and every knock of the two-minute hold cost the reply one of its
+    // attempts. The same question the slot asks at the turn, from the same
+    // memory, before the claim — a wait that lands while this tick is on its
+    // way is still caught there, and that claim is given back.
+    if (
+      slotHold({ now: new Date(), floodUntil: floodWaitUntil, restrictedAt: slotRestrictedAt, peerSentAt: null }, null)
+    ) {
+      return;
+    }
 
     const job = await claimNext(account.managerUserId);
-    if (!job) return;
+    if (!job) {
+      // People first: the machine's reply takes a tick only when no person's
+      // reply is waiting for it.
+      startAgentTick({ pulls: true, telegram: true, steps: true });
+      return;
+    }
     try {
       const [counts, wroteFirst] = await Promise.all([
         sentCounts(account.managerUserId, job.peerId),
@@ -718,11 +1641,15 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       });
       if (!verdict.ok) {
         // A limit is "not yet", not "never" — except the two that ARE never,
-        // and those must not sit in the queue pretending they will go.
+        // and those must not sit in the queue pretending they will go. «Not
+        // yet» gives the claim back WITH its attempt (K22's follow-up): the
+        // limit is the account's minute or day, nothing was tried, and a
+        // reply that bounced twice here used to fail for good on its first
+        // real network blip (`markAttemptFailed` against MAX_ATTEMPTS).
         if (verdict.reason === 'never_wrote_first') {
           await markAttemptFailed(job.id, 'never_wrote_first', true, MAX_ATTEMPTS);
         } else {
-          await releaseClaim(job.id);
+          await giveClaimBack(job.id);
         }
         return;
       }
@@ -746,18 +1673,22 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           return;
         }
         const { CustomFile } = await import('telegram/client/uploads');
-        result = (await client.sendFile(target, {
-          file: new CustomFile(upload.fileName, upload.bytes.length, '', upload.bytes),
-          caption: job.body || undefined,
-          // A spreadsheet must arrive AS a file. Without this gramjs offers
-          // an image-shaped document to Telegram, which re-encodes anything
-          // it decides is a picture and drops the filename — so a PDF the
-          // client needs to open becomes an unnamed blob.
-          forceDocument: upload.contentType.startsWith('image/') ? undefined : true,
-          replyTo,
-        })) as { id?: number; date?: number };
+        result = (await sendSlot({ peerId: job.peerId, headAt: null }, () =>
+          client.sendFile(target, {
+            file: new CustomFile(upload.fileName, upload.bytes.length, '', upload.bytes),
+            caption: job.body || undefined,
+            // A spreadsheet must arrive AS a file. Without this gramjs offers
+            // an image-shaped document to Telegram, which re-encodes anything
+            // it decides is a picture and drops the filename — so a PDF the
+            // client needs to open becomes an unnamed blob.
+            forceDocument: upload.contentType.startsWith('image/') ? undefined : true,
+            replyTo,
+          }),
+        )) as { id?: number; date?: number };
       } else {
-        result = await client.sendMessage(target, { message: job.body, replyTo });
+        result = await sendSlot({ peerId: job.peerId, headAt: null }, () =>
+          client.sendMessage(target, { message: job.body, replyTo }),
+        );
       }
       // From here the message EXISTS in somebody's Telegram. Every failure
       // below is a bookkeeping failure and is treated as one.
@@ -796,17 +1727,33 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       }
       sent += 1;
       console.log(`  → ${job.clientId.slice(0, 8)} yuborildi`);
+      // A person answered from the CRM (fit-3) — the same «he replied
+      // himself» the live hook raises for his phone, which this echo never
+      // passes through. Off the send path entirely: the message has left,
+      // and nothing here may be mistaken for a failed send below.
+      if (echo) void crmReplied(echo.peerId, echo.tgMessageId);
     } catch (err) {
+      // The slot refused the turn — a wait or a restriction the send ahead of
+      // this one met. Nothing was called: the reply goes back to the queue
+      // with its claim GIVEN BACK (final review K4) — `claimNext` counted an
+      // attempt, and the account's trouble must not spend the reply's retries
+      // — and the gate says why on the next tick.
+      if (err instanceof SlotHeld) {
+        console.log(`  ⏸ ${job.id.slice(0, 8)}: navbatga qaytdi (${err.reason})`);
+        await giveClaimBack(job.id).catch(() => {});
+        return;
+      }
       const message = err instanceof Error ? err.message : String(err);
       // Telegram's own instruction, and obeying it is not optional: carrying
       // on through a FLOOD_WAIT is the fastest way to lose the account.
       const seconds = (err as { seconds?: number })?.seconds;
       // A database that is not there is not a send that failed: the message
-      // never left, so the row must go back in the queue rather than be
-      // marked failed by a write that would fail too.
+      // never left, so the row must go back in the queue — its claim given
+      // back, nothing was tried — rather than be marked failed by a write
+      // that would fail too.
       if (isDbUnreachable(message)) {
         await noteDbFailure(err);
-        await releaseClaim(job.id).catch(() => {});
+        await giveClaimBack(job.id).catch(() => {});
         return;
       }
       // Telegram ended the SESSION. Nothing this account sends will work
@@ -816,17 +1763,51 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // session while the screen said the bridge was live.
       if (isSessionDead(message)) {
         console.error(`SESSION o‘lgan: ${message} — qayta ulanish kerak`);
-        // The reply itself is fine and goes out when he reconnects; failing
-        // it would throw away an answer a client is still waiting for.
-        await releaseClaim(job.id).catch(() => {});
+        // The reply itself is fine and goes out when he reconnects, with every
+        // retry it had; failing it would throw away an answer a client is
+        // still waiting for.
+        await giveClaimBack(job.id).catch(() => {});
         await announceSessionDead(message);
         void stop(message, 'signed_out');
+        return;
+      }
+      // What the error means for the ACCOUNT (review ban-1), read by the one
+      // classifier the agent's pump uses too.
+      const kind = tgErrorKind(err);
+      // PEER_FLOOD, USER_RESTRICTED, FROZEN_*: Telegram says the ACCOUNT is
+      // already limited, and failing this one row while the next is tried
+      // three seconds later is exactly the knocking that makes it worse. The
+      // pause is committed FIRST — the gate above reads it before the next
+      // claim, human rows included — and the row goes back to the queue with
+      // its claim given back (final review K4: `claimNext` had counted it):
+      // the reply is fine, the account is not, and «Tekshirdim» must find the
+      // reply with every retry it had. On a database without 0138 there is
+      // nowhere to keep a pause, so the old answer (the row fails,
+      // permanently) stands below.
+      if (kind.kind === 'restricted' && (await tablesReady())) {
+        console.error(`AKKAUNT CHEKLANDI (${kind.code}) — yuborish to‘xtatildi, «Tekshirdim» kutilmoqda`);
+        await accountRestricted(alarmAccount, { pause: kind.pause, code: kind.code }).catch(async (e: unknown) => {
+          await noteDbFailure(e);
+        });
+        await giveClaimBack(job.id).catch(() => {});
         return;
       }
       if (typeof seconds === 'number') {
         floodWaitUntil = computeFloodWait(seconds);
         console.error(`FLOOD_WAIT ${seconds}s — ${floodWaitUntil.toISOString()} gacha to‘xtadim`);
-        await releaseClaim(job.id);
+        // Telegram refused the CALL with a wait — about the account, never this reply: the claim goes back whole.
+        await giveClaimBack(job.id);
+        // The wait itself, persisted UNCAPPED on the guard row (ban-2): the
+        // in-memory clock above stays as the fast path, capped as it always
+        // was, and is all a database without 0138 gets. It only ever reaches
+        // here past gramjs's own 60-second sleep.
+        await accountFlooded(alarmAccount, {
+          method: job.attachmentId ? 'messages.SendMedia' : 'messages.SendMessage',
+          seconds,
+          source: 'raise',
+        }).catch((e: unknown) => {
+          console.error('flood yozilmadi:', e instanceof Error ? e.message : e);
+        });
         return;
       }
       const permanent = isPermanentSendError(message);
@@ -842,9 +1823,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   // screen watched it sit at «navbatda» for a beat that was pure polling —
   // nothing was being rate-limited, the sender simply had not looked yet. So
   // `queueReply` now pokes a postgres channel and the poke pumps immediately,
-  // while `MIN_SEND_GAP_MS` keeps the thing that actually matters: no two
-  // messages leave closer together than that, however loud the knocking.
-  const MIN_SEND_GAP_MS = 1200;
+  // while `sendSlot` keeps the thing that actually matters: no two messages
+  // leave closer together than `MIN_SEND_GAP_MS`, however loud the knocking —
+  // on the knock, on this interval, and between a person and the agent.
   let lastPumpAt = 0;
   let pumping = false;
   const runPump = async () => {
@@ -899,7 +1880,17 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   const catchUp = async () => {
     const points = await resumePoints(account.managerUserId);
     if (points.length === 0) return;
+    // The entity cache is in memory and empty at every start, and a bare id
+    // resolves only for a contact (gramjs `getInputEntity` asks GetUsers with
+    // access hash 0), so every other stored chat failed «Could not find the
+    // input entity» here on every restart. One page of the newest dialogs
+    // fills the cache for the chats that matter most — the ones written in
+    // last — before the walk asks for any of them.
+    await warmDialogs().catch((err: unknown) => {
+      console.error('catch-up: chatlar ro‘yxati olinmadi:', err instanceof Error ? err.message : err);
+    });
     let recovered = 0;
+    const unreachable: string[] = [];
     for (const point of points) {
       try {
         for await (const msg of client.iterMessages(
@@ -938,20 +1929,66 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           if (written) {
             recovered += 1;
             await saveMediaFor(written, msg, account.managerUserId).catch(() => {});
+            // The agent's sweep drafts a deploy-gap line from STORED rows, so
+            // a customer's auto-reply caught up here must carry its flag too
+            // (ban-4). Catch-up starts no run of its own.
+            if (wasAutoSent(msg)) await markAutoSent(written).catch(() => {});
           }
         }
       } catch (err) {
-        // One unreachable chat must not stop the rest catching up.
-        console.error('catch-up:', err instanceof Error ? err.message : err);
+        // One unreachable chat must not stop the rest catching up. A chat this
+        // Telegram account cannot open at all is counted, not printed one by
+        // one: after a change of number every chat the OLD number kept is one
+        // (2026-10-29 — eight identical gramjs paragraphs on every start).
+        const message = err instanceof Error ? err.message : String(err);
+        if (/Could not find the input entity/i.test(message)) unreachable.push(`#…${lastFour(point.peerId)}`);
+        else console.error('catch-up:', message);
       }
+    }
+    if (unreachable.length > 0) {
+      console.error(
+        `catch-up: ${unreachable.length} ta saqlangan suhbat bu Telegram akkauntda ochilmadi (${unreachable.join(', ')}) — Telegram ularni bu akkauntga tanitmadi (boshqa raqamdan qolgan yoki uzoq yozilmagan chat); uzilish paytida ular yozgan bo‘lsa, o‘sha xabarlar olinmadi`,
+      );
     }
     if (recovered > 0) console.log(`uzilish davridagi ${recovered} ta xabar olindi`);
   };
-  await catchUp().catch((err) => {
-    // Never fatal: a bridge that refuses to start because it could not
-    // backfill is worse than one that starts and is a little behind.
-    console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
-  });
+  /**
+   * The walk, retried (review S11). A failed catch-up used to leave
+   * `caughtUp` false for the life of the process: every approved AI reply
+   * looped on `not_caught_up` until its six-hour expiry, while the app —
+   * which read only the pump stamp — went on accepting ✅. Now a failure is
+   * tried again a minute later, a bounded number of times, and the app reads
+   * the catch-up stamp too (`listenerIsCurrent`), so a listener that never
+   * walked its gap is refused at the ✅ in words.
+   */
+  const CATCHUP_RETRY_MS = 60_000;
+  const CATCHUP_ATTEMPTS = 5;
+  let catchUpAttempts = 0;
+  let catchUpRetry: ReturnType<typeof setTimeout> | null = null;
+  const runCatchUp = async (): Promise<void> => {
+    catchUpAttempts += 1;
+    try {
+      await catchUp();
+      // The gap is walked: from here tg_messages is as complete as this
+      // connection can make it, and an approved AI reply may take its steps.
+      caughtUp = true;
+    } catch (err) {
+      // Never fatal: a bridge that refuses to start because it could not
+      // backfill is worse than one that starts and is a little behind. The
+      // agent's replies, though, wait — a gap nobody walked is exactly what
+      // its verdict must not decide over (ban-3).
+      console.error('catch-up umuman ishlamadi:', err instanceof Error ? err.message : err);
+      if (catchUpAttempts < CATCHUP_ATTEMPTS) {
+        catchUpRetry = setTimeout(() => {
+          catchUpRetry = null;
+          void runCatchUp();
+        }, CATCHUP_RETRY_MS);
+      } else {
+        console.error(`catch-up ${CATCHUP_ATTEMPTS} marta o‘tmadi — AI javoblari qayta ishga tushirilguncha kutadi`);
+      }
+    }
+  };
+  await runCatchUp();
 
   /**
    * Website visitors who wrote while this listener was down (round 113).
@@ -970,9 +2007,9 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       try {
         for await (const msg of client.iterMessages(undefined, { search: offer.tag, limit: 5 })) {
           if (msg.out) continue;
-          const peer = peerFromChat((await msg.getChat?.()) as never);
+          const peer = listenPeer(await msg.getChat?.());
           if (!peer.isPrivate) continue;
-          await serialised(peer.id.toString(), () => handleMessage(peer, msg as never));
+          await serialised(peer.id.toString(), () => handleMessage(peer, msg as never, 'site_sweep'));
         }
       } catch (err) {
         console.error('sayt qidiruvi:', err instanceof Error ? err.message : err);
@@ -1031,6 +2068,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           if (written) {
             inChat += 1;
             await saveMediaFor(written, msg, account.managerUserId).catch(() => {});
+            if (wasAutoSent(msg)) await markAutoSent(written).catch(() => {});
           }
         }
         if (inChat > 0) {
@@ -1144,6 +2182,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
     clearInterval(sender);
     clearInterval(indexer);
     clearInterval(usernameRefresh);
+    if (catchUpRetry) clearTimeout(catchUpRetry);
     if (unlistenOutbox) await unlistenOutbox().catch(() => undefined);
     if (logOutOfTelegram) {
       await client.invoke(new Api.auth.LogOut()).catch((err: unknown) => {

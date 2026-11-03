@@ -67,6 +67,7 @@ export async function TelegramLookback({
                 clientId={clientId ?? null}
                 leadId={leadId ?? null}
                 label={t('lookbackAttach')}
+                serviceChatLabel={t('chatServiceChat')}
               />
             ) : (
               // Named, not opened. The person creating the card now knows who

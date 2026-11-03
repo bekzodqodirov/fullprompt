@@ -138,6 +138,7 @@ export default async function WhichChatsPage({
                 leadOpened: t('chatLeadOpened'),
                 bookMatch: t('chatBookMatch'),
                 bookMatchHint: t('chatBookMatchHint'),
+                serviceChat: t('chatServiceChat'),
               }}
             />
           ))}

@@ -68,6 +68,15 @@ export interface WsTab {
   via?: string[];
   /** Hidden when the Q19 money sight hides this kind from the viewer. */
   sight?: MoneySight;
+  /**
+   * For a sub-page only: offered only when the SERVER says this viewer's door
+   * is open (`viewer.doors` carries the href). For a gate that is a fact in
+   * the database rather than a grant — «is this person the AI sotuvchi's
+   * configured owner» — which a role list would either miss (his working
+   * account is «bir admin va sotuvchi», review fit-11) or widen to everyone
+   * holding the role (#170: never a new permission code).
+   */
+  door?: true;
   /** Hisobotlar only. */
   group?: ReportGroup;
   /**
@@ -173,6 +182,10 @@ export const WORKSPACES: WorkspaceSpec[] = [
       { href: '/crm', key: 'crm' },
       { href: '/admin/clients', key: 'clients' },
       { href: '/suhbatlar', key: 'suhbatlar' },
+      // The AI sotuvchi (docs/AI-SOTUVCHI.md §17.12, review build-13): ONE
+      // route, `mayRunAgent` — the configured owner or the super_admin ROLE,
+      // decided on the server and handed in as `viewer.doors`.
+      { href: '/suhbatlar/ai', key: 'aiSotuvchi', door: true, via: ['/suhbatlar'] },
       { href: '/my-clients', key: 'myClients' },
       // «Olib ketilmagan yuk» (0116) — `mayOpenMyClients`'s grants. Hung off
       // the client book too: the logist's menu carries /admin/clients and not
@@ -497,6 +510,7 @@ function inMenu(href: string, viewer: Viewer): boolean {
 export function tabVisible(tab: WsTab, viewer: Viewer, hidden: ReadonlySet<string> = new Set()): boolean {
   if (hidden.has(tab.href)) return false;
   if (NAV_BY_HREF.has(tab.href)) return inMenu(tab.href, viewer);
+  if (tab.door && viewer.doors?.has(tab.href) !== true) return false;
   if (tab.roles && !tab.roles.some((role) => viewer.roles.includes(role))) return false;
   if (tab.need && !tab.need.every((any) => any.some((code) => viewer.permissions.has(code)))) return false;
   if (tab.sight && moneyHidden(tab.sight, viewer.permissions)) return false;

@@ -59,13 +59,26 @@ export function fifoOrder(a: FifoCharge, b: FifoCharge): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** What is still owed on each charge, by id. */
-export function settleCharges(charges: FifoCharge[], credits: FifoCredits): Map<string, number> {
+/**
+ * What is still owed on each charge, by id — and how much of each was settled
+ * by a DEFERRAL rather than by money. The second map is what keeps «a deferral
+ * must never settle another job» true for CARTONS too: a truck price covers
+ * every carton of the client aboard whatever their deal, so a price written to
+ * a deferred deal (his Q8 «c», 2026-10-27: the person setting a two-deal
+ * truck's price chooses the deal) would otherwise read the OTHER deal's
+ * cartons as paid on a decision nobody made about them (review). `paidCargo`
+ * reads it; every other caller wants `settleCharges`.
+ */
+export function settleChargesFully(
+  charges: FifoCharge[],
+  credits: FifoCredits,
+): { owed: Map<string, number>; deferred: Map<string, number> } {
   const ordered = [...charges].sort(fifoOrder);
   const owed = new Map<string, number>(ordered.map((c) => [c.id, Math.max(0, c.amountUsd)]));
+  const deferred = new Map<string, number>();
 
   /** Apply `amount` to the charges `pick` admits, oldest first; returns what was used. */
-  const apply = (amount: number, pick: (c: FifoCharge) => boolean): number => {
+  const apply = (amount: number, pick: (c: FifoCharge) => boolean, record?: Map<string, number>): number => {
     let left = amount;
     for (const charge of ordered) {
       if (left <= 0) break;
@@ -74,6 +87,7 @@ export function settleCharges(charges: FifoCharge[], credits: FifoCredits): Map<
       if (open <= 0) continue;
       const used = Math.min(left, open);
       owed.set(charge.id, open - used);
+      if (record) record.set(charge.id, (record.get(charge.id) ?? 0) + used);
       left -= used;
     }
     return amount - left;
@@ -88,11 +102,16 @@ export function settleCharges(charges: FifoCharge[], credits: FifoCredits): Map<
   // 2. Deferrals onto their own deal's charges; the residue is not money.
   for (const deferral of credits.deferrals ?? []) {
     if (!(deferral.owedUsd > 0)) continue;
-    apply(deferral.owedUsd, (c) => c.dealId === deferral.dealId);
+    apply(deferral.owedUsd, (c) => c.dealId === deferral.dealId, deferred);
   }
   // 3. What is left of the money, oldest charge first.
   const general = credits.generalUsd - usedByCompensations;
   if (general > 0) apply(general, () => true);
 
-  return owed;
+  return { owed, deferred };
+}
+
+/** What is still owed on each charge, by id. */
+export function settleCharges(charges: FifoCharge[], credits: FifoCredits): Map<string, number> {
+  return settleChargesFully(charges, credits).owed;
 }

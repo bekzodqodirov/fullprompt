@@ -100,8 +100,15 @@ export async function activeClientsByPhone(phone: string) {
     .where(
       and(
         eq(clients.active, true),
+        // A phones value that is not an array (typed by hand, an old import)
+        // is read as no phones: `jsonb_array_elements_text` THROWS on a
+        // scalar, and one such card made every advert, form and agent arrival
+        // with a phone fail its landing — the scan reads every active card
+        // (review, 2026-10-24). The JS arbiter below already answers «no» for it.
         sql`EXISTS (
-          SELECT 1 FROM jsonb_array_elements_text(${clients}."phones") AS ph(p)
+          SELECT 1 FROM jsonb_array_elements_text(
+            CASE WHEN jsonb_typeof(${clients}."phones") = 'array' THEN ${clients}."phones" ELSE '[]'::jsonb END
+          ) AS ph(p)
           WHERE right(regexp_replace(ph.p, '[^0-9]', '', 'g'), 7) = ${last7}
         )`,
       ),

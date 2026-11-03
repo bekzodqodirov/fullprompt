@@ -1,6 +1,7 @@
 import { isUniqueViolation } from '@/modules/platform/db/errors';
 import { sessionKey } from './telegram-session';
 import { phoneHolder, saveAccount } from './telegram-accounts';
+import { TELEGRAM_DEVICE } from './telegram-device';
 
 /**
  * Connecting a manager's Telegram from the APP — round 21, the owner:
@@ -322,6 +323,9 @@ export async function beginTgLogin(userId: string, rawPhone: string): Promise<Co
     const { StringSession } = await import('telegram/sessions');
     const client = new TelegramClient(new StringSession(''), config.apiId, config.apiHash, {
       connectionRetries: 3,
+      // The session this login mints is the one the listener reuses — born
+      // under the same device name it will announce on every connect (ban-12).
+      ...TELEGRAM_DEVICE,
     });
     opened = client;
     if ((await client.connect()) === false) {

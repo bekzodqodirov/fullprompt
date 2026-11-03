@@ -18,6 +18,7 @@ import {
 } from '../src/modules/wms/crm/telegram-import';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
+import { TELEGRAM_DEVICE } from '../src/modules/wms/crm/telegram-device';
 
 /**
  * One-off: bring a manager's existing Telegram conversations into the CRM.
@@ -116,6 +117,7 @@ async function main() {
   // and forgotten when it exits.
   const client = new TelegramClient(new StringSession(''), apiId, apiHash, {
     connectionRetries: 3,
+    ...TELEGRAM_DEVICE,
   });
 
   await client.start({

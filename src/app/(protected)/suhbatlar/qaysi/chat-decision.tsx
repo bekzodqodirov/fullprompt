@@ -82,6 +82,8 @@ export function ChatDecision({
     leadOpened: string;
     bookMatch: string;
     bookMatchHint: string;
+    /** `service_chat` in words — Telegram's own 777000 chat, which no answer but «never» fits. */
+    serviceChat: string;
   };
 }) {
   const [state, submit, pending] = useActionState<ChatRuleState, FormData>(decideChatAction, {});
@@ -95,6 +97,7 @@ export function ChatDecision({
   );
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
+  const refusal = state.error ?? purgeState.error ?? leadState.error;
 
   const shown = query.trim()
     ? clients
@@ -268,9 +271,9 @@ export function ChatDecision({
         </div>
       )}
 
-      {(state.error ?? purgeState.error ?? leadState.error) && (
+      {refusal && (
         <p className="text-sm font-semibold text-bad">
-          {state.error ?? purgeState.error ?? leadState.error}
+          {refusal === 'service_chat' ? labels.serviceChat : refusal}
         </p>
       )}
     </div>

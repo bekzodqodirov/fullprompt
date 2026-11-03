@@ -14,6 +14,7 @@ import {
   roles,
   settings,
   telegramLinks,
+  tgMessageFlags,
   tgMessages,
   userRoles,
   users,
@@ -21,6 +22,7 @@ import {
 import { landInboundLead } from '@/modules/wms/crm/inbound';
 import { addActivity, moveLead, setFollowUp, setLeadOwner, updateLead } from '@/modules/wms/crm/service';
 import { claimUntouched, stampFirstContacts } from '@/modules/wms/crm/first-contact';
+import { markAutoSent } from '@/modules/wms/crm/message-flags';
 import { CONTACT_NOTE, markContactedFromBot, remindUntouched } from '@/modules/wms/crm/inbound-notify';
 import { firstContactBySeller, readPeriod, salesAnalytics } from '@/modules/wms/crm/analytics';
 import { createClient } from '@/modules/platform/clients/service';
@@ -402,6 +404,45 @@ describe('what counts as contact', () => {
     const done = await land('done', sellerA);
     await setFollowUp('lead', done.leadId!, null, { actorId: sellerA });
     expect(await stampedKind(done.leadId!)).toMatchObject({ kind: 'followup', by: sellerA });
+  });
+
+  it('the account’s own robot is not contact — an away message flagged auto_sent neither stamps nor silences', async () => {
+    // A Telegram Business away / greeting message is OUR account's outgoing
+    // copy, flagged by the listener (0138's tg_message_flags, `wasAutoSent`,
+    // both directions). Nobody reached the customer by it.
+    const autoReply = async (leadId: string, peer: bigint) => {
+      const [row] = await db
+        .insert(tgMessages)
+        .values({
+          leadId,
+          managerUserId: sellerA,
+          peerId: peer,
+          tgMessageId: 1n,
+          direction: 'out',
+          body: 'Hozir javob bera olmayman, tez orada yozaman',
+          sentAt: new Date(),
+        })
+        .returning({ id: tgMessages.id });
+      await markAutoSent(row!.id);
+      return row!.id;
+    };
+
+    const stamped = await land('away-stamp', sellerA);
+    const awayRow = await autoReply(stamped.leadId!, BigInt(910_000_000 + Number(STAMP)));
+    expect((await stampedKind(stamped.leadId!)).at, 'an away message is no first contact').toBeNull();
+    // The control: the SAME row without the flag is a person's message.
+    await db.delete(tgMessageFlags).where(eq(tgMessageFlags.messageId, awayRow));
+    expect(await stampedKind(stamped.leadId!)).toMatchObject({ kind: 'telegram', by: sellerA });
+
+    // And the owner is still reminded about a lead only the robot answered.
+    const reminded = await land('away-claim', sellerA);
+    const intake = await intakeOf(reminded.leadId!);
+    const claimRow = await autoReply(reminded.leadId!, BigInt(920_000_000 + Number(STAMP)));
+    await clockAt(intake.id, 20, 5);
+    expect((await claimUntouched(F)).map((row) => row.id)).toContain(intake.id);
+    await db.delete(tgMessageFlags).where(eq(tgMessageFlags.messageId, claimRow));
+    await clockAt(intake.id, 20, 5);
+    expect((await claimUntouched(F)).map((row) => row.id), 'unflagged, it is a reply').not.toContain(intake.id);
   });
 
   it('a machine’s note is not contact — even on a lead that is nobody’s', async () => {
