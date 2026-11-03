@@ -6610,6 +6610,54 @@ then ran the merged review. (5) **A red-proof runner can lie.** P1's first runne
 test name with parentheses, which vitest reads as a regex, matched no test and printed
 GREEN; those results were thrown away, and the runner now refuses a proof in which no test
 ran — P3's also refuses an empty replacement and one whose new text already occurs (#815).
-(6) STATED at the docs commit: §17.6's drills (crash, parking, add-save, deploy, flood,
-boot-window, stop, stalled-storage, graceful; the worst-case state size and UPSERT time)
-and the Playwright suite on the merged tree are not recorded as run in this file.
+(6) **Measured, and not.** §17.6's numbers were measured at d6fd6e6 in this container (4 CPUs;
+fixrev's drills.json): the spec's worst collection is 0.72 MiB of JSON (74 KB stored), its
+UPSERT 21 ms median / 28 ms max and the confirm's delay 21 ms; beyond every cap that exists
+(two added invoices, a 1000-row add, 200 conflicts) 2.58 MiB, 98 ms max; five such chats dirty
+at once 94-116 ms — all far inside the 2 s confirm bound and the stop's worst 1 s flush window.
+A real 20-message forward writes once per batch (twice at 300 ms a message: the 5 s ceiling);
+a 50-row hydrate 90-395 ms; the root-duplicate re-read an index scan, 0.03-0.05 ms;
+`amendRequest` 152 ms on 30 rows, 387 ms on 300. The process drills on a running stack
+(`docker kill`, SIGTERM, stalled storage) were NOT run — this container runs no compose stack;
+their behaviour is pinned by the integration files. Playwright on the merged tree in CI's
+order: 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at d6fd6e6, and
+488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at the final tree (#1581).
+
+**#1581 — The fixes reviewed before production, and the one fix that regressed.** His «3 ni
+ozini merge qil va productionga chiqaz» made the fixes of #1579 the last code before his
+server, and every earlier round in this file found regressions in its own fixes (#1114,
+#1267, #1281). So three lenses (regression, durability, what the people see) drove
+e086975..f553fa8 through the real handler chain, beside §17.6's drills: 34 confirmed (1
+blocker, 15 defects, 18 nits), 27 fixed in 408a7d7 with 33 red proofs, 7 rejected in
+writing. The blocker was the round's own PF-4 fix: `answerHow` asked `nameWordFor` of every
+⚠️ row and each call folded every row per candidate — O(n²) synchronous CPU on the ONE app
+process, 4.5 s a render at 500 rows, 17 s at 1000, 38 s for `deliverNextStep` (FR-3); now at
+most `NAME_ROWS_TRIED` rows are asked and the first answer stops (500 rows: 8 s → 46 ms). The
+drills found its twin in the reading (DRILL-1: `addReading` re-keyed both names per
+stored × read pair, 11.7-16.5 s at 1000 × 500 → 73 ms). The add door's resume ignored its own
+refusal (FR-1: «Avval … javobni yozing» said, and the figure written anyway); the zone press
+and «↩️» of a parked collection ask the same predicate now (FR-2, W-15). A seeded table never
+DREW the stale brutto that COMP-4 computed (FR-4/W-1 — its test checked
+`tableContext().stale`, not the table it was named after; `TableInput.totalsStale` sits
+outside `amend`). A file replying to the ➕ answer was marked taken before its caption (FR-5,
+fdur-1 — dur-1's fix one door over); the opening message is 'take' (fdur-2), a redelivered
+«🗑 Ha» takes its file (fdur-3), the album hint survives the early return (fdur-4). The save
+net handed a FRESH save's untold row back as a waited one (fdur-5/fdur-6/W-3 — it now skips a
+row its collection still holds). Then an independent checker re-ran every verifier's
+reproduction against 408a7d7 (unit 9287 and integration 3559 green) and found ONE fix that
+regressed (CHK-1): W-9 kept the digits inside a name run for «iPhone 15 Pro», and a name
+holding «N <unit>» — «Paket 100 dona qora» — then taught «Paket 100 dona qora 30 dona», which
+the parser refuses «repeated», and «Paypoq 10 juft qora 30 dona» wrote 10 juft as a measure
+beside the 30. The lead's fix: a number with its unit word is left out of the run («Paket
+qora 30 dona»), and `parseTableAnswer` itself is the ARBITER — the example is read back as the
+✍️ line draws it (`exampleFigure`, now exported from intake.ts) and taught only when it lands
+on its row with that figure alone. A rule restated beside the parser is how W-9's fix taught
+what the parser refuses; red proofs: the pair-skip stripped → 1 red, both guards stripped →
+5. Rejected, in writing: FR-8 (§20's stated pause rule), W-4/W-14 (words only — the owner's
+1.26 now names both doors and the button a 30-minute-old chat does not show), W-6/W-10 (a new
+sentence §2 does not fix), W-7 (a harness artefact), W-13 (main's AI sotuvchi strings, pinned
+verbatim). Stated, not fixed: a text reply to the ➕ answer of a collection being READ past
+30 minutes is answered «⏳ Tahlil davom etmoqda» and not added (CHK-N1); the net's NOT EXISTS
+is as true as the durable row, which production flushes within 5 s while the net reads rows
+five minutes old (CHK-N2). Final tree, in CI's order on a fresh database: vitest 821 files / 12851 tests, 0 failed (947987b); build 0;
+Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent).

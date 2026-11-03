@@ -3044,7 +3044,7 @@ lists travel as FILES). Main's Uch band (0136) was merged in before the push —
 rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
 `recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
 
-**Round — Sakkiz band, round 3 (2026-11-03; DECISIONS #1571-#1580, numbered past main's #1570; migration 0139
+**Round — Sakkiz band, round 3 (2026-11-03; DECISIONS #1571-#1581, numbered past main's #1570; migration 0139
 `calc_intake_durable` — renamed from 0137 and then 0138 on two merges, the TWENTY-SEVENTH collision — ledger must
 reach 140; spec `docs/SAKKIZ-R3.md`, §20 = as built + his six new questions).** Item 1B + 2.8 b, his 1.8 c 1.9 a
 1.10 c 1.11 c 2.8 b and «14 a, qolgani seni taklifing». The «Hisoblatish» collection is a ROW
@@ -3075,9 +3075,16 @@ measured: the bare UPDATE closed, lock-then-UPDATE refused), the fold presses wi
 fixed), cherry-picked P1 → P2 → P3 → P5 → P4 → P6 (30 seams in the merge ledger, none visible to a package); the
 weekly limit stopped the merge after P5 on 10-28 and it resumed IN PLACE on 11-03, merged main 901c280, then a
 four-lens review: 30 verified, 28 fixed — the headline (dur-1) an add door opened by a reply marking the reply
-taken before its answer, so a restart lost it in silence. Ratchet unchanged (142 known). STATED at the docs commit:
-§17.6's drills and Playwright on the merged tree are not recorded as run. OWED to him: 1.21-1.26 (spec §20.4,
-CHANGELOG 2026-11-03).
+taken before its answer, so a restart lost it in silence. Ratchet unchanged (142 known). Then the FIXES were reviewed before production (#1581: three lenses and
+§17.6's drills, 34 confirmed, 27 fixed in 408a7d7, 7 rejected in writing): the blocker was PF-4's own name search,
+O(n²) on the one process (4.5-17 s a render at 500-1000 rows → `NAME_ROWS_TRIED`), its twin in `addReading`
+(DRILL-1, 12-16 s → ms), the add door's resume ignoring its own refusal (FR-1), and a seeded table that never drew
+the stale brutto COMP-4 computed (FR-4 — its test read `tableContext()`, not the table). An independent check then
+found one fix that regressed (CHK-1, W-9's digits taught «Paket 100 dona qora 30 dona», refused «repeated»): a
+number with its unit word leaves the run, and `parseTableAnswer` is the ARBITER of every taught name example. The
+drills measured the worst collection at 0.72 MiB / UPSERT 28 ms max (beyond every cap 2.58 MiB / 98 ms) — inside
+the 2 s confirm and the stop's 1 s flush; the process drills on a running stack were NOT run. Final tree in CI's
+order: vitest 821 files / 12851 tests, 0 failed (947987b), Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent). OWED to him: 1.21-1.26 (spec §20.4, CHANGELOG 2026-11-03).
 
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136

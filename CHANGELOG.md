@@ -62,7 +62,7 @@ Javoblaringiz: 1.8 c · 1.9 a · 1.10 c · 1.11 c · 2.8 b, raund savollariga es
 - a) ⭐ hozirgidek eski brutto bilan tushadi (ogohlantirish faqat botdagi jadvalda ko'rinadi);
 - b) bruttosiz tushadi — VED so'raydi.
 
-**1.26** To'xtab turgan (⏸) yig'ish, AI sotuvchi sizdan ✏️ matn, narx yoki mijoz kodini kutayotgan paytda, o'z tugmalarini rad etadi va shunday deydi: «Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) — keyin qayta bosing.»
+**1.26** To'xtab turgan (⏸) yig'ish, AI sotuvchi sizdan ✏️ matn, narx yoki mijoz kodini kutayotgan paytda, o'z tugmalarini rad etadi va shunday deydi: «Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) — keyin qayta bosing.» Xuddi shu so'zlar «➕» javobiga reply qilib yozilgan matn yoki faylga ham aytiladi. Yig'ish to'xtab turganiga 30 daqiqadan oshgan bo'lsa, «qayta bosing» deyilgan tugma 2 soatlik eslatma kelguncha chatda ko'rinmasligi mumkin.
 - a) ⭐ shu so'zlar qolsin.
 - b) boshqa so'z — yozib yuboring.
 
@@ -74,6 +74,8 @@ Javoblaringiz: 1.8 c · 1.9 a · 1.10 c · 1.11 c · 2.8 b, raund savollariga es
 
 ### Tekshiruv
 Qurilishdan oldin 5 tomondan baholandi: 87 e'tiroz, 63 tasi tasdiqlandi, 12 tasi qisman — hammasi hisobga olindi. Raund bitta asos va oltita alohida qismdan qurildi; har bir qism ikki marta tekshirildi (120 band, 101 tasi tuzatildi, qolgani sababi yozilgan holda qoldirildi). Qismlar birlashtirilgach, asosiy shox (AI sotuvchi) bilan birga yana to'rt tomondan tekshirildi: 30 band, 28 tasi tuzatildi. Eng muhimi: AI javobiga reply qilib qo'shimcha ochilganda, sotuvchining javobi hali yozilmasdan «olindi» deb belgilanardi — server o'sha daqiqada qayta ishga tushsa, javob jimgina yo'qolardi. Endi javob faqat yozilganda belgilanadi.
+
+Production'dan oldin tuzatishlarning o'zi yana uch tomondan tekshirildi: 34 band, 27 tasi tuzatildi, 7 tasi sababi yozilgan holda qoldirildi. Eng muhimi: 500 qatorli so'rovda bot jadvalni chizayotganda server 4–17 soniya band bo'lib qolardi, shu paytda sayt, skaner ekranlari va bot kutib turardi. Endi bu bir soniyaning yigirmadan biricha vaqt oladi. Qo'shimcha faylini o'qish ham shunday tezlashdi. Keyin mustaqil tekshiruv yana bitta xatoni topdi: nomi ichida son va birlik bo'lgan tovarlarda («Paket 100 dona qora») jadval bot o'zi tushunmaydigan namunani ko'rsatardi. Endi namuna bot uni o'zi to'g'ri o'qiy olsagina ko'rsatiladi, masalan «Paket qora 30 dona». Oxirgi kod bilan 12 851 ta avtomatik test va brauzerdagi 488 ta sinov o'tdi.
 
 ## 2026-10-24 → 10-29 — Mijoz topuvchi agent uchun eshik: lidlar CRMga tushadi, agent ikki ro'yxatni o'qiydi
 

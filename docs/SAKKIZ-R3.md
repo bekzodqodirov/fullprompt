@@ -5728,24 +5728,65 @@ writers), and cases added to `intake-table`, `calc-intake-sweep`, `calc-amend-pr
   «A - B» reader is a corpus file — its own round) and lmp-4 (pre-existing on main: the thread
   door's reading has no budget gate and no billing — its own round).
 
-### 20.3 Not recorded as run at this commit
+**The fixes, reviewed again (DECISIONS #1581).** Three lenses (regression, durability, words)
+drove e086975..f553fa8 through the real handler chain, beside §17.6's drills: 34 confirmed (1
+blocker, 15 defects, 18 nits), 27 fixed in 408a7d7 (33 red proofs), 7 rejected in writing; an
+independent check re-ran every reproduction and found one fix that regressed (CHK-1), fixed by
+the lead. Tests: `calc-fixrev-bot` (integration, through the bot), `calc-r3-review` (the net),
+`calc-fixrev` and cases in `intake-table` (unit).
 
-- §17.6's drills: the worst-case state size and one UPSERT's time against the stop's budget,
-  the write count over a real 20-message forward, the 50-row hydrate, the ROOT-duplicate query
-  on the shaped copy, and the crash, parking, add-save, deploy, flood, boot-window, stop,
-  stalled-storage and graceful drills (`docker kill` / SIGTERM). Their behaviour is pinned by
+- **A bounded name search** (FR-3, blocker): `answerHow` asks `nameWord` of at most
+  `NAME_ROWS_TRIED` ⚠️ rows and stops at the first answer; `nameWordFor` folds the rows once per
+  call. A 500-row all-⚠️ table: 8 s → 46 ms. DRILL-1: `addReading` keys each name once
+  (1000 × 500: 11.7-16.5 s → 73 ms).
+- **The name example, read back by the parser** (FR-6, W-9, CHK-1): a run starts at a word of
+  three letters and keeps a model's numbers («iPhone 15 Pro»), but a number with its unit word
+  is a figure inside the name and is left out («Paket 100 dona qora» → «Paket qora 30 dona»);
+  the candidate is prefiltered by `readSegment`'s rules before the name (a totals word, a carton
+  word, an address) and then `parseTableAnswer` reads it exactly as drawn (`exampleFigure` of the
+  row's first need) — taught only when it lands on that row with that figure alone.
+- **One predicate beside a parked collection, everywhere** (FR-1, FR-2, W-15): the add door's
+  same-request resume, the zone press and «↩️» ask `otherCollectorLive` before anything is said
+  or written; `pressResume` returns whether it resumed (a reading running: «⏳ Tahlil davom
+  etmoqda»), and a «💬» wait the refusal named is kept.
+- **The seeded table draws its stale brutto** (FR-4, W-1): `TableInput.totalsStale`, outside
+  `amend`; «yangi tovar qo‘shildi» only when a line WAS added (W-2).
+- **One patch per taken file** (FR-5, fdur-1): a file replying to the ➕ answer carries its
+  caption and the move to 'material' in the file's own patch. `intakeTakes` rule 1b: the message
+  that opened the collection is 'take' (fdur-2); a redelivered «🗑 Ha» takes its file (fdur-3);
+  the album line on the early return (fdur-4); `repliedTaken` keeps 200 (fdur-8).
+- **The save net and the sweep** (fdur-5, fdur-6, W-3, FR-7, fdur-7): the untold arm skips a row
+  whose collection still holds its note (that row is the sweep's settle to tell, with fresh
+  words); a stale row is named once per process, split by what is owed; a job-less reading token
+  minted before this boot waits out `BOOT_GRACE_MS`.
+- **Smaller** (W-8, W-11, W-12, FR-10, FR-9, W-5): « va yana N ta» without the comma;
+  `nothingNewToRead` is the one home; the ✅ count line rides outside the cut; a certificate
+  changed from `certificateAtOpen` is content; the grid posts the rev its held drafts were
+  typed over (`sawRevFor`); `reloadCure` names which reload a refusal asks for.
+- Rejected: FR-8, W-4, W-6, W-7, W-10, W-13, W-14 (fixrev's fix-ledger.json). Stated: CHK-N1 (a
+  text reply to the ➕ answer of a collection being read past 30 minutes is answered «⏳ Tahlil
+  davom etmoqda» and not added), CHK-N2 (the net's NOT EXISTS is as true as the durable row).
+
+### 20.3 Measured, run, and not run
+
+- **§17.6's drills, measured** at d6fd6e6 in this container (4 CPUs; fixrev's drills.json). The
+  spec's worst collection (12 photos, 3 PDFs, five 15k-character sheets, a 500-row invoice, 100
+  answers, 30 echoes): 0.72 MiB JSON / 74 KB stored, UPSERT 21 ms median / 28 ms max, the
+  confirm's delay 21 ms. Beyond every cap that exists: 2.58 MiB, 98 ms max; five such chats dirty
+  at once 94-116 ms. All inside the 2 s confirm bound and the stop's worst 1 s flush window. A
+  real 20-message forward: one write per batch (two at 300 ms a message — the 5 s ceiling). A
+  50-row hydrate 90-395 ms. The root-duplicate re-read: an index scan, 0.03-0.05 ms.
+  `amendRequest`: 152 ms on 30 rows, 387 ms on 300.
+- **Not run:** the process drills on a running stack (`docker kill`, SIGTERM mid-collection,
+  stalled storage, flood) — this container runs no compose stack. Their behaviour is pinned by
   the integration files (`calc-store-durable`, `bot-redelivery`, `calc-read-job`,
-  `amend-save-job`, `calc-pass-settle`, `calc-r3-review-bot`), not measured on a running stack.
-- Playwright on the merged tree. P6's browser check (the four doors refusing at 1280×900 ru and
-  360×800 uz, document width equal to the viewport) ran on P6's own branch.
-- The bot against real Telegram: every bot path here ran on a stand-in bot (this container
-  cannot reach Telegram). The first real collection, «Bo‘ldi», table answer and «➕» after the
-  deploy are the proof — CHANGELOG 2026-11-03 asks him for one.
-- Gates at the fix stage, each on its own: typecheck, lint, the whole of `tests/unit`
-  (535 files, 9260 tests), `intake-corpus.test.ts` alone (2404 tests; ratchet unchanged, 142
-  known), and the integration suite (284 files: 283 green, the one red re-anchored in f553fa8
-  and green on its rerun). The full vitest and Playwright in CI's order are the lead's push
-  gate.
+  `amend-save-job`, `calc-pass-settle`, `calc-r3-review-bot`, `calc-fixrev-bot`).
+- **The bot against real Telegram:** every bot path ran on a stand-in bot (this container cannot
+  reach Telegram). The first real collection, «Bo‘ldi», table answer and «➕» after the deploy are
+  the proof — CHANGELOG 2026-11-03 asks him for one.
+- **Gates on the final tree**, each on its own, in CI's order on a fresh database: typecheck 0,
+  lint 0, vitest 821 files / 12851 tests, 0 failed (947987b), build 0, Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent). At d6fd6e6 (before #1581's fixes) the same order
+  gave 819 files / 12803 tests and Playwright 488 passed, 1 skipped.
 
 ### 20.4 Questions for the owner (asked when the round shipped; ⭐ = what is built)
 
@@ -5791,6 +5832,8 @@ through «➕» with a NEW line shows its old brutto as ⚠️ «yangilansinmi?�
 
 **1.26 The words of a parked collection's refusal beside the AI sotuvchi's wait** (merged review
 REG-2, COMP-5). «Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi)
-— keyin qayta bosing.»
+— keyin qayta bosing.» Since #1581 (FR-1) the same words also answer a TEXT or FILE replied to
+the ➕ answer (fix review W-4), and «qayta bosing» names a button that a chat whose collection
+parked 30 minutes ago no longer shows before the 2 h reminder (W-14).
 - a) ⭐ As built.
 - b) Other words — his.
