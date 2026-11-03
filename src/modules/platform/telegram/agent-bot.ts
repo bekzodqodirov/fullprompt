@@ -1,6 +1,6 @@
 import type { Bot, Context } from 'grammy';
 import { logger } from '../logger';
-import { activeIntake } from './calc-intake';
+import { holdingIntake } from './calc-store';
 import { activeCapture } from './note-capture';
 import { answerPress } from './press';
 import { peekTaskPending, staffForChat, type BotCallback } from './staff-bot';
@@ -33,10 +33,13 @@ const BUSY_REPLY = "Avval «💬 Javob yozish» so'ragan javobni yozing — keyi
  * Javob yozish», a ⏰ date, review I2 b): a press that ARMS an agent wait
  * while another question is on the screen would leave his next text to
  * whichever reads first. Null = free; otherwise the words that name the
- * question actually waiting.
+ * question actually waiting. A «Hisoblatish» collection refuses only while it
+ * HOLDS the chat (docs/SAKKIZ-R3.md §6.2.7): it now waits 24 hours, but a
+ * parked one — idle past the half hour every collection used to live for —
+ * no longer takes his text, so it no longer stands in the agent's way.
  */
 function busy(chatId: bigint): string | null {
-  if (activeIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
+  if (holdingIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
   const task = peekTaskPending(chatId);
   if (!task) return null;
   return task.kind === 'reply' ? BUSY_REPLY : BUSY_TASK;

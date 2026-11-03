@@ -48,7 +48,11 @@ describe('the AI-VED estimate to the owner', () => {
     announce.mockRejectedValue(new Error('owner copy failed'));
     await (await handler())([job]);
     expect(say).toHaveBeenCalledTimes(1);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: 'customs reply' }), { whileOpen: true });
+    // Round 3 made a machine message per PASS (sayOnce's second argument,
+    // docs/SAKKIZ-R3.md K15); a job with no `pass` is the landing's.
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: 'customs reply' }), {
+      whileOpen: true,
+    });
   });
 
   it('a run that did not speak announces nothing', async () => {

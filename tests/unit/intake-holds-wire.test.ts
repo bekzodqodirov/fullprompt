@@ -74,6 +74,11 @@ const HOLDS: Record<string, string> = {
 /** The four doors that refuse beside a collection — by the one predicate, never `activeIntake`. */
 const DOORS: { site: string; needle: string }[] = [
   { site: 'task-handlers.ts:startTaskDraft', needle: 'if (holdingIntake(chatId)) {' },
+  // main's AI sotuvchi (0138): a press that arms an agent wait refuses beside a collection.
+  {
+    site: 'agent-bot.ts:busy',
+    needle: 'if (holdingIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;',
+  },
   { site: 'staff-handlers.ts:handleNoteCallback', needle: 'if (holdingIntake(chatId)) {' },
   { site: 'staff-handlers.ts:handleThreadReplyPress', needle: 'if (holdingIntake(chatId)) {' },
   {
