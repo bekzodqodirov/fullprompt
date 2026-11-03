@@ -223,8 +223,12 @@ describe('a text reply to the AI answer opens the add door and STOPS the ladder 
     const live = activeIntake(chat)!;
     expect(live.amend?.requestId).toBe(requestId);
     expect(live.stage).toBe('review');
-    // The reply is the collection's own message: a redelivery of it is `seen`.
-    expect(live.takenUpTo).toBe(ctx.message.message_id);
+    // The OPENING takes nothing (merged review dur-1): only the answer's own
+    // write takes the reply, in the same patch — stood in here, so nothing
+    // is taken yet. Marked by the open, a flush in the table's send and a
+    // restart made the redelivery `seen` with its answer never written
+    // (calc-r3-review-bot.integration drives that through, unmocked).
+    expect(live.takenUpTo).toBe(0);
     expect(vi.mocked(routeCollectorText)).toHaveBeenCalledTimes(1);
     const [, onChat, state, text, meta] = vi.mocked(routeCollectorText).mock.calls[0]!;
     expect(onChat).toBe(chat);
