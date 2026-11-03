@@ -37,6 +37,7 @@ import { readCodeMedians } from '@/modules/wms/customs/import-median';
 import { readImportStats } from '@/modules/wms/customs/import-stats';
 import { underCeiling } from '@/modules/wms/finance/price-history';
 import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The 📊 estimate end to end (docs/SAKKIZ-R2.md §6.9): his 2.1 b (the median
@@ -193,8 +194,8 @@ async function sealMemory(): Promise<void> {
   madeRequests.push(r.id);
   await typeBaza(r.id, MEMORY_NAME, 4);
   await setFreightZone(r.id, 'cn', ctx());
-  await confirmAllGroups(r.id, ctx());
-  await sealCalc(r.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await confirmAllGroups(r.id, ctx(), await sawRev(r.id));
+  await sealCalc(r.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(r.id) }, ctx());
 }
 
 /** A person types a baza on the row named so — the exact half of a reply. */
@@ -532,9 +533,13 @@ describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ o
     const refusal = out.text.split('\n').find((l) => l.startsWith('   ⚠️ '));
     expect(refusal, 'the refused line').toBeDefined();
     // One fact, one fixer: the count is the customer's (§0.1(7)), on the line
-    // as in the Taxminiy sentence below it.
-    expect(refusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
+    // as in the Taxminiy sentence below it. Re-anchored for round 3
+    // (docs/SAKKIZ-R3.md §2.5): `out.text` is the CHAT, whose seller tail
+    // points at «➕» under the message; the lenta keeps R2's words.
+    expect(refusal!.endsWith('— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring')).toBe(true);
     expect(refusal).not.toContain('VED xodimi');
+    const lentaRefusal = out.lentaText.split('\n').find((l) => l.startsWith('   ⚠️ '));
+    expect(lentaRefusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
   });
 });
 

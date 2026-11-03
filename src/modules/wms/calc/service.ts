@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { db, type Tx } from '@/modules/platform/db/client';
 import {
   calcGroups,
@@ -6,6 +6,7 @@ import {
   calcRequestItems,
   calcRequests,
   crmActivities,
+  clients,
   dealLines,
   deals,
   leadStages,
@@ -41,8 +42,10 @@ import {
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
-import type { NeedLaw } from './needs';
-import type { BazaBasis, MeasureUnit } from './pricing';
+import { groupLawsOf, type NeedLaw } from './needs';
+import type { AmendBase } from './amend-types';
+import { isCalcSection } from './labels';
+import type { BazaBasis, DutyMode, DutyUnit, MeasureUnit } from './pricing';
 import { parseTypedMoney } from './money-input';
 import { childStateSql, type ChildState } from './chain';
 import { creditsSql, isAnswer, isAnswerSql } from './credit';
@@ -320,17 +323,54 @@ export async function calcOpenRefusal(
 }
 
 /**
+ * «A ROOT request carries one of these notes» — the WHERE alone, over any
+ * number of notes: the one home of «landed» (docs/SAKKIZ-R3.md §6.2.10). The
+ * one-note reader below adds its own ORDER BY and LIMIT to it, and the bot's
+ * hydrate (`endedCollections`, intake-ended.ts) asks it over every hydrated
+ * note at once, so the two can never mean different things by «landed».
+ * Never called with no notes (`IN ()` is not SQL): both callers have one or more.
+ */
+export function rootNotesWhereSql(noteIds: readonly string[]): SQL {
+  return sql`note_id IN (${sql.join(
+    noteIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  )}) AND supersedes_request_id IS NULL`;
+}
+
+/**
+ * The ROOT request of a note — the one a landing opened on it, never a
+ * correction (a correction copies its parent's `note_id` by design,
+ * `recalcFromSealed`). A WHERE fragment that carries its own ORDER BY and
+ * LIMIT, so `openCalcRequest`'s in-transaction re-read and the landing's
+ * pooled `rootRequestOfNote` cannot disagree about which row is the root
+ * (#513).
+ */
+export function rootOfNoteSql(noteId: string): SQL {
+  return sql`${rootNotesWhereSql([noteId])} ORDER BY requested_at LIMIT 1`;
+}
+
+/**
  * Open a calculation request and hand it to the queue.
  *
  * Everything pooled — the note, the TNVED memory, the rota — happens BEFORE
  * the transaction, and the task and its Telegram after it: a second
  * connection asked for from inside a transaction is what freezes the whole
  * app (`tests/unit/tx-pool.test.ts`).
+ *
+ * Idempotent per NOTE (docs/SAKKIZ-R3.md K2): every caller asks
+ * `rootRequestOfNote` on the pool first, so only a CONCURRENT twin of one
+ * note — two finishers of a landing cut off halfway, two presses of one
+ * form — reaches the transaction together. The note's advisory lock is its
+ * first statement and the root re-read its second, so the twin waits for the
+ * first to commit and then answers `existing` with the request it opened:
+ * nothing is inserted and nothing after the transaction runs (the first call
+ * made the bound task and said the unassigned ping). A lock and not a unique
+ * index, because corrections share their parent's note on purpose.
  */
 export async function openCalcRequest(
   input: CalcRequestInput,
   ctx: AuditContext,
-): Promise<{ id: string; assigneeId: string | null }> {
+): Promise<{ id: string; assigneeId: string | null; existing: boolean }> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const refused = await calcOpenRefusal(ctx.actorId, input.items.length);
   if (refused) throw new CalcError(refused);
@@ -464,7 +504,15 @@ export async function openCalcRequest(
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
-  const { requestId, assigneeId } = await db.transaction(async (tx) => {
+  const opened = await db.transaction(async (tx) => {
+    if (noteId) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('calc-note:' || ${noteId}::text))`);
+      const [root] = (await tx.execute(sql`
+        SELECT id::text AS id, assignee_id::text AS assignee_id FROM calc_requests
+         WHERE ${rootOfNoteSql(noteId)}
+      `)) as unknown as { id: string; assignee_id: string | null }[];
+      if (root) return { requestId: root.id, assigneeId: root.assignee_id, existing: true };
+    }
     // A request lands on a lead only while it is OPEN, decided under the
     // lead's row lock: a win takes the same row FOR UPDATE while it moves the
     // lead's jobs onto their deals, so a job can no longer slip in between
@@ -508,6 +556,10 @@ export async function openCalcRequest(
         noteId,
         takenAt: assigneeId ? new Date() : null,
         dueAt,
+        // Hands-off from birth (his 1.9 a): `rev` is 0 at insert, so a request
+        // nobody has touched reads «VED hali boshlamagan». A correction does
+        // NOT write it (`recalcFromSealed`): that is the VED's own job.
+        handsoffRev: 0,
       })
       .returning({ id: calcRequests.id });
     const id = row!.id;
@@ -526,7 +578,7 @@ export async function openCalcRequest(
         ...(linesVolume !== null ? { volumeFromLines: true } : {}),
       },
     });
-    return { requestId: id, assigneeId };
+    return { requestId: id, assigneeId, existing: false };
   }).catch((err: unknown) => {
     // Two presses of one form carry one pre-minted note id. The pooled check
     // above answers the second once the first has COMMITTED; a second that
@@ -535,6 +587,8 @@ export async function openCalcRequest(
     if (input.note && violatedUnique(err) === 'crm_activities_pkey') throw new CalcError('note_taken');
     throw err;
   });
+  const { requestId, assigneeId } = opened;
+  if (opened.existing) return { id: requestId, assigneeId, existing: true };
 
   // The task is what puts the job on somebody's /bugun and their phone; it
   // carries the request's own deadline, so the two clocks cannot drift.
@@ -581,7 +635,7 @@ export async function openCalcRequest(
     }).catch((err) => logger.error({ err, requestId }, '[calc] unassigned notify failed'));
   }
 
-  return { id: requestId, assigneeId };
+  return { id: requestId, assigneeId, existing: false };
 }
 
 /**
@@ -738,6 +792,15 @@ async function endRequest(
     answerCurrency?: string | null;
     answerNote?: string | null;
     answerInternalNote?: string | null;
+    /**
+     * «Готово»'s P6 refusal (docs/SAKKIZ-R3.md §10A): the revision the VED's
+     * screen was drawn at. Set, the close happens only while no seller's
+     * APPLIED addition is newer than it, and a null answer then means EITHER
+     * closed meanwhile OR amended — the caller re-reads to say which. Only
+     * `finishCalcRequest` passes it: a hand-back and the task/lines closes
+     * write no price.
+     */
+    notAmendedSince?: number;
   },
 ): Promise<{
   entityType: string;
@@ -746,26 +809,61 @@ async function endRequest(
   taskId: string | null;
 } | null> {
   const now = new Date();
-  const rows = await db
-    .update(calcRequests)
-    .set({
-      completedAt: now,
-      completedBy: patch.actorId,
-      completedVia: patch.via,
-      returnReason: patch.returnReason ?? null,
-      answerAmount: num(patch.answerAmount ?? null),
-      answerCurrency: patch.answerCurrency ?? null,
-      answerNote: patch.answerNote ?? null,
-      answerInternalNote: patch.answerInternalNote ?? null,
-      updatedAt: now,
-    })
-    .where(and(eq(calcRequests.id, id), openRequests))
-    .returning({
-      entityType: calcRequests.entityType,
-      entityId: calcRequests.entityId,
-      requestedBy: calcRequests.requestedBy,
-      taskId: calcRequests.taskId,
+  const set = {
+    completedAt: now,
+    completedBy: patch.actorId,
+    completedVia: patch.via,
+    returnReason: patch.returnReason ?? null,
+    answerAmount: num(patch.answerAmount ?? null),
+    answerCurrency: patch.answerCurrency ?? null,
+    answerNote: patch.answerNote ?? null,
+    answerInternalNote: patch.answerInternalNote ?? null,
+    updatedAt: now,
+  };
+  const returning = {
+    entityType: calcRequests.entityType,
+    entityId: calcRequests.entityId,
+    requestedBy: calcRequests.requestedBy,
+    taskId: calcRequests.taskId,
+  };
+  let rows: { entityType: string; entityId: string; requestedBy: string; taskId: string | null }[];
+  if (patch.notAmendedSince === undefined) {
+    rows = await db
+      .update(calcRequests)
+      .set(set)
+      .where(and(eq(calcRequests.id, id), openRequests))
+      .returning(returning);
+  } else {
+    // Dynamic: amended-since.ts throws this file's CalcError (the workspace
+    // import's reason, below). Read before the transaction opens.
+    const { amendedSinceSql } = await import('./amended-since');
+    const unamended = sql`NOT ${amendedSinceSql(id, patch.notAmendedSince)}`;
+    /**
+     * THE ROW LOCK FIRST, THEN THE UPDATE — two statements, not one.
+     *
+     * The predicate inside the bare UPDATE is not enough, and it was the
+     * first draft (P6, measured on a throwaway pair of tables): the add
+     * door's applied write holds this row `FOR UPDATE` while it inserts its
+     * amendment, so an UPDATE started meanwhile WAITS for the row — and when
+     * the writer commits, READ COMMITTED re-checks the WHERE against the new
+     * row version only. The `NOT EXISTS` over `calc_amendments` is evaluated
+     * in the statement's ORIGINAL snapshot and cannot see the amendment that
+     * committed while it waited: the bare UPDATE closed the job (1 row), the
+     * locked shape refused it (0 rows). After `FOR UPDATE` is granted, the
+     * UPDATE is a new statement with a new snapshot, and it sees it — the
+     * same order the three locked doors keep (`refuseIfAmendedSinceInTx`
+     * right after the lock). The task close and every ping stay after the
+     * commit, on the pool (#714).
+     */
+    rows = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM calc_requests WHERE id = ${id}::uuid FOR UPDATE`);
+      return tx
+        .update(calcRequests)
+        .set(set)
+        .where(and(eq(calcRequests.id, id), openRequests, unamended))
+        .returning(returning);
     });
+  }
   const row = rows[0];
   if (!row) return null;
   // A request nobody took has no task, and `eq(tasks.id, null)` would match
@@ -915,6 +1013,11 @@ export async function finishCalcRequest(
     internalNote: string;
   },
   ctx: AuditContext,
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, never optional — an optional one fails open (#790).
+   */
+  sawRev: number,
 ): Promise<void> {
   if (!ctx.actorId) throw new CalcError('unauthenticated');
   const current = await db.query.calcRequests.findFirst({
@@ -972,8 +1075,22 @@ export async function finishCalcRequest(
     answerCurrency: currency,
     answerNote: sellerNote,
     answerInternalNote: internalNote,
+    // P6 (docs/SAKKIZ-R3.md §10A): «Готово» is the only close on exactly the
+    // jobs 2.8 b asks a count for (no customs total, so no seal), and the
+    // answer becomes the upsale floor, the card's lock, the channel's post
+    // and the CalcDone push. A check up here would race exactly the addition
+    // it exists for; the close itself carries it.
+    notAmendedSince: sawRev,
   });
-  if (!row) throw new CalcError('already_closed');
+  if (!row) {
+    // Zero rows is two different facts, and the VED must read the right one.
+    const stood = await db.query.calcRequests.findFirst({
+      where: eq(calcRequests.id, id),
+      columns: { completedAt: true },
+    });
+    if (!stood || stood.completedAt) throw new CalcError('already_closed');
+    throw new CalcError('amended_since');
+  }
   // The price channel's claim (his F6 a: «Готово» answers too) — right after
   // the job closed, before anything that can throw; its own catch, and the
   // drain's net picks up a row this misses.
@@ -1530,6 +1647,7 @@ type GoodsFact = CalcGoodsFact & { seq: number };
 
 const storedGoodsFact = (row: typeof calcRequestItems.$inferSelect): GoodsFact => ({
   seq: row.seq,
+  itemId: row.id,
   name: row.name,
   quantity: toNum(row.quantity),
   weightKg: toNum(row.weightKg),
@@ -1591,44 +1709,209 @@ export function lineNeedsFor(
 }
 
 /**
- * What a landed request still owes, read back from its STORED rows with the
- * book's law — the seller's form prints it under ✅ (judge UX13: «Yuborildi.
- * VED so‘raydi: 2-qator «Kurtka» — soni (dona)»), so the gap is heard at
- * send time and not when the VED hands the job back. Pool reads only.
+ * What a landed request still owes, read back from its STORED rows — the
+ * seller's form prints it under ✅ (judge UX13: «Yuborildi. VED so‘raydi:
+ * 2-qator «Kurtka» — soni (dona)»), so the gap is heard at send time and not
+ * when the VED hands the job back. Pool reads only.
+ *
+ * Over `storedRequestFacts` (docs/SAKKIZ-R3.md §10.2.7), the stored request's
+ * ONE reader (#513): a GROUPED row answers to its group's law (judge S9) —
+ * the rule `checklistFor`, the VED's chips, the add table and the 2.8 b ask
+ * already follow. It read the book only, so after the VED retyped a group's
+ * law the form's ✅ and the VED's chips named different figures for one row.
+ * The card form calls it right after the landing, before anything is
+ * grouped, so that ✅ reads exactly as before.
  */
 export async function requestAsks(
   requestId: string,
 ): Promise<{ missing: string[]; lines: (LineNeed & { seq: number })[] }> {
-  const [row] = await db
-    .select({
-      section: calcRequests.section,
-      fromCity: calcRequests.fromCity,
-      toCity: calcRequests.toCity,
-      weightKg: calcRequests.weightKg,
-      volumeM3: calcRequests.volumeM3,
-    })
-    .from(calcRequests)
-    .where(eq(calcRequests.id, requestId))
-    .limit(1);
-  if (!row) return { missing: [], lines: [] };
-  const goods = (await goodsByRequest([requestId])).get(requestId) ?? [];
-  const laws = await bookLawsFor(goods.map((g) => g.tnvedCode));
+  const stored = await storedRequestFacts(requestId);
+  if (!stored) return { missing: [], lines: [] };
+  // Every row carries its law already (group's, else the book's): no map.
+  const laws = new Map<string, NeedLaw>();
+  const goods = stored.facts.goods ?? [];
+  return {
+    missing: missingFor(stored.base.section, stored.facts, laws),
+    lines: lineNeedsFor(stored.base.section, stored.facts, laws).map((l) => ({ ...l, seq: goods[l.index]!.seq! })),
+  };
+}
+
+export { isComplete };
+
+/**
+ * One stored request as the bot reads it (docs/SAKKIZ-R3.md K14) — the add
+ * door's base, its table and its asks all read THIS, so what the seller is
+ * shown and what the writer compares are one reading (#513).
+ *
+ * Built on the stored-request reader above (`storedGoodsFact`, `bookLawsFor`,
+ * the regression-3 flags `missingFor` forces), never beside it. Each row
+ * carries its law: a grouped row its GROUP's (`groupLawsOf`, exactly as the
+ * VED page's checklist reads it), an ungrouped one the book's — so a caller
+ * needs no laws map of its own. At most four statements on the pool and
+ * never `loadWorkspace` (~15, the bazas over every name, the tariff, fx):
+ * the press and the reply door await this on the poller (performance-9).
+ * Pool reads only (#714).
+ *
+ * Null: no such request — or one with no section (written before 0085),
+ * which has no checklist and nothing a table could ask.
+ */
+export async function storedRequestFacts(requestId: string): Promise<{
+  base: AmendBase;
+  facts: CalcFacts;
+  rev: number;
+  handsoffRev: number | null;
+  aiPassRev: number | null;
+  aiPassAt: Date | null;
+  aiPassJob: string | null;
+  requestedBy: string;
+  completedAt: Date | null;
+  completedVia: string | null;
+  returnReason: string | null;
+  ending: CalcEnding | null;
+} | null> {
+  const [[row], itemRows, groupRows] = await Promise.all([
+    db
+      .select({
+        entityType: calcRequests.entityType,
+        entityId: calcRequests.entityId,
+        section: calcRequests.section,
+        fromCity: calcRequests.fromCity,
+        toCity: calcRequests.toCity,
+        weightKg: calcRequests.weightKg,
+        volumeM3: calcRequests.volumeM3,
+        rev: calcRequests.rev,
+        handsoffRev: calcRequests.handsoffRev,
+        aiPassRev: calcRequests.aiPassRev,
+        aiPassAt: calcRequests.aiPassAt,
+        aiPassJob: calcRequests.aiPassJob,
+        requestedBy: calcRequests.requestedBy,
+        completedAt: calcRequests.completedAt,
+        completedVia: calcRequests.completedVia,
+        returnReason: calcRequests.returnReason,
+        answerAmount: calcRequests.answerAmount,
+        dealCode: deals.code,
+        clientCode: clients.clientCode,
+        clientName: clients.name,
+        leadName: leads.name,
+        leadPhone: leads.phone,
+        leadKind: leadStages.kind,
+      })
+      .from(calcRequests)
+      .leftJoin(deals, and(eq(calcRequests.entityType, 'deal'), eq(deals.id, calcRequests.entityId)))
+      .leftJoin(clients, eq(clients.id, deals.clientId))
+      .leftJoin(leads, and(eq(calcRequests.entityType, 'lead'), eq(leads.id, calcRequests.entityId)))
+      .leftJoin(leadStages, eq(leadStages.id, leads.stageId))
+      .where(eq(calcRequests.id, requestId))
+      .limit(1),
+    db
+      .select()
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, requestId))
+      .orderBy(asc(calcRequestItems.seq)),
+    db
+      .select({
+        id: calcGroups.id,
+        dutyMode: calcGroups.dutyMode,
+        dutyUnit: calcGroups.dutyUnit,
+        dutySpecific: calcGroups.dutySpecific,
+        dutyFree: calcGroups.dutyFree,
+        excisePct: calcGroups.excisePct,
+        exciseSpecific: calcGroups.exciseSpecific,
+        exciseUnit: calcGroups.exciseUnit,
+        confirmedAt: calcGroups.confirmedAt,
+      })
+      .from(calcGroups)
+      .where(eq(calcGroups.requestId, requestId)),
+  ]);
+  if (!row || !isCalcSection(row.section)) return null;
+  // The rows through the checklist's own projection (`storedGoodsFact`), in
+  // seq order; the group link beside them, which that projection does not
+  // carry.
+  const stored = itemRows.map(storedGoodsFact);
+  const groupOf = new Map(itemRows.map((i) => [i.id, i.groupId]));
+  const groups = groupRows.map((g) => ({
+    // Stored NULL reads as 'advalor' — the workspace's own reading.
+    dutyMode: (g.dutyMode as DutyMode | null) ?? 'advalor',
+    dutyUnit: (g.dutyUnit as DutyUnit | null) ?? null,
+    dutySpecific: toNum(g.dutySpecific),
+    dutyFree: g.dutyFree,
+    excisePct: toNum(g.excisePct),
+    exciseSpecific: toNum(g.exciseSpecific),
+    exciseUnit: (g.exciseUnit as DutyUnit | null) ?? null,
+    items: itemRows.filter((i) => i.groupId === g.id).map((i) => ({ seq: i.seq })),
+  }));
+  const groupLaw = groupLawsOf(groups);
+  const confirmedGroups = new Set(groupRows.filter((g) => g.confirmedAt !== null).map((g) => g.id));
+  const bookLaws = await bookLawsFor(stored.filter((g) => !groupLaw.has(g.seq)).map((g) => g.tnvedCode));
+  const goods = stored.map((g) => ({
+    ...g,
+    law: groupLaw.get(g.seq) ?? (g.tnvedCode ? (bookLaws.get(g.tnvedCode) ?? null) : null),
+  }));
+
   const facts: CalcFacts = {
     fromCity: row.fromCity,
     toCity: row.toCity,
     weightKg: toNum(row.weightKg),
     volumeM3: toNum(row.volumeM3),
     goods,
+    // R2's regression-3: a stored row's weight is its own and a stored total
+    // is what the engine prices — nothing derived (`missingFor`'s flags).
+    lineWeightsStated: true,
+    totalsStored: true,
+  };
+  const deal = row.entityType === 'deal';
+  const clientLabel = deal
+    ? [row.clientCode, row.clientName].filter((v): v is string => !!v?.trim()).join(' ') || null
+    : [row.leadName, row.leadPhone].filter((v): v is string => !!v?.trim()).join(' ') || null;
+  const base: AmendBase = {
+    requestId,
+    cardLabel: (deal ? row.dealCode : row.leadName) ?? '—',
+    entityType: deal ? 'deal' : 'lead',
+    entityId: row.entityId,
+    leadOpen: deal ? null : row.leadKind === 'open',
+    section: row.section,
+    clientLabel,
+    openedRev: row.rev,
+    items: goods.map((g, k) => ({
+      itemId: g.itemId!,
+      seq: g.seq,
+      name: g.name,
+      note: itemRows[k]?.note ?? null,
+      quantity: g.quantity ?? null,
+      weightKg: g.weightKg ?? null,
+      volumeM3: g.volumeM3 ?? null,
+      measureUnit: g.measureUnit ?? null,
+      measureQty: g.measureQty ?? null,
+      tnvedCode: g.tnvedCode ?? null,
+      law: g.law,
+      confirmed: confirmedGroups.has(groupOf.get(g.itemId!) ?? ''),
+    })),
+    weightKg: facts.weightKg ?? null,
+    volumeM3: facts.volumeM3 ?? null,
+    fromCity: row.fromCity,
+    toCity: row.toCity,
   };
   return {
-    missing: missingFor(row.section, facts, laws),
-    lines: lineNeedsFor(row.section, facts, laws).map((l) => ({ ...l, seq: goods[l.index]!.seq })),
+    base,
+    facts,
+    rev: row.rev,
+    handsoffRev: row.handsoffRev,
+    aiPassRev: row.aiPassRev,
+    aiPassAt: row.aiPassAt,
+    aiPassJob: row.aiPassJob,
+    requestedBy: row.requestedBy,
+    completedAt: row.completedAt,
+    completedVia: row.completedVia,
+    returnReason: row.returnReason,
+    ending: endingOf(row),
   };
 }
 
-export { isComplete };
-
 export interface CalcRequestDetail extends CalcQueueRow {
+  /** The revision clock as this read found it — read BEFORE the rows, so it
+   * is never newer than what the page prints from this detail; the «Готово»
+   * fold's `sawRev` is the older of it and the workspace's (P6, page.tsx). */
+  rev: number;
   noteId: string | null;
   source: string | null;
   completedAt: Date | null;
@@ -1755,6 +2038,7 @@ export async function calcRequestDetail(
     lineNeeds: lineNeedsFor(row.section, facts, laws),
     goodsFacts,
     late: !row.completedAt && row.dueAt.getTime() < now.getTime(),
+    rev: row.rev,
     noteId: row.noteId,
     source: row.source,
     completedAt: row.completedAt,

@@ -184,7 +184,7 @@ describe('overlapping runs — the advisory lock, not the EXISTS alone', () => {
       const requestId = randomUUID();
       const spoke = await Promise.all(
         Array.from({ length: 8 }, (_, k) =>
-          sayOnce(requestId, { userIds: [actorId], type: 'CalcPrefilled', text: `burst ${burst} run ${k}` }),
+          sayOnce(requestId, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: `burst ${burst} run ${k}` }),
         ),
       );
       expect(spoke.filter(Boolean), `burst ${burst}: one run speaks`).toHaveLength(1);
@@ -218,10 +218,10 @@ describe('the speaking door and its claim (R2 late pass)', () => {
       // «Готово» or a hand-back, after the pass's last step and before it speaks.
       await returnCalcRequest(r.id, 'VED qaytardi — test', { actorId });
       const reply = { userIds: [actorId], type: 'CalcPrefilled', text: `${AI_REPLY_HEAD} · yopiq so‘rov` };
-      expect(await sayOnce(r.id, reply, { whileOpen: true })).toBe(false);
+      expect(await sayOnce(r.id, 'landing', reply, { whileOpen: true })).toBe(false);
       expect(await said(r.id), 'the reply is not queued').toHaveLength(0);
       // The door refuses the REPLY only: the closed sentence is the one message.
-      expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yopilgan' })).toBe(true);
+      expect(await sayOnce(r.id, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: 'yopilgan' })).toBe(true);
       expect(await said(r.id)).toHaveLength(1);
     } finally {
       await sweepHandBacks(dealId);
@@ -275,6 +275,6 @@ describe('the speaking door and its claim (R2 late pass)', () => {
       status: 'sent',
       createdAt: new Date(Date.now() - 3 * 86_400_000),
     });
-    expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yangi' })).toBe(true);
+    expect(await sayOnce(r.id, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: 'yangi' })).toBe(true);
   });
 });

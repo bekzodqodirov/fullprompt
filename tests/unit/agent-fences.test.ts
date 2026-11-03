@@ -121,8 +121,11 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
 
 describe('platform still reaches wms only by dynamic import', () => {
   it('the static platform → wms imports are exactly the two that predate this round', () => {
+    // A VALUE import is the dependency the rule forbids; `import type` is
+    // erased at compile time (Sakkiz round 3's collector names wms's shapes
+    // that way, docs/SAKKIZ-R3.md K13), so it is not one.
     const offenders = filesUnder('src/modules/platform').filter((file) =>
-      /^import[^;]*from\s+['"][^'"]*\/wms\//m.test(strip(readFileSync(file, 'utf8'))),
+      /^import(?!\s+type\b)[^;]*from\s+['"][^'"]*\/wms\//m.test(strip(readFileSync(file, 'utf8'))),
     );
     expect(offenders.map((f) => f.replace(/^src\/modules\/platform\//, '')).sort()).toEqual(
       ['telegram/bot.ts', 'telegram/client-cabinet.ts'].sort(),

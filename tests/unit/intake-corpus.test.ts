@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import ExcelJS from 'exceljs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { KNOWN_FAILING } from './fixtures/intake-corpus-known';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The intake regression corpus (tests/unit/fixtures/intake-corpus.ts), run
@@ -32,7 +33,14 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md
+// §7.2.10); the ledger is not what these cases are about.
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only ENQUEUES since the reading is a pg-boss job (§7.1): the
+// collector cases run the captured job through the one drive helper.
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 const prefill = vi.hoisted(() => ({ standing: vi.fn(), run: vi.fn() }));
 vi.mock('@/modules/wms/calc/prefill', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/prefill')>()),
@@ -48,6 +56,13 @@ vi.mock('@/modules/platform/notifications/staff', async (importOriginal) => ({
 // through `sayOnce` — one per request — so the worker cases read it here.
 const say = vi.hoisted(() => vi.fn());
 vi.mock('@/modules/wms/calc/say-once', () => ({ sayOnce: say }));
+// Round 3 (docs/SAKKIZ-R3.md §10.2.2): the worker settles its pass on every
+// way out — the real module otherwise, with the settle stood in, so the
+// worker cases' job id ('j1') never reaches a database from a unit test.
+vi.mock('@/modules/wms/calc/prefill-queue', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/wms/calc/prefill-queue')>()),
+  settlePass: vi.fn(),
+}));
 
 import {
   AI_READ_FAILURE,
@@ -81,7 +96,8 @@ import {
   intakeClientLabel,
   intakeClientSummary,
   pickGoods,
-  resolveLineDone,
+  placeByName,
+  sameGoodsLine,
   startIntake,
   updateIntake,
   type IntakeState,
@@ -98,6 +114,8 @@ import {
   receiveSheetText,
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
+import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 import {
   attemptStandingCases,
   buildFile,
@@ -114,6 +132,7 @@ import {
   readGoodsFileCases,
   readGoodsLinesCases,
   resolveLineDoneCases,
+  sameGoodsLineCases,
   scenarioCases,
   sourceRows,
   statesGoodsCases,
@@ -213,7 +232,7 @@ function collection(
   seq += 1;
   const chatId = BigInt(-9_500_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 
@@ -246,6 +265,7 @@ const reads = (goods: Goods, steps: string[] = []) => ({
 });
 
 beforeEach(() => {
+  resetReadingDrive();
   model.analyze.mockReset();
   prefill.standing.mockReset();
   prefill.run.mockReset();
@@ -345,10 +365,49 @@ describe('intakeClientSummary (the summary’s customer line)', () => {
   });
 });
 
-describe('resolveLineDone', () => {
+// The same four inputs and expected placements, run through `placeByName`
+// (entries without patches): ⏭'s `lineDone` is retired with the per-line
+// question (docs/SAKKIZ-R3.md §11, his 1.10 c) — the subject moved, the cases
+// did not. An entry placed nowhere (-1) is not a placement.
+describe('resolveLineDone (now placeByName)', () => {
   each(resolveLineDoneCases)(title, (c) => {
-    expect(resolveLineDone(c.input.goods, c.input.done)).toEqual(c.expected);
+    const placed = placeByName(c.input.goods, c.input.done.map((d) => ({ ...d, patch: {} }))).entries;
+    expect(
+      placed.filter((e) => e.index >= 0).map((e) => ({ index: e.index, name: c.input.goods[e.index]!.name })),
+    ).toEqual(c.expected);
   });
+});
+
+// c1524-c1526's typed numbered lists, ROUTED (docs/SAKKIZ-R3.md §11, P3):
+// beside their goods-reader cases, which are unchanged. In the table stage
+// over rows that do NOT carry those names, a numbered line is ASKED
+// (`name_mismatch`), a carton word is never a name (`no_address`), and no row
+// is patched; in the material stage after a reading «N.» is not an address,
+// so the list is material — where «➕ Yana ma’lumot» left the seller.
+describe('c1524-c1526 routed by the table', () => {
+  const ROUTED = ['c1524', 'c1525', 'c1526'];
+  const cases = readGoodsLinesCases.filter((c) => ROUTED.includes(c.id));
+  const row = (no: number, name: string, needs: TableRef['rows'][number]['needs']) => ({ no, index: no - 1, seq: null, name, needs });
+  const rows = [row(1, 'Krossovka', ['juft']), row(2, 'Sumka', ['dona', 'kg']), row(3, 'Monitor', ['dona'])];
+  const ref = (stage: TableRef['stage'], r = rows): TableRef => {
+    const open = r.map((x) => ({ line: x.no }));
+    return { rows: r, open, preferred: open, stage };
+  };
+  it('all three are here', () => expect(cases.map((c) => c.id)).toEqual(ROUTED));
+  for (const c of cases) {
+    it(`${c.id} in the table stage: asked, nothing patched`, () => {
+      const out = parseTableAnswer(c.input as string, ref('review'));
+      expect(out.material).toBe(false);
+      for (const seg of out.segments) {
+        // A refused segment writes nothing (`planWrites` asks it, never patches).
+        expect(seg.refused?.reason, seg.raw).toMatch(/^(name_mismatch|no_address)$/);
+      }
+    });
+    it(`${c.id} in the material stage after a reading: material`, () => {
+      const meeting = [row(1, 'Kurtka', ['dona']), row(2, 'Shim', ['dona'])];
+      expect(parseTableAnswer(c.input as string, ref('material', meeting))).toEqual({ segments: [], material: true });
+    });
+  }
 });
 
 describe('pickGoods', () => {
@@ -369,6 +428,12 @@ describe('pickGoods', () => {
         `${JSON.stringify(want)} kept or named: ${JSON.stringify(picked)}`,
       ).toBe(true);
     }
+  });
+});
+
+describe('sameGoodsLine (the add door’s top-up — a stored row, or a new line)', () => {
+  each(sameGoodsLineCases)(title, (c) => {
+    expect(sameGoodsLine(c.input.kept as never, c.input.read as never)).toBe(c.expected);
   });
 });
 
@@ -548,7 +613,7 @@ async function fileProblems(
   if (want.lastLineEnds !== undefined && !last.endsWith(want.lastLineEnds)) out.push(`last line ${JSON.stringify(last)} does not end ${want.lastLineEnds}`);
   if (want.replyIncludes || want.replyExcludes) {
     const answer = await readIntakeFile(
-      { isPhoto: false, body: run.built.body },
+      { isPhoto: false, body: run.built.body, attachmentId: 'a-file' },
       run.built.fileName,
       run.built.contentType,
       collection({ stage: 'material' }).state,
@@ -589,7 +654,7 @@ const source = (p: string) => code(readFileSync(p, 'utf8'));
 /** A file the seller forwards, read by the bot's own door onto a live collection. */
 async function forward(chatId: bigint, spec: FileSpec, fileName?: string) {
   const built = await buildFile(spec);
-  const answer = await readIntakeFile({ isPhoto: false, body: built.body }, fileName ?? built.fileName, built.contentType, activeIntake(chatId)!);
+  const answer = await readIntakeFile({ isPhoto: false, body: built.body, attachmentId: 'a-file' }, fileName ?? built.fileName, built.contentType, activeIntake(chatId)!);
   updateIntake(chatId, answer.patch);
   return answer;
 }
@@ -758,24 +823,32 @@ const xmlRows = (n: number) =>
   '<Row><Cell><Data ss:Type="String">Стол</Data></Cell><Cell><Data ss:Type="Number">5</Data></Cell>\n'.repeat(n) +
   '</Table></Worksheet></Workbook>';
 
-/** The ⏭ / «Yana ma’lumot» / «Bo‘ldi» walk of R3-C5 (c1375, c1721). */
-async function skipThenReread(): Promise<{ chatId: bigint; asked: string[] }> {
+/** A table answer, as a typed message in the table stage. */
+const answer = (ctx: ReturnType<typeof fakeCtx>, chatId: bigint, text: string) =>
+  applyTableAnswer(ctx, chatId, activeIntake(chatId)!, text, { date: 0, messageId: 900, forwarded: false, replyTo: null });
+
+/**
+ * The answer / «Yana ma’lumot» / «Bo‘ldi» walk of R3-C5 (c1375, c1721) — ⏭ is
+ * retired (his 1.10 c), so the skip became an ANSWER: the defect these
+ * pinned, a record carried by index onto another line after a re-read, is
+ * held on answers (docs/SAKKIZ-R3.md §11).
+ */
+async function answerThenReread(): Promise<{ chatId: bigint; table: string }> {
   const { chatId } = collection({
-    stage: 'question',
-    askingIndex: 0,
-    round: 1,
+    stage: 'review',
     clientHintRaw: 'GS777',
     material: ['Kurtka'],
     facts: { goods: [line('Kurtka')] },
   });
   const ctx = fakeCtx();
-  await handleCalcCallback(ctx, chatId, 'skip');
+  await answer(ctx, chatId, '1: 150 kg');
   await handleCalcCallback(ctx, chatId, 'more');
   updateIntake(chatId, { material: ['Kurtka', 'Shim 2 karobka'] });
   model.analyze.mockResolvedValueOnce(reads([line('Shim'), line('Kurtka')]));
+  // The re-read half runs as the job (P2, §11): «Bo‘ldi» only enqueues.
   await handleCalcCallback(ctx, chatId, 'done');
-  await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
-  return { chatId, asked: ctx.texts().filter((t) => t.startsWith('❓')).map((t) => t.split(' — ')[0]!.split(':')[0]!) };
+  await driveReading(chatId, ctx);
+  return { chatId, table: ctx.texts().at(-1)! };
 }
 
 /** The bundle's words, by key. */
@@ -823,7 +896,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect([r.patch.stage, r.reask]).toEqual(['material', null]);
   },
   c0006: async () => {
-    const r = invoiceChoice(invoiceState('question'), 'inv_add')!;
+    // 'question' is retired (his 1.10 c); the table stage is 'review' — the
+    // claim (inv_add moves to 'material', no re-ask) is unchanged.
+    const r = invoiceChoice(invoiceState('review'), 'inv_add')!;
     expect([r.patch.stage, r.reask]).toEqual(['material', null]);
   },
   // «🧮 → section → client», two mapped files, ➕, then «GS777»: the customer, never material.
@@ -888,11 +963,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   c0011: async () => {
     const { state } = collection({ stage: 'material', material: ['Kurtka'], analysing: 'tok' });
-    const snapshot: IntakeState = { ...state, material: ['Kurtka'], fileCount: 0, lineAnswers: [], lineDone: [] };
+    const snapshot: IntakeState = { ...state, material: ['Kurtka'], fileCount: 0, lineAnswers: [] };
     const live: IntakeState = {
       ...snapshot,
       lineAnswers: [{ index: 0, name: 'Kurtka', patch: { weightKg: 150 } }],
-      lineDone: [{ index: 0, name: 'Kurtka' }],
       answers: ['1-qator: 150 kg'],
     };
     const analysed: IntakeState = { ...snapshot, facts: { goods: [line('Kurtka')] } as IntakeState['facts'] };
@@ -911,18 +985,22 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       }
       return false;
     });
+    // Re-anchored (P2, §11): the press enqueues and the job settles the
+    // token — the claim («never «Tahlil davom etmoqda» for ever») holds.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     await handleCalcCallback(ctx, chatId, 'more');
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(ctx.texts()).not.toContain('⏳ Tahlil davom etmoqda — natijani kuting.');
     expect(model.analyze).toHaveBeenCalledTimes(2);
   },
   // ---- «boshqa zavodning tovarlarimi?» in either order (c4)
   c0016: async () => {
     const base = { stage: 'material' as const, material: ['x'], invoiceGoods: [line('Factory A chair'), line('Factory A table')], aiGoods: null };
-    const pdf = receivePdf(collection(base).state, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»');
+    const pdf = receivePdf(collection(base).state, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     const sheet = receiveSheetText(collection(base).state, '«B.csv»', { text: '[CSV]\nB blender | 5', cut: false, cellsCut: false }, fitRows);
     for (const answer of [pdf, sheet]) {
       expect(answer.patch.aiGoods).toBe('ask');
@@ -936,7 +1014,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     }
   },
   c0017: async () => {
-    const { state } = collection({ stage: 'material', invoiceGoods: [], pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }], aiGoods: null });
+    const { state } = collection({ stage: 'material', invoiceGoods: [], pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }], aiGoods: null });
     const answer = receiveGoodsSheet(state, mapped('«A.xlsx»', [line('Kurtka')]));
     expect(answer.patch.aiGoods).toBe('ask');
     expect(buttonsOf(answer)).toContain('c:other_add');
@@ -947,7 +1025,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect([STALE, NOT_READ]).toContain(ctx.texts().at(-1));
-    expect(['review', 'question']).not.toContain(activeIntake(chatId)!.stage);
+    expect(activeIntake(chatId)!.stage).not.toBe('review');
     await handleCalcCallback(ctx, chatId, 'save');
     expect(ctx.texts().at(-1)).toBe(NOT_READ);
   },
@@ -956,28 +1034,31 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect([STALE, NOT_READ]).toContain(ctx.texts().at(-1));
-    expect(['review', 'question']).not.toContain(activeIntake(chatId)!.stage);
+    expect(activeIntake(chatId)!.stage).not.toBe('review');
     await handleCalcCallback(ctx, chatId, 'save');
     expect(ctx.texts().at(-1)).toBe(NOT_READ);
   },
   c0020: async () => {
-    const { chatId } = collection({ stage: 'question', analysing: 'token', askingIndex: 0, facts: { goods: [line('Kurtka')] } as IntakeState['facts'] });
+    // 'question' is a dead value (R3): the table stage during a re-read.
+    const { chatId } = collection({ stage: 'review', analysing: 'token', facts: { goods: [line('Kurtka')] } as IntakeState['facts'] });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect(ctx.texts().at(-1)).toBe(STALE);
   },
   c0021: async () => {
+    // RETIRED by his 1.10 c (docs/SAKKIZ-R3.md §11): the table has no
+    // per-line skip, so ⏭ is «Bu tugma eskirgan» everywhere — a line left ⚠️
+    // at «Tasdiqlash» is the VED's. Nothing moves.
     const { chatId } = collection({
-      stage: 'question',
+      stage: 'review',
       analysing: null,
-      askingIndex: 0,
-      round: 1,
       facts: { goods: [line('Kurtka'), line('Shim')] } as IntakeState['facts'],
     });
+    const before = JSON.stringify(activeIntake(chatId));
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)!.lineDone).toContainEqual({ index: 0, name: 'Kurtka' });
-    expect(ctx.texts().at(-1)).toMatch(/^❓ 2-qator «Shim»/);
+    expect(ctx.texts().at(-1)).toBe(STALE);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   // ---- 🔁 drops the replaced workbook's other sheets too (c7)
   c0022: async () => {
@@ -1098,7 +1179,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(1)]);
-    const texts = say.mock.calls.map((call) => (call[1] as { text: string }).text);
+    const texts = say.mock.calls.map((call) => (call[2] as { text: string }).text);
     // Exactly one message, and that one (R2 late pass, review P1-R8): the two
     // old assertions held over an EMPTY list too, so a stand-down that fell
     // silent on a retry stayed green.
@@ -1109,7 +1190,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { handler } = await prefillWorker();
     prefill.standing.mockResolvedValue('touched');
     await handler([prefillJob(0)]);
-    expect(say).toHaveBeenCalledWith('r1', expect.objectContaining({ text: STOOD_DOWN.touched }));
+    expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: STOOD_DOWN.touched }));
   },
   // ---- no pause after the last attempt, none past the leash (a19)
   c0222: async () => {
@@ -1179,8 +1260,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated' });
     const ctx = fakeCtx();
+    // The reading is a job (P2, §11); the keyboard read is the one it sent.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(buttonsOf(ctx.replies.at(-1))).not.toContain('c:reread');
   },
   c0235: async () => {
@@ -1293,8 +1376,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated' });
     const ctx = fakeCtx();
+    // The reading is a job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(buttonsOf(ctx.replies.at(-1))).not.toContain('🔄 AI qayta o‘qisin');
   },
   c0600: async () => {
@@ -1321,13 +1406,18 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     // The day's budget is written from the collection's bills at the
     // landing; a paid read that failed must still carry what it cost.
     // Re-anchored (docs/SAKKIZ-R2.md §8.2.7, his 2.9 c): the reading names
-    // every ANSWERED attempt in `answered`, and the collection APPENDS them
-    // into `usages` — one bill per reading, never the last one alone.
+    // every ANSWERED attempt in `answered`. Re-anchored again (SAKKIZ-R3
+    // §7.2.10, P2): the reading JOB bills `answered` the moment the model
+    // answered, so the collection no longer appends to `usages` — the claim
+    // (a failed paid read still carries what it cost) is on `answered`, and
+    // that it is COUNTED against the day's budget is proven where the job
+    // writes the row: intake-billing.integration.test.ts, «a reading that
+    // answered (cut, with usage)…» (review spec-7).
     const usage = { model: 'm', inputTokens: 40_000, outputTokens: 16_000 };
     const { state } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg'] });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'truncated', usage, answered: [usage] });
     const out = await analyzeCollected(state);
-    expect(out.usages).toEqual([usage]);
+    expect(out.answered).toEqual([usage]);
   },
   // ---- the fixer's collector pins (#0-#7)
   c0768: async () => {
@@ -1422,7 +1512,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     model.analyze.mockResolvedValueOnce(reads([line('Kurtka', { quantity: 300, weightKg: 150 })]));
     const ctx = fakeCtx((t) => t.startsWith('⏳'));
     await expect(handleCalcCallback(ctx, chatId, 'done')).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    // The job settles it (P2, §11): the same three facts.
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(model.analyze).toHaveBeenCalledTimes(1);
     expect(activeIntake(chatId)!.analysing).toBeNull();
     expect(buttonsOf(ctx.replies.at(-1))).toContain('c:save');
@@ -1430,7 +1522,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c0775: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10]] }), 'A.xlsx');
-    const pdf = receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»');
+    const pdf = receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     updateIntake(chatId, pdf.patch);
     expect(activeIntake(chatId)!.aiGoods).toBe('ask');
     expect(pdf.say).toContain('boshqa zavodning tovarlarimi?');
@@ -1547,13 +1639,16 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(r.ms).toBeLessThan(3_000);
   },
   c0797: async () => {
-    const { chatId } = collection({ stage: 'question', askingIndex: 0, round: 1, facts: { goods: [line('Kurtka'), line('Shim')] } as IntakeState['facts'] });
+    // Re-anchored onto ANSWERS (⏭ retired, his 1.10 c): line 1 answered is
+    // written back to the stored collection, and what is still missing names
+    // line 2 — never line 1 again.
+    const { chatId } = collection({ stage: 'review', facts: { goods: [line('Kurtka'), line('Shim')] } as IntakeState['facts'] });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(ctx.texts().at(-1)).toMatch(/^❓ 2-qator «Shim»/);
-    expect(activeIntake(chatId)!.lineDone).toEqual([{ index: 0, name: 'Kurtka' }]);
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(ctx.texts().filter((t) => t.startsWith('❓ 1-qator «Kurtka»'))).toEqual([]);
+    await answer(ctx, chatId, '1: 150 kg');
+    expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 0, name: 'Kurtka', patch: { weightKg: 150 } }]);
+    const echo = ctx.texts().find((t) => t.startsWith('✅ 1-qator «Kurtka»'))!;
+    expect(echo).toContain('⚠️ Yana 3 ta: 2-qator, umumiy brutto, umumiy hajm.');
+    expect(echo).not.toContain('1-qator,');
   },
   c0802: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
@@ -1568,16 +1663,19 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(s.invoiceTexts.map((t) => t.text).join('\n')).toContain('TOTAL G.W. | 150 KGS');
   },
   c0803: async () => {
+    // RETIRED by his 1.10 c: the totals are a table row, not a question, so
+    // there is no ⏭ to accept under them — the press is «eskirgan» and the
+    // ⚠️ brutto row stays for a typed «jami … kg» (or the VED).
     const { chatId } = collection(
-      // Re-anchored (§8.2.5): «asking the totals» is `askingTotalsFor`
-      // naming WHICH totals, no longer a flag beside it.
-      { stage: 'question', analysing: null, ai: true, askingIndex: null, askingTotalsFor: 'both', totalsAsked: true, facts: { goods: [line('Kurtka', { quantity: 300 })] } as IntakeState['facts'] },
+      { stage: 'review', analysing: null, ai: true, facts: { goods: [line('Kurtka', { quantity: 300 })] } as IntakeState['facts'] },
       'podklyuch',
     );
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
-    expect(ctx.texts()).not.toContain(STALE);
+    expect(ctx.texts().at(-1)).toBe(STALE);
     expect(activeIntake(chatId)!.stage).toBe('review');
+    await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
+    expect(ctx.texts().at(-1)).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
   },
   c0804: async () => {
     say.mockReset();
@@ -1588,7 +1686,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(prefill.run).toHaveBeenCalled();
   },
   c0805: async () => {
-    const handlers = source('src/modules/platform/telegram/staff-handlers.ts');
+    // The file reader moved to calc-files.ts (docs/SAKKIZ-R3.md K5).
+    const handlers = source('src/modules/platform/telegram/calc-files.ts');
     expect(handlers).toContain("type SheetRefusalReason = Extract<import('../../wms/deals/goods-file').GoodsFileRead, { kind: 'refused' }>['reason'];");
     expect(handlers).toContain('const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string> = {');
     expect(source('src/modules/wms/deals/goods-file.ts')).toContain("| { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };");
@@ -1624,7 +1723,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1336: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(150, 'lines'), 'A.xlsx');
-    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»').patch);
+    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
     updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
@@ -1638,7 +1737,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1337: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(400, 'lines'), 'A.xlsx');
-    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }, '«B.pdf»').patch);
+    updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
     updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
@@ -1698,54 +1797,71 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(prompt.slice(prompt.indexOf('Другие листы книги'))).toContain('[Таблица обрезана');
   },
   c1375: async () => {
-    const { chatId, asked } = await skipThenReread();
-    expect(asked).toEqual(['❓ 1-qator «Shim»']);
-    expect(activeIntake(chatId)!.lineDone).toEqual([{ index: 1, name: 'Kurtka' }]);
+    // Re-anchored onto ANSWERS: the answered Kurtka lands on its own line
+    // after the re-read reorders, and only Shim is ⚠️.
+    const { chatId, table } = await answerThenReread();
+    expect(table).toContain('⚠️ 1. Shim');
+    expect(table).toContain('✅ 2. Kurtka — 150 kg');
+    expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
   },
   c1376: async () => {
+    // Re-anchored onto ANSWERS: two lines answered, the stored collection
+    // remembers both, and what is missing never names them again.
     const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+      stage: 'review',
+      facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf'), line('Shapka')] } as IntakeState['facts'],
+    });
+    const ctx = fakeCtx();
+    await answer(ctx, chatId, '1: 150 kg');
+    await answer(ctx, chatId, '2: 20 kg');
+    expect(activeIntake(chatId)!.lineAnswers).toMatchObject([
+      { index: 0, name: 'Kurtka' },
+      { index: 1, name: 'Shim' },
+    ]);
+    expect(ctx.texts().filter((t) => t.startsWith('✅ 2-qator «Shim»')).at(-1)).toContain('⚠️ Yana 4 ta: 3-qator, 4-qator, umumiy brutto, umumiy hajm.');
+  },
+  c1377: async () => {
+    // RETIRED with MAX_QUESTION_ROUNDS (his 1.10 c): the table has no rounds,
+    // so nothing replaces it — ⏭ is «eskirgan» and the table stays.
+    const { chatId } = collection({
+      stage: 'review',
       facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf'), line('Shapka')] } as IntakeState['facts'],
     });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
-    expect(activeIntake(chatId)).toMatchObject({ askingIndex: 2, lineDone: [{ index: 0, name: 'Kurtka' }, { index: 1, name: 'Shim' }] });
-  },
-  c1377: async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 3,
-      facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf'), line('Shapka')] } as IntakeState['facts'],
-    });
-    await handleCalcCallback(fakeCtx(), chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
+    expect(ctx.texts().at(-1)).toBe(STALE);
+    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineAnswers: [] });
   },
   c1545: async () => {
     expect(goodsProblems(pasteItems('Kurtka 6201 93 0000 300 dona 12.5$') as unknown as Line[], { rows: [{ tnvedCode: '6201930000', quantity: 300 }], count: 1 })).toEqual([]);
   },
   c1721: async () => {
-    const { chatId, asked } = await skipThenReread();
-    expect(asked).toEqual(['❓ 1-qator «Shim»']);
-    expect(activeIntake(chatId)!.lineDone).toEqual([{ index: 1, name: 'Kurtka' }]);
+    const { chatId, table } = await answerThenReread();
+    expect(table).not.toContain('⚠️ 2. Kurtka');
+    expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Kurtka', { weightKg: 150 }));
+    expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
   },
   c1722: async () => {
+    // Re-anchored onto ANSWERS: a reading WITHOUT the line keeps the answer
+    // (unplaced, -1), and the retry that brings the line back brings its
+    // figure with it — Shim is the first ⚠️.
     const three = [line('Kurtka'), line('Shim'), line('Sharf')];
-    const { chatId } = collection({ stage: 'question', askingIndex: 0, round: 1, material: ['yana fayl bor'], facts: { goods: three } as IntakeState['facts'] });
+    const { chatId } = collection({ stage: 'review', material: ['yana fayl bor'], facts: { goods: three } as IntakeState['facts'] });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
+    await answer(ctx, chatId, '1: 150 kg');
     await handleCalcCallback(ctx, chatId, 'more');
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'timeout' });
+    // Both readings run as the job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
     model.analyze.mockResolvedValueOnce(reads(three));
     await handleCalcCallback(ctx, chatId, 'reread');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
-    expect(ctx.texts().filter((t) => t.startsWith('❓')).at(-1)).toMatch(/^❓ 2-qator «Shim»/);
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
+    expect(activeIntake(chatId)!.facts.goods?.[0]).toEqual(line('Kurtka', { weightKg: 150 }));
+    const table = ctx.texts().at(-1)!;
+    expect(table).toContain('✅ 1. Kurtka — 150 kg');
+    expect(table).toContain('⚠️ 2. Shim');
   },
   c1743: async () => {
     const built = await buildFile(xlsx({ name: 'S', rows: [['Name badge holder'], ['Lanyard 100 pcs 5 kg'], ['Clip 200 pcs 3 kg']] }));
@@ -1865,12 +1981,14 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       material: ['Kurtka'],
       aiGoods: 'add',
       invoiceGoods: [line('Kurtka', { quantity: 300, weightKg: 150 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
+    // Reached through the job (P2, §11): the tail read is the one it sent.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     expect(ctx.texts().at(-1)).not.toContain('Faqat yozilganidan o‘qildi.');
   },
   c1893: async () => {
@@ -1879,7 +1997,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       material: ['x'],
       aiGoods: 'add',
       invoiceGoods: [line('Ladies jacket', { quantity: 300, weightKg: 150 }), line('Kurtka', { quantity: 100, weightKg: 50 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce(
       reads(
@@ -1892,8 +2010,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       ),
     );
     const ctx = fakeCtx();
+    // Reached through the job (P2, §11).
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     const summary = ctx.texts().find((t) => t.includes('Excel’dagi bilan bir xil')) ?? ctx.texts().at(-1)!;
     expect(summary.split('\n').some((l) => l.startsWith('⚠️') && l.includes('Excel’dagi bilan bir xil'))).toBe(true);
     for (const step of ['step one', 'step two', 'step three']) expect(summary).toContain(step);

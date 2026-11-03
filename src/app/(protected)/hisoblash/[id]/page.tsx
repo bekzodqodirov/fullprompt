@@ -12,7 +12,7 @@ import {
   endingOf,
   type CalcEnding,
 } from '@/modules/wms/calc/service';
-import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
+import { groupLawsOf } from '@/modules/wms/calc/needs';
 import { measureNeedText, type CalcT } from './words';
 import { linkedReceipts } from '@/modules/wms/calc/link';
 import { chainLinksOf, chainOf, type ChainLink, type ChainVersion } from '@/modules/wms/calc/chain';
@@ -155,12 +155,20 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
     if (!isServerBehind(err)) throw err;
     logger.error({ err, id }, '[calc] workspace: server behind');
   }
+  // The revision «Готово» presses with (P6, review adv-2): the OLDER of the
+  // two clocks this page was drawn from. The header's route/kg/m³, the
+  // checklist and — wherever the workspace's table is not on screen — the
+  // goods are printed from `row`, read before `loadWorkspace`; an addition
+  // committed between the two reads would sit in the workspace's clock but
+  // not in what the fold's VED reads, and the newer clock would let it
+  // through. The older one only ever refuses (fails closed): the predicate
+  // counts additions alone, so the VED's and the machine's writes in that gap
+  // trip nothing. A server-behind page has no workspace — the row's clock.
+  const drawnRev = workspace ? Math.min(row.rev, workspace.rev) : row.rev;
   // The checklist, with a GROUPED line asking its group's law (judge S9) — the
   // chip and the row's cell border then read the same law. On the workspace's
   // own catch: with no workspace on screen the book's reading stands.
-  const groupLawBySeq = workspace
-    ? new Map<number, NeedLaw>(workspace.groups.flatMap((g) => g.items.map((i) => [i.seq, needLawOf(g)] as const)))
-    : null;
+  const groupLawBySeq = workspace ? groupLawsOf(workspace.groups) : null;
   const checklist = await checklistFor(row, groupLawBySeq).catch((err: unknown) => {
     if (!isServerBehind(err)) throw err;
     return { missing: row.missing, lines: [] };
@@ -577,6 +585,8 @@ export default async function CalcRequestPage({ params }: { params: Promise<{ id
                 mine={row.assigneeId === actor.id}
                 assigned={Boolean(row.assigneeId)}
                 canSeal={workspace ? canSeal(workspace) : false}
+                // The revision this page was drawn at (P6) — see `drawnRev`.
+                sawRev={drawnRev}
               />
             </section>
           )}

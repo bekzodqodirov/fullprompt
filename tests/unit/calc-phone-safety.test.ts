@@ -259,7 +259,14 @@ describe('his 2b (2026-10-07): «boshqa kishi hozirgina o‘zgartirdi» is the P
     // given, and the sheet adds its own beside the built edit before calling it.
     const sender = constBody('send');
     expect(sender).not.toMatch(/expect:|expectFor\(|lookFirst\(|probeClock\(/);
-    expect(sender).toContain('saveTableAction(id, { items, adds })');
+    // The one thing the sender adds is the revision the screen was drawn at
+    // (review lmp-1): the server refuses on a SELLER's addition newer than it
+    // — `calc_amendments`, never a colleague's save — so 2b's
+    // last-writer-wins between people stands. The grid's save hands in the
+    // rev its held drafts were TYPED over, and the older of the two is posted
+    // (fix review FR-9: a refresh moved the screen's rev under them).
+    expect(sender).toContain('const sawRev = sawRevFor(revAtPress, typedAt);');
+    expect(sender).toContain('saveTableAction(id, { items, adds, sawRev })');
   });
 
   it('every way into the sheet is one of four, and only the phone cards are handed an opener', () => {
@@ -438,8 +445,16 @@ describe('D9: ONE way to reload a stale tab', () => {
     ['items-table.tsx', TABLE],
     ['row-sheet.tsx', SHEET],
   ])('%s reloads through reloadFresh() and never by hand', (_name, source) => {
-    expect(source).toContain('reloadFresh(');
+    // The calc screens ask build-check's `reloadCure`, whose 'fresh' IS
+    // reloadFresh (fix review W-5: «sahifani yangilang» after a seller's
+    // addition got its own plain reload beside it).
+    expect(source.includes('reloadFresh(') || source.includes('runReload(reloadCure(')).toBe(true);
     expect(source).not.toMatch(/location\.assign\(|location\.href\s*=/);
+  });
+  it('the one reload rule sends a stale build through reloadFresh()', () => {
+    const rule = readFileSync('src/components/build-check.ts', 'utf8');
+    expect(rule).toContain("if (cure === 'fresh') void reloadFresh();");
+    expect(rule).toContain("if (code === 'stale_build') return 'fresh';");
   });
 });
 

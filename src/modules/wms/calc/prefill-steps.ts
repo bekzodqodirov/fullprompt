@@ -47,8 +47,15 @@ export const MAX_PICK_ROWS = 40;
  */
 export const PICK_HEADING_MS = 5000;
 
-/** `saveTable`'s options for a revision the caller carries — none for null. */
-const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { expectRev });
+/**
+ * `saveTable`'s options for a revision the caller carries — none for null.
+ * `handsOff` beside it (docs/SAKKIZ-R3.md §10.2.3): these are the MACHINE's
+ * saves, so each one moves the hands-off stamp along with the clock, in its
+ * own transaction — a pass killed after this save leaves the stamp here, and
+ * the request still reads «nobody but the machine» (durability-6). No chain,
+ * no stamp: a save that compares nothing proves nothing about who was here.
+ */
+const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { expectRev, handsOff: true });
 
 /**
  * A machine save refused because a PERSON saved in between (K14). Nothing was

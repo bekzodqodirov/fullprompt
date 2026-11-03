@@ -1131,3 +1131,8 @@ export const intakeClientSummaryCases = corpusCases<CorpusCase<string, string | 
 export const attemptStandingCases = corpusCases<CorpusCase<[string, number], string>>('attemptStandingCases');
 
 export const scenarioCases = corpusCases<ScenarioCase>('scenarioCases');
+
+/** The add door's top-up: is a line read from new material that STORED row (round 3, P4)? */
+export const sameGoodsLineCases = corpusCases<CorpusCase<{ kept: Record<string, unknown>; read: Record<string, unknown> }, boolean>>(
+  'sameGoodsLineCases',
+);

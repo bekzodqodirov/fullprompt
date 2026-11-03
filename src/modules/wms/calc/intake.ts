@@ -32,8 +32,14 @@ import {
 import type { GoodsRow } from '../deals/goods-import';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
+import type { TableRow, TableTarget } from './line-address';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units';
+import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
+import { clipText } from '../../platform/telegram/format';
+
+/** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
+export { fitTelegram };
 
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
@@ -267,6 +273,11 @@ export interface CalcGoodsFact {
    * line's code up in `laws`; null = the line has no known law.
    */
   law?: NeedLaw | null;
+  /** A STORED row's own id and number (docs/SAKKIZ-R3.md K14) — what the add
+   * door writes by, and the number the VED's screen prints. Absent on a line
+   * that was only read, never stored. */
+  itemId?: string | null;
+  seq?: number;
 }
 
 /** One line as the rest of the system should read it. */
@@ -612,11 +623,19 @@ export function lineFiguresText(g: CalcItemFact): string {
  * (`needWhatUz`/`needWhyUz`, judge UX5), never restated here.
  */
 export function lineNeedText(line: LineNeed): string {
-  const what =
-    line.pinned.length > 0
-      ? line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')
-      : `${needWhatUz('dona')} yoki ${needWhatUz('kg')}`;
-  return `${line.index + 1}-qator «${line.name}»: ${what}`;
+  return `${line.index + 1}-qator «${line.name}»: ${lineNeedWhat(line)}`;
+}
+
+/**
+ * What a line still owes, without its address — the table's ↳ prints exactly
+ * this (docs/SAKKIZ-R3.md §2.1, product-fit-19 c): a row stating nothing reads
+ * «soni (dona) yoki sof og‘irligi (kg)», never a bare «og‘irligi» that reads
+ * like the table's brutto.
+ */
+export function lineNeedWhat(line: LineNeed): string {
+  return line.pinned.length > 0
+    ? line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')
+    : `${needWhatUz('dona')} yoki ${needWhatUz('kg')}`;
 }
 
 /**
@@ -668,55 +687,435 @@ export function ambiguousTotalText(a: TotalDoubt): string {
 const LINE_FIELDS: readonly CalcField[] = ['itemMeasure', 'lineNeed'];
 
 /**
- * The message the staff member reads before pressing confirm — the facts as
- * the system understood them, and, in red, what a quote still needs.
- *
- * Deliberately shows what is THERE as well as what is missing: a checklist
- * of absences alone gives no way to catch the commonest error, which is not
- * a missing number but a misread one. Every still-missing LINE is named by
- * its number and its name (P1.3) — «tovarning soni yoki og‘irligi» named
- * none of the ten lines it was about.
+ * A stored row the new material restates with another figure (P4's
+ * `IntakeState.conflicts`, law-money-5) — the table's shape for it, so this
+ * pure file never names the bot's state. `choice` null = unanswered.
  */
-export function intakeSummaryText(input: {
+export interface TableConflict {
+  itemId: string;
+  seq: number;
+  field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty';
+  unit: string;
+  stored: number | null;
+  read: number;
+  choice: 'add' | 'rep' | 'ved' | null;
+}
+
+/** An add collection's part of the table (§2.4) — null on a new request. */
+export interface TableAmend {
+  cardLabel: string;
+  storedCount: number;
+  totalsStale: readonly ('weightKg' | 'volumeM3')[];
+  conflicts: readonly TableConflict[];
+  askedSeqs: readonly number[] | null;
+  /** The VED has started on the job (`standingAtOpen`): the confirm is «📨 VED ga yuborish». */
+  started?: boolean;
+}
+
+/** What the table is drawn from — everything a row, a total and the closing need. */
+export interface TableInput {
   section: CalcSection;
   facts: CalcFacts;
   laws: ReadonlyMap<string, NeedLaw>;
   clientLabel: string | null;
   fileCount: number;
-  /** Totals the typed material states two ways, or against the answer — asked, never guessed. */
-  ambiguous?: TotalDoubt[];
-}): string {
-  const missing = missingFields(input.section, input.facts, input.laws);
-  const fields = missing.filter((f) => !LINE_FIELDS.includes(f));
-  const lines = lineNeeds(input.section, input.facts, input.laws);
-  const goods = itemFacts(input.facts);
-  const goodsLines = goods
-    .slice(0, 15)
-    .map((g) => {
-      const figures = lineFiguresText(g);
-      return `· ${g.name}${figures ? ` — ${figures}` : ''}${g.tnvedCode ? ` · ${g.tnvedCode}` : ''}`;
-    })
-    .join('\n');
-  const ambiguous = input.ambiguous ?? [];
+  /** R2's doubts (`IntakeState.ambiguousTotals`, CONC-2) — asked, never guessed (re-check p3-7). */
+  ambiguous: readonly TotalDoubt[];
+  amend: TableAmend | null;
+  /** Notes + AI words + certificate, already rendered — fixed, never cut. */
+  tail: string;
+  /**
+   * Totals the collection's lines left behind (calc-dialog `staleTotalsOf`):
+   * an add collection's (`amendTotalsStale`, also on `amend`) and a SEEDED
+   * one's brutto under a line added beyond the returned rows (review COMP-4).
+   * Out of `amend` because a seeded collection has none (fix review FR-4: the
+   * stale brutto was computed and never drawn).
+   */
+  totalsStale?: readonly ('weightKg' | 'volumeM3')[];
+  /**
+   * The words of a row's name the ANSWER PARSER reads as naming that row alone
+   * among `rows` — line-address.ts `nameWordFor`, handed in by the caller
+   * because line-address cannot be imported here (it imports intake-manual,
+   * which imports this file). The ✍️ line teaches only such a name (review
+   * PF-4): «Kurtka 30 dona» over two kurtka rows was refused «name_many» by
+   * the parser it taught.
+   */
+  nameWord: (rows: readonly TableRow[], row: TableRow) => string | null;
+}
 
-  return (
-    `${SECTION_LABEL[input.section]}\n` +
-    `Mijoz: ${input.clientLabel ?? '— (yangi)'}\n` +
-    (input.section === 'rastamojka'
-      ? ''
-      : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `${weightLabel(input.section, input.facts)}: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
-    (goods.length
-      ? `Tovarlar (${goods.length}):\n${goodsLines}${goods.length > 15 ? '\n…' : ''}\n`
-      : 'Tovarlar: —\n') +
-    (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
-    (ambiguous.length ? `\n${ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`).join('\n')}\n` : '') +
-    (missing.length
-      ? (fields.length ? `\n⚠️ Yetishmayapti: ${fields.map((f) => FIELD_LABEL[f]).join(', ')}\n` : '\n') +
-        (lines.length ? `⚠️ Qatorlarda yetishmayapti:\n${linesBlock(lines)}\n` : '') +
-        'Yetishmaganini yozib yuboring yoki shundayligicha tasdiqlang.'
-      : '\n✅ Ma’lumot to‘liq. Tasdiqlaysizmi?')
+/**
+ * Every row's number, the ONE numbering (§1's table, product-fit-4,
+ * regression-8): the table, the echo, the undo, the offers and the address
+ * parser all read `TableRow.no`. A stored row's `seq` (gaps after a VED
+ * deletion stay gaps — the numbers the VED's screen and the 2.8 b ask print),
+ * a new request's position, or `max(seq) + k` for a line an add collection
+ * adds. `needs` are the units the line still owes (`lineNeeds`).
+ */
+export function tableRowsOf(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): TableRow[] {
+  const goods = input.facts.goods ?? [];
+  const needs = lineNeeds(input.section, input.facts, input.laws);
+  const seqs = goods.flatMap((g) => (typeof g.seq === 'number' ? [g.seq] : []));
+  const top = seqs.length > 0 ? Math.max(...seqs) : 0;
+  let added = 0;
+  return goods.map((g, index) => {
+    const seq = typeof g.seq === 'number' ? g.seq : null;
+    const no = seq ?? (seqs.length > 0 ? top + ++added : index + 1);
+    return { no, index, seq, name: g.name, needs: needs.find((l) => l.index === index)?.units ?? [] };
+  });
+}
+
+/**
+ * Which totals rows are ⚠️ — `missingFields` minus `LINE_FIELDS`, the ONE home
+ * on every section (regression-22). R2's `totalsQuestion` said «rastamojka
+ * never asks» while MR-9's `REQUIRED_FIELDS.rastamojka` asks brutto and m³, so
+ * the rule had two homes that disagreed; the table reads this one.
+ */
+function totalsMissing(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): CalcField[] {
+  return missingFields(input.section, input.facts, input.laws).filter((f) => !LINE_FIELDS.includes(f));
+}
+
+/** A conflict is open while the seller has not answered it. */
+const openConflicts = (amend: TableAmend | null) => (amend?.conflicts ?? []).filter((c) => c.choice === null);
+
+/** The stale totals, wherever the caller put them (`TableInput.totalsStale`, `TableAmend.totalsStale`). */
+const staleTotalsIn = (input: Pick<TableInput, 'amend' | 'totalsStale'>) =>
+  new Set([...(input.totalsStale ?? []), ...(input.amend?.totalsStale ?? [])]);
+
+/**
+ * Every ⚠️ target of the table, in its order: the lines (a need, or an
+ * unanswered conflict), the totals, the route. What an unaddressed answer may
+ * mean (`TableRef.open`), and what the echo's «Yana {k} ta» counts.
+ */
+export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend' | 'totalsStale'>): TableTarget[] {
+  const conflicted = new Set(openConflicts(input.amend).map((c) => c.itemId));
+  const goods = input.facts.goods ?? [];
+  const lines: TableTarget[] = tableRowsOf(input)
+    .filter((r) => r.needs.length > 0 || conflicted.has(goods[r.index]?.itemId ?? ''))
+    .map((r) => ({ line: r.no }));
+  const missing = totalsMissing(input);
+  const stale = staleTotalsIn(input);
+  const totals: TableTarget[] = (['weightKg', 'volumeM3'] as const)
+    .filter((f) => missing.includes(f) || stale.has(f))
+    .map((f) => ({ totals: f }));
+  const route: TableTarget[] = missing.includes('fromCity') || missing.includes('toCity') ? [{ route: true }] : [];
+  return [...lines, ...totals, ...route];
+}
+
+/** «1, 3, 5–9, 12» — numbers as ranges, in order. */
+export function numberRanges(nos: readonly number[]): string {
+  const sorted = [...new Set(nos)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j += 1;
+    out.push(j > i ? `${sorted[i]}–${sorted[j]}` : String(sorted[i]));
+    i = j + 1;
+  }
+  return out.join(', ');
+}
+
+/** How many ⚠️ rows `answerHow` asks for a name of its own — the example needs one, not the best. */
+export const NAME_ROWS_TRIED = 3;
+
+/** A figure for the table's examples, per unit — «2: 40 juft», «Shapka 30 dona» (§2.1 literally). */
+const EXAMPLE_VALUE: Record<NeedUnit, number> = {
+  dona: 30, '1000_dona': 3000, kg: 150, m3: 2, m2: 120, juft: 40, litr: 50, sm3: 1500,
+};
+export const exampleFigure = (unit: NeedUnit) =>
+  unit === '1000_dona' ? figureLabel(EXAMPLE_VALUE[unit], 'dona') : figureLabel(EXAMPLE_VALUE[unit], unit);
+
+/** The field a conflict names, in the seller's word, for «so‘rovda og‘irlik yo‘q». */
+const CONFLICT_FIELD_WORD: Record<TableConflict['field'], string> = {
+  quantity: 'son',
+  weightKg: 'og‘irlik',
+  volumeM3: 'hajm',
+  measureQty: 'o‘lchov',
+};
+
+/** «faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?» (§2.1). */
+export function conflictText(c: Pick<TableConflict, 'field' | 'unit' | 'stored' | 'read'>): string {
+  const unit = needShortUz(c.unit as NeedUnit) ?? c.unit;
+  if (c.stored === null) {
+    return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${CONFLICT_FIELD_WORD[c.field]} yo‘q — yozilsinmi yoki VED hal qilsinmi?`;
+  }
+  return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${fmt(c.stored)} — qo‘shilsinmi (${fmt(c.stored + c.read)}), o‘rniga (${fmt(c.read)}) yoki VED hal qilsinmi?`;
+}
+
+/** One goods row of the table: its line, and the ↳ under it when it is ⚠️ — ONE entry, a cut never separates them. */
+interface TableEntry {
+  no: number;
+  warn: boolean;
+  line: string;
+  /** The needs' ↳ text (groupable), and the conflicts' own ↳ lines. */
+  need: string | null;
+  conflicts: string[];
+}
+
+const entryText = (e: TableEntry, need: boolean) =>
+  [e.line, ...(need && e.need ? [`   ↳ ${e.need}`] : []), ...e.conflicts.map((c) => `   ↳ ${c}`)].join('\n');
+
+/**
+ * The table the seller reads after a reading and after every answer (his
+ * 1.10 c, docs/SAKKIZ-R3.md §2.1) — it replaces the summary. Every line ✅ or
+ * ⚠️ with WHY under it, the totals rows, and how to answer, so a seller fills
+ * any line in one message instead of being walked through a question per row.
+ *
+ * Over Telegram's 4096 (§2.1): every ⚠️ row is always shown; ✅ rows while the
+ * text fits, the rest collapsed into one numbered line; then ⚠️ rows sharing
+ * one ↳ grouped under the last of them; only then are ⚠️ rows cut, by
+ * `fitTelegram`'s own «… va yana N ta qator», with the closing saying what to
+ * send instead. `maxLines: Infinity`: R2's 25-line cap is the AI answer's
+ * rule, and on the table it would cut row 26 of a short table that fits
+ * (product-fit-10). Pure.
+ */
+export function intakeTableText(input: TableInput): string {
+  const rows = tableRowsOf(input);
+  const items = itemFacts(input.facts);
+  const needs = lineNeeds(input.section, input.facts, input.laws);
+  const freightOnly = !REQUIRED_FIELDS[input.section].includes('itemMeasure');
+  const goods = input.facts.goods ?? [];
+  const conflicts = openConflicts(input.amend);
+  const client = input.clientLabel ?? 'mijoz hali yozilmagan';
+
+  const head = input.amend
+    ? [`➕ Qo‘shimcha · ${input.amend.cardLabel} · ${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`]
+    : [SECTION_LABEL[input.section], `Mijoz: ${client}`];
+  if (input.fileCount) head.push(`Fayllar: ${input.fileCount}`);
+  head.push('', input.amend ? `So‘rovdagi qatorlar (${input.amend.storedCount}):` : `Tovarlar (${rows.length}):`);
+
+  const entries: TableEntry[] = rows.map((r) => {
+    const item = items[r.index]!;
+    const need = needs.find((l) => l.index === r.index);
+    const itemId = goods[r.index]?.itemId ?? null;
+    const own = itemId === null ? [] : conflicts.filter((c) => c.itemId === itemId);
+    const warn = !freightOnly && (need !== undefined || own.length > 0);
+    const mark = freightOnly ? '·' : warn ? '⚠️' : '✅';
+    const fresh = input.amend && r.seq === null ? '🆕 ' : '';
+    const figures = lineFiguresText(item);
+    return {
+      no: r.no,
+      warn,
+      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}` : ''}`,
+      need: !freightOnly && need ? lineNeedWhat(need) : null,
+      conflicts: own.map(conflictText),
+    };
+  });
+
+  const missing = totalsMissing(input);
+  const doubted = new Set(input.ambiguous.map((a) => a.field));
+  const stale = staleTotalsIn(input);
+  // «yangi tovar qo‘shildi» only when a line WAS added (fix review W-2): a
+  // stored row's corrected weight that was copied from the brutto (lmp-2), or
+  // a stored row's corrected m³ under a typed total, leaves the total stale
+  // with nothing added — and the table said a new item came. A seeded
+  // collection's total is stale only by an added line.
+  const staleWhy = !input.amend || rows.some((r) => r.seq === null) ? 'yangi tovar qo‘shildi, yangilansinmi?' : 'yangilansinmi?';
+  const totalsRows: string[] = [];
+  const field = (f: 'weightKg' | 'volumeM3', ok: string, staleWords: string) => {
+    if (doubted.has(f)) return `⚠️ ${FIELD_LABEL[f]} — ikki xil yozilgan (pastda)`;
+    if (missing.includes(f)) return `⚠️ ${FIELD_LABEL[f]} — yozilmagan`;
+    if (stale.has(f)) return staleWords;
+    return ok;
+  };
+  totalsRows.push(
+    field(
+      'weightKg',
+      `✅ ${weightLabel(input.section, input.facts)}: ${fmt(Number(input.facts.weightKg))} kg`,
+      `⚠️ umumiy brutto og‘irligi (kg) — ${staleWhy} «jami … kg»`,
+    ),
+    field(
+      'volumeM3',
+      `✅ Hajm: ${volumeText(input.facts)}`,
+      `⚠️ umumiy hajmi (kub) — ${staleWhy} «jami … kub»`,
+    ),
   );
+  if (input.section !== 'rastamojka') {
+    const ends = (['fromCity', 'toCity'] as const).filter((f) => missing.includes(f));
+    if (ends.length === 0) {
+      totalsRows.push(`✅ Yo‘nalish: ${input.facts.fromCity?.trim()} → ${input.facts.toCity?.trim()}`);
+    } else {
+      for (const end of ends) totalsRows.push(`⚠️ ${FIELD_LABEL[end]} — yozilmagan`);
+    }
+  }
+  const totalsWarn = totalsRows.some((r) => r.startsWith('⚠️'));
+  const doubts = input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
+
+  const warnRows = entries.filter((e) => e.warn);
+  const confirm = input.amend ? (input.amend.started ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
+  const vedLine = `Bilmagan qatoringizni VED to‘ldiradi — ${confirm} ni hozir ham bosishingiz mumkin.`;
+  const closing: string[] = [];
+  if (rows.length === 0) {
+    closing.push('⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.', vedLine);
+  } else if (warnRows.length === 0 && !totalsWarn) {
+    closing.push('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
+  } else {
+    closing.push(
+      warnRows.length > 0 && totalsWarn
+        ? `⚠️ ${warnRows.length} ta qatorda va umumiyda ma’lumot yetishmayapti.`
+        : warnRows.length > 0
+          ? `⚠️ ${warnRows.length} ta qatorda ma’lumot yetishmayapti.`
+          : '⚠️ Umumiyda ma’lumot yetishmayapti.',
+      ...answerHow(input, rows, missing, stale),
+      vedLine,
+    );
+  }
+
+  const tail = input.tail ? input.tail.split('\n') : [];
+  const fixed = (cut: boolean) => [
+    '',
+    'Umumiy:',
+    ...totalsRows,
+    ...doubts,
+    '',
+    ...closing,
+    ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
+  ];
+  const goodsLines = rows.length === 0 ? [`⚠️ ${FIELD_LABEL.goods} — yozilmagan`] : null;
+  const length = (lines: string[], cut = false) => [...head, ...lines, ...fixed(cut), ...tail].join('\n').length;
+  const fits = (lines: string[]) => length(lines) <= TELEGRAM_LIMIT;
+  const draw = (lines: string[], cut = false) =>
+    fitTelegram(head, lines, fixed(cut), tail, { maxLines: Number.POSITIVE_INFINITY });
+
+  if (goodsLines) return draw(goodsLines);
+  const all = entries.map((e) => entryText(e, true));
+  if (fits(all)) return draw(all);
+
+  // ✅ rows while they fit, the rest one line: «✅ yana 4 ta qator to‘liq: 1, 3, 5–7».
+  const withOk = (list: TableEntry[], needText: (e: TableEntry) => string): string[] | null => {
+    const ok = list.filter((e) => !e.warn);
+    for (let k = ok.length - 1; k >= 0; k -= 1) {
+      const shown = new Set(ok.slice(0, k).map((e) => e.no));
+      const gone = ok.slice(k).map((e) => e.no);
+      const lines = [
+        ...list.filter((e) => e.warn || shown.has(e.no)).map(needText),
+        `✅ yana ${gone.length} ta qator to‘liq: ${numberRanges(gone)}`,
+      ];
+      if (fits(lines)) return lines;
+    }
+    return null;
+  };
+  const collapsed = withOk(entries, (e) => entryText(e, true));
+  if (collapsed) return draw(collapsed);
+
+  // ⚠️ rows sharing one ↳ lose their own and get one grouped line under the
+  // last of them — a 60-line clothing invoice priced only in kg repeats one
+  // reason sixty times (product-fit-10).
+  const byNeed = new Map<string, number[]>();
+  for (const e of warnRows) if (e.need) byNeed.set(e.need, [...(byNeed.get(e.need) ?? []), e.no]);
+  const grouped = new Set([...byNeed].filter(([, nos]) => nos.length > 1).map(([need]) => need));
+  const groupedText = (e: TableEntry) => {
+    if (!e.warn || !e.need || !grouped.has(e.need)) return entryText(e, true);
+    const nos = byNeed.get(e.need)!;
+    const last = nos[nos.length - 1] === e.no;
+    return [entryText(e, false), ...(last ? [`   ↳ ${numberRanges(nos)}: ${e.need}`] : [])].join('\n');
+  };
+  const groupedAll = entries.map(groupedText);
+  if (fits(groupedAll)) return draw(groupedAll);
+  const regrouped = withOk(entries, groupedText);
+  if (regrouped) return draw(regrouped);
+  const okCount = entries.filter((e) => !e.warn).length;
+  const warnOnly = [
+    ...entries.filter((e) => e.warn).map(groupedText),
+    ...(okCount > 0
+      ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`]
+      : []),
+  ];
+  if (fits(warnOnly)) return draw(warnOnly);
+  // Only then are ⚠️ rows shortened — by `fitTelegram`'s own count line —
+  // and the closing says what to send instead. A grouped reason leaves its
+  // rows for the lines after the cut (review PF-5): hung under the LAST row of
+  // its group, it was the first thing the cut took, and a 60-row clothing
+  // table said what every row lacked nowhere.
+  // The ✅ rows' one line stays out of the cut too (fix review W-12): one
+  // entry of the cut list standing for all of them, it went first, and the
+  // count line called it one row — «… va yana 10 ta qator» with 19 hidden.
+  // Now the count is the ⚠️ rows the cut took, and nothing else is hidden.
+  const reasons = [...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`);
+  const bare = (e: TableEntry) => (e.warn && e.need && grouped.has(e.need) ? entryText(e, false) : entryText(e, true));
+  const cutRows = entries.filter((e) => e.warn).map(bare);
+  const okLine =
+    okCount > 0 ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`] : [];
+  return fitTelegram(head, cutRows, [...okLine, ...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
+}
+
+/**
+ * How to answer, built from THIS table (§2.1): the first ⚠️ line's number and
+ * its first unit, a ⚠️ line's first name word (the next one, when there is
+ * one, so the two examples show two rows), and the total the table still
+ * owes. An add collection says it in its own words (§2.4).
+ */
+function answerHow(
+  input: TableInput,
+  rows: readonly TableRow[],
+  missing: readonly CalcField[],
+  stale: ReadonlySet<'weightKg' | 'volumeM3'>,
+): string[] {
+  const needing = rows.filter((r) => r.needs.length > 0);
+  const first = needing[0];
+  const numbered = first ? `${first.no}: ${exampleFigure(first.needs[0]!)}` : null;
+  if (input.amend) {
+    const asked = (input.amend.askedSeqs ?? [])
+      .map((seq) => rows.find((r) => r.seq === seq))
+      .filter((r): r is TableRow => r !== undefined && r.needs.length > 0);
+    if (asked.length > 0) {
+      // At most LINES_NAMED named, the rest counted (review PF-6): the closing
+      // is never cut, so a 250-row ask pushed the instruction itself past
+      // Telegram's 4096.
+      const named =
+        asked
+          .slice(0, LINES_NAMED)
+          .map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`)
+          .join(', ') + (asked.length > LINES_NAMED ? ` va yana ${asked.length - LINES_NAMED} ta` : '');
+      return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
+    }
+    // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
+    // else an open conflict as its typed answer, else the total the table
+    // owes — «jami 3500 kg» under a ✅ brutto taught a figure nobody asked for.
+    const conflict = input.amend.conflicts.find((c) => c.choice === null);
+    const conflictExample = conflict
+      ? `${rows.find((r) => r.seq === conflict.seq)?.no ?? conflict.seq}: ${figureLabel(conflict.read, conflict.unit as NeedUnit)}`
+      : null;
+    const totalExample =
+      missing.includes('weightKg') || stale.has('weightKg')
+        ? 'jami 3500 kg'
+        : missing.includes('volumeM3') || stale.has('volumeM3')
+          ? 'jami 12 kub'
+          : null;
+    const example = numbered ?? conflictExample ?? totalExample ?? 'Yiwu → Toshkent';
+    return [`✍️ Yetishmaganini yozing: «${example}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
+  }
+  // A name the parser reads as THAT row alone (`nameWord`, review PF-4) — the
+  // next ⚠️ row's when it has one, so the two examples show two rows; else
+  // another's; none (two rows of one name) → the numbered example only. It
+  // starts with a letter: «100% paxta futbolka» gave «100 30 dona», which
+  // reads as row 100 (review adv-20). At most NAME_ROWS_TRIED rows are asked,
+  // and the first that answers ends the search (fix review FR-3): every ⚠️
+  // row asked, each over every row, was 8 s of the one process on a 500-row
+  // table where no row has a name of its own.
+  let named: { row: TableRow; word: string } | null = null;
+  for (const r of [...needing.slice(1, NAME_ROWS_TRIED), ...needing.slice(0, 1)]) {
+    const word = input.nameWord(rows, r);
+    if (word !== null) {
+      named = { row: r, word };
+      break;
+    }
+  }
+  const examples = [
+    ...(numbered ? [numbered] : []),
+    ...(named ? [`${named.word} ${exampleFigure(named.row.needs[0]!)}`] : []),
+    ...(missing.includes('weightKg') || stale.has('weightKg')
+      ? ['jami 3500 kg']
+      : missing.includes('volumeM3') || stale.has('volumeM3')
+        ? ['jami 12 kub']
+        : []),
+  ];
+  if (examples.length === 0) examples.push('Yiwu → Toshkent');
+  const quoted = examples.map((e) => `«${e}»`);
+  const list = quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} yoki ${quoted.at(-1)}` : quoted[0];
+  return [
+    `✍️ Bir xabarda istalgan qatorni to‘ldiring: ${list}.`,
+    'Bir nechta bo‘lsa — har birini alohida satrga yozing (yoki «;» bilan).',
+  ];
 }
 
 /**
@@ -801,34 +1200,6 @@ export function intakeNoteText(input: {
 }
 
 /**
- * Which line the bot should ask about next, and what to ask (sub-round C).
- *
- * The rule is `lineNeeds`, one row at a time: a row the LAW asks a figure of
- * that it does not state, or a row stating no figure at all. Everything else
- * about the shipment can be left to the VED — never «are you sure», never a
- * form.
- *
- * Freight-only sections ask NOTHING: a truck is priced on the totals, and
- * `lineNeeds` reads `REQUIRED_FIELDS` to say so (#513).
- *
- * `skip` holds the lines already dealt with this collection — answered, or
- * passed with «⏭» — so a re-analysis after «➕ Yana ma'lumot» never asks
- * the same line twice (P1.3). Returns the INDEX into `facts.goods` so the
- * answer is written back onto exactly the row that was asked about — a name
- * is not an address, two lines of a packing list are routinely called the
- * same thing.
- */
-export function nextLineToAsk(
-  section: CalcSection,
-  facts: CalcFacts,
-  laws: ReadonlyMap<string, NeedLaw>,
-  opts: { skip?: readonly number[] } = {},
-): LineNeed | null {
-  const skip = new Set(opts.skip ?? []);
-  return lineNeeds(section, facts, laws).find((l) => !skip.has(l.index)) ?? null;
-}
-
-/**
  * What a BARE «50» means on this line — the one unit the law pins, when it
  * pins exactly one (P1.3). Anything else is asked with buttons: a bare
  * number is never silently a weight (the audit's finding: «a bare number
@@ -882,25 +1253,6 @@ export function numberText(value: number): string {
  */
 export function anyMeasureLine(index: number, name: string): LineNeed {
   return { index, name, pinned: [], anyMeasure: true, units: ['dona', 'kg'] };
-}
-
-/**
- * The question, in the seller's own language — ONE unit only when the law
- * pins it (judge UX5); a baza-only line is asked for a count OR a weight,
- * because either prices it.
- */
-export function lineQuestionText(line: LineNeed): string {
-  const head = `❓ ${line.index + 1}-qator «${line.name}»`;
-  if (line.pinned.length > 0) {
-    const asked = line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ');
-    const example = line.pinned.map((n) => `«${figureLabel(n.unit === 'kg' ? 150 : 300, n.unit)}»`).join(', ');
-    return `${head}: ${asked}.\nMasalan: ${example}.`;
-  }
-  return (
-    `${head} — nechta dona yoki necha kg (sof og‘irlik)?\n` +
-    'Masalan: «50 dona», «300 kg» yoki ikkalasi «300 dona 150 kg». ' +
-    'm², juft yoki litr ham bo‘ladi: «120 m²», «40 juft».'
-  );
 }
 
 /**

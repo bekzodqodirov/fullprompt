@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The «Hisoblatish» collector after the round-4 review (the regression
@@ -15,16 +16,20 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1).
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
   analyzeCollected,
-  carryLineDone,
   endIntake,
   intakeClientLabel,
   pickGoods,
-  resolveLineDone,
+  placeByName,
   sameAsInvoiceNote,
   startIntake,
   typedLeftOutNote,
@@ -49,7 +54,7 @@ function collection(patch: Partial<IntakeState> = {}): { chatId: bigint; state: 
   seq += 1;
   const chatId = BigInt(-9_300_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 function fakeCtx() {
@@ -68,7 +73,10 @@ function fakeCtx() {
   };
 }
 
-beforeEach(() => model.analyze.mockReset());
+beforeEach(() => {
+  model.analyze.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -100,22 +108,24 @@ describe('the lead’s name: the hint cut out of one line, contact lines dropped
   });
 });
 
-describe('a ⏭ survives a reading without the goods (round 4, C-r2)', () => {
-  it('stored: placed where the reading has the line, kept as it was where it has not', () => {
-    expect(carryLineDone([], [{ index: 0, name: 'Kurtka' }])).toEqual([{ index: 0, name: 'Kurtka' }]);
-    expect(
-      carryLineDone([line('Shim'), line('Kurtka')], [
-        { index: 0, name: 'Kurtka' },
-        { index: 3, name: 'Sharf' },
-      ]),
-    ).toEqual([
-      { index: 1, name: 'Kurtka' },
-      { index: 3, name: 'Sharf' },
+describe('an answer survives a reading without the goods (round 4, C-r2; R3 regression-7)', () => {
+  // ⏭ is retired (his 1.10 c); the rule `carryLineDone` held is carried by
+  // `placeByName`'s WRITE-BACK: the same fixtures, the placed index asserted.
+  const at = (index: number, name: string) => ({ index, name, patch: {} });
+  it('stored: placed where the reading has the line, kept (unplaced, -1) where it has not', () => {
+    expect(placeByName([], [at(0, 'Kurtka')]).entries).toEqual([at(-1, 'Kurtka')]);
+    expect(placeByName([line('Shim'), line('Kurtka')], [at(0, 'Kurtka'), at(3, 'Sharf')]).entries).toEqual([
+      at(1, 'Kurtka'),
+      at(-1, 'Sharf'),
     ]);
   });
 
-  it('the question is still chosen by the placed ones only', () => {
-    expect(resolveLineDone([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf' }])).toEqual([]);
+  it('an unplaced answer writes nothing, and comes back with its line on the next reading', () => {
+    const once = placeByName([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf', patch: { quantity: 5 } }]);
+    expect(once.goods).toEqual([line('Shim'), line('Kurtka')]);
+    const again = placeByName([line('Sharf'), line('Shim')], once.entries);
+    expect(again.goods[0]).toEqual(line('Sharf', { quantity: 5 }));
+    expect(again.entries.map((e) => e.index)).toEqual([0]);
   });
 });
 
@@ -202,12 +212,14 @@ describe('the summary beside an Excel (round 4)', () => {
       material: ['Kurtka 300 dona'],
       aiGoods: 'add',
       invoiceGoods: [line('Kurtka', { quantity: 300, weightKg: 150 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
+    // Reached through the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     const summary = ctx.replies.at(-1)!;
     expect(summary).toContain('Faqat Excel va yozilganidan o‘qildi.');
     expect(summary).toContain('\n\n⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Kurtka».');

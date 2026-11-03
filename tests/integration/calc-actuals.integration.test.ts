@@ -45,6 +45,7 @@ import { confirmCalcLink, setCalcLink, stampCalcLink } from '@/modules/wms/calc/
 import { addCostEntry } from '@/modules/wms/costing/service';
 import { calcActuals, calcCoverage, linkSuggestions } from '@/modules/wms/calc/actuals';
 import { linkReceipt } from '@/modules/wms/deals/service';
+import { sawRev, sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase E1 — the join, and what a ✅ is a record OF.
@@ -247,7 +248,7 @@ async function sealedJob(opts: { weightKg?: number; volumeM3?: number } = {}) {
   await setFreightZone(request.id, 'cn', ctx());
   await sealCalc(
     request.id,
-    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
     ctx(),
   );
   return request.id;
@@ -490,7 +491,7 @@ describe('a correction adopts the cargo it was correcting', () => {
     await setFreightZone(second, 'cn', ctx());
     await sealCalc(
       second,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(second) },
       ctx(),
     );
     const after = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
@@ -551,10 +552,10 @@ describe('the low-confidence counter is about the MODEL, not about a mood', () =
     await setItemBaza(request.id, 1, { bazaUsd: 20, basis: 'unit', source: 'typed' }, ctx());
     // Confirmed LAST: both setters clear the ✅, and an unconfirmed group is
     // a seal blocker (law 1).
-    await confirmGroup(orphan!.id, ctx());
+    await confirmGroup(orphan!.id, ctx(), 'single', await sawRevOfGroup(orphan!.id));
     await sealCalc(
       request.id,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
       ctx(),
     );
     const version = await db.query.calcVersions.findFirst({
@@ -599,7 +600,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
 
   it('records what stood on the screen when a group is confirmed', async () => {
     const { requestId, groupId } = await groupedJob();
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
     expect(row!.confirmVia).toBe('single');
     // The typed rates EQUAL what the seeded PP-3818 dictionary answers for
@@ -611,7 +612,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
 
   it('marks a bulk confirm as bulk — a different act from a single one', async () => {
     const { requestId, groupId } = await groupedJob();
-    await confirmAllGroups(requestId, ctx());
+    await confirmAllGroups(requestId, ctx(), await sawRev(requestId));
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
     expect(row!.confirmVia).toBe('bulk');
   });
@@ -623,7 +624,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
    */
   it('setGroupRates clears the record, not only the confirmation', async () => {
     const { groupId } = await groupedJob();
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     await setGroupRates(
       groupId,
       {
@@ -682,7 +683,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
     );
     madeBazas.push(bazaId);
 
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     const { filled } = await pullBazasFromDictionary(request.id, ctx());
     expect(filled).toBe(1);
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
@@ -692,7 +693,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
 
   it('unconfirm() clears it too — a changed baza is a changed number', async () => {
     const { requestId, groupId } = await groupedJob();
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     await setItemBaza(requestId, 1, { bazaUsd: 4, basis: 'kg', source: 'typed' }, ctx());
     const row = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
     expect(row!.confirmedAt).toBeNull();
@@ -920,10 +921,10 @@ describe('a quote with no volume is still guarded, by weight', () => {
       ctx(),
     );
     await setItemBaza(request.id, 1, { bazaUsd: 20, basis: 'unit', source: 'typed' }, ctx());
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     await sealCalc(
       request.id,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
       ctx(),
     );
     const version = (await db.query.calcVersions.findFirst({
@@ -1047,10 +1048,10 @@ describe('the truck answers for the cargo it carried', () => {
       ctx(),
     );
     await setItemBaza(request.id, 1, { bazaUsd: 20, basis: 'unit', source: 'typed' }, ctx());
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     await sealCalc(
       request.id,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
       ctx(),
     );
     const receiptId = await receiptOn(deal, { boxes: 4 });
@@ -1162,10 +1163,10 @@ describe('a bill that allocated to nobody is a refusal, not a saving', () => {
       ctx(),
     );
     await setItemBaza(request.id, 1, { bazaUsd: 20, basis: 'unit', source: 'typed' }, ctx());
-    await confirmGroup(groupId, ctx());
+    await confirmGroup(groupId, ctx(), 'single', await sawRevOfGroup(groupId));
     await sealCalc(
       request.id,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
       ctx(),
     );
     const receiptId = await receiptOn(deal, { boxes: 4 });
@@ -1347,7 +1348,7 @@ async function sealedJobOn(deal: string): Promise<string> {
   await setFreightZone(request.id, 'cn', ctx());
   await sealCalc(
     request.id,
-    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
     ctx(),
   );
   return request.id;

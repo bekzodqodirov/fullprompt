@@ -4,7 +4,6 @@ import {
   LONE_NETTO_NOTE,
   LONE_WEIGHT_NOTE,
   factsVolumeM3,
-  intakeSummaryText,
   landingItems,
   missingFields,
   weightFromTotalNote,
@@ -123,12 +122,6 @@ describe('a goods line’s own figure is that line’s (PF-2)', () => {
   });
 });
 
-describe('the summary says which weight the seller confirms', () => {
-  it('«(brutto)» on a freight section, «(netto)» on a netto customs total, plain otherwise', () => {
-    const summary = (section: 'yolkira' | 'podklyuch' | 'rastamojka', text: string) =>
-      intakeSummaryText({ section, facts: parseManualFacts(text, section), laws: noLaws, clientLabel: null, fileCount: 0 });
-    expect(summary('podklyuch', 'Kurtka 300 dona\nJami 3500 kg 12 kub')).toContain('Og‘irlik (brutto): 3500 kg');
-    expect(summary('rastamojka', 'Kurtka 300 dona\nNetto 1200 kg')).toContain('Og‘irlik (netto): 1200 kg');
-    expect(summary('rastamojka', 'Kurtka 300 dona\nJami 1200 kg')).toContain('Og‘irlik: 1200 kg');
-  });
-});
+// «which weight the seller confirms» moved with the summary to the table's
+// weight row: `intake-table.test.ts` asserts the same three cases on
+// `intakeTableText` (docs/SAKKIZ-R3.md §11, re-check p3-1).

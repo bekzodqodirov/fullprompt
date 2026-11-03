@@ -378,6 +378,16 @@ export type BotCallback =
    */
   | { kind: 'thread_reply' }
   /**
+   * «➕ Shu so‘rovga qo‘shish» (docs/SAKKIZ-R3.md K12, his 1.9 a) — lines or
+   * files onto a request the seller already sent: `ca:<request>` plain,
+   * `cg:<request>` its restart twin («🗑 Ha, uni o‘chirib …», a live
+   * collection is ended first), `cf:<request>` the offer under a forward or a
+   * plain file, whose replied-to message becomes the first material.
+   */
+  | { kind: 'calc_add'; requestId: string; mode: 'plain' | 'restart' | 'replied' }
+  /** «↩️ Bekor qilish» under an echo — `cu:<8 hex>`, the echo's own tag. */
+  | { kind: 'calc_undo'; tag: string }
+  /**
    * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
    * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
    * calculation request (p) or a tray rule (n k x c b); the digest rides only
@@ -405,6 +415,10 @@ export type AgentOp = (typeof AGENT_OPS)[number];
  * `note` is 'read': a repeated send is one more copy of the note into the
  * presser's OWN chat, and save/cancel end the capture the first time; `draft`
  * is 'cas': the draft its due buttons finish is consumed by the first run.
+ * `calc` is 'prompt' as a KIND and is classed per step below
+ * (`CALC_STEP_REPEAT`); `calc_add` is 'keyed' for its restart form, whose
+ * claim ends a live collection only once, and its plain form resumes the
+ * request's own collection; `calc_undo` is 'cas' on the echo's `undone`.
  */
 export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt' | 'read'> = {
   task_done: 'prompt',
@@ -427,6 +441,8 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   draft_pick: 'prompt',
   forward: 'keyed',
   thread_reply: 'prompt',
+  calc_add: 'keyed',
+  calc_undo: 'cas',
   // Every agent press is decided by a CAS in its service: a draft that is no
   // longer pending, a rule already decided, an offer already written. The 📌
   // general fact's yes is the one two-press op, and its second press is a
@@ -449,6 +465,9 @@ export type DraftStep = (typeof DRAFT_STEPS)[number];
 
 export const FORWARD_STEPS = ['task', 'search'] as const;
 export type ForwardStep = (typeof FORWARD_STEPS)[number];
+
+/** The add door's three prefixes → its mode (K12). One table, read by the parser. */
+const ADD_MODES = { ca: 'plain', cg: 'restart', cf: 'replied' } as const;
 
 /** The uuid-bearing task callbacks: prefix → kind. One table, read by the parser. */
 const TASK_PREFIXES = {
@@ -474,8 +493,10 @@ export type NoteStep = 'send' | 'new' | 'save' | 'cancel' | 'share' | 'page';
 
 /**
  * `go_*` are the RESTART confirmations: a section pressed while a collection
- * is live asks first and only then discards (sub-round C). `cert` flips the
- * certificate answer, `ai` opens the AI-rastamojka door, `skip` moves past a
+ * is live asks first and only then discards (sub-round C). `cert_y`/`cert_n`
+ * SET the certificate answer (the legacy `cert` flipped it, and a press
+ * delivered twice undid itself — it stays parseable for old messages and is
+ * «eskirgan», #939), `ai` opens the AI-rastamojka door, `skip` moves past a
  * follow-up question the seller cannot answer.
  */
 const CALC_STEPS = [
@@ -523,9 +544,91 @@ const CALC_STEPS = [
   // or the same goods, read for their totals.
   'other_add',
   'other_same',
+  // Round 3 (docs/SAKKIZ-R3.md K12): «▶️ Yo‘q, davom etaman» re-prompts the
+  // live stage (it was `more`, which threw a reviewed collection back to
+  // material); the certificate pair carries its answer; «✖️» asks once
+  // before it ends a collection (`cancel_y` is the «yes»); and a stored row
+  // that a re-read file disagrees with is answered add / replace / leave it
+  // to the VED — parsed like `pick_N`, by POSITION among the live conflicts
+  // (three at most), never by a figure.
+  'resume',
+  'cert_y',
+  'cert_n',
+  'cancel_y',
+  'conf_0_add',
+  'conf_0_rep',
+  'conf_0_ved',
+  'conf_1_add',
+  'conf_1_rep',
+  'conf_1_ved',
+  'conf_2_add',
+  'conf_2_rep',
+  'conf_2_ved',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
+
+/**
+ * What a REPEAT of each calc step does — `PRESS_REPEAT`'s question asked per
+ * step, because one kind carries presses of every class. A `Record`, so a new
+ * step without a class does not compile (Q5 a, re-check kernel-18):
+ *   own    — acts only on the collection whose message carries it
+ *            (`ownsPress`; `pick_N` only from the message that drew the live
+ *            offers): the redelivered «✖️» of an older collection must not end
+ *            the newer one, and an old offer must not apply the live
+ *            `offers[n]`;
+ *   keyed  — the restart: a press from the message that opened the live
+ *            collection resumes it, and the dispatcher's `pressKey(…,
+ *            'restart')` claim lets one message restart once;
+ *   prompt — it only asks (a section, a zone the stage itself refuses once
+ *            answered, ▶️, ⏭) or is «eskirgan» (the legacy `cert`);
+ *   cas    — the service refuses the second one.
+ */
+export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'own'> = {
+  yolkira: 'prompt',
+  rastamojka: 'prompt',
+  podklyuch: 'prompt',
+  ai: 'prompt',
+  aipk: 'prompt',
+  go_yolkira: 'keyed',
+  go_rastamojka: 'keyed',
+  go_podklyuch: 'keyed',
+  go_ai: 'keyed',
+  go_aipk: 'keyed',
+  zone_cn: 'prompt',
+  zone_kashgar: 'prompt',
+  zone_horgos: 'prompt',
+  cert: 'prompt',
+  skip: 'prompt',
+  resume: 'prompt',
+  pick_0: 'own',
+  pick_1: 'own',
+  pick_2: 'own',
+  pick_3: 'own',
+  pick_4: 'own',
+  pick_5: 'own',
+  done: 'own',
+  save: 'own',
+  more: 'own',
+  cancel: 'own',
+  cancel_y: 'own',
+  reread: 'own',
+  inv_add: 'own',
+  inv_replace: 'own',
+  other_add: 'own',
+  other_same: 'own',
+  cert_y: 'own',
+  cert_n: 'own',
+  conf_0_add: 'own',
+  conf_0_rep: 'own',
+  conf_0_ved: 'own',
+  conf_1_add: 'own',
+  conf_1_rep: 'own',
+  conf_1_ved: 'own',
+  conf_2_add: 'own',
+  conf_2_rep: 'own',
+  conf_2_ved: 'own',
+};
 
 /** The podklyuch door's «Yuk qayerdan chiqadi?» answers — one per zone the bot can name. */
 export type ZoneStep = Extract<CalcStep, `zone_${string}`>;
@@ -642,6 +745,13 @@ export function parseCallback(data: string): BotCallback | null {
       verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
     };
   }
+  // Round 3's add door and the echo's undo. None collides: `c:` is anchored
+  // to one word, `cl:` and `lc:` are their own letters, `ag:` is the AI
+  // sotuvchi's, and the cabinet's `lang:` / `ph:` / `mg` are distinct.
+  const add = /^(ca|cg|cf):([0-9a-f-]{36})$/.exec(data);
+  if (add) return { kind: 'calc_add', requestId: add[2]!, mode: ADD_MODES[add[1] as keyof typeof ADD_MODES] };
+  const undo = /^cu:([0-9a-f]{8})$/.exec(data);
+  if (undo) return { kind: 'calc_undo', tag: undo[1]! };
   const agent = /^ag:([a-z]):([0-9a-f-]{36})(?::([0-9a-f]{8}))?$/.exec(data);
   if (agent && (AGENT_OPS as readonly string[]).includes(agent[1]!)) {
     return {
@@ -734,6 +844,13 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
         { text: '❌', callback_data: `cl:0:${ask.receiptId}:${ask.req8}` },
       ]);
     return rows.length > 0 ? rows : null;
+  }
+  // The machine's answer about a request still open (docs/SAKKIZ-R3.md
+  // §10.2.5, his proposal 2): «➕» opens the add collection on THAT request.
+  // `add` is decided by the worker (`addFor`) — never on a closed request's
+  // sentence — and only a uuid reaches `ca:`, the one shape the parser takes.
+  if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
+    return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
   }
   return null;
 }
@@ -1413,10 +1530,9 @@ export async function landCollectedIntake(
     hasCertificate: state.hasCertificate,
     // The AI podklyuch door's «qayerdan?» answer; every other door has none.
     freightZone: state.route?.zone ?? null,
-    // What every reading cost, so the day's AI budget counts the most
-    // expensive call on this path rather than the two cheap ones — every
-    // answered one, a re-read after «➕ Yana ma'lumot» included (2.9 c).
-    usages: state.usages,
+    // No usages: every reading was billed by its job the moment the model
+    // answered, on this collection's note, and the landing ATTACHES those
+    // rows to the request it opens (docs/SAKKIZ-R3.md §7.2.9).
   });
 }
 

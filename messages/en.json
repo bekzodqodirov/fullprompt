@@ -3665,6 +3665,7 @@
       "stale_baza": "The group’s bazas changed underneath — refresh and retype",
       "group_gone": "That code’s group is gone — refresh the page",
       "conflict": "Someone just saved — the screen refreshed, press again",
+      "amended_since": "The seller sent an addition — reload the page; the change is written under «Questions».",
       "save_failed": "Save failed — check the connection and retry",
       "ambiguous_number": "A number with a comma is ambiguous — choose which one you meant",
       "stale_build": "The app was updated — reload the page. What you typed is kept.",

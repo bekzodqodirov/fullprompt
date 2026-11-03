@@ -386,8 +386,16 @@ export async function threadCalcSend(
       });
       target = { kind: landed.kind, id: landed.id };
       noteOnCard = true;
-      // A retried press after the request opened: it is in the queue already.
-      if (await rootRequestOfNote(input.noteId)) return { ...target, queued: true };
+      // A retried press after the request opened: it is in the queue
+      // already — and its pass is asked for again, through the ticket, in
+      // case the earlier press was cut before it queued one (a no-op beside
+      // a pass that stands; refused once anybody wrote, `atRev: 0`;
+      // docs/SAKKIZ-R3.md §10.2.1).
+      const root = await rootRequestOfNote(input.noteId);
+      if (root) {
+        await queueCalcPrefill({ requestId: root, staffId: actor.id, section: input.section, atRev: 0 });
+        return { ...target, queued: true };
+      }
     }
   }
 
@@ -411,6 +419,13 @@ export async function threadCalcSend(
     },
     ctx,
   );
+  // A concurrent twin of this very press opened it first (the note's lock,
+  // docs/SAKKIZ-R3.md K2): the same answer as the retried press above, and
+  // the same queue through the ticket — a no-op beside the twin's own.
+  if (opened.existing) {
+    await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: input.section, atRev: 0 });
+    return { ...target, queued: true };
+  }
   // …and the machine looks at it, exactly as it does for the bot's door.
   await queueCalcPrefill({
     requestId: opened.id,

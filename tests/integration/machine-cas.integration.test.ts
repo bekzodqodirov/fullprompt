@@ -26,6 +26,7 @@ import { aiPrefill } from '@/modules/wms/calc/prefill';
 import type { PickOutcome, PickRequest } from '@/modules/wms/calc/prefill-ai';
 import { normalizeName } from '@/modules/wms/customs/import-parse';
 import { productKey } from '@/modules/wms/tnved/service';
+import { sawRev, sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * The machine never writes over a person (docs/SAKKIZ-R2.md §1, §7.2.7,
@@ -161,7 +162,7 @@ describe('a person’s save between the machine’s question and its answer wins
         { items: [{ id: booked!.id, seq: booked!.seq, bazaUsd: null, bazaBasis: null }], adds: [] },
         { actorId },
       );
-      await confirmGroup(booked!.groupId!, { actorId });
+      await confirmGroup(booked!.groupId!, { actorId }, 'single', await sawRevOfGroup(booked!.groupId!));
       return {
         answers: rows.map((r) => ({ seq: r.seq, candidate: 0, reason: 'qoshiq' })),
         usage: null,
@@ -237,8 +238,8 @@ describe('a person’s save between the machine’s question and its answer wins
     await saveTable(sealed, { items: [], adds: [] }, ctx());
     const [priced] = await rowsOf(sealed);
     await saveTable(sealed, { items: [{ id: priced!.id, seq: priced!.seq, bazaUsd: 4, bazaBasis: 'kg' }], adds: [] }, ctx());
-    await confirmAllGroups(sealed, ctx());
-    await sealCalc(sealed, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await confirmAllGroups(sealed, ctx(), await sawRev(sealed));
+    await sealCalc(sealed, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(sealed) }, ctx());
 
     const id = await open([{ name: REMEMBERED, tnvedCode: null, weightKg: 10 }]);
     // The door may already have coded it from the book the seal taught; the

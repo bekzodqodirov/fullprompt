@@ -29,6 +29,17 @@ import { pressMiddleware } from './press';
 import { coalesceBacklogLabels } from './backlog';
 import { briefRetry } from './retry';
 import { flushWaitWrites, hydrateWaits, setDurableWaits } from './waits';
+import {
+  collectorScope,
+  flushBeforeConfirm,
+  flushIntakeWrites,
+  hydrateIntakes,
+  hydrateWithRetry,
+  markIntakesHydrated,
+  oldestUnwrittenUpdate,
+  sealIntakeWrites,
+  setDurableIntakes,
+} from './calc-store';
 import { messageKey } from './once';
 
 /**
@@ -129,7 +140,7 @@ export function startTelegramBot(): void {
   // confirming exactly what finished, then hands the signal to Next.
   if (!globalForBot.shutdownInstalled) {
     globalForBot.shutdownInstalled = true;
-    installBotShutdown(process, () => stopTelegramBot({ bot, flush: flushWaitWrites, drain: membershipSettled }));
+    installBotShutdown(process, () => stopTelegramBot(botStopDeps(bot)));
   }
 
   const startPolling = (retryMs: number) => {
@@ -176,13 +187,53 @@ export function startTelegramBot(): void {
         }, retryMs);
       });
   };
-  // The durable waits are back in memory BEFORE the first getUpdates: the
-  // backlog's first text may be the answer to one of them.
+  // The durable waits AND the «Hisoblatish» collections are back in memory
+  // BEFORE the first getUpdates: the backlog's first text may be the answer
+  // to one of them. `allSettled` with one catch each — a failed restore is a
+  // log line, never an unhandled rejection, and polling waits for BOTH, so the
+  // backlog never meets half-restored memory (regression-20, durability-11).
+  // A hydrate that failed still marks the store hydrated: memory is then the
+  // only truth this process has, and the jobs waiting on it go on. The
+  // collections' restore is tried again for a couple of seconds first (a
+  // database a moment late after its own container was recreated), and in
+  // the background after that.
   setDurableWaits(true);
-  void hydrateWaits()
-    .catch((err: unknown) => logger.warn({ err }, 'telegram waits not restored'))
-    .finally(() => startPolling(30_000));
+  setDurableIntakes(true);
+  // The lead's ruling L1: grammy confirms a batch with its next getUpdates,
+  // so that call first writes every collection the batch changed.
+  bot.api.config.use(flushBeforeConfirm());
+  void Promise.allSettled([
+    hydrateWaits().catch((err: unknown) => logger.warn({ err }, 'telegram waits not restored')),
+    hydrateWithRetry(hydrateIntakes).catch((err: unknown) => logger.warn({ err }, 'telegram calc intakes not restored')),
+  ]).finally(() => {
+    markIntakesHydrated();
+    startPolling(30_000);
+  });
   logger.info('telegram bot polling started');
+}
+
+/**
+ * What the stop is handed — exported so a test stops a bot with the SAME
+ * deps the server's signal does. Both durable stores are flushed; then the
+ * «Hisoblatish» store names the oldest update whose change it could not
+ * write and is SEALED in the same moment — nothing written after it can
+ * disagree with what the stop confirms, and an update still running here past
+ * the budget can never overwrite the row the next process hydrates
+ * (docs/SAKKIZ-R3.md §6.2.3, §6.2.11).
+ */
+export function botStopDeps(bot: Parameters<typeof stopTelegramBot>[0]['bot']): Parameters<typeof stopTelegramBot>[0] {
+  return {
+    bot,
+    flush: async () => {
+      await Promise.allSettled([flushWaitWrites(), flushIntakeWrites()]);
+    },
+    drain: membershipSettled,
+    unwritten: () => {
+      const n = oldestUnwrittenUpdate();
+      sealIntakeWrites();
+      return n;
+    },
+  };
 }
 
 /**
@@ -193,6 +244,9 @@ export function startTelegramBot(): void {
  */
 export function registerBotHandlers(bot: Bot): void {
   bot.use(stoppingGuard());
+  // The «Hisoblatish» collection's own view of the update: the message a
+  // change takes (`takenUpTo`) and the collector messages it sends.
+  bot.use(collectorScope());
   bot.use(pressMiddleware());
   bot.use(coalesceBacklogLabels());
 

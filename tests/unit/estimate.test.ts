@@ -369,9 +369,15 @@ describe('the small rules', () => {
     // Pinned at the source (#166): the reply's own test hands the renderer
     // its sentences, so a word changed HERE would leave every other test
     // green while the seller read something nobody agreed.
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5, §10.1): the seller's
+    // tail is keyed by its reader — the chat points at «➕» under the
+    // message, the lenta keeps R2's words; the other three are unchanged.
     expect(TAXMINIY_BLOCK_WORDS).toEqual({
       ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
-      refused_measure: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      refused_measure: {
+        chat: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+        lenta: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      },
       budget: 'vaqt yetmadi, statistika o‘qilmadi',
       refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
     });

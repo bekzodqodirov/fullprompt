@@ -48,3 +48,25 @@ export async function reloadFresh(): Promise<void> {
   }
   window.location.href = `${window.location.pathname}?v=${Date.now()}`;
 }
+
+/**
+ * Which reload a refusal's own words ask for — one home for the three calc
+ * screens that print them (fix review W-5). `stale_build` is a new deploy:
+ * the whole cleanup above. `amended_since` («Sotuvchi qo‘shimcha yubordi —
+ * sahifani yangilang …») is a seller's addition the screen has not drawn: a
+ * plain reload, which redraws it and names every kept draft whose row moved
+ * (the restore, B5 a) — emptying the offline caches over a seller's message
+ * would cost the phone its copy for nothing. The words said «yangilang» with
+ * no button, and the installed app has no address bar. Null = no reload.
+ */
+export function reloadCure(code: string | null | undefined): 'fresh' | 'plain' | null {
+  if (code === 'stale_build') return 'fresh';
+  if (code === 'amended_since') return 'plain';
+  return null;
+}
+
+/** The reload `reloadCure` named. */
+export function runReload(cure: 'fresh' | 'plain'): void {
+  if (cure === 'fresh') void reloadFresh();
+  else window.location.reload();
+}

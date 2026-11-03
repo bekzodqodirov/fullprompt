@@ -28,6 +28,7 @@ import {
   takeCalcRequest,
   rekeyLeadCalcRequests,
 } from '@/modules/wms/calc/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase A — the queue against a real database.
@@ -399,7 +400,7 @@ describe('the endings', () => {
 
   it('finishing records the ANSWER, not just the fact that it ended', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx(), await sawRev(id));
     const row = await calcRequestDetail(id);
     expect(row!.completedVia).toBe('task');
     expect(row!.answerAmount).toBe(480);
@@ -409,9 +410,9 @@ describe('the endings', () => {
 
   it('a closed request cannot be closed twice', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx());
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx(), await sawRev(id));
     await expect(
-      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx()),
+      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx(), await sawRev(id)),
     ).rejects.toThrow('already_closed');
   });
 });

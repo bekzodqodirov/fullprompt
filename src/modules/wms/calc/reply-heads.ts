@@ -24,6 +24,16 @@ export const TARIFF_ESTIMATE_WORD = 'taxminiy';
 /** What a PRICED yolkira reply starts with — the chip's anchor. */
 export const TARIFF_PRICED_HEAD = `${TARIFF_REPLY_TITLE} · ${TARIFF_ESTIMATE_WORD}`;
 
+/**
+ * A re-run's word (docs/SAKKIZ-R3.md §2.5): the pass a seller's addition
+ * queued again answers under the same heading with this after the TITLE
+ * phrase — never between `TARIFF_REPLY_TITLE` and its estimate word — so
+ * every heading still starts with its `MACHINE_REPLY_HEADS[kind]`, a priced
+ * tariff re-run with `TARIFF_PRICED_HEAD`, and the lenta chip classifies it
+ * unchanged.
+ */
+export const RERUN_WORD = 'qayta hisob';
+
 export type MachineReplyKind = 'ai' | 'tariff';
 
 /** Keyed by kind, so a third kind with no heading is a compile error. */

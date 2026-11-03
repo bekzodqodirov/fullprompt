@@ -3665,6 +3665,7 @@
       "stale_baza": "Guruh bazalari o'zgargan — sahifani yangilab qayta kiriting",
       "group_gone": "Bu kodning guruhi qolmadi — sahifani yangilang",
       "conflict": "Boshqa kishi hozirgina saqladi — ekran yangilandi, qayta bosing",
+      "amended_since": "Sotuvchi qo‘shimcha yubordi — sahifani yangilang, o‘zgarish «Savol-javob» da yozilgan.",
       "save_failed": "Saqlash o'tmadi — aloqani tekshirib, qayta urinib ko'ring",
       "ambiguous_number": "Vergulli son noaniq — qaysi biri ekanini tanlang",
       "stale_build": "Ilova yangilandi — sahifani yangilang. Yozganlaringiz saqlanib qoladi.",

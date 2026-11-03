@@ -361,6 +361,10 @@ describe('11. a photo reply to a cargo ping — a TEXT-only sentence', () => {
     expect(mediaSentenceFor({ kind: 'calc_task', requestId: id, taskId: id })).toBe(REPLY_SENTENCES.mediaCard);
     expect(mediaSentenceFor({ kind: 'task_question', taskId: id })).toBe(REPLY_SENTENCES.mediaTask);
     expect(mediaSentenceFor({ kind: 'customer' })).toBeNull();
+    // Re-anchored for round 3's add door (docs/SAKKIZ-R3.md §9.1): a file
+    // replied to an AI answer that carries ➕ is the addition's material, so
+    // there is no sentence — `refuseMediaReply` opens the door instead.
+    expect(mediaSentenceFor({ kind: 'calc_add', requestId: id })).toBeNull();
   });
 });
 

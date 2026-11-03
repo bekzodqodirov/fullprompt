@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -50,6 +48,7 @@ vi.mock('@/modules/wms/calc/intake-manual', async (importOriginal) => {
 import { endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 import { clientCodePrefix, landCollectedIntake } from '@/modules/platform/telegram/staff-bot';
 import { readCustomerText } from '@/modules/platform/telegram/staff-handlers';
+import { collectorSource } from '../fixtures/calc-collector-source';
 
 const chats: bigint[] = [];
 let seq = 0;
@@ -57,7 +56,7 @@ function collected(clientHintRaw: string): bigint {
   seq += 1;
   const chatId = BigInt(-9_300_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   updateIntake(chatId, { clientHintRaw, stage: 'review' });
   return chatId;
 }
@@ -102,9 +101,11 @@ describe('both readers of «who is the customer» get the company’s code prefi
   });
 
   it('the bot’s customer stage reads the setting once and hands it on', () => {
-    const src = readFileSync(path.join(process.cwd(), 'src/modules/platform/telegram/staff-handlers.ts'), 'utf8');
-    expect(src).toContain('const read = await readCustomerText(ctx.message.text, await clientCodePrefix());');
-    expect(src).toContain('const answer = clientAnswer(intake, ctx.message.text, read);');
+    // The ladder's collector branch moved into `routeCollectorText` (K6), which
+    // takes the text as `text` — `ctx.message.text` cannot appear there.
+    const src = collectorSource();
+    expect(src).toContain('const read = await readCustomerText(text, await clientCodePrefix());');
+    expect(src).toContain('const answer = clientAnswer(intake, text, read);');
   });
 
   it('an unreadable setting answers the shipped default, never an empty prefix', async () => {

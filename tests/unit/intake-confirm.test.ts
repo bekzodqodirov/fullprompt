@@ -38,7 +38,7 @@ async function save(section: IntakeState['section'], replyQueued: boolean): Prom
   seq += 1;
   const chatId = BigInt(-9_900_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   updateIntake(chatId, { stage: 'review', material: ['Kurtka 300 dona'] });
   land.target.mockResolvedValueOnce({
     kind: 'lead',
@@ -51,7 +51,16 @@ async function save(section: IntakeState['section'], replyQueued: boolean): Prom
     replyQueued,
   });
   const replies: string[] = [];
-  await handleCalcCallback({ reply: async (text: string) => replies.push(text) }, chatId, 'save');
+  await handleCalcCallback(
+    {
+      reply: async (text: string) => {
+        replies.push(text);
+        return { message_id: replies.length };
+      },
+    },
+    chatId,
+    'save',
+  );
   return replies.at(-1) ?? '';
 }
 

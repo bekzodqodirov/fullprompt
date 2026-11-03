@@ -504,6 +504,10 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     aiConfigured: true,
     estimate: null,
     pickLeft: null,
+    // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
+    // nothing asked — the chip's subject is the heading, which neither moves.
+    asks: null,
+    pass: 'landing',
     audience: 'lenta',
   };
   const aiText = aiVedReplyText(aiInput);
@@ -565,6 +569,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     freight: road(false),
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
   });
   // §2.6: the VED line sits on line 2, directly under the heading.
@@ -580,6 +585,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
   });
   const tariffEstimateText = tariffReplyText({
@@ -587,6 +593,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: null,
     freight: road(true),
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
   });
 

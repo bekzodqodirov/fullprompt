@@ -1,6 +1,6 @@
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
+import { calcAmendments, calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
 import { aiConfigured } from '../../platform/ai/model';
 import { aiCalcBudgetLeft } from './ai-cost';
@@ -19,6 +19,7 @@ import { loadWorkspace, proposeGroups, requestClock, saveTable, type Workspace }
 import {
   aiVedReplyText,
   pickLeftOf,
+  ROAD_STALE_WORDS,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
@@ -47,6 +48,7 @@ import { tariffFor } from './tariff-read';
 import { onDate } from './dictionaries';
 import { weightFromTotalNote } from './intake';
 import { CalcError } from './service';
+import { lawAsksInputOf, lawAsksOf, type LawAsk } from './law-asks';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -167,6 +169,14 @@ export interface PrefillOutcome {
    * own «🔎 VED uchun:» line stands under its heading (§2.6).
    */
   lentaText: string;
+  /**
+   * The lenta rendering WITHOUT his 2.8 b line «❓ Sotuvchidan so‘raldi» —
+   * present only when the reply asks the seller something. That line states
+   * the seller WAS asked; the worker writes this one instead when his copy
+   * reaches nobody (muted, no linked chat, cannot log in), so the VED is
+   * never told a question is with a seller who never got it (review p5-adv-2).
+   */
+  lentaUnasked?: string;
   /** The workspace's EXACT customs total — never the estimate. */
   customsUsd: number | null;
   freightUsd: number | null;
@@ -252,9 +262,18 @@ export async function aiPrefill(
    * (`prefillStanding`) — the chain starts there, not from a fresh read, or a
    * person's save landing between that check and the first machine write
    * becomes the machine's own base and is overwritten by the grouping.
-   * Absent or null: a direct caller, and the chain starts from a fresh read.
+   * Absent or null: no chain at all — a job queued before tickets existed,
+   * or a direct caller — and no save of the pass moves the hands-off stamp
+   * (docs/SAKKIZ-R3.md §10.2.3: a fresh read here was a second, unproven
+   * start; the request then reads «started», and its additions go to the
+   * VED in words).
+   *
+   * `pass`: which pass this is (`sayOnce`'s key) — absent = the landing's.
+   * An addition's re-run (`amend:<id>`) reads what that addition left stale,
+   * so the road is never priced on a total the new lines outgrew
+   * (law-money-1), and its heading says «qayta hisob».
    */
-  opts: { expectCustoms?: boolean; expectRev?: number | null } = {},
+  opts: { expectCustoms?: boolean; expectRev?: number | null; pass?: string } = {},
 ): Promise<PrefillOutcome> {
   const deadline = deps.deadline ?? Date.now() + PASS_DEADLINE_MS;
   const propose = deps.propose ?? proposeGroups;
@@ -285,7 +304,8 @@ export async function aiPrefill(
     );
     return { ...NOTHING_DONE, text: '', lentaText: '', stood: 'touched' };
   }
-  if (!parts.customs) return tariffOnly(requestId, deps);
+  const amend = amendmentOf(opts.pass);
+  if (!parts.customs) return tariffOnly(requestId, deps, amend);
 
   /**
    * Configured AND within the day's budget — one flag, because to everything
@@ -322,9 +342,15 @@ export async function aiPrefill(
    *
    * It STARTS at the revision the job was checked against (`expectRev`), so
    * a save in the gap after that check is a conflict too — a fresh read here
-   * would adopt it as the machine's own.
+   * would adopt it as the machine's own. No ticket revision, no chain: the
+   * fallback read that stood here started a chain nothing had checked
+   * (docs/SAKKIZ-R3.md §10.2.3, law-money-2).
+   *
+   * Every save on the chain carries `handsOff`: the machine's own writes
+   * move the hands-off stamp with the clock, inside their own transactions,
+   * so «has a person been here» stays answerable after the pass (his 1.9 a).
    */
-  let rev: number | null = opts.expectRev ?? (await prefillTicket(requestId));
+  let rev: number | null = opts.expectRev ?? null;
   let overtaken: string | null = null;
   let closed = false;
   /** Has any machine write landed? A person overtaking BEFORE one did gets
@@ -396,7 +422,7 @@ export async function aiPrefill(
   //    compares (review P1-R2), so nothing here is adopted.
   if (configured && standing() && !late('step 1') && (await stillOurs('step 1'))) {
     try {
-      const out = await propose(requestId, ctx, rev === null ? {} : { expectRev: rev });
+      const out = await propose(requestId, ctx, rev === null ? {} : { expectRev: rev, handsOff: true });
       codesStamped += out.codesStamped;
       ratesPulled += out.ratesPulled;
       importFilled += out.importFilled;
@@ -406,9 +432,9 @@ export async function aiPrefill(
       dictionaryFilled += out.dictionaryFilled;
       aiUsed = true;
       if (out.rev !== null && out.rev !== rev) wrote = true;
-      // No chain went in (the request had no revision to start from): there
-      // is nothing to compare against, and the clock is all there is.
-      rev = out.rev ?? (rev === null ? await prefillTicket(requestId) : rev);
+      // No chain went in: none comes out, and nothing is adopted — a fresh
+      // read here would start a chain at whatever a person last saved.
+      rev = out.rev ?? rev;
     } catch (err) {
       // A person working here, or a close, stands the machine down. Anything
       // else — a model that refused, a key that expired — is not fatal, and
@@ -432,7 +458,12 @@ export async function aiPrefill(
   //    it «Kod topilmadi» although it carries a code.
   if (standing()) {
     try {
-      const swept = await saveTable(requestId, { items: [], adds: [] }, ctx, rev === null ? undefined : { expectRev: rev });
+      const swept = await saveTable(
+        requestId,
+        { items: [], adds: [] },
+        ctx,
+        rev === null ? undefined : { expectRev: rev, handsOff: true },
+      );
       importFilled += swept.importFilled.length;
       memoryFilled += swept.memoryFilled.length;
       dictionaryFilled += swept.dictionaryFilled.length;
@@ -535,12 +566,25 @@ export async function aiPrefill(
     estimate = estimateCustoms({ ...estimateInputOf(ws), medians });
   }
 
-  const road = await roadOf(ws);
+  // An addition that left a total the road needs behind (law-money-1): the
+  // road is not priced on it — the words say so, and no figure is printed.
+  const stale = ws.parts.freight && (await staleTotalsOf(requestId, amend)).length > 0;
+  const road = stale ? STALE_ROAD : await roadOf(ws);
   // Who the answer is ABOUT — the card's own code, and the customer's, so a
   // seller with three open jobs can tell which one this is.
   const about = await requestAbout(requestId, deps.replyTo ?? null);
   const lines = replyLines(ws, estimate);
-  const reply = (link: string | null, audience: 'chat' | 'lenta') =>
+  /**
+   * His 2.8 b: the figures the LAW pins that the rows still lack, asked of
+   * the seller — the add table's own rule (`lawAsksOf`), read off THIS
+   * workspace (performance-9). Only while nobody but the machine has written
+   * (`lawAsksInputOf` answers null otherwise: the VED is on the job, and a
+   * second person asking the customer is noise), and never on a pass a
+   * person overtook.
+   */
+  const asksInput = overtaken === null ? lawAsksInputOf(ws) : null;
+  const asks: LawAsk[] | null = asksInput ? lawAsksOf(asksInput) : null;
+  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) =>
     aiVedReplyText({
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
@@ -554,10 +598,12 @@ export async function aiPrefill(
       link,
       aiConfigured: hasKey,
       budgetSpent: hasKey && budgetLeft <= 0,
-      estimate: estimate ? totalsWords(estimate) : null,
+      estimate: estimate ? totalsWords(estimate, audience) : null,
       // A pick skipped past the deadline is news only while a row still
       // waits for a baza; with none, there was nothing it could have chosen.
       pickLeft: pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft,
+      asks: asked ? asks : null,
+      pass: amend === null ? 'landing' : 'amend',
       audience,
     });
 
@@ -565,8 +611,10 @@ export async function aiPrefill(
     ...NOTHING_DONE,
     text: reply(about?.link ?? null, 'chat'),
     lentaText: reply(null, 'lenta'),
+    ...(asks && asks.length > 0 ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
     customsUsd,
-    freightUsd,
+    // A stale road printed no figure, and the outcome carries none either.
+    freightUsd: stale ? null : freightUsd,
     taxminiyUsd: estimate?.taxminiy?.customsUsd ?? null,
     codesStamped,
     ratesPulled,
@@ -589,16 +637,22 @@ export async function aiPrefill(
  * memory, no model, no save — with the card's labels and the road through
  * the ONE freight answer the podklyuch reply prints too.
  */
-async function tariffOnly(requestId: string, deps: PrefillDeps): Promise<PrefillOutcome> {
+async function tariffOnly(requestId: string, deps: PrefillDeps, amend: string | null): Promise<PrefillOutcome> {
   const ws = await loadWorkspace(requestId);
   if (!ws) throw new Error(`calc request ${requestId} vanished during the pass`);
-  const road: AiVedFreight = (await roadOf(ws)) ?? {
-    // A freight-only section always has a road; a section without one has
-    // nothing to answer, and says so rather than a silence.
-    ok: false,
-    refusal: 'bu bo‘limda yo‘lkira yo‘q',
-    tail: 'ved',
-  };
+  // The section that is ONLY the road prices it from the stored totals
+  // (`roadOf`) — an addition that left one of them behind is answered with
+  // the words, never a dollar figure on the stale cube (law-money-1).
+  const stale = ws.parts.freight && (await staleTotalsOf(requestId, amend)).length > 0;
+  const road: AiVedFreight = stale
+    ? STALE_ROAD
+    : ((await roadOf(ws)) ?? {
+        // A freight-only section always has a road; a section without one
+        // has nothing to answer, and says so rather than a silence.
+        ok: false,
+        refusal: 'bu bo‘limda yo‘lkira yo‘q',
+        tail: 'ved',
+      });
   const about = await requestAbout(requestId, deps.replyTo ?? null);
   const said = (link: string | null, audience: 'chat' | 'lenta') =>
     tariffReplyText({
@@ -606,14 +660,67 @@ async function tariffOnly(requestId: string, deps: PrefillDeps): Promise<Prefill
       cardLabel: about?.cardLabel ?? null,
       freight: road,
       link,
+      pass: amend === null ? 'landing' : 'amend',
       audience,
     });
   return {
     ...NOTHING_DONE,
     text: said(about?.link ?? null, 'chat'),
     lentaText: said(null, 'lenta'),
-    freightUsd: ws.freight && ws.freight.ok ? ws.freight.listUsd : null,
+    freightUsd: !stale && ws.freight && ws.freight.ok ? ws.freight.listUsd : null,
   };
+}
+
+/** The road an addition left without its totals — the words, no figure (§2.5). */
+const STALE_ROAD: AiVedFreight = { ok: false, refusal: ROAD_STALE_WORDS, tail: 'ved', stale: true };
+
+/** The amendment an `amend:<id>` pass re-runs for; null for any other pass. */
+function amendmentOf(pass: string | undefined): string | null {
+  const m = /^amend:([0-9a-f-]{36})$/i.exec(pass ?? '');
+  return m ? m[1]! : null;
+}
+
+/**
+ * The totals the request's additions left stale and nobody re-answered
+ * (`AmendChange.totalsStale`, §9.5) — stored on each amendment by its writer,
+ * read here and nowhere recomputed. A re-run of anything but an addition has
+ * none. A read that fails is treated as stale: the road is not priced on a
+ * total nobody could vouch for (law-money-1), and the VED prices it.
+ *
+ * EVERY applied addition up to this one, not this one alone: `totalsStale`
+ * names only what ITS addition changed, so a line added (the typed cube now
+ * stale) and then a row count answered — which his 2.8 b block invites —
+ * left the second re-run reading «nothing stale» and pricing the road on the
+ * cube the first one outgrew (review p5-adv-1). A total stays stale until a
+ * later addition carries it in `change.cargo` (the seller's «jami … kub/kg»,
+ * or a whole Σ re-summed). A VED's own answer needs no case: once a person
+ * has written, every addition goes to the VED and no re-run follows.
+ */
+async function staleTotalsOf(requestId: string, amend: string | null): Promise<('weightKg' | 'volumeM3')[]> {
+  if (amend === null) return [];
+  try {
+    const rows = await db
+      .select({ id: calcAmendments.id, rev: calcAmendments.rev, change: calcAmendments.change })
+      .from(calcAmendments)
+      .where(and(eq(calcAmendments.requestId, requestId), eq(calcAmendments.outcome, 'applied')))
+      .orderBy(asc(calcAmendments.rev), asc(calcAmendments.createdAt));
+    // This addition's own write bounds the fold; one the read cannot place
+    // (never applied) folds them all — more stale, never less.
+    const upTo = rows.find((r) => r.id === amend)?.rev ?? Number.POSITIVE_INFINITY;
+    const stale = { weightKg: false, volumeM3: false };
+    for (const row of rows) {
+      if (row.rev === null || row.rev > upTo) continue;
+      const change = row.change as { cargo?: unknown; totalsStale?: unknown } | null;
+      const cargo = change?.cargo && typeof change.cargo === 'object' ? (change.cargo as Record<string, unknown>) : {};
+      for (const field of ['weightKg', 'volumeM3'] as const) if (cargo[field] !== undefined) stale[field] = false;
+      const listed: unknown[] = Array.isArray(change?.totalsStale) ? change.totalsStale : [];
+      for (const field of listed) if (field === 'weightKg' || field === 'volumeM3') stale[field] = true;
+    }
+    return (['weightKg', 'volumeM3'] as const).filter((field) => stale[field]);
+  } catch (err) {
+    logger.warn({ err, requestId, amend }, '[calc-prefill] the addition’s stale totals not read — the road is left to the VED');
+    return ['weightKg', 'volumeM3'];
+  }
 }
 
 /**
@@ -639,10 +746,15 @@ async function roadOf(ws: Workspace): Promise<AiVedFreight | null> {
   );
 }
 
-/** Why Taxminiy is absent, as the sentence §2.2 prints after the dash. */
-function blockWords(block: CustomsEstimate['taxminiyBlock']): string | null {
+/**
+ * Why Taxminiy is absent, as the sentence §2.2 prints after the dash — in
+ * the reader's words where they differ: a missing count is the seller's to
+ * send with «➕» in the chat, and the lenta's reader writes it on the card.
+ */
+function blockWords(block: CustomsEstimate['taxminiyBlock'], audience: 'chat' | 'lenta'): string | null {
   if (block === null) return null;
-  if (block === 'ungrouped' || block === 'refused_measure' || block === 'budget' || block === 'refused') {
+  if (block === 'refused_measure') return TAXMINIY_BLOCK_WORDS.refused_measure[audience];
+  if (block === 'ungrouped' || block === 'budget' || block === 'refused') {
     return TAXMINIY_BLOCK_WORDS[block];
   }
   const fee: FeeRefusal = block;
@@ -650,7 +762,7 @@ function blockWords(block: CustomsEstimate['taxminiyBlock']): string | null {
 }
 
 /** The estimate's two totals, in the reply's vocabulary. */
-function totalsWords(e: CustomsEstimate): AiVedEstimate {
+function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta'): AiVedEstimate {
   return {
     rows: e.rows,
     exactRows: e.exactRows,
@@ -659,7 +771,7 @@ function totalsWords(e: CustomsEstimate): AiVedEstimate {
     taxminiyFee: e.taxminiy
       ? { bhm: e.taxminiy.fee.overridden ? null : e.taxminiy.fee.bhmCoefficient, usd: e.taxminiy.fee.feeUsd }
       : null,
-    taxminiyBlock: blockWords(e.taxminiyBlock),
+    taxminiyBlock: blockWords(e.taxminiyBlock, audience),
   };
 }
 

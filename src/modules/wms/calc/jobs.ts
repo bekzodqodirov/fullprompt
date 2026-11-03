@@ -57,6 +57,12 @@ export interface CalcPrefillJob {
    * customs job, the only kind there was.
    */
   section?: string | null;
+  /**
+   * Which pass this is — `sayOnce`'s key, so a seller's addition gets its
+   * own answer (docs/SAKKIZ-R3.md K15). On both queues. Absent = the
+   * landing's pass (every job queued before this field existed).
+   */
+  pass?: string;
 }
 
 /**
@@ -234,9 +240,10 @@ export function attemptStanding(
  * grammy context that no longer exists by then: the drain owns the claim
  * (0082) and round 101's transient-vs-permanent budget, so a Telegram 429
  * costs a retry instead of the message. And it goes through `sayOnce`: ONE
- * machine message per request, so a re-delivered job sends nothing at all
- * once one is queued — no second reply, no second lenta note, no «hisoblay
- * olmadi» after a real answer.
+ * machine message per pass, so a re-delivered job sends nothing at all once
+ * one is queued — no second reply, no second lenta note, no «hisoblay
+ * olmadi» after a real answer — while a seller's addition, which queues the
+ * pass again under its own key, is answered again.
  *
  * A failure is NOT rethrown. The pass is best-effort by construction — the
  * request is in the VED's queue whatever happens here, and a person will
@@ -251,17 +258,57 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
     // `includeMetadata`: the stand-down sentence depends on whether this is a
     // re-delivery (`attemptStanding`) — customs/jobs.ts asks for it the same way.
     await boss.work<CalcPrefillJob>(queue, { includeMetadata: true }, async (jobs) => {
-      for (const job of jobs) await runPrefillJob(job.data, job.retryCount ?? 0);
+      for (const job of jobs) await runPrefillJob(job.data, job.retryCount ?? 0, job.id);
     });
   }
 }
 
+/**
+ * Which machine messages carry «➕ Shu so‘rovga qo‘shish» (docs/SAKKIZ-R3.md
+ * §10.2.5, his proposal 2): every message about a request that is still
+ * open — the reply, «hisoblay olmadi», and the stand-downs (a person on the
+ * job is the add door's own question: it then hands the addition to the VED
+ * in words). Not a closed request's: nothing can be added to an answer that
+ * is out, and not one that is gone.
+ */
+export function addFor(standing: StandDown | 'ok'): boolean {
+  return standing !== 'closed' && standing !== 'not_found';
+}
+
+/**
+ * Does the seller's copy of the machine's answer reach him — the drain's own
+ * three conditions, asked once (`reachOf`): he can log in, his chat is
+ * linked, and he has not muted the answers, or this re-run is one he started
+ * (`direct`, which sends past the mute). A read that fails answers no: the
+ * lenta then claims nothing about him.
+ */
+async function sellerHears(staffId: string, direct: boolean): Promise<boolean> {
+  try {
+    const { reachOf } = await import('../../platform/notifications/staff');
+    const reach = (await reachOf([staffId], 'CalcPrefilled')).get(staffId);
+    return reach === 'ok' || (direct && reach === 'muted');
+  } catch (err) {
+    logger.warn({ err, staffId }, '[calc-prefill] the seller’s reach not read — the lenta names no ask');
+    return false;
+  }
+}
+
 /** One job, on either queue — the payload's section says which pass it is. */
-async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<void> {
+async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: string): Promise<void> {
   const { requestId, staffId } = data;
   // K16: the section rides the payload, so this is no database read. A job
   // queued before round 2 carries none — it was a customs job, the only kind.
   const writes = sectionParts((data.section ?? 'rastamojka') as CalcSectionName).customs;
+  // Which pass this is — `sayOnce`'s key, so a seller's addition gets its
+  // own answer and a redelivery of either stays silent (§10.2.4). A job
+  // queued before passes had names was the landing's.
+  const pass = data.pass ?? 'landing';
+  // A re-run the seller started himself with «✅ Qo‘shish» reaches him even
+  // when he muted the AI's answers (his ⭐ of Question 7): he was just told
+  // the result comes to this chat. Every other pass keeps his mute — and its
+  // calls stay exactly the landing's (no options at all, `whileOpen` alone).
+  const direct = pass.startsWith('amend:');
+  const voice: [] | [{ direct: true }] = direct ? [{ direct: true }] : [];
   try {
     const { aiPrefill, prefillStanding } = await import('./prefill');
     const { sayOnce } = await import('./say-once');
@@ -274,7 +321,14 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
       // Said, not silent (2026-10-21): the seller was promised a figure in
       // this chat, and a pass that stood down used to leave him waiting.
       const said = standDownWords(standing, writes);
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) {
+        await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: said,
+          extra: { add: addFor(standing) },
+        }, ...voice);
+      }
       return;
     }
     // NOBODY typed this. The pass ran under the seller's id, so every
@@ -292,27 +346,48 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // the pass's compare-and-set chain starts there, so a save landing after
     // this check is a conflict and never the machine's base.
     const expected = { expectCustoms: writes, expectRev: data.rev ?? null };
-    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected);
+    // `pass`: an addition's re-run reads what that addition left stale, so the
+    // road is never priced on a total the new lines outgrew (law-money-1).
+    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { ...expected, pass });
     if (out.stood) {
       // The section moved since queueing (§2.8) — the customs sentence — or
       // the pass stood down mid-run: the VED closed the request (CONC-1), or
       // a person overtook the machine before it wrote anything (CONC-5).
       logger.info({ requestId, stood: out.stood, overtaken: out.overtaken }, '[calc-prefill] stood down mid-pass');
       const said = STOOD_DOWN[out.stood];
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) {
+        await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: said,
+          extra: { add: addFor(out.stood) },
+        }, ...voice);
+      }
       return;
     }
     // `whileOpen` (review CONC-1): the request is read under the claim's own
     // lock, and a VED who closed it after the pass's last step — «Готово»,
     // a hand-back — has sent the official answer; the machine's reply and its
     // lenta note must not follow it.
-    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text }, { whileOpen: true });
+    const spoke = await sayOnce(requestId, pass, {
+      userIds: [staffId],
+      type: 'CalcPrefilled',
+      text: out.text,
+      extra: { add: addFor('ok') },
+    }, { whileOpen: true, ...(direct ? { direct } : {}) });
     if (!spoke) {
       // Withheld because the request closed: the seller is told so, once. Or
       // withheld because a message already went out (a re-delivery): the
       // claim drops this one too.
       const closed = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN).closed;
-      if (closed) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: closed });
+      if (closed) {
+        await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: closed,
+          extra: { add: addFor('closed') },
+        }, ...voice);
+      }
     }
     // The AI-VED's estimate, «rasmiy emas», to the AI sotuvchi's owner when
     // the agent sent this job (his Q5 ⭐ c) — a no-op otherwise. Only when
@@ -341,6 +416,13 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // reader already stands, or one the seller reading it is bounced from.
     // Only when THIS run spoke: a re-delivery writes no second note.
     if (spoke) {
+      // His 2.8 b's lenta line says the seller WAS asked for the law's figure.
+      // `spoke` is true for a claim row nobody receives too — a seller who
+      // muted the AI's answers (unless he started this re-run: `direct`), one
+      // with no linked chat, one who can no longer log in — and the VED must
+      // not wait on a question that never reached him (review p5-adv-2): the
+      // card then carries the rendering without the line.
+      if (out.lentaUnasked !== undefined && !(await sellerHears(staffId, direct))) out.lentaText = out.lentaUnasked;
       await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
         logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
       );
@@ -367,9 +449,26 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // Best-effort: the drain may be what failed.
     try {
       const { sayOnce } = await import('./say-once');
-      await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: writes ? PASS_FAILED : TARIFF_PASS_FAILED });
+      await sayOnce(requestId, pass, {
+        userIds: [staffId],
+        type: 'CalcPrefilled',
+        text: writes ? PASS_FAILED : TARIFF_PASS_FAILED,
+        extra: { add: addFor('ok') },
+      }, ...voice);
     } catch {
       /* the log line above is the record */
+    }
+  } finally {
+    // The pass has ended, whichever way it went (§10.2.2): its ticket is
+    // cleared — by THIS job's id only — and an addition the seller made
+    // meanwhile is handed to its own job now. Never rethrown: the answer is
+    // out, and a settle that failed leaves a ticket the next standing clears
+    // when its job reads terminal.
+    try {
+      const { settlePass } = await import('./prefill-queue');
+      await settlePass(requestId, jobId);
+    } catch (err) {
+      logger.error({ err, requestId, jobId }, '[calc-prefill] settle failed');
     }
   }
 }

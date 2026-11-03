@@ -422,7 +422,12 @@ export const KNOWN_GOODS_CHARS = 6_000;
  * write one (round-2 review, C2: the old comment called the name check «the
  * fence whatever the model does», and a translated name walked through).
  */
-export function knownGoodsText(names: readonly string[], budget: number): string {
+export function knownGoodsText(
+  names: readonly string[],
+  budget: number,
+  /** Whose names: the invoice's (an Excel) or the REQUEST's own rows (the add door, §9.4). */
+  source: 'invoice' | 'request' = 'invoice',
+): string {
   const shown: string[] = [];
   let used = 0;
   for (const name of names) {
@@ -432,10 +437,21 @@ export function knownGoodsText(names: readonly string[], budget: number): string
     used += line.length + 1;
   }
   const rest = names.length - shown.length;
+  const request = source === 'request';
   return (
-    'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n' +
+    (request
+      ? // The exception is the add door's conflict path (law-money-5): a
+        // top-up restating a stored good with ITS OWN figures («Kurtka 200»
+        // against a stored 300) must come back with them, or the bot never
+        // asks «qo‘shilsin / o‘rniga / VED hal qilsin» and factory B's 200
+        // vanishes; `sameGoodsLine` then matches it to its row, so it is never
+        // priced as a second line. Without figures it is the same row — left out.
+        'Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые. Исключение: если в материале у такого товара СВОИ цифры (количество, вес или объём), укажи его в goods с этими цифрами из материала — не придумывай их:\n'
+      : 'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n') +
     shown.join('\n') +
-    (rest > 0 ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк этой таблицы — их тоже не повторяй.` : '') +
+    (rest > 0
+      ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк ${request ? 'этой заявки — для них то же правило.' : 'этой таблицы — их тоже не повторяй.'}`
+      : '') +
     '\n\n'
   );
 }
@@ -494,6 +510,13 @@ export async function analyzeIntake(input: {
    */
   knownGoods?: readonly string[];
   /**
+   * The rows already on the REQUEST, by name (the add door, docs/SAKKIZ-R3.md
+   * §9.4): a top-up's reading must list only NEW goods, or a stored row read
+   * again is priced twice. Printed before the Excel's names, inside the same
+   * `KNOWN_GOODS_CHARS` budget.
+   */
+  requestGoods?: readonly string[];
+  /**
    * The caller's leash. The bot answers asynchronously and affords the
    * default 60 s; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
@@ -525,6 +548,7 @@ export async function analyzeIntake(input: {
   const leash = input.timeoutMs ?? INTAKE_TIMEOUT_MS;
   const started = Date.now();
   const known = (input.knownGoods ?? []).map((n) => n.trim()).filter(Boolean);
+  const requestNames = (input.requestGoods ?? []).map((n) => n.trim()).filter(Boolean);
   let failure: AiReadFailure = 'network';
   for (let attempt = 0; attempt < INTAKE_ATTEMPTS; attempt += 1) {
     const left = leash - (Date.now() - started);
@@ -539,7 +563,7 @@ export async function analyzeIntake(input: {
         messages: [
           {
             role: 'user',
-            content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheets, contextSheets, known),
+            content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheets, contextSheets, known, requestNames),
           },
         ],
       });
@@ -653,12 +677,13 @@ const FACTS_JSON_SCHEMA = {
 
 /**
  * What a document stating only the NETTO of the whole shipment becomes —
- * per section, because only the freight sections ASK the brutto
- * (`totalsQuestion`, review P3-R3). There the netto must not pass for it: the
+ * per section, because only the freight sections must have the BRUTTO (the
+ * table's ⚠️ brutto row, `totalsMissing` in intake.ts; R2's retired
+ * `totalsQuestion`, review P3-R3). There the netto must not pass for it: the
  * truck is priced on what it carries with the packaging, so null, and the
- * question comes. A customs job is never asked (customs prices the lines),
- * so null there landed every netto-only invoice with no weight at all — a
- * chip asking for ever, and a single line's derived weight with no source.
+ * table asks. Customs prices the lines, so a null there landed every
+ * netto-only invoice with no weight at all — a chip asking for ever, and a
+ * single line's derived weight with no source.
  * There the netto stands as the total, and the reading SAYS it is netto,
  * on the lenta the VED reads — and in `weight_netto` (review PF-3), so the
  * single line's copied weight, the summary and the Telegram line call it
@@ -671,7 +696,11 @@ const NETTO_ONLY: Record<CalcSection, string> = {
     'Только нетто: возьми нетто как общий вес, поставь weight_netto = true и напиши в steps: «Umumiy og‘irlik faqat netto — bruttosi hujjatda yo‘q».',
 };
 
-/** What the model is shown, in the order a person reads a forwarded pile. */
+/**
+ * What the model is shown, in the order a person reads a forwarded pile. The
+ * two name lists share one budget: the request's own rows first (the add
+ * door), the Excel's in what is left.
+ */
 function intakeContent(
   section: CalcSection,
   fileCount: number,
@@ -681,7 +710,10 @@ function intakeContent(
   sheets: readonly IntakeSheetText[],
   contextSheets: readonly IntakeSheetText[],
   known: readonly string[],
+  request: readonly string[] = [],
 ): Anthropic.ContentBlockParam[] {
+  const requestText = request.length ? knownGoodsText(request, KNOWN_GOODS_CHARS, 'request') : '';
+  const knownBudget = Math.max(0, KNOWN_GOODS_CHARS - requestText.length);
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
@@ -710,7 +742,8 @@ function intakeContent(
         // Said, never silent (round-1 review, a17; round-2, C1): a model not
         // told a table stops reads the visible rows as the whole order.
         sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET) +
-        (known.length ? knownGoodsText(known, KNOWN_GOODS_CHARS) : '') +
+        requestText +
+        (known.length ? knownGoodsText(known, knownBudget) : '') +
         (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
     },
   ];

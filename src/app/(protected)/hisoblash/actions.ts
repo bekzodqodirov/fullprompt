@@ -111,6 +111,17 @@ export type TableFormState =
     };
 
 /**
+ * The server-behind line, said the same way by every door here: the postgres
+ * code (42P01 a missing table, 42703 a missing column) and, in `err`'s own
+ * message, the relation — never one migration's number, which named 0085 for
+ * every missing table long after 0085 was everyone's (review p6-adv-4).
+ */
+function logServerBehind(err: unknown): void {
+  const code = typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : null;
+  logger.error({ err, code }, '[calc] server behind — a migration not applied');
+}
+
+/**
  * Every door into the queue.
  *
  * All four VED actions gate on `ved.docs` — the queue's own grant — and every
@@ -137,10 +148,12 @@ async function run(
     await work({ actorId: who.id, ...meta });
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
-    // Deploy morning: the app can be a release ahead of the migration, and
-    // this module's columns landed in 0085 (#472's rule).
+    // Deploy morning: the app can be a release ahead of the migration (#472's
+    // rule). This module's tables began in 0085 and keep growing (0139's
+    // calc_amendments is read by four of these doors), so the line names the
+    // code and leaves the relation to postgres's own message in `err`.
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     // …and 0125's widened basis CHECKs (the dictionary's m³ baza comes
@@ -181,6 +194,12 @@ export async function finishCalcAction(
   id: string,
   answer: { amountText: string; currency: string; note: string; internalNote: string },
   revalidate: string,
+  /**
+   * The revision the page was drawn at (docs/SAKKIZ-R3.md §10A, P6): an
+   * ARGUMENT, because none of the VED's four doors is a form post. Required
+   * here and in the service, so no caller can forget it.
+   */
+  sawRev: number,
 ): Promise<CalcFormState> {
   return run(
     'ved.docs',
@@ -194,6 +213,7 @@ export async function finishCalcAction(
           internalNote: String(answer.internalNote ?? ''),
         },
         ctx,
+        sawRev,
       ),
     revalidate,
   );
@@ -280,6 +300,10 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCa
       },
       { actorId: actor.id, ...meta },
     );
+    // A twin of this very form (two presses, one pre-minted note) opened it
+    // first: what it got from the note's key until the note lock (K2), and
+    // no second pass.
+    if (opened.existing) return { error: 'note_taken' };
     // The AI VED hodimi looks at it — same sender, same queue, same rev
     // ticket as the bot's door. Only the bot had this until now, so which of
     // three buttons a seller pressed decided whether the machine ever saw
@@ -306,7 +330,7 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCa
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code };
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     throw err;
@@ -378,7 +402,7 @@ async function runTable(
   } catch (err) {
     if (err instanceof CalcError) return { error: err.code, seq: err.seq };
     if (isServerBehind(err)) {
-      logger.error({ err }, '[calc] server behind — migration 0085 not applied');
+      logServerBehind(err);
       return { error: 'server_behind' };
     }
     if (isBehindOnBasisCheck(err)) {
@@ -411,9 +435,16 @@ async function runTable(
  * row born with code + baza + measure prices on its first save. */
 export async function saveTableAction(
   id: string,
-  input: { items: TableItemEdit[]; adds: TableNewItem[] },
+  input: { items: TableItemEdit[]; adds: TableNewItem[]; sawRev?: number },
 ): Promise<TableFormState> {
-  return runTable((ctx) => saveTable(id, input, ctx), ws(id));
+  // The revision the grid was drawn at (review lmp-1): a seller's addition
+  // written after it refuses the save. A tab from before this release posts
+  // none and saves as it always did.
+  const sawRev = typeof input.sawRev === 'number' ? input.sawRev : undefined;
+  return runTable(
+    (ctx) => saveTable(id, { items: input.items, adds: input.adds }, ctx, sawRev !== undefined ? { sawRev } : undefined),
+    ws(id),
+  );
 }
 
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {
@@ -560,13 +591,15 @@ export async function confirmGroupAction(
   id: string,
   groupId: string,
   /** Which card the ✅ was pressed on — the phone's is its own record (A18). */
-  via: 'single' | 'phone' = 'single',
+  via: 'single' | 'phone',
+  /** The revision the screen was drawn at (P6, §10A) — required. */
+  sawRev: number,
 ): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx, via), ws(id));
+  return run('ved.docs', (ctx) => confirmGroup(groupId, ctx, via, sawRev), ws(id));
 }
 
-export async function confirmAllAction(id: string): Promise<CalcFormState> {
-  return run('ved.docs', (ctx) => confirmAllGroups(id, ctx), ws(id));
+export async function confirmAllAction(id: string, sawRev: number): Promise<CalcFormState> {
+  return run('ved.docs', (ctx) => confirmAllGroups(id, ctx, sawRev), ws(id));
 }
 
 export async function saveExtraAction(
@@ -605,6 +638,9 @@ export async function sealAction(
     /** The fee the screen showed (P2.6) — absent from a tab opened on the
      * build before this one, and then never compared (judge MR-24). */
     sawFeeUsd?: number | null;
+    /** The revision the screen was drawn at (P6, §10A) — required, unlike
+     * the fee: an action id is per build, so no older page can post here. */
+    sawRev: number;
   },
 ): Promise<CalcFormState> {
   return run(
@@ -618,6 +654,7 @@ export async function sealAction(
           bandOverrideMin: input.bandOverrideMin,
           bandOverrideReason: input.bandOverrideReason.trim() || null,
           ...(input.sawFeeUsd !== undefined ? { sawFeeUsd: input.sawFeeUsd } : {}),
+          sawRev: input.sawRev,
         },
         ctx,
       ),

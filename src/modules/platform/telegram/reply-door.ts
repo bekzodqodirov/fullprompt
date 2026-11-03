@@ -13,6 +13,7 @@ import {
   type ThreadPingType,
   type ThreadRef,
 } from '../notifications/thread-ref';
+import { isBacklog } from './lifecycle';
 import { onceKey, readyKey } from './once';
 import {
   answerFromBot,
@@ -53,6 +54,12 @@ export type ReplyVerdict =
   | { kind: 'old_ping' }
   /** A customer's own message (`ClientBotMessage`) — a reply here reaches nobody. */
   | { kind: 'customer' }
+  /**
+   * The machine's answer about a request that still takes an addition (the
+   * ping carries «➕», P5 marks it `add`): a reply is the seller's addition —
+   * «2: 40 juft» — and opens the add door on THAT request (his 1.9 a, 2.8 b).
+   */
+  | { kind: 'calc_add'; requestId: string }
   /** A row of any other type. */
   | { kind: 'not_replyable' };
 
@@ -126,6 +133,16 @@ export async function replyVerdictFor(
       : { kind: 'old_ping' };
   }
   if (row.type === 'ClientBotMessage') return { kind: 'customer' };
+  // Only an answer that says it takes an addition (`add`, written by the pass
+  // beside its ➕): every other «Hisob tayyor» stays not replyable (Q2 a).
+  if (
+    row.type === 'CalcPrefilled' &&
+    payload.add === true &&
+    typeof payload.requestId === 'string' &&
+    THREAD_UUID.test(payload.requestId)
+  ) {
+    return { kind: 'calc_add', requestId: payload.requestId };
+  }
   const taskId = typeof payload.taskId === 'string' && THREAD_UUID.test(payload.taskId) ? payload.taskId : null;
   if (taskId && row.type === 'TaskQuestion') return { kind: 'task_answer', taskId };
   if (taskId && ASSIGNEE_COPIES.includes(row.type)) {
@@ -163,6 +180,9 @@ export function mediaSentenceFor(verdict: ReplyVerdict): string | null {
     case 'old_ping':
     case 'customer':
     case 'not_replyable':
+    // The add door files a photo or a document as the addition's material
+    // (`refuseMediaReply`'s own branch) — no sentence of refusal.
+    case 'calc_add':
       return null;
     default: {
       const never: never = verdict;
@@ -227,7 +247,10 @@ export async function threadReplyFromBot(
     /** True when called from the 'reply' wait (the person pressed «💬 Javob yozish»): never fall through. */
     fromWait?: boolean;
   },
-): Promise<{ text: string } | null> {
+  // A non-null answer means HANDLED, and the caller says `text` only when it
+  // is non-null (regression-2): the add door (P4) handles a reply by sending
+  // everything itself, by chat id. Null still means «not handled, go on».
+): Promise<{ text: string | null } | null> {
   try {
     const staff = await staffForChat(chatId);
     if (!staff) return null;
@@ -255,6 +278,26 @@ export async function threadReplyFromBot(
     }
     const refused = verdictSentence(verdict);
     if (refused) return { text: refused };
+
+    // A reply to the AI answer IS the seller's addition: the add door opens
+    // (or resumes) on that request and takes the text as a table answer,
+    // saying everything itself by chat id — so this is HANDLED with no words
+    // (regression-2). Null here would hand «2: 40 juft» to Door B, then to
+    // `takeTaskPending` (which deletes on read and would close an armed task
+    // with it as the result), then to the paid assistant.
+    if (verdict.kind === 'calc_add') {
+      // platform → platform, but calc-amend imports this door back: dynamic.
+      const { openAmendFromReply } = await import('./calc-amend');
+      const landed = await openAmendFromReply(chatId, verdict.requestId, {
+        text: input.text,
+        date: input.messageDate,
+        messageId: input.incomingMessageId,
+      });
+      // A «💬» wait the door refused beside stays: its words said «avval …
+      // javobni yozing» (fix review FR-1).
+      if (landed && pending?.kind === 'reply') dropTaskPending(chatId);
+      return { text: null };
+    }
 
     let answer: string;
     if (verdict.kind === 'thread' || verdict.kind === 'calc_task') {
@@ -331,6 +374,23 @@ export async function refuseMediaReply(ctx: Context, chatId: bigint): Promise<bo
     if (!staff) return false;
     const verdict = await replyVerdictFor(chatId, replied.message_id, staff.id);
     if (!verdict) return false;
+    if (verdict.kind === 'calc_add') {
+      const m = ctx.message!;
+      // Q5 a: only a hydrated collection takes the backlog — a file written
+      // while the bot was down opens no 24-hour collection; the handler's own
+      // backlog sentence answers it (both handlers ask this before `late`).
+      if (isBacklog(m.date)) return false;
+      // His 1.12 a: a voice note is not read — said, and nothing opens (an
+      // empty 24-hour collection, or the cabinet's silence, was the first draft).
+      if (m.voice || m.audio || m.video || m.video_note) {
+        await ctx.reply('🎤 Ovozli xabar o‘qilmaydi — yozib yuboring.');
+        return true;
+      }
+      if (!m.photo && !m.document) return false;
+      const { openAmendFromMedia } = await import('./calc-amend');
+      await openAmendFromMedia(ctx as unknown as Parameters<typeof openAmendFromMedia>[0], chatId, verdict.requestId);
+      return true;
+    }
     const sentence = mediaSentenceFor(verdict);
     if (!sentence) return false;
     await ctx.reply(sentence);

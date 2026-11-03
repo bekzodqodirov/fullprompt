@@ -1,5 +1,82 @@
 # CHANGELOG
 
+## 2026-11-03 — 8 band, 3-raund: «Hisoblatish» deploydan keyin ham saqlanadi, savollar bitta jadval, «➕ Shu so‘rovga qo‘shish»
+
+Javoblaringiz: 1.8 c · 1.9 a · 1.10 c · 1.11 c · 2.8 b, raund savollariga esa «14 a, qolgani seni taklifing» — ya'ni 1.14 a, 1.15-1.20 ⭐ variant. **Yangi migratsiya bor (0139).** Deploydan keyin **migratsiyalar soni 140** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin. Bu deploy asosiy shoxdagi «Yo'ldagi yuk» (0137) va «AI sotuvchi» (0138) migratsiyalarini ham olib kelishi mumkin — hisob baribir **140**.
+
+### Sotuvchi uchun (Telegram botda)
+- **Yig'ilgan ma'lumot yo'qolmaydi (1.8 c).** «🧮 Hisoblatish» ga yuborgan xabar, fayl va javoblaringiz endi serverda saqlanadi: deploy yoki botning qayta ishga tushishi ularni o'chirmaydi. Bot o'chiq paytda yozilgan xabar ham, yig'ish ochilgandan keyin yozilgan bo'lsa, shu yig'ishga qo'shiladi. Bitta xabar ikki marta qo'shilmaydi.
+- **Yig'ish 24 soat kutadi, lekin chatni egallab turmaydi.** 30 daqiqa hech narsa yozmasangiz, u «⏸ to'xtab turadi». Shu paytda «GS777», zametka, «➕ Topshiriq», AI yordamchi va AI sotuvchi oddiygidek ishlaydi. Davom etish — «▶️ Davom etamiz», yig'ishning o'z tugmalari yoki jadvalga reply. To'xtab turgan yig'ishga jadvalga o'xshagan matn («3: 50 dona») yozsangiz, bot «bu xabar unga qo'shilmadi» deydi — jimgina qo'shmaydi.
+- **2 soatdan keyin bitta eslatma:** «⏸ Tugallanmagan hisoblatish … Davom etamizmi?». Kechasi 22:00–08:00 ovozsiz keladi (1.17 ⭐). Eslatma sizning o'z ishingiz haqida, shuning uchun xabarnomalar o'chirilgan bo'lsa ham keladi. **24 soatdan keyin** bitta qator: «⌛ … o‘chirildi» (bo'sh yig'ish jim o'chadi, 1.18 ⭐).
+- **«Bo‘ldi» dan keyingi AI o'qishi alohida navbatda** (bir vaqtda 4 ta). Deploy paytiga to'g'ri kelsa, natija biroz kechroq keladi, lekin yo'qolmaydi. «⏳ AI o‘qiyapti…» xabari jadval kelganda «✅ O‘qildi — natija pastda ⬇️» ga o'zgaradi. Telegram vaqtincha xabar yubormay tursa, tayyor jadval kutib turadi va keyin keladi — «Tahlil qilib bo‘lmadi» demaydi. Bitta o'qish uchun pullik AI ikki marta chaqirilmaydi. Har bir AI o'qishi model javob bergan zahoti kunlik hisobga yoziladi — tashlab ketilgan yig'ishniki ham.
+- **Savollar endi bitta jadval (1.10 c).** O'qishdan keyin bitta xabar keladi: har qator ✅ yoki ⚠️, ostida nima yetishmasligi, keyin umumiy brutto, kub va yo'nalish. Bitta xabarda istalgan qatorni to'ldirasiz — raqami yoki nomi bilan (1.11 c): «2: 40 juft», «3-qator 50 dona», «Shapka 30 dona», «jami 3500 kg». Qator raqami VED ekranidagi raqam bilan bir xil. Jadval javob kelgan sari o'sha xabarning o'zida yangilanadi. Bittalab so'rash va «⏭ O‘tkazib yubor» olib tashlandi: to'ldirilmagan qatorni VED to'ldiradi.
+- **Har javobga bitta tasdiq:** masalan «3-qator Sumka: 50 dona yozildi», yana nima yetishmasligi va «↩️ Shu javobni bekor qilish» tugmasi. Bu tugma faqat shu xabar yozganini qaytaradi; keyingi javob o'zgartirgan qatorga tegmaydi, uni nomi bilan aytadi. Butun yig'ishni o'chiradigan «✖️ Bekor qilish» ichida narsa bo'lsa bir marta so'raydi: «🗑 Hammasi o‘chadi: 3 ta xabar, 2 ta fayl. O‘chiramizmi?».
+- **Jadval paytida yozilgan matn endi umumiy og'irlikka aylanib ketmaydi.** Ilgari «3: 50 dona / 5: 20 kg» yozilsa, keyingi «Bo‘ldi» da 20 kg lik yuk bo'lib qolardi. Endi bunday matn yo qatorga javob bo'ladi, yo bot «⚠️ Qaysi qatorga?» deb so'raydi. Raqami boshqa tovarni ko'rsatgan javob (masalan «1. Kurtka 300 dona», 1-qatorda esa boshqa tovar) yozilmaydi — so'raladi. Yangi tovar yoki fayl uchun — «➕ Yana ma’lumot».
+- **«➕ Shu so‘rovga qo‘shish» (1.9 a).** ✅ va AI javobi ostida turadi; AI javobiga reply qilib yozsangiz ham bo'ladi. Oxirgi 7 kunda yuborgan ochiq so'rovingiz bo'lsa, forward qilingan xabar yoki fayl ostida ham bot «➕ B-000067 so‘roviga qo‘shish» ni taklif qiladi. «✅ Qo‘shish» bosilganda:
+  - VED hali boshlamagan bo'lsa — qo'shimcha o'sha so'rovga yoziladi va AI qayta hisoblaydi; javob «qayta hisob» deb keladi;
+  - VED boshlagan yoki so'rov yopilgan bo'lsa — hech narsa yozilmaydi, qo'shimcha VED ga matn bo'lib boradi. Bot buni oldindan aytadi: «📝 VED ga yuboriladi», tugma esa «📨 VED ga yuborish» bo'ladi;
+  - AI hali hisoblayotgan bo'lsa — qo'shimcha saqlanadi va AI tugatgach o'zi yoziladi, qayta bosish shart emas;
+  - faqat fayl yoki matn bo'lib qatorlar o'zgarmasa — kartaga va VED ga boradi, AI qayta hisoblamaydi.
+- **Qo'shimcha nimani o'zgartirmaydi.** Narx, stavka, zona, sertifikat va **bor** TNVED kod o'zgarmaydi: kodi bor qatorga boshqa kod yozilsa, u VED ga matn bo'lib boradi (1.16 ⭐), bo'sh kod esa yoziladi. Fayldagi son so'rovdagidan farq qilsa («faylda 200 dona, so'rovda 300»), bot so'raydi: «qo'shilsin» (500), «o'rniga» (200) yoki «VED hal qilsin»; javob bo'lmasa VED hal qiladi. Umumiy og'irlik yoki hajm faqat «jami 3500 kg» deb yozilganda o'zgaradi. Yangi tovar qo'shilib, qo'lda yozilgan jami yangilanmagan bo'lsa, «yangilansinmi?» deb so'raladi va AI yo'lkirani hisoblamaydi.
+- **VED qaytargan so'rovga «➕»** (1.19 ⭐) o'sha so'rovning qatorlari, kodlari va mijozi bilan to'ldirilgan YANGI «🧮 Hisoblatish» ni ochadi. «✅ Tasdiqlash» uni Uch band qoidasi bo'yicha yangi so'rov qilib yuboradi; qaytarilgan bitim ochiq qoladi.
+- **Kod qonuni so'ragan son (2.8 b, 1.14 a).** AI javobidan keyin, kod qonuni so'ragan, lekin so'rovda yo'q son (dona, juft, kerak bo'lsa kg, m², litr) javobdagi «❓» blokida qator raqami bilan so'raladi. AI javobiga reply qilib yozasiz («2: 40 juft») yoki «➕» ni bosasiz — son yoziladi va AI qayta hisoblaydi. Bir javobda bir marta so'raladi; javob berilmagan qolganini keyingi javob so'raydi.
+- AI javoblarini o'chirib qo'ygan («✅ Mening vazifalarim») sotuvchiga o'zi «✅ Qo‘shish» bilan so'ragan qayta hisob baribir keladi (1.20 ⭐); boshqa AI javoblari o'chirilganicha qoladi.
+
+### VED uchun
+- Sotuvchining har bir qo'shimchasi hisob ostidagi «Savol-javob» ga keladi: nima yozildi, nima yozilmadi, qaysi kod saqlab qolindi, qaysi farqni VED hal qiladi, qaysi jami eskirdi.
+- **«VED boshlagan»** — hisob sahifasida biror narsani saqlagan yoki guruhga ✅ bosgan bo'lsa (1.15 ⭐). «Olaman», sahifani ochish yoki savol yozish hisoblanmaydi. Deploydan oldin yuborilgan so'rovlar «boshlagan» deb olinadi: ularga qo'shimcha matn bo'lib boradi.
+- **Sahifa eskirgan bo'lsa, tugmalar rad etadi.** VED sahifani ochgandan keyin sotuvchining qo'shimchasi so'rovga yozilsa, «Готово», guruh ✅, «✅ Hammasini», «Muhrlash» va kompyuterdagi jadvalning saqlash tugmasi shunday deydi: «Sotuvchi qo‘shimcha yubordi — sahifani yangilang, o‘zgarish «Savol-javob» da yozilgan.» Yozilgan raqamlar yo'qolmaydi, sahifa yangilangach yana bosiladi. VED ning o'z saqlashlari va hamkasbining saqlashi bu xabarni chiqarmaydi.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. `docker compose --profile telegram up -d --build tg-listen`.
+6. Migratsiyalar soni **140** ekanini va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishini tekshiring. Kam chiqsa, `migrate` konteynerining o'z chiqishini o'qing.
+
+### Bilib qo'ying
+- Deploy paytida ochiq turgan yig'ishlar saqlanadi. AI o'qishi deploy paytiga to'g'ri kelsa, natija bir necha daqiqa (7 daqiqagacha) kechikadi va AI qayta o'qiydi: Anthropic ikkalasi uchun pul oladi, kunlik AI hisobida esa bittasi ko'rinadi.
+- Qo'shimcha eshigi faqat Telegram botda. Veb kartada VED bilan aloqa avvalgidek «Savol-javob» orqali.
+- Ovozli xabar avvalgidek: «yozib yuboring» (1.12 a). Ikkinchi invoys avvalgidek so'raladi (1.13 c).
+- Bot bu yerda haqiqiy Telegram bilan ishlatib ko'rilmadi (sinov boti bilan tekshirildi). Deploydan keyin bitta sinov «🧮 Hisoblatish» qilib, «Bo‘ldi», jadvalga javob va «➕» ni bosib ko'ring.
+
+### Sizga savollar (⭐ = hozir shunday qurilgan)
+**1.21** AI hali hisoblayotgan paytda sotuvchi qo'shimcha yuborsa, u «kutmoqda» bo'lib saqlanadi va sotuvchiga «AI tugatgach so‘rovga avtomatik yoziladi» deyiladi. Shu oraliqda VED «Готово» bossa, so'rov o'sha qo'shimchasiz yopiladi; qo'shimcha VED ga matn bo'lib boradi va sotuvchiga «so'rov yopilgan» deyiladi.
+- a) ⭐ hozirgidek: faqat so'rovga YOZILGAN qo'shimcha VED tugmalarini to'xtatadi; kutayotgani VED ga matn bo'lib boradi, sotuvchiga aytiladi.
+- b) shunday paytda «Готово» rad etsin: «sotuvchi qo‘shimcha kutmoqda — AI tugashini kuting». Narx uchun xavfsizroq, lekin AI ishlayotgan butun vaqt (bir necha daqiqa, deploydan keyin 30 daqiqagacha) VED javobini ushlab turadi.
+
+**1.22** Kod qonuni so'ragan son sotuvchidan so'ralganda, kartaning lentasiga «❓ Sotuvchidan so‘raldi: 2, 5-qator o‘lchovi» yoziladi. Sotuvchiga xabar yetib bormasa (bot ulanmagan yoki AI javoblari o'chirilgan), lentada hozir hech narsa yozilmaydi.
+- a) ⭐ hozirgidek: lenta hech kim olmagan so'rovni «so'raldi» demaydi.
+- b) VED ko'rsin: «❓ Qonun 2, 5-qator o‘lchovini so‘raydi — sotuvchiga yetib bormadi (bot ulanmagan yoki o‘chirilgan)».
+
+**1.23** Jadval paytida sotuvchi faqat «ha», «ok» yoki «tasdiq» yozsa, bot «⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona»…» deydi.
+- a) ⭐ hozirgidek: jadvalning oxirgi qatori tugmani aytib turadi, bunday so'z hech narsa yozmaydi.
+- b) alohida qisqa javob: «Tasdiqlash uchun «✅ Tasdiqlash» tugmasini bosing.»
+
+**1.24** VED kompyuterdagi jadvalni sotuvchining qo'shimchasidan OLDIN ochilgan sahifadan saqlasa, butun saqlash rad etiladi («Sotuvchi qo‘shimcha yubordi — sahifani yangilang …»), yozganlari sahifa yangilangandan keyin ham turadi.
+- a) ⭐ hozirgidek: butun saqlash rad etiladi, hech narsa yo'qolmaydi, bir marta yangilanadi. Ikki VED orasida kompyuterda oxirgi saqlagan yutadi (sizning 2b javobingiz).
+- b) faqat sotuvchi o'zgartirgan kataklar rad etilsin, VED ning boshqa kataklari darhol saqlansin.
+
+**1.25** Qaytarilgan so'rov «➕» orqali YANGI qator bilan qayta yuborilsa, eski brutto ⚠️ «yangilansinmi?» bo'lib chiqadi. Sotuvchi javob bermay «✅ Tasdiqlash» bossa, yangi so'rov:
+- a) ⭐ hozirgidek eski brutto bilan tushadi (ogohlantirish faqat botdagi jadvalda ko'rinadi);
+- b) bruttosiz tushadi — VED so'raydi.
+
+**1.26** To'xtab turgan (⏸) yig'ish, AI sotuvchi sizdan ✏️ matn, narx yoki mijoz kodini kutayotgan paytda, o'z tugmalarini rad etadi va shunday deydi: «Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) — keyin qayta bosing.» Xuddi shu so'zlar «➕» javobiga reply qilib yozilgan matn yoki faylga ham aytiladi. Yig'ish to'xtab turganiga 30 daqiqadan oshgan bo'lsa, «qayta bosing» deyilgan tugma 2 soatlik eslatma kelguncha chatda ko'rinmasligi mumkin.
+- a) ⭐ shu so'zlar qolsin.
+- b) boshqa so'z — yozib yuboring.
+
+### Qilinmadi (keyingi raundlar)
+- «A - B» ko'rinishida yozilgan yo'nalishni o'qish va uning rad javobi — alohida kichik raund.
+- Karta chatidagi 🧮 dan kelgan AI o'qishi hali kunlik limitga sanalmaydi va hisobga yozilmaydi — 5-raundda.
+- «✅ Tasdiqlash» yoki «✅ Qo‘shish» dan keyin bekor qilish yo'q: o'zgartirish — yana «➕».
+- Tashlab ketilgan yig'ishning fayllari omborda qoladi (avvalgidek).
+
+### Tekshiruv
+Qurilishdan oldin 5 tomondan baholandi: 87 e'tiroz, 63 tasi tasdiqlandi, 12 tasi qisman — hammasi hisobga olindi. Raund bitta asos va oltita alohida qismdan qurildi; har bir qism ikki marta tekshirildi (120 band, 101 tasi tuzatildi, qolgani sababi yozilgan holda qoldirildi). Qismlar birlashtirilgach, asosiy shox (AI sotuvchi) bilan birga yana to'rt tomondan tekshirildi: 30 band, 28 tasi tuzatildi. Eng muhimi: AI javobiga reply qilib qo'shimcha ochilganda, sotuvchining javobi hali yozilmasdan «olindi» deb belgilanardi — server o'sha daqiqada qayta ishga tushsa, javob jimgina yo'qolardi. Endi javob faqat yozilganda belgilanadi.
+
+Production'dan oldin tuzatishlarning o'zi yana uch tomondan tekshirildi: 34 band, 27 tasi tuzatildi, 7 tasi sababi yozilgan holda qoldirildi. Eng muhimi: 500 qatorli so'rovda bot jadvalni chizayotganda server 4–17 soniya band bo'lib qolardi, shu paytda sayt, skaner ekranlari va bot kutib turardi. Endi bu bir soniyaning yigirmadan biricha vaqt oladi. Qo'shimcha faylini o'qish ham shunday tezlashdi. Keyin mustaqil tekshiruv yana bitta xatoni topdi: nomi ichida son va birlik bo'lgan tovarlarda («Paket 100 dona qora») jadval bot o'zi tushunmaydigan namunani ko'rsatardi. Endi namuna bot uni o'zi to'g'ri o'qiy olsagina ko'rsatiladi, masalan «Paket qora 30 dona». Oxirgi kod bilan 12 854 ta avtomatik test o'tdi; brauzerdagi 488 ta sinov ham o'tdi.
+
 ## 2026-10-24 → 10-29 — Mijoz topuvchi agent uchun eshik: lidlar CRMga tushadi, agent ikki ro'yxatni o'qiydi
 
 Sizning 23-oktabrdagi qaroringiz: alohida dastur (agent) internetdan Xitoydan yuk olib keladigan firmalarni topadi, siz tasdiqlaysiz, lid CRMga tushadi va sotuvchilar o'zlari yozadi. Agent hech kimga yozmaydi. (Bu «agent» — AI sotuvchi emas: AI sotuvchi sizning Telegram akkauntingizdagi yordamchi, u ham siz ✅ bosmaguningizcha hech kimga yozmaydi — pastda.) **Migratsiya yo'q** — bu eshik o'z migratsiyasini qo'shmaydi: deploydan keyin baza hisobi asosiy shoxdagidek **139** bo'ladi, yangilangani esa `/api/version` dagi build vaqtidan tekshiriladi.

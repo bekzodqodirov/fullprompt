@@ -14,6 +14,11 @@ vi.mock('@/modules/platform/telegram/calc-intake', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/calc-intake')>()),
   analyzeCollected: analyse.fn,
 }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (docs/SAKKIZ-R3.md
+// §7.1); the one drive helper runs the captured job.
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
@@ -23,6 +28,9 @@ import {
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { INTAKE_READ_RETRY } from '@/modules/platform/telegram/calc-read';
+import { driveReading, readingsEnqueued, resetReadingDrive } from '../fixtures/calc-read-drive';
+import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
 import {
   clientAnswer,
   handleCalcCallback,
@@ -54,7 +62,7 @@ function collection(patch: Partial<IntakeState> = {}, section: IntakeState['sect
   state: IntakeState;
 } {
   const chatId = freshChat();
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   const state = updateIntake(chatId, patch)!;
   return { chatId, state };
 }
@@ -82,7 +90,10 @@ function fakeCtx(opts: { refuse?: RegExp } = {}) {
 const callbacksOf = (kb: { inline_keyboard: { callback_data: string }[][] } | undefined) =>
   (kb?.inline_keyboard ?? []).flat().map((b) => b.callback_data);
 
-beforeEach(() => analyse.fn.mockReset());
+beforeEach(() => {
+  analyse.fn.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -137,7 +148,7 @@ describe('a third goods file folds into the open question (review c1)', () => {
 
 describe('an answer given while the analysis ran is kept (review c2)', () => {
   it('the live per-line answer goes back onto the new reading', () => {
-    const snapshot = { ...collection({ stage: 'question', analysing: 'T1', material: ['Kurtka'] }).state };
+    const snapshot = { ...collection({ stage: 'material', analysing: 'T1', material: ['Kurtka'] }).state };
     const live: IntakeState = {
       ...snapshot,
       answers: ['1-qator: 150 kg'],
@@ -154,20 +165,28 @@ describe('an answer given while the analysis ran is kept (review c2)', () => {
 });
 
 describe('a refused «⏳» notice cannot strand the lock (review c3)', () => {
-  it('the analysis is dispatched anyway, and its own exit releases the token', async () => {
+  it('the reading is enqueued anyway, and its own exit releases the token', async () => {
+    // Re-anchored (docs/SAKKIZ-R3.md §11, P2): the press ENQUEUES the reading
+    // — the notice's failure is caught as before — and the job is the
+    // reading's exit; its last attempt releases the token and says so.
     analyse.fn.mockRejectedValueOnce(new Error('model down'));
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona'] });
     const ctx = fakeCtx({ refuse: /^⏳/ });
     await expect(handleCalcCallback(ctx, chatId, 'done')).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    expect(readingsEnqueued(chatId)).toHaveLength(1);
+    await driveReading(chatId, ctx, { retryCount: INTAKE_READ_RETRY });
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(analyse.fn).toHaveBeenCalledTimes(1);
+    expect(ctx.texts().at(-1)).toBe('Tahlil qilib bo‘lmadi. «Bo‘ldi» ni qayta bosing.');
     // …and the next «Bo'ldi» is a «Bo'ldi», not «Tahlil davom etmoqda».
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(readingsEnqueued(chatId)).toHaveLength(2);
     expect(ctx.texts().some((t) => t.includes('Tahlil davom etmoqda'))).toBe(false);
   });
 });
 
 describe('a PDF or a header-less sheet beside an Excel list is ASKED about (review c4)', () => {
-  const pdf = { data: Buffer.from('%PDF-1.4 x'), name: 'B.pdf' };
+  const pdf = { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 };
 
   it('a PDF after the Excel: the question, two buttons the parser takes, and «Bo‘ldi» waits', async () => {
     const { chatId, state } = collection({ stage: 'material', invoiceGoods: [line('Kurtka')], fileCount: 2 });
@@ -224,12 +243,14 @@ describe('a stale ⏭ moves nothing (review c5)', () => {
     expect(activeIntake(chatId)?.stage).toBe('material');
   });
 
-  it('nor while an analysis runs', async () => {
-    const { chatId } = collection({ stage: 'question', askingIndex: 0, analysing: 'T9' });
+  it('nor while an analysis runs — the stage is unchanged', async () => {
+    // R3: the per-line question stage is retired (his 1.10 c), so the claim
+    // this pinned is held on the table stage: a stale ⏭ moves nothing.
+    const { chatId } = collection({ stage: 'review', analysing: 'T9' });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect(ctx.texts()).toEqual(['Bu tugma eskirgan.']);
-    expect(activeIntake(chatId)?.stage).toBe('question');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 
@@ -346,54 +367,57 @@ describe('a goods list sent twice stays goods (round-2 review, C3/C7)', () => {
   });
 });
 
-describe('a line passed with ⏭ is never asked again (round-2 review, C10)', () => {
-  it('⏭ on line 1, then ⏭ on line 2: line 3 is asked — the stored collection remembers both', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+describe('a line answered in the table stays answered across «➕ Yana ma’lumot» (round-2 review, C10; R3 1.10 c)', () => {
+  // ⏭ is retired with the per-line question (docs/SAKKIZ-R3.md §11): the
+  // defect C10 pinned — a record of a line carried by index onto another line
+  // after a re-read — is held on ANSWERS, which `placeByName` places by name.
+  it('row 1 answered, ➕, a re-read that moves it: the answer lands on its own line', async () => {
+    const { chatId, state } = collection({
+      stage: 'review',
+      material: ['Kurtka, Shim, Sharf'],
       facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf')] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [{ index: 0, name: 'Kurtka' }] });
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({
-      stage: 'question',
-      askingIndex: 2,
-      lineDone: [
-        { index: 0, name: 'Kurtka' },
-        { index: 1, name: 'Shim' },
-      ],
-    });
-    expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
-  });
-
-  it('the summary keeps the list too, so «➕ Yana ma’lumot» cannot bring a passed line back', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
-      facts: { goods: [line('Kurtka')] },
-    });
-    await handleCalcCallback(fakeCtx(), chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
+    await applyTableAnswer(ctx, chatId, state, '1: 150 kg', { date: 0, messageId: 50, forwarded: false, replyTo: null });
+    expect(activeIntake(chatId)?.facts.goods?.[0]).toMatchObject({ name: 'Kurtka', weightKg: 150 });
+    await handleCalcCallback(ctx, chatId, 'more');
+    expect(activeIntake(chatId)?.stage).toBe('material');
+    analyse.fn.mockImplementationOnce(async (s: IntakeState) => ({
+      ...s,
+      facts: { goods: [line('Shim'), line('Kurtka'), line('Sharf')] },
+      stage: 'review',
+      // analyzeCollected's own shape: the job bills what it answered (§7.2.10).
+      answered: [],
+    }));
+    // The re-read runs as the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
+    await handleCalcCallback(ctx, chatId, 'done');
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
+    const after = activeIntake(chatId)!;
+    expect(after.facts.goods?.map((g) => [g.name, g.weightKg ?? null])).toEqual([
+      ['Shim', null],
+      ['Kurtka', 150],
+      ['Sharf', null],
+    ]);
+    // …and the stored answer says where it now is, so the next re-read starts there.
+    expect(after.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka', patch: { weightKg: 150 } }]);
   });
 });
 
-describe('the summary names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
+describe('the table names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
   it('«Ali aka» over the phone reads «Mijoz: Ali aka · +998 …» — one line, and the phone the landing reads', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+    // The summary reached through ⏭ is retired; the table is what the reading
+    // delivers (`deliverNextStep`), with the same `Mijoz:` line.
+    const { chatId, state } = collection({
+      stage: 'material',
       clientHintRaw: 'Ali aka\n+998 90 123 45 67',
       facts: { goods: [line('Kurtka', { weightKg: 150 })] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    const summary = ctx.texts().at(-1)!;
-    expect(summary).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    await deliverNextStep(ctx, chatId, state);
+    const table = ctx.texts().at(-1)!;
+    expect(table).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 
@@ -428,7 +452,7 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
       (_, i) => `${i + 1};Куртка женская модель YW-${i} (女士夹克);${300 + i};PCS;${i}.5;${i}.9;0.${i}`,
     ).join('\n');
     const state = collection().state;
-    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv) }, 'PL.csv', 'text/csv', state);
+    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv), attachmentId: 'a-file' }, 'PL.csv', 'text/csv', state);
     expect(answer.say).toContain('⚠️ Jadval katta');
     expect(answer.patch.sheetTexts?.[0]?.cut).toBe(true);
   });

@@ -41,6 +41,7 @@ import {
   setItemBaza,
   setRequestCertificate,
 } from '@/modules/wms/calc/workspace';
+import { sawRev, sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase B — the workspace and the seal against a real database.
@@ -178,7 +179,7 @@ async function readyRequest(overrides: Partial<Parameters<typeof openCalcRequest
     ctx(),
   );
   await setFreightZone(request.id, 'cn', ctx());
-  await confirmAllGroups(request.id, ctx());
+  await confirmAllGroups(request.id, ctx(), await sawRev(request.id));
   return { requestId: request.id, groupId };
 }
 
@@ -203,7 +204,7 @@ describe('the workspace refuses rather than inventing a number', () => {
     expect(workspace!.blockers.some((b) => b.kind === 'customs')).toBe(true);
 
     await expect(
-      sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+      sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx()),
     ).rejects.toMatchObject({ code: 'not_ready' });
   });
 
@@ -223,7 +224,7 @@ describe('the workspace refuses rather than inventing a number', () => {
     const workspace = await loadWorkspace(request.id);
     expect(workspace!.blockers).toContainEqual({ kind: 'groups_unconfirmed', count: 1 });
     await expect(
-      sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+      sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx()),
     ).rejects.toMatchObject({ code: 'not_ready' });
   });
 
@@ -286,7 +287,7 @@ describe('the seal', () => {
     const { requestId } = await readyRequest();
     const result = await sealCalc(
       requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) },
       ctx(),
     );
     // customs: 100 × $20 = $2 000 value; duty 10 % = $200; VAT 12 % of
@@ -319,9 +320,9 @@ describe('the seal', () => {
 
   it('a second seal on the same request is refused, not a second version', async () => {
     const { requestId } = await readyRequest();
-    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx());
     await expect(
-      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx()),
     ).rejects.toMatchObject({ code: 'already_closed' });
     const versions = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
     expect(versions).toHaveLength(1);
@@ -330,12 +331,12 @@ describe('the seal', () => {
   it('a discount needs a reason, and lands on its own line', async () => {
     const { requestId } = await readyRequest();
     await expect(
-      sealCalc(requestId, { discountUsd: 300, discountReason: '  ', bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+      sealCalc(requestId, { discountUsd: 300, discountReason: '  ', bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx()),
     ).rejects.toMatchObject({ code: 'discount_reason_required' });
 
     const result = await sealCalc(
       requestId,
-      { discountUsd: 300, discountReason: 'doimiy mijoz', bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 300, discountReason: 'doimiy mijoz', bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) },
       ctx(),
     );
     expect(result.totalUsd).toBe(3496.96);
@@ -357,12 +358,12 @@ describe('the seal', () => {
     expect(before!.freight).toMatchObject({ ok: true, listUsd: 3300 });
 
     await expect(
-      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: null }, ctx()),
+      sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx()),
     ).rejects.toMatchObject({ code: 'band_reason_required' });
 
     const result = await sealCalc(
       requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: 'yuk siqilgan' },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: 950, bandOverrideReason: 'yuk siqilgan', sawRev: await sawRev(requestId) },
       ctx(),
     );
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));
@@ -381,7 +382,7 @@ describe('the seal', () => {
     expect(workspace!.freight).toBeNull();
     const result = await sealCalc(
       requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) },
       ctx(),
     );
     expect(result.totalUsd).toBe(496.96);
@@ -394,7 +395,7 @@ describe('the seal', () => {
 describe('the card reads the version', () => {
   it('currentSealFor answers with the newest sealed price on the card', async () => {
     const { requestId } = await readyRequest();
-    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx());
     const seal = await currentSealFor('deal', dealId);
     expect(seal!.totalUsd).toBe(3796.96);
     expect(seal!.expired).toBe(false);
@@ -405,7 +406,7 @@ describe('the card reads the version', () => {
 describe('the lock is real', () => {
   it('the ✏️ form cannot change a sealed quote, and an ordinary save still works', async () => {
     const { requestId } = await readyRequest();
-    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx());
     expect(await quoteLockedFor('deal', dealId)).toBe(3796.96);
 
     const stage = await db.query.dealStages.findFirst({ where: eq(dealStages.kind, 'open') });
@@ -454,7 +455,7 @@ describe('what the shipped-code audit found', () => {
     );
     madeRequests.push(request.id);
     await setFreightZone(request.id, 'cn', ctx());
-    await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx());
     expect(await quoteLockedFor('lead', leadId)).toBe(3300);
 
     const { rekeyLeadCalcRequests } = await import('@/modules/wms/calc/service');
@@ -513,7 +514,7 @@ describe('what the shipped-code audit found', () => {
       ),
     ).rejects.toMatchObject({ code: 'bad_number' });
     await expect(
-      sealCalc(requestId, { discountUsd: NaN, discountReason: 'x', bandOverrideMin: null, bandOverrideReason: null }, ctx()),
+      sealCalc(requestId, { discountUsd: NaN, discountReason: 'x', bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx()),
     ).rejects.toMatchObject({ code: 'bad_number' });
   });
 });
@@ -521,7 +522,7 @@ describe('what the shipped-code audit found', () => {
 describe('a correction is a NEW request', () => {
   it('copies the groups and items, and confirms NOTHING', async () => {
     const { requestId } = await readyRequest();
-    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(requestId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) }, ctx());
 
     const freshId = (await recalcFromSealed(requestId, ctx())).id;
     madeRequests.unshift(freshId); // deleted before the request it supersedes
@@ -666,10 +667,10 @@ describe('the lgota is offered from the last sealed decision', () => {
       { tnvedCode: code, dutyPct: 0, vatPct: 12, dutyFree: true, vatFree: false, source: 'typed' },
       ctx(),
     );
-    await confirmAllGroups(first.requestId, ctx());
+    await confirmAllGroups(first.requestId, ctx(), await sawRev(first.requestId));
     await sealCalc(
       first.requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(first.requestId) },
       ctx(),
     );
 
@@ -848,8 +849,8 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
     // The sborniy case: this sender's certificate stands whatever the
     // request-level answer says.
     await setGroupRates(ownAnswer, { ...rates, hasCertificate: true }, ctx());
-    await confirmGroup(inheriting, ctx());
-    await confirmGroup(ownAnswer, ctx());
+    await confirmGroup(inheriting, ctx(), 'single', await sawRevOfGroup(inheriting));
+    await confirmGroup(ownAnswer, ctx(), 'single', await sawRevOfGroup(ownAnswer));
 
     await setRequestCertificate(request.id, false, ctx());
 
@@ -869,7 +870,7 @@ describe('VED 2.0 — the law engine wired through the workspace', () => {
     const { requestId } = await readyRequest({ section: 'rastamojka' });
     await sealCalc(
       requestId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(requestId) },
       ctx(),
     );
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, requestId));

@@ -33,6 +33,7 @@ import {
 import { withoutButton } from '@/modules/platform/notifications/staff-html';
 import { reachLine } from '@/modules/platform/notifications/staff';
 import { emptyDayText, undatedLine } from '@/modules/platform/tasks/digest';
+import { CALC_COLLECTOR_FILES } from '../fixtures/calc-collector-source';
 
 /**
  * The topshiriq round's buttons where they are pure (docs/TELEGRAM-TOPSHIRIQ.md
@@ -103,10 +104,15 @@ describe('the closed callback vocabularies (telegram-mechanics-25)', () => {
   it('DERIVED: every callback_data the staff keyboards build is one the parser accepts (#939)', () => {
     // ONE fence over every staff source: a hole is filled with each value a
     // real button could carry, and the literal passes when one of them parses.
+    // …and every calc collector file: K moved the calc keyboards out of
+    // staff-handlers.ts (docs/SAKKIZ-R3.md K16, the subject moved).
+    // …and the zametka capture's keyboard, which K moved into
+    // note-capture.ts, no collector file (K's review, U1).
     const sources = [
       'src/modules/platform/telegram/staff-bot.ts',
-      'src/modules/platform/telegram/staff-handlers.ts',
       'src/modules/platform/telegram/task-handlers.ts',
+      ...CALC_COLLECTOR_FILES.map((f) => `src/modules/platform/telegram/${f}`),
+      'src/modules/platform/telegram/note-capture.ts',
     ].map(read);
     const literals = sources.flatMap((s) =>
       [...s.matchAll(/callback_data:\s*(['`])((?:[a-z]{1,3}):[^'`]*)\1/g)].map((m) => m[2]!),
@@ -124,6 +130,7 @@ describe('the closed callback vocabularies (telegram-mechanics-25)', () => {
     for (const prefix of ['tk:', 'tw:', 'tq:', 'tr:', 'tn:', 'te:', 'tc:', 'tf:', 'tp:', 'd:', 'dk:', 'fb:']) {
       expect(literals.some((l) => l.startsWith(prefix)), prefix).toBe(true);
     }
+    for (const control of ['n:save', 'n:share', 'n:cancel']) expect(literals, control).toContain(control);
   });
 
   it('the keyboards the bot builds by function parse too', () => {

@@ -1,6 +1,6 @@
 import type { Bot, Context } from 'grammy';
 import { logger } from '../logger';
-import { activeIntake } from './calc-intake';
+import { holdingIntake } from './calc-store';
 import { activeCapture } from './note-capture';
 import { answerPress } from './press';
 import { peekTaskPending, staffForChat, type BotCallback } from './staff-bot';
@@ -33,13 +33,43 @@ const BUSY_REPLY = "Avval «💬 Javob yozish» so'ragan javobni yozing — keyi
  * Javob yozish», a ⏰ date, review I2 b): a press that ARMS an agent wait
  * while another question is on the screen would leave his next text to
  * whichever reads first. Null = free; otherwise the words that name the
- * question actually waiting.
+ * question actually waiting. A «Hisoblatish» collection refuses only while it
+ * HOLDS the chat (docs/SAKKIZ-R3.md §6.2.7): it now waits 24 hours, but a
+ * parked one — idle past the half hour every collection used to live for —
+ * no longer takes his text, so it no longer stands in the agent's way.
  */
 function busy(chatId: bigint): string | null {
-  if (activeIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
+  if (holdingIntake(chatId) || activeCapture(chatId) || activeDraft(chatId)) return BUSY;
+  return taskWaitWords(chatId);
+}
+
+/** A task's one-text wait, in the words naming it; null when none is armed. */
+function taskWaitWords(chatId: bigint): string | null {
   const task = peekTaskPending(chatId);
   if (!task) return null;
   return task.kind === 'reply' ? BUSY_REPLY : BUSY_TASK;
+}
+
+/** One of the agent's three waits is on the screen (✏️ his text, 💵 his price, 👤 a stranger's code). */
+const BUSY_AGENT = 'Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) — keyin qayta bosing.';
+
+/**
+ * A one-text wait this chat's next text answers — a task's (a «Bajarildi»
+ * result, «💬 Javob yozish», a ⏰ date) or one of the agent's three — in the
+ * words naming it; null when none. The collector asks it before a press makes
+ * a PARKED collection hold the chat again (calc-intake-sweep.ts
+ * `otherCollectorLive`, review REG-2 / COMP-5): a holding collection is asked
+ * first by the text ladder and would file that answer as its material.
+ */
+export function waitingAnswerWords(chatId: bigint): string | null {
+  const task = taskWaitWords(chatId);
+  if (task) return task;
+  const now = nowSec();
+  for (const kind of AGENT_WAITS) {
+    const entry = readWait<unknown>(chatId, kind);
+    if (entry && waitVerdict(entry, now, false) === 'answers') return BUSY_AGENT;
+  }
+  return null;
 }
 
 /** How many of one target's prompts a swipe-reply may still name (✏️ tapped again re-asks the same thing). */

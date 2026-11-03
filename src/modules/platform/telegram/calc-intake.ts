@@ -1,6 +1,10 @@
-import { v4 as uuidv4 } from 'uuid';
 import { logger } from '../logger';
 import { staffForChat } from './staff-bot';
+import { tierWords } from './name-tiers';
+import type { AmendBase } from '../../wms/calc/amend-types';
+import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
+import type { TableTarget } from '../../wms/calc/line-address';
+import type { IntakeFiles } from './calc-files';
 
 /**
  * The «Hisoblatish» collection, as the bot holds it.
@@ -17,9 +21,18 @@ import { staffForChat } from './staff-bot';
  * status column and a cleanup job for abandoned rows — is more machinery
  * than a five-minute conversation deserves, and the confirmed result is
  * persisted the moment it matters.
+ *
+ * The store itself is calc-store.ts (docs/SAKKIZ-R3.md K3); its four calls are
+ * re-exported here, so every importer keeps its import.
  */
 
-export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'question';
+/**
+ * Where the collection stands. `review` is the TABLE stage (docs/SAKKIZ-R3.md
+ * §8.2.1, his 1.10 c): one message names every line ✅ or ⚠️ and the seller
+ * answers any of them; the `question` stage that asked one line at a time is
+ * retired.
+ */
+export type IntakeStage = 'section' | 'client' | 'material' | 'review';
 
 /**
  * A spreadsheet's text, whether its reader stopped before the end (round-2
@@ -30,11 +43,137 @@ export type IntakeStage = 'section' | 'client' | 'material' | 'review' | 'questi
  */
 export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & { label?: string };
 
+/** An inline keyboard as Telegram takes it — what a stored reply carries. */
+export type InlineKeyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
+
+/**
+ * One table answer as the seller was told it (P3, docs/SAKKIZ-R3.md §2.2), so
+ * «↩️ Bekor qilish» can put back exactly what it changed. K: nothing writes one.
+ */
+export interface IntakeEcho {
+  /** 8 hex, random — `cu:<tag>`. */
+  tag: string;
+  /** The echo's own message (joins `ownMessageIds`). */
+  messageId: number | null;
+  lines: {
+    index: number;
+    no: number;
+    itemId: string | null;
+    name: string;
+    before: Partial<CalcGoodsFact>;
+    patch: Partial<CalcGoodsFact>;
+  }[];
+  /** The undo restores the previous answer WHOLE (figures and `at`) and the doubts it retired. */
+  totals: {
+    before: Partial<CalcFacts>;
+    patch: Partial<CalcFacts>;
+    answerBefore: IntakeState['totalsAnswer'];
+    doubtsBefore: TotalDoubt[];
+  } | null;
+  undone: boolean;
+}
+
 export interface IntakeState {
   section: import('../../wms/calc/intake').CalcSection;
   stage: IntakeStage;
   /** Minted up front so photos can be stored against it while they arrive. */
   noteId: string;
+  /**
+   * The member of staff collecting, and the clocks the durable store keeps
+   * (docs/SAKKIZ-R3.md K4, P1). `touchedAt` is the seller's last action;
+   * `remindedAt` the reminder's mark. Inert in K: `expires` still decides.
+   */
+  staffId: string;
+  openedAt: number;
+  touchedAt: number;
+  remindedAt: number | null;
+  /** The highest Telegram message id this collection applied (durability-1, regression-6). */
+  takenUpTo: number;
+  /** The message whose press (or reply) opened it — a restart pressed from it again resumes. */
+  openedBy: number | null;
+  /** This collection's own bot messages: prompt, table, echoes, reminder, pause notice (last 40). */
+  ownMessageIds: number[];
+  /** Non-null = an add collection: «➕ Shu so‘rovga qo‘shish» (P4). */
+  amend: AmendBase | null;
+  /**
+   * Question 6 a: a returned request's rows, kept through every reading like an
+   * add collection's stored rows, but landed as a NEW request through
+   * `landIntake` — Uch band decides its card (P4).
+   */
+  seed: CalcGoodsFact[] | null;
+  /**
+   * The returned request a seeded collection was opened from (COMP-3): a
+   * second ➕ on that request resumes it, and a reply to that request's AI
+   * answer is its own, never «another request's». Optional — a row written
+   * before this field reads as null.
+   */
+  seededFrom?: string | null;
+  /**
+   * The customer the DOOR wrote into `clientHintRaw` — an add collection's
+   * card label, a seeded one's carried code (review PF-9). Not the seller's
+   * typing: a collection holding only this is empty, never reminded and never
+   * said goodbye to. Optional — a row written before this field reads as none.
+   */
+  doorHint?: string | null;
+  /**
+   * The certificate answer the collection opened with — a seeded one's,
+   * carried from the returned request (fix review FR-10): a press that
+   * changes it is the seller's content (`intakeIsEmpty`). Optional — a row
+   * written before this field reads as none.
+   */
+  certificateAtOpen?: boolean | null;
+  /** Seqs the law asks a count for (P5's `lawAsksOf`), when an add collection opens (P4). */
+  askedSeqs: number[] | null;
+  /**
+   * A stored row the new material restates with another figure, or with a
+   * figure in a field the row has empty (`stored: null`) (P4). `choice` is the
+   * seller's answer; null = unanswered, which is 'ved' at the save.
+   */
+  conflicts: {
+    itemId: string;
+    seq: number;
+    field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty';
+    unit: string;
+    stored: number | null;
+    read: number;
+    choice: 'add' | 'rep' | 'ved' | null;
+  }[];
+  /** «✅ Qo‘shish» pressed: the save job owns the collection until it answers (P4). */
+  saving: { token: string; at: number; jobId: string | null } | null;
+  /** The add door's standing when it opened (P4): 'started' makes the echo say «VED ga yuboriladi». */
+  standingAtOpen: 'open' | 'started' | 'busy' | null;
+  /** The message that drew the LIVE `offers` (P3): a pick from any other message is stale. */
+  offersMessageId: number | null;
+  /** Messages taken through a `cf:` offer press (P4), one per album part: older than `takenUpTo` by nature (calc-amend `REPLIED_TAKEN_KEPT`). */
+  repliedTaken: number[];
+  /** The table, for edit-in-place (P3). */
+  tableMessageId: number | null;
+  /** The last table text drawn (P3, performance-5). */
+  tableHash: string | null;
+  /** When the reading's token was minted (P2's staleness). */
+  analysingAt: number | null;
+  /** The reading's pg-boss job id (P2, performance-1). */
+  analysingJob: string | null;
+  /** «Tahlil qilib bo‘lmadi» already said for this token (P2). */
+  readingSaidDead: boolean;
+  /**
+   * A reading's reply stored before it was sent (P2): `at` = when it was
+   * stored; `jobId` = the delivery-only follow-up's job, when a flood wait sent
+   * the delivery there (durability-16); `noticeMessageId` = the press's
+   * «⏳ AI o‘qiyapti…», so whoever delivers the reply late — the sweep has no
+   * job payload — still points it down (§2.6; reviews spec-5, adv-11).
+   * Optional: a row stored before it existed reads as no notice.
+   */
+  pendingReply: {
+    token: string;
+    text: string;
+    keyboard: InlineKeyboard | null;
+    at: number;
+    jobId: string | null;
+    noticeMessageId?: number | null;
+  } | null;
+  /** The table answers the seller was told, for the undo (P3). */
+  echoes: IntakeEcho[];
   /** What staff typed to name the customer — a code, a phone, or a name. */
   clientHintRaw: string;
   /** Everything typed or captioned, in the order it came. */
@@ -61,12 +200,14 @@ export interface IntakeState {
    * office photographs the packing list; the numbers on it were stored on
    * the card and read by nobody.
    *
-   * Held in memory beside the rest of the collection (the FILES themselves
-   * are already in storage against the note id — these are the reduced
-   * copies the call sends). Capped in both directions: a handful of images,
-   * downscaled, or a forwarded album is a request body nobody budgeted for.
+   * The FILES are in storage against the note id from the moment they
+   * arrive; the collection keeps their attachment ids and never the bytes
+   * (docs/SAKKIZ-R3.md K4 — a Buffer never reaches the durable row). The
+   * reading loads them (`loadIntakeFiles`). Capped in both directions: a
+   * handful of images, downscaled, or a forwarded album is a request body
+   * nobody budgeted for.
    */
-  images: { data: Buffer; mediaType: 'image/jpeg' }[];
+  images: { attachmentId: string; mediaType: 'image/jpeg' }[];
   /** How many photos arrived but were NOT reduced — counted, never silent. */
   imagesSkipped: number;
   /**
@@ -102,53 +243,24 @@ export interface IntakeState {
    */
   route: { zone: string; fromCity: string; toCity: string } | null;
   /**
-   * Has the totals question been asked (`totalsQuestion`: every freight
-   * section, every door, once)? Cleared by a re-read that still leaves the
-   * asked figure missing, so new material asks again rather than skipping.
-   */
-  totalsAsked: boolean;
-  /**
-   * WHICH totals the pending question asks — what a bare number answering it
-   * means (his 2.7 b): «3500» after the brutto question is kilograms, «12»
-   * after the volume one is cubic metres, and after the question for BOTH it
-   * is neither and is refused in words. Null = the pending question (if any)
-   * is about a goods line. One field, not a flag beside it: «are we asking
-   * the totals» is this being non-null.
-   */
-  askingTotalsFor: TotalsAsk | null;
-  /**
-   * What the seller ANSWERED to the totals question, as READ (judge
-   * concurrency-4) — put back on top of every re-read, the way `lineAnswers`
-   * is. A bare «3500» stored as raw material read null on the next «Bo‘ldi»
-   * (the house number reader needs a unit word), the job landed with no kg,
-   * and `totalsAsked` kept the question silent.
+   * What the seller ANSWERED for the totals in the table («jami 3500 kg»), as
+   * READ (judge concurrency-4) — put back on top of every re-read, the way
+   * `lineAnswers` is: an answer is never material, so a re-read would
+   * otherwise rebuild the facts without it.
    *
    * `at` is where the material and files stood when it was given (review
    * CONC-2): what arrives AFTER it may state the figure differently, and is
    * then asked about rather than outranked (`totalsDoubts`).
    */
   totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
-  /** The line the bot is waiting for an answer about, by its index in
-   * `facts.goods`. Null outside the question stage. */
-  askingIndex: number | null;
-  /** How many questions have been asked. Capped — a bot that keeps asking is
-   * a bot people stop answering. */
-  round: number;
-  /** Was the LAST answer unreadable? One re-ask per line, then move on. */
-  reasked: boolean;
   /**
-   * The lines dealt with this collection — answered, or passed with «⏭» —
-   * by index AND name. Kept across «➕ Yana ma'lumot»: an answered line is
-   * never asked twice (P1.3).
-   *
-   * The name is what makes «kept» true (round-3 review, R3-C5): an index
-   * alone survived a re-read onto a list rebuilt from scratch — the model
-   * returned [Shim, Kurtka] where it had said [Kurtka], index 0 now named
-   * Shim, so the skipped Kurtka was asked and Shim never. Resolved onto the
-   * goods list the question is about (`resolveLineDone`) by the same rule as
-   * `lineAnswers`.
+   * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
+   * beside `totalsAnswer` so a re-read cannot erase it — a typed «Yiwu →
+   * Toshkent» lived only in `facts`, and the next reading rebuilt `facts`
+   * from the material. Marked like it (`at`) so later material can doubt it.
+   * Present keys only. Inert in K: nothing writes it.
    */
-  lineDone: { index: number; name: string }[];
+  routeAnswer: { fromCity?: string; toCity?: string; at: TotalsMark } | null;
   /**
    * What the seller ANSWERED per line, kept so a re-analysis after «➕ Yana
    * ma'lumot» can put it back. The audit's finding: the re-read rebuilt the
@@ -156,19 +268,29 @@ export interface IntakeState {
    * while the seller believed those lines were answered. Matched back by
    * index AND name — a re-read that reorders the lines must not hand one
    * line's answer to another.
+   *
+   * `index` is the line the answer was PLACED on by the last reading — WRITTEN
+   * BACK by `placeByName` (regression-7, the rule `carryLineDone` held for
+   * ⏭); a stored row's answer also carries its item id (P3/P4, K4). -1 = not
+   * placed this reading, kept by name for a later one, and never matched by
+   * index, so answering row 1 cannot delete another line's kept answer.
    */
   lineAnswers: {
     index: number;
     name: string;
     patch: Partial<import('../../wms/calc/intake').CalcGoodsFact>;
+    itemId?: string | null;
   }[];
   /**
-   * The figures the pending question's buttons stand for («[50 dona] [50
-   * kg]», judge UX4). A button carries only its position (`c:pick_N`); the
-   * figure is read back from here, so a stale or forged press can only pick
-   * among what THIS question offered.
+   * The figures the last answer's buttons stand for («[50 dona] [50 kg]»,
+   * judge UX4). A button carries only its position (`c:pick_N`); the figure
+   * and the row it answers (`target`) are read back from here, and only from
+   * the message that drew them (`offersMessageId`), so a stale or forged
+   * press can only pick among what THAT answer offered (regression-23).
+   * `taken`: its row was answered by a pick — the same message's buttons for
+   * OTHER rows stay live (review adv-7), its own are «eskirgan».
    */
-  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number }[];
+  offers: { unit: import('../../wms/calc/needs').NeedUnit; value: number; target: TableTarget; taken?: boolean }[];
   /**
    * Totals the typed material states two ways, or states against the
    * seller's own answer (review CONC-2) — the summary asks them.
@@ -192,8 +314,10 @@ export interface IntakeState {
    * first wins» — so the second factory's invoice of a two-factory order was
    * stored on the card and read by nobody (his 1.13). Up to
    * `MAX_INTAKE_PDFS`, read TOGETHER; past the cap the seller is told.
+   *
+   * By attachment id, like the images (K4); `bytes` keeps the cap arithmetic.
    */
-  pdfs: { data: Buffer; name: string }[];
+  pdfs: { attachmentId: string; name: string; bytes: number }[];
   /**
    * Spreadsheets the reader could not map onto columns (no header it knows),
    * as text — the model reads them (his 1.2 b). A sheet the reader DID map is
@@ -259,13 +383,13 @@ export interface IntakeState {
    */
   clientAskedWith: string | null;
   /**
-   * What every analysis of this collection cost — APPENDED, one entry per
-   * reading the model answered, ok or not (his 2.9 c: failed reads count).
-   * Carried to the landing, which bills each against the request. A re-read
-   * after «➕ Yana ma'lumot» used to REPLACE the first reading's usage, so
-   * the day's budget counted one call where the seller had caused two.
+   * RETIRED (docs/SAKKIZ-R3.md §7.2.10): what the readings cost used to be
+   * appended here and billed at the landing. The reading job now writes the
+   * ledger the moment the model answered, on the collection's note, so
+   * nothing reads this any more; optional for one release, for a collection
+   * hydrated with it, then removed.
    */
-  usages: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
+  usages?: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
   /**
@@ -280,22 +404,17 @@ export interface IntakeState {
    */
   analysing: string | null;
   /**
-   * The seller's typed answers to per-line questions, verbatim, for the card.
+   * The seller's typed table answers, verbatim, for the card — each saying
+   * where it went («3-qator: …», «Umumiy: …»).
    * NOT material: material is re-read for the shipment's totals, and a line's
    * «150 kg» read as the whole truck's weight is what made a re-analysis
    * overrule the documents (the diagnosis' cause 5).
    */
   answers: string[];
-  /** The album the open question was last re-asked for (one ask per album). */
+  /** The album the open customer question was last re-asked for (one ask per album). */
   reaskedGroup: string | null;
   expires: number;
 }
-
-/** After this many questions the bot stops asking and offers the confirm. */
-export const MAX_QUESTION_ROUNDS = 3;
-
-/** Which shipment totals the bot asks for (docs/SAKKIZ-R2.md §8.2.5). */
-export type TotalsAsk = 'kg' | 'm3' | 'both';
 
 /** How much material and how many files a collection held at a moment. */
 export interface TotalsMark {
@@ -303,131 +422,12 @@ export interface TotalsMark {
   files: number;
 }
 
-/**
- * Whether to ask the shipment's TOTALS, and which (his 2.7 b).
- *
- * Every section with a freight half — yolkira and podklyuch — on every bot
- * door, AI or not: the road is priced on the totals (the tariff's density
- * band × m³), and the gate used to be the AI podklyuch door alone, so a
- * plain yolkira collection landed with no kg and the tariff answer refused.
- * Rastamojka never: customs prices the lines — which is why its READING
- * keeps a netto-only total (`intake-ai.ts`, review P3-R3) rather than
- * leaving it for a question this section does not ask.
- *
- * The weight is BRUTTO and only ever ASKED — line kilos are netto, and a Σ
- * of them is a different, smaller number. The volume is asked only when it
- * is neither stated nor summable from the lines: `volumeM3` is the caller's
- * `factsVolumeM3(state.facts)` (wms's one rule; platform does not import wms
- * statically, so the figure is handed in). A seller who typed 3500 kg is
- * asked the cube alone (product-fit-7), never the kilos again. Pure.
- */
-export function totalsQuestion(
-  state: Pick<IntakeState, 'section' | 'totalsAsked' | 'facts'>,
-  volumeM3: number | null,
-): TotalsAsk | null {
-  if (state.section !== 'yolkira' && state.section !== 'podklyuch') return null;
-  if (state.totalsAsked) return null;
-  const kgMissing = !(Number(state.facts.weightKg) > 0);
-  const m3Missing = volumeM3 === null;
-  if (kgMissing && m3Missing) return 'both';
-  if (kgMissing) return 'kg';
-  if (m3Missing) return 'm3';
-  return null;
-}
-
 const figure = (n: number) => String(Math.round(n * 1000) / 1000);
 
-/**
- * The totals question in the bot's Uzbek. Each names only what it asks, and
- * says what is already known — and where it came from, since a Σ of the
- * lines is a figure nobody typed. Pure.
- */
-export function totalsQuestionText(
-  ask: TotalsAsk,
-  facts: Pick<IntakeState['facts'], 'weightKg'>,
-  volume: { m3: number | null; fromLines: boolean },
-): string {
-  if (ask === 'kg') {
-    const known =
-      volume.m3 === null
-        ? ''
-        : volume.fromLines
-          ? `\n(hajm: ${figure(volume.m3)} m³ — qatorlardan qo‘shildi)`
-          : `\n(hajm bor: ${figure(volume.m3)} m³)`;
-    return `Yo‘lkira uchun umumiy BRUTTO og‘irlik kerak (qadoq bilan), kg. Masalan: «3500» yoki «3500 kg»${known}`;
-  }
-  if (ask === 'm3') {
-    const kg = Number(facts.weightKg);
-    return (
-      'Yo‘lkira uchun umumiy hajm (kub) kerak. Masalan: «12» yoki «12 kub»' +
-      (kg > 0 ? `\n(brutto og‘irlik bor: ${figure(kg)} kg)` : '')
-    );
-  }
-  return 'Yo‘lkira uchun umumiy hajm va brutto og‘irlik kerak. Masalan: «12 kub 3500 kg»';
-}
-
-/**
- * A totals answer that names no unit — the shape only the question it
- * answers can read («3500» after the brutto question). Digits with the
- * house's separators, nothing else. Pure.
- */
-export function bareTotalsNumber(text: string): boolean {
-  return /^\s*\d[\d\s.,]*\s*$/u.test(text);
-}
-
-/** One figure of a totals answer: «3 500» grouped by thousands, else «1,2» / «3500». */
-const TOTALS_NUMBER = /\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
-const TOTALS_UNIT = /^(?:kg|kgs|кг|kilo|kilogramm?|кило|килограмм?|kub|куб|kubometr|кубометр|m3|м3|m³|м³|cbm|brutto|брутто)$/u;
-
-/**
- * How many figures a totals answer holds — «3 500» and «1 200 000» are ONE
- * (grouped by thousands), «12 3500» is two (review P3-R7). A bare answer to
- * the kilos question that holds two is not one weight: the house reader kept
- * the last and the first (the cube, as often as not) was dropped in silence.
- * Pure.
- */
-export function totalsFigureCount(text: string): number {
-  return (text.match(TOTALS_NUMBER) ?? []).length;
-}
-
-/**
- * What an answer to the totals question can look like, and nothing else: at
- * most TWO figures, and the kg / kub / m³ words — «3500», «3 500 kg», «12 kub
- * 3500 kg».
- *
- * Asked by the staff tail when NO collection is live (judge concurrency-5):
- * the collection lives in memory until round 3, so a restart or the TTL
- * between the question and the answer loses it, and the orphaned «3500»
- * would otherwise fall to the paid assistant, which can say nothing about it.
- * A goods line («Kurtka 300 kg») or a code («GS777») is not this shape.
- *
- * Nor is a PHONE NUMBER (review P3-R1): the assistant finds a client, a lead
- * or a partner by its last nine digits, and the first version of this read
- * «+998 90 123 45 67» as a lost totals answer. Nine digits or more in all
- * (no shipment is 100 000 000 kg), or three figures that are not one
- * thousands-grouped number («123 45 67») — and it is not a total. A «+» is
- * no longer stripped as punctuation, so it is a word no unit matches. Pure.
- */
-export function looksLikeTotalsAnswer(text: string): boolean {
-  return totalsAnswerShape(text) !== null;
-}
-
-/**
- * …and WHICH totals answer it looks like (review REG-3): `worded` names a
- * unit («3500 kg», «12 kub»), `bare` is figures alone («777», «150»). Only a
- * worded one is evidence of a lost collection — a bare figure is as often a
- * code typed without its letters, and was told «to‘plam topilmadi» about a
- * collection that never existed (`[].every()` is true). Pure.
- */
-export function totalsAnswerShape(text: string): 'worded' | 'bare' | null {
-  const t = text.trim().toLowerCase();
-  const digits = (t.match(/\d/gu) ?? []).length;
-  if (digits === 0 || digits >= 9) return null;
-  if (totalsFigureCount(t) > 2) return null;
-  const words = t.replace(TOTALS_NUMBER, ' ').replace(/[.,;:]/gu, ' ').split(/\s+/u).filter(Boolean);
-  if (!words.every((w) => TOTALS_UNIT.test(w))) return null;
-  return words.length > 0 ? 'worded' : 'bare';
-}
+// R2's totals-shape helpers live in a zero-import module now (docs/SAKKIZ-R3.md
+// K6), so the pure wms table parser can read them without this file's
+// staff-bot import; re-exported, so no importer moved.
+export { bareTotalsNumber, looksLikeTotalsAnswer, totalsAnswerShape, totalsFigureCount } from './totals-shape';
 
 /**
  * The totals the material states two ways that the seller has NOT since
@@ -491,6 +491,45 @@ export function totalsDoubts(
   return doubts;
 }
 
+/** The same route answer — the same cities, given at the same point? Pure. */
+export function sameRouteAnswer(
+  a: IntakeState['routeAnswer'] | undefined,
+  b: IntakeState['routeAnswer'] | undefined,
+): boolean {
+  if (!a || !b) return !a && !b;
+  return (
+    a.fromCity === b.fromCity &&
+    a.toCity === b.toCity &&
+    a.at.material === b.at.material &&
+    a.at.files === b.at.files
+  );
+}
+
+/**
+ * The route answer's cities that still stand over a (re-)read — `totalsAnswer`'s
+ * rule for the route (R2's CONC-2): a key is applied while no material written
+ * AFTER the answer names a different city for it, and then the reading's city
+ * stands. `since` is that later material's own reading, or null when nothing
+ * came after (an answer typed while a reading ran is newer than all of it).
+ * Pure.
+ */
+export function answeredRoute(
+  answer: IntakeState['routeAnswer'] | undefined,
+  since: { fromCity?: string | null; toCity?: string | null } | null,
+): { fromCity?: string; toCity?: string } {
+  if (!answer) return {};
+  const same = (x: string, y: string) => x.trim().toLowerCase() === y.trim().toLowerCase();
+  const out: { fromCity?: string; toCity?: string } = {};
+  for (const key of ['fromCity', 'toCity'] as const) {
+    const said = answer[key];
+    if (!said) continue;
+    const later = since?.[key];
+    if (later && !same(later, said)) continue;
+    out[key] = said;
+  }
+  return out;
+}
+
 /** Is this the same totals answer — the same figures, given at the same point? Pure. */
 export function sameTotalsAnswer(a: IntakeState['totalsAnswer'], b: IntakeState['totalsAnswer']): boolean {
   return (
@@ -548,116 +587,77 @@ export function mergeTotalsAnswer(
   };
 }
 
-/**
- * Does the totals question stay asked over these (merged) facts? Cleared
- * when they still miss a figure the question would ask, so a re-read after
- * new material asks again rather than landing the job silent. `volumeM3` is
- * `factsVolumeM3` over the MERGED facts (handed in, as for
- * `totalsQuestion`). Pure.
- */
-export function totalsStillAsked(
-  state: Pick<IntakeState, 'section' | 'totalsAsked'>,
-  facts: IntakeState['facts'],
-  volumeM3: number | null,
-): boolean {
-  return state.totalsAsked && totalsQuestion({ section: state.section, totalsAsked: false, facts }, volumeM3) === null;
-}
-
 /** At most this many buttons answer one question — two readings × three units. */
 export const MAX_OFFERS = 6;
 
 /**
- * Put the seller's earlier per-line answers back onto a re-read goods list.
+ * Where each of the seller's per-line answers stands on a (re-)read goods
+ * list, and the list with them put back — the ONE placement rule
+ * (docs/SAKKIZ-R3.md §8.2.8):
+ *  - the stored row's `itemId` first;
+ *  - else the same index while the line there still carries the name;
+ *  - else the first UNCLAIMED line of that name;
+ *  - else nowhere (-1), the name kept for a later reading.
+ * A line is claimed once (round-3 review R3-C5's rule, which only the ⏭
+ * record had): answers to two «Kurtka» lines land on two lines, never one
+ * line twice while the other is lost.
  *
- * By index when the line there still has the same name; else the first line
- * of that name; else the answer stays where it already is — in the material,
- * which the VED reads verbatim. Pure.
+ * The placement is WRITTEN BACK (regression-7, round 4's C-r2 lesson): the
+ * readers that store answers store the returned `entries`, each `index`
+ * rewritten to where it landed. Carried by the old index, an answer to
+ * [Kurtka] re-read as [Shim, Kurtka] still pointed at row 0, and the next
+ * answer to row 1 «Shim» replaced it — Kurtka's figure was lost. Pure.
+ */
+export function placeByName(
+  goods: NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>,
+  entries: IntakeState['lineAnswers'],
+): { goods: NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>; entries: IntakeState['lineAnswers'] } {
+  const out = goods.map((g) => ({ ...g }));
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const taken = new Set<number>();
+  const placed: IntakeState['lineAnswers'] = [...entries];
+  // An answer the last reading placed somewhere claims before one it placed
+  // nowhere (-1): an orphan's name fallback took the line a later correction
+  // held by its index, and the seller's fresh figure moved to the other
+  // «Kurtka» (review spec-10, adv-6). Within each, the list's order.
+  const order = entries.map((_e, i) => i).sort((a, b) => Number(entries[a]!.index < 0) - Number(entries[b]!.index < 0));
+  for (const n of order) {
+    const entry = entries[n]!;
+    const free = (i: number) => i >= 0 && i < out.length && !taken.has(i);
+    let at = entry.itemId ? out.findIndex((g, i) => free(i) && g.itemId === entry.itemId) : -1;
+    if (at < 0 && free(entry.index) && sameName(out[entry.index]!.name, entry.name)) at = entry.index;
+    if (at < 0) at = out.findIndex((g, i) => free(i) && sameName(g.name, entry.name));
+    if (at >= 0) {
+      taken.add(at);
+      out[at] = { ...out[at]!, ...rowPatchOf(out[at]!, entry.patch) };
+    }
+    placed[n] = { ...entry, index: at };
+  }
+  return { goods: out, entries: placed };
+}
+
+/**
+ * What an answer puts on its row. A stored row's code is the VED's: a
+ * different code the seller typed rides in the answer, for the VED to be told
+ * (`codesKept`, §9.5), and is never drawn over the stored one — the echo said
+ * «yangi kod yozilmadi» (review adv-11). Pure.
+ */
+export function rowPatchOf(row: CalcGoodsFact, patch: Partial<CalcGoodsFact>): Partial<CalcGoodsFact> {
+  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return patch;
+  const rest = { ...patch };
+  delete rest.tnvedCode;
+  return rest;
+}
+
+/**
+ * Put the seller's earlier per-line answers back onto a re-read goods list —
+ * `placeByName`'s goods, the signature every caller already used (K4). Pure.
  */
 export function mergeLineAnswers(
   goods: NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>,
   answers: IntakeState['lineAnswers'],
 ): NonNullable<import('../../wms/calc/intake').CalcFacts['goods']> {
-  const out = goods.map((g) => ({ ...g }));
-  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-  for (const answer of answers) {
-    const at =
-      out[answer.index] && sameName(out[answer.index]!.name, answer.name)
-        ? answer.index
-        : out.findIndex((g) => sameName(g.name, answer.name));
-    if (at < 0) continue;
-    out[at] = { ...out[at]!, ...answer.patch };
-  }
-  return out;
-}
-
-/**
- * The goods line `index` names, as `lineDone` records it — null when the list
- * has no such line (a stale index records nothing). Pure.
- */
-export function doneLine(
-  goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  index: number,
-): IntakeState['lineDone'][number] | null {
-  const row = goods?.[index];
-  return row ? { index, name: row.name } : null;
-}
-
-/**
- * Where each entry of `lineDone` stands on the goods list as it is now (round-3
- * review, R3-C5) — `mergeLineAnswers`' rule: the same index while the line
- * there still carries the name, else the first line of that name, else
- * nowhere (-1). One step stricter than that rule, because a skip has no figure
- * to show it landed: a line is claimed once, so two «Kurtka» lines are two
- * entries and never one line marked twice while the other is lost.
- */
-function placeLineDone(
-  goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): { entry: IntakeState['lineDone'][number]; at: number }[] {
-  const list = goods ?? [];
-  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
-  const taken = new Set<number>();
-  return done.map((entry) => {
-    const at =
-      list[entry.index] && !taken.has(entry.index) && sameName(list[entry.index]!.name, entry.name)
-        ? entry.index
-        : list.findIndex((g, i) => !taken.has(i) && sameName(g.name, entry.name));
-    if (at >= 0) taken.add(at);
-    return { entry, at };
-  });
-}
-
-/**
- * The lines dealt with, put onto the goods list as it stands now (R3-C5,
- * `placeLineDone`); an entry the list does not hold is left out — a line this
- * reading does not list is nothing to skip. What the next QUESTION is chosen
- * by. Pure.
- */
-export function resolveLineDone(
-  goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): IntakeState['lineDone'] {
-  const list = goods ?? [];
-  return placeLineDone(goods, done)
-    .filter((p) => p.at >= 0)
-    .map((p) => ({ index: p.at, name: list[p.at]!.name }));
-}
-
-/**
- * What a collection STORES of the lines dealt with: each entry put onto the
- * list as it stands now where it is found (`placeLineDone`), and kept as it was
- * where it is not (round-4 review, C-r2: the resolved list was written back,
- * so ONE reading without the goods — a model timeout after «➕ Yana ma'lumot»
- * — erased every ⏭ for good, and the next «🔄 AI qayta o'qisin» asked the
- * skipped line again). A line missing from one reading stays passed when a
- * later reading brings it back. Pure.
- */
-export function carryLineDone(
-  goods: import('../../wms/calc/intake').CalcFacts['goods'],
-  done: IntakeState['lineDone'],
-): IntakeState['lineDone'] {
-  const list = goods ?? [];
-  return placeLineDone(goods, done).map((p) => (p.at >= 0 ? { index: p.at, name: list[p.at]!.name } : p.entry));
+  return placeByName(goods, answers).goods;
 }
 
 /** The hint's non-empty lines, each with its spacing collapsed. */
@@ -1076,28 +1076,8 @@ function nameWords(key: string): Map<string, Set<string>> {
   return by;
 }
 
-/**
- * The tier words of a model designation — «iPhone 15 Pro Max», «Galaxy S24
- * Ultra», «Redmi Note 13 Pro» — in either script, each counted only right
- * after a word with a digit or another tier word: before or apart from a model
- * number the same words describe («Pro hair dryer», «Plus size»), and a
- * translation drops them.
- */
-const TIER_WORDS: Readonly<Record<string, string>> = {
-  pro: 'pro', max: 'max', plus: 'plus', ultra: 'ultra', lite: 'lite', se: 'se', fe: 'fe',
-  про: 'pro', макс: 'max', плюс: 'plus', ультра: 'ultra', лайт: 'lite',
-};
-
-function tierWords(key: string): Set<string> {
-  const tiers = new Set<string>();
-  let afterModel = false;
-  for (const word of key.normalize('NFKC').toLowerCase().split(' ').filter(Boolean)) {
-    const tier = TIER_WORDS[word.replace(/[^\p{L}]/gu, '')];
-    if (tier !== undefined && afterModel) tiers.add(tier);
-    else afterModel = /\d/u.test(word);
-  }
-  return tiers;
-}
+// The tier words (#1468) live in name-tiers.ts, one home with the bot table's
+// name address (docs/SAKKIZ-R3.md §8.1); `otherName` reads them from there.
 
 /**
  * Are two keys two DIFFERENT names: in some script both write — or in the
@@ -1205,6 +1185,31 @@ export interface PickedGoods {
 }
 
 /**
+ * Is the line READ the line KEPT, read again — `pickGoods`' «already
+ * carries» rule, one home for it (docs/SAKKIZ-R3.md §9.4): the same WHOLE
+ * name, or a name one answers to that is the other's (`namesMeet`) with
+ * figures that agree (`figuresAgree`). The wide match alone threw factory B's
+ * «Kurtka (qora)» 200 away against factory A's «Kurtka» 300 — two factories,
+ * one generic name, two lines. The add door asks it of a stored row and a
+ * top-up's line: «Куртка женская (Ladies jacket)» against a stored «Ladies
+ * jacket» is that row, never a second one priced twice. Pure.
+ */
+export function sameGoodsLine(kept: GoodsList[number], read: GoodsList[number]): boolean {
+  return sameLine(kept, goodsNameKeys(kept.name), read, goodsNameKeys(read.name));
+}
+
+/**
+ * `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice
+ * once. ONE rule for both (§9.1): a name of nothing but spaces and signs keys
+ * to nothing, and nothing is no name to be «the same» by — two such lines are
+ * not one line.
+ */
+function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[number], readNames: NameKeys): boolean {
+  if (!keptNames.whole || !readNames.whole) return false;
+  return keptNames.whole === readNames.whole || (namesMeet(readNames, keptNames) && figuresAgree(read, kept));
+}
+
+/**
  * Which goods list a collection lands, in the order of how EXACT each source
  * is about the lines. Pure, so the order is a test and not a reading of
  * `analyzeCollected`.
@@ -1257,7 +1262,7 @@ export function pickGoods(input: {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
     const carried = (g: GoodsList[number], names: NameKeys) =>
-      invoice.some((inv) => inv.names.whole === names.whole || (namesMeet(names, inv.names) && figuresAgree(g, inv.row)));
+      invoice.some((inv) => sameLine(inv.row, inv.names, g, names));
     if (input.aiGoods !== 'add') {
       if (input.aiGoods !== null || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
       const read = input.model.map((g) => goodsNameKeys(g.name));
@@ -1330,6 +1335,19 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   return `⚠️ ${typed.length} ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): ${namedLines(typed)}.`;
 }
 
+/**
+ * The seller's word for the photographs and PDFs the reading could not load
+ * back from storage (docs/SAKKIZ-R3.md K5, §2.6's words). Since K the
+ * collection keeps attachment ids and the bytes are read back at «Bo‘ldi»; a
+ * storage blip used to leave the model reading text alone under a prompt that
+ * had promised it the photos, with nothing on the screen to say so. Null =
+ * every file was read.
+ */
+export function filesMissingNote(missing: number): string | null {
+  if (missing <= 0) return null;
+  return `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
+}
+
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
 export const MAX_INTAKE_IMAGES = 12;
 
@@ -1375,83 +1393,12 @@ export function intakeFileKind(
   return 'sheet';
 }
 
-const TTL_MS = 30 * 60_000;
-const collections = new Map<string, IntakeState>();
+// The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
+// every importer's import.
+export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
 
-const key = (chatId: bigint) => String(chatId);
-
-export function startIntake(
-  chatId: bigint,
-  section: import('../../wms/calc/intake').CalcSection,
-  opts: { ai?: boolean } = {},
-): IntakeState {
-  const state: IntakeState = {
-    section,
-    stage: 'client',
-    noteId: uuidv4(),
-    clientHintRaw: '',
-    material: [],
-    fileCount: 0,
-    facts: {},
-    steps: [],
-    notes: [],
-    aiUsed: false,
-    images: [],
-    imagesSkipped: 0,
-    promptMessageId: null,
-    ai: opts.ai ?? false,
-    hasCertificate: true,
-    route: null,
-    totalsAsked: false,
-    askingTotalsFor: null,
-    totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
-    askingIndex: null,
-    round: 0,
-    reasked: false,
-    lineDone: [],
-    lineAnswers: [],
-    offers: [],
-    ambiguousTotals: [],
-    invoiceGoods: [],
-    pdfs: [],
-    sheetTexts: [],
-    invoiceTexts: [],
-    pendingInvoice: null,
-    aiGoods: null,
-    clientAskedWith: null,
-    usages: [],
-    aiFailure: null,
-    analysing: null,
-    answers: [],
-    reaskedGroup: null,
-    expires: Date.now() + TTL_MS,
-  };
-  collections.set(key(chatId), state);
-  return state;
-}
-
-/** The live collection for a chat, or nothing — expiry is checked on read. */
-export function activeIntake(chatId: bigint): IntakeState | null {
-  const state = collections.get(key(chatId));
-  if (!state) return null;
-  if (state.expires <= Date.now()) {
-    collections.delete(key(chatId));
-    return null;
-  }
-  return state;
-}
-
-export function updateIntake(chatId: bigint, patch: Partial<IntakeState>): IntakeState | null {
-  const state = activeIntake(chatId);
-  if (!state) return null;
-  const next = { ...state, ...patch, expires: Date.now() + TTL_MS };
-  collections.set(key(chatId), next);
-  return next;
-}
-
-export function endIntake(chatId: bigint): void {
-  collections.delete(key(chatId));
-}
+/** No bytes to read — a collection of text alone, or a caller that loads none. */
+const NO_FILES: IntakeFiles = { images: [], pdfs: [], missing: 0 };
 
 /**
  * Read the collected material with the model, then keep whatever the person
@@ -1460,38 +1407,53 @@ export function endIntake(chatId: bigint): void {
  * The manual layer is not a fallback for a broken key — it is the truth
  * beside the model's reading: a staff member who typed «5 kub» meant it,
  * and a model that missed it must not erase it.
+ *
+ * The bytes the model reads come from storage (`files`, `loadIntakeFiles`):
+ * the collection keeps attachment ids, never a Buffer (docs/SAKKIZ-R3.md
+ * K4/K5). `answered` is what this reading cost: the reading job bills it
+ * the moment the model answered (docs/SAKKIZ-R3.md §7.2.10). A leash
+ * (`timeoutMs`) of nothing is no call at all — the job's wall clock had no
+ * room left — and reads as the «timeout» failure, in words.
  */
-export async function analyzeCollected(state: IntakeState): Promise<IntakeState> {
+export async function analyzeCollected(
+  state: IntakeState,
+  files: IntakeFiles = NO_FILES,
+  opts: { timeoutMs?: number } = {},
+): Promise<IntakeState & { answered: import('../../wms/calc/intake-ai').AnsweredUsage[] }> {
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
   const { parseManualFacts, readGoodsLines, totalWeightFrom } = await import('../../wms/calc/intake-manual');
-  const { factsVolumeM3 } = await import('../../wms/calc/intake');
   const text = state.material.join('\n');
   // The section decides whether a NETTO figure may stand for the total
   // (review PF-1): never where the bot asks the brutto.
   const manual = parseManualFacts(text, state.section);
   const invoice = state.invoiceGoods ?? [];
+  // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
+  // (`amend`), or a returned one carried into a new collection (`seed`).
+  const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
   // answers, which is exactly what a keyless server has always had, and the
   // summary says so rather than looking like a model that found nothing.
   //
-  // This collection's OWN earlier readings are not in the ledger yet — they
-  // are billed at the landing (judge concurrency-11) — so they are counted
-  // here, or a collection re-read again and again passes the cap it spends.
+  // This collection's own earlier readings are IN the ledger: the reading job
+  // bills each the moment the model answered (§7.2.10), so the ledger alone
+  // counts them — subtracting them here as well counted each one twice.
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
-  const budgetLeft = (await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY)) - state.usages.length;
+  const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
   type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
   const outcome: Outcome =
-    budgetLeft <= 0
+    opts.timeoutMs !== undefined && opts.timeoutMs <= 0
+      ? { ok: false, failure: 'timeout' }
+      : budgetLeft <= 0
       ? { ok: false, failure: 'budget' }
       : await analyzeIntake({
           section: state.section,
           text,
           fileCount: state.fileCount,
-          images: state.images,
-          pdf: state.pdfs[0] ?? null,
-          morePdfs: state.pdfs.slice(1),
+          images: files.images,
+          pdf: files.pdfs[0] ?? null,
+          morePdfs: files.pdfs.slice(1),
           // The separate files are goods material; a mapped workbook's other
           // sheets are TOTALS only, under their own heading — in one block
           // with the files, an «add» answer had the model re-list the
@@ -1503,6 +1465,10 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
           // Every name: `analyzeIntake` shows what fits its character budget
           // and counts the rest.
           knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
+          // …and the rows already on the request, so the model lists only NEW goods.
+          ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
+          // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
+          ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
@@ -1524,20 +1490,45 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
   // keeps them (R3-C1; round 4, C-r1 nit and integration S-a).
-  const notes = [sameAsInvoiceNote(picked.sameAsInvoice), typedLeftOutNote(picked.sameAsInvoice)].filter(
-    (n): n is string => n !== null,
-  );
+  // …and the files the reading could not load back from storage (K5), said
+  // rather than read past in silence.
+  const notes = [
+    sameAsInvoiceNote(picked.sameAsInvoice),
+    typedLeftOutNote(picked.sameAsInvoice),
+    filesMissingNote(files.missing),
+  ].filter((n): n is string => n !== null);
+  if (kept) {
+    const { conflictOf } = await import('../../wms/calc/amend');
+    const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
+    return addReading(
+      state,
+      { kept, picked, manual, ai, outcome, notes, text },
+      { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
+    );
+  }
+  // A route the seller answered in the table goes above everything a reading
+  // finds — unless the material AFTER the answer names another city, read
+  // from that SLICE alone (`readRoute` has no offset form), so the very city
+  // text the answer corrected cannot doubt it (docs/SAKKIZ-R3.md K15).
+  const routeAnswer = state.routeAnswer ?? null;
+  const routeSince =
+    routeAnswer && state.material.length > routeAnswer.at.material
+      ? parseManualFacts(state.material.slice(routeAnswer.at.material).join('\n'), state.section)
+      : null;
+  const route = answeredRoute(routeAnswer, routeSince);
+  // The seller's per-line answers go back on top (P1.3) — a re-read after «➕
+  // Yana ma'lumot» must not erase them — and where each landed is what the
+  // collection keeps (`placeByName`'s write-back, regression-7).
+  const placed = placeByName(picked.goods, state.lineAnswers);
   const reading: IntakeState['facts'] = {
-    fromCity: manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
-    toCity: manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
+    fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
+    toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
     ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
     volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.
     ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
-    // The seller's per-line answers go back on top (P1.3): a re-read after
-    // «➕ Yana ma'lumot» must not erase them.
-    goods: mergeLineAnswers(picked.goods, state.lineAnswers),
+    goods: placed.goods,
   };
   // The seller's answer to the totals question goes back on top as well
   // (judge concurrency-4): «3500» typed after the brutto question is no
@@ -1565,16 +1556,184 @@ export async function analyzeCollected(state: IntakeState): Promise<IntakeState>
     notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
-    // Every reading the model answered is billed at the landing — a paid
-    // read that failed (cut, refused, unreadable) included (r1-fix typed
-    // #21), and a re-read ADDED to the first, never in its place (2.9 c).
-    usages: [...state.usages, ...(outcome.answered ?? [])],
-    totalsAsked: totalsStillAsked(state, facts, factsVolumeM3(facts)),
+    lineAnswers: placed.entries,
     // What the seller has answered is not asked again (review P3-3) — unless
     // later material doubts the answer, and then THAT is what is asked.
     ambiguousTotals: [...unansweredAmbiguity(manual.ambiguous, state.totalsAnswer), ...doubts],
     stage: 'review',
+    // Every reading the model answered — a paid read that failed (cut,
+    // refused, unreadable) included (r1-fix typed #21), each re-read its own
+    // (2.9 c) — for the job's bill.
+    answered: outcome.answered ?? [],
   };
+}
+
+/**
+ * The add door's reading (docs/SAKKIZ-R3.md §9.4) — an add collection's, and a
+ * returned request's seeded one. The rows already on the request are KEPT;
+ * the reading only adds:
+ *  - a line the reading finds that IS a kept row read again (`sameGoodsLine`:
+ *    the same whole name, or a name it answers to with figures that agree) is
+ *    that row, never a second one priced twice — and when it states a figure
+ *    the stored row has otherwise or not at all, it is the row's CONFLICT
+ *    (law-money-5): asked «qo‘shilsin / o‘rniga / VED hal qilsin», never
+ *    written on its own, and the VED's when unanswered. A wide match whose
+ *    figures disagree is no match: another factory's line, a NEW line;
+ *  - totals and cities are NOT read from new material (§0.1(2)): a top-up's
+ *    packing list may state its own totals or the whole truck's, and nobody
+ *    can tell which. The stored ones stand, a table answer goes on top, and an
+ *    answer is still judged against what the NEW material states (CONC-2).
+ */
+function addReading(
+  state: IntakeState,
+  r: {
+    kept: readonly GoodsList[number][];
+    picked: PickedGoods;
+    manual: ReturnType<typeof import('../../wms/calc/intake-manual').parseManualFacts>;
+    ai: { facts: import('../../wms/calc/intake').CalcFacts; steps: string[] } | null;
+    outcome: { ok: boolean; failure?: import('../../wms/calc/intake').AiReadFailure; answered?: import('../../wms/calc/intake-ai').AnsweredUsage[] };
+    notes: string[];
+    text: string;
+  },
+  deps: AddReadingDeps,
+): IntakeState & { answered: import('../../wms/calc/intake-ai').AnsweredUsage[] } {
+  const { kept, picked, manual, ai, outcome, text } = r;
+  const notes = [...r.notes];
+  const fresh: GoodsList = [];
+  const conflicts: IntakeState['conflicts'] = [];
+  const restated: { name: string; figures: { read: number; unit: string }[] }[] = [];
+  // Keyed once, as `pickGoods` keys its invoice (fix review DRILL-1):
+  // `sameGoodsLine` keys BOTH names on every call, so a 500-line Excel over a
+  // 1000-row request was a million keyings — 12 s of the one process.
+  const keptKeyed = kept.map((k) => ({ row: k, names: goodsNameKeys(k.name) }));
+  for (const read of picked.goods) {
+    const readNames = goodsNameKeys(read.name);
+    const match = keptKeyed.find((k) => sameLine(k.row, k.names, read, readNames))?.row;
+    if (!match) {
+      fresh.push(read);
+      continue;
+    }
+    // Only a STORED row can be ASKED about (a conflict needs its item id). A
+    // seeded collection's row is a plain line, kept as `pickGoods` keeps an
+    // invoice's — and, like `pickGoods`' left-out lines, a re-read that states
+    // another figure is NAMED, never dropped in silence: a corrected «Sumka —
+    // 500 dona» for a request the VED returned for its count must not land
+    // as the very 300 it was returned for, unsaid.
+    if (!state.amend || !match.itemId) {
+      const differs = deps.conflictOf(match, read);
+      if (differs.length > 0) restated.push({ name: match.name, figures: differs.map((c) => ({ read: c.read, unit: c.unit })) });
+      continue;
+    }
+    for (const c of deps.conflictOf(match, read)) {
+      if (conflicts.some((x) => x.itemId === match.itemId && x.field === c.field)) continue;
+      const before = state.conflicts.find((x) => x.itemId === match.itemId && x.field === c.field);
+      // A re-read REPLACES a conflict; an answer stands only while the read figure does.
+      conflicts.push({
+        itemId: match.itemId,
+        seq: match.seq ?? 0,
+        field: c.field,
+        unit: c.unit,
+        stored: c.stored,
+        read: c.read,
+        choice: before && before.read === c.read ? before.choice : null,
+      });
+    }
+  }
+  const amend = state.amend;
+  const sum = amend ? deps.volumeIsLinesSum(amend.volumeM3, amend.items) : false;
+  const stored = amend
+    ? { fromCity: amend.fromCity, toCity: amend.toCity, weightKg: amend.weightKg, volumeM3: sum ? null : amend.volumeM3 }
+    : {
+        fromCity: state.facts.fromCity ?? null,
+        toCity: state.facts.toCity ?? null,
+        weightKg: state.facts.weightKg ?? null,
+        volumeM3: state.facts.volumeM3 ?? null,
+      };
+  const routeAnswer = state.routeAnswer ?? null;
+  const routeSince =
+    routeAnswer && state.material.length > routeAnswer.at.material
+      ? deps.parseManualFacts(state.material.slice(routeAnswer.at.material).join('\n'), state.section)
+      : null;
+  const route = answeredRoute(routeAnswer, routeSince);
+  // A stored row's ✅ is the VED's word about its group, not a goods fact.
+  const keptRows: GoodsList = kept.map((k) => {
+    const row: GoodsList[number] & { confirmed?: boolean } = { ...k };
+    delete row.confirmed;
+    return row;
+  });
+  // The table's answers back on top by the ONE placement rule (§8.2.8,
+  // §9.4): a stored row's answer finds its row by item id first, never by
+  // position — and where each landed is what the collection keeps.
+  const placed = placeByName([...keptRows, ...fresh], state.lineAnswers);
+  const reading: IntakeState['facts'] = {
+    fromCity: route.fromCity ?? stored.fromCity,
+    toCity: route.toCity ?? stored.toCity,
+    weightKg: stored.weightKg,
+    volumeM3: stored.volumeM3,
+    // A stored row's weight is its own — never one copied from the brutto.
+    lineWeightsStated: true,
+    ...(amend ? { totalsStored: !sum } : {}),
+    goods: placed.goods,
+  };
+  // What the NEW material states, never the stored totals (they are no
+  // statement made after the answer): only it can doubt a table answer.
+  const said = deps.totalWeightFrom(state.section, manual, ai?.facts ?? null, false);
+  const at = state.totalsAnswer.at;
+  const since =
+    state.material.length > at.material
+      ? deps.parseManualFacts(text, state.section, {
+          from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+        })
+      : { weightKg: null, volumeM3: null, ambiguous: [] };
+  const doubts = totalsDoubts(state.totalsAnswer, {
+    now: { material: state.material.length, files: state.fileCount },
+    since,
+    reading: { weightKg: said.weightKg ?? null, volumeM3: manual.volumeM3 ?? ai?.facts.volumeM3 ?? null },
+  });
+  const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
+  const restatedNote = seedRestatedNote(restated);
+  if (restatedNote) notes.unshift(restatedNote);
+  return {
+    ...state,
+    facts,
+    conflicts,
+    steps: ai?.steps ?? [],
+    notes,
+    aiUsed: Boolean(ai),
+    aiFailure: outcome.ok ? null : (outcome.failure ?? 'network'),
+    lineAnswers: placed.entries,
+    ambiguousTotals: doubts,
+    stage: 'review',
+    answered: outcome.answered ?? [],
+  };
+}
+
+/** «40 juft», «12 m³» — a re-read figure in its own unit, for a sentence. */
+const RESTATED_UNIT: Record<string, string> = { dona: 'dona', kg: 'kg', m3: 'm³', m2: 'm²', juft: 'juft', litr: 'litr', sm3: 'sm³' };
+
+/**
+ * The seller's word for the lines a SEEDED collection (a returned request's
+ * re-send) read again with another figure than its row: kept as the row, and
+ * NAMED with the figure read, for him to answer the row if it is the right
+ * one. Null = none. Pure.
+ */
+export function seedRestatedNote(lines: readonly { name: string; figures: readonly { read: number; unit: string }[] }[]): string | null {
+  if (lines.length === 0) return null;
+  const shown = lines.slice(0, 3).map((l) => {
+    const name = l.name.length > 30 ? `${l.name.slice(0, 29)}…` : l.name;
+    const figures = l.figures.map((f) => `${Number(f.read.toFixed(3))} ${RESTATED_UNIT[f.unit] ?? f.unit}`).join(', ');
+    return `«${name}» (faylda ${figures})`;
+  });
+  const more = lines.length > 3 ? ` va yana ${lines.length - 3} ta` : '';
+  return `⚠️ ${lines.length} ta qator so‘rovdagi bilan bir xil, lekin boshqa son bilan o‘qildi — so‘rovdagi qoldi: ${shown.join(', ')}${more}. Fayldagi to‘g‘ri bo‘lsa, shu qatorga javob yozing.`;
+}
+
+/** What the add reading needs of wms — handed in, platform never imports wms statically. */
+interface AddReadingDeps {
+  conflictOf: typeof import('../../wms/calc/amend').conflictOf;
+  volumeIsLinesSum: typeof import('../../wms/calc/line-totals').volumeIsLinesSum;
+  parseManualFacts: typeof import('../../wms/calc/intake-manual').parseManualFacts;
+  totalWeightFrom: typeof import('../../wms/calc/intake-manual').totalWeightFrom;
 }
 
 /** Is this chat a member of staff who may use «Hisoblatish»? Everyone is

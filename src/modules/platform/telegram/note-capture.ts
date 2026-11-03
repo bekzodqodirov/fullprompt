@@ -77,3 +77,40 @@ export function endCapture(chatId: bigint): void {
 export function captureIsEmpty(state: CaptureState): boolean {
   return state.body.join('').trim() === '' && state.fileCount === 0;
 }
+
+/** The capture's buttons: save and the share toggle once it has a name, cancel always. */
+export function captureKeyboard(state: CaptureState) {
+  const rows: { text: string; callback_data: string }[][] = [];
+  if (state.stage === 'parts') {
+    rows.push([{ text: '✅ Saqlash', callback_data: 'n:save' }]);
+    rows.push([
+      {
+        text: state.shared ? '🏢 Hammaga: ha' : '🏢 Hammaga: yo‘q',
+        callback_data: 'n:share',
+      },
+    ]);
+  }
+  rows.push([{ text: '✖️ Bekor qilish', callback_data: 'n:cancel' }]);
+  return { inline_keyboard: rows };
+}
+
+/**
+ * One collector at a time. The calc intake wins because it is minutes of a
+ * seller's forwarding; a note capture is refused IN WORDS rather than
+ * discarded, which is the rule the section buttons already learned.
+ *
+ * Here, beside the capture it asks about, so every door that refuses beside
+ * a capture — the calc collector's openings, the add door — imports a leaf
+ * (docs/SAKKIZ-R3.md K6).
+ */
+export async function refuseWhileCapturing(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<unknown> },
+  chatId: bigint,
+): Promise<boolean> {
+  if (!activeCapture(chatId)) return false;
+  await ctx.reply(
+    'Hozir yangi zametka yozilyapti. Avval uni saqlang yoki bekor qiling.',
+    { reply_markup: captureKeyboard(activeCapture(chatId)!) },
+  );
+  return true;
+}

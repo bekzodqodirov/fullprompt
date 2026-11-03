@@ -69,7 +69,10 @@ describe('the Telegram ladder', () => {
     const body = between(HANDLERS, "bot.on('message:text'", 'type StaffTailCtx');
     const draft = body.indexOf('const draft = activeDraft(chatId)');
     const reply = body.indexOf('threadReplyFromBot(chatId, {');
-    // Door B's own branch — the agent slot above it only READS the field (I2 c).
+    // The Door B STATEMENT — the collector's own `forwarded:
+    // Boolean(ctx.message.forward_origin)` flag (Sakkiz R3 K, handed to
+    // `routeCollectorText`) and the agent slot (I2 c) both only READ the field
+    // above the reply block, so the bare expression would match them.
     const doorB = body.indexOf('if (ctx.message.forward_origin) {');
     const wait = body.indexOf('takeTaskPending(chatId, ctx.message.date)');
     expect(draft).toBeGreaterThan(0);
