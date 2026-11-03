@@ -15,8 +15,10 @@ import {
   endIntake,
   flushIntakeWrites,
   holdingIntake,
+  intakeIsEmpty,
   loadIntake,
   noteOwnMessage,
+  notTaking,
   startIntake,
   updateIntake,
 } from './calc-store';
@@ -107,6 +109,8 @@ export const SAVE_WORDS = {
  */
 export const AMEND_REFUSAL: Record<SaveTableRefusal | 'server_behind', string> = {
   too_many_items: 'tovarlar juda ko‘p (1000 dan ortiq).',
+  // Never reaches him: only a screen's save carries the revision it saw (lmp-1).
+  amended_since: 'so‘rovga yangi qo‘shimcha yozilgan — qayta bosing.',
   server_behind: 'tizim yangilanmoqda — birozdan keyin qayta bosing.',
   name_required: 'yangi qatorga tovar nomi yozing.',
   // Never reaches him: the `not_found` outcome answers first.
@@ -311,7 +315,7 @@ async function openDoor(
   chatId: bigint,
   requestId: string,
   sp: Speaker,
-  opts: { openedBy: number | null; restart: boolean; restartKey: OnceKey | null },
+  opts: { openedBy: number | null; restart: boolean; restartKey: OnceKey | null; askAbout?: number | null },
 ): Promise<{ state: IntakeState; opened: boolean } | null> {
   const staff = await staffForChat(chatId);
   if (!staff) {
@@ -365,7 +369,12 @@ async function openDoor(
     await refuse(sp, ADD_REFUSAL.saving);
     return null;
   }
-  if (live && !returned && live.amend?.requestId === requestId) {
+  // This request's own collection: its add collection — or, for a RETURNED
+  // request, the seeded one a first ➕ opened from it (COMP-3). Asking «Sizda
+  // tugallanmagan yig‘ish bor … o‘chadi» about the collection he is filling
+  // would offer to wipe it.
+  const sameRequest = live !== null && (returned ? (live.seededFrom ?? null) === requestId : live.amend?.requestId === requestId);
+  if (live && sameRequest) {
     // This request's own add collection: a resume (P1 un-parks it there).
     await sp.answer(ADD_REFUSAL.sameLive);
     await sp.reply(ADD_REFUSAL.sameLive);
@@ -373,11 +382,19 @@ async function openDoor(
     return { state: activeIntake(chatId) ?? live, opened: false };
   }
   if (live) {
-    if (!opts.restart) {
+    // Nothing the seller sent is in it (review PF-11): replaced without the
+    // question — «Yuborilgan hamma narsa o‘chadi» about nothing.
+    if (!opts.restart && !intakeIsEmpty(live)) {
       const card = stored.base.cardLabel;
       const question = `Sizda tugallanmagan yig‘ish bor. Uni o‘chirib, ${card} so‘roviga qo‘shimcha boshlaymizmi? Yuborilgan hamma narsa o‘chadi.`;
       await sp.answer(question);
-      const sent = await sp.reply(question, { reply_markup: restartQuestionKeyboard(requestId) });
+      // Asked as a reply to the file an offer was pressed under (review
+      // PF-3), so its «🗑 Ha» carries that file into the new collection —
+      // the press has no other way to know which message it was about.
+      const sent = await sp.reply(question, {
+        reply_markup: restartQuestionKeyboard(requestId),
+        ...(opts.askAbout ? { reply_parameters: { message_id: opts.askAbout, allow_sending_without_reply: true } } : {}),
+      });
       noteOwnMessage(chatId, sent.message_id);
       return null;
     }
@@ -447,13 +464,23 @@ async function openAdd(
     volumeM3: sum ? null : stored.facts.volumeM3,
   };
   startIntake(chatId, base.section, { ai: true, staffId, amend: base, openedBy });
-  const state = updateIntake(chatId, {
-    stage: 'review',
-    facts,
-    clientHintRaw: base.clientLabel ?? '',
-    askedSeqs: asks.length > 0 ? asks.map((a) => a.seq) : null,
-    standingAtOpen: atOpen,
-  });
+  // Quiet (dur-1): `startIntake` set the clocks, and a non-quiet patch made
+  // while a REPLY is handled would mark that reply taken (`takenUpTo`) before
+  // its answer is written — a flush in the table's send, a restart, and the
+  // redelivered reply was 'seen' and dropped in silence. The answer's own
+  // patch carries `takenUpTo`; `standingAtOpen` is a quiet mark (§6.2.6).
+  const state = updateIntake(
+    chatId,
+    {
+      stage: 'review',
+      facts,
+      clientHintRaw: base.clientLabel ?? '',
+      doorHint: base.clientLabel ?? '',
+      askedSeqs: asks.length > 0 ? asks.map((a) => a.seq) : null,
+      standingAtOpen: atOpen,
+    },
+    { quiet: true },
+  );
   if (!state) return null;
   await sp.answer();
   const line = STANDING_LINE[atOpen];
@@ -478,6 +505,7 @@ async function openSeeded(
 ): Promise<{ state: IntakeState; opened: boolean } | null> {
   const { returnedClientHint, requestHasCertificate } = await import('../../wms/calc/amend');
   const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
+  const { sectionParts } = await import('../../wms/calc/pricing');
   const [hint, certificate] = await Promise.all([
     returnedClientHint(stored.base),
     requestHasCertificate(stored.base.requestId),
@@ -492,23 +520,32 @@ async function openSeeded(
   // the add door does): copied as a figure, a forgotten line added here would
   // land under the old Σ, labelled typed, and the road priced on it.
   const sum = volumeIsLinesSum(stored.base.volumeM3, stored.base.items);
-  startIntake(chatId, stored.base.section, { ai: true, staffId, amend: null, openedBy });
-  const state = updateIntake(chatId, {
-    stage: hint ? 'review' : 'client',
-    facts: {
-      fromCity: stored.base.fromCity,
-      toCity: stored.base.toCity,
-      weightKg: stored.base.weightKg,
-      volumeM3: sum ? null : stored.base.volumeM3,
-      goods: lines,
-      lineWeightsStated: true,
+  // The certificate is a customs question (review PF-7): a returned yo‘lkira
+  // request carries no certificate line and no «📄 Sertifikat» button.
+  startIntake(chatId, stored.base.section, { ai: sectionParts(stored.base.section).customs, staffId, amend: null, openedBy });
+  // Quiet, as the add door's (dur-1): the opening is no answer to anything.
+  const state = updateIntake(
+    chatId,
+    {
+      stage: hint ? 'review' : 'client',
+      facts: {
+        fromCity: stored.base.fromCity,
+        toCity: stored.base.toCity,
+        weightKg: stored.base.weightKg,
+        volumeM3: sum ? null : stored.base.volumeM3,
+        goods: lines,
+        lineWeightsStated: true,
+      },
+      seed: lines,
+      seededFrom: stored.base.requestId,
+      clientHintRaw: hint,
+      doorHint: hint,
+      // The certificate answer the request carried — never the collector's
+      // optimistic default, which would leave the additional duty out.
+      ...(certificate !== null ? { hasCertificate: certificate } : {}),
     },
-    seed: lines,
-    clientHintRaw: hint,
-    // The certificate answer the request carried — never the collector's
-    // optimistic default, which would leave the additional duty out.
-    ...(certificate !== null ? { hasCertificate: certificate } : {}),
-  });
+    { quiet: true },
+  );
   if (!state) return null;
   await sp.answer();
   noteOwnMessage(
@@ -542,10 +579,20 @@ export async function pressAdd(
   const pressed = ctx.callbackQuery?.message?.message_id ?? null;
   const before = activeIntake(chatId)?.noteId ?? null;
   try {
-    const out = await openDoor(chatId, requestId, sp, { openedBy: pressed, restart: mode === 'restart', restartKey });
+    const original = ctx.callbackQuery?.message?.reply_to_message ?? null;
+    const out = await openDoor(chatId, requestId, sp, {
+      openedBy: pressed,
+      restart: mode === 'restart',
+      restartKey,
+      askAbout: mode === 'replied' ? (original?.message_id ?? null) : null,
+    });
     if (out && mode === 'replied') {
-      const original = ctx.callbackQuery?.message?.reply_to_message;
-      await takeReplied(chatId, sp, out.state, original ?? null);
+      await takeReplied(chatId, sp, out.state, original);
+    } else if (out?.opened && mode === 'restart' && original && !original.from?.is_bot) {
+      // The «🗑 Ha» of a question asked about a file (PF-3): the file the
+      // offer was pressed under is this collection's first material, as the
+      // offer's own press would have made it — never dropped without a word.
+      await takeReplied(chatId, sp, out.state, original);
     }
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] the add door failed');
@@ -597,7 +644,6 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
     noteOwnMessage(chatId, (await sp.reply('Asl xabar topilmadi — qaytadan yuboring.')).message_id);
     return;
   }
-  if (state.repliedTaken.includes(original.message_id)) return;
   const group = original.media_group_id ?? null;
   const parts: { messageId: number; file: BotFile | null; name: string; mime: string | null }[] = [];
   const first = fileOf(original);
@@ -623,12 +669,28 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
     if (part.messageId === original.message_id) continue;
     parts.push(part);
   }
+  // What was taken is unread (`awaitReading`): the move to 'material' rides
+  // in the same patch as the take, so a crash between them cannot leave a
+  // taken file under the stored table's «✅ Qo‘shish».
+  const unread: Partial<IntakeState> = state.stage === 'client' || state.stage === 'section' ? {} : { stage: 'material' };
+  // Every part already taken — a redelivered press after everything landed:
+  // its «Bo‘ldi» prompt again, if the reading is still owed, and nothing else.
+  if (parts.every((p) => state.repliedTaken.includes(p.messageId))) {
+    if (state.stage === 'material') await showIntakePrompt(sp, chatId, state);
+    return;
+  }
   const staffId = state.staffId;
   const text = (original.text ?? original.caption ?? '').trim();
+  const mark = (taken: number[], id: number) => [...taken, id].slice(-20);
   let live = state;
   let files = 0;
+  // Each part is fenced in the SAME patch that adds its file (review dur-2):
+  // one mark at the end let a flush between the parts, a restart and the
+  // redelivered press file every part a second time — fileCount 2, the same
+  // attachment twice in `pdfs`. The original's own text rides in its own
+  // part's patch, so a part taken is a text taken.
   for (const part of parts) {
-    if (!part.file) continue;
+    if (!part.file || live.repliedTaken.includes(part.messageId)) continue;
     const saved = await saveIntakeFile({}, live.noteId, staffId, part.file).catch((err: unknown) => {
       logger.warn({ err }, '[calc-amend] replied file save failed');
       return null;
@@ -636,15 +698,25 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
     if (!saved) continue;
     const read = await readIntakeFile(saved, part.name, part.mime, live);
     files += 1;
-    live =
-      updateIntake(chatId, { ...read.patch, fileCount: live.fileCount + 1 }) ?? { ...live, ...read.patch, fileCount: live.fileCount + 1 };
+    const patch: Partial<IntakeState> = {
+      ...read.patch,
+      ...unread,
+      fileCount: live.fileCount + 1,
+      repliedTaken: mark(live.repliedTaken, part.messageId),
+      ...(part.messageId === original.message_id && text ? { material: [...live.material, text] } : {}),
+    };
+    live = updateIntake(chatId, patch) ?? { ...live, ...patch };
     if (read.say) noteOwnMessage(chatId, (await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined)).message_id);
   }
-  const taken =
-    updateIntake(chatId, {
-      material: text ? [...live.material, text] : live.material,
-      repliedTaken: [...live.repliedTaken, original.message_id].slice(-20),
-    }) ?? live;
+  // The original with no file taken above (a text, or a file that could not
+  // be saved): its text and its mark in one patch.
+  const taken = live.repliedTaken.includes(original.message_id)
+    ? live
+    : (updateIntake(chatId, {
+        ...(text ? unread : {}),
+        material: text ? [...live.material, text] : live.material,
+        repliedTaken: mark(live.repliedTaken, original.message_id),
+      }) ?? live);
   if (group && !album) noteOwnMessage(chatId, (await sp.reply('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.')).message_id);
   if (!text && files === 0) {
     logger.info({ chatId: chatId.toString() }, '[calc-amend] replied message carried nothing to take');
@@ -669,17 +741,21 @@ export async function openAmendFromReply(
   const sp = messageSpeaker(chatId);
   const before = activeIntake(chatId)?.noteId ?? null;
   try {
-    const out = await openDoor(chatId, requestId, sp, { openedBy: msg.messageId, restart: false, restartKey: null });
+    // The opening takes nothing (dur-1): only the answer's own write below
+    // takes this message.
+    const out = await notTaking(() => openDoor(chatId, requestId, sp, { openedBy: msg.messageId, restart: false, restartKey: null }));
     if (!out) return;
     // A RETURNED request opened a NEW collection (⭐ of Question 6): its rows
     // are numbered afresh, or it waits for the customer — an answer addressed
     // by the old request's row numbers is not applied to it.
     if (!out.state.amend) {
-      updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, msg.messageId) }, { quiet: true });
       noteOwnMessage(chatId, (await sp.reply(ADD_REFUSAL.seededReply)).message_id);
       return;
     }
-    const state = updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, msg.messageId) }, { quiet: true }) ?? out.state;
+    // No `takenUpTo` here (dur-1): the answer's own write takes this message
+    // in the same patch (the collector scope), so a write lost in a crash is
+    // redone on the redelivery and one that landed is never applied twice.
+    const state = out.state;
     const text = msg.text?.trim();
     if (!text) return;
     await routeCollectorText(sp, chatId, state, text, {
@@ -713,9 +789,13 @@ export async function openAmendFromMedia(
   if (!message) return;
   const before = activeIntake(chatId)?.noteId ?? null;
   try {
-    const out = await openDoor(chatId, requestId, sp, { openedBy: message.message_id, restart: false, restartKey: null });
+    const out = await notTaking(() =>
+      openDoor(chatId, requestId, sp, { openedBy: message.message_id, restart: false, restartKey: null }),
+    );
     if (!out) return;
-    let live = updateIntake(chatId, { takenUpTo: Math.max(out.state.takenUpTo, message.message_id) }, { quiet: true }) ?? out.state;
+    // The file's own non-quiet patch takes this message (dur-1), never a mark
+    // before the file is saved.
+    let live = out.state;
     let took = false;
     const file = fileOf(message);
     if (file) {
@@ -748,21 +828,31 @@ export async function openAmendFromMedia(
 }
 
 /**
- * A text replying to ANOTHER request's ➕-bearing message while a collection
- * is live (regression-5, product-fit-5): words naming both, nothing written —
- * the answer is never applied to the wrong job. B's own add collection takes
- * it as a table answer (false here). It fails CLOSED: once the reply is known
- * to be another request's, a failure to name that request still writes
- * nothing; a reply that could not be checked at all is refused in words —
- * falling through would put the figure into THIS job's row.
+ * A text replying to a ➕-bearing message while a collection is live:
+ *  - ANOTHER request's (regression-5, product-fit-5): words naming both,
+ *    nothing written — the answer is never applied to the wrong job
+ *    ('handled');
+ *  - THIS add collection's own request's ('own', review PF-1): the answer is
+ *    the table's, and the caller hands it on with `replyTo: null` — the ➕
+ *    answer is not one of the collection's drawn messages, so read as a reply
+ *    to «somebody else's» message it met «Qaysi qatorga?» on every reply but
+ *    the one that opened the door (and on that one too after a ➕ press);
+ *  - the RETURNED request a seeded collection was opened from (COMP-3): its
+ *    rows are numbered afresh, so the answer is not applied — the door's own
+ *    `seededReply` words ('handled');
+ *  - anything else: null, the caller goes on as it was.
+ * It fails CLOSED: once the reply is known to be another request's, a failure
+ * to name that request still writes nothing; a reply that could not be
+ * checked at all is refused in words — falling through would put the figure
+ * into THIS job's row.
  */
 export async function foreignAddReply(
   ctx: CollectorReply,
   chatId: bigint,
   intake: IntakeState,
   replyTo: number | null,
-): Promise<boolean> {
-  if (replyTo === null) return false;
+): Promise<'handled' | 'own' | null> {
+  if (replyTo === null) return null;
   let verdict: Awaited<ReturnType<typeof import('./reply-door').replyVerdictFor>>;
   try {
     const { replyVerdictFor } = await import('./reply-door');
@@ -773,9 +863,17 @@ export async function foreignAddReply(
       .reply(ADD_REFUSAL.replyUnchecked)
       .then((sent) => noteOwnMessage(chatId, sent.message_id))
       .catch(() => {});
-    return true;
+    return 'handled';
   }
-  if (verdict?.kind !== 'calc_add' || verdict.requestId === intake.amend?.requestId) return false;
+  if (verdict?.kind !== 'calc_add') return null;
+  if (intake.amend && verdict.requestId === intake.amend.requestId) return 'own';
+  if (!intake.amend && (intake.seededFrom ?? null) === verdict.requestId) {
+    await ctx
+      .reply(ADD_REFUSAL.seededReply)
+      .then((sent) => noteOwnMessage(chatId, sent.message_id))
+      .catch(() => {});
+    return 'handled';
+  }
   let b = 'boshqa';
   try {
     const { storedRequestFacts } = await import('../../wms/calc/service');
@@ -805,7 +903,7 @@ export async function foreignAddReply(
   } catch (err) {
     logger.warn({ err }, '[calc-amend] the two-card words not sent');
   }
-  return true;
+  return 'handled';
 }
 
 // ---------------------------------------------------------------------------

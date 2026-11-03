@@ -141,10 +141,11 @@ describe('the rules a shell cannot exercise', () => {
     );
   });
 
-  it('a live collection is never replaced without asking', () => {
+  it('a live collection with something in it is never replaced without asking', () => {
     // The restart question is what stands between «I pressed the wrong
-    // button» and twenty forwarded messages gone.
-    const at = handlers.indexOf("if (!step.startsWith('go_') && activeIntake(chatId))");
+    // button» and twenty forwarded messages gone. An EMPTY one is replaced
+    // with no question (review PF-11) — a frozen add collection never is.
+    const at = handlers.indexOf("if (!step.startsWith('go_') && live && (live.saving || !intakeIsEmpty(live)))");
     expect(at, 'the restart guard has moved — re-anchor this fence').toBeGreaterThan(-1);
     // …and it must come BEFORE the state is minted, or it guards nothing.
     expect(at).toBeLessThan(handlers.indexOf('startIntake(chatId, opening'));

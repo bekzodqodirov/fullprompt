@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { factsVolumeM3, intakeNoteText, intakeTableText, missingFields, type CalcFacts } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 
 /**
  * The shipment's cubic metres SUMMED from its lines (his 2.7 b,
@@ -102,7 +103,7 @@ describe('a summed volume is SAID where it is printed', () => {
   // The table replaced the summary (docs/SAKKIZ-R3.md §2.1); its volume row
   // is `volumeText`'s own words (re-check p3-18).
   const table = (f: CalcFacts) =>
-    intakeTableText({ section: 'yolkira', facts: f, laws: noLaws, clientLabel: null, fileCount: 0, ambiguous: [], amend: null, tail: '' });
+    intakeTableText({ section: 'yolkira', facts: f, laws: noLaws, clientLabel: null, fileCount: 0, ambiguous: [], amend: null, tail: '', nameWord: nameWordFor });
 
   it('the table and the lenta note print «(qatorlardan)» beside the Σ', () => {
     const summary = table(facts);

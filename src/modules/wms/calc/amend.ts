@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { v5 as uuidv5 } from 'uuid';
 import { db, type Tx } from '../../platform/db/client';
 import { calcAmendments, calcRequests, notifications, users } from '../../platform/db/schema';
@@ -7,7 +7,7 @@ import { logger } from '../../platform/logger';
 import { THREAD_TEXT_MAX } from '../../platform/notifications/thread-ref';
 import type { AmendBase, AmendBaseItem, AmendSubmission } from './amend-types';
 import { doorRow } from './door-row';
-import { figureLabel, MATERIAL_NOTE_CAP, REQUIRED_FIELDS, SECTION_LABEL, type CalcGoodsFact, type CalcSection } from './intake';
+import { figureLabel, MATERIAL_NOTE_CAP, REQUIRED_FIELDS, SECTION_LABEL, weightFromTotalNote, type CalcGoodsFact, type CalcSection } from './intake';
 import { linesVolumeM3, roundM3, volumeIsLinesSum } from './line-totals';
 import { needShortUz, type NeedUnit } from './needs';
 import { prefillStanding } from './prefill';
@@ -186,8 +186,12 @@ export function conflictOf(
  */
 export function amendTotalsStale(input: {
   section: CalcSection;
-  stored: { weightKg: number | null; volumeM3: number | null; items: readonly { volumeM3: number | null }[] };
-  linesAfter: readonly { volumeM3: number | null }[];
+  stored: {
+    weightKg: number | null;
+    volumeM3: number | null;
+    items: readonly { volumeM3: number | null; weightKg?: number | null; note?: string | null }[];
+  };
+  linesAfter: readonly { volumeM3: number | null; weightKg?: number | null }[];
   added: number;
   answered: { weightKg: boolean; volumeM3: boolean };
 }): { stale: ('weightKg' | 'volumeM3')[]; resummedM3: number | null } {
@@ -215,10 +219,39 @@ export function amendTotalsStale(input: {
       }
     }
   }
-  if (needs.includes('weightKg') && !input.answered.weightKg && input.added > 0 && input.stored.weightKg !== null) {
+  // A row whose weight the landing COPIED from the shipment total (review
+  // lmp-2): its correction is the shipment's too — the brutto it was copied
+  // from no longer agrees with it, and the road must not be priced on the old.
+  const copiedMoved = storedLines.some((l, i) => {
+    if (weightFromTotalNote(l.note ?? null) === null) return false;
+    const after = input.linesAfter[i]?.weightKg;
+    return after !== undefined && after !== null && !sameFigure(after, l.weightKg ?? null, 3);
+  });
+  if (
+    needs.includes('weightKg') &&
+    !input.answered.weightKg &&
+    (input.added > 0 || copiedMoved) &&
+    input.stored.weightKg !== null
+  ) {
     stale.push('weightKg');
   }
   return { stale, resummedM3 };
+}
+
+/**
+ * The stored note with the landing's lone-weight sentence taken out — what an
+ * edit of that row's weight posts (review lmp-2): left, the note goes on
+ * saying the row's weight was copied from the brutto after the seller typed
+ * its own, and every reader of `weightFromTotalNote` says «bruttodan» about
+ * it. Null = nothing else was in the note. Pure.
+ */
+export function noteWithoutLoneWeight(note: string | null): string | null {
+  const rest = (note ?? '')
+    .split(/\s*·\s*/u)
+    .filter((part) => part.trim() !== '' && weightFromTotalNote(part) === null)
+    .join(' · ')
+    .trim();
+  return rest === '' ? null : rest;
 }
 
 /** What `amendDiff` says the addition is, over a FRESH base — and, once the
@@ -239,6 +272,8 @@ export interface AmendChange {
     expect: TableExpect;
     /** A conflict the seller answered «qo‘shilsin»: the figure is stored + read. */
     sum?: { field: AmendField; unit: string; stored: number; read: number };
+    /** The note with the lone-weight copy's sentence out (`noteWithoutLoneWeight`, lmp-2) — present only then. */
+    note?: string | null;
   }[];
   /** A different code for a coded row — for the VED only (⭐ of Question 3). */
   codesKept: { seq: number; name: string; typed: string; stored: string }[];
@@ -364,7 +399,20 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
     // since then fails this compare-and-set and becomes the VED's — 500
     // written over a newer figure would be a sum nobody made.
     if (sum) expect[sum.field] = sum.stored;
-    edits.push({ itemId: item.itemId, seq: item.seq, name: item.name, set, expect, ...(sum ? { sum } : {}) });
+    // The seller typed the weight of a row whose weight the landing copied
+    // from the brutto (lmp-2): the copy's sentence leaves the note with it,
+    // under the note's own compare-and-set.
+    const copied = set.weightKg !== undefined && weightFromTotalNote(item.note ?? null) !== null;
+    if (copied) expect.note = item.note ?? null;
+    edits.push({
+      itemId: item.itemId,
+      seq: item.seq,
+      name: item.name,
+      set,
+      expect,
+      ...(sum ? { sum } : {}),
+      ...(copied ? { note: noteWithoutLoneWeight(item.note ?? null) } : {}),
+    });
   }
 
   const conflicts: AmendChange['conflicts'] = [...sub.conflicts];
@@ -408,9 +456,12 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
   const linesAfter = [
     ...fresh.items.map((i) => {
       const e = edits.find((x) => x.itemId === i.itemId);
-      return { volumeM3: e?.set.volumeM3 !== undefined ? e.set.volumeM3 : i.volumeM3 };
+      return {
+        volumeM3: e?.set.volumeM3 !== undefined ? e.set.volumeM3 : i.volumeM3,
+        weightKg: e?.set.weightKg !== undefined ? e.set.weightKg : i.weightKg,
+      };
     }),
-    ...adds.map((a) => ({ volumeM3: a.volumeM3 ?? null })),
+    ...adds.map((a) => ({ volumeM3: a.volumeM3 ?? null, weightKg: a.weightKg ?? null })),
   ];
   const { stale, resummedM3 } = amendTotalsStale({
     section: fresh.section,
@@ -448,13 +499,22 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
 
 /**
  * The save's edits: the answered fields and the row's compare-and-set, and
- * NOTHING else. No `note` — an edit's note REPLACES the stored one, which
- * would erase the landing's «og‘irlik umumiy (brutto)dan olindi» that
- * `weightFromTotalNote` reads (re-check p4-17) — and never a baza, a basis, an
- * import row or a reason (law 1: the add door posts no price). Pure.
+ * NOTHING else. A `note` only where the edit set the weight of a row the
+ * landing copied it into from the brutto (lmp-2): there the stored note, its
+ * «og‘irlik umumiy (brutto)dan olindi» taken out, under the note's own
+ * compare-and-set — any other edit's note would REPLACE the stored one and
+ * erase that sentence, which `weightFromTotalNote` reads (re-check p4-17).
+ * Never a baza, a basis, an import row or a reason (law 1: the add door posts
+ * no price). Pure.
  */
 export function tableEditsOf(change: Pick<AmendChange, 'edits'>): TableItemEdit[] {
-  return change.edits.map((e) => ({ id: e.itemId, seq: e.seq, ...e.set, expect: e.expect }));
+  return change.edits.map((e) => ({
+    id: e.itemId,
+    seq: e.seq,
+    ...e.set,
+    ...(e.note !== undefined ? { note: e.note } : {}),
+    expect: e.expect,
+  }));
 }
 
 /** Does the change write anything into the rows (edits, adds or totals)? */
@@ -677,6 +737,7 @@ class AmendDuplicate extends Error {
 const SAVE_TABLE_REFUSAL_NAMES: Record<SaveTableRefusal, true> = {
   ai_running: true,
   already_closed: true,
+  amended_since: true,
   bad_basis: true,
   bad_code: true,
   bad_number: true,
@@ -1152,10 +1213,21 @@ export async function redoAmendment(row: CalcAmendmentRow, staffId: string): Pro
   const change = row.change as AmendChange;
   if (row.outcome === 'applied' && row.rev !== null && !change.repassQueued) {
     const ticket = await ticketStanding(row.requestId);
+    // Bounded like sayOnce's claim (review lmp-3): the re-pass answer is
+    // addressed to the seller who queued it and is never older than its
+    // amendment (sayOnce's day of slack kept) — unbounded, the probe read
+    // every CalcPrefilled row there is.
     const spoke = await db
       .select({ id: notifications.id })
       .from(notifications)
-      .where(and(eq(notifications.type, 'CalcPrefilled'), sql`${notifications.payload} ->> 'pass' = ${`amend:${row.id}`}`))
+      .where(
+        and(
+          eq(notifications.type, 'CalcPrefilled'),
+          eq(notifications.userId, staffId),
+          sql`${notifications.createdAt} >= ${new Date(row.createdAt).toISOString()}::timestamptz - interval '1 day'`,
+          sql`${notifications.payload} ->> 'pass' = ${`amend:${row.id}`}`,
+        ),
+      )
       .limit(1);
     if (ticket === 'none' && spoke.length === 0) {
       const queued = await queueCalcPrefill({
@@ -1199,7 +1271,8 @@ export const WAITING_REQUEUE_HOURS = 24;
 
 /**
  * Every stored «waiting» addition (of one request, or all) whose machine pass
- * is gone, handed back to the save job. No `singletonKey`: the once-fence of
+ * is gone — and every addition decided but never told (dur-4) — handed back
+ * to the save job. No `singletonKey`: the once-fence of
  * an addition is its note id, and a duplicate job answers `duplicate`. The
  * settle (P5) calls it per request; the sweep (P1) for all — the net under a
  * lost enqueue. Answers how many it handed back.
@@ -1222,7 +1295,20 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
     .from(calcAmendments)
     .where(
       and(
-        eq(calcAmendments.outcome, 'waiting'),
+        // A waited addition the job DECIDED but whose words never reached the
+        // seller (review dur-4): its collection is long gone, so neither the
+        // sweep's dead-save settle nor the hydrate's untold net reads it, and
+        // «AI tugatgach so‘rovga avtomatik yoziladi» was never followed by a
+        // word. Handed back, the job answers `duplicate`, says the words once
+        // and stamps them. Five minutes old at least: a fresh save's own job
+        // is still telling it.
+        or(
+          eq(calcAmendments.outcome, 'waiting'),
+          and(
+            isNull(calcAmendments.outcomeSentAt),
+            sql`${calcAmendments.createdAt} < now() - interval '5 minutes'`,
+          ),
+        ),
         isNotNull(calcAmendments.staffId),
         requestId ? eq(calcAmendments.requestId, requestId) : undefined,
       ),
@@ -1231,7 +1317,7 @@ export async function requeueWaitingAmendments(requestId?: string): Promise<numb
   if (stale.length > 0) {
     logger.warn(
       { amendmentIds: stale.map((r) => r.id) },
-      '[calc-amend] waiting additions older than a day — not requeued; the VED must enter them',
+      '[calc-amend] additions older than a day (waiting, or decided and never told) — not requeued; the VED must enter them',
     );
   }
   const rows = all.filter((r) => r.fresh);

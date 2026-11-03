@@ -225,6 +225,39 @@ describe('the reminder (2 h, once per idle stretch)', () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it('an add collection only OPENED — its card’s customer is the door’s, nothing his — is neither reminded nor said goodbye to (review PF-9)', async () => {
+    const now = Date.now();
+    const id = chat();
+    const amend = { cardLabel: 'B-000067', requestId: 'r', clientLabel: 'GS777 Ali' } as AmendBase;
+    startIntake(id, 'rastamojka', { staffId: 'staff-sweep', amend });
+    updateIntake(id, { stage: 'review', clientHintRaw: 'GS777 Ali', doorHint: 'GS777 Ali' }, { quiet: true });
+    updateIntake(id, { touchedAt: now - 3 * H }, { quiet: true });
+    await runIntakeSweep(now);
+    expect(send).not.toHaveBeenCalled();
+    await runIntakeSweep(now + 22 * H);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('…but one he answered a row in — a press writes no `answers` line — is reminded (review PF-9)', async () => {
+    const now = Date.now();
+    const id = chat();
+    const amend = { cardLabel: 'B-000067', requestId: 'r', clientLabel: 'GS777 Ali' } as AmendBase;
+    startIntake(id, 'rastamojka', { staffId: 'staff-sweep', amend });
+    updateIntake(
+      id,
+      {
+        stage: 'review',
+        clientHintRaw: 'GS777 Ali',
+        doorHint: 'GS777 Ali',
+        lineAnswers: [{ index: 0, itemId: 'i1', name: 'Sumka', patch: { quantity: 50 } }],
+      } as Partial<IntakeState>,
+      { quiet: true },
+    );
+    updateIntake(id, { touchedAt: now - 2 * H }, { quiet: true });
+    await runIntakeSweep(now);
+    expect(remindersTo(id)).toHaveLength(1);
+  });
+
   it('a 429 (or the token down, or no answer) releases the claim — the next tick sends; a 403 stays claimed', async () => {
     const now = Date.now();
     const flaky = open(now, 2 * H);
@@ -522,7 +555,7 @@ describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', 
     expect(await landedAlreadyReply({ reply: async () => ({ message_id: 1 }) }, id, peekIntake(id)!)).toBe(true);
     fail(new Error('database blip'));
     await tick;
-    expect(textsTo(id)).toEqual(['Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.']);
+    expect(textsTo(id)).toEqual(['Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.']);
   });
 });
 

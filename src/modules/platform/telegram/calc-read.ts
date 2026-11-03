@@ -22,9 +22,9 @@ import {
   updateIntake,
 } from './calc-store';
 import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
-import { intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
+import { deliverNextStep, intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
 import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
-import { isStopping } from './lifecycle';
+import { bootedAtSec, isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
 
 /**
@@ -118,9 +118,28 @@ function isArrivedReply(reply: { text: string }): boolean {
 /** Telegram refusing the CHAT, not our message: the bot blocked, the chat gone. */
 const CHAT_GONE = /chat not found|bot was blocked|bot was kicked|user is deactivated|have no rights|not enough rights|CHAT_WRITE_FORBIDDEN|PEER_ID_INVALID/i;
 
+/**
+ * A token whose press died with the process before this one (review dur-3):
+ * minted before this boot and never given a job — its notice was still going
+ * out when the old process stopped, so nothing was enqueued and nothing ever
+ * will be. adv-14's staleness rule (a notice hanging in THIS process) does not
+ * apply across a boot: the redelivered press takes it over at once and the
+ * sweep releases it on its first tick, instead of «Tahlil davom etmoqda» for
+ * twenty-two minutes about a reading that does not exist.
+ */
+function pressDiedBeforeBoot(state: IntakeState): boolean {
+  const boot = bootedAtSec();
+  return state.analysingJob === null && state.analysingAt !== null && boot > 0 && state.analysingAt < boot * 1000;
+}
+
 /** Is the collection's reading still running (or about to), by the press's own clock? */
 function readingLive(state: IntakeState, now: number): boolean {
-  return state.analysing !== null && state.analysingAt !== null && now - state.analysingAt <= ANALYSIS_STALE_MS;
+  return (
+    state.analysing !== null &&
+    state.analysingAt !== null &&
+    now - state.analysingAt <= ANALYSIS_STALE_MS &&
+    !pressDiedBeforeBoot(state)
+  );
 }
 
 /**
@@ -154,6 +173,16 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     return;
   }
   if (state.material.length === 0 && state.fileCount === 0) {
+    // A collection that carries rows of its own — an add collection's stored
+    // rows, a seeded one's returned rows — reaches the table with NO material
+    // (review PF-8): «Hali hech narsa yuborilmadi» there pointed at the save's
+    // «avval «Bo‘ldi» ni bosing», and the two refusals pointed at each other.
+    // Nothing new to read: back to its table.
+    if (state.amend || state.seed) {
+      const back = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' as const };
+      await deliverNextStep(ctx, chatId, back);
+      return;
+    }
     await ctx.reply('Hali hech narsa yuborilmadi.');
     return;
   }
@@ -485,7 +514,7 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     } else {
       // No keyboard is built here: the step's own (the derived `c:` fence reads
       // every button where it is built).
-      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale });
+      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
       patch = { ...outcome.state, ...step.patch };
       text = step.text;
       keyboard = step.keyboard;
@@ -736,7 +765,7 @@ export async function readingAlive(state: IntakeState): Promise<boolean> {
   if (state.pendingReply?.token === state.analysing) return true;
   if (inFlight.has(state.analysing)) return true;
   const age = state.analysingAt === null ? Number.POSITIVE_INFINITY : Date.now() - state.analysingAt;
-  if (state.analysingJob === null) return age <= ANALYSIS_STALE_MS;
+  if (state.analysingJob === null) return age <= ANALYSIS_STALE_MS && !pressDiedBeforeBoot(state);
   const life = await jobLife(state.analysingJob);
   return life === 'alive' || (life === 'missing' && age < ENQUEUE_GRACE_MS);
 }

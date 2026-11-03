@@ -71,7 +71,7 @@ const HOLDS: Record<string, string> = {
   'staff-handlers.ts:answerStaffText': 'the orphan guard: «no HOLDING collection», the parked one handed in',
 };
 
-/** The four doors that refuse beside a collection — by the one predicate, never `activeIntake`. */
+/** The five doors that refuse beside a collection — by the one predicate, never `activeIntake` (main's agent-bot.ts:busy the fifth). */
 const DOORS: { site: string; needle: string }[] = [
   { site: 'task-handlers.ts:startTaskDraft', needle: 'if (holdingIntake(chatId)) {' },
   // main's AI sotuvchi (0138): a press that arms an agent wait refuses beside a collection.
@@ -179,7 +179,7 @@ describe('every `activeIntake(` asks the question it means (§6.2.7)', () => {
     expect([...new Set(PEEKS.map((s) => s.key))].filter((k) => !(k in PEEK))).toEqual([]);
   });
 
-  it('the four doors ask `holdingIntake`', () => {
+  it('the five doors ask `holdingIntake`', () => {
     for (const door of DOORS) {
       const [file, fn] = door.site.split(':') as [string, string];
       const source = FILES.find((f) => f.path.endsWith(`/${file}`));

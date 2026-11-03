@@ -435,9 +435,16 @@ async function runTable(
  * row born with code + baza + measure prices on its first save. */
 export async function saveTableAction(
   id: string,
-  input: { items: TableItemEdit[]; adds: TableNewItem[] },
+  input: { items: TableItemEdit[]; adds: TableNewItem[]; sawRev?: number },
 ): Promise<TableFormState> {
-  return runTable((ctx) => saveTable(id, input, ctx), ws(id));
+  // The revision the grid was drawn at (review lmp-1): a seller's addition
+  // written after it refuses the save. A tab from before this release posts
+  // none and saves as it always did.
+  const sawRev = typeof input.sawRev === 'number' ? input.sawRev : undefined;
+  return runTable(
+    (ctx) => saveTable(id, { items: input.items, adds: input.adds }, ctx, sawRev !== undefined ? { sawRev } : undefined),
+    ws(id),
+  );
 }
 
 export async function deleteItemAction(id: string, itemId: string): Promise<TableFormState> {

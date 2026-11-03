@@ -80,6 +80,7 @@ import { refuseWhileCapturing } from '@/modules/platform/telegram/note-capture';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
 import { BUSY_DRAFT } from '@/modules/platform/telegram/task-handlers';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 
 const REQ = '01234567-89ab-7def-8123-456789abcd01';
 const OTHER = '01234567-89ab-7def-8123-456789abcd02';
@@ -268,7 +269,7 @@ describe('the open', () => {
     expect(vi.mocked(deliverNextStep).mock.calls[0]![2]).toMatchObject({ amend: { requestId: REQ }, stage: 'review' });
     // The table P3's renderer draws for this state (the merged tree, P4
     // handoff item 1): the add head, and the add keyboard — one home for both.
-    const table = intakeNextStep(state, new Map(), await import('@/modules/wms/calc/intake'));
+    const table = intakeNextStep(state, new Map(), await import('@/modules/wms/calc/intake'), { nameWord: nameWordFor });
     expect(table.text.split('\n')[0]).toBe('➕ Qo‘shimcha · B-000067 · 🛃 Rastamojka');
     expect(table.keyboard!.inline_keyboard.flat().map((b) => [b.text, b.callback_data])).toEqual([
       ['✅ Qo‘shish', 'c:save'],
@@ -284,7 +285,7 @@ describe('the open', () => {
     const p = await press(id);
     expect(p.texts()).toEqual([STANDING_LINE.started]);
     expect(activeIntake(id)!.standingAtOpen).toBe('started');
-    const table = intakeNextStep(activeIntake(id)!, new Map(), await import('@/modules/wms/calc/intake'));
+    const table = intakeNextStep(activeIntake(id)!, new Map(), await import('@/modules/wms/calc/intake'), { nameWord: nameWordFor });
     expect(table.keyboard!.inline_keyboard[0]![0]).toEqual({ text: '📨 VED ga yuborish', callback_data: 'c:save' });
   });
 
@@ -324,6 +325,8 @@ describe('a live collection: the question, the restart and the resume (durabilit
     stub.stored = storedOf();
     const id = chat();
     const old = startIntake(id, 'yolkira', { staffId: 'staff-1' });
+    // Something the seller sent: an empty collection is replaced unasked (PF-11).
+    updateIntake(id, { material: ['Kurtka 300 dona'] }, { quiet: true });
     const p = await press(id);
     expect(p.replies).toHaveLength(1);
     expect(p.replies[0]!.text).toContain('B-000067');
@@ -332,6 +335,16 @@ describe('a live collection: the question, the restart and the resume (durabilit
     expect(activeIntake(id)!.noteId).toBe(old.noteId);
     // §2.4: the press is answered with the question's own words.
     expect(stub.toasts).toEqual([p.replies[0]!.text]);
+  });
+
+  it('an EMPTY collection is replaced with no question (review PF-11)', async () => {
+    stub.stored = storedOf();
+    const id = chat();
+    const old = startIntake(id, 'yolkira', { staffId: 'staff-1' });
+    const p = await press(id);
+    expect(p.replies.map((r) => r.text).filter((t) => t.includes('tugallanmagan'))).toEqual([]);
+    expect(activeIntake(id)!.noteId).not.toBe(old.noteId);
+    expect(activeIntake(id)!.amend?.requestId).toBe(REQ);
   });
 
   it('cg: ends the other collection and opens the add one', async () => {
@@ -395,6 +408,8 @@ describe('a live collection: the question, the restart and the resume (durabilit
     stub.stored = storedOf();
     const id = chat();
     await press(id);
+    // An answer typed into it: an add collection the seller only opened is empty (PF-9, PF-11).
+    updateIntake(id, { answers: ['1: 50 dona'] }, { quiet: true });
     stub.stored = storedOf({}, { requestId: OTHER, cardLabel: 'B-000068' });
     const p = await press(id, 'plain', OTHER);
     expect(p.replies[0]!.text).toContain('B-000068');

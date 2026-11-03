@@ -22,6 +22,13 @@ export interface AmendBaseItem {
   law: NeedLaw | null;
   /** In a group a person has ✅'d. */
   confirmed: boolean;
+  /**
+   * The row's stored note — where the landing's «og‘irlik umumiy
+   * (brutto)dan olindi» lives (`weightFromTotalNote`): an addition that
+   * changes such a row's weight clears that sentence and leaves the brutto
+   * stale (review lmp-2). Optional — an addition built before it reads none.
+   */
+  note?: string | null;
 }
 
 export interface AmendBase {

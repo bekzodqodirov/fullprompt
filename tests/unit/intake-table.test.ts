@@ -9,7 +9,7 @@ import {
   type TableInput,
 } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
-import { parseTableAnswer } from '@/modules/wms/calc/line-address';
+import { nameWordFor, parseTableAnswer } from '@/modules/wms/calc/line-address';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
 /**
@@ -31,6 +31,7 @@ function table(over: Partial<TableInput> & { facts: CalcFacts }): string {
     ambiguous: [],
     amend: null,
     tail: '',
+    nameWord: nameWordFor,
     ...over,
   });
 }
@@ -137,6 +138,32 @@ describe('the §2.1 table', () => {
     const input = { section: 'rastamojka' as const, facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Sumka', quantity: 2 }, { name: '100% paxta futbolka' }] }, laws: noLaws, amend: null };
     const ref = { rows: tableRowsOf(input), open: tableOpenOf(input), preferred: tableOpenOf(input), stage: 'review' as const };
     expect(parseTableAnswer('paxta 30 dona', ref).segments[0]!.at).toEqual({ line: 2 });
+  });
+
+  it('two rows sharing a first word: the example names one of them alone, and the parser lands it there (review PF-4)', () => {
+    const facts: CalcFacts = {
+      weightKg: 3500,
+      volumeM3: 12,
+      goods: [
+        { name: 'Kurtka qishki erkaklar', weightKg: 40, tnvedCode: '6110200000' },
+        { name: 'Kurtka qishki ayollar', weightKg: 30, tnvedCode: '6110200000' },
+      ],
+    };
+    const laws = new Map([['6110200000', FUTBOLKA]]);
+    const text = table({ laws, facts });
+    const example = /«(\p{L}[^»]*?) 30 dona»/u.exec(text)?.[1];
+    expect(example, 'a name example is taught').toBeDefined();
+    const input = { section: 'rastamojka' as const, facts, laws, amend: null };
+    const ref = { rows: tableRowsOf(input), open: tableOpenOf(input), preferred: tableOpenOf(input), stage: 'review' as const };
+    const seg = parseTableAnswer(`${example} 30 dona`, ref).segments[0]!;
+    expect(seg.refused).toBeNull();
+    expect(seg.at).toEqual({ line: 2 });
+  });
+
+  it('two rows of ONE name: no name example at all, the numbered one only (review PF-4)', () => {
+    const facts: CalcFacts = { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Kurtka' }, { name: 'Kurtka' }] };
+    const text = table({ facts });
+    expect(text).toContain('✍️ Bir xabarda istalgan qatorni to‘ldiring: «1: 30 dona».');
   });
 
   it('a row that states nothing reads «soni (dona) yoki sof og‘irligi (kg)» — lineNeedText’s own words (product-fit-19 c)', () => {
@@ -321,6 +348,39 @@ describe('over Telegram’s 4096 (§2.1, product-fit-10)', () => {
     const text = table({ facts: { weightKg: 3500, volumeM3: 12, goods } });
     expect(text.length).toBeLessThanOrEqual(MAX);
     expect(numbers(text)).toEqual(Array.from({ length: 40 }, (_, i) => i + 1));
+  });
+
+  it('100 long rows owing ONE count, cut to fit: the grouped ↳ still says what they lack (review PF-5)', () => {
+    const goods = Array.from({ length: 100 }, (_, i) => ({ name: long(i + 1), weightKg: 10, tnvedCode: '6110200000' }));
+    const text = table({ laws: new Map([['6110200000', FUTBOLKA]]), facts: { weightKg: 3500, volumeM3: 12, goods } });
+    expect(text.length).toBeLessThanOrEqual(MAX);
+    expect(text).toContain('va yana');
+    expect(text).toContain('   ↳ 1–100: soni (dona) — boj kamida $2/dona');
+  });
+
+  it('an add table asking EVERY one of 250 rows: the closing names a few, counts the rest, and keeps its instruction (review PF-6)', () => {
+    const goods = Array.from({ length: 250 }, (_, i) => ({
+      name: `Futbolka ${i + 1}`,
+      weightKg: 10,
+      tnvedCode: '6110200000',
+      seq: i + 1,
+      itemId: `i${i + 1}`,
+    }));
+    const text = table({
+      laws: new Map([['6110200000', FUTBOLKA]]),
+      facts: { weightKg: 3500, volumeM3: 12, goods },
+      amend: {
+        cardLabel: 'B-00123',
+        storedCount: 250,
+        totalsStale: [],
+        conflicts: [],
+        askedSeqs: goods.map((g) => g.seq),
+        started: false,
+      },
+    });
+    expect(text.length).toBeLessThanOrEqual(MAX);
+    expect(text).toMatch(/✍️ So‘ralgan: 1-qator soni \(dona\), .*, va yana 242 ta\. Yozing: «1: 30 dona»\./u);
+    expect(text).not.toContain('(qisqartirildi)');
   });
 
   it('60 kg-only rows owing the same count: one grouped ↳ line, every ⚠️ row’s number present', () => {

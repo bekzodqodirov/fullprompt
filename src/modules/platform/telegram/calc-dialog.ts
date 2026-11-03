@@ -194,18 +194,37 @@ export interface TableContext {
   intake: Intake;
   laws: ReadonlyMap<string, NeedLaw>;
   stale: readonly ('weightKg' | 'volumeM3')[];
+  /** The answer parser's own «which words name this row alone» (line-address.ts, review PF-4). */
+  nameWord: import('../../wms/calc/intake').TableInput['nameWord'];
 }
 
-/** Which totals an add collection's new lines leave stale — P4's one home (`amendTotalsStale`). */
+/**
+ * Which totals a collection's new lines leave stale — P4's one home
+ * (`amendTotalsStale`) for an add collection, its rows' answered weights
+ * included (a row whose weight was copied from the brutto, lmp-2). A SEEDED
+ * collection carries the returned request's brutto as a plain fact (review
+ * COMP-4): a line added beyond its rows leaves that brutto behind too, and
+ * the table asks «yangilansinmi?» rather than landing it under a ✅.
+ */
 async function staleTotalsOf(state: IntakeState): Promise<('weightKg' | 'volumeM3')[]> {
-  if (!state.amend) return [];
   try {
-    const { amendTotalsStale } = await import('../../wms/calc/amend');
     const goods = state.facts.goods ?? [];
+    if (!state.amend) {
+      if (!state.seed) return [];
+      const { REQUIRED_FIELDS } = await import('../../wms/calc/intake');
+      const added = goods.length > state.seed.length;
+      return REQUIRED_FIELDS[state.section].includes('weightKg') &&
+        added &&
+        state.facts.weightKg != null &&
+        state.totalsAnswer.weightKg === null
+        ? ['weightKg']
+        : [];
+    }
+    const { amendTotalsStale } = await import('../../wms/calc/amend');
     return amendTotalsStale({
       section: state.section,
       stored: { weightKg: state.amend.weightKg, volumeM3: state.amend.volumeM3, items: state.amend.items },
-      linesAfter: goods.map((g) => ({ volumeM3: g.volumeM3 ?? null })),
+      linesAfter: goods.map((g) => ({ volumeM3: g.volumeM3 ?? null, weightKg: g.weightKg ?? null })),
       added: goods.filter((g) => !g.itemId).length,
       answered: { weightKg: state.totalsAnswer.weightKg !== null, volumeM3: state.totalsAnswer.volumeM3 !== null },
     }).stale;
@@ -225,15 +244,22 @@ export async function tableContext(
   extraCodes: readonly (string | null)[] = [],
 ): Promise<TableContext> {
   const intake = await import('../../wms/calc/intake');
+  const { nameWordFor } = await import('../../wms/calc/line-address');
   const [laws, stale] = await Promise.all([intakeLaws(state, extraCodes), staleTotalsOf(state)]);
-  return { intake, laws, stale };
+  return { intake, laws, stale, nameWord: nameWordFor };
 }
 
-/** Why the model's reading is missing (his 1.6 a) — null when it read, or when nothing was read yet on an addition. */
+/**
+ * Why the model's reading is missing (his 1.6 a) — null when it read, or when
+ * nothing was read yet on a collection that carries rows of its own: an
+ * addition's stored rows, a seeded collection's returned rows (review PF-7 —
+ * «AI ulanmagan (serverda kalit yo‘q)» stood under every seeded table that
+ * had never been read at all).
+ */
 function readingFailure(state: IntakeState): import('../../wms/calc/intake').AiReadFailure | null {
   if (state.aiUsed) return null;
   if (state.aiFailure) return state.aiFailure;
-  return state.amend ? null : 'not_configured';
+  return state.amend || state.seed ? null : 'not_configured';
 }
 
 /**
@@ -282,6 +308,7 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
         }
       : null,
     tail: tableTail(state, tc.intake),
+    nameWord: tc.nameWord,
   };
 }
 
@@ -361,11 +388,11 @@ export function intakeNextStep(
   state: IntakeState,
   laws: ReadonlyMap<string, NeedLaw>,
   intake: Intake,
-  opts: { stale?: readonly ('weightKg' | 'volumeM3')[] } = {},
+  opts: { stale?: readonly ('weightKg' | 'volumeM3')[]; nameWord: TableContext['nameWord'] },
 ): NextStep {
   return {
     patch: { stage: 'review', offers: [], offersMessageId: null },
-    ...tableWords(state, { intake, laws, stale: opts.stale ?? [] }),
+    ...tableWords(state, { intake, laws, stale: opts.stale ?? [], nameWord: opts.nameWord }),
   };
 }
 
@@ -379,7 +406,7 @@ export function intakeNextStep(
  */
 export async function deliverNextStep(ctx: CollectorReply, chatId: bigint, state: IntakeState): Promise<void> {
   const tc = await tableContext(state);
-  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale });
+  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
   const settled = updateIntake(chatId, step.patch);
   const words = settled ? tableWords(settled, tc) : step;
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
@@ -1346,9 +1373,23 @@ export async function routeCollectorText(
     // company's code prefix is read once, here, off any transaction.
     const read = await readCustomerText(text, await clientCodePrefix());
     const answer = clientAnswer(intake, text, read);
-    updateIntake(chatId, answer.patch);
+    // A SEEDED collection already carries the returned request's goods (review
+    // PF-8): with its customer named and nothing new sent, the next step is
+    // its table — «Tovar ro‘yxatini yuboring» about goods it holds sent the
+    // seller looking for a list he had already given.
+    const toTable =
+      answer.kind === 'customer' &&
+      intake.seed !== null &&
+      (intake.facts.goods ?? []).length > 0 &&
+      intake.material.length === 0 &&
+      intake.fileCount === 0;
+    const written = updateIntake(chatId, toTable ? { ...answer.patch, stage: 'review' } : answer.patch);
     if (answer.kind === 'material') {
       await ctx.reply(answer.say, { parse_mode: 'Markdown' });
+      return;
+    }
+    if (toTable && written) {
+      await deliverNextStep(ctx, chatId, written);
       return;
     }
     // Per section (judge UX14): a customs job is asked for the LINES —
@@ -1833,9 +1874,39 @@ export async function orphanAnswerSentence(
   const { looksLikeTableAnswer } = await import('../../wms/calc/line-address');
   const tableShaped = looksLikeTableAnswer(text);
   const bare = totalsAnswerShape(text) === 'bare';
-  if (parked) return tableShaped || bare ? { text: PAUSE_LINE, keyboard: pauseKeyboard() } : null;
+  if (parked) {
+    return tableShaped || bare || (await answersParkedTable(text, parked))
+      ? { text: PAUSE_LINE, keyboard: pauseKeyboard() }
+      : null;
+  }
   if (tableShaped) return { text: NO_OPEN_COLLECTION, keyboard: null };
   return bare ? { text: BARE_FIGURE_NOT_FOUND, keyboard: null } : null;
+}
+
+/**
+ * A text the PARKED table's own parser places — every segment on a row or a
+ * total, no refusal (review PF-10): «Shapka 30 dona», «40 juft» to a table
+ * whose one open row is a pair. §2.8's shape guard is address-first on
+ * purpose (regression-21 narrowed it, and with no collection it stays so),
+ * but where the bot knows the rows an answer to them is never the paid
+ * assistant's question. A text with no figure is never an answer. A failed
+ * read answers «no».
+ */
+async function answersParkedTable(text: string, parked: IntakeState): Promise<boolean> {
+  if (!/\d/u.test(text) || (parked.facts.goods ?? []).length === 0) return false;
+  try {
+    const { parseTableAnswer } = await import('../../wms/calc/line-address');
+    const tc = await tableContext(parked);
+    const parsed = parseTableAnswer(text, tableRefOf(parked, tc, 'review'));
+    return (
+      !parsed.material &&
+      parsed.segments.length > 0 &&
+      parsed.segments.every((s) => s.at !== null && s.refused === null && (s.answer !== null || s.totals !== null || s.route !== null))
+    );
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] parked table unreadable — the text goes on');
+    return false;
+  }
 }
 
 /** The ✅'s queue line when the tariff reply is on its way (judge concurrency-8). */

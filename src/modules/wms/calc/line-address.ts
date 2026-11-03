@@ -538,6 +538,35 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
   return { raw, at: { line: kept[0]!.no }, refused: null, answer, totals: null, route: null, ...plain };
 }
 
+/** At most this many leading words make an example name — past three it is no example anyone types. */
+const NAME_WORDS_TAUGHT = 3;
+
+/**
+ * The words of `row`'s name a typed answer names it by ALONE among `rows`, by
+ * `readSegment`'s own rule (`namesRow`, then `holdsModel`): the shortest
+ * leading run of its words — «Kurtka» when it is the only kurtka, «Kurtka
+ * qishki ayollar» beside «Kurtka qishki erkaklar» — or null when no run of up
+ * to three does. What the table's ✍️ line teaches (intake.ts `answerHow`,
+ * review PF-4): its example «Kurtka 30 dona» over two kurtka rows was the
+ * parser's own «name_many». A word starts with a letter and has three of them
+ * («100% paxta futbolka» gave «100 30 dona», which reads as row 100 — review
+ * adv-20).
+ */
+export function nameWordFor(rows: readonly TableRow[], row: TableRow): string | null {
+  const words = row.name.match(/(?<![\p{L}\p{N}])\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}/gu) ?? [];
+  for (let k = 1; k <= Math.min(words.length, NAME_WORDS_TAUGHT); k += 1) {
+    const candidate = words.slice(0, k).join(' ');
+    const parts = nameParts(candidate);
+    if (!hasName(parts)) continue;
+    const named = rows.filter((r) => {
+      const name = rowName(r.name);
+      return namesRow(parts, name) && holdsModel(parts, name);
+    });
+    if (named.length === 1 && named[0]!.no === row.no) return candidate;
+  }
+  return null;
+}
+
 /**
  * The text's segments: lines and «;» always; a comma only when EVERY part of
  * it starts with an address — «Kurtka (qora, XL) 50 dona» stays one, while

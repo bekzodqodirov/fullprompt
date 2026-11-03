@@ -1872,10 +1872,11 @@ export async function storedRequestFacts(requestId: string): Promise<{
     section: row.section,
     clientLabel,
     openedRev: row.rev,
-    items: goods.map((g) => ({
+    items: goods.map((g, k) => ({
       itemId: g.itemId!,
       seq: g.seq,
       name: g.name,
+      note: itemRows[k]?.note ?? null,
       quantity: g.quantity ?? null,
       weightKg: g.weightKg ?? null,
       volumeM3: g.volumeM3 ?? null,

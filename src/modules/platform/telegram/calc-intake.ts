@@ -101,6 +101,20 @@ export interface IntakeState {
    * `landIntake` — Uch band decides its card (P4).
    */
   seed: CalcGoodsFact[] | null;
+  /**
+   * The returned request a seeded collection was opened from (COMP-3): a
+   * second ➕ on that request resumes it, and a reply to that request's AI
+   * answer is its own, never «another request's». Optional — a row written
+   * before this field reads as null.
+   */
+  seededFrom?: string | null;
+  /**
+   * The customer the DOOR wrote into `clientHintRaw` — an add collection's
+   * card label, a seeded one's carried code (review PF-9). Not the seller's
+   * typing: a collection holding only this is empty, never reminded and never
+   * said goodbye to. Optional — a row written before this field reads as none.
+   */
+  doorHint?: string | null;
   /** Seqs the law asks a count for (P5's `lawAsksOf`), when an add collection opens (P4). */
   askedSeqs: number[] | null;
   /**

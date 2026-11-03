@@ -1101,7 +1101,10 @@ export function ItemsTable({
     setSaving(true);
     inFlight.current = true;
     try {
-      const result = await saveTableAction(id, { items, adds });
+      // The revision this screen was drawn at: a seller's addition written
+      // after it refuses the save, the drafts kept (review lmp-1) — never a
+      // colleague's save, which stays last-writer-wins (his 2b).
+      const result = await saveTableAction(id, { items, adds, sawRev: revAtPress });
       if (!result.ok) {
         // A REFUSAL wrote nothing (one transaction), so the stamp it minted
         // would vouch for a save that never happened — put back what stood.

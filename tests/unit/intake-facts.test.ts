@@ -11,6 +11,7 @@ import {
   missingFields,
   weightFromTotalNote,
 } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
 /** No line here carries a code the book knows — the law cases build their own. */
@@ -78,6 +79,7 @@ describe('the checklist still names what a quote cannot be made without', () => 
       ambiguous: [],
       amend: null,
       tail: '',
+      nameWord: nameWordFor,
     });
     expect(text).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
   });
@@ -175,6 +177,7 @@ describe('what a line weighs is derived once, or asked for', () => {
       ambiguous: [],
       amend: null,
       tail: '',
+      nameWord: nameWordFor,
     });
     expect(text).toContain('100 dona');
     expect(text).toContain('250 kg');
@@ -200,6 +203,7 @@ describe('a total written with a separator is read, or asked — never guessed (
       ambiguous: facts.ambiguous,
       amend: null,
       tail: '',
+      nameWord: nameWordFor,
     });
     // Both readings in the seller's face, and the way to answer each.
     expect(text).toContain('1.2 mi yoki 1200 mi');

@@ -61,11 +61,13 @@ import {
 import { aiConfigured } from '../ai/model';
 import { codeCandidates } from '../ai/route-text';
 import { clientLabels } from './client-labels';
-import { mayCollect } from './calc-intake';
+import { mayCollect, type IntakeState } from './calc-intake';
 import {
   activeIntake,
   endIntake,
   holdingIntake,
+  intakeHolds,
+  intakeIsEmpty,
   intakeMomentOf,
   intakeTakes,
   noteOwnMessage,
@@ -84,6 +86,8 @@ import {
 import {
   NOT_FOUND_HINT,
   orphanAnswerSentence,
+  PAUSE_LINE,
+  pauseKeyboard,
   landingReplyText,
   pressCancel,
   pressCertificate,
@@ -105,7 +109,7 @@ import {
   zoneKeyboard,
 } from './calc-keyboards';
 import { pressAnalyse } from './calc-read';
-import { landedAlreadyReply, pressResume } from './calc-intake-sweep';
+import { landedAlreadyReply, otherCollectorLive, pressResume } from './calc-intake-sweep';
 import {
   foreignAddReply,
   landedReplyMarkup,
@@ -280,6 +284,48 @@ function aiSectionKeyboard() {
       [{ text: '🔑 Podklyuch (rastamojka + yo‘lkira)', callback_data: 'c:aipk' }],
     ],
   };
+}
+
+/** Per chat, the album the pause line was last said for — one line per album, never ten. */
+const pausedAlbums = new Map<string, string>();
+
+/**
+ * §2.7's pause line for a FILE a parked collection did not take (review
+ * PF-2): «bu xabar unga qo‘shilmadi» with «▶️ Davom etamiz» — as a reply to
+ * the file, so the seller sees which one. The notice joins the collection's
+ * own messages, so its buttons act on it.
+ */
+async function sayPausedForFile(
+  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>; message: { message_id: number; media_group_id?: string } },
+  chatId: bigint,
+): Promise<void> {
+  const group = ctx.message.media_group_id ?? null;
+  if (group !== null) {
+    if (pausedAlbums.get(String(chatId)) === group) return;
+    pausedAlbums.set(String(chatId), group);
+  }
+  const sent = await ctx
+    .reply(PAUSE_LINE, {
+      reply_markup: pauseKeyboard(),
+      reply_parameters: { message_id: ctx.message.message_id, allow_sending_without_reply: true },
+    })
+    .catch((err: unknown) => {
+      logger.warn({ err }, '[calc-intake] pause line for a file not sent');
+      return null;
+    });
+  if (sent) noteOwnMessage(chatId, sent.message_id);
+}
+
+/**
+ * A message a PARKED collection takes only because it replies to one of the
+ * collection's own messages (`intakeTakes` rule 3), while another collector
+ * or a one-text wait is live beside it (`otherCollectorLive`): refused in
+ * words and written nowhere (review REG-2) — taking it would make the
+ * collection hold the chat again. Judged at the message's own date, as the
+ * verdict is.
+ */
+function refusesBesideParked(chatId: bigint, state: IntakeState, dateSec: number): boolean {
+  return !intakeHolds(state, dateSec * 1000) && otherCollectorLive(chatId) !== null;
 }
 
 /**
@@ -718,6 +764,11 @@ export function registerStaffBot(bot: Bot): void {
         // A plain file with nothing to take it: the add door's one offer, as
         // a reply to it, when the sender has a request it could join (P4).
         if (await offerAddForMedia(ctx, chatId)) return;
+        // A PARKED collection took no file (§0 1.8 c) — and said nothing until
+        // the 2 h reminder (review PF-2): the pause line, as a reply to it,
+        // once per album. Then on to the cabinet as before (a both-chat's
+        // photo still reaches its manager; a staff chat's hears nothing more).
+        if (state && !late && (await staffForChat(chatId))) await sayPausedForFile(ctx, chatId);
         return next();
       }
       const owner = await staffForChat(chatId);
@@ -730,6 +781,12 @@ export function registerStaffBot(bot: Bot): void {
     // it would join a collection the job ends without reading it.
     if (state.saving) {
       await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+      return;
+    }
+    // A file replying to a PARKED collection's own message beside another
+    // collector: the text ladder's guard, for a file (review REG-2).
+    if (refusesBesideParked(chatId, state, ctx.message.date)) {
+      await ctx.reply(otherCollectorLive(chatId)!);
       return;
     }
     const staff = await staffForChat(chatId);
@@ -852,14 +909,23 @@ export function registerStaffBot(bot: Bot): void {
         await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
         return;
       }
+      // A reply to a PARKED collection's own table while another collector or
+      // a one-text wait is live (review REG-2): taking it would make the
+      // collection hold again, and the other's next text would be filed here.
+      if (refusesBesideParked(chatId, intake, ctx.message.date)) {
+        await ctx.reply(otherCollectorLive(chatId)!);
+        return;
+      }
       // A text replying to ANOTHER request's ➕-bearing message: words naming
-      // both, nothing written (P4).
-      if (await foreignAddReply(ctx, chatId, intake, incoming.replyTo)) return;
+      // both, nothing written (P4). A reply to THIS add collection's own
+      // request's answer is the table's, addressed by its row (PF-1).
+      const addReply = await foreignAddReply(ctx, chatId, intake, incoming.replyTo);
+      if (addReply === 'handled') return;
       await routeCollectorText(ctx, chatId, intake, ctx.message.text, {
         date: ctx.message.date,
         messageId: ctx.message.message_id,
         forwarded: Boolean(ctx.message.forward_origin),
-        replyTo: incoming.replyTo,
+        replyTo: addReply === 'own' ? null : incoming.replyTo,
       });
       return;
     }
@@ -1489,8 +1555,11 @@ export async function handleCalcCallback(
     }
     // A live collection is minutes of somebody's attention. Replacing it in
     // silence is what this used to do; now it asks — unless the answer has
-    // already arrived (`go_`).
-    if (!step.startsWith('go_') && activeIntake(chatId)) {
+    // already arrived (`go_`), or there is nothing in it to lose (review
+    // PF-11: with a 24-hour life, «Yuborilgan hamma narsa o‘chadi» about an
+    // empty one was asked for a day). A frozen add collection always asks.
+    const live = activeIntake(chatId);
+    if (!step.startsWith('go_') && live && (live.saving || !intakeIsEmpty(live))) {
       await ctx.reply(
         'Sizda tugallanmagan yig‘ish bor. Boshqatdan boshlaymizmi? Yuborilgan hamma narsa o‘chadi.',
         { reply_markup: restartKeyboard(opening) },
@@ -1559,6 +1628,20 @@ export async function handleCalcCallback(
   if (CALC_STEP_REPEAT[step] === 'own' && !ownsPress(state, pressed)) {
     await ctx.reply('Bu tugma eskirgan.');
     return;
+  }
+
+  // A PARKED collection's own button while a task draft, a zametka or a
+  // one-text wait is live beside it (review REG-2, COMP-5): every one of these
+  // presses writes a non-quiet patch, so the collection would hold the chat
+  // again and file the other's next text as its material. «▶️ Davom etamiz»'s
+  // own refusal, nothing written. «✖️ Bekor qilish» was answered above: it
+  // ends the collection, which takes nothing from the other.
+  if (CALC_STEP_REPEAT[step] === 'own' && !holdingIntake(chatId)) {
+    const busy = otherCollectorLive(chatId);
+    if (busy) {
+      await ctx.reply(busy);
+      return;
+    }
   }
 
   if (step === 'cert_y' || step === 'cert_n') {
@@ -1680,7 +1763,7 @@ export async function handleCalcCallback(
     }
     // The card and its note are one commit and a retry finds them through the
     // note, so pressing again finishes the SAME card (judge conc-1).
-    await ctx.reply('Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.');
+    await ctx.reply('Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.');
     return;
   }
   endIntake(chatId);

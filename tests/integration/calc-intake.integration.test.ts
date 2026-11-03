@@ -26,6 +26,7 @@ import {
   parseClientHint,
   type CalcFacts,
 } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land';
 import { openCalcRequest } from '@/modules/wms/calc/service';
@@ -131,7 +132,7 @@ describe('what a quote cannot be made without', () => {
     // The table replaced the summary (docs/SAKKIZ-R3.md §2.1): a missing end
     // is its own ⚠️ row, the ends that ARE there print on the ✅ route row.
     const table = (facts: CalcFacts, clientLabel: string | null, fileCount: number) =>
-      intakeTableText({ section: 'yolkira', facts, laws: noLaws, clientLabel, fileCount, ambiguous: [], amend: null, tail: '' });
+      intakeTableText({ section: 'yolkira', facts, laws: noLaws, clientLabel, fileCount, ambiguous: [], amend: null, tail: '', nameWord: nameWordFor });
     const text = table({ ...full, toCity: null }, 'GS777', 2);
     expect(text).toContain('Mijoz: GS777');
     expect(text).toContain('✅ Og‘irlik (brutto): 250 kg');

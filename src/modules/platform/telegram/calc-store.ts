@@ -198,6 +198,20 @@ export function collectorScope(): MiddlewareFn<Context> {
   };
 }
 
+/**
+ * Run `fn` as no message's effect: a non-quiet patch inside it is still the
+ * seller's action (the clocks slide) but takes nothing (`takenUpTo`). For a
+ * door that OPENS a collection for a message whose answer it applies only
+ * afterwards — the add door's reply or file (review dur-1): the opening's own
+ * writes (the table's stage, its standing) took the reply before its answer
+ * was written, so a flush in the table's send, a restart and the redelivered
+ * reply was 'seen' and dropped in silence. Outside a message: just `fn`.
+ */
+export function notTaking<T>(fn: () => Promise<T>): Promise<T> {
+  const scope = messageScope.getStore();
+  return scope ? messageScope.run({ chat: scope.chat, messageId: null }, fn) : fn();
+}
+
 function hasCollectorButton(markup: unknown): boolean {
   const rows = (markup as { inline_keyboard?: unknown } | null | undefined)?.inline_keyboard;
   if (!Array.isArray(rows)) return false;
@@ -244,6 +258,8 @@ export function startIntake(
     ownMessageIds: [],
     amend: opts.amend ?? null,
     seed: null,
+    seededFrom: null,
+    doorHint: null,
     askedSeqs: null,
     conflicts: [],
     saving: null,
@@ -341,15 +357,27 @@ export function activeIntake(chatId: bigint, atMs?: number): IntakeState | null 
 }
 
 /**
- * Is the collection empty — nothing sent, no customer named? Such a one is
- * neither reminded nor said goodbye to: there is nothing to lose.
+ * Is the collection empty — nothing the SELLER sent, no customer he named?
+ * Such a one is neither reminded nor said goodbye to, and a door that would
+ * replace it asks nothing: there is nothing to lose.
+ *
+ * Judged by what he did (review PF-9): an add collection opened by ➕ carries
+ * its card's label in `clientHintRaw` (`doorHint`), which is no reason to
+ * remind him at 2 h and say «⌛ … o‘chirildi» at 24 h about a press he made
+ * and left. His row answers, conflict choices and totals answers are content
+ * — the ones a button writes reach no `answers` line.
  */
 export function intakeIsEmpty(state: IntakeState): boolean {
+  const hint = state.clientHintRaw.trim();
   return (
     state.material.length === 0 &&
     state.fileCount === 0 &&
     state.answers.length === 0 &&
-    state.clientHintRaw.trim() === ''
+    state.lineAnswers.length === 0 &&
+    state.conflicts.every((c) => c.choice === null) &&
+    state.totalsAnswer.weightKg === null &&
+    state.totalsAnswer.volumeM3 === null &&
+    (hint === '' || hint === (state.doorHint ?? '').trim())
   );
 }
 

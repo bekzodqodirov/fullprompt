@@ -94,7 +94,7 @@ import { childStateSql } from './chain';
 import { guessedZoneFor } from './zone-guess';
 import { volumeIsLinesSum } from './line-totals';
 import { advanceHandsOffInTx } from './hands-off';
-import { refuseIfAmendedSinceInTx } from './amended-since';
+import { amendedSinceSql, refuseIfAmendedSinceInTx } from './amended-since';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -3519,6 +3519,7 @@ export function movedUnder(
 export type SaveTableRefusal =
   | 'ai_running'
   | 'already_closed'
+  | 'amended_since'
   | 'bad_basis'
   | 'bad_code'
   | 'bad_number'
@@ -4290,6 +4291,17 @@ export async function saveTable(
     expectRev?: number;
     handsOff?: boolean;
     inTx?: (tx: TxHandle, rev: number, applied: SaveTableApplied) => Promise<void>;
+    /**
+     * `sawRev` — a SCREEN's save: the revision its grid was drawn at (review
+     * lmp-1). A seller's APPLIED addition newer than that refuses the save
+     * `amended_since` (P6's own predicate, `amendedSinceSql`), so a VED's
+     * figure typed over the stale screen never overwrites the seller's
+     * «2: 50 dona» it never saw. Keyed on `calc_amendments`, never on `rev`
+     * moving: another VED's save and the machine's pass still never refuse it
+     * — his 2b, the desktop is last-writer-wins between people. The add door
+     * and the machine pass none.
+     */
+    sawRev?: number;
   },
 ): Promise<TableSaveResult> {
   const cargo = input.cargo ? cargoPatchOf(input.cargo) : null;
@@ -4462,6 +4474,16 @@ export async function saveTable(
     // `confirmGroup`'s idiom, under the same lock: a revision that moved since
     // the caller read it means a person has been here.
     if (opts?.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
+    // Under the same lock, on this transaction (#714): an addition that
+    // committed while the save waited is seen by the next statement. Thrown
+    // HERE, by P6's one predicate, so `SaveTableRefusal`'s derived fence reads
+    // the code off this body.
+    if (opts?.sawRev !== undefined) {
+      const [seen] = await tx.execute<{ amended: boolean }>(
+        sql`SELECT ${amendedSinceSql(requestId, opts.sawRev)} AS amended`,
+      );
+      if (seen?.amended) throw new CalcError('amended_since');
+    }
     if (cargo && Object.keys(cargo).length > 0) {
       await tx.update(calcRequests).set(cargo).where(eq(calcRequests.id, requestId));
     }

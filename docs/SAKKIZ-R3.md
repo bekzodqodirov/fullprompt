@@ -1195,8 +1195,9 @@ export function hydrateIntakes(): Promise<number>;      // K: 0
   `'pass'` goes on down the ladder; `'take'` applies. K's body is today's rule, so behaviour is
   identical. `redelivery-wire.test.ts` («every collector asks it») is re-anchored to the
   predicate.
-- The four doors that refuse beside a collection (`task-handlers.ts:127`, the zametka
-  «Yangi» step, the 💬 door, the shared-contact branch) ask `holdingIntake` instead of
+- The five doors that refuse beside a collection (`task-handlers.ts:127`, the zametka
+  «Yangi» step, the 💬 door, the shared-contact branch, and — since the merge with main's
+  AI sotuvchi — `agent-bot.ts:busy`, the press that arms an agent wait) ask `holdingIntake` instead of
   `activeIntake`. K's body is `activeIntake`, so behaviour is identical. So does the orphan
   guard in `answerStaffText` (K6), a «holds» site that hands `activeIntake` as `parked`
   (re-check kernel-7). A derived fence
@@ -2199,7 +2200,7 @@ Also in K13, stubs that one package fills and another calls (K: inert bodies):
        calc-amend.ts, each with its reason in intake-holds-wire.test.ts; each asks whether ITS
        token, answer or note is still the collection's);
      - «holds»: the text ladder, the file ladder and the voice/audio handler (K3's three
-       `!late` checks, now one `intakeTakes` verdict); the four doors; the orphan guard.
+       `!late` checks, now one `intakeTakes` verdict); the five doors; the orphan guard.
      A «holds» site must also ask `holdingIntake(` or `intakeTakes(`: one that asks
      `activeIntake` alone fails it, and so does an unlisted call. A package adding a call
      adds it to a list with its reason (a press is «presence»).
@@ -5578,3 +5579,74 @@ move; every amended spot carries «(re-check <id>)».
 8. The 2-hour reminder at night: the shipped `quietHour` (22:00), told to him with the reason.
 9. `CALC_STEP_REPEAT` is a Record over the step union; the existing pins re-anchored.
 10. The doubted-totals wording: one, picked by the cross pass (X8), verbatim everywhere.
+
+## 20. The merged round's review, fixed (2026-11-03, as built)
+
+Four lenses over `origin/main...HEAD` at e086975 (durability, regression, product, law-money-perf)
+plus a completeness pass: 30 verified (27 confirmed, 3 partial). Each behavioural fix below has a
+red proof by string edit, restored by sha256; the tests are
+`tests/integration/calc-r3-review-bot.integration.test.ts` (through the bot the server runs, the
+table-answer path REAL — COMP-1), `tests/integration/calc-r3-review.integration.test.ts` (the wms
+writers), and cases added to `intake-table`, `calc-intake-sweep`, `calc-amend-press` (unit) and
+`agent-bot-ladder` (integration).
+
+- **One predicate beside a parked collection** (REG-2, COMP-5): `otherCollectorLive(chatId)`
+  (calc-intake-sweep.ts) = a task draft or a zametka capture (§2.7's
+  `Avval topshiriqni (zametkani) tugating …` words), else a one-text wait — a task's
+  (`agent-bot.ts` `waitingAnswerWords`: its BUSY_TASK / BUSY_REPLY words) or one of the AI
+  sotuvchi's three (`Avval AI sotuvchi so‘ragan javobni yozing (javob matni, narx yoki mijoz kodi) —
+  keyin qayta bosing.` — new, not a §2 line). Asked by «▶️ Davom etamiz», by every 'own' press of a
+  PARKED collection except «✖️ Bekor qilish», and by a reply or file that a parked collection takes
+  only by rule 3 (`refusesBesideParked`, the text and file ladders): answered in words, nothing
+  written, the collection stays parked. REG-1's behavioural case: a parked collection lets ✏️ arm, a
+  holding one refuses (`agent-bot-ladder`).
+- **A reply to the ➕ answer is the add table's** (PF-1): `foreignAddReply` answers
+  `'handled' | 'own' | null`; `'own'` (this add collection's request) is routed with `replyTo: null`,
+  so the second reply — and the first one after a ➕ press — is addressed by its row, never «Qaysi
+  qatorga?».
+- **The opening takes nothing** (dur-1): the add door's two message openings run under
+  `notTaking` (calc-store.ts) — `openAdd`'s and `openSeeded`'s patches are quiet too (§6.2.6), but
+  `deliverNextStep`'s own non-quiet stage patch also took the reply before its answer — so only the
+  answer's write takes it; the explicit `takenUpTo` marks are gone.
+- **A replied file is fenced per part** (dur-2): each part's `repliedTaken` mark and the move to
+  'material' ride in the patch that adds its file; a fully taken redelivery re-shows «Bo‘ldi» only.
+- **A press that died with the old process** (dur-3): `pressDiedBeforeBoot` — a token minted before
+  this boot with no job id — is not live in `readingLive` nor alive in `readingAlive`.
+- **A waited addition decided and never told** (dur-4): `requeueWaitingAmendments` also hands back
+  rows not 'waiting' with `outcome_sent_at IS NULL`, at least 5 minutes old, within its 24 h; the job
+  answers `duplicate` and says the words once.
+- **The pause line for a file** (PF-2, partial): a file a PARKED collection passed and nothing else
+  took gets §2.7's pause line as a reply to it (once per album), then goes on to the cabinet as
+  before. 1.8 c unchanged: the file is not taken.
+- **The «another collection» question carries its file** (PF-3): asked as a reply to the file the
+  `cf:` offer sat under; its «🗑 Ha» takes that file (`takeReplied`).
+- **The table's examples** (PF-4, PF-5, PF-6): the name example is a run of a ⚠️ row's words the
+  ANSWER PARSER reads as that row alone (`line-address.ts` `nameWordFor`, handed in as the REQUIRED
+  `TableInput.nameWord` — line-address cannot be imported by intake.ts); none → the numbered example
+  only. A grouped ↳ stands after the cut. The add table's «✍️ So‘ralgan:» names at most
+  `LINES_NAMED`, then `, va yana {m} ta`.
+- **A seeded collection** (PF-7, PF-8, COMP-3, COMP-4): no «AI ulanmagan» before any reading; the
+  certificate only on a section with customs; `seededFrom` (the returned request) makes a second ➕
+  a resume and a reply to that request's answer `seededReply`; its customer named with nothing new
+  sent → its table; a line beyond its rows leaves the brutto ⚠️ «yangilansinmi?». An add collection's
+  «Bo‘ldi» with nothing to read → its table again.
+- **Empty is what the seller did not send** (PF-9, PF-11): `intakeIsEmpty` ignores the door's
+  `doorHint` and counts row answers, conflict choices and totals answers; the two restart
+  questions are asked only of a collection that is not empty (or is frozen).
+- **The parked table's own parser** (PF-10, partial): with a PARKED collection, a text with a figure
+  that `parseTableAnswer` places on its rows (every segment, no refusal) is the pause line, never
+  the paid assistant. With none, §2.8 is unchanged (regression-21).
+- **Words** (PF-12): `Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.` — there is no «Saqlash»
+  button in the bot. COMP-6: «five doors» (`agent-bot.ts:busy` the fifth).
+- **The VED's desktop save after a seller's addition** (lmp-1, partial): the grid posts the
+  revision its screen was drawn at (`sawRev`, the press's `revAtPress`); `saveTable` refuses
+  `amended_since` — P6's predicate, under the lock — when an APPLIED addition is newer. Keyed on
+  `calc_amendments`: a colleague's save never refuses it, his 2b stands. A tab from before this
+  release posts none. The per-cell form is asked of him.
+- **A lone line's copied weight** (lmp-2): `AmendBaseItem.note`; an answered weight on a row whose
+  weight the landing copied from the brutto leaves the brutto stale (save and table) and posts the
+  note without «og‘irlik umumiy (brutto)dan olindi», under the note's compare-and-set.
+- **The redo's probe** (lmp-3): bounded by the seller's `user_id` and the amendment's day.
+- Rejected, with reasons in ship's fix-ledger.json: PF-13 (route-refusal words not fixed by §2; the
+  «A - B» reader is a corpus file — its own round) and lmp-4 (pre-existing on main: the thread
+  door's reading has no budget gate and no billing — its own round).

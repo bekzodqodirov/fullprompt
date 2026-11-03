@@ -33,6 +33,7 @@ import { deliverStoredReply, pendingDeliveryAlive, readingAlive, releaseDeadRead
 import { landedReplyMarkup, releaseDeadSave, savingAlive } from './calc-amend';
 import { activeCapture } from './note-capture';
 import { activeDraft } from './task-draft';
+import { waitingAnswerWords } from './agent-bot';
 import { bootedAtSec } from './lifecycle';
 import { quietHour, sendText } from './send';
 import { landCollectedIntake, landingLinkFor, staffForChat } from './staff-bot';
@@ -458,7 +459,7 @@ async function resumeLanding(
     } else if (sweepMemory.silenced.has(k)) {
       // A «Tasdiqlash» this resume kept silent is owed an answer: the press
       // path's own words for a landing that failed.
-      await sayOrRetry({ chatId, text: 'Saqlab bo‘lmadi — «Saqlash»ni qayta bosing.' });
+      await sayOrRetry({ chatId, text: 'Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.' });
     }
   } finally {
     sweepMemory.resuming.delete(k);
@@ -470,6 +471,25 @@ async function resumeLanding(
 const NO_COLLECTION =
   'Bu so‘rov yopilgan — saqlangan bo‘lsa, kartada turibdi. Yangisini «🧮 Hisoblatish» tugmasidan boshlang.';
 
+/** §2.7's words for a press while a task draft or a zametka capture is live. */
+const RESUME_BUSY = 'Avval topshiriqni (zametkani) tugating yoki bekor qiling — keyin «▶️ Davom etamiz».';
+
+/**
+ * Another collector — or a one-text wait — is live beside a PARKED
+ * collection: the words to answer a press with, or null. ONE predicate
+ * (review REG-2, COMP-5), asked by «▶️ Davom etamiz» and by every press that
+ * would make the parked collection hold the chat again (the dispatcher's
+ * 'own' steps, a reply to its own table): a holding collection is asked
+ * FIRST by the text ladder, so the draft's next line, the zametka's name, a
+ * «Bajarildi» result or the AI sotuvchi's ✏️ text would be filed as its
+ * material. On main each door refused the other and the state could not
+ * exist; a parked collection now lets the others open (§6.2.7).
+ */
+export function otherCollectorLive(chatId: bigint): string | null {
+  if (activeDraft(chatId) || activeCapture(chatId)) return RESUME_BUSY;
+  return waitingAnswerWords(chatId);
+}
+
 /**
  * «▶️ Davom etamiz» and the restart question's «Yo‘q, davom etaman»: the live
  * stage is asked again, exactly where it stands — the zone keyboard, the
@@ -478,8 +498,9 @@ const NO_COLLECTION =
  * one-question loop is retired).
  *
  * A press is the seller's action, so it un-parks the collection (a touch).
- * Not while a task draft or a zametka capture is live: those work while the
- * collection is parked, and the person finishes one thing first.
+ * Not while a task draft, a zametka capture or a one-text wait is live
+ * (`otherCollectorLive`): those work while the collection is parked, and the
+ * person finishes one thing first.
  */
 export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<void> {
   const state = activeIntake(chatId);
@@ -494,8 +515,9 @@ export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<vo
     await ctx.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
     return;
   }
-  if (activeDraft(chatId) || activeCapture(chatId)) {
-    await ctx.reply('Avval topshiriqni (zametkani) tugating yoki bekor qiling — keyin «▶️ Davom etamiz».');
+  const busy = otherCollectorLive(chatId);
+  if (busy) {
+    await ctx.reply(busy);
     return;
   }
   // The touch: the seller pressed, so the collection holds the chat again.

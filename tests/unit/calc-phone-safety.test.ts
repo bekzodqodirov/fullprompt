@@ -259,7 +259,11 @@ describe('his 2b (2026-10-07): «boshqa kishi hozirgina o‘zgartirdi» is the P
     // given, and the sheet adds its own beside the built edit before calling it.
     const sender = constBody('send');
     expect(sender).not.toMatch(/expect:|expectFor\(|lookFirst\(|probeClock\(/);
-    expect(sender).toContain('saveTableAction(id, { items, adds })');
+    // The one thing the sender adds is the revision the screen was drawn at
+    // (review lmp-1): the server refuses on a SELLER's addition newer than it
+    // — `calc_amendments`, never a colleague's save — so 2b's
+    // last-writer-wins between people stands.
+    expect(sender).toContain('saveTableAction(id, { items, adds, sawRev: revAtPress })');
   });
 
   it('every way into the sheet is one of four, and only the phone cards are handed an opener', () => {

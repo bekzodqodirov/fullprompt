@@ -54,6 +54,7 @@ vi.mock('@/modules/platform/telegram/send', async (importOriginal) => ({
 }));
 
 import { factsVolumeM3, intakeTableText, tableOpenOf, type CalcFacts, type CalcSection } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import {
   activeIntake,
@@ -146,7 +147,7 @@ const openTotals = (section: CalcSection, facts: CalcFacts) =>
   tableOpenOf({ section, facts, laws: new Map(), amend: null }).flatMap((t) => ('totals' in t ? [t.totals] : []));
 
 const table = (section: CalcSection, facts: CalcFacts, ambiguous: IntakeState['ambiguousTotals'] = []) =>
-  intakeTableText({ section, facts, laws: new Map(), clientLabel: null, fileCount: 0, ambiguous, amend: null, tail: '' });
+  intakeTableText({ section, facts, laws: new Map(), clientLabel: null, fileCount: 0, ambiguous, amend: null, tail: '', nameWord: nameWordFor });
 
 const ROAD = { fromCity: 'Yiwu', toCity: 'Toshkent' };
 

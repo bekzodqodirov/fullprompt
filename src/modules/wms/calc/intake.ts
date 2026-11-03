@@ -724,6 +724,15 @@ export interface TableInput {
   amend: TableAmend | null;
   /** Notes + AI words + certificate, already rendered — fixed, never cut. */
   tail: string;
+  /**
+   * The words of a row's name the ANSWER PARSER reads as naming that row alone
+   * among `rows` — line-address.ts `nameWordFor`, handed in by the caller
+   * because line-address cannot be imported here (it imports intake-manual,
+   * which imports this file). The ✍️ line teaches only such a name (review
+   * PF-4): «Kurtka 30 dona» over two kurtka rows was refused «name_many» by
+   * the parser it taught.
+   */
+  nameWord: (rows: readonly TableRow[], row: TableRow) => string | null;
 }
 
 /**
@@ -992,8 +1001,19 @@ export function intakeTableText(input: TableInput): string {
   ];
   if (fits(warnOnly)) return draw(warnOnly);
   // Only then are ⚠️ rows shortened — by `fitTelegram`'s own count line —
-  // and the closing says what to send instead.
-  return draw(warnOnly, true);
+  // and the closing says what to send instead. A grouped reason leaves its
+  // rows for the lines after the cut (review PF-5): hung under the LAST row of
+  // its group, it was the first thing the cut took, and a 60-row clothing
+  // table said what every row lacked nowhere.
+  const reasons = [...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`);
+  const bare = (e: TableEntry) => (e.warn && e.need && grouped.has(e.need) ? entryText(e, false) : entryText(e, true));
+  const cutRows = [
+    ...entries.filter((e) => e.warn).map(bare),
+    ...(okCount > 0
+      ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`]
+      : []),
+  ];
+  return fitTelegram(head, cutRows, [...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
 }
 
 /**
@@ -1010,14 +1030,20 @@ function answerHow(
 ): string[] {
   const needing = rows.filter((r) => r.needs.length > 0);
   const first = needing[0];
-  const second = needing[1] ?? first;
   const numbered = first ? `${first.no}: ${exampleFigure(first.needs[0]!)}` : null;
   if (input.amend) {
     const asked = (input.amend.askedSeqs ?? [])
       .map((seq) => rows.find((r) => r.seq === seq))
       .filter((r): r is TableRow => r !== undefined && r.needs.length > 0);
     if (asked.length > 0) {
-      const named = asked.map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`).join(', ');
+      // At most LINES_NAMED named, the rest counted (review PF-6): the closing
+      // is never cut, so a 250-row ask pushed the instruction itself past
+      // Telegram's 4096.
+      const named =
+        asked
+          .slice(0, LINES_NAMED)
+          .map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`)
+          .join(', ') + (asked.length > LINES_NAMED ? `, va yana ${asked.length - LINES_NAMED} ta` : '');
       return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
     }
     // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
@@ -1036,13 +1062,17 @@ function answerHow(
     const example = numbered ?? conflictExample ?? totalExample ?? 'Yiwu → Toshkent';
     return [`✍️ Yetishmaganini yozing: «${example}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
   }
-  // A word the parser reads as a NAME: it starts with a letter and has three
-  // of them — «100% paxta futbolka» gave «100 30 dona», which reads as row 100
-  // (review adv-20).
-  const word = second?.name.match(/(?<![\p{L}\p{N}])\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}/u)?.[0];
+  // A name the parser reads as THAT row alone (`nameWord`, review PF-4) — the
+  // next ⚠️ row's when it has one, so the two examples show two rows; else
+  // another's; none (two rows of one name) → the numbered example only. It
+  // starts with a letter: «100% paxta futbolka» gave «100 30 dona», which
+  // reads as row 100 (review adv-20).
+  const named = [...needing.slice(1), ...needing.slice(0, 1)]
+    .map((r) => ({ row: r, word: input.nameWord(rows, r) }))
+    .find((c) => c.word !== null);
   const examples = [
     ...(numbered ? [numbered] : []),
-    ...(second && word ? [`${word} ${exampleFigure(second.needs[0]!)}`] : []),
+    ...(named ? [`${named.word} ${exampleFigure(named.row.needs[0]!)}`] : []),
     ...(missing.includes('weightKg') || stale.has('weightKg')
       ? ['jami 3500 kg']
       : missing.includes('volumeM3') || stale.has('volumeM3')
