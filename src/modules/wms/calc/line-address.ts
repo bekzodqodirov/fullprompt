@@ -454,7 +454,11 @@ interface ReadSegment extends TableSegment {
   namedNone: boolean;
 }
 
-function readSegment(raw: string, table: TableRef): ReadSegment {
+/** A row's folded name — `rowName`, or one the caller already folded (`nameWordFor`, perf review PERF-1). */
+type NameOf = (row: TableRow) => RowName;
+const foldEach: NameOf = (row) => rowName(row.name);
+
+function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment {
   const plain = { explicit: false, namedNone: false };
   const address = addressOf(raw, table.stage);
   if (address) {
@@ -465,7 +469,7 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
     // The words after the number must not name ANOTHER row (regression-3):
     // «1. Kurtka 300 dona» on row 1 Krossovka is a list of other goods, asked.
     if (hasName(parts)) {
-      const name = rowName(row.name);
+      const name = nameOf(row);
       if (!namesRow(parts, name) || !holdsModel(parts, name)) {
         return {
           ...refused(raw, 'name_mismatch', parts.typed || raw, { at: { line: row.no }, answer }),
@@ -518,9 +522,9 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
 
   // Goods words: the NAME address, read before or after the figure («50 dona
   // sumka», «40 juft krossovka» — ordinary Uzbek word order, product-fit-13).
-  const met = table.rows.filter((r) => namesRow(parts, rowName(r.name)));
+  const met = table.rows.filter((r) => namesRow(parts, nameOf(r)));
   if (met.length === 0) return { ...refused(raw, 'name_none', parts.typed || raw, { answer }), explicit: false, namedNone: true };
-  const kept = met.filter((r) => holdsModel(parts, rowName(r.name)));
+  const kept = met.filter((r) => holdsModel(parts, nameOf(r)));
   if (kept.length === 0) {
     return {
       ...refused(raw, 'name_mismatch', parts.typed || raw, { answer, at: { line: met[0]!.no } }),
@@ -538,6 +542,16 @@ function readSegment(raw: string, table: TableRef): ReadSegment {
   return { raw, at: { line: kept[0]!.no }, refused: null, answer, totals: null, route: null, ...plain };
 }
 
+/**
+ * The rows' folded names per table — `answerHow` asks up to NAME_ROWS_TRIED
+ * rows of ONE `rows` array, so a render folds them once (perf review PERF-1).
+ * Keyed by the array itself: a new render builds a new one, and nothing is held.
+ */
+const FOLDED_ROWS = new WeakMap<readonly TableRow[], RowName[]>();
+
+/** A number (decimals, «1 200» grouping) with a word after it — a figure when that word is a unit. */
+const FIGURE_IN_NAME = /(?<![\p{L}\p{N}])\d+(?:[.,]\d+)*(?:\s\d{3}(?!\d))*\s+(\p{L}[\p{L}²³]*)/gu;
+
 /** At most this many leading WORDS make an example name — past three it is no example anyone types. */
 const NAME_WORDS_TAUGHT = 3;
 
@@ -553,7 +567,8 @@ const NAME_WORDS_TAUGHT = 3;
  * 30 dona», which reads as row 100 — review adv-20) and keeps the model's
  * numbers between its words: «iPhone Pro» taught for «iPhone 15 Pro» named
  * goods no row holds (fix review W-9). A number with its unit word after it
- * is a FIGURE inside the name, and the pair is left out of the run: «Paket
+ * — «1.5 litr» and «1 200 dona» whole (`FIGURE_IN_NAME`) — is a FIGURE
+ * inside the name, and the pair is left out of the run: «Paket
  * 100 dona qora» taught «Paket 100 dona qora 30 dona», which the parser
  * refuses «repeated» — and «Paypoq 10 juft qora 30 dona» wrote 10 juft as a
  * measure beside the 30 (the fix review's check, CHK-1). The candidates are
@@ -569,19 +584,18 @@ const NAME_WORDS_TAUGHT = 3;
  * rows' names are folded once per call (fix review FR-3: a rowName per row
  * per candidate per ⚠️ row was seconds on a 500-row table), and the parser
  * reads only a candidate that already named this row alone — at most
- * NAME_WORDS_TAUGHT per call.
+ * NAME_WORDS_TAUGHT per call — over those same folded names (`readTable`,
+ * perf review PERF-1: a fold of its own per candidate was 0.4-1.2 s a render
+ * on 1000 long customs descriptions).
  */
 export function nameWordFor(rows: readonly TableRow[], row: TableRow): string | null {
-  const tokens = row.name.match(/(?<![\p{L}\p{N}])[\p{L}\p{N}][\p{L}\p{N}'’‘ʻ`-]*/gu) ?? [];
+  // «100 dona», «1.5 litr», «1 200 dona»: a figure in the name, never its words.
+  const bare = row.name.replace(FIGURE_IN_NAME, (whole, unit: string) => (unitOf(unit) !== null ? ' ' : whole));
+  const tokens = bare.match(/(?<![\p{L}\p{N}])[\p{L}\p{N}][\p{L}\p{N}'’‘ʻ`-]*/gu) ?? [];
   const isWord = (t: string) => /^\p{L}[\p{L}\p{N}'’‘ʻ`-]{2,}$/u.test(t);
   const candidates: string[] = [];
   const run: string[] = [];
-  for (let i = 0; i < tokens.length; i += 1) {
-    const token = tokens[i]!;
-    if (/^\d+$/u.test(token) && unitOf(tokens[i + 1]) !== null) {
-      i += 1; // «100 dona»: a figure in the name, never part of the example's name
-      continue;
-    }
+  for (const token of tokens) {
     if (isWord(token)) {
       run.push(token);
       candidates.push(run.join(' '));
@@ -594,15 +608,27 @@ export function nameWordFor(rows: readonly TableRow[], row: TableRow): string | 
   const expected = JSON.stringify(parseLineAnswer(figure));
   const ref: TableRef = { rows, open: [], preferred: [], stage: 'review' };
   let names: RowName[] | null = null;
+  // The parser reads with the names folded here (perf review PERF-1: its own
+  // fold per candidate was 0.4-1.2 s a render on 1000 long customs names).
+  let folded: Map<TableRow, RowName> | null = null;
+  const nameOf: NameOf = (r) => folded!.get(r) ?? rowName(r.name);
+  const foldRows = () => {
+    const known = FOLDED_ROWS.get(rows);
+    if (known) return known;
+    const fresh = rows.map((r) => rowName(r.name));
+    FOLDED_ROWS.set(rows, fresh);
+    return fresh;
+  };
   for (const candidate of candidates) {
     const example = `${candidate} ${figure}`;
     if (addressOf(example, 'review') !== null || totalsLead(example) !== null) continue;
     const parts = nameParts(example);
     if (parts.carton || !hasName(parts)) continue;
-    names ??= rows.map((r) => rowName(r.name));
+    names ??= foldRows();
     const named = rows.filter((_, i) => namesRow(parts, names![i]!) && holdsModel(parts, names![i]!));
     if (named.length !== 1 || named[0]!.no !== row.no) continue;
-    const read = parseTableAnswer(example, ref);
+    folded ??= new Map(rows.map((r, i) => [r, names![i]!]));
+    const read = readTable(example, ref, nameOf);
     const [segment] = read.segments;
     const lands =
       !read.material &&
@@ -645,11 +671,16 @@ function segmentsOf(text: string, startsAddressed: (part: string) => boolean): s
  * the segments and words the refusals.
  */
 export function parseTableAnswer(text: string, table: TableRef): { segments: TableSegment[]; material: boolean } {
+  return readTable(text, table, foldEach);
+}
+
+/** `parseTableAnswer` with the rows' names folded by `nameOf` — the ONE reader; only the fold is the caller's. */
+function readTable(text: string, table: TableRef, nameOf: NameOf): { segments: TableSegment[]; material: boolean } {
   const startsAddressed = (part: string): boolean =>
     addressOf(part, table.stage) !== null ||
     totalsLead(part) !== null ||
-    (table.stage === 'review' && hasName(nameParts(part)) && table.rows.some((r) => namesRow(nameParts(part), rowName(r.name))));
-  const read = segmentsOf(text, startsAddressed).map((raw) => readSegment(raw, table));
+    (table.stage === 'review' && hasName(nameParts(part)) && table.rows.some((r) => namesRow(nameParts(part), nameOf(r))));
+  const read = segmentsOf(text, startsAddressed).map((raw) => readSegment(raw, table, nameOf));
   const strip = (s: ReadSegment): TableSegment => ({
     raw: s.raw,
     at: s.at,

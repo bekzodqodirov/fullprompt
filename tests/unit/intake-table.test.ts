@@ -491,6 +491,16 @@ describe('the fix review of the review’s fixes (docs/SAKKIZ-R3.md §20.2)', ()
     expect(nameWordFor(kafel, kafel[0]!)).toBe('Kafel qadoq');
   });
 
+  it('a decimal or grouped figure leaves the name whole — never a stray «1» (CHK-1 verify, CORR-nit-1)', () => {
+    const moy = tableRowsOf(input(['Moy 1.5 litr qora', 'Moy 1.5 litr sariq']));
+    expect(moy.map((r) => nameWordFor(moy, r))).toEqual(['Moy qora', 'Moy sariq']);
+    const kurtka = tableRowsOf(input(['Kurtka 1 200 dona qora', 'Kurtka 1 200 dona sariq']));
+    expect(kurtka.map((r) => nameWordFor(kurtka, r))).toEqual(['Kurtka qora', 'Kurtka sariq']);
+    // A model number is no figure: «iPhone 15 Pro» keeps its 15 (W-9).
+    const phones = tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro']));
+    expect(nameWordFor(phones, phones[1]!)).toBe('iPhone 15 Pro');
+  });
+
   it('«iPhone 15 Pro», never «iPhone Pro» — the row’s own name (W-9)', () => {
     expect(nameWordFor(tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro'])), tableRowsOf(input(['iPhone 15', 'iPhone 15 Pro']))[1]!)).toBe(
       'iPhone 15 Pro',
