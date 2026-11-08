@@ -330,3 +330,154 @@ selects) before it posts; no other change to the action.
   pressed in a browser.
 - Re-read every integration file that calls `cancelBatch(` (6 files) for a
   test that now gets the same code back.
+
+---
+
+## §3 — v2: the judge's findings, absorbed (BINDING; overrides §1-§2 where they differ)
+
+Six lenses read v1 against the code (47 findings: 0 blockers, 31 defects,
+16 nits; every one with file:line evidence). Decisions:
+
+### 3.1 Part 1
+
+1. **Prices as drawn (`pricesSeen`).** The table posts the sorted ids of the
+   client's live charges on this truck as drawn; the write body re-reads them
+   under `lockOwnersTx` + the truck lock and refuses `prices_changed` (redraw,
+   typed amounts kept by deal id). Closes the stale-tab / two-person double
+   write (the client lock serialises two presses).
+2. **The truck lock reads the kind too.** ONE helper `lockTruckForPriceTx(tx,
+   batchId)` = `SELECT b.status, o.country, d.country … FOR SHARE OF b`,
+   refusing `batch_cancelled` and `internal_batch` (`internal.ts`'s rule on the
+   locked row). Used by the shared write body (so `addTransaction`'s truck
+   branch too) AND by `moveCharge` on each target truck — it took no truck lock
+   at all (the cancel race the price door already closed). A destination
+   change (§2.4) can no longer slip a price onto an internal leg.
+3. **The shared body OWNS its transaction** (tx-pool fence): `writeTruckCharges
+   (pre, ctx)` opens `db.transaction` and runs, inline: `lockOwnersTx` →
+   `lockTruckForPriceTx` → `cargoAboard(…, tx)` → the decision again (key +
+   parts) → `pricesSeen` → N inserts → ONE `reconcileFxResidueTx` → an audit
+   row per charge. Its pool half `prepareTruckCharges` (route, cargo, decision,
+   rate once, per-part dollars + `exceedsRowUsd`) is shared too.
+   `addTransaction`'s `charge && batchId` path calls both and returns before
+   its own transaction; payments/refunds keep today's body. No `= db` default
+   on a writer.
+4. **Pre-fill is a PURE rule** `prefillFor(row)` → `{ usd } | { none: why }`,
+   unit-tested, and the row prints the why (muted). A value only when ALL hold:
+   quote sight (`dealPriceSight`); currency USD; the figure was SCALED by a
+   measure (never the whole-quote fallback — `expectedPartFor` answers null
+   where `expectedPriceFor` falls back); the deal's discount is 0; the deal has
+   NO live charge anywhere (this truck, another truck, its card — so a deal
+   split over two trucks is pre-filled on the first only, and a second truck
+   reads «YW-009 da narx bor»); no davomi carton of the deal aboard
+   (`carriage.byLot.follows`); the trip is not a continuation; the client has
+   no `offElsewhere` price here; no `whole` price stands (3.1.6). The value is
+   the deal's quote × this truck's EXACT share (Σ lot volume/weight ×
+   onBatch/boxCount, unrounded, on the basis the upsale uses — kg for a
+   per-kg version, else m³, else kg), **rounded UP to the cent**, so a
+   pre-filled single-truck deal never reads `no_invoice` by a rounding
+   (integration test pins it). «Bitimsiz» is never pre-filled.
+5. **Clear only what was written.** After a save only the rows that were
+   written clear; a row the person emptied on purpose stays empty
+   (per-deal «touched» mark for the component's life); pre-fill only ever fills
+   an untouched row.
+6. **What counts as «already priced here» — ONE pure reading**, shared by
+   `unpricedDealsOf` and the table (#513): a deal's own live prices here; the
+   «bitimsiz» part = deal-less prices whose create audit says `dealVia: 'none'`;
+   **`whole`** = every OTHER deal-less price here (pre-Q8, or before the deals
+   were known — on a `none` truck too) and every price on a deal no longer among
+   the candidates. While a `whole` stands: no pre-fill anywhere, and every
+   filled row asks, naming it.
+7. **The per-row ask** (one alert per press, only when something is asked):
+   `secondBill`; a filled row whose deal is priced here («qo'shimcha hisob»);
+   the «Bitimsiz» row when a chosen-bitimsiz price stands; every filled row
+   while a `whole` stands; a filled `card` row («bitim kartasida narx bor»);
+   a filled row whose deal is priced on another truck (soft: «YW-009 da ham
+   narx bor»); the 5 % deviation per row (quote sight, USD); ⏳ rows.
+   «Jami» in the chosen currency.
+8. **One wrapper per client card** (`ClientPricing`) holds the last refusal
+   sentence and renders the table or the single form; a `deals_changed` that
+   flips ambiguity keeps the sentence (typed amounts of a flipped body are not
+   carried — stated).
+9. **PricingForm loses its question branch** (TruckDealSelect, choiceAsks,
+   chosen, truckDealAsk*, expectedByDeal) — it is now only the non-ambiguous
+   form; its fences move to the table file honestly. `TruckDealSelect` stays for
+   the ledger door.
+10. **Rows are read in the browser** with `parseTypedMoney`; only `trim() === ''`
+    rows are blank; an unreadable row is marked on that row and refused as
+    `validation` with its deal id (server too). A press with no filled row:
+    `deal_parts_empty` returned by the action BEFORE the schema.
+11. **«Bu mashinadagi narxlar»** keeps his 3a words but the missing deals become
+    ONE loud line «Narx yo'q: B-…, B-…» (not one line per deal); the row label
+    wraps (`min-w-0 [overflow-wrap:anywhere]`).
+12. **Compensation and Ko'chirish learn the parts:** `lostCargoChargesOn` ranks
+    the prixod's own deal's part first, then deal-less, then the rest, with an
+    `id` tiebreak; every line in both forms prints `batchCode · dealCode`.
+13. **Fences:** truck-deal-wire grows (both doors call the shared halves;
+    addTransaction holds no second `cargoAboard(`/`truckDealDecision(`; the
+    in-tx check is the parts check); the three addTransaction slicing fences are
+    rewritten against the shared halves (sliced by function); the confirm-
+    machinery fences loop over both form files; the action fence covers
+    `addTruckPricesAction` (one `authorize('finance.manage')`, no kassa branch).
+14. **e2e** m9zzzg is rewritten test by test to the table; the fixture grows to
+    ≥12 deals with one 40+ character unbroken goods name and one deal-less
+    prixod; 360×800 measured (document width = viewport, Saqlash and its alert
+    reachable).
+
+### 3.2 Part 2
+
+1. **The holder of number N** is the truck wearing `P-pad(N)` now; if nobody
+   wears it, the truck whose newest batch audit row renamed AWAY from it
+   (`before->>'code'`, read in former-codes.ts, its fenced home). Releasable =
+   that truck is cancelled, `departed_at IS NULL`, never at the agent (3.2.3),
+   and `P-pad(N)` is no road former name. A truck renamed to its plate before
+   it left and then cancelled therefore gives its number back (no rename
+   needed — it wears the plate); one that LEFT stops the walk
+   (`why: 'renamed_left'`, naming its name). A number with no holder at all
+   stops it (`'unworn'`); no counter row → `'no_counter'`; a truck whose code
+   is not in today's prefix → `'prefix'`.
+2. **Release, per number, in one short transaction:** counter row FOR UPDATE →
+   plain read of the holder → only if it reads releasable: `lockBatchCode(old)`,
+   `lockBatchCode(new)`, truck row FOR UPDATE, re-check under the locks →
+   rename (only when it still wears the number) + counter CAS `value = N` →
+   audit `{before:{code}, after:{code, released:true}}` (never `reason`), with
+   `warehouseId` = the truck's OWN origin. `SET LOCAL lock_timeout = '3s'`; a
+   timeout is `'busy'`, answered as «raqam qaytmadi» — never a failed cancel.
+3. **«Never at the agent»** = `sent_to_agent_at IS NULL` AND no audit row of
+   the truck that ever ticked it (an untick does not un-send papers). The
+   agent tick is refused on a cancelled truck under its row lock and hidden
+   there.
+4. **The answer is read from the truck's own row after the walk** (whoever's
+   walk freed it). And it is DURABLE on the card: a cancelled truck's header
+   prints `batch-number-state` — «Raqami qaytarildi» when it wears «… (bekor…)»
+   or was released from a plate, else «Raqam qaytmadi: …» with the live reason
+   (the same predicate, read-only). `cancelBatchAction` passes `number` too.
+5. **Bot:** `upper(code) = X` finds nothing for a released number until it is
+   minted again — a fallback in former-codes.ts (`releasedNameSql`, «X (BEKOR%»)
+   answers «bekor qilingan, raqami qaytarildi».
+6. **History labels:** `released` and `destBeforeDeparture` get `audit.fields`
+   words in four bundles and `AUDIT_FIELD_LABELS`.
+7. **The dry run** iterates `counters WHERE kind='batch_seq'` (old prefixes
+   included), prints every warehouse using each prefix today, labels every gap
+   («30: 01A777BA nomi bilan jo'nagan», «bekor, agentga yuborilgan», «hech kim
+   olmagan»), escapes the prefix in its match. A cascade may rename another
+   warehouse's cancelled truck when they share a prefix — stated.
+8. **Destination before departure** (`changeDestBeforeDeparture`): first
+   statement `lockTruckLoading`, then the truck row FOR NO KEY UPDATE (status
+   re-check), then money counted under it, then the target warehouse FOR SHARE,
+   then the UPDATE with a CAS (`status IN forming/loading AND dest = seen`).
+   Refused: `dest_money_country` — live money and the destination's COUNTRY
+   would change (not merely internal ⇄ crossing: `crossesBorderSql` and
+   `bearsPriceSql` read countries); `dest_agent_sent` while ticked. Audit under
+   its OWN key `destBeforeDeparture` (before/after), never the reroute's — the
+   road reroute's «told» readers must not take it for a «keladi». Both writers
+   go through ONE private `writeDestTx` in reroute.ts (the fence counts
+   UPDATE sites). Added to count-kernel-wire's «loading change takes the truck
+   lock first» list. /plans/[id] prints «Mashina hozir: <dest>» when the
+   truck's destination differs from the plan's.
+9. **Quick-batch confirm** is IN-PAGE (testids), not `window.confirm`: the
+   press shows «<origin name> → <dest name>: yangi partiya ochilsinmi?
+   [Ha, ochish] [Bekor]» (names passed in, the single-warehouse branch read from
+   its fixed origin). Every e2e that creates a quick batch (9 presses, 8 specs)
+   goes through ONE helper `createQuickBatch(page, …)`.
+10. **m9m** asserts the archive row by id/href and the card's
+    `batch-number-state`, not a count over a substring.
