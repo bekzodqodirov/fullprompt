@@ -1009,6 +1009,28 @@ export const borderQueue = pgTable(
 );
 
 /**
+ * «Navbatda kechikdi» told (0140, docs/XORGOS-NAVBAT.md §3): one row per
+ * (truck, post) the logists were warned about — his 3a, once per queue — and
+ * the entry that wait counted from. The claim, written in the same
+ * transaction as the message rows (`tracking/queue-alert.ts`), never deleted
+ * by the app; time never re-arms it, a LATER entry (a «Chegarada» press after
+ * the call) does. `post` is a `BorderPost` with no CHECK, for `border_queue`'s
+ * reason.
+ */
+export const truckQueueAlerts = pgTable(
+  'truck_queue_alerts',
+  {
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id, { onDelete: 'cascade' }),
+    post: text('post').notNull(),
+    enteredAt: timestamp('entered_at', { withTimezone: true }).notNull(),
+    alertedAt: timestamp('alerted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: 'truck_queue_alerts_pk', columns: [t.batchId, t.post] })],
+);
+
+/**
  * Load plans (W3). "Quick batch" internal transfers may create a batch with
  * no plan; a plan's batch_id is set at approval.
  */

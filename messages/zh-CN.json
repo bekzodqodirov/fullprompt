@@ -2163,7 +2163,16 @@
     "unplaced": "位置不明——未在地图上显示：",
     "atGate": "已到达，未卸货",
     "atGateDays": "{n, plural, =0 {今天到达} other {已停#天}}",
-    "atGateStuck": "请检查卸货"
+    "atGateStuck": "请检查卸货",
+    "queuePost": {
+      "khorgos": "霍尔果斯",
+      "yallama": "亚拉马"
+    },
+    "queueDay": "{post}排队：第{n}天（预计{given}天）",
+    "queueOver": "{post}排队第{n}天——已超过录入的{given}天",
+    "queueOverUsual": "{post}排队第{n}天——已超过通常的{given}天",
+    "queueLate": "{post}排队第{n}天——已超过录入的{given}天，请联系司机",
+    "queueLateUsual": "{post}排队第{n}天——已超过通常的{given}天，请联系司机"
   },
   "accounting": {
     "title": "管理会计",
@@ -3026,6 +3035,7 @@
     "queue": {
       "title": "口岸排队",
       "meaning": "现在到达排队的车辆需要等待多久。已在排队的车辆也从此刻起计算；已过境的车辆不变。",
+      "hold": "在按下按钮之前，车辆一直停在排队中：“在哈萨克斯坦”使其通过霍尔果斯，“在乌兹别克斯坦”使其通过亚拉马（如果司机手机显示已过境，则自动通过）。超过录入的最长等待1天时，物流员会收到一次Telegram消息。",
       "post": {
         "khorgos": "霍尔果斯（中国→哈萨克斯坦）",
         "yallama": "亚拉马（哈萨克斯坦→乌兹别克斯坦）"

@@ -2163,7 +2163,16 @@
     "unplaced": "Location unknown — not drawn on the map:",
     "atGate": "At gate, not unloaded",
     "atGateDays": "{n, plural, =0 {came today} one {standing # day} other {standing # days}}",
-    "atGateStuck": "check the unloading"
+    "atGateStuck": "check the unloading",
+    "queuePost": {
+      "khorgos": "Khorgos",
+      "yallama": "Yallama"
+    },
+    "queueDay": "{post} queue: day {n} (of {given} days)",
+    "queueOver": "{post} queue: day {n} — past the {given} days typed",
+    "queueOverUsual": "{post} queue: day {n} — past the usual {given} days",
+    "queueLate": "{post} queue: day {n} — past the {given} days typed, call the driver",
+    "queueLateUsual": "{post} queue: day {n} — past the usual {given} days, call the driver"
   },
   "accounting": {
     "title": "Management accounting",
@@ -3026,6 +3035,7 @@
     "queue": {
       "title": "Border queues",
       "meaning": "How long a truck arriving at the queue now will wait. Trucks already queueing are counted from this moment too; trucks that have crossed are unchanged.",
+      "hold": "Until a button is pressed the truck stays in the queue: «In Kazakhstan» takes it past Khorgos, «In Uzbekistan» past Yallama (if the driver’s phone shows the border crossed, it moves on by itself). One day past the longest wait typed, the logists get one Telegram message.",
       "post": {
         "khorgos": "Khorgos (China→Kazakhstan)",
         "yallama": "Yallama (Kazakhstan→Uzbekistan)"

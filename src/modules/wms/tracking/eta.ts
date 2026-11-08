@@ -9,6 +9,7 @@ import {
   type BorderPost,
   type RouteDef,
   type RoutePoint,
+  type RouteSegment,
   type TransitEstimate,
 } from './engine';
 import { CHECKPOINT_KEYS, CHECKPOINT_SEGMENTS, routeFor, yardFor, type CheckpointKey } from './map-data';
@@ -59,6 +60,126 @@ export function isGenericRoute(route: RouteDef): boolean {
 }
 
 const HOUR_MS = 3_600_000;
+
+/**
+ * A queue the truck does not leave by time alone (the owner, 2026-11-08,
+ * answer 1a — docs/XORGOS-NAVBAT.md §2): a stationary leg carrying a post
+ * the logist types the wait of (`BORDER_POSTS` — Horgos and Yallama). The
+ * walk reaches it at the usual pace and STOPS; only newer evidence on a
+ * later leg moves the truck past it — his «Qozog‘istonda» / «O‘zbekistonda»
+ * press, or the driver's phone seen beyond the post (4a). Keyed by the POST,
+ * like `routeWithWaits`: the Kashgar road's Irkeshtam wait is stationary too,
+ * carries no post and nobody types it, so it walks on as it always did.
+ */
+export function isHeldQueue(seg: { span: readonly [number, number]; post?: BorderPost }): boolean {
+  return seg.post !== undefined && seg.span[0] === seg.span[1];
+}
+
+/**
+ * «Ko'p oshdi» (his 2a): more than a day past the LONGEST wait the queue was
+ * given is late — the card's «Kechikkan» and the logists' one Telegram
+ * message (`queue-alert.ts`). Past the longest wait but within the day the
+ * truck has no date and says so, in the warn colour, and nothing is sent.
+ */
+export const QUEUE_LATE_HOURS = 24;
+
+/**
+ * A held queue's hours as days a person reads — the /trucks panel's own rule
+ * (`asDays`, two decimals at most: «2,5», «1,25», «3»), so the panel and
+ * every sentence under it print one figure for one queue.
+ */
+export function hoursAsDays(hours: number): number {
+  return Math.round((hours / 24) * 100) / 100;
+}
+
+/** The day of the wait the truck is in: its first 24 hours are «1-kun» (his 5a). Hours, not calendar days. */
+export function queueDayNo(stoodHours: number): number {
+  return Math.floor(Math.max(0, stoodHours) / 24) + 1;
+}
+
+/**
+ * How near a HELD post a fix on the road leading to it reads as «in the
+ * queue» (`fixAnchor`, `queueSinceFor`). Wider than `QUEUE_RADIUS_DEG`
+ * because a held queue is a line of lorries kilometres long, and a phone in
+ * its tail read as «driving to the post» restarted the queue's clock on every
+ * report (the design's judge): ~12-16 km here. A lorry DRIVING through that
+ * last stretch is minutes from the post anyway. The far side is still the
+ * next leg.
+ */
+export const HELD_QUEUE_RADIUS_DEG = 0.15;
+
+/**
+ * The wait a held queue gives NOW, as the /trucks panel shows it: the
+ * logist's typed hours, or his default (`BORDER_POSTS`) — and from WHEN they
+ * count. The panel's own promise is «navbatda turganlar ham shu paytdan
+ * boshlab hisoblanadi», so a number typed while the truck is already in the
+ * queue is counted from the typing, SHIFTED and never stretched: the range he
+ * typed is the range that runs (the judge: `withLead`'s scaling printed
+ * «2–4 kun» beside a typed «0,5–1»). A held truck has not crossed by
+ * definition, so the «had it crossed before the change» history
+ * (`queueHours`' `before`) has nothing to say here.
+ */
+function givenWait(
+  seg: { hours: [number, number]; post?: BorderPost },
+  waits: BorderHours,
+): { hours: [number, number]; typed: boolean; sinceMs: number | null } {
+  const w = seg.post && Object.hasOwn(waits, seg.post) ? waits[seg.post] : undefined;
+  if (!w) return { hours: [seg.hours[0], seg.hours[1]], typed: false, sinceMs: null };
+  return w.hours
+    ? { hours: [w.hours[0], w.hours[1]], typed: true, sinceMs: w.sinceMs }
+    : { hours: [seg.hours[0], seg.hours[1]], typed: false, sinceMs: w.sinceMs };
+}
+
+/**
+ * A truck standing in a held queue (`isHeldQueue`) — what every screen says
+ * about it, from ONE walk (`placeTruck`).
+ */
+export interface QueueHold {
+  post: BorderPost;
+  /** When it entered (ISO): the walk's arrival, the logist's «Chegarada» press, or the phone at the post (§2.1). */
+  enteredAt: string;
+  /** Hours stood so far — the «N-kun» of the words (`queueDayNo`). */
+  stoodHours: number;
+  /** The wait as the /trucks panel shows it — typed, or his default (`givenWait`). */
+  given: [number, number];
+  /** `given` is the logist's typed number, not the default: the words say «kiritilgan» only then. */
+  typed: boolean;
+  /** When the longest wait given runs out (ISO): entry, or the typing if later, plus `given[1]`. */
+  dueBy: string;
+  /** The legs after the queue, [min, max] hours — what is left once it is through. */
+  afterHours: [number, number];
+  /** Past `dueBy`: no date, nobody knows when it leaves. */
+  over: boolean;
+  /** Past it by `QUEUE_LATE_HOURS`: the «overdue» kind and the one message to the logists. */
+  late: boolean;
+}
+
+/** Is there a held queue among these legs — the walk across one cannot date anything beyond it. */
+function heldAmong(segments: readonly RouteSegment[]): boolean {
+  return segments.some((seg) => isHeldQueue(seg));
+}
+
+/**
+ * The held queue the walk from `anchor` stands in at `nowMs`, and the moment
+ * it entered — the first held queue at or after the anchor's own leg, once
+ * the walk (the engine's midpoints) has reached it. Null while the truck is
+ * still on the way to it, and on a road with none. A queue BEFORE the
+ * anchor's leg is behind it: the evidence put the truck past it. The legs
+ * walked are moving legs — the first held queue ends the walk.
+ */
+function heldQueueAt(route: RouteDef, anchor: Anchor, nowMs: number): { q: number; enteredMs: number } | null {
+  let t = anchor.legStartMs;
+  for (let i = anchor.segIdx; i < route.segments.length; i += 1) {
+    const seg = route.segments[i]!;
+    if (isHeldQueue(seg)) return t <= nowMs ? { q: i, enteredMs: t } : null;
+    t += segMid(seg.hours) * HOUR_MS;
+    // `>`, not `>=`: the engine moves a truck onto the next leg the moment
+    // its elapsed time EQUALS a leg's midpoint, so a walk exactly at the
+    // queue's door is in it.
+    if (t > nowMs) return null;
+  }
+  return null;
+}
 
 /**
  * One border queue as the logist typed it on /trucks (0118): the range in
@@ -242,6 +363,10 @@ export function pinOnRoute(
  * A pin anchors only when its leg is on THIS route: the engine would ignore
  * an unknown leg anyway, but the queue walk has to start from the same place
  * the engine does, or the two disagree about when the truck reaches a post.
+ *
+ * The RAW walk: no fix and no hold (`isHeldQueue`). Every screen reads
+ * `placeTruck`, which holds a truck in the Horgos and Yallama queues; this
+ * one has no production reader and stays the schedule's own arithmetic.
  */
 export function scheduleEstimate(
   originCode: string,
@@ -411,6 +536,13 @@ export interface PlacementFix {
   source: string;
   /** When the phone first put it at its yard (`latestPositions`); null = never. REQUIRED: forgotten, a truck in the yard would never read «stuck». */
   gateSince: Date | null;
+  /**
+   * Since when the phone has had it in each held queue (`queueSinceFor`):
+   * its first fix within `HELD_QUEUE_RADIUS_DEG` of the post after a fix
+   * anywhere else — the arrival the phone SAW. Absent = not seen, or not
+   * asked (a test): the entry then falls back to the walk and the fix.
+   */
+  queueSince?: Partial<Record<BorderPost, Date>>;
 }
 
 export type PlaceSource = 'gps' | 'manual' | 'pin' | 'schedule';
@@ -427,9 +559,9 @@ export interface TruckPlace {
   segKey: string | null;
   /** 0..1 of the road's LENGTH behind the truck; null = nobody can say. */
   progress: number | null;
-  /** Null when overdue or when there is no road to walk. */
+  /** Null when overdue, when there is no road to walk, and past a held queue's longest wait. */
   remainingHours: [number, number] | null;
-  /** The walk from the newest evidence is spent. */
+  /** The walk from the newest evidence is spent — or a held queue is a day past its longest wait (2a). */
   overdue: boolean;
   /** The newest fix is at the destination's gate (`GATE_RADIUS_DEG`): no date, not overdue. */
   atGate: boolean;
@@ -445,6 +577,8 @@ export interface TruckPlace {
   point: RoutePoint | null;
   /** The road walked (typed queues in place); null = no schedule. */
   route: RouteDef | null;
+  /** Standing in a held queue (`isHeldQueue`); null anywhere else. */
+  queue: QueueHold | null;
 }
 
 export interface PlaceInput {
@@ -492,11 +626,18 @@ function fixAnchor(
   const snapped = snapToRoute(base.points, at);
 
   const queue = base.segments[g + 1];
-  if (queue && queue.span[0] === queue.span[1] && chordDeg(at, base.points[queue.span[0]]!) <= QUEUE_RADIUS_DEG) {
+  const held = queue ? isHeldQueue(queue) : false;
+  const radius = held ? HELD_QUEUE_RADIUS_DEG : QUEUE_RADIUS_DEG;
+  if (queue && queue.span[0] === queue.span[1] && chordDeg(at, base.points[queue.span[0]]!) <= radius) {
     const q = g + 1;
+    // The walk dates the entry only when nothing held lies between: a walk
+    // across Horgos counts its typical wait as spent, which the hold says it
+    // never is — and put a phone first seen at Yallama 96 h into a queue it
+    // had just reached (the design's judge, its blocker).
+    const walkable = prior.segIdx < q && !heldAmong(base.segments.slice(prior.segIdx, q));
     let entry: number | null = null;
     if (prior.segIdx === q) entry = prior.legStartMs;
-    else if (prior.segIdx < q) {
+    else if (walkable) {
       const walked = routeWithWaits(
         base,
         { segIdx: prior.segIdx, atMs: prior.legStartMs, pinned: prior.pinned },
@@ -505,6 +646,12 @@ function fixAnchor(
       entry = prior.legStartMs;
       for (let i = prior.segIdx; i < q; i += 1) entry += segMid(walked.segments[i]!.hours) * HOUR_MS;
     }
+    // In a held queue the phone that SAW the truck arrive says since when it
+    // has stood there (`queueSinceFor` — the driver's phone is the truth, his
+    // 4a): over the walk, which only guesses the arrival. A «Chegarada» press
+    // keeps its own moment (§2.1).
+    const since = held && prior.segIdx !== q ? fix.queueSince?.[queue.post!]?.getTime() : undefined;
+    if (since !== undefined && Number.isFinite(since)) entry = since;
     let entered = Math.max(departedMs, Math.min(fixMs, entry ?? fixMs));
     // The fix says the truck is STILL in the queue at its own moment. An
     // entry whose walk has it out of the queue by then is disproved by the fix
@@ -514,8 +661,13 @@ function fixAnchor(
     // for a regime that changed mid-queue (the review: a truck 60 h into a
     // 1-3 day Irkeshtam queue, phoning from the post, read «Qirg'izistonda»
     // with a date two days early). One fix cannot say how long it has stood.
+    //
+    // NOT in a held queue (`isHeldQueue`, his 1a): there the walk never leaves
+    // by time, so a fix that still sees the truck at the post disproves
+    // nothing — and counting from the fix would restart the queue's clock on
+    // every report, so a truck phoning from Horgos could never be late.
     const stands = routeWithWaits(base, { segIdx: q, atMs: entered, pinned: true }, waits).segments[q]!.hours;
-    if (entered + segMid(stands) * HOUR_MS <= fixMs) entered = fixMs;
+    if (!held && entered + segMid(stands) * HOUR_MS <= fixMs) entered = fixMs;
     return {
       segIdx: q,
       legStartMs: entered,
@@ -554,7 +706,9 @@ function fixAnchor(
  * coarse «in Kazakhstan» must not drag a truck back to the start of
  * Kazakhstan. A fix at the destination's gate is the truck arrived in all but
  * the scan (`atGate`); a walk from a fix is spent only at its slowest pace and
- * one reporting window after it.
+ * one reporting window after it. A walk that reaches a held queue (Horgos,
+ * Yallama — `isHeldQueue`) stops there until newer evidence on a later leg
+ * (docs/XORGOS-NAVBAT.md): it can never be «spent» before it is through.
  *
  * `waits` is REQUIRED for the reason `scheduleEstimate` states, and in second
  * place so the wire fence can read it.
@@ -601,6 +755,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
         fresh: now.getTime() - fixMs <= FRESH_MINUTES * 60_000,
         point: { x: fix.lon, y: fix.lat },
         route: null,
+        queue: null,
       };
     }
     return {
@@ -620,6 +775,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       fresh: byFix && now.getTime() - fixMs <= FRESH_MINUTES * 60_000,
       point: fix ? { x: fix.lon, y: fix.lat } : null,
       route: null,
+      queue: null,
     };
   }
 
@@ -657,6 +813,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     fresh,
     point,
     route,
+    queue: null,
   });
 
   // The slowest arrival from a fix, ONE figure for the due window and for
@@ -685,6 +842,69 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       fresh,
       point: { x: fix!.lon, y: fix!.lat },
       route,
+      queue: null,
+    };
+  }
+
+  const held = heldQueueAt(route, anchor, now.getTime());
+  if (held) {
+    // In a held queue (his 1a): the truck stays at the post however long the
+    // wait runs, until newer evidence on a later leg — the logist's press, or
+    // the phone beyond the post — makes that leg the anchor. The wait runs
+    // from the entry, or from the typing when the logist typed it while the
+    // truck was already queueing (`givenWait`); what is left is that window
+    // LESS the time gone (`slowestArrivalMs`'s own queue rule — the engine's
+    // proportional remainder read 9 h of a 72 h wait after 42 h stood), then
+    // every later leg at the wait it gives NOW. Past the window nobody knows
+    // when it leaves, so there is no date (`placeDated`); a day past it the
+    // truck is late (2a). The dot is the post, or the phone's own fix while
+    // that is fresh — a phone in the queue's tail is where the lorry is.
+    const nowMs = now.getTime();
+    const seg = base.segments[held.q]!;
+    const wait = givenWait(seg, waits);
+    const from = Math.max(held.enteredMs, wait.sinceMs ?? held.enteredMs);
+    const opensMs = from + wait.hours[0] * HOUR_MS;
+    const dueMs = from + wait.hours[1] * HOUR_MS;
+    const later = base.segments.slice(held.q + 1).map((s) => (isHeldQueue(s) ? givenWait(s, waits).hours : s.hours));
+    const afterHours: [number, number] = [
+      later.reduce((sum, h) => sum + h[0], 0),
+      later.reduce((sum, h) => sum + h[1], 0),
+    ];
+    const over = nowMs > dueMs;
+    const late = nowMs > dueMs + QUEUE_LATE_HOURS * HOUR_MS;
+    const hoursTo = (ms: number) => Math.max(0, (ms - nowMs) / HOUR_MS);
+    // A walk from a fix closes no earlier than its slowest arrival (the
+    // window below), so entering the queue does not shorten the date.
+    const slowest = latestMs === null ? 0 : Math.round(hoursTo(latestMs));
+    return {
+      zone: zoneOfLeg(seg.key),
+      segKey: seg.key,
+      progress: share(cum[seg.span[0]]!),
+      remainingHours: over
+        ? null
+        : [
+            Math.round(hoursTo(opensMs) + afterHours[0]),
+            Math.max(Math.round(hoursTo(dueMs) + afterHours[1]), slowest),
+          ],
+      overdue: late,
+      atGate: false,
+      gateSince: null,
+      source,
+      evidenceAt,
+      fresh,
+      point: fresh && fixPoint ? fixPoint : base.points[seg.span[0]]!,
+      route,
+      queue: {
+        post: seg.post!,
+        enteredAt: new Date(held.enteredMs).toISOString(),
+        stoodHours: Math.max(0, (nowMs - held.enteredMs) / HOUR_MS),
+        given: wait.hours,
+        typed: wait.typed,
+        dueBy: new Date(dueMs).toISOString(),
+        afterHours,
+        over,
+        late,
+      },
     };
   }
 
@@ -730,6 +950,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       fresh,
       point: fixPoint ?? (leg ? base.points[leg.span[0]]! : null),
       route,
+      queue: null,
     };
   }
 
@@ -766,6 +987,11 @@ function underNewerPin(
   departedAt: Date,
 ): FixAnchor | null {
   if (fixed.segIdx !== pinned.segIdx) return null;
+  // A held queue (`isHeldQueue`): «Chegarada» is the logist's «count the
+  // queue from now» (docs/XORGOS-NAVBAT.md §2.1) — the meaning a pin has
+  // always had, and his way to restart the clock after phoning the driver.
+  // The fix's earlier entry would quietly overrule the press he just made.
+  if (isHeldQueue(base.segments[pinned.segIdx]!)) return null;
   const atPress = walkFrom(base, fixed, waits, departedAt, new Date(pinned.legStartMs)).est;
   if (!atPress.overdue && atPress.segIndex === pinned.segIdx) return fixed;
   const leg = base.segments[pinned.segIdx]!;

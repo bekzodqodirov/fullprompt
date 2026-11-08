@@ -5,8 +5,9 @@ import { z } from 'zod';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, driverDevices, driverPositions } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { FRESH_MINUTES } from './engine';
-import { GATE_RADIUS_DEG, gateYard, type PlacementFix } from './eta';
+import { FRESH_MINUTES, type BorderPost } from './engine';
+import { GATE_RADIUS_DEG, gateYard, HELD_QUEUE_RADIUS_DEG, isHeldQueue, type PlacementFix } from './eta';
+import { routeFor } from './map-data';
 
 /**
  * Driver phone pairing + position ingest (owner's flow): at loading, the
@@ -227,6 +228,14 @@ export interface LatestPosition {
    * schedule-based clock flagged a truck the minute it pulled in, or never).
    */
   gateSince: Date | null;
+  /**
+   * Since when the phone has had it in each HELD queue on its road (Horgos,
+   * Yallama — `queueSinceFor`): the first fix within `HELD_QUEUE_RADIUS_DEG`
+   * of the post after the last one outside, when there was one outside.
+   * The newest fix says it is in the queue; only this says since when, so a
+   * phone reporting from the queue does not restart its clock.
+   */
+  queueSince: Partial<Record<BorderPost, Date>>;
 }
 
 /**
@@ -283,7 +292,9 @@ export async function latestPositions(trips: readonly PositionTrip[]): Promise<M
     // all reads `received_at`) fall back to the phone's own order.
     .orderBy(driverPositions.batchId, desc(at), desc(driverPositions.recordedAt), desc(driverPositions.id));
 
-  const since = rows.length ? await gateSinceFor(trips) : new Map<string, Date>();
+  const [since, queued] = rows.length
+    ? await Promise.all([gateSinceFor(trips), queueSinceFor(trips)])
+    : [new Map<string, Date>(), new Map<string, Partial<Record<BorderPost, Date>>>()];
 
   const now = Date.now();
   return new Map(
@@ -300,6 +311,7 @@ export async function latestPositions(trips: readonly PositionTrip[]): Promise<M
           ageMinutes,
           fresh: ageMinutes <= FRESH_MINUTES,
           gateSince: since.get(r.batchId) ?? null,
+          queueSince: queued.get(r.batchId) ?? {},
         },
       ];
     }),
@@ -353,10 +365,69 @@ export async function gateSinceFor(trips: readonly PositionTrip[]): Promise<Map<
   return since;
 }
 
-/** The fix as the placement reads it — ONE mapping, so no reader drops `gateSince`. */
+/**
+ * Since when each trip's phone has stood in each HELD queue on its road
+ * (docs/XORGOS-NAVBAT.md §2.1): `gateSinceFor`'s rule, one post at a time —
+ * the first fix within `HELD_QUEUE_RADIUS_DEG` of the post after the last
+ * one outside it, from the departure — with one difference: a fix OUTSIDE
+ * must come first. Only then did the phone SEE the truck arrive; a phone
+ * switched on in the queue says nothing about how long it had stood there,
+ * and the walk's arrival stays the better word (`fixAnchor`). One statement
+ * for every trip on a road that has such a queue (the HOR roads today), none
+ * for the rest.
+ */
+export async function queueSinceFor(
+  trips: readonly PositionTrip[],
+): Promise<Map<string, Partial<Record<BorderPost, Date>>>> {
+  const out = new Map<string, Partial<Record<BorderPost, Date>>>();
+  const posts = trips.flatMap((t) => {
+    const route = routeFor(t.originCode, t.destCode);
+    if (!route) return [];
+    return route.segments.filter(isHeldQueue).map((seg) => {
+      const p = route.points[seg.span[0]]!;
+      return sql`(${t.id}::uuid, ${seg.post!}::text, ${p.x}::float8, ${p.y}::float8, ${t.departedAt?.toISOString() ?? null}::timestamptz, ${t.until?.toISOString() ?? null}::timestamptz)`;
+    });
+  });
+  if (posts.length === 0) return out;
+  const found = await db.execute<{ batch_id: string; post: string; since_ms: string | null }>(sql`
+    WITH f AS (
+      SELECT p.batch_id, y.post, p.id, p.recorded_at, least(p.recorded_at, p.received_at) AS at,
+             sqrt(power((p.lon::float8 - y.lon) * cos(radians((p.lat::float8 + y.lat) / 2)), 2)
+                  + power(p.lat::float8 - y.lat, 2)) <= ${HELD_QUEUE_RADIUS_DEG} AS inside
+        FROM ${driverPositions} p
+        JOIN (VALUES ${sql.join(posts, sql`, `)}) AS y(batch_id, post, lon, lat, from_at, until_at) ON y.batch_id = p.batch_id
+       WHERE (p.accuracy_m IS NULL OR p.accuracy_m <= ${COARSE_FIX_M})
+         AND (y.from_at IS NULL OR least(p.recorded_at, p.received_at) >= y.from_at)
+         AND (y.until_at IS NULL OR least(p.recorded_at, p.received_at) <= y.until_at)
+    ), n AS (
+      SELECT f.*, row_number() OVER (PARTITION BY batch_id, post ORDER BY at, recorded_at, id) AS k FROM f
+    ), g AS (
+      SELECT n.*, max(k) FILTER (WHERE NOT inside) OVER (PARTITION BY batch_id, post) AS last_out FROM n
+    )
+    SELECT batch_id, post, extract(epoch FROM min(at)) * 1000 AS since_ms
+      FROM g
+     WHERE inside AND last_out IS NOT NULL AND k > last_out
+     GROUP BY batch_id, post`);
+  for (const r of found) {
+    if (r.since_ms === null) continue;
+    const posted = out.get(r.batch_id) ?? {};
+    posted[r.post as BorderPost] = new Date(Number(r.since_ms));
+    out.set(r.batch_id, posted);
+  }
+  return out;
+}
+
+/** The fix as the placement reads it — ONE mapping, so no reader drops `gateSince` or `queueSince`. */
 export function placementFix(fix: LatestPosition | null | undefined): PlacementFix | null {
   return fix
-    ? { lat: fix.lat, lon: fix.lon, recordedAt: fix.recordedAt, source: fix.source, gateSince: fix.gateSince }
+    ? {
+        lat: fix.lat,
+        lon: fix.lon,
+        recordedAt: fix.recordedAt,
+        source: fix.source,
+        gateSince: fix.gateSince,
+        queueSince: fix.queueSince,
+      }
     : null;
 }
 

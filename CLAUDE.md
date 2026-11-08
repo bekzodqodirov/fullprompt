@@ -167,6 +167,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Round 3 of the eight items — the «Hisoblatish» collection that survives a deploy, the reading as a job, one table / echo / undo, «➕ Shu so‘rovga qo‘shish», the law's count after the AI answer, the VED's doors refusing a screen a seller's addition overtook | `docs/SAKKIZ-R3.md` — agreed 2026-10-27 (his 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b, then «14 a, qolgani seni taklifing»), **round 3 SHIPPED** (DECISIONS #1571-#1580, migration 0139, ledger 140); §0 binding, §2 the exact Uzbek words, §6.2.2 the lead's ruling L1, §20 as built + his six new questions 1.21-1.26 |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
+| Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 
@@ -3280,7 +3281,23 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Latest migration: 0139** (`calc_intake_durable`, `when` …118; ledger must reach **140**). Before
+**Round — Horgos and Yallama hold the truck (2026-11-08; DECISIONS #1582-#1584; migration 0140
+`truck_queue_alerts` — ledger must reach 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding).** His «horgosdan
+jo‘nagan mashinalar … joyi aniq emas» (a departure-only HOR truck's spent walk had `zoneOfRoute` of a
+five-zone road), then what he meant: answers 1a 2a 3a 4a 5a, code HOR. A **held queue** = a stationary leg
+with a typed-queue `post` (`isHeldQueue`; Horgos + Yallama, the Kashgar road untouched): `placeTruck` walks to
+the first one at or after the anchor's leg and STOPS until a pin or a fix past the post. The wait is the
+panel's (`givenWait`, shifted from the typing, never `withLead`-stretched), no date past it, `overdue` a day
+after (`QUEUE_LATE_HOURS`). The walk never dates an entry across a held queue; the phone that saw the arrival
+does (`queueSinceFor`, devices.ts, `HELD_QUEUE_RADIUS_DEG` 0.15°). `TruckPlace/TruckRow/TruckMarker.queue`
+carry it to the words (5a, «kiritilgan» only when typed), the map label («⏳2», `truck-label.ts`) and the
+cabinet (`arriveBy` '9999' once over). `alertLateQueues` (queue-alert.ts, office hours): ONE message per sweep
+to `plans.manage`, claim per (truck, post) re-armed only by a wait begun after the warning; `TruckQueueLate`
+in `alerts`. Judged by five lenses before code (two blockers). DEPLOY: every unpressed HOR truck already past
+Horgos snaps back «late» — the logists get one list at 08:00 and press.
+
+**Latest migration: 0140** (`truck_queue_alerts`, `when` …119; ledger must reach **141**). Before
+it: 0139 (`calc_intake_durable`, `when` …118). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
@@ -3424,7 +3441,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **140** since 0139 (139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **141** since 0140 (140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

@@ -6670,3 +6670,63 @@ verbatim). Stated, not fixed: a text reply to the ➕ answer of a collection bei
 30 minutes is answered «⏳ Tahlil davom etmoqda» and not added (CHK-N1); the net's NOT EXISTS
 is as true as the durable row, which production flushes within 5 s while the net reads rows
 five minutes old (CHK-N2). Final tree (14355e4), each gate on its own on a fresh database: typecheck 0, lint 0, unit 537 files / 9295 tests and integration 285 files / 3559 tests with 0 failed, build 0 (the bundle's foreign hosts the known ones); at 947987b the whole CI order ran, vitest 821 files / 12851 tests with 0 failed, build 0 and Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent), and GitHub's CI on 947987b was green; the final head is CI's run.
+
+**#1582 — Horgos and Yallama HOLD the truck (the owner's 1a 2a 3a 4a 5a, 2026-11-08;
+docs/XORGOS-NAVBAT.md).** His first report of the day was «horgosdan jo‘nagan mashinalar
+lokatsiyasi joyi aniq emas»: a HOR truck with nothing but its departure walked the schedule out
+of both queues at their midpoints and, past 186 h (Tashkent) or 204 h (Andijan), had a spent walk
+whose place is `zoneOfRoute` of a five-zone road — null, no point. His second message said what
+he had meant all along: the truck waits in the queue until the logist presses «Qozog‘istonda»,
+drives on, waits again at Yallama until «O‘zbekistonda». So a **held queue** is a stationary leg
+carrying a typed-queue `post` (`isHeldQueue`) — Horgos and Yallama on the HOR roads; the Kashgar
+road's Irkeshtam wait has no post and walks on exactly as before (fenced). `placeTruck` walks
+from the newest evidence at the usual pace to the first held queue at or after the anchor's leg
+(`heldQueueAt`) and STOPS; only newer evidence on a later leg — a pin, or a fix projected beyond
+the post (his 4a) — moves it past. The held place is the post's zone, segKey and progress; the
+wait is the one the /trucks panel shows (`givenWait`: typed, or his default), counted from the
+entry or from the typing when he typed it while the truck already queued — SHIFTED, never
+stretched by `withLead` (the judge: the stretched pair printed «2–4 kun» beside a typed «0,5–1»);
+what is left is that window less the time gone, then every later leg at the wait it gives NOW;
+past the window `remainingHours` is null (no date anywhere, `placeDated`); a day past it
+(`QUEUE_LATE_HOURS`, his 2a) `overdue` is true and the card's kind is `overdue`. Every reader goes
+through `placeTruck` (board, dashboard, truck card, «Yuklar», map, bot, cabinet), so one change
+moved them all; `TruckPlace.queue` / `TruckRow.queue` / `TruckMarker.queue` carry it to the words
+(5a, «Horgos navbatida: 2-kun (2–3 kundan)», «kiritilgan» only for a typed number, «odatdagi» for
+his default) and to the map label («HR-001 ⏳2», both renderers, `truck-label.ts`). The cabinet
+ranks a held-over truck with the late ones (`arriveBy` '9999'), or a lot split over two trucks
+showed the other truck's date for the cartons stuck at the border. `scheduleEstimate` (no
+production reader) stays the raw walk and says so.
+
+**#1583 — The entry: the walk never dates across a held queue, and the phone that SAW the
+arrival outranks it.** The design judge's blocker: `fixAnchor` dated a phone first seen at
+Yallama from the departure by walking Horgos at its typical 72 h — and with the hold's removal of
+the «disproved entry → count from the fix» reset, that read 96 h into a queue it had just reached
+and spent the once-only warning. Now the walk dates an entry only when no held queue lies between
+the prior anchor and the queue; otherwise the entry is the phone's own history, else the fix.
+`queueSinceFor` (devices.ts) is `gateSinceFor`'s query one post at a time — the first fix within
+`HELD_QUEUE_RADIUS_DEG` (0.15°, ~12-16 km: a held queue is kilometres of lorries, and a phone in
+its tail read as «driving to the post» restarted the clock on every report) after a fix OUTSIDE,
+i.e. an arrival the phone saw; a phone switched on in the queue says nothing and the walk stays
+the better word. The reset is kept for the Kashgar road and skipped for a held queue: there a
+fix that still sees the truck at the post disproves nothing, and resetting would restart the
+clock on every report so a phoning truck could never be late. A «Chegarada» press is «count the
+queue from the press»: `underNewerPin` lets the pin's anchor stand in a held queue. A fresh fix
+is drawn where the phone is, held or not (round 100 9a).
+
+**#1584 — The warning: once per (truck, post, wait), ONE message per sweep (his 3a; migration
+0140 `truck_queue_alerts`, ledger 141).** `alertLateQueues` reads the dashboard's own rows
+(`roadRowsNow`), keeps `queue.late`, and in ONE transaction claims each truck
+(`INSERT … ON CONFLICT DO UPDATE … WHERE alerted_at < EXCLUDED.entered_at RETURNING`) and queues
+ONE message listing the trucks it won to every `plans.manage` holder (read on the pool before
+the transaction, #714) — `TruckSilent`'s audience: the logists, plus the owner and admins who
+hold every grant (stated). Time never re-arms a claim; a wait that BEGAN after the warning (a
+«Chegarada» press after the call) does — otherwise the one warning would be spent on a wait the
+press replaced (the alert judge). One message per sweep and not per truck: on deploy morning
+every HOR truck nobody ever pressed past Horgos turns late at once (the judges' deploy-day
+finding), and the logists get one list, capped at `LATE_QUEUE_LINES` with «… va yana N ta».
+The text names the buttons with their flags («🇰🇿 Qozog‘istonda», «🇺🇿 O‘zbekistonda»), so a
+logist on the Russian screen finds them, and from Horgos names both, because pressing
+«Qozog‘istonda» for a truck already in Uzbekistan holds it at Yallama and warns again a week
+later. Office hours only (`*/30 3-14 * * *` UTC = 08:00-19:30 Tashkent). One migration behind it
+says so once and sends nothing (`isServerBehind`). `TruckQueueLate` is in the `alerts` mute group
+beside TruckSilent, a newcomer never in FOUNDERS — so an old «alerts» tick mutes it too, stated.

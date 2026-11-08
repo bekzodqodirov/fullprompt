@@ -8,6 +8,7 @@ import {
   type BorderHours,
   type PlaceSource,
   type PlacementFix,
+  type QueueHold,
   type TruckPlace,
 } from './eta';
 import type { CheckpointKey } from './map-data';
@@ -138,6 +139,12 @@ export interface TruckRow {
   roadPct: number | null;
   /** Where on the road and on which leg (`placeTruck`); null on an arrived truck. */
   zone: RoadZone | null;
+  /**
+   * Standing in a held queue — Horgos, Yallama (`placeTruck`, his 1a): the
+   * day of the wait and the wait it was given are printed from it (5a); late
+   * is the «Kechikkan» kind. Null anywhere else, and on an arrived truck.
+   */
+  queue: QueueHold | null;
   segKey: string | null;
   /** What placed it — the phone, a typed position, the pin, the schedule — and when. */
   source: PlaceSource | null;
@@ -236,6 +243,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
       stage: null,
       roadPct: null,
       zone: null,
+      queue: null,
       segKey: null,
       source: null,
       evidenceAt: null,
@@ -283,6 +291,7 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
     days,
     awaitingUnload: null,
     zone: place.zone,
+    queue: place.queue,
     segKey: place.segKey,
     source: place.source,
     evidenceAt: place.evidenceAt,
@@ -304,22 +313,28 @@ export function truckRow(input: TruckInput, now: Date, today: string, waits: Bor
   if (!place.route) {
     return { ...off, kind: 'no_schedule', roadPct: null, eta: null, arrivalOrder: null };
   }
-  if (place.overdue || !place.remainingHours) {
+  if (place.overdue || (!place.remainingHours && !place.queue)) {
     // Spent: no date. The bar stays where the newest evidence last put the
-    // truck, and is absent when only the departure speaks.
+    // truck, and is absent when only the departure speaks. A held queue a
+    // day past its longest wait is late the same way (his 2a).
     return { ...off, kind: 'overdue', roadPct: pct, eta: null, arrivalOrder: null };
   }
+  const remaining = place.remainingHours;
   return {
     ...off,
+    // In a held queue past its longest wait but within the day: still on the
+    // road, with no date — the words say how long it has stood (5a).
     kind: 'on_road',
     roadPct: pct,
     // `placeDated` is the one rule every reader asks (a truck due NOW has no
     // date to print).
     eta:
-      isMovingStage(stage) && placeDated(place)
-        ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, now)
+      remaining && isMovingStage(stage) && placeDated(place)
+        ? etaWindow({ overdue: false, remainingHours: remaining }, now)
         : null,
-    arrivalOrder: place.remainingHours[0],
+    // Undated in a queue: it could leave any minute, so it sorts by what is
+    // left once it is through.
+    arrivalOrder: remaining ? remaining[0] : (place.queue?.afterHours[0] ?? null),
   };
 }
 

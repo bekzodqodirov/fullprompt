@@ -2163,7 +2163,16 @@
     "unplaced": "Joyi aniq emas — xaritada chizilmadi:",
     "atGate": "Manzilda, tushirilmagan",
     "atGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
-    "atGateStuck": "tushirishni tekshiring"
+    "atGateStuck": "tushirishni tekshiring",
+    "queuePost": {
+      "khorgos": "Horgos",
+      "yallama": "Yallama"
+    },
+    "queueDay": "{post} navbatida: {n}-kun ({given} kundan)",
+    "queueOver": "{post} navbatida {n}-kun — kiritilgan {given} kundan oshdi",
+    "queueOverUsual": "{post} navbatida {n}-kun — odatdagi {given} kundan oshdi",
+    "queueLate": "{post} navbatida {n}-kun — kiritilgan {given} kundan oshdi, haydovchi bilan bog‘laning",
+    "queueLateUsual": "{post} navbatida {n}-kun — odatdagi {given} kundan oshdi, haydovchi bilan bog‘laning"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -3026,6 +3035,7 @@
     "queue": {
       "title": "Chegara navbatlari",
       "meaning": "Hozir navbatga kelgan mashina qancha kutadi. Navbatda turganlar ham shu paytdan boshlab hisoblanadi; chegaradan o‘tganlar o‘zgarmaydi.",
+      "hold": "Tugma bosilmaguncha mashina navbatda turadi: «Qozog‘istonda» Horgosdan, «O‘zbekistonda» Yallamadan o‘tkazadi (haydovchi telefoni chegaradan o‘tganini ko‘rsatsa, o‘zi o‘tadi). Kiritilgan eng ko‘p kundan 1 kun oshsa, logistlarga Telegramda bir marta xabar boradi.",
       "post": {
         "khorgos": "Horgos (Xitoy→Qozog‘iston)",
         "yallama": "Yallama (Qozog‘iston→O‘zbekiston)"
