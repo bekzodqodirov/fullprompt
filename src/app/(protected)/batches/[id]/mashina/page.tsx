@@ -9,8 +9,8 @@ import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { departureDestination, rerouteHistory, rerouteTargets } from '@/modules/wms/batches/reroute';
 import { mayRerouteTruck } from '@/modules/wms/batches/reroute-rules';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
-import { checkpointsFor } from '@/modules/wms/tracking/eta';
-import { CHECKPOINT_KEYS, CHECKPOINT_LABEL, type CheckpointKey } from '@/modules/wms/tracking/map-data';
+import { checkpointsFor, roadHolds } from '@/modules/wms/tracking/eta';
+import { CHECKPOINT_KEYS, pinLabel, type CheckpointKey } from '@/modules/wms/tracking/map-data';
 import { Panel } from '@/components/panel';
 import { createDriverDeviceAction, revokeDriverDeviceAction } from '../../batch-actions-server';
 import { BatchCard, batchTabMetadata } from '../batch-card';
@@ -58,6 +58,8 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   // carries is offered too when its road does not, so a pin written before
   // the rule can still be pressed off.
   const pinOptions: CheckpointKey[] = checkpointsFor(head.originCode, head.destCode, head.destCountry);
+  // The Horgos road names its first queue (`pinLabel`, docs/XORGOS-NAVBAT.md).
+  const held = roadHolds(head.originCode, head.destCode);
   if (checkpointKey && !pinOptions.includes(checkpointKey)) pinOptions.push(checkpointKey);
 
   // «Yo'nalishni o'zgartirish» (the reroute round): the history for every
@@ -167,7 +169,7 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
         {batch.status === 'in_transit' && canVehicle && pinOptions.length > 0 && (
           <Panel
             title={`📍 ${t('whereIsTruck')}`}
-            badge={checkpointKey ? t(CHECKPOINT_LABEL[checkpointKey].label) : undefined}
+            badge={checkpointKey ? t(pinLabel(checkpointKey, held).label) : undefined}
             testId="batch-where-panel"
             open
           >
@@ -176,7 +178,7 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
               current={checkpointKey}
               options={pinOptions.map((key) => ({
                 key,
-                label: `${CHECKPOINT_LABEL[key].icon} ${t(CHECKPOINT_LABEL[key].label)}`,
+                label: `${pinLabel(key, held).icon} ${t(pinLabel(key, held).label)}`,
               }))}
             />
           </Panel>

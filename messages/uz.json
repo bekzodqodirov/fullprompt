@@ -1522,6 +1522,7 @@
     "pricing": "Partiya moliyasi (narxlar)",
     "whereIsTruck": "Mashina qayerda?",
     "cpBorder": "Chegarada turibdi",
+    "cpBorderHorgos": "Horgosda turibdi",
     "cpKg": "Qirg‘izistonda",
     "cpUz": "O‘zbekistonda",
     "openMap": "Xaritada ko‘rish",
@@ -1564,7 +1565,8 @@
       "not_in_transit": "Mashina yo‘lda emas — belgi faqat yo‘ldagi mashinaga qo‘yiladi",
       "unknown_key": "Bunday belgi yo‘q",
       "not_on_route": "Bu mashina u yerdan o‘tmaydi — o‘z yo‘lining belgisini tanlang",
-      "checkpoint_changed": "Bu orada belgi o‘zgardi — sahifani yangilab, qaytadan bosing"
+      "checkpoint_changed": "Bu orada belgi o‘zgardi — sahifani yangilab, qaytadan bosing",
+      "pin_kept": "Bu belgi turibdi. Horgos yo‘lida belgini qayta bosib o‘chirib bo‘lmaydi — mashina navbatga qaytib qolardi. Mashina boshqa joyda bo‘lsa, o‘sha joyni bosing."
     },
     "rename": {
       "codeLabel": "Yangi nom",
@@ -3035,7 +3037,7 @@
     "queue": {
       "title": "Chegara navbatlari",
       "meaning": "Hozir navbatga kelgan mashina qancha kutadi. Navbatda turganlar ham shu paytdan boshlab hisoblanadi; chegaradan o‘tganlar o‘zgarmaydi.",
-      "hold": "Tugma bosilmaguncha mashina navbatda turadi: «Qozog‘istonda» Horgosdan, «O‘zbekistonda» Yallamadan o‘tkazadi (haydovchi telefoni chegaradan o‘tganini ko‘rsatsa, o‘zi o‘tadi). Kiritilgan eng ko‘p kundan 1 kun oshsa, logistlarga Telegramda bir marta xabar boradi.",
+      "hold": "Tugma bosilmaguncha mashina navbatda turadi: «Qozog‘istonda» Horgosdan, «O‘zbekistonda» Yallamadan o‘tkazadi (haydovchi telefoni chegaradan o‘tganini ko‘rsatsa, o‘zi o‘tadi). Kiritilgan eng ko‘p kundan 1 kun oshsa, logistlarga Telegramda bir marta xabar boradi; kunni qayta kiritsangiz, yangi muddat uchun yana bir marta.",
       "post": {
         "khorgos": "Horgos (Xitoy→Qozog‘iston)",
         "yallama": "Yallama (Qozog‘iston→O‘zbekiston)"

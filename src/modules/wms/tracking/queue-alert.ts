@@ -23,8 +23,9 @@ import { roadRowsNow } from './on-road';
  * between them leaves either both or neither, and two overlapping sweeps
  * cannot both win the claim. Time never re-arms it — 3a is «har bir navbat
  * uchun bir marta», not «each half hour it is still there» — but a LATER
- * entry does: a «Chegarada» press after the call counts the wait again from
- * the press, and if THAT runs out the logists are told again.
+ * wait does: a «Horgosda turibdi» press after the call, or a wait typed on
+ * /trucks after it, counts the wait again (`QueueHold.countedFrom`), and if
+ * THAT runs out the logists are told again.
  *
  * «Late» is `placeTruck`'s own `queue.late` (more than `QUEUE_LATE_HOURS`
  * past the LONGEST wait it was given, his 2a), read off the same rows the
@@ -49,6 +50,14 @@ const NEXT_PRESS: Record<BorderPost, string> = {
   khorgos: `chegaradan o‘tgan bo‘lsa ${KZ_BUTTON}, O‘zbekistonga kirgan bo‘lsa ${UZ_BUTTON}`,
   yallama: `O‘zbekistonga kirgan bo‘lsa ${UZ_BUTTON}`,
 };
+
+/**
+ * The press that must NOT be made. On this road «Chegarada» is named
+ * «Horgosda turibdi» (`pinLabel`) — and «chegarada» is where a truck at
+ * Yallama also is, so the logist is told that this button puts it back in
+ * the Horgos queue (the design's judge).
+ */
+const WRONG_PRESS = '«🛃 Horgosda turibdi» ni bosmang — u mashinani Horgos navbatiga qaytaradi.';
 
 /** The post as the message names it — the /trucks panel's own short names. */
 const POST_NAME: Record<BorderPost, string> = {
@@ -101,6 +110,7 @@ export function lateQueueText(trucks: readonly LateQueueTruck[], appUrl: string)
     return (
       `⏰ ${truckLine(truck)}.\n` +
       `Haydovchidan so‘rang: ${NEXT_PRESS[truck.queue.post]} tugmasini bosing.\n` +
+      (truck.queue.post === 'yallama' ? `${WRONG_PRESS}\n` : '') +
       // The pins are on the truck card's «Mashina» tab.
       `${appUrl}${batchTabHref(truck.batchId, 'mashina')}`
     );
@@ -114,6 +124,9 @@ export function lateQueueText(trucks: readonly LateQueueTruck[], appUrl: string)
     ),
     ...(more > 0 ? [`… va yana ${more} ta — Partiya doskasida`] : []),
     `Haydovchilardan so‘rang: Horgosdan o‘tgan bo‘lsa ${KZ_BUTTON}, O‘zbekistonga kirgan bo‘lsa ${UZ_BUTTON} tugmasini bosing (mashina kartasida).`,
+    ...(trucks.some((truck) => truck.queue.post === 'yallama')
+      ? [`Yallamadagilar uchun ${WRONG_PRESS}`]
+      : []),
   ].join('\n');
 }
 
@@ -166,21 +179,29 @@ export async function alertLateQueues(now = new Date()): Promise<number> {
       for (const truck of due) {
         const rows = await tx.execute<{ batch_id: string }>(sql`
           INSERT INTO truck_queue_alerts (batch_id, post, entered_at)
-          VALUES (${truck.batchId}, ${truck.queue.post}, ${truck.queue.enteredAt}::timestamptz)
+          VALUES (${truck.batchId}, ${truck.queue.post}, ${truck.queue.countedFrom}::timestamptz)
           ON CONFLICT (batch_id, post) DO UPDATE
              SET entered_at = EXCLUDED.entered_at, alerted_at = now()
-           -- A wait that began AFTER the warning — the press after the call —
-           -- is a new wait; a shifted guess about the old one is not.
+           -- A wait counted from AFTER the warning — the press after the call,
+           -- a wait typed after it — is a new one; time alone is not.
            WHERE truck_queue_alerts.alerted_at < EXCLUDED.entered_at
           RETURNING batch_id`);
         if (rows.length > 0) won.push(truck);
       }
       if (won.length > 0) {
-        await queueStaffTelegram(tx, {
+        const queued = await queueStaffTelegram(tx, {
           userIds,
           type: 'TruckQueueLate',
           text: lateQueueText(won, appUrl),
         });
+        // The claim is spent either way (3a): say so in the log when nobody
+        // could be told — no colleague holds `plans.manage`, or all muted it.
+        if (queued === 0) {
+          logger.warn(
+            { trucks: won.map((t) => t.code) },
+            '[late-queue] nobody to tell: no one who plans trips will get this warning',
+          );
+        }
       }
       return won.length;
     });

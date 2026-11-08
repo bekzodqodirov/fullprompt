@@ -37,6 +37,7 @@ export function CheckpointButtons({
     unknown_key: t('checkpointErrors.unknown_key'),
     not_on_route: t('checkpointErrors.not_on_route'),
     checkpoint_changed: t('checkpointErrors.checkpoint_changed'),
+    pin_kept: t('checkpointErrors.pin_kept'),
   };
   const refusal = state && 'error' in state ? ERRORS[state.error] : null;
 

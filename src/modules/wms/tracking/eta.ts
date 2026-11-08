@@ -75,6 +75,11 @@ export function isHeldQueue(seg: { span: readonly [number, number]; post?: Borde
   return seg.post !== undefined && seg.span[0] === seg.span[1];
 }
 
+/** Does this road hold a truck anywhere (Horgos → Tashkent / Andijan today)? Asked by the pin service. */
+export function roadHolds(originCode: string, destCode: string): boolean {
+  return routeFor(originCode, destCode)?.segments.some(isHeldQueue) ?? false;
+}
+
 /**
  * «Ko'p oshdi» (his 2a): more than a day past the LONGEST wait the queue was
  * given is late — the card's «Kechikkan» and the logists' one Telegram
@@ -140,6 +145,13 @@ export interface QueueHold {
   enteredAt: string;
   /** Hours stood so far — the «N-kun» of the words (`queueDayNo`). */
   stoodHours: number;
+  /**
+   * Where the wait is COUNTED from (ISO): the entry, or the typing on /trucks
+   * if that came later (the panel's own sentence). `dueBy` = this + `given[1]`.
+   * The late warning claims on it (0140): a wait typed after the warning is a
+   * new expectation, and when that one runs out the logists are told again.
+   */
+  countedFrom: string;
   /** The wait as the /trucks panel shows it — typed, or his default (`givenWait`). */
   given: [number, number];
   /** `given` is the logist's typed number, not the default: the words say «kiritilgan» only then. */
@@ -897,6 +909,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
       queue: {
         post: seg.post!,
         enteredAt: new Date(held.enteredMs).toISOString(),
+        countedFrom: new Date(from).toISOString(),
         stoodHours: Math.max(0, (nowMs - held.enteredMs) / HOUR_MS),
         given: wait.hours,
         typed: wait.typed,
@@ -1015,6 +1028,24 @@ export function placeDated(place: Pick<TruckPlace, 'overdue' | 'remainingHours'>
 export interface EtaWindow {
   fromIso: string;
   toIso: string;
+}
+
+/**
+ * The latest moment a placed truck promises — the key the customer's cabinet
+ * ranks a lot's trucks by (the latest one dates the lot). Inside its window,
+ * the window's far end. A truck held in a queue past its wait
+ * (docs/XORGOS-NAVBAT.md) has no date and is NOT «due now»: nobody knows when
+ * it leaves, so it ranks with the late ones ('9999') — or a lot split over two
+ * trucks shows the OTHER truck's date for the cartons stuck at the border
+ * (the design's judge). Anything else with no date is «now».
+ */
+export function placeArriveBy(
+  place: Pick<TruckPlace, 'overdue' | 'remainingHours' | 'queue'>,
+  window: EtaWindow | null,
+  now: Date,
+): string {
+  if (window) return window.toIso;
+  return place.overdue || place.queue?.over ? '9999' : now.toISOString();
 }
 
 /**

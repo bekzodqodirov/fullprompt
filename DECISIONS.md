@@ -6730,3 +6730,24 @@ logist on the Russian screen finds them, and from Horgos names both, because pre
 later. Office hours only (`*/30 3-14 * * *` UTC = 08:00-19:30 Tashkent). One migration behind it
 says so once and sends nothing (`isServerBehind`). `TruckQueueLate` is in the `alerts` mute group
 beside TruckSilent, a newcomer never in FOUNDERS — so an old «alerts» tick mutes it too, stated.
+
+**#1585 — On the Horgos road a pin is not pressed off, its border pin is named «Horgosda
+turibdi», and the warning counts from the wait it was counted from (the intent judge, before the
+merge).** Three ways the round's own buttons could undo it. (1) **The toggle.** «Chegarada» and
+every other pin has always cleared on a second press. Off the Horgos road that only loses a pin;
+on it the pin is what moved the truck past a queue, so a logist tapping «Qozog‘istonda» again to
+«confirm» sent a truck in Kazakhstan back into the Horgos queue — late, with a warning to every
+logist. `setTrackingCheckpoint` now refuses `pin_kept` when the pressed key is the one standing,
+on the truck's own road, and that road holds (`roadHolds`); a pin off the road (written before
+#531) still clears, so nothing is stuck for ever; moving it is pressing another place. (2) **The
+word.** A truck standing at Yallama is «chegarada» too, and pressing «Chegarada» for it puts it
+back at Horgos. `pinLabel(key, held)` names the border pin «🛃 Horgosda turibdi» on a road that
+holds — on the Mashina tab, the board's ⋯ and the card's road line — and the Yallama warning says
+not to press it. (3) **The re-arm.** With the toggle gone, the logist's way to restart the count
+is the number he types on /trucks (the panel's own sentence: a truck already queueing counts from
+the typing). The claim stored the ENTRY, which typing never moves, so a wait typed after the
+warning ran out in silence. `QueueHold.countedFrom` (entry, or the typing if later; `dueBy` = it
+plus the longest wait) is what the claim stores now — a wait counted from after the warning is a
+new wait. The cabinet's ranking key is a function (`placeArriveBy`) so it could be tested. 11 red
+proofs by string edit, one of which (the press over an older phone in the queue) first stayed
+green and was re-anchored on a phone seen one hour before the press.

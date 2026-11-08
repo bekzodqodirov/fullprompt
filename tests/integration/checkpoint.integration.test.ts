@@ -137,3 +137,71 @@ describe('a press is judged against the pin the presser SAW (the batch board)', 
     expect(await pinOf(kaTas)).toBeNull();
   });
 });
+
+describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is not pressed off', () => {
+  // The Horgos road is keyed by the warehouse CODE and no seed carries one,
+  // so the block mints `HOR` when the database has none. The press audits on
+  // the truck's origin (audit_log's FK), so a minted warehouse cannot be
+  // deleted afterwards: it is renamed off `HOR` and deactivated instead, or
+  // the next file would find a Horgos it never made (#183).
+  let horId = '';
+  let mintedHor = false;
+  let horTruck = '';
+
+  beforeAll(async () => {
+    const hor = await db.query.warehouses.findFirst({ where: eq(warehouses.code, 'HOR') });
+    if (hor) horId = hor.id;
+    else {
+      const [w] = await db
+        .insert(warehouses)
+        .values({ code: 'HOR', name: 'Horgos (test)', country: 'CN', type: 'hub', timezone: 'Asia/Shanghai', batchPrefix: 'HR' })
+        .returning({ id: warehouses.id });
+      horId = w!.id;
+      mintedHor = true;
+    }
+    const tas = (await db.query.warehouses.findFirst({ where: eq(warehouses.code, 'TAS1') }))!.id;
+    const [b] = await db
+      .insert(batches)
+      .values({
+        code: `PIN${SUFFIX}-H`,
+        originWarehouseId: horId,
+        destWarehouseId: tas,
+        status: 'in_transit',
+        departedAt: new Date(),
+        createdBy: actors.logist.id,
+      })
+      .returning({ id: batches.id });
+    horTruck = b!.id;
+  });
+
+  afterAll(async () => {
+    if (horTruck) await db.delete(batches).where(eq(batches.id, horTruck));
+    if (mintedHor) {
+      await db
+        .update(warehouses)
+        .set({ code: `XH${SUFFIX}`, active: false })
+        .where(eq(warehouses.id, horId));
+    }
+  });
+
+  it('«Qozog‘istonda» pressed again to «confirm» is refused in words — the truck stays past Horgos', async () => {
+    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, ''))?.key).toBe('in_kz');
+    expect(await codeOf(setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, 'in_kz'))).toBe('pin_kept');
+    expect(await pinOf(horTruck)).toBe('in_kz');
+  });
+
+  it('moving it is pressing another place', async () => {
+    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_uz', META, 'in_kz'))?.key).toBe('in_uz');
+    expect(await codeOf(setTrackingCheckpoint(actors.logist, horTruck, 'in_uz', META, 'in_uz'))).toBe('pin_kept');
+    expect(await pinOf(horTruck)).toBe('in_uz');
+  });
+
+  it('a pin off this road — written before the rule — still clears', async () => {
+    await db
+      .update(batches)
+      .set({ trackingCheckpoint: { key: 'in_kg', at: new Date().toISOString() } })
+      .where(eq(batches.id, horTruck));
+    expect(await setTrackingCheckpoint(actors.logist, horTruck, 'in_kg', META)).toBeNull();
+    expect(await pinOf(horTruck)).toBeNull();
+  });
+});

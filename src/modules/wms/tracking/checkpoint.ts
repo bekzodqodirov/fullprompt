@@ -4,7 +4,7 @@ import { db } from '../../platform/db/client';
 import { batches, warehouses } from '../../platform/db/schema';
 import { AuthError, type Actor } from '../../platform/rbac/authorize';
 import { assertOnBatchCard } from '../batches/batch-authorize';
-import { checkpointsFor } from './eta';
+import { checkpointsFor, roadHolds } from './eta';
 import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
 
 /**
@@ -19,9 +19,14 @@ import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
  * The screen offers only the truck's own keys (`checkpointsFor`); this is the
  * half that makes a hand-made post obey the same list (#531).
  *
- * Clearing the pin the truck carries is ALWAYS allowed, on-route or not: a
- * pin written before this rule existed must stay removable, or it is stuck on
- * the truck for ever.
+ * Clearing the pin the truck carries is allowed, on-route or not: a pin
+ * written before this rule existed must stay removable, or it is stuck on the
+ * truck for ever — EXCEPT a pin of a road that HOLDS (docs/XORGOS-NAVBAT.md,
+ * Horgos): there the pin is what moved the truck past a queue, and clearing
+ * «Qozog‘istonda» by tapping it again to «confirm» sent a truck in Kazakhstan
+ * back into the Horgos queue, late, with a warning to every logist (the
+ * design's judge). Moving it is pressing another place; an off-route pin on
+ * that road still clears.
  */
 
 export type CheckpointErrorCode =
@@ -29,7 +34,8 @@ export type CheckpointErrorCode =
   | 'not_in_transit'
   | 'unknown_key'
   | 'not_on_route'
-  | 'checkpoint_changed';
+  | 'checkpoint_changed'
+  | 'pin_kept';
 
 export class CheckpointError extends Error {
   constructor(public readonly code: CheckpointErrorCode) {
@@ -87,17 +93,20 @@ export async function setTrackingCheckpoint(
     const shown =
       typeof current === 'string' && (CHECKPOINT_KEYS as readonly string[]).includes(current) ? current : '';
     if (seenKey !== undefined && shown !== seenKey) throw new CheckpointError('checkpoint_changed');
+    const ends = await tx
+      .select({ id: warehouses.id, code: warehouses.code, country: warehouses.country })
+      .from(warehouses)
+      .where(inArray(warehouses.id, [batch.originWarehouseId, batch.destWarehouseId]));
+    const origin = ends.find((w) => w.id === batch.originWarehouseId);
+    const dest = ends.find((w) => w.id === batch.destWarehouseId);
+    const offered = checkpointsFor(origin?.code ?? '', dest?.code ?? '', dest?.country ?? null);
     let next: { key: CheckpointKey; at: string } | null;
     if (current === pressed) {
+      if (offered.includes(pressed) && roadHolds(origin?.code ?? '', dest?.code ?? '')) {
+        throw new CheckpointError('pin_kept');
+      }
       next = null;
     } else {
-      const ends = await tx
-        .select({ id: warehouses.id, code: warehouses.code, country: warehouses.country })
-        .from(warehouses)
-        .where(inArray(warehouses.id, [batch.originWarehouseId, batch.destWarehouseId]));
-      const origin = ends.find((w) => w.id === batch.originWarehouseId);
-      const dest = ends.find((w) => w.id === batch.destWarehouseId);
-      const offered = checkpointsFor(origin?.code ?? '', dest?.code ?? '', dest?.country ?? null);
       if (!offered.includes(pressed)) throw new CheckpointError('not_on_route');
       next = { key: pressed, at: new Date().toISOString() };
     }

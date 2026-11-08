@@ -26,7 +26,7 @@ import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
-import { etaWindow, placeDated, placeTruck } from '../tracking/eta';
+import { etaWindow, placeArriveBy, placeDated, placeTruck } from '../tracking/eta';
 import { loadBorderHours } from '../tracking/border-queue';
 import { latestPositions, placementFix, type LatestPosition } from '../tracking/devices';
 import { journeyFromEvents, type JourneyStep } from './journey';
@@ -399,11 +399,8 @@ async function trucksFor(batchIds: string[]): Promise<Map<string, CabinetTruck>>
         : null;
     out.set(r.id, {
       stage: stageBatchOf({ ...r, trackingCheckpoint: r.checkpoint }),
-      // A truck held in a queue past its wait (docs/XORGOS-NAVBAT.md) has no
-      // date and is NOT «due now»: nobody knows when it leaves, so it ranks
-      // with the late ones — or a lot split over two trucks shows the OTHER
-      // truck's date for the cartons stuck at the border (the judge).
-      arriveBy: window?.toIso ?? (place.overdue || place.queue?.over ? '9999' : now.toISOString()),
+      // A truck held past its queue's wait ranks with the late ones (`placeArriveBy`).
+      arriveBy: placeArriveBy(place, window, now),
       // Only while it drives: an ARRIVED truck still carrying cartons nobody
       // has scanned off has no % and no date left (the walk knows no arrival,
       // and the office's board says «Yetib keldi» — O15, the review).

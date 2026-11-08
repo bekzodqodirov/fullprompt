@@ -2,9 +2,9 @@ import type { ReactNode } from 'react';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { formatEtaRange } from '@/modules/platform/telegram/client-labels';
 import { estimateBasis, fixAge, gateWord, type TruckRow } from '@/modules/wms/tracking/on-road-state';
-import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
+import { pinLabel } from '@/modules/wms/tracking/map-data';
 import { LEG_KEYS, type BorderPost, type LegKey } from '@/modules/wms/tracking/engine';
-import { hoursAsDays, queueDayNo, type QueueHold } from '@/modules/wms/tracking/eta';
+import { hoursAsDays, queueDayNo, roadHolds, type QueueHold } from '@/modules/wms/tracking/eta';
 import type { RoadZone } from '@/modules/wms/tracking/place';
 import { num } from '@/components/charts/format';
 
@@ -202,7 +202,9 @@ export async function truckRoadWords({ counts = true }: { counts?: boolean } = {
         const ago = age.unit === 'now' ? AGO.now() : AGO[age.unit](age.n);
         parts.push(row.source === 'manual' ? t('truckFixManual', { ago }) : t('truckFixGps', { ago }));
       } else if (row.checkpoint) {
-        parts.push(`${tb(CHECKPOINT_LABEL[row.checkpoint.key].label)} · ${t('truckPin', { n: row.pinDays ?? 0 })}`);
+        parts.push(
+          `${tb(pinLabel(row.checkpoint.key, roadHolds(row.originCode, row.destCode)).label)} · ${t('truckPin', { n: row.pinDays ?? 0 })}`,
+        );
       }
       if (row.stage === 'customs_done') parts.push(t('truckStage.customs_done'));
       if (counts) parts.push(t('truckDeparted', { n: num(row.departedBoxes) }));

@@ -211,9 +211,20 @@ wins.
 11. **The map label shows the day of the wait beside the code** («HR-001 ⏳2»), in both
     renderers.
 
+12. **On the Horgos road a standing pin is not pressed off** (`pin_kept`, checkpoint.ts). A
+    second tap of «Qozog‘istonda» to «confirm» used to clear it and send the truck back into the
+    Horgos queue, late. A pin off the road still clears; moving it is pressing another place.
+13. **The border pin is named «🛃 Horgosda turibdi» on a road that holds** (`pinLabel`), on the
+    Mashina tab, the board's ⋯ and the card's road line. A Yallama truck is «at the border» too;
+    the Yallama warning says not to press it.
+14. **The warning re-arms on the wait's COUNTING start** (`QueueHold.countedFrom`: the entry, or
+    the typing on /trucks if later). With the toggle gone, typing a new wait is how the logist
+    restarts the count, and a wait typed after the warning is a new wait.
+
 **Rejected or stated:**
-- **«Chegarada» is still a toggle** (checkpoint.ts). To restart the clock, clear it and press
-  again. This is said in the CHANGELOG, not changed.
+- **To restart the Horgos count, type the wait again on /trucks** (the panel says so). It moves
+  the count for every truck in that queue — the panel's own rule since 2026-09-29. A
+  «Horgosda turibdi» press restarts it for a truck that has no pin yet.
 - **`scheduleEstimate` stays the raw walk.** It has no production reader. The panel's promise is
   now pinned through `placeTruck` (queue-hold.test.ts).
 - **Deploy morning:** trucks the old walk had moved past Horgos snap back to Horgos «late» until

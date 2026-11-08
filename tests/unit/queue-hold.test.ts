@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { cumulativeLengths, type RoutePoint } from '@/modules/wms/tracking/engine';
 import {
   hoursAsDays,
+  etaWindow,
   isHeldQueue,
+  placeArriveBy,
   placeDated,
   placeTruck,
   QUEUE_LATE_HOURS,
   queueDayNo,
+  roadHolds,
   type BorderHours,
   type PlacementFix,
 } from '@/modules/wms/tracking/eta';
-import { routeFor } from '@/modules/wms/tracking/map-data';
+import { pinLabel, routeFor } from '@/modules/wms/tracking/map-data';
 import { truckRow, type TruckInput } from '@/modules/wms/tracking/on-road-state';
 import {
   LATE_QUEUE_LINES,
@@ -71,6 +74,19 @@ describe('which queues hold', () => {
     expect(isHeldQueue(irk)).toBe(false);
     // A moving leg never holds, whatever it carries.
     expect(isHeldQueue(kz)).toBe(false);
+  });
+});
+
+describe('the Horgos road names its border pin', () => {
+  it('«Horgosda turibdi» on a road that holds, «Chegarada» everywhere else', () => {
+    expect(roadHolds('HOR', 'TAS1')).toBe(true);
+    expect(roadHolds('HOR', 'AND')).toBe(true);
+    expect(roadHolds('KA', 'TAS1')).toBe(false);
+    expect(roadHolds('YW', 'KA')).toBe(false);
+    expect(pinLabel('at_border', true).label).toBe('cpBorderHorgos');
+    expect(pinLabel('at_border', false).label).toBe('cpBorder');
+    // Only the border pin changes its words — «Qozog‘istonda» is one place.
+    expect(pinLabel('in_kz', true)).toEqual(pinLabel('in_kz', false));
   });
 });
 
@@ -153,6 +169,9 @@ describe('a departed Horgos truck with nothing but its departure', () => {
     expect(place.queue).toMatchObject({ given: [12, 24], typed: true, over: false });
     expect(place.queue!.stoodHours).toBeCloseTo(58, 9);
     expect(place.queue!.dueBy).toBe(ago(10 - 24).toISOString());
+    // The wait is counted from the typing — what the late warning claims on (0140).
+    expect(place.queue!.countedFrom).toBe(ago(10).toISOString());
+    expect(place.queue!.enteredAt).toBe(ago(58).toISOString());
     // Then Kazakhstan 18-30, Yallama 72-96, Tashkent 2-6.
     expect(place.remainingHours).toEqual([2 + 92, 14 + 132]);
     // A reset back to his default, typed while queueing, counts from the reset too.
@@ -219,6 +238,19 @@ describe('the logist’s presses move it on (1a)', () => {
     expect(place.source).toBe('pin');
     expect(place.queue!.stoodHours).toBeCloseTo(2, 9);
     expect(place.queue!.over).toBe(false);
+    expect(place.queue!.countedFrom).toBe(ago(2).toISOString());
+  });
+
+  it('…and over a phone at the post an hour BEFORE the press — the press is the restart he meant', () => {
+    // The phone saw it in the queue 3 h ago (its walk still on the queue's
+    // leg at the press); he phoned the driver and pressed 2 h ago.
+    const place = departed(30, {
+      checkpoint: { key: 'at_border', at: ago(2).toISOString() },
+      fix: fixAt(POST, 3),
+    });
+    expect(place.source).toBe('pin');
+    expect(place.queue!.enteredAt).toBe(ago(2).toISOString());
+    expect(place.queue!.stoodHours).toBeCloseTo(2, 9);
   });
 });
 
@@ -312,6 +344,33 @@ const row = (hours: number, extra: Partial<TruckInput> = {}) =>
     {},
   );
 
+describe('the customer’s cabinet ranks a held truck (`placeArriveBy`)', () => {
+  const rank = (place: ReturnType<typeof placeTruck>) =>
+    placeArriveBy(
+      place,
+      place.remainingHours && placeDated(place)
+        ? etaWindow({ overdue: false, remainingHours: place.remainingHours }, NOW)
+        : null,
+      NOW,
+    );
+  it('inside its wait: the far end of its window', () => {
+    const place = placeTruck({ ...HOR_TAS, departedAt: ago(10), checkpoint: null }, {}, NOW);
+    expect(rank(place)).toBe(
+      new Date(NOW.getTime() + place.remainingHours![1] * HOUR).toISOString(),
+    );
+  });
+  it('past its wait, within the day: LATEST, never «due now» — nobody knows when it leaves', () => {
+    const place = placeTruck({ ...HOR_TAS, departedAt: ago(2 + 90), checkpoint: null }, {}, NOW);
+    expect(place.queue).toMatchObject({ over: true, late: false });
+    expect(rank(place)).toBe('9999');
+  });
+  it('a truck with no road and no date is «now», as before', () => {
+    expect(placeArriveBy({ overdue: false, remainingHours: null, queue: null }, null, NOW)).toBe(
+      NOW.toISOString(),
+    );
+  });
+});
+
 describe('the card’s kinds for a held truck', () => {
   it('inside the wait: on the road, dated', () => {
     const r = row(10);
@@ -355,6 +414,7 @@ describe('the words (5a) and the message (3a)', () => {
     queue: {
       post,
       enteredAt: ago(120).toISOString(),
+      countedFrom: ago(120).toISOString(),
       stoodHours: 120,
       given: [48, 72] as [number, number],
       typed,
@@ -375,6 +435,9 @@ describe('the words (5a) and the message (3a)', () => {
     expect(yal).toContain('Yallama navbatida 6-kun');
     expect(yal).toContain('O‘zbekistonga kirgan bo‘lsa «🇺🇿 O‘zbekistonda» tugmasini bosing');
     expect(yal).not.toContain('Qozog‘istonda');
+    // «Chegarada» is where a Yallama truck also is: its button is named and refused.
+    expect(yal).toContain('«🛃 Horgosda turibdi» ni bosmang');
+    expect(lateQueueText([lateTruck('HR-001', 'khorgos')], '')).not.toContain('bosmang');
     // His default, nobody typed: it never says «kiritilgan».
     const usual = lateQueueText([lateTruck('HR-001', 'khorgos', false)], '');
     expect(usual).toContain('odatdagi 2–3 kundan oshdi');
@@ -393,5 +456,8 @@ describe('the words (5a) and the message (3a)', () => {
     expect(text).toContain('… va yana 3 ta');
     expect(text).toContain('HR-100');
     expect(text).not.toContain(`HR-${100 + LATE_QUEUE_LINES}`);
+    expect(text).not.toContain('bosmang');
+    const mixed = lateQueueText([lateTruck('HR-1', 'khorgos'), lateTruck('HR-2', 'yallama')], '');
+    expect(mixed).toContain('Yallamadagilar uchun «🛃 Horgosda turibdi» ni bosmang');
   });
 });

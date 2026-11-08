@@ -154,8 +154,14 @@ describe('the late-queue warning (3a)', () => {
     expect(new Set(late.map((r) => r.userId)).size).toBe(late.length);
     expect(late.length).toBeGreaterThan(0);
     expect(late[0]!.text).toContain('Horgos navbatida');
-    expect(late[0]!.text).toContain('«Qozog‘istonda» tugmasini bosing');
-    expect((await toldAbout('yallama'))[0]!.text).toContain('«O‘zbekistonda» tugmasini bosing');
+    // The buttons as the Mashina tab draws them, flag first.
+    expect(late[0]!.text).toContain('«🇰🇿 Qozog‘istonda»');
+    const yal = (await toldAbout('yallama'))[0]!.text;
+    expect(yal).toContain('Yallama navbatida');
+    expect(yal).toContain('«🇺🇿 O‘zbekistonda»');
+    // Both turned late in ONE sweep: ONE message lists them (deploy morning).
+    expect(yal).toBe(late[0]!.text);
+    expect(yal).toContain('«🛃 Horgosda turibdi» ni bosmang');
     expect(await toldAbout('fresh')).toHaveLength(0);
   });
 
@@ -199,5 +205,33 @@ describe('the phone’s history at a held post (queueSinceFor)', () => {
     // And the place counts the queue from it, not from the newest fix.
     const row = (await roadRowsNow(NOW)).find((r) => r.id === ids.phone)!;
     expect(row.queue!.stoodHours).toBeCloseTo(20, 1);
+  });
+});
+
+describe('a wait counted from after the warning is a new wait (0140)', () => {
+  it('«Horgosda turibdi» pressed after the call, and late again: told again — the old Yallama one is not', async () => {
+    const late = (await toldAbout('late')).length;
+    const yallama = (await toldAbout('yallama')).length;
+    expect(late).toBeGreaterThan(0);
+    // The logist phones the driver and presses the border pin a minute after
+    // the warning; 200 h later the truck still stands there.
+    await db
+      .update(batches)
+      .set({
+        trackingCheckpoint: {
+          key: 'at_border',
+          at: new Date(NOW.getTime() + 60_000).toISOString(),
+        },
+      })
+      .where(eq(batches.id, ids.late));
+    const later = new Date(NOW.getTime() + 200 * HOUR);
+    await alertLateQueues(later);
+    expect((await toldAbout('late')).length).toBe(2 * late);
+    expect((await toldAbout('yallama')).length).toBe(yallama);
+    const [claim] = await db
+      .select({ enteredAt: truckQueueAlerts.enteredAt })
+      .from(truckQueueAlerts)
+      .where(and(eq(truckQueueAlerts.batchId, ids.late), eq(truckQueueAlerts.post, 'khorgos')));
+    expect(claim!.enteredAt.toISOString()).toBe(new Date(NOW.getTime() + 60_000).toISOString());
   });
 });
