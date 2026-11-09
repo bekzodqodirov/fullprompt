@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 2026-11-08 — Horgos va Yallama navbati: mashina tugma bosilmaguncha navbatda turadi
+## 2026-11-09 — Horgos va Yallama navbati: mashina tugma bosilmaguncha navbatda turadi
 
 Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migratsiya bor (0140).** Deploydan keyin **migratsiyalar soni 141** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
 
@@ -34,6 +34,7 @@ Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migra
 3. `docker compose build migrate`.
 4. `docker compose --profile https up -d --build`.
 5. Migratsiyalar soni **141** ekanini va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishini tekshiring. Kam chiqsa, `migrate` konteynerining o'z chiqishini o'qing.
+6. Pastdagi «Mashina narxi har bitimga …» yozuvi ham shu deploy bilan chiqsa (u hali deploy qilinmagan bo'lsa), o'sha yozuvning 6-qadamini ham bajaring — eski bekor qilingan mashinalar ro'yxati.
 
 ### Bilib qo'ying
 - **Deploy kuni yo'ldagi Horgos mashinalari.** Ilgari tugma bosish shart emas edi. Shuning uchun hozir yo'lda bo'lgan, lekin hech kim «Qozog‘istonda»/«O‘zbekistonda» ni bosmagan mashinalar deploydan keyin Horgos navbatida «kechikkan» bo'lib ko'rinadi.
@@ -48,6 +49,49 @@ Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migra
   - Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Xato bosilgan belgini o'chirib bo'lmaydi — to'g'ri joyni bosing; agar to'g'ri joy Horgos navbati bo'lsa, navbat shu bosilgan paytdan hisoblanadi. Boshqa yo'llarda tugma avvalgidek ishlaydi.
 - **Logist «Qozog‘istonda» ni erta bossa-yu, haydovchi telefoni hali Horgos navbatidan xabar bersa,** mashina Horgosda ko'rinadi va navbat skladdan chiqqandan beri hisoblanadi (ilgari har xabarda «1-kun» dan qaytadan boshlanardi va hech qachon kechikmasdi).
 - Telefon bilan navbatda 12-16 km dan uzoqroq turgan mashina hali ham «postga ketyapti» deb ko'rinadi.
+
+## 2026-11-09 — Mashina narxi har bitimga bitta jadvalda; bekor qilingan partiya raqami qaytadi
+
+Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migratsiya yo'q** — migratsiyalar soni **140** bo'lib qoladi, shuning uchun deploydan keyin tekshiradigan narsa `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi. (Yuqoridagi Horgos yozuvi bilan birga deploy qilinsa, son **141** bo'ladi — u o'zining 0140 migratsiyasini olib keladi.)
+
+### Buxgalter / admin uchun — mashinaning «Narx» bo'limi
+- **Bitta mijozning bir mashinada 10-15 ta bitimi bo'lsa, endi hammasiga bitta jadvalda narx qo'yiladi.** Har bitim — bitta qator (bitim raqami, tovar, kub, kg), bitimsiz yuki bo'lsa — «Bitimsiz» qatori. Sana va valyuta tepada bitta. Bitta «🧾 Saqlash» hammasini birdaniga yozadi. Ilgari har bitimga alohida bosib, har safar tasdiqlab chiqish kerak edi.
+- **Qatorlar oldindan to'ldirilgan (1a):** har bitimning o'z sotilgan narxi, shu mashinadagi yukiga moslab (kub yoki kg — upsale qaysi asosda hisoblasa, o'sha asosda), sentgacha yuqoriga yaxlitlangan. Bitim boshqa mashinada yoki kartasida narxlangan bo'lsa, chegirmasi bo'lsa, valyuta dollar bo'lmasa — qator bo'sh qoladi va nega bo'shligi yozilgan.
+- **Bo'sh qoldirilgan bitim yozilmaydi (3a)** va «Bu mashinadagi narxlar» da baland ovozda turadi: «Narx yo'q: B-…, B-…». Hammasi bo'sh bo'lsa, Saqlash rad etadi.
+- **Yolg'on «qo'shimcha hisob» xabari yo'q.** Tasdiqlash faqat haqiqatan so'raladigan narsada chiqadi: shu bitimga shu mashinada narx allaqachon bor bo'lsa, bitim kartasida narx bor bo'lsa, butun yukka narx turgan bo'lsa, narx bitimdagidan 5 % dan ko'p farq qilsa yoki «muddat» li bitim bo'lsa. Har qator o'z bitimini nomi bilan aytadi.
+- **Kompensatsiya bilan nolga tushirilgan narx «narx yo'q» bo'lib qolmaydi** — u qatorda «narx kompensatsiya bilan olib tashlangan — yana qo'yasizmi?» deb so'raladi, ikkinchi hisob jimgina yozilmaydi.
+- **Ikki kishi bir vaqtda:** jadval ochiq turganda boshqa xodim shu mashinaga narx yozsa, Saqlash «bu mashinadagi narxlar o'zgardi» deydi; bitim kartasiga yozsa — «bitim kartasidagi narx o'zgardi» deydi. Ikkalasida ham sahifa yangilanadi, yozilgan summalar saqlanib qoladi. Tasdiq oynasi ochiq turgan paytda shunday o'zgarish bo'lsa, oyna yopiladi va qayta so'raydi.
+- Bitta bitimli mijozning oddiy formasi ham kompensatsiya bilan nolga tushirilgan narx ustiga yangi narx yozishdan oldin so'raydi.
+- **VED (2a):** jadval xuddi shunday, lekin hech narsa oldindan to'ldirilmaydi va sotilgan narx ko'rinmaydi — summalarni o'zi yozadi.
+- Bitta bitimli mijoz uchun eski forma o'zgarmadi. Mijoz kartasidagi (moliya) narx eshigi ham avvalgidek bitta bitim.
+
+### Logist / sklad uchun — partiya raqami
+- **Yo'lga chiqmagan partiya bekor qilinsa, raqami qaytadi (4a).** YW-010 bekor qilinsa va YW-011 hali ochilmagan bo'lsa, bekor qilingani «YW-010 (bekor)» bo'lib arxivda qoladi, keyingi mashina esa YW-010 bo'ladi.
+- **Undan keyin yangi mashina ochilgan bo'lsa, raqam qaytmaydi (5a)** va bekor qilishning o'zi aytadi: «Raqam qaytmadi: YW-011 allaqachon ochilgan». Bekor qilingan mashina kartasida ham bu yozuv turadi.
+- Hujjatlari agentga yuborilgan mashina raqamini saqlaydi; yo'lga chiqqan mashina ham.
+- **Agentga hujjat ketgan raqam hech qachon ikkinchi mashinaga berilmaydi** — hatto o'sha mashina keyin boshqa nomga o'zgartirilgan bo'lsa ham. Yangi partiya ochilganda tizim bunday raqamni o'tkazib yuboradi.
+- Bekor qilingan mashina kartasida qaytgan raqam keyin boshqa mashina tomonidan yo'lda olingan yoki uning nomi bilan agentga hujjat ketgan bo'lsa, «keyingi mashinaga beriladi» deb yozilmaydi — nima bo'lgani yoziladi.
+- Botga «YW-010» yozilsa, yangi YW-010 ochilguncha «bekor qilingan, raqami qaytarildi» deb javob beradi.
+- **Qabul skladini jo'nashdan oldin o'zgartirish (6a):** mashina kartasidagi «Mashina» bo'limida — «Qabul skladini o'zgartirish». Mashina o'sha, raqam o'sha, bekor qilish shart emas. Mashinada pul (xarajat yoki narx) bo'lsa va yangi sklad boshqa davlatda bo'lsa — rad etadi va sababini aytadi. Reja sahifasida «Mashina hozir: Toshkent — reja Andijon uchun tasdiqlangan» deb chiqadi.
+- **Tezkor partiya endi so'raydi:** «Yiwu → Toshkent: yangi partiya ochilsinmi? [Ha, ochish] [Bekor]». Noto'g'ri tanlangan sklad shu yerda ushlanadi.
+- **Sanoq (8a)** o'zgarmadi: har sklad o'z raqamini sanaydi, ichki reyslar ham.
+
+### Bilib qo'ying
+- **Raqam faqat OXIRIDAN qaytadi.** O'rtadagi bo'shliq (10 bekor qilingan, 11 allaqachon ochilgan) shunday qoladi.
+- **Davlat raqami bilan nomlangan mashina bekor qilinsa**, raqami (YW-010) qaytadi, lekin davlat raqamidagi NOMI o'sha bekor qilingan mashinada qoladi — yangi mashinaga shu nomni berib bo'lmaydi («bu nom band»). Davlat raqamini «Mashina» bo'limidagi «davlat raqami» ga yozing; sklad xato tanlangan bo'lsa esa endi bekor qilmasdan o'zgartiriladi. Bu nomni ham bo'shatishni xohlasangiz, ayting.
+- Bir nechta sklad bitta prefiksni ishlatsa, raqam qaytarish boshqa skladning bekor qilingan mashinasini ham «(bekor)» ga o'zgartirishi mumkin.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishini tekshiring (migratsiya yo'q — soni 140 da qoladi).
+6. **Eski bekor qilingan mashinalar (7a)** — avval faqat ro'yxat, hech narsa o'zgarmaydi:
+   `docker compose run --rm migrate pnpm exec tsx scripts/batch-raqam.ts`
+   Chiqqan ro'yxatni menga yuboring yoki o'qib chiqing: har sklad uchun qaysi raqamlar bo'sh, nega, va qaysilari qaytadi. Rozi bo'lsangiz:
+   `docker compose run --rm migrate pnpm exec tsx scripts/batch-raqam.ts --apply`
+   Faqat oxiridagi, yo'lga chiqmagan va agentga yuborilmagan raqamlar qaytadi.
 
 ## 2026-11-03 — 8 band, 3-raund: «Hisoblatish» deploydan keyin ham saqlanadi, savollar bitta jadval, «➕ Shu so‘rovga qo‘shish»
 

@@ -218,7 +218,7 @@ wins.
     (`placedBehindPin`: a newer phone fix overruled it); otherwise it changes nothing — a confirm
     tap must not restart the Kazakh leg and the Yallama count with it. A pin off the road still
     clears; moving it is pressing another place. (Built first as a refusal, `pin_kept`, then as a
-    re-stamp of every pin — #1586, #1587.)
+    re-stamp of every pin — #1597, #1598.)
 13. **The border pin is named «🛃 Horgosda turibdi» on a road that holds** (`pinLabel`), on the
     Mashina tab, the board's ⋯ and the card's road line. A Yallama truck is «at the border» too;
     the Yallama warning says not to press it.

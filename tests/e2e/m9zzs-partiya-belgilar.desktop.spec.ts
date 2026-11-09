@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 import { cleanPriceIcons, leftovers, seedPriceIcons, type Seeded } from '../fixtures/partiya-belgilar';
 
 /**
@@ -28,11 +29,7 @@ async function login(page: Page, phone: string) {
 
 test('a truck out of YW with one seeded prixod', async ({ page }) => {
   await login(page, OWNER);
-  await page.goto('/batches');
-  await page.selectOption('select[name="originId"]', { label: 'YW' });
-  await page.selectOption('select[name="destId"]', { label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   batchPath = new URL(page.url()).pathname;
   seeded = await seedPriceIcons(batchPath.split('/').pop()!, run);
 });

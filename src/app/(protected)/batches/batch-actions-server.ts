@@ -1,6 +1,6 @@
 'use server';
 
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, ne } from 'drizzle-orm';
 import { revalidatePath } from 'next/cache';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
@@ -10,8 +10,9 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
 import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
-import { rerouteBatch, RerouteError } from '@/modules/wms/batches/reroute';
-import type { RerouteErrorCode } from '@/modules/wms/batches/reroute-rules';
+import { changeDestBeforeDeparture, DestChangeError, rerouteBatch, RerouteError } from '@/modules/wms/batches/reroute';
+import type { DestChangeErrorCode, RerouteErrorCode } from '@/modules/wms/batches/reroute-rules';
+import { mayAt } from '@/modules/platform/rbac/scope';
 import { removeLoadedCode, ScanError } from '@/modules/wms/scanning/service';
 import {
   closeBatch,
@@ -423,6 +424,11 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
     await db.transaction(async (tx) => {
       const row = await lockTruckForTickInTx(tx, batchId);
       if (!row || (row.sentToAgentAt !== null) === sending) throw new TickRefused('no_op');
+      // A cancelled truck's papers are not «sent» any more (his 7a keeps a
+      // ticked truck's number, §3.2.3): a tick landing after the cancel —
+      // after its number came back — would be the state 7a exists to
+      // prevent. Judged on the LOCKED row; an untick stays allowed.
+      if (sending && row.status === 'cancelled') throw new TickRefused('no_op');
       if (sending) {
         const frozen = await freezeCompositionsInTx(tx, batchId);
         if (paperStamp(frozen) !== postedStamp) throw new TickRefused('paper_moved');
@@ -456,7 +462,12 @@ export async function setSentToAgentAction(formData: FormData): Promise<void> {
         const done = await tx
           .update(batches)
           .set({ sentToAgentAt: sending ? tashkentDay() : null })
-          .where(and(eq(batches.id, batchId), sending ? isNull(batches.sentToAgentAt) : isNotNull(batches.sentToAgentAt)))
+          .where(
+            and(
+              eq(batches.id, batchId),
+              sending ? and(isNull(batches.sentToAgentAt), ne(batches.status, 'cancelled')) : isNotNull(batches.sentToAgentAt),
+            ),
+          )
           .returning({ id: batches.id });
         if (done.length === 0) return;
         await writeAudit(tx, ctx, { entityType: 'batch', entityId: batchId, action: 'update', after: { sentToAgent: sending } });
@@ -669,6 +680,66 @@ export async function rerouteBatchAction(input: unknown): Promise<RerouteActionR
     return { ok: true, toCode: result.to.code, pinOffRoute: result.pinOffRoute, noSchedule: result.noSchedule };
   } catch (err) {
     if (err instanceof RerouteError) return { ok: false, error: err.code };
+    if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
+    throw err;
+  }
+}
+
+const destChangeSchema = z.object({
+  batchId: z.string().uuid(),
+  destWarehouseId: z.string().max(64),
+  seenDestWarehouseId: z.string().max(64),
+});
+
+export type DestChangeActionResult =
+  | { ok: true; toCode: string }
+  | { ok: false; error: DestChangeErrorCode | 'busy_retry' | 'validation' | 'unauthenticated' };
+
+/**
+ * «Qabul skladini o'zgartirish» before departure (the owner's 6a,
+ * docs/NARX-VA-RAQAM.md §2.4). The cancel's door, at the ORIGIN: whoever may
+ * cancel the truck and open it again may fix it in place — so
+ * `batches.depart_close` there, and `plans.manage` there for the planner who
+ * holds no depart grant. `authorize` takes ONE code, so the action asks the
+ * one this person holds (the pair-gate idiom) and the service asks the pair
+ * again on the locked row (#531). Every answer is words: an async onClick's
+ * thrown AuthError would reach the person as nothing at all.
+ */
+export async function changeDestBeforeDepartureAction(input: unknown): Promise<DestChangeActionResult> {
+  const parsed = destChangeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: 'validation' };
+  const batchId = parsed.data.batchId;
+  const actor = await getActor();
+  if (!actor) return { ok: false, error: 'unauthenticated' };
+  const [batch] = await db
+    .select({ originWarehouseId: batches.originWarehouseId })
+    .from(batches)
+    .where(eq(batches.id, batchId));
+  if (!batch) return { ok: false, error: 'batch_not_found' };
+  const code = mayAt(actor, 'batches.depart_close', batch.originWarehouseId) ? 'batches.depart_close' : 'plans.manage';
+  let door: Awaited<ReturnType<typeof authorize>>;
+  try {
+    door = await authorize(code, { warehouseId: batch.originWarehouseId });
+  } catch (err) {
+    if (err instanceof AuthError) return { ok: false, error: err.code === 'unauthenticated' ? 'unauthenticated' : 'forbidden' };
+    throw err;
+  }
+  try {
+    const result = await changeDestBeforeDeparture(
+      door,
+      batchId,
+      { destWarehouseId: parsed.data.destWarehouseId, seenDestWarehouseId: parsed.data.seenDestWarehouseId },
+      await requestMeta(),
+    );
+    // The header on every tab, the board's cards, the plan screen's «Mashina
+    // hozir» line and the homes' counts all read the live column.
+    revalidatePath(`/batches/${batchId}`, 'layout');
+    revalidatePath('/batches');
+    revalidatePath('/plans', 'layout');
+    revalidatePath('/');
+    return { ok: true, toCode: result.to.code };
+  } catch (err) {
+    if (err instanceof DestChangeError) return { ok: false, error: err.code };
     if (isBusyError(err)) return { ok: false, error: 'busy_retry' };
     throw err;
   }

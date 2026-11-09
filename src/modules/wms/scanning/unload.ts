@@ -43,6 +43,8 @@ import {
   lotModeOnTruck,
   type DoorOpts,
 } from './count-rules';
+// A TYPE only — erased, so it is no runtime cycle (rename.ts imports this file).
+import type { CancelNumber } from '../batches/rename';
 
 export const unloadScanSchema = z.object({
   clientEventUuid: z.string().uuid(),
@@ -1712,5 +1714,35 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   // After the commit (#714): the cancelled tasks' Telegram copies stop
   // offering a «✅» on a trip that is over.
   retireTaskCopiesSoon({ taskIds: cancelledTasks, outcome: 'cancelled' });
-  return out;
+  // His 4a: a truck that never left gives its number back when it is the
+  // counter's top (docs/NARX-VA-RAQAM.md §3.2). AFTER the commit and in its
+  // own short transactions — never inside this one, which holds the truck's
+  // loading lock a rename waits on, and whose order (loading lock first) is
+  // the opposite of the mint's (counter, then name). Every cancel releases:
+  // the action, a script, a test — the service is the door a test can press
+  // (#531). It never throws: a give-back that went wrong is «raqam qaytmadi»,
+  // never a failed cancel. Imported where it is used: rename.ts imports this
+  // file for the aboard count.
+  //
+  // Nothing from here on may fail the press (review F3): the cancel has
+  // COMMITTED — the truck is cancelled and its cargo is back on the shelf —
+  // and an error page would send the person to press again into «already
+  // cancelled». A failure is logged, and answered with what is known.
+  let number: CancelNumber = { kind: 'kept', why: 'error' };
+  try {
+    const { releaseNumberAfterCancel } = await import('../batches/rename');
+    number = await releaseNumberAfterCancel(batchId, ctx);
+  } catch (err) {
+    console.error('[batch-number] release after cancel', batchId, err);
+  }
+  // The row as it stands now: a give-back renamed it «… (bekor)», and a
+  // caller reading the cancel's truck must not get the name it just gave up.
+  // A read that fails falls back to the row the cancel itself returned.
+  let now: typeof out.batch | undefined;
+  try {
+    now = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  } catch (err) {
+    console.error('[batch-number] reread after cancel', batchId, err);
+  }
+  return { ...out, batch: now ?? out.batch, number };
 }

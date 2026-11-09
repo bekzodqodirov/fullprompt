@@ -92,21 +92,39 @@ describe('the ban at the counter', () => {
     expect(fn).toMatch(/shortLoadedIds: shortLoaded\.map\(\(b\) => b\.id\)/);
   });
 
-  it('a truck price names cargo aboard: addTransaction asks cargoAboard AFTER the internal-leg refusal', () => {
-    const fn = between(read('src/modules/wms/finance/service.ts'), 'export async function addTransaction', 'export const moveChargeSchema');
+  // Rewritten with the price table (docs/NARX-VA-RAQAM.md §3.1.13): the truck
+  // branch left addTransaction for the pool half both doors share, so the
+  // fence follows it there — sliced to the next declaration, never to the
+  // position of addTransaction's neighbour (judge F2).
+  it('a truck price names cargo aboard: the shared pool half asks cargoAboard AFTER the internal-leg refusal', () => {
+    const service = read('src/modules/wms/finance/service.ts');
+    const fn = between(service, 'export async function prepareTruckCharges', '\nexport ');
     const internal = fn.indexOf("throw new FinanceError('internal_batch')");
     const aboard = fn.indexOf("if (!aboard.aboard) throw new FinanceError('client_not_aboard')");
     expect(internal).toBeGreaterThan(-1);
     expect(aboard).toBeGreaterThan(internal);
+    // …and both truck doors go through it.
+    expect(between(service, 'export async function addTransaction(', '\nexport ')).toContain('await prepareTruckCharges({');
+    expect(between(service, 'export async function addTruckPrices(', '\nexport ')).toContain('await prepareTruckCharges({');
   });
 
-  it('«Ko‘chirish» admits exactly who the charge door admits — the same authorize and nothing else', () => {
+  it('«Ko‘chirish» and the price table admit exactly who the charge door admits — the same authorize and nothing else', () => {
     const actions = read('src/app/(protected)/finance/actions.ts');
     const add = between(actions, 'export async function addTransactionAction', 'const voidSchema');
     const move = between(actions, 'export async function moveChargeAction', 'export async function placePaymentAction');
+    const table = between(actions, 'export async function addTruckPricesAction', '\nexport ');
     const grant = /authorize\('([a-z.]+)'\)/;
-    expect(move.match(grant)?.[1]).toBe(add.match(grant)?.[1]);
-    expect(move.match(/authorize\(/g)).toHaveLength(1);
+    for (const [name, body] of [
+      ['moveChargeAction', move],
+      ['addTruckPricesAction', table],
+    ] as const) {
+      expect(body.match(grant)?.[1], name).toBe(add.match(grant)?.[1]);
+      expect(body.match(/authorize\(/g), name).toHaveLength(1);
+    }
+    // A truck price moves no kassa: none of the ledger door's till branches
+    // applies, and the table posts no account at all (judge F7).
+    expect(table).not.toContain('mayPickTill');
+    expect(table).not.toContain('accountId');
   });
 
   it('the company-wide reads run without JIT — measured: ~3 s of compile per call on a 60k-carton book', () => {

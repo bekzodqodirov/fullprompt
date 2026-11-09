@@ -6,6 +6,7 @@ import { FOUND_BACK_SQL, RIDE_CAUSES, leftBehindSql, rideMovementSql, riderRowsS
 import { crossesBorderSql, receivedInUzSql } from '../batches/internal';
 import { ISSUABLE_STATUSES } from '../issue/parties';
 import { loadFilterSql, type LoadFilter } from '../ftl/sql';
+import { zeroedByCompensationSql } from './standing-price-sql';
 
 /**
  * «Narxi yozilmagan yuk» — the ONE rule for which cargo has no price (owner,
@@ -309,10 +310,7 @@ export function uncoveredCtes(boxScope: SQL, opts: { landedOnly: boolean }): SQL
         LEFT JOIN warehouses cd ON cd.id = cb.dest_warehouse_id
        WHERE ct.type = 'charge'
          AND ct.client_id IN (SELECT client_id FROM u_rcpt)
-         AND (ct.voided_at IS NULL OR EXISTS (
-               SELECT 1 FROM audit_log za
-                WHERE za.entity_type = 'client_transaction' AND za.entity_id = ct.id AND za.action = 'void'
-                  AND za.after->>'from' = 'compensation' AND za.after->'repricedTo' = 'null'::jsonb))
+         AND (ct.voided_at IS NULL OR ${zeroedByCompensationSql(sql`ct.id`)})
     ),
     u_ctruck AS (SELECT DISTINCT client_id, batch_id FROM u_charge WHERE batch_id IS NOT NULL),
     -- Which (prixod, CHARGED truck) pairs touched at all: a movement of the

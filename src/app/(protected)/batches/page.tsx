@@ -7,7 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import { batches, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { Panel } from '@/components/panel';
-import { createQuickBatchAction } from './batch-actions-server';
+import { QuickBatchForm } from './quick-batch-form';
 import { PageHeader } from '@/components/ui/page';
 import { hrefWith } from '@/components/list/board-filter';
 import { warehouseScopeEither } from '@/modules/platform/rbac/scope';
@@ -80,6 +80,8 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
     .select({
       id: warehouses.id,
       code: warehouses.code,
+      // The quick truck's confirm names the warehouses (his 6a), not codes.
+      name: warehouses.name,
       allowsQuickBatch: warehouses.allowsQuickBatch,
     })
     .from(warehouses)
@@ -179,50 +181,13 @@ export default async function BatchesPage({ searchParams }: { searchParams: Prom
       />
 
       {canQuick && originWhs.length > 0 && (
-        <form action={createQuickBatchAction} className="card flex flex-wrap items-center gap-2 !p-3">
-          <span className="text-sm font-bold">⚡ {t('quickBatch')}</span>
-          {originWhs.length === 1 ? (
-            // One warehouse, no choice to make: show it and send it.
-            <>
-              <input type="hidden" name="originId" value={originWhs[0]!.id} />
-              <span
-                data-testid="quick-origin-fixed"
-                className="input !w-24 flex items-center font-mono font-bold"
-              >
-                {originWhs[0]!.code}
-              </span>
-            </>
-          ) : (
-            <select
-              name="originId"
-              aria-label={t('quickOrigin')}
-              className="input !w-24 font-mono font-bold"
-              defaultValue={originWhs[0]?.id}
-            >
-              {originWhs.map((wh) => (
-                <option key={wh.id} value={wh.id}>
-                  {wh.code}
-                </option>
-              ))}
-            </select>
-          )}
-          <span className="font-bold">→</span>
-          <select
-            name="destId"
-            aria-label={t('quickDest')}
-            className="input !w-24 font-mono font-bold"
-            defaultValue={activeWhs.find((wh) => wh.id !== originWhs[0]?.id)?.id}
-          >
-            {activeWhs.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.code}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="btn-primary flex-1 whitespace-nowrap px-3" data-testid="create-quick-batch">
-            ＋ {t('create')}
-          </button>
-        </form>
+        // One line of confirm before a number is minted (his 6a): the form is
+        // a client component now, with the same action and the same names.
+        <QuickBatchForm
+          origins={originWhs.map(({ id, code, name }) => ({ id, code, name }))}
+          dests={activeWhs.map(({ id, code, name }) => ({ id, code, name }))}
+          defaultDestId={activeWhs.find((wh) => wh.id !== originWhs[0]?.id)?.id}
+        />
       )}
 
       {/* The road strip (2a): a count per place, every filter but `joy`

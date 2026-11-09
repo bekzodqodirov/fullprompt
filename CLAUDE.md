@@ -170,6 +170,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
+| A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 
 ## State — 2026-08-23
 
@@ -3281,7 +3282,28 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — Horgos and Yallama hold the truck (2026-11-08; DECISIONS #1582-#1584; migration 0140
+**Round — narx jadvali + partiya raqami (2026-11-09; DECISIONS #1582-#1592; NO migration, ledger 140; spec
+`docs/NARX-VA-RAQAM.md`).** His two reports, answered «1a 2a 3a 4a 5a 6a 7a 8a». (1) A client with 10-15 deals on one
+truck: when `DealCandidates.ambiguous`, the «Narx» tab draws `PricingTable` (one row per own deal + «Bitimsiz», one date,
+one currency, one Saqlash; blanks write nothing, 3a). ONE write body shared with `addTransaction`'s truck branch:
+`prepareTruckCharges` (pool) + `writeTruckCharges` (owns its tx: lockOwnersTx → `lockTruckForPriceTx` → cargoAboard(tx) →
+`truckDealParts` again → `pricesSeen` + `cardSeen` re-read → N inserts → one FX residue → audit `dealVia`/`parts`). The
+pre-fill is pure (`prefillFor(facts, currency)`, quote sight only — the VED gets no money), the deal's quote × the truck's
+EXACT share on the upsale's basis (`expectedPartFor`, no whole-quote fallback, rounded UP to the cent); the 5 % check, the
+deal block and the totals use the SAME basis (`expectedHereFor`). «Already priced here» = ONE `pricedHereReading(candidates,
+prices, zeroed)` (byDeal / none = audit `dealVia:'none'` / whole), and a compensation-ZEROED truck charge stands
+(`batchZeroedCharges`, the clause in `finance/standing-price-sql.ts`, kept out of `pricesSeen`); the correction doors carry
+`dealVia:'none'`. **TRAP (#1585): `FOR SHARE OF b` over a JOIN loses the row** — after a wait EvalPlanQual re-fetches `b`
+and re-uses the OLD joined row, the join fails and 0 rows come back; lock the row ALONE, then read the joined facts.
+(2) `cancelBatch` → after its commit → `releaseNumberAfterCancel` walks the counter down (rename.ts stays `batches.code`'s one
+writer; counter FOR UPDATE → name locks → row → CAS; audit `after {code, released:true, number}` and NEVER a `reason`, or the
+former-name predicate burns the number); kept reasons `NUMBER_KEPT`, shown on the cancelled card (`batch-number-state`) and
+answered by the bot; the holder of N (#1592): the wearer — unless a cancelled never-departed wearer not born with it, which yields to the live-or-departed minter — else the ROAD carrier, else the newest minter, else the newest rename-away row; «at the agent» is asked of the NUMBER (any truck that ever wore the string, `everTickedSql`) by the walk, the card, the dry run AND the mint (`numberEverAtAgent` in `nextBatchCode`). `scripts/batch-raqam.ts`
+through `migrate`: dry run, then `--apply` (7a). `changeDestBeforeDeparture` (reroute.ts, ONE `writeDestTx` with the road
+reroute, its own audit key `destBeforeDeparture`) on the Mashina tab; the quick batch asks in-page, every e2e through
+`tests/e2e/quick-batch.ts` `createQuickBatch`. Stated: a plate-named cancelled truck keeps the plate as its NAME (C3).
+
+**Round — Horgos and Yallama hold the truck (2026-11-08; DECISIONS #1593-#1598 — renumbered from #1582-#1587 on the merge, the TWENTY-EIGHTH collision: «narx jadvali» took #1582-#1592 first; migration 0140
 `truck_queue_alerts` — ledger must reach 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding).** His «horgosdan
 jo‘nagan mashinalar … joyi aniq emas» (a departure-only HOR truck's spent walk had `zoneOfRoute` of a
 five-zone road), then what he meant: answers 1a 2a 3a 4a 5a, code HOR. A **held queue** = a stationary leg
@@ -3293,7 +3315,7 @@ does (`queueSinceFor`, devices.ts, `HELD_QUEUE_RADIUS_DEG` 0.15°). `TruckPlace/
 carry it to the words (5a, «kiritilgan» only when typed), the map label («⏳2», `truck-label.ts`) and the
 cabinet (`arriveBy` '9999' once over). `alertLateQueues` (queue-alert.ts, office hours): ONE message per sweep
 to `plans.manage`, claim per (truck, post) re-armed only by a wait begun after the warning; `TruckQueueLate`
-in `alerts`. Judged by five lenses before code (two blockers), then reviewed as built twice (#1585-#1587): on that
+in `alerts`. Judged by five lenses before code (two blockers), then reviewed as built twice (#1596-#1598): on that
 road a pin is never pressed off — a re-press of «Horgosda turibdi» re-stamps it (the restart), «Qozog‘istonda» /
 «O‘zbekistonda» only when the truck reads BEHIND the pin (`placedBehindPin`); the listing names the press per
 queue; a premature pin's Horgos entry is the departure's walk. DEPLOY: every unpressed HOR truck already past

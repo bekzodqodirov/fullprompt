@@ -139,6 +139,10 @@ describe('count kernel wiring', () => {
       [SERVICE, 'finishLoading'],
       [SERVICE, 'departBatch'],
       [UNLOAD, 'cancelBatch'],
+      // The destination before departure (docs/NARX-VA-RAQAM.md §3.2.8):
+      // departBatch reads the destination under this lock alone and writes it
+      // into the once-only departure movements.
+      ['src/modules/wms/batches/reroute.ts', 'changeDestBeforeDeparture'],
     ] as const) {
       const text = body(path, fn);
       const tx = text.indexOf('db.transaction(async (tx) => {');

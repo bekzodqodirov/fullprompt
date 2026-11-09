@@ -7,6 +7,8 @@ import {
 } from '@/modules/wms/finance/deal-price-hint';
 
 const quote = { amount: 4800, currency: 'USD', m3: 30, kg: 1500 };
+// No exact share to state: each deal's figure is the hint's own fallback.
+const noParts = { exact: new Map<string, { m3: number; kg: number }>(), perKg: () => false };
 
 describe('the deal price beside the truck price (his item 7, 2026-09-26)', () => {
   it('scales the quote by this truck’s share of the quoted m³', () => {
@@ -56,16 +58,16 @@ describe('several prixods and deals for one client (2026-09-26, item 5)', () => 
     ]);
     const { shares } = dealSharesOf([lot('1', 'r1', 5, 0), lot('2', 'r2', 5, 0)], 'C');
     // Half of deal 1 (500) and all of deal 2 (600).
-    expect(expectedForDeals(quotes, shares, 0)).toBe(1100);
+    expect(expectedForDeals(quotes, shares, 0, noParts)).toBe(1100);
   });
 
   it('says nothing when part of the cargo has no deal or no dollar quote', () => {
     const quotes = new Map([['1', { amount: 1000, currency: 'USD', m3: 10, kg: null }]]);
     const { shares, unlinkedReceipts } = dealSharesOf([lot('1', 'r1', 5, 0), lot(null, 'r2', 1, 0)], 'C');
     expect(unlinkedReceipts).toBe(1);
-    expect(expectedForDeals(quotes, shares, unlinkedReceipts)).toBeNull();
+    expect(expectedForDeals(quotes, shares, unlinkedReceipts, noParts)).toBeNull();
     const som = new Map([['1', { amount: 1000, currency: 'UZS', m3: 10, kg: null }]]);
-    expect(expectedForDeals(som, dealSharesOf([lot('1', 'r1', 5, 0)], 'C').shares, 0)).toBeNull();
+    expect(expectedForDeals(som, dealSharesOf([lot('1', 'r1', 5, 0)], 'C').shares, 0, noParts)).toBeNull();
   });
 
   it('reads another client’s deal as unlinked — its quote is not this client’s to be compared with', () => {
@@ -80,6 +82,6 @@ describe('several prixods and deals for one client (2026-09-26, item 5)', () => 
     const got = dealSharesOf([lot('1', 'r1', 5, 0), lot('F', 'r2', 1, 0, 'Z')], 'C');
     expect(got.shares.map((share) => share.dealId)).toEqual(['1']);
     expect(got.unlinkedReceipts).toBe(1);
-    expect(expectedForDeals(quotes, got.shares, got.unlinkedReceipts)).toBeNull();
+    expect(expectedForDeals(quotes, got.shares, got.unlinkedReceipts, noParts)).toBeNull();
   });
 });
