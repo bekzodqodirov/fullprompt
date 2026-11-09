@@ -878,7 +878,9 @@
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",
       "tariffBands": "Tarif qatorlari",
-      "freightMode": "Yuk turi (LTL/FTL)"
+      "freightMode": "Yuk turi (LTL/FTL)",
+      "released": "Raqami qaytarildi",
+      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)"
     }
   },
   "profile": {
@@ -1249,7 +1251,8 @@
     "roadPart": "{n} yo‘ldan",
     "roadAwaited": "{n} kutilmoqda",
     "roadCame": "{n} keldi",
-    "roadMissed": "{n} kelmadi"
+    "roadMissed": "{n} kelmadi",
+    "truckNow": "Mashina hozir: {dest} (rejada {planned})"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1686,7 +1689,50 @@
       "roadOwed": "+{n} yo‘ldan"
     },
     "finishSummaryRoad": "{n} yo‘ldan kelmadi",
-    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})",
+    "number": {
+      "stateReturned": "♻️ {number} raqami qaytarildi — keyingi mashinaga beriladi",
+      "kept": {
+        "newer": "Raqam qaytmadi: {name} allaqachon ochilgan",
+        "agent": "Raqam qaytmadi: hujjatlari agentga yuborilgan",
+        "left": "Raqam qaytmadi: mashina yo‘lga chiqqan",
+        "renamed_left": "Raqam qaytmadi: {number} {name} nomi bilan jo‘nagan",
+        "unworn": "Raqam qaytmadi: {number} raqami hech kimga berilmagan",
+        "no_counter": "Raqam qaytmadi: bu prefiksning hisoblagichi yo‘q",
+        "prefix": "Raqam qaytmadi: ombor prefiksi o‘zgargan",
+        "pending": "Raqam hali qaytarilmagan — keyingi bekor qilishda qaytadi",
+        "busy": "Raqam hozir qaytmadi: tizim band — keyingi bekor qilishda qaytadi",
+        "error": "Raqam qaytmadi: xatolik — keyingi bekor qilishda qaytishi mumkin"
+      }
+    },
+    "destChange": {
+      "title": "Qabul skladini o‘zgartirish",
+      "hint": "Mashina hali jo‘namagan: o‘sha mashina, o‘sha raqam — faqat qabul skladi o‘zgaradi. Yo‘lga chiqqandan keyin «Yo‘nalishni o‘zgartirish» bilan o‘zgaradi.",
+      "target": "Yangi qabul skladi",
+      "targetPick": "— skladni tanlang —",
+      "submit": "Qabul skladini o‘zgartirish",
+      "done": "✅ Qabul skladi o‘zgartirildi: endi {to}",
+      "noTargets": "Boshqa faol sklad yo‘q",
+      "errors": {
+        "forbidden": "Qabul skladini jo‘nash skladining menejeri yoki logist o‘zgartira oladi",
+        "batch_not_found": "Mashina topilmadi",
+        "not_before_departure": "Mashina jo‘nagan — yo‘nalishni «Yo‘nalishni o‘zgartirish» bilan o‘zgartiring",
+        "dest_changed": "Qabul skladini kimdir hozirgina o‘zgartirdi — yangi holat ko‘rsatildi, qayta tekshiring",
+        "bad_target": "Skladni ro‘yxatdan tanlang",
+        "same_destination": "Mashina allaqachon shu skladga boradi",
+        "destination_is_origin": "Mashina chiqadigan skladni qabul skladi qilib bo‘lmaydi",
+        "target_inactive": "Bu sklad o‘chirilgan",
+        "dest_money_country": "Mashinaga xarajat yoki narx yozilgan: qabul skladini faqat shu davlat ichida o‘zgartirish mumkin. Boshqa davlatga — avval pulni bekor qiling.",
+        "dest_agent_sent": "Hujjatlar agentga yuborilgan — avval «agentga yuborildi» belgisini oling",
+        "busy_retry": "Mashina hozir band (yuklash davom etmoqda) — birozdan keyin qayta bosing",
+        "validation": "Ma’lumot noto‘g‘ri — sahifani yangilang",
+        "offline": "Server javob bermadi — internetni tekshirib, qayta bosing",
+        "unauthenticated": "Sessiya tugagan — qayta kiring"
+      }
+    },
+    "quickConfirm": "{from} → {to}: yangi partiya ochilsinmi?",
+    "quickConfirmYes": "Ha, ochish",
+    "quickConfirmNo": "Bekor"
   },
   "loading": {
     "title": "Pogruzka",

@@ -878,7 +878,9 @@
       "tariffZone": "价目表栏",
       "tariffFrom": "价目表日期",
       "tariffBands": "价目表各行",
-      "freightMode": "货物类型（LTL/FTL）"
+      "freightMode": "货物类型（LTL/FTL）",
+      "released": "编号已收回",
+      "destBeforeDeparture": "收货仓库（出发前）"
     }
   },
   "profile": {
@@ -1249,7 +1251,8 @@
     "roadPart": "{n} 在途",
     "roadAwaited": "待到 {n}",
     "roadCame": "已到 {n}",
-    "roadMissed": "未到 {n}"
+    "roadMissed": "未到 {n}",
+    "truckNow": "车辆现在开往：{dest}（计划为 {planned}）"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -1686,7 +1689,50 @@
       "roadOwed": "+{n} 在途"
     },
     "finishSummaryRoad": "{n} 箱在途未到",
-    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）",
+    "number": {
+      "stateReturned": "♻️ 编号 {number} 已收回 — 下一辆车将使用它",
+      "kept": {
+        "newer": "编号未收回：{name} 已经开出",
+        "agent": "编号未收回：单据已发给代理",
+        "left": "编号未收回：车辆已经出发过",
+        "renamed_left": "编号未收回：{number} 已以 {name} 的名称出发",
+        "unworn": "编号未收回：编号 {number} 从未分配给车辆",
+        "no_counter": "编号未收回：该前缀没有计数器",
+        "prefix": "编号未收回：仓库前缀已更改",
+        "pending": "编号尚未收回 — 下次取消时收回",
+        "busy": "编号此刻未收回：系统繁忙 — 下次取消时收回",
+        "error": "编号未收回：出错 — 下次取消时可能收回"
+      }
+    },
+    "destChange": {
+      "title": "更改收货仓库",
+      "hint": "车辆尚未出发：同一辆车、同一编号 — 只更改收货仓库。出发后请用「更改目的地」。",
+      "target": "新的收货仓库",
+      "targetPick": "— 选择仓库 —",
+      "submit": "更改收货仓库",
+      "done": "✅ 收货仓库已更改：现在是 {to}",
+      "noTargets": "没有其他启用的仓库",
+      "errors": {
+        "forbidden": "收货仓库由发货仓库经理或物流员更改",
+        "batch_not_found": "未找到车辆",
+        "not_before_departure": "车辆已出发 — 请用「更改目的地」",
+        "dest_changed": "收货仓库刚被他人更改 — 已显示新状态，请再检查",
+        "bad_target": "请从列表中选择仓库",
+        "same_destination": "车辆已经开往该仓库",
+        "destination_is_origin": "发货仓库不能作为收货仓库",
+        "target_inactive": "该仓库已停用",
+        "dest_money_country": "车辆已有费用或价格：收货仓库只能在同一国家内更改。改到其他国家 — 请先作废这些金额。",
+        "dest_agent_sent": "单据已发给代理 — 请先取消「已发给代理」标记",
+        "busy_retry": "车辆正忙（正在装货） — 请稍后再按",
+        "validation": "数据有误 — 请刷新页面",
+        "offline": "服务器无响应 — 请检查网络后再按",
+        "unauthenticated": "会话已过期 — 请重新登录"
+      }
+    },
+    "quickConfirm": "{from} → {to}：开一个新车次吗？",
+    "quickConfirmYes": "是，开出",
+    "quickConfirmNo": "取消"
   },
   "loading": {
     "title": "装车",

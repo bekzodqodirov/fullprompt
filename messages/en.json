@@ -878,7 +878,9 @@
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",
       "tariffBands": "Tariff rows",
-      "freightMode": "Load type (LTL/FTL)"
+      "freightMode": "Load type (LTL/FTL)",
+      "released": "Number given back",
+      "destBeforeDeparture": "Receiving warehouse (before departure)"
     }
   },
   "profile": {
@@ -1249,7 +1251,8 @@
     "roadPart": "{n} from the road",
     "roadAwaited": "{n} awaited",
     "roadCame": "{n} came",
-    "roadMissed": "{n} did not come"
+    "roadMissed": "{n} did not come",
+    "truckNow": "The truck now goes to: {dest} (planned {planned})"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1686,7 +1689,50 @@
       "roadOwed": "+{n} from the road"
     },
     "finishSummaryRoad": "{n} did not come from the road",
-    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})",
+    "number": {
+      "stateReturned": "♻️ Number {number} came back — the next truck gets it",
+      "kept": {
+        "newer": "The number did not come back: {name} is already open",
+        "agent": "The number did not come back: its papers went to the agent",
+        "left": "The number did not come back: the truck had left",
+        "renamed_left": "The number did not come back: {number} left as {name}",
+        "unworn": "The number did not come back: number {number} was never given to a truck",
+        "no_counter": "The number did not come back: this prefix has no counter",
+        "prefix": "The number did not come back: the warehouse prefix has changed",
+        "pending": "The number has not come back yet — the next cancel returns it",
+        "busy": "The number did not come back now: the system was busy — the next cancel returns it",
+        "error": "The number did not come back: an error — the next cancel may return it"
+      }
+    },
+    "destChange": {
+      "title": "Change the receiving warehouse",
+      "hint": "The truck has not left yet: same truck, same number — only the receiving warehouse changes. On the road it changes through «Change destination».",
+      "target": "New receiving warehouse",
+      "targetPick": "— pick a warehouse —",
+      "submit": "Change the receiving warehouse",
+      "done": "✅ Receiving warehouse changed: now {to}",
+      "noTargets": "There is no other active warehouse",
+      "errors": {
+        "forbidden": "The receiving warehouse is changed by the origin warehouse manager or a logist",
+        "batch_not_found": "Truck not found",
+        "not_before_departure": "The truck has left — use «Change destination»",
+        "dest_changed": "Somebody just changed the receiving warehouse — the new state is shown, check again",
+        "bad_target": "Pick a warehouse from the list",
+        "same_destination": "The truck already goes to this warehouse",
+        "destination_is_origin": "The origin warehouse cannot be the receiving one",
+        "target_inactive": "This warehouse is deactivated",
+        "dest_money_country": "The truck carries a cost or a price: the receiving warehouse may change only within the same country. To another country — void the money first.",
+        "dest_agent_sent": "The papers went to the agent — clear the «sent to agent» tick first",
+        "busy_retry": "The truck is busy right now (loading in progress) — press again in a moment",
+        "validation": "Bad data — reload the page",
+        "offline": "The server did not answer — check the connection and press again",
+        "unauthenticated": "The session has ended — sign in again"
+      }
+    },
+    "quickConfirm": "{from} → {to}: open a new batch?",
+    "quickConfirmYes": "Yes, open it",
+    "quickConfirmNo": "Cancel"
   },
   "loading": {
     "title": "Loading",

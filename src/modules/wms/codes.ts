@@ -48,12 +48,70 @@ export async function nextReceiptNumber(
   return `${warehouse.code}-IN-${dateKey}-${String(seq).padStart(3, '0')}`;
 }
 
+/**
+ * Whose sequence a truck out of this warehouse counts on: the prefix, and the
+ * warehouse's code when it has none. ONE home (#513) for the mint, the
+ * cancel's give-back and the dry-run list — the counter row is keyed on this
+ * string, so two warehouses with one prefix share one sequence.
+ */
+export function batchSeqPrefix(warehouse: { code: string; batchPrefix: string | null }): string {
+  return warehouse.batchPrefix || warehouse.code;
+}
+
+/**
+ * The exact string the mint builds for number `n` — the give-back compares
+ * against THIS and never parses a code, so a truck minted under an older
+ * prefix, or a hand-typed «YW-0010», is never taken for number 10. The pad
+ * has no cap: 999 → «-999», 1000 → «-1000» (#653).
+ */
+export function batchSeqCode(prefix: string, n: number): string {
+  return `${prefix}-${String(n).padStart(3, '0')}`;
+}
+
+/**
+ * The counter's value under its row lock, or null when the row is not there.
+ * The give-back's first statement: a mint bumps the same row (`bumpCounter`'s
+ * upsert), so the two serialise here and a release never reads a number a
+ * mint is still handing out.
+ */
+export async function lockCounterRow(tx: Tx, kind: string, scopeKey: string): Promise<number | null> {
+  const rows = (await tx.execute(sql`
+    SELECT value FROM counters WHERE kind = ${kind} AND scope_key = ${scopeKey} FOR UPDATE
+  `)) as unknown as { value: string | number }[];
+  const row = [...rows][0];
+  return row ? Number(row.value) : null;
+}
+
+/** The same value read with no lock — the read-only explainer's. */
+export async function readCounter(handle: Db | Tx, kind: string, scopeKey: string): Promise<number | null> {
+  const rows = (await handle.execute(sql`
+    SELECT value FROM counters WHERE kind = ${kind} AND scope_key = ${scopeKey}
+  `)) as unknown as { value: string | number }[];
+  const row = [...rows][0];
+  return row ? Number(row.value) : null;
+}
+
+/**
+ * Take the counter back by one, compare-and-set: only from `from`. Under
+ * `lockCounterRow` it cannot miss; it is the belt for a caller that read the
+ * value in an earlier statement, so a number a mint has handed out since is
+ * never handed out twice.
+ */
+export async function rewindCounter(tx: Tx, kind: string, scopeKey: string, from: number): Promise<boolean> {
+  const rows = (await tx.execute(sql`
+    UPDATE counters SET value = value - 1
+     WHERE kind = ${kind} AND scope_key = ${scopeKey} AND value = ${from}
+    RETURNING value
+  `)) as unknown as unknown[];
+  return [...rows].length === 1;
+}
+
 /** Batch code `{PREFIX}-{001}`, lifetime per-origin-warehouse sequence. */
 export async function nextBatchCode(
   tx: Db | Tx,
   warehouse: { code: string; batchPrefix: string | null },
 ): Promise<string> {
-  const prefix = warehouse.batchPrefix || warehouse.code;
+  const prefix = batchSeqPrefix(warehouse);
   // The counter says which number is NEXT; the table says which are TAKEN —
   // and the two can disagree (round 100, the owner's item 7): production's
   // YW counter stood BEHIND the existing codes, the insert hit the unique
@@ -73,9 +131,14 @@ export async function nextBatchCode(
   // that same number and then see it, instead of meeting it as a 23505 inside
   // approvePlan or a quick batch. A rename takes this lock FIRST, before any
   // truck lock, and the walk never takes a truck row, so there is no cycle.
+  //
+  // A cancelled truck that never left gives its number BACK (the owner's 4a,
+  // docs/NARX-VA-RAQAM.md §3.2): `releaseTrailingCodes` (batches/rename.ts)
+  // renames it «YW-010 (bekor)» and rewinds this same counter, so the walk
+  // meets the number free and hands it out again — nothing here changes.
   for (;;) {
     const seq = await bumpCounter(tx, 'batch_seq', prefix);
-    const code = `${prefix}-${String(seq).padStart(3, '0')}`;
+    const code = batchSeqCode(prefix, seq);
     await lockBatchCode(tx, code);
     if (!(await codeEverWorn(tx, code, null))) return code;
   }

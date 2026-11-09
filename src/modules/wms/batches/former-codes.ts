@@ -113,6 +113,136 @@ export async function batchByFormerCode(
   return row ? { batchId: row.batch_id, formerCode: row.former_code } : null;
 }
 
+/**
+ * The truck that HOLDS a minted number — the cancel's give-back asks it of
+ * every number it walks (docs/NARX-VA-RAQAM.md §3.2.1). Here because it reads
+ * `before->>'code'`, and this file is that read's one home (fenced).
+ *
+ * The truck WEARING the string now, first; and when nobody wears it, the
+ * truck whose NEWEST batch audit row renamed AWAY from it (before and after
+ * both carry a code and they differ — any stage, with or without a reason,
+ * the give-back's own row included). That second half is why a truck renamed
+ * to its plate before it left and then cancelled is still found: his 4a says
+ * its number comes back, and «nobody wears it» alone would have stopped the
+ * walk there for ever. The newest row answers, so a number handed out again
+ * and renamed away again belongs to its LAST holder.
+ *
+ * Plain statements and no lock: the release reads it first, takes its locks
+ * only when the answer is «releasable», and then reads it again. `wears`
+ * false is the rename-away case. `atAgent` is the 7a rule — the tick standing
+ * now OR ever pressed (an untick does not un-send papers, §3.2.3).
+ * `roadFormer` is the former-name predicate over the number itself: a name
+ * that reached the road is never given out again.
+ *
+ * The rename-away half has no partial index of its own (0121's covers road
+ * renames only) and rides `audit_entity_idx`'s leading column over the batch
+ * rows — a few thousand on the live server, read on a cancel, a cancelled
+ * truck's card and the dry run, never on a list. No migration for it.
+ */
+export interface NumberHolder {
+  id: string;
+  code: string;
+  status: string;
+  originWarehouseId: string;
+  departed: boolean;
+  atAgent: boolean;
+  wears: boolean;
+  roadFormer: boolean;
+}
+
+export async function numberHolderOf(handle: Db | Tx, code: string): Promise<NumberHolder | null> {
+  const wearer = (await handle.execute(sql`
+    SELECT b.id FROM batches b WHERE upper(b.code) = upper(${code}::text) LIMIT 1
+  `)) as unknown as { id: string }[];
+  let id = [...wearer][0]?.id ?? null;
+  const wears = id !== null;
+  if (!id) {
+    const away = (await handle.execute(sql`
+      SELECT a.entity_id AS id FROM audit_log a JOIN batches b ON b.id = a.entity_id
+       WHERE a.entity_type = 'batch' AND a.action = 'update'
+         AND upper(a.before->>'code') = upper(${code}::text)
+         AND (a.after->>'code') IS NOT NULL
+         AND upper(a.after->>'code') <> upper(${code}::text)
+       ORDER BY a.id DESC
+       LIMIT 1
+    `)) as unknown as { id: string }[];
+    id = [...away][0]?.id ?? null;
+  }
+  if (!id) return null;
+  const rows = (await handle.execute(sql`
+    SELECT b.id, b.code, b.status, b.origin_warehouse_id,
+           (b.departed_at IS NOT NULL) AS departed,
+           (b.sent_to_agent_at IS NOT NULL OR EXISTS (
+              SELECT 1 FROM audit_log t
+               WHERE t.entity_type = 'batch' AND t.entity_id = b.id AND (t.after->>'sentToAgent') = 'true'
+           )) AS at_agent,
+           EXISTS (SELECT 1 FROM audit_log a WHERE ${PRED_A} AND ${KEY_A} = upper(${code}::text)) AS road_former
+      FROM batches b WHERE b.id = ${id}::uuid
+  `)) as unknown as {
+    id: string;
+    code: string;
+    status: string;
+    origin_warehouse_id: string;
+    departed: boolean;
+    at_agent: boolean;
+    road_former: boolean;
+  }[];
+  const row = [...rows][0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    status: row.status,
+    originWarehouseId: row.origin_warehouse_id,
+    departed: row.departed === true,
+    atAgent: row.at_agent === true,
+    wears,
+    roadFormer: row.road_former === true,
+  };
+}
+
+/**
+ * The name a truck was BORN with — its oldest rename's «from», else the name
+ * it wears. The minted number of a truck renamed before it left (the plate
+ * case) is only here; the cancelled truck's card reads it to say which number
+ * it held (§3.2.4).
+ */
+export async function firstNameOf(handle: Db | Tx, batchId: string): Promise<string | null> {
+  const rows = (await handle.execute(sql`
+    SELECT coalesce(
+      (SELECT a.before->>'code' FROM audit_log a
+        WHERE a.entity_type = 'batch' AND a.entity_id = b.id AND a.action = 'update'
+          AND (a.before->>'code') IS NOT NULL
+        ORDER BY a.id ASC LIMIT 1),
+      b.code) AS first
+      FROM batches b WHERE b.id = ${batchId}::uuid
+  `)) as unknown as { first: string | null }[];
+  return [...rows][0]?.first ?? null;
+}
+
+/**
+ * «YW-010 (bekor)», «YW-010 (bekor 2)» — the name the give-back puts on a
+ * cancelled truck, matched from the number people know (§3.2.5). The bot's
+ * exact lookup finds nothing for a released number until it is minted again,
+ * and this is its fallback. Upper-cased both sides, the needle escaped with
+ * `!` (a prefix is free text: `_` and `%` are its own characters here).
+ */
+export function releasedNameSql(code: string): SQL {
+  const needle = code.toUpperCase().replace(/[!%_]/g, (ch) => `!${ch}`);
+  return sql`upper("batches"."code") LIKE ${`${needle} (BEKOR%`} ESCAPE '!'`;
+}
+
+/** The newest cancelled truck that gave this number back, for the bot. */
+export async function batchByReleasedName(code: string): Promise<{ batchId: string } | null> {
+  const rows = (await db.execute(sql`
+    SELECT "batches"."id" AS batch_id FROM batches
+     WHERE "batches"."status" = 'cancelled' AND ${releasedNameSql(code)}
+     ORDER BY "batches"."created_at" DESC LIMIT 1
+  `)) as unknown as { batch_id: string }[];
+  const row = [...rows][0];
+  return row ? { batchId: row.batch_id } : null;
+}
+
 export interface FormerCodeRow {
   from: string;
   to: string;

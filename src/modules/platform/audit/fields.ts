@@ -82,6 +82,11 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   warehouses: 'warehouses',
   // A truck's receiving warehouse, changed on the road (the reroute round).
   destWarehouseId: 'destination',
+  // …and changed BEFORE it left, under its own key so the road reroute's
+  // «told» readers never take it for a «keladi» (docs/NARX-VA-RAQAM.md §3.2.8);
+  // and a cancelled truck's number given back (§3.2.6).
+  destBeforeDeparture: 'destBeforeDeparture',
+  released: 'released',
   typeId: 'type',
   deal: 'deal',
   dealId: 'deal',

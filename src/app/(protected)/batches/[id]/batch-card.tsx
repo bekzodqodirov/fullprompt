@@ -20,6 +20,7 @@ import { batchDocsPending } from '@/modules/wms/batches/docs-pending';
 import { batchLots } from '@/modules/wms/batches/lots';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
 import { formerCodesOf, formerNames, type FormerCodeRow } from '@/modules/wms/batches/former-codes';
+import { batchNumberState, type NumberKeptWhy } from '@/modules/wms/batches/batch-number';
 import { mayRenameBatch, renameDoorOpens, renameStageOf } from '@/modules/wms/batches/rename-door';
 import { departureDestination, rerouteHistory } from '@/modules/wms/batches/reroute';
 import {
@@ -341,6 +342,31 @@ export async function BatchCard({
   // card (the papers keep them); the who/why log only for the truck's readers.
   const renames: FormerCodeRow[] = (await soft('former', () => formerCodesOf(id))) ?? [];
   const former = formerNames(renames, batch.code);
+  // A cancelled truck says what became of its number (his 4a / 5a / 7a) —
+  // DURABLY, here, because the cancel dialog that heard the answer is
+  // unmounted by the refresh the cancel itself causes. Read-only, the
+  // give-back's own predicate (batches/batch-number.ts).
+  const numberState = cancelled ? await soft('number state', () => batchNumberState(id)) : null;
+  const tn = await getTranslations('batches.number');
+  const numberLine = (() => {
+    if (!numberState) return null;
+    if (numberState.kind === 'returned') return tn('stateReturned', { number: numberState.number });
+    const values = { number: numberState.number ?? '—', name: numberState.name ?? '—' };
+    // A literal map — a key built from a value escapes the i18n tripwire (#163).
+    const kept: Record<NumberKeptWhy, string> = {
+      newer: tn('kept.newer', values),
+      agent: tn('kept.agent', values),
+      left: tn('kept.left', values),
+      renamed_left: tn('kept.renamed_left', values),
+      unworn: tn('kept.unworn', values),
+      no_counter: tn('kept.no_counter', values),
+      prefix: tn('kept.prefix', values),
+      pending: tn('kept.pending', values),
+      busy: tn('kept.busy', values),
+      error: tn('kept.error', values),
+    };
+    return kept[numberState.why];
+  })();
 
   // The stage buttons this person can press — and only those.
   const inOrigin = inScope(actor, batch.originWarehouseId);
@@ -417,6 +443,18 @@ export async function BatchCard({
             {format.dateTime(batch.createdAt, { dateStyle: 'short' })}
           </span>
         </div>
+
+        {numberState && numberLine && (
+          <p
+            className={`text-sm font-semibold [overflow-wrap:anywhere] ${
+              numberState.kind === 'returned' ? 'text-good' : 'text-ink-700'
+            }`}
+            data-testid="batch-number-state"
+            data-state={numberState.kind === 'returned' ? 'returned' : numberState.why}
+          >
+            {numberLine}
+          </p>
+        )}
 
         {former.length > 0 && (
           <div className="space-y-1">

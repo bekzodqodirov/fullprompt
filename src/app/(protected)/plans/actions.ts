@@ -20,7 +20,7 @@ import { cancelBatch } from '@/modules/wms/scanning/unload';
 import { mayCountMove } from '@/modules/wms/scanning/count-door';
 import { authorizeOnBatch } from '@/modules/wms/batches/batch-authorize';
 import { BATCH_TABS, batchTabHref } from '@/modules/wms/batches/card-door';
-import { RenameError, renameBatch } from '@/modules/wms/batches/rename';
+import { RenameError, renameBatch, type CancelNumber } from '@/modules/wms/batches/rename';
 import { renameDoorFor } from '@/modules/wms/batches/rename-door';
 import { isBusyError } from '@/modules/platform/db/errors';
 import { z } from 'zod';
@@ -255,7 +255,7 @@ export async function renameBatchAction(
 export async function cancelBatchAction(
   batchId: string,
   reason: string,
-): Promise<{ ok: boolean; released?: number; error?: string }> {
+): Promise<{ ok: boolean; released?: number; number?: CancelNumber; error?: string }> {
   const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
   if (!batch) return { ok: false, error: 'batch_not_found' };
   const actor = await authorize('batches.depart_close', { warehouseId: batch.originWarehouseId });
@@ -264,7 +264,10 @@ export async function cancelBatchAction(
     const result = await cancelBatch(batchId, reason, { actorId: actor.id, ...meta });
     revalidatePath(`/batches/${batchId}`);
     revalidatePath('/batches');
-    return { ok: true, released: result.boxesReleased };
+    // What became of the number travels with the answer; the card says it
+    // durably (`batch-number-state`), because the dialog that hears this is
+    // unmounted by the refresh the cancel causes.
+    return { ok: true, released: result.boxesReleased, number: result.number };
   } catch (err) {
     if (err instanceof ScanError) return { ok: false, error: err.code };
     throw err;

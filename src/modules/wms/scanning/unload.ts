@@ -1712,5 +1712,16 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   // After the commit (#714): the cancelled tasks' Telegram copies stop
   // offering a «✅» on a trip that is over.
   retireTaskCopiesSoon({ taskIds: cancelledTasks, outcome: 'cancelled' });
-  return out;
+  // His 4a: a truck that never left gives its number back when it is the
+  // counter's top (docs/NARX-VA-RAQAM.md §3.2). AFTER the commit and in its
+  // own short transactions — never inside this one, which holds the truck's
+  // loading lock a rename waits on, and whose order (loading lock first) is
+  // the opposite of the mint's (counter, then name). Every cancel releases:
+  // the action, a script, a test — the service is the door a test can press
+  // (#531). It never throws: a give-back that went wrong is «raqam qaytmadi»,
+  // never a failed cancel. Imported where it is used: rename.ts imports this
+  // file for the aboard count.
+  const { releaseNumberAfterCancel } = await import('../batches/rename');
+  const number = await releaseNumberAfterCancel(batchId, ctx);
+  return { ...out, number };
 }
