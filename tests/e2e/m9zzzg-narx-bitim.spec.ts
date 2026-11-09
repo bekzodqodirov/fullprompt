@@ -1,7 +1,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import {
+  LONG_GOODS,
   cleanNarxBitim,
   leftovers,
+  priceBehindTheScreen,
   pricesOn,
   refile,
   retireTruck,
@@ -10,19 +12,24 @@ import {
 } from '../fixtures/narx-bitim';
 
 /**
- * His Q8 «c» (2026-10-27: «logist o'zi tanlaydi»), on the truck's «Narx» tab
- * at 360 px: one client, three of his deals on one truck.
+ * The truck's «Narx» tab at 360 px for a client with TWELVE deals on one
+ * truck and some cargo with none (the owner, 2026-11-08, his 1a-3a: «1
+ * mashinada 1 clientda 10 15 ta prixoda va har birida bitim bolsa narx
+ * berishda faqat 1 dona bitim tanlaydigan bolib qolgan»; docs/NARX-VA-RAQAM.md
+ * §1 + §3.1). One row per deal and «Bitimsiz», one «Saqlash».
  *
- * What only a browser can prove: that the price cannot be saved before a deal
- * is chosen (the select's own `required`, before any request); that every
- * press on such a truck asks once and names the deal's part — on its own, with
- * nothing else to ask about; that a second price is asked about as an extra
- * bill; that a page drawn before a prixod was re-filed is refused and redrawn
- * — with the choice blanked when the select stays, never posted as the first
- * deal — rather than answered; that the VED is asked the same question with
- * none of the deals' quotes in the page; and that all of it fits 360 px. The
- * rule itself is proven in `truck-price-deal` (integration) and
- * `pricing-view` (unit).
+ * What only a browser can prove: that the accountant's rows arrive pre-filled
+ * with each deal's own part and the VED's empty, with no quote anywhere in his
+ * page; that a save with blank rows writes only the filled ones and keeps the
+ * emptied rows empty; that a row whose deal is already priced here asks
+ * «qo'shimcha hisob» for THAT row and a deal with nothing here is never called
+ * an extra bill (the false line this round removes); that a page drawn before
+ * a prixod was re-filed — or before somebody else priced the truck — is
+ * refused and redrawn with the typed figure kept on its own deal; that the
+ * refusal sentence survives the redraw turning the table into the single
+ * form; and that all of it fits 360 px with a 44-character unbroken goods
+ * name. The rules are proven in `truck-price-table` / `truck-price-deal`
+ * (integration) and `truck-deal-parts` / `truck-price-prefill` (unit).
  */
 
 test.describe.configure({ mode: 'serial' });
@@ -62,9 +69,26 @@ async function openCard(page: Page): Promise<Locator> {
   return card;
 }
 
-const submit = (card: Locator) => card.getByTestId('pricing-form').locator('button[type="submit"]');
+const row = (card: Locator, key: string) => card.locator(`[data-testid="pricing-table-row"][data-deal="${key}"]`);
+const box = (card: Locator, key: string) => row(card, key).getByTestId('pricing-table-amount');
+const save = (card: Locator) => card.getByTestId('pricing-table-save');
+const deal = (i: number) => seeded!.deals[i]!;
 
-test('a truck out of YW, and on it one client with three deals', async ({ page }) => {
+/**
+ * Every row on the screen emptied, then the given ones typed — what a person
+ * does before a partial save. Only the rows DRAWN: a re-filed deal's row is
+ * gone from the page, and a row nobody fills keeps no figure to post.
+ */
+async function onlyRows(card: Locator, typed: Record<string, string>) {
+  const rows = card.getByTestId('pricing-table-row');
+  const keys = await rows.evaluateAll((els) => els.map((el) => el.getAttribute('data-deal') ?? ''));
+  for (const key of keys) await box(card, key).fill(typed[key] ?? '');
+}
+
+const width = (page: Page) =>
+  page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
+
+test('a truck out of YW, and on it one client with twelve deals and a deal-less prixod', async ({ page }) => {
   await login(page, OWNER);
   await page.goto('/batches');
   await page.selectOption('select[name="originId"]', { label: 'YW' });
@@ -76,163 +100,197 @@ test('a truck out of YW, and on it one client with three deals', async ({ page }
   seeded = await seedNarxBitim(batchId, run);
 });
 
-test('the price waits for a choice: the deals only (no «bitimsiz» — every carton has a deal), and no press goes out', async ({ page }) => {
+test('the table: a row per deal and «Bitimsiz», the accountant’s rows pre-filled with each deal’s own part — no select, nothing sent', async ({ page }) => {
   expect(seeded).not.toBeNull();
   await login(page, ACCOUNTANT);
   const card = await openCard(page);
-  const select = card.getByTestId('truck-deal-select');
-  await expect(select).toBeVisible();
-  // The placeholder and the three deals; «bitimsiz» would be option (a).
-  await expect(select.locator('option')).toHaveCount(4);
-  await expect(select.locator('option[value="none"]')).toHaveCount(0);
-  for (const deal of seeded!.deals) await expect(select.locator(`option[value="${deal.id}"]`)).toContainText(deal.code);
-  // The goods and the share come right after the code — what a closed select
-  // at 360 px still shows — then the cargo, spelled like the lot rows above
-  // it («3 m³ · 300 kg», never «3.00 m³ · 300.0 kg»).
-  await expect(select.locator(`option[value="${seeded!.deals[2]!.id}"]`)).toContainText(
-    `${seeded!.deals[2]!.code} · Monitor · 50 % · 3 m³ · 300 kg`,
+  // The single-deal form and its select are gone for this client.
+  await expect(card.getByTestId('truck-deal-select')).toHaveCount(0);
+  await expect(card.getByTestId('pricing-form')).toHaveCount(0);
+  const rows = card.getByTestId('pricing-table-row');
+  await expect(rows).toHaveCount(13);
+  // In the order the select used: by code, «Bitimsiz» last.
+  await expect(rows.first()).toHaveAttribute('data-deal', deal(0).id);
+  await expect(rows.last()).toHaveAttribute('data-deal', 'none');
+  // Each row named like every deal picker names one — the goods and the
+  // share right after the code, the cargo spelled like the lot rows.
+  await expect(row(card, deal(2).id).getByTestId('pricing-table-label')).toContainText(
+    `${deal(2).code} · Monitor · 4 % · 3 m³ · 300 kg`,
   );
-
-  await card.locator('input[name="amount"]').fill('500');
-  await submit(card).click();
-  // The browser refuses the press itself: nothing asked, nothing sent.
-  expect(await select.evaluate((el) => (el as HTMLSelectElement).validity.valueMissing)).toBe(true);
-  await expect(card.getByTestId('pricing-deviation')).toHaveCount(0);
-  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(0);
-});
-
-test('on a two-deal truck the press asks about the deal’s part by itself — nothing else to ask, nothing sent yet', async ({ page }) => {
-  await login(page, ACCOUNTANT);
-  const card = await openCard(page);
-  const second = seeded!.deals[1]!;
-  await card.getByTestId('truck-deal-select').selectOption(second.id);
-  // Inside 5 % of the deal's own part here (6543.21 × 2/3 = 4362.14), and the
-  // first price: only the Q8 question can stop this press.
-  await card.locator('input[name="amount"]').fill('4362');
-  await submit(card).click();
-  const alert = card.getByTestId('pricing-deviation');
-  await expect(alert.getByTestId('pricing-deal-ask')).toContainText(second.code);
-  await expect(alert.getByTestId('pricing-deal-ask')).toContainText('33 %');
-  await expect(alert.getByTestId('pricing-deviation-pct')).toHaveCount(0);
-  await expect(alert.getByTestId('pricing-priced-here-ask')).toHaveCount(0);
-  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(0);
-  await alert.getByRole('button').last().click();
-  await expect(alert).toHaveCount(0);
-  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(0);
-});
-
-test('choosing the second deal writes the price to it, after one question that names its part', async ({ page }) => {
-  await login(page, ACCOUNTANT);
-  const card = await openCard(page);
-  const [first, second, third] = seeded!.deals;
-  await card.getByTestId('truck-deal-select').selectOption(second!.id);
-  await expect(card.getByTestId('truck-deal-line')).toContainText(second!.code);
-  await card.locator('input[name="amount"]').fill('500');
-  await submit(card).click();
-  const alert = card.getByTestId('pricing-deviation');
-  await expect(alert).toBeVisible();
-  await expect(alert.getByTestId('pricing-deal-ask')).toContainText(second!.code);
-  // The accountant's 5 % check compares with THAT deal's part here: 6543.21 × 2/3.
-  await expect(alert.getByTestId('pricing-deviation-pct')).toContainText('4362.14');
-  // The control for the VED's half below: the quotes ARE in the owner-side page.
-  expect(await page.content()).toContain('6543.21');
-  await alert.getByTestId('pricing-deviation-confirm').click();
-  await expect(submit(card)).toHaveText('✅', { timeout: 15_000 });
-
-  expect((await pricesOn(batchId, seeded!.clientId)).map((row) => row.dealId)).toEqual([second!.id]);
-  // Where it went, and which of his deals here still has no price — loud now.
-  const here = card.getByTestId('pricing-priced-here');
-  await expect(here.getByTestId('pricing-priced-here-row')).toContainText(second!.code);
-  const missing = here.getByTestId('pricing-priced-here-missing');
-  await expect(missing).toHaveCount(2);
-  // In the order the deals are listed above it (by code), not by deal id.
-  await expect(missing.first()).toContainText(first!.code);
-  await expect(missing.filter({ hasText: first!.code })).toHaveAttribute('data-why', 'missing');
-  await expect(missing.filter({ hasText: third!.code })).toHaveAttribute('data-why', 'missing');
-  // The next price is chosen again, never carried over — and the deals still
-  // without a price here come first.
-  const select = card.getByTestId('truck-deal-select');
-  expect(await select.inputValue()).toBe('');
-  await expect(select.locator('option').nth(3)).toHaveAttribute('value', second!.id);
-});
-
-test('the first deal’s price is asked about as an extra bill on this truck', async ({ page }) => {
-  await login(page, ACCOUNTANT);
-  const card = await openCard(page);
-  const [first, second] = seeded!.deals;
-  await card.getByTestId('truck-deal-select').selectOption(first!.id);
-  await card.locator('input[name="amount"]').fill('300');
-  await submit(card).click();
-  const alert = card.getByTestId('pricing-deviation');
-  await expect(alert.getByTestId('pricing-priced-here-ask')).toContainText(`$500.00 → ${second!.code}`);
-  await alert.getByTestId('pricing-deviation-confirm').click();
-  await expect(submit(card)).toHaveText('✅', { timeout: 15_000 });
-  expect((await pricesOn(batchId, seeded!.clientId)).map((row) => row.dealId)).toEqual([second!.id, first!.id]);
-  await expect(card.getByTestId('pricing-priced-here-missing')).toHaveCount(1);
-});
-
-test('the VED is asked the same question, with none of the deals’ quotes in the page — and it fits 360 px', async ({ page }) => {
-  await login(page, VED);
-  const card = await openCard(page);
-  await expect(card.getByTestId('truck-deal-select').locator('option')).toHaveCount(4);
-  const html = await page.content();
-  for (const deal of seeded!.deals) expect(html, deal.quote).not.toContain(deal.quote);
-  expect(html).not.toContain('4362.14');
-  await card.getByTestId('truck-deal-select').selectOption(seeded!.deals[2]!.id);
-  const w = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
+  // Quote × this truck's share, rounded UP: 6543.21 × 2/3, 1234.56 × 1/2,
+  // 7777.33 × 3/4 = 5832.9975.
+  await expect(box(card, deal(1).id)).toHaveValue('4362.14');
+  await expect(box(card, deal(0).id)).toHaveValue('617.28');
+  await expect(box(card, deal(2).id)).toHaveValue('5833.00');
+  // «Bitimsiz» has no quote and is never pre-filled.
+  await expect(box(card, 'none')).toHaveValue('');
+  // A dollar figure never stands in a so'm box: the untouched pre-fill goes,
+  // and comes back with the dollar. (The options carry no value attribute —
+  // their text is the value.)
+  const currency = card.getByTestId('pricing-table').locator('select[name="currency"]');
+  if ((await currency.locator('option', { hasText: /^UZS$/ }).count()) > 0) {
+    await currency.selectOption('UZS');
+    await expect(box(card, deal(1).id)).toHaveValue('');
+    await expect(row(card, deal(1).id).getByTestId('pricing-table-why')).toHaveAttribute('data-why', 'currency');
+    await currency.selectOption('USD');
+    await expect(box(card, deal(1).id)).toHaveValue('4362.14');
+  }
+  // The owner's sight draws the most per deal (the deal block above the
+  // table): it fits the phone too, the 44-character name included (#400).
+  const w = await width(page);
   expect(w.view).toBe(360);
   expect(w.doc).toBeLessThanOrEqual(w.view);
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(0);
 });
 
-test('a chosen deal whose prixod was re-filed is refused, and the redrawn select is blank — never the first deal', async ({ page }) => {
+test('a save with blank rows writes only the filled one (his 3a) — and nothing asks about a deal with nothing here', async ({ page }) => {
   await login(page, ACCOUNTANT);
   const card = await openCard(page);
-  const [first, , third] = seeded!.deals;
-  const select = card.getByTestId('truck-deal-select');
-  await select.selectOption(third!.id);
-  // The third deal's prixod moves onto the first while the page is open: two
-  // deals remain, so the question stays and the chosen option goes.
-  await refile(third!.receiptId, first!.id);
-  await card.locator('input[name="amount"]').fill('20');
-  await submit(card).click();
-  await card.getByTestId('pricing-deviation').getByTestId('pricing-deviation-confirm').click();
-  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'deals_changed', { timeout: 15_000 });
-  await expect(select.locator(`option[value="${third!.id}"]`)).toHaveCount(0, { timeout: 15_000 });
-  await expect(select).toBeVisible();
-  expect(await select.inputValue()).toBe('');
-  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(2);
+  await onlyRows(card, { [deal(1).id]: '4362.14' });
+  await save(card).click();
+  // Nothing to ask: inside 5 %, no price here, no «davomi» — the old «Bu narx
+  // qo'shimcha hisob bo'ladi» about the next deal's part is gone.
+  await expect.poll(async () => (await pricesOn(batchId, seeded!.clientId)).map((r) => r.dealId), { timeout: 15_000 }).toEqual([
+    deal(1).id,
+  ]);
+  await expect(card.getByTestId('pricing-deviation')).toHaveCount(0);
+  // The rows emptied on purpose stay empty — never pre-filled back for the
+  // next press to write (judge P1-UX-3); the written row cleared.
+  await expect(box(card, deal(0).id)).toHaveValue('');
+  await expect(box(card, deal(1).id)).toHaveValue('');
+  // What stands for the priced deal, and ONE loud line for every blank one.
+  await expect(row(card, deal(1).id).getByTestId('pricing-table-stands')).toContainText('$4362.14');
+  const missing = card.getByTestId('pricing-priced-here-missing');
+  await expect(missing).toHaveCount(1);
+  await expect(missing).toHaveAttribute('data-loud', 'true');
+  await expect(missing).toContainText(deal(0).code);
+  await expect(missing).not.toContainText(deal(1).code);
 });
 
-test('a page drawn before the truck became one deal’s is refused and redrawn with nothing to choose', async ({ page }) => {
+test('a row whose deal is priced here asks «qo‘shimcha hisob» for THAT row only — a deal with nothing here is never called an extra bill', async ({ page }) => {
   await login(page, ACCOUNTANT);
   const card = await openCard(page);
-  const [first, second, third] = seeded!.deals;
-  await card.getByTestId('truck-deal-select').selectOption(first!.id);
-  // Every prixod of his here moves onto the second deal while the page is open.
-  await refile(first!.receiptId, second!.id);
-  await refile(third!.receiptId, second!.id);
-  await card.locator('input[name="amount"]').fill('10');
-  await submit(card).click();
-  await card.getByTestId('pricing-deviation').getByTestId('pricing-deviation-confirm').click();
-  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'deals_changed', { timeout: 15_000 });
-  // Redrawn: the truck carries one deal of his now, so nobody is asked.
-  await expect(card.getByTestId('truck-deal-select')).toHaveCount(0, { timeout: 15_000 });
-  await expect(card.getByTestId('pricing-to-deal')).toContainText(second!.code);
-  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(2);
-});
-
-test('a further price for a client already priced here asks — by itself, with no deal to choose', async ({ page }) => {
-  await login(page, ACCOUNTANT);
-  const card = await openCard(page);
-  // All 6 m³ are the second deal's now: 6543.21 × 6/3 = 13086.42 — inside 5 %.
-  await card.locator('input[name="amount"]').fill('13086');
-  await submit(card).click();
+  // A fresh page: the priced deal sorts last among the deals, and nothing
+  // pre-fills it again.
+  await expect(card.getByTestId('pricing-table-row').nth(11)).toHaveAttribute('data-deal', deal(1).id);
+  await expect(box(card, deal(1).id)).toHaveValue('');
+  await onlyRows(card, { [deal(0).id]: '617.28', [deal(1).id]: '4362.14' });
+  await save(card).click();
   const alert = card.getByTestId('pricing-deviation');
-  await expect(alert.getByTestId('pricing-priced-here-ask')).toBeVisible();
-  await expect(alert.getByTestId('pricing-deal-ask')).toHaveCount(0);
-  await expect(alert.getByTestId('pricing-deviation-pct')).toHaveCount(0);
+  await expect(alert).toBeVisible();
+  await expect(alert.getByTestId('pricing-table-total')).toContainText('4979.42 USD');
+  const extra = alert.locator('[data-testid="pricing-table-ask"][data-kind="extra"]');
+  await expect(extra).toHaveCount(1);
+  await expect(extra).toContainText(deal(1).code);
+  await expect(extra).toContainText('$4362.14');
+  // Deal 0 has nothing here and sits on its own part: no line names it.
+  await expect(alert.getByTestId('pricing-table-ask').filter({ hasText: deal(0).code })).toHaveCount(0);
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(1);
+  // Taken back, nothing is written; without the extra row the press goes
+  // straight through.
+  await alert.getByRole('button').last().click();
+  await expect(alert).toHaveCount(0);
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(1);
+  await box(card, deal(1).id).fill('');
+  await save(card).click();
+  await expect.poll(async () => (await pricesOn(batchId, seeded!.clientId)).map((r) => r.dealId), { timeout: 15_000 }).toEqual([
+    deal(1).id,
+    deal(0).id,
+  ]);
+});
+
+test('the VED: the same rows, nothing pre-filled, no quote in the page — and it fits 360 px with a 44-character name', async ({ page }) => {
+  await login(page, VED);
+  const card = await openCard(page);
+  await expect(card.getByTestId('pricing-table-row')).toHaveCount(13);
+  const html = await page.content();
+  for (const d of seeded!.deals) expect(html, d.quote).not.toContain(d.quote);
+  for (const figure of ['5833.00', '617.28', '4362.14']) expect(html, figure).not.toContain(`value="${figure}"`);
+  await expect(box(card, deal(2).id)).toHaveValue('');
+  // The long name wraps in its row; the page stays the phone's width (#400).
+  await expect(row(card, deal(3).id).getByTestId('pricing-table-label')).toContainText(LONG_GOODS);
+  const w = await width(page);
+  expect(w.view).toBe(360);
+  expect(w.doc).toBeLessThanOrEqual(w.view);
+  // «Saqlash» and its alert are reachable at the foot of thirteen rows — the
+  // VED types into a priced deal's row, so the alert asks.
+  await box(card, deal(1).id).fill('10');
+  await save(card).scrollIntoViewIfNeeded();
+  await expect(save(card)).toBeVisible();
+  await save(card).click();
+  const alert = card.getByTestId('pricing-deviation');
+  await alert.scrollIntoViewIfNeeded();
+  await expect(alert.getByTestId('pricing-deviation-confirm')).toBeInViewport();
+  const after = await width(page);
+  expect(after.doc).toBeLessThanOrEqual(after.view);
   await alert.getByRole('button').last().click();
   expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(2);
+});
+
+test('a price written behind the screen is `prices_changed` — refused, redrawn, the typed figure kept on its own row', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  const card = await openCard(page);
+  await onlyRows(card, { [deal(4).id]: '50' });
+  // Another tab prices deal 5 while this page is open.
+  await priceBehindTheScreen(batchId, seeded!.clientId, deal(5).id, '25.00');
+  await save(card).click();
+  // Deal 4 is far under its part: the alert asks first.
+  await card.getByTestId('pricing-deviation').getByTestId('pricing-deviation-confirm').click();
+  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'prices_changed', { timeout: 15_000 });
+  // Redrawn: deal 5's row now says what stands, and the figure typed for
+  // deal 4 is still on deal 4.
+  await expect(row(card, deal(5).id).getByTestId('pricing-table-stands')).toContainText('$25.00', { timeout: 15_000 });
+  await expect(box(card, deal(4).id)).toHaveValue('50');
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(3);
+});
+
+test('a page drawn before a prixod was re-filed is refused and redrawn — the row of the deal that left is gone, the other figure stays', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  const card = await openCard(page);
+  // TYPED, not the pre-fill: an untouched row would show the redrawn page's
+  // own pre-fill (deal 2 carries 10 m³ after the re-file).
+  await onlyRows(card, { [deal(2).id]: '5833', [deal(6).id]: '1' });
+  // Deal 6's prixod moves onto deal 2 while the page is open.
+  await refile(deal(6).receiptId, deal(2).id);
+  await save(card).click();
+  // Deal 6's 1 is far under its part — the alert asks; confirm it.
+  await card.getByTestId('pricing-deviation').getByTestId('pricing-deviation-confirm').click();
+  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'deals_changed', { timeout: 15_000 });
+  await expect(row(card, deal(6).id)).toHaveCount(0, { timeout: 15_000 });
+  // The figure stays on the deal it was typed for — never moved to another row.
+  await expect(box(card, deal(2).id)).toHaveValue('5833');
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(3);
+});
+
+test('a page drawn before the truck became one deal’s is refused and redrawn as the single form — the sentence survives the flip', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  const card = await openCard(page);
+  await onlyRows(card, { [deal(2).id]: '5833' });
+  // Every prixod of his here moves onto deal 2 while the page is open: one
+  // deal beside deal-less cargo is nobody's question (R3a).
+  for (const d of seeded!.deals) if (d.id !== deal(2).id) await refile(d.receiptId, deal(2).id);
+  await save(card).click();
+  // 5833 is far under deal 2's part as drawn (10 m³ of it): the alert asks.
+  await card.getByTestId('pricing-deviation').getByTestId('pricing-deviation-confirm').click();
+  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'deals_changed', { timeout: 15_000 });
+  await expect(card.getByTestId('pricing-table')).toHaveCount(0, { timeout: 15_000 });
+  await expect(card.getByTestId('pricing-form')).toBeVisible();
+  // The wrapper kept the refusal across the remount (judge P1-UX-5).
+  await expect(card.getByTestId('pricing-form-error')).toHaveAttribute('data-error', 'deals_changed');
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(3);
+});
+
+test('the single form: a further price for a client already priced here asks — by itself', async ({ page }) => {
+  await login(page, ACCOUNTANT);
+  const card = await openCard(page);
+  await card.getByTestId('pricing-form').locator('input[name="amount"]').fill('100');
+  await card.getByTestId('pricing-form').locator('button[type="submit"]').click();
+  const alert = card.getByTestId('pricing-deviation');
+  await expect(alert.getByTestId('pricing-priced-here-ask')).toBeVisible();
+  // Deal-less cargo aboard: no whole-cargo figure to compare with.
+  await expect(alert.getByTestId('pricing-deviation-pct')).toHaveCount(0);
+  await alert.getByRole('button').last().click();
+  expect(await pricesOn(batchId, seeded!.clientId)).toHaveLength(3);
 });
 
 test('cleanup: the seed and its prices are gone and the truck is cancelled', async ({ page }) => {
