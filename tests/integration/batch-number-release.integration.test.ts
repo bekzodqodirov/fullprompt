@@ -806,6 +806,78 @@ describe('a cancelled WEARER of a live minter’s vacated number (review M6)', (
     expect(await batchNumberState(w.id)).toEqual({ kind: 'kept', why: 'newer', number: `${prefix}-003`, name: z.code });
     expect(await counterOf(prefix)).toBe(4);
   });
+
+  it('the minter’s OWN cancel, whose walk frees its number through the wearer’s row, answers «qaytdi» — never «xatolik»', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix); // 001
+    const x = await mint(prefix); // 002
+    const w = await mint(prefix); // 003
+    await renameLoading(x.id, `01A${tag()}BA`); // X live under its plate
+    await renameLoading(w.id, x.code); // W wears the vacated 002
+    expect((await cancelBatch(w.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [`${prefix}-003`] });
+    expect(await counterOf(prefix)).toBe(2);
+    // X's cancel walks: 002's holder is X, cancelled, never left → given back
+    // through W, the truck that wears it («002 (bekor)»).
+    const res = await cancelBatch(x.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'returned', codes: [x.code] });
+    expect(await batchNumberState(x.id)).toEqual({ kind: 'returned', numbers: [x.code] });
+    expect(await codeOf(w.id)).toBe(`${x.code} (bekor)`);
+    expect(await counterOf(prefix)).toBe(1);
+    expect((await mint(prefix)).code).toBe(x.code);
+  });
+
+  it('a number given back through a wearer that later had papers at the agent is never promised to the next truck', async () => {
+    const prefix = await freshPrefix();
+    const y = await mint(prefix); // 001
+    const x = await mint(prefix); // 002
+    const w = await mint(prefix); // 003
+    await renameLoading(x.id, `01S${tag()}BA`);
+    await renameLoading(w.id, x.code);
+    await cancelBatch(x.id, 'xato', ctx()); // kept: W lives above it
+    expect((await cancelBatch(w.id, 'xato', ctx())).number).toEqual({
+      kind: 'returned',
+      codes: [`${prefix}-003`, x.code],
+    });
+    expect(await counterOf(prefix)).toBe(1);
+    // Y takes the given-back 002 by hand, its papers go to the agent under it,
+    // and it is renamed away before it leaves.
+    await renameLoading(y.id, x.code);
+    await tickAgent(y.id, true);
+    await renameLoading(y.id, `01Y${tag()}BA`);
+    expect(await batchNumberState(w.id)).toEqual({
+      kind: 'returned',
+      numbers: [`${prefix}-003`, x.code],
+      agent: [x.code],
+    });
+    // …and the mint passes over it.
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+
+  it('a cancelled truck still WEARING its number below a hand-moved counter is no «qaytdi» — the mint walks past a worn name', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix); // 001
+    const b = await mint(prefix); // 002
+    await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, b.id)); // no walk
+    await db.execute(sql`UPDATE counters SET value = 1 WHERE kind = 'batch_seq' AND scope_key = ${prefix}`);
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'kept', why: 'error', number: b.code });
+  });
+
+  it('an ANNULLED minter (cancelled after it left) still holds its number against a cancelled wearer', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix); // 001
+    const x = await mint(prefix); // 002
+    const w = await mint(prefix); // 003
+    const plate = `01D${tag()}BA`;
+    await renameLoading(x.id, plate);
+    await departWithCarton(x.id);
+    await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, x.id)); // the annul
+    await renameLoading(w.id, x.code);
+    expect((await cancelBatch(w.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [`${prefix}-003`] });
+    expect(await counterOf(prefix)).toBe(2);
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.stoppedBy).toEqual({ why: 'renamed_left', number: x.code, name: plate });
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
 });
 
 describe('after the commit nothing fails the cancel (review F3)', () => {

@@ -131,6 +131,36 @@ export type NumberState =
   | { kind: 'returned'; numbers: string[]; taken?: { number: string; name: string }[]; agent?: string[] }
   | { kind: 'kept'; why: NumberKeptWhy; number?: string; name?: string };
 
+/**
+ * A number given back, as the card says it. «Keyingi mashinaga beriladi» is a
+ * promise about the MINT, so it is read live and not from the release row
+ * (review RVF3-2): a number given back and then worn on the road by another
+ * truck under a hand rename is a road former name, which no mint ever hands
+ * out again — `taken`, named by the truck that carried it (`numberHolderOf`'s
+ * road-first rule) as it is called now. A holder BORN with it got it from the
+ * mint: the promise kept, whatever it is called on the road since (review M3)
+ * — so «born» keeps a number out of `taken` only, never out of `agent`: a
+ * number the agent has since had papers under is one the mint passes over
+ * (review M5), whoever holds it (the check of M3-M6 — a born minter cancelled
+ * before its wearer gave the number back is such a holder).
+ */
+async function returnedState(batchId: string, numbers: string[]): Promise<NumberState> {
+  const taken: { number: string; name: string }[] = [];
+  const agent: string[] = [];
+  for (const number of numbers) {
+    const verdict = await numberVerdict(db, number);
+    const holder = verdict.holder;
+    if (holder && holder.id !== batchId && holder.roadFormer && !holder.born) taken.push({ number, name: holder.code });
+    else if (!verdict.ok && verdict.why === 'agent') agent.push(number);
+  }
+  return {
+    kind: 'returned',
+    numbers,
+    ...(taken.length ? { taken } : {}),
+    ...(agent.length ? { agent } : {}),
+  };
+}
+
 /** How far the explainer walks from the counter's top before it says «newer» — a busy prefix's top is live. */
 const EXPLAIN_WALK = 200;
 
@@ -164,30 +194,7 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   const released = await releasedNumbersOf(db, batchId);
   if (released) {
     const numbers = released.length ? released : [(await firstNameOf(db, batchId)) ?? row.code];
-    // «Keyingi mashinaga beriladi» is a promise about the MINT, so it is read
-    // live and not from the release row (review RVF3-2): a number given back
-    // and then worn on the road by another truck under a hand rename is a
-    // road former name, which no mint ever hands out again. The verdict's
-    // holder is then the truck that carried it (`numberHolderOf`'s road-first
-    // rule), by the name it wears now. A holder BORN with it got it from the
-    // mint — the promise kept, whatever it is called on the road since
-    // (review M3). And a number the agent has since had papers under is one
-    // the mint passes over (review M5): the verdict says 'agent' for it.
-    const taken: { number: string; name: string }[] = [];
-    const agent: string[] = [];
-    for (const number of numbers) {
-      const verdict = await numberVerdict(db, number);
-      const holder = verdict.holder;
-      if (holder && holder.id !== batchId && holder.born) continue;
-      if (holder && holder.id !== batchId && holder.roadFormer) taken.push({ number, name: holder.code });
-      else if (!verdict.ok && verdict.why === 'agent') agent.push(number);
-    }
-    return {
-      kind: 'returned',
-      numbers,
-      ...(taken.length ? { taken } : {}),
-      ...(agent.length ? { agent } : {}),
-    };
+    return returnedState(batchId, numbers);
   }
   const prefix = batchSeqPrefix({ code: row.whCode, batchPrefix: row.batchPrefix });
   const held = await heldNumberOf(db, batchId, prefix, row.code);
@@ -197,9 +204,22 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   if (n === null) return { kind: 'kept', why: 'prefix', number: held };
   const top = await readCounter(db, 'batch_seq', prefix);
   if (top === null) return { kind: 'kept', why: 'no_counter', number: held };
-  // Below its own number, unreleased: nothing walking down from the top will
-  // ever reach it, and the mint walks past a name a truck still wears.
-  if (top < n) return { kind: 'kept', why: 'error', number: held };
+  // The counter is already below its number with no release row of its own:
+  // another truck's release row freed it — a wearer it had vacated the
+  // number to gave it back (review M6's path: the minter's OWN cancel then
+  // runs the walk that frees it). The number's own verdict says what stands:
+  // releasable is a number the mint will hand out again, i.e. it came back;
+  // anything else is the reason it stays (papers at the agent, a truck
+  // wearing it). Never «xatolik» for a number that came back (the check of
+  // review M3-M6). A releasable holder that still WEARS the string is not
+  // free — the mint walks past a name a truck wears — and nothing walking
+  // down from the top will ever reach it: that anomaly stays «xatolik».
+  if (top < n) {
+    const verdict = await numberVerdict(db, held);
+    if (verdict.ok && !verdict.holder?.wears) return returnedState(batchId, [held]);
+    if (verdict.ok) return { kind: 'kept', why: 'error', number: held };
+    return { kind: 'kept', why: verdict.why, number: held, name: verdict.holder?.code };
+  }
 
   // The numbers above it, top first: the first that does not come back is
   // what keeps this one.
