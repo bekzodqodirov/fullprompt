@@ -146,7 +146,13 @@ export function CompensationForm({
           {mine.map((charge) => (
             <div key={charge.id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
               <span className="min-w-0 flex-1 font-mono text-xs">
-                {charge.batchCode ?? charge.dealCode ?? '—'} · {charge.amount} {charge.currency} · {charge.txDate}
+                {/* Truck AND deal: a truck priced from the table carries one
+                    part per deal, and fifteen «YW-010 · …» lines cannot be
+                    told apart (judge P1-correction-doors). */}
+                {[charge.batchCode, charge.dealCode ?? (charge.batchCode ? t('pricedHereNoDeal') : null)]
+                  .filter(Boolean)
+                  .join(' · ') || '—'}{' '}
+                · {charge.amount} {charge.currency} · {charge.txDate}
               </span>
               <input
                 className="input !w-28 shrink-0"

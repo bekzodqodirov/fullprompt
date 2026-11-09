@@ -16,10 +16,23 @@ describe('the deal price on the pricing screen', () => {
     expect(page).toMatch(/dealPriceSight && groupDealIds\.length > 0\s*\?/);
   });
 
+  // Both «Narx» bodies since the price table (2026-11-08): the single form
+  // against the client's whole cargo, the table against each ROW's own part.
   it('the form stops the press before its action and asks once', () => {
     const form = read('src/app/(protected)/batches/[id]/pricing/pricing-form.tsx');
     expect(form).toContain('needsConfirmation(typed, expectedUsd)');
-    expect(form).toContain('event.preventDefault();');
-    expect(form).toContain('confirmed.current = true;');
+    const table = read('src/app/(protected)/batches/[id]/pricing/pricing-table.tsx');
+    expect(table).toContain('needsConfirmation(amount, row.expectedUsd)');
+    for (const body of [form, table]) {
+      expect(body).toContain('event.preventDefault();');
+      expect(body).toContain('confirmed.current = true;');
+    }
+  });
+
+  it('a row’s 5 % figure and its pre-fill exist only for the quote sight (law 4)', () => {
+    const page = read('src/app/(protected)/batches/[id]/pricing/page.tsx');
+    expect(page).toContain('const quote = dealPriceSight ? quoteOf.get(dealId) : undefined;');
+    expect(page).toContain('sight: dealPriceSight,');
+    expect(page).toContain('discounted: dealPriceSight && discountedDeals.has(dealId),');
   });
 });

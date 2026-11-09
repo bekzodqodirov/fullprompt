@@ -64,8 +64,12 @@ export interface OffTruckPrice {
   droppedBoxIds: string[];
   /** Where the dropped cartons ride now (pointer or ride), code-sorted. */
   droppedTo: { batchId: string; code: string; boxes: number }[];
-  /** The live charges behind `chargedUsd`, for «🚚 Ko'chirish» (own currency). */
-  charges: { id: string; amount: number; currency: string }[];
+  /**
+   * The live charges behind `chargedUsd`, for «🚚 Ko'chirish» (own currency),
+   * each with its deal — a truck priced from the table carries one part per
+   * deal, and the move form names which one it moves.
+   */
+  charges: { id: string; amount: number; currency: string; dealCode: string | null }[];
 }
 
 export type OffTruckScope = { batchIds: string[] } | { clientIds: string[] };
@@ -255,9 +259,11 @@ export async function offTruckPrices(
            coalesce((SELECT json_agg(json_build_object('batchId', nb.id, 'code', nb.code, 'boxes', x.boxes) ORDER BY nb.code)
                        FROM ot_dest x JOIN batches nb ON nb.id = x.to_batch
                       WHERE x.from_batch = p.batch_id AND x.client_id = p.client_id), '[]'::json) AS dropped_to,
-           (SELECT json_agg(json_build_object('id', lc.id, 'amount', lc.amount, 'currency', lc.currency)
+           (SELECT json_agg(json_build_object('id', lc.id, 'amount', lc.amount, 'currency', lc.currency,
+                                              'dealCode', ld.code)
                             ORDER BY lc.created_at, lc.id)
               FROM client_transactions lc
+              LEFT JOIN deals ld ON ld.id = lc.deal_id
              WHERE lc.batch_id = p.batch_id AND lc.client_id = p.client_id
                AND lc.type = 'charge' AND lc.voided_at IS NULL) AS charges
       FROM ot_priced p
@@ -284,7 +290,7 @@ export async function offTruckPrices(
     grew_ids: string[];
     drop_cause: 'short_loaded' | 'found_back' | 'taken_back' | 'mixed' | null;
     dropped_to: { batchId: string; code: string; boxes: number }[] | string;
-    charges: { id: string; amount: string | number; currency: string }[] | null;
+    charges: { id: string; amount: string | number; currency: string; dealCode: string | null }[] | null;
   }[];
 
   return rows.map((row) => ({
@@ -308,7 +314,12 @@ export async function offTruckPrices(
     droppedTo: (typeof row.dropped_to === 'string' ? JSON.parse(row.dropped_to) : row.dropped_to).map(
       (d: { batchId: string; code: string; boxes: number }) => ({ batchId: d.batchId, code: d.code, boxes: Number(d.boxes) }),
     ),
-    charges: (row.charges ?? []).map((c) => ({ id: c.id, amount: Number(c.amount), currency: c.currency })),
+    charges: (row.charges ?? []).map((c) => ({
+      id: c.id,
+      amount: Number(c.amount),
+      currency: c.currency,
+      dealCode: c.dealCode ?? null,
+    })),
   }));
 }
 

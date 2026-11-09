@@ -831,8 +831,8 @@ export async function setUpsaleCategory(categoryId: string, ctx: AuditContext): 
  */
 export async function bothFiguresForDeals(
   dealIds: string[],
-): Promise<Map<string, { floorUsd: number; clientPriceUsd: number }>> {
-  const out = new Map<string, { floorUsd: number; clientPriceUsd: number }>();
+): Promise<Map<string, { floorUsd: number; clientPriceUsd: number; perKg: boolean }>> {
+  const out = new Map<string, { floorUsd: number; clientPriceUsd: number; perKg: boolean }>();
   const ids = [...new Set(dealIds)].filter(Boolean);
   if (ids.length === 0) return out;
   const { offerStandsSql, releasedOfferWhere } = await import('./workspace');
@@ -847,6 +847,14 @@ export async function bothFiguresForDeals(
       floorUsd: sql<string>`COALESCE(
         (SELECT v.total_usd FROM calc_versions v WHERE v.id = ${calcOffers.versionId}),
         (SELECT r.answer_amount FROM calc_requests r WHERE r.id = ${calcOffers.requestId})
+      )`,
+      // What the promise's share scales on — per kg when its freight was
+      // priced per kg (`payableOffersSql`'s `per_kg`): the «Narx» tab's
+      // pre-fill states a deal's part on the same basis its invoice check
+      // measures it (docs/NARX-VA-RAQAM.md §3.1.4). An answer has no version
+      // and is per m³ (else kg), like the upsale's own COALESCE.
+      perKg: sql<boolean>`COALESCE(
+        (SELECT v.freight_per_kg FROM calc_versions v WHERE v.id = ${calcOffers.versionId}), false
       )`,
       offeredAt: calcOffers.offeredAt,
     })
@@ -863,7 +871,7 @@ export async function bothFiguresForDeals(
   // Ordered ascending and overwritten, so the NEWEST standing offer per deal
   // wins — one pair per deal, never a promise a correction replaced.
   for (const r of rows) {
-    out.set(r.dealId, { floorUsd: money(r.floorUsd), clientPriceUsd: money(r.clientPriceUsd) });
+    out.set(r.dealId, { floorUsd: money(r.floorUsd), clientPriceUsd: money(r.clientPriceUsd), perKg: Boolean(r.perKg) });
   }
   return out;
 }

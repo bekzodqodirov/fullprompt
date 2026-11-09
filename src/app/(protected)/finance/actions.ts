@@ -10,10 +10,12 @@ import { requestMeta } from '@/modules/platform/auth/session';
 import {
   FinanceError,
   addTransaction,
+  addTruckPrices,
   moveCharge,
   moveChargeSchema,
   placePayment,
   transactionSchema,
+  truckPricesSchema,
   voidTransaction,
 } from '@/modules/wms/finance/service';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
@@ -55,6 +57,10 @@ export async function addTransactionAction(
     // nothing; without this line the door would never hear that the page went
     // stale, and every service test would still pass (#531).
     dealsSeen: formData.get('dealsSeen') || undefined,
+    // The prices the «Narx» form was drawn with — '' (none yet) is an
+    // answer, not an absence: a colleague's price in between must still be
+    // caught, so `has`, never `|| undefined`. The ledger posts none.
+    pricesSeen: formData.has('pricesSeen') ? String(formData.get('pricesSeen')) : undefined,
     accountId: formData.get('accountId') || undefined,
     note: String(formData.get('note') ?? ''),
   });
@@ -364,4 +370,76 @@ export async function voidFxCloseAction(input: unknown): Promise<TxFormState> {
   revalidatePath(`/finance/${parsed.data.clientId}`);
   revalidatePath('/accounting/pnl');
   return { ok: true };
+}
+
+export interface TruckPricesState {
+  ok?: boolean;
+  error?: string;
+  /** The row a refusal is about — a deal id, or 'none' — so the table marks it. */
+  dealId?: string;
+  /** The rows this press wrote — the table clears exactly these (his 3a). */
+  written?: string[];
+}
+
+/** The table's amount fields: `deal:<uuid>` or `deal:none`. */
+const PART_FIELD = 'deal:';
+
+/**
+ * «Narx» tab, the price table (docs/NARX-VA-RAQAM.md §1.3 / §3.1): one row per
+ * deal of the client's on the truck, ONE press. The charge door's grant, and
+ * nothing else — a truck price moves no kassa, so none of the ledger door's
+ * till branches applies (fenced: unpriced-gate-wire). Blank rows are dropped
+ * BEFORE the schema, and a press with none left is `deal_parts_empty` in its
+ * own words, never zod's `validation` (judge P1-empty-code); only a row whose
+ * text is empty is blank — `parseTypedMoney` answers null for «abc» too, and
+ * a filter on its answer would save the rest and silently drop that row
+ * (P1-UX-8), so an unreadable row is refused by its deal id.
+ */
+export async function addTruckPricesAction(_prev: TruckPricesState, formData: FormData): Promise<TruckPricesState> {
+  let actor;
+  try {
+    actor = await authorize('finance.manage');
+  } catch (err) {
+    if (err instanceof AuthError) return { error: 'forbidden' };
+    throw err;
+  }
+  const parts: { dealId: string; amount: number }[] = [];
+  for (const [name, value] of formData.entries()) {
+    if (!name.startsWith(PART_FIELD)) continue;
+    const text = String(value).trim();
+    if (text === '') continue;
+    const dealId = name.slice(PART_FIELD.length);
+    const amount = parseTypedMoney(text);
+    if (amount === null || !(amount > 0)) return { error: 'validation', dealId };
+    parts.push({ dealId, amount });
+  }
+  if (parts.length === 0) return { error: 'deal_parts_empty' };
+  const parsed = truckPricesSchema.safeParse({
+    clientId: formData.get('clientId'),
+    batchId: formData.get('batchId'),
+    currency: formData.get('currency'),
+    txDate: formData.get('txDate'),
+    // Both always posted by the table — '' is «no prices here yet», an answer.
+    dealsSeen: String(formData.get('dealsSeen') ?? ''),
+    pricesSeen: String(formData.get('pricesSeen') ?? ''),
+    parts,
+    note: String(formData.get('note') ?? ''),
+  });
+  if (!parsed.success) return { error: amountRefusal(parsed.error) ?? 'validation' };
+  const meta = await requestMeta();
+  let rows;
+  try {
+    rows = await addTruckPrices(parsed.data, { actorId: actor.id, ...meta });
+  } catch (err) {
+    if (err instanceof FinanceError) return { error: err.code, dealId: err.detail };
+    throw err;
+  }
+  revalidatePath('/finance');
+  revalidatePath(`/finance/${parsed.data.clientId}`);
+  revalidatePath(`/batches/${parsed.data.batchId}/pricing`);
+  // Each part is its deal's money now — every deal card it reached redraws.
+  for (const dealId of new Set(rows.map((row) => row.dealId).filter((id): id is string => Boolean(id)))) {
+    revalidatePath(`/bitimlar/${dealId}`);
+  }
+  return { ok: true, written: parsed.data.parts.map((part) => part.dealId) };
 }

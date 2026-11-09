@@ -123,6 +123,109 @@ export function truckDealDecision(
 }
 
 /**
+ * One row of the «Narx» tab's table (the owner, 2026-11-08, his 1a: «1
+ * mashinada 1 clientda 10 15 ta prixoda va har birida bitim bolsa narx
+ * berishda faqat 1 dona bitim tanlaydigan bolib qolgan»): a deal's own part,
+ * or the «bitimsiz» part, with its typed amount. `derive` is no part — the
+ * table is drawn only where somebody has to choose.
+ */
+export type TruckDealPart = { choice: TruckDealChoice; amount: number };
+
+export type TruckDealPartsRefusal = TruckDealRefusal | 'deal_parts_empty' | 'deal_part_duplicate';
+
+/** The part a refusal is about, as the table posts it: the deal's id, or 'none'. */
+export const partKeyOf = (choice: TruckDealChoice): string =>
+  choice.kind === 'deal' ? choice.dealId : choice.kind;
+
+/**
+ * One press of the table, decided — beside `truckDealDecision` and built from
+ * it, so a part is admitted by exactly the branches a single price is (#513).
+ * Asked by the price door on the pool and again inside its transaction.
+ *
+ * The order is the refusals' priority: a page drawn under another question
+ * first (Q8's rule — nothing else it says can be trusted), then a table posted
+ * for a client nobody has to ask (a stale or forged post: the table is drawn
+ * only for an ambiguous client), then the shape of the press, then each part.
+ * `at` names the part a refusal is about, so the screen can mark its row.
+ */
+export function truckDealParts(
+  candidates: DealCandidates,
+  parts: TruckDealPart[],
+  seen: string,
+):
+  | { ok: true; parts: { dealId: string | null; via: 'chosen' | 'none'; amount: number }[] }
+  | { ok: false; code: TruckDealPartsRefusal; at?: string } {
+  if (seen !== candidates.key) return { ok: false, code: 'deals_changed' };
+  if (!candidates.ambiguous) return { ok: false, code: 'deal_choice_invalid' };
+  if (parts.length === 0) return { ok: false, code: 'deal_parts_empty' };
+  const keys = new Set<string>();
+  const out: { dealId: string | null; via: 'chosen' | 'none'; amount: number }[] = [];
+  for (const part of parts) {
+    const at = partKeyOf(part.choice);
+    if (keys.has(at)) return { ok: false, code: 'deal_part_duplicate', at };
+    keys.add(at);
+    // On an ambiguous truck `derive` would answer «choose» — but a table
+    // row always names its deal, so a derived part is a malformed post.
+    if (part.choice.kind === 'derive') return { ok: false, code: 'deal_choice_invalid', at };
+    const decided = truckDealDecision(candidates, part.choice, seen);
+    if (!decided.ok) return { ok: false, code: decided.code, at };
+    // `derived` is unreachable here (no derive part); narrowed for the type.
+    out.push({ dealId: decided.dealId, via: decided.via === 'none' ? 'none' : 'chosen', amount: part.amount });
+  }
+  return { ok: true, parts: out };
+}
+
+/**
+ * A live price of the client on this truck, as the «already priced here»
+ * reading needs it. `chosenNone` — its create audit says the person CHOSE
+ * «bitimsiz» (`dealVia: 'none'`); every other deal-less price was written
+ * before the deals were known or before Q8, and is the whole cargo's.
+ */
+export interface TruckPriceHere {
+  id: string;
+  dealId: string | null;
+  usd: number;
+  chosenNone: boolean;
+}
+
+/**
+ * What already stands for a client on a truck — the ONE reading behind «Bu
+ * mashinadagi narxlar» (`unpricedDealsOf`) and every row of the price table
+ * (its pre-fill and its ask), so the two cannot disagree about which price
+ * covers what (#513; judge P1-UX-4).
+ *
+ * - `byDeal` — each offered deal's own live prices here;
+ * - `none` — the chosen «bitimsiz» part (`chosenNone`);
+ * - `whole` — every OTHER deal-less price here, on a truck with deal-less
+ *   cargo too (a pre-Q8 price there is still the whole cargo's: the audit
+ *   tells it from a chosen part), and every price on a deal that is no longer
+ *   among the candidates. Truck coverage ignores the deal (unpriced.ts), so
+ *   each of them already covers every carton of the client aboard: while one
+ *   stands nothing is pre-filled and every filled row asks, naming it.
+ */
+export interface PricedHereReading {
+  byDeal: Map<string, TruckPriceHere[]>;
+  none: TruckPriceHere[];
+  whole: TruckPriceHere[];
+}
+
+export function pricedHereReading(candidates: DealCandidates, prices: TruckPriceHere[]): PricedHereReading {
+  const byDeal = new Map<string, TruckPriceHere[]>();
+  const none: TruckPriceHere[] = [];
+  const whole: TruckPriceHere[] = [];
+  for (const price of prices) {
+    if (price.dealId !== null && candidates.deals.includes(price.dealId)) {
+      byDeal.set(price.dealId, [...(byDeal.get(price.dealId) ?? []), price]);
+    } else if (price.dealId === null && price.chosenNone) {
+      none.push(price);
+    } else {
+      whole.push(price);
+    }
+  }
+  return { byDeal, none, whole };
+}
+
+/**
  * The choice a deal select shows: the person's own, while it was made under
  * the question drawn now and is still one of its options; else nothing.
  *
@@ -146,24 +249,24 @@ export function shownDealChoice(
  * - `card` — the deal carries a live price of its own off any truck; the
  *   unpriced rule's deal clause covers its cartons here, so «narx yo'q» would
  *   invite a second bill for the same job.
- * - `whole` — a price with NO deal is already on the truck while none of the
- *   client's cargo here is deal-less (`!none`). It is not a chosen «bitimsiz»
- *   part (none is offered on such a truck): it is a whole-cargo price, written
- *   before the deals were known or before Q8, and it covers every carton of
- *   the client aboard. Said so, muted — bold «narx yo'q» under it invited two
- *   more bills (review).
+ * - `whole` — a whole-cargo price stands (`pricedHereReading`): a deal-less
+ *   price nobody chose as «bitimsiz» — written before the deals were known or
+ *   before Q8, on a truck with or without deal-less cargo — or a price on a
+ *   deal whose cargo left. It covers every carton of the client aboard. Said
+ *   so, muted — bold «narx yo'q» under it invited two more bills (review).
  * - `missing` — nothing covers this deal's part on the truck yet; loud only
  *   once the client has some price here (before that, «Narx: —» says it).
  */
 export function unpricedDealsOf(
   candidates: DealCandidates,
-  prices: { dealId: string | null }[],
+  prices: TruckPriceHere[],
   cardPriced: (dealId: string) => boolean,
 ): { dealId: string; why: 'card' | 'whole' | 'missing'; loud: boolean }[] {
   if (!candidates.ambiguous) return [];
-  const whole = !candidates.none && prices.some((price) => price.dealId === null);
+  const reading = pricedHereReading(candidates, prices);
+  const whole = reading.whole.length > 0;
   return candidates.deals
-    .filter((dealId) => !prices.some((price) => price.dealId === dealId))
+    .filter((dealId) => !reading.byDeal.has(dealId))
     .map((dealId) => {
       if (cardPriced(dealId)) return { dealId, why: 'card' as const, loud: false };
       if (whole) return { dealId, why: 'whole' as const, loud: false };

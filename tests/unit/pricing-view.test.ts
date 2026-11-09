@@ -31,6 +31,8 @@ const lot = (over: Partial<BatchLot>): BatchLot => ({
   lotBoxCount: 1,
   kg: 10,
   m3: 0.1,
+  lotKg: 10,
+  lotM3: 0.1,
   lostCount: 0,
   missingCount: 0,
   leftBehindCount: 0,
@@ -296,31 +298,53 @@ describe('unpricedDealsOf — what «Bu mashinadagi narxlar» says about a deal 
     'C1',
   );
   const noCard = () => false;
+  let n = 0;
+  const price = (dealId: string | null, chosenNone = false) => ({ id: `p${(n += 1)}`, dealId, usd: 10, chosenNone });
 
   it('quiet before any price, loud once the client has one here and this deal does not', () => {
     expect(unpricedDealsOf(ab, [], noCard)).toEqual([
       { dealId: 'A', why: 'missing', loud: false },
       { dealId: 'B', why: 'missing', loud: false },
     ]);
-    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], noCard)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
+    expect(unpricedDealsOf(ab, [price('B')], noCard)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
   });
 
   it('a no-deal price on a deals-only truck is a WHOLE-cargo price: both deals are covered, said muted (review)', () => {
-    expect(unpricedDealsOf(ab, [{ dealId: null }], noCard)).toEqual([
+    expect(unpricedDealsOf(ab, [price(null)], noCard)).toEqual([
       { dealId: 'A', why: 'whole', loud: false },
       { dealId: 'B', why: 'whole', loud: false },
     ]);
   });
 
-  it('a chosen «bitimsiz» part beside deal-less cargo covers no deal’s part', () => {
-    expect(unpricedDealsOf(abLoose, [{ dealId: null }], noCard)).toEqual([
+  it('a CHOSEN «bitimsiz» part beside deal-less cargo covers no deal’s part', () => {
+    expect(unpricedDealsOf(abLoose, [price(null, true)], noCard)).toEqual([
       { dealId: 'A', why: 'missing', loud: true },
       { dealId: 'B', why: 'missing', loud: true },
     ]);
   });
 
+  // Judge P1-UX-4 (b): before Q8 every multi-deal truck price had no deal,
+  // and on a truck with deal-less cargo the old rule read it as the
+  // «bitimsiz» part — so both deals read «narx yo'q», were pre-filled and
+  // saved a second bill with nothing asked. The audit tells them apart.
+  it('a deal-less price nobody CHOSE is whole-cargo on a truck with deal-less cargo too', () => {
+    expect(unpricedDealsOf(abLoose, [price(null)], noCard)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+
+  // …(a): a price on a deal whose cargo has left still covers every carton of
+  // the client aboard — truck coverage ignores the deal.
+  it('a price on a deal no longer among the candidates is whole-cargo too', () => {
+    expect(unpricedDealsOf(ab, [price('GONE')], noCard)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+
   it('a deal with its own price off any truck is covered by it — never «narx yo’q»', () => {
-    expect(unpricedDealsOf(ab, [{ dealId: 'B' }], (dealId) => dealId === 'A')).toEqual([
+    expect(unpricedDealsOf(ab, [price('B')], (dealId) => dealId === 'A')).toEqual([
       { dealId: 'A', why: 'card', loud: false },
     ]);
   });

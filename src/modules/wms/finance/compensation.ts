@@ -149,9 +149,20 @@ export interface LostCargoCharge {
  * never an internal leg, which is never billed) or typed on the prixod's
  * deal with no truck. Not a charge routed through a firm or half of a
  * three-cornered settlement (the void+copy claim refuses those). At most 20
- * per prixod, newest first. On the caller's handle: the form's list on the
- * pool, the door's re-check on its own transaction under the locks.
+ * per prixod — the prixod's OWN deal's part first, then a deal-less price,
+ * then the rest, each newest first with the id last: a truck priced from the
+ * table carries up to forty parts written in one transaction, which share
+ * `created_at`, so «newest first» alone cut the lost carton's own deal's part
+ * off the list by chance, and lowering another deal's part moves the
+ * discount onto that deal's invoice (judges F4, P1-correction-doors). On the
+ * caller's handle: the form's list on the pool, the door's re-check on its
+ * own transaction under the locks.
  */
+/** 0 = the prixod's own deal's part, 1 = a deal-less price, 2 = another deal's. */
+const ownPartFirstSql = sql.raw(
+  `(CASE WHEN r.deal_id IS NOT NULL AND ct.deal_id = r.deal_id THEN 0 WHEN ct.deal_id IS NULL THEN 1 ELSE 2 END)`,
+);
+
 export async function lostCargoChargesOn(
   handle: Exec,
   clientId: string,
@@ -178,7 +189,10 @@ export async function lostCargoChargesOn(
     cand AS (
       SELECT r.id AS receipt_id, ct.id, ct.batch_id, ct.deal_id, ct.amount, ct.currency, ct.amount_usd,
              ct.rate_to_usd, ct.tx_date, ct.created_at,
-             row_number() OVER (PARTITION BY r.id ORDER BY ct.tx_date DESC, ct.created_at DESC) AS n
+             ${ownPartFirstSql} AS own_rank,
+             row_number() OVER (
+               PARTITION BY r.id ORDER BY ${ownPartFirstSql}, ct.tx_date DESC, ct.created_at DESC, ct.id
+             ) AS n
         FROM r
         JOIN client_transactions ct
           ON ct.client_id = ${clientId}::uuid AND ct.type = 'charge' AND ct.voided_at IS NULL
@@ -195,7 +209,7 @@ export async function lostCargoChargesOn(
       LEFT JOIN warehouses cd ON cd.id = cb.dest_warehouse_id
       LEFT JOIN deals d ON d.id = c.deal_id
      WHERE c.n <= 20 AND (c.batch_id IS NULL OR NOT ${internalLegSql('co', 'cd')})
-     ORDER BY c.receipt_id, c.tx_date DESC, c.created_at DESC`)) as unknown as {
+     ORDER BY c.receipt_id, c.own_rank, c.tx_date DESC, c.created_at DESC, c.id`)) as unknown as {
     receipt_id: string;
     id: string;
     amount: string;
