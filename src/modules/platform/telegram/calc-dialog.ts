@@ -1559,7 +1559,8 @@ async function promptWords(
   const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const { fitTelegram } = await import('../../wms/calc/intake');
   const text = intakePromptText(state, { sheetFit: (texts) => fitSheetRows(texts, SHEET_TEXT_BUDGET), fitTelegram });
-  return { text, extra: { reply_markup: doneKeyboard } };
+  // A door's one line above the prompt (the «▶️ Davom etamiz — …» of a take, §4.2): this draw's only.
+  return { text: lead ? `${lead}\n${text}` : text, extra: { reply_markup: doneKeyboard } };
 }
 
 /**
@@ -1590,6 +1591,9 @@ type DrawCtx = CollectorReply & { api?: EditApi };
  * collection's own messages, so its buttons still work). Coalesced per chat
  * (`keepLastSoon`), so an album or a forward burst moves it once; dispatched
  * off the poller, and drawn from the collection as it stands when it runs.
+ * `lead`: one line above it, for this draw only — what a typed goods list at
+ * the customer question became (§1.5), or what a take added (§4.2); a later
+ * draw in the same burst wins, lead and all.
  */
 export function drawPromptSoon(ctx: DrawCtx, chatId: bigint, lead: string | null = null): void {
   keepLastSoon(`prompt:${chatId}`, () => drawPrompt(ctx, chatId, lead));
