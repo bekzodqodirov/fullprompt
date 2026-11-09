@@ -58,7 +58,7 @@ import { TOPSHIRIQ } from '@/modules/platform/telegram/staff-bot';
 import { armWait, dropWait, nowSec } from '@/modules/platform/telegram/waits';
 import { AGENT_WAIT_TTL_MS } from '@/modules/platform/telegram/agent-bot';
 import { ADD_REFUSAL, JOB_CALC_AMEND_SAVE, __resetAddOffers, runAmendSave, type AmendSaveJob } from '@/modules/platform/telegram/calc-amend';
-import { PAUSE_LINE } from '@/modules/platform/telegram/calc-dialog';
+import { burstPauseLine } from '@/modules/platform/telegram/calc-dialog';
 import { readingAlive } from '@/modules/platform/telegram/calc-read';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
@@ -340,14 +340,16 @@ function fileMessage(chat: number, fileId: string, name = 'a.pdf') {
 }
 
 describe('«➕ … so‘roviga qo‘shish» under a plain file, redelivered (review dur-2)', () => {
-  it('the file’s words held, a flush, a restart, the press again → ONE file, once in `pdfs`', async () => {
+  it('the prompt after the file held, a flush, a restart, the press again → ONE file, once in `pdfs`', async () => {
     const { requestId } = await answered();
     const fileId = `r3pdf-${STAMP}-b`;
     h.serveFile(fileId, PDF);
     const original = fileMessage(chatA, fileId);
     const press = tg.callback(chatA, (seq += 1), `cf:${requestId}`, { message: { reply_to_message: original } });
     hang.chat = chatA;
-    hang.needle = 'AI o‘qiydi';
+    // The file's own «AI o‘qiydi» is a line of the ONE prompt now (his 1a,
+    // docs/IKKI-ESHIK.md §1.4) — the first send after the file's patch.
+    hang.needle = 'Qabul qilindi';
     hang.on = true;
     hang.reached = false;
     void h.handle(press).catch(() => {});
@@ -443,7 +445,7 @@ describe('a PARKED collection beside another collector (review REG-2, COMP-5)', 
 });
 
 describe('a file into a PARKED collection is told so (review PF-2)', () => {
-  it('the pause line, as a reply to the file; nothing filed', async () => {
+  it('the burst’s pause line, as a reply to the file; nothing filed (docs/IKKI-ESHIK.md §4.2)', async () => {
     await parkedB(4545);
     const before = activeIntake(BigInt(chatB))!.fileCount;
     const photo = tg.photo(chatB);
@@ -451,7 +453,7 @@ describe('a file into a PARKED collection is told so (review PF-2)', () => {
     const m = h.mark();
     await h.handle(photo);
     await h.settle();
-    const said = h.since(m).api.filter((x) => x.method === 'sendMessage' && x.payload.text === PAUSE_LINE);
+    const said = h.since(m).api.filter((x) => x.method === 'sendMessage' && x.payload.text === burstPauseLine(1));
     expect(said).toHaveLength(1);
     expect((said[0]!.payload.reply_parameters as { message_id: number }).message_id).toBe(photoId);
     expect(activeIntake(BigInt(chatB))!.fileCount).toBe(before);

@@ -84,8 +84,6 @@ import {
   editTableSoon,
   NOT_FOUND_HINT,
   orphanAnswerSentence,
-  PAUSE_LINE,
-  pauseKeyboard,
   landingReplyText,
   pressCancel,
   pressCertificate,
@@ -110,10 +108,12 @@ import { landedAlreadyReply, otherCollectorLive, pressResume } from './calc-inta
 import {
   foreignAddReply,
   landedReplyMarkup,
-  offerAddForMedia,
   pressAdd,
+  pressResumeTake,
   saveAmendment,
 } from './calc-amend';
+import { burstDoor } from './burst';
+import { aliasBurst, burstCounts, endBurst, waitingBurst } from './burst-wait';
 import { phoneKeyboard } from './client-cabinet';
 import { replyKeyboardFor } from './keyboards';
 import {
@@ -279,36 +279,6 @@ function aiSectionKeyboard() {
       [{ text: '🔑 Podklyuch (rastamojka + yo‘lkira)', callback_data: 'c:aipk' }],
     ],
   };
-}
-
-/** Per chat, the album the pause line was last said for — one line per album, never ten. */
-const pausedAlbums = new Map<string, string>();
-
-/**
- * §2.7's pause line for a FILE a parked collection did not take (review
- * PF-2): «bu xabar unga qo‘shilmadi» with «▶️ Davom etamiz» — as a reply to
- * the file, so the seller sees which one. The notice joins the collection's
- * own messages, so its buttons act on it.
- */
-async function sayPausedForFile(
-  ctx: { reply: (text: string, extra?: Record<string, unknown>) => Promise<{ message_id: number }>; message: { message_id: number; media_group_id?: string } },
-  chatId: bigint,
-): Promise<void> {
-  const group = ctx.message.media_group_id ?? null;
-  if (group !== null) {
-    if (pausedAlbums.get(String(chatId)) === group) return;
-    pausedAlbums.set(String(chatId), group);
-  }
-  const sent = await ctx
-    .reply(PAUSE_LINE, {
-      reply_markup: pauseKeyboard(),
-      reply_parameters: { message_id: ctx.message.message_id, allow_sending_without_reply: true },
-    })
-    .catch((err: unknown) => {
-      logger.warn({ err }, '[calc-intake] pause line for a file not sent');
-      return null;
-    });
-  if (sent) noteOwnMessage(chatId, sent.message_id);
 }
 
 /**
@@ -756,14 +726,14 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
-        // A plain file with nothing to take it: the add door's one offer, as
-        // a reply to it, when the sender has a request it could join (P4).
-        if (await offerAddForMedia(ctx, chatId)) return;
-        // A PARKED collection took no file (§0 1.8 c) — and said nothing until
-        // the 2 h reminder (review PF-2): the pause line, as a reply to it,
-        // once per album. Then on to the cabinet as before (a both-chat's
-        // photo still reaches its manager; a staff chat's hears nothing more).
-        if (state && !late && (await staffForChat(chatId))) await sayPausedForFile(ctx, chatId);
+        // A plain file with nothing to take it joins the chat's burst
+        // (docs/IKKI-ESHIK.md §4.1, his 6a): files sent in a row get ONE
+        // message, kept last — the add door's offer when the sender has a
+        // request it could join (P4), or, beside a PARKED collection that took
+        // no file (§0 1.8 c), its pause line (§4.2). An offer answers it;
+        // otherwise on to the cabinet as before (a both-chat's photo still
+        // reaches its manager; a staff chat's hears nothing more).
+        if ((await burstDoor(ctx, chatId)) === 'offer') return;
         return next();
       }
       const owner = await staffForChat(chatId);
@@ -1112,7 +1082,10 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
-        await offerForwardTask(ctx, chatId, null);
+        // Into the chat's burst (docs/IKKI-ESHIK.md §4.1): forwards in a row
+        // are ONE «📌 N ta xabar …» offer, kept last. Door B's single offer
+        // answers whatever the burst would not take.
+        if ((await burstDoor(ctx, chatId)) === 'none') await offerForwardTask(ctx, chatId, null);
         return;
       }
     }
@@ -1180,6 +1153,23 @@ export function registerStaffBot(bot: Bot): void {
       waitDeclined,
     });
   });
+}
+
+/**
+ * The orphan sentence for a typed text, beside whatever collection is parked
+ * — knowing whether a burst's pause line waits beside it, which then is the
+ * way back: the line invites no reply to the table, and its buttons are the
+ * burst's (docs/IKKI-ESHIK.md §4.2). `burstId`: the burst the sent line must
+ * speak for (`aliasBurst`), so its «▶️» takes the parts.
+ */
+async function orphanPauseAware(
+  text: string,
+  chatId: bigint,
+  parked: IntakeState | null,
+): Promise<(NonNullable<Awaited<ReturnType<typeof orphanAnswerSentence>>> & { burstId: number | null }) | null> {
+  const burst = parked !== null ? waitingBurst(chatId, parked.noteId) : null;
+  const said = await orphanAnswerSentence(text, parked, burst ? { forwards: burstCounts(burst.parts).forwards > 0 } : null);
+  return said ? { ...said, burstId: burst?.id ?? null } : null;
 }
 
 /** What the staff tail needs from grammy's context. */
@@ -1265,12 +1255,13 @@ export async function answerStaffText(
   // buttons (P3's pause line — the notice then joins the collection's own).
   const orphan =
     opts.messageId !== null && !opts.waitDeclined && !holdingIntake(chatId)
-      ? await orphanAnswerSentence(text, activeIntake(chatId))
+      ? await orphanPauseAware(text, chatId, activeIntake(chatId))
       : null;
   if (orphan) {
     if (orphan.keyboard) {
       const sent = await ctx.reply(orphan.text, { reply_markup: orphan.keyboard });
       noteOwnMessage(chatId, sent.message_id);
+      if (orphan.burstId !== null) aliasBurst(chatId, orphan.burstId, sent.message_id);
     } else {
       await ctx.reply(orphan.text);
     }
@@ -1517,6 +1508,14 @@ export async function handleCalcCallback(
   // material, product-fit-8).
   if (step === 'resume') {
     await pressResume(ctx, chatId);
+    return;
+  }
+
+  // «▶️ Davom etamiz» under a burst's pause line (docs/IKKI-ESHIK.md §4.2):
+  // the one ▶️ that TAKES — the parts the pressed line spoke for, through the
+  // take's per-part fence. Its own collection and REG-2 checks.
+  if (step === 'resume_take') {
+    await pressResumeTake(ctx, chatId);
     return;
   }
 
@@ -2024,6 +2023,8 @@ async function handleNoteCallback(
       return;
     }
     const { v4: uuidv4 } = await import('uuid');
+    // A capture opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1).
+    endBurst(chatId);
     startCapture(chatId, uuidv4());
     await ctx.reply('Zametkaga nom bering (masalan: «Xitoy sklad manzili»):');
     return;

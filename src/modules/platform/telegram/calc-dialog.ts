@@ -137,20 +137,48 @@ export const BARE_FIGURE_NOT_FOUND = `${NOT_FOUND_HINT}\n(Hisoblatish savoliga j
  */
 export const NO_OPEN_COLLECTION = `Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). ${addPointerWords(null)}`;
 
+/** What every pause line opens with — the collection exists, it only stopped holding the chat. */
+const PAUSE_HEAD = '⏸ Hisoblatish to‘xtab turibdi (30 daqiqa yozilmadi)';
+
 /**
  * A table-shaped text (or a bare figure) while the collection is PARKED (§2.7,
  * regression-1): it exists, so «not found» would be false — and it is never
  * silently added either. Its buttons act on the parked collection (the
  * notice joins its own messages).
+ *
+ * «yoki jadvalga reply qilib yozing» only where there IS a table — the
+ * 'review' stage — and no burst is waiting beside it (docs/IKKI-ESHIK.md
+ * §4.2): a reply to the table resumes the collection WITHOUT the files the
+ * burst's own line offers to take, so it would be the wrong way back.
  */
-export const PAUSE_LINE =
-  '⏸ Hisoblatish to‘xtab turibdi (30 daqiqa yozilmadi) — bu xabar unga qo‘shilmadi.\n' +
-  'Davom etish uchun «▶️ Davom etamiz» ni bosing yoki jadvalga reply qilib yozing.';
+export function pauseLine(stage: IntakeState['stage'], burstWaiting: boolean): string {
+  const reply = stage === 'review' && !burstWaiting ? ' yoki jadvalga reply qilib yozing' : '';
+  return `${PAUSE_HEAD} — bu xabar unga qo‘shilmadi.\nDavom etish uchun «▶️ Davom etamiz» ni bosing${reply}.`;
+}
 
-export function pauseKeyboard(): InlineKeyboard {
+/** The pause line of a parked table with nothing waiting beside it — the full sentence. */
+export const PAUSE_LINE = pauseLine('review', false);
+
+/**
+ * A burst beside a PARKED collection (§4.2): its ONE message, kept last,
+ * covering the forwards too — the files are not taken by themselves (1.8 c),
+ * «▶️» is his consent.
+ */
+export function burstPauseLine(parts: number): string {
+  return `${PAUSE_HEAD}. Hozirgi ${parts} ta xabar unga hali qo‘shilmagan — «▶️ Davom etamiz» ni bossangiz, qo‘shiladi.`;
+}
+
+/**
+ * The pause line's buttons. Beside a burst, «▶️» is `c:resume_take` — it takes
+ * the burst's parts, read by the pressed message (§4.2) — and «📌 Topshiriq
+ * qilish» (Door B's own `fb:task`) appears when the burst holds a forward.
+ * Every other «▶️» stays `c:resume`, which takes nothing.
+ */
+export function pauseKeyboard(burst: { forwards: boolean } | null = null): InlineKeyboard {
   return {
     inline_keyboard: [
-      [{ text: '▶️ Davom etamiz', callback_data: 'c:resume' }],
+      [{ text: '▶️ Davom etamiz', callback_data: burst ? 'c:resume_take' : 'c:resume' }],
+      ...(burst?.forwards ? [[{ text: '📌 Topshiriq qilish', callback_data: 'fb:task' }]] : []),
       [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
     ],
   };
@@ -1649,9 +1677,12 @@ export const ZONE_OPENING = '🤖 AI podklyuch: rastamojka + yo‘lkira (tarif n
  * something has arrived — «Qabul qilindi: 📎 4 ta fayl.» over it, the same
  * message edited to count and kept last, with the zone keyboard. Pure.
  */
-export function zoneQuestionText(state: Pick<IntakeState, 'fileCount' | 'material'>): string {
+export function zoneQuestionText(state: Pick<IntakeState, 'fileCount' | 'material'>, lead: string | null = null): string {
   const received = receivedCounts(state);
-  return received ? `Qabul qilindi: ${received}.\nAvval yuk qayerdan chiqishini tanlang:` : ZONE_OPENING;
+  // `lead`: what a take just added (§4.2, review PB-SPEC-1) — its line on top,
+  // never a message of its own.
+  const asked = received ? `Qabul qilindi: ${received}.\nAvval yuk qayerdan chiqishini tanlang:` : ZONE_OPENING;
+  return lead ? `${lead}\n${asked}` : asked;
 }
 
 /**
@@ -1720,7 +1751,7 @@ async function promptWords(
   lead: string | null,
 ): Promise<{ text: string; extra: Record<string, unknown> } | null> {
   if (state.stage === 'section') {
-    return { text: zoneQuestionText(state), extra: { reply_markup: zoneKeyboard(await pricedZonesNow()) } };
+    return { text: zoneQuestionText(state, lead), extra: { reply_markup: zoneKeyboard(await pricedZonesNow()) } };
   }
   if (state.stage === 'client') return { text: clientQuestionText(state, lead), extra: { parse_mode: 'Markdown' } };
   if (state.stage !== 'material') return null;
@@ -2456,17 +2487,23 @@ export async function pressCertificate(
  * product-fit-14) gets the no-collection sentence, never the paid assistant;
  * a BARE figure keeps R2's REG-3 answer — «777» is as often a code typed
  * without its letters. Async: the shape is wms's, reached by dynamic import.
+ * `burst`: a burst's pause line stands beside the parked collection
+ * (burst-wait.ts `waitingBurst`) — the line then invites no reply (§4.2), and
+ * its «▶️» is the burst's (`c:resume_take`): a second ▶️ that took nothing
+ * would be the wrong way back the clause was dropped for (review PB-SPEC-4).
+ * The caller makes the line speak for the burst (`aliasBurst`).
  */
 export async function orphanAnswerSentence(
   text: string,
   parked: IntakeState | null,
+  burst: { forwards: boolean } | null = null,
 ): Promise<{ text: string; keyboard: InlineKeyboard | null } | null> {
   const { looksLikeTableAnswer } = await import('../../wms/calc/line-address');
   const tableShaped = looksLikeTableAnswer(text);
   const bare = totalsAnswerShape(text) === 'bare';
   if (parked) {
     return tableShaped || bare || (await answersParkedTable(text, parked))
-      ? { text: PAUSE_LINE, keyboard: pauseKeyboard() }
+      ? { text: pauseLine(parked.stage, burst !== null), keyboard: pauseKeyboard(burst) }
       : null;
   }
   if (tableShaped) return { text: NO_OPEN_COLLECTION, keyboard: null };

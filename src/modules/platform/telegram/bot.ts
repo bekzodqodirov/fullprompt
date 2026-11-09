@@ -41,6 +41,9 @@ import {
   setDurableIntakes,
 } from './calc-store';
 import { messageKey } from './once';
+import { burstScope } from './burst';
+import { keptLastSettled } from './kept-last';
+import { tableEditsSettled } from './calc-dialog';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -225,6 +228,11 @@ export function botStopDeps(bot: Parameters<typeof stopTelegramBot>[0]['bot']): 
   return {
     bot,
     flush: async () => {
+      // A kept-last draw owed (a burst's ONE message waiting out its album,
+      // the collection's ONE prompt) and a table edit in flight are drawn
+      // before the stop, or they are lost with the process.
+      await keptLastSettled().catch(() => {});
+      await tableEditsSettled().catch(() => {});
       await Promise.allSettled([flushWaitWrites(), flushIntakeWrites()]);
     },
     drain: membershipSettled,
@@ -247,6 +255,10 @@ export function registerBotHandlers(bot: Bot): void {
   // The «Hisoblatish» collection's own view of the update: the message a
   // change takes (`takenUpTo`) and the collector messages it sends.
   bot.use(collectorScope());
+  // Beside it, the burst's ONE end (docs/IKKI-ESHIK.md §4.1): an update that
+  // is neither a file nor a forward closes the chat's burst before any
+  // handler reads it.
+  bot.use(burstScope());
   bot.use(pressMiddleware());
   bot.use(coalesceBacklogLabels());
 

@@ -98,7 +98,7 @@ const drafts = new Map<string, TaskDraft>();
 
 export function startDraft(
   chatId: bigint,
-  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts' | 'tooBig'>> = {},
+  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts' | 'tooBig' | 'dropped'>> = {},
 ): TaskDraft {
   const state: TaskDraft = {
     stage: 'who',
@@ -113,7 +113,9 @@ export function startDraft(
     // A seed's oversized files are still told at the end (review bot-7): a
     // hard [] here dropped Door B's «20 MB dan katta» sentence.
     tooBig: seed.tooBig ?? [],
-    dropped: 0,
+    // A seed cut at the cap says so once, itself (a burst's «📌»): carried,
+    // so the draft's next forward does not say the cap a second time.
+    dropped: seed.dropped ?? 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,

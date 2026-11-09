@@ -88,7 +88,7 @@ import {
   setDurableIntakes,
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
-import { PAUSE_LINE, orphanAnswerSentence } from '@/modules/platform/telegram/calc-dialog';
+import { orphanAnswerSentence, pauseLine } from '@/modules/platform/telegram/calc-dialog';
 import { botStopDeps } from '@/modules/platform/telegram/bot';
 import { logger } from '@/modules/platform/logger';
 import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
@@ -493,6 +493,8 @@ describe('TWICE — a crash redelivers what already ran', () => {
     const forward = tg.forward(s.chat, `bu nima ${STAMP}`);
     const m0 = h.mark();
     await h.handle(forward);
+    // The burst's ONE offer, drawn once its debounce settles (docs/IKKI-ESHIK.md §4.1).
+    await h.settle();
     const offer = h.since(m0).api.find((c) => c.method === 'sendMessage' && c.payload.text === '📌 Topshiriq qilamizmi?');
     expect(offer?.messageId, 'the «📌» offer').toBeDefined();
     const original = (forward as unknown as { message: Record<string, unknown> }).message;
@@ -1189,8 +1191,12 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     expect(h.textsTo(s.chat, m)).toEqual([expected!.text]);
     // …and that sentence is P3's pause line with «▶️» / «✖️» under it (§2.8,
     // the parked half of the orphan guard — asserted here, on the real handler
-    // chain, at the merge: P3's tree could not reach this file).
-    expect(expected!.text).toBe(PAUSE_LINE);
+    // chain, at the merge: P3's tree could not reach this file). Its «reply to
+    // the table» clause only where there IS a table (docs/IKKI-ESHIK.md §4.2):
+    // this collection is still collecting.
+    expect(activeIntake(chat)!.stage).toBe('material');
+    expect(expected!.text).toBe(pauseLine('material', false));
+    expect(expected!.text).not.toContain('jadvalga reply');
     const paused = h.api.filter((c) => c.method === 'sendMessage').at(-1)!;
     expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:resume');
     expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:cancel');

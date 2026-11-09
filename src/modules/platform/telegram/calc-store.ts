@@ -7,6 +7,7 @@ import { logger } from '../logger';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
+import { endBurst } from './burst-wait';
 import { foldPendingInvoice } from './file-goods';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
 import { quietHour, sendText, type SendResult } from './send';
@@ -311,6 +312,9 @@ export function startIntake(
   };
   store.collections.set(key(chatId), state);
   markDirty(key(chatId));
+  // A collection opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1): what
+  // comes next is this collection's, and the burst's message keeps its parts.
+  endBurst(chatId);
   return state;
 }
 

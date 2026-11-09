@@ -555,6 +555,9 @@ const CALC_STEPS = [
   // to the VED — parsed like `pick_N`, by POSITION among the live conflicts
   // (three at most), never by a figure.
   'resume',
+  // «▶️ Davom etamiz» under a burst's pause line (docs/IKKI-ESHIK.md §4.2):
+  // the one ▶️ that TAKES — the burst parts its pressed message speaks for.
+  'resume_take',
   'cert_y',
   'cert_n',
   'cancel_y',
@@ -605,6 +608,9 @@ export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'ow
   cert: 'prompt',
   skip: 'prompt',
   resume: 'prompt',
+  // Acts only on the parked collection its pause line was drawn beside, and a
+  // repeat takes nothing twice (each part is fenced by `repliedTaken`).
+  resume_take: 'own',
   pick_0: 'own',
   pick_1: 'own',
   pick_2: 'own',
@@ -1537,7 +1543,7 @@ export async function landCollectedIntake(
 
   const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
-  return landIntake({
+  const landed = await landIntake({
     // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1) — a
     // seeded collection its source's, NULL included (§0.3) — written on the
     // request for every later reader.
@@ -1578,6 +1584,13 @@ export async function landCollectedIntake(
     // answered, on this collection's note, and the landing ATTACHES those
     // rows to the request it opens (docs/SAKKIZ-R3.md §7.2.9).
   });
+  // The request just landed is offered at once (docs/IKKI-ESHIK.md §4.3): the
+  // offer list is cached a minute per chat, so the files he forwards right
+  // after the ✅ met a list that did not know it yet. Both senders — the press
+  // and the sweep's resumed landing — come through here.
+  const { forgetAddOffers } = await import('./calc-amend');
+  forgetAddOffers(chatId);
+  return landed;
 }
 
 /**
@@ -2006,11 +2019,13 @@ export function dueKeyboard(): CallbackButton[][] {
 }
 
 /** Door B's question under a forwarded message (spec §3). */
-export function forwardKeyboard(): CallbackButton[][] {
+export function forwardKeyboard(opts: { search: boolean } = { search: true }): CallbackButton[][] {
+  // «🔍 Qidirish» searches ONE text: a burst of several has no one text to
+  // search (docs/IKKI-ESHIK.md §4.1), so its offer draws the task button alone.
   return [
     [
       { text: '📌 Topshiriq qilish', callback_data: 'fb:task' },
-      { text: '🔍 Qidirish', callback_data: 'fb:search' },
+      ...(opts.search ? [{ text: '🔍 Qidirish', callback_data: 'fb:search' }] : []),
     ],
   ];
 }

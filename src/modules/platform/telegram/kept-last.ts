@@ -94,16 +94,26 @@ export async function drawKeptLast(
   }
   const sent = await ctx.reply(text, extra);
   if (prior === null || prior === sent.message_id) return { messageId: sent.message_id, moved: true, kept: null };
-  const deleted = ctx.api?.deleteMessage
-    ? await ctx.api.deleteMessage(String(chatId), prior).then(
-        () => true,
-        (err: unknown) => {
-          logger.info({ err }, '[kept-last] older copy not deleted — it stays, its buttons still work');
-          return false;
-        },
-      )
-    : false;
+  const deleted = await retireCopy(ctx.api, chatId, prior);
   return { messageId: sent.message_id, moved: true, kept: deleted ? null : prior };
+}
+
+/**
+ * The older copy, once a new one stands below it: deleted, best-effort.
+ * False = it stays, and the caller keeps it among its own messages so a press
+ * on its buttons still works (§1.4). The other half of `drawKeptLast`, for a
+ * caller whose new copy was sent by somebody else's draw (calc-amend's take:
+ * the ONE prompt sent fresh with the take's line on top).
+ */
+export async function retireCopy(api: Pick<KeptLastApi, 'deleteMessage'> | undefined, chatId: bigint, messageId: number): Promise<boolean> {
+  if (!api?.deleteMessage) return false;
+  return api.deleteMessage(String(chatId), messageId).then(
+    () => true,
+    (err: unknown) => {
+      logger.info({ err }, '[kept-last] older copy not deleted — it stays, its buttons still work');
+      return false;
+    },
+  );
 }
 
 /** How long a burst of parts waits before the kept-last message is moved once (§1.4: an album moves it once). */

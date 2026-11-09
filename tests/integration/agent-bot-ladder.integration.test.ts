@@ -330,6 +330,8 @@ describe('a forward is never the typed answer (I2 c)', () => {
     await pressEdit(me, draftId);
     const m = h.mark();
     await h.handle(tg.forward(me.chat, `mijoz yozdi ${STAMP}`));
+    // The burst's ONE offer is drawn once its debounce settles (docs/IKKI-ESHIK.md §4.1).
+    await h.settle();
     expect((await draftOf(draftId)).finalBody).toBeNull();
     expect(h.textsTo(me.chat, m)).toContain('📌 Topshiriq qilamizmi?');
     expect(readWait(BigInt(me.chat), 'agent_edit')).not.toBeNull();

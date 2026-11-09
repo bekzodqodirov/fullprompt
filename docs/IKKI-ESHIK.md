@@ -587,6 +587,45 @@ and a conflict as a «VED hal qiladi» line (1.1).
   - When the wait is gone (it expired, or the press is older than the row), the press takes what
     `reply_to_message` gives and SAYS so, never silently: «⚠ Faqat 1 ta xabar qo‘shildi —
     qolganlarini qaytadan yo‘naltiring.» These are task-handlers.ts:630-632's words.
+- **As built** (P-burst; `burst-wait.ts` the wait and its words, `burst.ts` the door):
+  - «Drops it» is built as **ends it**: no later part joins, the next one opens a new burst. Its
+    parts stay in the row, so the message it drew still acts on them — a seller who types «shu
+    GS777 niki» under his files and then presses ➕ gets every file, and a redelivered press finds
+    the parts its fence needs. «Gone» is a row replaced by a newer burst, or one past the waits'
+    24 h reach.
+  - One forward alone keeps Door B's own words: «📌 Topshiriq qilamizmi?», and «📌 Topshiriq
+    qilamizmi yoki so‘rovga qo‘shamizmi?» with a ➕ row. «(N tasi fayl)» is left out when no part is
+    a file. «fayl» counts photos and documents; «xabar» counts every part.
+  - Plain files with no request to join them draw nothing (today's silence, the cabinet next), but
+    they ARE kept: a forward that follows draws ONE message for all of them.
+  - A full burst (20 parts) STANDS: a part past the cap is counted and said as a line of its ONE
+    message, «⚠ Bir martada ko‘pi bilan 20 ta xabar olinadi — qolgan 5 tasini tugmani bosgandan
+    keyin qaytadan yuboring.», and the message moves below it (review PB-ADV-1). The chat has one
+    row, so a 21st part opening the next burst overwrote the twenty before they were offered. A
+    full burst that draws nothing (plain files, no request) takes no overflow: the part opens the
+    next one, so a forward after it still draws.
+  - 📌 takes EVERY part the message counted — a plain photo or file beside the forwards is a source
+    too, the draft's own rule — the first 10 as sources, a part's file only beside its source; the
+    cap is the FIRST line of the draft's «👤 Kimga?», and the draft knows the rest were dropped
+    (reviews PB-ADV-2, PB-SPEC-5, PB-SPEC-6, PB-ADV-7). «🔍» takes away only its own button.
+  - A burst is taken once into each kind: a collection that FILED it (its save or its landing
+    wrote the note under the collection's id) refuses a second ➕ — «Bu xabarlar allaqachon
+    so‘rovga qo‘shilgan.» — while one cancelled or abandoned frees the parts; a second 📌 says «Bu
+    xabarlar allaqachon topshiriqqa olingan.». A collection and a task may both take it, as Door
+    B's single offer always let ➕ and 📌 act on one forward (review PB-ADV-3). The take is marked
+    BEFORE it runs, so a draw the album still owes never speaks for parts being taken (PB-ADV-5).
+  - A replaced burst leaves what its message spoke for (one generation): how many parts, and where
+    they went — so its press, or the restart question asked about it, says `BURST_GONE` and never
+    files twice (reviews PB-SPEC-3, PB-ADV-3).
+  - A forwarded voice note or video taken by ➕ is refused in words once per kind, as the
+    collector does («🎤 Ovozli xabar o‘qilmaydi — yozib yuboring.»). A forwarded contact card or
+    place is its one line of material (PB-ADV-6).
+  - The add door's «Sizda tugallanmagan yig‘ish bor…», asked about a burst, speaks for it: its
+    «🗑 Ha» takes the whole burst (`aliasIds`).
+  - The take's line («➕ 3 ta fayl va 2 ta xabar qo‘shildi.») is the FIRST line of the ONE prompt
+    that follows (§1.4), never a message of its own: a NEW prompt below what was taken, the old one
+    retired the kept-last way (review PB-SPEC-2). A collection still at its customer or zone
+    question asks it again with the line on top (PB-SPEC-1).
 
 4.2 **Beside a PARKED collection, the pause line is the burst's one message** (DR-8, P8).
 - It covers forwards too, is kept last (1.4), and appears once per burst: «⏸ Hisoblatish to‘xtab
@@ -605,8 +644,23 @@ and a conflict as a «VED hal qiladi» line (1.1).
     yuboring yoki «Bo‘ldi» ni bosing.»
 - The other five ▶️ (the restart's «🔄 Ha», the reminder, and the rest) keep `c:resume`, which takes
   nothing. 1.8 c's «a parked collection takes nothing by itself» holds: the press is his consent.
+- **As built** (P-burst): the pause line carries no ➕ rows — its buttons are the three above.
+  «Waiting» is a pause-line burst not yet taken, beside the collection it was drawn by (`parkedNote`),
+  so a typed table answer still gets the line without the reply clause after the burst has ended.
+  `c:resume_take` acts only on that collection; a press whose wait is gone takes what the line
+  replies to (its newest part) and says `BURST_GONE` when it spoke for more. Pressed again after
+  everything was taken (the collection parked anew), it goes on as `c:resume` does — the stage
+  shown, nothing taken twice (review PB-ADV-4).
+  - A typed table answer beside a waiting burst gets the pause line WITHOUT the reply clause, and
+    that line is the burst's too: its keyboard is the burst's, and it speaks for the burst, so its
+    «▶️» takes the parts — a second «▶️» that took nothing was the wrong way back (PB-SPEC-4).
+  - «📌» on the pause line takes every part into the draft, and the line becomes the collection's
+    plain pause line («… bu xabar unga qo‘shilmadi», `c:resume` / `c:cancel`): now true, and its
+    «▶️» / «✖️» still act on the collection (PB-ADV-2).
 
 4.3 **A just-landed request is offered at once**: the landing clears the offer list's cache.
+  As built: `landCollectedIntake` (staff-bot.ts), the one function both senders call, forgets the
+  chat's cached list after `landIntake` returns.
 
 ## §5 Not changed
 

@@ -272,9 +272,13 @@ describe('(8) no collector this process opened takes a backlog message', () => {
     }
   });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
+    // The offer is the burst's now (docs/IKKI-ESHIK.md §4.1): `burstDoor`
+    // first, Door B's single offer for what the burst would not take.
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));
+    expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'burstDoor('));
     expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'offerForwardTask('));
     const media = bodyOf(TASKS, 'export async function draftMedia(');
+    expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'burstDoor('));
     expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'offerForwardTask('));
   });
 });

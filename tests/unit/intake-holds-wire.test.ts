@@ -66,6 +66,16 @@ const PRESENCE: Record<string, string> = {
   'calc-store.ts:collectionSurvived': 'the backlog sentence: did a collection survive the restart',
   'staff-bot.ts:landCollectedIntake': 'the landing of the collection whose «Tasdiqlash» was pressed',
   'staff-handlers.ts:handleCalcCallback': 'the dispatcher’s reads: cancel, the restart question, the press’s state',
+  // The burst (docs/IKKI-ESHIK.md §4.2): beside a PARKED collection its ONE
+  // message is the pause line — a holding one was refused just above
+  // (`holdingIntake`), so what is asked is whether a parked one exists.
+  'burst.ts:burstShows': 'a parked collection beside the burst: its pause line, the holding one refused by the door above',
+  'burst.ts:drawBurst': 'the pause line drawn beside the parked collection, the holding one refused above',
+  'calc-amend.ts:pressResumeTake': 'a press — the pause line’s «▶️» on the parked collection it was drawn beside',
+  // The burst's review fixes: which collection a take went into, read back.
+  'calc-amend.ts:takenElsewhere': 'is the collection a burst went into still the live one — a parked one is (review PB-ADV-3)',
+  'calc-amend.ts:awaitReading': 'the prompt id the take’s new prompt was just stored under, to retire the old one',
+  'task-handlers.ts:draftFromBurst': 'a press — 📌 on the pause line redraws the parked collection’s own line',
 };
 
 const HOLDS: Record<string, string> = {

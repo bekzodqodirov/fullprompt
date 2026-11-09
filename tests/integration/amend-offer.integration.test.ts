@@ -7,9 +7,16 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
  * Where extra information arrives with nothing open (docs/SAKKIZ-R3.md §9.2,
  * product-fit-16): a forward gets Door B's «📌» AND «➕ {card} so‘roviga
  * qo‘shish»; a plain file, which today gets silence, gets one offer line; the
- * press files what the offer replied to. The real Door B and the real offer
+ * press files what the offer spoke for. The real burst door and the real offer
  * query (it is the 7-day, own, open rule); the file store and the next step
  * are stood in.
+ *
+ * Re-anchored on his 6a (docs/IKKI-ESHIK.md §4.1, 2026-11-08 «ketma-ket
+ * yuborilgan fayllarga BITTA savol»): an album is no longer offered «once per
+ * album, as a reply to its first part» but as ONE burst message, kept last —
+ * a reply to its NEWEST part — and the press acts on every part by the
+ * pressed message's id. A parked collection's burst gets its pause line, not
+ * the ➕ rows (§4.2).
  */
 vi.mock('@/modules/platform/jobs/boss', async (original) => ({
   ...(await original<typeof import('@/modules/platform/jobs/boss')>()),
@@ -51,10 +58,13 @@ import {
   telegramLinks,
   users,
 } from '@/modules/platform/db/schema';
-import { __resetAddOffers, openAmendFromMedia, offerAddForMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
+import { __resetAddOffers, openAmendFromMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
 import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
-import { activeIntake, endIntake, holdingIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
-import { deliverNextStep, TABLE_SUPERSEDED, tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
+import { activeIntake, endIntake, HOLD_MS, holdingIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
+import { burstDoor } from '@/modules/platform/telegram/burst';
+import { endBurst } from '@/modules/platform/telegram/burst-wait';
+import { burstPauseLine, deliverNextStep, TABLE_SUPERSEDED, tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
+import { __forgetWaitMemory } from '@/modules/platform/telegram/waits';
 import { saveIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { forwardKeyboard } from '@/modules/platform/telegram/staff-bot';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
@@ -89,9 +99,11 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  await keptLastSettled();
   endIntake(chat);
   __resetAddOffers();
   __resetDrafts();
+  __forgetWaitMemory();
   vi.mocked(saveIntakeFile).mockClear();
   if (madeRequests.length) {
     await db
@@ -140,8 +152,11 @@ const PROMPT_TAIL = 'Yana yuboring yoki «Bo‘ldi» ni bosing.';
 const now = () => Math.floor(Date.now() / 1000);
 const forwarded = { forward_origin: { type: 'hidden_user', sender_user_name: 'Mijoz', date: 0 } };
 
+/** Every reply any part's ctx made — a burst's ONE message is drawn through whichever part came last. */
+const allReplies: { text: string; extra?: Record<string, unknown>; id: number }[] = [];
+
 function ctxOf(message: Record<string, unknown>) {
-  const replies: { text: string; extra?: Record<string, unknown> }[] = [];
+  const replies: { text: string; extra?: Record<string, unknown>; id: number }[] = [];
   const full = { message_id: (messageSeq += 1), date: now(), chat: { id: Number(chat), type: 'private' }, ...message };
   return {
     message: full,
@@ -150,22 +165,30 @@ function ctxOf(message: Record<string, unknown>) {
       chat: { id: Number(chat), type: 'private' },
       from: { id: Number(chat) },
       message: full,
-      reply: async (text: string, extra?: Record<string, unknown>) => (replies.push({ text, extra }), { message_id: (messageSeq += 1) }),
-      api: { editMessageText: async () => true },
+      reply: async (text: string, extra?: Record<string, unknown>) => {
+        const said = { text, extra, id: (messageSeq += 1) };
+        replies.push(said);
+        allReplies.push(said);
+        return { message_id: said.id };
+      },
+      api: { editMessageText: async () => true, deleteMessage: async () => true },
     },
   };
 }
 
+/** The burst door for one part, as the handlers call it. */
+const door = (p: ReturnType<typeof ctxOf>) => burstDoor(p.ctx as never, chat);
+
 const rowsOf = (extra?: Record<string, unknown>) =>
   (extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard;
 
-/** The offer pressed: its message replies to `original`. */
-async function pressOffer(requestId: string, original: Record<string, unknown>) {
+/** The offer pressed — `offer`, the burst's ONE message (or a new id: an offer the wait no longer knows); it replies to `original`. */
+async function pressOffer(requestId: string, original: Record<string, unknown>, offer?: { id: number; text?: string }) {
   const replies: string[] = [];
   pressReplies = replies;
   const ctx = {
     reply: async (text: string) => (replies.push(text), { message_id: (messageSeq += 1) }),
-    callbackQuery: { message: { message_id: (messageSeq += 1), reply_to_message: original } },
+    callbackQuery: { message: { message_id: offer?.id ?? (messageSeq += 1), text: offer?.text, reply_to_message: original } },
     answerCallbackQuery: async () => true,
     api: { editMessageText: async () => true },
   };
@@ -181,14 +204,15 @@ describe('a forward, with an open request of his (Door B)', () => {
   it('Door B carries its own two buttons AND «➕ {card} so‘roviga qo‘shish» (cf:); the press opens the add collection with the forward as material', async () => {
     const r = await request();
     const f = ctxOf({ text: 'Yana 20 karobka keldi', ...forwarded });
-    await offerForwardTask(f.ctx as never, chat, null);
+    expect(await door(f)).toBe('offer');
+    await keptLastSettled();
     expect(f.replies).toHaveLength(1);
-    expect(f.replies[0]!.text).toBe('📌 Topshiriq qilamizmi?');
+    expect(f.replies[0]!.text).toBe('📌 Topshiriq qilamizmi yoki so‘rovga qo‘shamizmi?');
     expect(rowsOf(f.replies[0]!.extra)).toEqual([
       ...forwardKeyboard(),
       [{ text: `➕ ${r.card} so‘roviga qo‘shish`, callback_data: `cf:${r.id}` }],
     ]);
-    await pressOffer(r.id, f.message);
+    await pressOffer(r.id, f.message, { id: f.replies[0]!.id });
     const live = activeIntake(chat)!;
     expect(live.amend?.requestId).toBe(r.id);
     expect(live.material).toEqual(['Yana 20 karobka keldi']);
@@ -197,19 +221,24 @@ describe('a forward, with an open request of his (Door B)', () => {
     // table's «✅ Qo‘shish» cannot save the stored rows without it (spec-1).
     expect(live.stage).toBe('material');
     expect(pressReplies.at(-1)).toContain(PROMPT_TAIL);
+    // The take's own line opens that ONE prompt — parts taken, never goods.
+    expect(pressReplies.at(-1)!.startsWith('➕ 1 ta xabar qo‘shildi.\n')).toBe(true);
     // A second press of the same offer takes nothing twice.
-    await pressOffer(r.id, f.message);
+    await pressOffer(r.id, f.message, { id: f.replies[0]!.id });
     expect(activeIntake(chat)!.material).toEqual(['Yana 20 karobka keldi']);
   });
 
-  it('a forwarded ALBUM: the press files every part the album memory holds, one attachment each (re-check p4-9)', async () => {
+  it('a forwarded ALBUM: ONE offer, below its newest part; the press files every part, one attachment each (re-check p4-9)', async () => {
     const r = await request();
     const group = `fa${STAMP}`;
     const parts = [1, 2, 3].map((n) => ctxOf({ photo: photo(n), media_group_id: group, ...forwarded }));
-    for (const p of parts) await offerForwardTask(p.ctx as never, chat, group);
-    // One offer for the album, as a reply to its first part.
-    expect(parts.map((p) => p.replies.length)).toEqual([1, 0, 0]);
-    await pressOffer(r.id, parts[0]!.message);
+    allReplies.length = 0;
+    for (const p of parts) await door(p);
+    await keptLastSettled();
+    expect(allReplies).toHaveLength(1);
+    expect(allReplies[0]!.text).toBe('📌 3 ta xabar (3 tasi fayl) — topshiriq qilamizmi yoki so‘rovga qo‘shamizmi?');
+    expect(allReplies[0]!.extra?.reply_parameters).toMatchObject({ message_id: parts[2]!.message.message_id });
+    await pressOffer(r.id, parts[2]!.message, { id: allReplies[0]!.id });
     expect(vi.mocked(saveIntakeFile)).toHaveBeenCalledTimes(3);
     const noteId = activeIntake(chat)!.noteId;
     expect(vi.mocked(saveIntakeFile).mock.calls.every((c) => c[1] === noteId)).toBe(true);
@@ -221,12 +250,13 @@ describe('a plain file, with an open request of his', () => {
   it('a document → one offer line as a reply to it; the press files that document', async () => {
     const r = await request();
     const d = ctxOf({ document: { file_id: `BQAC${STAMP}`, file_unique_id: 'd', file_name: 'packing.xlsx', mime_type: 'application/vnd.ms-excel', file_size: 100 } });
-    expect(await offerAddForMedia(d.ctx as never, chat)).toBe(true);
+    expect(await door(d)).toBe('offer');
+    await keptLastSettled();
     expect(d.replies).toHaveLength(1);
     expect(d.replies[0]!.text).toBe('➕ Bu faylni so‘rovga qo‘shamizmi?');
     expect(d.replies[0]!.extra?.reply_parameters).toMatchObject({ message_id: d.message.message_id });
     expect(rowsOf(d.replies[0]!.extra)).toEqual([[{ text: `➕ ${r.card} so‘roviga qo‘shish`, callback_data: `cf:${r.id}` }]]);
-    await pressOffer(r.id, d.message);
+    await pressOffer(r.id, d.message, { id: d.replies[0]!.id });
     expect(vi.mocked(saveIntakeFile)).toHaveBeenCalledTimes(1);
     expect(activeIntake(chat)!.fileCount).toBe(1);
     expect(activeIntake(chat)!.stage).toBe('material');
@@ -269,14 +299,16 @@ describe('a plain file, with an open request of his', () => {
     expect((table?.extra?.reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
   });
 
-  it('a plain album of ten photos → ONE offer line, as a reply to its first part; the press files all ten', async () => {
+  it('a plain album of ten photos → ONE offer, below its newest part; the press files all ten', async () => {
     const r = await request();
     const group = `pa${STAMP}`;
     const parts = Array.from({ length: 10 }, (_, i) => ctxOf({ photo: photo(i + 10), media_group_id: group }));
-    for (const p of parts) await offerAddForMedia(p.ctx as never, chat);
-    expect(parts.map((p) => p.replies.length)).toEqual([1, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-    expect(parts[0]!.replies[0]!.extra?.reply_parameters).toMatchObject({ message_id: parts[0]!.message.message_id });
-    await pressOffer(r.id, parts[0]!.message);
+    allReplies.length = 0;
+    for (const p of parts) await door(p);
+    await keptLastSettled();
+    expect(allReplies.map((x) => x.text)).toEqual(['➕ 10 ta faylni so‘rovga qo‘shamizmi?']);
+    expect(allReplies[0]!.extra?.reply_parameters).toMatchObject({ message_id: parts[9]!.message.message_id });
+    await pressOffer(r.id, parts[9]!.message, { id: allReplies[0]!.id });
     expect(vi.mocked(saveIntakeFile)).toHaveBeenCalledTimes(10);
   });
 });
@@ -284,12 +316,16 @@ describe('a plain file, with an open request of his', () => {
 describe('nothing to offer', () => {
   async function nothingOffered(): Promise<void> {
     const f = ctxOf({ text: 'Mijozdan xabar', ...forwarded });
-    await offerForwardTask(f.ctx as never, chat, null);
+    await door(f);
+    await keptLastSettled();
     expect(rowsOf(f.replies[0]!.extra)).toEqual(forwardKeyboard());
     __resetAddOffers();
+    // A typed text between: the next file is a burst of its own.
+    endBurst(chat);
     const d = ctxOf({ document: { file_id: `BQAD${STAMP}`, file_unique_id: 'e', file_name: 'x.pdf', mime_type: 'application/pdf', file_size: 10 } });
     // Today's silence: the handler goes on to the cabinet, which says nothing.
-    expect(await offerAddForMedia(d.ctx as never, chat)).toBe(false);
+    expect(await door(d)).toBe('none');
+    await keptLastSettled();
     expect(d.replies).toEqual([]);
   }
 
@@ -318,8 +354,9 @@ describe('nothing to offer', () => {
     await request();
     startIntake(chat, 'yolkira', { staffId: sellerId });
     const d = ctxOf({ document: { file_id: `BQAE${STAMP}`, file_unique_id: 'f', file_name: 'y.pdf', mime_type: 'application/pdf', file_size: 10 } });
-    expect(await offerAddForMedia(d.ctx as never, chat)).toBe(false);
+    expect(await door(d)).toBe('none');
     const f = ctxOf({ text: 'x', ...forwarded });
+    expect(await door(f)).toBe('none');
     await offerForwardTask(f.ctx as never, chat, null);
     expect(rowsOf(f.replies[0]!.extra)).toEqual(forwardKeyboard());
   });
@@ -327,23 +364,26 @@ describe('nothing to offer', () => {
   it('a collection taken a minute after an offer: the cache never offers beside it (adv-13)', async () => {
     await request();
     const first = ctxOf({ text: 'x', ...forwarded });
-    await offerForwardTask(first.ctx as never, chat, null);
+    await door(first);
+    await keptLastSettled();
     expect(rowsOf(first.replies[0]!.extra)).toHaveLength(forwardKeyboard().length + 1);
     startIntake(chat, 'yolkira', { staffId: sellerId });
     const second = ctxOf({ text: 'y', ...forwarded });
+    expect(await door(second)).toBe('none');
     await offerForwardTask(second.ctx as never, chat, null);
     expect(rowsOf(second.replies[0]!.extra)).toEqual(forwardKeyboard());
   });
 
-  it('a PARKED collection takes nothing, so it silences no offer — the press asks the question instead (spec-5)', async () => {
-    const r = await request();
+  it('a PARKED collection takes nothing: its burst’s ONE message is the pause line — no ➕ rows (§4.2, was spec-5)', async () => {
+    await request();
     startIntake(chat, 'yolkira', { staffId: sellerId });
-    // P1's park: the collection lives on, it no longer holds the chat (asked
-    // twice — the media offer, then its rows).
-    vi.mocked(holdingIntake).mockReturnValueOnce(null).mockReturnValueOnce(null);
+    updateIntake(chat, { touchedAt: Date.now() - HOLD_MS - 60_000 }, { quiet: true });
+    expect(holdingIntake(chat)).toBeNull();
     const d = ctxOf({ document: { file_id: `BQAP${STAMP}`, file_unique_id: 'q', file_name: 'z.pdf', mime_type: 'application/pdf', file_size: 10 } });
-    expect(await offerAddForMedia(d.ctx as never, chat)).toBe(true);
-    expect(rowsOf(d.replies[0]!.extra)).toEqual([[{ text: `➕ ${r.card} so‘roviga qo‘shish`, callback_data: `cf:${r.id}` }]]);
+    expect(await door(d)).toBe('pause');
+    await keptLastSettled();
+    expect(d.replies.map((x) => x.text)).toEqual([burstPauseLine(1)]);
+    expect(rowsOf(d.replies[0]!.extra).flat().map((b) => b.callback_data)).toEqual(['c:resume_take', 'c:cancel']);
     expect(activeIntake(chat)).not.toBeNull();
   });
 
@@ -351,7 +391,8 @@ describe('nothing to offer', () => {
     await request();
     vi.mocked(openRequestsToOffer).mockRejectedValueOnce(new Error('db blip'));
     const f = ctxOf({ text: 'x', ...forwarded });
-    await offerForwardTask(f.ctx as never, chat, null);
+    await door(f);
+    await keptLastSettled();
     expect(f.replies[0]!.text).toBe('📌 Topshiriq qilamizmi?');
     expect(rowsOf(f.replies[0]!.extra)).toEqual(forwardKeyboard());
   });
