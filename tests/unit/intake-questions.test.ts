@@ -98,6 +98,14 @@ describe('the table’s ⚠️ lines', () => {
     expect(firstNeed('rastamojka', goods([{ name: 'Sumka' }]), noLaws)).toBeNull();
   });
 
+  it('a missing CODE is never a question — on the AI door the reading or the VED codes the row (docs/IKKI-ESHIK.md §3.1, his 5a)', () => {
+    // The table tells such a row «kod yo‘q — …» (intake-table.test.ts); what it ASKS
+    // stays the rows the engine would refuse, and an uncoded row with a figure prices.
+    const facts = goods([{ name: 'Sumka', quantity: 50 }, { name: 'Choynak', weightKg: 20, tnvedCode: null }]);
+    expect(firstNeed('rastamojka', facts, noLaws)).toBeNull();
+    expect(warned('rastamojka', facts, laws)).toEqual([]);
+  });
+
   it('a freight-only job is asked nothing — a truck is priced on the totals', () => {
     const facts = goods([{ name: 'Sumka' }, { name: 'Choynak' }]);
     expect(firstNeed('yolkira', facts, noLaws)).toBeNull();

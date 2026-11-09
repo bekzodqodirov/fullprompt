@@ -37,6 +37,7 @@ import type { BazaBasis, MeasureUnit } from './pricing';
 import { codeWrittenAsCode, normalizeRowUnit, parseGoodsLine, routeAmount, unitOf } from './units';
 import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
 import { SELLER_TAIL_NO_ASK } from './tail-words';
+import { AI_CODE_MARK } from './code-source';
 import { clipText } from '../../platform/telegram/format';
 
 /** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
@@ -803,7 +804,38 @@ export interface TableInput {
    * qo‘shildi …» on a table material arrived below. Absent = none.
    */
   marker?: string | null;
+  /**
+   * The AI door's TABLE (docs/IKKI-ESHIK.md §3.1-§3.4, his 4a/5a): the door
+   * in its head, a code the model proposed marked as its proposal, a row with
+   * no code told who finds it, the closing promising the AI's figure, and —
+   * as the LAST block, right above the buttons — what the last answer did,
+   * since the answer sends no message of its own. Absent = today's table (a
+   * request from before the doors, §0.2). Ignored under `plain`.
+   */
+  ai?: TableAi | null;
 }
+
+/** The AI door's part of the table — what the dialogue reads for it (§3.1, §3.4). */
+export interface TableAi {
+  /**
+   * `aiCalcAvailable()` — a key AND budget today — read ONCE per draw: the
+   * only thing that makes «AI hisoblashda topadi» a promise (review PF-SPEC-4).
+   */
+  available: boolean;
+  /**
+   * The last answer's result, or what the last «↩️» took back (§3.4) —
+   * rendered by the dialogue from the echo records, never cut.
+   */
+  last: readonly string[];
+}
+
+/**
+ * A row with no code yet on the AI door's table (§3.1, P13) — never ✅ and
+ * never a question: the code is not the seller's part. With the AI
+ * available the landing pass looks for one; without it, the VED sets it.
+ */
+export const CODE_GAP_AI = 'kod yo‘q — AI hisoblashda topadi (topolmasa VED qo‘yadi)';
+export const CODE_GAP_VED = 'kod yo‘q — VED xodimi qo‘yadi';
 
 /**
  * The plain door's tail on a gap (§2.1): the VED asks the seller — the
@@ -884,6 +916,23 @@ export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws'
   return [...lines, ...totals, ...route];
 }
 
+/**
+ * «3-qator», «umumiy brutto», «umumiy hajm», «yo‘nalish» — a target as the
+ * seller reads it: in the AI table's state line, an offer's button and the
+ * echo of a request from before the doors (one home, #513).
+ */
+export function targetWord(t: TableTarget): string {
+  if ('line' in t) return `${t.line}-qator`;
+  if ('totals' in t) return t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm';
+  return 'yo‘nalish';
+}
+
+/** «3-qator, umumiy brutto va yana 2 ta» — the first six targets named, the rest counted. */
+export function openTargetsText(open: readonly TableTarget[]): string {
+  const names = open.map(targetWord);
+  return names.slice(0, 6).join(', ') + (names.length > 6 ? ` va yana ${names.length - 6} ta` : '');
+}
+
 /** «1, 3, 5–9, 12» — numbers as ranges, in order. */
 export function numberRanges(nos: readonly number[]): string {
   const sorted = [...new Set(nos)].sort((a, b) => a - b);
@@ -935,11 +984,39 @@ interface TableEntry {
   line: string;
   /** The needs' ↳ text (groupable), and the conflicts' own ↳ lines. */
   need: string | null;
+  /** The AI door's «kod yo‘q — …» (§3.1, groupable) — a row with it is ℹ️, never ✅. */
+  code: string | null;
   conflicts: string[];
 }
 
-const entryText = (e: TableEntry, need: boolean) =>
-  [e.line, ...(need && e.need ? [`   ↳ ${e.need}`] : []), ...e.conflicts.map((c) => `   ↳ ${c}`)].join('\n');
+const entryText = (e: TableEntry, need: boolean, code = true) =>
+  [
+    e.line,
+    ...(need && e.need ? [`   ↳ ${e.need}`] : []),
+    ...(code && e.code ? [`   ↳ ${e.code}`] : []),
+    ...e.conflicts.map((c) => `   ↳ ${c}`),
+  ].join('\n');
+
+/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, and (AI door) no code. */
+const entryOk = (e: TableEntry) => !e.warn && !e.code;
+
+/** A table with no goods row: what to send, on every door that asks. */
+const NO_GOODS_CLOSING = '⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.';
+
+/** The AI door's complete closing (§3.2), verbatim — «complete» being the SELLER's part. */
+export const AI_TABLE_COMPLETE = '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, AI hisoblaydi.';
+
+/**
+ * What a complete AI table promises the press does (§3.2, §3.7): the AI's
+ * figure only while the AI will run today — otherwise the plain door's true
+ * words, the job going to the VED; an addition the VED has started on goes
+ * to him and nothing re-runs.
+ */
+function aiCompleteLine(amend: TableAmend | null, available: boolean): string {
+  if (amend?.started) return '✅ Ma’lumot to‘liq — «📨 VED ga yuborish» ni bosing.';
+  if (amend) return available ? '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.' : '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing.';
+  return available ? AI_TABLE_COMPLETE : '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, so‘rov VED ga tushadi.';
+}
 
 /**
  * The table the seller reads after a reading and after every answer (his
@@ -964,14 +1041,19 @@ export function intakeTableText(input: TableInput): string {
   const conflicts = vedConflicts(input.amend);
   const client = input.clientLabel ?? 'mijoz hali yozilmagan';
   const plain = input.plain === true;
+  const ai = !plain && input.ai ? input.ai : null;
   // The plain door's gap mark (§2.1): the VED asks, so the row is told, never warned.
   const gapMark = plain ? 'ℹ️' : '⚠️';
+  // A row with no code on the AI door (§3.1): who finds it, by whether the AI
+  // will run today — read once per draw by the dialogue.
+  const codeGap = ai ? (ai.available ? CODE_GAP_AI : CODE_GAP_VED) : null;
 
   // The two doors look different on the screen where the seller decides what
-  // ✅ does (§2.1): «🧮 Hisoblatish · 🛃 Rastamojka».
+  // ✅ does (§2.1, §3.2): «🧮 Hisoblatish · 🛃 Rastamojka», «🤖 AI rastamojka · 🛃 Rastamojka».
+  const doorHead = plain ? '🧮 Hisoblatish · ' : ai ? '🤖 AI rastamojka · ' : '';
   const head = input.amend
     ? [`➕ Qo‘shimcha · ${input.amend.cardLabel} · ${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`]
-    : [plain ? `🧮 Hisoblatish · ${SECTION_LABEL[input.section]}` : SECTION_LABEL[input.section], `Mijoz: ${client}`];
+    : [`${doorHead}${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`];
   if (input.fileCount) head.push(`Fayllar: ${input.fileCount}`);
   head.push('', input.amend ? `So‘rovdagi qatorlar (${input.amend.storedCount}):` : `Tovarlar (${rows.length}):`);
 
@@ -982,14 +1064,21 @@ export function intakeTableText(input: TableInput): string {
     const own = itemId === null ? [] : conflicts.filter((c) => c.itemId === itemId);
     // A conflict is said under its row and asks nothing (§1.1): no ⚠️ for it.
     const warn = !freightOnly && need !== undefined;
-    const mark = freightOnly ? '·' : warn ? gapMark : '✅';
+    // No code on the AI door (§3.1): told, never asked, never ✅ — the code is
+    // not the seller's part, so it never makes the table incomplete either.
+    const code = codeGap !== null && !freightOnly && !item.tnvedCode?.trim() ? codeGap : null;
+    const mark = freightOnly ? '·' : warn ? gapMark : code ? 'ℹ️' : '✅';
     const fresh = input.amend && r.seq === null ? '🆕 ' : '';
     const figures = lineFiguresText(item);
+    // The model's code is its PROPOSAL (§3.1, P13): marked as such, so a code
+    // nobody checked never reads like one the file stated.
+    const proposed = ai && item.tnvedSource === 'model' ? ` ${AI_CODE_MARK}` : '';
     return {
       no: r.no,
       warn,
-      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}` : ''}`,
+      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed}` : ''}`,
       need: !freightOnly && need ? (plain ? plainNeedWhat(need) : lineNeedWhat(need)) : null,
+      code,
       conflicts: own.map(conflictText),
     };
   });
@@ -1056,8 +1145,16 @@ export function intakeTableText(input: TableInput): string {
   const doubts = plain ? [] : input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
 
   const warnRows = entries.filter((e) => e.warn);
+  // Complete = the SELLER's part (§3.2): a row with no code is not his to fill.
+  const complete = warnRows.length === 0 && !totalsWarn;
   const confirm = input.amend ? (input.amend.started ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
   const vedLine = `Bilmagan qatoringizni VED to‘ldiradi — ${confirm} ni hozir ham bosishingiz mumkin.`;
+  const shortage =
+    warnRows.length > 0 && totalsWarn
+      ? `⚠️ ${warnRows.length} ta qatorda va umumiyda ma’lumot yetishmayapti.`
+      : warnRows.length > 0
+        ? `⚠️ ${warnRows.length} ta qatorda ma’lumot yetishmayapti.`
+        : '⚠️ Umumiyda ma’lumot yetishmayapti.';
   const closing: string[] = [];
   if (plain) {
     // His 2a: the job lands as it is, and the VED asks for what is missing —
@@ -1069,33 +1166,44 @@ export function intakeTableText(input: TableInput): string {
         : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
       PLAIN_SUMMARY_LAST,
     );
+  } else if (ai) {
+    // The AI door's closing is the table's LAST block (§3.2, §3.4), under
+    // what the last answer did. Collecting again (the marker) it points at no
+    // press the save guard refuses (review adv-18): the marker points at
+    // «Bo‘ldi», and only what is still open is said.
+    const collecting = Boolean(input.marker);
+    if (rows.length === 0) {
+      if (!collecting) closing.push(NO_GOODS_CLOSING, vedLine);
+    } else if (complete) {
+      if (!collecting) closing.push(aiCompleteLine(input.amend, ai.available));
+    } else {
+      // After an answer the state names what is still open (§3.4): «⚠️ Yana 1 ta: 5-qator.»
+      const open = tableOpenOf(input);
+      closing.push(ai.last.length > 0 && open.length > 0 ? `⚠️ Yana ${open.length} ta: ${openTargetsText(open)}.` : shortage);
+      if (!collecting) closing.push(...answerHow(input, rows, missing, stale), vedLine);
+    }
   } else if (rows.length === 0) {
-    closing.push('⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.', vedLine);
-  } else if (warnRows.length === 0 && !totalsWarn) {
+    closing.push(NO_GOODS_CLOSING, vedLine);
+  } else if (complete) {
     closing.push('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
   } else {
-    closing.push(
-      warnRows.length > 0 && totalsWarn
-        ? `⚠️ ${warnRows.length} ta qatorda va umumiyda ma’lumot yetishmayapti.`
-        : warnRows.length > 0
-          ? `⚠️ ${warnRows.length} ta qatorda ma’lumot yetishmayapti.`
-          : '⚠️ Umumiyda ma’lumot yetishmayapti.',
-      ...answerHow(input, rows, missing, stale),
-      vedLine,
-    );
+    closing.push(shortage, ...answerHow(input, rows, missing, stale), vedLine);
   }
 
   const marker = input.marker ? ['', input.marker] : [];
   // The plain summary's closing is its LAST block (§2.1), after the bot's and
-  // the model's notes; the table keeps its closing above them, as it was.
+  // the model's notes; so is the AI table's (§3.4), after the certificate and
+  // under what the last answer did. The table from before the doors keeps its
+  // closing above them, as it was.
   const notes = input.tail ? input.tail.split('\n') : [];
-  const tail = plain ? [...notes, '', ...closing, ...marker] : [...notes, ...marker];
+  const last = ai ? [...ai.last, ...closing] : closing;
+  const tail = plain || ai ? [...notes, ...(last.length > 0 ? ['', ...last] : []), ...marker] : [...notes, ...marker];
   const fixed = (cut: boolean) => [
     '',
     'Umumiy:',
     ...totalsRows,
     ...doubts,
-    ...(plain ? [] : ['', ...closing]),
+    ...(plain || ai ? [] : ['', ...closing]),
     ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
   ];
   const goodsLines =
@@ -1110,13 +1218,15 @@ export function intakeTableText(input: TableInput): string {
   if (fits(all)) return draw(all);
 
   // ✅ rows while they fit, the rest one line: «✅ yana 4 ta qator to‘liq: 1, 3, 5–7».
+  // Only a row owing nothing folds there (`entryOk`): an AI-door row with no
+  // code is never ✅ (§3.1), so it is never counted «to‘liq».
   const withOk = (list: TableEntry[], needText: (e: TableEntry) => string): string[] | null => {
-    const ok = list.filter((e) => !e.warn);
+    const ok = list.filter(entryOk);
     for (let k = ok.length - 1; k >= 0; k -= 1) {
       const shown = new Set(ok.slice(0, k).map((e) => e.no));
       const gone = ok.slice(k).map((e) => e.no);
       const lines = [
-        ...list.filter((e) => e.warn || shown.has(e.no)).map(needText),
+        ...list.filter((e) => !entryOk(e) || shown.has(e.no)).map(needText),
         `✅ yana ${gone.length} ta qator to‘liq: ${numberRanges(gone)}`,
       ];
       if (fits(lines)) return lines;
@@ -1128,27 +1238,32 @@ export function intakeTableText(input: TableInput): string {
 
   // ⚠️ rows sharing one ↳ lose their own and get one grouped line under the
   // last of them — a 60-line clothing invoice priced only in kg repeats one
-  // reason sixty times (product-fit-10).
+  // reason sixty times (product-fit-10). The AI door's «kod yo‘q» is one
+  // reason too, grouped the same way.
   const byNeed = new Map<string, number[]>();
   for (const e of warnRows) if (e.need) byNeed.set(e.need, [...(byNeed.get(e.need) ?? []), e.no]);
   const grouped = new Set([...byNeed].filter(([, nos]) => nos.length > 1).map(([need]) => need));
+  const codeNos = entries.filter((e) => e.code).map((e) => e.no);
+  const codeGrouped = codeNos.length > 1;
+  const needGroupedOf = (e: TableEntry) => e.warn && e.need !== null && grouped.has(e.need);
   const groupedText = (e: TableEntry) => {
-    if (!e.warn || !e.need || !grouped.has(e.need)) return entryText(e, true);
-    const nos = byNeed.get(e.need)!;
-    const last = nos[nos.length - 1] === e.no;
-    return [entryText(e, false), ...(last ? [`   ↳ ${numberRanges(nos)}: ${e.need}`] : [])].join('\n');
+    const needOwn = !needGroupedOf(e);
+    const codeOwn = !(codeGrouped && e.code);
+    if (needOwn && codeOwn) return entryText(e, true);
+    const nos = needOwn ? [] : byNeed.get(e.need!)!;
+    return [
+      entryText(e, needOwn, codeOwn),
+      ...(!needOwn && nos[nos.length - 1] === e.no ? [`   ↳ ${numberRanges(nos)}: ${e.need}`] : []),
+      ...(!codeOwn && codeNos[codeNos.length - 1] === e.no ? [`   ↳ ${numberRanges(codeNos)}: ${codeGap ?? ''}`] : []),
+    ].join('\n');
   };
   const groupedAll = entries.map(groupedText);
   if (fits(groupedAll)) return draw(groupedAll);
   const regrouped = withOk(entries, groupedText);
   if (regrouped) return draw(regrouped);
-  const okCount = entries.filter((e) => !e.warn).length;
-  const warnOnly = [
-    ...entries.filter((e) => e.warn).map(groupedText),
-    ...(okCount > 0
-      ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`]
-      : []),
-  ];
+  const okNos = entries.filter(entryOk).map((e) => e.no);
+  const okLine = okNos.length > 0 ? [`✅ yana ${okNos.length} ta qator to‘liq: ${numberRanges(okNos)}`] : [];
+  const warnOnly = [...entries.filter((e) => !entryOk(e)).map(groupedText), ...okLine];
   if (fits(warnOnly)) return draw(warnOnly);
   // Only then are ⚠️ rows shortened — by `fitTelegram`'s own count line —
   // and the closing says what to send instead. A grouped reason leaves its
@@ -1159,11 +1274,12 @@ export function intakeTableText(input: TableInput): string {
   // entry of the cut list standing for all of them, it went first, and the
   // count line called it one row — «… va yana 10 ta qator» with 19 hidden.
   // Now the count is the ⚠️ rows the cut took, and nothing else is hidden.
-  const reasons = [...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`);
-  const bare = (e: TableEntry) => (e.warn && e.need && grouped.has(e.need) ? entryText(e, false) : entryText(e, true));
-  const cutRows = entries.filter((e) => e.warn).map(bare);
-  const okLine =
-    okCount > 0 ? [`✅ yana ${okCount} ta qator to‘liq: ${numberRanges(entries.filter((e) => !e.warn).map((e) => e.no))}`] : [];
+  const reasons = [
+    ...[...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`),
+    ...(codeGrouped ? [`   ↳ ${numberRanges(codeNos)}: ${codeGap ?? ''}`] : []),
+  ];
+  const bare = (e: TableEntry) => entryText(e, !needGroupedOf(e), !(codeGrouped && e.code));
+  const cutRows = entries.filter((e) => !entryOk(e)).map(bare);
   return fitTelegram(head, cutRows, [...okLine, ...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
 }
 

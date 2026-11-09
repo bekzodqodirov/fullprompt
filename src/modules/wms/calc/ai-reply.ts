@@ -1,4 +1,5 @@
 import { dutyText } from './duty-text';
+import { AI_CODE_MARK } from './code-source';
 import { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT } from './fit-telegram';
 import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
 import { AI_REPLY_HEAD, RERUN_WORD, VED_ESTIMATE_MARK } from './reply-heads';
@@ -55,12 +56,11 @@ export { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT };
 export { CUSTOMS_TAIL_WORDS, FREIGHT_TAIL_WORDS, SELLER_TAIL_NO_ASK, tailWords };
 export type { FreightTail, ReplyAudience };
 
-/**
- * A group's code the model proposed while reading (§3.1, P13), as the line
- * prints it — «· 6403990000 (AI taklifi)», the table's own mark — so a code
- * nobody has checked never reads like one the file stated.
- */
-export const AI_CODE_MARK = '(AI taklifi)';
+// A group's code the model proposed while reading (§3.1, P13), as the line
+// prints it — «· 6403990000 (AI taklifi)», the table's own mark — so a code
+// nobody has checked never reads like one the file stated. Its home is
+// code-source.ts, beside the item note it stands for; re-exported here.
+export { AI_CODE_MARK };
 
 export interface AiVedLine {
   /** What the group is, in the seller's words — its items, joined. */

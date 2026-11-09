@@ -196,6 +196,14 @@ export interface IntakeState {
   } | null;
   /** The table answers the seller was told, for the undo (P3). */
   echoes: IntakeEcho[];
+  /**
+   * What the last «↩️» took back on the AI door (docs/IKKI-ESHIK.md §3.4):
+   * the table's last block says it — «↩️ Bekor qilindi: …», or that a row a
+   * later answer changed was kept — until the next answer or reading, since
+   * no echo message is left to edit. `tag`: the echo it undid. Optional — a
+   * row written before it reads as none.
+   */
+  lastUndo?: { tag: string; done: string[]; notes: string[] } | null;
   /** What staff typed to name the customer — a code, a phone, or a name. */
   clientHintRaw: string;
   /** Everything typed or captioned, in the order it came. */

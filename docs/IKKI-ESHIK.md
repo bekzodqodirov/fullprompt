@@ -463,6 +463,23 @@ VED's, and the lenta note names them.
     reply), or a refusal's words.
   - That reply has no «✅ Yozildi», no confirm, no certificate and no ↩️.
 - Echo ids already stored stay readable for `ownsMessage` for the 24 h that old collections live.
+- **As built** (pair 2, P-chat B):
+  - The AI table's closing moved to its END, like the plain summary's: notes, the certificate line,
+    the last block, then the state and «✍️ …» lines. After an answer the state reads «⚠️ Yana N ta:
+    5-qator, umumiy brutto.» (`openTargetsText`); with no answer yet it is today's «⚠️ N ta qatorda
+    … yetishmayapti.».
+  - The last block is DERIVED from the echo records (`lastBlockOf`), naming each row where it stands
+    in the table now; an undo's own words wait in `IntakeState.lastUndo` until the next answer or
+    reading. One action names at most 3 writes, the rest counted.
+  - The ↩️ stays on a table that points down (§1.4's marker): the undo is no press the save guard
+    refuses, and the echo that carried it is gone. Collecting, the closing says only what is open.
+  - A text that writes nothing and asks nothing («;») gets NO_ADDRESS, never a 👍.
+  - With no table drawn, an undo says its result in one message — the one place left.
+  - The complete closing promises the AI's figure only while `aiCalcAvailable()` holds; otherwise
+    «… so‘rov VED ga tushadi.» An addition: «✅ Qo‘shish … AI qayta hisoblaydi.», and «📨 VED ga
+    yuborish» with no AI promise once the VED has started (§3.7).
+  - A NULL door (an add or seeded collection on a request from before 0140) keeps today's table and
+    echo (§0.2).
 
 3.5 **«✅ Tasdiqlash» → the job lands → the AI computes** (P6, M9, P3, F7).
 - **The ✅ text.** When queued: «🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_TABLE_COMPLETE,
+  CODE_GAP_AI,
+  CODE_GAP_VED,
   intakeTableText,
   NAME_ROWS_TRIED,
   tableOpenOf,
@@ -642,5 +645,145 @@ describe('the plain door’s SUMMARY over the same input (docs/IKKI-ESHIK.md §2
     for (const plain of [true, false]) {
       expect(table({ ...input, plain, marker }).split('\n').at(-1), String(plain)).toBe(marker);
     }
+  });
+});
+
+/**
+ * The AI door's TABLE (docs/IKKI-ESHIK.md §3.1-§3.4, his 4a and 5a) over the
+ * same input — pure, every literal by hand. The door in the head; a code the
+ * model proposed marked as its proposal; a row with no code told who finds it,
+ * by whether the AI will run today, never ✅ and never asked; the closing as
+ * the LAST block, under what the last answer did.
+ */
+describe('the AI door’s TABLE (docs/IKKI-ESHIK.md §3.1-§3.4)', () => {
+  const ai = (available: boolean, last: readonly string[] = []) => ({ available, last });
+  const input = {
+    clientLabel: 'GS777 · Ali aka',
+    fileCount: 2,
+    laws: new Map([['6403990000', KROSSOVKA]]),
+    tail: '\n📄 Sertifikat: bor (o‘zgartirish uchun tugmani bosing)',
+    facts: {
+      volumeM3: 12,
+      goods: [
+        { name: 'Kurtka qishki', quantity: 300, weightKg: 150, tnvedCode: '6201400000', tnvedSource: 'model' as const },
+        { name: 'Krossovka', weightKg: 12.5, tnvedCode: '6403990000', tnvedSource: 'row' as const },
+        { name: 'Sumka', quantity: 50, weightKg: 20 },
+        { name: 'Shapka' },
+      ],
+    },
+  };
+
+  it('the example, literally — the last answer above the state, both above the buttons', () => {
+    expect(table({ ...input, ai: ai(true, ['✍️ Oxirgi javob: 3-qator «Sumka» — 50 dona']) })).toBe(
+      [
+        '🤖 AI rastamojka · 🛃 Rastamojka',
+        'Mijoz: GS777 · Ali aka',
+        'Fayllar: 2',
+        '',
+        'Tovarlar (4):',
+        '✅ 1. Kurtka qishki — 300 dona · 150 kg · 6201400000 (AI taklifi)',
+        '⚠️ 2. Krossovka — 12.5 kg · 6403990000',
+        '   ↳ juft soni — boj kamida $3/juft',
+        'ℹ️ 3. Sumka — 50 dona · 20 kg',
+        `   ↳ ${CODE_GAP_AI}`,
+        '⚠️ 4. Shapka',
+        '   ↳ soni (dona) yoki sof og‘irligi (kg)',
+        `   ↳ ${CODE_GAP_AI}`,
+        '',
+        'Umumiy:',
+        '⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan',
+        '✅ Hajm: 12 kub',
+        '',
+        '📄 Sertifikat: bor (o‘zgartirish uchun tugmani bosing)',
+        '',
+        '✍️ Oxirgi javob: 3-qator «Sumka» — 50 dona',
+        '⚠️ Yana 3 ta: 2-qator, 4-qator, umumiy brutto.',
+        '✍️ Bir xabarda istalgan qatorni to‘ldiring: «2: 40 juft», «Shapka 30 dona» yoki «jami 3500 kg».',
+        'Bir nechta bo‘lsa — har birini alohida satrga yozing (yoki «;» bilan).',
+        'Bilmagan qatoringizni VED to‘ldiradi — «✅ Tasdiqlash» ni hozir ham bosishingiz mumkin.',
+      ].join('\n'),
+    );
+  });
+
+  it('no answer yet: the state is the table’s own count; with the AI gone, a row with no code is the VED’s', () => {
+    const text = table({ ...input, ai: ai(false) });
+    expect(text).toContain(`ℹ️ 3. Sumka — 50 dona · 20 kg\n   ↳ ${CODE_GAP_VED}`);
+    expect(text).not.toContain('AI hisoblashda topadi');
+    expect(text).toContain('⚠️ 2 ta qatorda va umumiyda ma’lumot yetishmayapti.');
+    expect(text).not.toContain('Oxirgi javob');
+  });
+
+  it('«(AI taklifi)» marks the MODEL’s code only, and only on the AI door — the table from before the doors and the plain summary say today’s words', () => {
+    const marked = table({ ...input, ai: ai(true) });
+    expect(marked.match(/\(AI taklifi\)/gu)).toHaveLength(1);
+    expect(marked).toContain('· 6403990000\n');
+    for (const other of [table(input), table({ ...input, plain: true })]) {
+      expect(other).not.toContain('(AI taklifi)');
+      expect(other).not.toContain('kod yo‘q');
+    }
+  });
+
+  it('a row with no code is never ✅, never an open target and never what makes a table incomplete — the code is not the seller’s part', () => {
+    const facts = { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Sumka', quantity: 50 }, { name: 'Shim', weightKg: 20 }] };
+    for (const available of [true, false]) {
+      const text = table({ facts, ai: ai(available) });
+      expect(text).toContain(`ℹ️ 1. Sumka — 50 dona\n   ↳ ${available ? CODE_GAP_AI : CODE_GAP_VED}`);
+      expect(text).not.toMatch(/✅ \d\./u);
+      expect(text.split('\n').at(-1)).toBe(
+        available ? AI_TABLE_COMPLETE : '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, so‘rov VED ga tushadi.',
+      );
+      expect(text).not.toContain('✍️');
+    }
+    expect(tableOpenOf({ section: 'rastamojka', facts, laws: noLaws, amend: null })).toEqual([]);
+  });
+
+  it('the podklyuch head, and a freight-only section draws no code line', () => {
+    expect(table({ section: 'podklyuch', facts: { goods: [{ name: 'Kurtka' }] }, ai: ai(true) }).split('\n')[0]).toBe(
+      '🤖 AI rastamojka · 🔑 Podklyuch (yo‘lkira + rastamojka)',
+    );
+    const freight = table({ section: 'yolkira', facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 3500, volumeM3: 12, goods: [{ name: 'Kurtka' }] }, ai: ai(true) });
+    expect(freight).not.toContain('kod yo‘q');
+    expect(freight).toContain('· 1. Kurtka');
+  });
+
+  it('collecting again (the marker): the closing points at no press the save guard refuses (review adv-18) — only what is open, then the marker', () => {
+    const marker = '⬇️ Yangi ma’lumot qo‘shildi — pastdagi «✅ Bo‘ldi» ni bosing, qayta o‘qiladi.';
+    const open = table({ ...input, ai: ai(true, ['✍️ Oxirgi javob: 3-qator «Sumka» — 50 dona']), marker });
+    expect(open.split('\n').slice(-4)).toEqual([
+      '✍️ Oxirgi javob: 3-qator «Sumka» — 50 dona',
+      '⚠️ Yana 3 ta: 2-qator, 4-qator, umumiy brutto.',
+      '',
+      marker,
+    ]);
+    const done = table({ facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Sumka', quantity: 50, tnvedCode: '4202920000' }] }, ai: ai(true), marker });
+    expect(done).not.toContain('Tasdiqlash');
+    expect(done.split('\n').at(-1)).toBe(marker);
+  });
+
+  it('an addition’s complete closing: «✅ Qo‘shish» and «AI qayta hisoblaydi»; started, «📨 VED ga yuborish» and no AI promise (§3.7)', () => {
+    const amend = (started: boolean): TableAmend => ({ cardLabel: 'B-00123', storedCount: 1, totalsStale: [], conflicts: [], askedSeqs: null, started });
+    const facts = { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Kurtka', quantity: 300, seq: 1, tnvedCode: '6201400000' }] };
+    expect(table({ facts, amend: amend(false), ai: ai(true) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.');
+    expect(table({ facts, amend: amend(false), ai: ai(false) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing.');
+    expect(table({ facts, amend: amend(true), ai: ai(true) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «📨 VED ga yuborish» ni bosing.');
+  });
+
+  it('ninety long rows: a row with no code is never folded into «to‘liq» — its reason is grouped like a need, and the closing stays (§2.1’s fit)', () => {
+    const goods = Array.from({ length: 90 }, (_v, i) => ({
+      name: `Tovar ${i + 1} juda uzun nomli mahsulot qatori bu yerda`,
+      quantity: 5,
+      ...(i % 2 === 1 ? { tnvedCode: '4202920000' } : {}),
+    }));
+    const text = table({ facts: { weightKg: 3500, volumeM3: 12, goods }, ai: ai(true) });
+    expect(text.length).toBeLessThanOrEqual(4096);
+    const uncoded = goods.flatMap((g, i) => (g.tnvedCode ? [] : [i + 1]));
+    const coded = goods.flatMap((g, i) => (g.tnvedCode ? [i + 1] : []));
+    // The ✅ line counts the coded rows alone.
+    const okLine = /✅ yana (\d+) ta qator to‘liq: ([^\n]+)/u.exec(text);
+    expect(okLine, 're-anchor: the ✅ rows no longer fold').not.toBeNull();
+    expect(okLine![2]!.split(', ').some((n) => uncoded.includes(Number(n)))).toBe(false);
+    expect(text).toContain(`↳ ${uncoded.join(', ')}: ${CODE_GAP_AI}`);
+    expect(coded.length).toBeGreaterThan(0);
+    expect(text.split('\n').at(-1)).toBe(AI_TABLE_COMPLETE);
   });
 });

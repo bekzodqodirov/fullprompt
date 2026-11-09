@@ -531,7 +531,11 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     } else {
       // No keyboard is built here: the step's own (the derived `c:` fence reads
       // every button where it is built).
-      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
+      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, {
+        stale: tc.stale,
+        nameWord: tc.nameWord,
+        aiAvailable: tc.aiAvailable,
+      });
       patch = { ...outcome.state, ...step.patch };
       text = step.text;
       keyboard = step.keyboard;

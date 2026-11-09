@@ -8,3 +8,12 @@
  * from the stored item and marks such a code «(AI taklifi)» on its line.
  */
 export const AI_CODE_NOTE = 'TNVED: AI taklifi (o‘qishda) — tekshiring';
+
+/**
+ * …and the mark such a code carries wherever it is PRINTED — the AI door's
+ * table («· 6403990000 (AI taklifi)», §3.1, P13), the AI answer's line and the
+ * plain note. Here, beside the note it stands for, so the table (intake.ts)
+ * and the answer (ai-reply.ts, which re-exports it) read one string without
+ * importing each other.
+ */
+export const AI_CODE_MARK = '(AI taklifi)';

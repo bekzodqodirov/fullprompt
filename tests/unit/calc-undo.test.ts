@@ -7,6 +7,12 @@ import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
  * message taken back while the collection is open. The row is found where
  * the answer is NOW, a row a later answer changed again is named and kept,
  * and a totals answer is restored WHOLE — its mark and the doubts it retired.
+ *
+ * Re-anchored 2026-11-09 on his 4a (docs/IKKI-ESHIK.md §3.4): the AI door
+ * sends no echo, so the ↩️ is the TABLE's — «↩️ Oxirgi javobni bekor
+ * qilish», naming the newest answer — and what an undo took back is the
+ * table's last block, never an edited echo and never a message. The undo's
+ * arithmetic is unchanged and pinned as it was.
  */
 const model = vi.hoisted(() => ({ analyze: vi.fn() }));
 vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
@@ -14,7 +20,11 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   analyzeIntake: model.analyze,
 }));
 // The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+vi.mock('@/modules/wms/calc/ai-cost', () => ({
+  aiCalcBudgetLeft: async () => 100,
+  aiCalcAvailable: async () => true,
+  recordAiPass: async () => {},
+}));
 // «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1): the one
 // drive helper runs the captured job.
 vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
@@ -85,10 +95,21 @@ async function say(ctx: Ctx, chatId: bigint, text: string, forwarded = false) {
   await tableEditsSettled();
   return ctx.replies.at(-1)!;
 }
+/** The table as a reading sends it. */
+async function drawn(ctx: Ctx, chatId: bigint) {
+  await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
+  return ctx.replies.at(-1)!;
+}
+/** The table the collection draws NOW, as the seller reads it: its newest edit. */
+const tableNow = (ctx: Ctx, chatId: bigint) => {
+  const id = activeIntake(chatId)!.tableMessageId!;
+  return ctx.edits.filter((e) => e.id === id).at(-1) ?? ctx.replies.find((r) => r.id === id)!;
+};
 /** The echo's tag, by its position among the collection's echoes. */
 const tagOf = (chatId: bigint, n: number) => activeIntake(chatId)!.echoes.at(n)!.tag;
-async function undo(ctx: Ctx, chatId: bigint, echo: Sent, tag: string) {
-  await pressUndo(from(ctx, echo.id), chatId, tag);
+/** ↩️ pressed on the table — the AI door's one undo (§3.4). */
+async function undo(ctx: Ctx, chatId: bigint, tag: string) {
+  await pressUndo(from(ctx, activeIntake(chatId)!.tableMessageId!), chatId, tag);
   await tableEditsSettled();
 }
 
@@ -116,33 +137,37 @@ afterEach(async () => {
 });
 
 describe('↩️', () => {
-  it('restores what the answer replaced, and edits both messages — the echo and the table', async () => {
+  it('restores what the answer replaced: the table is redrawn — its last block says what was taken back — and NO message is sent', async () => {
     const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
     const ctx = fakeCtx();
-    await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
-    const table = ctx.replies[0]!;
-    const echo = await say(ctx, chatId, '2: 50 dona');
+    const table = await drawn(ctx, chatId);
+    await say(ctx, chatId, '2: 50 dona');
     expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { quantity: 50 }));
-    const editsBefore = ctx.edits.length;
-    await undo(ctx, chatId, echo, tagOf(chatId, 0));
+    await undo(ctx, chatId, tagOf(chatId, 0));
     const live = activeIntake(chatId)!;
     expect(live.facts.goods?.[1]).toEqual(line('Sumka', { quantity: null }));
     expect(live.lineAnswers).toEqual([]);
     expect(live.echoes[0]!.undone).toBe(true);
-    const after = ctx.edits.slice(editsBefore);
-    expect(after.find((e) => e.id === echo.id)).toMatchObject({ text: '↩️ Bekor qilindi: 2-qator «Sumka» — 50 dona', extra: { reply_markup: { inline_keyboard: [] } } });
-    expect(after.find((e) => e.id === table.id)!.text).toContain('⚠️ 2. Sumka');
+    const now = tableNow(ctx, chatId);
+    expect(now.id).toBe(table.id);
+    expect(now.text).toContain('⚠️ 2. Sumka');
+    expect(now.text).toContain('↩️ Bekor qilindi: 2-qator «Sumka» — 50 dona');
+    expect(now.text).not.toContain('Oxirgi javob');
+    // Nothing left to take back: the ↩️ goes with it.
+    expect(JSON.stringify(now.extra)).not.toContain('cu:');
+    expect(ctx.replies).toEqual([table]);
     expect(ctx.toasts).toEqual([undefined]);
   });
 
   it('twice: «Allaqachon bekor qilingan», nothing moves', async () => {
     const { chatId } = collection({ stage: 'review', facts: { goods: [line('Kurtka'), line('Sumka')] } });
     const ctx = fakeCtx();
-    const echo = await say(ctx, chatId, '2: 50 dona');
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '2: 50 dona');
     const tag = tagOf(chatId, 0);
-    await undo(ctx, chatId, echo, tag);
+    await undo(ctx, chatId, tag);
     const before = JSON.stringify(activeIntake(chatId));
-    await undo(ctx, chatId, echo, tag);
+    await undo(ctx, chatId, tag);
     expect(ctx.toasts.at(-1)).toBe('Allaqachon bekor qilingan');
     expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   });
@@ -150,45 +175,51 @@ describe('↩️', () => {
   it('an unknown tag, or no live collection: «Bu tugma eskirgan»', async () => {
     const { chatId } = collection({ stage: 'review', facts: { goods: [line('Kurtka'), line('Sumka')] } });
     const ctx = fakeCtx();
-    const echo = await say(ctx, chatId, '2: 50 dona');
-    await pressUndo(from(ctx, echo.id), chatId, 'deadbeef');
+    const table = await drawn(ctx, chatId);
+    await say(ctx, chatId, '2: 50 dona');
+    await pressUndo(from(ctx, table.id), chatId, 'deadbeef');
     expect(ctx.toasts.at(-1)).toBe('Bu tugma eskirgan.');
     expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan.');
     const tag = tagOf(chatId, 0);
     endIntake(chatId);
-    await pressUndo(from(ctx, echo.id), chatId, tag);
+    await pressUndo(from(ctx, table.id), chatId, tag);
     expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan.');
   });
 
-  it('a row a LATER answer changed again is kept, and named', async () => {
+  it('a row a LATER answer changed again is kept, and named — and the block still names the answer that stands', async () => {
     const { chatId } = collection({ stage: 'review', facts: { goods: [line('Kurtka'), line('Sumka')] } });
     const ctx = fakeCtx();
-    const first = await say(ctx, chatId, '2: 50 dona');
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '2: 50 dona');
     await say(ctx, chatId, '2: 70 dona');
-    await undo(ctx, chatId, first, tagOf(chatId, 0));
+    await undo(ctx, chatId, tagOf(chatId, 0));
     expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { quantity: 70 }));
     expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 1, patch: { quantity: 70 } }]);
-    expect(ctx.edits.find((e) => e.id === first.id)!.text).toBe('⚠️ 2-qator keyin o‘zgartirilgan — u bekor qilinmadi.');
+    expect(tableNow(ctx, chatId).text).toContain(
+      '⚠️ 2-qator keyin o‘zgartirilgan — u bekor qilinmadi.\n✍️ Oxirgi javob: 2-qator «Sumka» — 50 → 70 dona',
+    );
   });
 
   it('a picked offer is restored like a typed answer', async () => {
     const { chatId } = collection({ stage: 'review', facts: { goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
     const ctx = fakeCtx();
+    await drawn(ctx, chatId);
     const asked = await say(ctx, chatId, '2: 50');
     await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 1);
     await tableEditsSettled();
-    const echo = ctx.replies.at(-1)!;
+    expect(ctx.replies.at(-1)).toBe(asked);
     expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { weightKg: 50 }));
-    await undo(ctx, chatId, echo, tagOf(chatId, 0));
+    await undo(ctx, chatId, tagOf(chatId, 0));
     expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { weightKg: null }));
-    expect(ctx.edits.find((e) => e.id === echo.id)!.text).toBe('↩️ Bekor qilindi: 2-qator «Sumka» — 50 kg');
+    expect(tableNow(ctx, chatId).text).toContain('↩️ Bekor qilindi: 2-qator «Sumka» — 50 kg');
   });
 
-  it('after «➕ Yana ma’lumot» + «Bo‘ldi» moved Sumka from row 3 to row 5, the OLD echo reverts row 5 — row 3’s new goods are untouched (product-fit-11)', async () => {
+  it('after «➕ Yana ma’lumot» + «Bo‘ldi» moved Sumka from row 3 to row 5, the OLD answer reverts row 5 — row 3’s new goods are untouched (product-fit-11)', async () => {
     const before = [line('Kurtka', { quantity: 1 }), line('Shim', { quantity: 1 }), line('Sumka'), line('Shapka', { quantity: 1 }), line('Sharf', { quantity: 1 })];
     const { chatId } = collection({ stage: 'review', material: ['ro‘yxat'], facts: { weightKg: 3500, volumeM3: 12, goods: before } });
     const ctx = fakeCtx();
-    const echo = await say(ctx, chatId, '3: 50 dona');
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '3: 50 dona');
     const tag = tagOf(chatId, 0);
     await handleCalcCallback(ctx, chatId, 'more');
     updateIntake(chatId, { material: ['ro‘yxat', 'yana'] });
@@ -201,16 +232,19 @@ describe('↩️', () => {
     );
     await pressDone(ctx, chatId);
     expect(activeIntake(chatId)!.facts.goods?.[4]).toEqual(line('Sumka', { quantity: 50 }));
-    await undo(ctx, chatId, echo, tag);
+    // The new table names the answer where it stands NOW.
+    expect(tableNow(ctx, chatId).text).toContain('✍️ Oxirgi javob: 5-qator «Sumka» — 50 dona');
+    await undo(ctx, chatId, tag);
     const live = activeIntake(chatId)!;
     expect(live.facts.goods?.[4]).toEqual(line('Sumka', { quantity: null }));
     expect(live.facts.goods?.[2]).toEqual(line('Paypoq', { quantity: 50 }));
-    expect(ctx.edits.find((e) => e.id === echo.id)!.text).toBe('↩️ Bekor qilindi: 5-qator «Sumka» — 50 dona');
+    expect(tableNow(ctx, chatId).text).toContain('↩️ Bekor qilindi: 5-qator «Sumka» — 50 dona');
   });
 
   it('a totals answer is undone WHOLE: the doubt it settled is back, and the weight is empty again (re-check p3-3)', async () => {
     const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona'], facts: { volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
     const ctx = fakeCtx();
+    await drawn(ctx, chatId);
     await say(ctx, chatId, 'jami 3500 kg');
     await handleCalcCallback(ctx, chatId, 'more');
     await say(ctx, chatId, 'brutto 4200 kg', true);
@@ -218,34 +252,35 @@ describe('↩️', () => {
     await pressDone(ctx, chatId);
     const doubt = { field: 'weightKg', answered: 3500, stated: 4200 };
     expect(activeIntake(chatId)!.ambiguousTotals).toEqual([doubt]);
-    const echo = await say(ctx, chatId, 'jami 4200 kg');
+    await say(ctx, chatId, 'jami 4200 kg');
     expect(activeIntake(chatId)!.facts.weightKg).toBe(4200);
     expect(activeIntake(chatId)!.ambiguousTotals).toEqual([]);
-    await undo(ctx, chatId, echo, tagOf(chatId, -1));
+    await undo(ctx, chatId, tagOf(chatId, -1));
     const live = activeIntake(chatId)!;
     expect(live.facts.weightKg ?? null).toBeNull();
     expect(live.ambiguousTotals).toEqual([doubt]);
     expect(live.totalsAnswer).toMatchObject({ weightKg: 3500, at: { material: 1, files: 0 } });
-    expect(ctx.edits.find((e) => e.id === echo.id)!.text).toBe('↩️ Bekor qilindi: umumiy brutto — 4200 kg');
+    const now = tableNow(ctx, chatId).text;
+    expect(now).toContain('↩️ Bekor qilindi: umumiy brutto — 4200 kg');
     // The table asks it again, with both figures.
-    expect(ctx.edits.at(-1)!.text).toContain('⚠️ Siz 3500 kg deb javob bergansiz, keyin yuborilgan ma’lumotda 4200 kg — qaysi biri?');
+    expect(now).toContain('⚠️ Siz 3500 kg deb javob bergansiz, keyin yuborilgan ma’lumotda 4200 kg — qaysi biri?');
   });
 });
 
 describe('↩️ — the review’s fixes', () => {
-  it('an answer the last reading placed nowhere goes back to the OLDER answer’s figure, and the echo keeps its ↩️ head (spec-4)', async () => {
+  it('an answer the last reading placed nowhere goes back to the OLDER answer’s figure, and the block keeps its ↩️ head (spec-4)', async () => {
     const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Sumka'), line('Kurtka')] } });
     const ctx = fakeCtx();
-    await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
+    await drawn(ctx, chatId);
     await say(ctx, chatId, '1: 50 dona');
-    const second = await say(ctx, chatId, '1: 60 dona');
+    await say(ctx, chatId, '1: 60 dona');
     // A re-read that drops Sumka: placeByName's write-back puts its answer at -1.
     const s0 = activeIntake(chatId)!;
     const placed = placeByName([line('Kurtka')], s0.lineAnswers);
     updateIntake(chatId, { facts: { ...s0.facts, goods: placed.goods }, lineAnswers: placed.entries });
-    await undo(ctx, chatId, second, tagOf(chatId, 1));
+    await undo(ctx, chatId, tagOf(chatId, 1));
     expect(activeIntake(chatId)!.lineAnswers).toEqual([{ index: -1, name: 'Sumka', patch: { quantity: 50 }, itemId: null }]);
-    expect(ctx.edits.find((e) => e.id === second.id)!.text).toBe(
+    expect(tableNow(ctx, chatId).text).toContain(
       '↩️ Bekor qilindi: «Sumka» — 60 dona\n⚠️ «Sumka» oxirgi o‘qishda topilmadi — javobi o‘chirildi.',
     );
     // Sumka back on the next reading carries the 50 nobody took back.
@@ -255,14 +290,15 @@ describe('↩️ — the review’s fixes', () => {
   it('undoing «jami 12 kub» keeps a LATER «jami 3500 kg» — in the answer, and through the next reading (adv-4)', async () => {
     const { chatId } = collection({ stage: 'review', material: ['Kurtka 3 dona'], facts: { goods: [line('Kurtka', { quantity: 3 })] } });
     const ctx = fakeCtx();
-    const cube = await say(ctx, chatId, 'jami 12 kub');
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, 'jami 12 kub');
     await say(ctx, chatId, 'jami 3500 kg');
-    await undo(ctx, chatId, cube, tagOf(chatId, 0));
+    await undo(ctx, chatId, tagOf(chatId, 0));
     const live = activeIntake(chatId)!;
     expect(live.totalsAnswer).toMatchObject({ weightKg: 3500, volumeM3: null });
     expect(live.facts.weightKg).toBe(3500);
     expect(live.facts.volumeM3 ?? null).toBeNull();
-    expect(ctx.edits.find((e) => e.id === cube.id)!.text).toBe('↩️ Bekor qilindi: umumiy hajm — 12 m³');
+    expect(tableNow(ctx, chatId).text).toContain('↩️ Bekor qilindi: umumiy hajm — 12 m³\n✍️ Oxirgi javob: umumiy brutto — 3500 kg');
     await handleCalcCallback(ctx, chatId, 'more');
     model.analyze.mockResolvedValueOnce(reads({ goods: [line('Kurtka', { quantity: 3 })] }));
     await pressDone(ctx, chatId);
@@ -272,15 +308,25 @@ describe('↩️ — the review’s fixes', () => {
   it('↩️ while a reading runs is refused in words — the reading carries the answer it started with (adv-5)', async () => {
     const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
     const ctx = fakeCtx();
-    const echo = await say(ctx, chatId, '2: 50 dona');
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '2: 50 dona');
     updateIntake(chatId, { analysing: 'reading-token' });
-    await pressUndo(from(ctx, echo.id), chatId, tagOf(chatId, 0));
-    await tableEditsSettled();
+    await undo(ctx, chatId, tagOf(chatId, 0));
     expect(ctx.toasts.at(-1)).toBe('⏳ Tahlil davom etmoqda — natijani kuting.');
     expect(ctx.texts().at(-1)).toBe('⏳ Tahlil davom etmoqda — natijani kuting.');
     const live = activeIntake(chatId)!;
     expect(live.echoes[0]!.undone).toBe(false);
     expect(live.lineAnswers).toEqual([{ index: 1, name: 'Sumka', patch: { quantity: 50 }, itemId: null }]);
     updateIntake(chatId, { analysing: null });
+  });
+
+  it('with no table drawn the undo still says what it took back — in a message, the one place left (§3.4)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '2: 50 dona');
+    expect(ctx.replies).toEqual([]);
+    await pressUndo(from(ctx, 1), chatId, tagOf(chatId, 0));
+    await tableEditsSettled();
+    expect(ctx.texts()).toEqual(['↩️ Bekor qilindi: 2-qator «Sumka» — 50 dona']);
   });
 });
