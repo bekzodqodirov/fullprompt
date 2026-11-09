@@ -1469,29 +1469,33 @@ export async function clientCodePrefix(): Promise<string> {
 }
 
 /**
- * The door a collection lands with (docs/IKKI-ESHIK.md §0.1, §0.3): its own
- * flag — «🤖 AI rastamojka» is 'ai', «🧮 Hisoblatish» 'plain'. A SEEDED
- * collection (a returned request's rows, «➕» on it) lands with its SOURCE's
- * door, read from that request's row; a source with none (legacy — every
- * request before 0140) or one that cannot be read gives the collection's own
- * flag: it is a bot collection whatever its source was, and its flag is what
- * the seller has been shown and is about to be answered by. Never null — a
- * collection is always one of the two doors.
+ * The door a collection lands with (docs/IKKI-ESHIK.md §0.1, §0.3). A first
+ * collection lands its own flag — «🤖 AI rastamojka» is 'ai', «🧮
+ * Hisoblatish» 'plain'. A SEEDED one (a returned request's rows, «➕» on it)
+ * lands with its SOURCE's door exactly as the source's row reads, and that
+ * includes NULL: a legacy source (every request before 0140, the card form's,
+ * the thread's, the agent's) gives a legacy request, which every reader
+ * answers as today (§0.2). Its own flag is no door — for a legacy source it
+ * is only `openSeeded`'s «a customs section», and landing it would stamp an
+ * «🤖» request nobody pressed: one that passes the seller's mute, for good,
+ * since a correction copies it. A source that cannot be read is legacy too —
+ * today's behaviour, never a guess.
  */
 async function collectedDoor(state: {
   ai: boolean;
   seed: unknown[] | null;
   seededFrom?: string | null;
-}): Promise<'plain' | 'ai'> {
-  const own = state.ai ? 'ai' : 'plain';
-  const source = state.seed !== null ? (state.seededFrom ?? null) : null;
-  if (!source) return own;
+}): Promise<'plain' | 'ai' | null> {
+  if (state.seed === null) return state.ai ? 'ai' : 'plain';
+  // A seeded row hydrated from before COMP-3 names no source: legacy.
+  const source = state.seededFrom ?? null;
+  if (!source) return null;
   try {
     const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
-    return (await requestIntakeDoor(source)) ?? own;
+    return await requestIntakeDoor(source);
   } catch (err) {
-    logger.warn({ err, source }, '[calc-intake] the source request’s door not read — the collection’s own');
-    return own;
+    logger.warn({ err, source }, '[calc-intake] the source request’s door not read — landed as legacy');
+    return null;
   }
 }
 
@@ -1530,8 +1534,9 @@ export async function landCollectedIntake(
   const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
   return landIntake({
-    // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1), written
-    // on the request for every later reader.
+    // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1) — a
+    // seeded collection its source's, NULL included (§0.3) — written on the
+    // request for every later reader.
     intakeDoor: await collectedDoor(state),
     noteId: state.noteId,
     section: state.section,

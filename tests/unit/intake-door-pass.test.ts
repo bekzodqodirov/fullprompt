@@ -108,6 +108,36 @@ describe('the worker reads the door from the row the standing read', () => {
     expect(say).toHaveBeenCalledWith('r1', 'landing', expect.objectContaining({ text: PASS_FAILED }), { direct: true });
   });
 
+  // The two sayOnce calls past the reply (K review K-SPEC-2): a pass the
+  // VED overtook or closed mid-run (`out.stood`), and the closed sentence
+  // after a reply the claim withheld because the request had closed.
+  it('an AI request’s mid-pass stand-down passes the mute; a plain or legacy one’s keeps it', async () => {
+    for (const stood of ['closed', 'touched'] as const) {
+      prefill.run.mockResolvedValue({ ...reply, stood });
+      for (const door of ['ai', 'plain', null] as const) {
+        say.mockClear();
+        standing('ok', door);
+        await (await handler())([job()]);
+        expect(say).toHaveBeenCalledTimes(1);
+        expect(say.mock.calls[0]![2]).toEqual(expect.objectContaining({ text: STOOD_DOWN[stood] }));
+        expect(say.mock.calls[0]!.slice(3)).toEqual(door === 'ai' ? [{ direct: true }] : []);
+      }
+    }
+  });
+
+  it('the closed sentence after a withheld reply passes it on an AI request, and only there', async () => {
+    for (const door of ['ai', 'plain', null] as const) {
+      say.mockReset().mockResolvedValueOnce(false).mockResolvedValue(true);
+      standing('ok', door);
+      await (await handler())([job()]);
+      expect(say).toHaveBeenCalledTimes(2);
+      // The reply itself: `whileOpen`, and `direct` on the AI door alone.
+      expect(say.mock.calls[0]![3]).toEqual(door === 'ai' ? { whileOpen: true, direct: true } : { whileOpen: true });
+      expect(say.mock.calls[1]![2]).toEqual(expect.objectContaining({ text: STOOD_DOWN.closed }));
+      expect(say.mock.calls[1]!.slice(3)).toEqual(door === 'ai' ? [{ direct: true }] : []);
+    }
+  });
+
   it('a plain request’s stand-down keeps the mute', async () => {
     standing('touched', 'plain');
     await (await handler())([job()]);

@@ -78,7 +78,8 @@ async function doorOf(requestId: string): Promise<string | null> {
 }
 
 /** A collection of a stranger, landed through the bot's own crossing. */
-async function landCollection(opts: { ai: boolean; seededFrom?: string }) {
+/** `seededFrom`: a seeded collection's source — null is a seeded row that names none (before COMP-3). */
+async function landCollection(opts: { ai: boolean; seededFrom?: string | null }) {
   const n = (seq += 1);
   const chatId = BigInt(-9_700_000_000) - BigInt(n);
   const name = `Kurtka ${SUFFIX}-${n}`;
@@ -89,7 +90,7 @@ async function landCollection(opts: { ai: boolean; seededFrom?: string }) {
     clientHintRaw: `Eshik ${SUFFIX}-${n} +99893${SUFFIX}${n % 10}`,
     material: [`${name} 10 dona 100 kg`],
     facts: { weightKg: 100, volumeM3: 1, goods },
-    ...(opts.seededFrom ? { seed: goods, seededFrom: opts.seededFrom } : {}),
+    ...(opts.seededFrom !== undefined ? { seed: goods, seededFrom: opts.seededFrom } : {}),
   });
   try {
     const target = await landCollectedIntake(chatId, actorId, 'Ikki eshik fixture');
@@ -193,12 +194,26 @@ describe('the landing writes the door (§0.1)', () => {
     expect(await doorOf(await landCollection({ ai: false }))).toBe('plain');
   });
 
-  it('a seeded collection lands with its SOURCE’s door; a legacy source gives the collection’s own', async () => {
-    const plainSource = await openOn('plain');
-    expect(await doorOf(await landCollection({ ai: true, seededFrom: plainSource }))).toBe('plain');
-    const legacySource = await openOn(null);
-    expect(await doorOf(await landCollection({ ai: true, seededFrom: legacySource }))).toBe('ai');
-    expect(await doorOf(await landCollection({ ai: false, seededFrom: legacySource }))).toBe('plain');
+  it('a seeded collection lands with its SOURCE’s door as the source reads it — a legacy source, a legacy request', async () => {
+    // The states `openSeeded` opens (tests/unit/intake-door-amend.test.ts): a
+    // 'plain' source's collection is plain, an 'ai' one's AI — and a legacy
+    // rastamojka's AI by «a customs section», a flag that is no door: landed,
+    // it would make an «🤖» request nobody pressed, past his mute (K review
+    // K-SPEC-1 / KU-1).
+    const from = madeRequests.length;
+    try {
+      expect(await doorOf(await landCollection({ ai: false, seededFrom: await openOn('plain') }))).toBe('plain');
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn('ai') }))).toBe('ai');
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn(null) }))).toBeNull();
+      // No source named (a seeded row from before COMP-3), or one that cannot
+      // be read: legacy too — today's behaviour, never the collection's flag.
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: null }))).toBeNull();
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: 'not-a-request-id' }))).toBeNull();
+    } finally {
+      // Closed again, failing or not: this test's eight would take the file
+      // past one requester's twenty open (`MAX_OPEN_PER_REQUESTER`).
+      for (const id of madeRequests.slice(from)) await answered(id);
+    }
   });
 
   it('the card form, the thread door and the agent name none — NULL, today’s', async () => {

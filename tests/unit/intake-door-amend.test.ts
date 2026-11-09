@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  */
 const stub = vi.hoisted(() => ({
   stored: null as null | Record<string, unknown>,
+  certificate: true as boolean | null,
 }));
 vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
   ...(await original<typeof import('@/modules/platform/telegram/staff-bot')>()),
@@ -25,7 +26,7 @@ vi.mock('@/modules/wms/calc/amend', async (original) => ({
   ...(await original<typeof import('@/modules/wms/calc/amend')>()),
   amendStanding: async () => ({ standing: 'open', rev: 3, handsoffRev: 3, completedVia: null, returnReason: null, ending: null }),
   returnedClientHint: async () => 'GS777',
-  requestHasCertificate: async () => true,
+  requestHasCertificate: async () => stub.certificate,
 }));
 vi.mock('@/modules/wms/calc/law-asks', async (original) => ({
   ...(await original<typeof import('@/modules/wms/calc/law-asks')>()),
@@ -41,8 +42,11 @@ vi.mock('@/modules/platform/telegram/calc-dialog', async (original) => ({
 }));
 
 import { collectionAiOf, pressAdd } from '@/modules/platform/telegram/calc-amend';
+import { intakeNextStep } from '@/modules/platform/telegram/calc-dialog';
 import { activeIntake, endIntake } from '@/modules/platform/telegram/calc-store';
+import * as intake from '@/modules/wms/calc/intake';
 import type { IntakeDoor } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 
 const REQ = '01234567-89ab-7def-8123-456789abcd41';
 const I1 = '01234567-89ab-7def-8123-456789abcd51';
@@ -95,6 +99,7 @@ function chat(): bigint {
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
   stub.stored = null;
+  stub.certificate = true;
 });
 
 async function opened(door: IntakeDoor | null, section: string, ending: string | null) {
@@ -145,5 +150,31 @@ describe('the seeded door on a returned request', () => {
     expect((await opened(null, 'rastamojka', 'returned')).ai).toBe(true);
     expect((await opened(null, 'podklyuch', 'returned')).ai).toBe(true);
     expect((await opened(null, 'yolkira', 'returned')).ai).toBe(false);
+  });
+});
+
+describe('a plain request’s seeded collection and the certificate (K review KU-2, stated)', () => {
+  /** The table as the collection would draw it — the real renderer over no laws. */
+  const tableOf = (state: ReturnType<typeof activeIntake>) =>
+    intakeNextStep(state!, new Map(), intake, { nameWord: nameWordFor });
+  const certButtons = (keyboard: { inline_keyboard: { callback_data?: string }[][] } | null | undefined) =>
+    (keyboard?.inline_keyboard ?? []).flat().filter((b) => (b.callback_data ?? '').startsWith('c:cert_'));
+
+  it('the «sertifikat yo‘q» the VED set is carried onto the new request — but the plain door draws no certificate control', async () => {
+    stub.certificate = false;
+    const plain = await opened('plain', 'rastamojka', 'returned');
+    expect(plain.ai).toBe(false);
+    // It lands with the request (calc-amend.ts openSeeded), as before 0140…
+    expect(plain.hasCertificate).toBe(false);
+    // …and nothing on the plain collection says so: no «📄 Sertifikat» line,
+    // no toggle — the plain door never had one (§2.1). A change K makes on a
+    // 'plain' request only; a legacy request still opens AI-flagged.
+    const shown = tableOf(plain);
+    expect(shown.text).not.toContain('📄 Sertifikat');
+    expect(certButtons(shown.keyboard)).toEqual([]);
+
+    const legacy = tableOf(await opened(null, 'rastamojka', 'returned'));
+    expect(legacy.text).toContain('📄 Sertifikat: yo‘q');
+    expect(certButtons(legacy.keyboard)).toHaveLength(1);
   });
 });
