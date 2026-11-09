@@ -1168,6 +1168,8 @@ describe('a pre-filled part passes its own deal’s invoice check (§3.1.4, judg
         weightKg: 600,
         items: [{ name: `Jadval tovar ${S}`, quantity: 10 }],
         source: 'card',
+        // The card form names no bot door (docs/IKKI-ESHIK.md §0.1).
+        intakeDoor: null,
       },
       ctx(),
     );
