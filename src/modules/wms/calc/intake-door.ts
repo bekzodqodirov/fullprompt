@@ -5,7 +5,7 @@ import { logger } from '../../platform/logger';
 import type { IntakeDoor } from './intake';
 
 /**
- * The door a calculation request came in through (0140, docs/IKKI-ESHIK.md
+ * The door a calculation request came in through (0141, docs/IKKI-ESHIK.md
  * §0) — `calc_requests.intake_door`, the ONE home of every statement that
  * names it.
  *
@@ -13,7 +13,7 @@ import type { IntakeDoor } from './intake';
  * declared, every calc INSERT and whole-row select would be a 42703 one
  * migration behind). So it is written here, by raw SQL, only when the probe
  * has seen it; and read through `to_jsonb(row)`, which answers NULL — today's
- * behaviour, §0.2 — on a database where 0140 has not landed yet (#472): a
+ * behaviour, §0.2 — on a database where 0141 has not landed yet (#472): a
  * landing is never refused `server_behind` because the migration is late
  * (§0.4).
  */
@@ -22,7 +22,7 @@ let ready = false;
 let probe: (() => Promise<boolean>) | null = null;
 
 /**
- * Has 0140 landed? One catalog lookup on the POOL — never inside a
+ * Has 0141 landed? One catalog lookup on the POOL — never inside a
  * transaction (#714) — the `intakeTableReady` idiom (calc-store.ts). Caches
  * TRUE only: a column does not disappear under a running process, and «no» is
  * asked again, so the door is written the moment the migration lands, with no
@@ -84,7 +84,7 @@ export function parseIntakeDoor(value: unknown): IntakeDoor | null {
 /**
  * One request's door, on the pool — for a reader that has no read of the row
  * of its own (the seeded collection's landing, §0.3). Null: legacy, no such
- * request, or 0140 not landed.
+ * request, or 0141 not landed.
  */
 export async function requestIntakeDoor(requestId: string): Promise<IntakeDoor | null> {
   const rows = (await db.execute(sql`

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  FOUNDERS,
   groupsFromList,
   isTelegramMuted,
   listFromGroups,
@@ -214,5 +215,32 @@ describe('0105 — «kompensatsiya yozilgan karobka topildi» can be muted', () 
     expect(MUTE_GROUPS.alerts).toContain('CompensatedCargoFound');
     const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/finance/compensation.ts'), 'utf8');
     expect(sender).toContain("type: 'CompensatedCargoFound',");
+  });
+});
+
+describe('«navbatda kechikdi» (docs/XORGOS-NAVBAT.md §3) rides with the truck alarms', () => {
+  it('is in `alerts` beside TruckSilent, never a founder, and an old «alerts» tick mutes it', () => {
+    // Sent through queueStaffTelegram (queue-alert.ts), so the routing scan
+    // above cannot see it — named here, or it ships in NO group and only
+    // «hammasi» can silence it (CalcSealed's defect).
+    expect(MUTE_GROUPS.alerts).toContain('TruckQueueLate');
+    expect(MUTE_GROUPS.alerts).toContain('TruckSilent');
+    expect(FOUNDERS.alerts).not.toContain('TruckQueueLate');
+    const ticked = listFromGroups(false, {
+      digest: false,
+      calls: false,
+      leads: false,
+      tasks: false,
+      alerts: true,
+      operations: false,
+      system: false,
+      owner: false,
+      debt: false,
+      chat: false,
+    });
+    expect(isTelegramMuted(ticked, 'TruckQueueLate')).toBe(true);
+    expect(isTelegramMuted(['TruckSilent'], 'TruckQueueLate')).toBe(false);
+    const sender = readFileSync(resolve(__dirname, '../../src/modules/wms/tracking/queue-alert.ts'), 'utf8');
+    expect(sender).toContain("type: 'TruckQueueLate',");
   });
 });

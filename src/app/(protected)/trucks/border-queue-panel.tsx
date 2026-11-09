@@ -82,6 +82,11 @@ export async function BorderQueuePanel({ actor }: { actor: Actor }) {
       <p className="text-xs text-ink-500" data-testid="queue-meaning">
         {t('meaning')}
       </p>
+      {/* The hold (docs/XORGOS-NAVBAT.md, his 1a-3a): what the number does
+          once a truck is IN the queue, said where the number is typed. */}
+      <p className="text-xs text-ink-500" data-testid="queue-hold">
+        {t('hold')}
+      </p>
     </section>
   );
 }

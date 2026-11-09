@@ -9,7 +9,8 @@ import {
   receipts,
 } from '../../platform/db/schema';
 import { isMovingStage, stageBatchOf, truckStage } from '../client-cabinet/stages';
-import { placeDated, placeTruck, type BorderHours } from './eta';
+import { hoursAsDays, placeDated, placeTruck, queueDayNo, type BorderHours } from './eta';
+import type { BorderPost } from './engine';
 import { WAREHOUSE_POINTS } from './map-data';
 import { placementFix, type LatestPosition } from './devices';
 import { gateDaysOf, stoodSince, stuckAtPhoneGate } from './on-road-state';
@@ -53,6 +54,12 @@ export interface TruckMarker {
   /** The road's LENGTH behind it (4a); null = nobody can say (no road, or overdue with nothing but the departure). */
   progress: number | null;
   overdue: boolean;
+  /**
+   * Held at Horgos or Yallama (`placeTruck`, docs/XORGOS-NAVBAT.md): the day
+   * of the wait and the wait given, IN DAYS — the popup and the bot print
+   * «Horgos navbatida: 2-kun (2–3 kundan)» from it (5a). Null elsewhere.
+   */
+  queue: { post: BorderPost; day: number; givenDays: [number, number]; typed: boolean; over: boolean; late: boolean } | null;
   remainingDays: [number, number];
   /**
    * A date may be printed beside this truck: it is placed, not overdue, and
@@ -178,6 +185,7 @@ export async function truckFor(
       segKey: last?.key ?? place.segKey ?? 'transit',
       progress: place.route ? 1 : null,
       overdue: false,
+      queue: null,
       remainingDays: [0, 0],
       dated: false,
       departedAt: (batch.departedAt ?? batch.createdAt).toISOString(),
@@ -210,6 +218,7 @@ export async function truckFor(
       segKey: place.segKey ?? 'transit',
       progress: null,
       overdue: false,
+      queue: null,
       remainingDays: [0, 0],
       dated: false,
       departedAt: (batch.departedAt ?? batch.createdAt).toISOString(),
@@ -250,6 +259,16 @@ export async function truckFor(
     segKey: place.segKey ?? 'transit',
     progress: place.progress,
     overdue: place.overdue,
+    queue: place.queue
+      ? {
+          post: place.queue.post,
+          day: queueDayNo(place.queue.stoodHours),
+          givenDays: [hoursAsDays(place.queue.given[0]), hoursAsDays(place.queue.given[1])],
+          typed: place.queue.typed,
+          over: place.queue.over,
+          late: place.queue.late,
+        }
+      : null,
     remainingDays: remaining
       ? // The upper end rounded UP: a dated truck an hour out is «~0–0.1 kun»,
         // never the «~0–0 kun» `placeDated` exists to keep off every screen.

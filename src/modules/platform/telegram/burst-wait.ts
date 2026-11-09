@@ -9,7 +9,7 @@ import { armWait, readWait, type WaitEntry } from './waits';
  * Topshiriq qilamizmi?», each asked about ONE message; the press took that
  * one, and the rest needed a forward again.
  *
- * Kept as a durable one-message wait (0140's 'burst' kind, waits.ts): one per
+ * Kept as a durable one-message wait (0141's 'burst' kind, waits.ts): one per
  * chat (the PK), its parts and the ids of the ONE message that answers for it,
  * so a deploy between the album and the press loses nothing. This file is the
  * wait and its pure words — no grammy, no collector — because the doors that

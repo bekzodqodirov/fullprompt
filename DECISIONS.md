@@ -6852,7 +6852,124 @@ the worn-string guard. Stated: a given-back number another truck WEARS (before d
 road) without having renamed away from it is still promised on the cancelled card, though the mint
 walks past a worn name; the swap-then-move-away gap (C2's rule).
 
-**#1593 — Ikki eshik: the door is a fact of the request.** His 2026-11-08 report («har bir fayl
+## Horgos and Yallama hold the truck until the logist's press (2026-11-08; numbered #1593-#1598, renumbered from #1582-#1587 on the merge — the TWENTY-EIGHTH collision: main's «narx jadvali + partiya raqami» took #1582-#1592 first; migration 0140 `truck_queue_alerts`, ledger 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding; his «1a 2a 3a 4a 5a, kod HOR»)
+
+**#1593 — Horgos and Yallama HOLD the truck (the owner's 1a 2a 3a 4a 5a, 2026-11-08;
+docs/XORGOS-NAVBAT.md).** His first report of the day was «horgosdan jo‘nagan mashinalar
+lokatsiyasi joyi aniq emas»: a HOR truck with nothing but its departure walked the schedule out
+of both queues at their midpoints and, past 186 h (Tashkent) or 204 h (Andijan), had a spent walk
+whose place is `zoneOfRoute` of a five-zone road — null, no point. His second message said what
+he had meant all along: the truck waits in the queue until the logist presses «Qozog‘istonda»,
+drives on, waits again at Yallama until «O‘zbekistonda». So a **held queue** is a stationary leg
+carrying a typed-queue `post` (`isHeldQueue`) — Horgos and Yallama on the HOR roads; the Kashgar
+road's Irkeshtam wait has no post and walks on exactly as before (fenced). `placeTruck` walks
+from the newest evidence at the usual pace to the first held queue at or after the anchor's leg
+(`heldQueueAt`) and STOPS; only newer evidence on a later leg — a pin, or a fix projected beyond
+the post (his 4a) — moves it past. The held place is the post's zone, segKey and progress; the
+wait is the one the /trucks panel shows (`givenWait`: typed, or his default), counted from the
+entry or from the typing when he typed it while the truck already queued — SHIFTED, never
+stretched by `withLead` (the judge: the stretched pair printed «2–4 kun» beside a typed «0,5–1»);
+what is left is that window less the time gone, then every later leg at the wait it gives NOW;
+past the window `remainingHours` is null (no date anywhere, `placeDated`); a day past it
+(`QUEUE_LATE_HOURS`, his 2a) `overdue` is true and the card's kind is `overdue`. Every reader goes
+through `placeTruck` (board, dashboard, truck card, «Yuklar», map, bot, cabinet), so one change
+moved them all; `TruckPlace.queue` / `TruckRow.queue` / `TruckMarker.queue` carry it to the words
+(5a, «Horgos navbatida: 2-kun (2–3 kundan)», «kiritilgan» only for a typed number, «odatdagi» for
+his default) and to the map label («HR-001 ⏳2», both renderers, `truck-label.ts`). The cabinet
+ranks a held-over truck with the late ones (`arriveBy` '9999'), or a lot split over two trucks
+showed the other truck's date for the cartons stuck at the border. `scheduleEstimate` (no
+production reader) stays the raw walk and says so.
+
+**#1594 — The entry: the walk never dates across a held queue, and the phone that SAW the
+arrival outranks it.** The design judge's blocker: `fixAnchor` dated a phone first seen at
+Yallama from the departure by walking Horgos at its typical 72 h — and with the hold's removal of
+the «disproved entry → count from the fix» reset, that read 96 h into a queue it had just reached
+and spent the once-only warning. Now the walk dates an entry only when no held queue lies between
+the prior anchor and the queue; otherwise the entry is the phone's own history, else the fix.
+`queueSinceFor` (devices.ts) is `gateSinceFor`'s query one post at a time — the first fix within
+`HELD_QUEUE_RADIUS_DEG` (0.15°, ~12-16 km: a held queue is kilometres of lorries, and a phone in
+its tail read as «driving to the post» restarted the clock on every report) after a fix OUTSIDE,
+i.e. an arrival the phone saw; a phone switched on in the queue says nothing and the walk stays
+the better word. The reset is kept for the Kashgar road and skipped for a held queue: there a
+fix that still sees the truck at the post disproves nothing, and resetting would restart the
+clock on every report so a phoning truck could never be late. A «Chegarada» press is «count the
+queue from the press»: `underNewerPin` lets the pin's anchor stand in a held queue. A fresh fix
+is drawn where the phone is, held or not (round 100 9a).
+
+**#1595 — The warning: once per (truck, post, wait), ONE message per sweep (his 3a; migration
+0140 `truck_queue_alerts`, ledger 141).** `alertLateQueues` reads the dashboard's own rows
+(`roadRowsNow`), keeps `queue.late`, and in ONE transaction claims each truck
+(`INSERT … ON CONFLICT DO UPDATE … WHERE alerted_at < EXCLUDED.entered_at RETURNING`) and queues
+ONE message listing the trucks it won to every `plans.manage` holder (read on the pool before
+the transaction, #714) — `TruckSilent`'s audience: the logists, plus the owner and admins who
+hold every grant (stated). Time never re-arms a claim; a wait that BEGAN after the warning (a
+«Chegarada» press after the call) does — otherwise the one warning would be spent on a wait the
+press replaced (the alert judge). One message per sweep and not per truck: on deploy morning
+every HOR truck nobody ever pressed past Horgos turns late at once (the judges' deploy-day
+finding), and the logists get one list, capped at `LATE_QUEUE_LINES` with «… va yana N ta».
+The text names the buttons with their flags («🇰🇿 Qozog‘istonda», «🇺🇿 O‘zbekistonda»), so a
+logist on the Russian screen finds them, and from Horgos names both, because pressing
+«Qozog‘istonda» for a truck already in Uzbekistan holds it at Yallama and warns again a week
+later. Office hours only (`*/30 3-14 * * *` UTC = 08:00-19:30 Tashkent). One migration behind it
+says so once and sends nothing (`isServerBehind`). `TruckQueueLate` is in the `alerts` mute group
+beside TruckSilent, a newcomer never in FOUNDERS — so an old «alerts» tick mutes it too, stated.
+
+**#1596 — On the Horgos road a pin is never pressed off, its border pin is named «Horgosda
+turibdi», and the warning counts from the wait it was counted from (the intent judge, before the
+merge; the refusal it first shipped with was replaced by a re-stamp in #1597).** Three ways the round's own buttons could undo it. (1) **The toggle.** «Chegarada» and
+every other pin has always cleared on a second press. Off the Horgos road that only loses a pin;
+on it the pin is what moved the truck past a queue, so a logist tapping «Qozog‘istonda» again to
+«confirm» sent a truck in Kazakhstan back into the Horgos queue — late, with a warning to every
+logist. On a road that holds (`roadHolds`) `setTrackingCheckpoint` never clears the standing pin
+(#1597: it re-stamps it); a pin off the road (written before #531) still clears, so nothing is
+stuck for ever; moving it is pressing another place. (2) **The
+word.** A truck standing at Yallama is «chegarada» too, and pressing «Chegarada» for it puts it
+back at Horgos. `pinLabel(key, held)` names the border pin «🛃 Horgosda turibdi» on a road that
+holds — on the Mashina tab, the board's ⋯ and the card's road line — and the Yallama warning says
+not to press it. (3) **The re-arm.** With the toggle gone, the logist's way to restart the count
+is the number he types on /trucks (the panel's own sentence: a truck already queueing counts from
+the typing). The claim stored the ENTRY, which typing never moves, so a wait typed after the
+warning ran out in silence. `QueueHold.countedFrom` (entry, or the typing if later; `dueBy` = it
+plus the longest wait) is what the claim stores now — a wait counted from after the warning is a
+new wait. The cabinet's ranking key is a function (`placeArriveBy`) so it could be tested. 11 red
+proofs by string edit, one of which (the press over an older phone in the queue) first stayed
+green and was re-anchored on a phone seen one hour before the press.
+
+**#1597 — The round reviewed as built (four lenses, a skeptic each): five confirmed, all fixed.**
+(1) **A re-press of the standing pin RE-STAMPS it** on a road that holds — «it is here now», what
+every press means — instead of #1596's `pin_kept` refusal. The refusal left two dead ends: a pin a
+newer phone fix had overruled (the truck back at Horgos by the phone) could not be pressed again,
+while the warning told the logist to press exactly it; and a pinned truck had no way to restart
+its Horgos count after the call. Now «Horgosda turibdi» again counts the queue from the press and
+re-arms the warning. (2) **The listing message names the press per QUEUE** — it told Yallama trucks
+«Horgosdan o‘tgan bo‘lsa «🇰🇿 Qozog‘istonda»», which every Yallama truck satisfies and which drags
+it back into Kazakhstan. (3) **A pin ahead of the queue the phone still sees the truck in** (a
+premature «Qozog‘istonda») dated the Horgos entry from the NEWEST fix — the queueSince history is
+empty by construction for a HOR truck, its yard being inside the post's 0.15° — so the clock
+restarted on every report and the truck was never late; the departure's walk dates it now when
+nothing held lies before the queue. (4) **The held branch dropped `slowestArrivalMs`**: it priced the
+queue on the walk's route, whose wait typed mid-queue is STRETCHED (`withLead`) where the panel
+shifts it, so one phone report moved the far end of the date by up to a day and the date then
+vanished at `dueBy`, before the end it promised. (5) **Saving the same number again on /trucks is a
+confirmation** (the panel's rule since 2026-09-29: the age moves, the clock does not), and the
+round's own sentences had promised it restarts the count — the panel, the CHANGELOG and §5 now say
+what does: «Horgosda turibdi» again, or a changed number. STATED, not fixed: a mistaken pin on that
+road cannot be taken off, only replaced by the true place, and if the true place is the Horgos
+queue its count starts from that press.
+
+**#1598 — The fixes reviewed (three lenses, a skeptic each): #1597's re-stamp was too wide.** A
+«confirm» tap of «Qozog‘istonda» on a truck the walk already had late at Yallama re-stamped the
+Kazakh leg: the dot jumped back ~1000 km to the Horgos exit with a fresh date, the Yallama count
+restarted at day 1 and the once-only warning re-armed — 1a, 2a, 3a and 5a broken by the round's own
+safety button, and for a driver with no phone for good. Same for a confirm tap of «O‘zbekistonda»
+on a truck late on the Uzbek leg (§4's «nothing changes after O‘zbekistonda»). Now only «Horgosda
+turibdi» re-stamps (the designed restart); «Qozog‘istonda» / «O‘zbekistonda» re-stamp only when the
+truck reads BEHIND that pin's leg (`placedBehindPin` — a newer phone fix overruled the pin, the case
+#1597 was for) and otherwise change nothing and audit nothing. The placement is read on the pool
+BEFORE the transaction (`trucksOnRoadRows`, #714) and the pin it was read under is compared under
+the lock (`checkpoint_changed`). 4 red proofs.
+
+**#1599 — Ikki eshik: the door is a fact of the request.** His 2026-11-08 report («har bir fayl
 uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak. oddiy hsoblatishdan
 … shunday turishicha ved hodimiga tushsin ai bergan komentariya bilan birga») and his «sen aytgandek
 bolsin» to six questions (1a-6a, every ⭐) are the spec: `docs/IKKI-ESHIK.md`, judged by five lenses
@@ -6874,7 +6991,7 @@ left out (#472). Readers take the door from the ROW, never a job payload (a job 
 carries none): `prefillStanding` reads it, `direct` = an `amend:` pass or door 'ai',
 `storedRequestFacts`/`AmendBase` carry it for the ➕ and seeded doors.
 
-**#1594 — No question per file (his 1a).** The second-Excel question, the other-files question,
+**#1600 — No question per file (his 1a).** The second-Excel question, the other-files question,
 «Bo‘ldi»'s two refusals and the add door's per-row conflict buttons are gone on both doors. The bot
 decides, and names what it did: `parseGoods` classifies a mapped sheet by its COLUMNS (`shape`
 invoice/packing, `weightKind`, `grossKg`, `volumeM3`), never by its line names; the first goods file
@@ -6896,7 +7013,7 @@ ratchet (142 → 104). Reviewed by two lenses: 27 findings (2 blockers — a «U
 as the unit column, which moved every count of the commonest invoice into a note), 24 fixed, 3
 rejected in writing.
 
-**#1595 — The reading codes the rows (his 5a).** ONE coding function (`codeRows`, `row-coding.ts`),
+**#1601 — The reading codes the rows (his 5a).** ONE coding function (`codeRows`, `row-coding.ts`),
 extracted from `openCalcRequest`'s block and used by the reading AND the INSERT (#513), in the order
 row's own code → sealed memory → exact-key book → model, returning each code's source; the collection
 carries it per row (`CalcGoodsFact.tnvedSource`). On the AI door the reading shows the invoice rows
@@ -6915,7 +7032,7 @@ unreadable ledger). Stated: on the plain door a model-read line's code ranks bel
 (the owner's 2026-09-05 memory-first order); the real-API token cost of a 200-row reading is not
 measured here — after the deploy, the «[calc intake] model tokens» log line is the check.
 
-**#1596 — The landing pass by door (his 2a, 3a, 4a).** On 'plain' every message the pass would send
+**#1602 — The landing pass by door (his 2a, 3a, 4a).** On 'plain' every message the pass would send
 — the reply, each stand-down, the failure, the 'closed' sentence — goes through `sayOnce`'s new
 SILENT mode: the claim row is written `muted` with error «oddiy eshik», the drain never sends it and
 `telegramProblemSql` does not count it; `spoke` stays the gate for the ONE lenta note. That note is
@@ -6932,7 +7049,7 @@ drain (`directPass`) — the second half of his 1.20 a reversed, stated in §7. 
 the tariff answer in the chat (his 2.5 b) with `noAsk` tails. NULL keeps today's words byte for byte.
 Two lenses: 9 findings, 7 fixed, 2 handed to the chat package.
 
-**#1597 — One prompt kept last, the plain summary, answers placed per segment (his 1a, 2a).**
+**#1603 — One prompt kept last, the plain summary, answers placed per segment (his 1a, 2a).**
 `kept-last.ts` (kernel K2) is the ONE «always the last message» rule for the three messages that must
 stay below what the seller sent — the collection's «Qabul qilindi» prompt, a burst's offer, a parked
 collection's pause line: edit while still last («not modified» is success; a 429 leaves the copy
@@ -6957,7 +7074,7 @@ point at an «AI javobi» and the add door's outcome line follow the door; the p
 summary too. `IntakeState.readMark` (what the reading read) keeps «➕» with nothing sent from
 re-reading or dropping the summary's buttons.
 
-**#1598 — The AI door's table answers without an echo (his 4a).** An answer edits the table and
+**#1604 — The AI door's table answers without an echo (his 4a).** An answer edits the table and
 sends no message of its own: the echo record stays in `echoes[]` with no message id, the table's LAST
 block shows «✍️ Oxirgi javob: 3-qator «Сумка женская» — 50 juft» and the state under it, ONE «↩️
 Oxirgi javobni bekor qilish» sits on the table keyboard naming the newest un-undone tag (redrawn with
@@ -6967,7 +7084,7 @@ only the refused or asked parts. Head «🤖 AI rastamojka · 🛃 Rastamojka»;
 «(AI taklifi)» from `tnvedSource`; a typed code is 'row' (restored on undo). The add collection on an
 AI request asks the same way. P-chat's two lenses: 23 findings (1 blocker), 21 fixed, 2 rejected.
 
-**#1599 — One question per burst (his 6a).** Files and forwards with no collection, draft or capture
+**#1605 — One question per burst (his 6a).** Files and forwards with no collection, draft or capture
 open, each within 2 minutes of the previous, are ONE burst: a durable `telegram_chat_waits` row of
 kind 'burst' (one per chat, ≤ 20 parts, expiring 2 minutes after the last), ended at ONE point (a
 middleware beside `collectorScope`: any other update, or opening a collection/draft/capture). ONE
@@ -6982,7 +7099,7 @@ burst's one message, and its own ▶️ `c:resume_take` takes only the parts its
 nothing (1.8 c holds: the press is his consent). The landing clears the add-offer cache. Two lenses:
 14 findings (1 blocker — the 21st part silently dropped the first 20), all fixed.
 
-**#1600 — The merge's seams.** Four packages built in pairs in worktrees on two kernels and merged by
+**#1606 — The merge's seams.** Four packages built in pairs in worktrees on two kernels and merged by
 cherry-pick (pair 2's P-burst as one squashed diff, its commits' messages kept). The lead's calls:
 `refusalOf` is the one «is a file's say a refusal» rule (P-burst's twin retired); the take path's new
 prompt goes through P-chat's coalesced `drawPromptSoon` with the take's line as its lead — P-burst's
@@ -6997,7 +7114,7 @@ draw whose Telegram call hangs (grammy's timeout is minutes) had eaten the flush
 4004 ms against 3000); and a process that dies drops its owed draws (`__forgetKeptLast` in
 `__forgetIntakeMemory`; a run's cleanup deletes only its own entry).
 
-**#1601 — The merged tree reviewed as built: 27 confirmed, 6 blockers, all fixed.** Five lenses
+**#1607 — The merged tree reviewed as built: 27 confirmed, 6 blockers, all fixed.** Five lenses
 (doors, files, what the seller sees, bursts and seams, durability), each in its own worktree and
 database, every finding re-tried by an independent refuter, then a completeness critic: 32 candidates,
 27 confirmed, 5 refuted. The blockers: (1) FILES-1 — the reader took a PER-CARTON count column
@@ -7018,8 +7135,8 @@ goods line beside a packing list. Also: DOORS-1 (a NULL add collection got the n
 / spent budget; the press and the resume spoke different doors), FILES-2/3/4/6, CHAT-3..8, BURST-2..8,
 DURABILITY-2/3. 13 + 14 fixes by two fixers, each red-proven.
 
-**#1602 — The fixes reviewed before production, and the residue the check found.** Every earlier
-round found regressions in its own fixes (#1114, #1267, #1281, #1581), so the 27 fixes of #1601 were
+**#1608 — The fixes reviewed before production, and the residue the check found.** Every earlier
+round found regressions in its own fixes (#1114, #1267, #1281, #1581), so the 27 fixes of #1607 were
 reviewed by three lenses with refuters, each against DIFFERENTIALS of the code before them (11cf9bc)
 and after (ead0e7c): 17 candidates, 10 confirmed, 7 refuted (all three performance findings refuted:
 the fold stays linear when every row shares one count or one name, 150-230 ms at 1000 × 500 where the
@@ -7047,16 +7164,18 @@ beside a packing list is read as the shipment's total again — the price of `sh
 answer on the AI door after «➕», a row answer typed before the reading, a field-labelled line beside
 a just-typed good.
 
-**#1603 — PROCESS.** (1) **Kernels before packages, and a kernel mid-round.** K (the door column) let
+**#1609 — PROCESS.** (1) **Kernels before packages, and a kernel mid-round.** K (the door column) let
 pair 1 build; K2 (`kept-last.ts`) was written by the lead between the pairs because two parallel
 packages each needed «always the last message» and would otherwise have restated it twice (#513).
 (2) **Reserve the shared names.** `code-source.ts` was handed to both pair-1 packages byte-identical,
 so the merge's only conflict was a comment. (3) **Two packages' tests are not one tree's tests.**
 Each package's integration run was green; the merged tree's whole run found 17 failures, all from
 the two packages' mechanisms meeting (a held send inside a coalesced draw). A merge is verified by
-the WHOLE suite on the merged tree, never by the union of the packages' green runs. (4) **Number
-past open PRs.** #137 and #138 were open with DECISIONS from #1582 (#138 merged during the round), so
-this round starts at #1593; #137 also holds a migration 0140 with the same `when`, so whichever
-merges second renumbers its migration. (5) **Red proofs that stay green.** The stop's first test
+the WHOLE suite on the merged tree, never by the union of the packages' green runs. (4) **Number past open PRs — and renumber anyway.** #137 and #138 were open with DECISIONS from
+#1582, so this round numbered from #1593; #138 merged first (#1582-#1592), then #137 merged renumbered to
+#1593-#1598 with the migration 0140 this round had also minted (same `when`). So this round is
+#1599-#1609 and migration 0141 (`when` …120, ledger 142) — the twenty-ninth collision. Numbering past
+an open PR does not survive that PR renumbering itself on its own merge; only the merge order decides,
+so the second to merge reads main's tail and the journal again. (5) **Red proofs that stay green.** The stop's first test
 asserted the durable row after the stop, and the store's own 1 s debounce wrote it anyway inside the
 unbounded 4 s; it was re-anchored on what only the bound changes (the stop's time).

@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  * The door is the REQUEST's, handed back by the standing's own read of the row
  * (`prefillStanding`'s `seen`), never the job's: the stand-in standing below
  * fills it the way the real read does, and the job payload carries none — as
- * a job queued before 0140 carries none. «🤖 AI rastamojka» ('ai') passes the
+ * a job queued before 0141 carries none. «🤖 AI rastamojka» ('ai') passes the
  * mute, reply and stand-downs alike. «🧮 Hisoblatish» ('plain') — his 3a —
  * tells the seller NOTHING on a customs pass: every one of the five messages
  * goes through `sayOnce`'s `silent` mode (re-anchored from kernel K's «plain
@@ -55,7 +55,7 @@ async function handler(): Promise<Handler> {
   return (boss.work.mock.calls as unknown[][]).find((c) => c[0] === JOB_CALC_PREFILL)![2] as Handler;
 }
 
-/** A landing pass's job — no `pass`, no door: the payload a job queued before 0140 carries. */
+/** A landing pass's job — no `pass`, no door: the payload a job queued before 0141 carries. */
 const job = (pass?: string) => ({
   id: 'j1',
   name: 'calc.prefill',
@@ -268,7 +268,7 @@ describe('a standing read that throws (K-SPEC-3): the door is asked once more be
     }
   });
 
-  it('the door read throws too: the pass name alone decides, as a landing was before 0140', async () => {
+  it('the door read throws too: the pass name alone decides, as a landing was before 0141', async () => {
     prefill.standing.mockRejectedValue(new Error('connection reset'));
     door.read.mockRejectedValue(new Error('connection reset'));
     await (await handler())([job()]);

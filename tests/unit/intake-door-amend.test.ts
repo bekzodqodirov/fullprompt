@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
  * A collection opened ON a stored request takes its `ai` from the request's
  * door (docs/IKKI-ESHIK.md §0.3): «➕ Shu so‘rovga qo‘shish» on an open
  * request (the add door) and on a returned one (the seeded door). 'plain' →
- * false, 'ai' → true, NULL → exactly the flag each door set before 0140 —
+ * false, 'ai' → true, NULL → exactly the flag each door set before 0141 —
  * the add door's `true`, the seeded door's «a customs section». The press is
  * the real one; the stored request, its standing and the staff member are
  * stand-ins, as in calc-amend-press.test.ts.
@@ -121,7 +121,7 @@ describe('the rule', () => {
     expect(collectionAiOf('ai', false)).toBe(true);
     expect(collectionAiOf(null, true)).toBe(true);
     expect(collectionAiOf(null, false)).toBe(false);
-    // A base hydrated from before 0140 carries no door at all.
+    // A base hydrated from before 0141 carries no door at all.
     expect(collectionAiOf(undefined, true)).toBe(true);
   });
 });
@@ -164,7 +164,7 @@ describe('a plain request’s seeded collection and the certificate (K review KU
     stub.certificate = false;
     const plain = await opened('plain', 'rastamojka', 'returned');
     expect(plain.ai).toBe(false);
-    // It lands with the request (calc-amend.ts openSeeded), as before 0140…
+    // It lands with the request (calc-amend.ts openSeeded), as before 0141…
     expect(plain.hasCertificate).toBe(false);
     // …and nothing on the plain collection says so: no «📄 Sertifikat» line,
     // no toggle — the plain door never had one (§2.1). A change K makes on a

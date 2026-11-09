@@ -141,15 +141,18 @@ describe('a fix places the truck (5a)', () => {
     expect(place.segKey).toBe('uz');
     expect(place.zone).toBe('uz');
 
-    // The same distance on the Kazakh side is the queue, entered when the
-    // schedule put the truck there (52 h ago), before the fix.
+    // The same distance on the Kazakh side is the queue — entered at the fix:
+    // the walk from the departure would cross HELD Horgos at its typical
+    // 72 h, which the hold says it never does (docs/XORGOS-NAVBAT.md §2.1),
+    // so it dates nothing beyond it.
     const approach = toward(hor.points[yal]!, hor.points[yal - 1]!, 0.02);
     const queued = placeTruck({ ...HOR_TAS, departedAt: ago(150), checkpoint: null, fix: fixAt(approach, 1) }, {}, NOW);
     expect(queued.segKey).toBe('uz_queue');
     expect(queued.zone).toBe('border');
-    // Stood 51 h of a 72-96 h queue: at the slowest it waits 45 h more,
-    // then Yallama → Tashkent's 6 h — from the fix an hour ago.
-    expect(queued.remainingHours).toEqual([29, 50]);
+    // Stood 1 h of a 72-96 h queue: 71-95 h more (the wait given LESS what it
+    // stood, §2.2), then Yallama → Tashkent's 2-6 h. Before the hold it read
+    // [29, 50] off a walk that had counted Horgos as crossed.
+    expect(queued.remainingHours).toEqual([73, 101]);
   });
 
   it('a stale fix still anchors: the truck walks on from it, it does not jump back', () => {
@@ -286,7 +289,7 @@ describe('no road to walk', () => {
  * the BUSINESS reads — the leg, overdue or not — never the engine against
  * itself.
  */
-describe('a queue the fix disproves is counted from the fix', () => {
+describe('a queue the fix disproves is counted from the fix — the Kashgar road; a HELD queue is never disproved', () => {
   it('Irkeshtam: 78 h out, the phone in the queue — still at the border, the whole wait ahead', () => {
     // The schedule had the truck enter 60 h ago and cross 12 h ago (24-72 h,
     // mid 48); the phone, half an hour ago, says it is still in the queue.
@@ -298,24 +301,35 @@ describe('a queue the fix disproves is counted from the fix', () => {
     expect(place.remainingHours).toEqual([96, 168]);
   });
 
-  it('Khorgos, 96 h late: in the queue, at the road up to the post', () => {
+  // Horgos and Yallama HOLD (the owner's 1a, 2026-11-08): the walk never
+  // leaves them by time, so a phone that still sees the truck at the post
+  // disproves nothing, and the queue is counted from the walk's arrival. These
+  // two read «not overdue» before the hold — the fix restarted the clock on
+  // every report, so a truck phoning from the queue could never be late.
+  it('Khorgos, the phone in the queue 168 h after the walk put it there: held, and late (2a)', () => {
     const hor = routeFor('HOR', 'TAS1')!;
     const post = hor.segments.find((s) => s.key === 'border_wait')!.span[0];
     const near = toward(hor.points[post]!, hor.points[post - 1]!, 0.02);
-    // Schedule: 2 h to the post, 72 h in the queue — out 74 h after leaving.
+    // 2 h to the post; 168 h stood against a longest wait of 84 h.
     const place = placeTruck({ ...HOR_TAS, departedAt: ago(170), checkpoint: null, fix: fixAt(near, 0.5) }, {}, NOW);
     expect(place.segKey).toBe('border_wait');
-    expect(place.overdue).toBe(false);
+    expect(place.queue).toMatchObject({ post: 'khorgos', late: true });
+    expect(place.overdue).toBe(true);
   });
 
-  it('Yallama, 96 h late: in the queue, not overdue', () => {
+  it('Yallama, the phone first seen in the queue: held from the fix — the walk dates nothing across Horgos', () => {
     const hor = routeFor('HOR', 'TAS1')!;
     const yal = hor.segments.find((s) => s.key === 'uz_queue')!.span[0];
     const approach = toward(hor.points[yal]!, hor.points[yal - 1]!, 0.02);
+    // The walk from the departure would say 2 + 72 + 24 h to Yallama, i.e.
+    // 182 h in it and late — but it walks through HELD Horgos, which the
+    // hold says is never left by time (the design's judge, its blocker). One
+    // fix cannot say how long it has stood; the phone's history can
+    // (`queueSince`, queue-hold.test.ts).
     const place = placeTruck({ ...HOR_TAS, departedAt: ago(280), checkpoint: null, fix: fixAt(approach, 1) }, {}, NOW);
     expect(place.segKey).toBe('uz_queue');
-    expect(place.overdue).toBe(false);
-    expect(place.remainingHours![0]).toBeGreaterThan(0);
+    expect(place.queue).toMatchObject({ post: 'yallama', late: false });
+    expect(place.queue!.stoodHours).toBeCloseTo(1, 9);
   });
 });
 

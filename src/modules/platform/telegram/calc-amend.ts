@@ -326,9 +326,9 @@ type Stored = NonNullable<Awaited<ReturnType<typeof import('../../wms/calc/servi
 /**
  * The `ai` flag of a collection opened ON a stored request — the ➕ add door
  * and the seeded door (docs/IKKI-ESHIK.md §0.3). The request's door decides:
- * 'plain' → false, 'ai' → true. NULL is legacy — every request before 0140,
+ * 'plain' → false, 'ai' → true. NULL is legacy — every request before 0141,
  * the card form's, the thread's, the agent's — and keeps exactly the flag that
- * door set before 0140 (`legacy`), so nothing a NULL request opens changes.
+ * door set before 0141 (`legacy`), so nothing a NULL request opens changes.
  */
 export function collectionAiOf(door: 'plain' | 'ai' | null | undefined, legacy: boolean): boolean {
   if (door === 'plain') return false;

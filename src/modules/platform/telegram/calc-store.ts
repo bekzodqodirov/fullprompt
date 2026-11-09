@@ -1032,7 +1032,7 @@ export function flushBeforeConfirm(): Transformer {
  * place an older collection's shape is brought forward, run on every row the
  * hydrate restores, before it is put in memory. Pure.
  *
- *  - the fields 0140's round added get their empty values — a row written
+ *  - the fields 0141's round added get their empty values — a row written
  *    before them has no `fileTotals` (null), no `fileNotes` ([]) and no
  *    `goodsFiles` ([]); a stored value always wins over the default;
  *  - a collection opened before his 1a may still hold a question no release

@@ -3,7 +3,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
- * The bot door on the REQUEST (0140, docs/IKKI-ESHIK.md §0): which door
+ * The bot door on the REQUEST (0141, docs/IKKI-ESHIK.md §0): which door
  * collected a job is written on its row by the landing, and read back from
  * the row by every later reader — the add and seeded doors' collection, the
  * pass (`prefillStanding`), a correction. On NULL (legacy, and every door
@@ -57,7 +57,7 @@ const madeRequests: string[] = [];
 const madeLeads: string[] = [];
 const ctx = () => ({ actorId });
 
-/** 0140's own two statements for the column — what the restore puts back. */
+/** 0141's own two statements for the column — what the restore puts back. */
 const RESTORE = [
   sql`ALTER TABLE calc_requests ADD COLUMN IF NOT EXISTS intake_door text`,
   sql`ALTER TABLE calc_requests DROP CONSTRAINT IF EXISTS calc_requests_intake_door_check`,

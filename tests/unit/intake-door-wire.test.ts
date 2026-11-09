@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
 
 /**
- * The bot door on the request (0140, docs/IKKI-ESHIK.md §0) — its WIRING,
+ * The bot door on the request (0141, docs/IKKI-ESHIK.md §0) — its WIRING,
  * source-shape, comments stripped (#725).
  *
  * Each assertion is a place where a correct module is reached by the wrong
@@ -87,7 +87,7 @@ describe('the pass reads the door from the ROW', () => {
     const decided = run.indexOf('direct = directPass(pass, seen.door)');
     expect(standing).toBeGreaterThan(0);
     expect(decided, 'decided from what the read saw').toBeGreaterThan(standing);
-    // Never from the job: a job queued before 0140 carries none.
+    // Never from the job: a job queued before 0141 carries none.
     expect(run).not.toMatch(/data\.(intakeDoor|door)\b/);
     const prefill = read('src/modules/wms/calc/prefill.ts');
     expect(bodyOf(prefill, 'export async function prefillStanding(')).toContain('intakeDoorSql(calcRequests)');

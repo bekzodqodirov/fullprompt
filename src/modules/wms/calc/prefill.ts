@@ -117,8 +117,8 @@ export type PrefillStand = 'ok' | 'touched' | 'confirmed' | 'closed' | 'not_foun
 
 /**
  * What the standing's request read saw besides the standing: the bot door the
- * job came in through (0140, docs/IKKI-ESHIK.md §0.3). Read from the ROW and
- * never from the job — a job queued before 0140, or re-queued by `retried()`,
+ * job came in through (0141, docs/IKKI-ESHIK.md §0.3). Read from the ROW and
+ * never from the job — a job queued before 0141, or re-queued by `retried()`,
  * carries none. Filled by `prefillStanding` when the request exists; the
  * caller starts it at null (legacy, today's behaviour), so a read that never
  * happens — or a stand-in that does not fill it — leaves today's.
@@ -314,7 +314,7 @@ export async function aiPrefill(
     ? sectionParts(row.section as CalcSectionName)
     : { customs: true, freight: true, extras: true };
   /**
-   * THE DOOR the request came in through (0140, docs/IKKI-ESHIK.md §0.3) —
+   * THE DOOR the request came in through (0141, docs/IKKI-ESHIK.md §0.3) —
    * read off the ROW in the statement above, which this pass already makes,
    * so a direct caller and the worker render alike. It decides WHAT the pass
    * says, never what it writes:
@@ -322,7 +322,7 @@ export async function aiPrefill(
    *    block, the seller's tails say the VED will ask him (his 4a, 5a, §3.5);
    *  - `plain` («🧮 Hisoblatish»): the answer is for the VED alone, with no
    *    money in it (his 3a, §2.4) — the worker sends the seller nothing.
-   * NULL — every request before 0140, the card form, the thread door, the
+   * NULL — every request before 0141, the card form, the thread door, the
    * agent — keeps today's words exactly (§0.2).
    */
   const door = parseIntakeDoor(row?.door);

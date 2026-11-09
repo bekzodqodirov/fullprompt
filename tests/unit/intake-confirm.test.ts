@@ -128,7 +128,7 @@ describe('the ✅ says where the answer comes from', () => {
     }
   });
 
-  it('the press says what the landed ROW says, not the collection: an «🤖» collection landed NULL (0140 not there yet) promises no AI figure (as-built review DOORS-3)', async () => {
+  it('the press says what the landed ROW says, not the collection: an «🤖» collection landed NULL (0141 not there yet) promises no AI figure (as-built review DOORS-3)', async () => {
     const said = await save('rastamojka', true, 'ai', true, { row: null });
     expect(said).not.toContain(AI_QUEUED);
     expect(said).toContain(VED_ANSWERS);

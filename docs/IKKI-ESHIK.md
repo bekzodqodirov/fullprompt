@@ -41,7 +41,7 @@ None of those asks was his choice for a particular door. Every question behind t
 ask by design. **This file supersedes those questions for the bot's two doors.** The card form,
 the thread door, the AI sotuvchi and the VED's screens are untouched.
 
-Numbering: DECISIONS #1582+, migration **0140** (`when` …119), ledger **141**.
+Numbering: DECISIONS #1599-#1609, migration **0141** (`when` …120), ledger **142** — renumbered on the merge from #1582+ / 0140 / 141: PR #138 took #1582-#1592, and PR #137 took 0140 and #1593-#1598 first.
 
 **v2 (2026-11-09).** Five lenses judged v1 before code: durability, money-ved, words, feasibility
 and intent, with two refuters per objection. 55 objections were confirmed (6 blockers, 43 defects,
@@ -52,7 +52,7 @@ fixes disagreed, §8 also says why one was not taken.
 
 ## §0 The door is a fact of the request
 
-0.1 **Migration 0140** adds `calc_requests.intake_door text NULL`, CHECK `IN ('plain','ai')`.
+0.1 **Migration 0141** adds `calc_requests.intake_door text NULL`, CHECK `IN ('plain','ai')`.
 - `CalcRequestInput.intakeDoor: 'plain' | 'ai' | null` is REQUIRED and written in
   `openCalcRequest`'s INSERT, so every caller fails to compile until it names its door.
 - The bot's collector passes 'plain' or 'ai' through `landIntake`, which takes the door as a
@@ -60,7 +60,7 @@ fixes disagreed, §8 also says why one was not taken.
 - The card form, the thread door and the AI sotuvchi pass **null**. For the AI sotuvchi
   (`agent/decide.ts`) that covers BOTH its paths: `landIntake` and `requeueLanded`.
 - `recalcFromSealed` copies `intake_door` the way it copies `source`.
-- 0140 also widens `telegram_chat_waits_kind_check` with `'burst'` (§4.1), as 0138 widened it.
+- 0141 also widens `telegram_chat_waits_kind_check` with `'burst'` (§4.1), as 0138 widened it.
 
 0.2 **NULL is legacy and means TODAY's behaviour on every reader.** Every request in production is
 NULL, the AI-door ones included. On NULL:
@@ -73,7 +73,7 @@ and the agent stay as they are, as §5 promises. A test pins that an agent-lande
 announces the estimate to its owner (his Q5 ⭐ c).
 
 0.3 **Readers take the door from the ROW, never from a job payload.** A pg-boss job queued before
-0140, or re-queued by `retried()`, carries none.
+0141, or re-queued by `retried()`, carries none.
 - The pass reads the door in `prefillStanding`'s existing request read.
 - `direct` (jobs.ts:303-310) becomes `pass.startsWith('amend:') || door === 'ai'`.
 - `storedRequestFacts`/`AmendBase` carry the door for the ➕ door and the seeded door. `openDoor` and
@@ -85,7 +85,7 @@ announces the estimate to its owner (his Q5 ⭐ c).
 
 0.4 **Code that runs ahead of the migration (#472).** The column is probed once per process, in the
 `intakeTableReady` idiom (calc-store.ts:151-164). While the column is missing, the INSERT leaves it
-out and every reader reads NULL. A landing is never refused 'server_behind' because 0140 is late.
+out and every reader reads NULL. A landing is never refused 'server_behind' because 0141 is late.
 
 ## §1 Shared by both doors: no question per file (his 1a)
 
@@ -477,7 +477,7 @@ is missing; that machinery is unchanged. The ✅ text (P6):
 
 **As built after the as-built review** (DOORS-2, DOORS-3): «the collection's door» is the door the
 landing WROTE on the request — `landCollectedIntake` reads it back off the row for both senders, so
-the ✅ says what the pass will do: a collection that landed NULL (0140 not there yet, §0.4) says
+the ✅ says what the pass will do: a collection that landed NULL (0141 not there yet, §0.4) says
 today's «🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.», never «🤖 AI hisoblayapti» while
 its pass keeps the seller's mute. A seeded collection lands with the `seedDoor` its open read off the
 source (the value its chat words followed — one home), never a second read of the source that could
@@ -645,7 +645,7 @@ VED's, and the lenta note names them.
   - The complete closing promises the AI's figure only while `aiCalcAvailable()` holds; otherwise
     «… so‘rov VED ga tushadi.» An addition: «✅ Qo‘shish … AI qayta hisoblaydi.», and «📨 VED ga
     yuborish» with no AI promise once the VED has started (§3.7).
-  - A NULL door (an add or seeded collection on a request from before 0140) keeps today's table and
+  - A NULL door (an add or seeded collection on a request from before 0141) keeps today's table and
     echo (§0.2).
 - **As built after the as-built review** (CHAT-2, CHAT-4, CHAT-8; the AI door — NULL keeps today's):
   - Collecting after a reading, a typed text is judged per SEGMENT (`materialSegments`): what the
@@ -701,7 +701,7 @@ and a conflict as a «VED hal qiladi» line (1.1).
 - **What a burst is**: files or forwards in one chat, each within 2 minutes of the previous, while no
   collection, draft or capture is open.
 - **It is stored durably, so a deploy loses nothing.** It is a `telegram_chat_waits` row of kind
-  `'burst'` (0140).
+  `'burst'` (0141).
   - The PK (chat_id, kind) gives one burst per chat.
   - The payload holds the offer's message id and the ordered parts, capped at 20: message id,
     forwarded flag, file id, name, mime, text.
@@ -926,7 +926,7 @@ the whole order is run.
 | F7 | defect | 3.5, §6 | one place for tails; the tests listed |
 | F8 | defect | §7 | the false sentence dropped; the true rule stated |
 | F9 | defect | 3.4 | the one reply for asks and refusals. Its «undo gone» was NOT taken: DR-5, INT-6 and P2 keep the undo |
-| F10 | defect | 4.1 | the fallback words are taken. Its in-memory store was NOT: DR-7's durable store is, since 0140 exists anyway |
+| F10 | defect | 4.1 | the fallback words are taken. Its in-memory store was NOT: DR-7's durable store is, since 0141 exists anyway |
 | F11 | nit | 1.2.5, 1.4 | receipt-time vs reading-time notes |
 | F12 | nit | 1.1, 1.7 | the union kept; units shared by both doors |
 | F13 | defect | §6 | the table |

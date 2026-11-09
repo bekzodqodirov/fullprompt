@@ -1482,7 +1482,7 @@ export async function clientCodePrefix(): Promise<string> {
  * What the ✅ says about the landed request (as-built review DOORS-2,
  * DOORS-3) — read on the pool AFTER the landing committed, so BOTH senders
  * (the press, the sweep's resumed landing) say what the ROW says, which is
- * what the pass will do: the door the landing actually wrote (NULL when 0140
+ * what the pass will do: the door the landing actually wrote (NULL when 0141
  * was not there yet, §0.4, or the read fails — today's words), and, on an
  * «🤖» request whose answer was queued, whether the pass will have a model
  * today (`aiCalcAvailable`, the one rule the table's closing read): with none
@@ -1557,7 +1557,7 @@ export async function landCollectedIntake(
     // `seedDoor` its open read off the source's immutable row, the value its
     // chat words already followed — a second read here could fail and land a
     // plain chat's request as legacy, its estimate then sent to the seller.
-    // A legacy source (every request before 0140, the card form's, the
+    // A legacy source (every request before 0141, the card form's, the
     // thread's, the agent's) gives NULL: never «🤖» by the collection's flag,
     // which for a legacy source is only `openSeeded`'s «a customs section».
     intakeDoor: collectionDoor(state),

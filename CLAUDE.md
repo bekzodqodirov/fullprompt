@@ -167,6 +167,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | Round 3 of the eight items — the «Hisoblatish» collection that survives a deploy, the reading as a job, one table / echo / undo, «➕ Shu so‘rovga qo‘shish», the law's count after the AI answer, the VED's doors refusing a screen a seller's addition overtook | `docs/SAKKIZ-R3.md` — agreed 2026-10-27 (his 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b, then «14 a, qolgani seni taklifing»), **round 3 SHIPPED** (DECISIONS #1571-#1580, migration 0139, ledger 140); §0 binding, §2 the exact Uzbek words, §6.2.2 the lead's ruling L1, §20 as built + his six new questions 1.21-1.26 |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
+| Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
@@ -3303,8 +3304,26 @@ through `migrate`: dry run, then `--apply` (7a). `changeDestBeforeDeparture` (re
 reroute, its own audit key `destBeforeDeparture`) on the Mashina tab; the quick batch asks in-page, every e2e through
 `tests/e2e/quick-batch.ts` `createQuickBatch`. Stated: a plate-named cancelled truck keeps the plate as its NAME (C3).
 
-**Round — Ikki eshik (2026-11-09; DECISIONS #1593-#1603, numbered past #137/#138; migration 0140
-`intake_door` — ledger must reach 141; spec `docs/IKKI-ESHIK.md`).** His report the day after R3 reached
+**Round — Horgos and Yallama hold the truck (2026-11-08; DECISIONS #1593-#1598 — renumbered from #1582-#1587 on the merge, the TWENTY-EIGHTH collision: «narx jadvali» took #1582-#1592 first; migration 0140
+`truck_queue_alerts` — ledger must reach 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding).** His «horgosdan
+jo‘nagan mashinalar … joyi aniq emas» (a departure-only HOR truck's spent walk had `zoneOfRoute` of a
+five-zone road), then what he meant: answers 1a 2a 3a 4a 5a, code HOR. A **held queue** = a stationary leg
+with a typed-queue `post` (`isHeldQueue`; Horgos + Yallama, the Kashgar road untouched): `placeTruck` walks to
+the first one at or after the anchor's leg and STOPS until a pin or a fix past the post. The wait is the
+panel's (`givenWait`, shifted from the typing, never `withLead`-stretched), no date past it, `overdue` a day
+after (`QUEUE_LATE_HOURS`). The walk never dates an entry across a held queue; the phone that saw the arrival
+does (`queueSinceFor`, devices.ts, `HELD_QUEUE_RADIUS_DEG` 0.15°). `TruckPlace/TruckRow/TruckMarker.queue`
+carry it to the words (5a, «kiritilgan» only when typed), the map label («⏳2», `truck-label.ts`) and the
+cabinet (`arriveBy` '9999' once over). `alertLateQueues` (queue-alert.ts, office hours): ONE message per sweep
+to `plans.manage`, claim per (truck, post) re-armed only by a wait begun after the warning; `TruckQueueLate`
+in `alerts`. Judged by five lenses before code (two blockers), then reviewed as built twice (#1596-#1598): on that
+road a pin is never pressed off — a re-press of «Horgosda turibdi» re-stamps it (the restart), «Qozog‘istonda» /
+«O‘zbekistonda» only when the truck reads BEHIND the pin (`placedBehindPin`); the listing names the press per
+queue; a premature pin's Horgos entry is the departure's walk. DEPLOY: every unpressed HOR truck already past
+Horgos snaps back «late» — the logists get one list at 08:00 and press.
+
+**Round — Ikki eshik (2026-11-09; DECISIONS #1599-#1609 — renumbered from #1593-#1603 on the merge, the TWENTY-NINTH collision: #137 took #1593-#1598 and 0140 first; migration 0141
+`intake_door` — ledger must reach 142; spec `docs/IKKI-ESHIK.md`).** His report the day after R3 reached
 production («har bir fayl uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak.
 oddiy hsoblatishdan … ved hodimiga tushsin ai bergan komentariya bilan birga»), answered «sen aytgandek
 bolsin» (1a-6a). Both bot doors were ONE collector; now the door is a fact of the request
@@ -3329,12 +3348,12 @@ ONE offer kept last acting on the whole burst; beside a parked collection the pa
 message and `c:resume_take` takes its parts through the per-part fence. The bot's stop gives kept-last
 draws their own 1.5 s (`STOP_DRAWS_MS`) before the durable flushes. Built as kernel K + K2 and four
 packages in two pairs, each reviewed by two lenses (73 findings); the merged tree reviewed as built by
-five lenses + a critic (27 confirmed, 6 blockers, all fixed), then the fixes reviewed (#1602). The corpus
-ratchet is 104 known (38 left it). DEPLOY: ledger 141 (142 if #137's 0140 merges first and this round's
-becomes 0141), rebuild tg-listen, `/api/version` today; the first real «🧮» and «🤖» after the deploy are
+five lenses + a critic (27 confirmed, 6 blockers, all fixed), then the fixes reviewed (#1608). The corpus
+ratchet is 104 known (38 left it). DEPLOY: ledger 142 (#137's 0140 rides with it if not yet on the server), rebuild tg-listen, `/api/version` today; the first real «🧮» and «🤖» after the deploy are
 the proof (no Telegram here).
 
-**Latest migration: 0140** (`intake_door`, `when` …119; ledger must reach **141**). Before
+**Latest migration: 0141** (`intake_door`, `when` …120; ledger must reach **142**). Before
+it: 0140 (`truck_queue_alerts`, `when` …119). Before
 it: 0139 (`calc_intake_durable`, `when` …118). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
@@ -3479,7 +3498,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **141** since 0140 (140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **142** since 0141 (141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

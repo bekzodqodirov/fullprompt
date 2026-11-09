@@ -41,10 +41,10 @@ export interface AmendBase {
   leadOpen: boolean | null;
   section: CalcSection;
   /**
-   * The bot door the request came in through (0140, docs/IKKI-ESHIK.md §0.3):
+   * The bot door the request came in through (0141, docs/IKKI-ESHIK.md §0.3):
    * the ➕ door and the seeded door open their collection's `ai` from it
    * ('plain' → false, 'ai' → true; null keeps today's flag). Optional: an add
-   * collection hydrated with a base built before 0140 reads none — null, so
+   * collection hydrated with a base built before 0141 reads none — null, so
    * it keeps the flag it was opened with.
    */
   door?: IntakeDoor | null;

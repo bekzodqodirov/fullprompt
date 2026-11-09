@@ -6,6 +6,7 @@ import { leafletLayer } from 'protomaps-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MAP_BOUNDS } from '@/modules/wms/tracking/map-data';
 import type { MapPickup, MapTruck, MapWarehouse } from './tracking-map';
+import { truckLabel } from './truck-label';
 import type { PickupPosition } from '@/modules/wms/tracking/pickup-route';
 
 /**
@@ -228,7 +229,7 @@ export function LeafletCorridor({
       // does not print its code over the other's.
       const icon = L.divIcon({
         className: '',
-        html: `<div style="position:relative;width:38px;height:28px;line-height:0"><div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:monospace;font-weight:800;font-size:12px;line-height:14px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(tr.code)}</div>${truckSvg(color)}</div>`,
+        html: `<div style="position:relative;width:38px;height:28px;line-height:0"><div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:monospace;font-weight:800;font-size:12px;line-height:14px;color:${text};-webkit-text-stroke:3px #fff;paint-order:stroke">${esc(truckLabel(tr))}</div>${truckSvg(color)}</div>`,
         iconSize: [38, 28],
         iconAnchor: [19, 14],
       });

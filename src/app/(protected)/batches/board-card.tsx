@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { truckRoadWords } from '@/components/truck-road';
 import type { BoardTrip, BoardTruck } from '@/modules/wms/batches/board';
 import { boardDay, boardRange, cargoLineOf, measureLine, telOf, type RoadBand } from '@/modules/wms/batches/board-view';
-import { CHECKPOINT_LABEL } from '@/modules/wms/tracking/map-data';
+import { pinLabel } from '@/modules/wms/tracking/map-data';
 import type { RoadZone } from '@/modules/wms/tracking/place';
 import { CheckpointButtons } from './[id]/mashina/checkpoint-buttons';
 
@@ -192,7 +192,7 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
                     moved the truck since — the card above says where. */}
                 {card.pins.current && (
                   <p className="text-xs" data-testid="board-pin-now">
-                    {CHECKPOINT_LABEL[card.pins.current].icon} {t(CHECKPOINT_LABEL[card.pins.current].label)}
+                    {pinLabel(card.pins.current, card.pins.held).icon} {t(pinLabel(card.pins.current, card.pins.held).label)}
                     {card.pins.days !== null && ` · ${td('truckPin', { n: card.pins.days })}`}
                   </p>
                 )}
@@ -202,7 +202,7 @@ export async function TruckCard({ card }: { card: BoardTruck }) {
                     current={card.pins.current}
                     options={card.pins.options.map((key) => ({
                       key,
-                      label: `${CHECKPOINT_LABEL[key].icon} ${t(CHECKPOINT_LABEL[key].label)}`,
+                      label: `${pinLabel(key, card.pins!.held).icon} ${t(pinLabel(key, card.pins!.held).label)}`,
                     }))}
                   />
                 )}

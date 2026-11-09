@@ -2608,7 +2608,7 @@ export async function recalcFromSealed(
       // the pooled `old` would put the correction back on the won lead —
       // superseding the deal's seal from a card no job follows. In the win's
       // order (request, then lead), a lead must still be OPEN to take it.
-      // …and its bot door (0140, docs/IKKI-ESHIK.md §0.1), which the
+      // …and its bot door (0141, docs/IKKI-ESHIK.md §0.1), which the
       // correction inherits the way it inherits `source`: the VED re-prices,
       // the seller who chose the door did not change.
       const [locked] = (await tx.execute(sql`
@@ -2662,7 +2662,7 @@ export async function recalcFromSealed(
         })
         .returning({ id: calcRequests.id });
       // A door READ off the row proves the column is there: no probe. NULL
-      // (legacy, or 0140 not landed) is the new row's own default.
+      // (legacy, or 0141 not landed) is the new row's own default.
       const door = parseIntakeDoor(locked.door);
       if (door) await stampIntakeDoorInTx(tx, fresh!.id, door);
 

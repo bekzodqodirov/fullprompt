@@ -292,8 +292,8 @@ export function addFor(standing: StandDown | 'ok'): boolean {
  *    (docs/IKKI-ESHIK.md §3.6, INT-5): he pressed that door FOR the answer —
  *    its stand-downs and «hisoblay olmadi» included, the answer to his press.
  * The door is the ROW's (`prefillStanding`'s read), never the job's: a job
- * queued before 0140 carries none. 'plain' and NULL keep the mute — NULL is
- * every request before 0140, the card form, the thread door and the agent,
+ * queued before 0141 carries none. 'plain' and NULL keep the mute — NULL is
+ * every request before 0141, the card form, the thread door and the agent,
  * which stay exactly as today (§0.2).
  */
 export function directPass(pass: string, door: IntakeDoor | null): boolean {
@@ -355,7 +355,7 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: st
   // landing's (no options at all, `whileOpen` alone). Until the standing has
   // read the request's door, only the pass name decides; a standing that
   // throws has the door asked once more in the catch, and a read that fails
-  // there too is answered as a landing pass was before 0140.
+  // there too is answered as a landing pass was before 0141.
   let direct = directPass(pass, null);
   let silent = false;
   let voice = voiceOf(direct, silent);
@@ -514,7 +514,7 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: st
     // The standing itself threw, so the door was never read (K-SPEC-3): one
     // more try, on its own, before the failure is said — a plain request's
     // must stay silent, an AI request's must pass the mute. A read that fails
-    // too leaves the pass name alone deciding, as a landing was before 0140.
+    // too leaves the pass name alone deciding, as a landing was before 0141.
     if (!doorRead) {
       try {
         const { requestIntakeDoor } = await import('./intake-door');

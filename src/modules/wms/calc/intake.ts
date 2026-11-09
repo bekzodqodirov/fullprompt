@@ -48,10 +48,10 @@ export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 export const CALC_SECTIONS: CalcSection[] = ['yolkira', 'rastamojka', 'podklyuch'];
 
 /**
- * Which of the bot's two doors a job came in through (0140, docs/IKKI-ESHIK.md
+ * Which of the bot's two doors a job came in through (0141, docs/IKKI-ESHIK.md
  * §0): «🧮 Hisoblatish» is 'plain', «🤖 AI rastamojka» is 'ai'. A fact of the
  * REQUEST, read from its row (`intake-door.ts`). Where a door is named as
- * `IntakeDoor | null`, NULL is legacy — every request before 0140, the card
+ * `IntakeDoor | null`, NULL is legacy — every request before 0141, the card
  * form, the thread door, the AI sotuvchi — and means TODAY's behaviour.
  */
 export type IntakeDoor = 'plain' | 'ai';

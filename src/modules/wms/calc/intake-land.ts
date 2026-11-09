@@ -458,7 +458,7 @@ export async function landIntake(input: {
   /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
   freightZone?: string | null;
   /**
-   * Which bot door collected it (0140, docs/IKKI-ESHIK.md §0.1) — 'plain' /
+   * Which bot door collected it (0141, docs/IKKI-ESHIK.md §0.1) — 'plain' /
    * 'ai' from the bot's collector, null from the AI sotuvchi. REQUIRED, as
    * `openCalcRequest`'s is: an absent door would read «legacy» in silence.
    */

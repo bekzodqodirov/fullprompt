@@ -125,6 +125,13 @@ export const MUTE_GROUPS = {
     // staleness threshold (round 55). Raised by the SERVER, deliberately:
     // every alarm the phone itself could raise dies with the app.
     'TruckSilent',
+    // A truck held in the Horgos or Yallama queue a day past the longest
+    // wait it was given (docs/XORGOS-NAVBAT.md §3): the one alarm the hold
+    // leaves, since time alone no longer moves the truck on. Raised by the
+    // server, beside TruckSilent and for its people. A newcomer, so never in
+    // FOUNDERS: a logist who ticked «alerts» before it existed has it muted
+    // too — the cost of one switch for the alarms, stated.
+    'TruckQueueLate',
     // A counterparty's debt is due in three days, overdue, or at 80 % of the
     // limit we allow ourselves (0108). Money that must move before a firm
     // stops carrying our trucks — an alarm, not news.

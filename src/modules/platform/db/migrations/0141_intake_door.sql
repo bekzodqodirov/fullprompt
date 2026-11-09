@@ -1,4 +1,4 @@
--- Ikki eshik (docs/IKKI-ESHIK.md §0), migration 0140 — after 0139_calc_intake_durable.
+-- Ikki eshik (docs/IKKI-ESHIK.md §0), migration 0141 — after 0140_truck_queue_alerts (renumbered from 0140 on the merge: PR #137 took it first).
 -- His 2026-11-08 report: «🧮 Hisoblatish» and «🤖 AI rastamojka» were ONE collector, so the
 -- two doors he chose between behaved the same. The door becomes a fact of the REQUEST, read
 -- from the row by every later reader (the pass, the ➕ add door, the seeded collection) and

@@ -255,7 +255,7 @@ export interface CalcRequestInput {
   noteId?: string | null;
   source: 'card' | 'bot';
   /**
-   * Which of the bot's two doors the job came in through (0140,
+   * Which of the bot's two doors the job came in through (0141,
    * docs/IKKI-ESHIK.md §0.1): 'plain' = «🧮 Hisoblatish», 'ai' = «🤖 AI
    * rastamojka», null = no bot door — the card form, the thread door, the AI
    * sotuvchi — which every reader treats exactly as today (§0.2). REQUIRED,
@@ -509,7 +509,7 @@ export async function openCalcRequest(
 
   // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
   const pool = await vedRotaPool();
-  // The door, written only once 0140 has landed (§0.4): on an older schema
+  // The door, written only once 0141 has landed (§0.4): on an older schema
   // the INSERT leaves it out and every reader reads NULL — never a refused
   // landing. The probe is pooled, so it is asked here, before the transaction.
   const door = await writableIntakeDoor(input.intakeDoor);
@@ -1771,7 +1771,7 @@ export { isComplete };
 export async function storedRequestFacts(requestId: string): Promise<{
   base: AmendBase;
   facts: CalcFacts;
-  /** The bot door it came in through (0140, §0.3) — null = legacy, today's behaviour. */
+  /** The bot door it came in through (0141, §0.3) — null = legacy, today's behaviour. */
   door: IntakeDoor | null;
   rev: number;
   handsoffRev: number | null;
