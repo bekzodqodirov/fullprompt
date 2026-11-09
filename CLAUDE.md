@@ -170,6 +170,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
+| «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
 
 ## State — 2026-08-23
 
@@ -3302,7 +3303,39 @@ through `migrate`: dry run, then `--apply` (7a). `changeDestBeforeDeparture` (re
 reroute, its own audit key `destBeforeDeparture`) on the Mashina tab; the quick batch asks in-page, every e2e through
 `tests/e2e/quick-batch.ts` `createQuickBatch`. Stated: a plate-named cancelled truck keeps the plate as its NAME (C3).
 
-**Latest migration: 0139** (`calc_intake_durable`, `when` …118; ledger must reach **140**). Before
+**Round — Ikki eshik (2026-11-09; DECISIONS #1593-#1603, numbered past #137/#138; migration 0140
+`intake_door` — ledger must reach 141; spec `docs/IKKI-ESHIK.md`).** His report the day after R3 reached
+production («har bir fayl uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak.
+oddiy hsoblatishdan … ved hodimiga tushsin ai bergan komentariya bilan birga»), answered «sen aytgandek
+bolsin» (1a-6a). Both bot doors were ONE collector; now the door is a fact of the request
+(`calc_requests.intake_door`, NOT on the drizzle table — read only through `calc/intake-door.ts`, fenced;
+REQUIRED on `CalcRequestInput`; card/thread/agent pass null; **NULL = today's behaviour on every reader**,
+only 'plain' silences, only 'ai' passes a mute). Shared: no question per file (`parseGoods` classifies by
+COLUMNS — `shape`/`weightKind`/`grossKg`, `PER_PACKAGE_COUNT`, `composedHeader` for merged sub-headers;
+`file-goods.ts` compares row by row through a bounded memo — the O(n²) first cut was 7-22 s on the one app
+process; decisions in `IntakeState.fileNotes`/`fileTotals`; `migrateIntakeState` resolves rows open at
+deploy; retired callbacks stay parsed); units once at `invoiceFacts`; ONE «Qabul qilindi» prompt, a pure
+function of durable state, kept last through `kept-last.ts` (the ONE «always the last message» rule — the
+prompt, a burst's offer, the pause line); a file's own message only for a refusal (`refusalOf`). Plain:
+a summary with no asks (ℹ️ «↳ kg yo‘q — VED xodimi so‘raydi»), typed text judged per segment
+(`plainVerdict`; a row's figure never becomes the shipment's weight), the pass SILENT (`sayOnce` silent
+mode, muted «oddiy eshik» claim rows) and a MONEY-FREE «🤖 AI izohi (VED uchun)» on the lenta. AI: the
+reading codes the rows (`codeRows`: row → memory → book → model, one function with the INSERT;
+`known_codes` by index; `AI_CODE_NOTE` «(AI taklifi)»), ONE table with no echo message (the result is its
+last block, ↩️ on its keyboard, 👍 only when all written), «Tasdiqlash» → the pass answers and asks
+NOTHING (`noAsk` tails), past the mute (`directPass`). «AI available» = `aiCalcStanding`/`aiCalcAvailable`
+(ai-cost.ts), never restated. Bursts: a durable `telegram_chat_waits` kind 'burst' (≤ 20 parts, 2 min),
+ONE offer kept last acting on the whole burst; beside a parked collection the pause line is its one
+message and `c:resume_take` takes its parts through the per-part fence. The bot's stop gives kept-last
+draws their own 1.5 s (`STOP_DRAWS_MS`) before the durable flushes. Built as kernel K + K2 and four
+packages in two pairs, each reviewed by two lenses (73 findings); the merged tree reviewed as built by
+five lenses + a critic (27 confirmed, 6 blockers, all fixed), then the fixes reviewed (#1602). The corpus
+ratchet is 104 known (38 left it). DEPLOY: ledger 141 (142 if #137's 0140 merges first and this round's
+becomes 0141), rebuild tg-listen, `/api/version` today; the first real «🧮» and «🤖» after the deploy are
+the proof (no Telegram here).
+
+**Latest migration: 0140** (`intake_door`, `when` …119; ledger must reach **141**). Before
+it: 0139 (`calc_intake_durable`, `when` …118). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
@@ -3446,7 +3479,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **140** since 0139 (139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **141** since 0140 (140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

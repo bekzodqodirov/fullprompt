@@ -825,7 +825,7 @@ and a conflict as a «VED hal qiladi» line (1.1).
 - The VED's four doors and `amended_since`.
 - The durable store and its flush.
 - The card form, the thread door, the AI sotuvchi.
-- The corpus ratchet: 142 known cases.
+- The corpus ratchet: 142 known cases at the start; 104 as built (38 left it with the file rule, none joined).
   - Any change to `intake.ts`, `intake-manual.ts`, `units.ts`, `goods-import.ts`, `goods-file.ts`,
     `xls.ts`, `calc-intake.ts` or the collector in `staff-handlers.ts` runs the WHOLE corpus first.
   - A known case that starts passing leaves the list.

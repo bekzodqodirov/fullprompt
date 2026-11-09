@@ -1,5 +1,56 @@
 # CHANGELOG
 
+## 2026-11-09 — Ikki eshik: «🧮 Hisoblatish» va «🤖 AI rastamojka» endi ikki xil ishlaydi
+
+8-noyabrdagi xabaringiz va oltita savolga «sen aytgandek bolsin» javobingiz (1a-6a, hammasi ⭐) bo'yicha. **Yangi migratsiya bor (0140).** Deploydan keyin **migratsiyalar soni [141]** bo'lishi kerak, `curl -s https://gsrwms.uz/api/version` esa bugungi vaqtni ko'rsatishi kerak. **tg-listen qayta yig'iladi.**
+
+### Ikkala eshikda ham
+- **Har fayl uchun savol yo'q (1a).** Bot fayllarni o'zi solishtiradi: bir xil tovar bir marta olinadi, yangisi qo'shiladi. Packing list faqat umumiy brutto, kub va qatorlardagi bo'sh og'irlik uchun o'qiladi, qator qo'shmaydi. Bot nima qilgani VED uchun kartaga yoziladi, masalan: «↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi».
+- **Xitoycha va ruscha packing listlar ham to'g'ri o'qiladi.** Bunga «每箱数量 / Кол-во в коробке» ustuni (bir karobkadagi son) va birlashtirilgan «G.W. | PER CTN | TOTAL» sarlavhalari kiradi.
+- **«Qabul qilindi» xabari bitta va doim chatning eng pastida.** Fayllar haqidagi qatorlar shu xabar ichida chiqadi. Faylning o'z xabari faqat o'qib bo'lmaganda keladi: HEIC, Word, video, arxiv, juda katta fayl yoki 4-PDF. Mijoz va (AI podklyuchda) zona ham bitta xabarda, bir marta so'raladi.
+- Deploy paytida ochiq turgan yig'ishlar yo'qolmaydi. Ulardagi eski savol tugmalarini bossangiz, bot «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» deydi.
+
+### «🧮 Hisoblatish» (2a, 3a)
+- **«Bo‘ldi» → qisqa xulosa, savolsiz → «✅ Tasdiqlash» → so‘rov VED ga tushadi.**
+  - Yetishmagan narsa ℹ️ bilan bitta qatorda yoziladi: «↳ kg yo‘q — VED xodimi so‘raydi».
+  - Bot so'ramaydi; yetishmaganini VED o'zi so'raydi.
+- Xulosadan keyin «3: 150 kg» yoki «Sumka 80 kg» deb yozsangiz, o'sha qatorga jimgina yoziladi va xabaringizga 👍 qo'yiladi. **Qatorning og'irligi hech qachon butun yukning og'irligiga aylanmaydi.**
+- ✅ dan keyin: «🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu yerga yuboradi.»
+- **AI sotuvchiga hech narsa yubormaydi (3a).** U faqat VED uchun kartaga izoh yozadi: «🤖 AI izohi (VED uchun)». Izohda qaysi kod qayerdan topilgani, stavkalar, bazalar va nima yetishmasligi bor. **Narx yo'q** — aniq hisobni VED o'z ekranida ko'radi.
+- Yo'lkira javobi avvalgidek chatga keladi (2.5 b).
+
+### «🤖 AI rastamojka» (4a, 5a)
+- **AI fayllarni o'qiyotganda tovar kodini (TNVED) ham topadi.** Shuning uchun o'lchov birligi (dona/juft) jadvalda bir marta so'raladi. AI taklif qilgan kod «(AI taklifi)» deb belgilanadi va VED tekshiradi.
+- **Bitta jadval.** Javobingiz alohida xabar yubormaydi: jadvalning o'zi yangilanadi. Oxirgi javobingiz jadval oxirida turadi («✍️ Oxirgi javob: …»), «↩️ Oxirgi javobni bekor qilish» tugmasi ham shu yerda.
+- To'liq bo'lsa: «✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, AI hisoblaydi.»
+- **«Tasdiqlash» → AI hisoblaydi va boshqa hech narsa so'ramaydi.** Yetishmagan narsa VED ga boradi: «— VED xodimi sizdan so‘raydi».
+- AI javobi «✅ Mening vazifalarim» o'chirilgan bo'lsa ham keladi, chunki o'zingiz bosgansiz. Bu 1.20 a ning ikkinchi yarmini o'zgartiradi.
+
+### Ochiq yig'ish bo'lmaganda fayl yuborsangiz (6a)
+- **Ketma-ket yuborilgan fayllar** (har biri oldingisidan 2 daqiqa ichida) **bitta savol oladi**, masalan: «➕ 3 ta faylni so‘rovga qo‘shamizmi?». Forward bo'lsa, topshiriq tugmalari ham shu xabarda. Bitta tugma hammasini oladi.
+- To'xtab turgan hisoblatish bo'lsa, bitta qator chiqadi: «⏸ Hisoblatish to‘xtab turibdi … Hozirgi 3 ta xabar unga hali qo‘shilmagan». «▶️ Davom etamiz» shu fayllarni qo'shadi.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. `docker compose --profile telegram up -d --build tg-listen`.
+6. Migratsiyalar soni **[141]** ekanini va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishini tekshiring. Kam chiqsa, `migrate` konteynerining o'z chiqishini o'qing.
+
+### Bilib qo'ying
+- Deploydan oldin yuborilgan so'rovlar avvalgidek ishlaydi (eski so'zlar, eski javoblar). Yangi tartib faqat deploydan keyin ochilgan so'rovlarga tegishli.
+- Oddiy «🧮» da brutto yoki kub yo'q bo'lsa, uni VED so'raydi (2a). Shuning uchun yo'lkira javobi ko'pincha «brutto yo‘q — VED xodimi sizdan so‘raydi» deydi.
+- «Ma’lumot to‘liq» — sotuvchining qismi to'liq degani. AI raqam chiqara oladimi — bu bojxona qiymatiga bog'liq (muhrlangan xotira yoki choraklik import).
+- Bot bu yerda haqiqiy Telegram bilan sinab ko'rilmadi (sinov boti bilan tekshirildi). Deploydan keyin ikkala eshikda bittadan sinov qiling:
+  - «🧮»: Excel + packing list, keyin «Bo‘ldi» va «Tasdiqlash»;
+  - «🤖»: Excel, keyin «Bo‘ldi», jadvalga javob va «Tasdiqlash».
+
+### Sizga savol (hech narsani to'xtatmaydi)
+- **Muhrlash:** m³ ham, kg ham yozilmagan hisobni muhrlashni bot rad etsinmi? Hozir rad etmaydi: bunday kotirovka yuk kelganda butun va'dasini saqlaydi, VED muhrdan oldin m³ yoki kg yozsa, u bo'yicha masshtablanadi.
+  - a) ⭐ hozirgidek;
+  - b) m³ ham, kg ham bo'lmasa, «avval m³ yoki kg yozing» deb rad etsin.
+
 ## 2026-11-09 — Mashina narxi har bitimga bitta jadvalda; bekor qilingan partiya raqami qaytadi
 
 Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migratsiya yo'q** — migratsiyalar soni **140** bo'lib qoladi, shuning uchun deploydan keyin tekshiradigan narsa `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi.
