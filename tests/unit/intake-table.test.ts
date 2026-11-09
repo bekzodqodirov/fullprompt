@@ -577,3 +577,70 @@ describe('the fix review of the review’s fixes (docs/SAKKIZ-R3.md §20.2)', ()
     expect(added).toContain('⚠️ umumiy brutto og‘irligi (kg) — yangi tovar qo‘shildi, yangilansinmi? «jami … kg»');
   });
 });
+
+describe('the plain door’s SUMMARY over the same input (docs/IKKI-ESHIK.md §2.1, his 2a)', () => {
+  const input = {
+    clientLabel: 'GS777 · Ali aka',
+    fileCount: 2,
+    laws: new Map([['6403990000', KROSSOVKA]]),
+    facts: {
+      volumeM3: 12,
+      goods: [
+        { name: 'Kurtka qishki', quantity: 300, weightKg: 150, tnvedCode: '6201400000' },
+        { name: 'Krossovka', weightKg: 12.5, tnvedCode: '6403990000' },
+        { name: 'Sumka', quantity: 50, weightKg: 20 },
+        { name: 'Shapka' },
+      ],
+    },
+  };
+
+  it('the example, literally — what the table asks, the summary says is the VED’s', () => {
+    expect(table({ ...input, plain: true })).toBe(
+      [
+        '🧮 Hisoblatish · 🛃 Rastamojka',
+        'Mijoz: GS777 · Ali aka',
+        'Fayllar: 2',
+        '',
+        'Tovarlar (4):',
+        '✅ 1. Kurtka qishki — 300 dona · 150 kg · 6201400000',
+        'ℹ️ 2. Krossovka — 12.5 kg · 6403990000',
+        '   ↳ juft yo‘q — VED xodimi so‘raydi',
+        '✅ 3. Sumka — 50 dona · 20 kg',
+        'ℹ️ 4. Shapka',
+        '   ↳ dona yoki kg yo‘q — VED xodimi so‘raydi',
+        '',
+        'Umumiy:',
+        'ℹ️ umumiy brutto og‘irligi (kg, qadoq bilan) yo‘q — VED xodimi so‘raydi',
+        '✅ Hajm: 12 kub',
+        '',
+        'ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — «✅ Tasdiqlash» ni hozir bosishingiz mumkin.',
+        'Qator raqami bilan yozsangiz («3: 150 kg», «jami 3500 kg») — shu yerda yangilanadi. Yana ma’lumot bo‘lsa — yuboring.',
+      ].join('\n'),
+    );
+    // The same input on the AI door is still the asking table.
+    const asking = table(input);
+    expect(asking).toContain('⚠️ 2. Krossovka');
+    expect(asking).toContain('✍️ Bir xabarda istalgan qatorni to‘ldiring');
+  });
+
+  it('a doubt, a clash and a stale total are said, never asked; the notes come before the closing', () => {
+    const text = table({
+      plain: true,
+      ambiguous: [{ field: 'weightKg', text: '1,200', decimal: 1.2, thousands: 1200 }],
+      clash: ['volumeM3'],
+      tail: '🤖 AI:\n· bitta izoh',
+      facts: { goods: [{ name: 'Kurtka', quantity: 300 }] },
+    });
+    expect(text).toContain('ℹ️ umumiy brutto og‘irligi (kg, qadoq bilan) ikki xil yozilgan — VED xodimi so‘raydi');
+    expect(text).toContain('ℹ️ umumiy hajmi (kub) fayllarda ikki xil — VED xodimi so‘raydi');
+    expect(text).not.toContain('mi yoki');
+    expect(text.indexOf('· bitta izoh')).toBeLessThan(text.indexOf('ℹ️ Yetishmaganini'));
+  });
+
+  it('the marker is the last line, on either door', () => {
+    const marker = '⬇️ Yangi ma’lumot qo‘shildi — pastdagi «✅ Bo‘ldi» ni bosing, qayta o‘qiladi.';
+    for (const plain of [true, false]) {
+      expect(table({ ...input, plain, marker }).split('\n').at(-1), String(plain)).toBe(marker);
+    }
+  });
+});
