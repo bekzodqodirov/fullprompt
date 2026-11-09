@@ -152,7 +152,7 @@ describe('the cancel gives the number back AFTER its commit', () => {
     expect(call).toBeGreaterThan(closed);
     expect(cancel.match(/releaseNumberAfterCancel\(/g) ?? []).toHaveLength(1);
     expect(cancel.slice(tx, closed)).not.toMatch(/release(TrailingCodes|NumberAfterCancel)\(/);
-    expect(cancel).toContain('return { ...out, number };');
+    expect(cancel).toContain('return { ...out, batch: now ?? out.batch, number };');
   });
 
   it('the action passes the answer on', () => {

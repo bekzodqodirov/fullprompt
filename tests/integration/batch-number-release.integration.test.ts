@@ -159,6 +159,9 @@ describe('the top number comes back (his 4a)', () => {
 
     const res = await cancelBatch(b.id, 'xato yo‘nalish', ctx());
     expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-002`] });
+    // The answer's row is the truck as it stands now, under its bekor name.
+    expect(res.batch.code).toBe(`${prefix}-002 (bekor)`);
+    expect(res.batch.status).toBe('cancelled');
     expect(await codeOf(b.id)).toBe(`${prefix}-002 (bekor)`);
     expect(await counterOf(prefix)).toBe(1);
     expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', number: `${prefix}-002` });
@@ -455,10 +458,10 @@ describe('the dry run (his 7a)', () => {
     expect(report!.counter).toBe(6);
     expect(report!.warehouses).toEqual([WH_O]);
     expect(report!.highestCode).toBe(`${prefix}-006`);
-    expect(report!.cancelled.map((c) => [c.code, c.atAgent])).toEqual([
-      [a.code, false],
-      [e.code, true],
-      [f.code, false],
+    expect(report!.cancelled.map((c) => [c.code, c.atAgent, c.released])).toEqual([
+      [a.code, false, false],
+      [e.code, true, false],
+      [f.code, false, false],
     ]);
     expect(report!.gaps).toEqual([
       { number: `${prefix}-001`, kind: 'cancelled', atAgent: false },
@@ -473,5 +476,9 @@ describe('the dry run (his 7a)', () => {
     expect(walk.stop).toMatchObject({ why: 'agent', number: e.code });
     expect(await codeOf(a.id)).toBe(a.code);
     expect(await codeOf(d.id)).toBe(d.code);
+    // Read again, the released truck is named as such and nothing more returns.
+    const [after] = await batchNumberReport([prefix]);
+    expect(after!.cancelled.find((c) => c.code === `${f.code} (bekor)`)?.released).toBe(true);
+    expect(after!.wouldReturn).toEqual([]);
   });
 });

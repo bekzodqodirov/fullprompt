@@ -68,7 +68,11 @@ async function main() {
       if (p.cancelled.length) {
         console.log('    bekor qilingan, jo‘namagan mashinalar:');
         for (const c of p.cancelled) {
-          console.log(`      ${c.code} · ${c.createdAt.toISOString().slice(0, 10)}${c.atAgent ? ' · hujjatlari agentga yuborilgan' : ''}`);
+          const notes = [
+            c.released ? 'raqami allaqachon qaytarilgan' : null,
+            c.atAgent ? 'hujjatlari agentga yuborilgan' : null,
+          ].filter(Boolean);
+          console.log(`      ${c.code} · ${c.createdAt.toISOString().slice(0, 10)}${notes.length ? ` · ${notes.join(' · ')}` : ''}`);
         }
       }
       if (p.gaps.length) {

@@ -179,8 +179,11 @@ export interface PrefixReport {
   warehouses: string[];
   /** The highest `P-<digits>` a truck wears now, as the mint built it. */
   highestCode: string | null;
-  /** Cancelled, never departed, wearing a name in this prefix — the give-back's candidates. */
-  cancelled: { code: string; createdAt: Date; atAgent: boolean }[];
+  /**
+   * Cancelled, never departed, wearing a name in this prefix — `released`
+   * when the give-back already returned its number (a «… (bekor)» name).
+   */
+  cancelled: { code: string; createdAt: Date; atAgent: boolean; released: boolean }[];
   gaps: NumberGap[];
   /** What `--apply` would give back: the trailing walk, read-only, the writer's own verdict. */
   wouldReturn: string[];
@@ -223,9 +226,21 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
              (b.sent_to_agent_at IS NOT NULL OR EXISTS (
                 SELECT 1 FROM audit_log t
                  WHERE t.entity_type = 'batch' AND t.entity_id = b.id AND (t.after->>'sentToAgent') = 'true'
-             )) AS at_agent
+             )) AS at_agent,
+             EXISTS (
+               SELECT 1 FROM audit_log r
+                WHERE r.entity_type = 'batch' AND r.entity_id = b.id AND r.action = 'update'
+                  AND (r.after->>'released') = 'true'
+             ) AS released
         FROM batches b WHERE upper(b.code) LIKE ${like} ESCAPE '!'
-    `)) as unknown as { code: string; status: string; created_at: string; departed: boolean; at_agent: boolean }[];
+    `)) as unknown as {
+      code: string;
+      status: string;
+      created_at: string;
+      departed: boolean;
+      at_agent: boolean;
+      released: boolean;
+    }[];
     let highest: { n: number; code: string } | null = null;
     for (const truck of [...worn]) {
       const n = numberOfCode(prefix, truck.code);
@@ -233,7 +248,12 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
     }
     const cancelled = [...worn]
       .filter((truck) => truck.status === 'cancelled' && !truck.departed)
-      .map((truck) => ({ code: truck.code, createdAt: new Date(truck.created_at), atAgent: truck.at_agent === true }))
+      .map((truck) => ({
+        code: truck.code,
+        createdAt: new Date(truck.created_at),
+        atAgent: truck.at_agent === true,
+        released: truck.released === true,
+      }))
       .sort((a, b) => a.code.localeCompare(b.code));
 
     const gaps: NumberGap[] = [];

@@ -1723,5 +1723,8 @@ export async function cancelBatch(batchId: string, reason: string, ctx: AuditCon
   // file for the aboard count.
   const { releaseNumberAfterCancel } = await import('../batches/rename');
   const number = await releaseNumberAfterCancel(batchId, ctx);
-  return { ...out, number };
+  // The row as it stands now: a give-back renamed it «… (bekor)», and a
+  // caller reading the cancel's truck must not get the name it just gave up.
+  const now = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  return { ...out, batch: now ?? out.batch, number };
 }
