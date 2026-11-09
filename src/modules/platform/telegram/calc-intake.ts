@@ -11,6 +11,7 @@ import {
   LINE_FIGURES,
   figureOf,
   namesMeet,
+  packingTotals,
   sameFigures,
   sameLine,
   type GoodsFileMeta,
@@ -1372,10 +1373,16 @@ export async function analyzeCollected(
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
   const { parseManualFacts, readGoodsLines, totalWeightFrom } = await import('../../wms/calc/intake-manual');
   const text = state.material.join('\n');
+  const invoice = state.invoiceGoods ?? [];
+  // Beside goods rows already held — an Excel, a packing list's totals, a
+  // request's stored lines — a typed line's figure is that line's, never the
+  // shipment's (`goodsBeside`, as-built review CHAT-3 / CRITIC-2-NEW): «3: 150
+  // kg», «Sumka 80 kg», «Shapka 50 dona 20 kg» outranked the packing list's
+  // brutto (§1.2.5) and landed as the shipment's weight under a ✅.
+  const goodsBeside = invoice.length > 0 || Boolean(state.fileTotals) || state.amend !== null || state.seed !== null;
   // The section decides whether a NETTO figure may stand for the total
   // (review PF-1): never where the bot asks the brutto.
-  const manual = parseManualFacts(text, state.section);
-  const invoice = state.invoiceGoods ?? [];
+  const manual = parseManualFacts(text, state.section, { goodsBeside });
   // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
   // (`amend`), or a returned one carried into a new collection (`seed`).
   const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
@@ -1518,7 +1525,7 @@ export async function analyzeCollected(
   // net Σ the freight sections refuse as a brutto, `totalWeightFrom`), then
   // the model's reading; the table answer goes on top of all three below. A
   // figure the packing list gave is therefore never asked again.
-  const fileTotals = state.fileTotals ?? null;
+  const fileTotals = state.fileTotals ?? loneFileTotals(state);
   // A figure two packing lists disagreed on is the VED's (review PF-ADV-8):
   // the model read both lists and its figure — their sum, as often as not —
   // must not land where the note promised «ikkalasi ham olinmadi».
@@ -1556,6 +1563,7 @@ export async function analyzeCollected(
     state.material.length > at.material
       ? parseManualFacts(text, state.section, {
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+          goodsBeside,
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
   // A packing list's figure doubts the answer only when it came AFTER it
@@ -1586,6 +1594,45 @@ export async function analyzeCollected(
     // refused, unreadable) included (r1-fix typed #21), each re-read its own
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
+  };
+}
+
+/**
+ * The totals of a collection's ONE goods file, read at the reading (as-built
+ * review FILES-4): a packing list sent alone states its brutto and its cube on
+ * every row, and a lone first file writes no `fileTotals` at receipt — that
+ * waits for an invoice, which hands them over (§1.2.2). With no second file
+ * the figure was computed and thrown away, and the seller who sent FEWER
+ * files was asked the brutto his file states (INT-10, his 4a). So, on a first
+ * collection with no `fileTotals`, a lone, uncapped goods file holding every
+ * row gives what the hand-over would: a packing list its `packingTotals` (a
+ * net Σ flagged netto, which the freight sections refuse as a brutto); an
+ * invoice its gross Σ alone, when it has a gross column (its lines' m³ are
+ * the INSERT's to sum, as always). Read here and never
+ * stored, so a later file — another factory's, or the shipment's packing list
+ * — decides as it always has. Null = nothing to give. Pure.
+ */
+export function loneFileTotals(
+  state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed'>,
+): IntakeState['fileTotals'] {
+  if (state.fileTotals || state.amend || state.seed !== null) return null;
+  const files = state.goodsFiles ?? [];
+  const rows = state.invoiceGoods ?? [];
+  const only = files.length === 1 ? files[0]! : null;
+  if (!only || only.capped || rows.length === 0 || only.rows !== rows.length) return null;
+  const totals =
+    only.shape === 'packing'
+      ? packingTotals(only, rows)
+      : { weightKg: only.grossKg, weightNetto: false, volumeM3: null };
+  if (totals.weightKg === null && totals.volumeM3 === null) return null;
+  return {
+    weightKg: totals.weightKg,
+    volumeM3: totals.volumeM3,
+    weightNetto: totals.weightKg !== null && totals.weightNetto,
+    label: only.label,
+    // The file's own receipt mark: an answer given with it in front of the
+    // seller is not doubted by it (PF-ADV-9). Unknown = before everything.
+    at: only.at ?? { material: 0, files: 0 },
   };
 }
 
@@ -1812,6 +1859,8 @@ function addReading(
     state.material.length > at.material
       ? deps.parseManualFacts(text, state.section, {
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+          // The request's stored rows are a goods list: a typed line's figure is the line's.
+          goodsBeside: true,
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
   const doubts = totalsDoubts(state.totalsAnswer, {

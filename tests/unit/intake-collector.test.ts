@@ -134,8 +134,10 @@ describe('a third goods file is compared like the second (review c1)', () => {
     take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
     const second = take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
     const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
-    expect(second.say).toBe('📄 «B.xlsx» — 3 ta tovar o‘qildi.\n📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.');
-    expect(third.say).toBe('📄 «C.xlsx» — 1 ta tovar o‘qildi.\n📄 «C.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    // One line per further file (§1.2.4; as-built review CHAT-6): the fold's
+    // own head names the rows, «N ta tovar o‘qildi» above it said it twice.
+    expect(second.say).toBe('📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.');
+    expect(third.say).toBe('📄 «C.xlsx» — 1 ta yangi tovar qo‘shildi.');
     expect(Object.keys(third).sort()).toEqual(['patch', 'say']);
     expect(state.pendingInvoice).toBeNull();
     expect(state.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', 'Choynak', 'Piyola', 'Lagan', 'Poyabzal']);

@@ -142,6 +142,14 @@ function lineSpans(text: string): [number, number][] {
 }
 
 /**
+ * A typed line that addresses a ROW of the goods list by its number — «3: 150
+ * kg», «3-qator 150 kg» — in the material stage (line-address.ts reads its
+ * answers by this same form, regression-3; a numbered list «1. Kurtka …» is
+ * goods). One home for both readers.
+ */
+export const MATERIAL_ROW_ADDRESS = /^\s*(\d{1,4})(?:-?(?:chi|nchi))?(?:\s*:|\s*-?\s*(?:qator|строк)\p{L}*(?=[\s:,.]|$))\s*/iu;
+
+/**
  * The shipment's totals and route, as TYPED.
  *
  * Two rules decide which typed figure may be the SHIPMENT's (round 2's merged
@@ -166,6 +174,16 @@ function lineSpans(text: string): [number, number][] {
  *    told to take the netto (`NETTO_ONLY`), it stands as the total when the
  *    text states nothing else — and says so (`weightNetto`), so the row note
  *    and the reply call it netto, never brutto (PF-3).
+ *  - **Beside a goods list, a line's figure is the line's** (`goodsBeside`,
+ *    as-built review CHAT-3 / CRITIC-2-NEW). When the collection already
+ *    holds rows — an Excel, a packing list's totals, a request's stored
+ *    lines — ONE typed goods line is no longer the shipment: «Sumka 80 kg»
+ *    corrects a row, «Shapka 50 dona 20 kg» names a forgotten good, and a
+ *    line addressing a row by its number («3: 150 kg») is that row's. Read as
+ *    totals they outranked the packing list's 3500 kg (§1.2.5) and became the
+ *    brutto under a ✅ — R3 §0.1(3)'s defect one press earlier. A figure on
+ *    any other line («jami 3500 kg», «brutto 3500 kg», «3500 kg») is still a
+ *    total there.
  */
 export function parseManualFacts(
   text: string,
@@ -176,15 +194,18 @@ export function parseManualFacts(
    * goods lines are still the WHOLE text's — «Shim 50 dona 120 kg» added to
    * a typed list is that line's figure, exactly as in the full reading, and
    * an old «1,200 kg» the answer settled no longer poisons a new «1300 kg».
+   *
+   * `goodsBeside`: the collection already holds goods rows (above).
    */
-  opts: { from?: number } = {},
+  opts: { from?: number; goodsBeside?: boolean } = {},
 ): CalcFacts & { ambiguous: AmbiguousTotal[] } {
   const route = readRoute(text);
   const typed = typedGoods(text);
   const spans = lineSpans(text);
   const onGoodsLine = (start: number) => {
-    if (typed.lines.size < 2) return false;
+    if (!opts.goodsBeside && typed.lines.size < 2) return false;
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
+    if (opts.goodsBeside && line >= 0 && MATERIAL_ROW_ADDRESS.test(text.slice(spans[line]![0], spans[line]![1]))) return true;
     return typed.lines.has(line);
   };
   // A figure that is not the shipment's: a goods line's own, or one written

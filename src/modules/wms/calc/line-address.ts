@@ -14,7 +14,7 @@
  * the whole database (re-check p3-10, p3-16).
  */
 import { exampleFigure, type AmbiguousTotal } from './intake';
-import { looksLikeMaterial, parseLineAnswer, parseManualFacts, type LineAnswer } from './intake-manual';
+import { looksLikeMaterial, MATERIAL_ROW_ADDRESS, parseLineAnswer, parseManualFacts, type LineAnswer } from './intake-manual';
 import type { NeedUnit } from './needs';
 import { unitOf } from './units';
 import { bareTotalsNumber, totalsAnswerShape, totalsFigureCount } from '../../platform/telegram/totals-shape';
@@ -202,8 +202,10 @@ const WORD_FIRST_ADDRESS = /^\s*(?:qator|строка|стр\.?)\s*(\d{1,4})(?=[
  * In the material stage only «N:» and «N-qator…» (ordinal or not) address a
  * row (regression-3): a hand-typed numbered list («1. Kurtka 300 dona»,
  * c1524-c1526) is goods, which is where «➕ Yana ma’lumot» left the seller.
+ * Its home is intake-manual.ts, so the reading's totals parser asks the very
+ * same form (as-built review CHAT-3).
  */
-const MATERIAL_ADDRESS = /^\s*(\d{1,4})(?:-?(?:chi|nchi))?(?:\s*:|\s*-?\s*(?:qator|строк)\p{L}*(?=[\s:,.]|$))\s*/iu;
+const MATERIAL_ADDRESS = MATERIAL_ROW_ADDRESS;
 
 function addressOf(segment: string, stage: TableRef['stage']): { n: number; rest: string } | null {
   const forms = stage === 'review' ? [REVIEW_ADDRESS, SIGN_ADDRESS, WORD_FIRST_ADDRESS] : [MATERIAL_ADDRESS, WORD_FIRST_ADDRESS];

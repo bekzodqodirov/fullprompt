@@ -145,10 +145,19 @@ describe('which lines land beside an Excel (round 4)', () => {
     expect(picked.sameAsInvoice).toEqual([{ name: 'Ladies jacket', quantity: 300, why: 'same' }]);
   });
 
-  it('«add» with no reading: the typed lines take the model’s place, the Excel’s own named', () => {
+  // Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.2.2; as-built review
+  // FILES-3): round 4's «the typed lines take the model’s place» was right
+  // while «add» meant the seller had SAID the other file was another
+  // factory's goods. The bot sets «add» by itself now, and with no reading
+  // nothing was model-read: the typed lines keep today's rule beside an Excel
+  // — the Excel answers, a line it does not carry is NAMED, never added.
+  it('«add» with no reading: the Excel answers — its own line named «same», a line it does not carry named «typed»', () => {
     const picked = add([line('Kurtka', { quantity: 300 })], null, [line('Kurtka', { quantity: 300 }), line('Shim', { quantity: 200 })]);
-    expect(picked.goods.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
-    expect(picked.sameAsInvoice).toEqual([{ name: 'Kurtka', quantity: 300, why: 'same' }]);
+    expect(picked.goods.map((g) => g.name)).toEqual(['Kurtka']);
+    expect(picked.sameAsInvoice).toEqual([
+      { name: 'Kurtka', quantity: 300, why: 'same' },
+      { name: 'Shim', quantity: 200, why: 'typed' },
+    ]);
   });
 
   it('one reading is named once, two readings of one name with different figures both', () => {

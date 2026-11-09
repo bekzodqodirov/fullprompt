@@ -43273,17 +43273,17 @@
        "name": "Kurtka",
        "quantity": 300,
        "weightKg": 120
-      },
-      {
-       "name": "Shim",
-       "quantity": 200
       }
      ],
-     "count": 3
-    }
+     "count": 2
+    },
+    "sameAsInvoice": [
+     "Kurtka",
+     "Shim"
+    ]
    },
    "said": "{\"goods\":[{\"name\":\"Ladies jacket\",\"quantity\":300,\"weightKg\":150},{\"name\":\"Kurtka\",\"quantity\":300,\"weightKg\":120},{\"name\":\"Shim\",\"quantity\":200}]}",
-   "why": "invoice present, model null in «add» mode: append the typed lines the Excel lacks (typed «Shim 200 dona» must not vanish)",
+   "why": "invoice present, model null in «add» mode: the typed «Shim 200 dona» the Excel lacks must not vanish — re-anchored on his 1a (docs/IKKI-ESHIK.md §1.2.2, as-built review FILES-3): the bot sets «add» by itself, and with no reading nothing was model-read, so the Excel answers and the typed line is NAMED («Rasmda/yozuvda Excel’da yo‘q tovar»), never added as a second product",
    "source": "integ S-a",
    "weight": "defect"
   },

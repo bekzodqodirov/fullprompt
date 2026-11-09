@@ -113,6 +113,32 @@ export function goodsNameKeys(name: string): {
  * one order. A bilingual cell's half meets by `halfMeets` alone.
  */
 export type NameKeys = ReturnType<typeof goodsNameKeys>;
+
+/**
+ * A string function remembered for the strings it has seen, up to `cap`
+ * (then forgotten whole — a bound, never a leak). The comparisons below are
+ * pure over a NAME, and two files of 500 rows compare 250 000 pairs: keying
+ * both names inside every pair was seconds of the one process, the bot and
+ * every web request stalled with it (as-built review DURABILITY-1 — fix
+ * review DRILL-1's shape, in the file rule that did not inherit its fix).
+ */
+function remembered<V>(fn: (s: string) => V, cap = 8192): (s: string) => V {
+  const seen = new Map<string, V>();
+  return (s) => {
+    const hit = seen.get(s);
+    if (hit !== undefined) return hit;
+    const v = fn(s);
+    if (seen.size >= cap) seen.clear();
+    seen.set(s, v);
+    return v;
+  };
+}
+
+/** `goodsNameKeys`, keyed once per name — read only, never mutated. */
+const keysOf = remembered(goodsNameKeys);
+/** `goodsNameKey`, keyed once per name. */
+const keyOf = remembered(goodsNameKey);
+
 export function namesMeet(a: NameKeys, b: NameKeys): boolean {
   return a.keys.includes(b.whole) || b.keys.includes(a.whole) || halfMeets(a, b) || halfMeets(b, a);
 }
@@ -156,7 +182,10 @@ function nameWords(key: string): Map<string, Set<string>> {
 }
 
 // The tier words (#1468) live in name-tiers.ts, one home with the bot table's
-// name address (docs/SAKKIZ-R3.md §8.1); `otherName` reads them from there.
+// name address (docs/SAKKIZ-R3.md §8.1); `otherName` reads them from there —
+// both remembered per key (DURABILITY-1): `halfMeets` asks them in every pair.
+const tiersOfKey = remembered(tierWords);
+const wordsOfKey = remembered(nameWords);
 
 /**
  * Are two keys two DIFFERENT names: in some script both write — or in the
@@ -172,11 +201,11 @@ function nameWords(key: string): Map<string, Set<string>> {
  * probe, collector, 10 common cases).
  */
 function otherName(a: string, b: string): boolean {
-  const tiersA = tierWords(a);
-  const tiersB = tierWords(b);
+  const tiersA = tiersOfKey(a);
+  const tiersB = tiersOfKey(b);
   if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
-  const wordsB = nameWords(b);
-  for (const [bucket, ofA] of nameWords(a)) {
+  const wordsB = wordsOfKey(b);
+  for (const [bucket, ofA] of wordsOfKey(a)) {
     const ofB = wordsB.get(bucket);
     if (ofB && [...ofA].some((w) => !ofB.has(w)) && [...ofB].some((w) => !ofA.has(w))) return true;
   }
@@ -367,8 +396,8 @@ function sharedFigures(held: GoodsList[number], read: GoodsList[number], kinds: 
  * Pure.
  */
 export function sameRowAgain(held: GoodsList[number], read: GoodsList[number], kinds: RowKinds = UNKNOWN_KINDS): boolean {
-  const h = goodsNameKeys(held.name);
-  const r = goodsNameKeys(read.name);
+  const h = keysOf(held.name);
+  const r = keysOf(read.name);
   if (!h.whole || !r.whole) return false;
   if (h.whole !== r.whole && !namesMeet(h, r)) return false;
   const shared = sharedFigures(held, read, kinds);
@@ -377,9 +406,72 @@ export function sameRowAgain(held: GoodsList[number], read: GoodsList[number], k
 
 /** Do the two names point at one product, the wide way (`namesMeet`, or the same whole name)? */
 function namesMeetLine(a: GoodsList[number], b: GoodsList[number]): boolean {
-  const x = goodsNameKeys(a.name);
-  const y = goodsNameKeys(b.name);
+  const x = keysOf(a.name);
+  const y = keysOf(b.name);
   return Boolean(x.whole && y.whole) && (x.whole === y.whole || namesMeet(x, y));
+}
+
+/**
+ * The rows of a list by every name they answer to, so a row meets its
+ * possible namesakes by LOOK-UP instead of a scan of the list (DURABILITY-1).
+ * `named(q)` is a SUPERSET of the rows whose names meet `q` the wide way
+ * (`namesMeet`, or the same whole name) — each clause of `namesMeet` has its
+ * own map — in list order, so the caller's exact test then picks the very row
+ * a scan would have. `counted(n)` is the rows stating exactly that count: a
+ * twin by figures (`sameFigures`) and an equal-count meet both need one.
+ */
+function rowIndex(rows: GoodsList): { named(q: NameKeys): number[]; counted(n: number | null): number[] } {
+  const byWhole = new Map<string, number[]>();
+  const byKey = new Map<string, number[]>();
+  const byInside = new Map<string, number[]>();
+  const byHalf = new Map<string, number[]>();
+  const byCount = new Map<number, number[]>();
+  const put = (map: Map<string, number[]>, k: string, i: number) => {
+    const at = map.get(k);
+    if (!at) map.set(k, [i]);
+    else if (at[at.length - 1] !== i) at.push(i);
+  };
+  rows.forEach((row, i) => {
+    const x = keysOf(row.name);
+    if (x.whole) put(byWhole, x.whole, i);
+    for (const k of x.keys) put(byKey, k, i);
+    for (const k of x.inside) put(byInside, k, i);
+    for (const h of x.halves) put(byHalf, h.key, i);
+    const n = figureOf(row, 'quantity');
+    if (n !== null) {
+      const at = byCount.get(n);
+      if (at) at.push(i);
+      else byCount.set(n, [i]);
+    }
+  });
+  return {
+    named(q) {
+      if (!q.whole) return [];
+      const out = new Set<number>();
+      const take = (at: number[] | undefined) => at?.forEach((i) => out.add(i));
+      // a.keys ∋ q.whole (the same whole name too: a row's keys hold its whole)
+      take(byKey.get(q.whole));
+      // q.keys ∋ a.whole
+      for (const k of q.keys) take(byWhole.get(k));
+      // a row's half meets q: q's whole, or what q's brackets hold
+      take(byHalf.get(q.whole));
+      for (const k of q.inside) take(byHalf.get(k));
+      // q's half meets a row: the row's whole, or what its brackets hold
+      for (const h of q.halves) {
+        take(byWhole.get(h.key));
+        take(byInside.get(h.key));
+      }
+      return [...out].sort((a, b) => a - b);
+    },
+    counted(n) {
+      return n === null ? [] : (byCount.get(n) ?? []);
+    },
+  };
+}
+
+/** The ascending union of two ascending index lists. */
+function unionSorted(a: readonly number[], b: readonly number[]): number[] {
+  return [...new Set([...a, ...b])].sort((x, y) => x - y);
 }
 
 /**
@@ -449,6 +541,9 @@ function sizesOf(name: string): Map<string, number[]> {
   return out;
 }
 
+/** `sizesOf`, read once per name (DURABILITY-1). */
+const sizesOfName = remembered(sizesOf);
+
 /**
  * Do two names say they are two DIFFERENT products, whatever their figures —
  * another model TIER («iPhone 16 Pro» / «iPhone 16 Plus», `tierWords`), or
@@ -456,11 +551,11 @@ function sizesOf(name: string): Map<string, number[]> {
  * unit is a translation's conversion and says nothing. Pure.
  */
 export function namesContradict(a: string, b: string): boolean {
-  const tiersA = tierWords(goodsNameKey(a));
-  const tiersB = tierWords(goodsNameKey(b));
+  const tiersA = tiersOfKey(keyOf(a));
+  const tiersB = tiersOfKey(keyOf(b));
   if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
-  const sizesB = sizesOf(b);
-  for (const [unit, ofA] of sizesOf(a)) {
+  const sizesB = sizesOfName(b);
+  for (const [unit, ofA] of sizesOfName(a)) {
     const ofB = sizesB.get(unit);
     if (!ofB) continue;
     const x = [...ofA].sort((p, q) => p - q);
@@ -493,8 +588,8 @@ function fillGaps(held: GoodsList[number], dup: GoodsList[number]): GoodsList[nu
 
 /** The same row stated again, word for word: the same whole name, code, unit, figures, money and note. */
 function identicalRow(held: GoodsList[number], read: GoodsList[number]): boolean {
-  const whole = goodsNameKey(held.name);
-  if (!whole || whole !== goodsNameKey(read.name)) return false;
+  const whole = keyOf(held.name);
+  if (!whole || whole !== keyOf(read.name)) return false;
   const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
   return (
     same(held.quantity, read.quantity) &&
@@ -560,9 +655,15 @@ export function sameFileAgain(
   if (read.length === 0) return false;
   if (readText.trim() !== '' && !heldTexts.some((t) => t.text.trim() === readText.trim())) return false;
   const claimed = new Set<number>();
+  // An identical row has the same whole name: looked up, never scanned (DURABILITY-1).
+  const byWhole = new Map<string, number[]>();
+  held.forEach((h, i) => {
+    const whole = keyOf(h.name);
+    if (whole) byWhole.set(whole, [...(byWhole.get(whole) ?? []), i]);
+  });
   return read.every((r) => {
-    const at = held.findIndex((h, i) => !claimed.has(i) && identicalRow(h, r));
-    if (at < 0) return false;
+    const at = (byWhole.get(keyOf(r.name)) ?? []).find((i) => !claimed.has(i) && identicalRow(held[i]!, r));
+    if (at === undefined) return false;
     claimed.add(at);
     return true;
   });
@@ -608,15 +709,23 @@ export function foldInvoice(
   const namesakes: string[] = [];
   let again = 0;
   const kinds = (i: number): RowKinds => ({ held: heldKinds[i] ?? null, read: readKind });
+  // Each read row meets its candidates by look-up (DURABILITY-1); the exact
+  // tests below still decide, in list order, so the row a scan picked is the
+  // row picked. A held row's name never changes (`fillGaps` keeps it).
+  const index = rowIndex(out);
   for (const r of read) {
-    const at = out.findIndex((h, i) => !claimed.has(i) && sameRowAgain(h, r, kinds(i)));
-    if (at >= 0) {
+    const named = index.named(keysOf(r.name));
+    const at = named.find((i) => !claimed.has(i) && sameRowAgain(out[i]!, r, kinds(i)));
+    if (at !== undefined) {
       claimed.add(at);
       out[at] = fillGaps(out[at]!, r);
       again += 1;
       continue;
     }
-    const twins = out.flatMap((h, i) => (!claimed.has(i) && !namesMeetLine(h, r) && sameFigures(h, r, kinds(i)) ? [i] : []));
+    // A twin by figures states the same count: only those rows are asked.
+    const twins = index
+      .counted(figureOf(r, 'quantity'))
+      .filter((i) => !claimed.has(i) && !namesMeetLine(out[i]!, r) && sameFigures(out[i]!, r, kinds(i)));
     if (twins.length === 1) {
       const i = twins[0]!;
       claimed.add(i);
@@ -625,7 +734,8 @@ export function foldInvoice(
       again += 1;
       continue;
     }
-    const namesake = out.find((h) => namesMeetLine(h, r));
+    const namesakeAt = named.find((i) => namesMeetLine(out[i]!, r));
+    const namesake = namesakeAt === undefined ? undefined : out[namesakeAt];
     if (namesake) {
       const field = firstField(r);
       const readWords = figureWords(r);
@@ -717,15 +827,21 @@ export function packingOfHeld(
   if (heldPieces !== null && heldPieces > 0 && heldPieces === total(packing)) return true;
   const claimed = new Set<number>();
   let met = 0;
+  // A held row meets by name, or — names apart — by an equal count (a twin by
+  // figures states one too): only those rows are asked, in list order
+  // (DURABILITY-1).
+  const index = rowIndex(held);
   for (const p of packing) {
-    const at = held.findIndex((h, i) => {
+    const candidates = unionSorted(index.named(keysOf(p.name)), index.counted(figureOf(p, 'quantity')));
+    const at = candidates.find((i) => {
       if (claimed.has(i)) return false;
+      const h = held[i]!;
       if (namesMeetLine(h, p)) return !countsDisagree(h, p);
       if (sameFigures(h, p, { held: heldKinds[i] ?? null, read: packingKind })) return true;
       const q = figureOf(h, 'quantity');
       return q !== null && q === figureOf(p, 'quantity') && !namesContradict(h.name, p.name);
     });
-    if (at < 0) continue;
+    if (at === undefined) continue;
     claimed.add(at);
     met += 1;
   }
@@ -748,12 +864,20 @@ export function packingFills(
   if (packingKind !== 'net') return { goods: held, filled: 0 };
   const claimed = new Set<number>();
   let filled = 0;
+  // The matching line's names meet the row's: looked up, in list order (DURABILITY-1).
+  const index = rowIndex(packing);
   const goods = held.map((h, i) => {
     if (figureOf(h, 'weightKg') !== null) return h;
-    const at = packing.findIndex(
-      (p, j) => !claimed.has(j) && figureOf(p, 'weightKg') !== null && p.weightKg! > 0 && sameRowAgain(h, p, { held: heldKinds[i] ?? null, read: packingKind }),
-    );
-    if (at < 0) return h;
+    const at = index
+      .named(keysOf(h.name))
+      .find(
+        (j) =>
+          !claimed.has(j) &&
+          figureOf(packing[j]!, 'weightKg') !== null &&
+          packing[j]!.weightKg! > 0 &&
+          sameRowAgain(h, packing[j]!, { held: heldKinds[i] ?? null, read: packingKind }),
+      );
+    if (at === undefined) return h;
     claimed.add(at);
     filled += 1;
     return { ...h, weightKg: packing[at]!.weightKg! };

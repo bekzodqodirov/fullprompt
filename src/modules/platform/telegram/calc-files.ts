@@ -395,6 +395,18 @@ export function receiveGoodsSheet(
       [...totals.lines, ...cutLines],
     );
   }
+  if (topUp && packing) {
+    // A top-up's packing list is a NOTED file whether or not rows are held
+    // (§1.2.3): the commonest one is the WHOLE shipment's — the stored rows
+    // and the new ones — so it is exactly the list that is not «of the held
+    // goods», and folded as another factory's invoice its rows landed as 🆕
+    // lines beside the request's own, priced twice (as-built review FILES-2,
+    // law-money-5). Its totals go on the note; its rows change nothing.
+    return answer(
+      { invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts] },
+      [notedTotalsNote(label, packingTotals(meta, goods)), ...cutLines],
+    );
+  }
   const first = files.length === 1 ? files[0]! : null;
   if (
     !packing &&
@@ -429,7 +441,11 @@ export function receiveGoodsSheet(
       invoiceTexts: [...state.invoiceTexts, ...texts],
       goodsFiles: [...files, { ...meta, rows: fold.added, text: null }],
     },
-    [readLine, ...cutLines, ...fold.notes],
+    // The fold's own head names the file's rows («3 ta yangi tovar
+    // qo‘shildi», «2 tasi ro‘yxatda bor edi, …»): «N ta tovar o‘qildi» above
+    // it said the same twice, and spent the ONE prompt's 4096 twice per file
+    // (§1.2.4; as-built review CHAT-6).
+    fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : [readLine, ...cutLines],
   );
 }
 
