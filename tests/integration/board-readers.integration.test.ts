@@ -162,6 +162,7 @@ describe('the map and the bot read the one placement', () => {
       ageMinutes: 20 * 60,
       fresh: false,
       gateSince: null,
+      queueSince: {},
     }))!;
     expect(marker.live).toBe(false);
     expect(marker.progress!).toBeGreaterThanOrEqual(cum[at]! / total);
@@ -205,6 +206,7 @@ describe('the map and the bot read the one placement', () => {
       ageMinutes: 60,
       fresh: true,
       gateSince: null,
+      queueSince: {},
     }))!;
     expect({ x: marker.x, y: marker.y }).toEqual(WAREHOUSE_POINTS.AND);
     expect(marker.live).toBe(false);
@@ -226,6 +228,7 @@ describe('the map and the bot read the one placement', () => {
       ageMinutes: 1,
       fresh: true,
       gateSince: new Date(Date.now() - sinceH * HOUR),
+      queueSince: {},
     });
     const fresh = (await truckFor(row, ends('KA', 'TAS1'), {}, atYard(1 / 60)))!;
     expect(fresh).toMatchObject({ atGate: true, overdue: false, dated: false, gateStuck: false });
@@ -457,6 +460,7 @@ describe('the customer reads the same truck', () => {
       ageMinutes: 30,
       fresh: true,
       gateSince: null,
+      queueSince: {},
     }))!;
     // An hour or so left: dated, and the days say so instead of «0–0».
     expect(marker.overdue).toBe(false);

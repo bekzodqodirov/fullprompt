@@ -40,6 +40,12 @@ import { batchByFormerCode, batchByReleasedName, formerCodesFor, formerNames } f
  * everyone.
  */
 
+/** A held queue's given wait in days, as the bot writes it — «2–3», «2,5», «3». */
+function botDays(days: [number, number]): string {
+  const one = (d: number) => String(d).replace('.', ',');
+  return days[0] === days[1] ? one(days[1]) : `${one(days[0])}–${one(days[1])}`;
+}
+
 export interface BotActor extends ScopedActor {
   id: string;
   permissions: Set<string>;
@@ -505,6 +511,14 @@ async function lookupClient(
       : marker.atGate && marker.gateDays !== null
         ? (marker.gateDays === 0 ? ' · bugun keldi' : ` · ${marker.gateDays} kundan beri turibdi`) +
           (marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')
+        : marker.queue
+          ? // Held at Horgos or Yallama (docs/XORGOS-NAVBAT.md, his 5a): the day
+            // of the wait and the wait given; past it, no date — said so.
+            ` · ⏱ ${marker.queue.post === 'khorgos' ? 'Horgos' : 'Yallama'} navbatida ${marker.queue.day}-kun` +
+            (marker.queue.over
+              ? ` — ${marker.queue.typed ? 'kiritilgan' : 'odatdagi'} ${botDays(marker.queue.givenDays)} kundan oshdi`
+              : ` (${botDays(marker.queue.givenDays)} kundan)` +
+                (marker.dated ? ` · ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun` : ''))
         : marker.overdue
           ? ' · ⏱ muddatdan oshdi'
           : marker.dated

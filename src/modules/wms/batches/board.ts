@@ -8,7 +8,7 @@ import { pickupEstimate } from '../pickups/eta';
 import { mayReadPickups, OPEN_STATUSES, staleOpenSql } from '../pickups/service';
 import { daysSince } from '../reports/dashboard-math';
 import { qrlessUncountedByTruck } from '../scanning/service';
-import { checkpointsFor, isGenericRoute } from '../tracking/eta';
+import { checkpointsFor, isGenericRoute, roadHolds } from '../tracking/eta';
 import { CHECKPOINT_KEYS, routeFor, type CheckpointKey } from '../tracking/map-data';
 import { trucksOnRoadRows } from '../tracking/on-road';
 import { zoneOfWarehouse } from '../tracking/place';
@@ -98,7 +98,8 @@ export interface BoardTruck extends CardPlacement {
    * «now»: a newer fix or the schedule walked on from it may have moved the
    * truck since, and the card above says where.
    */
-  pins: { current: CheckpointKey | null; days: number | null; options: CheckpointKey[] } | null;
+  /** `held` = the road holds a truck (Horgos): its border pin is «Horgosda turibdi» (`pinLabel`). */
+  pins: { current: CheckpointKey | null; days: number | null; options: CheckpointKey[]; held: boolean } | null;
 }
 
 export interface BoardTrip extends CardPlacement {
@@ -308,7 +309,12 @@ async function boardTrucks(actor: BoardActor, now: Date): Promise<{ cards: Board
       awaitingCount: awaiting.has(r.id),
       pins:
         pinnable && (pinOptions.length > 0 || storedPin)
-          ? { current: storedPin, days: pinAt ? daysSince(pinAt, today) : null, options: pinOptions }
+          ? {
+              current: storedPin,
+              days: pinAt ? daysSince(pinAt, today) : null,
+              options: pinOptions,
+              held: roadHolds(r.originCode, r.destCode),
+            }
           : null,
     };
   });

@@ -5,7 +5,7 @@ import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
 import zh from '../../messages/zh-CN.json';
 import { KNOWN_TARIFF_ZONES } from '@/modules/wms/calc/tariff-seed';
-import { BORDER_POST_KEYS, CHECKPOINT_LABEL, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
+import { BORDER_POST_KEYS, CHECKPOINT_KEYS, CHECKPOINT_LABEL, pinLabel, routeFor, WAREHOUSE_POINTS } from '@/modules/wms/tracking/map-data';
 
 /**
  * Every key the Horgos round builds at RUNTIME (`seg_${segKey}`, a pin's
@@ -64,6 +64,12 @@ describe('the tracking words the code asks for at runtime', () => {
 
   it('every pin has its label', () => {
     expect(missing(Object.values(CHECKPOINT_LABEL).map((l) => `batches.${l.label}`))).toEqual([]);
+  });
+
+  it('every pin has its label on the Horgos road too (`pinLabel` names its border pin)', () => {
+    const labels = CHECKPOINT_KEYS.flatMap((k) => [pinLabel(k, true).label, pinLabel(k, false).label]);
+    expect(labels).toContain('cpBorderHorgos');
+    expect(missing(labels.map((l) => `batches.${l}`))).toEqual([]);
   });
 
   it('every zone the app can name has its name', () => {

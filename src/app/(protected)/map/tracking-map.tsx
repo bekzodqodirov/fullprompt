@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useTranslations } from 'next-intl';
+import { useFormatter, useTranslations } from 'next-intl';
 import { graticule, LANDMARKS, toSvg, VIEWBOX } from '@/modules/wms/tracking/map-data';
 import { Icon } from '@/components/ui/icon';
 import { PlaceCargo } from './place-cargo';
+import { truckLabel } from './truck-label';
 import {
   pickupPosition,
   type PickupPosition,
@@ -42,6 +43,15 @@ export interface MapTruck {
   segKey: string;
   progress: number | null;
   overdue: boolean;
+  /** Held at Horgos or Yallama — the marker's own (`TruckMarker.queue`). */
+  queue: {
+    post: 'khorgos' | 'yallama';
+    day: number;
+    givenDays: [number, number];
+    typed: boolean;
+    over: boolean;
+    late: boolean;
+  } | null;
   remainingDays: [number, number];
   dated: boolean;
   atGate: boolean;
@@ -127,6 +137,7 @@ export function TrackingMap({
   unplacedCount?: number;
 }) {
   const t = useTranslations('map');
+  const format = useFormatter();
   const [selected, setSelected] = useState<Selected>(
     focusPickupId ? { kind: 'pickup', id: focusPickupId } : null,
   );
@@ -154,6 +165,19 @@ export function TrackingMap({
   // "185 daqiqa oldin" — switch to hours once that is the honest unit.
   const ago = (minutes: number) =>
     minutes < 90 ? t('agoMin', { n: minutes }) : t('agoHour', { n: Math.round(minutes / 60) });
+
+  // A held queue in his 5a words — the board's and the card's sentence
+  // (`truckRoadWords`), from the marker's own days.
+  const queueLine = (q: NonNullable<MapTruck['queue']>) => {
+    const day = (d: number) => format.number(d, { maximumFractionDigits: 2 });
+    const given = day(q.givenDays[0]) === day(q.givenDays[1]) ? day(q.givenDays[1]) : `${day(q.givenDays[0])}–${day(q.givenDays[1])}`;
+    // Literal keys: one built from a value escapes the i18n tripwire (#163).
+    const post = q.post === 'khorgos' ? t('queuePost.khorgos') : t('queuePost.yallama');
+    const params = { post, n: q.day, given };
+    if (q.late) return q.typed ? t('queueLate', params) : t('queueLateUsual', params);
+    if (q.over) return q.typed ? t('queueOver', params) : t('queueOverUsual', params);
+    return t('queueDay', params);
+  };
 
   const selWh = selected?.kind === 'wh' ? warehouses.find((w) => w.code === selected.code) : null;
   const selTruck =
@@ -275,7 +299,9 @@ export function TrackingMap({
               ? `🟢 ${t('liveFix', { ago: ago(selTruck.fixAgeMinutes ?? 0) })}`
               : `🟡 ${t('estimated')}${selTruck.fixAgeMinutes !== null ? ` · ${t('lastFix', { ago: ago(selTruck.fixAgeMinutes) })}` : ''}`}
           </p>
-          <p className={`text-xs font-semibold ${selTruck.overdue || selTruck.gateStuck ? 'text-bad' : ''}`}>
+          <p
+            className={`text-xs font-semibold ${selTruck.overdue || selTruck.gateStuck ? 'text-bad' : selTruck.queue?.over ? 'text-warn' : ''}`}
+          >
             📍 {selTruck.atGate ? t('atGate') : t(`seg_${selTruck.segKey}`)}
             {/* A truck drawn at its phone's fix with NO schedule behind it
                 (an unmapped pair, or since round B a generic one) has no
@@ -285,6 +311,8 @@ export function TrackingMap({
                 and the cabinet map's rule. */}
             {selTruck.atGate && selTruck.gateDays !== null
               ? ` · ${t('atGateDays', { n: selTruck.gateDays })}${selTruck.gateStuck ? ` — ${t('atGateStuck')}` : ''}`
+              : selTruck.queue
+                ? ` · ${queueLine(selTruck.queue)}${selTruck.dated ? ` · ${t('eta', { min: selTruck.remainingDays[0], max: selTruck.remainingDays[1] })}` : ''}`
               : selTruck.overdue
                 ? ` — ${t('overdue')}`
                 : selTruck.dated
@@ -619,7 +647,7 @@ function SvgCorridor({
               strokeWidth={3}
               paintOrder="stroke"
             >
-              {tr.code}
+              {truckLabel(tr)}
             </text>
           </g>
         );

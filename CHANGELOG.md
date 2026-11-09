@@ -1,8 +1,58 @@
 # CHANGELOG
 
+## 2026-11-09 — Horgos va Yallama navbati: mashina tugma bosilmaguncha navbatda turadi
+
+Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migratsiya bor (0140).** Deploydan keyin **migratsiyalar soni 141** bo'lishi kerak va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+
+### Nima o'zgardi
+- **«Joyi aniq emas» endi chiqmaydi (sizning birinchi savolingiz).** Ilgari Horgosdan chiqqan mashina, hech kim tugma bosmasa, jadval bo'yicha navbatdan o'zi «o'tib» ketardi. Toshkentgacha bo'lgan taxminan 7-8 kunlik jadval tugagach esa «Joyi aniq emas» bo'lib qolardi. Endi bunday mashina Horgos navbatida turadi.
+- **Mashina navbatda tugma bosilmaguncha turadi (1a).** Skladdan chiqqach Horgos postiga boradi (1-3 soat) va o'sha yerda kutadi. Kiritilgan kunlar tugashi uni o'tkazib yubormaydi.
+  - Logist **«🇰🇿 Qozog‘istonda»** ni bossa, mashina Qozog'iston bo'ylab yuradi va Yallama navbatida yana kutadi.
+  - **«🇺🇿 O‘zbekistonda»** bosilsa, skladga yuradi. Bu tugmani to'g'ridan-to'g'ri Horgosdan ham bossa bo'ladi.
+- **Haydovchi telefoni haqiqat (4a).** Telefon mashina chegaradan o'tganini ko'rsatsa, tugmasiz ham o'tadi.
+  - Telefon navbatdan xabar berib tursa, hisob qaytadan boshlanmaydi: mashina telefon uni navbatga kelganini ko'rgan paytdan beri turgan deb hisoblanadi.
+  - Post oldidagi 12-16 km lik navbat dumi ham navbat hisoblanadi.
+- **Ekranda (5a).**
+  - Karta, Partiya doskasi, dashboard, «Yuklar» va bot: «Horgos navbatida: 2-kun (2–3 kundan)».
+  - Xaritada mashina post oldida turadi, belgisi yonida «⏳2» (navbatning nechanchi kuni), bosganda to'liq yozuv chiqadi.
+  - Kiritilgan eng ko'p kun o'tsa, sariq rangda «… kiritilgan 2–3 kundan oshdi» chiqadi, sana ko'rsatilmaydi.
+  - Logist kun kiritmagan bo'lsa, «kiritilgan» o'rniga «odatdagi» deyiladi.
+- **Logist navbat kunini mashina navbatda turgan paytda o'zgartirsa,** yangi kunlar o'sha paytdan boshlab hisoblanadi — panelda yozilganidek. Chegaradan o'tgan mashinaga bu raqam ta'sir qilmaydi.
+- **Ogohlantirish (2a, 3a).**
+  - Mashina kiritilgan eng ko'p kundan **1 kun** oshib ketsa, logistlarga Telegramda bitta xabar boradi: qaysi mashina, qaysi navbatda necha kundan beri turibdi, qaysi tugmani bosish kerak, va mashina kartasiga havola. Xuddi shu xabar «📵 haydovchi telefoni jim» xabari kabi egasi va adminlarga ham boradi.
+  - Har navbat uchun bir marta yuboriladi.
+  - Logist haydovchiga qo'ng'iroq qilib, «🛃 Horgosda turibdi» ni bossa (qayta bossa ham), Horgos navbati shu paytdan qaytadan hisoblanadi. «Mashinalar» sahifasida navbat kunini **o'zgartirsa** ham shunday. Bu yangi muddat ham 1 kun oshsa, yana bitta xabar boradi. O'sha raqamni qayta saqlash esa hisobni qaytadan boshlamaydi — faqat «tekshirildi» deb vaqtini yangilaydi, avvalgidek.
+  - Bir nechta mashinali xabarda har navbat uchun o'z tugmasi yoziladi: Horgosdagilarga «🇰🇿 Qozog‘istonda» yoki «🇺🇿 O‘zbekistonda», Yallamadagilarga faqat «🇺🇿 O‘zbekistonda» va «🛃 Horgosda turibdi» ni bosmang (u mashinani Horgos navbatiga qaytaradi).
+  - Bir vaqtda bir nechta mashina kechiksa, har bir logistga ro'yxat bo'lgan bitta xabar boradi.
+  - Xabarlar faqat ish vaqtida yuboriladi (08:00–19:30). Profildagi «Ogohlantirishlar» belgisi bu xabarni ham o'chiradi.
+- **Kechikkan mashina** (1 kundan oshgan) dashboard va doskada «kechikkan» qatoriga o'tadi, ro'yxatda yuqoriga chiqadi, yozuvi «… haydovchi bilan bog‘laning» bilan tugaydi. Mijoz kabinetida navbat muddati o'tgan mashinaga sana ko'rsatilmaydi.
+- «Mashinalar» sahifasidagi navbat paneli ostiga shu qoida yozib qo'yildi.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. Migratsiyalar soni **141** ekanini va `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishini tekshiring. Kam chiqsa, `migrate` konteynerining o'z chiqishini o'qing.
+6. Pastdagi «Mashina narxi har bitimga …» yozuvi ham shu deploy bilan chiqsa (u hali deploy qilinmagan bo'lsa), o'sha yozuvning 6-qadamini ham bajaring — eski bekor qilingan mashinalar ro'yxati.
+
+### Bilib qo'ying
+- **Deploy kuni yo'ldagi Horgos mashinalari.** Ilgari tugma bosish shart emas edi. Shuning uchun hozir yo'lda bo'lgan, lekin hech kim «Qozog‘istonda»/«O‘zbekistonda» ni bosmagan mashinalar deploydan keyin Horgos navbatida «kechikkan» bo'lib ko'rinadi.
+  - Ertalab 08:00 da logistlarga ularning ro'yxati bitta xabar bo'lib keladi.
+  - Logist har biri uchun haydovchidan so'rab, to'g'ri tugmani bossin.
+  - Shu paytgacha bunday mashinaning mijoz kabinetidagi chizig'i Horgosda turadi va sanasi ko'rinmaydi.
+- **Qashqar yo'li o'zgarmadi.** Irkeshtam navbati kunlari kiritilmaydi, shuning uchun u yerda mashina avvalgidek jadval bo'yicha yuradi.
+- **Horgos yo'lida «Chegarada» tugmasi «🛃 Horgosda turibdi» deb nomlandi.** Yallamadagi mashina ham «chegarada», shuning uchun eski nom chalg'itardi: uni bosish mashinani Horgosga qaytaradi.
+- **Horgos yo'lida bosilgan belgi qayta bosilganda o'chmaydi.** Ilgari «Qozog‘istonda» ni «tasdiqlash» uchun yana bosish uni o'chirardi va mashina Horgos navbatiga «kechikkan» bo'lib qaytardi.
+  - «🛃 Horgosda turibdi» ni qayta bossangiz, Horgos navbati shu paytdan hisoblanadi.
+  - «Qozog‘istonda» yoki «O‘zbekistonda» ni qayta bosish hech narsani o'zgartirmaydi — faqat haydovchi telefoni mashinani orqaroqda (masalan hali Horgosda) ko'rsatib turgan bo'lsa, «hozir shu yerda» deb yangilanadi. Shunda xabardagi tugmani bosish ishlaydi.
+  - Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Xato bosilgan belgini o'chirib bo'lmaydi — to'g'ri joyni bosing; agar to'g'ri joy Horgos navbati bo'lsa, navbat shu bosilgan paytdan hisoblanadi. Boshqa yo'llarda tugma avvalgidek ishlaydi.
+- **Logist «Qozog‘istonda» ni erta bossa-yu, haydovchi telefoni hali Horgos navbatidan xabar bersa,** mashina Horgosda ko'rinadi va navbat skladdan chiqqandan beri hisoblanadi (ilgari har xabarda «1-kun» dan qaytadan boshlanardi va hech qachon kechikmasdi).
+- Telefon bilan navbatda 12-16 km dan uzoqroq turgan mashina hali ham «postga ketyapti» deb ko'rinadi.
+
 ## 2026-11-09 — Mashina narxi har bitimga bitta jadvalda; bekor qilingan partiya raqami qaytadi
 
-Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migratsiya yo'q** — migratsiyalar soni **140** bo'lib qoladi, shuning uchun deploydan keyin tekshiradigan narsa `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi.
+Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migratsiya yo'q** — migratsiyalar soni **140** bo'lib qoladi, shuning uchun deploydan keyin tekshiradigan narsa `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatishi. (Yuqoridagi Horgos yozuvi bilan birga deploy qilinsa, son **141** bo'ladi — u o'zining 0140 migratsiyasini olib keladi.)
 
 ### Buxgalter / admin uchun — mashinaning «Narx» bo'limi
 - **Bitta mijozning bir mashinada 10-15 ta bitimi bo'lsa, endi hammasiga bitta jadvalda narx qo'yiladi.** Har bitim — bitta qator (bitim raqami, tovar, kub, kg), bitimsiz yuki bo'lsa — «Bitimsiz» qatori. Sana va valyuta tepada bitta. Bitta «🧾 Saqlash» hammasini birdaniga yozadi. Ilgari har bitimga alohida bosib, har safar tasdiqlab chiqish kerak edi.
