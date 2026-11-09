@@ -33,6 +33,7 @@ import { INTAKE_TIMEOUT_MS } from '@/modules/wms/calc/intake-ai';
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 import {
   ANALYSIS_STALE_MS,
+  INTAKE_CODING_BUDGET_MS,
   INTAKE_DELIVERY_RESERVE_MS,
   INTAKE_FILES_BUDGET_MS,
   INTAKE_HYDRATE_WAIT_MS,
@@ -250,9 +251,17 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
 });
 
 describe('the one wall clock and its workers (§7.2.1, §7.2.2)', () => {
-  it('hydrate + files + model + delivery + slack fit pg-boss’s expiry, less the handler’s own 10 s', () => {
+  it('hydrate + files + model + coding + delivery + slack fit pg-boss’s expiry, less the handler’s own 10 s', () => {
+    // The coding step (docs/IKKI-ESHIK.md §3.1) is a step of its own, inside
+    // the sum: two pooled reads after the model, before the table's laws.
+    expect(INTAKE_CODING_BUDGET_MS).toBeGreaterThan(0);
     expect(
-      INTAKE_HYDRATE_WAIT_MS + INTAKE_FILES_BUDGET_MS + INTAKE_TIMEOUT_MS + INTAKE_DELIVERY_RESERVE_MS + INTAKE_STEP_SLACK_MS,
+      INTAKE_HYDRATE_WAIT_MS +
+        INTAKE_FILES_BUDGET_MS +
+        INTAKE_TIMEOUT_MS +
+        INTAKE_CODING_BUDGET_MS +
+        INTAKE_DELIVERY_RESERVE_MS +
+        INTAKE_STEP_SLACK_MS,
     ).toBeLessThanOrEqual(INTAKE_READ_EXPIRE_S * 1000 - 10_000);
     expect(INTAKE_READ_EXPIRE_S).toBe(300);
   });

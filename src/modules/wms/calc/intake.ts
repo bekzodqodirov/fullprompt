@@ -310,6 +310,8 @@ export interface CalcItemFact {
   unit: string | null;
   amount: number | null;
   tnvedCode: string | null;
+  /** Where the code came from (§3.1), carried to the INSERT; absent = not said. */
+  tnvedSource?: CalcGoodsFact['tnvedSource'];
   note: string | null;
   bazaBasis: BazaBasis | null;
   law: NeedLaw | null | undefined;
@@ -404,6 +406,7 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
       unit: g.unit?.trim() || null,
       amount: typedFigure(g.amount),
       tnvedCode: g.tnvedCode?.trim() || null,
+      ...(g.tnvedSource && g.tnvedCode?.trim() ? { tnvedSource: g.tnvedSource } : {}),
       note:
         [g.note?.trim() || null, fromTotal ? (facts.weightNetto ? LONE_NETTO_NOTE : LONE_WEIGHT_NOTE) : null]
           .filter(Boolean)
@@ -432,6 +435,10 @@ export function landingItems(facts: CalcFacts) {
     measureQty: g.measureQty,
     amount: g.amount,
     tnvedCode: g.tnvedCode,
+    // …and where the code came from, so the INSERT marks a model's proposal
+    // (`AI_CODE_NOTE`, docs/IKKI-ESHIK.md §3.1) — the reading coded the row by
+    // the very function the INSERT asks.
+    ...(g.tnvedSource ? { tnvedSource: g.tnvedSource } : {}),
     note: g.note,
   }));
 }

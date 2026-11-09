@@ -5,6 +5,7 @@ import { enqueue, jobState, type JobState } from '../jobs/boss';
 import {
   analyzeCollected,
   answeredRoute,
+  codeCollectedGoods,
   mergeTotalsAnswer,
   placeByName,
   sameRouteAnswer,
@@ -64,7 +65,14 @@ export const INTAKE_FILES_BUDGET_MS = 30_000;
  */
 export const INTAKE_DELIVERY_RESERVE_MS = 70_000;
 /** The book's laws, the settle's flush and the bill. */
-export const INTAKE_STEP_SLACK_MS = 30_000;
+export const INTAKE_STEP_SLACK_MS = 20_000;
+/**
+ * The reading's coding of the rows (docs/IKKI-ESHIK.md §3.1): two pooled
+ * reads — the sealed memory and the exact-key book — for every row without a
+ * code of its own. Past it the reading keeps the codes it has. Taken out of
+ * the slack, which was sized when the laws read was its biggest step.
+ */
+export const INTAKE_CODING_BUDGET_MS = 10_000;
 /**
  * How long a job fetched in the boot window waits for this process to hydrate
  * the collections (durability-9) — normally milliseconds. ONE home, the
@@ -456,7 +464,7 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
   // answer could not be stored, and the next process reads again anyway.
   if (isStopping()) return handOn(deadline);
   const { INTAKE_TIMEOUT_MS } = await import('../../wms/calc/intake-ai');
-  const leash = Math.min(INTAKE_TIMEOUT_MS, deadline - Date.now() - INTAKE_DELIVERY_RESERVE_MS);
+  const leash = Math.min(INTAKE_TIMEOUT_MS, deadline - Date.now() - INTAKE_DELIVERY_RESERVE_MS - INTAKE_CODING_BUDGET_MS);
   // Too little left to read well: the model is not called (a leash of nothing
   // is no call) and the reading settles as R1's «timeout», in words.
   const analysed = await analyzeCollected(state, files, { timeoutMs: leash < INTAKE_MIN_LEASH_MS ? 0 : leash });
@@ -491,13 +499,18 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
   // the same answer again (review adv-12). It is the reading's end, said once.
   let pendingReply: NonNullable<IntakeState['pendingReply']>;
   try {
+    // The rows coded FIRST (docs/IKKI-ESHIK.md §3.1), on the pool and under
+    // its own budget: the laws below are read for the codes the rows will
+    // carry, so the unit the table asks is the law of the code the INSERT
+    // stores. It never throws — past its budget it keeps the codes it has.
+    const coded = await codeCollectedGoods(analysed, { timeoutMs: INTAKE_CODING_BUDGET_MS });
     // The laws on the pool BEFORE the live collection is taken: from here to
     // the store's write nothing is awaited, so no press can land in between
     // and the words stored are the words of the state stored (K's review, U4).
     // The table's own context (laws, the wms module, an addition's stale
     // totals): the table this job sends is the one every later edit redraws.
-    const tc = await tableContext(analysed);
-    const outcome = settleAnalysis(activeIntake(chatId), state, analysed, data.token);
+    const tc = await tableContext(coded);
+    const outcome = settleAnalysis(activeIntake(chatId), state, coded, data.token);
     if (outcome.kind === 'gone') return;
     let patch: Partial<IntakeState>;
     let text: string;

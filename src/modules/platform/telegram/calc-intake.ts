@@ -3,6 +3,8 @@ import { staffForChat } from './staff-bot';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
 import type { TableTarget } from '../../wms/calc/line-address';
+import type { CodedRow, CodingLookups, CodingRow } from '../../wms/calc/row-coding';
+import type { KnownCode } from '../../wms/calc/intake-ai';
 import type { IntakeFiles } from './calc-files';
 import {
   goodsNameKeys,
@@ -694,7 +696,11 @@ export function placeByName(
  * «yangi kod yozilmadi» (review adv-11). Pure.
  */
 export function rowPatchOf(row: CalcGoodsFact, patch: Partial<CalcGoodsFact>): Partial<CalcGoodsFact> {
-  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return patch;
+  // A code the seller typed is the row's OWN from here on (docs/IKKI-ESHIK.md
+  // §3.1): it stays on top of the reading's coding, and never lands marked as
+  // the model's proposal it replaced.
+  const typed = (p: Partial<CalcGoodsFact>) => (p.tnvedCode ? { ...p, tnvedSource: 'row' as const } : p);
+  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return typed(patch);
   const rest = { ...patch };
   delete rest.tnvedCode;
   return rest;
@@ -1264,6 +1270,10 @@ export async function analyzeCollected(
   // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
   // (`amend`), or a returned one carried into a new collection (`seed`).
   const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
+  // The model codes the Excel's rows only on the AI door, and only on a first
+  // collection: an add or seeded collection's rows are the request's, and its
+  // new lines are coded by the memory and the book (`codeCollectedGoods`).
+  const codeKnown = state.ai && !kept && invoice.length > 0;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -1297,8 +1307,11 @@ export async function analyzeCollected(
           sheets: state.sheetTexts,
           contextSheets: state.invoiceTexts,
           // Every name: `analyzeIntake` shows what fits its character budget
-          // and counts the rest.
-          knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
+          // and counts the rest. On the AI door they are ALWAYS shown, numbered,
+          // and the model codes them by number (docs/IKKI-ESHIK.md §3.1); the
+          // goods it lists stay «only new goods».
+          knownGoods: state.aiGoods === 'add' || codeKnown ? invoice.map((g) => g.name) : undefined,
+          ...(codeKnown ? { codeKnown: true } : {}),
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
@@ -1317,7 +1330,9 @@ export async function analyzeCollected(
   const picked = pickGoods({
     invoice,
     aiGoods: state.aiGoods,
-    model: ai ? (ai.facts.goods ?? []) : null,
+    // A code on a model-read line is the model's PROPOSAL, never the row's own
+    // (§3.1): the coding asks the memory and the book first.
+    model: ai ? (ai.facts.goods ?? []).map(modelCoded) : null,
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
   });
@@ -1363,7 +1378,11 @@ export async function analyzeCollected(
   // The seller's per-line answers go back on top (P1.3) — a re-read after «➕
   // Yana ma'lumot» must not erase them — and where each landed is what the
   // collection keeps (`placeByName`'s write-back, regression-7).
-  const placed = placeByName(picked.goods, state.lineAnswers);
+  // The model's codes for the Excel's rows, each by the index it was shown
+  // with and re-checked against the row there (`withKnownCodes`) — under the
+  // seller's answers, which go on top next.
+  const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
+  const placed = placeByName(coded, state.lineAnswers);
   // The totals in their rank (docs/IKKI-ESHIK.md §1.2.5): what the seller
   // typed, then what a packing list GAVE (`fileTotals` — its gross Σ, or a
   // net Σ the freight sections refuse as a brutto, `totalWeightFrom`), then
@@ -1434,6 +1453,99 @@ export async function analyzeCollected(
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
   };
+}
+
+/** A model-read line, its code marked as the model's proposal (§3.1). Pure. */
+function modelCoded(g: GoodsList[number]): GoodsList[number] {
+  return g.tnvedCode?.trim() ? { ...g, tnvedSource: 'model' } : g;
+}
+
+/**
+ * The model's codes for the Excel's rows (`known_codes`, docs/IKKI-ESHIK.md
+ * §3.1), put on the rows as the model's proposal. `names` is the list the
+ * model was shown, in the order shown; each code names its row by INDEX into
+ * it, and is re-checked against the row there — the `pickImportRows` idiom:
+ * a row that is not there, is not the row that was shown, is a stored row
+ * (the VED's), or already has a code of its own takes nothing. Pure.
+ */
+export function withKnownCodes(
+  goods: GoodsList,
+  names: readonly string[],
+  codes: readonly KnownCode[],
+): GoodsList {
+  if (codes.length === 0) return goods;
+  const out = [...goods];
+  for (const { index, code } of codes) {
+    const row = out[index];
+    if (!row || row.itemId) continue;
+    if (row.name.trim() !== (names[index] ?? '').trim()) continue;
+    if (row.tnvedCode?.trim()) continue;
+    out[index] = { ...row, tnvedCode: code, tnvedSource: 'model' };
+  }
+  return out;
+}
+
+/** A collected row as the one coding function reads it: a model's code is step 4, any other the row's own. */
+function codingRowOf(g: GoodsList[number]): CodingRow {
+  const model = g.tnvedSource === 'model';
+  return {
+    name: g.name,
+    own: model ? null : (g.tnvedCode ?? null),
+    ownSource: model ? null : (g.tnvedSource ?? null),
+    model: model ? (g.tnvedCode ?? null) : null,
+  };
+}
+
+/** The row with the code the coding chose, and where it came from. */
+function withCoded(g: GoodsList[number], c: CodedRow): GoodsList[number] {
+  if (!c.code || !c.source) return g;
+  return { ...g, tnvedCode: c.code, tnvedSource: c.source };
+}
+
+/**
+ * The reading codes the rows (docs/IKKI-ESHIK.md §3.1), by the ONE function
+ * `openCalcRequest` asks before its INSERT (`row-coding.ts`): the row's own
+ * code, the sealed memory, the exact-key book, the model's proposal — so the
+ * table asks the law's unit of the code the card will carry. A stored row
+ * (the add door's, `itemId`) is the VED's and is left as it is.
+ *
+ * Run by the reading job on the POOL, after the model and the bill and before
+ * the table's laws are read. It never throws into the settle: past its own
+ * budget, or on any error, the reading keeps the codes it already has — the
+ * Excel's own and the model's — and says so in the log. Deterministic over
+ * the dictionaries, so a retry codes identically.
+ */
+export async function codeCollectedGoods<S extends IntakeState>(
+  state: S,
+  /** `timeoutMs`: the reading job's `INTAKE_CODING_BUDGET_MS`, part of its pinned time sum. */
+  opts: { timeoutMs: number; lookups?: CodingLookups },
+): Promise<S> {
+  const goods = state.facts.goods ?? [];
+  const at = goods.flatMap((g, i) => (g.itemId ? [] : [i]));
+  if (at.length === 0) return state;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const { codeRows } = await import('../../wms/calc/row-coding');
+    const asked = codeRows(at.map((i) => codingRowOf(goods[i]!)), opts.lookups);
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), opts.timeoutMs);
+    });
+    const coded = await Promise.race([asked, late]);
+    if (!coded) {
+      logger.warn({ rows: at.length }, '[calc-intake] coding past its budget — the codes the reading has stand');
+      return state;
+    }
+    const next = [...goods];
+    at.forEach((i, k) => {
+      next[i] = withCoded(goods[i]!, coded[k]!);
+    });
+    return { ...state, facts: { ...state.facts, goods: next } };
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] rows not coded — the codes the reading has stand');
+    return state;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /**

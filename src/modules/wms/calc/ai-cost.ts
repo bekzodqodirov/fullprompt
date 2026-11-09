@@ -131,3 +131,16 @@ export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<numbe
   `);
   return Math.max(0, configured - Number(row?.used ?? 0));
 }
+
+/**
+ * Will the AI VED pass have a model today — a key AND budget left? The two
+ * mean the same thing to a reader that says what happens next: the table's
+ * «↳ kod yo‘q — AI hisoblashda topadi» is a promise only while both hold, and
+ * «VED xodimi qo‘yadi» otherwise (docs/IKKI-ESHIK.md §3.1). An unreadable
+ * ledger is not a spent budget (as the reading's own gate reads it).
+ */
+export async function aiCalcAvailable(): Promise<boolean> {
+  const { aiConfigured } = await import('../../platform/ai/model');
+  if (!aiConfigured()) return false;
+  return (await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY)) > 0;
+}

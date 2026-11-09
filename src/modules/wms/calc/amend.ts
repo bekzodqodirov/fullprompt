@@ -7,6 +7,7 @@ import { logger } from '../../platform/logger';
 import { THREAD_TEXT_MAX } from '../../platform/notifications/thread-ref';
 import type { AmendBase, AmendBaseItem, AmendSubmission } from './amend-types';
 import { doorRow } from './door-row';
+import { codedNote } from './row-coding';
 import { figureLabel, MATERIAL_NOTE_CAP, REQUIRED_FIELDS, SECTION_LABEL, weightFromTotalNote, type CalcGoodsFact, type CalcSection } from './intake';
 import { linesVolumeM3, roundM3, volumeIsLinesSum } from './line-totals';
 import { needShortUz, type NeedUnit } from './needs';
@@ -448,7 +449,10 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
       measureUnit: row.measureUnit,
       measureQty: row.measureQty,
       tnvedCode: row.tnvedCode,
-      note: row.note,
+      // A code the reading's model proposed lands marked, as the INSERT's
+      // rows do (`AI_CODE_NOTE`, docs/IKKI-ESHIK.md §3.1) — only while the
+      // door kept it.
+      note: codedNote(row.note, row.tnvedCode ? line.tnvedSource : null),
     });
   });
 
