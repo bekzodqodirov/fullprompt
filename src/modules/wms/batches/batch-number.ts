@@ -119,8 +119,13 @@ async function heldNumberOf(handle: Db | Tx, batchId: string, prefix: string, we
 
 /** The card's line — durable, read from the truck's own rows. */
 export type NumberState =
-  /** Every number the give-back freed from this truck — usually one; two when it held a vacated one too. */
-  | { kind: 'returned'; numbers: string[] }
+  /**
+   * Every number the give-back freed from this truck — usually one; two when
+   * it held a vacated one too. `taken`, only when there is one: those of them
+   * a truck has since carried on the road under a rename — burned for good
+   * (no mint will hand them out), named by that truck as it is called now.
+   */
+  | { kind: 'returned'; numbers: string[]; taken?: { number: string; name: string }[] }
   | { kind: 'kept'; why: NumberKeptWhy; number?: string; name?: string };
 
 /** How far the explainer walks from the counter's top before it says «newer» — a busy prefix's top is live. */
@@ -130,7 +135,8 @@ const EXPLAIN_WALK = 200;
  * What became of a cancelled truck's number — `null` for a truck that is not
  * cancelled. Read-only, on the POOL, the same predicate the writer asks: a
  * truck the give-back renamed (or released from its plate) says «Raqami
- * qaytarildi» and names the numbers its release rows freed; any other says
+ * qaytarildi» and names the numbers its release rows freed (and, of those,
+ * any a truck has since carried on the road: `taken`); any other says
  * «Raqam qaytmadi» and the reason that stands NOW — the first number from the
  * counter's top down that does not come back, or the truck's own (the number
  * it HOLDS, `heldNumberOf`). `pending` is a truck the rule would release that
@@ -154,7 +160,19 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   if (!row || row.status !== 'cancelled') return null;
   const released = await releasedNumbersOf(db, batchId);
   if (released) {
-    return { kind: 'returned', numbers: released.length ? released : [(await firstNameOf(db, batchId)) ?? row.code] };
+    const numbers = released.length ? released : [(await firstNameOf(db, batchId)) ?? row.code];
+    // «Keyingi mashinaga beriladi» is a promise about the MINT, so it is read
+    // live and not from the release row (review RVF3-2): a number given back
+    // and then worn on the road by another truck under a hand rename is a
+    // road former name, which no mint ever hands out again. The verdict's
+    // holder is then the truck that carried it (`numberHolderOf`'s road-first
+    // rule), by the name it wears now.
+    const taken: { number: string; name: string }[] = [];
+    for (const number of numbers) {
+      const { holder } = await numberVerdict(db, number);
+      if (holder && holder.id !== batchId && holder.roadFormer) taken.push({ number, name: holder.code });
+    }
+    return taken.length ? { kind: 'returned', numbers, taken } : { kind: 'returned', numbers };
   }
   const prefix = batchSeqPrefix({ code: row.whCode, batchPrefix: row.batchPrefix });
   const held = await heldNumberOf(db, batchId, prefix, row.code);

@@ -4,7 +4,17 @@ import postgres from 'postgres';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { auditLog, batches, clients, clientTransactions, users, warehouses } from '@/modules/platform/db/schema';
+import {
+  auditLog,
+  batches,
+  boxes,
+  clients,
+  clientTransactions,
+  receiptLots,
+  receipts,
+  users,
+  warehouses,
+} from '@/modules/platform/db/schema';
 import { writeAudit } from '@/modules/platform/audit/service';
 import { bumpCounter, nextBatchCode, readCounter } from '@/modules/wms/codes';
 import { batchNumberReport, batchNumberState } from '@/modules/wms/batches/batch-number';
@@ -12,6 +22,7 @@ import {
   batchByFormerCode,
   codeEverWorn,
   formerCodesFor,
+  numberHolderOf,
 } from '@/modules/wms/batches/former-codes';
 import { releaseTrailingCodes, renameBatch } from '@/modules/wms/batches/rename';
 import { renameDoorFor } from '@/modules/wms/batches/rename-door';
@@ -47,6 +58,9 @@ const ctx = () => ({ actorId });
 const trucks: string[] = [];
 const prefixes: string[] = [];
 const moneyRows: string[] = [];
+const cartonIds: string[] = [];
+const lotIds: string[] = [];
+const receiptIds: string[] = [];
 
 /** A fresh sequence for one test: the origin's prefix, as /admin/warehouses would set it. */
 async function freshPrefix(): Promise<string> {
@@ -85,6 +99,57 @@ const releaseRows = async (id: string) =>
 
 const planner = () =>
   renameDoorFor({ id: actorId, permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] });
+
+/** A rename before departure, through the service (no reason — not a former name). */
+const renameLoading = async (id: string, code: string) =>
+  renameBatch({ batchId: id, code, seen: { code: await codeOf(id), stage: 'loading' } }, planner(), ctx());
+
+/** A rename ON THE ROAD, through the service's road branch (a reason — a former name for ever). */
+const renameRoad = async (id: string, code: string, reason: string) =>
+  renameBatch({ batchId: id, code, reason, seen: { code: await codeOf(id), stage: 'road' } }, planner(), ctx());
+
+/**
+ * Departs a truck with one carton aboard: the road stage of a rename needs a
+ * carton still to unload (`awaitingUnloadCount`), and that is all it reads.
+ */
+async function departWithCarton(id: string) {
+  const [receipt] = await db
+    .insert(receipts)
+    .values({ warehouseId: originId, clientId, status: 'confirmed', confirmedAt: new Date(), createdBy: actorId })
+    .returning();
+  receiptIds.push(receipt!.id);
+  const [lot] = await db
+    .insert(receiptLots)
+    .values({
+      receiptId: receipt!.id,
+      seq: 1,
+      letter: 'A',
+      dimsMode: 'mixed',
+      productNameZh: '号码',
+      boxCount: 1,
+      totalWeightKg: '10',
+      totalVolumeM3: '0.2',
+    })
+    .returning();
+  lotIds.push(lot!.id);
+  const [carton] = await db
+    .insert(boxes)
+    .values({ lotId: lot!.id, shortCode: `NRLB${tag()}`, seqInLot: 1, status: 'in_transit', currentBatchId: id })
+    .returning();
+  cartonIds.push(carton!.id);
+  await db.update(batches).set({ status: 'in_transit', departedAt: new Date() }).where(eq(batches.id, id));
+}
+
+/** «Agentga yuborildi» as the action writes it — the column and its audit row (batch-actions-server.ts). */
+async function tickAgent(id: string, sent: boolean) {
+  await db.update(batches).set({ sentToAgentAt: sent ? '2026-11-09' : null }).where(eq(batches.id, id));
+  await writeAudit(db, { actorId, warehouseId: originId }, {
+    entityType: 'batch',
+    entityId: id,
+    action: 'update',
+    after: { sentToAgent: sent, frozenLots: 0 },
+  });
+}
 const boss: BotActor = { id: '', permissions: new Set(['plans.manage']), warehouseScoped: false, warehouseIds: [] };
 
 /** Somebody else's transaction, held open on its own connection. */
@@ -138,6 +203,9 @@ beforeAll(async () => {
 afterAll(async () => {
   try {
     if (moneyRows.length) await db.delete(clientTransactions).where(inArray(clientTransactions.id, moneyRows));
+    if (cartonIds.length) await db.delete(boxes).where(inArray(boxes.id, cartonIds));
+    if (lotIds.length) await db.delete(receiptLots).where(inArray(receiptLots.id, lotIds));
+    if (receiptIds.length) await db.delete(receipts).where(inArray(receipts.id, receiptIds));
     if (trucks.length) await db.delete(batches).where(inArray(batches.id, trucks));
     for (const prefix of prefixes) {
       await db.execute(sql`DELETE FROM counters WHERE kind = 'batch_seq' AND scope_key = ${prefix}`);
@@ -392,6 +460,78 @@ describe('papers at the agent keep the number (his 7a)', () => {
   });
 });
 
+describe('papers at the agent keep the NUMBER, whoever holds it (review RVF3-1)', () => {
+  /**
+   * X is minted 002 and renamed to its plate (it stays live); Y takes the
+   * vacated «002» by hand, its papers go to the agent under 002, and Y moves
+   * away again before departure. The minter rule (C2) makes X the holder of
+   * 002, and X was never ticked — but the agent holds Y's papers under 002.
+   */
+  async function agentShape(opts: { unticked: boolean }) {
+    const prefix = await freshPrefix();
+    const y = await mint(prefix); // 001
+    const x = await mint(prefix); // 002, the top
+    const plate = `01G${tag()}BA`;
+    await renameLoading(x.id, plate);
+    await renameLoading(y.id, x.code);
+    await tickAgent(y.id, true);
+    if (opts.unticked) await tickAgent(y.id, false);
+    const away = `02G${tag()}CC`;
+    await renameLoading(y.id, away);
+    return { prefix, x, y, plate, away };
+  }
+
+  for (const unticked of [false, true]) {
+    it(`the minter’s cancel keeps it «agent»${unticked ? ' — an untick does not un-send the colleague’s papers' : ''}`, async () => {
+      const { prefix, x, plate } = await agentShape({ unticked });
+      const res = await cancelBatch(x.id, 'xato', ctx());
+      expect(res.number).toEqual({ kind: 'kept', why: 'agent', newer: plate, number: x.code });
+      expect(await counterOf(prefix)).toBe(2);
+      expect(await releaseRows(x.id)).toHaveLength(0);
+      expect(await codeOf(x.id)).toBe(plate);
+      // The card says the same thing, durably.
+      expect(await batchNumberState(x.id)).toEqual({ kind: 'kept', why: 'agent', number: x.code, name: plate });
+      // …and the next truck is 003, never a second 002 beside the papers.
+      expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+    });
+  }
+
+  it('--apply over rows cancelled the old way agrees: the dry run says «agent», the walk gives nothing back', async () => {
+    const { prefix, x, plate, away } = await agentShape({ unticked: false });
+    // Cancelled by a path that ran no give-back (rows from before the deploy).
+    await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, x.id));
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.wouldReturn).toEqual([]);
+    expect(report!.stoppedBy).toEqual({ why: 'agent', number: x.code, name: plate });
+    expect(report!.gaps).toEqual([
+      { number: `${prefix}-001`, kind: 'renamed_waiting', name: away },
+      { number: x.code, kind: 'cancelled', atAgent: true, name: plate },
+    ]);
+    expect(await releaseTrailingCodes(prefix, { actorId: null })).toEqual({
+      released: [],
+      stop: { why: 'agent', number: x.code, name: plate },
+    });
+    expect(await counterOf(prefix)).toBe(2);
+    expect(await releaseRows(x.id)).toHaveLength(0);
+  });
+
+  it('the same for a WEARER: a third truck renamed to the number and cancelled gives back only what is above it', async () => {
+    const { prefix, x } = await agentShape({ unticked: false });
+    const w = await mint(prefix); // 003, the top
+    await renameLoading(w.id, x.code); // W wears 002 now
+    const res = await cancelBatch(w.id, 'xato', ctx());
+    // 003 (W's own) comes back; 002 — W wears it, Y's papers went under it — stays.
+    expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-003`] });
+    expect(await codeOf(w.id)).toBe(x.code);
+    expect(await counterOf(prefix)).toBe(2);
+    expect(await releaseTrailingCodes(prefix, ctx())).toEqual({
+      released: [],
+      stop: { why: 'agent', number: x.code, name: x.code },
+    });
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+});
+
 describe('what else keeps a number', () => {
   it('the warehouse prefix changed since the mint → kept «prefix»', async () => {
     const prefix = await freshPrefix();
@@ -438,6 +578,74 @@ describe('what else keeps a number', () => {
     await expect(cancelBatch(a.id, 'xato', ctx())).rejects.toMatchObject({ code: 'batch_has_charges' });
     expect(await codeOf(a.id)).toBe(a.code);
     expect(await counterOf(prefix)).toBe(1);
+  });
+});
+
+describe('a number given back and then carried on the road by another truck (review RVF3-2)', () => {
+  it('the dry run, --apply and the bot name the truck that carried it; the giver’s card stops promising it', async () => {
+    const prefix = await freshPrefix();
+    const r = await mint(prefix); // 001
+    const b = await mint(prefix); // 002
+    const c = await mint(prefix); // 003
+    expect((await cancelBatch(c.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [c.code] });
+    expect((await cancelBatch(b.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [b.code] });
+    expect(await counterOf(prefix)).toBe(1);
+    // R leaves and is renamed on the road to the free «…-002» (a partner's papers)…
+    await departWithCarton(r.id);
+    await renameRoad(r.id, b.code, 'hamkor raqami');
+    // …a truck minted and cancelled meanwhile brings the counter back to 2…
+    const d = await mint(prefix);
+    expect(d.code).toBe(`${prefix}-003`);
+    expect((await cancelBatch(d.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [d.code] });
+    expect(await counterOf(prefix)).toBe(2);
+    // …and R is renamed on the road again, away from it: 002 is burned for good.
+    const kz = `01K${tag()}KZ`;
+    await renameRoad(r.id, kz, 'yana hamkor');
+    expect(await codeEverWorn(db, b.code, null)).toBe(true);
+
+    // The holder of 002 is the truck that carried it, as ⌘K and the bot say.
+    expect((await numberHolderOf(db, b.code))?.id).toBe(r.id);
+    expect((await batchByFormerCode(b.code))?.batchId).toBe(r.id);
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.gaps).toEqual([
+      { number: `${prefix}-001`, kind: 'renamed_left', name: kz },
+      { number: b.code, kind: 'renamed_left', name: kz },
+    ]);
+    expect(report!.stoppedBy).toEqual({ why: 'renamed_left', number: b.code, name: kz });
+    expect(await releaseTrailingCodes(prefix, { actorId: null })).toEqual({
+      released: [],
+      stop: { why: 'renamed_left', number: b.code, name: kz },
+    });
+
+    // B's card: its number came back once, and is no longer promised to the next truck.
+    expect(await batchNumberState(b.id)).toEqual({
+      kind: 'returned',
+      numbers: [b.code],
+      taken: [{ number: b.code, name: kz }],
+    });
+    // C's is untouched by any road: still the next truck's.
+    expect(await batchNumberState(c.id)).toEqual({ kind: 'returned', numbers: [c.code] });
+    // …and the mint passes over the burned one.
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+
+  it('a cancelled truck below it says who carried it, not the cancelled minter that never left', async () => {
+    const prefix = await freshPrefix();
+    const a = await mint(prefix); // 001
+    const r = await mint(prefix); // 002
+    const b = await mint(prefix); // 003, the top
+    expect((await cancelBatch(b.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [b.code] });
+    await departWithCarton(r.id);
+    await renameRoad(r.id, b.code, 'hamkor raqami');
+    const kz = `01K${tag()}KZ`;
+    await renameRoad(r.id, kz, 'yana hamkor');
+    const g = await mint(prefix);
+    expect(g.code).toBe(`${prefix}-004`);
+    expect((await cancelBatch(a.id, 'xato', ctx())).number).toMatchObject({ kind: 'kept', why: 'newer', newer: g.code });
+    expect((await cancelBatch(g.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [g.code] });
+    expect(await counterOf(prefix)).toBe(3);
+    // The walk stopped at 003, which R took out under a rename.
+    expect(await batchNumberState(a.id)).toEqual({ kind: 'kept', why: 'renamed_left', number: b.code, name: kz });
   });
 });
 

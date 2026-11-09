@@ -351,7 +351,17 @@ export async function BatchCard({
   const numberLine = (() => {
     if (!numberState) return null;
     // The numbers its own release rows freed — never its born name (review C1).
-    if (numberState.kind === 'returned') return tn('stateReturned', { number: numberState.numbers.join(', ') });
+    // «Keyingi mashinaga beriladi» only for those no truck has since carried
+    // on the road (review RVF3-2 — the state reads that live): a burned one
+    // says who took it instead of promising it to the next truck.
+    if (numberState.kind === 'returned') {
+      const taken = numberState.taken ?? [];
+      const promised = numberState.numbers.filter((number) => !taken.some((t) => t.number === number));
+      return [
+        ...(promised.length ? [tn('stateReturned', { number: promised.join(', ') })] : []),
+        ...taken.map((t) => tn('stateReturnedTaken', { number: t.number, name: t.name })),
+      ].join(' · ');
+    }
     const values = { number: numberState.number ?? '—', name: numberState.name ?? '—' };
     // A literal map — a key built from a value escapes the i18n tripwire (#163).
     const kept: Record<NumberKeptWhy, string> = {
@@ -448,10 +458,12 @@ export async function BatchCard({
         {numberState && numberLine && (
           <p
             className={`text-sm font-semibold [overflow-wrap:anywhere] ${
-              numberState.kind === 'returned' ? 'text-good' : 'text-ink-700'
+              numberState.kind === 'returned' && !numberState.taken ? 'text-good' : 'text-ink-700'
             }`}
             data-testid="batch-number-state"
-            data-state={numberState.kind === 'returned' ? 'returned' : numberState.why}
+            data-state={
+              numberState.kind === 'returned' ? (numberState.taken ? 'returned_taken' : 'returned') : numberState.why
+            }
           >
             {numberLine}
           </p>

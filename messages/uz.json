@@ -1693,6 +1693,7 @@
     "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})",
     "number": {
       "stateReturned": "♻️ {number} raqami qaytarildi — keyingi mashinaga beriladi",
+      "stateReturnedTaken": "♻️ {number} raqami qaytarilgan edi, lekin keyin {name} mashinasi uni yo‘lda oldi — endi boshqa mashinaga berilmaydi",
       "kept": {
         "newer": "Raqam qaytmadi: {name} allaqachon ochilgan",
         "agent": "Raqam qaytmadi: hujjatlari agentga yuborilgan",

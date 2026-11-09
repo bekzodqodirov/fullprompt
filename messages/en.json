@@ -1693,6 +1693,7 @@
     "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})",
     "number": {
       "stateReturned": "♻️ Number {number} came back — the next truck gets it",
+      "stateReturnedTaken": "♻️ Number {number} came back, but then truck {name} took it on the road — no other truck will get it now",
       "kept": {
         "newer": "The number did not come back: {name} is already open",
         "agent": "The number did not come back: its papers went to the agent",

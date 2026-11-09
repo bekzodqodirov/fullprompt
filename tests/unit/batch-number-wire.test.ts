@@ -1,4 +1,5 @@
 import { globSync, readFileSync } from 'node:fs';
+import { createTranslator } from 'next-intl';
 import { describe, expect, it } from 'vitest';
 import { NUMBER_KEPT } from '@/modules/wms/batches/batch-number';
 import { numberStopWords } from '@/modules/wms/batches/number-stop-words';
@@ -175,6 +176,34 @@ describe('the card says it durably, and the papers of a cancelled truck are not 
     expect(card).toContain('data-testid="batch-number-state"');
   });
 
+  it('a given-back number a truck since carried on the road is not promised to the next truck (review RVF3-2)', () => {
+    // The state names those numbers (`taken`, read live — the integration
+    // test proves it); the card must keep them OUT of «keyingi mashinaga
+    // beriladi» and say who took each instead.
+    const card = read('src/app/(protected)/batches/[id]/batch-card.tsx');
+    expect(card).toContain('const promised = numberState.numbers.filter((number) => !taken.some((t) => t.number === number));');
+    expect(card).toContain("...(promised.length ? [tn('stateReturned', { number: promised.join(', ') })] : []),");
+    expect(card).toContain("...taken.map((t) => tn('stateReturnedTaken', { number: t.number, name: t.name })),");
+    expect(card).not.toContain('numberState.numbers.join(');
+    // …and it wears neither the good-news colour nor the plain «returned» state.
+    expect(card).toContain("numberState.kind === 'returned' && !numberState.taken ? 'text-good' : 'text-ink-700'");
+    expect(card).toContain("(numberState.taken ? 'returned_taken' : 'returned')");
+  });
+
+  it('the «taken» sentence names the number and the truck in every bundle, and promises nothing', () => {
+    const promise = { uz: 'keyingi mashinaga', ru: 'следующая машина', en: 'the next truck', zh: '下一辆车' } as const;
+    for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
+      const t = createTranslator({ locale: name, messages: bundle as never, namespace: 'batches.number' as never });
+      const line = (t as unknown as (key: string, values: Record<string, string>) => string)('stateReturnedTaken', {
+        number: 'YW-002',
+        name: '01A777BA',
+      });
+      expect(line, name).toContain('YW-002');
+      expect(line, name).toContain('01A777BA');
+      expect(line, name).not.toContain(promise[name as keyof typeof promise]);
+    }
+  });
+
   it('the tick refuses a cancelled truck on the LOCKED row, before anything is frozen', () => {
     const tick = body(ACTIONS, 'setSentToAgentAction');
     inOrder(tick, ['lockTruckForTickInTx(tx, batchId)', "sending && row.status === 'cancelled'", 'freezeCompositionsInTx(']);
@@ -287,13 +316,14 @@ describe('every answer has its words in all four bundles', () => {
     for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
       const b = (bundle as unknown as {
         batches: {
-          number: { stateReturned: string; kept: Record<string, string> };
+          number: { stateReturned: string; stateReturnedTaken: string; kept: Record<string, string> };
           destChange: { errors: Record<string, string> };
           quickConfirm: string;
         };
         audit: { fields: Record<string, string> };
       });
       expect(typeof b.batches.number.stateReturned, `${name}: stateReturned`).toBe('string');
+      expect(typeof b.batches.number.stateReturnedTaken, `${name}: stateReturnedTaken`).toBe('string');
       for (const why of NUMBER_KEPT) expect(typeof b.batches.number.kept[why], `${name}: kept.${why}`).toBe('string');
       for (const code of [...DEST_CHANGE_REFUSALS, 'busy_retry', 'validation', 'offline', 'unauthenticated']) {
         expect(typeof b.batches.destChange.errors[code], `${name}: destChange.errors.${code}`).toBe('string');
