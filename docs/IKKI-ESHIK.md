@@ -329,6 +329,18 @@ The model never decides a price, and nothing here touches money.
     next material moves them instead of drawing a second «Bo‘ldi».
   - A door's lead line («▶️ Davom etamiz — …») is said by the next draw whichever call of the burst
     queued it, and it is counted inside the 4096.
+- **As built after the as-built review** (CHAT-7, CHAT-8, DURABILITY-3, BURST-5, BURST-7):
+  - A save failure («Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.») is the collection's own
+    message and the ONE prompt is drawn below it; the «⏳ Qo‘shimcha yozilmoqda» and REG-2 refusals
+    of a file join the collection's messages too. So does the add door's «Shu so‘rovga qo‘shimcha
+    yig‘ilmoqda — davom eting.»: the prompt was edited in place above it.
+  - The prompt counts files first, as the customer question does (§1.5): «Qabul qilindi: 📎 3 ta fayl
+    · ✍️ 1 ta xabar · …». The same counts flipped order between the two in one chat.
+  - ▶️ that took nothing readable hands its «▶️ Davom etamiz.» to the draw as its lead (the
+    `headed()` ctx was the one caller left; a file right after coalesced the line away).
+  - The one «always the last message» rule (kept-last.ts) loses no draw: a run that asks for its own
+    key — before its first await, or microtasks after its last — is run again, never re-armed on an
+    entry its cleanup then deleted.
 
 1.5 **The customer is asked once per collection**, never once per file.
 - The question is ONE message, edited to count and kept last: «Qabul qilindi: 📎 4 ta fayl · ✍️ 1
@@ -432,6 +444,14 @@ is missing; that machinery is unchanged. The ✅ text (P6):
 «AI izohi kartada» is for the VED, so it goes at the head of the card note, not into the chat.
 `landingReplyText` takes the collection's door at BOTH of its senders: the press
 (staff-handlers.ts:1806) and `resumeLanding` (calc-intake-sweep.ts:447).
+
+**As built after the as-built review** (DOORS-2, DOORS-3): «the collection's door» is the door the
+landing WROTE on the request — `landCollectedIntake` reads it back off the row for both senders, so
+the ✅ says what the pass will do: a collection that landed NULL (0140 not there yet, §0.4) says
+today's «🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.», never «🤖 AI hisoblayapti» while
+its pass keeps the seller's mute. A seeded collection lands with the `seedDoor` its open read off the
+source (the value its chat words followed — one home), never a second read of the source that could
+fail and land a plain chat as legacy.
 
 2.4 **The landing pass still runs and writes the commentary, but sends the seller nothing**
 (DR-2, M6, F6, M7, P10, INT-1). This covers rastamojka and podklyuch on a plain request.
@@ -592,11 +612,29 @@ VED's, and the lenta note names them.
     yuborish» with no AI promise once the VED has started (§3.7).
   - A NULL door (an add or seeded collection on a request from before 0140) keeps today's table and
     echo (§0.2).
+- **As built after the as-built review** (CHAT-2, CHAT-4, CHAT-8; the AI door — NULL keeps today's):
+  - Collecting after a reading, a typed text is judged per SEGMENT (`materialSegments`): what the
+    material stage places («N:», «N-qator», a totals word, R3 §0.1(3)) is written through the no-echo
+    commit; a courtesy word is nothing; goods beside it are filed as material on their own.
+    «3: 150 kg\nrahmat» filed whole had left row 3 unwritten under a ✅ (PC-ADV-1's hole on this
+    door). Nothing placed: the whole text is material, as before.
+  - A courtesy word (`plainAck`, a letter in it) is §2.2 (b)'s: «Tasdiqlash uchun «✅ Tasdiqlash» ni
+    bosing. Yana ma’lumot bo‘lsa — yuboring.» — never «⚠️ «rahmat» — jadvalda bunday qator yo‘q …», and
+    after «➕» with nothing sent never material (its re-read was billed and held the ✅). Beside an
+    answer it is dropped: the answer keeps its 👍. «;» keeps NO_ADDRESS.
+  - The last block says a typed cube in the table's word: «✍️ Oxirgi javob: umumiy hajm — 12 kub»
+    under «✅ Hajm: 12 kub» (and «↩️ Bekor qilindi: … 12 kub»).
 
 3.5 **«✅ Tasdiqlash» → the job lands → the AI computes** (P6, M9, P3, F7).
 - **The ✅ text.** When queued: «🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga
   keladi. Rasmiy narxni VED xodimi beradi.» That promise is made only when `replyQueued === true`.
   When not queued: the unchanged «⚠️ Hisoblash navbatiga tushmadi: …».
+  - As built after the as-built review (DOORS-2): and only while `aiCalcAvailable()` holds — the
+    rule the table's closing read. With no key or the day's budget spent the table said «… so‘rov VED
+    ga tushadi.», so the ✅ says today's «🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.» (a
+    model-free reply may still follow, as on NULL). An addition's outcome on such a request drops
+    «🤖 AI qayta hisoblayapti — natija shu yerga keladi.» (`amendWords` takes the availability as a
+    required argument).
 - **The pass replies with the figure and asks nothing.** The ❓ block goes, which takes the 2.8 b /
   1.14 a seller ask out of the landing pass. Every SELLER tail goes too.
 - **ONE place decides who a tail is addressed to**: a `noAsk` flag on the renderer, applied to
@@ -686,6 +724,19 @@ and a conflict as a «VED hal qiladi» line (1.1).
     that follows (§1.4), never a message of its own: a NEW prompt below what was taken, the old one
     retired the kept-last way (review PB-SPEC-2). A collection still at its customer or zone
     question asks it again with the line on top (PB-SPEC-1).
+- **As built after the as-built review** (BURST-2, BURST-8, DURABILITY-2):
+  - `BURST_FULL`'s «… qaytadan yuboring» is said only on a message with a door that takes the resend
+    (a ➕ row, the pause line's ▶️). A full burst whose one door is 📌 says «⚠ Bir martada ko‘pi bilan
+    20 ta xabar olinadi — topshiriqqa birinchi 10 tasi qo‘shiladi.» (`BURST_FULL_TASK`).
+  - A part the draft's cap drops is never «📎 Qabul qilindi»: the cap line («⚠ Bitta topshiriqqa
+    ko‘pi bilan 10 ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.») is said once per draft —
+    to the first resent part of a draft 📌 seeded at the cap too (PB-ADV-7 kept it silent, and the
+    resend was acknowledged as received).
+  - The burst's ONE message is drawn off the handler, after grammy confirmed its parts; a process
+    killed inside those 700 ms left the question asked of nobody. At boot, after both stores are
+    hydrated and before the first getUpdates, every burst still inside its window whose newest part
+    no copy was drawn below (`burstOwed`) is drawn once, through the same `drawBurst`
+    (`drawOwedBursts`). A graceful stop drew it already (`keptLastSettled`).
 
 4.2 **Beside a PARKED collection, the pause line is the burst's one message** (DR-8, P8).
 - It covers forwards too, is kept last (1.4), and appears once per burst: «⏸ Hisoblatish to‘xtab
@@ -717,6 +768,14 @@ and a conflict as a «VED hal qiladi» line (1.1).
   - «📌» on the pause line takes every part into the draft, and the line becomes the collection's
     plain pause line («… bu xabar unga qo‘shilmadi», `c:resume` / `c:cancel`): now true, and its
     «▶️» / «✖️» still act on the collection (PB-ADV-2).
+- **As built after the as-built review** (BURST-3, BURST-4):
+  - «▶️» on a line whose burst is gone and which replies to nothing (the orphan line above) says «⚠
+    Bu xabarlar endi olinmaydi — qaytadan yuboring.» before the collection goes on — unless the burst
+    went into this very collection. `BURST_GONE`'s «Faqat 1 ta xabar qo‘shildi» would be false: none
+    was.
+  - After a «▶️» that took something, the pause line (the pressed copy and the burst's current one)
+    is edited to the take's own line, «▶️ Davom etamiz — 3 ta fayl qo‘shildi.», its keyboard kept
+    (PB-ADV-4): it said «hali qo‘shilmagan» right above the prompt saying they were added.
 
 4.3 **A just-landed request is offered at once**: the landing clears the offer list's cache.
   As built: `landCollectedIntake` (staff-bot.ts), the one function both senders call, forgets the
