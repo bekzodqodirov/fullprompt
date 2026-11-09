@@ -13,6 +13,7 @@ import {
   type PrefillFacts,
   type PrefillWhy,
 } from '@/modules/wms/finance/deal-price-hint';
+import { cardSeenOf, pressTotalOf, rowSaysUnreadable, type RowMark } from './table-rules';
 
 /**
  * One row of the price table: a deal of the client's on this truck, or the
@@ -30,6 +31,11 @@ export interface PricingTableRow {
   deferred: boolean;
   /** The row's own live prices here, summed (dollars) — null when none. */
   hereUsd: number | null;
+  /**
+   * A price here the lost-cargo door lowered to ZERO stands for this row —
+   * its own, or the whole cargo's (`zeroedFor`, review A1).
+   */
+  zeroed: boolean;
   /** The deal carries a live price of its own off any truck. */
   card: boolean;
   /** Other trucks where the deal has a live price (codes). */
@@ -45,6 +51,7 @@ type Ask =
   | { kind: 'none_extra'; usd: number }
   | { kind: 'whole'; code: string }
   | { kind: 'card'; code: string }
+  | { kind: 'zeroed'; code: string }
   | { kind: 'elsewhere'; code: string; codes: string }
   | { kind: 'above' | 'below'; code: string; pct: number; usd: number }
   | { kind: 'deferred'; code: string };
@@ -113,7 +120,11 @@ export function PricingTable({
     const keep = new Set(rows.map((row) => row.key));
     setTyped((prev) => Object.fromEntries(Object.entries(prev).filter(([key]) => keep.has(key))));
   }
-  const [bad, setBad] = useState<string | null>(null);
+  // The row a refusal is about, WITH its code: only an unreadable amount is
+  // that row's own sentence — every other refusal (a figure too large, a deal
+  // that left) only outlines the row and is worded once by the wrapper
+  // (`rowSaysUnreadable`, review B2).
+  const [bad, setBad] = useState<RowMark>(null);
 
   const prefillOf = (row: PricingTableRow) => (row.prefill ? prefillFor(row.prefill, currency) : null);
   const valueOf = (row: PricingTableRow): string => {
@@ -122,9 +133,14 @@ export function PricingTable({
     return prefill && 'usd' in prefill ? prefill.usd.toFixed(2) : '';
   };
 
-  const [asked, setAsked] = useState<{ key: string; asks: Ask[]; n: number; total: number; currency: string } | null>(
-    null,
-  );
+  const [asked, setAsked] = useState<{
+    key: string;
+    asks: Ask[];
+    n: number;
+    none: boolean;
+    total: number;
+    currency: string;
+  } | null>(null);
   const confirmed = useRef(false);
   const reask = () => {
     setAsked(null);
@@ -154,7 +170,7 @@ export function PricingTable({
       setAsked(null);
       router.refresh();
     }
-    if (result.dealId) setBad(result.dealId);
+    if (result.dealId && result.error) setBad({ key: result.dealId, error: result.error });
     confirmed.current = false;
     onResult(result);
     return result;
@@ -168,6 +184,7 @@ export function PricingTable({
       case 'continuation':
       case 'whole':
       case 'priced_here':
+      case 'zeroed':
       case 'priced_card':
       case 'priced_elsewhere':
         return null;
@@ -199,6 +216,8 @@ export function PricingTable({
         });
       case 'card':
         return t('truckTableAskCard', { code: ask.code });
+      case 'zeroed':
+        return t('truckTableAskZeroed', { code: ask.code });
       case 'elsewhere':
         return t('truckTableAskElsewhere', { code: ask.code, codes: ask.codes });
       case 'above':
@@ -228,7 +247,7 @@ export function PricingTable({
           const amount = parseTypedMoney(text);
           if (amount === null || !(amount > 0)) {
             event.preventDefault();
-            setBad(row.key);
+            setBad({ key: row.key, error: 'validation' });
             onResult({ error: 'validation', dealId: row.key });
             return;
           }
@@ -250,6 +269,9 @@ export function PricingTable({
           else if (row.hereUsd !== null) {
             asks.push(row.key === 'none' ? { kind: 'none_extra', usd: row.hereUsd } : { kind: 'extra', code, usd: row.hereUsd });
           }
+          // A part the lost-cargo door gave back is still a price someone set:
+          // typed again, the job is billed for what the compensation took back.
+          if (row.zeroed) asks.push({ kind: 'zeroed', code });
           if (row.card) asks.push({ kind: 'card', code });
           if (row.elsewhere.length > 0) asks.push({ kind: 'elsewhere', code, codes: row.elsewhere.join(', ') });
           if (currency === 'USD' && needsConfirmation(amount, row.expectedUsd)) {
@@ -263,8 +285,8 @@ export function PricingTable({
         setAsked({
           key: askKey(),
           asks,
-          n: filled.length,
-          total: Math.round(filled.reduce((sum, part) => sum + part.amount, 0) * 100) / 100,
+          // «N ta bitim» counts DEALS; «bitimsiz» is said beside them (B3).
+          ...pressTotalOf(filled.map((part) => ({ key: part.row.key, amount: part.amount }))),
           currency,
         });
       }}
@@ -275,6 +297,16 @@ export function PricingTable({
       <input type="hidden" name="batchId" value={batchId} />
       <input type="hidden" name="dealsSeen" value={dealsSeen} />
       <input type="hidden" name="pricesSeen" value={pricesSeen} />
+      {/* The posted deals that carried a card price as drawn — the «bitim
+          kartasida narx bor» each row asked, or did not. The write body
+          re-reads it under the client lock: a card price written meanwhile
+          is `prices_changed`, never a second bill nobody was asked about
+          (review A4). Recomputed every render, so it is what this press posts. */}
+      <input
+        type="hidden"
+        name="cardSeen"
+        value={cardSeenOf(rows, (row) => valueOf(row).trim() !== '')}
+      />
       <p className="text-xs font-semibold text-ink-700">{t('truckTableTitle')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -311,6 +343,7 @@ export function PricingTable({
           const why = prefill && 'none' in prefill && !(row.key in typed) ? whyWords(prefill.none) : null;
           const stands = [
             row.hereUsd !== null ? t('truckTableStandsHere', { usd: `$${row.hereUsd.toFixed(2)}` }) : null,
+            row.zeroed ? t('truckTableStandsZeroed') : null,
             row.card ? t('pricedHereCardPrice') : null,
             whole.length > 0 ? t('truckTableStandsWhole') : null,
             row.elsewhere.length > 0 ? t('truckTableStandsElsewhere', { codes: row.elsewhere.join(', ') }) : null,
@@ -318,10 +351,10 @@ export function PricingTable({
           return (
             <li
               key={row.key}
-              className="flex flex-wrap items-center gap-x-2 gap-y-1 p-2"
+              className={`flex flex-wrap items-center gap-x-2 gap-y-1 p-2 ${bad?.key === row.key ? 'ring-2 ring-inset ring-bad' : ''}`}
               data-testid="pricing-table-row"
               data-deal={row.key}
-              data-bad={bad === row.key ? 'true' : undefined}
+              data-bad={bad?.key === row.key ? bad.error : undefined}
             >
               {/* A goods name is free text, often 40+ characters with no
                   break in it: unbroken it widens the page past 360 px and
@@ -342,8 +375,8 @@ export function PricingTable({
                     {why}
                   </p>
                 )}
-                {bad === row.key && (
-                  <p className="text-xs font-semibold text-bad" data-testid="pricing-table-bad">
+                {rowSaysUnreadable(bad, row.key) && (
+                  <p role="alert" className="text-xs font-semibold text-bad" data-testid="pricing-table-bad">
                     {t('truckTableRowUnreadable', { code: row.key === 'none' ? t('pricedHereNoDeal') : row.code })}
                   </p>
                 )}
@@ -358,7 +391,7 @@ export function PricingTable({
                 onChange={(event) => {
                   const value = event.target.value;
                   setTyped((now) => ({ ...now, [row.key]: value }));
-                  if (bad === row.key) setBad(null);
+                  if (bad?.key === row.key) setBad(null);
                   reask();
                 }}
                 data-testid="pricing-table-amount"
@@ -378,7 +411,10 @@ export function PricingTable({
       {asked && asked.key === askKey() && (
         <div role="alert" className="space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
           <p className="font-semibold" data-testid="pricing-table-total">
-            {t('truckTableTotal', { n: asked.n, amount: `${asked.total.toFixed(2)} ${asked.currency}` })}
+            {t(asked.none ? 'truckTableTotalNone' : 'truckTableTotal', {
+              n: asked.n,
+              amount: `${asked.total.toFixed(2)} ${asked.currency}`,
+            })}
           </p>
           {secondBill && (
             <p className="font-semibold text-warn" data-testid="pricing-second-bill">

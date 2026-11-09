@@ -286,13 +286,20 @@ describe('ONE write body for every truck price, deciding twice on the same state
 
   it('the truck lock reads the KIND on the locked row, after the cancel (judge P1-dest-change-race)', () => {
     const lock = fn(service, 'export async function lockTruckForPriceTx(');
-    expect(lock).toContain('FOR SHARE OF b');
-    expect(lock).toContain('JOIN warehouses o ON o.id = b.origin_warehouse_id');
-    expect(lock).toContain('JOIN warehouses d ON d.id = b.dest_warehouse_id');
+    // The row ALONE: a warehouse joined into the locked statement is
+    // re-checked as the OLD destination's row after a wait, and the truck
+    // reads as gone (review A3 — the race itself runs in
+    // truck-price-table.integration.test.ts).
+    expect(lock).toMatch(/SELECT status, origin_warehouse_id, dest_warehouse_id\s+FROM batches\s+WHERE id = \$\{batchId\}::uuid\s+FOR SHARE`/);
+    expect(lock).not.toContain('JOIN');
+    const locked = lock.indexOf('FOR SHARE`');
     const cancelled = lock.indexOf("throw new FinanceError('batch_cancelled')");
-    const internal = lock.indexOf("if (isInternalLeg(truck.origin_country, truck.dest_country)) throw new FinanceError('internal_batch');");
-    expect(cancelled).toBeGreaterThan(-1);
-    expect(internal).toBeGreaterThan(cancelled);
+    const countries = lock.indexOf('SELECT id, country FROM warehouses');
+    const internal = lock.indexOf("throw new FinanceError('internal_batch');");
+    expect(cancelled).toBeGreaterThan(locked);
+    expect(countries).toBeGreaterThan(cancelled);
+    expect(internal).toBeGreaterThan(countries);
+    expect(lock).toContain('isInternalLeg(countryOf(truck.origin_warehouse_id), countryOf(truck.dest_warehouse_id))');
   });
 
   it('«🚚 Ko‘chirish» locks and judges every target truck the same way, inside its transaction (judge F6)', () => {
@@ -318,6 +325,76 @@ describe('ONE write body for every truck price, deciding twice on the same state
     const none = table.indexOf("part.dealId === 'none' ? { kind: 'none' } : { kind: 'deal', dealId: part.dealId }");
     expect(none).toBeGreaterThan(-1);
     expect(table.indexOf('prepareTruckCharges(')).toBeGreaterThan(none);
+  });
+});
+
+/**
+ * The review of the round as built (docs/NARX-VA-RAQAM.md §3.1): the halves
+ * of each fix that live in a component or the page, where no service test
+ * reaches — the rules themselves are proven in truck-price-table-rules /
+ * truck-price-prefill / truck-deal-parts (unit) and truck-price-table
+ * (integration).
+ */
+describe('the review’s fixes, wired', () => {
+  it('A1: the page reads the zeroed prices beside the live ones — and posts only the live ones as drawn', () => {
+    const page = read(PAGE);
+    expect(page).toContain('batchZeroedCharges(id)');
+    expect(page).toContain('pricedHereReading(candidates, prices, zeroedHereOf(group.clientId))');
+    expect(page).toContain('unpricedDealsOf(candidates, rows, zeroed, (dealId) =>');
+    expect(page).toContain('const zeroed = zeroedFor(reading, dealId);');
+    expect(page).toContain("zeroed: zeroedFor(reading, 'none'),");
+    expect(page.match(/pricesSeen: pricesSeenOf\(/g)).toHaveLength(1);
+    const table = read(TABLE);
+    expect(table).toContain("if (row.zeroed) asks.push({ kind: 'zeroed', code });");
+    expect(table).toContain("row.zeroed ? t('truckTableStandsZeroed') : null,");
+  });
+
+  it('A4: the table posts the card-priced deals it drew, the action passes them, the body re-reads them under the client lock', () => {
+    const table = read(TABLE);
+    expect(table).toContain('name="cardSeen"');
+    expect(table).toContain("value={cardSeenOf(rows, (row) => valueOf(row).trim() !== '')}");
+    expect(read(ACTIONS)).toContain("cardSeen: formData.has('cardSeen') ? String(formData.get('cardSeen')) : undefined,");
+    expect(fn(read(SERVICE), 'export async function addTruckPrices(')).toContain('cardSeen: input.cardSeen,');
+    const body = fn(read(SERVICE), 'export async function writeTruckCharges(');
+    const owners = body.indexOf('await lockOwnersTx(tx, { clientIds: [plan.clientId] });');
+    const card = body.indexOf('if (plan.cardSeen !== undefined) {');
+    const insert = body.indexOf('.insert(clientTransactions)');
+    expect(card).toBeGreaterThan(owners);
+    expect(insert).toBeGreaterThan(card);
+    expect(body).toContain('AND ${dealCardPricedSql(sql`d.id`)}');
+  });
+
+  it('B1: a row is compared on its pre-fill’s basis, and the deal block prints the same figures', () => {
+    const page = read(PAGE);
+    expect(page).toContain(
+      'expectedUsd: quote ? expectedHereFor(quote, share, exact.get(dealId), dealFigures.get(dealId)?.perKg ?? false) : null,',
+    );
+    expect(page).not.toContain('expectedPriceFor(');
+    expect(page).toContain('expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts, parts)');
+  });
+
+  it('B2-B4: the row’s mark keeps its code, the total counts deals, the held refusal names its row as drawn', () => {
+    const table = read(TABLE);
+    expect(table).toContain('const [bad, setBad] = useState<RowMark>(null);');
+    expect(table).toContain('if (result.dealId && result.error) setBad({ key: result.dealId, error: result.error });');
+    expect(table).toContain('{rowSaysUnreadable(bad, row.key) && (');
+    expect(table).toContain('...pressTotalOf(filled.map((part) => ({ key: part.row.key, amount: part.amount }))),');
+    expect(table).toContain("t(asked.none ? 'truckTableTotalNone' : 'truckTableTotal', {");
+    const wrapper = read('src/app/(protected)/batches/[id]/pricing/client-pricing.tsx');
+    expect(wrapper).toContain('code: refusalCodeOf(result.dealId, codes)');
+    expect(wrapper).toContain('wrapperWords(last, table ? table.rows.map((row) => row.key) : null)');
+    // Never the raw id as the code.
+    expect(wrapper).not.toContain('?? last.dealId');
+    expect(wrapper).toContain("if (error === 'batch_not_found') return t('batchNotFoundRefused');");
+  });
+
+  it('the new words exist in all four bundles (a key chosen at run time is invisible to the literal tripwire, #163)', () => {
+    for (const locale of ['ru', 'uz', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { finance: Record<string, string> };
+      for (const key of ['truckTableTotal', 'truckTableTotalNone', 'truckTableStandsZeroed', 'truckTableAskZeroed', 'batchNotFoundRefused']) {
+        expect(bundle.finance[key], `${locale} finance.${key}`).toBeTruthy();
+      }
+    }
   });
 });
 

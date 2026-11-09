@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   ceilCents,
   exactSharesOf,
+  expectedForDeals,
+  expectedHereFor,
   expectedPartFor,
   expectedPriceFor,
+  needsConfirmation,
   prefillFor,
+  type DealQuote,
   type PrefillFacts,
 } from '@/modules/wms/finance/deal-price-hint';
 
@@ -20,6 +24,7 @@ const facts = (over: Partial<PrefillFacts> = {}): PrefillFacts => ({
   quoted: true,
   discounted: false,
   pricedHere: false,
+  zeroed: false,
   pricedCard: false,
   pricedOn: [],
   follows: false,
@@ -57,6 +62,53 @@ describe('expectedPartFor — a deal’s part on one truck, for a bill', () => {
     expect(expectedPartFor({ ...quote, currency: 'UZS' }, { m3: 1, kg: 0 }, false)).toBeNull();
     expect(expectedPartFor({ ...quote, amount: 0 }, { m3: 1, kg: 0 }, false)).toBeNull();
     expect(expectedPartFor({ ...quote, amount: null }, { m3: 1, kg: 0 }, false)).toBeNull();
+  });
+});
+
+describe('expectedHereFor — the figure a row is compared with is the pre-fill’s own (review B1)', () => {
+  // A sealed per-kg version (the open top band): $1000 for 10 m³ / 2000 kg,
+  // and 11 m³ / 1900 kg of it aboard. Worked by hand: by kg 1000 × 1900 /
+  // 2000 = $950 — the upsale's own basis; by m³ 1000 × 11 / 10 = $1100.
+  const perKgQuote = { amount: 1000, currency: 'USD', m3: 10, kg: 2000 };
+  const aboard = { m3: 11, kg: 1900 };
+
+  it('an untouched per-kg pre-fill raises no 5 % question about itself', () => {
+    const part = expectedPartFor(perKgQuote, aboard, true);
+    expect(part).toEqual({ usd: 950, basis: 'kg' });
+    const prefill = prefillFor(facts({ partUsd: part!.usd }), 'USD');
+    expect(prefill).toEqual({ usd: 950 });
+    const compared = expectedHereFor(perKgQuote, aboard, aboard, true);
+    expect(compared).toBe(950);
+    expect(needsConfirmation(950, compared)).toBe(false);
+    // The m³-first hint the row used to compare with called the system's own
+    // figure 14 % cheap — and its «≈ $1100» billed $150 over the sale.
+    expect(expectedPriceFor(perKgQuote, aboard)).toBe(1100);
+    expect(needsConfirmation(950, 1100)).toBe(true);
+  });
+
+  it('keeps the hint’s fallback where no part can be stated — a warning, never a bill', () => {
+    // No measure on the quote: the whole quote, as the hint always said.
+    expect(expectedHereFor({ ...perKgQuote, m3: null, kg: null }, aboard, aboard, false)).toBe(1000);
+    // No exact share (nothing to scale): the rounded share's m³-first figure.
+    expect(expectedHereFor(perKgQuote, aboard, undefined, true)).toBe(1100);
+    expect(expectedHereFor(perKgQuote, undefined, undefined, true)).toBeNull();
+  });
+
+  it('the deal block’s total is the sum of the same per-deal figures', () => {
+    const quotes = new Map<string, DealQuote>([
+      ['A', perKgQuote],
+      ['B', { amount: 600, currency: 'USD', m3: 5, kg: null }],
+    ]);
+    const shares = [
+      { dealId: 'A', dealCode: 'B-1', m3: 11, kg: 1900, receipts: 1 },
+      { dealId: 'B', dealCode: 'B-2', m3: 1.2344, kg: 0, receipts: 1 },
+    ];
+    const exact = new Map([
+      ['A', aboard],
+      ['B', { m3: 1.2344, kg: 0 }],
+    ]);
+    // 950 (A by kg) + 600 × 1.2344 / 5 = 148.128 → up 148.13 (B by m³).
+    expect(expectedForDeals(quotes, shares, 0, { exact, perKg: (dealId) => dealId === 'A' })).toBe(1098.13);
   });
 });
 
@@ -101,6 +153,9 @@ describe('prefillFor — a value only when nothing on the page says the cargo is
     expect(prefillFor(facts({ whole: true, pricedHere: true }), 'USD')).toEqual({ none: 'whole' });
     expect(prefillFor(facts({ offElsewhere: true }), 'USD')).toEqual({ none: 'off_elsewhere' });
     expect(prefillFor(facts({ pricedHere: true }), 'USD')).toEqual({ none: 'priced_here' });
+    // A part the lost-cargo door gave back is still a price someone set —
+    // pre-filled, the next press bills it again (review A1).
+    expect(prefillFor(facts({ zeroed: true }), 'USD')).toEqual({ none: 'zeroed' });
     expect(prefillFor(facts({ pricedCard: true }), 'USD')).toEqual({ none: 'priced_card' });
     // A deal split over two trucks: pre-filled on the first only.
     expect(prefillFor(facts({ pricedOn: ['YW-009'] }), 'USD')).toEqual({ none: 'priced_elsewhere' });

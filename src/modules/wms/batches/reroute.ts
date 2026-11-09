@@ -291,9 +291,12 @@ export interface DestChangeResult {
  * (column B, departure records A — the judge's P2-LOCK-1); then the truck row
  * FOR NO KEY UPDATE, re-read; then the money COUNTED under it (a bill or a
  * price takes the same row FOR SHARE in its own transaction, so either it
- * committed first and is counted, or it waits and re-reads the new
- * destination); then the target warehouse FOR SHARE; then the write with its
- * compare-and-set.
+ * committed first and is counted, or it waits — and a price then judges the
+ * leg on the NEW destination: `lockTruckForPriceTx` locks the truck row alone
+ * and reads the two countries after the lock, because a warehouse joined into
+ * the locked statement is re-checked as the OLD destination's row and the
+ * truck reads as gone, review A3); then the target warehouse FOR SHARE; then
+ * the write with its compare-and-set.
  *
  * Audit under its OWN key `destBeforeDeparture`, never the reroute's
  * `destWarehouseId`: every reader of that key takes a row for a road reroute

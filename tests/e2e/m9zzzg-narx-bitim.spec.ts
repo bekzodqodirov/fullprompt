@@ -203,6 +203,12 @@ test('the VED: the same rows, nothing pre-filled, no quote in the page — and i
   const html = await page.content();
   for (const d of seeded!.deals) expect(html, d.quote).not.toContain(d.quote);
   for (const figure of ['5833.00', '617.28', '4362.14']) expect(html, figure).not.toContain(`value="${figure}"`);
+  // The rows reach his browser as client props, inside the flight payload
+  // (`self.__next_f.push`, a JSON string, so each quote arrives escaped as
+  // `\"`): no quote-derived figure may ride there either, whatever the boxes
+  // render — `null` stays allowed (law 4; review E1).
+  expect(html).not.toMatch(/partUsd\\?":-?\d/);
+  expect(html).not.toMatch(/expectedUsd\\?":-?\d/);
   await expect(box(card, deal(2).id)).toHaveValue('');
   // The long name wraps in its row; the page stays the phone's width (#400).
   await expect(row(card, deal(3).id).getByTestId('pricing-table-label')).toContainText(LONG_GOODS);

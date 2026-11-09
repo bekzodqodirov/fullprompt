@@ -10,6 +10,7 @@ import {
   balancesForClients,
   batchCharges,
   batchTripCoverage,
+  batchZeroedCharges,
   pricesSeenOf,
   truckDealHeads,
 } from '@/modules/wms/finance/service';
@@ -32,6 +33,7 @@ import {
   ownDealOf,
   pricedHereReading,
   unpricedDealsOf,
+  zeroedFor,
   type DealCandidates,
   type TruckPriceHere,
 } from '@/modules/wms/finance/truck-deal';
@@ -60,8 +62,8 @@ import {
   dealSharesOf,
   exactSharesOf,
   expectedForDeals,
+  expectedHereFor,
   expectedPartFor,
-  expectedPriceFor,
   type DealShare,
 } from '@/modules/wms/finance/deal-price-hint';
 import { BatchCard, batchTabMetadata } from '../batch-card';
@@ -148,8 +150,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
 
   const lots = await batchLots(id);
   const receiptIds = [...new Set(lots.map((lot) => lot.receiptId))];
-  const [charges, currencyRows, lotCost, breakdown, unconverted, ownCosts, unsplitHere, carried] = await Promise.all([
+  const [charges, zeroedCharges, currencyRows, lotCost, breakdown, unconverted, ownCosts, unsplitHere, carried] = await Promise.all([
     batchCharges(id),
+    // The prices the lost-cargo door lowered to ZERO here — read beside the
+    // live ones by the «already priced here» reading (review A1). Prices only,
+    // both sights; an internal leg is never priced.
+    internal ? Promise.resolve([] as Awaited<ReturnType<typeof batchZeroedCharges>>) : batchZeroedCharges(id),
     db.select({ code: currencies.code }).from(currencies).where(eq(currencies.active, true)),
     full ? batchLandedCostByLot(id) : Promise.resolve(new Map<string, LotLandedCost>()),
     full ? batchClientCostBreakdown(id) : Promise.resolve(new Map<string, ClientCostPart[]>()),
@@ -419,6 +425,13 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         dealCode: row.dealCode,
         chosenNone: Boolean(row.chosenNone),
       }));
+  // …and the ones the lost-cargo door lowered to ZERO: $0 now, and still a
+  // price someone set (review A1). In NO `pricesSeen` — the write body re-reads
+  // live ids only, and a voided row is in no live set.
+  const zeroedHereOf = (clientId: string): (TruckPriceHere & { dealCode: string | null })[] =>
+    zeroedCharges
+      .filter((row) => row.clientId === clientId)
+      .map((row) => ({ id: row.id, usd: 0, dealId: row.dealId, dealCode: row.dealCode, chosenNone: row.chosenNone }));
 
   // The ROWS of the price table for a client whose cargo here rides under two
   // or more of his deals (Q8 «c», then his 1a of 2026-11-08: one row per
@@ -442,7 +455,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       own.length === 0 ? null : own.every((share) => share.m3 > 0) ? 'm3' : own.every((share) => share.kg > 0) ? 'kg' : null;
     const total = own.reduce((sum, share) => sum + (basis === 'm3' ? share.m3 : basis === 'kg' ? share.kg : 0), 0);
     const prices = pricedHereOf(group.clientId);
-    const reading = pricedHereReading(candidates, prices);
+    const reading = pricedHereReading(candidates, prices, zeroedHereOf(group.clientId));
     const exact = exactSharesOf(group.lots, group.clientId);
     // A deal with a «davomi» carton aboard: its price and its road sit on an
     // earlier truck (judge P1-UX-1).
@@ -487,21 +500,26 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       const part = quote
         ? expectedPartFor(quote, exact.get(dealId) ?? { m3: 0, kg: 0 }, dealFigures.get(dealId)?.perKg ?? false)
         : null;
+      const zeroed = zeroedFor(reading, dealId);
       return {
         key: dealId,
         code,
         label,
         deferred: head?.deferred ?? false,
         hereUsd: usdOf(here),
+        zeroed,
         card: head?.cardPriced ?? false,
         elsewhere,
-        expectedUsd: quote && share ? expectedPriceFor(quote, { m3: share.m3, kg: share.kg }) : null,
+        // On the pre-fill's own basis wherever it has one (`expectedHereFor`,
+        // review B1): an untouched pre-filled row never asks about itself.
+        expectedUsd: quote ? expectedHereFor(quote, share, exact.get(dealId), dealFigures.get(dealId)?.perKg ?? false) : null,
         prefill: {
           sight: dealPriceSight,
           partUsd: part?.usd ?? null,
           quoted: Boolean(quote && quote.amount !== null && quote.amount > 0 && quote.currency === 'USD'),
           discounted: dealPriceSight && discountedDeals.has(dealId),
           pricedHere: here.length > 0,
+          zeroed,
           pricedCard: head?.cardPriced ?? false,
           pricedOn: elsewhere,
           follows: follows.has(dealId),
@@ -519,6 +537,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         label: t('truckDealNone'),
         deferred: false,
         hereUsd: usdOf(reading.none),
+        zeroed: zeroedFor(reading, 'none'),
         card: false,
         elsewhere: [],
         expectedUsd: null,
@@ -538,11 +557,18 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
   // or a whole-cargo price is not «missing», and its table row says why.
   const pricedHereBlock = (group: { clientId: string }) => {
     const rows = pricedHereOf(group.clientId);
+    const zeroed = zeroedHereOf(group.clientId);
     const candidates = candidatesOf.get(group.clientId)!;
-    const missing = unpricedDealsOf(candidates, rows, (dealId) => dealHeads.get(dealId)?.cardPriced ?? false).filter(
+    const missing = unpricedDealsOf(candidates, rows, zeroed, (dealId) => dealHeads.get(dealId)?.cardPriced ?? false).filter(
       (row) => row.why === 'missing',
     );
-    if (rows.length === 0 && !candidates.ambiguous) return null;
+    // A price whose cargo is gone from the truck: a deal's no longer among
+    // the candidates, or a chosen «bitimsiz» part on a truck that now carries
+    // only his deals — both read as the whole cargo's (`pricedHereReading`,
+    // review F1), and both say so.
+    const gone = (row: TruckPriceHere) =>
+      row.dealId ? !candidates.deals.includes(row.dealId) : row.chosenNone && !candidates.none;
+    if (rows.length === 0 && zeroed.length === 0 && !candidates.ambiguous) return null;
     // In the order the deals are listed in the table, by code — not by id.
     const codes = missing.map((row) => dealHeads.get(row.dealId)?.code ?? '—').sort((a, b) => a.localeCompare(b));
     const loud = missing.some((row) => row.loud);
@@ -553,12 +579,20 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
           <p key={row.id} data-testid="pricing-priced-here-row">
             <span className="num font-semibold">{money(row.usd)}</span> →{' '}
             <span className="font-mono">{row.dealCode ?? t('pricedHereNoDeal')}</span>
-            {row.dealId && !candidates.deals.includes(row.dealId) && (
+            {gone(row) && (
               <span className="text-warn" data-testid="pricing-priced-here-gone">
                 {' '}
                 ⚠ {t('pricedHereGone')}
               </span>
             )}
+          </p>
+        ))}
+        {/* Given back by the lost-cargo door: $0 now, and the reason its deal
+            is not «narx yo'q» below (review A1). */}
+        {zeroed.map((row) => (
+          <p key={row.id} className="text-ink-500" data-testid="pricing-priced-here-zeroed">
+            <span className="num">{money(0)}</span> →{' '}
+            <span className="font-mono">{row.dealCode ?? t('pricedHereNoDeal')}</span> · {t('truckTableStandsZeroed')}
           </p>
         ))}
         {codes.length > 0 && (
@@ -1221,6 +1255,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               if (split.shares.length === 0) return null;
               const usdOf = (amount: number, currency: string | null) =>
                 currency === 'USD' ? money(amount) : `${amount.toFixed(2)} ${currency ?? ''}`;
+              // «bu mashinada ≈» on the pre-fill's own basis, per deal and in
+              // the total — the figure the table's rows compare with (B1).
+              const parts = {
+                exact: exactSharesOf(group.lots, group.clientId),
+                perKg: (dealId: string) => dealFigures.get(dealId)?.perKg ?? false,
+              };
               const rows = split.shares.map((share) => {
                 const quote = quoteOf.get(share.dealId);
                 const figures = dealFigures.get(share.dealId);
@@ -1228,7 +1268,9 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   share,
                   quote,
                   figures,
-                  expected: quote ? expectedPriceFor(quote, { m3: share.m3, kg: share.kg }) : null,
+                  expected: quote
+                    ? expectedHereFor(quote, share, parts.exact.get(share.dealId), parts.perKg(share.dealId))
+                    : null,
                 };
               });
               const sum = (pick: (row: (typeof rows)[number]) => number | null) =>
@@ -1242,7 +1284,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
               const upsaleUsd = sum((row) =>
                 row.figures ? Math.max(0, row.figures.clientPriceUsd - row.figures.floorUsd) : null,
               );
-              const expectedHere = expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts);
+              const expectedHere = expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts, parts);
               // Several prixods or several deals: the deals' own totals come
               // FIRST, above the rows (his item 5).
               const many = split.receipts > 1 || split.shares.length > 1;
@@ -1326,7 +1368,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 // bill and asks (R3a). One wrapper either way, holding the
                 // refusal across a redraw that flips the shape.
                 const rows = candidates.ambiguous ? tableRowsFor(group, candidates, split.shares) : null;
-                const reading = pricedHereReading(candidates, prices);
+                const reading = pricedHereReading(candidates, prices, zeroedHereOf(group.clientId));
                 return (
                   <ClientPricing
                     shared={{
@@ -1353,7 +1395,10 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                       rows
                         ? null
                         : {
-                            expectedAll: expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts),
+                            expectedAll: expectedForDeals(quoteOf, split.shares, split.unlinkedReceipts, {
+                              exact: exactSharesOf(group.lots, group.clientId),
+                              perKg: (dealId) => dealFigures.get(dealId)?.perKg ?? false,
+                            }),
                             pricedHere: prices.map((row) => ({ usd: row.usd, dealCode: row.dealCode })),
                           }
                     }

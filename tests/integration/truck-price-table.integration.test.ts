@@ -29,14 +29,24 @@ import {
   addTransaction,
   addTruckPrices,
   batchCharges,
+  batchZeroedCharges,
   moveCharge,
   pricesSeenOf,
+  truckDealHeads,
+  voidTransaction,
   type TruckPricesInput,
 } from '@/modules/wms/finance/service';
-import { lostCargoChargesOn } from '@/modules/wms/finance/compensation';
+import { addCompensation, lostCargoChargesOn } from '@/modules/wms/finance/compensation';
 import { batchLots, cargoAboard } from '@/modules/wms/batches/lots';
-import { pricedHereReading, unpricedDealsOf } from '@/modules/wms/finance/truck-deal';
-import { exactSharesOf, expectedPartFor, prefillFor } from '@/modules/wms/finance/deal-price-hint';
+import { linkReceipt } from '@/modules/wms/deals/service';
+import {
+  pricedHereReading,
+  seenOf,
+  unpricedDealsOf,
+  zeroedFor,
+  type TruckPriceHere,
+} from '@/modules/wms/finance/truck-deal';
+import { exactSharesOf, expectedPartFor, prefillFor, type PrefillFacts } from '@/modules/wms/finance/deal-price-hint';
 import { bothFiguresForDeals, upsaleStateOf } from '@/modules/wms/calc/upsale-service';
 import { payableOffersSql } from '@/modules/wms/calc/upsale';
 import { finishCalcRequest, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
@@ -61,6 +71,7 @@ let actorId: string;
 let cn: string;
 let cn2: string;
 let uz: string;
+let uz2: string;
 let clientId: string;
 let otherClientId: string;
 let stageId: string;
@@ -112,6 +123,18 @@ async function mintTruck() {
 
 /** One confirmed prixod of one lot of one carton, departed on `batchId` — its receipt id. */
 async function cargo(batchId: string, owner: string, dealId: string | null, m3 = '0.1', kg = '10'): Promise<string> {
+  return (await cargoBoxes(batchId, owner, dealId, 1, m3, kg)).receiptId;
+}
+
+/** One confirmed prixod of one lot of `n` cartons, all departed on `batchId`. */
+async function cargoBoxes(
+  batchId: string,
+  owner: string,
+  dealId: string | null,
+  n: number,
+  m3 = '0.1',
+  kg = '10',
+): Promise<{ receiptId: string; boxIds: string[] }> {
   seq += 1;
   const receiptId = (
     await db
@@ -128,7 +151,7 @@ async function cargo(batchId: string, owner: string, dealId: string | null, m3 =
         seq: 1,
         letter: 'A',
         productNameZh: `货${S}-${seq}`,
-        boxCount: 1,
+        boxCount: n,
         dimsMode: 'mixed',
         totalWeightKg: kg,
         totalVolumeM3: m3,
@@ -136,25 +159,29 @@ async function cargo(batchId: string, owner: string, dealId: string | null, m3 =
       .returning({ id: receiptLots.id })
   )[0]!.id;
   madeLots.push(lotId);
-  const boxId = (
-    await db
-      .insert(boxes)
-      .values({ lotId, shortCode: `TT${S}X${seq}`, seqInLot: 1, currentWarehouseId: null, status: 'in_transit' })
-      .returning({ id: boxes.id })
-  )[0]!.id;
-  madeBoxes.push(boxId);
-  await db.insert(boxMovements).values({
-    boxId,
-    fromWarehouseId: cn,
-    toWarehouseId: uz,
-    fromStatus: 'loading',
-    toStatus: 'in_transit',
-    cause: 'batch_departed',
-    refType: 'batch',
-    refId: batchId,
-    actorId,
-  });
-  return receiptId;
+  const boxIds: string[] = [];
+  for (let i = 1; i <= n; i += 1) {
+    const boxId = (
+      await db
+        .insert(boxes)
+        .values({ lotId, shortCode: `TT${S}X${seq}${n > 1 ? `-${i}` : ''}`, seqInLot: i, currentWarehouseId: null, status: 'in_transit' })
+        .returning({ id: boxes.id })
+    )[0]!.id;
+    madeBoxes.push(boxId);
+    boxIds.push(boxId);
+    await db.insert(boxMovements).values({
+      boxId,
+      fromWarehouseId: cn,
+      toWarehouseId: uz,
+      fromStatus: 'loading',
+      toStatus: 'in_transit',
+      cause: 'batch_departed',
+      refType: 'batch',
+      refId: batchId,
+      actorId,
+    });
+  }
+  return { receiptId, boxIds };
 }
 
 const livePrices = (batchId: string) =>
@@ -173,7 +200,7 @@ async function drawn(batchId: string) {
 }
 
 type Part = TruckPricesInput['parts'][number];
-const press = async (batchId: string, parts: Part[], seen?: { dealsSeen: string; pricesSeen: string }) =>
+const press = async (batchId: string, parts: Part[], seen?: { dealsSeen: string; pricesSeen: string; cardSeen?: string }) =>
   addTruckPrices(
     { clientId, batchId, currency: 'USD', txDate: '2026-07-10', ...(seen ?? (await drawn(batchId))), parts },
     ctx(),
@@ -186,6 +213,34 @@ async function createAudit(txId: string) {
     .where(and(eq(auditLog.entityType, 'client_transaction'), eq(auditLog.entityId, txId), eq(auditLog.action, 'create')));
   return row?.after as { dealVia?: string; parts?: number; dealId?: string } | undefined;
 }
+
+/** What the «Narx» tab reads of this client's prices here: the live ones and the zeroed ones (review A1). */
+async function standing(batchId: string): Promise<{ live: TruckPriceHere[]; zeroed: TruckPriceHere[] }> {
+  const live = (await batchCharges(batchId))
+    .filter((row) => row.tx.clientId === clientId && row.tx.type === 'charge')
+    .map((row) => ({ id: row.tx.id, dealId: row.tx.dealId, usd: Number(row.tx.amountUsd), chosenNone: Boolean(row.chosenNone) }));
+  const zeroed = (await batchZeroedCharges(batchId))
+    .filter((row) => row.clientId === clientId)
+    .map((row) => ({ id: row.id, dealId: row.dealId, usd: 0, chosenNone: row.chosenNone }));
+  return { live, zeroed };
+}
+
+/** A row's pre-fill facts with nothing excluding it — each case states what it changes. */
+const facts = (over: Partial<PrefillFacts>): PrefillFacts => ({
+  sight: true,
+  partUsd: 600,
+  quoted: true,
+  discounted: false,
+  pricedHere: false,
+  zeroed: false,
+  pricedCard: false,
+  pricedOn: [],
+  follows: false,
+  continuation: false,
+  offElsewhere: false,
+  whole: false,
+  ...over,
+});
 
 /** Somebody else's transaction, held open on its own connection. */
 async function withHolder(run: (held: postgres.ReservedSql) => Promise<void>) {
@@ -212,6 +267,31 @@ async function someoneWaits(): Promise<boolean> {
     await new Promise((r) => setTimeout(r, 20));
   }
   return false;
+}
+
+/**
+ * A press made while the holder keeps the TRUCK ROW and moves its destination
+ * — what `changeDestBeforeDeparture` and a road `rerouteBatch` do — so the
+ * price's own truck lock WAITS on the row and is re-checked after the commit
+ * (review A3: the client lock alone let the change commit before the price
+ * ever reached the row, and the interleaving that failed was never run).
+ */
+async function pressWhileDestMoves(
+  held: postgres.ReservedSql,
+  truck: string,
+  dest: string,
+  write: () => Promise<unknown>,
+): Promise<unknown> {
+  await held`BEGIN`;
+  await held`SELECT id FROM batches WHERE id = ${truck}::uuid FOR NO KEY UPDATE`;
+  await held`UPDATE batches SET dest_warehouse_id = ${dest}::uuid WHERE id = ${truck}::uuid`;
+  const pressed = write().then(
+    () => null,
+    (err: unknown) => err,
+  );
+  expect(await someoneWaits(), 'the price never had to wait on the truck row').toBe(true);
+  await held`COMMIT`;
+  return pressed;
 }
 
 /** A press made while the holder keeps the client's money lock, and what it answered. */
@@ -242,6 +322,7 @@ beforeAll(async () => {
   cn = await mintWarehouse(`TJ${S}`, 'CN');
   cn2 = await mintWarehouse(`TK${S}`, 'CN');
   uz = await mintWarehouse(`TV${S}`, 'UZ');
+  uz2 = await mintWarehouse(`TU${S}`, 'UZ');
   clientId = (
     await db.insert(clients).values({ clientCode: `TT${S}`, name: `Jadval mijoz ${S}` }).returning({ id: clients.id })
   )[0]!.id;
@@ -273,7 +354,7 @@ afterAll(async () => {
   await db.delete(batches).where(inArray(batches.id, madeBatches));
   // An audited fixture is deactivated, never deleted (audit_log FK).
   await db.update(clients).set({ active: false }).where(inArray(clients.id, [clientId, otherClientId]));
-  await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [cn, cn2, uz]));
+  await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, [cn, cn2, uz, uz2]));
   await db.update(users).set({ active: false }).where(eq(users.id, actorId));
   await pgClient.end();
 });
@@ -317,8 +398,8 @@ describe('one press, one charge per filled row', () => {
       chosenNone: Boolean(row.chosenNone),
     }));
     const candidates = (await cargoAboard(truck, clientId)).candidates;
-    expect(pricedHereReading(candidates, prices).whole).toEqual([]);
-    expect(unpricedDealsOf(candidates, prices, () => false)).toEqual([{ dealId: c, why: 'missing', loud: true }]);
+    expect(pricedHereReading(candidates, prices, []).whole).toEqual([]);
+    expect(unpricedDealsOf(candidates, prices, [], () => false)).toEqual([{ dealId: c, why: 'missing', loud: true }]);
 
     // …and the next press prices the blank deal alone (a partial save, then
     // the rest): nothing asks a second time about the rows already written.
@@ -522,6 +603,255 @@ describe('the body decides again under its locks — races, run as races', () =>
   });
 });
 
+describe('the truck lock judges the row it holds — a destination moved while the price waited (review A3)', () => {
+  const pressOn = (truck: string, a: string) => () => press(truck, [{ dealId: a, amount: 1 }]);
+  const moveOn = (truck: string, txId: string) => () => moveCharge({ txId, parts: [{ batchId: truck, amount: 70 }] }, ctx());
+
+  async function twoDealTruck() {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    return { a, truck };
+  }
+
+  it('to another Uzbek warehouse: the price is WRITTEN — never «batch_not_found» for a legal price', async () => {
+    const { a, truck } = await twoDealTruck();
+    let err: unknown = 'not run';
+    await withHolder(async (held) => {
+      err = await pressWhileDestMoves(held, truck, uz2, pressOn(truck, a));
+    });
+    expect(err).toBeNull();
+    expect((await livePrices(truck)).map((row) => row.dealId)).toEqual([a]);
+    const [moved] = await db.select({ dest: batches.destWarehouseId }).from(batches).where(eq(batches.id, truck));
+    expect(moved!.dest).toBe(uz2);
+  });
+
+  it('to a Chinese warehouse: `internal_batch` — the right word, nothing written', async () => {
+    const { a, truck } = await twoDealTruck();
+    let err: unknown = 'not run';
+    await withHolder(async (held) => {
+      err = await pressWhileDestMoves(held, truck, cn2, pressOn(truck, a));
+    });
+    expect(err).toMatchObject({ code: 'internal_batch' });
+    expect(await livePrices(truck)).toHaveLength(0);
+  });
+
+  it('«🚚 Ko‘chirish» onto a truck whose destination moved while it waited: the same two answers', async () => {
+    for (const [dest, written] of [
+      [uz2, true],
+      [cn2, false],
+    ] as const) {
+      const a = await mintDeal(clientId);
+      const truck = await mintTruck();
+      await cargo(truck, clientId, a);
+      const card = await addTransaction(
+        { clientId, type: 'charge', amount: 70, currency: 'USD', txDate: '2026-07-10', dealId: a },
+        ctx(),
+      );
+      let err: unknown = 'not run';
+      await withHolder(async (held) => {
+        err = await pressWhileDestMoves(held, truck, dest, moveOn(truck, card.id));
+      });
+      if (written) {
+        expect(err, 'same country').toBeNull();
+        expect((await livePrices(truck)).map((row) => Number(row.amountUsd))).toEqual([70]);
+      } else {
+        expect(err, 'to China').toMatchObject({ code: 'internal_batch' });
+        expect(await livePrices(truck)).toHaveLength(0);
+      }
+    }
+  });
+});
+
+describe('a part the lost-cargo door lowered to ZERO still stands (review A1)', () => {
+  it('its deal is not «narx yo‘q», is never pre-filled, and is in no live set the next press is checked against', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId, { quotedAmount: '600.00', quotedCurrency: 'USD', quotedVolumeM3: '0.100' });
+    const c = await mintDeal(clientId);
+    const d = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    const lostOne = await cargoBoxes(truck, clientId, b, 1);
+    await cargo(truck, clientId, c);
+    await cargo(truck, clientId, d);
+    const written = await press(truck, [
+      { dealId: a, amount: 100 },
+      { dealId: b, amount: 600 },
+      { dealId: d, amount: 40 },
+    ]);
+    // D's price voided the ordinary way — a void, not a price given back.
+    await voidTransaction(written.find((row) => row.dealId === d)!.id, 'xato narx', ctx(), { mayMoveTill: true });
+
+    // B's only carton lost; the lost-cargo door takes B's whole part back.
+    await db.update(boxes).set({ status: 'lost' }).where(eq(boxes.id, lostOne.boxIds[0]!));
+    const bPart = (await lostCargoChargesOn(db, clientId, [lostOne.receiptId])).find((line) => line.amount === 600)!;
+    await addCompensation(
+      {
+        clientId,
+        receiptId: lostOne.receiptId,
+        currency: 'USD',
+        txDate: '2026-07-11',
+        note: 'yo‘qoldi, narx olib tashlandi',
+        reprices: [{ chargeId: bPart.id, newAmount: 0 }],
+      },
+      ctx(),
+      { mayPayClient: true },
+    );
+
+    const { live, zeroed } = await standing(truck);
+    // Only the compensation's zero — never D's ordinary void.
+    expect(zeroed.map((row) => row.dealId)).toEqual([b]);
+    expect(live.map((row) => row.dealId)).toEqual([a]);
+    const candidates = (await cargoAboard(truck, clientId)).candidates;
+    expect(candidates.deals).toContain(b);
+    const reading = pricedHereReading(candidates, live, zeroed);
+    expect(zeroedFor(reading, b)).toBe(true);
+    expect(zeroedFor(reading, c)).toBe(false);
+    // B's part was set and given back: not «narx yo'q». C and D have nothing
+    // here, and stay loud (his 3a).
+    expect(unpricedDealsOf(candidates, live, zeroed, () => false)).toEqual([
+      { dealId: c, why: 'missing', loud: true },
+      { dealId: d, why: 'missing', loud: true },
+    ].sort((x, y) => candidates.deals.indexOf(x.dealId) - candidates.deals.indexOf(y.dealId)));
+    // B's $600 part is NOT pre-filled — the press for C would have posted it.
+    expect(prefillFor(facts({ partUsd: 600, zeroed: zeroedFor(reading, b) }), 'USD')).toEqual({ none: 'zeroed' });
+    // The deal's heads name this truck: a second truck of B is not pre-filled over it either.
+    expect((await truckDealHeads([b])).get(b)?.pricedTrucks.map((row) => row.batchId)).toEqual([truck]);
+    // In no live set: a press drawn now for C goes through, nothing «changed».
+    await press(truck, [{ dealId: c, amount: 50 }]);
+    expect((await livePrices(truck)).map((row) => row.dealId).sort()).toEqual([a, c].sort());
+  });
+});
+
+describe('a chosen «bitimsiz» part stays one through the correction doors (review A2)', () => {
+  /** Deals A and B plus a deal-less prixod of two cartons; A and «bitimsiz» priced, B left blank. */
+  async function priced() {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    const loose = await cargoBoxes(truck, clientId, null, 2);
+    const written = await press(truck, [
+      { dealId: a, amount: 100 },
+      { dealId: 'none', amount: 50 },
+    ]);
+    const none = written.find((row) => row.dealId === null)!;
+    const before = await standing(truck);
+    const candidates = (await cargoAboard(truck, clientId)).candidates;
+    expect(unpricedDealsOf(candidates, before.live, before.zeroed, () => false)).toEqual([{ dealId: b, why: 'missing', loud: true }]);
+    return { a, b, truck, loose, none, candidates };
+  }
+
+  it('lowered by the lost-cargo door: the copy is still the «bitimsiz» part, and the blank deal stays loud', async () => {
+    const { b, truck, loose, none, candidates } = await priced();
+    await db.update(boxes).set({ status: 'lost' }).where(eq(boxes.id, loose.boxIds[0]!));
+    const line = (await lostCargoChargesOn(db, clientId, [loose.receiptId])).find((row) => row.id === none.id)!;
+    expect(line).toBeTruthy();
+    await addCompensation(
+      {
+        clientId,
+        receiptId: loose.receiptId,
+        currency: 'USD',
+        txDate: '2026-07-11',
+        note: 'bitta karobka yo‘qoldi',
+        reprices: [{ chargeId: line.id, newAmount: 25 }],
+      },
+      ctx(),
+      { mayPayClient: true },
+    );
+    const after = await standing(truck);
+    const copy = after.live.find((row) => row.dealId === null)!;
+    expect(copy.usd).toBe(25);
+    expect((await createAudit(copy.id))?.dealVia).toBe('none');
+    expect(copy.chosenNone).toBe(true);
+    // Lowered, not zeroed: no zeroed reading.
+    expect(after.zeroed).toEqual([]);
+    const reading = pricedHereReading(candidates, after.live, after.zeroed);
+    expect(reading.none.map((row) => row.id)).toEqual([copy.id]);
+    expect(reading.whole).toEqual([]);
+    expect(unpricedDealsOf(candidates, after.live, after.zeroed, () => false)).toEqual([{ dealId: b, why: 'missing', loud: true }]);
+  });
+
+  it('split by «Ko‘chirish»: the part that STAYS is still «bitimsiz»; the part that leaves carries no word', async () => {
+    const { b, truck, none, candidates } = await priced();
+    const other = await mintTruck();
+    await cargo(other, clientId, null);
+    const moved = await moveCharge(
+      {
+        txId: none.id,
+        parts: [
+          { batchId: truck, amount: 30 },
+          { batchId: other, amount: 20 },
+        ],
+      },
+      ctx(),
+    );
+    const [stays, leaves] = moved.ids;
+    expect((await createAudit(stays!))?.dealVia).toBe('none');
+    expect((await createAudit(leaves!))?.dealVia).toBeUndefined();
+    const after = await standing(truck);
+    expect(after.live.find((row) => row.id === stays)?.chosenNone).toBe(true);
+    expect(unpricedDealsOf(candidates, after.live, after.zeroed, () => false)).toEqual([{ dealId: b, why: 'missing', loud: true }]);
+  });
+});
+
+describe('a chosen «bitimsiz» part whose deal-less cargo was filed onto a deal (review F1)', () => {
+  it('is the WHOLE cargo’s price: no row is pre-filled, every filled row asks — never a silent second bill', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    const loose = await cargo(truck, clientId, null);
+    const written = await press(truck, [{ dealId: 'none', amount: 500 }]);
+    // The office files the deal-less prixod onto deal B — the ordinary way.
+    await linkReceipt(loose, b, ctx(), null);
+    const candidates = (await cargoAboard(truck, clientId)).candidates;
+    expect(candidates).toMatchObject({ none: false, ambiguous: true });
+    const { live, zeroed } = await standing(truck);
+    expect(live.map((row) => [row.id, row.chosenNone])).toEqual([[written[0]!.id, true]]);
+    const reading = pricedHereReading(candidates, live, zeroed);
+    expect(reading.none).toEqual([]);
+    expect(reading.whole.map((row) => row.id)).toEqual([written[0]!.id]);
+    // Both deals covered by it, said muted — and the press asks on every row.
+    expect(unpricedDealsOf(candidates, live, zeroed, () => false)).toEqual(
+      candidates.deals.map((dealId) => ({ dealId, why: 'whole', loud: false })),
+    );
+    // B's part — which now carries the filed cargo — is never pre-filled.
+    expect(prefillFor(facts({ whole: reading.whole.length > 0 }), 'USD')).toEqual({ none: 'whole' });
+  });
+});
+
+describe('the deal prices OFF this truck the rows were drawn with (review A4)', () => {
+  it('a card price written between the drawing and the press is `prices_changed` — never a second bill nobody was asked about', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    await cargo(truck, clientId, b);
+    // Drawn: A had no card price, so its row asked nothing about one.
+    const seen = { ...(await drawn(truck)), cardSeen: '' };
+    // A colleague writes A's price on the client ledger, with no truck.
+    await addTransaction({ clientId, type: 'charge', amount: 600, currency: 'USD', txDate: '2026-07-10', dealId: a }, ctx());
+    // `pricesSeen` (this truck's charges) cannot see it…
+    expect((await drawn(truck)).pricesSeen).toBe(seen.pricesSeen);
+    // …the card's own digest does.
+    await expect(press(truck, [{ dealId: a, amount: 600 }], seen)).rejects.toMatchObject({ code: 'prices_changed' });
+    expect(await livePrices(truck)).toHaveLength(0);
+    // Redrawn, the row asks «bitim kartasida narx bor» and the person confirms.
+    await press(truck, [{ dealId: a, amount: 600 }], { ...(await drawn(truck)), cardSeen: seenOf([a]) });
+    expect((await livePrices(truck)).map((row) => row.dealId)).toEqual([a]);
+    // Only the POSTED deals: a card price on B, which this press does not
+    // touch, bills nothing here and is not asked about.
+    await addTransaction({ clientId, type: 'charge', amount: 10, currency: 'USD', txDate: '2026-07-10', dealId: b }, ctx());
+    await press(truck, [{ dealId: a, amount: 1 }], { ...(await drawn(truck)), cardSeen: seenOf([a]) });
+    expect(await livePrices(truck)).toHaveLength(2);
+  });
+});
+
 describe('the lost-cargo door finds the prixod’s own part among many (§3.1.12)', () => {
   it('a truck priced in one press for 21 deals: the lost prixod’s own deal’s part is first, never cut off by the 20', async () => {
     const dealIds: string[] = [];
@@ -599,6 +929,7 @@ describe('a pre-filled part passes its own deal’s invoice check (§3.1.4, judg
         quoted: true,
         discounted: false,
         pricedHere: false,
+        zeroed: false,
         pricedCard: false,
         pricedOn: [],
         follows: false,

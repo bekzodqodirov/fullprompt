@@ -115,22 +115,29 @@ export function dealSharesOf(
 
 /**
  * The price the deals say THIS truck's goods were sold for — each deal's
- * quote scaled on its own share, summed. Null (so nothing is compared and
- * nothing asks for a confirmation) the moment any part is unknown: goods on
- * no deal, or a deal with no dollar quote. A sum over part of the cargo
- * would call an honest price «too high» by exactly the part it skipped.
+ * figure here (`expectedHereFor`, the pre-fill's own basis wherever the deal
+ * has a part to state), summed. Null (so nothing is compared and nothing asks
+ * for a confirmation) the moment any part is unknown: goods on no deal, or a
+ * deal with no dollar quote. A sum over part of the cargo would call an honest
+ * price «too high» by exactly the part it skipped.
+ *
+ * `parts` is REQUIRED (the exact shares and each deal's per-kg flag): without
+ * it the total fell back to the m³-first hint while the rows below it compared
+ * on the pre-fill's basis, and the deal block printed a different «bu
+ * mashinada ≈» from the one the press asked about (review B1).
  */
 export function expectedForDeals(
   quotes: Map<string, DealQuote>,
   shares: DealShare[],
   unlinkedReceipts: number,
+  parts: { exact: Map<string, { m3: number; kg: number }>; perKg: (dealId: string) => boolean },
 ): number | null {
   if (shares.length === 0 || unlinkedReceipts > 0) return null;
   let sum = 0;
   for (const share of shares) {
     const quote = quotes.get(share.dealId);
     if (!quote) return null;
-    const expected = expectedPriceFor(quote, { m3: share.m3, kg: share.kg });
+    const expected = expectedHereFor(quote, share, parts.exact.get(share.dealId), parts.perKg(share.dealId));
     if (expected === null) return null;
     sum += expected;
   }
@@ -217,6 +224,27 @@ export function expectedPartFor(
 }
 
 /**
+ * The figure a typed price for ONE deal's part here is compared with (the 5 %
+ * check) and the deal block prints as «bu mashinada ≈» — on the PRE-FILL's own
+ * basis wherever the deal has a part to state (`expectedPartFor`: the exact
+ * share, kg for a per-kg version, rounded up), so a row the system filled
+ * itself never stops the press to call its own figure wrong (review B1: a
+ * per-kg deal pre-filled $950 by kg was compared with $1100 by m³). Where no
+ * part can be stated, the hint keeps its fallback (`expectedPriceFor`: the
+ * rounded share m³ first, or the whole quote) — a warning, never a bill.
+ */
+export function expectedHereFor(
+  quote: DealQuote,
+  share: { m3: number; kg: number } | undefined,
+  exact: { m3: number; kg: number } | undefined,
+  perKg: boolean,
+): number | null {
+  const part = expectedPartFor(quote, exact ?? { m3: 0, kg: 0 }, perKg);
+  if (part) return part.usd;
+  return share ? expectedPriceFor(quote, { m3: share.m3, kg: share.kg }) : null;
+}
+
+/**
  * Why a row of the price table is NOT pre-filled — in the order the row says
  * it (the most useful reason first).
  */
@@ -226,6 +254,7 @@ export type PrefillWhy =
   | 'whole'
   | 'off_elsewhere'
   | 'priced_here'
+  | 'zeroed'
   | 'priced_card'
   | 'priced_elsewhere'
   | 'follows'
@@ -251,6 +280,12 @@ export interface PrefillFacts {
   discounted: boolean;
   /** The deal's own live price on THIS truck. */
   pricedHere: boolean;
+  /**
+   * A price here the lost-cargo door lowered to ZERO — the deal's own, or the
+   * whole cargo's (`zeroedFor`). Still a price someone set: pre-filled, the
+   * next press would bill again what the compensation took back (review A1).
+   */
+  zeroed: boolean;
   /** …on its card (no truck). */
   pricedCard: boolean;
   /** …on other trucks: their codes. */
@@ -275,9 +310,10 @@ export interface PrefillFacts {
  * already knows the deal's cargo here is priced, or a figure nobody stated,
  * and a pre-fill is one tap away from a bill (judges F5, P1-UX-1/2/4): the
  * quote sight; no continuation trip; no whole-cargo price; no other truck's
- * price whose cartons ride here; the deal priced nowhere yet (here, on its
- * card, on another truck — a deal split over two trucks is pre-filled on the
- * first only); no «davomi» carton of the deal aboard; a dollar quote with no
+ * price whose cartons ride here; the deal priced nowhere yet (here — a price
+ * the lost-cargo door lowered to zero counts, review A1 — on its card, on
+ * another truck — a deal split over two trucks is pre-filled on the first
+ * only); no «davomi» carton of the deal aboard; a dollar quote with no
  * discount, scaled by a measure; and dollars typed. Asked in the browser too,
  * with the currency the select holds NOW.
  */
@@ -287,6 +323,7 @@ export function prefillFor(facts: PrefillFacts, currency: string): { usd: number
   if (facts.whole) return { none: 'whole' };
   if (facts.offElsewhere) return { none: 'off_elsewhere' };
   if (facts.pricedHere) return { none: 'priced_here' };
+  if (facts.zeroed) return { none: 'zeroed' };
   if (facts.pricedCard) return { none: 'priced_card' };
   if (facts.pricedOn.length > 0) return { none: 'priced_elsewhere' };
   if (facts.follows) return { none: 'follows' };

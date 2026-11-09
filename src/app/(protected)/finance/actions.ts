@@ -422,6 +422,9 @@ export async function addTruckPricesAction(_prev: TruckPricesState, formData: Fo
     // Both always posted by the table — '' is «no prices here yet», an answer.
     dealsSeen: String(formData.get('dealsSeen') ?? ''),
     pricesSeen: String(formData.get('pricesSeen') ?? ''),
+    // Posted by the table always ('' = none of the posted deals had a card
+    // price as drawn — an answer); absent from a hand-built post = not checked.
+    cardSeen: formData.has('cardSeen') ? String(formData.get('cardSeen')) : undefined,
     parts,
     note: String(formData.get('note') ?? ''),
   });

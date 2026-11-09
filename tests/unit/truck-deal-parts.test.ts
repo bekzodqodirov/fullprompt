@@ -3,7 +3,10 @@ import {
   dealCandidatesOf,
   partKeyOf,
   pricedHereReading,
+  seenOf,
   truckDealParts,
+  unpricedDealsOf,
+  zeroedFor,
   type TruckDealPart,
 } from '@/modules/wms/finance/truck-deal';
 
@@ -114,14 +117,11 @@ describe('pricedHereReading — the ONE «already priced here» reading', () => 
   const p = (id: string, dealId: string | null, chosenNone = false) => ({ id, dealId, usd: 10, chosenNone });
 
   it('sorts each live price into its deal, the chosen «bitimsiz» part, or the whole cargo', () => {
-    const reading = pricedHereReading(abLoose, [
-      p('1', 'A'),
-      p('2', 'A'),
-      p('3', null, true),
-      p('4', null),
-      p('5', 'GONE'),
-      p('6', 'B'),
-    ]);
+    const reading = pricedHereReading(
+      abLoose,
+      [p('1', 'A'), p('2', 'A'), p('3', null, true), p('4', null), p('5', 'GONE'), p('6', 'B')],
+      [],
+    );
     expect([...reading.byDeal.entries()].map(([deal, rows]) => [deal, rows.map((row) => row.id)])).toEqual([
       ['A', ['1', '2']],
       ['B', ['6']],
@@ -130,11 +130,73 @@ describe('pricedHereReading — the ONE «already priced here» reading', () => 
     expect(reading.whole.map((row) => row.id)).toEqual(['4', '5']);
   });
 
-  it('a deal-less price is the «bitimsiz» part only when its audit says somebody CHOSE it — on any truck', () => {
-    expect(pricedHereReading(ab, [p('1', null)])).toMatchObject({ none: [], whole: [{ id: '1' }] });
-    // A chosen part whose deal-less cargo has since left the truck is still a
-    // part and not the whole cargo's price (§3.1.6) — the deals keep reading
-    // «narx yo'q» rather than «covered».
-    expect(pricedHereReading(ab, [p('2', null, true)])).toMatchObject({ none: [{ id: '2' }], whole: [] });
+  it('a deal-less price is the «bitimsiz» part only when its audit says somebody CHOSE it', () => {
+    expect(pricedHereReading(abLoose, [p('1', null)], [])).toMatchObject({ none: [], whole: [{ id: '1' }] });
+    expect(pricedHereReading(abLoose, [p('2', null, true)], [])).toMatchObject({ none: [{ id: '2' }], whole: [] });
+  });
+
+  // Review F1: a chosen «bitimsiz» part whose deal-less cargo has since been
+  // filed onto one of his deals covers every carton of the client aboard —
+  // truck coverage ignores the deal, exactly as for a price on a deal whose
+  // cargo left. As a «bitimsiz» part it hid in a row the table no longer
+  // draws: every deal pre-filled, nothing asked, the filed cargo billed twice.
+  it('a chosen «bitimsiz» part on a truck that now carries only his deals is the WHOLE cargo’s price', () => {
+    expect(pricedHereReading(ab, [p('2', null, true)], [])).toMatchObject({ none: [], whole: [{ id: '2' }] });
+    expect(unpricedDealsOf(ab, [p('2', null, true)], [], () => false)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+});
+
+describe('a price the lost-cargo door lowered to ZERO still stands (review A1)', () => {
+  const p = (id: string, dealId: string | null, chosenNone = false) => ({ id, dealId, usd: 0, chosenNone });
+
+  it('is read beside the live prices, by the same three-way rule, and never mixed into them', () => {
+    const reading = pricedHereReading(abLoose, [], [p('z1', 'B'), p('z2', null, true)]);
+    expect(reading.byDeal.size).toBe(0);
+    expect(reading.none).toEqual([]);
+    expect([...reading.zeroed.byDeal.keys()]).toEqual(['B']);
+    expect(reading.zeroed.none.map((row) => row.id)).toEqual(['z2']);
+    expect(zeroedFor(reading, 'B')).toBe(true);
+    expect(zeroedFor(reading, 'none')).toBe(true);
+    expect(zeroedFor(reading, 'A')).toBe(false);
+  });
+
+  it('a deal whose part was given back is not «narx yo’q» — the blank deal beside it still is, loud', () => {
+    // A priced live, B priced and given back: only C, with nothing at all
+    // here, is «narx yo'q».
+    const abc = dealCandidatesOf(
+      [
+        { dealId: 'A', dealClientId: C },
+        { dealId: 'B', dealClientId: C },
+        { dealId: 'C', dealClientId: C },
+      ],
+      C,
+    );
+    expect(unpricedDealsOf(abc, [{ id: 'l1', dealId: 'A', usd: 100, chosenNone: false }], [p('z1', 'B')], () => false)).toEqual([
+      { dealId: 'C', why: 'missing', loud: true },
+    ]);
+    // Only a zeroed price on the truck: the blank deal is still loud — a price
+    // was set here for this client.
+    expect(unpricedDealsOf(ab, [], [p('z1', 'B')], () => false)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
+  });
+
+  it('a zeroed whole-cargo price covers every deal like a live one, and every row reads it', () => {
+    const reading = pricedHereReading(ab, [], [p('z1', null)]);
+    expect(reading.zeroed.whole.map((row) => row.id)).toEqual(['z1']);
+    expect(zeroedFor(reading, 'A')).toBe(true);
+    expect(zeroedFor(reading, 'B')).toBe(true);
+    expect(unpricedDealsOf(ab, [], [p('z1', null)], () => false)).toEqual([
+      { dealId: 'A', why: 'whole', loud: false },
+      { dealId: 'B', why: 'whole', loud: false },
+    ]);
+  });
+});
+
+describe('seenOf — a set of ids as one comparable string', () => {
+  it('sorts, so the order a page drew them in never matters', () => {
+    expect(seenOf(['b', 'a', 'c'])).toBe('a,b,c');
+    expect(seenOf([])).toBe('');
   });
 });

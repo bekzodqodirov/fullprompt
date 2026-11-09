@@ -10,6 +10,7 @@ import { lockOwnersTx, reconcileFxResidueTx } from './fx-residue';
 import { rateFor } from '../costing/service';
 import { RIDE_CAUSES, rideMovementSql } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
+import { chosenNoneSql } from './standing-price-sql';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 
@@ -318,7 +319,8 @@ export async function addCompensation(
            SET voided_at = now(), voided_by = ${actorId}::uuid, void_reason = ${reason}
          WHERE id = ${change.chargeId}::uuid AND voided_at IS NULL AND type = 'charge' AND partner_id IS NULL
            AND NOT EXISTS (SELECT 1 FROM partner_transactions pt WHERE pt.client_tx_id = ${change.chargeId}::uuid)
-         RETURNING id, client_id, batch_id, deal_id, tx_date::text AS tx_date, currency, rate_to_usd, created_at::text AS created_at`)) as unknown as {
+         RETURNING id, client_id, batch_id, deal_id, tx_date::text AS tx_date, currency, rate_to_usd, created_at::text AS created_at,
+                   ${chosenNoneSql(sql`client_transactions.id`)} AS chosen_none`)) as unknown as {
         id: string;
         client_id: string;
         batch_id: string | null;
@@ -327,6 +329,7 @@ export async function addCompensation(
         currency: string;
         rate_to_usd: string;
         created_at: string;
+        chosen_none: boolean;
       }[];
       const [old] = [...claimed];
       if (!old) throw new CompensationError('charge_taken');
@@ -374,6 +377,11 @@ export async function addCompensation(
             currency: old.currency,
             repricedFrom: old.id,
             ...(old.batch_id ? { batchId: old.batch_id } : {}),
+            // A chosen «bitimsiz» part lowered is still that part (Q8 «c»):
+            // the copy keeps the original's deal (none) and its word, or the
+            // «already priced here» reading takes it for a whole-cargo price
+            // and every blank deal on the truck goes quiet (review A2).
+            ...(old.chosen_none && old.batch_id && !old.deal_id ? { dealVia: 'none' } : {}),
           },
         });
       }
