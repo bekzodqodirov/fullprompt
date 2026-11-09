@@ -14,7 +14,8 @@ vi.mock('@/modules/platform/settings/service', () => ({
   },
 }));
 
-import { aiCalcAvailable } from '@/modules/wms/calc/ai-cost';
+import { readFileSync } from 'node:fs';
+import { aiCalcAvailable, aiCalcStanding } from '@/modules/wms/calc/ai-cost';
 
 const saved = process.env.ANTHROPIC_API_KEY;
 afterEach(() => {
@@ -39,5 +40,23 @@ describe('aiCalcAvailable', () => {
     process.env.ANTHROPIC_API_KEY = 'test-key';
     setting.value = new Error('settings unreadable');
     expect(await aiCalcAvailable()).toBe(true);
+  });
+});
+
+describe('aiCalcStanding — the landing pass reads the same rule', () => {
+  it('an unreadable ledger is budget left for the pass too', async () => {
+    setting.value = new Error('settings unreadable');
+    expect(await aiCalcStanding(true)).toEqual({ hasKey: true, budgetLeft: Number.POSITIVE_INFINITY });
+  });
+
+  it('no key → no budget asked', async () => {
+    setting.value = new Error('must not be read');
+    expect(await aiCalcStanding(false)).toEqual({ hasKey: false, budgetLeft: 0 });
+  });
+
+  it('prefill asks aiCalcStanding, never the ledger bare (review PF-SPEC-4)', () => {
+    const src = readFileSync('src/modules/wms/calc/prefill.ts', 'utf8');
+    expect(src).toContain('await aiCalcStanding(deps.configured)');
+    expect(src).not.toMatch(/aiCalcBudgetLeft\(/);
   });
 });

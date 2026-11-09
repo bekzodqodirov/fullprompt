@@ -2,8 +2,7 @@ import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { calcAmendments, calcGroups, calcRequests, clients, deals, leads } from '../../platform/db/schema';
 import { userPermissions } from '../../platform/rbac/authorize';
-import { aiConfigured } from '../../platform/ai/model';
-import { aiCalcBudgetLeft } from './ai-cost';
+import { aiCalcStanding } from './ai-cost';
 import { logger } from '../../platform/logger';
 import type { AuditContext } from '../../platform/audit/service';
 import {
@@ -349,9 +348,12 @@ export async function aiPrefill(
    * The reply says which it was, in words: «AI sozlanmagan» is a fact about
    * the server and «AI kunlik limiti tugadi» is a fact about today, and a
    * seller reading the second must not be told the first.
+   *
+   * Read through `aiCalcStanding`, the body `aiCalcAvailable` answers from:
+   * the table promised «AI hisoblashda topadi» by that rule, and a pass that
+   * read the ledger on its own failed exactly where the promise held.
    */
-  const hasKey = deps.configured ?? aiConfigured();
-  const budgetLeft = hasKey ? await aiCalcBudgetLeft() : 0;
+  const { hasKey, budgetLeft } = await aiCalcStanding(deps.configured);
   const configured = hasKey && budgetLeft > 0;
 
   /**

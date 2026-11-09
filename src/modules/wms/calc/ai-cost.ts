@@ -145,7 +145,26 @@ export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<numbe
  * unreadable ledger, and the table promised a pass that would not run.
  */
 export async function aiCalcAvailable(): Promise<boolean> {
+  const { hasKey, budgetLeft } = await aiCalcStanding();
+  return hasKey && budgetLeft > 0;
+}
+
+/**
+ * The two halves of «available», for the one reader that must say WHICH half
+ * failed: the landing pass prints «AI sozlanmagan» (the server) apart from
+ * «AI kunlik limiti tugadi» (today). Same rule as `aiCalcAvailable`, from the
+ * same body — an unreadable ledger reads as budget left — so the table's
+ * promise and the pass cannot disagree (review PF-SPEC-4: prefill read the
+ * ledger bare, threw, and failed the pass the table had promised).
+ *
+ * `hasKey` lets a test stand in for the environment's key, as the pass's
+ * `deps.configured` always has.
+ */
+export async function aiCalcStanding(
+  hasKey?: boolean,
+): Promise<{ hasKey: boolean; budgetLeft: number }> {
   const { aiConfigured } = await import('../../platform/ai/model');
-  if (!aiConfigured()) return false;
-  return (await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY)) > 0;
+  const key = hasKey ?? aiConfigured();
+  if (!key) return { hasKey: false, budgetLeft: 0 };
+  return { hasKey: true, budgetLeft: await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY) };
 }
