@@ -3293,7 +3293,10 @@ does (`queueSinceFor`, devices.ts, `HELD_QUEUE_RADIUS_DEG` 0.15°). `TruckPlace/
 carry it to the words (5a, «kiritilgan» only when typed), the map label («⏳2», `truck-label.ts`) and the
 cabinet (`arriveBy` '9999' once over). `alertLateQueues` (queue-alert.ts, office hours): ONE message per sweep
 to `plans.manage`, claim per (truck, post) re-armed only by a wait begun after the warning; `TruckQueueLate`
-in `alerts`. Judged by five lenses before code (two blockers). DEPLOY: every unpressed HOR truck already past
+in `alerts`. Judged by five lenses before code (two blockers), then reviewed as built twice (#1585-#1587): on that
+road a pin is never pressed off — a re-press of «Horgosda turibdi» re-stamps it (the restart), «Qozog‘istonda» /
+«O‘zbekistonda» only when the truck reads BEHIND the pin (`placedBehindPin`); the listing names the press per
+queue; a premature pin's Horgos entry is the departure's walk. DEPLOY: every unpressed HOR truck already past
 Horgos snaps back «late» — the logists get one list at 08:00 and press.
 
 **Latest migration: 0140** (`truck_queue_alerts`, `when` …119; ledger must reach **141**). Before
