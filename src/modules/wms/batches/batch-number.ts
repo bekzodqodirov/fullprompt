@@ -161,6 +161,27 @@ async function returnedState(batchId: string, numbers: string[]): Promise<Number
   };
 }
 
+/**
+ * Whether the number this cancelled truck holds came back through ANOTHER
+ * truck's release row after this truck was cancelled — a wearer it had
+ * vacated the number to gave it back (review M6's path). A durable fact, read
+ * from the audit log, so the card says «qaytdi» for good and does not follow
+ * the counter: once the mint hands the number out again the promise is kept,
+ * not broken (the check of the lead's fix, D1). After this truck's cancel the
+ * only way its held number comes back is as this truck's number.
+ */
+async function cameBackAfterCancel(batchId: string, number: string): Promise<boolean> {
+  const rows = (await db.execute(sql`
+    SELECT 1 FROM audit_log r
+     WHERE r.entity_type = 'batch' AND r.action = 'update' AND (r.after->>'released') = 'true'
+       AND upper(r.after->>'number') = upper(${number}::text)
+       AND r.id > coalesce((SELECT max(c.id) FROM audit_log c
+                             WHERE c.entity_type = 'batch' AND c.entity_id = ${batchId}::uuid
+                               AND c.action = 'status_change' AND (c.after->>'status') = 'cancelled'), 0)
+     LIMIT 1`)) as unknown as unknown[];
+  return [...rows].length > 0;
+}
+
 /** How far the explainer walks from the counter's top before it says «newer» — a busy prefix's top is live. */
 const EXPLAIN_WALK = 200;
 
@@ -200,6 +221,7 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   const held = await heldNumberOf(db, batchId, prefix, row.code);
   if (row.departedAt) return { kind: 'kept', why: 'left', number: held };
 
+  if (await cameBackAfterCancel(batchId, held)) return returnedState(batchId, [held]);
   const n = numberOfCode(prefix, held);
   if (n === null) return { kind: 'kept', why: 'prefix', number: held };
   const top = await readCounter(db, 'batch_seq', prefix);
@@ -216,9 +238,8 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   // down from the top will ever reach it: that anomaly stays «xatolik».
   if (top < n) {
     const verdict = await numberVerdict(db, held);
-    if (verdict.ok && !verdict.holder?.wears) return returnedState(batchId, [held]);
-    if (verdict.ok) return { kind: 'kept', why: 'error', number: held };
-    return { kind: 'kept', why: verdict.why, number: held, name: verdict.holder?.code };
+    if (verdict.ok && !verdict.holder.wears) return returnedState(batchId, [held]);
+    if (verdict.ok && verdict.holder.id === batchId) return { kind: 'kept', why: 'error', number: held };
   }
 
   // The numbers above it, top first: the first that does not come back is
@@ -242,6 +263,7 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
   // at the agent, says so — the dry run's own words for that number
   // (review M4).
   if (own.holder && own.holder.id !== batchId) {
+    if (own.holder.born) return returnedState(batchId, [held]);
     const why = !own.ok && (own.why === 'renamed_left' || own.why === 'agent') ? own.why : 'newer';
     return { kind: 'kept', why, number: held, name: own.holder.code };
   }

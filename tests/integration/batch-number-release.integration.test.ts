@@ -824,6 +824,9 @@ describe('a cancelled WEARER of a live minter’s vacated number (review M6)', (
     expect(await codeOf(w.id)).toBe(`${x.code} (bekor)`);
     expect(await counterOf(prefix)).toBe(1);
     expect((await mint(prefix)).code).toBe(x.code);
+    // …and the card still says «qaytdi» once the mint has handed it out again:
+    // the promise kept, read from the release row and not from the counter.
+    expect(await batchNumberState(x.id)).toEqual({ kind: 'returned', numbers: [x.code] });
   });
 
   it('a number given back through a wearer that later had papers at the agent is never promised to the next truck', async () => {
@@ -849,6 +852,9 @@ describe('a cancelled WEARER of a live minter’s vacated number (review M6)', (
       numbers: [`${prefix}-003`, x.code],
       agent: [x.code],
     });
+    // X, the minter, was freed by the same walk (W's release row): its card says
+    // the same as W's, never «hujjatlari agentga yuborilgan» about a truck nobody ticked.
+    expect(await batchNumberState(x.id)).toEqual({ kind: 'returned', numbers: [x.code], agent: [x.code] });
     // …and the mint passes over it.
     expect((await mint(prefix)).code).toBe(`${prefix}-003`);
   });

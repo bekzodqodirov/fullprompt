@@ -589,7 +589,11 @@ cancel freed its number through the wearer's release row answers «qaytdi» (the
 verdict decides when the counter is already below it); a releasable truck still WEARING the
 string there stays «xatolik» (the mint walks past a worn name).
 
-**Stated, not built:** while a truck wears a given-back number on the road and has not yet
-renamed away from it, the cancelled truck's card still promises it (only the burned case is
-`taken`); in a swap-then-move-away the away-branch leaves a gap (C2's rule); the dry run's
+A cancelled minter freed by ANOTHER truck's release row says «qaytdi» from that row
+(`cameBackAfterCancel`: a release row naming its number after its own cancel), so the card no
+longer flips to «allaqachon ochilgan» once the mint hands the number out again.
+
+**Stated, not built:** while another truck WEARS a given-back number — before departure or on
+the road — and has not renamed away from it, the cancelled truck's card still promises it,
+though the mint walks past a worn name (only the burned case is `taken`); in a swap-then-move-away the away-branch leaves a gap (C2's rule); the dry run's
 cancelled-truck list says `atAgent` of the TRUCK while its gap line says it of the NUMBER.

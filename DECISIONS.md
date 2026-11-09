@@ -6843,7 +6843,11 @@ reads the verdict live — `returned_taken` (burned on the road by a truck not b
 so «born» keeps a number out of `taken` only, never out of `agent` (the lead's fix of the second
 check). A minter whose own cancel freed its number through the wearer's release row answered
 «xatolik» (its counter already below, no release row of its own); the number's own verdict
-decides there now, and a releasable truck still WEARING the string stays «xatolik». Red proofs
+decides there now, and a releasable truck still WEARING the string stays «xatolik»; a third
+check found that answer followed the COUNTER and flipped to «allaqachon ochilgan» as soon as the
+mint handed the number out again, so it is anchored on the durable fact — a release row naming
+the number written after this truck's cancel (`cameBackAfterCancel`). Red proofs
 for every fix by string edit; three of the lead's last four went red, the fourth was added for
-the worn-string guard. Stated: a given-back number a truck wears on the road but has not renamed
-away from is still promised on the cancelled card; the swap-then-move-away gap (C2's rule).
+the worn-string guard. Stated: a given-back number another truck WEARS (before departure or on the
+road) without having renamed away from it is still promised on the cancelled card, though the mint
+walks past a worn name; the swap-then-move-away gap (C2's rule).
