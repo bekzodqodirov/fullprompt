@@ -377,10 +377,10 @@ export interface IntakeState {
    * goods list (#1458) — under their OWN heading, «for the totals, do not
    * list these goods» (round-2 review, C2: joined into the goods block, a
    * «boshqa zavod» answer re-listed the workbook's own lines). Kept per
-   * accepted workbook so «🔁 Oldingisining o'rniga» drops the replaced file's
-   * totals WITH its goods: they used to stay in `sheetTexts`, and the job's
-   * kg/m³ could come from the very file the seller had just been told was
-   * replaced (round-1 review, c7).
+   * workbook, out of `sheetTexts` (round-1 review, c7); since his 1a no file
+   * replaces another, and a packing-shaped further Excel's WHOLE text joins
+   * here too (docs/IKKI-ESHIK.md §1.2.2) — its «TOTAL G.W.» row is read under
+   * the totals-only heading.
    */
   invoiceTexts: SheetText[];
   /**
@@ -1023,8 +1023,9 @@ export interface PickedGoods {
  *
  *  1. An attached invoice (XLSX/CSV) answers whenever it yields a line
  *     (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
- *     weights and volumes. When the seller said a separate model-read file is
- *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's
+ *     weights and volumes. On the add path — a model-read document beside
+ *     the Excel, `aiGoods: 'add'` (round-1 review c4; since his 1a the bot
+ *     takes it without asking, docs/IKKI-ESHIK.md §1.2.2) — the model's
  *     lines are appended — or, when the model did not read, the TYPED lines
  *     (round-4 integration S-a: «add» answered, the PDF unread, and the typed
  *     «Shim 200 dona» vanished) — except those the Excel already carries,
@@ -1044,7 +1045,10 @@ export interface PickedGoods {
  *     C-r1 nit / C-r2 ND: «Куртка женская (Ladies jacket)» 300 beside the
  *     same name at 200 lost the 200 unnamed). What was left out is returned
  *     (`sameAsInvoice`), for the seller to see.
- *     When nobody was asked (`aiGoods` null: no PDF and no header-less sheet
+ *     Also «already carried»: a model line whose count AND weight equal
+ *     exactly ONE Excel row's under another name (M1 c, `sameFigures`),
+ *     unless the names contradict.
+ *     With no model-read document (`aiGoods` null: no PDF and no header-less sheet
  *     beside the Excel), the Excel alone answers — and a typed line the model
  *     read too and the Excel does not carry is NAMED (round-4 integration
  *     S-a). Only one the model read: a typed reading alone is the regex's
