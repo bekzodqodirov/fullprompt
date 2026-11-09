@@ -30,7 +30,11 @@ export type WaitKind =
   // his price, the client code he opened for a stranger.
   | 'agent_edit'
   | 'agent_price'
-  | 'agent_code';
+  | 'agent_code'
+  // Files or forwards sent in a row while no collection, draft or capture is
+  // open (0140, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
+  // deploy. Its payload and its arming are the burst door's own.
+  | 'burst';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {

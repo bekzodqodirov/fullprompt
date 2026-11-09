@@ -46,7 +46,8 @@ import {
 import { rowMediansFor } from './estimate-read';
 import { tariffFor } from './tariff-read';
 import { onDate } from './dictionaries';
-import { weightFromTotalNote } from './intake';
+import { weightFromTotalNote, type IntakeDoor } from './intake';
+import { intakeDoorSql, parseIntakeDoor } from './intake-door';
 import { CalcError } from './service';
 import { lawAsksInputOf, lawAsksOf, type LawAsk } from './law-asks';
 
@@ -112,15 +113,29 @@ export const PASS_DEADLINE_MS = 10 * 60_000;
  */
 export type PrefillStand = 'ok' | 'touched' | 'confirmed' | 'closed' | 'not_found';
 
+/**
+ * What the standing's request read saw besides the standing: the bot door the
+ * job came in through (0140, docs/IKKI-ESHIK.md §0.3). Read from the ROW and
+ * never from the job — a job queued before 0140, or re-queued by `retried()`,
+ * carries none. Filled by `prefillStanding` when the request exists; the
+ * caller starts it at null (legacy, today's behaviour), so a read that never
+ * happens — or a stand-in that does not fill it — leaves today's.
+ */
+export interface PrefillSeen {
+  door: IntakeDoor | null;
+}
+
 export async function prefillStanding(
   requestId: string,
   expectRev: number | null,
+  seen?: PrefillSeen,
 ): Promise<PrefillStand> {
   const [request] = await db
-    .select({ rev: calcRequests.rev, completedAt: calcRequests.completedAt })
+    .select({ rev: calcRequests.rev, completedAt: calcRequests.completedAt, door: intakeDoorSql(calcRequests) })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   if (!request) return 'not_found';
+  if (seen) seen.door = parseIntakeDoor(request.door);
   if (request.completedAt) return 'closed';
   if (expectRev !== null && request.rev !== expectRev) return 'touched';
   const [confirmed] = await db

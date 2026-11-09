@@ -166,7 +166,7 @@ async function open(
   extra: Partial<Parameters<typeof openCalcRequest>[0]> = {},
 ): Promise<string> {
   const r = await openCalcRequest(
-    { entityType: 'deal', entityId: dealId, section, fromCity: 'Yiwu', toCity: 'Toshkent', items, source: 'card', ...extra },
+    { intakeDoor: null, entityType: 'deal', entityId: dealId, section, fromCity: 'Yiwu', toCity: 'Toshkent', items, source: 'card', ...extra },
     ctx(),
   );
   madeRequests.push(r.id);
@@ -181,6 +181,7 @@ async function open(
 async function sealMemory(): Promise<void> {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: memoryDealId,
       section: 'rastamojka',

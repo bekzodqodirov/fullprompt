@@ -45,6 +45,15 @@ export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
 export const CALC_SECTIONS: CalcSection[] = ['yolkira', 'rastamojka', 'podklyuch'];
 
+/**
+ * Which of the bot's two doors a job came in through (0140, docs/IKKI-ESHIK.md
+ * §0): «🧮 Hisoblatish» is 'plain', «🤖 AI rastamojka» is 'ai'. A fact of the
+ * REQUEST, read from its row (`intake-door.ts`). Where a door is named as
+ * `IntakeDoor | null`, NULL is legacy — every request before 0140, the card
+ * form, the thread door, the AI sotuvchi — and means TODAY's behaviour.
+ */
+export type IntakeDoor = 'plain' | 'ai';
+
 export const SECTION_LABEL: Record<CalcSection, string> = {
   yolkira: '🚚 Yo‘lkira',
   rastamojka: '🛃 Rastamojka',
@@ -263,6 +272,14 @@ export interface CalcGoodsFact {
   /** An invoice line's money, carried for the VED; nothing prices it. */
   amount?: number | null;
   tnvedCode?: string | null;
+  /**
+   * Where `tnvedCode` came from (docs/IKKI-ESHIK.md §3.1): the row's own
+   * (Excel, typed), the sealed memory, the exact-key book, or the model's
+   * proposal — the one coding function says, so the table and the INSERT can
+   * word a model's code as «AI taklifi». Absent = not said (every line read
+   * before that function, and every stored row).
+   */
+  tnvedSource?: 'row' | 'memory' | 'book' | 'model';
   note?: string | null;
   /** A chosen baza basis (stored rows): the VED's choice pins its unit too. */
   bazaBasis?: BazaBasis | null;

@@ -66,6 +66,7 @@ async function mintLead(name: string): Promise<string> {
 async function sealedOn(leadId: string) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'lead',
       entityId: leadId,
       section: 'yolkira',
@@ -89,6 +90,7 @@ async function sealedOn(leadId: string) {
 async function openOn(leadId: string, goods = `monitor ${tag()}`): Promise<string> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'lead',
       entityId: leadId,
       section: 'rastamojka',
@@ -298,6 +300,7 @@ describe('a won lead opens a deal per SALE', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',
@@ -319,6 +322,7 @@ describe('a won lead opens a deal per SALE', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',
@@ -361,6 +365,7 @@ describe('a won lead opens a deal per SALE', () => {
     const press = () =>
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',

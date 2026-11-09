@@ -1469,6 +1469,33 @@ export async function clientCodePrefix(): Promise<string> {
 }
 
 /**
+ * The door a collection lands with (docs/IKKI-ESHIK.md §0.1, §0.3): its own
+ * flag — «🤖 AI rastamojka» is 'ai', «🧮 Hisoblatish» 'plain'. A SEEDED
+ * collection (a returned request's rows, «➕» on it) lands with its SOURCE's
+ * door, read from that request's row; a source with none (legacy — every
+ * request before 0140) or one that cannot be read gives the collection's own
+ * flag: it is a bot collection whatever its source was, and its flag is what
+ * the seller has been shown and is about to be answered by. Never null — a
+ * collection is always one of the two doors.
+ */
+async function collectedDoor(state: {
+  ai: boolean;
+  seed: unknown[] | null;
+  seededFrom?: string | null;
+}): Promise<'plain' | 'ai'> {
+  const own = state.ai ? 'ai' : 'plain';
+  const source = state.seed !== null ? (state.seededFrom ?? null) : null;
+  if (!source) return own;
+  try {
+    const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
+    return (await requestIntakeDoor(source)) ?? own;
+  } catch (err) {
+    logger.warn({ err, source }, '[calc-intake] the source request’s door not read — the collection’s own');
+    return own;
+  }
+}
+
+/**
  * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
  * client the typed hint names, deal or lead, what the note says — lives in
  * wms and is tested there; this is the crossing.
@@ -1503,6 +1530,9 @@ export async function landCollectedIntake(
   const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
   return landIntake({
+    // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1), written
+    // on the request for every later reader.
+    intakeDoor: await collectedDoor(state),
     noteId: state.noteId,
     section: state.section,
     facts: state.facts,

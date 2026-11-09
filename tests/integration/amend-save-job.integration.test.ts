@@ -157,7 +157,7 @@ async function addCollection(): Promise<{ chatId: bigint; requestId: string; ite
     .returning();
   madeDeals.push(deal!.id);
   const r = await openCalcRequest(
-    { entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: `Sumka ${SUFFIX}`, quantity: 10 }], source: 'card' },
+    { intakeDoor: null, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: `Sumka ${SUFFIX}`, quantity: 10 }], source: 'card' },
     { actorId: sellerId },
   );
   madeRequests.push(r.id);

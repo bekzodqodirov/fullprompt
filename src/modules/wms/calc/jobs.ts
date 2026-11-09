@@ -4,6 +4,8 @@ import { sectionParts, type CalcSectionName } from './pricing';
 import { notifyOverdueCalcs } from './service';
 import { notifyDictionaryReview } from './review';
 import { sendLinkAsks } from './link-ask';
+import type { IntakeDoor } from './intake';
+import type { PrefillSeen } from './prefill';
 
 export const JOB_CALC_OVERDUE = 'calc.overdue';
 export const JOB_CALC_REVIEW = 'calc.dict-review';
@@ -276,6 +278,23 @@ export function addFor(standing: StandDown | 'ok'): boolean {
 }
 
 /**
+ * Does this pass's answer reach the seller past his «✅ Mening vazifalarim»
+ * mute (`direct`)? Two passes do, and no other:
+ *  - a re-run the seller started himself with «✅ Qo‘shish» (his ⭐ of
+ *    Question 7): he was just told the result comes to this chat;
+ *  - any pass on a request that came in through «🤖 AI rastamojka»
+ *    (docs/IKKI-ESHIK.md §3.6, INT-5): he pressed that door FOR the answer —
+ *    its stand-downs and «hisoblay olmadi» included, the answer to his press.
+ * The door is the ROW's (`prefillStanding`'s read), never the job's: a job
+ * queued before 0140 carries none. 'plain' and NULL keep the mute — NULL is
+ * every request before 0140, the card form, the thread door and the agent,
+ * which stay exactly as today (§0.2).
+ */
+export function directPass(pass: string, door: IntakeDoor | null): boolean {
+  return pass.startsWith('amend:') || door === 'ai';
+}
+
+/**
  * Does the seller's copy of the machine's answer reach him — the drain's own
  * three conditions, asked once (`reachOf`): he can log in, his chat is
  * linked, and he has not muted the answers, or this re-run is one he started
@@ -303,19 +322,25 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: st
   // own answer and a redelivery of either stays silent (§10.2.4). A job
   // queued before passes had names was the landing's.
   const pass = data.pass ?? 'landing';
-  // A re-run the seller started himself with «✅ Qo‘shish» reaches him even
-  // when he muted the AI's answers (his ⭐ of Question 7): he was just told
-  // the result comes to this chat. Every other pass keeps his mute — and its
-  // calls stay exactly the landing's (no options at all, `whileOpen` alone).
-  const direct = pass.startsWith('amend:');
-  const voice: [] | [{ direct: true }] = direct ? [{ direct: true }] : [];
+  // Which passes reach the seller past his mute (`directPass`): an «✅
+  // Qo‘shish» re-run, and any pass on a «🤖 AI rastamojka» request. Every
+  // other pass keeps his mute — and its calls stay exactly the landing's (no
+  // options at all, `whileOpen` alone). Until the standing has read the
+  // request's door, only the pass name decides: a read that throws is answered
+  // (the catch below) as a landing pass was before 0140.
+  let direct = directPass(pass, null);
+  let voice: [] | [{ direct: true }] = direct ? [{ direct: true }] : [];
   try {
     const { aiPrefill, prefillStanding } = await import('./prefill');
     const { sayOnce } = await import('./say-once');
     // A person may have reached the request first — the queue drains
     // when it drains, and pg-boss re-delivers. The machine stands down
-    // rather than deleting their groups and un-ticking their ✅.
-    const standing = attemptStanding(await prefillStanding(requestId, data.rev ?? null), retryCount, writes);
+    // rather than deleting their groups and un-ticking their ✅. The same
+    // read hands back the request's door (§0.3).
+    const seen: PrefillSeen = { door: null };
+    const standing = attemptStanding(await prefillStanding(requestId, data.rev ?? null, seen), retryCount, writes);
+    direct = directPass(pass, seen.door);
+    voice = direct ? [{ direct: true }] : [];
     if (standing !== 'ok') {
       logger.info({ requestId, standing, retryCount }, '[calc-prefill] stood down — the request has moved');
       // Said, not silent (2026-10-21): the seller was promised a figure in

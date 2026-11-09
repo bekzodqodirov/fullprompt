@@ -113,6 +113,7 @@ afterAll(async () => {
 async function request(input: Partial<Parameters<typeof openCalcRequest>[0]> = {}): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

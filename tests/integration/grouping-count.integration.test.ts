@@ -121,6 +121,7 @@ afterAll(async () => {
 async function open(items: { name: string; tnvedCode?: string | null; weightKg?: number | null }[]) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

@@ -191,6 +191,17 @@ export interface IntakeState {
    * lenta keeps them ahead of the model's notes, as before.
    */
   notes: string[];
+  /**
+   * The RECEIPT-time notes (docs/IKKI-ESHIK.md §1.2.5, §1.4): what the bot
+   * decided about a file when it arrived — the Excel-vs-Excel comparison, «N
+   * ta tovar o‘qildi», «rasm sifatida o‘qiladi», the reader's cut and size
+   * warnings — written in the same patch as the file. They survive every
+   * reading (`settleAnalysis` keeps the live row's), are lines of the ONE
+   * prompt, and land on the card note ahead of `notes` and `steps`.
+   * READING-time notes stay in `notes`. A row written before it reads []
+   * (`migrateIntakeState`).
+   */
+  fileNotes: string[];
   aiUsed: boolean;
   /**
    * Photographs the model is allowed to LOOK at, downscaled.
@@ -253,6 +264,24 @@ export interface IntakeState {
    * then asked about rather than outranked (`totalsDoubts`).
    */
   totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
+  /**
+   * The totals a further packing-shaped Excel GAVE (docs/IKKI-ESHIK.md
+   * §1.2.2, §1.2.5): its gross Σ as the brutto — or, from a net column only,
+   * offered as a netto (`weightNetto`), which the freight total refuses where
+   * the section needs brutto — and its m³ Σ. Written in the same patch as the
+   * file, so a re-read cannot lose it. Ranked below the seller's typed figure
+   * and `totalsAnswer`, above the model; `at` is where the material stood, so
+   * a `totalsAnswer` older than it is doubted (`totalsDoubts`). `label` names
+   * the file. Null = no such file. Optional in the stored row: a row written
+   * before it reads null (`migrateIntakeState`).
+   */
+  fileTotals: {
+    weightKg: number | null;
+    volumeM3: number | null;
+    weightNetto: boolean;
+    label: string;
+    at: TotalsMark;
+  } | null;
   /**
    * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
    * beside `totalsAnswer` so a re-read cannot erase it — a typed «Yiwu →

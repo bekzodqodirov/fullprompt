@@ -157,7 +157,9 @@ describe('the prefill survives a deploy', () => {
     expect(jobs.indexOf('prefillStanding(')).toBeLessThan(jobs.indexOf('aiPrefill(requestId'));
     // …and the revision it compares against travels ON the job, stamped by
     // the sender: read at drain time it would always agree with itself.
-    expect(jobs).toContain('prefillStanding(requestId, data.rev ?? null)');
+    // Re-anchored for Ikki eshik (docs/IKKI-ESHIK.md §0.3): the same read
+    // hands back the request's door (`seen`), read from the ROW.
+    expect(jobs).toContain('prefillStanding(requestId, data.rev ?? null, seen)');
     // Re-anchored for round 3 (§10.2.1): the revision is the TICKET's — taken
     // on the request's row in the statement that marks the pass owed — and
     // it travels in the payload the job is sent with.

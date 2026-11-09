@@ -178,6 +178,7 @@ afterAll(async () => {
 async function open(overrides: Partial<Parameters<typeof openCalcRequest>[0]> = {}) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -443,6 +444,7 @@ describe('a lead’s request follows the cargo onto the deal', () => {
   it('re-keys on win, so the deal’s own save can stop the clock', async () => {
     const { id } = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'lead',
         entityId: leadId,
         section: 'yolkira',
@@ -487,6 +489,7 @@ describe('the materials are the seller’s own note', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'deal',
           entityId: dealId,
           section: 'podklyuch',

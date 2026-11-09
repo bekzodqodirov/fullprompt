@@ -70,6 +70,7 @@ beforeAll(async () => {
   dealId = deal!.id;
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

@@ -295,6 +295,19 @@ async function refuse(sp: Speaker, words: string, extra?: Record<string, unknown
 type Stored = NonNullable<Awaited<ReturnType<typeof import('../../wms/calc/service').storedRequestFacts>>>;
 
 /**
+ * The `ai` flag of a collection opened ON a stored request — the ➕ add door
+ * and the seeded door (docs/IKKI-ESHIK.md §0.3). The request's door decides:
+ * 'plain' → false, 'ai' → true. NULL is legacy — every request before 0140,
+ * the card form's, the thread's, the agent's — and keeps exactly the flag that
+ * door set before 0140 (`legacy`), so nothing a NULL request opens changes.
+ */
+export function collectionAiOf(door: 'plain' | 'ai' | null | undefined, legacy: boolean): boolean {
+  if (door === 'plain') return false;
+  if (door === 'ai') return true;
+  return legacy;
+}
+
+/**
  * The sweep's «▶️», reached dynamically: calc-intake-sweep.ts imports this
  * file statically (the frozen save's release), so a static import back made
  * the two modules a cycle — whichever loads first sees the other half-built
@@ -479,7 +492,8 @@ async function openAdd(
     totalsStored: !sum,
     volumeM3: sum ? null : stored.facts.volumeM3,
   };
-  startIntake(chatId, base.section, { ai: true, staffId, amend: base, openedBy });
+  // The request's door (§0.3); a legacy one keeps the add door's own `true`.
+  startIntake(chatId, base.section, { ai: collectionAiOf(stored.door, true), staffId, amend: base, openedBy });
   // Quiet (dur-1): `startIntake` set the clocks, and a non-quiet patch made
   // while a REPLY is handled would mark that reply taken (`takenUpTo`) before
   // its answer is written — a flush in the table's send, a restart, and the
@@ -536,9 +550,16 @@ async function openSeeded(
   // the add door does): copied as a figure, a forgotten line added here would
   // land under the old Σ, labelled typed, and the road priced on it.
   const sum = volumeIsLinesSum(stored.base.volumeM3, stored.base.items);
-  // The certificate is a customs question (review PF-7): a returned yo‘lkira
-  // request carries no certificate line and no «📄 Sertifikat» button.
-  const opening = startIntake(chatId, stored.base.section, { ai: sectionParts(stored.base.section).customs, staffId, amend: null, openedBy });
+  // The source request's door (§0.3). A legacy one keeps the flag this door
+  // always set — a customs section's, because the certificate is a customs
+  // question (review PF-7): a returned yo‘lkira request carries no certificate
+  // line and no «📄 Sertifikat» button.
+  const opening = startIntake(chatId, stored.base.section, {
+    ai: collectionAiOf(stored.door, sectionParts(stored.base.section).customs),
+    staffId,
+    amend: null,
+    openedBy,
+  });
   // Quiet, as the add door's (dur-1): the opening is no answer to anything.
   const state = updateIntake(
     chatId,

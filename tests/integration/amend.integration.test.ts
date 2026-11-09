@@ -171,6 +171,7 @@ async function land(
   const entityId = opts.lead ? await freshLead() : await freshDeal();
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: opts.lead ? 'lead' : 'deal',
       entityId,
       section: 'rastamojka',

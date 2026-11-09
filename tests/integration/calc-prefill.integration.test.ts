@@ -132,6 +132,7 @@ async function open(
 ) {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -155,6 +156,7 @@ async function openSection(
 ) {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       ...extra,
       entityType: 'deal',
       entityId: dealId,

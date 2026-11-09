@@ -37,8 +37,10 @@ import {
   type CalcFacts,
   type CalcGoodsFact,
   type CalcSection,
+  type IntakeDoor,
   type LineNeed,
 } from './intake';
+import { intakeDoorSql, parseIntakeDoor, stampIntakeDoorInTx, writableIntakeDoor } from './intake-door';
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
@@ -246,6 +248,16 @@ export interface CalcRequestInput {
   /** A note already written — the bot path, where `landIntake` wrote it. */
   noteId?: string | null;
   source: 'card' | 'bot';
+  /**
+   * Which of the bot's two doors the job came in through (0140,
+   * docs/IKKI-ESHIK.md §0.1): 'plain' = «🧮 Hisoblatish», 'ai' = «🤖 AI
+   * rastamojka», null = no bot door — the card form, the thread door, the AI
+   * sotuvchi — which every reader treats exactly as today (§0.2). REQUIRED,
+   * not optional: every caller names its door or fails to compile, because
+   * an optional one fails OPEN (an absent door would silently read «legacy»
+   * on a door that has one).
+   */
+  intakeDoor: IntakeDoor | null;
   /** Set by the bot, which acts for the staff member who collected. */
   hasMaterials?: boolean;
   /**
@@ -501,6 +513,10 @@ export async function openCalcRequest(
 
   // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
   const pool = await vedRotaPool();
+  // The door, written only once 0140 has landed (§0.4): on an older schema
+  // the INSERT leaves it out and every reader reads NULL — never a refused
+  // landing. The probe is pooled, so it is asked here, before the transaction.
+  const door = await writableIntakeDoor(input.intakeDoor);
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
@@ -563,6 +579,7 @@ export async function openCalcRequest(
       })
       .returning({ id: calcRequests.id });
     const id = row!.id;
+    if (door) await stampIntakeDoorInTx(tx, id, door);
     if (items.length > 0) {
       await tx.insert(calcRequestItems).values(items.map((item) => ({ ...item, requestId: id })));
     }
@@ -1758,6 +1775,8 @@ export { isComplete };
 export async function storedRequestFacts(requestId: string): Promise<{
   base: AmendBase;
   facts: CalcFacts;
+  /** The bot door it came in through (0140, §0.3) — null = legacy, today's behaviour. */
+  door: IntakeDoor | null;
   rev: number;
   handsoffRev: number | null;
   aiPassRev: number | null;
@@ -1789,6 +1808,8 @@ export async function storedRequestFacts(requestId: string): Promise<{
         completedVia: calcRequests.completedVia,
         returnReason: calcRequests.returnReason,
         answerAmount: calcRequests.answerAmount,
+        // Through the one reader fragment — NULL, not 42703, one migration behind.
+        intakeDoor: intakeDoorSql(calcRequests),
         dealCode: deals.code,
         clientCode: clients.clientCode,
         clientName: clients.name,
@@ -1860,6 +1881,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
     totalsStored: true,
   };
   const deal = row.entityType === 'deal';
+  const door = parseIntakeDoor(row.intakeDoor);
   const clientLabel = deal
     ? [row.clientCode, row.clientName].filter((v): v is string => !!v?.trim()).join(' ') || null
     : [row.leadName, row.leadPhone].filter((v): v is string => !!v?.trim()).join(' ') || null;
@@ -1870,6 +1892,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
     entityId: row.entityId,
     leadOpen: deal ? null : row.leadKind === 'open',
     section: row.section,
+    door,
     clientLabel,
     openedRev: row.rev,
     items: goods.map((g, k) => ({
@@ -1894,6 +1917,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
   return {
     base,
     facts,
+    door,
     rev: row.rev,
     handsoffRev: row.handsoffRev,
     aiPassRev: row.aiPassRev,

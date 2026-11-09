@@ -78,6 +78,7 @@ describe('a stored request with no m³ is asked for it, whatever its lines say',
   it('the chip and the freight engine agree', async () => {
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'lead',
         entityId: leadId,
         section: 'yolkira',

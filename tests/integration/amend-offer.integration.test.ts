@@ -123,7 +123,7 @@ async function request(who = sellerId): Promise<{ id: string; card: string }> {
   const [deal] = await db.insert(deals).values({ code, clientId, stageId, title: 'Taklif', createdBy: who }).returning();
   madeDeals.push(deal!.id);
   const r = await openCalcRequest(
-    { entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: 'Sumka', quantity: 10 }], source: 'card' },
+    { intakeDoor: null, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: 'Sumka', quantity: 10 }], source: 'card' },
     { actorId: who },
   );
   madeRequests.push(r.id);

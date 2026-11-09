@@ -140,6 +140,7 @@ afterAll(async () => {
 async function open(overrides: Partial<Parameters<typeof openCalcRequest>[0]> = {}) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -441,6 +442,7 @@ describe('what the shipped-code audit found', () => {
     // and a won lead is exactly when the quote becomes the invoice.
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'lead',
         entityId: leadId,
         section: 'yolkira',

@@ -153,6 +153,7 @@ afterAll(async () => {
 async function open(overrides: Partial<Parameters<typeof openCalcRequest>[0]> = {}) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',

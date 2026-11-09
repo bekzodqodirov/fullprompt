@@ -102,6 +102,7 @@ afterAll(async () => {
 async function sealableRequest(): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

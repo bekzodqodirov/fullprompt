@@ -154,6 +154,7 @@ async function newDeal(): Promise<string> {
 async function openJob(dealId: string): Promise<string> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'yolkira',

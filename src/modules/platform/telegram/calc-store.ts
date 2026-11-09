@@ -279,6 +279,7 @@ export function startIntake(
     facts: {},
     steps: [],
     notes: [],
+    fileNotes: [],
     aiUsed: false,
     images: [],
     imagesSkipped: 0,
@@ -287,6 +288,7 @@ export function startIntake(
     hasCertificate: true,
     route: null,
     totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
+    fileTotals: null,
     routeAnswer: null,
     lineAnswers: [],
     offers: [],
@@ -991,6 +993,23 @@ export function flushBeforeConfirm(): Transformer {
 }
 
 /**
+ * A stored row as THIS release reads it (docs/IKKI-ESHIK.md §1.3): the ONE
+ * place an older collection's shape is brought forward, run on every row the
+ * hydrate restores, before it is put in memory. Pure.
+ *
+ * Today it gives the fields 0140's round added their empty values — a row
+ * written before them has neither: no `fileTotals` (null), no `fileNotes`
+ * ([]). A stored value always wins over the default.
+ */
+export function migrateIntakeState(row: IntakeState): IntakeState {
+  return {
+    ...row,
+    fileTotals: row.fileTotals ?? null,
+    fileNotes: Array.isArray(row.fileNotes) ? row.fileNotes : [],
+  };
+}
+
+/**
  * Restore the durable collections before the first `getUpdates`. Every row
  * that ran out less than 24 hours ago is loaded too, so the sweep ends it WITH
  * its line (durability-12 b); memory wins where it already holds a chat. A
@@ -1030,7 +1049,7 @@ export async function hydrateIntakes(): Promise<number> {
   let loaded = 0;
   for (const row of candidates) {
     if (ended.has(row.note_id) || store.collections.has(row.chat_id)) continue;
-    const state = { ...row.state, expires: row.state.touchedAt + INTAKE_TTL_MS };
+    const state = { ...migrateIntakeState(row.state), expires: row.state.touchedAt + INTAKE_TTL_MS };
     store.collections.set(row.chat_id, state);
     loaded += 1;
   }

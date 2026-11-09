@@ -432,6 +432,7 @@ async function photoNote(): Promise<string> {
 async function openRequest(section: 'rastamojka' | 'podklyuch' = 'rastamojka', card?: Card) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'lead',
       entityId: card?.entityId ?? leadId,
       section,

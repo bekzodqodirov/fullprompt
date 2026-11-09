@@ -2856,6 +2856,22 @@ export const calcRequests = pgTable(
     aiPassRev: integer('ai_pass_rev'),
     aiPassAt: timestamp('ai_pass_at', { withTimezone: true }),
     aiPassJob: uuid('ai_pass_job'),
+    /*
+     * `intake_door` (0140, docs/IKKI-ESHIK.md §0) — 'plain' | 'ai' | NULL,
+     * which of the bot's two doors the job came in through — is deliberately
+     * NOT declared here this release, as 0127's three `crm_activities`
+     * columns were not. Drizzle names EVERY declared column in every INSERT
+     * (an absent value is rendered `default`), in a bare `.returning()` and in
+     * every whole-row select (`db.query.calcRequests.findFirst`, `.select()`),
+     * and those are every calc writer and reader in the app: declared, each
+     * would be a 42703 on a database one migration behind (#472), and the
+     * landing would answer `server_behind` — exactly what §0.4 forbids. So it
+     * lives in raw SQL only, through ONE module (`wms/calc/intake-door.ts`):
+     * written by `stampIntakeDoorInTx` behind a probe, read everywhere through
+     * `to_jsonb(row)->>'intake_door'` (NULL, not 42703, on an old schema).
+     * Fenced by tests/unit/intake-door-wire.test.ts. A LATER release, once
+     * 0140 is everywhere, may declare it.
+     */
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

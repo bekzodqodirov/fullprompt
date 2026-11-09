@@ -243,7 +243,7 @@ async function open(
 ): Promise<string> {
   const dealId = await freshDeal();
   const r = await openCalcRequest(
-    { entityType: 'deal', entityId: dealId, section, items, source: 'card', ...extra },
+    { intakeDoor: null, entityType: 'deal', entityId: dealId, section, items, source: 'card', ...extra },
     { actorId: by },
   );
   madeRequests.push(r.id);
@@ -693,14 +693,14 @@ describe('the lenta’s chips still read a re-run (feed.ts, PF-9)', () => {
     // On the lead's card, written by the worker's own lenta copy.
     const tariffId = (
       await openCalcRequest(
-        { entityType: 'lead', entityId: leadId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Lenta tarif ${SUFFIX}` }], source: 'card' },
+        { intakeDoor: null, entityType: 'lead', entityId: leadId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Lenta tarif ${SUFFIX}` }], source: 'card' },
         ctx(),
       )
     ).id;
     madeRequests.push(tariffId);
     const aiId = (
       await openCalcRequest(
-        { entityType: 'lead', entityId: leadId, section: 'rastamojka', items: [{ name: `Lenta ai ${SUFFIX}`, tnvedCode: '3916100000', weightKg: 100 }], source: 'card' },
+        { intakeDoor: null, entityType: 'lead', entityId: leadId, section: 'rastamojka', items: [{ name: `Lenta ai ${SUFFIX}`, tnvedCode: '3916100000', weightKg: 100 }], source: 'card' },
         ctx(),
       )
     ).id;
@@ -839,6 +839,7 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
     madeNotes.push(noteId);
     const land = () =>
       landIntake({
+        intakeDoor: null,
         noteId,
         section: 'rastamojka',
         facts: { weightKg: 100, goods: [{ name: `Kesilgan ${SUFFIX}`, weightKg: 100 }] },

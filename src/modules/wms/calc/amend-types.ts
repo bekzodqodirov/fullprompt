@@ -4,7 +4,7 @@
  * writer. Type-only imports, so the bot's modules can name these without
  * pulling wms into platform at run time.
  */
-import type { CalcGoodsFact, CalcSection } from './intake';
+import type { CalcGoodsFact, CalcSection, IntakeDoor } from './intake';
 import type { NeedLaw } from './needs';
 import type { MeasureUnit } from './pricing';
 
@@ -40,6 +40,14 @@ export interface AmendBase {
    * read in `storedRequestFacts`; asked again under the lock at the save. */
   leadOpen: boolean | null;
   section: CalcSection;
+  /**
+   * The bot door the request came in through (0140, docs/IKKI-ESHIK.md §0.3):
+   * the ➕ door and the seeded door open their collection's `ai` from it
+   * ('plain' → false, 'ai' → true; null keeps today's flag). Optional: an add
+   * collection hydrated with a base built before 0140 reads none — null, so
+   * it keeps the flag it was opened with.
+   */
+  door?: IntakeDoor | null;
   clientLabel: string | null;
   openedRev: number;
   /** Seq order. */

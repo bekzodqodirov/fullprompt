@@ -981,6 +981,13 @@
       "when": 1785190000118,
       "tag": "0139_calc_intake_durable",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1785190000119,
+      "tag": "0140_intake_door",
+      "breakpoints": true
     }
   ]
 }

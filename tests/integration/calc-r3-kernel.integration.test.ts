@@ -124,7 +124,7 @@ describe('the landing (K2)', () => {
   it('writes handsoff_rev = 0 beside rev 0: a request nobody has touched reads hands-off from birth', async () => {
     const deal = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Kurtka ${SUFFIX}`, quantity: 10 }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Kurtka ${SUFFIX}`, quantity: 10 }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -172,7 +172,7 @@ describe('the landing (K2)', () => {
     });
     await held;
     const twin = openCalcRequest(
-      { entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Twin ${SUFFIX}` }], noteId, source: 'bot' },
+      { intakeDoor: null, entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Twin ${SUFFIX}` }], noteId, source: 'bot' },
       { actorId },
     );
     // Wait (bounded) until the twin is parked on an advisory lock.
@@ -208,6 +208,7 @@ describe('storedRequestFacts (K14)', () => {
     const deal = await freshDeal();
     const r = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal.id,
         section: 'rastamojka',
@@ -284,7 +285,7 @@ describe('storedRequestFacts (K14)', () => {
       .returning({ id: leads.id });
     madeLeads.push(lead!.id);
     const r = await openCalcRequest(
-      { entityType: 'lead', entityId: lead!.id, section: 'yolkira', items: [{ name: `Yuk ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'lead', entityId: lead!.id, section: 'yolkira', items: [{ name: `Yuk ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -306,7 +307,7 @@ describe('saveTable’s seams (K15)', () => {
   async function landed(): Promise<{ id: string; itemId: string }> {
     const deal = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: deal.id, section: 'podklyuch', weightKg: 300, volumeM3: 2, toCity: 'Andijon', items: [{ name: `Sumka ${SUFFIX}`, quantity: 5 }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: deal.id, section: 'podklyuch', weightKg: 300, volumeM3: 2, toCity: 'Andijon', items: [{ name: `Sumka ${SUFFIX}`, quantity: 5 }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -371,7 +372,7 @@ describe('a reading billed on its note (K15)', () => {
   it('stands on the note alone until the landing attaches it — once', async () => {
     const deal = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Lak ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Lak ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -396,7 +397,7 @@ describe('machine messages per pass, and the muted seller’s direct row (K15)',
   it('a row written before passes had names is the landing’s; a named pass speaks once of its own', async () => {
     const deal = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Stol ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: deal.id, section: 'rastamojka', items: [{ name: `Stol ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);

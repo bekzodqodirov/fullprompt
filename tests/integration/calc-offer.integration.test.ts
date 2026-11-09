@@ -174,6 +174,7 @@ async function sealed(
   const code = opts.code ?? CODE_A;
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: opts.onLead ? 'lead' : 'deal',
       entityId: opts.onLead ? leadId : dealId,
       section: 'podklyuch',

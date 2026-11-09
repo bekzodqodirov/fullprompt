@@ -209,6 +209,7 @@ async function answered(
   }
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       ...entity,
       section,
       fromCity: section === 'rastamojka' ? null : 'Yiwu',
