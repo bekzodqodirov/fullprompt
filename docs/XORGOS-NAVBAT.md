@@ -211,20 +211,33 @@ wins.
 11. **The map label shows the day of the wait beside the code** («HR-001 ⏳2»), in both
     renderers.
 
-12. **On the Horgos road a standing pin is not pressed off** (`pin_kept`, checkpoint.ts). A
-    second tap of «Qozog‘istonda» to «confirm» used to clear it and send the truck back into the
-    Horgos queue, late. A pin off the road still clears; moving it is pressing another place.
+12. **On the Horgos road a standing pin is never pressed off — a re-press RE-STAMPS it**
+    (checkpoint.ts, «it is here now», what every press means). A second tap of «Qozog‘istonda» to
+    «confirm» used to clear it and send the truck back into the Horgos queue, late. «Horgosda
+    turibdi» pressed again after the call counts the queue from the press. A pin off the road
+    still clears; moving it is pressing another place. (The first build refused it with
+    `pin_kept`; the review found that left a pin a newer phone fix overruled impossible to press,
+    while the warning named it.)
 13. **The border pin is named «🛃 Horgosda turibdi» on a road that holds** (`pinLabel`), on the
     Mashina tab, the board's ⋯ and the card's road line. A Yallama truck is «at the border» too;
     the Yallama warning says not to press it.
 14. **The warning re-arms on the wait's COUNTING start** (`QueueHold.countedFrom`: the entry, or
-    the typing on /trucks if later). With the toggle gone, typing a new wait is how the logist
-    restarts the count, and a wait typed after the warning is a new wait.
+    the typing on /trucks if later). A re-stamped «Horgosda turibdi» or a CHANGED number after the
+    warning is a new wait. The same number saved again is a confirmation (the age moves, the clock
+    does not — the panel's rule since 2026-09-29).
+15. **The listing message names the press per queue** — never «Qozog‘istonda» for a Yallama truck.
+16. **A pin ahead of the queue the phone still sees the truck in** dates the entry from the
+    departure's walk when nothing held lies before the queue (Horgos): a HOR truck's yard is inside
+    the post's radius, so the phone never «sees it arrive» there, and the newest fix would restart
+    the count on every report.
+17. **No `slowestArrivalMs` in the held branch**: it priced the wait stretched (`withLead`) where
+    the panel shifts it, so a phone's report moved the date's far end by up to a day.
 
 **Rejected or stated:**
-- **To restart the Horgos count, type the wait again on /trucks** (the panel says so). It moves
-  the count for every truck in that queue — the panel's own rule since 2026-09-29. A
-  «Horgosda turibdi» press restarts it for a truck that has no pin yet.
+- **To restart a count**: «Horgosda turibdi» pressed again (Horgos), or a changed number on /trucks
+  (either queue — it moves the count for every truck in that queue, the panel's rule).
+- **A mistaken pin on that road cannot be taken off**, only replaced by the true place; if that is
+  the Horgos queue, its count starts from the press.
 - **`scheduleEstimate` stays the raw walk.** It has no production reader. The panel's promise is
   now pinned through `placeTruck` (queue-hold.test.ts).
 - **Deploy morning:** trucks the old walk had moved past Horgos snap back to Horgos «late» until

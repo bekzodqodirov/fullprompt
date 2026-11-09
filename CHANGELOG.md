@@ -21,8 +21,8 @@ Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migra
 - **Ogohlantirish (2a, 3a).**
   - Mashina kiritilgan eng ko'p kundan **1 kun** oshib ketsa, logistlarga Telegramda bitta xabar boradi: qaysi mashina, qaysi navbatda necha kundan beri turibdi, qaysi tugmani bosish kerak, va mashina kartasiga havola. Xuddi shu xabar «📵 haydovchi telefoni jim» xabari kabi egasi va adminlarga ham boradi.
   - Har navbat uchun bir marta yuboriladi.
-  - Logist haydovchiga qo'ng'iroq qilib, «Mashinalar» sahifasida navbat kunini qayta kiritsa, navbat shu paytdan qaytadan hisoblanadi. Bu yangi muddat ham 1 kun oshsa, yana bitta xabar boradi. Hali belgisi yo'q mashina uchun «🛃 Horgosda turibdi» ni bosish ham hisobni shu paytdan boshlaydi.
-  - Yallama navbatidagi mashina haqidagi xabarda «🛃 Horgosda turibdi» ni bosmang deb yoziladi: u mashinani Horgos navbatiga qaytaradi.
+  - Logist haydovchiga qo'ng'iroq qilib, «🛃 Horgosda turibdi» ni bossa (qayta bossa ham), Horgos navbati shu paytdan qaytadan hisoblanadi. «Mashinalar» sahifasida navbat kunini **o'zgartirsa** ham shunday. Bu yangi muddat ham 1 kun oshsa, yana bitta xabar boradi. O'sha raqamni qayta saqlash esa hisobni qaytadan boshlamaydi — faqat «tekshirildi» deb vaqtini yangilaydi, avvalgidek.
+  - Bir nechta mashinali xabarda har navbat uchun o'z tugmasi yoziladi: Horgosdagilarga «🇰🇿 Qozog‘istonda» yoki «🇺🇿 O‘zbekistonda», Yallamadagilarga faqat «🇺🇿 O‘zbekistonda» va «🛃 Horgosda turibdi» ni bosmang (u mashinani Horgos navbatiga qaytaradi).
   - Bir vaqtda bir nechta mashina kechiksa, har bir logistga ro'yxat bo'lgan bitta xabar boradi.
   - Xabarlar faqat ish vaqtida yuboriladi (08:00–19:30). Profildagi «Ogohlantirishlar» belgisi bu xabarni ham o'chiradi.
 - **Kechikkan mashina** (1 kundan oshgan) dashboard va doskada «kechikkan» qatoriga o'tadi, ro'yxatda yuqoriga chiqadi, yozuvi «… haydovchi bilan bog‘laning» bilan tugaydi. Mijoz kabinetida navbat muddati o'tgan mashinaga sana ko'rsatilmaydi.
@@ -42,7 +42,8 @@ Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migra
   - Shu paytgacha bunday mashinaning mijoz kabinetidagi chizig'i Horgosda turadi va sanasi ko'rinmaydi.
 - **Qashqar yo'li o'zgarmadi.** Irkeshtam navbati kunlari kiritilmaydi, shuning uchun u yerda mashina avvalgidek jadval bo'yicha yuradi.
 - **Horgos yo'lida «Chegarada» tugmasi «🛃 Horgosda turibdi» deb nomlandi.** Yallamadagi mashina ham «chegarada», shuning uchun eski nom chalg'itardi: uni bosish mashinani Horgosga qaytaradi.
-- **Horgos yo'lida bosilgan belgini qayta bosib o'chirib bo'lmaydi.** Ilgari «Qozog‘istonda» ni «tasdiqlash» uchun yana bosish uni o'chirardi va mashina Horgos navbatiga «kechikkan» bo'lib qaytardi. Endi bot «Bu belgi turibdi…» deydi. Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Boshqa yo'llarda tugma avvalgidek ishlaydi.
+- **Horgos yo'lida bosilgan belgi qayta bosilganda o'chmaydi, «hozir shu yerda» deb yangilanadi.** Ilgari «Qozog‘istonda» ni «tasdiqlash» uchun yana bosish uni o'chirardi va mashina Horgos navbatiga «kechikkan» bo'lib qaytardi. Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Xato bosilgan belgini o'chirib bo'lmaydi — to'g'ri joyni bosing; agar to'g'ri joy Horgos navbati bo'lsa, navbat shu bosilgan paytdan hisoblanadi. Boshqa yo'llarda tugma avvalgidek ishlaydi.
+- **Logist «Qozog‘istonda» ni erta bossa-yu, haydovchi telefoni hali Horgos navbatidan xabar bersa,** mashina Horgosda ko'rinadi va navbat skladdan chiqqandan beri hisoblanadi (ilgari har xabarda «1-kun» dan qaytadan boshlanardi va hech qachon kechikmasdi).
 - Telefon bilan navbatda 12-16 km dan uzoqroq turgan mashina hali ham «postga ketyapti» deb ko'rinadi.
 
 ## 2026-11-03 — 8 band, 3-raund: «Hisoblatish» deploydan keyin ham saqlanadi, savollar bitta jadval, «➕ Shu so‘rovga qo‘shish»

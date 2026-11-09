@@ -6731,15 +6731,15 @@ later. Office hours only (`*/30 3-14 * * *` UTC = 08:00-19:30 Tashkent). One mig
 says so once and sends nothing (`isServerBehind`). `TruckQueueLate` is in the `alerts` mute group
 beside TruckSilent, a newcomer never in FOUNDERS — so an old «alerts» tick mutes it too, stated.
 
-**#1585 — On the Horgos road a pin is not pressed off, its border pin is named «Horgosda
+**#1585 — On the Horgos road a pin is never pressed off, its border pin is named «Horgosda
 turibdi», and the warning counts from the wait it was counted from (the intent judge, before the
-merge).** Three ways the round's own buttons could undo it. (1) **The toggle.** «Chegarada» and
+merge; the refusal it first shipped with was replaced by a re-stamp in #1586).** Three ways the round's own buttons could undo it. (1) **The toggle.** «Chegarada» and
 every other pin has always cleared on a second press. Off the Horgos road that only loses a pin;
 on it the pin is what moved the truck past a queue, so a logist tapping «Qozog‘istonda» again to
 «confirm» sent a truck in Kazakhstan back into the Horgos queue — late, with a warning to every
-logist. `setTrackingCheckpoint` now refuses `pin_kept` when the pressed key is the one standing,
-on the truck's own road, and that road holds (`roadHolds`); a pin off the road (written before
-#531) still clears, so nothing is stuck for ever; moving it is pressing another place. (2) **The
+logist. On a road that holds (`roadHolds`) `setTrackingCheckpoint` never clears the standing pin
+(#1586: it re-stamps it); a pin off the road (written before #531) still clears, so nothing is
+stuck for ever; moving it is pressing another place. (2) **The
 word.** A truck standing at Yallama is «chegarada» too, and pressing «Chegarada» for it puts it
 back at Horgos. `pinLabel(key, held)` names the border pin «🛃 Horgosda turibdi» on a road that
 holds — on the Mashina tab, the board's ⋯ and the card's road line — and the Yallama warning says
@@ -6751,3 +6751,25 @@ plus the longest wait) is what the claim stores now — a wait counted from afte
 new wait. The cabinet's ranking key is a function (`placeArriveBy`) so it could be tested. 11 red
 proofs by string edit, one of which (the press over an older phone in the queue) first stayed
 green and was re-anchored on a phone seen one hour before the press.
+
+**#1586 — The round reviewed as built (four lenses, a skeptic each): five confirmed, all fixed.**
+(1) **A re-press of the standing pin RE-STAMPS it** on a road that holds — «it is here now», what
+every press means — instead of #1585's `pin_kept` refusal. The refusal left two dead ends: a pin a
+newer phone fix had overruled (the truck back at Horgos by the phone) could not be pressed again,
+while the warning told the logist to press exactly it; and a pinned truck had no way to restart
+its Horgos count after the call. Now «Horgosda turibdi» again counts the queue from the press and
+re-arms the warning. (2) **The listing message names the press per QUEUE** — it told Yallama trucks
+«Horgosdan o‘tgan bo‘lsa «🇰🇿 Qozog‘istonda»», which every Yallama truck satisfies and which drags
+it back into Kazakhstan. (3) **A pin ahead of the queue the phone still sees the truck in** (a
+premature «Qozog‘istonda») dated the Horgos entry from the NEWEST fix — the queueSince history is
+empty by construction for a HOR truck, its yard being inside the post's 0.15° — so the clock
+restarted on every report and the truck was never late; the departure's walk dates it now when
+nothing held lies before the queue. (4) **The held branch dropped `slowestArrivalMs`**: it priced the
+queue on the walk's route, whose wait typed mid-queue is STRETCHED (`withLead`) where the panel
+shifts it, so one phone report moved the far end of the date by up to a day and the date then
+vanished at `dueBy`, before the end it promised. (5) **Saving the same number again on /trucks is a
+confirmation** (the panel's rule since 2026-09-29: the age moves, the clock does not), and the
+round's own sentences had promised it restarts the count — the panel, the CHANGELOG and §5 now say
+what does: «Horgosda turibdi» again, or a changed number. STATED, not fixed: a mistaken pin on that
+road cannot be taken off, only replaced by the true place, and if the true place is the Horgos
+queue its count starts from that press.

@@ -8,6 +8,7 @@ import { usersWithPermission } from '../../platform/notifications/service';
 import { batchTabHref } from '../batches/card-door';
 import type { BorderPost } from './engine';
 import { hoursAsDays, queueDayNo, type QueueHold } from './eta';
+import { BORDER_POST_KEYS } from './map-data';
 import { roadRowsNow } from './on-road';
 
 /**
@@ -123,10 +124,14 @@ export function lateQueueText(trucks: readonly LateQueueTruck[], appUrl: string)
       (truck) => `• ${truckLine(truck)} — ${appUrl}${batchTabHref(truck.batchId, 'mashina')}`,
     ),
     ...(more > 0 ? [`… va yana ${more} ta — Partiya doskasida`] : []),
-    `Haydovchilardan so‘rang: Horgosdan o‘tgan bo‘lsa ${KZ_BUTTON}, O‘zbekistonga kirgan bo‘lsa ${UZ_BUTTON} tugmasini bosing (mashina kartasida).`,
-    ...(trucks.some((truck) => truck.queue.post === 'yallama')
-      ? [`Yallamadagilar uchun ${WRONG_PRESS}`]
-      : []),
+    'Haydovchilardan so‘rang va mashina kartasida bosing:',
+    // The press per QUEUE, never one for all: «Qozog‘istonda» for a truck at
+    // Yallama would drag it back into Kazakhstan (the review), and from
+    // Horgos both are named (`NEXT_PRESS`).
+    ...BORDER_POST_KEYS.filter((post) => trucks.some((truck) => truck.queue.post === post)).map(
+      (post) =>
+        `— ${POST_NAME[post]}dagilar: ${NEXT_PRESS[post]}${post === 'yallama' ? ` — ${WRONG_PRESS}` : ''}`,
+    ),
   ].join('\n');
 }
 

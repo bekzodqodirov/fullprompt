@@ -312,6 +312,37 @@ describe('the driver’s phone is the truth (4a)', () => {
     expect(place.fresh).toBe(true);
     expect(place.point!.x).toBeCloseTo(near.x, 2);
   });
+
+  it('«Qozog‘istonda» pressed before it crossed, the phone still at Horgos: the queue counts from the departure’s walk, never from each report', () => {
+    // The review: with no arrival the phone saw (a HOR truck's yard is inside
+    // the post's radius), the entry was the NEWEST fix — «1-kun» on every
+    // report, never late, never warned.
+    for (const age of [0.5, 2.5, 4.5]) {
+      const place = departed(200, {
+        checkpoint: { key: 'in_kz', at: ago(150).toISOString() },
+        fix: fixAt(POST, age),
+      });
+      expect(place.segKey).toBe('border_wait');
+      // Departed 200 h ago, 2 h to the post (the walk's midpoint).
+      expect(place.queue!.enteredAt).toBe(ago(198).toISOString());
+      expect(place.queue!.late).toBe(true);
+    }
+  });
+
+  it('a phone’s report does not move the date of a wait typed mid-queue — shifted, as without the phone', () => {
+    // In the queue 98 h when «0,5–1 kun» is typed, 10 h ago (the review: the
+    // phone's walk priced the stretched wait and moved the far end 29 h).
+    const waits: BorderHours = { khorgos: { hours: [12, 24], sinceMs: ago(10).getTime() } };
+    const bare = placeTruck({ ...HOR_TAS, departedAt: ago(100), checkpoint: null }, waits, NOW);
+    const phoned = placeTruck(
+      { ...HOR_TAS, departedAt: ago(100), checkpoint: null, fix: fixAt(POST, 1) },
+      waits,
+      NOW,
+    );
+    expect(bare.remainingHours).toEqual([2 + 92, 14 + 132]);
+    expect(phoned.remainingHours).toEqual(bare.remainingHours);
+    expect(phoned.queue!.dueBy).toBe(bare.queue!.dueBy);
+  });
 });
 
 describe('the Kashgar road is untouched', () => {
@@ -457,7 +488,22 @@ describe('the words (5a) and the message (3a)', () => {
     expect(text).toContain('HR-100');
     expect(text).not.toContain(`HR-${100 + LATE_QUEUE_LINES}`);
     expect(text).not.toContain('bosmang');
+    expect(text).toContain(
+      '— Horgosdagilar: chegaradan o‘tgan bo‘lsa «🇰🇿 Qozog‘istonda», O‘zbekistonga kirgan bo‘lsa «🇺🇿 O‘zbekistonda»',
+    );
+    expect(text).not.toContain('Yallamadagilar');
+    // The press per QUEUE: a truck at Yallama is never told «Qozog‘istonda»,
+    // which would drag it back into Kazakhstan (the review).
     const mixed = lateQueueText([lateTruck('HR-1', 'khorgos'), lateTruck('HR-2', 'yallama')], '');
-    expect(mixed).toContain('Yallamadagilar uchun «🛃 Horgosda turibdi» ni bosmang');
+    expect(mixed).toContain(
+      '— Yallamadagilar: O‘zbekistonga kirgan bo‘lsa «🇺🇿 O‘zbekistonda» — «🛃 Horgosda turibdi» ni bosmang',
+    );
+    expect(mixed).toContain('— Horgosdagilar:');
+    const yallamaOnly = lateQueueText(
+      [lateTruck('HR-3', 'yallama'), lateTruck('HR-4', 'yallama')],
+      '',
+    );
+    expect(yallamaOnly).not.toContain('Qozog‘istonda');
+    expect(yallamaOnly).not.toContain('Horgosdagilar');
   });
 });

@@ -25,8 +25,12 @@ import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
  * Horgos): there the pin is what moved the truck past a queue, and clearing
  * «Qozog‘istonda» by tapping it again to «confirm» sent a truck in Kazakhstan
  * back into the Horgos queue, late, with a warning to every logist (the
- * design's judge). Moving it is pressing another place; an off-route pin on
- * that road still clears.
+ * design's judge). On that road a press of the standing pin RE-STAMPS it —
+ * «it is here now», what every press means: «Horgosda turibdi» again after
+ * the call counts the queue from the press (and a wait counted from after
+ * the warning re-arms it), and a pin a newer phone fix overruled answers the
+ * warning that names it (the review: refusing it left the logist told to
+ * press a button that refused). An off-route pin on that road still clears.
  */
 
 export type CheckpointErrorCode =
@@ -34,8 +38,7 @@ export type CheckpointErrorCode =
   | 'not_in_transit'
   | 'unknown_key'
   | 'not_on_route'
-  | 'checkpoint_changed'
-  | 'pin_kept';
+  | 'checkpoint_changed';
 
 export class CheckpointError extends Error {
   constructor(public readonly code: CheckpointErrorCode) {
@@ -102,10 +105,10 @@ export async function setTrackingCheckpoint(
     const offered = checkpointsFor(origin?.code ?? '', dest?.code ?? '', dest?.country ?? null);
     let next: { key: CheckpointKey; at: string } | null;
     if (current === pressed) {
-      if (offered.includes(pressed) && roadHolds(origin?.code ?? '', dest?.code ?? '')) {
-        throw new CheckpointError('pin_kept');
-      }
-      next = null;
+      next =
+        offered.includes(pressed) && roadHolds(origin?.code ?? '', dest?.code ?? '')
+          ? { key: pressed, at: new Date().toISOString() }
+          : null;
     } else {
       if (!offered.includes(pressed)) throw new CheckpointError('not_on_route');
       next = { key: pressed, at: new Date().toISOString() };

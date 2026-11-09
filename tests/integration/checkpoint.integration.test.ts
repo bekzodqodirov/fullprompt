@@ -138,7 +138,7 @@ describe('a press is judged against the pin the presser SAW (the batch board)', 
   });
 });
 
-describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is not pressed off', () => {
+describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is never pressed off — a re-press re-stamps it', () => {
   // The Horgos road is keyed by the warehouse CODE and no seed carries one,
   // so the block mints `HOR` when the database has none. The press audits on
   // the truck's origin (audit_log's FK), so a minted warehouse cannot be
@@ -184,15 +184,28 @@ describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is not pres
     }
   });
 
-  it('«Qozog‘istonda» pressed again to «confirm» is refused in words — the truck stays past Horgos', async () => {
+  const stampOf = async (id: string) =>
+    ((await db.query.batches.findFirst({ where: eq(batches.id, id) }))!.trackingCheckpoint as { at?: string } | null)
+      ?.at ?? null;
+
+  it('«Qozog‘istonda» pressed again to «confirm» keeps it — stamped with the new press, never cleared', async () => {
     expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, ''))?.key).toBe('in_kz');
-    expect(await codeOf(setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, 'in_kz'))).toBe('pin_kept');
+    // An hour ago, so the re-stamp is visible.
+    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+    await db.update(batches).set({ trackingCheckpoint: { key: 'in_kz', at: hourAgo } }).where(eq(batches.id, horTruck));
+    const again = await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, 'in_kz');
+    expect(again?.key).toBe('in_kz');
     expect(await pinOf(horTruck)).toBe('in_kz');
+    expect(Date.parse((await stampOf(horTruck))!)).toBeGreaterThan(Date.parse(hourAgo));
   });
 
-  it('moving it is pressing another place', async () => {
-    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_uz', META, 'in_kz'))?.key).toBe('in_uz');
-    expect(await codeOf(setTrackingCheckpoint(actors.logist, horTruck, 'in_uz', META, 'in_uz'))).toBe('pin_kept');
+  it('«Horgosda turibdi» again after the call counts the queue from the press; moving it is pressing another place', async () => {
+    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'at_border', META, 'in_kz'))?.key).toBe('at_border');
+    const before = await stampOf(horTruck);
+    await new Promise((r) => setTimeout(r, 5));
+    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'at_border', META, 'at_border'))?.key).toBe('at_border');
+    expect(Date.parse((await stampOf(horTruck))!)).toBeGreaterThan(Date.parse(before!));
+    expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_uz', META, 'at_border'))?.key).toBe('in_uz');
     expect(await pinOf(horTruck)).toBe('in_uz');
   });
 

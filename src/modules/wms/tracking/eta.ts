@@ -664,6 +664,18 @@ function fixAnchor(
     // keeps its own moment (§2.1).
     const since = held && prior.segIdx !== q ? fix.queueSince?.[queue.post!]?.getTime() : undefined;
     if (since !== undefined && Number.isFinite(since)) entry = since;
+    // A pin AHEAD of the queue the phone still sees the truck in — «Qozog‘istonda»
+    // pressed on the driver's word before it crossed — dates nothing; with no
+    // arrival the phone saw (a HOR truck's yard is inside the post's radius,
+    // so at Horgos it never has one), the entry would be the NEWEST fix and
+    // restart on every report: never late, never warned (the review). When
+    // the departure reaches this queue across nothing held, its walk is the
+    // entry, as for a truck with no pin at all.
+    if (entry === null && held && prior.segIdx > q && !heldAmong(base.segments.slice(0, q))) {
+      const walked = routeWithWaits(base, { segIdx: 0, atMs: departedMs, pinned: false }, waits);
+      entry = departedMs;
+      for (let i = 0; i < q; i += 1) entry += segMid(walked.segments[i]!.hours) * HOUR_MS;
+    }
     let entered = Math.max(departedMs, Math.min(fixMs, entry ?? fixMs));
     // The fix says the truck is STILL in the queue at its own moment. An
     // entry whose walk has it out of the queue by then is disproved by the fix
@@ -885,9 +897,12 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
     const over = nowMs > dueMs;
     const late = nowMs > dueMs + QUEUE_LATE_HOURS * HOUR_MS;
     const hoursTo = (ms: number) => Math.max(0, (ms - nowMs) / HOUR_MS);
-    // A walk from a fix closes no earlier than its slowest arrival (the
-    // window below), so entering the queue does not shorten the date.
-    const slowest = latestMs === null ? 0 : Math.round(hoursTo(latestMs));
+    // No `slowestArrivalMs` here: its queue rule is this window, but priced
+    // on the walk's route, whose queue a wait typed mid-queue STRETCHES
+    // (`withLead`) where the panel shifts it — so a phone's report moved the
+    // date a day later and the date then vanished at `dueBy`, before the end
+    // it promised (the review). What it added before the queue is the
+    // slowest rest of the few kilometres to the post.
     return {
       zone: zoneOfLeg(seg.key),
       segKey: seg.key,
@@ -896,7 +911,7 @@ export function placeTruck(input: PlaceInput, waits: BorderHours, now: Date = ne
         ? null
         : [
             Math.round(hoursTo(opensMs) + afterHours[0]),
-            Math.max(Math.round(hoursTo(dueMs) + afterHours[1]), slowest),
+            Math.round(hoursTo(dueMs) + afterHours[1]),
           ],
       overdue: late,
       atGate: false,

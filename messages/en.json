@@ -1565,8 +1565,7 @@
       "not_in_transit": "The truck is not on the road — pins are for trucks in transit",
       "unknown_key": "No such pin",
       "not_on_route": "This truck does not pass there — choose a pin on its own road",
-      "checkpoint_changed": "The pin changed meanwhile — refresh the page and press again",
-      "pin_kept": "This pin is already set. On the Khorgos road it cannot be cleared by pressing it again — the truck would go back into the queue. If the truck is somewhere else, press that place."
+      "checkpoint_changed": "The pin changed meanwhile — refresh the page and press again"
     },
     "rename": {
       "codeLabel": "New name",
@@ -3037,7 +3036,7 @@
     "queue": {
       "title": "Border queues",
       "meaning": "How long a truck arriving at the queue now will wait. Trucks already queueing are counted from this moment too; trucks that have crossed are unchanged.",
-      "hold": "Until a button is pressed the truck stays in the queue: «In Kazakhstan» takes it past Khorgos, «In Uzbekistan» past Yallama (if the driver’s phone shows the border crossed, it moves on by itself). One day past the longest wait typed, the logists get one Telegram message; type the wait again and they get one more for the new wait.",
+      "hold": "Until a button is pressed the truck stays in the queue: «In Kazakhstan» takes it past Khorgos, «In Uzbekistan» past Yallama (if the driver’s phone shows the border crossed, it moves on by itself). One day past the longest wait typed, the logists get one Telegram message; press «🛃 At Khorgos» again or change the wait and they get one more for the new wait (saving the same number again does not restart the count).",
       "post": {
         "khorgos": "Khorgos (China→Kazakhstan)",
         "yallama": "Yallama (Kazakhstan→Uzbekistan)"
