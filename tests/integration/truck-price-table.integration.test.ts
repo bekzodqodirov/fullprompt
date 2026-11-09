@@ -49,7 +49,7 @@ import {
   zeroedFor,
   type TruckPriceHere,
 } from '@/modules/wms/finance/truck-deal';
-import { singleFormAsks } from '@/app/(protected)/batches/[id]/pricing/table-rules';
+import { singleFormAsks, standingAsksOf } from '@/app/(protected)/batches/[id]/pricing/table-rules';
 import { exactSharesOf, expectedPartFor, prefillFor, type PrefillFacts } from '@/modules/wms/finance/deal-price-hint';
 import { bothFiguresForDeals, upsaleStateOf } from '@/modules/wms/calc/upsale-service';
 import { payableOffersSql } from '@/modules/wms/calc/upsale';
@@ -829,6 +829,52 @@ describe('what a row SAYS of a zeroed price — its own part only; the whole car
     expect(prefillFor(facts({ pricedHere: true, zeroed: zeroedFor(reading, b) }), 'USD')).toEqual({ none: 'priced_here' });
     expect(unpricedDealsOf(candidates, live, zeroed, () => false)).toEqual([]);
   });
+
+  it('(c) the given-back whole-cargo price of (a), then B priced $400 on the table: B typed again asks the whole cargo AND «allaqachon $400» — the $0 never hides it (review RVF2-M1)', async () => {
+    const a = await mintDeal(clientId);
+    const b = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    const loose = await cargoBoxes(truck, clientId, null, 2);
+    const price = await addTransaction(
+      { clientId, type: 'charge', amount: 500, currency: 'USD', txDate: '2026-07-10', batchId: truck, ...(await drawn(truck)) },
+      ctx(),
+    );
+    expect(price.dealId).toBeNull();
+    await db.update(boxes).set({ status: 'lost' }).where(eq(boxes.id, loose.boxIds[0]!));
+    const line = (await lostCargoChargesOn(db, clientId, [loose.receiptId])).find((row) => row.id === price.id)!;
+    await addCompensation(
+      {
+        clientId,
+        receiptId: loose.receiptId,
+        currency: 'USD',
+        txDate: '2026-07-11',
+        note: 'yo‘qoldi, narx olib tashlandi',
+        reprices: [{ chargeId: line.id, newAmount: 0 }],
+      },
+      ctx(),
+      { mayPayClient: true },
+    );
+    await linkReceipt(loose.receiptId, b, ctx(), null);
+    // The table is drawn; B is priced $400 on it.
+    await press(truck, [{ dealId: b, amount: 400 }]);
+    const candidates = (await cargoAboard(truck, clientId)).candidates;
+    expect(candidates).toMatchObject({ ambiguous: true });
+    const { live, zeroed } = await standing(truck);
+    const reading = pricedHereReading(candidates, live, zeroed);
+    expect((reading.byDeal.get(b) ?? []).map((row) => row.usd)).toEqual([400]);
+    // What the page hands the table: the whole list, each entry marked…
+    const whole = wholeStandingOf(reading).map(({ price: standingPrice, zeroed: given }) => ({ usd: standingPrice.usd, zeroed: given }));
+    expect(whole).toEqual([{ usd: 0, zeroed: true }]);
+    // …and what each filled row asks of it: B names its own $400 beside the
+    // whole cargo's $0; A, with nothing of its own here, the whole ask alone.
+    const hereOf = (dealId: string) => {
+      const rows = reading.byDeal.get(dealId) ?? [];
+      return rows.length > 0 ? rows.reduce((sum, row) => sum + row.usd, 0) : null;
+    };
+    expect(standingAsksOf(hereOf(b), whole)).toEqual({ whole: true, ownUsd: 400 });
+    expect(standingAsksOf(hereOf(a), whole)).toEqual({ whole: true, ownUsd: null });
+  });
 });
 
 describe('the single «Narx» form asks over a price the lost-cargo door gave back (review RVF1-1)', () => {
@@ -877,6 +923,76 @@ describe('the single «Narx» form asks over a price the lost-cargo door gave ba
     // «removed — set it again?» beside it, and the form still asks.
     expect(zeroedAskedOf(after.zeroed, after.live)).toEqual([]);
     expect(singleFormAsks({ secondBill: false, deviates: false, pricedHere: after.live, zeroedHere: [] })).toBe(true);
+  });
+
+  /** Lose `boxId` and let the lost-cargo door lower `chargeId` to zero. */
+  const giveBack = async (receiptId: string, boxId: string, chargeId: string) => {
+    await db.update(boxes).set({ status: 'lost' }).where(eq(boxes.id, boxId));
+    const line = (await lostCargoChargesOn(db, clientId, [receiptId])).find((row) => row.id === chargeId)!;
+    expect(line).toBeTruthy();
+    await addCompensation(
+      { clientId, receiptId, currency: 'USD', txDate: '2026-07-11', note: 'yo‘qoldi, narx olib tashlandi', reprices: [{ chargeId: line.id, newAmount: 0 }] },
+      ctx(),
+      { mayPayClient: true },
+    );
+  };
+
+  it('priced again on ANOTHER deal than the zeroed price stood on: the live price re-covers his whole cargo, nothing is «removed — set it again?» (review RVF2-M2)', async () => {
+    const a = await mintDeal(clientId);
+    const truck = await mintTruck();
+    await cargo(truck, clientId, a);
+    const loose = await cargoBoxes(truck, clientId, null, 2);
+    // One deal beside deal-less cargo: the single form, the price deal-less (R3a).
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ ambiguous: false, sole: null, none: true });
+    const first = await addTransaction(
+      { clientId, type: 'charge', amount: 500, currency: 'USD', txDate: '2026-07-10', batchId: truck, ...(await drawn(truck)) },
+      ctx(),
+    );
+    expect(first.dealId).toBeNull();
+    await giveBack(loose.receiptId, loose.boxIds[0]!, first.id);
+    // The deal-less prixod is filed onto A: the client is A's alone now, and
+    // the next price is DERIVED onto A — not where the zeroed one stood.
+    await linkReceipt(loose.receiptId, a, ctx(), null);
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ ambiguous: false, sole: a });
+    const again = await addTransaction(
+      { clientId, type: 'charge', amount: 400, currency: 'USD', txDate: '2026-07-12', batchId: truck, ...(await drawn(truck)) },
+      ctx(),
+    );
+    expect(again.dealId).toBe(a);
+    const now = await standing(truck);
+    expect(now.live.map((row) => [row.dealId, row.usd])).toEqual([[a, 400]]);
+    expect(now.zeroed.map((row) => [row.id, row.dealId])).toEqual([[first.id, null]]);
+    // The $400 covers all his cargo here: the form names it, and not the zeroed one beside it…
+    expect(zeroedAskedOf(now.zeroed, now.live)).toEqual([]);
+    // …and still asks — the live price is a price standing.
+    expect(singleFormAsks({ secondBill: false, deviates: false, pricedHere: now.live, zeroedHere: [] })).toBe(true);
+  });
+
+  it('the reverse: zeroed on the deal, priced again deal-less once deal-less cargo rode beside it — the same (review RVF2-M2)', async () => {
+    const a = await mintDeal(clientId);
+    const truck = await mintTruck();
+    const own = await cargoBoxes(truck, clientId, a, 2);
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ ambiguous: false, sole: a });
+    const first = await addTransaction(
+      { clientId, type: 'charge', amount: 600, currency: 'USD', txDate: '2026-07-10', batchId: truck, ...(await drawn(truck)) },
+      ctx(),
+    );
+    expect(first.dealId).toBe(a);
+    await giveBack(own.receiptId, own.boxIds[0]!, first.id);
+    // Deal-less cargo of his rides the truck too: one deal beside deal-less
+    // cargo names no deal (R3a), so the next price lands deal-less.
+    await cargo(truck, clientId, null);
+    expect((await cargoAboard(truck, clientId)).candidates).toMatchObject({ ambiguous: false, sole: null, none: true });
+    const again = await addTransaction(
+      { clientId, type: 'charge', amount: 300, currency: 'USD', txDate: '2026-07-12', batchId: truck, ...(await drawn(truck)) },
+      ctx(),
+    );
+    expect(again.dealId).toBeNull();
+    const now = await standing(truck);
+    expect(now.live.map((row) => [row.dealId, row.usd])).toEqual([[null, 300]]);
+    expect(now.zeroed.map((row) => [row.id, row.dealId])).toEqual([[first.id, a]]);
+    expect(zeroedAskedOf(now.zeroed, now.live)).toEqual([]);
+    expect(singleFormAsks({ secondBill: false, deviates: false, pricedHere: now.live, zeroedHere: [] })).toBe(true);
   });
 });
 

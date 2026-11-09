@@ -234,15 +234,20 @@ describe('what a row SAYS of a zeroed price — its own part, while nothing live
   });
 });
 
-describe('zeroedAskedOf — the single form names a zeroed price not priced again since (review RVF1-1)', () => {
+describe('zeroedAskedOf — the single form names a zeroed price not priced again since (review RVF1-1, RVF2-M2)', () => {
   const p = (id: string, dealId: string | null, usd = 0) => ({ id, dealId, usd, chosenNone: false });
 
-  it('keeps every zeroed price whose job has no live price here, drops one priced again', () => {
+  it('keeps every zeroed price while nothing live stands here, drops them all once a price does', () => {
     expect(zeroedAskedOf([p('z1', 'A'), p('z2', null)], []).map((row) => row.id)).toEqual(['z1', 'z2']);
-    expect(zeroedAskedOf([p('z1', 'A'), p('z2', null)], [p('l1', 'A', 600)]).map((row) => row.id)).toEqual(['z2']);
+    expect(zeroedAskedOf([p('z1', 'A'), p('z2', null)], [p('l1', 'A', 600)])).toEqual([]);
     expect(zeroedAskedOf([p('z2', null)], [p('l2', null, 50)])).toEqual([]);
-    // A live price on ANOTHER job leaves the zeroed one named.
-    expect(zeroedAskedOf([p('z1', 'A')], [p('l2', null, 50)]).map((row) => row.id)).toEqual(['z1']);
+  });
+
+  it('a live price on ANOTHER job re-covers the zeroed one too — one price covers all of a single-form client’s cargo, and its deal is derived (RVF2-M2)', () => {
+    // Zeroed deal-less, priced again on A after its prixod was filed onto A…
+    expect(zeroedAskedOf([p('z2', null)], [p('l1', 'A', 400)])).toEqual([]);
+    // …and the reverse: zeroed on A, priced again deal-less.
+    expect(zeroedAskedOf([p('z1', 'A')], [p('l2', null, 50)])).toEqual([]);
   });
 });
 

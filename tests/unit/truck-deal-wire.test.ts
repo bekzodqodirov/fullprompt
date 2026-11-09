@@ -217,9 +217,14 @@ describe('the confirmation is the question that is posted — on both «Narx» b
 
   it('the table asks per ROW — never the false «extra bill» on a deal with nothing here', () => {
     const table = read(TABLE);
-    // A deal's own price here, the chosen «bitimsiz» part, a whole-cargo price.
-    expect(table).toContain("if (whole.length > 0) asks.push({ kind: 'whole', code });");
-    expect(table).toContain('else if (row.hereUsd !== null) {');
+    // A deal's own price here, the chosen «bitimsiz» part, a whole-cargo price
+    // — through the one rule, so a zeroed whole price never hides the row's
+    // own live one (`standingAsksOf`, review RVF2-M1).
+    expect(table).toContain('const standing = standingAsksOf(row.hereUsd, whole);');
+    expect(table).toContain("if (standing.whole) asks.push({ kind: 'whole', code });");
+    expect(table).toContain('if (standing.ownUsd !== null) {');
+    expect(table).not.toContain('else if (row.hereUsd !== null) {');
+    expect(table).not.toContain("if (whole.length > 0) asks.push({ kind: 'whole', code });");
     expect(table).toContain("if (row.card) asks.push({ kind: 'card', code });");
     expect(table).toContain("if (row.elsewhere.length > 0) asks.push({ kind: 'elsewhere', code, codes: row.elsewhere.join(', ') });");
     expect(table).toContain("if (currency === 'USD' && needsConfirmation(amount, row.expectedUsd)) {");
@@ -357,6 +362,8 @@ describe('the review’s fixes, wired', () => {
     expect(page).not.toMatch(/zeroed: zeroedFor\(/);
     expect(page).toContain('whole: wholeStandingOf(reading).map(({ price, zeroed }) => ({');
     expect(page).not.toContain('whole: reading.whole.map(');
+    // Each whole entry carries its own zeroed flag to the table's ask (RVF2-M1).
+    expect(page).toMatch(/whole: wholeStandingOf\(reading\)\.map\(\(\{ price, zeroed \}\) => \(\{\n\s*usd: price\.usd,\n\s*zeroed,\n/);
     expect(page.match(/pricesSeen: pricesSeenOf\(/g)).toHaveLength(1);
     const table = read(TABLE);
     expect(table).toContain("if (row.zeroed) asks.push({ kind: 'zeroed', code });");

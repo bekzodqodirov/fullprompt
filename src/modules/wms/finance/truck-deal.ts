@@ -307,16 +307,21 @@ export function wholeStandingOf(reading: PricedHereReading): { price: TruckPrice
 }
 
 /**
- * The zeroed prices the single «Narx» form names in its ask: each one whose
- * target — its deal, or no deal — has no live price here. One price covers
- * all of such a client's cargo here, so ANY price standing makes the press
- * an extra bill and asks (`pricedHere`); a zeroed price priced again is
- * named by that live price, never «removed — set it again?» beside it (the
- * table's own rule, `ownZeroedFor`). Whether the form asks is unchanged by
- * the filter: a zeroed price it drops always has a live one beside it.
+ * The zeroed prices the single «Narx» form names in its ask: every one of
+ * them while no live price of the client's stands here, and none once one
+ * does. The single form is the client nobody has to ask which deal (R3a):
+ * ONE price covers all his cargo here, whatever deal it was written on — and
+ * that deal is DERIVED at each press, so a price set again after the
+ * compensation lands where the cargo rides now, not where the zeroed one
+ * stood (deal-less, then A once its prixod was filed onto A; or the reverse).
+ * Any live price therefore re-covers the cargo the zeroed one covered; it is
+ * named by the form's `pricedHere` ask, never «removed — set it again?»
+ * beside it (the table's own rule, `ownZeroedFor`). Matching on the deal id
+ * missed exactly that move (review RVF2-M2). Whether the form asks is
+ * unchanged: a zeroed price dropped here always has a live one beside it.
  */
 export function zeroedAskedOf<T extends TruckPriceHere>(zeroed: T[], live: TruckPriceHere[]): T[] {
-  return zeroed.filter((row) => !live.some((price) => price.dealId === row.dealId));
+  return live.length > 0 ? [] : zeroed;
 }
 
 /**

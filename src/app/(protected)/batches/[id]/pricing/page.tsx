@@ -1394,9 +1394,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                             // Live and zeroed alike: a whole-cargo price the
                             // lost-cargo door lowered to zero covers every
                             // row like a live one, and is said here — never
-                            // as each row's own (A1-zeroed-words).
+                            // as each row's own (A1-zeroed-words). Marked, so
+                            // a $0 one never hides a row's own live price
+                            // from the ask (RVF2-M1).
                             whole: wholeStandingOf(reading).map(({ price, zeroed }) => ({
                               usd: price.usd,
+                              zeroed,
                               to: zeroed
                                 ? `${zeroedHere.find((row) => row.id === price.id)?.dealCode ?? t('pricedHereNoDeal')} · ${t('truckTableStandsZeroed')}`
                                 : (prices.find((row) => row.id === price.id)?.dealCode ?? t('pricedHereNoDeal')),

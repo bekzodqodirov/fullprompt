@@ -7,6 +7,7 @@ import {
   refusalCodeOf,
   rowSaysUnreadable,
   singleFormAsks,
+  standingAsksOf,
   wrapperWords,
 } from '@/app/(protected)/batches/[id]/pricing/table-rules';
 
@@ -161,5 +162,31 @@ describe('singleFormAsks — a press over ANY price standing here asks, live or 
   it('the old reasons still ask on their own', () => {
     expect(singleFormAsks({ ...quiet, secondBill: true })).toBe(true);
     expect(singleFormAsks({ ...quiet, deviates: true })).toBe(true);
+  });
+});
+
+describe('standingAsksOf — what a filled row asks of the prices standing here (judge P1-UX-4, review RVF2-M1)', () => {
+  const live = { zeroed: false };
+  const zeroed = { zeroed: true };
+
+  it('a zeroed whole-cargo price beside the row’s own live price asks BOTH — the $0 never hides the $400', () => {
+    // A1-zeroed-words (a), then B priced $400 on the table: the given-back
+    // deal-less price is the whole cargo's, B's $400 is the row's own.
+    expect(standingAsksOf(400, [zeroed])).toEqual({ whole: true, ownUsd: 400 });
+    // Several zeroed whole prices: the same.
+    expect(standingAsksOf(400, [zeroed, zeroed])).toEqual({ whole: true, ownUsd: 400 });
+  });
+
+  it('a LIVE whole-cargo price asks for the whole cargo alone — the design’s own masking, unchanged', () => {
+    expect(standingAsksOf(400, [live])).toEqual({ whole: true, ownUsd: null });
+    // Live and zeroed together: a live one stands, so the same.
+    expect(standingAsksOf(400, [zeroed, live])).toEqual({ whole: true, ownUsd: null });
+  });
+
+  it('no whole price: the row’s own price alone, or nothing', () => {
+    expect(standingAsksOf(400, [])).toEqual({ whole: false, ownUsd: 400 });
+    expect(standingAsksOf(null, [])).toEqual({ whole: false, ownUsd: null });
+    // A zeroed whole price beside a row with nothing of its own: the whole ask only.
+    expect(standingAsksOf(null, [zeroed])).toEqual({ whole: true, ownUsd: null });
   });
 });

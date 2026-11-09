@@ -111,6 +111,32 @@ export function pageWentStale(error: string | undefined): boolean {
 }
 
 /**
+ * What a filled table row asks of the prices already standing for the
+ * client here — before its own zeroed / card / elsewhere / 5 % questions.
+ *
+ * - `whole` — a whole-cargo price stands (`wholeStandingOf`, live or given
+ *   back to zero): every filled row asks, naming the list. Truck coverage
+ *   ignores the deal (judge P1-UX-4).
+ * - `ownUsd` — the row's own live prices here (`hereUsd`), to be named as
+ *   «allaqachon $X — qo'shimcha hisob»; null when there are none, or while a
+ *   LIVE whole-cargo price stands, which already says the press is a second
+ *   bill over all his cargo (P1-UX-4's design). A whole price the lost-cargo
+ *   door lowered to ZERO bills nothing: it never hides the row's own live
+ *   price — the price that really makes this press an extra bill — from the
+ *   question (review RVF2-M1; A1-zeroed-words had put the $0 price in the
+ *   whole list, and the row's $400 was then said only in its muted line).
+ */
+export function standingAsksOf(
+  hereUsd: number | null,
+  whole: { zeroed: boolean }[],
+): { whole: boolean; ownUsd: number | null } {
+  return {
+    whole: whole.length > 0,
+    ownUsd: hereUsd !== null && !whole.some((price) => !price.zeroed) ? hereUsd : null,
+  };
+}
+
+/**
  * Whether the single «Narx» form stops a press to ask: a second bill over an
  * earlier truck's price, a figure off the deal's, or ANY price of the
  * client's standing here — a live one (`pricedHere`), or one the lost-cargo

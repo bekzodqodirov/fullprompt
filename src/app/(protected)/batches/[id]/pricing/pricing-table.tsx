@@ -13,7 +13,15 @@ import {
   type PrefillFacts,
   type PrefillWhy,
 } from '@/modules/wms/finance/deal-price-hint';
-import { askKeyOf, cardSeenOf, pageWentStale, pressTotalOf, rowSaysUnreadable, type RowMark } from './table-rules';
+import {
+  askKeyOf,
+  cardSeenOf,
+  pageWentStale,
+  pressTotalOf,
+  rowSaysUnreadable,
+  standingAsksOf,
+  type RowMark,
+} from './table-rules';
 
 /**
  * One row of the price table: a deal of the client's on this truck, or the
@@ -35,8 +43,9 @@ export interface PricingTableRow {
    * This row's OWN part here was lowered to ZERO by the lost-cargo door and
    * nothing live stands for it since (`ownZeroedFor`): the row says so and a
    * figure typed for it asks (review A1). A zeroed WHOLE-cargo price is not
-   * the row's — it is in `whole`, said and asked like a live one
-   * (A1-zeroed-words); the pre-fill's gate is `prefill.zeroed`, wider.
+   * the row's — it is in `whole`, said and asked as the whole cargo's
+   * (A1-zeroed-words), and never hides the row's own live price from the ask
+   * (RVF2-M1); the pre-fill's gate is `prefill.zeroed`, wider.
    */
   zeroed: boolean;
   /** The deal carries a live price of its own off any truck. */
@@ -103,8 +112,13 @@ export function PricingTable({
   pricesSeen: string;
   rows: PricingTableRow[];
   secondBill?: { n: number; codes: string } | null;
-  /** Whole-cargo prices standing here — every filled row asks, naming them. */
-  whole?: { usd: number; to: string }[];
+  /**
+   * Whole-cargo prices standing here — every filled row asks, naming them.
+   * `zeroed` — lowered to zero by the lost-cargo door: it bills nothing, so it
+   * never hides the row's own live price from the ask (`standingAsksOf`,
+   * review RVF2-M1). Required: a missing flag would read as a live price.
+   */
+  whole?: { usd: number; to: string; zeroed: boolean }[];
   onResult: (result: TruckPricesState) => void;
 }) {
   const t = useTranslations('finance');
@@ -267,10 +281,13 @@ export function PricingTable({
         for (const { row, amount } of filled) {
           const code = row.key === 'none' ? t('pricedHereNoDeal') : row.code;
           // A price already covering every carton of his here asks on EVERY
-          // filled row — truck coverage ignores the deal (judge P1-UX-4).
-          if (whole.length > 0) asks.push({ kind: 'whole', code });
-          else if (row.hereUsd !== null) {
-            asks.push(row.key === 'none' ? { kind: 'none_extra', usd: row.hereUsd } : { kind: 'extra', code, usd: row.hereUsd });
+          // filled row — truck coverage ignores the deal (judge P1-UX-4); the
+          // row's own live price is named beside it unless a LIVE whole price
+          // stands (a zeroed one bills nothing, review RVF2-M1).
+          const standing = standingAsksOf(row.hereUsd, whole);
+          if (standing.whole) asks.push({ kind: 'whole', code });
+          if (standing.ownUsd !== null) {
+            asks.push(row.key === 'none' ? { kind: 'none_extra', usd: standing.ownUsd } : { kind: 'extra', code, usd: standing.ownUsd });
           }
           // The row's OWN part the lost-cargo door gave back is still a price
           // someone set: typed again, the job is billed for what the
