@@ -58887,7 +58887,8 @@
    "said": "patch.stage stays 'client' and reask = 'client' (the customer question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0001",
@@ -58916,7 +58917,8 @@
    "said": "patch.stage stays 'client' and reask = 'client' (the customer question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0002",
@@ -58945,7 +58947,8 @@
    "said": "patch.stage stays 'section' and reask = 'section' (the «Yuk qayerdan chiqadi?» zone question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0003",
@@ -58974,7 +58977,8 @@
    "said": "patch.stage stays 'section' and reask = 'section' (the «Yuk qayerdan chiqadi?» zone question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0004",
@@ -59003,7 +59007,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0005",
@@ -59032,7 +59037,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0006",
@@ -59061,7 +59067,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0007",
@@ -59079,7 +59086,8 @@
    "said": "«GS777» becomes clientHintRaw (stage was still 'client'); landing resolves GS777's deal, never a nameless lead",
    "why": "Votes 0/1 probe: GS777 went into material and clientHintRaw stayed \"\".",
    "source": "r1 c00 collector — vote 1 probe x.ts",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0008",
@@ -59122,7 +59130,8 @@
    "said": "after C: pendingInvoice.goods = B+C (4 lines), label «B.xlsx, C.xlsx», the reply names both waiting files; after ➕: invoiceGoods = A+B+C (6 lines)",
    "why": "All votes: C replaced B without a word and B's lines never reached facts.goods (his 1.13 c, one file further).",
    "source": "r1 c01 collector — vote 1 probe",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0009",
@@ -59165,7 +59174,8 @@
    "said": "invoiceGoods = B+C (4 lines) — 🔁 replaces A with every waiting file",
    "why": "Votes 0/1: 🔁 puts all the waiting files in place of the first.",
    "source": "r1 c01 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0010",
@@ -59180,7 +59190,8 @@
    "said": "the second press answers «Bu tugma eskirgan» (pendingInvoice is null) and changes nothing",
    "why": "Any on-screen keyboard acts on the same, named set; once applied, the rest are stale.",
    "source": "r1 c01 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0011",
@@ -59272,7 +59283,8 @@
    "said": "aiGoods 'ask' and the «boshqa zavodning tovarlarimi?» keyboard; «Bo'ldi» waits for the answer — the bot never promises «AI o‘qiydi» about lines it then drops",
    "why": "All votes: the add/replace question was asked only when the second file was itself a mapped sheet.",
    "source": "r1 c04 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0017",
@@ -59291,7 +59303,8 @@
    "said": "the same question is asked in the reverse order (aiGoods 'ask', keyboard shown)",
    "why": "Votes 0/1/2: B first, then the mapped A, asked nothing.",
    "source": "r1 c04 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0018",
@@ -59383,7 +59396,8 @@
    "said": "invoiceGoods = [RIGHT shoes, RIGHT shoes B]; invoiceTexts = RIGHT's packing list only — the model never sees «9999 KGS / 77»",
    "why": "All votes: the job's kg/m³ could come from the file the seller was just told was replaced.",
    "source": "r1 c07 collector — vote 1 probe",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0023",
@@ -59399,7 +59413,8 @@
    "said": "invoiceTexts = A's and B's other sheets (both kept)",
    "why": "Votes 0/1/2: ➕ keeps both workbooks' totals sheets.",
    "source": "r1 c07 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0064",
@@ -60098,7 +60113,8 @@
    "said": "stage stays 'client'; goods become [Kurtka, Shim]; the last reply is CLIENT_QUESTION; a following «GS777» goes through clientAnswer as the customer (clientHintRaw 'GS777'), never into the material",
    "why": "#0: the ➕/🔁 answer used to force stage 'material', so the customer typed next was filed as goods.",
    "source": "r1-fix collector #0 (fixer summary; reviewers 0+1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0769",
@@ -60121,7 +60137,8 @@
    "said": "stage stays 'section', route still null, and the zone keyboard (c:zone_cn, c:zone_kashgar via pricedZonesNow) is sent again; «Bo'ldi» stays refused until a zone is picked",
    "why": "#0 reviewer 0: on the aipk door the open question is the zone.",
    "source": "r1-fix collector #0 reviewer 0",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0770",
@@ -60138,7 +60155,8 @@
    "said": "re-asks the open question exactly as invoiceChoice does (CLIENT_QUESTION / the zone keyboard); the stage is not forced to 'material'",
    "why": "#0 reviewer 0: «otherFilesChoice re-asks the open question the same way».",
    "source": "r1-fix collector #0 reviewer 0",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0771",
@@ -60158,7 +60176,8 @@
    "said": "C folds into the waiting pendingInvoice; the reply names «B.xlsx», «C.xlsx» — jami 3 ta tovar; one ➕ (the keyboard under B) lands A1, A2, B1, C1, C2 and invoiceTexts holds all three files' other-sheet texts; the second keyboard (under C) answers «Bu tugma eskirgan»; B is never overwritten",
    "why": "#1: a further goods file used to REPLACE the waiting one.",
    "source": "r1-fix collector #1 (fixer summary; reviewer 0 probe p1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0772",
@@ -60179,7 +60198,8 @@
    "said": "the first file (A) is replaced by B+C together, and the reply text says so",
    "why": "#1 reviewer 1: «🔁 O'rniga» on the folded set replaces the first file with B+C together.",
    "source": "r1-fix collector #1 reviewer 1",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0773",
@@ -60233,7 +60253,8 @@
    "said": "aiGoods 'ask': the bot asks «boshqa zavodning tovarlarimi?» with two buttons c:other_add / c:other_same, and «Bo'ldi» (and reread) is refused while the answer is 'ask'",
    "why": "#4: a PDF or a header-less sheet beside an Excel list used to have its goods dropped silently.",
    "source": "r1-fix collector #4 (fixer summary; reviewers 0+1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0776",
@@ -60252,7 +60273,8 @@
    "said": "asks «boshqa zavodning tovarlarimi?» too (the reverse order); after c:other_add the model prompt carries the knownGoods block (at most 100 names) — knownGoods is passed only on 'add'",
    "why": "#4: Excel after a PDF or sheet asks as well; knownGoods (capped at 100) reaches the model only on add.",
    "source": "r1-fix collector #4 (fixer summary; reviewer 0 probe p3.mts)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0782",
@@ -60325,7 +60347,8 @@
    "said": "invoiceGoods = [Right1]; the text sent to the model is «X-headerless\\n\\n[Packing list]\\nTOTAL G.W. 1500» — the 9999 sheet is gone and the separate file's text is kept",
    "why": "#7: sheetTexts holds only header-less files; a replaced workbook's other sheets leave with it (invoiceTexts).",
    "source": "r1-fix collector #7 (fixer summary; reviewer 0 probe p1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0789",
@@ -60460,7 +60483,8 @@
    "said": "aiGoods stays null (no «boshqa zavodning tovarlarimi?» question): the workbook's other sheets go to invoiceTexts and the ask condition reads only sheetTexts",
    "why": "#7 reviewer 1: «the ask condition reads only sheetTexts, as intended».",
    "source": "r1-fix collector #7 reviewer 1",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c0803",
@@ -60544,7 +60568,8 @@
    "said": "the «Packing list» sheet is NOT in the «Таблица Excel» goods block; it stands under «Другие листы книги… Товары отсюда НЕ перечисляй в goods»; all 150 Excel names are shown (no 100-char cut)",
    "why": "C2/C6 (fixed): a mapped workbook's other sheets are a separate context input.",
    "source": "r3 collector rv0 C2 + r3 collector rv1 C2",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c1337",
@@ -60556,7 +60581,8 @@
    "said": "234 names shown (within 6 000 characters) followed by «…и ещё 166 строк этой таблицы»",
    "why": "C2: the Excel names to the model are capped by characters, the rest counted.",
    "source": "r3 collector rv0 C2",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
   },
   {
    "id": "c1338",
@@ -61115,7 +61141,43 @@
    "said": "the «⚠️ N ta qator Excel’dagi bilan bir xil…» sentence is printed as its own line, not counted against the model's three «🤖 AI» notes (the model's third step is still shown)",
    "why": "R3-C1 note placement",
    "source": "C-r1 ND nit",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Superseded by his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08): the bot no longer asks about a second file — it compares the files itself and names what it did. The drive pins the question's ABSENCE (an old button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.») and the rule that replaced it."
+  },
+  {
+   "id": "c2449",
+   "call": "readIntakeFile ×2 (two factories' invoices)",
+   "input": {
+    "files": {
+     "A.xlsx": [
+      "Kurtka 300 dona 150 kg",
+      "Shim 100 dona"
+     ],
+     "B.xlsx": [
+      "Kurtka 200 dona 90 kg",
+      "Shim 100 dona",
+      "Sumka 50 dona"
+     ]
+    }
+   },
+   "said": "both factories' «Kurtka» rows are kept and named («ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi)»); B's «Shim 100» is A's row read again and taken once; nothing is asked",
+   "why": "INT-4: a same-named row whose figures disagree is another factory's line — an added row is one press to delete on the VED's screen, a dropped one is silent",
+   "source": "docs/IKKI-ESHIK.md §1.2.2 (his 1a), INT-4",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2450",
+   "call": "readIntakeFile ×2 (packing list first, then the invoice)",
+   "input": {
+    "files": {
+     "P.xlsx": "Description | Qty (pcs) | CTN | N.W.(kg) | G.W.(kg) | CBM — Kurtka 300/10/150/165/1.2, Shim 100/4/40/46/0.4",
+     "I.xlsx": "Description | Qty | Unit price | Amount — Kurtka 300, Shim 100"
+    }
+   },
+   "said": "the invoice takes the goods role; the packing list's rows become its totals (brutto 211 kg = Σ G.W., 1.6 m³) and the invoice rows' netto (150, 40 kg); the note names only what was read",
+   "why": "M1 a: file order never decides which counts land; brutto only from the gross column (M2)",
+   "source": "docs/IKKI-ESHIK.md §1.2.2 (his 1a), M1 a",
+   "weight": "pinned"
   }
  ],
  "sameGoodsLineCases": [

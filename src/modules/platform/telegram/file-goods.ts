@@ -364,14 +364,74 @@ function namesMeetLine(a: GoodsList[number], b: GoodsList[number]): boolean {
 
 /**
  * A count AND a weight on both rows, in comparable units, both equal — the
- * same row under another name («nomi boshqacha, raqamlari bir xil», §1.2.2):
- * a Russian invoice and its Chinese packing list name one jacket two ways,
- * and only its figures say so. Pure.
+ * same row under another name («nomi boshqacha, raqamlari bir xil», §1.2.2,
+ * M1 c): a Chinese PDF's «女士夹克» read as «Куртка женская» beside the
+ * Excel's «Ladies jacket», one tile written «60x60cm» and «600×600 мм» — only
+ * the figures say they are one line. Unless the names CONTRADICT each other
+ * (`namesContradict`): two stalls' «iPhone 16 Pro» and «iPhone 16 Plus»
+ * cases, «Nails 2.5*50mm» and «Гвозди 3×70 мм», may ship the same count at the
+ * same weight and are two products (the corpus' c2367, c2202). Pure.
  */
 export function sameFigures(held: GoodsList[number], read: GoodsList[number], kinds: RowKinds = UNKNOWN_KINDS): boolean {
   const shared = sharedFigures(held, read, kinds);
   const both = shared.filter((f) => f.field === 'quantity' || f.field === 'weightKg');
-  return both.length === 2 && both.every((f) => figureAgrees(f, held, read));
+  return both.length === 2 && both.every((f) => figureAgrees(f, held, read)) && !namesContradict(held.name, read.name);
+}
+
+/**
+ * The units a name writes its sizes in, one spelling per unit across the
+ * scripts a seller writes — so «50mm» and «70 мм» are two sizes in ONE unit,
+ * while «60cm» and «600 мм» are one size in two (nobody converts here; a
+ * conversion is never a contradiction).
+ */
+const SIZE_UNITS: Readonly<Record<string, string>> = {
+  mm: 'mm', мм: 'mm', cm: 'cm', см: 'cm', m: 'm', м: 'm',
+  ml: 'ml', мл: 'ml', l: 'l', л: 'l',
+  w: 'w', вт: 'w', kw: 'kw', квт: 'kw', mah: 'mah', мач: 'mah',
+  inch: 'inch', дюйм: 'inch', дюйма: 'inch', дюймов: 'inch',
+  kg: 'kg', кг: 'kg', g: 'g', г: 'g',
+};
+
+/** A number as a size writes it: «2,8» and «2.8», «12,000» and «12 000». */
+function sizeNumber(text: string): number {
+  const t = text.replace(/[\s\u00a0]/g, '');
+  if (/^\d{1,3}(?:,\d{3})+$/.test(t)) return Number(t.replace(/,/g, ''));
+  return Number(t.replace(',', '.'));
+}
+
+/** «2.5*50mm» → mm: [2.5, 50] — every number of a run sized in a unit, by that unit. */
+function sizesOf(name: string): Map<string, number[]> {
+  const out = new Map<string, number[]>();
+  const NUMBER = String.raw`\d{1,3}(?:[ \u00a0]\d{3})+|\d+(?:[.,]\d+)?`;
+  const run = new RegExp(String.raw`((?:${NUMBER})(?:\s*[*x×х/~\-–]\s*(?:${NUMBER}))*)\s*([a-zа-яё]+)(?![\p{L}\p{N}])`, 'giu');
+  for (const m of name.normalize('NFKC').matchAll(run)) {
+    const unit = SIZE_UNITS[m[2]!.toLowerCase()];
+    if (!unit) continue;
+    const numbers = (m[1]!.match(new RegExp(NUMBER, 'g')) ?? []).map(sizeNumber).filter((n) => Number.isFinite(n));
+    out.set(unit, [...(out.get(unit) ?? []), ...numbers]);
+  }
+  return out;
+}
+
+/**
+ * Do two names say they are two DIFFERENT products, whatever their figures —
+ * another model TIER («iPhone 16 Pro» / «iPhone 16 Plus», `tierWords`), or
+ * other sizes in the SAME unit («2.5*50mm» / «3×70 мм»)? A size in another
+ * unit is a translation's conversion and says nothing. Pure.
+ */
+export function namesContradict(a: string, b: string): boolean {
+  const tiersA = tierWords(goodsNameKey(a));
+  const tiersB = tierWords(goodsNameKey(b));
+  if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
+  const sizesB = sizesOf(b);
+  for (const [unit, ofA] of sizesOf(a)) {
+    const ofB = sizesB.get(unit);
+    if (!ofB) continue;
+    const x = [...ofA].sort((p, q) => p - q);
+    const y = [...ofB].sort((p, q) => p - q);
+    if (x.length !== y.length || x.some((n, i) => Math.abs(n - y[i]!) > 1e-9)) return true;
+  }
+  return false;
 }
 
 /**
