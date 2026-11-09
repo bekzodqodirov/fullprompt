@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { logger } from '../logger';
+import { editGone, notModified } from './kept-last';
 import { answerPress } from './press';
 import { clientCodePrefix } from './staff-bot';
 import {
@@ -1101,26 +1102,8 @@ export async function applyTableAnswer(
 /** A table edit in flight per chat — latest wins, an identical one is never sent (performance-5). */
 const tableEdits = new Map<string, { again: boolean; ctx: CollectorReply & { api?: EditApi }; running: Promise<void> }>();
 
-/** What Telegram said about a refused call. */
-function saidOf(err: unknown): string {
-  const said = (err as { description?: unknown } | null)?.description;
-  return typeof said === 'string' ? said : String(err);
-}
-
-/** Telegram's 400 «message is not modified» — success, never a reason to send again. */
-function notModified(err: unknown): boolean {
-  return /message is not modified/iu.test(saidOf(err));
-}
-
-/**
- * The table message itself is gone or past editing (too old, deleted) — the
- * one refusal a fresh table answers. A 429 past the brief retry, a timeout or
- * a reset is NOT: the edit may even have landed, and a second table would move
- * `tableMessageId` off the one the seller is reading (review adv-16).
- */
-function editGone(err: unknown): boolean {
-  return /message to edit not found|message can'?t be edited|MESSAGE_ID_INVALID/iu.test(saidOf(err));
-}
+// The refused-call predicates live in kept-last.ts — one reading of
+// Telegram's refusals for every message this collector edits (§1.4).
 
 /**
  * Redraw the table in place (§8.2.9), off the poller: dispatched `void`, per
