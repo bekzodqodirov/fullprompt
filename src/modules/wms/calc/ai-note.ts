@@ -1,6 +1,8 @@
 import {
   AI_CODE_MARK,
   fitTelegram,
+  MAX_REPLY_LINES,
+  TELEGRAM_LIMIT,
   lawParts,
   pickLeftLine,
   roadRefusalLine,
@@ -99,8 +101,12 @@ export interface AiNoteInput {
   ungrouped: string[];
   /** The figures the LAW still wants (`lawAsksOf`) — the VED's to get. */
   asks: LawAsk[];
-  /** The road, for its REFUSAL only — a priced road prints nothing here. */
-  freight: AiVedFreight | null;
+  /**
+   * The road, for its REFUSAL only. Typed so (review ADV-4): the money-free
+   * note must not rest on how its input is used — a priced road, with its
+   * list price on it, cannot reach this renderer at all (#790's idiom).
+   */
+  freight: Extract<AiVedFreight, { ok: false }> | null;
   feeRefusal: string | null;
   pickLeft: PickLeft | null;
   hasCertificate: boolean;
@@ -152,11 +158,6 @@ export function aiNoteText(input: AiNoteInput): string {
   const gaps = vedGapsLine(input.asks, input.freight);
   if (gaps) head.push(gaps);
 
-  const lines = [
-    ...(input.rows.length > 0 ? ['Kodlar:', ...input.rows.map(rowLine)] : []),
-    ...(input.groups.length > 0 ? ['Guruhlar:', ...input.groups.map(groupLine)] : []),
-  ];
-
   const fixed: string[] = [];
   if (input.ungrouped.length > 0) {
     const names = input.ungrouped.slice(0, 5).map(shortName).join(', ');
@@ -166,7 +167,7 @@ export function aiNoteText(input: AiNoteInput): string {
   // The road's refusal in words when it is the VED's own (a zone, a tariff
   // hole, a stale total); the customer's facts are already in the gaps line.
   const f = input.freight;
-  if (f && !f.ok && (f.stale || f.tail === 'ved')) fixed.push(roadRefusalLine({ ...f, also: undefined }, 'lenta', true));
+  if (f && (f.stale || f.tail === 'ved')) fixed.push(roadRefusalLine({ ...f, also: undefined }, 'lenta', true));
   if (input.feeRefusal) fixed.push(`⚠️ Bojxona yig‘imi: ${input.feeRefusal}`);
   const left = pickLeftLine(input.pickLeft);
   if (left) fixed.push(left);
@@ -174,5 +175,49 @@ export function aiNoteText(input: AiNoteInput): string {
   const tail = [`📄 Sertifikat: ${input.hasCertificate ? 'bor' : 'yo‘q'} (deb hisoblandi)`];
   if (!input.aiConfigured) tail.push('AI sozlanmagan — faqat yozilganidan o‘qildi.');
   else if (input.budgetSpent) tail.push('AI kunlik limiti tugadi — muhrlangan xotira va bojxona faylidan to‘ldirildi.');
-  return fitTelegram(head, lines, fixed, tail);
+  return fitNote(head, input.groups, input.rows, fixed, tail);
+}
+
+/**
+ * The note's own fit (review PP-SPEC-1). The AI door's answer is one line
+ * per GROUP; this note carries two lists, and in fitTelegram's ONE capped
+ * list the rows came first — so an invoice of 24 rows or more printed no
+ * group line at all, and with it every law, rate source, baza count and
+ * refusal the VED reads the note for. The GROUPS get their cap first and the
+ * rows' codes their own after them, each list collapsing with its own count
+ * («… va yana N ta guruh», «… va yana N ta qator kodi» — never a header
+ * counted as a «qator»), and a hidden group's refusal is counted, never
+ * dropped in silence. To fit Telegram the rows shrink first, then the groups;
+ * the head, the fixed lines and the tail are never cut (fitTelegram's rule).
+ */
+function fitNote(head: string[], groups: AiNoteGroup[], rows: AiNoteRow[], fixed: string[], tail: string[]): string {
+  const groupLines = groups.map(groupLine);
+  const rowLines = rows.map(rowLine);
+  const body = (g: number, r: number): string[] => {
+    const out: string[] = [];
+    if (groups.length > 0) {
+      out.push('Guruhlar:', ...groupLines.slice(0, g));
+      const hidden = groups.slice(g);
+      if (hidden.length > 0) {
+        const refused = hidden.filter((x) => x.refusal !== null).length;
+        out.push(
+          `… va yana ${hidden.length} ta guruh` +
+            (refused > 0 ? `, ${refused} tasi hisoblanmadi — ro‘yxati VED ekranida` : ''),
+        );
+      }
+    }
+    if (rows.length > 0) {
+      out.push('Kodlar:', ...rowLines.slice(0, r));
+      if (rows.length > r) out.push(`… va yana ${rows.length - r} ta qator kodi`);
+    }
+    return out;
+  };
+  for (let g = Math.min(groups.length, MAX_REPLY_LINES); g >= 0; g -= 1) {
+    for (let r = Math.min(rows.length, MAX_REPLY_LINES); r >= 0; r -= 1) {
+      const text = [...head, ...body(g, r), ...fixed, ...tail].join('\n');
+      if (text.length <= TELEGRAM_LIMIT) return text;
+    }
+  }
+  // A head longer than the cap by itself: fitTelegram's last resort.
+  return fitTelegram(head, [], fixed, tail);
 }

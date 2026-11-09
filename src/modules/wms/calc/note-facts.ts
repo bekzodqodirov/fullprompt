@@ -6,6 +6,7 @@ import { productKey, tnvedFor } from '../tnved/service';
 import type { AiVedLine } from './ai-reply';
 import type { AiNoteGroup, AiNoteRow, CodeSource } from './ai-note';
 import { AI_CODE_NOTE } from './code-source';
+import { aiRecoded } from './warnings';
 import { itemNameNorm, sealedMemoryFor } from './memory';
 import type { BazaSource } from './pricing';
 import type { Workspace, WorkspaceItem } from './workspace';
@@ -47,16 +48,33 @@ export async function codesOf(requestId: string): Promise<Map<string, string | n
  * to both memories; a row whose own code a memory happens to agree with is
  * named by that memory — the code is the same either way. A read that fails
  * names no source; it never costs the note.
+ *
+ * «The model's» is asked of what the workspace STORES (review PP-SPEC-2 /
+ * ADV-1), the seal's own E1 rule: the row's group was proposed by the model
+ * (`ai_proposed`), or the pick recoded the row (`aiRecoded`). «Landed» means
+ * as the request stood when THIS pass started, and on an addition's re-run
+ * that includes the landing pass's model codes — read as «the row's own»,
+ * the VED was told an unchecked guess was the file's, on the same card whose
+ * first note said «tekshiring». So on a re-run a landed code the memories do
+ * not explain is the model's when the workspace says so, and otherwise
+ * NAMELESS (the code alone): a VED's own code typed between the passes is
+ * not the file's either, and the re-run cannot tell which it was. Only the
+ * landing pass names «the row's own» — nothing but the INSERT wrote before
+ * it. A code that changed DURING the pass is the model's when the workspace
+ * says so or when no person overtook the machine; a person who did may have
+ * typed it, and then it is nameless too.
  */
 export async function noteRows(
   requestId: string,
   ws: Workspace,
   landed: Map<string, string | null> | null,
   memoryIds: ReadonlySet<string>,
-  aiUsed: boolean,
+  pass: { aiUsed: boolean; overtaken: boolean; amend: boolean },
 ): Promise<AiNoteRow[]> {
   const items = [...ws.groups.flatMap((g) => g.items), ...ws.ungrouped].sort((a, b) => a.seq - b.seq);
   const codeOf = (i: WorkspaceItem) => (i.tnvedCode ?? '').trim() || null;
+  const aiGroups = new Set(ws.groups.filter((g) => g.aiProposed).map((g) => g.id));
+  const modelsOwn = (i: WorkspaceItem) => (i.groupId !== null && aiGroups.has(i.groupId)) || aiRecoded(i.bazaReason);
   const source = new Map<string, CodeSource | null>();
   const asked: WorkspaceItem[] = [];
   for (const i of items) {
@@ -66,9 +84,13 @@ export async function noteRows(
       if (carriesAiCode(i.note)) source.set(i.id, 'reading');
       else asked.push(i);
     } else if (memoryIds.has(i.id)) source.set(i.id, 'memory');
-    // Nothing but the memory and the model codes a row in the pass.
-    else source.set(i.id, aiUsed ? 'model' : null);
+    // Nothing but the memory and the model codes a row in the pass — unless
+    // a person overtook it.
+    else source.set(i.id, modelsOwn(i) || (pass.aiUsed && !pass.overtaken) ? 'model' : null);
   }
+  /** A landed code neither memory explains. */
+  const unexplained = (i: WorkspaceItem): CodeSource | null =>
+    !pass.amend ? 'row' : modelsOwn(i) ? 'model' : null;
   if (asked.length > 0) {
     try {
       const names = asked.map((i) => i.label);
@@ -81,7 +103,7 @@ export async function noteRows(
             ? 'memory'
             : book.get(productKey(i.label))?.tnvedCode === code
               ? 'book'
-              : 'row',
+              : unexplained(i),
         );
       }
     } catch (err) {

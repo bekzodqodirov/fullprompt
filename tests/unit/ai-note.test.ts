@@ -103,8 +103,12 @@ describe('the plain door’s note (§2.4)', () => {
   it('carries NO money — no customs figure, no Aniq/Taxminiy, no road, no JAMI (his 3a)', () => {
     const note = aiNoteText({
       ...base,
-      // Even with a road that priced, the note prints nothing about it.
+      // A road that priced cannot even reach the note (review ADV-4): the
+      // input admits a REFUSED road only, so this is a compile error — and if
+      // the type ever widens again, the unused directive fails typecheck.
+      // At run time the note still prints nothing about it.
       freight: {
+        // @ts-expect-error — `freight` is `Extract<AiVedFreight, { ok: false }> | null`
         ok: true,
         listUsd: 1920,
         routeLabel: 'Xitoy → O‘zbekiston',
@@ -146,6 +150,46 @@ describe('the plain door’s note (§2.4)', () => {
     expect(note).toContain('⚠️ AI bazasini qo‘ymadi: 1 tasida tanlangan deklaratsiya o‘lchovi mos kelmadi — VED to‘ldiradi');
     expect(aiNoteText({ ...base, aiConfigured: false })).toContain('AI sozlanmagan — faqat yozilganidan o‘qildi.');
     expect(aiNoteText({ ...base, budgetSpent: true })).toContain('AI kunlik limiti tugadi');
+  });
+
+  it('30 rows in 3 groups: every group line and its refusal survive the fit, and each list counts its own (review PP-SPEC-1)', () => {
+    const rows = Array.from({ length: 30 }, (_, k) => ({
+      seq: k + 1,
+      name: `Tovar ${k + 1}`,
+      code: k < 10 ? '4202929800' : k < 20 ? '6201930000' : '6403990000',
+      source: 'row' as const,
+    }));
+    const groups = [
+      group({ label: 'Sumka', bazas: {}, bazaless: 10, refusal: 'Sumka: baza yo‘q — Tovar 1', refusalTail: 'ved' }),
+      group({ label: 'Kurtka', code: '6201930000' }),
+      group({ label: 'Krossovka', code: '6403990000', rates: 'typed' }),
+    ];
+    const note = aiNoteText({ ...base, rows, groups, ungrouped: [] });
+    // The groups come first — the law, the rate source, the bazas and the
+    // refusal are what the VED reads the note for.
+    expect(note).toContain(
+      '1. Sumka · 4202929800 · boj 10% · QQS 12% · stavka 📖 lug‘atdan · baza: 10 ta bazasiz — VED to‘ldiradi\n' +
+        '   ⚠️ Sumka: baza yo‘q — Tovar 1 — VED xodimi qo‘yadi',
+    );
+    expect(note).toContain('2. Kurtka · 6201930000');
+    expect(note).toContain('3. Krossovka · 6403990000 · boj 10% · QQS 12% · stavka qo‘lda');
+    expect(note.indexOf('Guruhlar:')).toBeLessThan(note.indexOf('Kodlar:'));
+    // The rows' codes keep their own cap and count only themselves.
+    expect(note).toContain('· 25-qator «Tovar 25» — 6403990000');
+    expect(note).not.toContain('26-qator');
+    expect(note).toContain('… va yana 5 ta qator kodi');
+    expect(note).not.toContain('ta guruh');
+  });
+
+  it('past the cap a hidden group’s refusal is counted, never dropped in silence', () => {
+    const groups = Array.from({ length: 28 }, (_, k) =>
+      group({ label: `Guruh ${k + 1}`, ...(k >= 25 && k !== 26 ? { refusal: `Guruh ${k + 1}: baza yo‘q` } : {}) }),
+    );
+    const note = aiNoteText({ ...base, rows: [], groups, ungrouped: [] });
+    expect(note).toContain('25. Guruh 25 ·');
+    expect(note).not.toContain('26. Guruh 26');
+    expect(note).toContain('… va yana 3 ta guruh, 2 tasi hisoblanmadi — ro‘yxati VED ekranida');
+    expect(note).not.toContain('Kodlar:');
   });
 
   it('a re-run after an addition says so in its heading', () => {

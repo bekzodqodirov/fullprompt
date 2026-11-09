@@ -1049,6 +1049,81 @@ describe('the pass by the door the request came in through', () => {
     expect(out.text).not.toContain('(AI taklifi)');
   });
 
+  it('an addition’s re-run names the landing pass’s model code the model’s — never the file’s (review PP-SPEC-2 / ADV-1)', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'rastamojka', [{ name: `${row.name} rerun ${SUFFIX}`, weightKg: 100 }]);
+    const landing = await aiPrefill(id, ctx(), {
+      propose: proposeAs(row.tnvedCode),
+      pick: async () => ({ answers: [], usage: null }),
+      configured: true,
+    });
+    expect(landing.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    // The re-run starts from the codes the landing pass's model left; the
+    // workspace still says whose they are (`ai_proposed`).
+    expect((await loadWorkspace(id))!.groups[0]!.aiProposed).toBe(true);
+    const rerun = await aiPrefill(
+      id,
+      ctx(),
+      { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true },
+      { pass: `amend:${randomUUID()}` },
+    );
+    expect(rerun.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    expect(rerun.text).not.toContain(CODE_SOURCE_WORDS.row);
+  });
+
+  it('a code a PERSON typed while the pass ran is not the model’s — overtaken, it is the code alone (review ADV-1)', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'rastamojka', [
+      { name: `${row.name} mashina ${SUFFIX}`, weightKg: 100 },
+      { name: `Odam yozgan ${SUFFIX}`, weightKg: 50 },
+    ]);
+    const ticket = (await prefillTicket(id))!;
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      {
+        configured: true,
+        // The model codes row 1 only; then a person codes row 2 — after the
+        // machine wrote, so the pass is overtaken at the sweep and still speaks.
+        propose: async (requestId, c, o = {}) => {
+          const items = await db
+            .select({ id: calcRequestItems.id, seq: calcRequestItems.seq })
+            .from(calcRequestItems)
+            .where(eq(calcRequestItems.requestId, requestId))
+            .orderBy(calcRequestItems.seq);
+          const applied = await applyProposal(
+            requestId,
+            [{ label: 'AI guruh', tnvedCode: row.tnvedCode, itemSeqs: [items[0]!.seq], aiProposed: true, confidence: 'high', aiDutyPct: null, note: null }],
+            c,
+            o,
+          );
+          const priced = await priceProposedGroups(requestId, c, o.expectRev === undefined ? {} : { expectRev: applied.rev });
+          await saveTable(requestId, { items: [{ id: items[1]!.id, seq: items[1]!.seq, tnvedCode: '9503007000' }], adds: [] }, ctx());
+          return { groups: 1, batches: 1, failed: 0, ...priced };
+        },
+        pick: async () => ({ answers: [], usage: null }),
+      },
+      { expectRev: ticket },
+    );
+    expect(out.overtaken).toBe('step 2');
+    expect(out.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    expect(out.text).toMatch(new RegExp(`· 2-qator «Odam yozgan ${SUFFIX}» — 9503007000$`, 'm'));
+  });
+
+  it('the file’s own code is named so on the landing pass only — on a re-run it is the code alone', async () => {
+    // A code no memory explains: the exact-key book knows no such name, and
+    // no seal carries this code.
+    const name = `Sinov tovari ${SUFFIX}`;
+    const id = await openDoor('plain', 'rastamojka', [{ name, tnvedCode: '9503007000', weightKg: 100 }]);
+    const noModel = { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true };
+    const landing = await aiPrefill(id, ctx(), noModel);
+    expect(landing.text).toContain(`· 1-qator «${name}» — 9503007000 · ${CODE_SOURCE_WORDS.row}`);
+    // Between the passes a VED could have typed it — the re-run cannot tell,
+    // so it names no source rather than a wrong one.
+    const rerun = await aiPrefill(id, ctx(), noModel, { pass: `amend:${randomUUID()}` });
+    expect(rerun.text).toMatch(new RegExp(`· 1-qator «${name}» — 9503007000$`, 'm'));
+  });
+
   it('«🤖»: the figure goes out and nothing is asked — a seller’s gap reads «VED xodimi sizdan so‘raydi» (his 5a)', async () => {
     const row = await importRow();
     const id = await openDoor('ai', 'podklyuch', [{ name: row.name, weightKg: 100 }], { fromCity: null });

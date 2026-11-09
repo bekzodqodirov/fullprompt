@@ -43,7 +43,11 @@ export const SILENT_DOOR_ERROR = 'oddiy eshik';
  * (`writeReplyToLenta` reads a setting on the pool, which may not run inside
  * this transaction, #714), so a process killed between the two loses the
  * note — the re-delivery finds the claim and writes nothing. The message
- * itself is never lost; the card's copy of it can be.
+ * itself is never lost; the card's copy of it can be. Under `silent` (below)
+ * there IS no message — the muted claim reaches nobody, and the note is the
+ * pass's only output — so that window loses all of it: the card gets neither
+ * the note nor the failure line (review ADV-3). Milliseconds wide, stated
+ * and not closed.
  *
  * Returns false when an earlier attempt already spoke — the caller then
  * writes no lenta note either — and, under `whileOpen`, when the request has
@@ -62,7 +66,8 @@ export const SILENT_DOOR_ERROR = 'oddiy eshik';
  * told «natija shu yerga keladi». Still the DRAIN's row, never a second
  * sender: queued `pending` with `direct: true` instead of `muted`, sent with
  * the drain's pauses, its `payload.tg` written like any sent row, so a reply
- * to it reaches the reply door. Set only for an `amend:*` pass (jobs.ts).
+ * to it reaches the reply door. Set for an `amend:*` pass and for any pass on
+ * a «🤖 AI rastamojka» request (`directPass`, jobs.ts).
  *
  * `silent` (docs/IKKI-ESHIK.md §2.4, his 3a): a pass on a «🧮 Hisoblatish»
  * request prepares the card for the VED and tells the seller nothing — the

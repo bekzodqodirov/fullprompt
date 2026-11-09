@@ -659,13 +659,18 @@ export async function aiPrefill(
       clientLabel: about?.clientCode ?? null,
       cardLabel: about?.cardLabel ?? null,
       pass: amend === null ? 'landing' : 'amend',
-      rows: await noteRows(requestId, ws, landedCodes, new Set(memoryCodedIds), aiUsed),
+      rows: await noteRows(requestId, ws, landedCodes, new Set(memoryCodedIds), {
+        aiUsed,
+        overtaken: overtaken !== null,
+        amend: amend !== null,
+      }),
       groups: noteGroups(ws, lines),
       ungrouped: ws.ungrouped.map((i) => i.label),
       // His 2.7: the plain door never asks a law unit — the rows the law
       // still wants a figure for are named for the VED.
       asks: asks ?? [],
-      freight: road,
+      // Its refusal only — a priced road cannot reach the note (ADV-4).
+      freight: road && !road.ok ? road : null,
       feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
       pickLeft: pickShown,
       hasCertificate: ws.hasCertificate,

@@ -369,6 +369,12 @@ export function roadRefusalLine(
  * seller any more), and the road's facts only the customer has. Null when
  * there are none. Capped like the old line: it sits in the head the fit
  * never cuts (review p5-adv-5).
+ *
+ * The LAW's figures and the road's facts, and nothing else (review
+ * PP-SPEC-4, stated): a group the engine refused for a measure the law does
+ * not pin is the seller's fact too, and it is said on that GROUP's own line
+ * with its tail — the refusal names the row — not here, where it would name a
+ * law-pinned row a second time.
  */
 export function vedGapsLine(asks: readonly LawAsk[], freight: AiVedFreight | null): string | null {
   const parts = asks
