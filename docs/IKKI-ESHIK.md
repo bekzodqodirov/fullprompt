@@ -105,6 +105,12 @@ out and every reader reads NULL. A landing is never refused 'server_behind' beca
 «Bo‘ldi» is never refused because of a file. New code only WRITES `aiGoods: 'add'`; the type and
 `pickGoods` keep `null`, `'context'` and `'ask'`, so a hydrated old collection still reads (§1.3).
 
+**As built after the as-built review** (CHAT-1, CHAT-5): the reading JOB's settle (`settleAnalysis`)
+carries the add reading's conflicts — it put the collection's old list back and every «↳ faylda 200
+dona, so‘rovda 300 — VED hal qiladi» was lost to the seller and the VED alike; a choice the live
+collection holds for the same row, field and read figure stands. The save's line is a statement:
+«· 1-qator «Kurtka»: faylda 200 dona (so‘rovda 300) — VED hal qiladi», no «sotuvchi tanlamadi».
+
 1.2 **The rule that replaces the seller's choice.** The bot decides, and names what it did.
 
 1.2.1 **A mapped Excel is classified by its COLUMNS, never by its line names.** The reader
@@ -119,6 +125,21 @@ net weight (`isNetWeight`) and money columns. `parseGoods` now also returns, per
 
 This is a reader change, so the WHOLE corpus runs first (`parseGoodsCases`, `readGoodsFileCases`)
 and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
+
+**As built after the as-built review** (CRITIC-1, FILES-1; corpus c2451-c2457):
+- A TWO-ROW header is read as one (`composedHeader`): under a parent merged across a split — «G.W.
+  (KG)» over «PER CTN | TOTAL», «毛重(KG)» over «单箱 | 合计», «Вес брутто, кг» over «1 места | всего»,
+  «Weight (KG)» over «N.W. | G.W.» — each column reads parent + child, the parent taken across the
+  split from the master on the left (the reader leaves a covered cell to its right empty). The
+  sub-header row is a closed vocabulary with a splitting word, never data. Before, the second column
+  had no header, the per-carton column was the only gross one, and the brutto was the Σ of single
+  cartons — 25 kg for a 190 kg shipment, ranked above the model and never asked again.
+- The belt: a gross or m³ Σ the sheet's own grand TOTAL row contradicts beyond rounding is refused
+  (null), never corrected — the VED reads the file, the model the row.
+- A COUNT header naming one package («每箱数量», «每箱件数», «Кол-во в коробке», «PCS/CTN», «Qty per
+  carton») is nobody's count (`PER_PACKAGE_COUNT`): the line's count is the total column. Taken as the
+  count, 300 jackets read 30, the packing list stopped being «the same goods» and its rows were added
+  as a second order.
 
 1.2.2 **A first collection** (neither an add nor seeded):
 - **The first mapped Excel is the goods list**, as today, whatever its shape.
@@ -176,6 +197,20 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
 - **Photos and typed text beside an Excel keep today's rule.** The Excel answers, and the extra
   lines are NAMED in the bot's note, never added: «Rasmda/yozuvda Excel’da yo‘q tovar: … — VED
   tekshiradi». Photos were never asked about; making them `add` would count goods twice (M3).
+- **As built after the as-built review** (FILES-3, FILES-4, DURABILITY-1):
+  - On the `add` path with NO model reading (no key, the day's budget, a timeout) nothing was
+    model-read, so the typed lines keep the rule above: a line the Excel does not carry is NAMED,
+    never appended (corpus c1716 and intake-collector-r4's pin re-anchored). The bot sets `add` by
+    itself now; an outage turned a typed restatement under another name into a second product.
+  - A LONE first goods file, uncapped and holding every row, gives its totals at the READING
+    (`loneFileTotals`, never stored): a packing list its `packingTotals`, an invoice its gross Σ. The
+    seller who sent only the packing list was asked the brutto it states on every row (INT-10). A
+    second file decides as before: another factory's list leaves nothing; the shipment's packing
+    list writes `fileTotals`.
+  - The file rule keys each name once and looks rows up by index (`rowIndex`, every clause of
+    `namesMeet` its own map; a twin by figures by its count) — same answers, in list order. Scanning,
+    two 500-row files cost 3-9 s and 1000 × 500 up to 22 s of synchronous CPU in the one process the
+    bot shares with every web request (DRILL-1's shape); now tens of ms, pinned under 600 ms.
 
 1.2.3 **An add or seeded collection** compares its files with the request's kept rows through R3's
 `addReading`/`conflictOf`, unchanged.
@@ -184,6 +219,10 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
   rows change no row and become no line — not even as a first file (review PF-SPEC-2).
 - A conflict is never asked (1.1). On both doors it defaults to 'ved' at the save
   (calc-intake.ts:128-140, calc-amend.ts:219).
+- As built after the as-built review (FILES-2): the packing-shaped file is the noted file whether or
+  not rows are held. The commonest top-up packing list is the WHOLE shipment's — the stored rows and
+  the new ones — so it is not «of the held goods», and folded as another factory's invoice its rows
+  landed as 🆕 lines beside the request's own, priced twice.
 
 1.2.4 **The notes**, in the code's own wording conventions (P11):
 - «📄 «packing.xlsx» — o‘sha tovarlar: qatorlar oldingi fayldan, bundan faqat umumiy brutto va kub
@@ -198,6 +237,10 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
 - «🤖 AI o‘qigan fayllardagi tovarlar Excel’da bor.»
 - The «bir xil deb qo‘shilmadi» line loses its ⚠️, because this is now the designed outcome: «📄 2 ta
   qator Excel’dagi bilan bir xil — bir marta olindi: …».
+- As built after the as-built review (CHAT-6): a further invoice-shaped Excel says ONE line, its
+  fold's head («📄 «zavod2.xlsx» — 3 ta yangi tovar qo‘shildi.»); «N ta tovar o‘qildi» above it said the
+  same twice and spent the prompt's 4096 twice per file. The first file, a capped one and the
+  packing hand-over keep theirs.
 
 1.2.5 **Where the decisions are kept, durably** (DR-9). There are two new optional collection
 fields; a row hydrated without them reads null and [].
@@ -213,6 +256,14 @@ fields; a row hydrated without them reads null and [].
   - A figure two packing lists disagree on stays the VED's (`clash`): a third list does not
     settle it, and the model's figure does not land in its place (review PF-ADV-8).
   - On the AI door, a figure the packing list gave is never asked again (INT-10).
+  - As built after the as-built review (CHAT-3, CRITIC-2-NEW): «the seller's typed figure» is a
+    TOTAL he typed. Beside goods rows already held — an Excel, a `fileTotals`, a request's stored
+    lines — ONE typed goods line is no longer the shipment (`parseManualFacts`' `goodsBeside`): «Sumka
+    80 kg», «Shapka 50 dona 20 kg» and a row addressed by number («3: 150 kg», the material stage's
+    own row address, now at home in intake-manual.ts) are the line's, and only a figure on another
+    line («jami 3500 kg», «brutto 3500 kg», «3500 kg») outranks the packing list. Typed before the
+    first «Bo‘ldi» or after «➕», they had become the brutto under a ✅. The row's figure typed
+    before the reading stays in the material for the VED; it is not written onto row 3 there.
 - **`fileNotes: string[]`** holds the RECEIPT-time notes: the Excel-vs-Excel decisions, «N ta tovar
   o‘qildi», «rasm sifatida o‘qiladi», and the reader's cut and size warnings.
   - It is written in the same patch as the file.
@@ -468,6 +519,15 @@ VED's, and the lenta note names them.
     settle.
   - It is deterministic, so a retry codes identically.
   - A code the seller typed (`lineAnswers`, `placeByName`) stays on top.
+- **As built after the as-built review** (DOORS-1, FILES-6):
+  - The reading asks the model for `known_codes` by the collection's DOOR (`collectionDoor`, now
+    beside `IntakeState`), never by its `ai` flag: an add or seeded collection on a NULL request
+    opens with the legacy flag set, and the model's guess landed on today's table unmarked — no «(AI
+    taklifi)» — with the law unit of the guess asked. NULL reads as on main (§0.2).
+  - A model-read line whose code the seller's own typed material states (`codeIn` per line, or a
+    typed goods line carrying it) keeps it as the row's own: no «AI taklifi», never replaced by the
+    memory or the book. Only a code nobody wrote is the model's proposal; a code read off a document
+    still cannot be told from a guess (PF-ADV-16).
 - **The words** (P13):
   - A model-proposed code prints as «· 6403990000 (AI taklifi)». It lands with the item note
     «TNVED: AI taklifi (o‘qishda) — tekshiring», and the AI answer's line marks it the same way.
