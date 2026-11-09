@@ -75,7 +75,10 @@ const managerElsewhere = () => person(['batches.depart_close'], [W.a]);
 const plannerAtOrigin = () => person(['plans.manage'], [W.org]);
 const packer = () => person(['scan.load'], [W.org]);
 
-async function truck(status: 'forming' | 'loading' | 'in_transit', dest = W.a): Promise<string> {
+async function truck(
+  status: 'forming' | 'loading' | 'in_transit' | 'arrived' | 'unloaded' | 'closed' | 'cancelled',
+  dest = W.a,
+): Promise<string> {
   const [row] = await db
     .insert(batches)
     .values({
@@ -83,7 +86,8 @@ async function truck(status: 'forming' | 'loading' | 'in_transit', dest = W.a): 
       originWarehouseId: W.org,
       destWarehouseId: dest,
       status,
-      departedAt: status === 'in_transit' ? new Date() : null,
+      // Everything past loading left, except a cancel before departure.
+      departedAt: ['forming', 'loading', 'cancelled'].includes(status) ? null : new Date(),
       createdBy: actorId,
     })
     .returning({ id: batches.id });
@@ -210,6 +214,19 @@ describe('a truck that has not left takes another receiving warehouse', () => {
     expect(await refusal(change(logist(), id, W.a, W.b))).toBe('not_before_departure');
     expect(await destOf(id)).toBe(W.a);
     expect(await destRows(id)).toHaveLength(0);
+  });
+
+  it('a stale panel learns what the truck IS — cancelled, or already past the road — never «use the road door» (review D3)', async () => {
+    const cancelled = await truck('cancelled');
+    expect(await refusal(change(logist(), cancelled, W.a, W.b))).toBe('batch_cancelled');
+    for (const status of ['arrived', 'unloaded', 'closed'] as const) {
+      const id = await truck(status);
+      expect(await refusal(change(logist(), id, W.a, W.b)), status).toBe('already_unloaded');
+      expect(await destOf(id)).toBe(W.a);
+      expect(await destRows(id)).toHaveLength(0);
+    }
+    expect(await destOf(cancelled)).toBe(W.a);
+    expect(await destRows(cancelled)).toHaveLength(0);
   });
 });
 

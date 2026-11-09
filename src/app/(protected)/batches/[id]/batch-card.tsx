@@ -350,7 +350,8 @@ export async function BatchCard({
   const tn = await getTranslations('batches.number');
   const numberLine = (() => {
     if (!numberState) return null;
-    if (numberState.kind === 'returned') return tn('stateReturned', { number: numberState.number });
+    // The numbers its own release rows freed — never its born name (review C1).
+    if (numberState.kind === 'returned') return tn('stateReturned', { number: numberState.numbers.join(', ') });
     const values = { number: numberState.number ?? '—', name: numberState.name ?? '—' };
     // A literal map — a key built from a value escapes the i18n tripwire (#163).
     const kept: Record<NumberKeptWhy, string> = {

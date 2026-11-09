@@ -1,7 +1,8 @@
 import { globSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { NUMBER_KEPT } from '@/modules/wms/batches/batch-number';
-import { DEST_CHANGE_REFUSALS } from '@/modules/wms/batches/reroute-rules';
+import { numberStopWords } from '@/modules/wms/batches/number-stop-words';
+import { DEST_CHANGE_REFUSALS, notBeforeDepartureWhy } from '@/modules/wms/batches/reroute-rules';
 import en from '../../messages/en.json';
 import ru from '../../messages/ru.json';
 import uz from '../../messages/uz.json';
@@ -116,7 +117,8 @@ describe('the give-back writes in one place, in one order', () => {
   it('its audit row says `released` and NEVER a `reason` — a reason would burn the number for ever', () => {
     const at = release.indexOf('writeAudit(');
     const audit = release.slice(at, release.indexOf('});', at));
-    expect(audit).toContain('after: { code: name, released: true }');
+    // …and the number it FREED, which in the plate case nothing else on the row names (review C1).
+    expect(audit).toContain('after: { code: name, released: true, number: code }');
     expect(audit).toContain('before: { code: holder.code }');
     expect(audit).not.toMatch(/\breason\b/);
     // The truck's OWN origin scope, so a shared prefix's rename sits where it belongs.
@@ -249,6 +251,20 @@ describe('the destination before departure', () => {
     const form = read('src/app/(protected)/batches/[id]/mashina/dest-change-form.tsx');
     expect(form).toContain("import type { DestChangeErrorCode } from '@/modules/wms/batches/reroute-rules';");
   });
+
+  it('a truck past forming/loading is refused by what it IS, and the stale panel is redrawn (review D3)', () => {
+    // Only a truck ON THE ROAD is told to use the road's door.
+    expect(notBeforeDepartureWhy('in_transit')).toBe('not_before_departure');
+    expect(notBeforeDepartureWhy('cancelled')).toBe('batch_cancelled');
+    for (const status of ['arrived', 'unloaded', 'closed']) expect(notBeforeDepartureWhy(status), status).toBe('already_unloaded');
+    expect(fn).toContain('throw new DestChangeError(notBeforeDepartureWhy(batch.status))');
+    const form = read('src/app/(protected)/batches/[id]/mashina/dest-change-form.tsx');
+    expect(form).toContain('if (STALE_PAGE.has(res.error)) router.refresh();');
+    const stale = form.match(/const STALE_PAGE[^;]*;/)?.[0] ?? '';
+    for (const code of ['dest_changed', 'batch_cancelled', 'not_before_departure', 'already_unloaded']) {
+      expect(stale, code).toContain(`'${code}'`);
+    }
+  });
 });
 
 describe('the quick batch asks first', () => {
@@ -288,9 +304,67 @@ describe('every answer has its words in all four bundles', () => {
     }
   });
 
+  it('the plan page names the PLAN’s destination as the approved one — «rejada» is the Mashina tab’s word (review D2)', () => {
+    // The Mashina tab's badge «↪ {now} · rejada {planned}» reads the DEPARTURE
+    // destination; the plan page's suffix is the plan's own approval, so it
+    // must not borrow that word for a different warehouse.
+    const approved = { uz: 'tasdiqlangan', ru: 'утверждён', en: 'approved', zh: '审批' } as const;
+    for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
+      const line = (bundle as unknown as { plans: { truckNow: string } }).plans.truckNow;
+      expect(line, name).toContain('{dest}');
+      expect(line, name).toContain('{planned}');
+      expect(line, name).toContain(approved[name as keyof typeof approved]);
+    }
+    expect((uz as unknown as { plans: { truckNow: string } }).plans.truckNow).not.toContain('rejada');
+  });
+
+  it('«pending» and «busy» promise the number back only while no new truck is opened first (review C4)', () => {
+    // `nextBatchCode` releases nothing — it bumps past a number no walk has
+    // freed — so the next cancel or `--apply` gives it back ONLY if no truck
+    // of the prefix was minted first; after that it is a gap for good. The
+    // unconditional «keyingi bekor qilishda qaytadi» was a promise the mint breaks.
+    const condition = {
+      uz: 'undan oldin yangi mashina ochilmasa',
+      ru: 'если до этого не откроют новую машину',
+      en: 'unless a new truck is opened first',
+      zh: '若在此之前未开出新车',
+    } as const;
+    for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
+      const kept = (bundle as unknown as { batches: { number: { kept: Record<string, string> } } }).batches.number.kept;
+      for (const why of ['pending', 'busy']) {
+        expect(kept[why], `${name}: kept.${why}`).toContain(condition[name as keyof typeof condition]);
+        expect(kept[why], `${name}: kept.${why}`).toContain('batch-raqam --apply');
+      }
+    }
+  });
+
   it('the card’s map names every kept reason (a literal map — #163)', () => {
     const card = read('src/app/(protected)/batches/[id]/batch-card.tsx');
     for (const why of NUMBER_KEPT) expect(card, why).toContain(`${why}: tn('kept.${why}', values)`);
+  });
+});
+
+describe('the dry run says why the walk stops in his words (review C5)', () => {
+  it('every reason has an Uzbek sentence — never the raw code', () => {
+    for (const why of NUMBER_KEPT) {
+      const line = numberStopWords({ why, number: 'YW-010', name: '01A777BA' });
+      expect(line, why).not.toMatch(new RegExp(`\\b${why}\\b`));
+      expect(line.length, why).toBeGreaterThan(10);
+    }
+    expect(numberStopWords({ why: 'agent', number: 'YW-010', name: 'YW-010' })).toBe(
+      'YW-010: bekor qilingan, hujjatlari agentga yuborilgan — raqami saqlanadi',
+    );
+    expect(numberStopWords({ why: 'newer', number: 'YW-011', name: 'YW-011' })).toBe('YW-011 allaqachon ochilgan');
+    expect(numberStopWords('empty')).toContain('sanoq boshiga yetdi');
+  });
+
+  it('both script lines print the stop through that map — the report’s reason, and the walk’s', () => {
+    const script = read('scripts/batch-raqam.ts');
+    expect(script).toContain('numberStopWords(p.stoppedBy)');
+    expect(script).toContain('numberStopWords(walk.stop)');
+    expect(script).not.toMatch(/\$\{walk\.stop\.why\}/);
+    // The one fixed sentence it used to print for every empty walk.
+    expect(script).not.toContain('oxirgi raqam yo‘lga chiqqan yoki ochiq mashinada');
   });
 });
 

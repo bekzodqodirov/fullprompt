@@ -89,7 +89,9 @@ export function mayRerouteTruck(
 export const DEST_CHANGE_REFUSALS = [
   'forbidden',
   'batch_not_found',
+  'batch_cancelled',
   'not_before_departure',
+  'already_unloaded',
   'dest_changed',
   'bad_target',
   'dest_agent_sent',
@@ -112,6 +114,21 @@ export function mayChangeDestDoor(
   originWarehouseId: string,
 ): boolean {
   return mayAt(actor, 'batches.depart_close', originWarehouseId) || mayAt(actor, 'plans.manage', originWarehouseId);
+}
+
+/**
+ * Why a truck that is no longer forming or loading cannot take another
+ * receiving warehouse here — by what it IS, because the advice differs
+ * (review D3): only a truck ON THE ROAD has the road's own door
+ * («Yo'nalishni o'zgartirish», `mayRerouteTruck` is `in_transit` alone); a
+ * cancelled truck never left, and an arrived, unloaded or closed one is past
+ * every door. The panel goes stale under a colleague's cancel or a departure,
+ * so the press is where a person learns it.
+ */
+export function notBeforeDepartureWhy(status: string): 'batch_cancelled' | 'not_before_departure' | 'already_unloaded' {
+  if (status === 'cancelled') return 'batch_cancelled';
+  if (status === 'in_transit') return 'not_before_departure';
+  return 'already_unloaded';
 }
 
 /** Who is OFFERED the form: the door, on a truck still forming or loading. */

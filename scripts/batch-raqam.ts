@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { numberStopWords } from '../src/modules/wms/batches/number-stop-words';
 
 /**
  * «Bekor qilingan partiyalarning raqamlari» — his 7a (docs/NARX-VA-RAQAM.md
@@ -21,6 +22,10 @@ import 'dotenv/config';
  * calls the cancel's own writer (`releaseTrailingCodes`) once per prefix and
  * prints what it gave back, read from what it returned — never the
  * prediction. Its audit rows carry no actor: the script is nobody's press.
+ * WHY a walk stops is printed through one literal Uzbek map
+ * (`number-stop-words.ts`) — the reason the report found, never a fixed
+ * sentence and never the raw code (review C5). That module is pure, so it
+ * is imported before the database client without building the pool.
  */
 
 const apply = process.argv.includes('--apply');
@@ -82,7 +87,7 @@ async function main() {
         console.log('    sanoqda bo‘sh joy yo‘q');
       }
       console.log(
-        `    --apply qaytaradi: ${p.wouldReturn.length ? p.wouldReturn.join(', ') : '— (oxirgi raqam yo‘lga chiqqan yoki ochiq mashinada)'}`,
+        `    --apply qaytaradi: ${p.wouldReturn.length ? p.wouldReturn.join(', ') : '—'} · to‘xtaydi: ${numberStopWords(p.stoppedBy)}`,
       );
       returnable += p.wouldReturn.length;
     }
@@ -97,7 +102,7 @@ async function main() {
       if (p.wouldReturn.length === 0) continue;
       const walk = await releaseTrailingCodes(p.prefix, { actorId: null });
       console.log(
-        `  ${p.prefix}: qaytdi ${walk.released.length ? walk.released.join(', ') : '—'} · to‘xtadi: ${walk.stop.why}${walk.stop.number ? ` (${walk.stop.number})` : ''}`,
+        `  ${p.prefix}: qaytdi ${walk.released.length ? walk.released.join(', ') : '—'} · to‘xtadi: ${numberStopWords(walk.stop)}`,
       );
       if (walk.stop.why === 'busy' || walk.stop.why === 'error') process.exitCode = 1;
     }

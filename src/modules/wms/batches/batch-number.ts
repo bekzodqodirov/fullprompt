@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { batches, warehouses } from '../../platform/db/schema';
 import { batchSeqCode, batchSeqPrefix, readCounter } from '../codes';
-import { firstNameOf, numberHolderOf, type NumberHolder } from './former-codes';
+import { firstNameOf, namesWornBy, numberHolderOf, type NumberHolder } from './former-codes';
 
 /*
  * «Bekor qilingan partiya raqami» — whether a cancelled truck's number comes
@@ -74,23 +74,53 @@ export function numberOfCode(prefix: string, code: string): number | null {
 }
 
 /**
- * Did the give-back release this truck's number? Its one audit row says so
- * (`after.released`, written only by `releaseTrailingCodes`) — the plate case
- * included, where the name did not change and only the counter moved.
+ * The numbers the give-back released FROM this truck, in the order it freed
+ * them — `null` when it released none. Each release writes one audit row
+ * (`after.released`, only `releaseTrailingCodes` writes it) and that row
+ * names the number it freed (`after.number`): the plate case included, where
+ * the name did not change and only the counter moved, and a truck that wore
+ * another truck's vacated number, where its BORN name is not what came back
+ * (review C1 — the card used to print `firstNameOf` and said a live
+ * colleague's number had returned). A row from before `number` was written
+ * names nothing and the caller falls back to the born name.
  */
-export async function auditSaysReleased(handle: Db | Tx, batchId: string): Promise<boolean> {
+export async function releasedNumbersOf(handle: Db | Tx, batchId: string): Promise<string[] | null> {
   const rows = (await handle.execute(sql`
-    SELECT 1 FROM audit_log a
+    SELECT a.after->>'number' AS number FROM audit_log a
      WHERE a.entity_type = 'batch' AND a.entity_id = ${batchId}::uuid AND a.action = 'update'
        AND (a.after->>'released') = 'true'
-     LIMIT 1
-  `)) as unknown as unknown[];
-  return [...rows].length > 0;
+     ORDER BY a.id ASC
+  `)) as unknown as { number: string | null }[];
+  const list = [...rows];
+  if (list.length === 0) return null;
+  return [...new Set(list.map((row) => row.number).filter((n): n is string => typeof n === 'string' && n !== ''))];
+}
+
+/**
+ * The number a cancelled truck HOLDS, by the holder rule and never by a guess
+ * from its history (review C1): the name it wears when that is a mint string
+ * of today's prefix (the wearer holds it); else, of the mint strings it ever
+ * renamed away from, the highest that `numberHolderOf` still gives to THIS
+ * truck — the walk from the top meets that one first; else its born name,
+ * which is the old answer and the one the «another truck holds it now» and
+ * «prefix» branches below read.
+ */
+async function heldNumberOf(handle: Db | Tx, batchId: string, prefix: string, wears: string): Promise<string> {
+  if (numberOfCode(prefix, wears) !== null) return wears;
+  const minted = (await namesWornBy(handle, batchId))
+    .map((name) => ({ name, n: numberOfCode(prefix, name) }))
+    .filter((c): c is { name: string; n: number } => c.n !== null)
+    .sort((a, b) => b.n - a.n);
+  for (const candidate of minted) {
+    if ((await numberHolderOf(handle, candidate.name))?.id === batchId) return candidate.name;
+  }
+  return (await firstNameOf(handle, batchId)) ?? wears;
 }
 
 /** The card's line — durable, read from the truck's own rows. */
 export type NumberState =
-  | { kind: 'returned'; number: string }
+  /** Every number the give-back freed from this truck — usually one; two when it held a vacated one too. */
+  | { kind: 'returned'; numbers: string[] }
   | { kind: 'kept'; why: NumberKeptWhy; number?: string; name?: string };
 
 /** How far the explainer walks from the counter's top before it says «newer» — a busy prefix's top is live. */
@@ -100,11 +130,13 @@ const EXPLAIN_WALK = 200;
  * What became of a cancelled truck's number — `null` for a truck that is not
  * cancelled. Read-only, on the POOL, the same predicate the writer asks: a
  * truck the give-back renamed (or released from its plate) says «Raqami
- * qaytarildi»; any other says «Raqam qaytmadi» and the reason that stands
- * NOW — the first number from the counter's top down that does not come
- * back, or the truck's own. `pending` is a truck the rule would release that
+ * qaytarildi» and names the numbers its release rows freed; any other says
+ * «Raqam qaytmadi» and the reason that stands NOW — the first number from the
+ * counter's top down that does not come back, or the truck's own (the number
+ * it HOLDS, `heldNumberOf`). `pending` is a truck the rule would release that
  * no walk has yet (the release ran into a lock, or failed): the next cancel
- * on the prefix, or the dry-run script's `--apply`, frees it.
+ * on the prefix, or the dry-run script's `--apply`, frees it — unless a new
+ * truck of the prefix is opened first, which passes over it for good.
  */
 export async function batchNumberState(batchId: string): Promise<NumberState | null> {
   const [row] = await db
@@ -120,41 +152,44 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
     .innerJoin(warehouses, eq(warehouses.id, batches.originWarehouseId))
     .where(eq(batches.id, batchId));
   if (!row || row.status !== 'cancelled') return null;
-  const first = (await firstNameOf(db, batchId)) ?? row.code;
-  if (await auditSaysReleased(db, batchId)) return { kind: 'returned', number: first };
-  if (row.departedAt) return { kind: 'kept', why: 'left', number: first };
-
+  const released = await releasedNumbersOf(db, batchId);
+  if (released) {
+    return { kind: 'returned', numbers: released.length ? released : [(await firstNameOf(db, batchId)) ?? row.code] };
+  }
   const prefix = batchSeqPrefix({ code: row.whCode, batchPrefix: row.batchPrefix });
-  const n = numberOfCode(prefix, first);
-  if (n === null) return { kind: 'kept', why: 'prefix', number: first };
+  const held = await heldNumberOf(db, batchId, prefix, row.code);
+  if (row.departedAt) return { kind: 'kept', why: 'left', number: held };
+
+  const n = numberOfCode(prefix, held);
+  if (n === null) return { kind: 'kept', why: 'prefix', number: held };
   const top = await readCounter(db, 'batch_seq', prefix);
-  if (top === null) return { kind: 'kept', why: 'no_counter', number: first };
+  if (top === null) return { kind: 'kept', why: 'no_counter', number: held };
   // Below its own number, unreleased: nothing walking down from the top will
   // ever reach it, and the mint walks past a name a truck still wears.
-  if (top < n) return { kind: 'kept', why: 'error', number: first };
+  if (top < n) return { kind: 'kept', why: 'error', number: held };
 
   // The numbers above it, top first: the first that does not come back is
   // what keeps this one.
   for (let m = top, walked = 0; m > n; m -= 1, walked += 1) {
     const above = batchSeqCode(prefix, m);
-    if (walked >= EXPLAIN_WALK) return { kind: 'kept', why: 'newer', number: first, name: batchSeqCode(prefix, top) };
+    if (walked >= EXPLAIN_WALK) return { kind: 'kept', why: 'newer', number: held, name: batchSeqCode(prefix, top) };
     const verdict = await numberVerdict(db, above);
     if (verdict.ok) continue;
     if (verdict.why === 'unworn') return { kind: 'kept', why: 'unworn', number: above };
     if (verdict.why === 'renamed_left') return { kind: 'kept', why: 'renamed_left', number: above, name: verdict.holder?.code };
     // A live truck — or a cancelled one that keeps its own number — sits
     // above: «YW-011 allaqachon ochilgan».
-    return { kind: 'kept', why: 'newer', number: first, name: verdict.holder?.code ?? above };
+    return { kind: 'kept', why: 'newer', number: held, name: verdict.holder?.code ?? above };
   }
 
   const own = await numberVerdict(db, batchSeqCode(prefix, n));
   // Another truck holds this number now (one renamed to it by hand after
   // this one let it go before departure).
   if (own.holder && own.holder.id !== batchId) {
-    return { kind: 'kept', why: 'newer', number: first, name: own.holder.code };
+    return { kind: 'kept', why: 'newer', number: held, name: own.holder.code };
   }
-  if (!own.ok) return { kind: 'kept', why: own.why, number: first, name: own.holder?.code };
-  return { kind: 'kept', why: 'pending', number: first };
+  if (!own.ok) return { kind: 'kept', why: own.why, number: held, name: own.holder?.code };
+  return { kind: 'kept', why: 'pending', number: held };
 }
 
 /**
@@ -187,6 +222,14 @@ export interface PrefixReport {
   gaps: NumberGap[];
   /** What `--apply` would give back: the trailing walk, read-only, the writer's own verdict. */
   wouldReturn: string[];
+  /**
+   * What stops that walk (review C5): the first number from the top that does
+   * not come back, by the verdict's own reason; `'empty'` when nothing is
+   * left below it (the counter is 0, or every number down to 1 comes back);
+   * `null` only when the walk was cut at `REPORT_NUMBERS`. The dry run says
+   * it in his words — it printed one fixed sentence for every reason.
+   */
+  stoppedBy: { why: NumberKeptWhy; number: string; name?: string } | 'empty' | null;
 }
 
 /** A prefix's numbers checked one by one at most this far down; a longer history is cut and said. */
@@ -258,8 +301,10 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
 
     const gaps: NumberGap[] = [];
     const wouldReturn: string[] = [];
+    let stoppedBy: PrefixReport['stoppedBy'] = null;
     let trailing = true;
-    for (let m = counter, walked = 0; m >= 1 && walked < REPORT_NUMBERS; m -= 1, walked += 1) {
+    let m = counter;
+    for (let walked = 0; m >= 1 && walked < REPORT_NUMBERS; m -= 1, walked += 1) {
       const code = batchSeqCode(prefix, m);
       const verdict = await numberVerdict(db, code);
       if (verdict.ok) {
@@ -272,6 +317,7 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
         });
         continue;
       }
+      if (trailing) stoppedBy = { why: verdict.why, number: code, ...(verdict.holder ? { name: verdict.holder.code } : {}) };
       trailing = false;
       const holder = verdict.holder;
       if (verdict.why === 'unworn') gaps.push({ number: code, kind: 'unworn' });
@@ -282,6 +328,8 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
       else if (holder && !holder.wears) gaps.push({ number: code, kind: 'renamed_waiting', name: holder.code });
       // A live truck wearing its own number is no gap.
     }
+    // The walk ran out of numbers, not into one that stays.
+    if (trailing && m < 1) stoppedBy = 'empty';
     out.push({
       prefix,
       counter,
@@ -292,6 +340,7 @@ export async function batchNumberReport(only?: readonly string[]): Promise<Prefi
       cancelled,
       gaps: gaps.reverse(),
       wouldReturn,
+      stoppedBy,
     });
   }
   return out;

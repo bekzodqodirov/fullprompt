@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import { auditLog, batches, clients, clientTransactions, users, warehouses } from '@/modules/platform/db/schema';
 import { writeAudit } from '@/modules/platform/audit/service';
@@ -164,7 +164,7 @@ describe('the top number comes back (his 4a)', () => {
     expect(res.batch.status).toBe('cancelled');
     expect(await codeOf(b.id)).toBe(`${prefix}-002 (bekor)`);
     expect(await counterOf(prefix)).toBe(1);
-    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', number: `${prefix}-002` });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [`${prefix}-002`] });
 
     const again = await mint(prefix);
     expect(again.code).toBe(`${prefix}-002`);
@@ -179,7 +179,7 @@ describe('the top number comes back (his 4a)', () => {
     const rows = await releaseRows(b.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.before).toEqual({ code: `${prefix}-002` });
-    expect(rows[0]!.after).toEqual({ code: `${prefix}-002 (bekor)`, released: true });
+    expect(rows[0]!.after).toEqual({ code: `${prefix}-002 (bekor)`, released: true, number: `${prefix}-002` });
     expect(rows[0]!.warehouseId).toBe(originId);
     expect(await codeEverWorn(db, `${prefix}-002`, null)).toBe(false);
     expect(await formerCodesFor(b.id)).toEqual([]);
@@ -243,7 +243,7 @@ describe('a gap below the top stays (his 5a)', () => {
     expect(await codeOf(c.id)).toBe(`${prefix}-003 (bekor)`);
     expect(await counterOf(prefix)).toBe(1);
     // The earlier cancel's card now says «qaytarildi» — the answer is the truck's own row (P2-REL-2).
-    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', number: `${prefix}-002` });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [`${prefix}-002`] });
   });
 
   it('a number nobody holds stops the walk («unworn»)', async () => {
@@ -287,8 +287,9 @@ describe('a truck renamed before it left', () => {
     const rows = await releaseRows(b.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.before).toEqual({ code: plate });
-    expect(rows[0]!.after).toEqual({ code: plate, released: true });
-    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', number: `${prefix}-002` });
+    // The plate is both before and after: only `number` says what came back.
+    expect(rows[0]!.after).toEqual({ code: plate, released: true, number: `${prefix}-002` });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [`${prefix}-002`] });
     expect((await mint(prefix)).code).toBe(`${prefix}-002`);
   });
 
@@ -303,6 +304,62 @@ describe('a truck renamed before it left', () => {
     expect(res.number).toEqual({ kind: 'kept', why: 'renamed_left', newer: plate, number: `${prefix}-002` });
     expect(await counterOf(prefix)).toBe(2);
     expect(await codeOf(a.id)).toBe(a.code);
+  });
+});
+
+describe('a truck that wore ANOTHER truck’s vacated number (review C1, C2)', () => {
+  const rename = async (id: string, code: string) =>
+    renameBatch({ batchId: id, code, seen: { code: await codeOf(id), stage: 'loading' } }, planner(), ctx());
+
+  it('swapped names: the answer and the card name the number that CAME BACK, never the born one', async () => {
+    const prefix = await freshPrefix();
+    const a = await mint(prefix); // 001
+    const b = await mint(prefix); // 002, the top
+    await rename(b.id, `01S${tag()}BA`);
+    await rename(a.id, b.code); // A wears 002
+    await rename(b.id, a.code); // B wears 001, live
+    const res = await cancelBatch(a.id, 'xato', ctx());
+    // The walk gave back 002 (A wore it) and stopped at 001, B's live name.
+    expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-002`] });
+    expect(await codeOf(a.id)).toBe(`${prefix}-002 (bekor)`);
+    expect(await counterOf(prefix)).toBe(1);
+    expect(await batchNumberState(a.id)).toEqual({ kind: 'returned', numbers: [`${prefix}-002`] });
+    expect((await releaseRows(a.id))[0]!.after).toMatchObject({ released: true, number: `${prefix}-002` });
+    expect(await codeOf(b.id)).toBe(`${prefix}-001`);
+    expect((await mint(prefix)).code).toBe(`${prefix}-002`);
+  });
+
+  it('kept: the card names the number the truck HOLDS (the one it wears), not the one a live colleague wears now', async () => {
+    const prefix = await freshPrefix();
+    const a = await mint(prefix); // 001
+    const b = await mint(prefix); // 002
+    const c = await mint(prefix); // 003, live, the top
+    await rename(a.id, `01K${tag()}BA`);
+    await rename(b.id, a.code); // B (live) wears 001 now
+    await rename(a.id, b.code); // A wears 002
+    const res = await cancelBatch(a.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'kept', why: 'newer', newer: c.code, number: `${prefix}-002` });
+    expect(await batchNumberState(a.id)).toEqual({ kind: 'kept', why: 'newer', number: `${prefix}-002`, name: c.code });
+    expect(await counterOf(prefix)).toBe(3);
+  });
+
+  it('the minter holds its number: a live truck renamed to its plate is not shadowed by a later renamer', async () => {
+    const prefix = await freshPrefix();
+    const y = await mint(prefix); // 001
+    const x = await mint(prefix); // 002, the top
+    const plate = `01X${tag()}BA`;
+    await rename(x.id, plate); // X stays live, minted as 002
+    await rename(y.id, x.code); // Y takes the vacated 002 by hand…
+    await rename(y.id, `02Y${tag()}CC`); // …and moves away from it again
+    const res = await cancelBatch(y.id, 'xato', ctx());
+    // Nothing comes back: 002 is X's (live), so 001 stays below it too.
+    expect(res.number).toEqual({ kind: 'kept', why: 'newer', newer: plate, number: y.code });
+    expect(await counterOf(prefix)).toBe(2);
+    expect(await releaseRows(y.id)).toHaveLength(0);
+    expect(await codeOf(x.id)).toBe(plate);
+    expect((await db.query.batches.findFirst({ where: eq(batches.id, x.id) }))!.status).toBe('forming');
+    // …and the next truck is 003, never a second 002 beside the live X.
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
   });
 });
 
@@ -384,6 +441,31 @@ describe('what else keeps a number', () => {
   });
 });
 
+describe('after the commit nothing fails the cancel (review F3)', () => {
+  it('a failed re-read of the truck answers with the row the cancel returned — never an error page', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix);
+    const b = await mint(prefix);
+    // The pool blinks on the one post-commit read of the truck (nothing else on
+    // the cancel's path asks `db.query.batches`; inside the transaction it is `tx`).
+    const spy = vi.spyOn(db.query.batches, 'findFirst').mockRejectedValueOnce(new Error('pool blip'));
+    let res: Awaited<ReturnType<typeof cancelBatch>>;
+    let reads = 0;
+    try {
+      res = await cancelBatch(b.id, 'xato', ctx());
+    } finally {
+      reads = spy.mock.calls.length;
+      spy.mockRestore();
+    }
+    expect(reads, 'the blip never reached the re-read').toBe(1);
+    // The cancel stands, its number came back, and the row is the transaction's own.
+    expect(res.batch.id).toBe(b.id);
+    expect(res.batch.status).toBe('cancelled');
+    expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-002`] });
+    expect(await codeOf(b.id)).toBe(`${prefix}-002 (bekor)`);
+  });
+});
+
 describe('concurrency — never a duplicate', () => {
   it('a mint in flight between the cancel and its release → kept «newer», and the next number is fresh', async () => {
     const prefix = await freshPrefix();
@@ -436,7 +518,7 @@ describe('concurrency — never a duplicate', () => {
     expect((await db.query.batches.findFirst({ where: eq(batches.id, b.id) }))!.status).toBe('cancelled');
     expect(await batchNumberState(b.id)).toEqual({ kind: 'kept', why: 'pending', number: b.code });
     expect((await releaseTrailingCodes(prefix, ctx())).released).toEqual([b.code]);
-    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', number: b.code });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [b.code] });
   }, 30_000);
 });
 
@@ -470,6 +552,8 @@ describe('the dry run (his 7a)', () => {
       { number: `${prefix}-006`, kind: 'cancelled', atAgent: false },
     ]);
     expect(report!.wouldReturn).toEqual([`${prefix}-006`]);
+    // …and what stops it, by the verdict's own reason — read to him in words (review C5).
+    expect(report!.stoppedBy).toEqual({ why: 'agent', number: e.code, name: e.code });
 
     const walk = await releaseTrailingCodes(prefix, { actorId: null });
     expect(walk.released).toEqual(report!.wouldReturn);
@@ -480,5 +564,20 @@ describe('the dry run (his 7a)', () => {
     const [after] = await batchNumberReport([prefix]);
     expect(after!.cancelled.find((c) => c.code === `${f.code} (bekor)`)?.released).toBe(true);
     expect(after!.wouldReturn).toEqual([]);
+    expect(after!.stoppedBy).toEqual({ why: 'agent', number: e.code, name: e.code });
+  });
+
+  it('a walk that runs out of numbers says so («empty») — at the bottom, and at counter 0', async () => {
+    const prefix = await freshPrefix();
+    const a = await mint(prefix);
+    await db.update(batches).set({ status: 'cancelled' }).where(eq(batches.id, a.id));
+    const [before] = await batchNumberReport([prefix]);
+    expect(before!.wouldReturn).toEqual([a.code]);
+    expect(before!.stoppedBy).toBe('empty');
+    expect((await releaseTrailingCodes(prefix, { actorId: null })).released).toEqual([a.code]);
+    const [after] = await batchNumberReport([prefix]);
+    expect(after!.counter).toBe(0);
+    expect(after!.wouldReturn).toEqual([]);
+    expect(after!.stoppedBy).toBe('empty');
   });
 });

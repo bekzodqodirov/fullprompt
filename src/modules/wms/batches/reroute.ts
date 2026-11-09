@@ -17,6 +17,7 @@ import {
   destChangeRefusal,
   lostThroughReroute,
   mayChangeDestDoor,
+  notBeforeDepartureWhy,
   rerouteRefusal,
   type DestChangeErrorCode,
   type RerouteErrorCode,
@@ -331,7 +332,7 @@ export async function changeDestBeforeDeparture(
     // nothing about the truck. The origin never changes, so this is the door
     // the screen asked.
     if (!mayChangeDestDoor(actor, batch.originWarehouseId)) throw new DestChangeError('forbidden');
-    if (!['forming', 'loading'].includes(batch.status)) throw new DestChangeError('not_before_departure');
+    if (!['forming', 'loading'].includes(batch.status)) throw new DestChangeError(notBeforeDepartureWhy(batch.status));
     if (batch.destWarehouseId !== input.seenDestWarehouseId) throw new DestChangeError('dest_changed');
 
     // The cancel's own count (unload.ts `cancelBatch`): a live bill or a live

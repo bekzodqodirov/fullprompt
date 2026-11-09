@@ -247,11 +247,15 @@ async function freeBekorName(tx: Tx, code: string, holderId: string): Promise<st
  *      same verdict again under all of it;
  *   4. the rename — only while it still wears the number (a truck renamed to
  *      its plate before it left needs none) — and the counter's CAS N → N-1;
- *   5. ONE audit row `{before:{code}, after:{code, released:true}}` in the
- *      truck's OWN origin's scope. NEVER a `reason`: the former-name
- *      predicate counts a road rename by `after.reason`, and a release
- *      written with one would make the number «ever worn» and burn it for
- *      ever (audit_log is immutable).
+ *   5. ONE audit row `{before:{code}, after:{code, released:true, number}}`
+ *      in the truck's OWN origin's scope. `number` is the number it FREED —
+ *      in the plate case before and after are both the plate, and a truck
+ *      wearing a colleague's vacated number frees that one and not the one it
+ *      was born with, so nothing else on the row could say which (review C1;
+ *      the card and the cancel's answer read it back). NEVER a `reason`: the
+ *      former-name predicate counts a road rename by `after.reason`, and a
+ *      release written with one would make the number «ever worn» and burn it
+ *      for ever (audit_log is immutable).
  *
  * Then the same question for N-1, until a number does not come back — a live
  * truck, a truck that left, one at the agent, a number nobody holds. A
@@ -301,7 +305,7 @@ export async function releaseTrailingCodes(prefix: string, ctx: AuditContext): P
           entityId: holder.id,
           action: 'update',
           before: { code: holder.code },
-          after: { code: name, released: true },
+          after: { code: name, released: true, number: code },
         });
         return { gave: code };
       });
@@ -348,8 +352,9 @@ export async function releaseNumberAfterCancel(batchId: string, ctx: AuditContex
     console.error('[batch-number] state after cancel', batchId, err);
   }
   if (state?.kind === 'returned') {
-    const own = state.number;
-    return { kind: 'returned', codes: [own, ...walk.released.filter((code) => code !== own)] };
+    // Its own release rows' numbers first, then whatever else this walk freed.
+    const own = state.numbers;
+    return { kind: 'returned', codes: [...own, ...walk.released.filter((code) => !own.includes(code))] };
   }
   if (state?.kind === 'kept' && state.why !== 'pending') {
     return { kind: 'kept', why: state.why, newer: state.name, number: state.number };

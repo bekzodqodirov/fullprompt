@@ -880,6 +880,7 @@
       "tariffBands": "Tariff rows",
       "freightMode": "Load type (LTL/FTL)",
       "released": "Number given back",
+      "number": "Number",
       "destBeforeDeparture": "Receiving warehouse (before departure)"
     }
   },
@@ -1252,7 +1253,7 @@
     "roadAwaited": "{n} awaited",
     "roadCame": "{n} came",
     "roadMissed": "{n} did not come",
-    "truckNow": "The truck now goes to: {dest} (planned {planned})"
+    "truckNow": "The truck now goes to {dest} — the plan was approved for {planned}"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1700,8 +1701,8 @@
         "unworn": "The number did not come back: number {number} was never given to a truck",
         "no_counter": "The number did not come back: this prefix has no counter",
         "prefix": "The number did not come back: the warehouse prefix has changed",
-        "pending": "The number has not come back yet — the next cancel returns it",
-        "busy": "The number did not come back now: the system was busy — the next cancel returns it",
+        "pending": "The number has not come back yet — unless a new truck is opened first, the next cancel or batch-raqam --apply returns it",
+        "busy": "The number did not come back now: the system was busy — unless a new truck is opened first, the next cancel or batch-raqam --apply returns it",
         "error": "The number did not come back: an error — the next cancel may return it"
       }
     },
@@ -1716,7 +1717,9 @@
       "errors": {
         "forbidden": "The receiving warehouse is changed by the origin warehouse manager or a logist",
         "batch_not_found": "Truck not found",
+        "batch_cancelled": "The truck was cancelled — its receiving warehouse cannot change",
         "not_before_departure": "The truck has left — use «Change destination»",
+        "already_unloaded": "The truck has already arrived — its receiving warehouse can no longer change",
         "dest_changed": "Somebody just changed the receiving warehouse — the new state is shown, check again",
         "bad_target": "Pick a warehouse from the list",
         "same_destination": "The truck already goes to this warehouse",

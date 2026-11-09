@@ -880,6 +880,7 @@
       "tariffBands": "Tarif qatorlari",
       "freightMode": "Yuk turi (LTL/FTL)",
       "released": "Raqami qaytarildi",
+      "number": "Raqam",
       "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)"
     }
   },
@@ -1252,7 +1253,7 @@
     "roadAwaited": "{n} kutilmoqda",
     "roadCame": "{n} keldi",
     "roadMissed": "{n} kelmadi",
-    "truckNow": "Mashina hozir: {dest} (rejada {planned})"
+    "truckNow": "Mashina hozir: {dest} — reja {planned} uchun tasdiqlangan"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1700,8 +1701,8 @@
         "unworn": "Raqam qaytmadi: {number} raqami hech kimga berilmagan",
         "no_counter": "Raqam qaytmadi: bu prefiksning hisoblagichi yo‘q",
         "prefix": "Raqam qaytmadi: ombor prefiksi o‘zgargan",
-        "pending": "Raqam hali qaytarilmagan — keyingi bekor qilishda qaytadi",
-        "busy": "Raqam hozir qaytmadi: tizim band — keyingi bekor qilishda qaytadi",
+        "pending": "Raqam hali qaytarilmagan — undan oldin yangi mashina ochilmasa, keyingi bekor qilishda yoki batch-raqam --apply bilan qaytadi",
+        "busy": "Raqam hozir qaytmadi: tizim band — undan oldin yangi mashina ochilmasa, keyingi bekor qilishda yoki batch-raqam --apply bilan qaytadi",
         "error": "Raqam qaytmadi: xatolik — keyingi bekor qilishda qaytishi mumkin"
       }
     },
@@ -1716,7 +1717,9 @@
       "errors": {
         "forbidden": "Qabul skladini jo‘nash skladining menejeri yoki logist o‘zgartira oladi",
         "batch_not_found": "Mashina topilmadi",
+        "batch_cancelled": "Mashina bekor qilingan — qabul skladini o‘zgartirib bo‘lmaydi",
         "not_before_departure": "Mashina jo‘nagan — yo‘nalishni «Yo‘nalishni o‘zgartirish» bilan o‘zgartiring",
+        "already_unloaded": "Mashina manziliga yetib kelgan — qabul skladini endi o‘zgartirib bo‘lmaydi",
         "dest_changed": "Qabul skladini kimdir hozirgina o‘zgartirdi — yangi holat ko‘rsatildi, qayta tekshiring",
         "bad_target": "Skladni ro‘yxatdan tanlang",
         "same_destination": "Mashina allaqachon shu skladga boradi",

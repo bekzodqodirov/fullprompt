@@ -880,6 +880,7 @@
       "tariffBands": "价目表各行",
       "freightMode": "货物类型（LTL/FTL）",
       "released": "编号已收回",
+      "number": "编号",
       "destBeforeDeparture": "收货仓库（出发前）"
     }
   },
@@ -1252,7 +1253,7 @@
     "roadAwaited": "待到 {n}",
     "roadCame": "已到 {n}",
     "roadMissed": "未到 {n}",
-    "truckNow": "车辆现在开往：{dest}（计划为 {planned}）"
+    "truckNow": "车辆现在开往 {dest} — 计划是按 {planned} 审批的"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -1700,8 +1701,8 @@
         "unworn": "编号未收回：编号 {number} 从未分配给车辆",
         "no_counter": "编号未收回：该前缀没有计数器",
         "prefix": "编号未收回：仓库前缀已更改",
-        "pending": "编号尚未收回 — 下次取消时收回",
-        "busy": "编号此刻未收回：系统繁忙 — 下次取消时收回",
+        "pending": "编号尚未收回 — 若在此之前未开出新车，下次取消或运行 batch-raqam --apply 时收回",
+        "busy": "编号此刻未收回：系统繁忙 — 若在此之前未开出新车，下次取消或运行 batch-raqam --apply 时收回",
         "error": "编号未收回：出错 — 下次取消时可能收回"
       }
     },
@@ -1716,7 +1717,9 @@
       "errors": {
         "forbidden": "收货仓库由发货仓库经理或物流员更改",
         "batch_not_found": "未找到车辆",
+        "batch_cancelled": "车辆已取消 — 不能更改收货仓库",
         "not_before_departure": "车辆已出发 — 请用「更改目的地」",
+        "already_unloaded": "车辆已到达收货仓库 — 不能再更改",
         "dest_changed": "收货仓库刚被他人更改 — 已显示新状态，请再检查",
         "bad_target": "请从列表中选择仓库",
         "same_destination": "车辆已经开往该仓库",

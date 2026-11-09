@@ -119,13 +119,21 @@ export async function batchByFormerCode(
  * `before->>'code'`, and this file is that read's one home (fenced).
  *
  * The truck WEARING the string now, first; and when nobody wears it, the
- * truck whose NEWEST batch audit row renamed AWAY from it (before and after
- * both carry a code and they differ — any stage, with or without a reason,
- * the give-back's own row included). That second half is why a truck renamed
- * to its plate before it left and then cancelled is still found: his 4a says
- * its number comes back, and «nobody wears it» alone would have stopped the
- * walk there for ever. The newest row answers, so a number handed out again
- * and renamed away again belongs to its LAST holder.
+ * truck that MINTED it — among the trucks with a batch audit row renaming
+ * AWAY from it (before and after both carry a code and they differ — any
+ * stage, with or without a reason, the give-back's own row included), the
+ * newest one BORN with it (`bornNameSql`, `firstNameOf`'s rule). That second
+ * half is why a truck renamed to its plate before it left and then cancelled
+ * is still found: his 4a says its number comes back, and «nobody wears it»
+ * alone would have stopped the walk there for ever. The MINTER and not
+ * merely the newest renamer (review C2): a forming truck may be renamed by
+ * hand to a colleague's just-vacated mint string and away again, and the
+ * newest row would make IT the holder — cancel it and the live plate-named
+ * minter's number is released and minted a second time (the unique index
+ * never sees it, the plate is what the minter wears). The NEWEST minter, so
+ * a number released and handed out again belongs to the truck that took it
+ * last. Only when no truck was born with it (rows from before the create
+ * audit, a hand-moved counter) does the newest rename-away row answer.
  *
  * Plain statements and no lock: the release reads it first, takes its locks
  * only when the answer is «releasable», and then reads it again. `wears`
@@ -137,7 +145,10 @@ export async function batchByFormerCode(
  * The rename-away half has no partial index of its own (0121's covers road
  * renames only) and rides `audit_entity_idx`'s leading column over the batch
  * rows — a few thousand on the live server, read on a cancel, a cancelled
- * truck's card and the dry run, never on a list. No migration for it.
+ * truck's card and the dry run, never on a list. No migration for it. The
+ * born-name question is then asked only of the handful of trucks that
+ * renamed away from this one string, one `audit_entity_idx` probe each
+ * (`entity_type`, `entity_id`) — never a scan per number.
  */
 export interface NumberHolder {
   id: string;
@@ -157,13 +168,24 @@ export async function numberHolderOf(handle: Db | Tx, code: string): Promise<Num
   let id = [...wearer][0]?.id ?? null;
   const wears = id !== null;
   if (!id) {
+    // The newest MINTER first (born with it), by the truck's own birth; then,
+    // with no minter at all, the newest rename-away row. MATERIALIZED so the
+    // born-name probe runs once per candidate, not once per sort key.
     const away = (await handle.execute(sql`
-      SELECT a.entity_id AS id FROM audit_log a JOIN batches b ON b.id = a.entity_id
-       WHERE a.entity_type = 'batch' AND a.action = 'update'
-         AND upper(a.before->>'code') = upper(${code}::text)
-         AND (a.after->>'code') IS NOT NULL
-         AND upper(a.after->>'code') <> upper(${code}::text)
-       ORDER BY a.id DESC
+      WITH away AS (
+        SELECT a.entity_id AS id, b.created_at, max(a.id) AS last_away
+          FROM audit_log a JOIN batches b ON b.id = a.entity_id
+         WHERE a.entity_type = 'batch' AND a.action = 'update'
+           AND upper(a.before->>'code') = upper(${code}::text)
+           AND (a.after->>'code') IS NOT NULL
+           AND upper(a.after->>'code') <> upper(${code}::text)
+         GROUP BY a.entity_id, b.created_at
+      ), judged AS MATERIALIZED (
+        SELECT away.*, coalesce(upper(${bornNameSql(sql`away.id`)}) = upper(${code}::text), false) AS minted
+          FROM away
+      )
+      SELECT id FROM judged
+       ORDER BY minted DESC, (CASE WHEN minted THEN created_at END) DESC NULLS LAST, last_away DESC
        LIMIT 1
     `)) as unknown as { id: string }[];
     id = [...away][0]?.id ?? null;
@@ -202,22 +224,49 @@ export async function numberHolderOf(handle: Db | Tx, code: string): Promise<Num
 }
 
 /**
+ * A truck's oldest rename's «from» — the name it was born with, when it was
+ * ever renamed (NULL otherwise). ONE fragment for `firstNameOf` and the
+ * holder's «who minted it» (`numberHolderOf`), so the two can never disagree
+ * about which truck a number was minted for. `entity` is the truck's id
+ * expression in the caller's query; one `audit_entity_idx` probe.
+ */
+function bornNameSql(entity: SQL): SQL {
+  return sql`(SELECT f.before->>'code' FROM audit_log f
+      WHERE f.entity_type = 'batch' AND f.entity_id = ${entity} AND f.action = 'update'
+        AND (f.before->>'code') IS NOT NULL
+      ORDER BY f.id ASC LIMIT 1)`;
+}
+
+/**
  * The name a truck was BORN with — its oldest rename's «from», else the name
  * it wears. The minted number of a truck renamed before it left (the plate
- * case) is only here; the cancelled truck's card reads it to say which number
- * it held (§3.2.4).
+ * case) is only here; the cancelled truck's card falls back to it when no
+ * number in its history is its own any more (§3.2.4).
  */
 export async function firstNameOf(handle: Db | Tx, batchId: string): Promise<string | null> {
   const rows = (await handle.execute(sql`
-    SELECT coalesce(
-      (SELECT a.before->>'code' FROM audit_log a
-        WHERE a.entity_type = 'batch' AND a.entity_id = b.id AND a.action = 'update'
-          AND (a.before->>'code') IS NOT NULL
-        ORDER BY a.id ASC LIMIT 1),
-      b.code) AS first
+    SELECT coalesce(${bornNameSql(sql`b.id`)}, b.code) AS first
       FROM batches b WHERE b.id = ${batchId}::uuid
   `)) as unknown as { first: string | null }[];
   return [...rows][0]?.first ?? null;
+}
+
+/**
+ * Every name a truck renamed AWAY from, oldest first and once each — the
+ * minted strings it may still HOLD by the holder rule after wearing another
+ * (a plate, or a colleague's vacated number: review C1). The cancelled
+ * truck's card asks the holder of each; nothing here decides.
+ */
+export async function namesWornBy(handle: Db | Tx, batchId: string): Promise<string[]> {
+  const rows = (await handle.execute(sql`
+    SELECT a.before->>'code' AS name, min(a.id) AS first_at
+      FROM audit_log a
+     WHERE a.entity_type = 'batch' AND a.entity_id = ${batchId}::uuid AND a.action = 'update'
+       AND (a.before->>'code') IS NOT NULL
+     GROUP BY a.before->>'code'
+     ORDER BY first_at ASC
+  `)) as unknown as { name: string }[];
+  return [...rows].map((row) => row.name);
 }
 
 /**

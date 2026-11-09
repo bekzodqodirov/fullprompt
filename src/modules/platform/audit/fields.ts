@@ -84,9 +84,11 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   destWarehouseId: 'destination',
   // …and changed BEFORE it left, under its own key so the road reroute's
   // «told» readers never take it for a «keladi» (docs/NARX-VA-RAQAM.md §3.2.8);
-  // and a cancelled truck's number given back (§3.2.6).
+  // and a cancelled truck's number given back (§3.2.6) — with the number the
+  // release freed, which in the plate case no other key on the row names.
   destBeforeDeparture: 'destBeforeDeparture',
   released: 'released',
+  number: 'number',
   typeId: 'type',
   deal: 'deal',
   dealId: 'deal',

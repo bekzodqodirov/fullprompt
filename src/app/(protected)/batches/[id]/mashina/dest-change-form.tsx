@@ -9,6 +9,19 @@ import type { DestChangeErrorCode } from '@/modules/wms/batches/reroute-rules';
 type Refusal = DestChangeErrorCode | 'busy_retry' | 'validation' | 'offline' | 'unauthenticated';
 
 /**
+ * The refusals that mean THIS PAGE is stale — the truck's destination or its
+ * status moved under it (a colleague's change, a cancel, a departure). After
+ * one the panel must not stay up offering a press that can only be refused
+ * again (review D3), so the page is redrawn from the server.
+ */
+const STALE_PAGE: ReadonlySet<Refusal> = new Set<Refusal>([
+  'dest_changed',
+  'batch_cancelled',
+  'not_before_departure',
+  'already_unloaded',
+]);
+
+/**
  * «Qabul skladini o'zgartirish» on a truck that has not left (the owner's 6a,
  * docs/NARX-VA-RAQAM.md §2.4) — a select and ONE press, no reason: a
  * destination fixed before departure is a typo fixed, like a name changed
@@ -18,9 +31,10 @@ type Refusal = DestChangeErrorCode | 'busy_retry' | 'validation' | 'offline' | '
  * Controlled, never a `<form action>`: a refusal keeps the chosen warehouse
  * (#377/#463), and the press awaits inside try/finally so `pending` cannot
  * stick (#882). No `router.refresh()` after a success — the action
- * revalidates (#1242). The one refresh is after `dest_changed`: nothing was
- * written and the page must show what a colleague just chose. Imports only
- * the refusal TYPE from the rules (#276).
+ * revalidates (#1242). The one refresh is after a refusal that says the page
+ * is stale (`STALE_PAGE`): nothing was written and the page must show what a
+ * colleague just chose — or that the truck is cancelled or gone, where this
+ * panel no longer belongs. Imports only the refusal TYPE from the rules (#276).
  */
 export function DestChangeForm({
   batchId,
@@ -47,7 +61,9 @@ export function DestChangeForm({
   const refusalText: Record<Refusal, string> = {
     forbidden: t('destChange.errors.forbidden'),
     batch_not_found: t('destChange.errors.batch_not_found'),
+    batch_cancelled: t('destChange.errors.batch_cancelled'),
     not_before_departure: t('destChange.errors.not_before_departure'),
+    already_unloaded: t('destChange.errors.already_unloaded'),
     dest_changed: t('destChange.errors.dest_changed'),
     bad_target: t('destChange.errors.bad_target'),
     dest_agent_sent: t('destChange.errors.dest_agent_sent'),
@@ -82,7 +98,7 @@ export function DestChangeForm({
       });
       if (!res.ok) {
         setError(res.error);
-        if (res.error === 'dest_changed') router.refresh();
+        if (STALE_PAGE.has(res.error)) router.refresh();
         return;
       }
       setDone(res.toCode);
