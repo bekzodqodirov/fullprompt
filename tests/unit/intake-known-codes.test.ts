@@ -110,7 +110,8 @@ describe('the Excel’s rows, numbered, and the codes the model gives them', () 
   });
 
   it('an answer from before the field, or with a broken entry, still reads — the codes are a proposal', async () => {
-    const { known_codes: _drop, ...old } = reading([]);
+    const old: Record<string, unknown> = reading([]);
+    delete old.known_codes;
     answers.push(old);
     const before = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, timeoutMs: 10_000 });
     expect(before.ok).toBe(true);
