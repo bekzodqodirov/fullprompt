@@ -52,6 +52,7 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { __resetAddOffers, openAmendFromMedia, offerAddForMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { activeIntake, endIntake, holdingIntake, startIntake } from '@/modules/platform/telegram/calc-store';
 import { saveIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { forwardKeyboard } from '@/modules/platform/telegram/staff-bot';
@@ -168,6 +169,8 @@ async function pressOffer(requestId: string, original: Record<string, unknown>) 
     api: { editMessageText: async () => true },
   };
   await pressAdd(ctx as never, chat, requestId, 'replied', null);
+  // The prompt is drawn kept-last, off the handler (docs/IKKI-ESHIK.md §1.4).
+  await keptLastSettled();
   return replies;
 }
 
@@ -233,6 +236,7 @@ describe('a plain file, with an open request of his', () => {
     const r = await request();
     const d = ctxOf({ document: { file_id: `BQAR${STAMP}`, file_unique_id: 'r', file_name: 'b.pdf', mime_type: 'application/pdf', file_size: 10 } });
     await openAmendFromMedia(d.ctx as never, chat, r.id);
+    await keptLastSettled();
     const live = activeIntake(chat)!;
     expect(live.amend?.requestId).toBe(r.id);
     expect(live.fileCount).toBe(1);

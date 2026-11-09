@@ -1071,14 +1071,23 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     await h.handle(tg.callback(s.chat, nextMsg(), 'c:rastamojka'));
     const m = h.mark();
     await h.handle(tg.text(s.chat, `Ali ${STAMP} +99890${STAMP}`));
+    // The prompt is drawn kept-last, off the handler (docs/IKKI-ESHIK.md
+    // §1.4): the customer question becomes it — edited in place while it is
+    // the last message the collection knows of (the fake's own ids run apart
+    // from the texts'), sent below otherwise. Either way it is the prompt.
+    await h.settle();
     const chat = BigInt(s.chat);
     const state = activeIntake(chat)!;
     expect(state.stage).toBe('material');
     notesMade.push(state.noteId);
-    const prompt = h
+    const drew = h
       .since(m)
-      .api.filter((c) => c.method === 'sendMessage' && JSON.stringify(c.payload.reply_markup ?? '').includes('c:done'))
-      .at(-1)!.messageId!;
+      .api.filter(
+        (c) => (c.method === 'sendMessage' || c.method === 'editMessageText') && JSON.stringify(c.payload.reply_markup ?? '').includes('c:done'),
+      )
+      .at(-1)!;
+    const prompt = drew.method === 'sendMessage' ? drew.messageId! : Number(drew.payload.message_id);
+    expect(state.promptMessageId).toBe(prompt);
     return { s, chat, prompt };
   }
 
@@ -1240,16 +1249,22 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     });
     const U = tg.text(s.chat, `Shim 200 dona ${STAMP}`);
     await h.handle(U);
-    // …and the batch's next update V is still in flight when the signal comes.
-    hang.chat = s.chat;
-    hang.on = true;
+    await h.settle();
+    // …and the batch's next update V is still in flight when the signal comes
+    // — held by the lifecycle guard itself: the collector's prompt is drawn
+    // off the handler now (docs/IKKI-ESHIK.md §1.4), so no send of V's holds
+    // it in flight, and a hung draw would hold every later settle with it.
     const V = tg.text(s.chat, `Kepka 50 dona ${STAMP}`);
-    void h.handle(V).catch(() => {});
-    await vi.waitFor(() => expect(hang.on).toBe(false));
+    let release: () => void = () => {};
+    void stoppingGuard()(
+      { update: { update_id: (V as { update_id: number }).update_id } } as never,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
     const getUpdates = vi.fn(async () => []);
     const outcome = await stopTelegramBot(
       botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never),
     );
+    release();
     const u = (U as { update_id: number }).update_id;
     expect(outcome.via).toBe('confirm');
     expect(outcome.confirmedThrough).toBe(u - 1);

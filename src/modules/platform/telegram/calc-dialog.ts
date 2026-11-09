@@ -45,6 +45,11 @@ import { totalsAnswerShape } from './totals-shape';
  * to take it back («↩️ Shu javobni bekor qilish»), and the table is edited in
  * place. The loop that asked one line at a time, its three-round cap and «⏭»
  * are gone.
+ *
+ * Since the two doors (docs/IKKI-ESHIK.md, his 1a-3a) the table and its echo
+ * are the AI door's; the plain «🧮» door draws a SUMMARY that asks nothing and
+ * writes a typed answer quietly (§2.2), and both share the ONE prompt kept as
+ * the last message, the customer and the zone asked once (§1.4-§1.6).
  */
 
 type Intake = typeof import('../../wms/calc/intake');
