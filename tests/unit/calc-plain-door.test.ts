@@ -528,3 +528,28 @@ describe('the reading settles the prompt through the job too', () => {
     expect(text.match(/ℹ️ \d\./gu)).toHaveLength(2);
   });
 });
+
+describe('a file speaks only to refuse (§1.4); a typed code is the seller’s (review PF-ADV-11)', () => {
+  it('`refusalOf`: an informational answer is a line of the prompt — only a refusal is a message', async () => {
+    const { refusalOf } = await import('@/modules/platform/telegram/calc-files');
+    expect(refusalOf({ patch: { fileNotes: ['📄 «A.xlsx» — 3 ta tovar o‘qildi.'] }, say: '📄 «A.xlsx» — 3 ta tovar o‘qildi.' })).toBeNull();
+    expect(refusalOf({ patch: { pdfs: [] }, say: '📄 «B.pdf» — AI o‘qiydi.' })).toBeNull();
+    expect(refusalOf({ patch: { sheetTexts: [] }, say: '📄 «C.xlsx» — jadval sarlavhasini topa olmadim, AI o‘qiydi.' })).toBeNull();
+    expect(refusalOf({ patch: { imagesSkipped: 1 }, say: '📷 «D.heic» — HEIC rasm, o‘qib bo‘lmaydi.' })).toBe('📷 «D.heic» — HEIC rasm, o‘qib bo‘lmaydi.');
+    expect(refusalOf({ patch: {}, say: '📄 «E.docx» — Word fayl o‘qilmaydi.' })).toBe('📄 «E.docx» — Word fayl o‘qilmaydi.');
+    expect(refusalOf({ patch: { imagesSkipped: 1 }, say: null })).toBeNull();
+  });
+
+  it('a code typed onto a row lands as the row’s own — never the model’s proposal it replaced', async () => {
+    const { chatId } = collection({
+      stage: 'review',
+      facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 300, tnvedCode: '6201400000', tnvedSource: 'model' })] },
+    });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '1: kod 6201930000');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[0]).toMatchObject({ tnvedCode: '6201930000', tnvedSource: 'row' });
+    expect(live.lineAnswers[0]!.patch).toMatchObject({ tnvedCode: '6201930000', tnvedSource: 'row' });
+  });
+});

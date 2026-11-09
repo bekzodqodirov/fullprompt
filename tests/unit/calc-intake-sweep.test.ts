@@ -14,6 +14,13 @@ const stub = vi.hoisted(() => ({
   deliveryAlive: false,
   landing: 'none' as 'none' | 'landed' | 'note_only',
   landed: null as null | Promise<unknown>,
+  /** The landed request's door, as its row says (docs/IKKI-ESHIK.md §2.3), and whether its answer was queued. */
+  door: null as null | 'plain' | 'ai',
+  replyQueued: false,
+}));
+vi.mock('@/modules/wms/calc/intake-door', async (original) => ({
+  ...(await original<typeof import('@/modules/wms/calc/intake-door')>()),
+  requestIntakeDoor: vi.fn(async () => stub.door),
 }));
 vi.mock('@/modules/platform/telegram/send', async (original) => ({
   ...(await original<typeof import('@/modules/platform/telegram/send')>()),
@@ -50,7 +57,7 @@ vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
   landingLinkFor: vi.fn(async () => null),
   landCollectedIntake: vi.fn(async () => {
     await stub.landed;
-    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false };
+    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: stub.replyQueued };
   }),
 }));
 vi.mock('@/modules/platform/telegram/keyboards', () => ({
@@ -417,6 +424,28 @@ describe('a landing cut off halfway (durability-3)', () => {
     expect(ticks).toHaveLength(1);
     expect(ticks[0]).toContain('✅ Saqlandi — oldingi urinishda ochilgan');
     expect(peekIntake(id)).toBeNull();
+  });
+
+  it('the resumed ✅ says what the landed REQUEST’s door promises — read off its row; a NULL door keeps today’s (§2.3, §3.5)', async () => {
+    const cases = [
+      { door: 'plain' as const, replyQueued: true, says: '🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu yerga yuboradi.' },
+      { door: 'ai' as const, replyQueued: true, says: '🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi.' },
+      { door: 'ai' as const, replyQueued: false, says: '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.' },
+      { door: null, replyQueued: true, says: '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.' },
+    ];
+    for (const c of cases) {
+      stub.door = c.door;
+      stub.replyQueued = c.replyQueued;
+      stub.landing = 'note_only';
+      stub.landed = null;
+      const id = open(Date.now(), 5 * MIN, { stage: 'review' });
+      await runIntakeSweep(Date.now());
+      const ticks = textsTo(id).filter((t) => t.startsWith('✅'));
+      expect(ticks, `${c.door}/${c.replyQueued}`).toHaveLength(1);
+      expect(ticks[0], `${c.door}/${c.replyQueued}`).toContain(c.says);
+    }
+    stub.door = null;
+    stub.replyQueued = false;
   });
 
   it('a press that started the landing this minute keeps the tick away', async () => {
