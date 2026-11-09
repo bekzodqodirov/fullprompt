@@ -22,6 +22,7 @@ import {
   batchByFormerCode,
   codeEverWorn,
   formerCodesFor,
+  numberEverAtAgent,
   numberHolderOf,
 } from '@/modules/wms/batches/former-codes';
 import { releaseTrailingCodes, renameBatch } from '@/modules/wms/batches/rename';
@@ -516,7 +517,7 @@ describe('papers at the agent keep the NUMBER, whoever holds it (review RVF3-1)'
   });
 
   it('the same for a WEARER: a third truck renamed to the number and cancelled gives back only what is above it', async () => {
-    const { prefix, x } = await agentShape({ unticked: false });
+    const { prefix, x, plate } = await agentShape({ unticked: false });
     const w = await mint(prefix); // 003, the top
     await renameLoading(w.id, x.code); // W wears 002 now
     const res = await cancelBatch(w.id, 'xato', ctx());
@@ -524,10 +525,26 @@ describe('papers at the agent keep the NUMBER, whoever holds it (review RVF3-1)'
     expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-003`] });
     expect(await codeOf(w.id)).toBe(x.code);
     expect(await counterOf(prefix)).toBe(2);
+    // While X — born 002, live under its plate — is counted under it, X holds
+    // it (review M6): the walk stops there first…
+    expect(await releaseTrailingCodes(prefix, ctx())).toEqual({
+      released: [],
+      stop: { why: 'newer', number: x.code, name: plate },
+    });
+    // …and once X is cancelled too, the cancelled wearer W holds it, and
+    // Y's papers keep it: «agent», on the walk, the answer and X's card.
+    expect((await cancelBatch(x.id, 'xato', ctx())).number).toEqual({
+      kind: 'kept',
+      why: 'agent',
+      newer: x.code,
+      number: x.code,
+    });
+    expect(await batchNumberState(x.id)).toEqual({ kind: 'kept', why: 'agent', number: x.code, name: x.code });
     expect(await releaseTrailingCodes(prefix, ctx())).toEqual({
       released: [],
       stop: { why: 'agent', number: x.code, name: x.code },
     });
+    expect(await counterOf(prefix)).toBe(2);
     expect((await mint(prefix)).code).toBe(`${prefix}-003`);
   });
 });
@@ -646,6 +663,148 @@ describe('a number given back and then carried on the road by another truck (rev
     expect(await counterOf(prefix)).toBe(3);
     // The walk stopped at 003, which R took out under a rename.
     expect(await batchNumberState(a.id)).toEqual({ kind: 'kept', why: 'renamed_left', number: b.code, name: kz });
+  });
+});
+
+describe('a number re-minted to the next truck is the promise kept, whatever that truck is called later (review M3)', () => {
+  it('B gives 002 back, D is minted 002 and renamed on the road: B’s card keeps «keyingi mashinaga beriladi»', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix); // 001
+    const b = await mint(prefix); // 002
+    expect((await cancelBatch(b.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [b.code] });
+    expect(await counterOf(prefix)).toBe(1);
+    // The next mint takes it, as his 4a says — the promise kept…
+    const d = await mint(prefix);
+    expect(d.code).toBe(b.code);
+    // …and D leaves and is renamed on the road to its plate: 002 is D’s former name now.
+    await departWithCarton(d.id);
+    const plate = `01A${tag()}BA`;
+    await renameRoad(d.id, plate, 'davlat raqami');
+    expect((await numberHolderOf(db, b.code))?.id).toBe(d.id);
+    // D got 002 at the MINT, not on the road: no «taken» on B’s card.
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [b.code] });
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.gaps).toEqual([{ number: b.code, kind: 'renamed_left', name: plate }]);
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+});
+
+describe('the cancelled truck’s own number held by another truck says what the dry run says (review M4)', () => {
+  it('the road truck carried it away: «renamed_left», on the card, in the answer and in the dry run', async () => {
+    const prefix = await freshPrefix();
+    const r = await mint(prefix); // 001
+    const b = await mint(prefix); // 002, the top
+    const plate = `01B${tag()}BA`;
+    await renameLoading(b.id, plate);
+    // R leaves, takes the vacated «002» on the road, and moves away from it again.
+    await departWithCarton(r.id);
+    await renameRoad(r.id, b.code, 'hamkor raqami');
+    const kz = `01K${tag()}KZ`;
+    await renameRoad(r.id, kz, 'yana hamkor');
+    expect((await numberHolderOf(db, b.code))?.id).toBe(r.id);
+
+    const res = await cancelBatch(b.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'kept', why: 'renamed_left', newer: kz, number: b.code });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'kept', why: 'renamed_left', number: b.code, name: kz });
+    expect(await counterOf(prefix)).toBe(2);
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.stoppedBy).toEqual({ why: 'renamed_left', number: b.code, name: kz });
+    expect(report!.gaps).toContainEqual({ number: b.code, kind: 'renamed_left', name: kz });
+    expect(await releaseTrailingCodes(prefix, ctx())).toEqual({
+      released: [],
+      stop: { why: 'renamed_left', number: b.code, name: kz },
+    });
+  });
+
+  it('a cancelled colleague wears it with papers at the agent: «agent», not «allaqachon ochilgan»', async () => {
+    const prefix = await freshPrefix();
+    const t = await mint(prefix); // 001
+    const b = await mint(prefix); // 002, the top
+    const plate = `01T${tag()}BA`;
+    await renameLoading(b.id, plate);
+    await renameLoading(t.id, b.code); // T wears the vacated 002…
+    await tickAgent(t.id, true); // …its papers go to the agent under it…
+    expect((await cancelBatch(t.id, 'xato', ctx())).number).toMatchObject({ kind: 'kept' }); // …and it is cancelled.
+
+    const res = await cancelBatch(b.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'kept', why: 'agent', newer: b.code, number: b.code });
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'kept', why: 'agent', number: b.code, name: b.code });
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.stoppedBy).toEqual({ why: 'agent', number: b.code, name: b.code });
+    expect(await counterOf(prefix)).toBe(2);
+  });
+});
+
+describe('the mint never hands out a number the agent holds papers under (review M5)', () => {
+  it('002 given back, a forming truck takes it by hand, is ticked and moves away: the next mint is 003', async () => {
+    const prefix = await freshPrefix();
+    const a = await mint(prefix); // 001
+    const b = await mint(prefix); // 002
+    expect((await cancelBatch(b.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [b.code] });
+    expect(await counterOf(prefix)).toBe(1);
+    await renameLoading(a.id, b.code);
+    await tickAgent(a.id, true);
+    const away = `03A${tag()}CC`;
+    await renameLoading(a.id, away);
+    // Free to «ever worn» (a name changed before departure frees) — the papers are not.
+    expect(await codeEverWorn(db, b.code, null)).toBe(false);
+    expect(await numberEverAtAgent(db, b.code)).toBe(true);
+
+    const n = await mint(prefix);
+    expect(n.code).toBe(`${prefix}-003`);
+    expect(await counterOf(prefix)).toBe(3);
+    // B’s card stops promising 002 to the next truck, and says why.
+    expect(await batchNumberState(b.id)).toEqual({ kind: 'returned', numbers: [b.code], agent: [b.code] });
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.gaps).toContainEqual({ number: b.code, kind: 'cancelled', atAgent: true, name: `${b.code} (bekor)` });
+
+    // The skipped number stays a gap; a clean give-back above it still comes back and is minted again.
+    expect((await cancelBatch(n.id, 'xato', ctx())).number).toEqual({ kind: 'returned', codes: [n.code] });
+    expect(await counterOf(prefix)).toBe(2);
+    expect(await releaseTrailingCodes(prefix, ctx())).toEqual({
+      released: [],
+      stop: { why: 'agent', number: b.code, name: `${b.code} (bekor)` },
+    });
+    expect(await numberEverAtAgent(db, n.code)).toBe(false);
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+});
+
+describe('a cancelled WEARER of a live minter’s vacated number (review M6)', () => {
+  it('gives back only its own number — the live truck born 002 holds 002', async () => {
+    const prefix = await freshPrefix();
+    const y = await mint(prefix); // 001
+    const x = await mint(prefix); // 002
+    const w = await mint(prefix); // 003, the top
+    const plate = `01W${tag()}BA`;
+    await renameLoading(x.id, plate); // X stays live, minted as 002
+    await renameLoading(w.id, x.code); // W takes the vacated 002 by hand
+    const res = await cancelBatch(w.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'returned', codes: [`${prefix}-003`] });
+    expect(await codeOf(w.id)).toBe(x.code);
+    expect(await counterOf(prefix)).toBe(2);
+    expect((await numberHolderOf(db, x.code))?.id).toBe(x.id);
+    expect(await batchNumberState(w.id)).toEqual({ kind: 'returned', numbers: [`${prefix}-003`] });
+    const [report] = await batchNumberReport([prefix]);
+    expect(report!.stoppedBy).toEqual({ why: 'newer', number: x.code, name: plate });
+    expect(report!.gaps).toEqual([{ number: x.code, kind: 'renamed_waiting', name: plate }]);
+    expect(await codeOf(y.id)).toBe(y.code);
+    // …and the next truck is 003, never a second 002 beside the live X.
+    expect((await mint(prefix)).code).toBe(`${prefix}-003`);
+  });
+
+  it('kept: the card names the number the cancelled wearer HOLDS — its own, not the live minter’s', async () => {
+    const prefix = await freshPrefix();
+    await mint(prefix); // 001
+    const x = await mint(prefix); // 002
+    const w = await mint(prefix); // 003
+    const z = await mint(prefix); // 004, live, the top
+    await renameLoading(x.id, `01X${tag()}BA`);
+    await renameLoading(w.id, x.code);
+    const res = await cancelBatch(w.id, 'xato', ctx());
+    expect(res.number).toEqual({ kind: 'kept', why: 'newer', newer: z.code, number: `${prefix}-003` });
+    expect(await batchNumberState(w.id)).toEqual({ kind: 'kept', why: 'newer', number: `${prefix}-003`, name: z.code });
+    expect(await counterOf(prefix)).toBe(4);
   });
 });
 

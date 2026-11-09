@@ -99,14 +99,15 @@ export async function releasedNumbersOf(handle: Db | Tx, batchId: string): Promi
 /**
  * The number a cancelled truck HOLDS, by the holder rule and never by a guess
  * from its history (review C1): the name it wears when that is a mint string
- * of today's prefix (the wearer holds it); else, of the mint strings it ever
- * renamed away from, the highest that `numberHolderOf` still gives to THIS
- * truck — the walk from the top meets that one first; else its born name,
- * which is the old answer and the one the «another truck holds it now» and
- * «prefix» branches below read.
+ * of today's prefix that `numberHolderOf` gives to THIS truck (a cancelled
+ * wearer of a live colleague's vacated number does not hold it — review M6);
+ * else, of the mint strings it ever renamed away from, the highest that
+ * `numberHolderOf` still gives to THIS truck — the walk from the top meets
+ * that one first; else its born name, which is the old answer and the one
+ * the «another truck holds it now» and «prefix» branches below read.
  */
 async function heldNumberOf(handle: Db | Tx, batchId: string, prefix: string, wears: string): Promise<string> {
-  if (numberOfCode(prefix, wears) !== null) return wears;
+  if (numberOfCode(prefix, wears) !== null && (await numberHolderOf(handle, wears))?.id === batchId) return wears;
   const minted = (await namesWornBy(handle, batchId))
     .map((name) => ({ name, n: numberOfCode(prefix, name) }))
     .filter((c): c is { name: string; n: number } => c.n !== null)
@@ -124,8 +125,10 @@ export type NumberState =
    * it held a vacated one too. `taken`, only when there is one: those of them
    * a truck has since carried on the road under a rename — burned for good
    * (no mint will hand them out), named by that truck as it is called now.
+   * `agent`, likewise: those a truck has since worn while its papers went to
+   * the agent — the mint passes over them too (review M5).
    */
-  | { kind: 'returned'; numbers: string[]; taken?: { number: string; name: string }[] }
+  | { kind: 'returned'; numbers: string[]; taken?: { number: string; name: string }[]; agent?: string[] }
   | { kind: 'kept'; why: NumberKeptWhy; number?: string; name?: string };
 
 /** How far the explainer walks from the counter's top before it says «newer» — a busy prefix's top is live. */
@@ -166,13 +169,25 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
     // and then worn on the road by another truck under a hand rename is a
     // road former name, which no mint ever hands out again. The verdict's
     // holder is then the truck that carried it (`numberHolderOf`'s road-first
-    // rule), by the name it wears now.
+    // rule), by the name it wears now. A holder BORN with it got it from the
+    // mint — the promise kept, whatever it is called on the road since
+    // (review M3). And a number the agent has since had papers under is one
+    // the mint passes over (review M5): the verdict says 'agent' for it.
     const taken: { number: string; name: string }[] = [];
+    const agent: string[] = [];
     for (const number of numbers) {
-      const { holder } = await numberVerdict(db, number);
+      const verdict = await numberVerdict(db, number);
+      const holder = verdict.holder;
+      if (holder && holder.id !== batchId && holder.born) continue;
       if (holder && holder.id !== batchId && holder.roadFormer) taken.push({ number, name: holder.code });
+      else if (!verdict.ok && verdict.why === 'agent') agent.push(number);
     }
-    return taken.length ? { kind: 'returned', numbers, taken } : { kind: 'returned', numbers };
+    return {
+      kind: 'returned',
+      numbers,
+      ...(taken.length ? { taken } : {}),
+      ...(agent.length ? { agent } : {}),
+    };
   }
   const prefix = batchSeqPrefix({ code: row.whCode, batchPrefix: row.batchPrefix });
   const held = await heldNumberOf(db, batchId, prefix, row.code);
@@ -202,9 +217,13 @@ export async function batchNumberState(batchId: string): Promise<NumberState | n
 
   const own = await numberVerdict(db, batchSeqCode(prefix, n));
   // Another truck holds this number now (one renamed to it by hand after
-  // this one let it go before departure).
+  // this one let it go before departure): a live one is «allaqachon
+  // ochilgan»; one that carried it away on the road, or wears it with papers
+  // at the agent, says so — the dry run's own words for that number
+  // (review M4).
   if (own.holder && own.holder.id !== batchId) {
-    return { kind: 'kept', why: 'newer', number: held, name: own.holder.code };
+    const why = !own.ok && (own.why === 'renamed_left' || own.why === 'agent') ? own.why : 'newer';
+    return { kind: 'kept', why, number: held, name: own.holder.code };
   }
   if (!own.ok) return { kind: 'kept', why: own.why, number: held, name: own.holder?.code };
   return { kind: 'kept', why: 'pending', number: held };

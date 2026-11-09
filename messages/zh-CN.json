@@ -1694,6 +1694,7 @@
     "number": {
       "stateReturned": "♻️ 编号 {number} 已收回 — 下一辆车将使用它",
       "stateReturnedTaken": "♻️ 编号 {number} 曾已收回，但之后车辆 {name} 在途中使用了它 — 不会再分配给其他车辆",
+      "stateReturnedAgent": "♻️ 编号 {number} 曾已收回，但之后以该编号向代理发送了单据 — 不会再分配给其他车辆",
       "kept": {
         "newer": "编号未收回：{name} 已经开出",
         "agent": "编号未收回：单据已发给代理",

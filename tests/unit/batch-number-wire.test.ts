@@ -176,18 +176,39 @@ describe('the card says it durably, and the papers of a cancelled truck are not 
     expect(card).toContain('data-testid="batch-number-state"');
   });
 
-  it('a given-back number a truck since carried on the road is not promised to the next truck (review RVF3-2)', () => {
-    // The state names those numbers (`taken`, read live — the integration
-    // test proves it); the card must keep them OUT of «keyingi mashinaga
-    // beriladi» and say who took each instead.
+  it('a given-back number the mint will not hand out is not promised to the next truck (reviews RVF3-2, M5)', () => {
+    // The state names those numbers (`taken` — carried on the road; `agent`
+    // — papers went to the agent under it since; both read live, the
+    // integration test proves it); the card must keep them OUT of «keyingi
+    // mashinaga beriladi» and say why for each instead.
     const card = read('src/app/(protected)/batches/[id]/batch-card.tsx');
-    expect(card).toContain('const promised = numberState.numbers.filter((number) => !taken.some((t) => t.number === number));');
+    expect(card).toContain('const promised = numberState.numbers.filter(');
+    expect(card).toContain('(number) => !taken.some((t) => t.number === number) && !agent.includes(number),');
     expect(card).toContain("...(promised.length ? [tn('stateReturned', { number: promised.join(', ') })] : []),");
     expect(card).toContain("...taken.map((t) => tn('stateReturnedTaken', { number: t.number, name: t.name })),");
+    expect(card).toContain("...agent.map((number) => tn('stateReturnedAgent', { number })),");
     expect(card).not.toContain('numberState.numbers.join(');
     // …and it wears neither the good-news colour nor the plain «returned» state.
-    expect(card).toContain("numberState.kind === 'returned' && !numberState.taken ? 'text-good' : 'text-ink-700'");
-    expect(card).toContain("(numberState.taken ? 'returned_taken' : 'returned')");
+    expect(card).toContain(
+      "numberState.kind === 'returned' && !numberState.taken && !numberState.agent ? 'text-good' : 'text-ink-700'",
+    );
+    expect(card).toMatch(
+      /numberState\.taken\s*\?\s*'returned_taken'\s*:\s*numberState\.agent\s*\?\s*'returned_agent'\s*:\s*'returned'/,
+    );
+  });
+
+  it('the «agent» sentence names the number in every bundle, and promises nothing (review M5)', () => {
+    const promise = { uz: 'keyingi mashinaga', ru: 'следующая машина', en: 'the next truck', zh: '下一辆车' } as const;
+    const papers = { uz: 'agent', ru: 'агент', en: 'agent', zh: '代理' } as const;
+    for (const [name, bundle] of Object.entries({ en, ru, uz, zh })) {
+      const t = createTranslator({ locale: name, messages: bundle as never, namespace: 'batches.number' as never });
+      const line = (t as unknown as (key: string, values: Record<string, string>) => string)('stateReturnedAgent', {
+        number: 'YW-002',
+      });
+      expect(line, name).toContain('YW-002');
+      expect(line, name).toContain(papers[name as keyof typeof papers]);
+      expect(line, name).not.toContain(promise[name as keyof typeof promise]);
+    }
   });
 
   it('the «taken» sentence names the number and the truck in every bundle, and promises nothing', () => {
@@ -221,6 +242,21 @@ describe('the card says it durably, and the papers of a cancelled truck are not 
     expect(holder).toContain("(t.after->>'sentToAgent') = 'true'");
     // The writer of that key is the tick.
     expect(read(ACTIONS)).toContain('after: { sentToAgent: true,');
+  });
+
+  it('the release and the mint ask ONE «papers under this number» predicate (reviews RVF3-1, M5)', () => {
+    const FORMER = 'src/modules/wms/batches/former-codes.ts';
+    const ticked = body(FORMER, 'everTickedSql');
+    expect(ticked).toContain('WHERE w.id IN (${everWoreSql(code)})');
+    expect(ticked).toContain('w.sent_to_agent_at IS NOT NULL OR EXISTS (');
+    expect(ticked).toContain("(t2.after->>'sentToAgent') = 'true'");
+    expect(body(FORMER, 'numberHolderOf')).toContain(
+      "CASE WHEN b.status = 'cancelled' AND b.departed_at IS NULL THEN ${everTickedSql(code)} ELSE false END",
+    );
+    expect(body(FORMER, 'numberEverAtAgent')).toContain('${everTickedSql(code)}');
+    // The mint passes over such a number under its own candidate lock, beside «ever worn».
+    const mint = body('src/modules/wms/codes.ts', 'nextBatchCode');
+    inOrder(mint, ['bumpCounter(tx', 'lockBatchCode(tx, code)', 'codeEverWorn(tx, code, null)', 'numberEverAtAgent(tx, code)']);
   });
 
   it('the bot falls back to a released number LAST, after the former name', () => {

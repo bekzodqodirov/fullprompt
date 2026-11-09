@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import type { Db, Tx } from '../platform/db/client';
-import { codeEverWorn, lockBatchCode } from './batches/former-codes';
+import { codeEverWorn, lockBatchCode, numberEverAtAgent } from './batches/former-codes';
 
 /**
  * Atomically advance a named counter by `by` and return the NEW value
@@ -135,12 +135,21 @@ export async function nextBatchCode(
   // A cancelled truck that never left gives its number BACK (the owner's 4a,
   // docs/NARX-VA-RAQAM.md §3.2): `releaseTrailingCodes` (batches/rename.ts)
   // renames it «YW-010 (bekor)» and rewinds this same counter, so the walk
-  // meets the number free and hands it out again — nothing here changes.
+  // meets the number free and hands it out again.
+  //
+  // Unless the agent holds papers under it (his 7a on the NUMBER, review M5):
+  // a forming truck may take a given-back number by hand, be ticked
+  // «agentga yuborildi» under it and move away before it leaves — «ever worn»
+  // frees that name, the papers do not. Such a number is passed over like a
+  // worn one and stays a gap; it is the release's own predicate
+  // (`numberEverAtAgent`), so the walk and the mint never disagree about
+  // papers at the agent. Asked under the same candidate lock, and only of a
+  // candidate «ever worn» lets through.
   for (;;) {
     const seq = await bumpCounter(tx, 'batch_seq', prefix);
     const code = batchSeqCode(prefix, seq);
     await lockBatchCode(tx, code);
-    if (!(await codeEverWorn(tx, code, null))) return code;
+    if (!(await codeEverWorn(tx, code, null)) && !(await numberEverAtAgent(tx, code))) return code;
   }
 }
 

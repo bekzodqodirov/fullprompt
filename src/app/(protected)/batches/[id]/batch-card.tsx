@@ -351,15 +351,20 @@ export async function BatchCard({
   const numberLine = (() => {
     if (!numberState) return null;
     // The numbers its own release rows freed — never its born name (review C1).
-    // «Keyingi mashinaga beriladi» only for those no truck has since carried
-    // on the road (review RVF3-2 — the state reads that live): a burned one
-    // says who took it instead of promising it to the next truck.
+    // «Keyingi mashinaga beriladi» only for those the mint will still hand
+    // out (the state reads that live): one a truck has since carried on the
+    // road says who took it (review RVF3-2), one the agent has since had
+    // papers under says so (review M5) — never a promise the mint passes over.
     if (numberState.kind === 'returned') {
       const taken = numberState.taken ?? [];
-      const promised = numberState.numbers.filter((number) => !taken.some((t) => t.number === number));
+      const agent = numberState.agent ?? [];
+      const promised = numberState.numbers.filter(
+        (number) => !taken.some((t) => t.number === number) && !agent.includes(number),
+      );
       return [
         ...(promised.length ? [tn('stateReturned', { number: promised.join(', ') })] : []),
         ...taken.map((t) => tn('stateReturnedTaken', { number: t.number, name: t.name })),
+        ...agent.map((number) => tn('stateReturnedAgent', { number })),
       ].join(' · ');
     }
     const values = { number: numberState.number ?? '—', name: numberState.name ?? '—' };
@@ -458,11 +463,17 @@ export async function BatchCard({
         {numberState && numberLine && (
           <p
             className={`text-sm font-semibold [overflow-wrap:anywhere] ${
-              numberState.kind === 'returned' && !numberState.taken ? 'text-good' : 'text-ink-700'
+              numberState.kind === 'returned' && !numberState.taken && !numberState.agent ? 'text-good' : 'text-ink-700'
             }`}
             data-testid="batch-number-state"
             data-state={
-              numberState.kind === 'returned' ? (numberState.taken ? 'returned_taken' : 'returned') : numberState.why
+              numberState.kind === 'returned'
+                ? numberState.taken
+                  ? 'returned_taken'
+                  : numberState.agent
+                    ? 'returned_agent'
+                    : 'returned'
+                : numberState.why
             }
           >
             {numberLine}
