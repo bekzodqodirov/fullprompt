@@ -293,7 +293,7 @@ describe('the truck cards', () => {
       truck,
     );
     // The standing pin as a dated fact: three Tashkent days ago, never «now».
-    expect(pinner.ROAD!.pins).toEqual({ current: 'in_uz', days: 3, options: [] });
+    expect(pinner.ROAD!.pins).toEqual({ current: 'in_uz', days: 3, options: [], held: false });
     expect(pinner.LOAD!.pins).toBeNull();
     const other = mine(
       (await loadBoard(unscoped(['plans.manage']))).cards.filter((c): c is BoardTruck => c.type === 'batch'),
