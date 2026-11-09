@@ -199,7 +199,12 @@ describe('(6) the start', () => {
     const tail = start.slice(open + callAt(start, open).length + 2);
     const fin = found(tail, '.finally(');
     const body = callAt(tail, tail.indexOf('(', fin));
-    expect(body.replace(/\s+/g, ' ')).toMatch(/^\(\) => \{ markIntakesHydrated\(\); startPolling\(/);
+    // Between them, the bursts a dead process owed are drawn — fenced, never a
+    // throw into the boot (as-built review BURST-8): nothing awaited, so the
+    // first getUpdates still waits on the two restores alone.
+    expect(body.replace(/\s+/g, ' ')).toMatch(
+      /^\(\) => \{ markIntakesHydrated\(\); try \{ drawOwedBursts\(bot\.api\); \} catch \(err\) \{ logger\.warn\(.*?\); \} startPolling\(/,
+    );
   });
 
   it('the stop flushes both stores and seals the collections as it names the oldest unwritten update', () => {
