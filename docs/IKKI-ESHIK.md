@@ -141,6 +141,23 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
   count, 300 jackets read 30, the packing list stopped being «the same goods» and its rows were added
   as a second order.
 
+**As built after the fixes' review** (FR-SELL-2, FR-REGR-2, FR-REGR-4, FR-SELL-3, FR-REGR-6):
+- The sub-header vocabulary reads «TTL» and «SINGLE», and the Russian package words by their stem
+  («в 1 месте», «за 1 место», «1 кор.», «1 коробки»). CRITIC-1's vocabulary was its three examples:
+  «PER CTN | TTL», the commonest Chinese abbreviation, still gave the Σ of single cartons.
+- A composed header keeps its PARENT's unit: «Кол-во, м2» over «всего» reads m², «QTY (PAIRS)» over
+  «TOTAL» and «数量(双)» over «合计» read pairs (§1.7). The split's word came last, so the unit was
+  lost and 120 juft landed as 120 dona. «Soni (juft)» over «har biri | jami» and «Кол-во, кг» over
+  «1 места | всего» are one package's on the left and the line's on the right.
+- The belt reads the sheet's LAST total row and, when there are several, their SUM: a «TOTAL» under
+  each section with no grand total adds up section by section. «Beyond rounding» is also the stated
+  figure's own last decimal: «0.7» stands for 0.65-0.75. A text total «1,650» / «1.650» is a thousands
+  figure or a decimal, and nobody can say which, so it contradicts nothing. Only a Σ that no reading
+  agrees with is refused: a pallet in the total, or one carton's column read for the line's.
+- A PLURAL package after «/» or «in» («QTY/CTNS», «QTY IN CTNS», «Total qty in cartons», «Кол-во/мест»)
+  counts the cartons themselves: the carton column and its note, as before FILES-1. A piece word
+  before it («PCS/CTNS») keeps it one package's.
+
 1.2.2 **A first collection** (neither an add nor seeded):
 - **The first mapped Excel is the goods list**, as today, whatever its shape.
 - **A packing-shaped further Excel gives TOTALS and fills gaps.** It never adds a row and never sets
@@ -223,6 +240,11 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
   not rows are held. The commonest top-up packing list is the WHOLE shipment's — the stored rows and
   the new ones — so it is not «of the held goods», and folded as another factory's invoice its rows
   landed as 🆕 lines beside the request's own, priced twice.
+- As built after the fixes' review (FR-SELL-6): on the add door the noted file reaches the VED.
+  `AmendSubmission.fileNotes` carries the collection's receipt-time notes, and the card note (under
+  «Fayllar: N») and the thread message print them, as a seeded landing's note always did. The VED
+  read «packing list jami: brutto 177 kg …» nowhere, while the add table asked the seller for the
+  brutto the file states.
 
 1.2.4 **The notes**, in the code's own wording conventions (P11):
 - «📄 «packing.xlsx» — o‘sha tovarlar: qatorlar oldingi fayldan, bundan faqat umumiy brutto va kub
@@ -264,6 +286,13 @@ fields; a row hydrated without them reads null and [].
     line («jami 3500 kg», «brutto 3500 kg», «3500 kg») outranks the packing list. Typed before the
     first «Bo‘ldi» or after «➕», they had become the brutto under a ✅. The row's figure typed
     before the reading stays in the material for the VED; it is not written onto row 3 there.
+  - As built after the fixes' review (FR-REGR-1, FR-SELL-1): a LONE typed line that speaks of the
+    whole shipment is the shipment's total beside held rows too, as it was before CHAT-3
+    (`shipmentLine`). That covers a totals word anywhere in the line («Kurtka va shim jami 3600 kg»,
+    «Jami: 3500 kg / 15 kub», «Faktik vazn …», «Обший вес …»), all of the cargo («Hamma yuk …»,
+    «Весь груз …»), and a head made only of measure and package words («Massa 3500 kg», «Karobka 20
+    ta, 3600 kg»). The goods reader takes those for goods lines, so the seller's own correction was
+    dropped and the packing list's figure landed over it. Two typed goods lines keep PF-2's rule.
 - **`fileNotes: string[]`** holds the RECEIPT-time notes: the Excel-vs-Excel decisions, «N ta tovar
   o‘qildi», «rasm sifatida o‘qiladi», and the reader's cut and size warnings.
   - It is written in the same patch as the file.
@@ -548,6 +577,11 @@ VED's, and the lenta note names them.
     typed goods line carrying it) keeps it as the row's own: no «AI taklifi», never replaced by the
     memory or the book. Only a code nobody wrote is the model's proposal; a code read off a document
     still cannot be told from a guess (PF-ADV-16).
+  - As built after the fixes' review (FR-REGR-3): the typed code is the row's own on ITS line only.
+    That means the typed goods line carrying it has a name that meets the model line's, or the same
+    count and weight. A code typed on a line of its own («TNVED 6201930000») is the seller's for the
+    one model line that carries it. The jacket's code copied by the model onto the trousers is the
+    trousers' proposal: «(AI taklifi)», and the memory and the book are asked.
 - **The words** (P13):
   - A model-proposed code prints as «· 6403990000 (AI taklifi)». It lands with the item note
     «TNVED: AI taklifi (o‘qishda) — tekshiring», and the AI answer's line marks it the same way.
@@ -618,6 +652,9 @@ VED's, and the lenta note names them.
     commit; a courtesy word is nothing; goods beside it are filed as material on their own.
     «3: 150 kg\nrahmat» filed whole had left row 3 unwritten under a ✅ (PC-ADV-1's hole on this
     door). Nothing placed: the whole text is material, as before.
+  - As built after the fixes' review (FR-SELL-8, both doors): with goods split off as material,
+    `answers` records only the placed segments' words. The whole text there as well put «Shapka 20
+    dona» on the VED's verbatim record twice.
   - A courtesy word (`plainAck`, a letter in it) is §2.2 (b)'s: «Tasdiqlash uchun «✅ Tasdiqlash» ni
     bosing. Yana ma’lumot bo‘lsa — yuboring.» — never «⚠️ «rahmat» — jadvalda bunday qator yo‘q …», and
     after «➕» with nothing sent never material (its re-read was billed and held the ✅). Beside an

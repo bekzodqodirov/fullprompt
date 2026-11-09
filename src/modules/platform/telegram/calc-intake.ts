@@ -7,6 +7,7 @@ import type { CodedRow, CodingLookups, CodingRow } from '../../wms/calc/row-codi
 import type { KnownCode } from '../../wms/calc/intake-ai';
 import type { IntakeFiles } from './calc-files';
 import {
+  goodsNameKey,
   goodsNameKeys,
   LINE_FIGURES,
   figureOf,
@@ -1447,17 +1448,21 @@ export async function analyzeCollected(
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
   // which read the same ambiguous text — does not get to answer it either.
   const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
-  // The codes the seller's own text states (as-built review FILES-6): a model
-  // line carrying one of them carries the SELLER's code, read back — not a
-  // proposal. Only the code nobody wrote is the model's (§3.1's step 4).
+  // The codes the seller's own text states (as-built review FILES-6), each
+  // with the goods line it was typed on (fix review FR-REGR-3): a model line
+  // carrying one of them on HIS line carries the SELLER's code, read back —
+  // not a proposal. The model copying the jacket's code onto the trousers is
+  // a proposal for the trousers. Only the code nobody wrote for that line is
+  // the model's (§3.1's step 4).
   const { codeIn } = await import('../../wms/calc/units');
-  const typedCodes = new Set<string>([
-    ...text.split(/\r?\n/).flatMap((l) => {
+  const typedCodes = typedCodeOwners(
+    text.split(/\r?\n/).flatMap((l) => {
       const found = codeIn(l)?.code;
-      return found ? [found.replace(/\D/g, '')] : [];
+      return found ? [{ code: found, line: l }] : [];
     }),
-    ...(manual.goods ?? []).flatMap((g) => (g.tnvedCode?.trim() ? [g.tnvedCode.replace(/\D/g, '')] : [])),
-  ]);
+    manual.goods ?? [],
+  );
+  const modelGoods = ai?.facts.goods ?? [];
   // Three sources, in the order of how EXACT they are (`pickGoods`).
   const picked = pickGoods({
     invoice,
@@ -1465,7 +1470,7 @@ export async function analyzeCollected(
     // A code on a model-read line is the model's PROPOSAL, never the row's own
     // (§3.1): the coding asks the memory and the book first — unless the
     // seller's own text states it.
-    model: ai ? (ai.facts.goods ?? []).map((g) => modelCoded(g, typedCodes)) : null,
+    model: ai ? modelGoods.map((g) => modelCoded(g, typedCodes, modelGoods)) : null,
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
     modelSawImages: files.images.length > 0,
@@ -1636,18 +1641,65 @@ export function loneFileTotals(
   };
 }
 
+/** Who typed a code: a goods line's name and figures, or null — a code typed on a line naming no goods. */
+type CodeOwner = { names: NameKeys; quantity: number | null; weightKg: number | null } | null;
+
+/**
+ * The codes the seller's typed material states, by code (digits only), each
+ * with the goods line it stands on (fix review FR-REGR-3): a typed goods line
+ * carrying a code owns it; a code on a line no typed goods line is — «TNVED
+ * 6201930000» under the list — is owned by nobody in particular (null). Pure.
+ */
+export function typedCodeOwners(
+  lineCodes: readonly { code: string; line: string }[],
+  typed: readonly GoodsList[number][],
+): Map<string, CodeOwner[]> {
+  const digits = (code: string) => code.replace(/\D/g, '');
+  const out = new Map<string, CodeOwner[]>();
+  const add = (code: string, owner: CodeOwner) => out.set(code, [...(out.get(code) ?? []), owner]);
+  const owned = typed.flatMap((g) => {
+    const code = g.tnvedCode?.trim();
+    return code ? [{ code: digits(code), key: goodsNameKey(g.name), owner: { names: goodsNameKeys(g.name), quantity: g.quantity ?? null, weightKg: g.weightKg ?? null } }] : [];
+  });
+  for (const o of owned) add(o.code, o.owner);
+  for (const { code, line } of lineCodes) {
+    const c = digits(code);
+    const lineKey = goodsNameKey(line);
+    if (!owned.some((o) => o.code === c && o.key !== '' && lineKey.includes(o.key))) add(c, null);
+  }
+  return out;
+}
+
 /**
  * A model-read line, its code marked as the model's proposal (§3.1) — unless
- * the seller's own typed material states that very code (`typed`, digits
- * only): then it is his, read back, and stays on top of the memory and the
- * book like any code a seller typed (as-built review FILES-6). A code read off
- * a document cannot be told from the model's guess and stays a proposal
- * (PF-ADV-16). Pure.
+ * the seller's own typed material states that very code FOR THIS LINE
+ * (`owners`): a typed goods line carrying it whose name meets this line's, or
+ * whose count and weight are this line's; or a code typed on a line of its
+ * own, when the model puts it on this one line alone. Then it is his, read
+ * back, and stays on top of the memory and the book like any code a seller
+ * typed (as-built review FILES-6). A code the seller wrote for the jacket and
+ * the model copied onto the trousers is the trousers' proposal (fix review
+ * FR-REGR-3). A code read off a document cannot be told from the model's
+ * guess and stays a proposal (PF-ADV-16). Pure.
  */
-function modelCoded(g: GoodsList[number], typed: ReadonlySet<string>): GoodsList[number] {
+function modelCoded(
+  g: GoodsList[number],
+  owners: ReadonlyMap<string, readonly CodeOwner[]>,
+  read: readonly GoodsList[number][],
+): GoodsList[number] {
   const code = g.tnvedCode?.trim();
   if (!code) return g;
-  return typed.has(code.replace(/\D/g, '')) ? g : { ...g, tnvedSource: 'model' };
+  const digits = code.replace(/\D/g, '');
+  const names = goodsNameKeys(g.name);
+  const alone = () => read.filter((r) => r.tnvedCode?.replace(/\D/g, '') === digits).length === 1;
+  const his = (owners.get(digits) ?? []).some((o) =>
+    o === null
+      ? alone()
+      : o.names.whole === names.whole ||
+        namesMeet(o.names, names) ||
+        (o.quantity !== null && o.quantity === (g.quantity ?? null) && (o.weightKg === null || g.weightKg == null || o.weightKg === g.weightKg)),
+  );
+  return his ? g : { ...g, tnvedSource: 'model' };
 }
 
 /**

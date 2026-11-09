@@ -84,4 +84,12 @@ export interface AmendSubmission {
   /** Law 11: the verbatim words (material, then the answers) and the file count. */
   material: string[];
   fileCount: number;
+  /**
+   * What the bot noted on RECEIVING the files (`IntakeState.fileNotes`, docs/
+   * IKKI-ESHIK.md §1.2.5): a top-up's packing list is a «noted» file, its
+   * totals «so‘rovga yozilmadi, VED fayldan ko‘radi» — said to the VED on the
+   * card and in the thread, as the seeded landing says it (fix review
+   * FR-SELL-6). Optional: a stored «waiting» row from before has none.
+   */
+  fileNotes?: string[];
 }

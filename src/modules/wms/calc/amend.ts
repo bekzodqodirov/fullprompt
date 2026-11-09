@@ -694,15 +694,29 @@ export function amendNoteText(input: {
   collectedBy: string;
   fileCount: number;
   material: readonly string[];
+  /** The receipt-time notes (`AmendSubmission.fileNotes`), under the file count. */
+  fileNotes?: readonly string[];
 }): string {
   const raw = input.material.map((m) => m.trim()).filter(Boolean).join('\n');
   const material = raw.length > MATERIAL_NOTE_CAP ? `${raw.slice(0, MATERIAL_NOTE_CAP)}\n… (qisqartirildi)` : raw;
+  const notes = (input.fileNotes ?? []).map((n) => n.trim()).filter(Boolean);
   return (
     `➕ Qo‘shimcha — ${SECTION_LABEL[input.section]} · ${input.card}\n` +
     `Yig‘di: ${input.collectedBy} (Telegram bot)\n` +
     (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
+    (notes.length > 0 ? `${notes.join('\n')}\n` : '') +
     (material ? `\nSotuvchi yuborgani (asl matn):\n${material}\n` : '')
   ).trimEnd();
+}
+
+/**
+ * The receipt-time notes as thread lines (fix review FR-SELL-6): a top-up's
+ * noted packing list — «packing list jami: brutto 177 kg … VED fayldan
+ * ko‘radi» — reached only the seller's prompt, and the VED read neither the
+ * card nor the thread saying it. Pure.
+ */
+function fileNoteLines(submission: AmendSubmission): string[] {
+  return (submission.fileNotes ?? []).map((n) => n.trim()).filter(Boolean).map((n) => `· ${n}`);
 }
 
 export type CalcAmendmentRow = typeof calcAmendments.$inferSelect;
@@ -896,6 +910,7 @@ async function noteAndThreadTx(
           collectedBy: input.staffName,
           fileCount: input.submission.fileCount,
           material: input.submission.material,
+          ...(input.submission.fileNotes ? { fileNotes: input.submission.fileNotes } : {}),
         }),
       },
       { actorId: input.staffId, ip: null, userAgent: 'telegram-bot' },
@@ -1007,7 +1022,7 @@ export async function amendRequest(input: {
     told: AmendChange['told'],
   ): Promise<{ written: Written } | 'duplicate' | 'lead_closed' | 'not_found'> => {
     const stamped: AmendChange = told ? { ...change, told } : change;
-    const lines = amendChangeText(stamped, fileCount, undefined, { maxLines: Number.POSITIVE_INFINITY });
+    const lines = [...amendChangeText(stamped, fileCount, undefined, { maxLines: Number.POSITIVE_INFINITY }), ...fileNoteLines(sub)];
     const body = amendThreadBody(headFor(why), lines);
     try {
       return await db.transaction(async (tx) => {
@@ -1129,7 +1144,7 @@ export async function amendRequest(input: {
             ...(waited ? { waitingId: input.waitingId } : {}),
           });
           if (!id) throw new AmendDuplicate();
-          const lines = amendChangeText(stamped, fileCount, done, { maxLines: Number.POSITIVE_INFINITY });
+          const lines = [...amendChangeText(stamped, fileCount, done, { maxLines: Number.POSITIVE_INFINITY }), ...fileNoteLines(sub)];
           const thread = await noteAndThreadTx(tx, {
             requestId: input.requestId,
             noteId: input.noteId,

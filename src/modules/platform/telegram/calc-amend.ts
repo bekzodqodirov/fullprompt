@@ -255,6 +255,9 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
     doubtedTotals,
     material: [...state.material, ...state.answers],
     fileCount: state.fileCount,
+    // The receipt-time notes — a noted packing list's totals among them —
+    // reach the VED, as a seeded landing's do (fix review FR-SELL-6).
+    ...((state.fileNotes ?? []).length > 0 ? { fileNotes: [...state.fileNotes] } : {}),
   };
 }
 

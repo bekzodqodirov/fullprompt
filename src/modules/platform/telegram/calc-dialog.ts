@@ -1395,8 +1395,12 @@ async function applyPlainText(
     s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
   );
   if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
-  // Labelled «N-qator: …» only when ALL of it went there — never a goods line beside it.
-  const answered = { ...state, answers: [...state.answers, answersEntry(text, parsed.segments)] };
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line
+  // beside it. Goods filed as material on their own are recorded there, once:
+  // the whole text here as well put «Shapka 20 dona» on the VED's verbatim
+  // record twice (fix review FR-SELL-8).
+  const entry = verdict.goods ? answersEntry(verdict.segments.map((s) => s.raw).join('\n'), verdict.segments) : answersEntry(text, parsed.segments);
+  const answered = { ...state, answers: [...state.answers, entry] };
   const committed = await commitWrites(
     ctx,
     chatId,
@@ -1485,8 +1489,10 @@ export async function applyTableAnswer(
     s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
   );
   if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
-  // Labelled «N-qator: …» only when ALL of it went there — never a goods line beside it.
-  const answered = { ...state, answers: [...state.answers, answersEntry(text, segments)] };
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line
+  // beside it; goods filed on their own are recorded there, once (FR-SELL-8).
+  const entry = goods ? answersEntry(writes.map((s) => s.raw).join('\n'), writes) : answersEntry(text, segments);
+  const answered = { ...state, answers: [...state.answers, entry] };
   const committed = await commitWrites(
     ctx,
     chatId,

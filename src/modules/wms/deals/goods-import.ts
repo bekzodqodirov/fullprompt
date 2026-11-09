@@ -285,7 +285,7 @@ const GROSS_HEADER = /gross|g\.\s*w|брутто|brutto|毛重/i;
  * «毛重(箱)» / «毛重（箱）» bracket the package instead (R3-S10).
  */
 const PER_PACKAGE =
-  /[/／]\s*(?:ctns?|cartons?|box(?:es)?|pcs?|pieces?|units?|шт|кор|мест|箱|件|个|只|包)|[(（]\s*(?:箱|件|个|只|包)\s*[)）]|\bper\b|\beach\b|на\s*1\b|(?<![\p{L}\d])(?:1|одного)\s*(?:мест|короб|ящик|упаков)|每|单箱|单件|单重/iu;
+  /[/／]\s*(?:ctns?|cartons?|box(?:es)?|pcs?|pieces?|units?|шт|кор|мест|箱|件|个|只|包)|[(（]\s*(?:箱|件|个|只|包)\s*[)）]|\bper\b|\beach\b|\bsingle\b|на\s*1\b|(?<![\p{L}\d])(?:1|одного)\s*(?:мест|кор|ящик|упаков)|每|单箱|单件|单重/iu;
 /**
  * A COUNT header that is one package's (as-built review FILES-1): «每箱数量»,
  * «每箱件数», «Кол-во в коробке», «PCS/CTN», «Qty per carton» stand before the
@@ -293,9 +293,27 @@ const PER_PACKAGE =
  * the line's count they made 300 jackets 30 — so the packing list was no
  * longer «the same goods» and its rows were added as a second order. Never
  * the weight's `PER_PACKAGE` whole: «Qty/pcs» is the line's count in pieces.
+ *
+ * The package is ONE (fix review FR-REGR-6): a PLURAL after the slash or
+ * «in» — «QTY/CTNS», «QTY IN CTNS», «Total qty in cartons», «Кол-во/мест» —
+ * counts the cartons themselves, the carton column it was before, unless a
+ * piece word stands before it («PCS/CTNS»). A two-row header's per-package
+ * child is one too (FR-REGR-2): «Soni (juft) har biri», «Кол-во, кг 1 места».
  */
-const PER_PACKAGE_COUNT =
-  /[/／]\s*(?:ctns?|cartons?|box(?:es)?|pkgs?|packs?|bags?|кор\p{L}*|мест\p{L}*|ящ\p{L}*|箱|包)|\b(?:per|each|in(?:\s+a)?|every)\s+(?:ctns?|cartons?|box(?:es)?|pkgs?|packages?|packs?|bags?)\b|(?<![\p{L}])(?:в|на)\s*(?:1\s*|одн\p{L}*\s*)?(?:коробк|кор\.|упаковк|мест|ящик)|每|单箱/iu;
+const PER_PACKAGE_COUNT = new RegExp(
+  [
+    String.raw`(?:pcs?|pieces?|шт\.?|件|个)\s*(?:[/／]|\s+in\s+)\s*(?:ctns?|cartons?|box(?:es)?|pkgs?|packs?|bags?|кор\p{L}*|мест\p{L}*|ящ\p{L}*|箱|包)`,
+    String.raw`[/／]\s*(?:ctn|carton|box|pkg|pack|bag|кор(?:\.|обк[аеуи])?|мест[оеау]|ящик[аеу]?|箱|包)(?![\p{L}])`,
+    String.raw`\b(?:per|each|every)\s+(?:ctns?|cartons?|box(?:es)?|pkgs?|packages?|packs?|bags?)\b`,
+    String.raw`\bin(?:\s+(?:a|one|1))?\s+(?:ctn|carton|box|pkg|package|pack|bag)\b`,
+    String.raw`(?<![\p{L}])(?:в|на)\s*(?:1\s*|одн\p{L}*\s*)?(?:коробк|кор\.|упаковк|мест|ящик)`,
+    String.raw`(?<![\p{L}\d])(?:1|одного)\s*(?:мест|кор|ящик|упаков)`,
+    // «har biri» / «har (bir) qutida»: each one package — never «har bir tovar soni», each GOOD's count.
+    String.raw`(?<![\p{L}])har\s+(?:biri(?![\p{L}])|(?:bir(?:ta)?\s+)?(?:quti|karobka|joy|qop)\p{L}*)`,
+    '每|单箱',
+  ].join('|'),
+  'iu',
+);
 /**
  * A money header. A CURRENCY is one too (the third review's S6 note): «Gross
  * (USD) | Net (USD)» is an invoice's money before and after a discount, and
@@ -543,9 +561,18 @@ function findWhere(header: Cell[], taken: Set<number>, test: (text: string, inde
   return null;
 }
 
+/**
+ * The words a two-row header's split puts AFTER the parent's unit and that
+ * name none: «Кол-во, м2» over «всего» reads «Кол-во, м2 всего», «QTY (PAIRS)»
+ * over «TOTAL» reads «QTY (PAIRS) TOTAL» (fix review FR-REGR-2) — the unit
+ * is still the parent's, or m² and pairs land as pieces.
+ */
+const UNIT_TAIL = new Set(['total', 'totals', 'ttl', 'sum', 'all', 'всего', 'итого', 'jami', '合计', '总计', '小计', '共计']);
+
 /** The unit a header names with its last word — «Кол-во, кг» is a weight. */
 function headerUnitWord(text: string): string | null {
   const words = text.toLowerCase().split(/[^\p{L}\d²³]+/u).filter(Boolean);
+  while (words.length > 1 && UNIT_TAIL.has(words.at(-1)!)) words.pop();
   const last = words.at(-1) ?? null;
   return last && unitOf(last) !== null ? last : null;
 }
@@ -564,12 +591,18 @@ interface Detected {
  * header is never taken for one.
  */
 const SUB_HEADER_WORDS = new Set([
-  'per', 'each', 'ctn', 'ctns', 'carton', 'cartons', 'box', 'pkg', 'pkgs', 'total', 'totals', 'sum', 'all',
+  'per', 'each', 'single', 'ctn', 'ctns', 'carton', 'cartons', 'box', 'pkg', 'pkgs', 'total', 'totals', 'ttl', 'sum', 'all',
   'g', 'w', 'n', 'gw', 'nw', 'gross', 'net', 'weight', 'wt', 'kg', 'kgs', 'pcs', 'pc', 'qty', 'quantity',
   'cbm', 'm', 'unit', 'units', 'vol', 'volume', 'meas',
   'шт', 'кг', 'м', 'нетто', 'брутто', 'вес', 'всего', 'итого', 'места', 'место', 'мест', 'в', 'коробке',
-  'упаковке', 'на', 'одного', 'ед', 'кол', 'во', 'объем', 'объём', 'jami', 'dona', 'har', 'biri', 'quti',
+  'упаковке', 'на', 'одного', 'ед', 'кол', 'во', 'объем', 'объём', 'jami', 'dona', 'har', 'biri', 'quti', 'за',
 ]);
+/**
+ * …and the Russian package words by their STEM (fix review FR-SELL-2): «в 1
+ * месте», «за 1 место», «1 кор.», «1 коробки» — a declension of a word the
+ * set held twice was a data row, and the brutto the Σ of single cartons.
+ */
+const SUB_HEADER_STEM = /^(?:мест|кор|упаков|ящик)/u;
 /** …and the Chinese characters such a row is written in. */
 const SUB_HEADER_HAN = /^[单每箱件个包合总计小毛净重数量体积]+$/u;
 /**
@@ -577,7 +610,7 @@ const SUB_HEADER_HAN = /^[单每箱件个包合总计小毛净重数量体积]+$
  * of bare units («pcs | kg») splits nothing, and «1 места» reads as a figure
  * («1 carton») to the figure test, so the vocabulary decides, not the shape.
  */
-const SPLIT_WORDS = new Set(['per', 'each', 'total', 'totals', 'all', 'sum', 'gross', 'net', 'n', 'g', 'gw', 'nw', 'нетто', 'брутто', 'всего', 'итого', 'места', 'место', 'jami', 'har']);
+const SPLIT_WORDS = new Set(['per', 'each', 'single', 'total', 'totals', 'ttl', 'all', 'sum', 'gross', 'net', 'n', 'g', 'gw', 'nw', 'нетто', 'брутто', 'всего', 'итого', 'места', 'место', 'jami', 'har']);
 const SPLIT_HAN = /[单每合总毛净]/u;
 
 /** Is the row under the chosen header its SUB-header (`SUB_HEADER_WORDS`), never data? */
@@ -596,7 +629,7 @@ function subHeaderRow(row: Cell[] | undefined, r: number, covered: Covered | nul
     if (tokens.length === 0) return false;
     for (const t of tokens) {
       const han = /^\p{Script=Han}+$/u.test(t);
-      if (han ? !SUB_HEADER_HAN.test(t) : /^\d+$/.test(t) ? t !== '1' && t !== '3' : !SUB_HEADER_WORDS.has(t)) return false;
+      if (han ? !SUB_HEADER_HAN.test(t) : /^\d+$/.test(t) ? t !== '1' && t !== '3' : !SUB_HEADER_WORDS.has(t) && !SUB_HEADER_STEM.test(t)) return false;
       if (han ? SPLIT_HAN.test(t) : SPLIT_WORDS.has(t)) splits += 1;
     }
   }
@@ -1080,29 +1113,66 @@ const GRAND_TOTAL = /^(?:grand\s+)?(?:total|totals|итого|всего|jami|�
 const SUBTOTAL_WORD = /sub\s*-?\s*total|подытог|小计|小計/iu;
 
 /**
- * The sheet's LAST grand total row under the header — the line a packing
- * list closes with («TOTAL … 190 … 1.6») — or null. Any cell may carry the
- * word: the «No.» column as often as the name's.
+ * The sheet's total rows under the header, in order — a packing list closes
+ * with one («TOTAL … 190 … 1.6»), and a sectioned one closes each section
+ * with its own (fix review FR-SELL-3). Any cell may carry the word: the «No.»
+ * column as often as the name's.
  */
-function grandTotal(rows: Cell[][], from: number, covered: Covered | null): Cell[] | null {
-  for (let d = rows.length - 1; d >= from; d--) {
+function totalRows(rows: Cell[][], from: number, covered: Covered | null): Cell[][] {
+  const out: Cell[][] = [];
+  for (let d = from; d < rows.length; d++) {
     const row = rows[d]!;
     const says = row.some((cell, i) => {
       if (covered?.has(d, i) || typeof cell !== 'string') return false;
       const text = cell.trim();
       return text.length <= 24 && GRAND_TOTAL.test(text) && !SUBTOTAL_WORD.test(text);
     });
-    if (says) return row;
+    if (says) out.push(row);
   }
-  return null;
+  return out;
 }
 
-/** The total row's figure in a column, against the Σ: apart by more than rounding (under `unit`, or 0.5 %). */
-function contradicts(sum: number, cell: Cell | undefined, unit: 'kg' | 'm3', step: number): boolean {
-  const stated = parseMeasure(cell ?? null, unit);
-  if (stated === null || stated <= 0) return false;
-  const gap = Math.abs(sum - stated);
-  return !(gap < step || gap <= 0.005 * Math.max(sum, stated));
+/**
+ * A total row's figure, with the half of its last printed decimal — what
+ * rounding it to that place may move (fix review FR-REGR-4): «0.7» stands
+ * for 0.65-0.75, «211» for 210.5-211.5. A text cell whose one separator is
+ * followed by exactly three digits («1,650», «1.650») is a thousands figure
+ * or a decimal, nobody can say which: it states nothing (the kernel's
+ * `readNumberCell` asks that very cell), and so contradicts nothing.
+ */
+function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3'): { value: number; half: number } | null {
+  if (cell === null || cell === undefined) return null;
+  const text = typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell.trim().replace(/\s+/gu, '');
+  if (typeof cell === 'string' && /^[1-9]\d{0,2}[.,]\d{3}(?![\d.,])/u.test(text)) return null;
+  const value = parseMeasure(cell, unit);
+  if (value === null || value <= 0) return null;
+  const decimals = /[.,](\d+)(?!.*[.,]\d)/u.exec(text)?.[1]?.length ?? 0;
+  return { value, half: 0.5 * 10 ** -decimals };
+}
+
+/**
+ * Do the sheet's own total rows CONTRADICT the column's Σ — apart by more
+ * than rounding (the stated figure's own place, `step`, or 0.5 %)? The last
+ * total row is read as the grand total, and so — when there are several —
+ * is their sum: a «TOTAL» under each section and none at the end
+ * (FR-SELL-3) adds up to the Σ section by section, and a closing «TOTAL»
+ * over sections is the Σ itself. Only a Σ that NO reading agrees with is
+ * refused: a pallet in the total, one carton's column read for the line's.
+ */
+function contradicts(sum: number, rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number): boolean {
+  const stated = rows.map((row) => statedFigure(row[column], unit));
+  const readings: { value: number; half: number }[] = [];
+  const last = stated.at(-1);
+  if (last) readings.push(last);
+  if (stated.length > 1 && stated.every((f) => f !== null)) {
+    const figures = stated as { value: number; half: number }[];
+    readings.push({ value: figures.reduce((n, f) => n + f.value, 0), half: figures.reduce((n, f) => n + f.half, 0) });
+  }
+  if (readings.length === 0) return false;
+  return readings.every(({ value, half }) => {
+    const gap = Math.abs(sum - value);
+    return !(gap < step || gap <= half + 1e-9 || gap <= 0.005 * Math.max(sum, value));
+  });
 }
 
 /**
@@ -1219,10 +1289,10 @@ export function parseGoods(
     // single cartons beside it is a smaller number wearing the shipment's
     // name. Refused, never corrected: the VED reads the file, the model reads
     // the row.
-    const stated = grandTotal(rows, r0(headerRow), covered);
-    if (stated) {
-      if (grossKg !== null && columns.gross !== null && contradicts(grossKg, stated[columns.gross], 'kg', 1)) grossKg = null;
-      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, stated[columns.volume], 'm3', 0.01)) volumeM3 = null;
+    const stated = totalRows(rows, r0(headerRow), covered);
+    if (stated.length > 0) {
+      if (grossKg !== null && columns.gross !== null && contradicts(grossKg, stated, columns.gross, 'kg', 1)) grossKg = null;
+      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, stated, columns.volume, 'm3', 0.01)) volumeM3 = null;
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
     // read wrong, never a figure to land.

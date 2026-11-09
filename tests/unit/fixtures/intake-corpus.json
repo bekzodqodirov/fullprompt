@@ -29266,6 +29266,294 @@
    "why": "«N.W.» and «G.W.» each over «EACH | TOTAL»: the line's netto is the TOTAL column (CRITIC-1)",
    "source": "as-built A (Ikki eshik) CRITIC-1",
    "weight": "blocker"
+  },
+  {
+   "id": "c2465",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, м2",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "в 1 коробке",
+     "всего",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "м2"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "м2"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "120 with no unit — the m² count landed as 120 pieces",
+   "why": "a composed header keeps its parent's unit: «Кол-во, м2 всего» reads м2 (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2466",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni (juft)",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "har biri",
+     "jami",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "juft"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "juft"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton 12 / 10 with no unit",
+   "why": "«har biri» is one package's count, and «Soni (juft) jami» the line's in pairs (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2467",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, кг",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "1 места",
+     "всего",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": null,
+       "weightKg": 120
+      },
+      {
+       "name": "Item 2",
+       "quantity": null,
+       "weightKg": 50
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a kilo column read as a count of 120 pieces",
+   "why": "«Кол-во, кг 1 места» is one place's, «Кол-во, кг всего» the line's WEIGHT (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2468",
+   "input": [
+    [
+     "Description",
+     "QTY (PAIRS)",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "PER CTN",
+     "TOTAL",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "pairs"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "pairs"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "120 with no unit — pairs landed as pieces",
+   "why": "«QTY (PAIRS) TOTAL» reads pairs (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2469",
+   "input": [
+    [
+     "Description",
+     "QTY IN CTNS",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     10,
+     100,
+     1
+    ],
+    [
+     "Shim",
+     4,
+     50,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 10,
+       "unit": "ctns"
+      },
+      {
+       "name": "Shim",
+       "quantity": 4,
+       "unit": "ctns"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no carton count at all — the VED lost the row's «sotuvchi: 10 ctns»",
+   "why": "a PLURAL package after «in» counts the cartons: the carton column, as before FILES-1 (FR-REGR-6)",
+   "source": "fix review (Ikki eshik) FR-REGR-6",
+   "weight": "regression"
+  },
+  {
+   "id": "c2470",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во/мест",
+     "Вес брутто",
+     "Объем"
+    ],
+    [
+     "Куртка",
+     10,
+     100,
+     1
+    ],
+    [
+     "Брюки",
+     4,
+     50,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 10,
+       "unit": "мест"
+      },
+      {
+       "name": "Брюки",
+       "quantity": 4,
+       "unit": "мест"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no carton count at all",
+   "why": "«/мест» (plural) is the carton column; only «/место» is one place's (FR-REGR-6)",
+   "source": "fix review (Ikki eshik) FR-REGR-6",
+   "weight": "regression"
   }
  ],
  "parseGoodsLineCases": [
@@ -57749,6 +58037,496 @@
    "said": "the same, with the labels merged down over both rows",
    "why": "a label merged DOWN repeats into the sub-header row as covered and is not the split's word (CRITIC-1)",
    "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2458",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TTL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the line weights were one carton's (15 / 10) and the brutto their Σ, 25 kg — «TTL» was no sub-header word",
+   "why": "«G.W. (KG)» merged over «PER CTN | TTL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2459",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "SINGLE",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one carton's 15 / 10 — «SINGLE» was no sub-header word",
+   "why": "«G.W. (KG)» merged over «SINGLE | TOTAL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2460",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "CTN",
+        "TTL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one carton's 15 / 10",
+   "why": "«G.W. (KG)» merged over «CTN | TTL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2461",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "в 1 месте",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one place's 15 / 10 — «месте» was no listed form",
+   "why": "«Вес брутто, кг» merged over «в 1 месте | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2462",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "за 1 место",
+        "итого",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one place's 15 / 10 — «за» was no sub-header word",
+   "why": "«Вес брутто, кг» merged over «за 1 место | итого»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2463",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "1 кор.",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one box's 15 / 10",
+   "why": "«Вес брутто, кг» merged over «1 кор. | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2464",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "1 коробки",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one box's 15 / 10",
+   "why": "«Вес брутто, кг» merged over «1 коробки | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
    "weight": "blocker"
   }
  ],

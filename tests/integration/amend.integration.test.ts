@@ -529,6 +529,32 @@ describe('(m) a file that changes no row', () => {
   });
 });
 
+describe('(m2) a top-up’s noted packing list reaches the VED (fix review FR-SELL-6, docs/IKKI-ESHIK.md §1.2.3)', () => {
+  const noted = '📄 «packing.xlsx» — packing list jami: brutto 177 kg, 1.4 m³ — so‘rovga yozilmadi, VED fayldan ko‘radi.';
+  const cardNote = (entityId: string) =>
+    db.execute<{ note: string }>(sql`
+      SELECT note FROM crm_activities WHERE entity_id = ${entityId}::uuid AND calc_request_id IS NULL
+    `);
+  it('noted: the thread line and the card note name the packing list’s totals', async () => {
+    const r = await land([{ name: `Sumka ${SUFFIX}`, quantity: 10 }]);
+    const out = await amend(r.requestId, sub({ fileCount: 1, fileNotes: [noted] }));
+    expect(out.kind).toBe('noted');
+    if (out.kind !== 'noted') return;
+    const thread = (await threadOf(r.requestId)).find((t) => t.id === threadIdOf(out.amendmentId, 'noted'))!;
+    expect(thread.note.split('\n')).toContain(`· ${noted}`);
+    expect((await cardNote(r.entityId))[0]!.note).toContain(noted);
+  });
+  it('applied: beside a new line, the same', async () => {
+    const r = await land([{ name: `Kurtka ${SUFFIX}`, quantity: 300 }]);
+    const out = await amend(r.requestId, sub({ newLines: [{ name: `Shapka ${SUFFIX}`, quantity: 50 }], fileCount: 2, fileNotes: [noted] }));
+    expect(out.kind).toBe('applied');
+    if (out.kind !== 'applied') return;
+    const thread = (await threadOf(r.requestId)).find((t) => t.id === threadIdOf(out.amendmentId, 'applied'))!;
+    expect(thread.note.split('\n')).toContain(`· ${noted}`);
+    expect((await cardNote(r.entityId))[0]!.note).toContain(noted);
+  });
+});
+
 describe('(n) a stored addition, written when the pass ends', () => {
   async function waitingOn(r: Awaited<ReturnType<typeof land>>) {
     vi.mocked(ticketStanding).mockResolvedValue('live');
