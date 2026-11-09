@@ -878,7 +878,10 @@
       "tariffZone": "价目表栏",
       "tariffFrom": "价目表日期",
       "tariffBands": "价目表各行",
-      "freightMode": "货物类型（LTL/FTL）"
+      "freightMode": "货物类型（LTL/FTL）",
+      "released": "编号已收回",
+      "number": "编号",
+      "destBeforeDeparture": "收货仓库（出发前）"
     }
   },
   "profile": {
@@ -1249,7 +1252,8 @@
     "roadPart": "{n} 在途",
     "roadAwaited": "待到 {n}",
     "roadCame": "已到 {n}",
-    "roadMissed": "未到 {n}"
+    "roadMissed": "未到 {n}",
+    "truckNow": "车辆现在开往 {dest} — 计划是按 {planned} 审批的"
   },
   "costing": {
     "fxTitle": "汇率",
@@ -1686,7 +1690,54 @@
       "roadOwed": "+{n} 在途"
     },
     "finishSummaryRoad": "{n} 箱在途未到",
-    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）"
+    "roadOwedLine": "在途待到：{lot} · {n} 箱（{trucks}）",
+    "number": {
+      "stateReturned": "♻️ 编号 {number} 已收回 — 下一辆车将使用它",
+      "stateReturnedTaken": "♻️ 编号 {number} 曾已收回，但之后车辆 {name} 在途中使用了它 — 不会再分配给其他车辆",
+      "stateReturnedAgent": "♻️ 编号 {number} 曾已收回，但之后以该编号向代理发送了单据 — 不会再分配给其他车辆",
+      "kept": {
+        "newer": "编号未收回：{name} 已经开出",
+        "agent": "编号未收回：单据已发给代理",
+        "left": "编号未收回：车辆已经出发过",
+        "renamed_left": "编号未收回：{number} 已以 {name} 的名称出发",
+        "unworn": "编号未收回：编号 {number} 从未分配给车辆",
+        "no_counter": "编号未收回：该前缀没有计数器",
+        "prefix": "编号未收回：仓库前缀已更改",
+        "pending": "编号尚未收回 — 若在此之前未开出新车，下次取消或运行 batch-raqam --apply 时收回",
+        "busy": "编号此刻未收回：系统繁忙 — 若在此之前未开出新车，下次取消或运行 batch-raqam --apply 时收回",
+        "error": "编号未收回：出错 — 下次取消时可能收回"
+      }
+    },
+    "destChange": {
+      "title": "更改收货仓库",
+      "hint": "车辆尚未出发：同一辆车、同一编号 — 只更改收货仓库。出发后请用「更改目的地」。",
+      "target": "新的收货仓库",
+      "targetPick": "— 选择仓库 —",
+      "submit": "更改收货仓库",
+      "done": "✅ 收货仓库已更改：现在是 {to}",
+      "noTargets": "没有其他启用的仓库",
+      "errors": {
+        "forbidden": "收货仓库由发货仓库经理或物流员更改",
+        "batch_not_found": "未找到车辆",
+        "batch_cancelled": "车辆已取消 — 不能更改收货仓库",
+        "not_before_departure": "车辆已出发 — 请用「更改目的地」",
+        "already_unloaded": "车辆已到达收货仓库 — 不能再更改",
+        "dest_changed": "收货仓库刚被他人更改 — 已显示新状态，请再检查",
+        "bad_target": "请从列表中选择仓库",
+        "same_destination": "车辆已经开往该仓库",
+        "destination_is_origin": "发货仓库不能作为收货仓库",
+        "target_inactive": "该仓库已停用",
+        "dest_money_country": "车辆已有费用或价格：收货仓库只能在同一国家内更改。改到其他国家 — 请先作废这些金额。",
+        "dest_agent_sent": "单据已发给代理 — 请先取消「已发给代理」标记",
+        "busy_retry": "车辆正忙（正在装货） — 请稍后再按",
+        "validation": "数据有误 — 请刷新页面",
+        "offline": "服务器无响应 — 请检查网络后再按",
+        "unauthenticated": "会话已过期 — 请重新登录"
+      }
+    },
+    "quickConfirm": "{from} → {to}：开一个新车次吗？",
+    "quickConfirmYes": "是，开出",
+    "quickConfirmNo": "取消"
   },
   "loading": {
     "title": "装车",
@@ -1970,6 +2021,7 @@
     "voidNeedsAccountant": "只有会计或管理员可以作废此项。",
     "clientNotAboard": "该客户在此车上没有货物——请在货物实际所乘车次上定价",
     "batchCancelledRefused": "该批次已取消，无法记录价格。",
+    "batchNotFoundRefused": "未找到该车辆——请刷新页面。",
     "txTruck": "哪个车次",
     "txTruckUnpriced": "未定价",
     "txCardOnlyHint": "若未选择车次或交易，此价格不覆盖任何货物——交付时需要许可",
@@ -2103,13 +2155,9 @@
     "truckDealLineNoShare": "价格记入交易 {code}。另一笔交易的货物请单独定价",
     "truckDealLineNone": "价格不记入任何交易",
     "truckDealDeferred": "交易 {code} 已延期付款：在延期有效期内，交货时此价格不会作为欠款扣住货物",
-    "truckDealAsk": "此价格仅为交易 {code} 的部分吗（占该客户本车货物的 {pct} %）？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
-    "truckDealAskNoShare": "此价格仅为交易 {code} 的部分吗？若整笔价格记入一笔交易，该交易利润会虚高，另一笔交易显示为零。",
-    "truckDealAskNone": "价格不记入任何交易——交易的利润和加价都看不到它。",
     "pricedHereAsk": "该客户在此车上已有价格：{list}。此价格将是额外的账单。",
     "pricedHereTitle": "本车上的价格",
     "pricedHereNoDeal": "无交易",
-    "pricedHereMissing": "本车上无价格",
     "pricedHereCardPrice": "该交易有自己的价格（无车次）",
     "pricedHereGone": "该交易的货物已不在车上",
     "truckDealChanged": "本车货物的交易已变更——页面已刷新，请核对价格后重新保存",
@@ -2117,7 +2165,35 @@
     "truckDealRequired": "该客户在此车上的货物属于多笔交易——请选择价格记入哪笔交易",
     "truckDealInvalid": "此选择不适用于本车——请刷新页面后重新选择",
     "truckDealMismatch": "该交易属于其他客户——价格不会记入",
-    "pricedHereWhole": "无交易的价格已覆盖该客户本车全部货物——如需记入交易，请作废后按交易重新录入"
+    "truckTableTitle": "按交易分别定价——在每笔交易的行中填写其货物价格；空行不记录",
+    "truckTableSave": "保存",
+    "truckTableConfirm": "是，保存",
+    "truckTableTotal": "合计：{n} 笔交易 · {amount}",
+    "truckTableTotalNone": "合计：{n, plural, =0 {无交易部分} other {# 笔交易 + 无交易部分}} · {amount}",
+    "truckTableStandsHere": "本车：{usd}",
+    "truckTableStandsZeroed": "价格已因赔偿撤销",
+    "truckTableStandsWhole": "已有覆盖全部货物的价格",
+    "truckTableStandsElsewhere": "{codes} 上已有价格",
+    "truckTableAskExtra": "{code}：本车已有价格（{usd}）——这将是额外的账单",
+    "truckTableAskNoneExtra": "无交易：本车已有无交易价格（{usd}）——这将是额外的账单",
+    "truckTableAskWhole": "{code}：该客户本车全部货物已有价格（{list}）——这将是额外的账单",
+    "truckTableAskCard": "{code}：该交易卡片上已有自己的价格——这将是额外的账单",
+    "truckTableAskZeroed": "{code}：价格已因赔偿撤销——要重新设置吗？",
+    "truckTableAskElsewhere": "{code}：{codes} 车上也有价格",
+    "truckTableAskAbove": "{code}：比交易价高 {pct}%（按交易约 {usd}）",
+    "truckTableAskBelow": "{code}：比交易价低 {pct}%（按交易约 {usd}）",
+    "truckTableRowUnreadable": "{code}：无法识别金额——请写成「1200」「1 200」或「1200.50」",
+    "truckPrefillOffElsewhere": "其他车次的价格已覆盖此货物——请转移该价格；未预填",
+    "truckPrefillFollows": "其货物价格在之前的车次上（续程）——未预填",
+    "truckPrefillNoQuote": "该交易没有美元报价——未预填",
+    "truckPrefillDiscount": "该交易有折扣——未预填",
+    "truckPrefillUnscaled": "交易报价没有立方或公斤——无法计算本车份额；未预填",
+    "truckPrefillCurrency": "仅以美元预填",
+    "truckPartsEmpty": "没有任何一行填写价格",
+    "truckPartDuplicate": "同一笔交易提交了两次——请刷新页面后重新保存",
+    "truckPricesChanged": "本车上的价格已变更——页面已刷新，请核对各行后重新保存",
+    "truckCardPricesChanged": "交易卡片上的价格已变更——页面已刷新，请核对该行后重新保存",
+    "pricedHereMissingList": "无价格：{codes}"
   },
   "map": {
     "title": "地图",

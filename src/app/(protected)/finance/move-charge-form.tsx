@@ -14,6 +14,11 @@ import { parseTypedMoney } from '@/modules/wms/calc/money-input';
  * Q2 / a partial short-load), said beside the box before the press. The
  * server re-derives every refusal (`moveCharge`), and the inputs are
  * controlled so a refused press keeps what was typed (#377/#463).
+ *
+ * `label` names WHICH price the fold moves — its truck and its deal: a truck
+ * priced from the table carries one part per deal, and fifteen identical
+ * «🚚 Ko'chirish» folds cannot be told apart (judge P1-correction-doors). The
+ * part keeps its own deal on the target truck (#1515).
  */
 export function MoveChargeForm({
   txId,
@@ -22,6 +27,7 @@ export function MoveChargeForm({
   currency,
   fromBatchId,
   targets,
+  label = null,
 }: {
   txId: string;
   clientId: string;
@@ -29,6 +35,8 @@ export function MoveChargeForm({
   currency: string;
   fromBatchId: string | null;
   targets: { batchId: string; code: string }[];
+  /** «YW-010 · B-00123» — the price this fold moves. */
+  label?: string | null;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
@@ -47,6 +55,7 @@ export function MoveChargeForm({
     move_noop: t('moveNoop'),
     client_not_aboard: t('clientNotAboard'),
     internal_batch: t('internalBatchRefused'),
+    batch_cancelled: t('batchCancelledRefused'),
     forbidden: tc('forbidden'),
   };
 
@@ -71,7 +80,15 @@ export function MoveChargeForm({
 
   return (
     <details className="text-sm" data-testid="move-charge">
-      <summary className="cursor-pointer text-xs font-semibold text-brand-700">{t('moveCharge')}</summary>
+      <summary className="cursor-pointer text-xs font-semibold text-brand-700 [overflow-wrap:anywhere]">
+        {t('moveCharge')}
+        {label && (
+          <span className="font-mono font-normal text-ink-500" data-testid="move-charge-label">
+            {' · '}
+            {label} · {amount.toFixed(2)} {currency}
+          </span>
+        )}
+      </summary>
       <div className="mt-2 space-y-2 rounded-lg border border-line p-2">
         <p className="text-xs text-ink-500">{t('moveChargeHint')}</p>
         <div className="flex flex-wrap items-center gap-2">

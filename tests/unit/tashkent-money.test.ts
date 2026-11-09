@@ -73,9 +73,13 @@ describe('batch pricing posts a visible Tashkent date (audit A13)', () => {
   const form = read('src/app/(protected)/batches/[id]/pricing/pricing-form.tsx');
   const page = read('src/app/(protected)/batches/[id]/pricing/page.tsx');
 
-  it('the charge date is a date input the person can see, not a hidden stamp', () => {
-    expect(form).not.toMatch(/type="hidden"\s+name="txDate"/);
-    expect(form).toMatch(/name="txDate"\s+type="date"/);
+  it('the charge date is a date input the person can see, not a hidden stamp — on both «Narx» bodies', () => {
+    const table = read('src/app/(protected)/batches/[id]/pricing/pricing-table.tsx');
+    for (const body of [form, table]) {
+      expect(body).not.toMatch(/type="hidden"\s+name="txDate"/);
+      expect(body).toMatch(/name="txDate"\s+type="date"/);
+      expect(body).toContain('max={latestTxDate()}');
+    }
   });
 
   it("the page seeds it with Tashkent's day", () => {

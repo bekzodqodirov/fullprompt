@@ -878,7 +878,10 @@
       "tariffZone": "Tariff column",
       "tariffFrom": "Tariff date",
       "tariffBands": "Tariff rows",
-      "freightMode": "Load type (LTL/FTL)"
+      "freightMode": "Load type (LTL/FTL)",
+      "released": "Number given back",
+      "number": "Number",
+      "destBeforeDeparture": "Receiving warehouse (before departure)"
     }
   },
   "profile": {
@@ -1249,7 +1252,8 @@
     "roadPart": "{n} from the road",
     "roadAwaited": "{n} awaited",
     "roadCame": "{n} came",
-    "roadMissed": "{n} did not come"
+    "roadMissed": "{n} did not come",
+    "truckNow": "The truck now goes to {dest} — the plan was approved for {planned}"
   },
   "costing": {
     "fxTitle": "Exchange rates",
@@ -1686,7 +1690,54 @@
       "roadOwed": "+{n} from the road"
     },
     "finishSummaryRoad": "{n} did not come from the road",
-    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})"
+    "roadOwedLine": "Awaited from the road: {lot} · {n} cartons ({trucks})",
+    "number": {
+      "stateReturned": "♻️ Number {number} came back — the next truck gets it",
+      "stateReturnedTaken": "♻️ Number {number} came back, but then truck {name} took it on the road — no other truck will get it now",
+      "stateReturnedAgent": "♻️ Number {number} came back, but then papers went to the agent under it — no other truck will get it now",
+      "kept": {
+        "newer": "The number did not come back: {name} is already open",
+        "agent": "The number did not come back: its papers went to the agent",
+        "left": "The number did not come back: the truck had left",
+        "renamed_left": "The number did not come back: {number} left as {name}",
+        "unworn": "The number did not come back: number {number} was never given to a truck",
+        "no_counter": "The number did not come back: this prefix has no counter",
+        "prefix": "The number did not come back: the warehouse prefix has changed",
+        "pending": "The number has not come back yet — unless a new truck is opened first, the next cancel or batch-raqam --apply returns it",
+        "busy": "The number did not come back now: the system was busy — unless a new truck is opened first, the next cancel or batch-raqam --apply returns it",
+        "error": "The number did not come back: an error — the next cancel may return it"
+      }
+    },
+    "destChange": {
+      "title": "Change the receiving warehouse",
+      "hint": "The truck has not left yet: same truck, same number — only the receiving warehouse changes. On the road it changes through «Change destination».",
+      "target": "New receiving warehouse",
+      "targetPick": "— pick a warehouse —",
+      "submit": "Change the receiving warehouse",
+      "done": "✅ Receiving warehouse changed: now {to}",
+      "noTargets": "There is no other active warehouse",
+      "errors": {
+        "forbidden": "The receiving warehouse is changed by the origin warehouse manager or a logist",
+        "batch_not_found": "Truck not found",
+        "batch_cancelled": "The truck was cancelled — its receiving warehouse cannot change",
+        "not_before_departure": "The truck has left — use «Change destination»",
+        "already_unloaded": "The truck has already arrived — its receiving warehouse can no longer change",
+        "dest_changed": "Somebody just changed the receiving warehouse — the new state is shown, check again",
+        "bad_target": "Pick a warehouse from the list",
+        "same_destination": "The truck already goes to this warehouse",
+        "destination_is_origin": "The origin warehouse cannot be the receiving one",
+        "target_inactive": "This warehouse is deactivated",
+        "dest_money_country": "The truck carries a cost or a price: the receiving warehouse may change only within the same country. To another country — void the money first.",
+        "dest_agent_sent": "The papers went to the agent — clear the «sent to agent» tick first",
+        "busy_retry": "The truck is busy right now (loading in progress) — press again in a moment",
+        "validation": "Bad data — reload the page",
+        "offline": "The server did not answer — check the connection and press again",
+        "unauthenticated": "The session has ended — sign in again"
+      }
+    },
+    "quickConfirm": "{from} → {to}: open a new batch?",
+    "quickConfirmYes": "Yes, open it",
+    "quickConfirmNo": "Cancel"
   },
   "loading": {
     "title": "Loading",
@@ -1970,6 +2021,7 @@
     "voidNeedsAccountant": "Only the accountant or an admin can void this.",
     "clientNotAboard": "This client has no cargo on this truck — price the truck the cargo rode",
     "batchCancelledRefused": "This truck was cancelled — no price can be written on it.",
+    "batchNotFoundRefused": "Truck not found — refresh the page.",
     "txTruck": "For which truck",
     "txTruckUnpriced": "no price",
     "txCardOnlyHint": "With neither a truck nor a deal chosen, this price covers no cargo — the handover will need permission",
@@ -2103,13 +2155,9 @@
     "truckDealLineNoShare": "The price is written to deal {code}. Price the other deal’s cargo separately",
     "truckDealLineNone": "The price is written to no deal",
     "truckDealDeferred": "Deal {code} has a payment deferral: while it lasts, this price does not hold the cargo at handover as debt",
-    "truckDealAsk": "Is this price only deal {code}’s part ({pct} % of the client’s cargo on this truck)? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
-    "truckDealAskNoShare": "Is this price only deal {code}’s part? Written whole onto one deal, that deal’s profit grows and the other deal reads zero.",
-    "truckDealAskNone": "The price is written to no deal — the deals’ profit and upsale will not see it.",
     "pricedHereAsk": "This client already has a price on this truck: {list}. This price will be an extra bill.",
     "pricedHereTitle": "Prices on this truck",
     "pricedHereNoDeal": "no deal",
-    "pricedHereMissing": "no price on this truck",
     "pricedHereCardPrice": "the deal has its own price (no truck)",
     "pricedHereGone": "this deal’s cargo is no longer on the truck",
     "truckDealChanged": "The deals of the cargo on this truck changed — the page was refreshed, check the price and save again",
@@ -2117,7 +2165,35 @@
     "truckDealRequired": "This client’s cargo on this truck belongs to several deals — choose which one the price is written to",
     "truckDealInvalid": "This choice does not fit this truck — refresh the page and choose again",
     "truckDealMismatch": "This deal belongs to another client — the price is not written to it",
-    "pricedHereWhole": "the no-deal price covers all this client’s cargo on this truck — to put it on a deal, void it and enter it again per deal"
+    "truckTableTitle": "A price per deal — type each deal’s cargo price on its own row; a blank row is not written",
+    "truckTableSave": "Save",
+    "truckTableConfirm": "Yes, save",
+    "truckTableTotal": "Total: {n} deals · {amount}",
+    "truckTableTotalNone": "Total: {n, plural, =0 {the no-deal part} one {# deal + the no-deal part} other {# deals + the no-deal part}} · {amount}",
+    "truckTableStandsHere": "on this truck: {usd}",
+    "truckTableStandsZeroed": "price removed by a compensation",
+    "truckTableStandsWhole": "a price covers the whole cargo",
+    "truckTableStandsElsewhere": "priced on {codes}",
+    "truckTableAskExtra": "{code}: already priced on this truck ({usd}) — this is an extra bill",
+    "truckTableAskNoneExtra": "No deal: a no-deal price already stands on this truck ({usd}) — this is an extra bill",
+    "truckTableAskWhole": "{code}: the client’s whole cargo on this truck is already priced ({list}) — this is an extra bill",
+    "truckTableAskCard": "{code}: the deal has its own price on its card — this is an extra bill",
+    "truckTableAskZeroed": "{code}: the price was removed by a compensation — set it again?",
+    "truckTableAskElsewhere": "{code}: also priced on {codes}",
+    "truckTableAskAbove": "{code}: {pct}% above the deal price (by the deal ≈ {usd})",
+    "truckTableAskBelow": "{code}: {pct}% below the deal price (by the deal ≈ {usd})",
+    "truckTableRowUnreadable": "{code}: the amount could not be read — write «1200», «1 200» or «1200.50»",
+    "truckPrefillOffElsewhere": "another truck’s price covers this cargo — move it; not pre-filled",
+    "truckPrefillFollows": "its cargo’s price is on an earlier truck (continuation) — not pre-filled",
+    "truckPrefillNoQuote": "the deal has no dollar price — not pre-filled",
+    "truckPrefillDiscount": "the deal has a discount — not pre-filled",
+    "truckPrefillUnscaled": "the deal price has no m³ or kg — this truck’s share cannot be stated; not pre-filled",
+    "truckPrefillCurrency": "pre-filled in dollars only",
+    "truckPartsEmpty": "No row has a price",
+    "truckPartDuplicate": "One deal was sent twice — refresh the page and save again",
+    "truckPricesChanged": "The prices on this truck changed — the page was refreshed, check the rows and save again",
+    "truckCardPricesChanged": "The price on the deal’s card changed — the page was refreshed, check the row and save again",
+    "pricedHereMissingList": "No price: {codes}"
   },
   "map": {
     "title": "Map",

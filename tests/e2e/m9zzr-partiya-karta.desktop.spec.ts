@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 
 /**
  * The truck card at 1280 px (docs/CARD-TABS.md): the header's tiles are
@@ -28,11 +29,7 @@ async function login(page: Page) {
 
 test('the header, the tiles and a tab link that keeps the header in view', async ({ page }) => {
   await login(page);
-  await page.goto('/batches');
-  await page.selectOption('select[name="originId"]', { label: 'YW' });
-  await page.selectOption('select[name="destId"]', { label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   batchPath = new URL(page.url()).pathname;
 
   await expect(page.getByTestId('batch-tiles')).toBeVisible();

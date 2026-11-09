@@ -7,12 +7,15 @@ import { addTransactionAction, type TxFormState } from '@/app/(protected)/financ
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price-hint';
-import { shownDealChoice } from '@/modules/wms/finance/truck-deal';
-import { TruckDealSelect, questionValues, type TruckDealQuestion } from '@/components/truck-deal-select';
-import { truckDealErrorKey } from '@/components/truck-deal-errors';
+import { pageWentStale, singleFormAsks } from './table-rules';
 
 /**
- * One client's negotiated price for this batch → a ledger charge.
+ * One client's negotiated price for this batch → a ledger charge — for a
+ * client NOBODY has to ask which deal: one deal, deal-less cargo, or one deal
+ * beside deal-less cargo (R3a). A client with two or more of his own deals
+ * aboard gets the per-deal table instead (`PricingTable`, his 1a of
+ * 2026-11-08); this form's old «which deal» select is gone with it — the
+ * select stays the client ledger's (`TruckDealSelect`).
  *
  * The amount and the currency are CONTROLLED: React resets a form when its
  * action returns, and a refused price (no FX rate, an unreadable number) must
@@ -34,19 +37,24 @@ import { truckDealErrorKey } from '@/components/truck-deal-errors';
  * `secondBill` names the client's cartons aboard whose price already sits on
  * an earlier truck — one price for the whole road (owner, 2026-09-30, 1a/4a:
  * «ogohlantirish bilan qolsin»). A price here is then a second bill, so the
- * press asks first, in any currency; one confirmation covers both questions.
+ * press asks first, in any currency; one confirmation covers every question.
  *
- * `question` (his Q8 «c», 2026-10-27: «logist o'zi tanlaydi»): two or more of
- * the client's deals ride this truck, so the person chooses which one the
- * price goes to (`TruckDealSelect`), and every such press asks once — the
- * price is THAT deal's part, a «muddatli» deal lets it through the handover,
- * and the 5 % check compares with the chosen deal's own expected part
- * (`expectedByDeal`, the owner's and the accountant's sight only — law 4).
- * `dealsSeen` is the question the page drew, posted always, so a prixod
- * re-filed before the press is refused (`deals_changed`) and redrawn, never
- * answered for somebody. `pricedHere` — the client's live prices already on
- * this truck — makes ANY further price here ask once: a second bill is
- * always a question, not a habit.
+ * `pricedHere` — the client's live prices already on this truck — makes ANY
+ * further price here ask once: for such a client one price covers all his
+ * cargo here, so a second one IS an extra bill. `zeroedHere` — his prices
+ * here the lost-cargo door lowered to ZERO, not priced again since
+ * (`zeroedAskedOf`) — asks the same way, «narx kompensatsiya bilan olib
+ * tashlangan — yana qo'yasizmi?»: such a price still covers his cargo, and a
+ * press over it bills again what the compensation took back. The table asked
+ * it per row and this form did not (review RVF1-1); it is REQUIRED, because
+ * an optional list fails open. Neither is in `pricesSeen` — the write body
+ * re-reads live ids only (review A1). `dealsSeen` (the question the
+ * page drew) and `pricesSeen` (the prices it drew) are posted always, so a
+ * prixod re-filed or a colleague's price between the drawing and the press
+ * is refused and redrawn (`deals_changed` / `prices_changed`), never answered
+ * for somebody. The refusal sentence is the wrapper's (`ClientPricing`): a
+ * refusal that turns this client into a table client remounts this body, and
+ * the sentence must survive it.
  */
 export function PricingForm({
   clientId,
@@ -54,11 +62,12 @@ export function PricingForm({
   currencies,
   today,
   expectedAll = null,
-  expectedByDeal = {},
   secondBill = null,
   dealsSeen,
-  question = null,
+  pricesSeen,
   pricedHere = [],
+  zeroedHere,
+  onResult,
 }: {
   clientId: string;
   batchId: string;
@@ -66,36 +75,29 @@ export function PricingForm({
   today: string;
   /** The deals' price for ALL this client's cargo here (null when unknown). */
   expectedAll?: number | null;
-  /** Each candidate deal's own expected part here (an ambiguous client only). */
-  expectedByDeal?: Record<string, number | null>;
   secondBill?: { n: number; codes: string } | null;
   dealsSeen: string;
-  question?: TruckDealQuestion | null;
+  pricesSeen: string;
   pricedHere?: { usd: number; dealCode: string | null }[];
+  /** His prices here given back to ZERO by the lost-cargo door — no default (review RVF1-1). */
+  zeroedHere: { dealCode: string | null }[];
+  onResult: (result: TxFormState) => void;
 }) {
   const t = useTranslations('finance');
   const tc = useTranslations('common');
   const router = useRouter();
   const [amount, setAmount] = useState('');
-  // The deal chosen, with the question it was chosen under (`shownDealChoice`).
-  const [choice, setChoice] = useState<{ deal: string; seen: string } | null>(null);
-  const shown = question ? shownDealChoice(choice, dealsSeen, questionValues(question)) : '';
-  const chosen = question?.options.find((option) => option.id === shown) ?? null;
-  // The figure the 5 % check compares with: the chosen deal's own part, or —
-  // «bitimsiz», or a client with nothing to choose — the whole cargo's.
-  const expectedUsd = question ? (shown === '' ? null : shown === 'none' ? expectedAll : (expectedByDeal[shown] ?? null)) : expectedAll;
+  const expectedUsd = expectedAll;
   // Prices here are dollars (the ledger's unit); the first active currency
   // in the dictionary was CNY, which turned «150» into ¥150 = $20.
   const [currency, setCurrency] = useState(currencies.includes('USD') ? 'USD' : (currencies[0] ?? ''));
   const [txDate, setTxDate] = useState(today);
   // The question the person was asked, as asked: drawn only while the
-  // amount, the currency and the deal are still those, and printing the
-  // figures it was asked with — a warning about deal A must never be
-  // confirmed onto deal B (review).
+  // amount, the currency and the page are still those, and printing the
+  // figures it was asked with (review).
   const [asked, setAsked] = useState<{
     amount: string;
     currency: string;
-    deal: string;
     seen: string;
     pct: number | null;
     usd: number | null;
@@ -115,16 +117,13 @@ export function PricingForm({
       if (result.ok) {
         setAmount('');
         setAsked(null);
-        // The next price for this client is usually the OTHER deal's part —
-        // chosen again, never carried over.
-        setChoice(null);
       }
-      if (result.error === 'deals_changed') {
-        setChoice(null);
+      if (pageWentStale(result.error)) {
         setAsked(null);
         router.refresh();
       }
       confirmed.current = false;
+      onResult(result);
       return result;
     },
     {},
@@ -140,16 +139,12 @@ export function PricingForm({
         if (confirmed.current) return;
         const typed = parseTypedMoney(amount);
         const deviates = currency === 'USD' && typed !== null && needsConfirmation(typed, expectedUsd);
-        // On a two-deal truck every press asks once (Q8 «c»): what the price
-        // now means is the deal's part, and the person says so.
-        const choiceAsks = question !== null && shown !== '';
-        if (!secondBill && !deviates && !choiceAsks && pricedHere.length === 0) return;
+        if (!singleFormAsks({ secondBill: secondBill !== null, deviates, pricedHere, zeroedHere })) return;
         event.preventDefault();
         setAsked({
           amount,
           currency,
-          deal: shown,
-          seen: dealsSeen,
+          seen: `${dealsSeen}#${pricesSeen}`,
           pct: deviates ? Math.round((deviationOf(typed!, expectedUsd!) ?? 0) * 100) : null,
           usd: deviates ? expectedUsd : null,
         });
@@ -161,17 +156,7 @@ export function PricingForm({
       <input type="hidden" name="batchId" value={batchId} />
       <input type="hidden" name="type" value="charge" />
       <input type="hidden" name="dealsSeen" value={dealsSeen} />
-      {question && (
-        <TruckDealSelect
-          question={question}
-          value={shown}
-          stale={choice !== null && shown === ''}
-          onChange={(value) => {
-            setChoice(value ? { deal: value, seen: dealsSeen } : null);
-            reask();
-          }}
-        />
-      )}
+      <input type="hidden" name="pricesSeen" value={pricesSeen} />
       <input
         name="txDate"
         type="date"
@@ -215,29 +200,11 @@ export function PricingForm({
       <button type="submit" disabled={pending} className="btn-primary shrink-0 px-4 disabled:opacity-60">
         {pending ? '…' : state.ok && amount === '' ? '✅' : `🧾 ${t('setPrice')}`}
       </button>
-      {asked && asked.amount === amount && asked.currency === currency && asked.deal === shown && asked.seen === dealsSeen && (
+      {asked && asked.amount === amount && asked.currency === currency && asked.seen === `${dealsSeen}#${pricesSeen}` && (
         <div role="alert" className="w-full space-y-2 rounded-lg border border-warn bg-warn/10 p-2 text-sm" data-testid="pricing-deviation">
           {secondBill && (
             <p className="font-semibold text-warn" data-testid="pricing-second-bill">
               ⚠ {t('secondBillWarn', { n: secondBill.n, codes: secondBill.codes })}
-            </p>
-          )}
-          {question && asked.deal === 'none' && (
-            <p className="font-semibold text-warn" data-testid="pricing-deal-ask">
-              ⚠ {t('truckDealAskNone')}
-            </p>
-          )}
-          {chosen && (
-            <p className="font-semibold text-warn" data-testid="pricing-deal-ask">
-              ⚠{' '}
-              {chosen.pct !== null
-                ? t('truckDealAsk', { code: chosen.code, pct: chosen.pct })
-                : t('truckDealAskNoShare', { code: chosen.code })}
-            </p>
-          )}
-          {chosen?.deferred && (
-            <p className="font-semibold text-warn" data-testid="pricing-deal-ask-deferred">
-              ⏳ {t('truckDealDeferred', { code: chosen.code })}
             </p>
           )}
           {pricedHere.length > 0 && (
@@ -248,6 +215,16 @@ export function PricingForm({
                   .map((row) => `$${row.usd.toFixed(2)} → ${row.dealCode ?? t('pricedHereNoDeal')}`)
                   .join(' · '),
               })}
+            </p>
+          )}
+          {/* A price the lost-cargo door gave back is still one someone set
+              (review RVF1-1) — the table's own sentence, per job named. */}
+          {zeroedHere.length > 0 && (
+            <p className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="pricing-zeroed-ask">
+              ⚠{' '}
+              {[...new Set(zeroedHere.map((row) => row.dealCode ?? t('pricedHereNoDeal')))]
+                .map((code) => t('truckTableAskZeroed', { code }))
+                .join(' · ')}
             </p>
           )}
           {asked.pct !== null && asked.usd !== null && (
@@ -270,8 +247,8 @@ export function PricingForm({
               data-testid="pricing-deviation-confirm"
               onClick={() => {
                 // Armed only for a press the browser will send: a form it
-                // refuses (an empty deal, a date past today) fires no submit,
-                // and the flag would wave the next press through unasked.
+                // refuses (an empty amount, a date past today) fires no
+                // submit, and the flag would wave the next press through.
                 const form = formRef.current;
                 if (!form || !form.reportValidity()) return;
                 confirmed.current = true;
@@ -285,23 +262,6 @@ export function PricingForm({
             </button>
           </div>
         </div>
-      )}
-      {state.error && (
-        <p role="alert" className="w-full text-sm font-semibold text-bad" data-testid="pricing-form-error" data-error={state.error}>
-          {state.error === 'fx_missing'
-            ? t('fxMissing')
-            : state.error === 'validation'
-              ? t('amountUnreadable')
-              : state.error === 'internal_batch'
-                ? t('internalBatchRefused')
-                : state.error === 'client_not_aboard'
-                  ? t('clientNotAboard')
-                  : state.error === 'batch_cancelled'
-                    ? t('batchCancelledRefused')
-                    : truckDealErrorKey(state.error)
-                      ? t(truckDealErrorKey(state.error)!)
-                      : tc('error')}
-        </p>
       )}
     </form>
   );

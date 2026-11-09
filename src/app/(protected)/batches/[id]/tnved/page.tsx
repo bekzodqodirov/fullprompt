@@ -212,7 +212,10 @@ export default async function BatchTnvedPage({
             ⚠ {tk('errors.busy')}
           </p>
         )}
-        {actor.permissions.has('ved.docs') && (
+        {/* A cancelled truck's papers cannot be «sent» any more — the action
+            refuses it on the locked row; a tick already standing can still
+            be taken off (docs/NARX-VA-RAQAM.md §3.2.3). */}
+        {actor.permissions.has('ved.docs') && (batch.status !== 'cancelled' || batch.sentToAgentAt) && (
           <form action={setSentToAgentAction}>
             <input type="hidden" name="batchId" value={batch.id} />
             {/* What the page showed and the compositions it was drawn with —
