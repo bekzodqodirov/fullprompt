@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 import {
   LONG_GOODS,
   cleanNarxBitim,
@@ -90,11 +91,7 @@ const width = (page: Page) =>
 
 test('a truck out of YW, and on it one client with twelve deals and a deal-less prixod', async ({ page }) => {
   await login(page, OWNER);
-  await page.goto('/batches');
-  await page.selectOption('select[name="originId"]', { label: 'YW' });
-  await page.selectOption('select[name="destId"]', { label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   batchPath = new URL(page.url()).pathname;
   batchId = batchPath.split('/').pop()!;
   seeded = await seedNarxBitim(batchId, run);

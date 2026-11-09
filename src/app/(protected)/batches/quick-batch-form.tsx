@@ -108,7 +108,15 @@ export function QuickBatchForm({
         )}
       </div>
       {asking && sendable && (
-        <div className="space-y-2 rounded-lg border border-line p-2" data-testid="quick-batch-confirm" role="alertdialog">
+        <div
+          className="space-y-2 rounded-lg border border-line p-2"
+          data-testid="quick-batch-confirm"
+          // What will be posted, by the codes the selects show — so a test can
+          // prove the question names what the form holds.
+          data-origin={origin!.code}
+          data-dest={dest!.code}
+          role="alertdialog"
+        >
           <p className="text-sm font-semibold [overflow-wrap:anywhere]">
             {t('quickConfirm', { from: origin!.name || origin!.code, to: dest!.name || dest!.code })}
           </p>
