@@ -392,7 +392,10 @@ describe('a conflict on an add collection’s stored row (product-fit-17)', () =
     const { chatId } = open();
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
-    expect(table.text).toContain('↳ faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?');
+    // The conflict's LINE is a statement since his 1a (docs/IKKI-ESHIK.md §1.1, intake.ts
+    // `conflictText`); the buttons below are calc-dialog's `conflictRows`, drawn for an unanswered
+    // conflict — retired in the dispatcher («eskirgan») and left to the dialog's own round.
+    expect(table.text).toContain('↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi');
     expect(buttons(table).slice(0, 3)).toEqual([
       { text: '➕ 1-qator: 500 dona', callback_data: 'c:conf_0_add' },
       { text: '🔁 1-qator: 200 dona', callback_data: 'c:conf_0_rep' },
@@ -617,8 +620,11 @@ describe('the review’s fixes', () => {
     const live = activeIntake(chatId)!;
     expect(live.conflicts[0]!.choice).toBeNull();
     expect(live.lineAnswers).toEqual([{ index: 0, name: 'Kurtka', patch: { weightKg: 150 }, itemId: 'i1' }]);
-    expect(ctx.edits.at(-1)!.text).toContain('↳ faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?');
-    expect(ctx.texts().at(-1)).not.toContain('Hamma qator to‘liq');
+    // The line is a statement since his 1a (docs/IKKI-ESHIK.md §1.1, intake.ts `conflictText`).
+    expect(ctx.edits.at(-1)!.text).toContain('↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi');
+    // A conflict opens nothing since his 1a (docs/IKKI-ESHIK.md §1.1, intake.ts `tableOpenOf`): the
+    // file's 200 is the VED's, so the rows ARE complete (this pinned the opposite while it was asked).
+    expect(ctx.texts().at(-1)).toContain('Hamma qator to‘liq');
     // The count itself answers it.
     await say(ctx, chatId, '1: 400 dona');
     expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('rep');

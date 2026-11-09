@@ -191,19 +191,21 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
     expect(readingsEnqueued(chatId)).toHaveLength(1);
   });
 
-  it('the questions a press is answered with first carry buttons of the collection’s own', async () => {
+  it('«Bo‘ldi» is refused for no file: the two file questions are gone (his 1a, docs/IKKI-ESHIK.md §1.1)', async () => {
+    // Re-anchored: this pinned «Avval ikkinchi fayl haqida javob bering» and «Avval javob bering:
+    // …boshqa zavodmi?» with their keyboards. He refused both questions; the press now reads.
     const invoice = collection({ pendingInvoice: { goods: [], label: '«B.xlsx»', texts: [] } });
     const a = fakeCtx();
     await handleCalcCallback(a, invoice, 'done');
-    expect(JSON.stringify(a.replies.at(-1)?.extra?.reply_markup)).toContain('c:inv_add');
-    expect(activeIntake(invoice)!.ownMessageIds).toContain(100 + a.replies.length);
+    expect(a.texts()).toEqual([NOTICE]);
+    expect(JSON.stringify(a.replies.map((r) => r.extra?.reply_markup ?? null))).not.toMatch(/c:inv_|c:other_/);
+    expect(readingsEnqueued(invoice)).toHaveLength(1);
 
     const other = collection({ aiGoods: 'ask' });
     const b = fakeCtx();
     await handleCalcCallback(b, other, 'done');
-    expect(JSON.stringify(b.replies.at(-1)?.extra?.reply_markup)).toContain('c:other_add');
-    expect(activeIntake(other)!.ownMessageIds).toContain(100 + b.replies.length);
-    expect(readingsEnqueued()).toHaveLength(0);
+    expect(b.texts()).toEqual([NOTICE]);
+    expect(readingsEnqueued(other)).toHaveLength(1);
   });
 
   it('a notice that hangs past the sweep’s minute of grace: the press stays alive, and its job id is stored only once the notice is out', async () => {

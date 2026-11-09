@@ -294,8 +294,14 @@ describe('the callback vocabulary (K12)', () => {
     expect(Object.entries(CALC_STEP_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k).sort()).toEqual(
       ['go_ai', 'go_aipk', 'go_podklyuch', 'go_rastamojka', 'go_yolkira'],
     );
-    for (const step of ['cancel', 'cancel_y', 'save', 'more', 'done', 'reread', 'cert_y', 'cert_n', 'pick_0', 'conf_0_add']) {
+    for (const step of ['cancel', 'cancel_y', 'save', 'more', 'done', 'reread', 'cert_y', 'cert_n', 'pick_0']) {
       expect(CALC_STEP_REPEAT[step as CalcStep], step).toBe('own');
+    }
+    // The file questions his 1a retired (docs/IKKI-ESHIK.md §1.3) — the second Excel, «boshqa
+    // zavodmi?», a stored row's conflict — answer only «eskirgan»: a prompt class, acting on no
+    // collection (it pinned `conf_0_add` as 'own' while the conflict was asked).
+    for (const step of ['inv_add', 'inv_replace', 'other_add', 'other_same', 'conf_0_add', 'conf_1_rep', 'conf_2_ved']) {
+      expect(CALC_STEP_REPEAT[step as CalcStep], step).toBe('prompt');
     }
     expect(PRESS_REPEAT.calc_add).toBe('keyed');
     expect(PRESS_REPEAT.calc_undo).toBe('cas');

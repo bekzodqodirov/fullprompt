@@ -166,7 +166,12 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
       }).state,
     );
     expect(out.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Choynak']);
-    expect(out.notes).toEqual(['⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Куртка женская (Ladies jacket)».']);
+    // Re-anchored by docs/IKKI-ESHIK.md §1.2.4: taking the same goods once is the designed outcome —
+    // the «bir xil» line loses its ⚠️ — and the model's additions are counted on their own line.
+    expect(out.notes).toEqual([
+      '🤖 AI o‘qigan fayllardan 1 ta yangi tovar qo‘shildi (1 tasi Excel’da bor edi).',
+      '📄 1 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Куртка женская (Ladies jacket)».',
+    ]);
     // The model's three stay three: the bot's sentence used to push the third out.
     expect(out.steps).toEqual(['a', 'b', 'c']);
     expect(aiStepsText(out.steps)).toContain('· c');
@@ -175,7 +180,7 @@ describe('another factory’s same-named line is kept (R3-C1)', () => {
   it('the note names three and counts the rest, whole within the summary’s cut; nothing left out says nothing', () => {
     const many = Array.from({ length: 7 }, (_, i) => line(`Tovar ${i + 1}`));
     expect(sameAsInvoiceNote(many)).toBe(
-      '⚠️ 7 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Tovar 1», «Tovar 2», «Tovar 3» va yana 4 ta.',
+      '📄 7 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Tovar 1», «Tovar 2», «Tovar 3» va yana 4 ta.',
     );
     const long = Array.from({ length: 120 }, (_, i) => line(`Куртка женская зимняя с капюшоном (女士冬季连帽夹克) №${i}`));
     const note = sameAsInvoiceNote(long)!;

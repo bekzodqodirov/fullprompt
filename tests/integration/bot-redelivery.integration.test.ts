@@ -1189,6 +1189,34 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     expect(activeIntake(chat)!.material).not.toContain('3500 kg');
   });
 
+  it('a collection hydrated holding a retired file question: resolved at the hydrate, its old buttons say «eskirgan», «Bo‘ldi» is refused for no file (docs/IKKI-ESHIK.md §1.3)', async () => {
+    const { chat, s, prompt } = await collecting();
+    // A collection written before his 1a: a second Excel waiting for «qo‘shilsin yoki o‘rniga?»,
+    // an open «boshqa zavodmi?», and a stored-row conflict nobody answered.
+    updateIntake(chat, {
+      invoiceGoods: [{ name: `Kurtka ${STAMP}`, quantity: 300 }],
+      pendingInvoice: { goods: [{ name: `Shim ${STAMP}`, quantity: 200 }], label: '«B.xlsx»', texts: [] },
+      aiGoods: 'ask',
+      conflicts: [{ itemId: 'i1', seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null }],
+    });
+    await restart();
+    const live = activeIntake(chat)!;
+    expect(live.pendingInvoice).toBeNull();
+    expect(live.aiGoods).toBe('add');
+    expect(live.invoiceGoods?.map((g) => g.name)).toEqual([`Kurtka ${STAMP}`, `Shim ${STAMP}`]);
+    expect(live.conflicts.map((c) => c.choice)).toEqual(['ved']);
+    for (const step of ['inv_add', 'inv_replace', 'other_add', 'other_same', 'conf_0_add']) {
+      const m = h.mark();
+      await h.handle(tg.callback(s.chat, prompt, `c:${step}`));
+      expect(h.textsTo(s.chat, m), step).toEqual(['Bu tugma eskirgan — fayllar o‘zi solishtirildi.']);
+    }
+    const m = h.mark();
+    await h.handle(tg.callback(s.chat, prompt, 'c:done'));
+    const said = h.textsTo(s.chat, m).join('\n');
+    expect(said).not.toContain('Avval ikkinchi fayl haqida javob bering');
+    expect(said).not.toContain('Avval javob bering');
+  });
+
   it('a redelivered «✖️» of an older collection ends nothing it does not own (durability-2)', async () => {
     const { chat, s, prompt } = await collecting();
     // «🔄 Ha, boshqatdan»: B replaces A.

@@ -263,19 +263,25 @@ describe('an add collection’s table (§2.1, §2.4)', () => {
     expect(text).toContain('✅ 🆕 5. Sumka — 50 dona');
   });
 
-  it('a conflict row is ⚠️ with its ↳; an empty-field conflict says «yozilsinmi»', () => {
-    const text = table({
-      facts,
-      amend: amend({
-        conflicts: [
-          { itemId: 'i4', seq: 4, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null },
-          { itemId: 'i1', seq: 1, field: 'weightKg', unit: 'kg', stored: null, read: 120, choice: null },
-        ],
-      }),
-    });
-    expect(text).toContain('⚠️ 4. Shim — 200 dona\n   ↳ faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?');
-    expect(text).toContain('⚠️ 1. Kurtka — 300 dona\n   ↳ faylda 120 kg, so‘rovda og‘irlik yo‘q — yozilsinmi yoki VED hal qilsinmi?');
-    expect(text).toContain('⚠️ 2 ta qatorda ma’lumot yetishmayapti.');
+  it('a conflict is a statement under its row, never a ⚠️ or a question (his 1a, docs/IKKI-ESHIK.md §1.1)', () => {
+    // Re-anchored: this pinned the R3 question «qo‘shilsinmi (500), o‘rniga (200) yoki VED hal
+    // qilsinmi?» and a ⚠️ row. He refused it: the stored figure stands, the file's is the VED's —
+    // unanswered (null) and «VED» alike.
+    for (const choice of [null, 'ved'] as const) {
+      const text = table({
+        facts,
+        amend: amend({
+          conflicts: [
+            { itemId: 'i4', seq: 4, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice },
+            { itemId: 'i1', seq: 1, field: 'weightKg', unit: 'kg', stored: null, read: 120, choice },
+          ],
+        }),
+      });
+      expect(text).toContain('✅ 4. Shim — 200 dona\n   ↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi');
+      expect(text).toContain('✅ 1. Kurtka — 300 dona\n   ↳ faylda 120 kg, so‘rovda og‘irlik yo‘q — VED hal qiladi');
+      expect(text).not.toContain('qilsinmi');
+      expect(text).not.toContain('qatorda ma’lumot yetishmayapti');
+    }
   });
 
   it('an answered conflict is ✅ again', () => {
@@ -298,13 +304,17 @@ describe('an add collection’s table (§2.1, §2.4)', () => {
     expect(table({ facts, amend: amend({ started: true, totalsStale: ['weightKg'] }) })).toContain('«📨 VED ga yuborish» ni hozir ham');
   });
 
-  it('only a conflict open, the brutto ✅: the example is that conflict’s answer, never «jami 3500 kg» (review adv-20)', () => {
+  it('a conflict alone opens nothing: no example teaches an answer to it, and none to a total nobody asked (review adv-20)', () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1): this pinned the conflict's typed answer
+    // «4: 200 dona» as the example. A conflict is no longer asked, so nothing is open and the
+    // table closes complete; «jami 3500 kg» under a ✅ brutto is still never taught.
     const text = table({
       facts,
-      amend: amend({ conflicts: [{ itemId: 'i4', seq: 4, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null }] }),
+      amend: amend({ conflicts: [{ itemId: 'i4', seq: 4, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: 'ved' }] }),
     });
-    expect(text).toContain('✍️ Yetishmaganini yozing: «4: 200 dona». Yangi tovar yoki fayl — «➕ Yana ma’lumot».');
+    expect(text).not.toContain('✍️ Yetishmaganini yozing');
     expect(text).not.toContain('jami 3500 kg');
+    expect(text).toContain('↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi');
   });
 });
 

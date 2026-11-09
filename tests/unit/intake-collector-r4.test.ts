@@ -183,10 +183,10 @@ describe('which lines land beside an Excel (round 4)', () => {
       { ...line('Куртка женская (Ladies jacket)'), why: 'same' as const },
       { ...line('Shim'), why: 'typed' as const },
     ];
-    expect(sameAsInvoiceNote(lines)).toBe('⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Куртка женская (Ladies jacket)».');
-    expect(typedLeftOutNote(lines)).toBe(
-      '⚠️ 1 ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): «Shim».',
-    );
+    // Re-worded by docs/IKKI-ESHIK.md §1.2.2/§1.2.4: «bir xil» is the designed outcome (no ⚠️), and
+    // a line in the photos or the typing that the Excel lacks is named for the VED, never added.
+    expect(sameAsInvoiceNote(lines)).toBe('📄 1 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Куртка женская (Ladies jacket)».');
+    expect(typedLeftOutNote(lines)).toBe('Rasmda/yozuvda Excel’da yo‘q tovar: «Shim» — VED tekshiradi.');
     expect(typedLeftOutNote([lines[0]!])).toBeNull();
   });
 });
@@ -202,7 +202,7 @@ describe('the summary beside an Excel (round 4)', () => {
     const out = await analyzeCollected(
       collection({ stage: 'material', material: ['Shim 200 dona'], invoiceGoods: [line('Kurtka', { quantity: 300 })] }).state,
     );
-    expect(out.notes).toEqual(['⚠️ 1 ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): «Shim».']);
+    expect(out.notes).toEqual(['Rasmda/yozuvda Excel’da yo‘q tovar: «Shim» — VED tekshiradi.']);
     expect(out.steps).toEqual(['a', 'b', 'c']);
   });
 
@@ -222,7 +222,7 @@ describe('the summary beside an Excel (round 4)', () => {
     expect(activeIntake(chatId)?.stage).toBe('review');
     const summary = ctx.replies.at(-1)!;
     expect(summary).toContain('Faqat Excel va yozilganidan o‘qildi.');
-    expect(summary).toContain('\n\n⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Kurtka».');
+    expect(summary).toContain('\n\n📄 1 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Kurtka».');
   });
 });
 
