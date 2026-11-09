@@ -403,6 +403,23 @@ describe('a typed code is the seller’s on HIS line only (fix review FR-REGR-3,
     expect(shim?.tnvedCode).toBe('6203429000');
     expect(coded.facts.goods?.find((g) => g.name === 'Kurtka')?.tnvedCode).toBe('6201930000');
   });
+  it('two typed lines with the SAME count and no weights: the copied code is still the model’s (the check after the fixes’ review)', async () => {
+    const { state } = collection({ stage: 'material', material: ['Kurtka 6201930000 100 dona\nShim 100 dona'], ai: true });
+    model.analyze.mockResolvedValueOnce(
+      reads([line('Kurtka', { quantity: 100, tnvedCode: '6201930000' }), line('Shim', { quantity: 100, tnvedCode: '6201930000' })]),
+    );
+    const read = await analyzeCollected(state);
+    expect(read.facts.goods?.find((g) => g.name === 'Kurtka')?.tnvedSource).not.toBe('model');
+    expect(read.facts.goods?.find((g) => g.name === 'Shim')?.tnvedSource).toBe('model');
+  });
+  it('…and a typed line the model renamed (a translation) keeps its code by its count when no other line shares it', async () => {
+    const { state } = collection({ stage: 'material', material: ['Kurtka 6201930000 100 dona\nShim 200 dona'], ai: true });
+    model.analyze.mockResolvedValueOnce(
+      reads([line('Куртка', { quantity: 100, tnvedCode: '6201930000' }), line('Shim', { quantity: 200 })]),
+    );
+    const read = await analyzeCollected(state);
+    expect(read.facts.goods?.find((g) => g.name === 'Куртка')?.tnvedSource).not.toBe('model');
+  });
   it('a code typed on a line of its own is the seller’s for the one line the model puts it on', async () => {
     const { state } = collection({ stage: 'material', material: ['Kurtka 300 dona 150 kg\nTNVED 6201930000'], ai: true });
     model.analyze.mockResolvedValueOnce(reads([line('Kurtka', { quantity: 300, weightKg: 150, tnvedCode: '6201930000' })]));

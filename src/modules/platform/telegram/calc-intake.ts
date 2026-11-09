@@ -1641,8 +1641,12 @@ export function loneFileTotals(
   };
 }
 
-/** Who typed a code: a goods line's name and figures, or null — a code typed on a line naming no goods. */
-type CodeOwner = { names: NameKeys; quantity: number | null; weightKg: number | null } | null;
+/**
+ * Who typed a code: a goods line's name and figures, or null — a code typed on
+ * a line naming no goods. `countShared`: another typed line has the same count,
+ * so a count alone cannot tell which line a copied code belongs to.
+ */
+type CodeOwner = { names: NameKeys; quantity: number | null; weightKg: number | null; countShared: boolean } | null;
 
 /**
  * The codes the seller's typed material states, by code (digits only), each
@@ -1659,7 +1663,11 @@ export function typedCodeOwners(
   const add = (code: string, owner: CodeOwner) => out.set(code, [...(out.get(code) ?? []), owner]);
   const owned = typed.flatMap((g) => {
     const code = g.tnvedCode?.trim();
-    return code ? [{ code: digits(code), key: goodsNameKey(g.name), owner: { names: goodsNameKeys(g.name), quantity: g.quantity ?? null, weightKg: g.weightKg ?? null } }] : [];
+    const quantity = g.quantity ?? null;
+    const countShared = quantity !== null && typed.filter((t) => (t.quantity ?? null) === quantity).length > 1;
+    return code
+      ? [{ code: digits(code), key: goodsNameKey(g.name), owner: { names: goodsNameKeys(g.name), quantity, weightKg: g.weightKg ?? null, countShared } }]
+      : [];
   });
   for (const o of owned) add(o.code, o.owner);
   for (const { code, line } of lineCodes) {
@@ -1697,7 +1705,13 @@ function modelCoded(
       ? alone()
       : o.names.whole === names.whole ||
         namesMeet(o.names, names) ||
-        (o.quantity !== null && o.quantity === (g.quantity ?? null) && (o.weightKg === null || g.weightKg == null || o.weightKg === g.weightKg)),
+        // The figures name the line when the names cannot (a translation):
+        // count AND weight, or the count alone only when no other typed line
+        // shares it — «Kurtka 6201930000 100 dona / Shim 100 dona» must not
+        // hand the jacket's code to the trousers (check after the fixes' review).
+        (o.quantity !== null &&
+          o.quantity === (g.quantity ?? null) &&
+          (o.weightKg !== null && g.weightKg != null ? o.weightKg === g.weightKg : !o.countShared)),
   );
   return his ? g : { ...g, tnvedSource: 'model' };
 }
