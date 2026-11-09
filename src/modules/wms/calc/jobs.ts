@@ -349,11 +349,13 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: st
   // queued before passes had names was the landing's.
   const pass = data.pass ?? 'landing';
   // Which passes reach the seller past his mute (`directPass`): an «✅
-  // Qo‘shish» re-run, and any pass on a «🤖 AI rastamojka» request. Every
-  // other pass keeps his mute — and its calls stay exactly the landing's (no
-  // options at all, `whileOpen` alone). Until the standing has read the
-  // request's door, only the pass name decides: a read that throws is answered
-  // (the catch below) as a landing pass was before 0140.
+  // Qo‘shish» re-run, and any pass on a «🤖 AI rastamojka» request; which
+  // reach him not at all (`silentPass`): a customs pass on a «🧮» request.
+  // Every other pass keeps his mute — and its calls stay exactly the
+  // landing's (no options at all, `whileOpen` alone). Until the standing has
+  // read the request's door, only the pass name decides; a standing that
+  // throws has the door asked once more in the catch, and a read that fails
+  // there too is answered as a landing pass was before 0140.
   let direct = directPass(pass, null);
   let silent = false;
   let voice = voiceOf(direct, silent);

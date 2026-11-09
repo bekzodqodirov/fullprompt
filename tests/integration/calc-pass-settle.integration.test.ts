@@ -1005,8 +1005,13 @@ describe('the two doors through the worker (Ikki eshik)', () => {
     expect(notes[0]).toMatch(/⚠️ VED uchun: 1-qator «Sviter plain [^»]+»: soni \(dona\)\./);
     for (const money of ['≈', 'Rastamojka jami', 'Taxminiy', 'Aniq', 'JAMI', '❓', 'reply qilib']) expect(notes[0], money).not.toContain(money);
 
-    // The job re-delivered (the process died after the claim): nothing more.
+    // The job re-delivered (the process died after the claim): nothing more —
+    // whether the standing stands it down (its own writes moved the clock)…
     await runJob(job, 1);
+    // …or lets it run to the reply again (a job queued before tickets carries
+    // no revision, so nothing stands it down): the claim answers «said», and
+    // `spoke` is what keeps the second note off the card.
+    await runJob({ ...job, data: { ...job.data, rev: undefined } }, 1);
     expect(await said(id, hears)).toHaveLength(1);
     expect((await lentaOf(id)).filter((n) => n.startsWith(AI_NOTE_HEAD))).toHaveLength(1);
     // …and nothing at all ever answered under the AI-VED's heading.
@@ -1039,6 +1044,20 @@ describe('the two doors through the worker (Ikki eshik)', () => {
     const lenta = (await lentaOf(id)).join('\n');
     expect(lenta).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
     expect(lenta).not.toContain('Sotuvchidan so‘raldi');
+  });
+
+  it('«🤖» to a seller nobody reaches: the card still names the gaps for the VED — no «unasked» rendering on a door request', async () => {
+    // Today's `lentaUnasked` drops the line that says the seller WAS asked;
+    // on a door request nobody was, and the VED's own line must stay.
+    const id = await sweaterAt('ai', sellerId);
+    const ticket = (await prefillTicket(id))!;
+    const out = await aiPrefill(id, { actorId: null }, { configured: false }, { expectRev: ticket });
+    expect(out.lentaUnasked).toBeUndefined();
+    expect(out.lentaText).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    const viaWorker = await sweaterAt('ai', sellerId);
+    await queueCalcPrefill({ requestId: viaWorker, staffId: sellerId, section: 'rastamojka' });
+    await runJob(passJobs(viaWorker)[0]!);
+    expect((await lentaOf(viaWorker)).join('\n')).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
   });
 
   it('`silent` keeps the claim’s two refusals: an earlier claim, and — under `whileOpen` — a closed request', async () => {

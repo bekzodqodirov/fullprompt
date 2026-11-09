@@ -244,9 +244,14 @@ describe('the queued AI pass is never silent when it does not answer', () => {
     expect(told).toBeLessThan(leaves);
     // Round 3 (docs/SAKKIZ-R3.md §10.2.4): the claim is the job's PASS.
     expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, pass, {');
-    const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
-    expect(failed.slice(0, 600)).toContain('await sayOnce(requestId, pass, {');
-    expect(failed.slice(0, 600)).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
+    // Re-anchored for Ikki eshik (docs/IKKI-ESHIK.md §2.4, K-SPEC-3): the
+    // catch first asks the door once more when the standing never read it,
+    // so its sentence sits past the old 600-character window — the pin reads
+    // the whole catch body instead, up to its `finally`.
+    const at = JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'");
+    const failed = JOBS.slice(at, JOBS.indexOf('} finally {', at));
+    expect(failed).toContain('await sayOnce(requestId, pass, {');
+    expect(failed).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
   });
 });
 
