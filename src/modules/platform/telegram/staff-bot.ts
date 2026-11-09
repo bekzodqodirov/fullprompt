@@ -1529,7 +1529,7 @@ export async function landCollectedIntake(
   /** On a lead about a colleague's client: whose client it is. */
   about?: { clientCode: string; sellerName: string | null } | null;
 } | null> {
-  const { activeIntake, intakeClientLabel } = await import('./calc-intake');
+  const { activeIntake, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
@@ -1544,7 +1544,9 @@ export async function landCollectedIntake(
     intakeDoor: await collectedDoor(state),
     noteId: state.noteId,
     section: state.section,
-    facts: state.facts,
+    // A code the seller typed lands as his own, never as the model's
+    // proposal it replaced (review PF-ADV-11).
+    facts: state.facts.goods ? { ...state.facts, goods: typedCodesOwn(state.facts.goods, state.lineAnswers) } : state.facts,
     // What the bot decided about each FILE as it arrived (docs/IKKI-ESHIK.md
     // §1.2.5 — the Excel-vs-Excel decisions, «N ta tovar o‘qildi», a packing
     // list's totals), then its notes on the reading (the lines an Excel kept

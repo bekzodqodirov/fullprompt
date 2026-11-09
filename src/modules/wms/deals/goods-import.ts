@@ -349,7 +349,14 @@ function invoiceHeader(texts: string[]): boolean {
 const PACKAGE_COUNT = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест|箱数|件数|包数/i;
 
 /** Rows that are arithmetic, not goods. */
-const TOTAL_ROW_KEYS = ['итого', 'всего', 'jami', 'total', '合计', '总计'];
+const TOTAL_ROW_KEYS = ['итого', 'всего', 'подытог', 'jami', 'total', '合计', '总计'];
+/**
+ * …and a Chinese SUBTOTAL row (review PF-ADV-3): «小计», «共计» under each
+ * group landed as a goods row and doubled the sheet's brutto and cube. Only as
+ * the cell's own word — never inside a name: «小计算器» is a pocket calculator.
+ */
+const SUBTOTAL_HAN = /^(?:小计|小計|共计|共計|合計|總計)(?!\p{Script=Han})/u;
+const isTotalRow = (text: string): boolean => matchKey(text, TOTAL_ROW_KEYS) || SUBTOTAL_HAN.test(text.trim());
 
 /** How many data rows a column's content is judged by. */
 const SAMPLE_ROWS = 50;
@@ -543,8 +550,8 @@ interface Detected {
  * legal names) and map its columns. Null when the file has no header we can
  * read: that is not a failure, it is single-column mode.
  */
-export function detectColumns(rows: Cell[][]): Detected | null {
-  return findHeader(rows).found;
+export function detectColumns(rows: Cell[][], covered: Covered | null = null): Detected | null {
+  return findHeader(rows, covered).found;
 }
 
 /**
@@ -553,7 +560,7 @@ export function detectColumns(rows: Cell[][]): Detected | null {
  * (`refused`, `listOpening`), which `parseGoods`' headerless pass starts
  * after.
  */
-function findHeader(rows: Cell[][]): { found: Detected | null; refused: number | null } {
+function findHeader(rows: Cell[][], covered: Covered | null = null): { found: Detected | null; refused: number | null } {
   const filled = (row: Cell[] | undefined) => (row ?? []).filter((cell) => cellText(cell) !== '').length;
   for (let r = 0; r < Math.min(rows.length, 10); r++) {
     const header = rows[r]!;
@@ -638,8 +645,8 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
       findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i));
     if (name === null) continue;
     taken.add(name);
-    const claim = (keys: string[]): number | null => {
-      const idx = findColumn(header, keys, taken);
+    const claim = (keys: string[], accept?: (index: number) => boolean): number | null => {
+      const idx = findColumn(header, keys, taken, accept);
       if (idx !== null) taken.add(idx);
       return idx;
     };
@@ -673,7 +680,11 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
     } else if (cartonCol) {
       taken.delete(cartonCol.index);
     }
-    const unit = claim(UNIT_KEYS);
+    // A unit PRICE is no unit (docs/IKKI-ESHIK.md review PF-SPEC-1): «Unit
+    // price», «Цена за ед.», «单价» carry a unit key, and claimed as the unit
+    // the price became every line's unit word («50») while the count beside
+    // it went to the note at the door as a count of nobody knows what.
+    const unit = claim(UNIT_KEYS, (i) => !MONEY_HEADER.test(cellText(header[i]!)));
     // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
     // and the volume keys are the more specific set.
     const claimWhere = (test: (text: string) => boolean): number | null => {
@@ -695,13 +706,49 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
       );
     const invoiced = invoiceHeader(header.map(cellText));
     const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
-    // The line's weight, never one package's and never a price.
+    // What a weight column's figures add up to, over the data rows (a merged
+    // position is its master's, counted once).
+    const columnKg = (i: number): number => {
+      let sum = 0;
+      for (let d = r + 1; d < rows.length; d++) {
+        if (covered?.has(d, i)) continue;
+        const value = parseMeasure(rows[d]![i] ?? null, 'kg');
+        if (value !== null && value > 0) sum += value;
+      }
+      return sum;
+    };
+    // Two columns of one kind are one carton's figure and the line's (review
+    // PF-ADV-1): a Chinese packing list writes «N.W.(KG) | G.W.(KG)» under a
+    // «PER CTN» super-header beside the «TOTAL» pair, or an unmarked
+    // «G.W.(KG)» before «TOTAL G.W.», and the leftmost was one carton's — the
+    // line 10× light and the shipment's brutto the Σ of single cartons. One
+    // carton's figure is never more than its line's, so the line's column is
+    // the heaviest; one column, or a tie, keeps the leftmost.
+    const heaviest = (candidates: number[]): number | null => {
+      if (candidates.length <= 1) return candidates[0] ?? null;
+      let best = candidates[0]!;
+      let bestKg = columnKg(best);
+      for (const i of candidates.slice(1)) {
+        const kg = columnKg(i);
+        if (kg > bestKg) {
+          best = i;
+          bestKg = kg;
+        }
+      }
+      return best;
+    };
+    // The line's weight, never one package's and never a price — and never a
+    // GROSS column while another weight column stands (a line's weight is
+    // netto): the heaviest is chosen among one kind only.
     const lineWeight = (isWeight: (text: string) => boolean): number | null => {
-      const idx = findWhere(
-        header,
-        taken,
-        (text) => isWeight(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text),
-      );
+      const candidates = header.flatMap((cell, i) => {
+        const text = cellText(cell);
+        return !taken.has(i) && isWeight(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text)
+          ? [i]
+          : [];
+      });
+      const plain = candidates.filter((i) => !GROSS_HEADER.test(cellText(header[i]!)));
+      const idx = heaviest(plain.length > 0 ? plain : candidates);
       if (idx !== null) taken.add(idx);
       return idx;
     };
@@ -728,9 +775,11 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
             ? 'gross'
             : 'plain';
     // The gross column is LOCATED, never claimed: beside a net column it is
-    // still the brutto the shipment's Σ is read from.
-    const grossAt = header.findIndex((cell, i) => (i === weight || !taken.has(i)) && isGrossWeight(cellText(cell)));
-    const gross = grossAt < 0 ? null : grossAt;
+    // still the brutto the shipment's Σ is read from — the line weight's own
+    // column when that is a gross one, else the heaviest gross column (one
+    // carton's G.W. stands beside the line's, PF-ADV-1).
+    const grossCandidates = header.flatMap((cell, i) => ((i === weight || !taken.has(i)) && isGrossWeight(cellText(cell)) ? [i] : []));
+    const gross = weight !== null && grossCandidates.includes(weight) ? weight : heaviest(grossCandidates);
     // The line's money is never a weight, a volume or a package count (S10,
     // the second review): «total» is a money key, and a packing list's
     // «TOTAL G.W.» — left free once «TOTAL N.W.» took the weight — or its
@@ -771,7 +820,17 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
           amount,
           amountIsPrice,
           gross,
-          cartons: cartonCol !== null,
+          // A carton column is any header that counts packages — «Кол-во
+          // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
+          // quantity keys never claimed (review PF-ADV-4: an invoice's own
+          // packing list with such a header and a plain weight read as a
+          // second invoice, and every row landed twice).
+          cartons:
+            cartonCol !== null ||
+            header.some((cell, i) => {
+              const text = cellText(cell);
+              return i !== name && PACKAGE_COUNT.test(text) && !MONEY_HEADER.test(text);
+            }),
           weightKind,
         },
       },
@@ -923,14 +982,14 @@ export function parseGoods(
   rows: Cell[][],
   covered: Covered | null = null,
 ): { goods: GoodsRow[]; headerRow: number | null } & SheetShape {
-  const header = findHeader(rows);
+  const header = findHeader(rows, covered);
   const detected = header.found;
   const goods: GoodsRow[] = [];
 
   const push = (row: GoodsRow): boolean => {
     const description = row.description.trim();
     if (!description) return false;
-    if (matchKey(description, TOTAL_ROW_KEYS)) return false;
+    if (isTotalRow(description)) return false;
     goods.push({ ...row, description: description.slice(0, 300) });
     return true;
   };
@@ -943,7 +1002,8 @@ export function parseGoods(
     let grossKg: number | null = columns.gross === null ? null : 0;
     let volumeM3: number | null = columns.volume === null ? null : 0;
     const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
-    for (let r = headerRow + 1; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
+    let r = headerRow + 1;
+    for (; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
       const at = (idx: number | null): Cell => (idx === null ? null : (row[idx] ?? null));
       const once = (idx: number | null): Cell => (idx !== null && covered?.has(r, idx) ? null : at(idx));
@@ -1002,7 +1062,28 @@ export function parseGoods(
         volumeM3 = sum(volumeM3, columns.volume, rowVolume ?? null);
       }
     }
-    const money = columns.amount !== null;
+    // A list the reader STOPPED at its ceiling sums nothing (review PF-ADV-2):
+    // the Σ of its first 500 lines is a smaller number wearing the shipment's
+    // name, and it outranks the model that may read the TOTAL row.
+    const stoppedShort =
+      goods.length >= MAX_GOODS_ROWS &&
+      rows.slice(r).some((row) => {
+        const name = cellText(row[columns.name] ?? null);
+        return name !== '' && !isTotalRow(name);
+      });
+    if (stoppedShort) {
+      grossKg = null;
+      volumeM3 = null;
+    }
+    // …and a brutto lighter than the lines' own netto is no brutto: a column
+    // read wrong, never a figure to land.
+    if (grossKg !== null && columns.weightKind === 'net' && columns.gross !== columns.weight) {
+      const net = goods.every((g) => g.weightKg !== null) ? goods.reduce((n, g) => n + (g.weightKg ?? 0), 0) : null;
+      if (net !== null && grossKg + 0.5 < net) grossKg = null;
+    }
+    // A money column is a money HEADER, claimed or not (PF-SPEC-1, §1.2.1's
+    // «NO money column»): «Value (USD)», a unit price the amount did not take.
+    const money = columns.amount !== null || rows[headerRow]!.some((cell) => MONEY_HEADER.test(cellText(cell)));
     const round = (n: number | null, places: number) => (n === null || goods.length === 0 ? null : Number(n.toFixed(places)));
     return {
       goods,

@@ -2203,8 +2203,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       ['Sumka', 50],
     ]);
     expect(b.say).toContain('📄 «B.xlsx» — 1 tasi ro‘yxatda bor edi, 2 ta yangi tovar qo‘shildi.');
+    // The held figure in the read's own unit is bare, as §1.2.2's sentence has it (review PF-SPEC-8).
     expect(b.say).toContain(
-      '📄 «B.xlsx» — «Kurtka» 200 dona: birinchi faylda ham «Kurtka» 300 dona — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
+      '📄 «B.xlsx» — «Kurtka» 200 dona: birinchi faylda ham «Kurtka» 300 — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
     );
     expect(b.say).not.toContain('Nima qilamiz?');
     expect(s.pendingInvoice).toBeNull();
@@ -2230,7 +2231,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
     const inv = await forward(
       chatId,
-      xlsx({ name: 'Invoice', rows: [['Description', 'Qty', 'Price', 'Amount'], ['Kurtka', 300, 12.5, 3750], ['Shim', 100, 5, 500]] }),
+      // «Unit price», as the case says — the commonest PI header, whose price once took the UNIT
+      // column and sent every count to the note (review PF-SPEC-1).
+      xlsx({ name: 'Invoice', rows: [['Description', 'Qty', 'Unit price', 'Amount'], ['Kurtka', 300, 12.5, 3750], ['Shim', 100, 5, 500]] }),
       'I.xlsx',
     );
     const s = activeIntake(chatId)!;

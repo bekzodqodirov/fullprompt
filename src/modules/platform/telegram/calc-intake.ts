@@ -295,6 +295,12 @@ export interface IntakeState {
     weightNetto: boolean;
     label: string;
     at: TotalsMark;
+    /**
+     * The figures two files disagreed on (`withFileTotals`): left to the VED,
+     * and the model's reading does not land in their place (review
+     * PF-ADV-8). Absent = none.
+     */
+    clash?: ('weightKg' | 'volumeM3')[];
   } | null;
   /**
    * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
@@ -707,6 +713,26 @@ export function rowPatchOf(row: CalcGoodsFact, patch: Partial<CalcGoodsFact>): P
 }
 
 /**
+ * A code the seller TYPED in the table is the row's own at the landing too
+ * (docs/IKKI-ESHIK.md §3.1, review PF-ADV-11): the table writes the code onto
+ * its row and leaves the row's `tnvedSource`, so a row the model had coded,
+ * corrected by the seller and confirmed straight away, landed with «TNVED: AI
+ * taklifi (o‘qishda) — tekshiring» over the seller's own code. Only a re-read
+ * cleared it (`rowPatchOf`). A row whose code IS its answer's code is the
+ * seller's; a stored row (the add door's) is the VED's and is left. Pure.
+ */
+export function typedCodesOwn(
+  goods: readonly CalcGoodsFact[],
+  answers: IntakeState['lineAnswers'],
+): CalcGoodsFact[] {
+  return goods.map((g, i) => {
+    if (g.itemId || g.tnvedSource === 'row' || !g.tnvedCode?.trim()) return g;
+    const typed = answers.some((e) => e.index === i && !e.itemId && e.patch.tnvedCode?.trim() === g.tnvedCode!.trim());
+    return typed ? { ...g, tnvedSource: 'row' } : g;
+  });
+}
+
+/**
  * Put the seller's earlier per-line answers back onto a re-read goods list —
  * `placeByName`'s goods, the signature every caller already used (K4). Pure.
  */
@@ -1075,6 +1101,12 @@ export function pickGoods(input: {
   model: GoodsList | null;
   typed: GoodsList;
   typedLabelled: GoodsList;
+  /**
+   * The model was shown PHOTOS (docs/IKKI-ESHIK.md §1.2.2): beside an Excel a
+   * line it read off one is named, never added (review PF-SPEC-3 / PF-ADV-10
+   * — a product the seller photographed vanished in silence). Absent = none.
+   */
+  modelSawImages?: boolean;
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
@@ -1096,6 +1128,22 @@ export function pickGoods(input: {
         if (!read.some((m) => m.whole === names.whole || namesMeet(m, names))) continue;
         named.add(names.whole);
         sameAsInvoice.push({ ...t, why: 'typed' });
+      }
+      // …and a model line read off a PHOTO the Excel does not carry — by name,
+      // or by a count and a weight equal to exactly one row's (a label read
+      // in another script) — is named the same way: «Rasmda/yozuvda Excel’da
+      // yo‘q tovar», never added (M3: a photo of the Excel's own goods would
+      // count them twice). One name once.
+      if (input.modelSawImages) {
+        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
+        for (const g of input.model) {
+          const names = goodsNameKeys(g.name);
+          if (!names.whole || named.has(names.whole) || carried(g, names)) continue;
+          if (invoice.filter((inv) => sameFigures(inv.row, g)).length === 1) continue;
+          if (typedNames.some((t) => namesMeet(t, names))) continue;
+          named.add(names.whole);
+          sameAsInvoice.push({ ...g, why: 'typed' });
+        }
       }
       return { goods: input.invoice, sameAsInvoice };
     }
@@ -1172,7 +1220,7 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   if (typed.length === 0) return null;
   // Named, never added (docs/IKKI-ESHIK.md §1.2.2, M3): beside an Excel the
   // photos and the typed text keep today's rule — the Excel answers.
-  return `Rasmda/yozuvda Excel’da yo‘q tovar: ${namedLines(typed)} — VED tekshiradi.`;
+  return `Rasmda/yozuvda Excel’da yo‘q tovar: ${namedLines(typed)} — VED tekshiradi`;
 }
 
 /**
@@ -1270,10 +1318,11 @@ export async function analyzeCollected(
   // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
   // (`amend`), or a returned one carried into a new collection (`seed`).
   const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
-  // The model codes the Excel's rows only on the AI door, and only on a first
-  // collection: an add or seeded collection's rows are the request's, and its
-  // new lines are coded by the memory and the book (`codeCollectedGoods`).
-  const codeKnown = state.ai && !kept && invoice.length > 0;
+  // The model codes the Excel's rows on the AI door (docs/IKKI-ESHIK.md
+  // §3.1) — an add or seeded collection's own Excel rows too (review
+  // PF-SPEC-6): they are NEW lines beside the request's rows, never the
+  // request's own (those are shown as `requestGoods` and never coded here).
+  const codeKnown = state.ai && invoice.length > 0;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -1311,7 +1360,8 @@ export async function analyzeCollected(
           // and the model codes them by number (docs/IKKI-ESHIK.md §3.1); the
           // goods it lists stay «only new goods».
           knownGoods: state.aiGoods === 'add' || codeKnown ? invoice.map((g) => g.name) : undefined,
-          ...(codeKnown ? { codeKnown: true } : {}),
+          // A row with a code of its own is listed and never asked (PF-ADV-13).
+          ...(codeKnown ? { codeKnown: true, knownCoded: invoice.map((g) => Boolean(g.tnvedCode?.trim())) } : {}),
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
@@ -1335,6 +1385,7 @@ export async function analyzeCollected(
     model: ai ? (ai.facts.goods ?? []).map(modelCoded) : null,
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
+    modelSawImages: files.images.length > 0,
   });
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
@@ -1356,12 +1407,19 @@ export async function analyzeCollected(
     typedLeftOutNote(picked.sameAsInvoice),
     filesMissingNote(files.missing),
   ].filter((n): n is string => n !== null);
+  // The model's codes for the Excel's rows, each by the index it was shown
+  // with and re-checked against the row there (`withKnownCodes`) — under the
+  // seller's answers, which go on top next.
+  const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
   if (kept) {
     const { conflictOf } = await import('../../wms/calc/amend');
     const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
     return addReading(
       state,
-      { kept, picked, manual, ai, outcome, notes, text },
+      // A coded line that IS a stored row is that row and carries nothing
+      // onto it (`addReading` keeps the stored row); only the fresh ones keep
+      // the model's proposal.
+      { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
       { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
     );
   }
@@ -1378,10 +1436,6 @@ export async function analyzeCollected(
   // The seller's per-line answers go back on top (P1.3) — a re-read after «➕
   // Yana ma'lumot» must not erase them — and where each landed is what the
   // collection keeps (`placeByName`'s write-back, regression-7).
-  // The model's codes for the Excel's rows, each by the index it was shown
-  // with and re-checked against the row there (`withKnownCodes`) — under the
-  // seller's answers, which go on top next.
-  const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
   const placed = placeByName(coded, state.lineAnswers);
   // The totals in their rank (docs/IKKI-ESHIK.md §1.2.5): what the seller
   // typed, then what a packing list GAVE (`fileTotals` — its gross Σ, or a
@@ -1389,7 +1443,11 @@ export async function analyzeCollected(
   // the model's reading; the table answer goes on top of all three below. A
   // figure the packing list gave is therefore never asked again.
   const fileTotals = state.fileTotals ?? null;
-  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg'));
+  // A figure two packing lists disagreed on is the VED's (review PF-ADV-8):
+  // the model read both lists and its figure — their sum, as often as not —
+  // must not land where the note promised «ikkalasi ham olinmadi».
+  const clashed = (field: 'weightKg' | 'volumeM3') => fileTotals?.clash?.includes(field) ?? false;
+  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg') || clashed('weightKg'));
   const fromFile =
     fileTotals && fileTotals.weightKg !== null
       ? totalWeightFrom(
@@ -1399,7 +1457,7 @@ export async function analyzeCollected(
           asked('weightKg'),
         )
       : null;
-  const modelVolume = asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
+  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
   const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,

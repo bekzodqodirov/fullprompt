@@ -152,6 +152,22 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
     birinchi faylda ham «Kurtka» 300 — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).»
   - This is a separate comparison, `sameRowAgain`. `sameGoodsLine` stays as it is for `pickGoods`
     and the add door (F3).
+- **As built after the review** (PF-ADV-1..7, PF-SPEC-1):
+  - A money HEADER is a money column whether or not the amount took it, and a unit price is never
+    the unit column («Qty | Unit price | Amount», «Цена за ед.», «单价»).
+  - Two weight columns of one kind (a «PER CTN» pair beside the «TOTAL» pair) are told apart by
+    their Σ: the line's is the heaviest; a gross column never beats a plain one for the line's
+    weight; a brutto lighter than the lines' netto is no brutto.
+  - A list the reader stopped at its row ceiling sums nothing. «小计» / «共计» rows are arithmetic.
+  - Any header counting packages («Cartons», «CTNS», «Мест») is a carton column for the shape.
+  - A packing-shaped file gives totals only when its rows ARE the held goods (`packingOfHeld`:
+    more than half of its rows meet a different held row, or the two lists count the same pieces);
+    otherwise it is another factory's list, folded as an invoice, and its totals are not the
+    shipment's. The packing-first hand-over asks the same of the invoice.
+  - The same Excel again (every row identical, its other sheets already held) adds nothing:
+    «📄 «A.xlsx» — bu fayl avval yuborilgan: qatorlari bir marta olindi.»
+  - Two NAMES are one row by their figures only when the weights agree to the gram or within
+    0.5 % (`twinWeight`), never «under 1 kg apart».
 - **A model-read DOCUMENT beside an Excel** (a PDF, or a header-less sheet) takes the
   `aiGoods: 'add'` path. These are the files that used to be asked about.
   - The model is shown the Excel's list as `knownGoods` and told to list only goods not on it.
@@ -164,7 +180,8 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
 1.2.3 **An add or seeded collection** compares its files with the request's kept rows through R3's
 `addReading`/`conflictOf`, unchanged.
 - Totals in top-up material are NOT written; R3 interp 2 holds.
-- A packing-shaped file there is a «noted» file: its totals go on the note for the VED.
+- A packing-shaped file there is a «noted» file: its totals go on the note for the VED, and its
+  rows change no row and become no line — not even as a first file (review PF-SPEC-2).
 - A conflict is never asked (1.1). On both doors it defaults to 'ved' at the save
   (calc-intake.ts:128-140, calc-amend.ts:219).
 
@@ -184,11 +201,17 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
 
 1.2.5 **Where the decisions are kept, durably** (DR-9). There are two new optional collection
 fields; a row hydrated without them reads null and [].
-- **`fileTotals: { weightKg, volumeM3, weightNetto, label, at: TotalsMark } | null`**, written in
-  the same patch as the file.
-  - **Rank**: the seller's typed figure, then `totalsAnswer`, then `fileTotals`, then the model.
+- **`fileTotals: { weightKg, volumeM3, weightNetto, label, at: TotalsMark, clash? } | null`**,
+  written in the same patch as the file.
+  - **Rank, as built** (review PF-SPEC-7): `totalsAnswer` on top, doubted by typed material that
+    came AFTER it and by a LATER `fileTotals` (R2 CONC-2); then the seller's typed figure; then
+    `fileTotals`; then the model.
   - A `totalsAnswer` older than a later `fileTotals` is doubted through `totalsDoubts` (the `at`
-    mark), exactly as later material doubts it.
+    mark), exactly as later material doubts it. The mark is the packing list's OWN, kept on its
+    file (`GoodsFileMeta.at`): a packing list that came first hands over the mark it arrived with,
+    so an answer given with it in front of the seller is not doubted by it (review PF-ADV-9).
+  - A figure two packing lists disagree on stays the VED's (`clash`): a third list does not
+    settle it, and the model's figure does not land in its place (review PF-ADV-8).
   - On the AI door, a figure the packing list gave is never asked again (INT-10).
 - **`fileNotes: string[]`** holds the RECEIPT-time notes: the Excel-vs-Excel decisions, «N ta tovar
   o‘qildi», «rasm sifatida o‘qiladi», and the reader's cut and size warnings.
@@ -383,6 +406,10 @@ VED's, and the lenta note names them.
     included, so this adds output and input tokens, not a call.
   - A model code fills only a row whose own code is null. Rows past `KNOWN_GOODS_CHARS`, which the
     model was not shown, are not coded by it.
+  - As built (review PF-ADV-13, PF-SPEC-6): a row with a code of its own is listed and never
+    numbered; at most `KNOWN_CODES_MAX` (40) rows are asked; an answer cut at `max_tokens` while
+    the codes were asked is read once more without them (both answers billed). An add or seeded
+    collection's OWN Excel rows are coded too (shown beside the request's rows, which are not).
 - **Where the coding step runs.** On the pool, after the model's answer and the bill, and before
   both `tableContext(analysed)` and `settleAnalysis`. It must come before `tableContext` because the
   laws of the new codes have to be read.

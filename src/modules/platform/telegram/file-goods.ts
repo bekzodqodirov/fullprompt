@@ -297,6 +297,26 @@ export interface GoodsFileMeta {
   volumeM3: number | null;
   rows: number;
   text: string | null;
+  /**
+   * The reader's own cuts of `text` (review PF-ADV-14): rows missing, cells
+   * shortened — the model is told a table it reads for totals stops short.
+   * Absent = whole (a block written before them).
+   */
+  textCut?: boolean;
+  textCellsCut?: boolean;
+  /**
+   * Where the material stood when THIS file arrived (review PF-ADV-9): a
+   * packing list that came first hands its totals over when the invoice
+   * arrives, and they are the packing list's — a totals answer given in
+   * between was given with them in front of the seller. Absent = unknown.
+   */
+  at?: TotalsMark;
+  /**
+   * The reader stopped at its row ceiling (review PF-ADV-2): the rows are the
+   * first 500, so nothing is summed from them — neither the gross column nor
+   * the lines' netto.
+   */
+  capped?: boolean;
 }
 
 /** Each held row's weight kind, from the file blocks — unknown when they do not add up. */
@@ -375,7 +395,23 @@ function namesMeetLine(a: GoodsList[number], b: GoodsList[number]): boolean {
 export function sameFigures(held: GoodsList[number], read: GoodsList[number], kinds: RowKinds = UNKNOWN_KINDS): boolean {
   const shared = sharedFigures(held, read, kinds);
   const both = shared.filter((f) => f.field === 'quantity' || f.field === 'weightKg');
-  return both.length === 2 && both.every((f) => figureAgrees(f, held, read)) && !namesContradict(held.name, read.name);
+  return (
+    both.length === 2 &&
+    both.every((f) => (f.field === 'weightKg' ? twinWeight(held.weightKg!, read.weightKg!) : figureAgrees(f, held, read))) &&
+    !namesContradict(held.name, read.name)
+  );
+}
+
+/**
+ * The weight two lines of two NAMES share, equal only to the gram or within
+ * 0.5 % (review PF-ADV-7). `LINE_FIGURES`' «under 1 kg apart» is for one
+ * document read twice; with nothing but the figures to say two names are one
+ * line, it made «Phone case» 100 / 5 kg and «Защитное стекло» 100 / 5.4 kg
+ * one row and dropped the glass.
+ */
+function twinWeight(a: number, b: number): boolean {
+  const gap = Math.abs(a - b);
+  return gap < 0.001 || gap <= 0.005 * Math.max(Math.abs(a), Math.abs(b));
 }
 
 /**
@@ -445,9 +481,32 @@ function fillGaps(held: GoodsList[number], dup: GoodsList[number]): GoodsList[nu
   if ((out.measureQty == null || out.measureUnit == null) && dup.measureQty != null && dup.measureUnit != null) {
     out.measureUnit = dup.measureUnit;
     out.measureQty = dup.measureQty;
+    // The duplicate's measure IS the held row's unit-less count in its unit
+    // («120» here, «120 пар» there — the door routed that count into the
+    // pair): one count stated once, never 120 pieces AND 120 pairs (review
+    // PF-ADV-15).
+    if (!held.unit && dup.quantity == null && held.quantity != null && held.quantity === dup.measureQty) out.quantity = null;
   }
   if (out.amount == null && dup.amount != null) out.amount = dup.amount;
   return out;
+}
+
+/** The same row stated again, word for word: the same whole name, code, unit, figures, money and note. */
+function identicalRow(held: GoodsList[number], read: GoodsList[number]): boolean {
+  const whole = goodsNameKey(held.name);
+  if (!whole || whole !== goodsNameKey(read.name)) return false;
+  const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+  return (
+    same(held.quantity, read.quantity) &&
+    same(held.unit, read.unit) &&
+    same(held.weightKg, read.weightKg) &&
+    same(held.volumeM3, read.volumeM3) &&
+    same(held.measureUnit, read.measureUnit) &&
+    same(held.measureQty, read.measureQty) &&
+    same(held.amount, read.amount) &&
+    same(held.tnvedCode, read.tnvedCode) &&
+    same(held.note, read.note)
+  );
 }
 
 /** How many sentences of one kind a file's note names before it counts the rest. */
@@ -481,6 +540,37 @@ function firstField(g: GoodsList[number]): 'quantity' | 'weightKg' | 'measureQty
 function capped(sentences: string[], label: string): string[] {
   if (sentences.length <= NAMED_LINES) return sentences;
   return [...sentences.slice(0, NAMED_LINES), `📄 ${label} — yana ${sentences.length - NAMED_LINES} ta shunday qator.`];
+}
+
+/**
+ * Is a further Excel the SAME FILE again (review PF-ADV-6)? The seller who
+ * forwards one Excel twice is the commonest double send, and a names-only or
+ * an amounts-only list shares no figure for `sameRowAgain` to compare — every
+ * row landed twice. Every row identical, word for word, to a different held
+ * row, and its other sheets (if any) one a held file already gave: nothing of
+ * it is new. A row sharing nothing with its namesake in a DIFFERENT file is
+ * still added (§1.2.2): two factories' bare «Kurtka» are two lines. Pure.
+ */
+export function sameFileAgain(
+  held: GoodsList,
+  read: GoodsList,
+  readText: string,
+  heldTexts: readonly { text: string }[],
+): boolean {
+  if (read.length === 0) return false;
+  if (readText.trim() !== '' && !heldTexts.some((t) => t.text.trim() === readText.trim())) return false;
+  const claimed = new Set<number>();
+  return read.every((r) => {
+    const at = held.findIndex((h, i) => !claimed.has(i) && identicalRow(h, r));
+    if (at < 0) return false;
+    claimed.add(at);
+    return true;
+  });
+}
+
+/** The sentence for a file sent again (`sameFileAgain`). */
+export function sameFileNote(label: string): string {
+  return `📄 ${label} — bu fayl avval yuborilgan: qatorlari bir marta olindi.`;
 }
 
 /** What a further invoice-shaped Excel did to the held list. */
@@ -539,7 +629,10 @@ export function foldInvoice(
     if (namesake) {
       const field = firstField(r);
       const readWords = figureWords(r);
-      const heldWords = figureWords(namesake, field);
+      // The held figure in the read's own unit is said bare, as the spec's
+      // sentence has it («… «Kurtka» 300 — ikkalasi olindi»); another unit
+      // keeps its word (review PF-SPEC-8).
+      const heldWords = field && figureOf(namesake, field) !== null ? num(figureOf(namesake, field)!) : figureWords(namesake, field);
       namesakes.push(
         `📄 ${label} — «${clip(r.name)}»${readWords ? ` ${readWords}` : ''}: birinchi faylda ham «${clip(namesake.name)}»${heldWords ? ` ${heldWords}` : ''} — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).`,
       );
@@ -575,13 +668,68 @@ export interface PackingTotals {
  * total refuses where the section needs brutto (`totalWeightFrom`); the cube
  * is its m³ Σ. A plain weight column is neither: nobody can say which it is.
  */
-export function packingTotals(meta: Pick<GoodsFileMeta, 'weightKind' | 'grossKg' | 'volumeM3'>, rows: GoodsList): PackingTotals {
+export function packingTotals(
+  meta: Pick<GoodsFileMeta, 'weightKind' | 'grossKg' | 'volumeM3' | 'capped'>,
+  rows: GoodsList,
+): PackingTotals {
+  // A list the reader stopped short of its end gives no totals (PF-ADV-2).
+  if (meta.capped) return { weightKg: null, weightNetto: false, volumeM3: null };
   if (meta.grossKg !== null) return { weightKg: meta.grossKg, weightNetto: false, volumeM3: meta.volumeM3 };
   if (meta.weightKind === 'net' && rows.length > 0 && rows.every((g) => figureOf(g, 'weightKg') !== null && g.weightKg! > 0)) {
     const sum = rows.reduce((n, g) => n + g.weightKg!, 0);
     return { weightKg: Number(sum.toFixed(3)), weightNetto: true, volumeM3: meta.volumeM3 };
   }
   return { weightKg: null, weightNetto: false, volumeM3: meta.volumeM3 };
+}
+
+/** Both rows state a count (or a measure in one unit), and the counts differ. */
+function countsDisagree(a: GoodsList[number], b: GoodsList[number]): boolean {
+  const qa = figureOf(a, 'quantity');
+  const qb = figureOf(b, 'quantity');
+  if (qa !== null && qb !== null && qa !== qb) return true;
+  const ma = figureOf(a, 'measureQty');
+  const mb = figureOf(b, 'measureQty');
+  return ma !== null && mb !== null && a.measureUnit != null && a.measureUnit === b.measureUnit && ma !== mb;
+}
+
+/**
+ * Is a packing-shaped file a packing list OF the held goods — «o‘sha
+ * tovarlar» — or another factory's own list that merely has a carton or gross
+ * column and no money (review PF-ADV-5)? The shape is a column decision; the
+ * totals role needs the rows to answer to the held ones. Either more than half
+ * of its rows each meet a DIFFERENT held row — by name with no count against
+ * it, by count and weight (`sameFigures`), or by an equal count under names
+ * that do not contradict (a Chinese list beside a Russian invoice) — or the
+ * whole lists count the same pieces (one shipment, broken down otherwise:
+ * «Kurtka 300» invoiced, S/M/L 100 each packed). Otherwise its goods are new
+ * goods (his 1a) and its totals are not the shipment's. Pure.
+ */
+export function packingOfHeld(
+  held: GoodsList,
+  heldKinds: readonly WeightKind[],
+  packing: GoodsList,
+  packingKind: WeightKind,
+): boolean {
+  if (held.length === 0 || packing.length === 0) return false;
+  const total = (rows: GoodsList) =>
+    rows.every((g) => figureOf(g, 'quantity') !== null) ? rows.reduce((n, g) => n + g.quantity!, 0) : null;
+  const heldPieces = total(held);
+  if (heldPieces !== null && heldPieces > 0 && heldPieces === total(packing)) return true;
+  const claimed = new Set<number>();
+  let met = 0;
+  for (const p of packing) {
+    const at = held.findIndex((h, i) => {
+      if (claimed.has(i)) return false;
+      if (namesMeetLine(h, p)) return !countsDisagree(h, p);
+      if (sameFigures(h, p, { held: heldKinds[i] ?? null, read: packingKind })) return true;
+      const q = figureOf(h, 'quantity');
+      return q !== null && q === figureOf(p, 'quantity') && !namesContradict(h.name, p.name);
+    });
+    if (at < 0) continue;
+    claimed.add(at);
+    met += 1;
+  }
+  return met * 2 > packing.length;
 }
 
 /**
@@ -681,28 +829,43 @@ export function withFileTotals(
       clash: false,
     };
   }
-  let clash = false;
+  // A figure two files disagreed on STAYS the VED's (review PF-ADV-8): a third
+  // file's figure does not settle it in silence, and the reading must not let
+  // the model's figure — the two lists added up, as often as not — land in
+  // its place (`clash`, read by `analyzeCollected`).
+  const clashed = new Set(prev.clash ?? []);
   let weightKg = prev.weightKg;
   let weightNetto = prev.weightNetto;
-  if (next.weightKg !== null) {
+  if (next.weightKg !== null && !clashed.has('weightKg')) {
     if (prev.weightKg === null || (prev.weightNetto && !next.weightNetto)) {
       weightKg = next.weightKg;
       weightNetto = next.weightNetto;
     } else if (prev.weightNetto === next.weightNetto && !agreeTotal(prev.weightKg, next.weightKg, 1)) {
       weightKg = null;
       weightNetto = false;
-      clash = true;
+      clashed.add('weightKg');
     }
   }
   let volumeM3 = prev.volumeM3;
-  if (next.volumeM3 !== null) {
+  if (next.volumeM3 !== null && !clashed.has('volumeM3')) {
     if (prev.volumeM3 === null) volumeM3 = next.volumeM3;
     else if (!agreeTotal(prev.volumeM3, next.volumeM3, 0.01)) {
       volumeM3 = null;
-      clash = true;
+      clashed.add('volumeM3');
     }
   }
-  return { fileTotals: { weightKg, volumeM3, weightNetto, label: `${prev.label}, ${next.label}`, at: next.at }, clash };
+  const clash = clashed.size > (prev.clash ?? []).length;
+  return {
+    fileTotals: {
+      weightKg,
+      volumeM3,
+      weightNetto,
+      label: `${prev.label}, ${next.label}`,
+      at: next.at,
+      ...(clashed.size > 0 ? { clash: [...clashed] } : {}),
+    },
+    clash,
+  };
 }
 
 /** The sentence for a second packing list whose totals disagree with the first's. */

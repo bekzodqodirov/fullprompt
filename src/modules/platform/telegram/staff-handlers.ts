@@ -1460,6 +1460,14 @@ async function answerWithAssistant(
   }
 }
 
+/** What a retired file question's button says (docs/IKKI-ESHIK.md §1.3). */
+export const RETIRED_FILE_STEP = 'Bu tugma eskirgan — fayllar o‘zi solishtirildi.';
+
+/** The buttons of the file questions his 1a retired: the second Excel, «boshqa zavodmi?», a conflict. */
+export function isRetiredFileStep(step: CalcStep): boolean {
+  return step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same' || step.startsWith('conf_');
+}
+
 /**
  * The «Hisoblatish» conversation, one press at a time.
  *
@@ -1474,14 +1482,6 @@ async function answerWithAssistant(
  * (a `go_*`), spent here before the restart wipes anything; null in a test
  * and on a server one migration behind.
  */
-/** What a retired file question's button says (docs/IKKI-ESHIK.md §1.3). */
-export const RETIRED_FILE_STEP = 'Bu tugma eskirgan — fayllar o‘zi solishtirildi.';
-
-/** The buttons of the file questions his 1a retired: the second Excel, «boshqa zavodmi?», a conflict. */
-export function isRetiredFileStep(step: CalcStep): boolean {
-  return step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same' || step.startsWith('conf_');
-}
-
 export async function handleCalcCallback(
   ctx: CalcPressCtx,
   chatId: bigint,

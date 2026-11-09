@@ -20,8 +20,11 @@ import {
   notedTotalsNote,
   packingFills,
   packingNote,
+  packingOfHeld,
   packingTotals,
   rowKindsOf,
+  sameFileAgain,
+  sameFileNote,
   totalsClashNote,
   withFileTotals,
   type GoodsFileMeta,
@@ -216,15 +219,20 @@ export function receiveGoodsSheet(
      */
     capped?: number;
     /** The sheet's shape by its columns (`SheetShape`); absent = an invoice, nothing summed. */
-    shape?: Partial<Omit<GoodsFileMeta, 'label' | 'rows' | 'text'>>;
-    /** A packing list's own rows as text (`GoodsFileRead.ownText`). */
-    ownText?: string | null;
+    shape?: Partial<Pick<GoodsFileMeta, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>>;
+    /** A packing list's own rows as text, with the reader's cuts (`GoodsFileRead.ownText`). */
+    ownText?: { text: string; cut: boolean; cellsCut: boolean } | null;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
   const texts: SheetText[] = sheet.text
     ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
     : [];
+  // Where the material stood: a totals answer given before this file is
+  // older than what it gave (`totalsDoubts`, §1.2.5) — kept ON the file, so a
+  // packing list that came first hands its own mark over (PF-ADV-9).
+  const at = { material: state.material.length, files: state.fileCount + 1 };
+  const packing = sheet.shape?.shape === 'packing';
   const meta: GoodsFileMeta = {
     label,
     shape: sheet.shape?.shape ?? 'invoice',
@@ -233,10 +241,13 @@ export function receiveGoodsSheet(
     grossColumn: sheet.shape?.grossColumn ?? false,
     volumeM3: sheet.shape?.volumeM3 ?? null,
     rows: goods.length,
-    text: sheet.shape?.shape === 'packing' ? (sheet.ownText ?? null) : null,
+    text: packing ? (sheet.ownText?.text ?? null) : null,
+    ...(packing && sheet.ownText ? { textCut: sheet.ownText.cut, textCellsCut: sheet.ownText.cellsCut } : {}),
+    at,
+    ...(sheet.capped ? { capped: true } : {}),
   };
-  const ownText = (m: Pick<GoodsFileMeta, 'text' | 'label'>): SheetText[] =>
-    m.text ? [{ text: m.text, cut: false, cellsCut: false, label: m.label }] : [];
+  const ownText = (m: GoodsFileMeta): SheetText[] =>
+    m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
   const cutLines = [
     ...(sheet.capped
       ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
@@ -251,9 +262,6 @@ export function receiveGoodsSheet(
   ];
   const readLine = `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.`;
   const topUp = state.amend !== null || state.seed !== null;
-  // Where the material stood: a totals answer given before this file is
-  // older than what it gave (`totalsDoubts`, §1.2.5).
-  const at = { material: state.material.length, files: state.fileCount + 1 };
   const held = state.invoiceGoods ?? [];
   const files = state.goodsFiles ?? [];
   const answer = (patch: Partial<IntakeState>, lines: string[]): FileAnswer => ({
@@ -269,7 +277,7 @@ export function receiveGoodsSheet(
         lines: [notedTotalsNote(m.label, totals), ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : [])],
       };
     }
-    const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at });
+    const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at: m.at ?? at });
     return {
       patch: { fileTotals: kept.fileTotals },
       lines: [
@@ -280,8 +288,19 @@ export function receiveGoodsSheet(
   };
 
   if (held.length === 0) {
+    if (topUp && packing) {
+      // A top-up's packing list is a NOTED file (§1.2.3): its totals go on the
+      // note for the VED and its rows change no row — kept as goods, every one
+      // a stored row does not `sameLine` landed as a 🆕 line, the request's
+      // own goods priced twice (review PF-SPEC-2, law-money-5). Its text rides
+      // with the model's totals-only sheets; it is no goods list, so an
+      // invoice after it is the goods list and takes nothing from it.
+      return answer(
+        { invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts] },
+        [notedTotalsNote(label, packingTotals(meta, goods)), ...cutLines],
+      );
+    }
     // The goods list. A model-read file already here takes the add path (M3).
-    const noted = topUp && meta.shape === 'packing' ? [notedTotalsNote(label, packingTotals(meta, goods))] : [];
     return answer(
       {
         invoiceGoods: goods,
@@ -289,11 +308,15 @@ export function receiveGoodsSheet(
         goodsFiles: [meta],
         ...(state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0) ? { aiGoods: 'add' as const } : {}),
       },
-      [readLine, ...cutLines, ...noted],
+      [readLine, ...cutLines],
     );
   }
+  // The same file again: nothing of it is new, and it is said (PF-ADV-6).
+  if (sameFileAgain(held, goods, sheet.text, state.invoiceTexts)) {
+    return answer({}, [sameFileNote(label)]);
+  }
   const kinds = rowKindsOf(files, held.length);
-  if (meta.shape === 'packing') {
+  if (packing && packingOfHeld(held, kinds, goods, meta.weightKind)) {
     // The same goods again: totals and the netto gaps, never a row.
     const fill = packingFills(held, kinds, goods, meta.weightKind);
     const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled);
@@ -307,9 +330,17 @@ export function receiveGoodsSheet(
     );
   }
   const first = files.length === 1 ? files[0]! : null;
-  if (first && first.shape === 'packing' && first.rows === held.length) {
+  if (
+    !packing &&
+    !topUp &&
+    first &&
+    first.shape === 'packing' &&
+    first.rows === held.length &&
+    packingOfHeld(goods, Array.from({ length: goods.length }, () => meta.weightKind), held, first.weightKind)
+  ) {
     // The packing list came first: this invoice takes the goods role, and the
-    // packing list's rows become its totals and its netto gap fills.
+    // packing list's rows become its totals and its netto gap fills — under
+    // the packing list's own receipt mark (PF-ADV-9).
     const fill = packingFills(goods, Array.from({ length: goods.length }, () => meta.weightKind), held, first.weightKind);
     const totals = totalsOf(first, held, `${label} dan`, fill.filled);
     return answer(
@@ -322,12 +353,15 @@ export function receiveGoodsSheet(
       [readLine, ...cutLines, ...totals.lines],
     );
   }
+  // Anything else is compared row by row — an invoice, and a packing-shaped
+  // list whose rows are not the held goods: another factory's own list, whose
+  // goods are new goods and whose totals are not the shipment's (PF-ADV-5).
   const fold = foldInvoice(held, kinds, goods, meta.weightKind, label);
   return answer(
     {
       invoiceGoods: fold.goods,
       invoiceTexts: [...state.invoiceTexts, ...texts],
-      goodsFiles: [...files, { ...meta, rows: fold.added }],
+      goodsFiles: [...files, { ...meta, rows: fold.added, text: null }],
     },
     [readLine, ...cutLines, ...fold.notes],
   );

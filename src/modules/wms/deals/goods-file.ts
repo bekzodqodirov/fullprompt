@@ -272,9 +272,12 @@ export type GoodsFileRead =
        * — only for a packing-shaped sheet (docs/IKKI-ESHIK.md §1.2.2): when it
        * gives the shipment's totals beside an invoice, its whole text goes to
        * the model under the totals-only heading («TOTAL G.W.» is a row of it).
-       * Null for an invoice.
+       * With the reader's own two words (review PF-ADV-14): `cut` = rows are
+       * missing — a «TOTAL G.W.» row at the bottom may be among them — and
+       * `cellsCut` = some cells shortened; the model is told either. Null for
+       * an invoice.
        */
-      ownText: string | null;
+      ownText: { text: string; cut: boolean; cellsCut: boolean } | null;
     } & SheetShape)
   /**
    * A table with no header the reader knows — handed to the model as text.
@@ -428,6 +431,10 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
     }
   }
   const others = sheetsAsText(filled.filter((sheet) => sheet !== best?.sheet));
+  const ownSheetText = (sheet: SheetRows) => {
+    const own = sheetsAsText([sheet]);
+    return { text: own.text, cut: own.rowsCut, cellsCut: own.cellsCut };
+  };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
     const { goods, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
@@ -443,7 +450,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       grossKg,
       grossColumn,
       volumeM3,
-      ownText: shape === 'packing' ? sheetsAsText([best.sheet]).text : null,
+      ownText: shape === 'packing' ? ownSheetText(best.sheet) : null,
     };
   }
   if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, ...cut };

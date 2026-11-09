@@ -135,7 +135,7 @@ describe('a mapped sheet is classified by its COLUMNS (§1.2.1)', () => {
   it('the reader carries the shape and a packing list’s own rows as text', async () => {
     const read = await readGoodsFile(await xlsx([PACKING_HEAD, ['Kurtka', 300, 10, 150, 165, 1.2]]), null);
     expect(read).toMatchObject({ kind: 'goods', shape: 'packing', grossKg: 165, volumeM3: 1.2 });
-    expect(read && read.kind === 'goods' ? read.ownText : null).toContain('G.W.(kg)');
+    expect(read && read.kind === 'goods' ? read.ownText?.text : null).toContain('G.W.(kg)');
     const invoice = await readGoodsFile(await xlsx([['Description', 'Qty', 'Amount'], ['Kurtka', 300, 3750]]), null);
     expect(invoice && invoice.kind === 'goods' ? invoice.ownText : 'x').toBeNull();
   });
@@ -234,7 +234,7 @@ describe('the same row again: names meet AND every shared figure agrees (§1.2.2
     }
     expect(state.invoiceGoods?.map((g) => g.quantity)).toEqual([300, 200]);
     expect(state.fileNotes).toContain(
-      '📄 «B.xlsx» — «Kurtka» 200 dona: birinchi faylda ham «Kurtka» 300 dona — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
+      '📄 «B.xlsx» — «Kurtka» 200 dona: birinchi faylda ham «Kurtka» 300 — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
     );
   });
 

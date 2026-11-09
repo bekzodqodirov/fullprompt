@@ -138,6 +138,11 @@ export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<numbe
  * «↳ kod yo‘q — AI hisoblashda topadi» is a promise only while both hold, and
  * «VED xodimi qo‘yadi» otherwise (docs/IKKI-ESHIK.md §3.1). An unreadable
  * ledger is not a spent budget (as the reading's own gate reads it).
+ *
+ * ONE home for «available» (review PF-SPEC-4, #513): the table's words and
+ * the landing pass ask THIS, never each its own `aiConfigured() &&
+ * aiCalcBudgetLeft() > 0` — written twice, the two disagreed on exactly the
+ * unreadable ledger, and the table promised a pass that would not run.
  */
 export async function aiCalcAvailable(): Promise<boolean> {
   const { aiConfigured } = await import('../../platform/ai/model');
