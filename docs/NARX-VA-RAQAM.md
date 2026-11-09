@@ -425,6 +425,9 @@ Six lenses read v1 against the code (47 findings: 0 blockers, 31 defects,
 
 ### 3.2 Part 2
 
+> **Superseded in part by §4.4** (the fixes reviewed): the holder of a number (3.2.1) and «never at
+> the agent» (3.2.3) are decided as §4.4 says, and the MINT asks the agent rule too.
+
 1. **The holder of number N** is the truck wearing `P-pad(N)` now; if nobody
    wears it, the truck whose newest batch audit row renamed AWAY from it
    (`before->>'code'`, read in former-codes.ts, its fenced home). Releasable =
@@ -484,7 +487,7 @@ Six lenses read v1 against the code (47 findings: 0 blockers, 31 defects,
 
 ---
 
-## §4 — As built (2026-11-09; DECISIONS #1582-#1590)
+## §4 — As built (2026-11-09; DECISIONS #1582-#1592)
 
 Built as two packages in worktrees on 34a8b622 (P1 the table, P2 the number), merged by
 cherry-pick, reviewed as built by six lenses with a skeptic per candidate (21 candidates:
@@ -545,3 +548,48 @@ change (a third name lock on a name that is not the number) — only if he asks.
 Red proofs by string edit, each reverted the same way and the tree checked clean: P1 12 + the
 fixes' own, P2 16 + the fixes' own (one, the counter `FOR UPDATE` alone, stayed GREEN: the CAS
 `value = N` refuses a stale rewind by itself — recorded as defence in depth, not a defect).
+
+### 4.4 The fixes reviewed, twice (DECISIONS #1591-#1592)
+
+Three lenses over the fix commits, two refuters per candidate: 7 candidates, all 7 confirmed
+(one pair the same defect), fixed in two worktrees; an independent checker per package then
+found 7 smaller items, fixed again and checked again; the last three (below) fixed by the lead.
+
+**The Narx tab:**
+- The SINGLE form asks before a price over a compensation-zeroed one (`zeroedHere`, the pure
+  `singleFormAsks`, the table's own sentence); `pricesSeen` stays live ids only. For a
+  single-form client any live price here re-covers all his cargo, so the zeroed list is empty
+  while one stands (`zeroedAskedOf`).
+- The table's alert identity holds the card digest it posts (`askKeyOf`, `cardSeen` computed
+  ONCE per render for the hidden input and the identity): a redraw that changes a card fact
+  takes an open alert back.
+- The card check has its own code and words, `card_prices_changed` («Bitim kartasidagi narx
+  o'zgardi …», the deal named); `prices_changed` stays this truck's; one `pageWentStale` rule
+  refreshes on all three stale codes.
+- A row's «narx kompensatsiya bilan olib tashlangan» comes from its OWN zeroed part only, and
+  only while nothing live stands for it (`ownZeroedFor`); a zeroed WHOLE price reads in the
+  whole-cargo list (`wholeStandingOf`, flag `zeroed`) and never hides a row's own live price from
+  the ask (`standingAsksOf`). The pre-fill gate is A1's, unchanged.
+
+**The number — the holder of N, as built:** the truck WEARING the string, unless it is a
+cancelled, never-departed wearer not born with it, which yields to the newest live-or-departed
+truck born with it; else the truck that carried it on the ROAD (the newest road rename away —
+the one ⌘K and the bot name); else the newest truck BORN with it; else the newest rename-away
+row. «At the agent» is decided for the NUMBER, not the holder: any truck that ever wore the
+exact string (now, or by a rename row from or to it) with a standing tick or an audit row that
+ever ticked it (`everTickedSql`, exported as `numberEverAtAgent`) — asked by the release walk,
+the card, the dry run, `--apply` AND `nextBatchCode`, which skips such a code beside
+`codeEverWorn` under the same per-candidate lock (measured ~2 ms per mint candidate at 5,000
+batch audit rows, ~8 ms at 22,000). The card of a returned number reads the verdict live:
+`returned_taken` (carried on the road under a hand rename by a truck not born with it — burned
+for good, named) and `returned_agent` (papers since at the agent — the mint passes over it); a
+number re-minted normally and road-renamed later is the promise kept. The own-number branch
+answers the dry run's words (`renamed_left` / `agent`, else `newer`). A minter whose own
+cancel freed its number through the wearer's release row answers «qaytdi» (the number's own
+verdict decides when the counter is already below it); a releasable truck still WEARING the
+string there stays «xatolik» (the mint walks past a worn name).
+
+**Stated, not built:** while a truck wears a given-back number on the road and has not yet
+renamed away from it, the cancelled truck's card still promises it (only the burned case is
+`taken`); in a swap-then-move-away the away-branch leaves a gap (C2's rule); the dry run's
+cancelled-truck list says `atAgent` of the TRUCK while its gap line says it of the NUMBER.

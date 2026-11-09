@@ -6802,3 +6802,48 @@ Yaratish» only ASKS («Yiwu → Toshkent: yangi partiya ochilsinmi?» in-page, 
 limit (review C3): a truck renamed to its PLATE and then cancelled keeps the plate as its name,
 so the reopened truck cannot take that name — the plate belongs in «Mashina», and a wrong
 destination is fixed in place now.
+
+**#1591 — The fixes reviewed: the table's fixes reached the single form, the open alert and the
+right words.** Three lenses over the two fix commits, two refuters each: all seven candidates
+confirmed (two the same defect). A1 had been fixed on the TABLE only: a one-deal client's
+`PricingForm` was handed live prices, so a price typed over a compensation-zeroed one went in
+with nothing asked — the same fact asked or did not ask depending on which shape a re-filed
+prixod gave the client. The form now gets `zeroedHere` and asks with the table's own sentence
+(`singleFormAsks`); and since one price covers all of a single-form client's cargo (R3a), any
+live price empties that list (`zeroedAskedOf`). A4's digest could be beaten by a redraw UNDER
+an open alert: `askKey` held no card fact while the hidden `cardSeen` followed the new drawing,
+so «Ha, saqlash» posted a digest that matched the server and the «bitim kartasida narx bor»
+question was never shown — the double bill A4 existed to stop. `cardSeen` is computed ONCE per
+render and is part of the identity (`askKeyOf`). Its refusal had borrowed `prices_changed`,
+whose words say THIS TRUCK's prices changed; it is `card_prices_changed` now, naming the deal,
+and one `pageWentStale` refreshes on all three stale codes. And A1's own words were too wide:
+a zeroed WHOLE price told every row «ITS price was removed», and a row priced again kept the
+line beside its live price; `ownZeroedFor` says it of a row's own part only while nothing live
+stands, a zeroed whole price reads in the whole-cargo list and never hides a row's own live
+price from the ask (`standingAsksOf`, found by the checker of the first fix). The pre-fill gate
+stayed A1's throughout.
+
+**#1592 — The holder of a number, and the agent rule asked of the NUMBER (also by the mint).**
+C2's minter-first holder reopened his 7a: `atAgent` was asked of the holder alone, so a colleague
+that wore the vacated string while its papers went to the agent and then renamed away no longer
+protected it — the cancel and `--apply` gave it back and the next truck was minted under the
+agent's number (RVF3-1, reproduced). «At the agent» is now a property of the number: any truck
+that ever wore the exact string, now or by a rename row from or to it, with a standing tick or
+an audit row that ever ticked it (`everTickedSql`). The checker then found the MINT still handed
+such a number out once it had been given back; `nextBatchCode` asks the same predicate
+(`numberEverAtAgent`) beside `codeEverWorn` under the same per-candidate lock — measured ~2 ms
+per candidate at 5,000 batch audit rows, ~8 ms at 22,000. The holder order as built: the
+wearer, unless a cancelled, never-departed wearer not born with the string — it yields to the
+newest live-or-departed truck born with it (else a second -002 was minted while the minter
+lived under its plate, M6; the annulled minter's half pinned by its own test); else the truck
+that carried it on the ROAD (the dry run named a cancelled truck that never left, RVF3-2); else
+the newest truck born with it; else the newest rename-away row. The card of a returned number
+reads the verdict live — `returned_taken` (burned on the road by a truck not born with it) and
+`returned_agent` — and a number re-minted normally and road-renamed later is the promise kept,
+so «born» keeps a number out of `taken` only, never out of `agent` (the lead's fix of the second
+check). A minter whose own cancel freed its number through the wearer's release row answered
+«xatolik» (its counter already below, no release row of its own); the number's own verdict
+decides there now, and a releasable truck still WEARING the string stays «xatolik». Red proofs
+for every fix by string edit; three of the lead's last four went red, the fourth was added for
+the worn-string guard. Stated: a given-back number a truck wears on the road but has not renamed
+away from is still promised on the cancelled card; the swap-then-move-away gap (C2's rule).

@@ -10,7 +10,8 @@ Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migra
 - **Bo'sh qoldirilgan bitim yozilmaydi (3a)** va «Bu mashinadagi narxlar» da baland ovozda turadi: «Narx yo'q: B-…, B-…». Hammasi bo'sh bo'lsa, Saqlash rad etadi.
 - **Yolg'on «qo'shimcha hisob» xabari yo'q.** Tasdiqlash faqat haqiqatan so'raladigan narsada chiqadi: shu bitimga shu mashinada narx allaqachon bor bo'lsa, bitim kartasida narx bor bo'lsa, butun yukka narx turgan bo'lsa, narx bitimdagidan 5 % dan ko'p farq qilsa yoki «muddat» li bitim bo'lsa. Har qator o'z bitimini nomi bilan aytadi.
 - **Kompensatsiya bilan nolga tushirilgan narx «narx yo'q» bo'lib qolmaydi** — u qatorda «narx kompensatsiya bilan olib tashlangan — yana qo'yasizmi?» deb so'raladi, ikkinchi hisob jimgina yozilmaydi.
-- **Ikki kishi bir vaqtda:** jadval ochiq turganda boshqa xodim shu bitimga (mashinada yoki kartada) narx yozsa, Saqlash «narxlar o'zgardi» deb rad etadi va sahifani yangilaydi; yozilgan summalar saqlanib qoladi.
+- **Ikki kishi bir vaqtda:** jadval ochiq turganda boshqa xodim shu mashinaga narx yozsa, Saqlash «bu mashinadagi narxlar o'zgardi» deydi; bitim kartasiga yozsa — «bitim kartasidagi narx o'zgardi» deydi. Ikkalasida ham sahifa yangilanadi, yozilgan summalar saqlanib qoladi. Tasdiq oynasi ochiq turgan paytda shunday o'zgarish bo'lsa, oyna yopiladi va qayta so'raydi.
+- Bitta bitimli mijozning oddiy formasi ham kompensatsiya bilan nolga tushirilgan narx ustiga yangi narx yozishdan oldin so'raydi.
 - **VED (2a):** jadval xuddi shunday, lekin hech narsa oldindan to'ldirilmaydi va sotilgan narx ko'rinmaydi — summalarni o'zi yozadi.
 - Bitta bitimli mijoz uchun eski forma o'zgarmadi. Mijoz kartasidagi (moliya) narx eshigi ham avvalgidek bitta bitim.
 
@@ -18,6 +19,8 @@ Javoblaringiz: **1a 2a 3a 4a 5a 6a 7a 8a** (har biri ⭐ variant). **Yangi migra
 - **Yo'lga chiqmagan partiya bekor qilinsa, raqami qaytadi (4a).** YW-010 bekor qilinsa va YW-011 hali ochilmagan bo'lsa, bekor qilingani «YW-010 (bekor)» bo'lib arxivda qoladi, keyingi mashina esa YW-010 bo'ladi.
 - **Undan keyin yangi mashina ochilgan bo'lsa, raqam qaytmaydi (5a)** va bekor qilishning o'zi aytadi: «Raqam qaytmadi: YW-011 allaqachon ochilgan». Bekor qilingan mashina kartasida ham bu yozuv turadi.
 - Hujjatlari agentga yuborilgan mashina raqamini saqlaydi; yo'lga chiqqan mashina ham.
+- **Agentga hujjat ketgan raqam hech qachon ikkinchi mashinaga berilmaydi** — hatto o'sha mashina keyin boshqa nomga o'zgartirilgan bo'lsa ham. Yangi partiya ochilganda tizim bunday raqamni o'tkazib yuboradi.
+- Bekor qilingan mashina kartasida qaytgan raqam keyin boshqa mashina tomonidan yo'lda olingan yoki uning nomi bilan agentga hujjat ketgan bo'lsa, «keyingi mashinaga beriladi» deb yozilmaydi — nima bo'lgani yoziladi.
 - Botga «YW-010» yozilsa, yangi YW-010 ochilguncha «bekor qilingan, raqami qaytarildi» deb javob beradi.
 - **Qabul skladini jo'nashdan oldin o'zgartirish (6a):** mashina kartasidagi «Mashina» bo'limida — «Qabul skladini o'zgartirish». Mashina o'sha, raqam o'sha, bekor qilish shart emas. Mashinada pul (xarajat yoki narx) bo'lsa va yangi sklad boshqa davlatda bo'lsa — rad etadi va sababini aytadi. Reja sahifasida «Mashina hozir: Toshkent — reja Andijon uchun tasdiqlangan» deb chiqadi.
 - **Tezkor partiya endi so'raydi:** «Yiwu → Toshkent: yangi partiya ochilsinmi? [Ha, ochish] [Bekor]». Noto'g'ri tanlangan sklad shu yerda ushlanadi.

@@ -3281,7 +3281,7 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — narx jadvali + partiya raqami (2026-11-09; DECISIONS #1582-#1590+; NO migration, ledger 140; spec
+**Round — narx jadvali + partiya raqami (2026-11-09; DECISIONS #1582-#1592; NO migration, ledger 140; spec
 `docs/NARX-VA-RAQAM.md`).** His two reports, answered «1a 2a 3a 4a 5a 6a 7a 8a». (1) A client with 10-15 deals on one
 truck: when `DealCandidates.ambiguous`, the «Narx» tab draws `PricingTable` (one row per own deal + «Bitimsiz», one date,
 one currency, one Saqlash; blanks write nothing, 3a). ONE write body shared with `addTransaction`'s truck branch:
@@ -3297,7 +3297,7 @@ and re-uses the OLD joined row, the join fails and 0 rows come back; lock the ro
 (2) `cancelBatch` → after its commit → `releaseNumberAfterCancel` walks the counter down (rename.ts stays `batches.code`'s one
 writer; counter FOR UPDATE → name locks → row → CAS; audit `after {code, released:true, number}` and NEVER a `reason`, or the
 former-name predicate burns the number); kept reasons `NUMBER_KEPT`, shown on the cancelled card (`batch-number-state`) and
-answered by the bot; the holder of N = the truck BORN with it (shared SQL with `firstNameOf`). `scripts/batch-raqam.ts`
+answered by the bot; the holder of N (#1592): the wearer — unless a cancelled never-departed wearer not born with it, which yields to the live-or-departed minter — else the ROAD carrier, else the newest minter, else the newest rename-away row; «at the agent» is asked of the NUMBER (any truck that ever wore the string, `everTickedSql`) by the walk, the card, the dry run AND the mint (`numberEverAtAgent` in `nextBatchCode`). `scripts/batch-raqam.ts`
 through `migrate`: dry run, then `--apply` (7a). `changeDestBeforeDeparture` (reroute.ts, ONE `writeDestTx` with the road
 reroute, its own audit key `destBeforeDeparture`) on the Mashina tab; the quick batch asks in-page, every e2e through
 `tests/e2e/quick-batch.ts` `createQuickBatch`. Stated: a plate-named cancelled truck keeps the plate as its NAME (C3).
