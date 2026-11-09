@@ -28995,6 +28995,277 @@
    "weight": "regression",
    "realistic": "same three-line head with the per-client waybill",
    "severity": "rare"
+  },
+  {
+   "id": "c2451",
+   "input": [
+    [
+     "品名",
+     "箱数",
+     "每箱数量",
+     "总数量",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "裤子",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton «每箱数量» was the line count: 30 / 25",
+   "why": "a count header naming one package is nobody's count (PER_PACKAGE_COUNT): the line count is «总数量», 300 / 100 — the packing list is then «o‘sha tovarlar» beside its invoice, never a second order",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2452",
+   "input": [
+    [
+     "Наименование",
+     "Мест",
+     "Кол-во в коробке",
+     "Кол-во, шт",
+     "Вес нетто",
+     "Вес брутто",
+     "Объем м3"
+    ],
+    [
+     "Куртка женская",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "Брюки",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Брюки",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во в коробке» was the line count: 30 / 25",
+   "why": "the Russian per-carton count is passed over; «Кол-во, шт» is the line count",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2453",
+   "input": [
+    [
+     "品名",
+     "箱数",
+     "每箱件数",
+     "总件数",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "裤子",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«每箱件数» was the line count",
+   "why": "every «每…» count header is one package's",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2454",
+   "input": [
+    [
+     "品名",
+     "数量(PCS)",
+     null,
+     "毛重(KG)",
+     null
+    ],
+    [
+     null,
+     "每箱",
+     "合计",
+     "单箱",
+     "合计"
+    ],
+    [
+     "女士夹克",
+     30,
+     300,
+     15,
+     150
+    ],
+    [
+     "裤子",
+     25,
+     100,
+     10,
+     40
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton count and weight (30 / 15)",
+   "why": "a two-row header is read as one: «数量(PCS)» over «每箱 | 合计» and «毛重(KG)» over «单箱 | 合计» compose parent + child, so the totals are the line's (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2455",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "N.W. (KG)",
+     null,
+     "G.W. (KG)",
+     null
+    ],
+    [
+     null,
+     null,
+     "EACH",
+     "TOTAL",
+     "EACH",
+     "TOTAL"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     14,
+     140,
+     15,
+     150
+    ],
+    [
+     "Trousers",
+     100,
+     9,
+     36,
+     10,
+     40
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 140
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 36
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton netto 14 / 9 was the line weight (and was written onto an invoice's rows)",
+   "why": "«N.W.» and «G.W.» each over «EACH | TOTAL»: the line's netto is the TOTAL column (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
   }
  ],
  "parseGoodsLineCases": [
@@ -57327,6 +57598,158 @@
    "why": "Base: textCut false. New: textCut true — `receiveSheetText` then tells the seller «⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi 3 qator)» about a file nothing was left out of. The SheetRows doc says «an empty tail is no loss».",
    "source": "r4-probe sheets",
    "weight": "regression"
+  },
+  {
+   "id": "c2456",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ],
+       [
+        "TOTAL",
+        400,
+        14,
+        null,
+        190,
+        1.6
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the line weights were one carton's (15 / 10) and the brutto their Σ, 25 kg",
+   "why": "«G.W. (KG)» merged over «PER CTN | TOTAL»: the covered cell takes its master's text across the split (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2457",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "A1:A2",
+       "B1:B2",
+       "C1:C2",
+       "D1:E1",
+       "F1:F2"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the same, with the labels merged down over both rows",
+   "why": "a label merged DOWN repeats into the sub-header row as covered and is not the split's word (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
   }
  ],
  "isArticleNumberCases": [

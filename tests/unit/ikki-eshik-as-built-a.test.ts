@@ -41,7 +41,9 @@ import { foldInvoice, packingFills, packingOfHeld, sameFileAgain } from '@/modul
 import { migrateIntakeState } from '@/modules/platform/telegram/calc-store';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
 import type { AmendBase } from '@/modules/wms/calc/amend-types';
+import ExcelJS from 'exceljs';
 import { MAX_GOODS_ROWS, parseGoods } from '@/modules/wms/deals/goods-import';
+import { readGoodsFile } from '@/modules/wms/deals/goods-file';
 import { invoiceFacts } from '@/modules/wms/calc/intake';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { receiveGoodsSheet } from '@/modules/platform/telegram/calc-files';
@@ -430,5 +432,109 @@ describe('a lone packing list gives its brutto and cube at the reading (as-built
     model.analyze.mockResolvedValueOnce(reads([]));
     const read = await analyzeCollected(folded);
     expect([read.facts.weightKg ?? null, read.facts.volumeM3 ?? null]).toEqual([null, null]);
+  });
+});
+
+/** A real .xlsx with real merges, read through the bot's own file reader. */
+async function workbook(rows: (string | number | null)[][], merges: string[] = []) {
+  const book = new ExcelJS.Workbook();
+  const ws = book.addWorksheet('Packing');
+  ws.addRows(rows);
+  for (const m of merges) ws.mergeCells(m);
+  const read = await readGoodsFile(Buffer.from(await book.xlsx.writeBuffer()), null);
+  if (!read || read.kind !== 'goods') throw new Error(`not read as goods: ${JSON.stringify(read)}`);
+  return read;
+}
+const counts = (read: Awaited<ReturnType<typeof workbook>>) => read.goods.map((g) => [g.description, g.quantity, g.weightKg]);
+
+describe('a two-row packing-list header reads as one (as-built CRITIC-1)', () => {
+  const DATA = [
+    ['Ladies jacket', 300, 10, 15, 150, 1.2],
+    ['Trousers', 100, 4, 10, 40, 0.4],
+    ['TOTAL', 400, 14, null, 190, 1.6],
+  ];
+  it('«G.W. (KG)» merged over «PER CTN | TOTAL»: the line is the TOTAL column, the brutto 190 — never the Σ of single cartons', async () => {
+    const read = await workbook([['Description', 'Qty', 'CTNS', 'G.W. (KG)', null, 'CBM'], [null, null, null, 'PER CTN', 'TOTAL', null], ...DATA], ['D1:E1']);
+    expect(counts(read)).toEqual([['Ladies jacket', 300, 150], ['Trousers', 100, 40]]);
+    expect([read.grossKg, read.volumeM3]).toEqual([190, 1.6]);
+  });
+  it('…and with the labels merged DOWN over both rows, the way Excel users draw it', async () => {
+    const read = await workbook(
+      [['Description', 'Qty', 'CTNS', 'G.W. (KG)', null, 'CBM'], [null, null, null, 'PER CTN', 'TOTAL', null], ...DATA],
+      ['A1:A2', 'B1:B2', 'C1:C2', 'D1:E1', 'F1:F2'],
+    );
+    expect(counts(read)).toEqual([['Ladies jacket', 300, 150], ['Trousers', 100, 40]]);
+    expect(read.grossKg).toBe(190);
+  });
+  it('«N.W.» and «G.W.» each over «EACH | TOTAL»: netto from the TOTAL column, never one carton’s', async () => {
+    const read = await workbook(
+      [
+        ['Description', 'Qty', 'N.W. (KG)', null, 'G.W. (KG)', null],
+        [null, null, 'EACH', 'TOTAL', 'EACH', 'TOTAL'],
+        ['Ladies jacket', 300, 14, 140, 15, 150],
+        ['Trousers', 100, 9, 36, 10, 40],
+      ],
+      ['C1:D1', 'E1:F1'],
+    );
+    expect(counts(read)).toEqual([['Ladies jacket', 300, 140], ['Trousers', 100, 36]]);
+    expect([read.weightKind, read.grossKg]).toEqual(['net', 190]);
+  });
+  it('«Weight (KG)» over «N.W. | G.W.»: a netto line weight and a brutto Σ — the gross column is there', async () => {
+    const read = await workbook(
+      [['Description', 'Qty', 'Weight (KG)', null], [null, null, 'N.W.', 'G.W.'], ['Ladies jacket', 300, 140, 150], ['Trousers', 100, 36, 40]],
+      ['C1:D1'],
+    );
+    expect([read.weightKind, read.grossKg, read.grossColumn]).toEqual(['net', 190, true]);
+  });
+  it('«数量(PCS)» over «每箱 | 合计», «毛重(KG)» over «单箱 | 合计»: the counts and the brutto are the totals', async () => {
+    const read = await workbook(
+      [['品名', '数量(PCS)', null, '毛重(KG)', null], [null, '每箱', '合计', '单箱', '合计'], ['女士夹克', 30, 300, 15, 150], ['裤子', 25, 100, 10, 40]],
+      ['B1:C1', 'D1:E1'],
+    );
+    expect(counts(read)).toEqual([['女士夹克', 300, 150], ['裤子', 100, 40]]);
+    expect(read.grossKg).toBe(190);
+  });
+  it('«Вес брутто, кг» over «1 места | всего»', async () => {
+    const read = await workbook(
+      [['Наименование', 'Кол-во', 'Вес брутто, кг', null], [null, null, '1 места', 'всего'], ['Куртка женская', 300, 15, 150], ['Брюки', 100, 10, 40]],
+      ['C1:D1'],
+    );
+    expect(read.grossKg).toBe(190);
+  });
+  it('the belt: a Σ the sheet’s own TOTAL row contradicts is refused, never landed', () => {
+    const parsed = parseGoods([
+      ['Description', 'Qty', 'G.W.(kg)', 'CBM'],
+      ['Ladies jacket', 300, 15, 1.2],
+      ['Trousers', 100, 10, 0.4],
+      ['TOTAL', 400, 190, 1.6],
+    ]);
+    expect([parsed.grossKg, parsed.volumeM3]).toEqual([null, 1.6]);
+    // …and a TOTAL row that agrees changes nothing.
+    expect(parseGoods([['Description', 'Qty', 'G.W.(kg)'], ['Ladies jacket', 300, 150], ['Trousers', 100, 40], ['TOTAL', 400, 190]]).grossKg).toBe(190);
+  });
+});
+
+describe('a per-carton count column is not the line’s count (as-built FILES-1, §1.2.2)', () => {
+  const CN = [
+    ['品名', '箱数', '每箱数量', '总数量', '净重', '毛重', '体积'],
+    ['女士夹克', 10, 30, 300, 150, 165, 1.2],
+    ['裤子', 4, 25, 100, 40, 46, 0.4],
+  ];
+  const RU = [
+    ['Наименование', 'Мест', 'Кол-во в коробке', 'Кол-во, шт', 'Вес нетто', 'Вес брутто', 'Объем м3'],
+    ['Куртка женская', 10, 30, 300, 150, 165, 1.2],
+    ['Брюки', 4, 25, 100, 40, 46, 0.4],
+  ];
+  for (const [label, rows] of [['Chinese', CN], ['Russian', RU], ['Chinese «每箱件数 | 总件数»', CN.map((r, i) => (i === 0 ? ['品名', '箱数', '每箱件数', '总件数', '净重', '毛重', '体积'] : r))], ['English control «PCS/CTN | TOTAL PCS»', CN.map((r, i) => (i === 0 ? ['Description', 'CTNS', 'PCS/CTN', 'TOTAL PCS', 'N.W.', 'G.W.', 'CBM'] : r))]] as const) {
+    it(`${label}: the counts are the totals`, () => {
+      expect(parseGoods(rows as (string | number)[][]).goods.map((g) => g.quantity)).toEqual([300, 100]);
+    });
+  }
+  it('the invoice, then its Chinese packing list: «o‘sha tovarlar» — totals only, no row added', () => {
+    const { chatId } = collection({ stage: 'material' }, { section: 'podklyuch', ai: true });
+    receive(chatId, sheet('«PI.xlsx»', [['品名', '数量', '单价', '金额'], ['女士夹克', 300, 12.5, 3750], ['裤子', 100, 8, 800]]));
+    const state = receive(chatId, sheet('«装箱单.xlsx»', CN));
+    expect(state.invoiceGoods?.map((g) => [g.name, g.quantity])).toEqual([['女士夹克', 300], ['裤子', 100]]);
+    expect([state.fileTotals?.weightKg, state.fileTotals?.volumeM3]).toEqual([211, 1.6]);
   });
 });
