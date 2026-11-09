@@ -6670,3 +6670,135 @@ verbatim). Stated, not fixed: a text reply to the ➕ answer of a collection bei
 30 minutes is answered «⏳ Tahlil davom etmoqda» and not added (CHK-N1); the net's NOT EXISTS
 is as true as the durable row, which production flushes within 5 s while the net reads rows
 five minutes old (CHK-N2). Final tree (14355e4), each gate on its own on a fresh database: typecheck 0, lint 0, unit 537 files / 9295 tests and integration 285 files / 3559 tests with 0 failed, build 0 (the bundle's foreign hosts the known ones); at 947987b the whole CI order ran, vitest 821 files / 12851 tests with 0 failed, build 0 and Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent), and GitHub's CI on 947987b was green; the final head is CI's run.
+
+## Mashina narxi har bitimga bir jadvalda + bekor qilingan partiya raqami (2026-11-09; numbered past main's #1581; NO migration, ledger 140; spec `docs/NARX-VA-RAQAM.md`, §3 binding, §4 the round as built; his «1a 2a 3a 4a 5a 6a 7a 8a» to the spec's eight questions)
+
+**#1582 — A client with fifteen deals on one truck is priced in ONE table and ONE press.**
+His «1 mashinada 1 clientda 10 15 ta prixoda va har birida bitim bolsa narx berishda faqat 1
+dona bitim tanlaydigan bolib qolgan». Q8 «c» (#1512) made every press choose ONE deal, so
+fifteen deals were fifteen presses, each stopped by a confirmation and followed by a full
+redraw — and from the second press on the confirmation said «Bu narx qo'shimcha hisob
+bo'ladi» about the correct next deal's part, which is no extra bill at all (m9zzzg pinned
+that false line as intended). When `DealCandidates.ambiguous`, the client's card on the
+«Narx» tab draws `PricingTable`: one shared date and currency, one row per own deal (as the
+select labelled it) plus «Bitimsiz» when some cargo has no deal, one «🧾 Saqlash». Blank rows
+write nothing (his 3a) and a press with none filled is `deal_parts_empty` in the browser AND
+before the schema. The write is ONE body shared with `addTransaction`'s truck branch (#513):
+`prepareTruckCharges` (pool: date, route, cargo, the pure `truckDealParts`, ONE `rateFor`,
+per-part dollars) and `writeTruckCharges`, which OWNS its transaction (#714) — `lockOwnersTx`
+→ `lockTruckForPriceTx` → `cargoAboard(…, tx)` → the decision again, part by part
+(`deals_changed`) → the drawn prices re-read (`prices_changed`) → N inserts → ONE
+`reconcileFxResidueTx` → an audit row per charge with `dealVia` and `parts: N`. All or
+nothing: a refused part writes no part. The non-ambiguous client keeps `PricingForm`, now
+without its question branch, and the ledger door keeps one deal per save (stated).
+
+**#1583 — The pre-fill is the deal's SOLD price for this truck's cargo, and only for the
+quote sight.** His 1a/2a. `prefillFor(facts, currency)` is pure and answers `{usd}` or `{none:
+why}`: a value only for `dealPriceSight` (the VED gets the facts with every money field
+null — law 4), USD, a figure SCALED by a measure (`expectedPartFor` has no whole-quote
+fallback — a bill is never the whole quote by default), no discount, no price of the deal
+anywhere (this truck, another truck, its card), no davomi carton, not a continuation, no
+`offElsewhere` price and no `whole` price standing. The value is the quote × the truck's
+EXACT share (Σ stored lot figure × onBatch / boxCount, unrounded), on the upsale's own basis
+(kg for a per-kg version, else m³, else kg), ROUNDED UP to the cent — measured: rounded to
+three places the share read 205.67 against a due 205.73 and a pre-filled single-truck deal
+answered `no_invoice` (red proof). Only an untouched row is filled; a save clears only what
+it wrote; leaving USD clears an untouched pre-fill.
+
+**#1584 — «Already priced here» has ONE reading, and a price the lost-cargo door lowered to
+zero still stands.** `pricedHereReading(candidates, prices, zeroed)` is shared by the table,
+«Bu mashinadagi narxlar» and `unpricedDealsOf`: a deal's own live prices; the «bitimsiz» part
+= deal-less prices whose create audit says `dealVia: 'none'`; `whole` = every other deal-less
+price and every price on a deal no longer aboard (while one stands, no pre-fill and every
+filled row asks). A row asks «qo'shimcha hisob» ONLY when its own deal is priced here — the
+false line's fix. The review found two ways the reading went quiet: a compensation-ZEROED
+truck charge read as «no price» (pre-filled in full, «Narx yo'q» loud, no ask — the next
+press billed it again), while `u_charge` and `cardPriced` had always counted it; now
+`batchZeroedCharges` reads it with their own clause, now one home in
+`finance/standing-price-sql.ts`, kept OUT of `pricesSeen` (or every later press reads
+`prices_changed`), and the row asks «narx kompensatsiya bilan olib tashlangan — yana
+qo'yasizmi?». And a chosen «bitimsiz» part lost its `dealVia` through the compensation
+re-post and through «Ko'chirish», so every blank deal turned muted `whole` — the binding 3a
+answer broken by a correction door; both copies carry `dealVia: 'none'` now, and only while
+the copy stays deal-less on the same truck. A chosen «bitimsiz» price on a truck that now
+carries only deals reads `whole` with the ⚠ «gone» mark.
+
+**#1585 — A row lock with a join is not a lock on the join.** `lockTruckForPriceTx` was
+`SELECT b.status, o.country, d.country … JOIN warehouses … FOR SHARE OF b`. Under READ
+COMMITTED, after waiting on a truck whose destination was being changed, postgres's
+EvalPlanQual re-fetches the NEW `b` row and re-uses the OLD, unlocked `d` row; the join qual
+`d.id = b.dest_warehouse_id` fails, ZERO rows come back, and every price or «Ko'chirish»
+pressed during a destination fix or a road reroute answered `batch_not_found` («Xatolik»),
+and a change to China answered with the wrong word. Measured with a bare two-table probe
+before the fix. The truck row is locked ALONE, then the two countries are read by id in a
+second statement; a held-row race test (holder `FOR NO KEY UPDATE` + the destination UPDATE,
+the press waits and resumes) pins both outcomes, same country → written, China →
+`internal_batch`, for the table and for `moveCharge` — which took no truck lock at all
+before this round.
+
+**#1586 — Two people on one deal: the drawn card prices are compared too.** `pricesSeen`
+re-reads this truck's live charges only, while the row's «bitim kartasida narx bor» and the
+pre-fill's `pricedCard` exclusion are render-time facts about the deal's OTHER prices. A card
+price written from the client ledger between the render and the press was a silent second
+bill (reproduced). The table posts `cardSeen` — the posted deals card-priced as drawn, by
+`cardPriced`'s own predicate — and `writeTruckCharges` re-reads it under `lockOwnersTx` and
+refuses `prices_changed` on any difference. Re-checking `cardPriced` alone was refused: it
+would refuse a row the person had already confirmed against the drawn line. And the 5 %
+check, the deal block's «bu mashinada ≈» and the totals used `expectedPriceFor` (m³ first)
+while the pre-fill used the per-kg basis — the system called its own pre-filled figure 14 %
+wrong and its hint billed $150 over the per-kg sale; one `expectedHereFor` feeds all four.
+
+**#1587 — A cancelled truck that never left gives its number back.** His «yw10 keyin u
+bekor qilinsa yw10 qolyabti … biz esa 10 11 qilib mashina sonini hsoblaymiz», answers 4a 5a.
+After `cancelBatch` COMMITS (never inside it: it holds the loading lock a rename waits on,
+#714) `releaseNumberAfterCancel` walks the prefix's counter down: number N is releasable when
+its holder is cancelled, `departed_at IS NULL`, never at the agent (no standing tick AND no
+audit row that ever ticked — an untick does not un-send papers) and N is no road former name.
+One short transaction per number in the mint's own order (counter row FOR UPDATE →
+`lockBatchCode` old and new → truck row → re-check → rename to «YW-010 (bekor)» / «(bekor 2)»
++ counter CAS `value = N` → one audit row `after {code, released: true, number}`), `lock_timeout
+3s`, a timeout `busy` and never a failed cancel. The audit row carries NO `reason`: the
+former-name predicate counts a road rename by `after.reason`, and a release written with one
+would burn the number for ever (audit_log is immutable; red proof — five tests). The holder
+of N is matched case-insensitively (`codeEverWorn` is upper-cased, so a hand-typed «yw-010»
+already blocks the mint), while the truck's OWN number is decided by building the exact
+string the mint builds (`numberOfCode`), never by a parse. A gap in the middle stays (5a)
+and the cancel SAYS so: «Raqam qaytmadi: YW-011 allaqachon ochilgan»; the card of a
+cancelled truck keeps the answer (`batch-number-state`), and the bot answers a released
+number «bekor qilingan, raqami qaytarildi» until it is minted again.
+
+**#1588 — Who holds a number is decided by the truck born with it.** The review found two
+readers disagreeing with the writer. The card and the cancel's answer read «my number» as
+the truck's FIRST name, so a truck born -001, renamed and then holding a vacated -002 printed
+the wrong number; the release row now records `number` and the readers read it back
+(`releasedNumbersOf`, `numberState.numbers: string[]` — one truck can hold two). And
+`numberHolderOf` picked the newest rename-away row before the newest truck BORN with the
+number, so a second -002 could be minted while a live truck still answered to it (S1,
+reproduced); the born-name rule is now one SQL fragment shared with `firstNameOf`,
+`MATERIALIZED` because EXPLAIN showed the lookup running once per sort key.
+
+**#1589 — Old cancelled trucks: a dry run read to him first (7a).**
+`scripts/batch-raqam.ts` through `migrate` (#1228) iterates every `batch_seq` counter (old
+prefixes too), names every warehouse using the prefix today, labels every gap, and says which
+numbers `--apply` would return and WHERE the walk stops, in Uzbek (`number-stop-words.ts`,
+one sentence per reason — a raw code reached the first draft's output). `--apply` calls the
+same `releaseTrailingCodes`; only TRAILING never-departed, never-agent numbers come back.
+Stated: a cascade may rename another warehouse's cancelled truck when they share a prefix.
+
+**#1590 — A wrong destination is fixed in place before departure, and the quick batch asks
+first (6a).** The commonest reason for a cancel was a mis-picked destination, and nothing
+could change it before departure. `changeDestBeforeDeparture` (reroute.ts, beside
+`rerouteBatch`; both write through ONE private `writeDestTx`, fenced by counting UPDATE
+sites): `lockTruckLoading` first (count-kernel-wire), the row FOR NO KEY UPDATE, money counted
+under it, the target FOR SHARE, a CAS on the destination as drawn. Refused in words: a truck
+on the road (`not_before_departure`), cancelled (`batch_cancelled`), already unloaded
+(`already_unloaded` — the review found all three answered «jo'nagan»), live money AND the
+destination's COUNTRY would change (`dest_money_country` — a price may not move onto an
+internal leg), papers at the agent, a stale panel (`dest_changed`; the form refreshes on any
+of the four stale answers). Audited under its OWN key `destBeforeDeparture` — never the
+reroute's, whose «told» readers would take it for a «keladi». The quick batch's «＋
+Yaratish» only ASKS («Yiwu → Toshkent: yangi partiya ochilsinmi?» in-page, no
+`window.confirm`); every e2e that creates one goes through `createQuickBatch(page, …)`. Stated
+limit (review C3): a truck renamed to its PLATE and then cancelled keeps the plate as its name,
+so the reopened truck cannot take that name — the plate belongs in «Mashina», and a wrong
+destination is fixed in place now.

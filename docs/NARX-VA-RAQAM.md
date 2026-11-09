@@ -481,3 +481,67 @@ Six lenses read v1 against the code (47 findings: 0 blockers, 31 defects,
    goes through ONE helper `createQuickBatch(page, …)`.
 10. **m9m** asserts the archive row by id/href and the card's
     `batch-number-state`, not a count over a substring.
+
+---
+
+## §4 — As built (2026-11-09; DECISIONS #1582-#1590)
+
+Built as two packages in worktrees on 34a8b622 (P1 the table, P2 the number), merged by
+cherry-pick, reviewed as built by six lenses with a skeptic per candidate (21 candidates:
+18 confirmed, 3 partial, 1 refuted), fixed in two more worktrees, then the FIXES reviewed
+(§4.4). No migration; the ledger stays 140.
+
+### 4.1 Where §3 was built differently (and why)
+
+- **«Bu mashinadagi narxlar»** keeps the price lines and the gone-deal ⚠; the missing deals
+  are ONE line «Narx yo'q: B-…, B-…» (`pricing-priced-here-missing`, `data-loud`). The
+  per-deal `card` / `whole` lines left that block: each table row says it itself
+  («bitim kartasida narx bor» / «butun yukka narx bor» / «YW-… da narx bor»), and fifteen
+  lines per kind pushed the table off a phone.
+- **`prefillFor(facts, currency)`** takes the currency as an argument: the browser asks it
+  with the currency the select holds NOW, so the server ships facts and one pure rule runs
+  in both places. The why is printed only where no other line already says it.
+- **`moveCharge`** re-reads `cargoAboard(…, tx)` for each target after the truck lock, not
+  only the lock.
+- **Two more kept reasons** for a number: `left` (a cancelled truck that departed — the
+  annul — keeps it) and `pending` (the card only: the rule would release it and no walk has
+  yet). `NUMBER_KEPT` = newer | agent | left | renamed_left | unworn | no_counter | prefix |
+  pending | busy | error.
+- **The holder of N is matched case-insensitively** — `codeEverWorn` is upper-cased, so a
+  hand-typed «yw-010» already blocks number 10 for the mint and the release must see it
+  too. The truck's OWN number is decided by the exact string the mint builds
+  (`numberOfCode`).
+- **`cancelBatch` returns the truck RE-READ after the release**, so no caller gets the name
+  the truck just gave up; the re-read and the release each sit in their own try/catch
+  after the commit (a failed tail never turns a committed cancel into an error page).
+- **The quick batch's «Yaratish»** is disabled when origin = destination (the action used to
+  return quietly).
+- **The destination form** lives on the Mashina tab only (its own folded panel,
+  `batch-dest-change-panel`), one press, no reason.
+- `/plans/[id]` prints «Mashina hozir: {dest} — reja {planned} uchun tasdiqlangan»; the
+  /plans LIST keeps the plan's destination (stated).
+
+### 4.2 The review as built (fixed; DECISIONS #1584-#1590)
+
+A1 a compensation-zeroed truck charge read as unpriced · A2 «bitimsiz» lost through the
+compensation re-post and «Ko'chirish» · A3/D1/F2 the join under `FOR SHARE OF b` (EvalPlanQual,
+`batch_not_found` during any destination change) · A4 a card price written while the table is
+open · B1 the 5 % check on another basis than the pre-fill · B2 every refusal marked the row
+«o'qib bo'lmadi» · B3 «Jami: N ta bitim» counted «Bitimsiz» · B4 a raw deal id in a held
+refusal · F1 a chosen «bitimsiz» price on a deals-only truck pre-filled every row · E1 the
+VED's law-4 check could not see an escaped figure in the RSC payload · C1 the card named the
+born number when the walk returned another · C2 the holder was the newest renamer, not the
+minter (a second -002 minted) · C4 `pending`/`busy` promised «keyingi bekor qilishda qaytadi»
+· C5 the dry run printed raw stop codes · D2 «rejada» named two warehouses · D3 a cancelled /
+arrived / closed truck was told «jo'nagan» · F3 cancel's post-commit tail outside any catch.
+Refuted: E2. Stated, not fixed: **C3** — a truck renamed to its plate and then cancelled keeps
+the plate as its NAME, so the reopened truck cannot take that name (`code_taken`); the plate
+belongs in the Mashina tab's «davlat raqami» (`vehicle_plate`, not unique), and a wrong
+destination is fixed in place now (6a). Renaming the plate holder inside a release is a design
+change (a third name lock on a name that is not the number) — only if he asks.
+
+### 4.3 Verification
+
+Red proofs by string edit, each reverted the same way and the tree checked clean: P1 12 + the
+fixes' own, P2 16 + the fixes' own (one, the counter `FOR UPDATE` alone, stayed GREEN: the CAS
+`value = N` refuses a stale rewind by itself — recorded as defence in depth, not a defect).
