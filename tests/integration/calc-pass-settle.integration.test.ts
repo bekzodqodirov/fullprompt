@@ -71,7 +71,12 @@ import {
   tgMessages,
   users,
 } from '@/modules/platform/db/schema';
-import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/notifications/service';
+import {
+  __resetTelegramPause,
+  problemSince,
+  sendPendingTelegram,
+  telegramProblemSql,
+} from '@/modules/platform/notifications/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import type { Actor } from '@/modules/platform/rbac/authorize';
 import {
@@ -89,7 +94,7 @@ import {
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
 import { TICKET_SEND_WINDOW_S, queueCalcPrefill, ticketStanding } from '@/modules/wms/calc/prefill-queue';
-import { sayOnce } from '@/modules/wms/calc/say-once';
+import { SILENT_DOOR_ERROR, sayOnce } from '@/modules/wms/calc/say-once';
 import { amendStanding } from '@/modules/wms/calc/amend';
 import { replyVerdictFor } from '@/modules/platform/telegram/reply-door';
 import {
@@ -104,7 +109,7 @@ import { ROAD_STALE_LINE } from '@/modules/wms/calc/ai-reply';
 import { lawAsksInputOf, lawAsksInputOfStored, lawAsksOf } from '@/modules/wms/calc/law-asks';
 import { landIntake } from '@/modules/wms/calc/intake-land';
 import { threadCalcSend } from '@/modules/wms/calc/from-thread';
-import { AI_REPLY_HEAD, RERUN_WORD, TARIFF_PRICED_HEAD } from '@/modules/wms/calc/reply-heads';
+import { AI_NOTE_HEAD, AI_REPLY_HEAD, RERUN_WORD, TARIFF_PRICED_HEAD } from '@/modules/wms/calc/reply-heads';
 import { clientFeed, machineReplyOf } from '@/modules/wms/crm/feed';
 
 const SUFFIX = String(Date.now()).slice(-6);
@@ -939,5 +944,112 @@ describe('Uch band’s retried landings queue the pass a cut left owed (§10.2.1
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
     await expect(press()).rejects.toMatchObject({ code: 'note_taken' });
     expect(await jobsOfNote(noteId)).toEqual({ requests: 1, jobs: 1 });
+  });
+});
+
+/**
+ * The two bot doors in a real pass, through the worker (docs/IKKI-ESHIK.md
+ * §2.4, §2.6, §3.5, §3.6). «🧮 Hisoblatish» (his 3a): the pass still prepares
+ * the card, and the seller hears NOTHING — every message goes through
+ * `sayOnce`'s silent mode, a claim row written `muted` «oddiy eshik», which
+ * the drain never sends and the problem counter never counts, and `spoke`
+ * still gates the ONE lenta note a redelivery must not repeat. «🤖 AI
+ * rastamojka» (his 4a, 5a): the figure reaches him past his mute and asks
+ * nothing. The sweater's law is «kamida $1/dona» and it states only kilos, so
+ * on a request from before the doors the answer would ASK its count (2.8 b,
+ * pinned above).
+ */
+describe('the two doors through the worker (Ikki eshik)', () => {
+  freshSeller();
+  let hears = '';
+  beforeAll(async () => {
+    // A linked seller who WOULD hear every message: the plain door's silence
+    // is the door's, not a missing chat.
+    hears = await mintUser('door-hears');
+    await db.insert(telegramLinks).values({ userId: hears, telegramChatId: BigInt(CHAT + 7), status: 'linked', linkedAt: new Date() });
+  });
+  const sweaterAt = (door: 'plain' | 'ai', by: string) =>
+    open('rastamojka', [{ name: `Sviter ${door} ${SUFFIX} ${seq++}`, weightKg: 150, tnvedCode: '6110200000' }], { weightKg: 150, intakeDoor: door }, by);
+  const lentaOf = async (requestId: string) => {
+    const [row] = await db.select({ entityId: calcRequests.entityId }).from(calcRequests).where(eq(calcRequests.id, requestId));
+    return (
+      await db
+        .select({ note: crmActivities.note })
+        .from(crmActivities)
+        .where(and(eq(crmActivities.entityId, row!.entityId), sql`${crmActivities.createdBy} IS NULL`))
+    ).map((n) => n.note ?? '');
+  };
+  const counted = async (id: string) =>
+    (
+      await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(and(telegramProblemSql(problemSince()), eq(notifications.id, id)))
+    ).length;
+
+  it('«🧮»: ONE silent claim — muted «oddiy eshik», never sent, never a problem — and ONE money-free note, a redelivery adding neither', async () => {
+    const id = await sweaterAt('plain', hears);
+    await queueCalcPrefill({ requestId: id, staffId: hears, section: 'rastamojka' });
+    const job = passJobs(id)[0]!;
+    await runJob(job);
+    const rows = await said(id, hears);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'muted', error: SILENT_DOOR_ERROR });
+    expect(await counted(rows[0]!.id)).toBe(0);
+    // The claim's text is the VED's note — the estimate travels nowhere.
+    const text = (rows[0]!.payload as { text: string }).text;
+    expect(text.startsWith(AI_NOTE_HEAD)).toBe(true);
+    const notes = (await lentaOf(id)).filter((n) => n.startsWith(AI_NOTE_HEAD));
+    expect(notes).toHaveLength(1);
+    // His 2.7: the count the law pins is named for the VED, never asked.
+    expect(notes[0]).toMatch(/⚠️ VED uchun: 1-qator «Sviter plain [^»]+»: soni \(dona\)\./);
+    for (const money of ['≈', 'Rastamojka jami', 'Taxminiy', 'Aniq', 'JAMI', '❓', 'reply qilib']) expect(notes[0], money).not.toContain(money);
+
+    // The job re-delivered (the process died after the claim): nothing more.
+    await runJob(job, 1);
+    expect(await said(id, hears)).toHaveLength(1);
+    expect((await lentaOf(id)).filter((n) => n.startsWith(AI_NOTE_HEAD))).toHaveLength(1);
+    // …and nothing at all ever answered under the AI-VED's heading.
+    expect((await lentaOf(id)).some((n) => n.startsWith(AI_REPLY_HEAD))).toBe(false);
+  });
+
+  it('«🧮»: an addition’s re-run is silent too — `direct` on every other door, outranked here (§2.6)', async () => {
+    const id = await sweaterAt('plain', hears);
+    const amendId = randomUUID();
+    await queueCalcPrefill({ requestId: id, staffId: hears, section: 'rastamojka', pass: `amend:${amendId}` });
+    await runJob(passJobs(id).find((j) => j.data.pass === `amend:${amendId}`)!);
+    const rows = await said(id, hears);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: 'muted', error: SILENT_DOOR_ERROR });
+    expect((rows[0]!.payload as { direct?: boolean }).direct).toBeUndefined();
+  });
+
+  it('«🤖»: the figure reaches a seller who muted the answers — one pending direct row — and asks him nothing (§3.5, §3.6)', async () => {
+    const id = await sweaterAt('ai', mutedId);
+    await queueCalcPrefill({ requestId: id, staffId: mutedId, section: 'rastamojka' });
+    await runJob(passJobs(id)[0]!);
+    const rows = await said(id, mutedId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.status).toBe('pending');
+    expect((rows[0]!.payload as { direct?: boolean }).direct).toBe(true);
+    const text = (rows[0]!.payload as { text: string }).text;
+    expect(text.startsWith(AI_REPLY_HEAD)).toBe(true);
+    for (const ask of ['❓', 'reply qilib', 'mijozdan so‘rab']) expect(text, ask).not.toContain(ask);
+    // The card's copy names the same row for the VED, never «Sotuvchidan so‘raldi».
+    const lenta = (await lentaOf(id)).join('\n');
+    expect(lenta).toMatch(/⚠️ VED uchun: 1-qator «Sviter ai [^»]+»: soni \(dona\)\./);
+    expect(lenta).not.toContain('Sotuvchidan so‘raldi');
+  });
+
+  it('`silent` keeps the claim’s two refusals: an earlier claim, and — under `whileOpen` — a closed request', async () => {
+    const id = await sweaterAt('plain', sellerId);
+    const reply = { userIds: [sellerId], type: 'CalcPrefilled', text: `${AI_NOTE_HEAD} · test` };
+    expect(await sayOnce(id, 'landing', reply, { silent: true })).toBe(true);
+    expect(await sayOnce(id, 'landing', reply, { silent: true })).toBe(false);
+    expect(await said(id)).toHaveLength(1);
+    const closed = await sweaterAt('plain', sellerId);
+    await returnCalcRequest(closed, 'VED qaytardi — test', { actorId: sellerId });
+    expect(await sayOnce(closed, 'landing', reply, { whileOpen: true, silent: true })).toBe(false);
+    expect(await said(closed)).toHaveLength(0);
   });
 });
