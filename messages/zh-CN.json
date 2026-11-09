@@ -2190,6 +2190,7 @@
     "truckPartsEmpty": "没有任何一行填写价格",
     "truckPartDuplicate": "同一笔交易提交了两次——请刷新页面后重新保存",
     "truckPricesChanged": "本车上的价格已变更——页面已刷新，请核对各行后重新保存",
+    "truckCardPricesChanged": "交易卡片上的价格已变更——页面已刷新，请核对该行后重新保存",
     "pricedHereMissingList": "无价格：{codes}"
   },
   "map": {

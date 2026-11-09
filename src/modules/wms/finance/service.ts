@@ -25,6 +25,7 @@ import { batchRoute, isInternalLeg } from '../batches/internal';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
 import { cargoAboard } from '../batches/lots';
 import {
+  cardMovedOf,
   seenOf,
   truckDealDecision,
   truckDealParts,
@@ -377,7 +378,8 @@ export async function prepareTruckCharges(input: {
  * under the client lock that serialises two presses (`prices_changed`: a
  * second tab, or the accountant and the admin at once, would otherwise each
  * write the same parts with nothing asked — judge P1-stale-prices) → the
- * posted deals' CARD prices as drawn (`cardSeen`, review A4) → the
+ * posted deals' CARD prices as drawn (`cardSeen`, review A4 —
+ * `card_prices_changed`, naming the deal) → the
  * inserts, all-or-nothing → ONE kurs farqi reconcile over them → an audit row
  * per charge, saying how its deal got there and, for the table, that it was
  * one press of N.
@@ -421,7 +423,11 @@ export async function writeTruckCharges(plan: TruckChargePlan, ctx: AuditContext
                  sql`, `,
                )})
                  AND ${dealCardPricedSql(sql`d.id`)}`)) as unknown as { id: string }[]);
-      if (seenOf([...card].map((row) => row.id)) !== plan.cardSeen) throw new FinanceError('prices_changed');
+      // Its own refusal, naming the deal: `prices_changed` says «the prices
+      // on THIS truck changed», and nothing on the truck had (review
+      // A4-words) — the row is outlined, the sentence names the deal card.
+      const ids = [...card].map((row) => row.id);
+      if (seenOf(ids) !== plan.cardSeen) throw new FinanceError('card_prices_changed', cardMovedOf(plan.cardSeen, ids));
     }
     const inserted = await tx
       .insert(clientTransactions)

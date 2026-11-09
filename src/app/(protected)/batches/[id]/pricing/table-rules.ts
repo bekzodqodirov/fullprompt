@@ -1,10 +1,11 @@
 import { seenOf } from '@/modules/wms/finance/truck-deal';
 
 /**
- * The price table's small decisions, pure and import-light — so the table
- * (`PricingTable`), the wrapper that words its refusals (`ClientPricing`) and
- * their tests are one arithmetic (#166). Nothing here reads money: each rule
- * is about which row a press counts, marks or names.
+ * The «Narx» tab's small decisions, pure and import-light — so the table
+ * (`PricingTable`), the single form (`PricingForm`), the wrapper that words
+ * their refusals (`ClientPricing`) and their tests are one arithmetic (#166).
+ * Nothing here reads money: each rule is about which row a press counts,
+ * marks or names, and when a press stops to ask.
  */
 
 /**
@@ -62,9 +63,68 @@ export function refusalCodeOf(dealId: string | undefined, codes: Record<string, 
  * The posted deals that carried a price of their own on their CARD as drawn —
  * the «bitim kartasida narx bor» each filled row asked, or did not. The write
  * body re-reads it under the client lock, so a card price written between the
- * drawing and the press is `prices_changed`, never a second bill nobody was
- * asked about (review A4). Only filled rows: a blank row bills nothing.
+ * drawing and the press is `card_prices_changed`, never a second bill nobody
+ * was asked about (review A4). Only filled rows: a blank row bills nothing.
+ * Computed ONCE per render, and that one value is both the question's
+ * identity (`askKeyOf`) and the hidden input the press posts (review RVF1-2).
  */
 export function cardSeenOf<R extends { key: string; card: boolean }>(rows: R[], posted: (row: R) => boolean): string {
   return seenOf(rows.filter((row) => row.card && row.key !== 'none' && posted(row)).map((row) => row.key));
+}
+
+/**
+ * The table's question identity — what an open alert is about: every row as
+ * it reads now, the money, the day, and every drawn fact the press posts for
+ * the door to compare (`dealsSeen`, `pricesSeen`, `cardSeen`). The alert
+ * stands only while the key it was asked under is this one, so a redraw that
+ * moves any of them takes it back and the next press asks again. `cardSeen`
+ * used to be left out while its hidden input followed every redraw: a card
+ * price written behind an open alert was posted by the redrawn input, the
+ * door compared it with itself, and the job was billed on its card and on the
+ * truck with the alert on screen never having asked «bitim kartasida narx
+ * bor» (review RVF1-2). Pass the SAME `cardSeen` the hidden input posts.
+ */
+export function askKeyOf(question: {
+  rows: [key: string, value: string][];
+  currency: string;
+  txDate: string;
+  dealsSeen: string;
+  pricesSeen: string;
+  cardSeen: string;
+}): string {
+  return JSON.stringify({
+    rows: question.rows,
+    currency: question.currency,
+    txDate: question.txDate,
+    seen: `${question.dealsSeen}#${question.pricesSeen}#${question.cardSeen}`,
+  });
+}
+
+/**
+ * The refusals that mean «the page was drawn on facts that have moved» — the
+ * client's deals aboard, his prices on this truck, the posted deals' card
+ * prices (review A4-words). Either body takes its alert back and redraws on
+ * any of them, the same way; the wrapper words each by its own code.
+ */
+export function pageWentStale(error: string | undefined): boolean {
+  return error === 'deals_changed' || error === 'prices_changed' || error === 'card_prices_changed';
+}
+
+/**
+ * Whether the single «Narx» form stops a press to ask: a second bill over an
+ * earlier truck's price, a figure off the deal's, or ANY price of the
+ * client's standing here — a live one (`pricedHere`), or one the lost-cargo
+ * door lowered to zero (`zeroedHere`). For such a client one price covers
+ * all his cargo here, so a press over either is an extra bill. The table
+ * asked a zeroed part and this form did not, so the same fact asked or not
+ * by which shape the client happened to get — and a re-filed prixod flips it
+ * (review RVF1-1).
+ */
+export function singleFormAsks(press: {
+  secondBill: boolean;
+  deviates: boolean;
+  pricedHere: unknown[];
+  zeroedHere: unknown[];
+}): boolean {
+  return press.secondBill || press.deviates || press.pricedHere.length > 0 || press.zeroedHere.length > 0;
 }

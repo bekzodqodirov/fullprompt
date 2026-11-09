@@ -20,6 +20,10 @@ export const TRUCK_DEAL_ERROR_KEYS = {
   deal_parts_empty: 'truckPartsEmpty',
   deal_part_duplicate: 'truckPartDuplicate',
   prices_changed: 'truckPricesChanged',
+  // …and a page drawn before somebody priced one of the posted deals on its
+  // CARD (or took that price back): nothing on this truck changed, so it is
+  // not `prices_changed`'s «Bu mashinadagi narxlar» (review A4-words).
+  card_prices_changed: 'truckCardPricesChanged',
 } as const;
 
 export function truckDealErrorKey(code: string | undefined): (typeof TRUCK_DEAL_ERROR_KEYS)[keyof typeof TRUCK_DEAL_ERROR_KEYS] | null {

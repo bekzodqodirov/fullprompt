@@ -31,8 +31,11 @@ import { batchLots, dealCandidateRows, type BatchLot } from '@/modules/wms/batch
 import {
   dealCandidatesOf,
   ownDealOf,
+  ownZeroedFor,
   pricedHereReading,
   unpricedDealsOf,
+  wholeStandingOf,
+  zeroedAskedOf,
   zeroedFor,
   type DealCandidates,
   type TruckPriceHere,
@@ -500,6 +503,9 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
       const part = quote
         ? expectedPartFor(quote, exact.get(dealId) ?? { m3: 0, kg: 0 }, dealFigures.get(dealId)?.perKg ?? false)
         : null;
+      // The pre-fill stops on ANY zeroed price standing for this row — its
+      // own or the whole cargo's (review A1). The row SAYS only its own part,
+      // and only while nothing live stands for it (A1-zeroed-words).
       const zeroed = zeroedFor(reading, dealId);
       return {
         key: dealId,
@@ -507,7 +513,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         label,
         deferred: head?.deferred ?? false,
         hereUsd: usdOf(here),
-        zeroed,
+        zeroed: ownZeroedFor(reading, dealId),
         card: head?.cardPriced ?? false,
         elsewhere,
         // On the pre-fill's own basis wherever it has one (`expectedHereFor`,
@@ -537,7 +543,7 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
         label: t('truckDealNone'),
         deferred: false,
         hereUsd: usdOf(reading.none),
-        zeroed: zeroedFor(reading, 'none'),
+        zeroed: ownZeroedFor(reading, 'none'),
         card: false,
         elsewhere: [],
         expectedUsd: null,
@@ -1368,7 +1374,8 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                 // bill and asks (R3a). One wrapper either way, holding the
                 // refusal across a redraw that flips the shape.
                 const rows = candidates.ambiguous ? tableRowsFor(group, candidates, split.shares) : null;
-                const reading = pricedHereReading(candidates, prices, zeroedHereOf(group.clientId));
+                const zeroedHere = zeroedHereOf(group.clientId);
+                const reading = pricedHereReading(candidates, prices, zeroedHere);
                 return (
                   <ClientPricing
                     shared={{
@@ -1384,9 +1391,15 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                       rows
                         ? {
                             rows,
-                            whole: reading.whole.map((row) => ({
-                              usd: row.usd,
-                              to: prices.find((price) => price.id === row.id)?.dealCode ?? t('pricedHereNoDeal'),
+                            // Live and zeroed alike: a whole-cargo price the
+                            // lost-cargo door lowered to zero covers every
+                            // row like a live one, and is said here — never
+                            // as each row's own (A1-zeroed-words).
+                            whole: wholeStandingOf(reading).map(({ price, zeroed }) => ({
+                              usd: price.usd,
+                              to: zeroed
+                                ? `${zeroedHere.find((row) => row.id === price.id)?.dealCode ?? t('pricedHereNoDeal')} · ${t('truckTableStandsZeroed')}`
+                                : (prices.find((row) => row.id === price.id)?.dealCode ?? t('pricedHereNoDeal')),
                             })),
                           }
                         : null
@@ -1400,6 +1413,10 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                               perKg: (dealId) => dealFigures.get(dealId)?.perKg ?? false,
                             }),
                             pricedHere: prices.map((row) => ({ usd: row.usd, dealCode: row.dealCode })),
+                            // …and the ones given back to zero, not priced
+                            // again since: they ask too (review RVF1-1) —
+                            // and are in no `pricesSeen` (A1).
+                            zeroedHere: zeroedAskedOf(zeroedHere, prices).map((row) => ({ dealCode: row.dealCode })),
                           }
                     }
                     codes={Object.fromEntries((rows ?? []).map((row) => [row.key, row.code]))}

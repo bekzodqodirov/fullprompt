@@ -2190,6 +2190,7 @@
     "truckPartsEmpty": "No row has a price",
     "truckPartDuplicate": "One deal was sent twice — refresh the page and save again",
     "truckPricesChanged": "The prices on this truck changed — the page was refreshed, check the rows and save again",
+    "truckCardPricesChanged": "The price on the deal’s card changed — the page was refreshed, check the row and save again",
     "pricedHereMissingList": "No price: {codes}"
   },
   "map": {

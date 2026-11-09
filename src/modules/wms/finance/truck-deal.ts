@@ -265,11 +265,71 @@ export function pricedHereReading(
 
 /**
  * Whether a zeroed price stands for a table row — the deal's own, the chosen
- * «bitimsiz» part's (`key` 'none'), or the whole cargo's (every row).
+ * «bitimsiz» part's (`key` 'none'), or the whole cargo's (every row). The
+ * PRE-FILL's gate (review A1): while any of them stands the row is never
+ * typed for the person. What the row SAYS is narrower (`ownZeroedFor`).
  */
 export function zeroedFor(reading: PricedHereReading, key: string): boolean {
   if (reading.zeroed.whole.length > 0) return true;
   return key === 'none' ? reading.zeroed.none.length > 0 : reading.zeroed.byDeal.has(key);
+}
+
+/**
+ * Whether a table row says — and asks — «narx kompensatsiya bilan olib
+ * tashlangan»: only of the row's OWN part (the deal's, or the chosen
+ * «bitimsiz» part's), and only while that part has no live price here. A
+ * zeroed WHOLE-cargo price is not this row's price: it is said and asked
+ * through the whole-cargo words (`wholeStandingOf`), like a live one — every
+ * row used to read «your price was removed» about a price none of them had,
+ * and a part priced again after the compensation went on reading «removed»
+ * beside the price standing for it (review A1-zeroed-words). The pre-fill
+ * stays on `zeroedFor`, so no row is typed while any of them stands.
+ */
+export function ownZeroedFor(reading: PricedHereReading, key: string): boolean {
+  return key === 'none'
+    ? reading.zeroed.none.length > 0 && reading.none.length === 0
+    : reading.zeroed.byDeal.has(key) && !reading.byDeal.has(key);
+}
+
+/**
+ * Every whole-cargo price standing here, live first, then the ones the
+ * lost-cargo door lowered to zero — the list the table's «butun yukka narx
+ * bor» line and its whole-cargo ask name. A zeroed one covers every carton
+ * of the client aboard like the price it was (`unpricedDealsOf` reads it as
+ * 'whole'), so it is said there, «$0.00 → … · kompensatsiya», never as each
+ * row's own (review A1-zeroed-words).
+ */
+export function wholeStandingOf(reading: PricedHereReading): { price: TruckPriceHere; zeroed: boolean }[] {
+  return [
+    ...reading.whole.map((price) => ({ price, zeroed: false })),
+    ...reading.zeroed.whole.map((price) => ({ price, zeroed: true })),
+  ];
+}
+
+/**
+ * The zeroed prices the single «Narx» form names in its ask: each one whose
+ * target — its deal, or no deal — has no live price here. One price covers
+ * all of such a client's cargo here, so ANY price standing makes the press
+ * an extra bill and asks (`pricedHere`); a zeroed price priced again is
+ * named by that live price, never «removed — set it again?» beside it (the
+ * table's own rule, `ownZeroedFor`). Whether the form asks is unchanged by
+ * the filter: a zeroed price it drops always has a live one beside it.
+ */
+export function zeroedAskedOf<T extends TruckPriceHere>(zeroed: T[], live: TruckPriceHere[]): T[] {
+  return zeroed.filter((row) => !live.some((price) => price.dealId === row.dealId));
+}
+
+/**
+ * The first deal whose card reads otherwise than the table was drawn with —
+ * `seen` the drawn digest (`seenOf`), `now` the posted deals card-priced at
+ * the press. The door refuses on it by its own code and names it, so its row
+ * is outlined and the sentence says the DEAL CARD changed, never «the prices
+ * on this truck» (review A4-words: nothing on the truck had moved).
+ */
+export function cardMovedOf(seen: string, now: string[]): string | undefined {
+  const drawn = new Set(seen.split(',').filter(Boolean));
+  const read = new Set(now);
+  return [...new Set([...drawn, ...read])].sort().find((dealId) => drawn.has(dealId) !== read.has(dealId));
 }
 
 /**

@@ -177,10 +177,13 @@ describe('the confirmation is the question that is posted — on both «Narx» b
     );
     const table = read(TABLE);
     expect(table).toContain('asked && asked.key === askKey()');
+    // The table's identity is the pure `askKeyOf` (its parts are proven in
+    // truck-price-table-rules), fed every drawn fact the press posts — the
+    // card digest included, the SAME value the hidden input posts (RVF1-2).
     const key = between(table, 'const askKey = () =>', '});');
-    for (const part of ['rows: rows.map((row) => [row.key, valueOf(row)])', 'currency,', 'txDate,', 'seen: `${dealsSeen}#${pricesSeen}`']) {
-      expect(key, part).toContain(part);
-    }
+    expect(key).toMatch(
+      /askKeyOf\(\{\s*rows: rows\.map\(\(row\) => \[row\.key, valueOf\(row\)\]\),\s*currency,\s*txDate,\s*dealsSeen,\s*pricesSeen,\s*cardSeen,?\s*$/,
+    );
   });
 
   it('prints the figures it was asked with, never the live ones', () => {
@@ -267,6 +270,9 @@ describe('ONE write body for every truck price, deciding twice on the same state
       'decideTruckAsk(now.candidates, plan,',
       "throw new FinanceError('deals_changed');",
       "throw new FinanceError('prices_changed');",
+      // The card digest after this truck's own: its own code, naming the
+      // deal (review A4-words).
+      "throw new FinanceError('card_prices_changed', cardMovedOf(plan.cardSeen, ids));",
       '.insert(clientTransactions)',
       'await reconcileFxResidueTx(tx, { clientIds: [plan.clientId] }, ctx);',
       'await writeAudit(tx, ctx, {',
@@ -341,18 +347,40 @@ describe('the review’s fixes, wired', () => {
     expect(page).toContain('batchZeroedCharges(id)');
     expect(page).toContain('pricedHereReading(candidates, prices, zeroedHereOf(group.clientId))');
     expect(page).toContain('unpricedDealsOf(candidates, rows, zeroed, (dealId) =>');
+    // The pre-fill's gate: ANY zeroed price standing for the row (A1)…
     expect(page).toContain('const zeroed = zeroedFor(reading, dealId);');
-    expect(page).toContain("zeroed: zeroedFor(reading, 'none'),");
+    expect(between(page, 'prefill: {', '},')).toMatch(/\n\s*zeroed,\n/);
+    // …the row's words: its OWN part only, while nothing live stands for it;
+    // a zeroed whole-cargo price is in the whole list (A1-zeroed-words).
+    expect(page).toContain('zeroed: ownZeroedFor(reading, dealId),');
+    expect(page).toContain("zeroed: ownZeroedFor(reading, 'none'),");
+    expect(page).not.toMatch(/zeroed: zeroedFor\(/);
+    expect(page).toContain('whole: wholeStandingOf(reading).map(({ price, zeroed }) => ({');
+    expect(page).not.toContain('whole: reading.whole.map(');
     expect(page.match(/pricesSeen: pricesSeenOf\(/g)).toHaveLength(1);
     const table = read(TABLE);
     expect(table).toContain("if (row.zeroed) asks.push({ kind: 'zeroed', code });");
     expect(table).toContain("row.zeroed ? t('truckTableStandsZeroed') : null,");
   });
 
+  it('RVF1-1: the single form is handed the client’s zeroed prices and asks over them — still out of `pricesSeen`', () => {
+    const page = read(PAGE);
+    expect(page).toContain('zeroedHere: zeroedAskedOf(zeroedHere, prices).map((row) => ({ dealCode: row.dealCode })),');
+    const form = read(FORM);
+    // The prop has no default: an optional list fails open.
+    expect(form).toContain('  zeroedHere,\n  onResult,');
+    expect(form).not.toMatch(/zeroedHere = /);
+    expect(form).toContain('if (!singleFormAsks({ secondBill: secondBill !== null, deviates, pricedHere, zeroedHere })) return;');
+    expect(form).not.toContain('pricedHere.length === 0) return;');
+    expect(between(form, 'data-testid="pricing-zeroed-ask"', '</p>')).toContain("t('truckTableAskZeroed', { code })");
+  });
+
   it('A4: the table posts the card-priced deals it drew, the action passes them, the body re-reads them under the client lock', () => {
     const table = read(TABLE);
-    expect(table).toContain('name="cardSeen"');
-    expect(table).toContain("value={cardSeenOf(rows, (row) => valueOf(row).trim() !== '')}");
+    // ONE digest per render, posted AND held in the alert's identity (RVF1-2).
+    expect(table).toContain("const cardSeen = cardSeenOf(rows, (row) => valueOf(row).trim() !== '');");
+    expect(table).toContain('<input type="hidden" name="cardSeen" value={cardSeen} />');
+    expect(table.match(/cardSeenOf\(/g)).toHaveLength(1);
     expect(read(ACTIONS)).toContain("cardSeen: formData.has('cardSeen') ? String(formData.get('cardSeen')) : undefined,");
     expect(fn(read(SERVICE), 'export async function addTruckPrices(')).toContain('cardSeen: input.cardSeen,');
     const body = fn(read(SERVICE), 'export async function writeTruckCharges(');
@@ -362,6 +390,16 @@ describe('the review’s fixes, wired', () => {
     expect(card).toBeGreaterThan(owners);
     expect(insert).toBeGreaterThan(card);
     expect(body).toContain('AND ${dealCardPricedSql(sql`d.id`)}');
+  });
+
+  it('A4-words: a card moved under the press is its own refusal, redrawn by both bodies like `prices_changed`', () => {
+    for (const path of [TABLE, FORM]) {
+      const body = read(path);
+      expect(body, path).toContain('if (pageWentStale(result.error)) {');
+      expect(body, path).not.toContain("result.error === 'prices_changed'");
+    }
+    expect(TRUCK_DEAL_ERROR_KEYS.card_prices_changed).toBe('truckCardPricesChanged');
+    expect(TRUCK_DEAL_ERROR_KEYS.prices_changed).toBe('truckPricesChanged');
   });
 
   it('B1: a row is compared on its pre-fill’s basis, and the deal block prints the same figures', () => {
@@ -409,7 +447,7 @@ describe('every refusal has words, in every bundle', () => {
   });
 
   it('the table’s own refusals are in the map', () => {
-    for (const code of ['deal_parts_empty', 'deal_part_duplicate', 'prices_changed']) {
+    for (const code of ['deal_parts_empty', 'deal_part_duplicate', 'prices_changed', 'card_prices_changed']) {
       expect(Object.keys(TRUCK_DEAL_ERROR_KEYS), code).toContain(code);
     }
   });

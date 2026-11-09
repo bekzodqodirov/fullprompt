@@ -64,8 +64,10 @@ describe('the screens ask the rule, not a copy of it', () => {
     // Widened by his Q8 «c» (2026-10-27) and moved by the price table
     // (2026-11-08): the single form also asks before any further price for a
     // client already priced here, the table per row — and in BOTH bodies
-    // `secondBill` still stops the press on its own.
-    expect(form).toContain('if (!secondBill && !deviates && pricedHere.length === 0) return;');
+    // `secondBill` still stops the press on its own (the form's rule is the
+    // pure `singleFormAsks` since review RVF1-1 — a zeroed price asks too —
+    // and its own test proves `secondBill` alone answers yes).
+    expect(form).toContain('if (!singleFormAsks({ secondBill: secondBill !== null, deviates, pricedHere, zeroedHere })) return;');
     expect(table).toContain('if (!secondBill && asks.length === 0) return;');
     for (const body of [form, table]) {
       const confirm = body.slice(body.indexOf('data-testid="pricing-deviation-confirm"') - 200, body.indexOf('data-testid="pricing-deviation-confirm"'));

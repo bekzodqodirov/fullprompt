@@ -13,7 +13,7 @@ import {
   type PrefillFacts,
   type PrefillWhy,
 } from '@/modules/wms/finance/deal-price-hint';
-import { cardSeenOf, pressTotalOf, rowSaysUnreadable, type RowMark } from './table-rules';
+import { askKeyOf, cardSeenOf, pageWentStale, pressTotalOf, rowSaysUnreadable, type RowMark } from './table-rules';
 
 /**
  * One row of the price table: a deal of the client's on this truck, or the
@@ -32,8 +32,11 @@ export interface PricingTableRow {
   /** The row's own live prices here, summed (dollars) — null when none. */
   hereUsd: number | null;
   /**
-   * A price here the lost-cargo door lowered to ZERO stands for this row —
-   * its own, or the whole cargo's (`zeroedFor`, review A1).
+   * This row's OWN part here was lowered to ZERO by the lost-cargo door and
+   * nothing live stands for it since (`ownZeroedFor`): the row says so and a
+   * figure typed for it asks (review A1). A zeroed WHOLE-cargo price is not
+   * the row's — it is in `whole`, said and asked like a live one
+   * (A1-zeroed-words); the pre-fill's gate is `prefill.zeroed`, wider.
    */
   zeroed: boolean;
   /** The deal carries a live price of its own off any truck. */
@@ -146,15 +149,15 @@ export function PricingTable({
     setAsked(null);
     confirmed.current = false;
   };
+  // The posted deals that carried a card price as drawn — ONE value per
+  // render, which is both what the press posts and what the alert was asked
+  // under (review RVF1-2: the input followed a redraw the alert did not).
+  const cardSeen = cardSeenOf(rows, (row) => valueOf(row).trim() !== '');
   // The question's identity: every filled row as typed, the money, the day and
-  // the page — an alert about one of them is never confirmed onto another.
+  // every drawn fact the press posts — an alert about one of them is never
+  // confirmed onto another (`askKeyOf`).
   const askKey = () =>
-    JSON.stringify({
-      rows: rows.map((row) => [row.key, valueOf(row)]),
-      currency,
-      txDate,
-      seen: `${dealsSeen}#${pricesSeen}`,
-    });
+    askKeyOf({ rows: rows.map((row) => [row.key, valueOf(row)]), currency, txDate, dealsSeen, pricesSeen, cardSeen });
 
   const formRef = useRef<HTMLFormElement>(null);
   const [, formAction, pending] = useActionState<TruckPricesState, FormData>(async (prev, formData) => {
@@ -166,7 +169,7 @@ export function PricingTable({
       // redrawn page never pre-fills them again.
       setTyped((now) => ({ ...now, ...Object.fromEntries((result.written ?? []).map((key) => [key, ''])) }));
     }
-    if (result.error === 'deals_changed' || result.error === 'prices_changed') {
+    if (pageWentStale(result.error)) {
       setAsked(null);
       router.refresh();
     }
@@ -269,8 +272,10 @@ export function PricingTable({
           else if (row.hereUsd !== null) {
             asks.push(row.key === 'none' ? { kind: 'none_extra', usd: row.hereUsd } : { kind: 'extra', code, usd: row.hereUsd });
           }
-          // A part the lost-cargo door gave back is still a price someone set:
-          // typed again, the job is billed for what the compensation took back.
+          // The row's OWN part the lost-cargo door gave back is still a price
+          // someone set: typed again, the job is billed for what the
+          // compensation took back. A zeroed whole-cargo price asks above,
+          // as `whole` (A1-zeroed-words).
           if (row.zeroed) asks.push({ kind: 'zeroed', code });
           if (row.card) asks.push({ kind: 'card', code });
           if (row.elsewhere.length > 0) asks.push({ kind: 'elsewhere', code, codes: row.elsewhere.join(', ') });
@@ -300,13 +305,10 @@ export function PricingTable({
       {/* The posted deals that carried a card price as drawn — the «bitim
           kartasida narx bor» each row asked, or did not. The write body
           re-reads it under the client lock: a card price written meanwhile
-          is `prices_changed`, never a second bill nobody was asked about
-          (review A4). Recomputed every render, so it is what this press posts. */}
-      <input
-        type="hidden"
-        name="cardSeen"
-        value={cardSeenOf(rows, (row) => valueOf(row).trim() !== '')}
-      />
+          is `card_prices_changed`, never a second bill nobody was asked
+          about (review A4). The same value the open alert's identity holds,
+          so a redraw that moves it takes the alert back (RVF1-2). */}
+      <input type="hidden" name="cardSeen" value={cardSeen} />
       <p className="text-xs font-semibold text-ink-700">{t('truckTableTitle')}</p>
       <div className="flex flex-wrap items-center gap-2">
         <input

@@ -2190,6 +2190,7 @@
     "truckPartsEmpty": "Hech bir qatorga narx yozilmagan",
     "truckPartDuplicate": "Bir bitim ikki marta yuborildi — sahifani yangilab, qaytadan saqlang",
     "truckPricesChanged": "Bu mashinadagi narxlar o‘zgardi — sahifa yangilandi, qatorlarni tekshirib qaytadan saqlang",
+    "truckCardPricesChanged": "Bitim kartasidagi narx o‘zgardi — sahifa yangilandi, qatorni tekshirib qaytadan saqlang",
     "pricedHereMissingList": "Narx yo‘q: {codes}"
   },
   "map": {

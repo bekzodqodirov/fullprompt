@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  cardMovedOf,
   dealCandidatesOf,
+  ownZeroedFor,
   partKeyOf,
   pricedHereReading,
   seenOf,
   truckDealParts,
   unpricedDealsOf,
+  wholeStandingOf,
+  zeroedAskedOf,
   zeroedFor,
   type TruckDealPart,
 } from '@/modules/wms/finance/truck-deal';
@@ -182,15 +186,73 @@ describe('a price the lost-cargo door lowered to ZERO still stands (review A1)',
     expect(unpricedDealsOf(ab, [], [p('z1', 'B')], () => false)).toEqual([{ dealId: 'A', why: 'missing', loud: true }]);
   });
 
-  it('a zeroed whole-cargo price covers every deal like a live one, and every row reads it', () => {
+  it('a zeroed whole-cargo price covers every deal like a live one: no row is pre-filled, and it is the WHOLE cargo’s, never a row’s own', () => {
     const reading = pricedHereReading(ab, [], [p('z1', null)]);
     expect(reading.zeroed.whole.map((row) => row.id)).toEqual(['z1']);
+    // The pre-fill's gate — every row, as A1 built it.
     expect(zeroedFor(reading, 'A')).toBe(true);
     expect(zeroedFor(reading, 'B')).toBe(true);
+    // The words: neither row's own price was removed (A1-zeroed-words a) —
+    // it is said and asked as the whole cargo's, beside the live ones.
+    expect(ownZeroedFor(reading, 'A')).toBe(false);
+    expect(ownZeroedFor(reading, 'B')).toBe(false);
+    expect(wholeStandingOf(reading)).toEqual([{ price: p('z1', null), zeroed: true }]);
     expect(unpricedDealsOf(ab, [], [p('z1', null)], () => false)).toEqual([
       { dealId: 'A', why: 'whole', loud: false },
       { dealId: 'B', why: 'whole', loud: false },
     ]);
+  });
+});
+
+describe('what a row SAYS of a zeroed price — its own part, while nothing live stands for it (review A1-zeroed-words)', () => {
+  const p = (id: string, dealId: string | null, chosenNone = false, usd = 0) => ({ id, dealId, usd, chosenNone });
+
+  it('a deal’s own given-back part: said and asked — and the deal beside it says nothing', () => {
+    const reading = pricedHereReading(ab, [], [p('z1', 'B')]);
+    expect(ownZeroedFor(reading, 'B')).toBe(true);
+    expect(ownZeroedFor(reading, 'A')).toBe(false);
+    expect(wholeStandingOf(reading)).toEqual([]);
+  });
+
+  it('a part priced AGAIN after the compensation: the live price is what stands — never «removed» beside it; the pre-fill still stops', () => {
+    const reading = pricedHereReading(ab, [p('l1', 'B', false, 400)], [p('z1', 'B')]);
+    expect(ownZeroedFor(reading, 'B')).toBe(false);
+    expect(zeroedFor(reading, 'B')).toBe(true);
+    // The chosen «bitimsiz» part the same way.
+    const loose = pricedHereReading(abLoose, [p('l2', null, true, 30)], [p('z2', null, true)]);
+    expect(ownZeroedFor(loose, 'none')).toBe(false);
+    expect(ownZeroedFor(pricedHereReading(abLoose, [], [p('z2', null, true)]), 'none')).toBe(true);
+  });
+
+  it('the whole-cargo list holds the live prices first, then the zeroed ones, each marked', () => {
+    const reading = pricedHereReading(ab, [p('l1', null, false, 500)], [p('z1', 'GONE'), p('z2', null)]);
+    expect(wholeStandingOf(reading)).toEqual([
+      { price: p('l1', null, false, 500), zeroed: false },
+      { price: p('z1', 'GONE'), zeroed: true },
+      { price: p('z2', null), zeroed: true },
+    ]);
+  });
+});
+
+describe('zeroedAskedOf — the single form names a zeroed price not priced again since (review RVF1-1)', () => {
+  const p = (id: string, dealId: string | null, usd = 0) => ({ id, dealId, usd, chosenNone: false });
+
+  it('keeps every zeroed price whose job has no live price here, drops one priced again', () => {
+    expect(zeroedAskedOf([p('z1', 'A'), p('z2', null)], []).map((row) => row.id)).toEqual(['z1', 'z2']);
+    expect(zeroedAskedOf([p('z1', 'A'), p('z2', null)], [p('l1', 'A', 600)]).map((row) => row.id)).toEqual(['z2']);
+    expect(zeroedAskedOf([p('z2', null)], [p('l2', null, 50)])).toEqual([]);
+    // A live price on ANOTHER job leaves the zeroed one named.
+    expect(zeroedAskedOf([p('z1', 'A')], [p('l2', null, 50)]).map((row) => row.id)).toEqual(['z1']);
+  });
+});
+
+describe('cardMovedOf — the deal whose card reads otherwise than drawn (review A4-words)', () => {
+  it('names the first deal, sorted, that gained or lost a card price — and nothing when the two agree', () => {
+    expect(cardMovedOf('', ['A'])).toBe('A');
+    expect(cardMovedOf('A,B', ['B'])).toBe('A');
+    expect(cardMovedOf('B', ['C', 'B'])).toBe('C');
+    expect(cardMovedOf('A,B', ['B', 'A'])).toBeUndefined();
+    expect(cardMovedOf('', [])).toBeUndefined();
   });
 });
 

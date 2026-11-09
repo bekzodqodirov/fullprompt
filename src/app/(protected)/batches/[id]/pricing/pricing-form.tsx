@@ -7,6 +7,7 @@ import { addTransactionAction, type TxFormState } from '@/app/(protected)/financ
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price-hint';
+import { pageWentStale, singleFormAsks } from './table-rules';
 
 /**
  * One client's negotiated price for this batch → a ledger charge — for a
@@ -40,7 +41,14 @@ import { deviationOf, needsConfirmation } from '@/modules/wms/finance/deal-price
  *
  * `pricedHere` — the client's live prices already on this truck — makes ANY
  * further price here ask once: for such a client one price covers all his
- * cargo here, so a second one IS an extra bill. `dealsSeen` (the question the
+ * cargo here, so a second one IS an extra bill. `zeroedHere` — his prices
+ * here the lost-cargo door lowered to ZERO, not priced again since
+ * (`zeroedAskedOf`) — asks the same way, «narx kompensatsiya bilan olib
+ * tashlangan — yana qo'yasizmi?»: such a price still covers his cargo, and a
+ * press over it bills again what the compensation took back. The table asked
+ * it per row and this form did not (review RVF1-1); it is REQUIRED, because
+ * an optional list fails open. Neither is in `pricesSeen` — the write body
+ * re-reads live ids only (review A1). `dealsSeen` (the question the
  * page drew) and `pricesSeen` (the prices it drew) are posted always, so a
  * prixod re-filed or a colleague's price between the drawing and the press
  * is refused and redrawn (`deals_changed` / `prices_changed`), never answered
@@ -58,6 +66,7 @@ export function PricingForm({
   dealsSeen,
   pricesSeen,
   pricedHere = [],
+  zeroedHere,
   onResult,
 }: {
   clientId: string;
@@ -70,6 +79,8 @@ export function PricingForm({
   dealsSeen: string;
   pricesSeen: string;
   pricedHere?: { usd: number; dealCode: string | null }[];
+  /** His prices here given back to ZERO by the lost-cargo door — no default (review RVF1-1). */
+  zeroedHere: { dealCode: string | null }[];
   onResult: (result: TxFormState) => void;
 }) {
   const t = useTranslations('finance');
@@ -107,7 +118,7 @@ export function PricingForm({
         setAmount('');
         setAsked(null);
       }
-      if (result.error === 'deals_changed' || result.error === 'prices_changed') {
+      if (pageWentStale(result.error)) {
         setAsked(null);
         router.refresh();
       }
@@ -128,7 +139,7 @@ export function PricingForm({
         if (confirmed.current) return;
         const typed = parseTypedMoney(amount);
         const deviates = currency === 'USD' && typed !== null && needsConfirmation(typed, expectedUsd);
-        if (!secondBill && !deviates && pricedHere.length === 0) return;
+        if (!singleFormAsks({ secondBill: secondBill !== null, deviates, pricedHere, zeroedHere })) return;
         event.preventDefault();
         setAsked({
           amount,
@@ -204,6 +215,16 @@ export function PricingForm({
                   .map((row) => `$${row.usd.toFixed(2)} → ${row.dealCode ?? t('pricedHereNoDeal')}`)
                   .join(' · '),
               })}
+            </p>
+          )}
+          {/* A price the lost-cargo door gave back is still one someone set
+              (review RVF1-1) — the table's own sentence, per job named. */}
+          {zeroedHere.length > 0 && (
+            <p className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="pricing-zeroed-ask">
+              ⚠{' '}
+              {[...new Set(zeroedHere.map((row) => row.dealCode ?? t('pricedHereNoDeal')))]
+                .map((code) => t('truckTableAskZeroed', { code }))
+                .join(' · ')}
             </p>
           )}
           {asked.pct !== null && asked.usd !== null && (

@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  askKeyOf,
   cardSeenOf,
+  pageWentStale,
   pressTotalOf,
   refusalCodeOf,
   rowSaysUnreadable,
+  singleFormAsks,
   wrapperWords,
 } from '@/app/(protected)/batches/[id]/pricing/table-rules';
 
@@ -55,6 +58,10 @@ describe('where a refusal is said (review B2)', () => {
     // Every other refusal, row or no row: the wrapper.
     expect(wrapperWords({ error: 'amount_too_large', dealId: 'A' }, ['A'])).toBe(true);
     expect(wrapperWords({ error: 'prices_changed' }, ['A'])).toBe(true);
+    // A card price moved under the press names its row (outlined), and is
+    // worded by the wrapper, by its own code (review A4-words).
+    expect(rowSaysUnreadable({ key: 'A', error: 'card_prices_changed' }, 'A')).toBe(false);
+    expect(wrapperWords({ error: 'card_prices_changed', dealId: 'A' }, ['A'])).toBe(true);
     expect(wrapperWords(null, ['A'])).toBe(false);
   });
 });
@@ -86,5 +93,73 @@ describe('cardSeenOf — the posted deals card-priced as drawn (review A4)', () 
 
   it('is empty when no posted deal had a card price — an answer, checked like any other', () => {
     expect(cardSeenOf(rows, (row) => row.key === 'D')).toBe('');
+  });
+});
+
+describe('askKeyOf — the open alert is the question the press posts (review RVF1-2)', () => {
+  // Client X's two deals, A typed 900 (a TYPED row keeps its value across a
+  // redraw), C typed 300; drawn before a colleague priced A on its card.
+  const before = [
+    { key: 'A', card: false, typed: '900' },
+    { key: 'C', card: false, typed: '300' },
+  ];
+  const after = before.map((row) => (row.key === 'A' ? { ...row, card: true } : row));
+  const keyOf = (rows: typeof before) =>
+    askKeyOf({
+      rows: rows.map((row) => [row.key, row.typed]),
+      currency: 'USD',
+      txDate: '2026-11-09',
+      dealsSeen: 'A,C',
+      pricesSeen: '',
+      cardSeen: cardSeenOf(rows, (row) => row.typed.trim() !== ''),
+    });
+
+  it('a redraw that flips a filled row’s card fact is ANOTHER question — the alert asked before it is taken back', () => {
+    // Nothing else moved: the deals, this truck's prices, the figures.
+    expect(cardSeenOf(before, (row) => row.typed !== '')).toBe('');
+    expect(cardSeenOf(after, (row) => row.typed !== '')).toBe('A');
+    expect(keyOf(after)).not.toBe(keyOf(before));
+  });
+
+  it('the same drawing is the same question — and every other posted fact is in it too', () => {
+    expect(keyOf(before)).toBe(keyOf(structuredClone(before)));
+    const base = { rows: [['A', '900']] as [string, string][], currency: 'USD', txDate: '2026-11-09', dealsSeen: 'A,C', pricesSeen: '', cardSeen: '' };
+    const key = askKeyOf(base);
+    for (const over of [
+      { rows: [['A', '901']] as [string, string][] },
+      { currency: 'CNY' },
+      { txDate: '2026-11-08' },
+      { dealsSeen: 'A,C,none' },
+      { pricesSeen: 'p1' },
+      { cardSeen: 'A' },
+    ]) {
+      expect(askKeyOf({ ...base, ...over }), JSON.stringify(over)).not.toBe(key);
+    }
+  });
+});
+
+describe('pageWentStale — the refusals both bodies redraw on (review A4-words)', () => {
+  it('the deals, this truck’s prices and the deal cards — and nothing else', () => {
+    for (const code of ['deals_changed', 'prices_changed', 'card_prices_changed']) {
+      expect(pageWentStale(code), code).toBe(true);
+    }
+    for (const code of ['validation', 'amount_too_large', 'deal_not_aboard', 'fx_missing', undefined]) {
+      expect(pageWentStale(code), String(code)).toBe(false);
+    }
+  });
+});
+
+describe('singleFormAsks — a press over ANY price standing here asks, live or given back (review RVF1-1)', () => {
+  const quiet = { secondBill: false, deviates: false, pricedHere: [], zeroedHere: [] };
+
+  it('a compensation-zeroed price alone stops the press — as a live one does', () => {
+    expect(singleFormAsks(quiet)).toBe(false);
+    expect(singleFormAsks({ ...quiet, zeroedHere: [{ dealCode: 'B-1' }] })).toBe(true);
+    expect(singleFormAsks({ ...quiet, pricedHere: [{ usd: 600, dealCode: 'B-1' }] })).toBe(true);
+  });
+
+  it('the old reasons still ask on their own', () => {
+    expect(singleFormAsks({ ...quiet, secondBill: true })).toBe(true);
+    expect(singleFormAsks({ ...quiet, deviates: true })).toBe(true);
   });
 });
