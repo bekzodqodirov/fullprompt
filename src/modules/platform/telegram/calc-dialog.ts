@@ -1435,30 +1435,71 @@ export async function applyTableAnswer(
   msg: { date: number; messageId: number; forwarded: boolean; replyTo: number | null },
 ): Promise<void> {
   const stage: TableRef['stage'] = state.stage === 'review' ? 'review' : 'material';
-  const { parseTableAnswer } = await import('../../wms/calc/line-address');
-  let tc = await tableContext(state);
-  const parsed = parseTableAnswer(text, tableRefOf(state, tc, stage));
-  if (parsed.material) {
-    await fileAsMaterial(ctx, chatId, state, text);
+  const ai = collectionDoor(state) === 'ai';
+  // The AI door's courtesy words (as-built review CHAT-4): «rahmat», «ok» are
+  // no goods name — answered «jadvalda bunday qator yo‘q» and invited to «➕»
+  // goods called «rahmat», or, collecting, filed as material whose re-read
+  // the ✅ then waited for. Nudged as the plain door nudges them (§2.2 b). A
+  // text with no letter at all («;») keeps its NO_ADDRESS (§3.4 as built). A
+  // NULL door keeps today's reading (§0.2).
+  if (ai && /\p{L}/u.test(text) && plainAck(text)) {
+    noteOwnMessage(chatId, (await ctx.reply(plainNudge(state))).message_id);
     return;
+  }
+  const { parseTableAnswer, materialSegments } = await import('../../wms/calc/line-address');
+  let tc = await tableContext(state);
+  // Collecting after a reading, the AI door judges per SEGMENT (as-built
+  // review CHAT-2, PC-ADV-1's hole on this door): «3: 150 kg\nrahmat» filed
+  // whole as material left row 3 unwritten under the ✅. The material stage's
+  // own rule still says which segments answer (only «N:», «N-qator», a totals
+  // word — R3 §0.1(3)); those are written, a courtesy word is nothing, and
+  // the rest — goods — is filed as material on its own. Nothing placed: the
+  // whole text is material, as before.
+  let segments: TableSegment[];
+  let writes: TableSegment[];
+  let goods: string | null = null;
+  if (ai && stage === 'material') {
+    const read = materialSegments(text, tableRefOf(state, tc, 'material'));
+    if (!read.some((r) => r.placed)) {
+      await fileAsMaterial(ctx, chatId, state, text);
+      return;
+    }
+    segments = read.map((r) => r.segment);
+    writes = read.filter((r) => r.placed).map((r) => r.segment);
+    const rest = read.filter((r) => !r.placed && !plainAck(r.segment.raw)).map((r) => r.segment.raw);
+    goods = rest.length > 0 ? rest.join('\n') : null;
+  } else {
+    const parsed = parseTableAnswer(text, tableRefOf(state, tc, stage));
+    if (parsed.material) {
+      await fileAsMaterial(ctx, chatId, state, text);
+      return;
+    }
+    segments = parsed.segments;
+    // On the AI door a courtesy word beside an answer is nothing (CHAT-4):
+    // the answer keeps its 👍, and nobody is told «rahmat» is no row.
+    writes = ai ? segments.filter((s) => !plainAck(s.raw)) : segments;
   }
   // A code the answer brings may pin the unit of its own bare figure: its law
   // is read before anything is decided (R1's «the code lands first»).
-  const codes = parsed.segments.flatMap((s) =>
+  const codes = writes.flatMap((s) =>
     s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
   );
   if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
-  const answered = { ...state, answers: [...state.answers, answersEntry(text, parsed.segments)] };
-  await commitWrites(
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line beside it.
+  const answered = { ...state, answers: [...state.answers, answersEntry(text, segments)] };
+  const committed = await commitWrites(
     ctx,
     chatId,
     answered,
-    parsed.segments.map((segment) => ({ kind: 'segment', segment }) as const),
+    writes.map((segment) => ({ kind: 'segment', segment }) as const),
     tableRefOf(answered, tc, stage),
     tc,
     null,
-    collectionDoor(state) === 'ai' ? { messageId: msg.messageId, ask: true } : null,
+    ai ? { messageId: msg.messageId, ask: true } : null,
   );
+  // The goods beside the answer are the next reading's — on their own lines.
+  const live = activeIntake(chatId);
+  if (committed && goods && live && live.noteId === state.noteId) await fileAsMaterial(ctx, chatId, live, goods);
 }
 
 /** A table edit in flight per chat — latest wins, an identical one is never sent (performance-5). */
@@ -1715,9 +1756,12 @@ export function intakePromptText(
   lead: string | null = null,
 ): string {
   const client = intakeClientSummary(state.clientHintRaw);
+  // Files first, as the customer question counts them (§1.5): the prompt that
+  // replaces that question kept the same counts in the other order
+  // (as-built review CHAT-8).
   const parts = [
-    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
+    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.images.length ? `🖼 ${state.images.length} ta rasm o‘qiladi` : '',
     (state.invoiceGoods ?? []).length ? `📊 fayldan ${(state.invoiceGoods ?? []).length} ta tovar` : '',
     state.imagesSkipped
@@ -2125,8 +2169,7 @@ function echoItems(state: IntakeState, echo: IntakeEcho, tc: TableContext): stri
       if (typeof value !== 'number') continue;
       const was = t.before[field] ?? t.answerBefore[field];
       const arrow = typeof was === 'number' && was > 0 && was !== value ? `${tc.intake.numberText(was)} → ` : '';
-      const figure = tc.intake.figureLabel(value, field === 'weightKg' ? 'kg' : 'm3');
-      items.push(`${field === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm'} — ${arrow}${figure}`);
+      items.push(`${field === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm'} — ${arrow}${lastBlockTotal(field, value, tc)}`);
     }
     if ('fromCity' in t.patch || 'toCity' in t.patch) {
       const from = t.patch.fromCity ?? state.facts.fromCity ?? '—';
@@ -2135,6 +2178,15 @@ function echoItems(state: IntakeState, echo: IntakeEcho, tc: TableContext): stri
     }
   }
   return items;
+}
+
+/**
+ * A total as the table's LAST block prints it — in the table's own word: a
+ * typed volume is «12 kub» on the table's «✅ Hajm: 12 kub» line above it,
+ * never «12 m³» (as-built review CHAT-8). The weight as the table prints it.
+ */
+function lastBlockTotal(field: 'weightKg' | 'volumeM3', value: number, tc: TableContext): string {
+  return field === 'weightKg' ? tc.intake.figureLabel(value, 'kg') : `${tc.intake.numberText(value)} kub`;
 }
 
 /**
@@ -2315,7 +2367,10 @@ function undoEcho(
       for (const field of mine) {
         const value = t.patch[field];
         if (typeof value === 'number') {
-          done.push(field === 'weightKg' ? `umumiy brutto — ${tc.intake.figureLabel(value, 'kg')}` : `umumiy hajm — ${tc.intake.figureLabel(value, 'm3')}`);
+          // The AI door says it in the table's last block, in the table's
+          // word; a NULL door's echo keeps today's «m³» (§0.2).
+          const said = collectionDoor(state) === 'ai' ? lastBlockTotal(field, value, tc) : tc.intake.figureLabel(value, field === 'weightKg' ? 'kg' : 'm3');
+          done.push(`${field === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm'} — ${said}`);
         }
       }
       const cities = (['fromCity', 'toCity'] as const).filter((k) => k in t.patch);
@@ -2590,7 +2645,7 @@ const LEGACY_QUEUED = '🧮 Hisoblash navbatiga tushdi — VED xodimi javob bera
  */
 export function landingReplyText(
   target: LandedTarget,
-  opts: { link: string | null; tariffFollows: boolean; door: 'plain' | 'ai' | null },
+  opts: { link: string | null; tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean },
 ): string {
   return (
     `✅ Saqlandi — ${landedWords(target)}\n` +
@@ -2603,15 +2658,19 @@ export function landingReplyText(
 }
 
 /**
- * Which queue line a queued landing says, by the collection's door (§2.3,
- * §3.5): the tariff's own answer is on its way whatever the door (his 2.5 b);
- * the AI door promises its figure only when that answer was queued; the
- * plain door promises the VED; a NULL door says what it always said.
+ * Which queue line a queued landing says, by the landed REQUEST's door (§2.3,
+ * §3.5 — what its row says, so both senders say what the pass will do): the
+ * tariff's own answer is on its way whatever the door (his 2.5 b); the AI
+ * door promises its figure only when that answer was queued AND the pass has
+ * a model today (`aiAvailable` — the table's own closing said «… so‘rov VED
+ * ga tushadi» without one, as-built review DOORS-2); the plain door promises
+ * the VED; anything else says what a NULL door always said — a model-free
+ * reply may still follow, as it does there.
  */
-function queuedLine(target: LandedTarget, opts: { tariffFollows: boolean; door: 'plain' | 'ai' | null }): string {
+function queuedLine(target: LandedTarget, opts: { tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean }): string {
   if (opts.tariffFollows) return TARIFF_FOLLOWS;
   if (opts.door === 'plain') return PLAIN_QUEUED;
-  if (opts.door === 'ai' && target.replyQueued === true) return AI_QUEUED;
+  if (opts.door === 'ai' && target.replyQueued === true && opts.aiAvailable) return AI_QUEUED;
   return LEGACY_QUEUED;
 }
 

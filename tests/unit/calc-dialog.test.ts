@@ -1080,3 +1080,93 @@ describe('the AI door’s table (§3.1-§3.4)', () => {
     expect(ctx.reactions).toEqual([]);
   });
 });
+
+/**
+ * The AI door's typed answers, as built after the as-built review: a courtesy
+ * word is no goods name (CHAT-4), collecting after a reading a row's figure is
+ * written per SEGMENT and never filed with a courtesy word as the shipment's
+ * material (CHAT-2, PC-ADV-1's hole on this door), and the last block says a
+ * typed cube in the table's own word (CHAT-8).
+ */
+describe('the AI door’s typed answers (as-built review CHAT-2, CHAT-4, CHAT-8)', () => {
+  const NUDGE = 'Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.';
+  const table3 = (patch: Partial<IntakeState> = {}) =>
+    collection({
+      stage: 'review',
+      ai: true,
+      facts: { weightKg: 3500, volumeM3: 15, goods: [line('Kurtka', { quantity: 300 }), line('Krossovka', { quantity: 40 }), line('Sumka', { quantity: 50 })] },
+      ...patch,
+    });
+
+  it('«rahmat» on the table is nudged at «Tasdiqlash» — never «jadvalda bunday qator yo‘q», nothing written', async () => {
+    const { chatId } = table3();
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    await say(ctx, chatId, 'rahmat');
+    expect(ctx.replies.slice(1).map((r) => r.text)).toEqual([NUDGE]);
+    expect(ctx.texts().join('\n')).not.toContain('jadvalda bunday qator yo‘q');
+    expect(activeIntake(chatId)!.echoes).toEqual([]);
+    expect(activeIntake(chatId)!.material).toEqual([]);
+    expect(tableNow(ctx, table)).toBe(table);
+  });
+
+  it('«3: 150 kg» with «rahmat» under it: row 3 written, a 👍, and no reply about the courtesy', async () => {
+    const { chatId } = table3();
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    const id = await say(ctx, chatId, '3: 150 kg\nrahmat');
+    expect(activeIntake(chatId)!.facts.goods?.[2]).toMatchObject({ name: 'Sumka', weightKg: 150 });
+    expect(activeIntake(chatId)!.facts.weightKg).toBe(3500);
+    expect(ctx.replies).toEqual([table]);
+    expect(ctx.reactions).toEqual([{ id, emoji: '👍' }]);
+  });
+
+  it('collecting after «➕ Yana ma’lumot», «3: 150 kg\\nrahmat» writes row 3 — never one piece of material whose 150 kg the re-read makes the brutto', async () => {
+    const { chatId } = table3({ stage: 'material', readMark: { material: 0, files: 0 } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '3: 150 kg\nrahmat');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[2]).toMatchObject({ name: 'Sumka', weightKg: 150 });
+    expect(live.facts.weightKg).toBe(3500);
+    // Nothing new to read: the courtesy word is no material, and the ✅ still stands.
+    expect(live.material).toEqual([]);
+    expect(ctx.texts().join('\n')).not.toContain('jadvalda bunday qator yo‘q');
+  });
+
+  it('…a row answer beside goods: the row written, the goods filed as material ON THEIR OWN', async () => {
+    const { chatId } = table3({ stage: 'material', readMark: { material: 0, files: 0 } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, '3: 150 kg\nShapka 50 dona');
+    const live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[2]).toMatchObject({ name: 'Sumka', weightKg: 150 });
+    expect(live.material).toEqual(['Shapka 50 dona']);
+  });
+
+  it('…«ok» after «➕» with nothing sent: no material, the table keeps its ✅ — no re-read of the word «ok»', async () => {
+    const { chatId } = table3({ stage: 'material', readMark: { material: 0, files: 0 } });
+    const ctx = fakeCtx();
+    await say(ctx, chatId, 'ok');
+    expect(activeIntake(chatId)!.material).toEqual([]);
+    expect(ctx.texts()).toEqual([NUDGE]);
+  });
+
+  it('a text with no letter at all («;») keeps its NO_ADDRESS (§3.4 as built)', async () => {
+    const { chatId } = table3();
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, ';');
+    expect(ctx.replies.at(-1)!.text).not.toBe(NUDGE);
+    expect(ctx.reactions).toEqual([]);
+  });
+
+  it('the last block says a typed cube in the table’s word — «kub», as «✅ Hajm: 12 kub» above it', async () => {
+    const { chatId } = table3({ facts: { weightKg: 3500, volumeM3: null, goods: [line('Kurtka', { quantity: 300 })] } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    await say(ctx, chatId, 'jami 12 kub');
+    const now = tableNow(ctx, table).text;
+    expect(now).toContain('✅ Hajm: 12 kub');
+    expect(now).toContain('✍️ Oxirgi javob: umumiy hajm — 12 kub');
+    expect(now).not.toContain('12 m³');
+  });
+});

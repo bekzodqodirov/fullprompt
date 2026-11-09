@@ -298,7 +298,8 @@ describe('↩️ — the review’s fixes', () => {
     expect(live.totalsAnswer).toMatchObject({ weightKg: 3500, volumeM3: null });
     expect(live.facts.weightKg).toBe(3500);
     expect(live.facts.volumeM3 ?? null).toBeNull();
-    expect(tableNow(ctx, chatId).text).toContain('↩️ Bekor qilindi: umumiy hajm — 12 m³\n✍️ Oxirgi javob: umumiy brutto — 3500 kg');
+    // The table's own word for a typed cube (as-built review CHAT-8): «✅ Hajm: 12 kub» above it.
+    expect(tableNow(ctx, chatId).text).toContain('↩️ Bekor qilindi: umumiy hajm — 12 kub\n✍️ Oxirgi javob: umumiy brutto — 3500 kg');
     await handleCalcCallback(ctx, chatId, 'more');
     model.analyze.mockResolvedValueOnce(reads({ goods: [line('Kurtka', { quantity: 3 })] }));
     await pressDone(ctx, chatId);

@@ -40,6 +40,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 import { landCollectedIntake } from '@/modules/platform/telegram/staff-bot';
+import { AI_QUEUED, landingReplyText } from '@/modules/platform/telegram/calc-dialog';
 import { landIntake } from '@/modules/wms/calc/intake-land';
 import { openCalcRequest, storedRequestFacts } from '@/modules/wms/calc/service';
 import { prefillStanding, type PrefillSeen } from '@/modules/wms/calc/prefill';
@@ -78,8 +79,17 @@ async function doorOf(requestId: string): Promise<string | null> {
 }
 
 /** A collection of a stranger, landed through the bot's own crossing. */
-/** `seededFrom`: a seeded collection's source — null is a seeded row that names none (before COMP-3). */
-async function landCollection(opts: { ai: boolean; seededFrom?: string | null }) {
+/**
+ * `seededFrom`: a seeded collection's source — null is a seeded row that names
+ * none (before COMP-3). `seedDoor`: the source's door as `openSeeded` read it
+ * at the open (absent = a row hydrated from before the field).
+ */
+async function landCollection(opts: { ai: boolean; seededFrom?: string | null; seedDoor?: IntakeDoor | null }): Promise<string> {
+  return (await landCollectionTarget(opts)).requestId!;
+}
+
+/** `landCollection`'s landing whole — what the ✅'s two senders are handed. */
+async function landCollectionTarget(opts: { ai: boolean; seededFrom?: string | null; seedDoor?: IntakeDoor | null }) {
   const n = (seq += 1);
   const chatId = BigInt(-9_700_000_000) - BigInt(n);
   const name = `Kurtka ${SUFFIX}-${n}`;
@@ -91,13 +101,14 @@ async function landCollection(opts: { ai: boolean; seededFrom?: string | null })
     material: [`${name} 10 dona 100 kg`],
     facts: { weightKg: 100, volumeM3: 1, goods },
     ...(opts.seededFrom !== undefined ? { seed: goods, seededFrom: opts.seededFrom } : {}),
+    ...(opts.seedDoor !== undefined ? { seedDoor: opts.seedDoor } : {}),
   });
   try {
     const target = await landCollectedIntake(chatId, actorId, 'Ikki eshik fixture');
     expect(target?.queued, `landed: ${target?.queueError ?? ''}`).toBe(true);
     madeRequests.push(target!.requestId!);
     if (target!.kind === 'lead') madeLeads.push(target!.id);
-    return target!.requestId!;
+    return target!;
   } finally {
     endIntake(chatId);
   }
@@ -194,21 +205,28 @@ describe('the landing writes the door (§0.1)', () => {
     expect(await doorOf(await landCollection({ ai: false }))).toBe('plain');
   });
 
-  it('a seeded collection lands with its SOURCE’s door as the source reads it — a legacy source, a legacy request', async () => {
+  it('a seeded collection lands with its SOURCE’s door, as its open read it (`seedDoor`) — a legacy source, a legacy request', async () => {
     // The states `openSeeded` opens (tests/unit/intake-door-amend.test.ts): a
     // 'plain' source's collection is plain, an 'ai' one's AI — and a legacy
     // rastamojka's AI by «a customs section», a flag that is no door: landed,
     // it would make an «🤖» request nobody pressed, past his mute (K review
-    // K-SPEC-1 / KU-1).
+    // K-SPEC-1 / KU-1). Re-anchored (as-built review DOORS-3): the landing
+    // takes the door the open recorded — the value the chat words followed —
+    // and no longer reads the source a second time, a read that could fail
+    // and land a plain chat's request as legacy.
     const from = madeRequests.length;
     try {
-      expect(await doorOf(await landCollection({ ai: false, seededFrom: await openOn('plain') }))).toBe('plain');
-      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn('ai') }))).toBe('ai');
-      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn(null) }))).toBeNull();
-      // No source named (a seeded row from before COMP-3), or one that cannot
-      // be read: legacy too — today's behaviour, never the collection's flag.
+      expect(await doorOf(await landCollection({ ai: false, seededFrom: await openOn('plain'), seedDoor: 'plain' }))).toBe('plain');
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn('ai'), seedDoor: 'ai' }))).toBe('ai');
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn(null), seedDoor: null }))).toBeNull();
+      // A plain source's collection lands plain even when the source cannot
+      // be read at the landing: the open's read stands.
+      expect(await doorOf(await landCollection({ ai: false, seededFrom: 'not-a-request-id', seedDoor: 'plain' }))).toBe('plain');
+      // No source named (a seeded row from before COMP-3), or a row hydrated
+      // from before `seedDoor`: legacy too — today's behaviour, never the
+      // collection's flag.
       expect(await doorOf(await landCollection({ ai: true, seededFrom: null }))).toBeNull();
-      expect(await doorOf(await landCollection({ ai: true, seededFrom: 'not-a-request-id' }))).toBeNull();
+      expect(await doorOf(await landCollection({ ai: true, seededFrom: await openOn('ai') }))).toBeNull();
     } finally {
       // Closed again, failing or not: this test's eight would take the file
       // past one requester's twenty open (`MAX_OPEN_PER_REQUESTER`).
@@ -271,7 +289,16 @@ describe('one migration behind (§0.4, #472)', () => {
     // The process as it starts on deploy morning: nothing cached.
     __forgetIntakeDoorReady();
     try {
-      const landed = await landCollection({ ai: true });
+      const target = await landCollectionTarget({ ai: true });
+      const landed = target.requestId!;
+      // The ✅ says what the ROW says (as-built review DOORS-3): an «🤖»
+      // collection landed NULL here, its pass is today's, so the press may not
+      // promise the AI's figure (it said the collection's door, the sweep's
+      // resume the row's).
+      expect(target.door).toBeNull();
+      expect(landingReplyText({ ...target, replyQueued: true }, { link: null, tariffFollows: false, door: target.door, aiAvailable: true })).not.toContain(
+        AI_QUEUED,
+      );
       const opened = await openOn('plain');
       expect((await storedRequestFacts(landed))?.door).toBeNull();
       expect(await seenDoor(opened)).toBeNull();
@@ -288,6 +315,8 @@ describe('one migration behind (§0.4, #472)', () => {
     }[];
     expect(check?.def).toContain("'plain'::text, 'ai'::text");
     // …and the moment the column is back, the door is written again — no restart.
-    expect(await doorOf(await landCollection({ ai: true }))).toBe('ai');
+    const back = await landCollectionTarget({ ai: true });
+    expect(await doorOf(back.requestId!)).toBe('ai');
+    expect(back.door).toBe('ai');
   });
 });

@@ -54,7 +54,9 @@ describe('the column is SQL-only, through one module', () => {
 describe('every door reaches the request', () => {
   it('the bot lands its collection’s door; the agent, the thread and the card name none', () => {
     const bot = read('src/modules/platform/telegram/staff-bot.ts');
-    expect(bodyOf(bot, 'export async function landCollectedIntake(')).toContain('intakeDoor: await collectedDoor(state)');
+    // The collection's ONE door (`collectionDoor`) — a seeded one's `seedDoor`
+    // (as-built review DOORS-3), never a second read of the source.
+    expect(bodyOf(bot, 'export async function landCollectedIntake(')).toContain('intakeDoor: collectionDoor(state)');
     const land = read('src/modules/wms/calc/intake-land.ts');
     expect(bodyOf(land, 'export async function landIntake(')).toContain('intakeDoor: input.intakeDoor');
     // The agent on BOTH its paths: `landIntake` and the re-queue's own open.

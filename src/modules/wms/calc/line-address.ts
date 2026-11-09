@@ -676,26 +676,50 @@ export function parseTableAnswer(text: string, table: TableRef): { segments: Tab
   return readTable(text, table, foldEach);
 }
 
-/** `parseTableAnswer` with the rows' names folded by `nameOf` — the ONE reader; only the fold is the caller's. */
-function readTable(text: string, table: TableRef, nameOf: NameOf): { segments: TableSegment[]; material: boolean } {
+/** Every segment of a text, read against the table — `readTable`'s and `materialSegments`' one reading. */
+function readAll(text: string, table: TableRef, nameOf: NameOf): ReadSegment[] {
   const startsAddressed = (part: string): boolean =>
     addressOf(part, table.stage) !== null ||
     totalsLead(part) !== null ||
     (table.stage === 'review' && hasName(nameParts(part)) && table.rows.some((r) => namesRow(nameParts(part), nameOf(r))));
-  const read = segmentsOf(text, startsAddressed).map((raw) => readSegment(raw, table, nameOf));
-  const strip = (s: ReadSegment): TableSegment => ({
-    raw: s.raw,
-    at: s.at,
-    refused: s.refused,
-    answer: s.answer,
-    totals: s.totals,
-    route: s.route,
-  });
+  return segmentsOf(text, startsAddressed).map((raw) => readSegment(raw, table, nameOf));
+}
+
+const strip = (s: ReadSegment): TableSegment => ({
+  raw: s.raw,
+  at: s.at,
+  refused: s.refused,
+  answer: s.answer,
+  totals: s.totals,
+  route: s.route,
+});
+
+/**
+ * In the material stage a segment ANSWERS only when it is explicitly
+ * addressed and names no other goods: «1: Kurtka 300 dona» typed after «➕
+ * Yana ma’lumot» is the seller's list, never a correction of row 1. ONE
+ * predicate for the whole-text rule and the per-segment one.
+ */
+const placedInMaterial = (s: ReadSegment): boolean => s.explicit && s.refused?.reason !== 'name_mismatch';
+
+/**
+ * The material stage's reading, per SEGMENT — every segment with whether the
+ * stage's rule places it (`placedInMaterial`). For the AI door collecting
+ * after a reading (as-built review CHAT-2): «3: 150 kg\nrahmat» is a placed
+ * row answer and a courtesy word, never one piece of material whose 150 kg
+ * becomes the shipment's; what is not placed is the caller's to file. Pure.
+ */
+export function materialSegments(text: string, table: TableRef): { segment: TableSegment; placed: boolean }[] {
+  const at = table.stage === 'material' ? table : { ...table, stage: 'material' as const };
+  return readAll(text, at, foldEach).map((s) => ({ segment: strip(s), placed: placedInMaterial(s) }));
+}
+
+/** `parseTableAnswer` with the rows' names folded by `nameOf` — the ONE reader; only the fold is the caller's. */
+function readTable(text: string, table: TableRef, nameOf: NameOf): { segments: TableSegment[]; material: boolean } {
+  const read = readAll(text, table, nameOf);
   if (table.stage === 'material') {
-    // Answers only when every segment is EXPLICITLY addressed and none names
-    // other goods: «1: Kurtka 300 dona» typed after «➕ Yana ma’lumot» is the
-    // seller's list, never a correction of row 1.
-    const answers = read.length > 0 && read.every((s) => s.explicit && s.refused?.reason !== 'name_mismatch');
+    // Answers only when every segment is placed (`placedInMaterial`).
+    const answers = read.length > 0 && read.every(placedInMaterial);
     return answers ? { segments: read.map(strip), material: false } : { segments: [], material: true };
   }
   // Rule 3: several segments, none addressed, none naming a row — a typed goods

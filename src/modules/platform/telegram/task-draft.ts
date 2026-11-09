@@ -62,6 +62,14 @@ export interface TaskDraft {
   tooBig: string[];
   /** Parts that came past the source cap and travel to nobody — told once (review bot-11). */
   dropped: number;
+  /**
+   * The cap's line was said to a part THIS draft dropped (as-built review
+   * BURST-2): said once per draft — a seed cut at the cap (a burst's «📌»)
+   * starts without it, because the seller resending what did not fit must
+   * hear that it goes nowhere, never «📎 Qabul qilindi». Optional — a draft
+   * started before it reads as not said.
+   */
+  capSaid?: boolean;
   /** media_group_id → when its last part arrived (ms) — the album settle. */
   albums: Record<string, number>;
   /** The bot message whose keyboard the draft edits. */

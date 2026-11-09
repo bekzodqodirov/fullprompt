@@ -79,7 +79,6 @@ import {
 } from './calc-store';
 import { readIntakeFile, refusalOf, saveBotFile, saveIntakeFile } from './calc-files';
 import {
-  collectionDoor,
   drawPromptSoon,
   editTableSoon,
   NOT_FOUND_HINT,
@@ -744,14 +743,17 @@ export function registerStaffBot(bot: Bot): void {
     // An add collection frozen while its save runs (P4) takes nothing more —
     // the text ladder's own guard, for a file (§9.6): filed after the press,
     // it would join a collection the job ends without reading it.
+    // Each refusal here joins the collection's own messages (as-built review
+    // CHAT-7): the prompt then knows it is no longer last, and the next draw
+    // moves it below.
     if (state.saving) {
-      await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+      noteOwnMessage(chatId, (await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.')).message_id);
       return;
     }
     // A file replying to a PARKED collection's own message beside another
     // collector: the text ladder's guard, for a file (review REG-2).
     if (refusesBesideParked(chatId, state, ctx.message.date)) {
-      await ctx.reply(otherCollectorLive(chatId)!);
+      noteOwnMessage(chatId, (await ctx.reply(otherCollectorLive(chatId)!)).message_id);
       return;
     }
     const staff = await staffForChat(chatId);
@@ -761,7 +763,10 @@ export function registerStaffBot(bot: Bot): void {
       return null;
     });
     if (!saved) {
-      await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+      // A save failure is a refusal of its own (§1.4), and the ONE prompt is
+      // drawn below it, kept last — it stood above the failed file.
+      noteOwnMessage(chatId, (await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id);
+      drawPromptSoon(ctx, chatId);
       return;
     }
     const caption = ctx.message.caption?.trim();
@@ -1790,9 +1795,12 @@ export async function handleCalcCallback(
   // — rather than «VED javob beradi» under a figure already in the chat.
   const { sectionParts } = await import('../../wms/calc/pricing');
   const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
-  // The collection's door says what the ✅ promises (docs/IKKI-ESHIK.md §2.3,
-  // §3.5): the plain door the VED, the AI door its figure.
-  await ctx.reply(landingReplyText(target, { link, tariffFollows, door: collectionDoor(state) }), {
+  // The landed request's door says what the ✅ promises (docs/IKKI-ESHIK.md
+  // §2.3, §3.5): the plain door the VED, the AI door its figure while the pass
+  // has a model. Read off the ROW the landing wrote, as the sweep's resume
+  // reads it (as-built review DOORS-2, DOORS-3): the collection's own door
+  // was said even where the row — and so the pass — had none.
+  await ctx.reply(landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable }), {
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     reply_markup: landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId)),

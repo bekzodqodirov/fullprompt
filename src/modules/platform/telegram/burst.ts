@@ -1,16 +1,17 @@
-import type { Context, MiddlewareFn } from 'grammy';
+import type { Api, Context, MiddlewareFn } from 'grammy';
 import type { Message } from 'grammy/types';
 import { logger } from '../logger';
 import { activeIntake, holdingIntake, noteOwnMessage } from './calc-store';
 import { addOfferRows } from './calc-amend';
 import { burstPauseLine, pauseKeyboard } from './calc-dialog';
 import { activeCapture } from './note-capture';
-import { activeDraft } from './task-draft';
+import { activeDraft, MAX_DRAFT_SOURCES } from './task-draft';
 import { drawKeptLast, keepLastSoon, type KeptLastApi } from './kept-last';
 import { isBacklog } from './lifecycle';
 import { forwardKeyboard, staffForChat } from './staff-bot';
 import {
   BURST_FULL,
+  BURST_FULL_TASK,
   burstCounts,
   burstFull,
   burstLastSeen,
@@ -21,11 +22,13 @@ import {
   nextOfferIds,
   noteBurstPart,
   noteOverflow,
+  burstOwed,
   readBurst,
   rewriteBurst,
   type BurstPart,
   type BurstPayload,
 } from './burst-wait';
+import { nowSec, waitsOfKind } from './waits';
 
 /**
  * The burst door (docs/IKKI-ESHIK.md §4.1, §4.2, his 6a): files or forwards
@@ -141,16 +144,22 @@ export async function drawBurst(ctx: BurstCtx, chatId: bigint): Promise<void> {
   const forwards = burstCounts(p.parts).forwards > 0;
   let text: string;
   let keyboard: { inline_keyboard: { text: string; callback_data: string }[][] };
+  // Does the message carry a door that takes a RESEND (the pause line's ▶️,
+  // a ➕ row: the collection then holds and takes what comes next)? Only then
+  // may the overflow line tell him to send the rest again (BURST-2).
+  let resend: boolean;
   if (parked) {
     text = burstPauseLine(p.parts.length);
     keyboard = pauseKeyboard({ forwards });
+    resend = true;
   } else {
     const rows = await addOfferRows(chatId);
     if (!forwards && rows.length === 0) return;
     text = burstOfferText(p.parts, rows.length > 0);
     keyboard = { inline_keyboard: [...(forwards ? forwardKeyboard({ search: burstOneText(p.parts) !== null }) : []), ...rows] };
+    resend = rows.length > 0;
   }
-  if ((p.overflow ?? 0) > 0) text = `${text}\n${BURST_FULL(p.overflow!)}`;
+  if ((p.overflow ?? 0) > 0) text = `${text}\n${resend ? BURST_FULL(p.overflow!) : BURST_FULL_TASK(MAX_DRAFT_SOURCES)}`;
   // Below the newest message it concerns (an overflow part too), as a reply
   // to its newest PART: a press whose wait is gone takes what it replies to.
   const newestPart = p.parts[p.parts.length - 1]!.messageId;
@@ -173,6 +182,40 @@ export async function drawBurst(ctx: BurstCtx, chatId: bigint): Promise<void> {
     if (drawn.kept !== null) noteOwnMessage(chatId, drawn.kept);
   }
   logger.info({ chatId: String(chatId), parts: p.parts.length, moved: drawn.moved }, '[burst] one message drawn');
+}
+
+/**
+ * The draws a dead process OWED (as-built review BURST-8, DURABILITY-2): a
+ * burst's ONE message waits out the album off the handler (`keepLastSoon`),
+ * after grammy has confirmed its parts, so a process killed inside those
+ * 700 ms (an OOM, a SIGKILL, a stop whose draw share ran out) left the parts
+ * in the durable row and the question asked of nobody, for good — the
+ * updates are never redelivered. At boot, after the waits and the
+ * collections are back in memory and before the first getUpdates, every
+ * burst still inside its window whose newest part no copy was drawn below
+ * (`burstOwed`) is drawn once, by chat id, through the SAME `drawBurst` — which
+ * still says nothing beside a collector, or when nothing would be offered.
+ * Dispatched `void` through `keepLastSoon`, as the door's own draw. The
+ * number queued, for the log.
+ */
+export function drawOwedBursts(api: Api, nowS: number = nowSec()): number {
+  let queued = 0;
+  for (const { chatId, entry } of waitsOfKind<BurstPayload>('burst')) {
+    if (!burstOwed(entry, nowS)) continue;
+    const chat = BigInt(chatId);
+    const ctx: BurstCtx = {
+      reply: (text, extra) => api.sendMessage(chatId, text, extra as Parameters<Api['sendMessage']>[2]),
+      api: {
+        editMessageText: (c: string, id: number, text: string, extra?: Record<string, unknown>) =>
+          api.editMessageText(c, id, text, extra as Parameters<Api['editMessageText']>[3]),
+        deleteMessage: (c: string, id: number) => api.deleteMessage(c, id),
+      } satisfies KeptLastApi,
+    };
+    keepLastSoon(`burst:${chat}`, () => drawBurst(ctx, chat));
+    queued += 1;
+  }
+  if (queued > 0) logger.info({ queued }, '[burst] owed messages drawn after the restart');
+  return queued;
 }
 
 /**

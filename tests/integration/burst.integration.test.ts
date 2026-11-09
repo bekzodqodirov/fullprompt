@@ -41,12 +41,16 @@ import { activeIntake, endIntake, HOLD_MS, holdingIntake, startIntake, updateInt
 import { burstPauseLine, pauseKeyboard, pauseLine } from '@/modules/platform/telegram/calc-dialog';
 import {
   BURST_FULL,
+  BURST_FULL_TASK,
   BURST_GONE,
   BURST_IN_REQUEST,
   BURST_IN_TASK,
+  BURST_NONE_TAKEN,
   BURST_TASK_CAP,
   readBurst,
 } from '@/modules/platform/telegram/burst-wait';
+import { drawOwedBursts } from '@/modules/platform/telegram/burst';
+import { __forgetKeptLast } from '@/modules/platform/telegram/kept-last';
 import { __resetDrafts, activeDraft, endDraft, MAX_DRAFT_SOURCES } from '@/modules/platform/telegram/task-draft';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
 import { landCollectedIntake } from '@/modules/platform/telegram/staff-bot';
@@ -489,7 +493,10 @@ describe('a burst past its cap stands, and says the rest (review PB-ADV-1)', () 
   it('25 forwards, no request: ONE message for the first twenty, the five said; 📌 takes the first ten', async () => {
     const parts = Array.from({ length: 25 }, (_, i) => tg.forward(chat, `uzun ${i} ${STAMP}`));
     const said = await burst(parts);
-    expect(said.map((c) => c.payload.text)).toEqual([`📌 20 ta xabar — topshiriq qilamizmi?\n${BURST_FULL(5)}`]);
+    // Re-anchored (as-built review BURST-2): a message whose only door is 📌
+    // never tells him to send the rest again — the draft takes ten, and a
+    // resend reaches nobody.
+    expect(said.map((c) => c.payload.text)).toEqual([`📌 20 ta xabar — topshiriq qilamizmi?\n${BURST_FULL_TASK(MAX_DRAFT_SOURCES)}`]);
     // Below the newest message, as a reply to the newest PART it holds.
     expect(said[0]!.payload.reply_parameters).toMatchObject({ message_id: msgOf(parts[19]!).message_id });
     const held = readBurst(chat)!.payload;
@@ -771,5 +778,150 @@ describe('the take’s other edges (review PB-ADV-4..6, PB-SPEC-1..4, PB-SPEC-7)
     expect(activeIntake(BigInt(chat))!.fileCount).toBe(2);
     const prompts = h.since(m).api.filter((c) => /Qabul qilindi[^]*«Bo‘ldi»/u.test(String(c.payload.text ?? '')));
     expect(prompts).toHaveLength(1);
+  });
+});
+
+
+/** A forwarded voice note — a burst part no take can read. */
+function voiceForward(): Update {
+  const u = tg.forward(chat, 'x');
+  const m = msgOf(u) as Record<string, unknown>;
+  delete m.text;
+  m.voice = { file_id: `VOICE${Math.random()}`, file_unique_id: `uv${Math.random()}`, duration: 3, mime_type: 'audio/ogg', file_size: 100 };
+  return u;
+}
+
+describe('the as-built review’s burst fixes (BURST-2..8, DURABILITY-2, CHAT-7)', () => {
+  it('BURST-2: 📌 on a full burst, then the five resent — the cap line once, never «📎 Qabul qilindi» for a part that went nowhere', async () => {
+    const parts = Array.from({ length: 25 }, (_, i) => tg.forward(chat, `uzun ${i} ${STAMP}`));
+    const [offer] = await burst(parts);
+    await h.handle(tg.callback(chat, offer!.messageId!, 'fb:task', { message: { text: offer!.payload.text, reply_to_message: msgOf(parts[19]!) } }));
+    await h.settle();
+    const m = h.mark();
+    for (let i = 20; i < 25; i++) await h.handle(tg.forward(chat, `uzun ${i} ${STAMP} qayta`));
+    await h.settle();
+    const said = h.textsTo(chat, m);
+    expect(said).toEqual([`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`]);
+    expect(said.some((t) => t.includes('Qabul qilindi'))).toBe(false);
+    expect(activeDraft(BigInt(chat))!.sources).toHaveLength(MAX_DRAFT_SOURCES);
+    endDraft(BigInt(chat));
+  });
+
+  it('BURST-2: a full burst beside a request keeps «qaytadan yuboring» — its ➕ takes the resend', async () => {
+    await request();
+    const parts = Array.from({ length: 21 }, () => tg.forward(chat, `f ${STAMP}`));
+    const said = await burst(parts);
+    expect(said.map((c) => c.payload.text)).toEqual([`📌 20 ta xabar — topshiriq qilamizmi yoki so‘rovga qo‘shamizmi?\n${BURST_FULL(1)}`]);
+  });
+
+  it('BURST-3: ▶️ on the orphan pause line after its burst was replaced — nothing taken, and SAID', async () => {
+    await parked();
+    updateIntake(BigInt(chat), { stage: 'review', facts: { goods: [{ name: 'Kurtka', quantity: 300 }] } }, { quiet: true });
+    const before = activeIntake(BigInt(chat))!.fileCount;
+    await burst([photo(), photo()]);
+    let m = h.mark();
+    await h.handle(tg.text(chat, '3500 kg'));
+    const [orphan] = sends(h.since(m).api);
+    await burst([photo()]);
+    expect(readBurst(chat)!.payload.previous?.ids).toContain(orphan!.messageId);
+    m = h.mark();
+    await h.handle(tg.callback(chat, orphan!.messageId!, 'c:resume_take', { message: { text: orphan!.payload.text } }));
+    await h.settle();
+    expect(h.textsTo(chat, m)).toContain(BURST_NONE_TAKEN);
+    expect(activeIntake(BigInt(chat))!.fileCount).toBe(before);
+  });
+
+  it('BURST-4: after ▶️ took the parts, the pause line says so — its keyboard kept', async () => {
+    await parked();
+    const parts = [photo(), photo(), photo()];
+    const [line] = await burst(parts);
+    const m = h.mark();
+    await h.handle(tg.callback(chat, line!.messageId!, 'c:resume_take', { message: { text: line!.payload.text, reply_to_message: msgOf(parts[2]!) } }));
+    await h.settle();
+    const edits = h.since(m).api.filter((c) => c.method === 'editMessageText' && Number(c.payload.message_id) === line!.messageId);
+    expect(edits.map((c) => c.payload.text)).toEqual(['▶️ Davom etamiz — 3 ta fayl qo‘shildi.']);
+    expect(edits[0]!.payload.reply_markup).toEqual(pauseKeyboard({ forwards: false }));
+  });
+
+  it('BURST-5: ➕ pressed twice — the «davom eting» line is the collection’s, and the ONE prompt moves below it', async () => {
+    const r = await request();
+    const parts = [photo(), photo()];
+    const [offer] = await burst(parts);
+    const press = () => tg.callback(chat, offer!.messageId!, `cf:${r.id}`, { message: { text: offer!.payload.text, reply_to_message: msgOf(parts[1]!) } });
+    await h.handle(press());
+    await h.settle();
+    const prompt = activeIntake(BigInt(chat))!.promptMessageId;
+    const m = h.mark();
+    await h.handle(press());
+    await h.settle();
+    const out = sends(h.since(m).api);
+    expect(out[0]!.payload.text).toBe('Shu so‘rovga qo‘shimcha yig‘ilmoqda — davom eting.');
+    // The prompt is the chat's LAST message: sent below the line, the old copy deleted.
+    expect(String(out.at(-1)!.payload.text)).toContain('Qabul qilindi');
+    expect(activeIntake(BigInt(chat))!.promptMessageId).toBe(out.at(-1)!.messageId);
+    expect(h.since(m).api.filter((c) => c.method === 'deleteMessage').map((c) => Number(c.payload.message_id))).toContain(prompt);
+  });
+
+  it('BURST-7: ▶️ that took nothing readable says «Davom etamiz.» on the prompt — even when a file right after coalesces the draw', async () => {
+    await parked();
+    const parts = [voiceForward(), voiceForward()];
+    const [line] = await burst(parts);
+    const m = h.mark();
+    await h.handle(tg.callback(chat, line!.messageId!, 'c:resume_take', { message: { text: line!.payload.text, reply_to_message: msgOf(parts[1]!) } }));
+    await h.handle(photo({ messageId: 990_000 + Math.floor(Math.random() * 1000) }));
+    await h.settle();
+    const prompts = sends(h.since(m).api).filter((c) => String(c.payload.text).includes('Qabul qilindi'));
+    expect(prompts.at(-1)!.payload.text).toMatch(/^▶️ Davom etamiz\.\n/u);
+  });
+
+  it('BURST-8 / DURABILITY-2: a process killed inside the debounce — the owed message is drawn at the next boot, once', async () => {
+    await request();
+    setDurableWaits(true);
+    try {
+      const m = h.mark();
+      for (const p of [photo(), photo(), photo()]) await h.handle(p);
+      await flushWaitWrites();
+      // The process dies here: its owed draws and its memory go with it.
+      __forgetKeptLast();
+      __forgetWaitMemory();
+      expect(await hydrateWaits()).toBeGreaterThan(0);
+      expect(drawOwedBursts(h.bot.api)).toBe(1);
+      await h.settle();
+      expect(sends(h.since(m).api).map((c) => c.payload.text)).toEqual(['➕ 3 ta faylni so‘rovga qo‘shamizmi?']);
+      expect(readBurst(chat)!.payload.offerIds).toHaveLength(1);
+      // Drawn: nothing is owed any more.
+      expect(drawOwedBursts(h.bot.api)).toBe(0);
+    } finally {
+      setDurableWaits(false);
+    }
+  });
+
+  it('BURST-8: a burst past its window is not asked about at boot', async () => {
+    await request();
+    for (const p of [photo(), photo()]) await h.handle(p);
+    __forgetKeptLast();
+    expect(readBurst(chat)!.payload.offerIds).toEqual([]);
+    // Booted three minutes later: the row's two minutes have run out.
+    const m = h.mark();
+    expect(drawOwedBursts(h.bot.api, nowSec() + 180)).toBe(0);
+    await h.settle();
+    expect(sends(h.since(m).api)).toEqual([]);
+  });
+
+  it('CHAT-7: a file whose save fails — its refusal, then the ONE prompt below it', async () => {
+    await h.handle(tg.text(chat, '🧮 Hisoblatish'));
+    await h.handle(tg.callback(chat, 45_000, 'c:rastamojka'));
+    await h.handle(tg.text(chat, 'GS777'));
+    await h.handle(tg.text(chat, 'Kurtka 300 dona'));
+    await h.settle();
+    const prompt = activeIntake(BigInt(chat))!.promptMessageId;
+    vi.mocked(saveIntakeFile).mockRejectedValueOnce(new Error('getFile 400'));
+    const m = h.mark();
+    await h.handle(photo({ messageId: 995_000 + Math.floor(Math.random() * 1000) }));
+    await h.settle();
+    const out = sends(h.since(m).api).map((c) => String(c.payload.text));
+    expect(out[0]).toBe('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+    expect(out.at(-1)).toContain('Qabul qilindi');
+    expect(activeIntake(BigInt(chat))!.promptMessageId).not.toBe(prompt);
   });
 });

@@ -29,6 +29,7 @@ import {
   deliverNextStep,
   drawPromptSoon,
   editTableSoon,
+  pauseKeyboard,
   routeCollectorText,
   showIntakePrompt,
   type CalcPressCtx,
@@ -41,7 +42,9 @@ import {
   aliasBurst,
   BURST_GONE,
   BURST_IN_REQUEST,
+  BURST_NONE_TAKEN,
   burstAnswering,
+  burstCounts,
   goneBurst,
   isFilePart,
   markBurstTaken,
@@ -427,7 +430,10 @@ async function openDoor(
     // A reading running: the resume says «kuting», never «davom eting» first.
     if (!live.analysing) {
       await sp.answer(ADD_REFUSAL.sameLive);
-      await sp.reply(ADD_REFUSAL.sameLive);
+      // The collection's own message (as-built review BURST-5): the resume's
+      // kept-last draw must know it, or the prompt is judged still last and
+      // edited in place ABOVE it.
+      noteOwnMessage(chatId, (await sp.reply(ADD_REFUSAL.sameLive)).message_id);
     }
     // Not resumed (the reading's own word said): nothing is taken into it.
     if (!(await resume(sp, chatId))) return null;
@@ -752,24 +758,6 @@ function aliasing(sp: Speaker, record: (messageId: number) => void): Speaker {
 }
 
 /**
- * The FIRST message a speaker sends opens with `head` — what a take just took
- * (§4.1 «➕ 3 ta fayl va 2 ta xabar qo‘shildi.», §4.2 «▶️ Davom etamiz — …»),
- * printed as the first line of the ONE prompt it answers with, never as a
- * message of its own (§1.4).
- */
-function headed<S extends CollectorReply>(sp: S, head: string): S {
-  let said = false;
-  const reply: CollectorReply['reply'] = (text, extra) => {
-    const first = !said;
-    said = true;
-    return sp.reply(first ? `${head}\n${text}` : text, extra);
-  };
-  // Over the speaker, never a copy of it: a grammy ctx carries its
-  // `callbackQuery` and `chat` as prototype getters a spread would drop.
-  return Object.assign(Object.create(sp) as S, { reply });
-}
-
-/**
  * What was just taken is unread: the table on screen does not show it, and
  * its «✅ Qo‘shish» would save the stored rows without it — the save guard
  * lets a 'review' stage through as «already read». So the collection moves to
@@ -1046,6 +1034,11 @@ export async function pressResumeTake(ctx: CalcPressCtx, chatId: bigint): Promis
   const original = message?.reply_to_message ?? null;
   const parts = burst ? burst.parts.map(takePartOfBurst) : original ? [takePartOfMessage(original)] : [];
   if (parts.length === 0) {
+    // The line spoke for a burst that is gone and replies to nothing (the
+    // orphan line, review PB-SPEC-4): nothing is taken, and it is SAID
+    // (as-built review BURST-3) — unless the burst went into this very
+    // collection, which has nothing to say.
+    if (!gone?.intoNote) noteOwnMessage(chatId, (await sp.reply(BURST_NONE_TAKEN)).message_id);
     await pressResume(ctx, chatId);
     return;
   }
@@ -1060,7 +1053,30 @@ export async function pressResumeTake(ctx: CalcPressCtx, chatId: bigint): Promis
   // collection goes on where it stands, as «c:resume» does. Nothing readable
   // taken: resumed with the take's line. A taken part `awaitReading` showed.
   if (taken.already) await pressResume(ctx, chatId);
-  else if (taken.files + taken.texts === 0) await pressResume(taken.head ? headed(ctx, taken.head) : ctx, chatId);
+  // The take's line is the next draw's lead (§1.4 as built, PC-SPEC-13), never
+  // a head on this ctx: a coalesced draw runs with the NEWEST call's ctx, and
+  // the line went with the older one (as-built review BURST-7).
+  else if (taken.files + taken.texts === 0) await pressResume(ctx, chatId, taken.head);
+  else if (burst) retellPauseLine(sp, chatId, burst, pressed, taken.head);
+}
+
+/**
+ * The pause line «▶️» just took from (as-built review BURST-4): it said the
+ * parts were «hali qo‘shilmagan» right above the prompt saying they were
+ * added. Edited to the take's own line, its keyboard kept — a second «▶️»
+ * goes on (review PB-ADV-4), «📌» may still make the task. Only the line
+ * pressed and the burst's current copy, both drawn beside this collection;
+ * best-effort and off the poller, as 📌's own redraw.
+ */
+function retellPauseLine(sp: Speaker, chatId: bigint, burst: BurstPayload, pressed: number | null, head: string | null): void {
+  if (!head) return;
+  const ids = new Set([pressed, burst.offerIds.at(-1) ?? null].filter((id): id is number => id !== null && burst.offerIds.includes(id)));
+  const keyboard = pauseKeyboard({ forwards: burstCounts(burst.parts).forwards > 0 });
+  for (const id of ids) {
+    void sp.api
+      .editMessageText(String(chatId), id, head, { reply_markup: keyboard })
+      .catch((err: unknown) => logger.info({ err }, '[burst] pause line not redrawn after ▶️'));
+  }
 }
 
 /**
@@ -1454,7 +1470,8 @@ async function settleDeadSave(chatId: bigint, noteId: string, failWords: string 
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(chatId, await amendWords(told, false, await requestDoorOf(row.requestId)));
+      const words = await requestWordsOf(row.requestId);
+      const sent = await sendWords(chatId, await amendWords(told, false, words.door, words.aiAvailable));
       if (!sent.ok && !sent.permanent) return;
       await amend.stampTold(row.id);
     }
@@ -1507,24 +1524,37 @@ const withLines = (head: string, lines: readonly string[]) => (lines.length ? `$
  * nothing, so its line promises the VED, never a result; the AI door and a
  * request from before the doors (NULL, §0.2) keep the promise.
  */
-async function repassLine(change: AmendChange, queued: boolean, door: 'plain' | 'ai' | null): Promise<string> {
+async function repassLine(change: AmendChange, queued: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean): Promise<string> {
   if (!queued) return SAVE_WORDS.queueRefused;
   const { sectionParts } = await import('../../wms/calc/pricing');
   if (!sectionParts(change.section).customs) return SAVE_WORDS.tariffLine;
-  return door === 'plain' ? SAVE_WORDS.plainLine : SAVE_WORDS.aiLine;
+  if (door === 'plain') return SAVE_WORDS.plainLine;
+  // An «🤖» request whose pass has no model today promises no AI result: its
+  // table's closing said none (as-built review DOORS-2).
+  if (door === 'ai' && !aiAvailable) return '';
+  return SAVE_WORDS.aiLine;
 }
 
 /**
  * The request's door, off its row (§0.3) — a read that fails is legacy
- * (NULL), today's words, never a guess.
+ * (NULL), today's words, never a guess — and, on an «🤖» request, whether its
+ * pass has a model today (`aiCalcAvailable`, the one rule; unreadable = no).
  */
-async function requestDoorOf(requestId: string): Promise<'plain' | 'ai' | null> {
+async function requestWordsOf(requestId: string): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean }> {
+  let door: 'plain' | 'ai' | null = null;
   try {
     const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
-    return await requestIntakeDoor(requestId);
+    door = await requestIntakeDoor(requestId);
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] the request’s door not read — today’s words');
-    return null;
+  }
+  if (door !== 'ai') return { door, aiAvailable: false };
+  try {
+    const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
+    return { door, aiAvailable: await aiCalcAvailable() };
+  } catch (err) {
+    logger.warn({ err }, '[calc-amend] AI availability unreadable — no AI result promised');
+    return { door, aiAvailable: false };
   }
 }
 
@@ -1536,10 +1566,10 @@ export type Told = Exclude<AmendOutcome, { kind: 'empty' | 'duplicate' | 'not_yo
  * job wrote after the machine's pass ended.
  */
 const OUTCOME_WORDS: {
-  [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean, door: 'plain' | 'ai' | null) => Promise<string>;
+  [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean) => Promise<string>;
 } = {
-  async applied(o, waited, door) {
-    const line = await repassLine(o.change, o.queued, door);
+  async applied(o, waited, door, aiAvailable) {
+    const line = await repassLine(o.change, o.queued, door, aiAvailable);
     return waited
       ? `✅ Kutib turgan qo‘shimchangiz so‘rovga yozildi (${o.change.card}).${line}`
       : `${withLines(`✅ So‘rovga qo‘shildi (${o.change.card}):`, o.lines)}${line}`;
@@ -1583,9 +1613,16 @@ const OUTCOME_WORDS: {
  * them). `door`: the request's (§2.6) — null keeps today's words. REQUIRED
  * (review PC-ADV-7): optional, it failed open — the dead save's sender
  * compiled without one and promised a plain seller the AI's result.
+ * `aiAvailable`: on an «🤖» request, whether its pass has a model today —
+ * REQUIRED for the same reason (as-built review DOORS-2).
  */
-export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null): Promise<string> {
-  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean, door: 'plain' | 'ai' | null) => Promise<string>)(o, waited, door);
+export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean): Promise<string> {
+  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean) => Promise<string>)(
+    o,
+    waited,
+    door,
+    aiAvailable,
+  );
 }
 
 /** The outcome a stored row records, rebuilt — what a redo says when the words were never sent. */
@@ -1683,7 +1720,8 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
     case 'waiting': {
       // A stored addition whose pass is still running stays stored, unsaid.
       if (outcome.kind === 'waiting' && outcome.stillWaiting) return;
-      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun, await requestDoorOf(data.requestId)));
+      const words = await requestWordsOf(data.requestId);
+      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun, words.door, words.aiAvailable));
       // Not delivered and worth another try: the retry is a `duplicate` and
       // says exactly these words, once. With no retry left the collection
       // stays frozen and the sweep tells it from the record.
@@ -1734,7 +1772,8 @@ async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(target, await amendWords(told, waitedRun, await requestDoorOf(data.requestId)));
+      const words = await requestWordsOf(data.requestId);
+      const sent = await sendWords(target, await amendWords(told, waitedRun, words.door, words.aiAvailable));
       if (!sent.ok && !sent.permanent) {
         // No retry left: the collection stays frozen; the sweep tells it from the record.
         if (last && !waitedRun) return;

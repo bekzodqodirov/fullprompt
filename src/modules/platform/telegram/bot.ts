@@ -41,7 +41,7 @@ import {
   setDurableIntakes,
 } from './calc-store';
 import { messageKey } from './once';
-import { burstScope } from './burst';
+import { burstScope, drawOwedBursts } from './burst';
 import { keptLastSettled } from './kept-last';
 import { tableEditsSettled } from './calc-dialog';
 
@@ -210,6 +210,13 @@ export function startTelegramBot(): void {
     hydrateWithRetry(hydrateIntakes).catch((err: unknown) => logger.warn({ err }, 'telegram calc intakes not restored')),
   ]).finally(() => {
     markIntakesHydrated();
+    // A burst's ONE message a dead process owed (as-built review BURST-8):
+    // asked now, from the rows just hydrated — never a throw into the boot.
+    try {
+      drawOwedBursts(bot.api);
+    } catch (err) {
+      logger.warn({ err }, 'telegram owed burst messages not drawn');
+    }
     startPolling(30_000);
   });
   logger.info('telegram bot polling started');

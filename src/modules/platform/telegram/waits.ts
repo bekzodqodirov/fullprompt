@@ -138,6 +138,16 @@ export function readWait<P>(chatId: bigint | number, kind: WaitKind): WaitEntry<
   return (memory.get(keyOf(chatId, kind)) as WaitEntry<P> | undefined) ?? null;
 }
 
+/** Every wait of one kind, from memory — the boot's owed bursts (burst.ts `drawOwedBursts`). */
+export function waitsOfKind<P>(kind: WaitKind): { chatId: string; entry: WaitEntry<P> }[] {
+  const prefix = `${kind}:`;
+  const out: { chatId: string; entry: WaitEntry<P> }[] = [];
+  for (const [key, entry] of memory) {
+    if (key.startsWith(prefix)) out.push({ chatId: key.slice(prefix.length), entry: entry as WaitEntry<P> });
+  }
+  return out;
+}
+
 export function dropWait(chatId: bigint | number, kind: WaitKind): void {
   const key = keyOf(chatId, kind);
   // Only what memory holds: the table never holds a wait this process does

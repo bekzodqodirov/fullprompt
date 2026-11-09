@@ -57,7 +57,8 @@ vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
   landingLinkFor: vi.fn(async () => null),
   landCollectedIntake: vi.fn(async () => {
     await stub.landed;
-    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: stub.replyQueued };
+    // The landing reads the door off the row it wrote (as-built review DOORS-3) — the stub's.
+    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: stub.replyQueued, door: stub.door, aiAvailable: true };
   }),
 }));
 vi.mock('@/modules/platform/telegram/keyboards', () => ({
@@ -511,7 +512,7 @@ describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', 
     vi.mocked(landCollectedIntake).mockReset();
     vi.mocked(landCollectedIntake).mockImplementation(async () => {
       await stub.landed;
-      return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false };
+      return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false, door: null, aiAvailable: false };
     });
   });
 

@@ -38,13 +38,17 @@ afterEach(() => {
 
 /**
  * «Tasdiqlash» on a collection of `door` — the plain «🧮» one, the AI one, or
- * a seeded collection whose source predates the doors (NULL).
+ * a seeded collection whose source predates the doors (NULL). The landing
+ * reports the door its ROW carries (`row`, the collection's own by default)
+ * and whether the pass has a model today (`aiAvailable`) — what the ✅ says
+ * (as-built review DOORS-2, DOORS-3).
  */
 async function save(
   section: IntakeState['section'],
   replyQueued: boolean,
   door: 'plain' | 'ai' | null = 'plain',
   queued = true,
+  landed: { row?: 'plain' | 'ai' | null; aiAvailable?: boolean } = {},
 ): Promise<string> {
   seq += 1;
   const chatId = BigInt(-9_900_000_000) - BigInt(seq);
@@ -64,6 +68,8 @@ async function save(
     requestId: queued ? 'req-1' : null,
     queueError: queued ? null : 'too_many_open',
     replyQueued,
+    door: queued ? (landed.row === undefined ? door : landed.row) : null,
+    aiAvailable: landed.aiAvailable ?? true,
   });
   const replies: string[] = [];
   await handleCalcCallback(
@@ -114,6 +120,23 @@ describe('the ✅ says where the answer comes from', () => {
     }
   });
 
+  it('the AI door with no model today promises no AI figure — its table said «… so‘rov VED ga tushadi» (as-built review DOORS-2)', async () => {
+    for (const section of ['rastamojka', 'podklyuch'] as const) {
+      const said = await save(section, true, 'ai', true, { aiAvailable: false });
+      expect(said, section).not.toContain(AI_QUEUED);
+      expect(said, section).toContain(VED_ANSWERS);
+    }
+  });
+
+  it('the press says what the landed ROW says, not the collection: an «🤖» collection landed NULL (0140 not there yet) promises no AI figure (as-built review DOORS-3)', async () => {
+    const said = await save('rastamojka', true, 'ai', true, { row: null });
+    expect(said).not.toContain(AI_QUEUED);
+    expect(said).toContain(VED_ANSWERS);
+    const plainLegacy = await save('rastamojka', true, 'plain', true, { row: null });
+    expect(plainLegacy).not.toContain(PLAIN_QUEUED);
+    expect(plainLegacy).toContain(VED_ANSWERS);
+  });
+
   it('a NULL door (a seeded collection whose source predates the doors) keeps today’s words (§0.2)', async () => {
     const said = await save('rastamojka', true, null);
     expect(said).toContain(VED_ANSWERS);
@@ -133,10 +156,13 @@ describe('the ✅ says where the answer comes from', () => {
 describe('landingReplyText by door (pure)', () => {
   const target: LandedTarget = { kind: 'deal', label: 'B-00001', queued: true, replyQueued: true };
   it('the four queue lines', () => {
-    expect(landingReplyText(target, { link: null, tariffFollows: false, door: 'plain' })).toContain(PLAIN_QUEUED);
-    expect(landingReplyText(target, { link: null, tariffFollows: false, door: 'ai' })).toContain(AI_QUEUED);
-    expect(landingReplyText(target, { link: null, tariffFollows: false, door: null })).toContain(VED_ANSWERS);
-    expect(landingReplyText(target, { link: null, tariffFollows: true, door: 'plain' })).toContain(TARIFF_FOLLOWS);
-    expect(landingReplyText({ ...target, replyQueued: false }, { link: null, tariffFollows: false, door: 'ai' })).toContain(VED_ANSWERS);
+    const on = { link: null, tariffFollows: false, aiAvailable: true };
+    expect(landingReplyText(target, { ...on, door: 'plain' })).toContain(PLAIN_QUEUED);
+    expect(landingReplyText(target, { ...on, door: 'ai' })).toContain(AI_QUEUED);
+    expect(landingReplyText(target, { ...on, door: null })).toContain(VED_ANSWERS);
+    expect(landingReplyText(target, { ...on, tariffFollows: true, door: 'plain' })).toContain(TARIFF_FOLLOWS);
+    expect(landingReplyText({ ...target, replyQueued: false }, { ...on, door: 'ai' })).toContain(VED_ANSWERS);
+    // No model today (as-built review DOORS-2): what a NULL door says.
+    expect(landingReplyText(target, { ...on, door: 'ai', aiAvailable: false })).toContain(VED_ANSWERS);
   });
 });

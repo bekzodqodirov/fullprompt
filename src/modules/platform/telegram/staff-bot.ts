@@ -1479,33 +1479,35 @@ export async function clientCodePrefix(): Promise<string> {
 }
 
 /**
- * The door a collection lands with (docs/IKKI-ESHIK.md §0.1, §0.3). A first
- * collection lands its own flag — «🤖 AI rastamojka» is 'ai', «🧮
- * Hisoblatish» 'plain'. A SEEDED one (a returned request's rows, «➕» on it)
- * lands with its SOURCE's door exactly as the source's row reads, and that
- * includes NULL: a legacy source (every request before 0140, the card form's,
- * the thread's, the agent's) gives a legacy request, which every reader
- * answers as today (§0.2). Its own flag is no door — for a legacy source it
- * is only `openSeeded`'s «a customs section», and landing it would stamp an
- * «🤖» request nobody pressed: one that passes the seller's mute, for good,
- * since a correction copies it. A source that cannot be read is legacy too —
- * today's behaviour, never a guess.
+ * What the ✅ says about the landed request (as-built review DOORS-2,
+ * DOORS-3) — read on the pool AFTER the landing committed, so BOTH senders
+ * (the press, the sweep's resumed landing) say what the ROW says, which is
+ * what the pass will do: the door the landing actually wrote (NULL when 0140
+ * was not there yet, §0.4, or the read fails — today's words), and, on an
+ * «🤖» request whose answer was queued, whether the pass will have a model
+ * today (`aiCalcAvailable`, the one rule the table's closing read): with none
+ * the table said «… so‘rov VED ga tushadi», and the ✅ must not say «AI
+ * hisoblayapti» under it.
  */
-async function collectedDoor(state: {
-  ai: boolean;
-  seed: unknown[] | null;
-  seededFrom?: string | null;
-}): Promise<'plain' | 'ai' | null> {
-  if (state.seed === null) return state.ai ? 'ai' : 'plain';
-  // A seeded row hydrated from before COMP-3 names no source: legacy.
-  const source = state.seededFrom ?? null;
-  if (!source) return null;
+async function landedWordsOf(
+  requestId: string | null | undefined,
+  replyQueued: boolean | undefined,
+): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean }> {
+  if (!requestId) return { door: null, aiAvailable: false };
+  let door: 'plain' | 'ai' | null = null;
   try {
     const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
-    return await requestIntakeDoor(source);
+    door = await requestIntakeDoor(requestId);
   } catch (err) {
-    logger.warn({ err, source }, '[calc-intake] the source request’s door not read — landed as legacy');
-    return null;
+    logger.warn({ err, requestId }, '[calc-intake] the landed request’s door not read — today’s words');
+  }
+  if (door !== 'ai' || replyQueued !== true) return { door, aiAvailable: false };
+  try {
+    const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
+    return { door, aiAvailable: await aiCalcAvailable() };
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] AI availability unreadable — the ✅ promises no AI figure');
+    return { door, aiAvailable: false };
   }
 }
 
@@ -1534,8 +1536,12 @@ export async function landCollectedIntake(
   outcome?: string;
   /** On a lead about a colleague's client: whose client it is. */
   about?: { clientCode: string; sellerName: string | null } | null;
+  /** The landed request's door as its ROW reads (`landedWordsOf`) — what the ✅ says. */
+  door: 'plain' | 'ai' | null;
+  /** On an «🤖» request whose answer was queued: whether the pass has a model today. */
+  aiAvailable: boolean;
 } | null> {
-  const { activeIntake, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
+  const { activeIntake, collectionDoor, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
@@ -1546,8 +1552,15 @@ export async function landCollectedIntake(
   const landed = await landIntake({
     // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1) — a
     // seeded collection its source's, NULL included (§0.3) — written on the
-    // request for every later reader.
-    intakeDoor: await collectedDoor(state),
+    // request for every later reader. ONE home for the collection's door
+    // (`collectionDoor`, as-built review DOORS-3): a seeded one's is the
+    // `seedDoor` its open read off the source's immutable row, the value its
+    // chat words already followed — a second read here could fail and land a
+    // plain chat's request as legacy, its estimate then sent to the seller.
+    // A legacy source (every request before 0140, the card form's, the
+    // thread's, the agent's) gives NULL: never «🤖» by the collection's flag,
+    // which for a legacy source is only `openSeeded`'s «a customs section».
+    intakeDoor: collectionDoor(state),
     noteId: state.noteId,
     section: state.section,
     // A code the seller typed lands as his own, never as the model's
@@ -1590,7 +1603,7 @@ export async function landCollectedIntake(
   // and the sweep's resumed landing — come through here.
   const { forgetAddOffers } = await import('./calc-amend');
   forgetAddOffers(chatId);
-  return landed;
+  return { ...landed, ...(await landedWordsOf(landed.queued ? landed.requestId : null, landed.replyQueued)) };
 }
 
 /**

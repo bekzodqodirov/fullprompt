@@ -223,9 +223,42 @@ export function offeredCount(text: string | null | undefined): number {
 /** What a press whose burst is gone took — said, never silent (task-handlers.ts's album words, for a burst). */
 export const BURST_GONE = '⚠ Faqat 1 ta xabar qo‘shildi — qolganlarini qaytadan yo‘naltiring.';
 
+/**
+ * A «▶️» whose burst is gone on a line that replies to NOTHING — the pause
+ * line a typed table answer drew beside a waiting burst is sent with no reply
+ * (it speaks for the burst by alias, review PB-SPEC-4): nothing can be taken,
+ * and that is said, never a silent resume (as-built review BURST-3).
+ * `BURST_GONE`'s «Faqat 1 ta xabar qo‘shildi» would be false: none was.
+ */
+export const BURST_NONE_TAKEN = '⚠ Bu xabarlar endi olinmaydi — qaytadan yuboring.';
+
 /** The line a full burst's message carries for the parts past the cap — said, never dropped in silence. */
 export const BURST_FULL = (over: number) =>
   `⚠ Bir martada ko‘pi bilan ${BURST_MAX_PARTS} ta xabar olinadi — qolgan ${over} tasini tugmani bosgandan keyin qaytadan yuboring.`;
+
+/**
+ * A FULL burst whose ONE message has only «📌» (no request to join, no parked
+ * collection — as-built review BURST-2): its draft takes the first `cap` and
+ * a resent part reaches nobody, so it says what «📌» takes — never
+ * `BURST_FULL`'s «qaytadan yuboring», which is true only of a door that takes
+ * the resend (a ➕ row, the pause line's ▶️).
+ */
+export const BURST_FULL_TASK = (cap: number) =>
+  `⚠ Bir martada ko‘pi bilan ${BURST_MAX_PARTS} ta xabar olinadi — topshiriqqa birinchi ${cap} tasi qo‘shiladi.`;
+
+/**
+ * Is this burst's ONE message owed — parts no message of it was drawn below?
+ * Its message sits below its newest part, so a part newer than the last copy
+ * drawn is one nobody was asked about: the draw the process owed when it died
+ * (as-built review BURST-8, DURABILITY-2). Only inside its window (`now`
+ * before the row's expiry): a burst a day old is not asked about at boot.
+ * Never a taken or an empty one. Pure.
+ */
+export function burstOwed(entry: Pick<WaitEntry<BurstPayload>, 'payload' | 'expiresAt'>, nowS: number): boolean {
+  const p = entry.payload;
+  if (p.taken || p.parts.length === 0 || nowS >= entry.expiresAt) return false;
+  return burstLastSeen(p) > (p.offerIds.at(-1) ?? 0);
+}
 
 /**
  * A press on a burst a collection already filed (saved, landed), or that is

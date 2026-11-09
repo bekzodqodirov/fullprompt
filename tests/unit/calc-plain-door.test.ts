@@ -472,7 +472,8 @@ describe('the ONE prompt (§1.4)', () => {
     const text = intakePromptText(state, fit);
     expect(text.split('\n')).toEqual([
       'Mijoz: GS777',
-      'Qabul qilindi: ✍️ 1 ta xabar · 📎 3 ta fayl',
+      // Files first, as the customer question counts them (§1.5, as-built review CHAT-8).
+      'Qabul qilindi: 📎 3 ta fayl · ✍️ 1 ta xabar',
       '📄 «inv.pdf» — AI o‘qiydi.',
       '📄 «list.xlsx» — jadval sarlavhasini topa olmadim, AI o‘qiydi.',
       '⚠️ Jadval katta: AI faqat birinchi 5 / 9 qatorini o‘qiydi — qolganini VED fayldan ko‘radi.',
@@ -630,14 +631,23 @@ describe('the refusals and the outcome line follow the door (§2.5, §2.6)', () 
   it('an applied addition’s line: a «🧮» request’s re-run promises the VED, never a result in the chat', async () => {
     const applied = (section: 'rastamojka' | 'yolkira'): Told =>
       ({ kind: 'applied', amendmentId: 'a', rev: 1, queued: true, lines: [], change: { section, card: 'B-1' } }) as unknown as Told;
-    const plain = await amendWords(applied('rastamojka'), false, 'plain');
+    const plain = await amendWords(applied('rastamojka'), false, 'plain', false);
     expect(plain).toContain('🤖 AI kartani VED uchun qayta tayyorlaydi — narxni VED beradi.');
     expect(plain).not.toContain(SAVE_WORDS.aiLine.trim());
     for (const door of ['ai', null] as const) {
-      expect(await amendWords(applied('rastamojka'), false, door), String(door)).toContain(SAVE_WORDS.aiLine.trim());
+      expect(await amendWords(applied('rastamojka'), false, door, true), String(door)).toContain(SAVE_WORDS.aiLine.trim());
     }
     // The tariff answers in the chat on either door (his 2.5 b).
-    expect(await amendWords(applied('yolkira'), false, 'plain')).toContain(SAVE_WORDS.tariffLine.trim());
+    expect(await amendWords(applied('yolkira'), false, 'plain', false)).toContain(SAVE_WORDS.tariffLine.trim());
+  });
+
+  it('an «🤖» request whose pass has no model today promises no AI result — its table said none (as-built review DOORS-2)', async () => {
+    const applied: Told = { kind: 'applied', amendmentId: 'a', rev: 1, queued: true, lines: [], change: { section: 'rastamojka', card: 'B-1' } } as unknown as Told;
+    const said = await amendWords(applied, false, 'ai', false);
+    expect(said).toBe('✅ So‘rovga qo‘shildi (B-1):');
+    expect(said).not.toContain('AI qayta hisoblayapti');
+    // A request from before the doors keeps today's line (§0.2).
+    expect(await amendWords(applied, false, null, false)).toContain(SAVE_WORDS.aiLine.trim());
   });
 
   it('the ✅ queue lines are exported once, for both senders', () => {

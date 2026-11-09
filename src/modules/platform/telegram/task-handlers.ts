@@ -399,11 +399,16 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
 /** A part of what the author sent, taken into the draft — then the next question. */
 export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft, part: DraftPart): Promise<void> {
   const firstOfAlbum = Boolean(part.mediaGroupId) && !Object.hasOwn(draft.albums, part.mediaGroupId!);
-  const next = updateDraft(chatId, { ...withPart(draft, part, Number(chatId)) })!;
-  if (next.dropped > 0 && draft.dropped === 0) {
-    // The first part past the cap, said ONCE (review bot-11): one
+  // THIS part went past the cap (as-built review BURST-2): it travels to
+  // nobody, so it is never «📎 Qabul qilindi».
+  const withIt = withPart(draft, part, Number(chatId));
+  const droppedNow = withIt.dropped > draft.dropped;
+  const next = updateDraft(chatId, { ...withIt, ...(droppedNow ? { capSaid: true } : {}) })!;
+  if (droppedNow && !draft.capSaid) {
+    // The first part past the cap, said ONCE per draft (review bot-11): one
     // forwardMessages call carries ten, and the rest were going nowhere in
-    // silence.
+    // silence. A draft seeded at the cap (a burst's «📌») says it too, to the
+    // first part he RESENDS: that one went nowhere either.
     await ctx.reply(`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`);
   }
   // An album is N updates: its settle timer is armed at EVERY stage. Armed
@@ -412,8 +417,9 @@ export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft,
   if (part.mediaGroupId) armAlbumTimer(chatId, part.mediaGroupId);
   if (next.stage === 'who') {
     // Sent before the person was picked: kept, and the question stands —
-    // said once per album, never once per photo.
-    if (!part.mediaGroupId || firstOfAlbum) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
+    // said once per album, never once per photo. A part the cap dropped was
+    // not kept: the cap's line answered it.
+    if (!droppedNow && (!part.mediaGroupId || firstOfAlbum)) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
     return;
   }
   // The due keyboard waits until the album has settled; the timer shows it.
