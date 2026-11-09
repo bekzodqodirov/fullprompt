@@ -114,7 +114,8 @@ import {
   receiveSheetText,
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
-import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, deliverNextStep, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 import {
   attemptStandingCases,
@@ -1586,7 +1587,11 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const s = activeIntake(chatId)!;
     expect([s.stage, s.route]).toEqual(['section', null]);
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(ctx.texts().at(-1)).toBe('Avval yuk qayerdan chiqishini tanlang.');
+    // Re-anchored by §1.6 (2026-11-08): the zone question is ONE message, counting what arrived,
+    // redrawn as the last one — never a second «Avval … tanlang.».
+    await keptLastSettled();
+    // (The helper reads the files without counting them, so the question is still its opening.)
+    expect(ctx.texts().at(-1)).toBe(ZONE_OPENING);
   },
   c0770: async () => {
     // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
@@ -1961,9 +1966,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   c1375: async () => {
     // Re-anchored onto ANSWERS: the answered Kurtka lands on its own line
-    // after the re-read reorders, and only Shim is ⚠️.
+    // after the re-read reorders, and only Shim is open — on the plain door's
+    // summary a gap is ℹ️, the VED's to ask (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
     const { chatId, table } = await answerThenReread();
-    expect(table).toContain('⚠️ 1. Shim');
+    expect(table).toContain('ℹ️ 1. Shim');
     expect(table).toContain('✅ 2. Kurtka — 150 kg');
     expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
   },
@@ -2024,7 +2030,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(activeIntake(chatId)!.facts.goods?.[0]).toEqual(line('Kurtka', { weightKg: 150 }));
     const table = ctx.texts().at(-1)!;
     expect(table).toContain('✅ 1. Kurtka — 150 kg');
-    expect(table).toContain('⚠️ 2. Shim');
+    // The plain door's summary marks a gap ℹ️ (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
+    expect(table).toContain('ℹ️ 2. Shim');
   },
   c1743: async () => {
     const built = await buildFile(xlsx({ name: 'S', rows: [['Name badge holder'], ['Lanyard 100 pcs 5 kg'], ['Clip 200 pcs 3 kg']] }));

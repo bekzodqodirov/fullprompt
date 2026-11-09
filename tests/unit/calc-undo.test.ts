@@ -36,11 +36,15 @@ const line = (name: string, extra: Partial<Goods[number]> = {}): Goods[number] =
 
 let seq = 0;
 const chats: bigint[] = [];
+/**
+ * On the AI door (moved there by docs/IKKI-ESHIK.md §2.2, 2026-11-08): the
+ * plain «🧮» door writes an answer quietly and draws no echo to take back.
+ */
 function collection(patch: Partial<IntakeState> = {}, section: IntakeState['section'] = 'rastamojka') {
   seq += 1;
   const chatId = BigInt(-9_900_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, section, { staffId: 'staff-test' });
+  startIntake(chatId, section, { staffId: 'staff-test', ai: true });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 

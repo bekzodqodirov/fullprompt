@@ -46,6 +46,7 @@ const PRESENCE: Record<string, string> = {
   // table's edit is FOR, re-read after their awaits by its note id.
   'calc-dialog.ts:commitWrites': 'an answer’s write and its echo’s id, on the collection it answered',
   'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
+  'calc-dialog.ts:drawPrompt': 'the kept-last draw of the collection’s own question or prompt (docs/IKKI-ESHIK.md §1.4)',
   'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',
   // The add door (P4, §9.2, §9.6): a parked collection is still one the door
   // would wipe or resume, and the save job reads only its own note's.

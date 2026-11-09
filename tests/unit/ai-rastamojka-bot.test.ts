@@ -180,13 +180,20 @@ describe('the rules a shell cannot exercise', () => {
     );
   });
 
-  it('a photo sent before the customer is named gets an answer', () => {
+  it('a photo sent before the customer is named gets an answer — the ONE question, never one per file', () => {
     // It used to fall through to the cabinet, which answers a staff chat
     // with nothing at all — the first thing a seller does after pressing the
     // button vanished. Since 2026-10-21 (his 1.7 b) the file is KEPT as
-    // material and the customer question is asked again — an answer still.
-    expect(handlers).toContain("if (state.stage === 'client') {");
-    expect(handlers).toContain('`Qabul qilindi.\\n\\n${CLIENT_QUESTION}`');
+    // material and the customer question stays open. Since his 1a
+    // (docs/IKKI-ESHIK.md §1.5, 2026-11-08) it is asked ONCE per collection:
+    // the file redraws the one question, counting, kept last — the
+    // «Qabul qilindi.\n\n» + question sent per file is gone.
+    const handler = handlers.slice(handlers.indexOf("bot.on(['message:photo', 'message:document']"));
+    const body = handler.slice(0, handler.indexOf('bot.on(', 10));
+    expect(body).toContain("const waiting = state.stage === 'client' || state.stage === 'section';");
+    expect(body).toContain('drawPromptSoon(ctx, chatId);');
+    expect(body).not.toContain('CLIENT_QUESTION');
+    expect(body).not.toContain('Qabul qilindi');
   });
 
   it('the Telegram file download has a deadline', () => {

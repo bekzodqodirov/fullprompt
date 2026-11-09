@@ -34,7 +34,14 @@ describe('the ✅ after «Hisoblatish» links what its sender can open', () => {
   it('asks `landingLinkFor` and prints the line only when it answers', () => {
     expect(at).toBeGreaterThan(-1);
     expect(save).toContain('landingLinkFor(staff.id, target)');
-    expect(save).toContain('landingReplyText(target, { link, tariffFollows })');
+    // …and the collection's door (docs/IKKI-ESHIK.md §2.3, §3.5) at the press;
+    // the sweep's resumed landing reads the door off the landed request's row.
+    expect(save).toContain('landingReplyText(target, { link, tariffFollows, door: collectionDoor(state) })');
+    const sweep = read('src/modules/platform/telegram/calc-intake-sweep.ts');
+    const resumed = sweep.slice(sweep.indexOf('async function resumeLanding('));
+    expect(resumed).toContain('const door = await landedDoor(target.requestId ?? null);');
+    expect(resumed).toContain('landingReplyText(target, { link, tariffFollows, door })');
+    expect(bodyOf(sweep, 'landedDoor')).toContain("await import('../../wms/calc/intake-door')");
     expect(replyText).toMatch(/\(opts\.link \? `\$\{opts\.link\}\\n` : ''\)/);
   });
 

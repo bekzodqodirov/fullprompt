@@ -650,8 +650,12 @@ function planWrites(
    * drawn on the row («yangi kod yozilmadi»), but carried in the answer, so
    * the addition can name it to the VED (`codesKept`, §9.5; review adv-11).
    */
-  const writeLine = (row: TableRow, patch: Partial<GoodsFact>, opts: { item?: string; kept?: string } = {}) => {
+  const writeLine = (row: TableRow, typed: Partial<GoodsFact>, opts: { item?: string; kept?: string } = {}) => {
     const g = goods()[row.index]!;
+    // A code the seller typed is HIS (review PF-ADV-11): its source goes with
+    // it, so the table never prints it as the model's proposal — and the undo
+    // puts the source back with the code (`before`).
+    const patch: Partial<GoodsFact> = typed.tnvedCode ? { ...typed, tnvedSource: 'row' } : typed;
     const before: Partial<GoodsFact> = {};
     for (const key of Object.keys(patch) as (keyof GoodsFact)[]) {
       (before as Record<string, unknown>)[key] = g[key] ?? null;
@@ -1489,14 +1493,15 @@ export function zoneQuestionText(state: Pick<IntakeState, 'fileCount' | 'materia
  * second ask. Markdown, as `CLIENT_QUESTION` is. Pure.
  */
 export function clientQuestionText(
-  state: Pick<IntakeState, 'fileCount' | 'material' | 'route' | 'ai' | 'section'>,
+  state: Pick<IntakeState, 'fileCount' | 'material' | 'route' | 'ai' | 'section' | 'seed' | 'amend'>,
   lead: string | null = null,
 ): string {
   const received = receivedCounts(state);
   // The road pressed stays said (the zone question became this one); the AI
-  // door's opening line only until something has arrived.
+  // door's opening line only on its own opening, until something has arrived.
   const road = state.route ? `✅ ${state.route.fromCity} → ${state.route.toCity}\n\n` : '';
-  const door = !road && !received && state.ai && state.section === 'rastamojka' ? '🤖 AI rastamojka — faqat bojxona to‘lovlari.\n\n' : '';
+  const opening = state.seed === null && state.amend === null && state.ai && state.section === 'rastamojka';
+  const door = !road && !received && opening ? '🤖 AI rastamojka — faqat bojxona to‘lovlari.\n\n' : '';
   return `${lead ? `${lead}\n\n` : ''}${road}${door}${received ? `Qabul qilindi: ${received}.\n\n` : ''}${CLIENT_QUESTION}`;
 }
 

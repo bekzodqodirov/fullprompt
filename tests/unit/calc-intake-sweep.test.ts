@@ -97,6 +97,7 @@ import { __resetLifecycle, bootedAtSec, markBoot } from '@/modules/platform/tele
 import { __resetBacklog, backlogSentence, tellBacklogOnce } from '@/modules/platform/telegram/backlog';
 import { __resetDrafts, startDraft } from '@/modules/platform/telegram/task-draft';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { SECTION_LABEL } from '@/modules/wms/calc/intake';
 import type { AmendBase } from '@/modules/wms/calc/amend-types';
 
@@ -654,7 +655,10 @@ describe('«▶️ Davom etamiz» and §2.7’s fixed words (SPEC-7)', () => {
     expect(holdingIntake(id)).toBeNull();
     const c = ctx();
     await pressResume(c as never, id);
-    expect(c.replies).toEqual([CLIENT_QUESTION]);
+    // The question once (docs/IKKI-ESHIK.md §1.5): its one message, counting
+    // what arrived, redrawn as the last — through the kept-last draw.
+    await keptLastSettled();
+    expect(c.replies).toEqual([`Qabul qilindi: ✍️ 1 ta xabar.\n\n${CLIENT_QUESTION}`]);
     expect(holdingIntake(id)).not.toBeNull();
     expect(intakeHolds(peekIntake(id)!, Date.now())).toBe(true);
   });
@@ -662,6 +666,14 @@ describe('«▶️ Davom etamiz» and §2.7’s fixed words (SPEC-7)', () => {
   it('the add collection’s end line and the survivor’s backlog sentence, as §2.7 prints them', () => {
     expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
       '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.',
+    );
+    // The door's words (docs/IKKI-ESHIK.md §2.5): a «🧮» request has no AI
+    // answer to press «➕» under; the AI door's and a NULL door's stay today's.
+    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067', door: 'plain' } as AmendBase }, SECTION_LABEL, null)).toBe(
+      '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».',
+    );
+    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067', door: 'ai' } as AmendBase }, SECTION_LABEL, null)).toContain(
+      'Kerak bo‘lsa ✅ yoki AI javobi ostidagi',
     );
     expect(backlogSentence(true)).toBe(
       '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. Zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.',

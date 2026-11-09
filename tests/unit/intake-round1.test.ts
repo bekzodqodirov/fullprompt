@@ -256,11 +256,19 @@ describe('the queued AI pass is never silent when it does not answer', () => {
 });
 
 describe('an album before the customer is named is asked about once', () => {
-  it('the re-ask is skipped for the rest of the same album', () => {
+  // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.4-§1.6, 2026-11-08): the
+  // per-album guard is gone because nothing is asked per file at all — every
+  // file redraws the ONE question through the kept-last draw, coalesced per
+  // chat, so an album (or a forward burst) moves it once. The behaviour is
+  // pinned in calc-plain-door.test.ts; this pins the wire.
+  it('every file redraws the one question through the coalesced draw — no ask of its own', () => {
     const handler = HANDLERS.slice(HANDLERS.indexOf("const waiting = state.stage === 'client' || state.stage === 'section';"));
-    const skip = handler.indexOf('if (asked) return;');
-    expect(skip, 'the album guard has moved — re-anchor').toBeGreaterThan(-1);
-    expect(skip).toBeLessThan(handler.indexOf("if (state.stage === 'section') {"));
-    expect(handler.slice(0, 600)).toContain('group === state.reaskedGroup');
+    const body = handler.slice(0, handler.indexOf('\n  });'));
+    expect(body).toContain('drawPromptSoon(ctx, chatId);');
+    expect(body).not.toContain('if (asked) return;');
+    expect(body).not.toContain('zoneKeyboard(');
+    const dialog = readFileSync('src/modules/platform/telegram/calc-dialog.ts', 'utf8');
+    const draw = dialog.slice(dialog.indexOf('export function drawPromptSoon('));
+    expect(draw.slice(0, draw.indexOf('\n}'))).toContain('keepLastSoon(`prompt:${chatId}`');
   });
 });

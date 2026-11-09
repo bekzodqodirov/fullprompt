@@ -346,7 +346,9 @@ describe('an answered line stays answered across a re-read (R3-C5, re-anchored o
     expect(live.facts.goods).toEqual([line('Shim'), line('Kurtka', { weightKg: 150 })]);
     expect(live.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
     const table = ctx.replies.at(-1)!;
-    expect(table).toContain('⚠️ 1. Shim');
+    // The plain door's summary marks the open row ℹ️ — the VED's to ask
+    // (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
+    expect(table).toContain('ℹ️ 1. Shim');
     expect(table).toContain('✅ 2. Kurtka — 150 kg');
   });
 });
