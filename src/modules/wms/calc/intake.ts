@@ -34,7 +34,7 @@ import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
 import type { TableRow, TableTarget } from './line-address';
 import type { BazaBasis, MeasureUnit } from './pricing';
-import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units';
+import { codeWrittenAsCode, normalizeRowUnit, parseGoodsLine, routeAmount, unitOf } from './units';
 import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
 import { clipText } from '../../platform/telegram/format';
 
@@ -438,22 +438,45 @@ export function landingItems(facts: CalcFacts) {
 
 /**
  * An attached invoice's rows as goods facts (P1.6) — everything the file
- * states, so the landing can route it: the unit word (the door sends «м2» /
- * «пар» to the measure pair), the volume and the money, the supplier's own
- * code and what the reader could not use. ONE mapping for the bot's invoice
- * reader and its test; nothing is decided here that the door decides.
+ * states: the volume and the money, the supplier's own code and what the
+ * reader could not use — and its numbers already in the columns their unit
+ * word names (docs/IKKI-ESHIK.md §1.7, M10): the landing's own rule
+ * (`normalizeRowUnit`, which `doorRow` applies), applied ONCE here, so the
+ * table, the summary, the completeness verdict, the file comparison and the
+ * card all read the row the landing will store. «120 пар» was 120 PIECES to
+ * every reader before the door and 120 juft after it — a table that said
+ * «120 dona» with ⚠️ juft. «пар» is juft, m²/litr go to the measure pair,
+ * «мест»/CTN/коробок are cartons: a note, never a count. The seller's words
+ * go on the note, as the door writes them; the door then finds nothing left
+ * to move. ONE mapping for the bot's invoice reader and its test.
  */
 export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
-  return rows.map((g) => ({
-    name: g.description,
-    quantity: g.quantity,
-    unit: g.unit,
-    weightKg: g.weightKg,
-    volumeM3: g.volumeM3,
-    amount: g.amount,
-    tnvedCode: g.tnvedCode,
-    note: g.note,
-  }));
+  return rows.map((g) => {
+    const routed = normalizeRowUnit({
+      quantity: g.quantity,
+      unit: g.unit,
+      weightKg: g.weightKg,
+      volumeM3: g.volumeM3,
+      measureUnit: null,
+      measureQty: null,
+    });
+    const row = {
+      name: g.description,
+      quantity: g.quantity,
+      unit: g.unit,
+      weightKg: g.weightKg,
+      volumeM3: g.volumeM3,
+      amount: g.amount,
+      tnvedCode: g.tnvedCode,
+      note: g.note,
+    };
+    if (!routed.moved) return row;
+    return {
+      ...row,
+      ...routed.patch,
+      note: [g.note, routed.note].filter(Boolean).join(' · ') || null,
+    };
+  });
 }
 
 /**
@@ -791,8 +814,14 @@ function totalsMissing(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): C
   return missingFields(input.section, input.facts, input.laws).filter((f) => !LINE_FIELDS.includes(f));
 }
 
-/** A conflict is open while the seller has not answered it. */
-const openConflicts = (amend: TableAmend | null) => (amend?.conflicts ?? []).filter((c) => c.choice === null);
+/**
+ * No conflict is an open question any more (his 1a, docs/IKKI-ESHIK.md §1.1):
+ * the stored figure stands and the file's is the VED's. What the table still
+ * SAYS under a row is every conflict the VED decides — unanswered, or left
+ * to him — as a statement, never a ⚠️.
+ */
+const vedConflicts = (amend: TableAmend | null) =>
+  (amend?.conflicts ?? []).filter((c) => c.choice === null || c.choice === 'ved');
 
 /** The stale totals, wherever the caller put them (`TableInput.totalsStale`, `TableAmend.totalsStale`). */
 const staleTotalsIn = (input: Pick<TableInput, 'amend' | 'totalsStale'>) =>
@@ -804,10 +833,8 @@ const staleTotalsIn = (input: Pick<TableInput, 'amend' | 'totalsStale'>) =>
  * mean (`TableRef.open`), and what the echo's «Yana {k} ta» counts.
  */
 export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend' | 'totalsStale'>): TableTarget[] {
-  const conflicted = new Set(openConflicts(input.amend).map((c) => c.itemId));
-  const goods = input.facts.goods ?? [];
   const lines: TableTarget[] = tableRowsOf(input)
-    .filter((r) => r.needs.length > 0 || conflicted.has(goods[r.index]?.itemId ?? ''))
+    .filter((r) => r.needs.length > 0)
     .map((r) => ({ line: r.no }));
   const missing = totalsMissing(input);
   const stale = staleTotalsIn(input);
@@ -849,13 +876,17 @@ const CONFLICT_FIELD_WORD: Record<TableConflict['field'], string> = {
   measureQty: 'o‘lchov',
 };
 
-/** «faylda 200 dona, so‘rovda 300 — qo‘shilsinmi (500), o‘rniga (200) yoki VED hal qilsinmi?» (§2.1). */
+/**
+ * «faylda 200 dona, so‘rovda 300 — VED hal qiladi» (docs/IKKI-ESHIK.md §1.1):
+ * a statement, never the R3 question «qo‘shilsinmi, o‘rniga yoki VED hal
+ * qilsinmi?» — the stored figure stands and the file's goes to the VED.
+ */
 export function conflictText(c: Pick<TableConflict, 'field' | 'unit' | 'stored' | 'read'>): string {
   const unit = needShortUz(c.unit as NeedUnit) ?? c.unit;
   if (c.stored === null) {
-    return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${CONFLICT_FIELD_WORD[c.field]} yo‘q — yozilsinmi yoki VED hal qilsinmi?`;
+    return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${CONFLICT_FIELD_WORD[c.field]} yo‘q — VED hal qiladi`;
   }
-  return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${fmt(c.stored)} — qo‘shilsinmi (${fmt(c.stored + c.read)}), o‘rniga (${fmt(c.read)}) yoki VED hal qilsinmi?`;
+  return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${fmt(c.stored)} — VED hal qiladi`;
 }
 
 /** One goods row of the table: its line, and the ↳ under it when it is ⚠️ — ONE entry, a cut never separates them. */
@@ -891,7 +922,7 @@ export function intakeTableText(input: TableInput): string {
   const needs = lineNeeds(input.section, input.facts, input.laws);
   const freightOnly = !REQUIRED_FIELDS[input.section].includes('itemMeasure');
   const goods = input.facts.goods ?? [];
-  const conflicts = openConflicts(input.amend);
+  const conflicts = vedConflicts(input.amend);
   const client = input.clientLabel ?? 'mijoz hali yozilmagan';
 
   const head = input.amend
@@ -905,7 +936,8 @@ export function intakeTableText(input: TableInput): string {
     const need = needs.find((l) => l.index === r.index);
     const itemId = goods[r.index]?.itemId ?? null;
     const own = itemId === null ? [] : conflicts.filter((c) => c.itemId === itemId);
-    const warn = !freightOnly && (need !== undefined || own.length > 0);
+    // A conflict is said under its row and asks nothing (§1.1): no ⚠️ for it.
+    const warn = !freightOnly && need !== undefined;
     const mark = freightOnly ? '·' : warn ? '⚠️' : '✅';
     const fresh = input.amend && r.seq === null ? '🆕 ' : '';
     const figures = lineFiguresText(item);
@@ -1086,19 +1118,15 @@ function answerHow(
       return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
     }
     // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
-    // else an open conflict as its typed answer, else the total the table
-    // owes — «jami 3500 kg» under a ✅ brutto taught a figure nobody asked for.
-    const conflict = input.amend.conflicts.find((c) => c.choice === null);
-    const conflictExample = conflict
-      ? `${rows.find((r) => r.seq === conflict.seq)?.no ?? conflict.seq}: ${figureLabel(conflict.read, conflict.unit as NeedUnit)}`
-      : null;
+    // else the total the table owes — «jami 3500 kg» under a ✅ brutto taught
+    // a figure nobody asked for. A conflict is no longer one (§1.1).
     const totalExample =
       missing.includes('weightKg') || stale.has('weightKg')
         ? 'jami 3500 kg'
         : missing.includes('volumeM3') || stale.has('volumeM3')
           ? 'jami 12 kub'
           : null;
-    const example = numbered ?? conflictExample ?? totalExample ?? 'Yiwu → Toshkent';
+    const example = numbered ?? totalExample ?? 'Yiwu → Toshkent';
     return [`✍️ Yetishmaganini yozing: «${example}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
   }
   // A name the parser reads as THAT row alone (`nameWord`, review PF-4) — the

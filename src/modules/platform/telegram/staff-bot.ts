@@ -536,6 +536,9 @@ const CALC_STEPS = [
   'cancel',
   // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
   // failure; answer «a second invoice arrived» — add its lines or replace.
+  // The invoice and «boshqa zavod» answers, and the conflict buttons below,
+  // were RETIRED by his 1a (docs/IKKI-ESHIK.md §1.3): still parsed, answered
+  // «eskirgan — fayllar o‘zi solishtirildi».
   'reread',
   'inv_add',
   'inv_replace',
@@ -581,7 +584,8 @@ export type CalcStep = (typeof CALC_STEPS)[number];
  *            collection resumes it, and the dispatcher's `pressKey(…,
  *            'restart')` claim lets one message restart once;
  *   prompt — it only asks (a section, a zone the stage itself refuses once
- *            answered, ▶️, ⏭) or is «eskirgan» (the legacy `cert`);
+ *            answered, ▶️, ⏭) or is «eskirgan» (the legacy `cert`, and the
+ *            file questions his 1a retired — docs/IKKI-ESHIK.md §1.3);
  *   cas    — the service refuses the second one.
  */
 export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'own'> = {
@@ -613,21 +617,21 @@ export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'ow
   cancel: 'own',
   cancel_y: 'own',
   reread: 'own',
-  inv_add: 'own',
-  inv_replace: 'own',
-  other_add: 'own',
-  other_same: 'own',
+  inv_add: 'prompt',
+  inv_replace: 'prompt',
+  other_add: 'prompt',
+  other_same: 'prompt',
   cert_y: 'own',
   cert_n: 'own',
-  conf_0_add: 'own',
-  conf_0_rep: 'own',
-  conf_0_ved: 'own',
-  conf_1_add: 'own',
-  conf_1_rep: 'own',
-  conf_1_ved: 'own',
-  conf_2_add: 'own',
-  conf_2_rep: 'own',
-  conf_2_ved: 'own',
+  conf_0_add: 'prompt',
+  conf_0_rep: 'prompt',
+  conf_0_ved: 'prompt',
+  conf_1_add: 'prompt',
+  conf_1_rep: 'prompt',
+  conf_1_ved: 'prompt',
+  conf_2_add: 'prompt',
+  conf_2_rep: 'prompt',
+  conf_2_ved: 'prompt',
 };
 
 /** The podklyuch door's «Yuk qayerdan chiqadi?» answers — one per zone the bot can name. */
@@ -1541,9 +1545,12 @@ export async function landCollectedIntake(
     noteId: state.noteId,
     section: state.section,
     facts: state.facts,
-    // The bot's own notes (the lines an Excel kept out) ahead of the model's,
-    // as the lenta has always carried them; the summary prints them apart.
-    steps: [...state.notes, ...state.steps],
+    // What the bot decided about each FILE as it arrived (docs/IKKI-ESHIK.md
+    // §1.2.5 — the Excel-vs-Excel decisions, «N ta tovar o‘qildi», a packing
+    // list's totals), then its notes on the reading (the lines an Excel kept
+    // out), then the model's — as the lenta has always carried them; the
+    // summary prints them apart.
+    steps: [...(state.fileNotes ?? []), ...state.notes, ...state.steps],
     // Law 11: the words themselves go onto the card, not only what the
     // parser made of them — the per-line answers included, labelled, since
     // they are kept out of the material the totals are read from.

@@ -5,6 +5,19 @@ import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
 import type { TableTarget } from '../../wms/calc/line-address';
 import type { IntakeFiles } from './calc-files';
+import {
+  goodsNameKeys,
+  LINE_FIGURES,
+  figureOf,
+  namesMeet,
+  sameFigures,
+  sameLine,
+  type GoodsFileMeta,
+  type NameKeys,
+} from './file-goods';
+// The name keys and «the same line» moved to file-goods.ts (docs/IKKI-ESHIK.md
+// §1.2) — the hydrate reads them too; every importer keeps its import here.
+export { goodsNameKey, goodsNameKeys, sameGoodsLine } from './file-goods';
 
 /**
  * The «Hisoblatish» collection, as the bot holds it.
@@ -372,12 +385,13 @@ export interface IntakeState {
    */
   invoiceTexts: SheetText[];
   /**
-   * Further spreadsheets of goods, waiting for the seller's answer: add their
-   * lines to the first's, or replace them (his 1.13 c — the bot asks). The
-   * second used to REPLACE the first in silence. A THIRD file while the
-   * question is open FOLDS into it — it used to overwrite the second, whose
-   * lines then reached nobody (round-1 review, c1) — and its other sheets wait here
-   * too, until the answer says whether they stay.
+   * RETIRED by his 1a (docs/IKKI-ESHIK.md §1.1): further spreadsheets that
+   * waited for «qo‘shilsin yoki o‘rniga?» (his 1.13 c). Nothing writes it any
+   * more — a further Excel is compared row by row as it arrives
+   * (file-goods.ts `foldInvoice`) — and a collection hydrated holding one is
+   * resolved by the same rule before it is put in memory
+   * (`migrateIntakeState`), so after the hydrate nothing is pending. Kept in
+   * the type for that one read.
    */
   pendingInvoice: {
     goods: import('../../wms/calc/intake').CalcFacts['goods'];
@@ -386,24 +400,33 @@ export interface IntakeState {
   } | null;
   /**
    * What the MODEL's goods are worth once an Excel list exists (round-1
-   * review, c4; his 1.13: two invoices from two factories). A PDF or a header-less sheet
-   * is read by the model, and its lines used to be thrown away whenever a
-   * mapped sheet answered — after the bot had promised «AI o'qiydi». So a
-   * separate model-read file beside an Excel list is ASKED about: `ask` =
-   * the question is open (and «Bo'ldi» waits for it), `add` = another
-   * factory's goods, appended to the Excel's, `context` = the same goods, the
-   * file is read for its totals only. Null = no such pair has arisen.
+   * review, c4; his 1.13: two invoices from two factories). A PDF or a
+   * header-less sheet beside an Excel list is no longer asked about (his 1a,
+   * docs/IKKI-ESHIK.md §1.2.2, M3): the bot writes `add` — the model is shown
+   * the Excel's list (`knownGoods`) and told to list only goods not on it,
+   * `pickGoods` drops a line the Excel already carries (by name, or by a count
+   * AND a weight equal to exactly one row's, M1 c), and the reading names
+   * what it added (`modelAddedNote`). `context` (the same goods, read for the
+   * totals only) and `ask` (the question open) are a hydrated collection's —
+   * `ask` becomes `add` at the hydrate (`migrateIntakeState`); new code only
+   * WRITES `add`. Null = no such pair has arisen: photos and typed text
+   * beside an Excel keep that rule (the Excel answers, the extra lines are
+   * named).
    *
-   * STATED, not built (round-2 review, C2): ONE answer covers every file the
-   * model reads in this collection — the model reads them together and
-   * returns one list, which carries no file per line. So factory A's own
-   * invoice.pdf beside factory B's PDF has no right answer: «add» repeats A's
-   * lines wherever their names differ from the Excel's, «context» drops B's.
-   * The question says so to the seller («Javob AI o‘qiydigan hamma
-   * fayllarga tegishli»); per-file answers would need the model to name a
-   * line's source.
+   * STATED, not built (round-2 review, C2): the model reads the documents
+   * together and returns one list, which names no file per line — the dedup
+   * against the Excel is what stands for per-file answers.
    */
   aiGoods: 'ask' | 'add' | 'context' | null;
+  /**
+   * The mapped Excels' blocks of `invoiceGoods`, in order (docs/IKKI-ESHIK.md
+   * §1.2.2): which file each row came from, its shape and weight kind — so a
+   * further file compares a gross weight only with a gross one, and a packing
+   * list that came FIRST hands the goods role to the invoice after it.
+   * Optional in the stored row: a row written before it reads [] and every
+   * held row's weight kind unknown.
+   */
+  goodsFiles?: GoodsFileMeta[];
   /**
    * The last text the customer question filed as MATERIAL. The same text sent
    * again is the seller insisting it IS the customer, and is taken as one —
@@ -972,226 +995,6 @@ export function intakeClientSummary(raw: string): string | null {
 
 type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>;
 
-/**
- * A goods name as two lists compare it: case, spacing and punctuation are not
- * what makes two lines the same product. Exported for the test.
- */
-export function goodsNameKey(name: string): string {
-  return name.toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
-}
-
-/**
- * A name's OUTERMOST brackets (ASCII and full-width — a Chinese original often
- * comes in （）): what each holds, and the name outside them. «Куртка женская
- * (Ladies jacket (XL))» holds «Ladies jacket (XL)» — the innermost pair alone
- * read «XL» and left the original's half outside (round-3 review, collector
- * C2 note). Unbalanced brackets are no brackets: nothing is guessed open.
- */
-function bracketParts(name: string): { inside: string[]; outside: string } {
-  const inside: string[] = [];
-  let outside = '';
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    const ch = name[i]!;
-    if (ch === '(' || ch === '（') {
-      if (depth === 0) {
-        start = i + 1;
-        outside += ' ';
-      }
-      depth += 1;
-    } else if (ch === ')' || ch === '）') {
-      if (depth === 0) return { inside: [], outside: name };
-      depth -= 1;
-      if (depth === 0) inside.push(name.slice(start, i));
-    } else if (depth === 0) outside += ch;
-  }
-  return depth === 0 ? { inside, outside } : { inside: [], outside: name };
-}
-
-/**
- * The names one goods line answers to (round-2 review, C2/C6), each through
- * `goodsNameKey`:
- *  - `whole` — the name as written: the one name the line IS;
- *  - `outside` / `inside` — the name outside its outermost brackets, and what
- *    each holds;
- *  - `keys` — everything the line answers to: the whole, the outside, the
- *    insides. The model is TOLD to write «Куртка женская (Ladies jacket)»
- *    (its SYSTEM prompt: Russian, the original in brackets), so the whole
- *    name alone never equalled the Excel's «Ladies jacket» and an «add»
- *    landed the same line twice;
- *  - `halves` — for a Chinese factory's bilingual cell with no brackets
- *    («女士夹克 Ladies jacket», «女士夹克\nLadies jacket») its Chinese half and
- *    the rest, each beside the OTHER half (`rest`): the model reads such a
- *    cell as «Куртка женская (女士夹克)» and the Excel's whole name met neither
- *    half (round-3 review, collector C2 note). How a half may meet is
- *    `halfMeets` — not as a name the line IS: «Kurtka 黑色» is a black jacket
- *    and «LED灯泡» a bulb, and nothing says a half is the other's translation
- *    (round-4 probe, collector).
- * Halves only without brackets: in «Kurtka (黑色)» the colour is the bracket.
- * Empty keys are dropped.
- */
-export function goodsNameKeys(name: string): {
-  whole: string;
-  outside: string;
-  inside: string[];
-  keys: string[];
-  halves: { key: string; rest: string }[];
-} {
-  const whole = goodsNameKey(name);
-  const parts = bracketParts(name);
-  const outside = goodsNameKey(parts.outside);
-  const inside = parts.inside.map(goodsNameKey).filter(Boolean);
-  const han = goodsNameKey((name.match(/\p{Script=Han}+/gu) ?? []).join(' '));
-  const rest = goodsNameKey(name.replace(/\p{Script=Han}+/gu, ' '));
-  const split = parts.inside.length === 0 && han !== '' && /\p{L}/u.test(rest);
-  return {
-    whole,
-    outside,
-    inside,
-    keys: [...new Set([whole, outside, ...inside])].filter(Boolean),
-    halves: split ? [{ key: han, rest }, { key: rest, rest: han }] : [],
-  };
-}
-
-/**
- * Do two names point at the same product the WIDE way — a name ONE of them
- * answers to is the name the OTHER is: «Куртка женская (Ladies jacket)» is
- * «Ladies jacket», «Kurtka» is «Kurtka (qora)» (round-2 review, C2/C6)? Never
- * bracket against bracket or outside against outside: a bracket is as often a
- * colour or a size, and «Kurtka (qora)» beside «Kurtka (oq)» are two lines of
- * one order. A bilingual cell's half meets by `halfMeets` alone.
- */
-type NameKeys = ReturnType<typeof goodsNameKeys>;
-function namesMeet(a: NameKeys, b: NameKeys): boolean {
-  return a.keys.includes(b.whole) || b.keys.includes(a.whole) || halfMeets(a, b) || halfMeets(b, a);
-}
-
-const SCRIPTS = [
-  ['han', /\p{Script=Han}/u],
-  ['cyrillic', /\p{Script=Cyrillic}/u],
-  ['latin', /\p{Script=Latin}/u],
-] as const;
-
-/**
- * A key's words for comparing two names: each word's LETTERS under the script
- * of its first one, and the NUMBERS the key states as their own bucket — every
- * run of digits, counted (a multiset), however they are written. A size is
- * «600*600mm» in the cell and «600×600 мм» in the model's reading of it, a
- * range «36~40» and «36–40»: compared as words they were two names and one
- * order landed twice (round-6 probe, collector, 28 common cases); left out,
- * «iPhone 14» met «iPhone 15» and a 800×800 tile met the 600*600 one (the
- * lead's undo, probed: 5 common). Read as numbers both hold. Not read: a unit
- * conversion («0.35L» / «350 мл»), which stays another name.
- */
-function nameWords(key: string): Map<string, Set<string>> {
-  const by = new Map<string, Set<string>>();
-  const add = (bucket: string, word: string) => by.set(bucket, (by.get(bucket) ?? new Set<string>()).add(word));
-  // NFKC writes full-width digits as digits and «№» as «No» — capitalised,
-  // so the case is folded after it.
-  const plain = key.normalize('NFKC').toLowerCase();
-  for (const word of plain.split(' ').filter(Boolean)) {
-    const letters = word.replace(/[^\p{L}]/gu, '');
-    if (letters === '') continue;
-    add(SCRIPTS.find(([, re]) => re.test(letters))?.[0] ?? 'other', letters);
-  }
-  const seen = new Map<string, number>();
-  for (const run of plain.match(/[0-9]+/g) ?? []) {
-    const n = run.replace(/^0+(?=\d)/, '');
-    const nth = (seen.get(n) ?? 0) + 1;
-    seen.set(n, nth);
-    add('number', `${n}#${nth}`);
-  }
-  return by;
-}
-
-// The tier words (#1468) live in name-tiers.ts, one home with the bot table's
-// name address (docs/SAKKIZ-R3.md §8.1); `otherName` reads them from there.
-
-/**
- * Are two keys two DIFFERENT names: in some script both write — or in the
- * numbers both state — each has a word the other lacks: «Shirt» beside
- * «Jacket», «Куртка M» beside «XL», «iPhone 15» beside «iPhone 14», «600*600»
- * beside «800×800». One naming MORE of the same is not another name:
- * «Наушники Bluetooth» shares the Latin of «Bluetooth earphones», «Куртка
- * женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки» is
- * «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone made
- * each of those a clash, and one order landed twice) — except a model's TIER
- * (`tierWords`): «Чехол iPhone 15» is not «Phone case iPhone 15 Pro», and two
- * stalls' phone cases had one line dropped as the other's (round-6 final
- * probe, collector, 10 common cases).
- */
-function otherName(a: string, b: string): boolean {
-  const tiersA = tierWords(a);
-  const tiersB = tierWords(b);
-  if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
-  const wordsB = nameWords(b);
-  for (const [bucket, ofA] of nameWords(a)) {
-    const ofB = wordsB.get(bucket);
-    if (ofB && [...ofA].some((w) => !ofB.has(w)) && [...ofB].some((w) => !ofA.has(w))) return true;
-  }
-  return false;
-}
-
-/**
- * A bilingual cell meets another line through a half only where a
- * translation stands: the other line's bracket — the model's «Куртка женская
- * (女士夹克)» — unless that line's outside and the cell's other half are two
- * names (`otherName`: «Shirt (黑色)» is not «Jacket 黑色»), or the other's
- * whole bare name («Ladies jacket»). Half against half, or against an
- * outside, met «夹克 XL» with «衬衫 XL» and «Kurtka 黑色» with «Kurtka (oq)»
- * (round-4 probe, collector).
- */
-function halfMeets(cell: NameKeys, other: NameKeys): boolean {
-  return cell.halves.some(({ key, rest }) => {
-    if (other.inside.length === 0) return other.whole === key;
-    if (!other.inside.includes(key)) return false;
-    return other.outside === '' || !otherName(other.outside, rest);
-  });
-}
-
-/**
- * The figures a goods line can state, and what «equal» means for each: a
- * count is exact (300 and 299 are two lines); a weight, volume or amount is
- * equal within rounding — under `unit` apart, or within 0.5 % (a PDF's
- * «1 234,5 kg» read as 1234).
- */
-const LINE_FIGURES: { field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty' | 'amount'; unit: number | null }[] = [
-  { field: 'quantity', unit: null },
-  { field: 'weightKg', unit: 1 },
-  { field: 'volumeM3', unit: 0.01 },
-  { field: 'measureQty', unit: null },
-  { field: 'amount', unit: 0.01 },
-];
-
-function figureOf(g: GoodsList[number], field: (typeof LINE_FIGURES)[number]['field']): number | null {
-  const v = g[field];
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
-}
-
-/**
- * Is the model's line the Excel line READ AGAIN, by its figures (round-3
- * review, R3-C1)? A packing list re-read carries the Excel line's own count or
- * weight; another factory's same-named product does not. Only the figures
- * BOTH lines state are compared (round-4 review, C-r2 ND2 and integration
- * defect 3): a re-read that states the count beside an Excel line stating
- * only the weight — the Invoice sheet beside the Packing list, or a count the
- * reader took once from a merged cell — shares nothing to disagree on, and
- * counting «the Excel has no count» as a disagreement landed the order twice.
- * So: nothing shared (nothing says it is another line), or a shared figure
- * agrees.
- */
-function figuresAgree(model: GoodsList[number], invoice: GoodsList[number]): boolean {
-  const shared = LINE_FIGURES.filter((f) => figureOf(model, f.field) !== null && figureOf(invoice, f.field) !== null);
-  if (shared.length === 0) return true;
-  return shared.some((f) => {
-    const ours = figureOf(model, f.field)!;
-    const theirs = figureOf(invoice, f.field)!;
-    if (f.unit === null) return ours === theirs;
-    const gap = Math.abs(ours - theirs);
-    return gap < f.unit || gap <= 0.005 * Math.max(Math.abs(ours), Math.abs(theirs));
-  });
-}
 
 /** A line the Excel kept out of the job, and why — see `PickedGoods.sameAsInvoice`. */
 export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' };
@@ -1213,30 +1016,6 @@ export interface PickedGoods {
   sameAsInvoice: LeftOutLine[];
 }
 
-/**
- * Is the line READ the line KEPT, read again — `pickGoods`' «already
- * carries» rule, one home for it (docs/SAKKIZ-R3.md §9.4): the same WHOLE
- * name, or a name one answers to that is the other's (`namesMeet`) with
- * figures that agree (`figuresAgree`). The wide match alone threw factory B's
- * «Kurtka (qora)» 200 away against factory A's «Kurtka» 300 — two factories,
- * one generic name, two lines. The add door asks it of a stored row and a
- * top-up's line: «Куртка женская (Ladies jacket)» against a stored «Ladies
- * jacket» is that row, never a second one priced twice. Pure.
- */
-export function sameGoodsLine(kept: GoodsList[number], read: GoodsList[number]): boolean {
-  return sameLine(kept, goodsNameKeys(kept.name), read, goodsNameKeys(read.name));
-}
-
-/**
- * `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice
- * once. ONE rule for both (§9.1): a name of nothing but spaces and signs keys
- * to nothing, and nothing is no name to be «the same» by — two such lines are
- * not one line.
- */
-function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[number], readNames: NameKeys): boolean {
-  if (!keptNames.whole || !readNames.whole) return false;
-  return keptNames.whole === readNames.whole || (namesMeet(readNames, keptNames) && figuresAgree(read, kept));
-}
 
 /**
  * Which goods list a collection lands, in the order of how EXACT each source
@@ -1290,8 +1069,13 @@ export function pickGoods(input: {
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
+    // …or, on the add path, a model line whose count AND weight equal exactly
+    // ONE Excel row's under another name (docs/IKKI-ESHIK.md §1.2.2, M1 c):
+    // the model reads a Chinese PDF's «女士夹克» as «Куртка женская», and only
+    // the figures say it is the Excel's «Ladies jacket».
     const carried = (g: GoodsList[number], names: NameKeys) =>
-      invoice.some((inv) => sameLine(inv.row, inv.names, g, names));
+      invoice.some((inv) => sameLine(inv.row, inv.names, g, names)) ||
+      (input.aiGoods === 'add' && invoice.filter((inv) => sameFigures(inv.row, g)).length === 1);
     if (input.aiGoods !== 'add') {
       if (input.aiGoods !== null || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
       const read = input.model.map((g) => goodsNameKeys(g.name));
@@ -1350,7 +1134,23 @@ function namedLines(lines: readonly { name: string }[]): string {
 export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: LeftOutLine['why'] })[]): string | null {
   const same = lines.filter((g) => g.why !== 'typed');
   if (same.length === 0) return null;
-  return `⚠️ ${same.length} ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: ${namedLines(same)}.`;
+  // No ⚠️ (docs/IKKI-ESHIK.md §1.2.4): taking the same goods once is the
+  // designed outcome now, not a doubt the seller is asked about.
+  return `📄 ${same.length} ta qator Excel’dagi bilan bir xil — bir marta olindi: ${namedLines(same)}.`;
+}
+
+/**
+ * What the model's documents added beside an Excel list, on the add path
+ * (docs/IKKI-ESHIK.md §1.2.4): how many new goods, and how many it read that
+ * the Excel already had. «AI o‘qigan fayllar», never «PDF»: the model-read
+ * file may be a photo or a header-less sheet. Null = the model did not read,
+ * or read no goods. Pure.
+ */
+export function modelAddedNote(added: number, same: number): string | null {
+  if (added > 0) {
+    return `🤖 AI o‘qigan fayllardan ${added} ta yangi tovar qo‘shildi${same > 0 ? ` (${same} tasi Excel’da bor edi)` : ''}.`;
+  }
+  return same > 0 ? '🤖 AI o‘qigan fayllardagi tovarlar Excel’da bor.' : null;
 }
 
 /**
@@ -1361,7 +1161,9 @@ export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: L
 export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   const typed = lines.filter((g) => g.why === 'typed');
   if (typed.length === 0) return null;
-  return `⚠️ ${typed.length} ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): ${namedLines(typed)}.`;
+  // Named, never added (docs/IKKI-ESHIK.md §1.2.2, M3): beside an Excel the
+  // photos and the typed text keep today's rule — the Excel answers.
+  return `Rasmda/yozuvda Excel’da yo‘q tovar: ${namedLines(typed)} — VED tekshiradi.`;
 }
 
 /**
@@ -1521,7 +1323,17 @@ export async function analyzeCollected(
   // keeps them (R3-C1; round 4, C-r1 nit and integration S-a).
   // …and the files the reading could not load back from storage (K5), said
   // rather than read past in silence.
+  // …and, on the add path, what the model's documents added (§1.2.4): a
+  // READING-time note, kept in `notes` (the receipt-time ones are `fileNotes`).
+  const modelAdded =
+    state.aiGoods === 'add' && ai && invoice.length > 0 && (ai.facts.goods ?? []).length > 0
+      ? modelAddedNote(
+          picked.goods.length - invoice.length,
+          picked.sameAsInvoice.filter((g) => g.why === 'same').length,
+        )
+      : null;
   const notes = [
+    modelAdded,
     sameAsInvoiceNote(picked.sameAsInvoice),
     typedLeftOutNote(picked.sameAsInvoice),
     filesMissingNote(files.missing),
@@ -1549,11 +1361,29 @@ export async function analyzeCollected(
   // Yana ma'lumot» must not erase them — and where each landed is what the
   // collection keeps (`placeByName`'s write-back, regression-7).
   const placed = placeByName(picked.goods, state.lineAnswers);
+  // The totals in their rank (docs/IKKI-ESHIK.md §1.2.5): what the seller
+  // typed, then what a packing list GAVE (`fileTotals` — its gross Σ, or a
+  // net Σ the freight sections refuse as a brutto, `totalWeightFrom`), then
+  // the model's reading; the table answer goes on top of all three below. A
+  // figure the packing list gave is therefore never asked again.
+  const fileTotals = state.fileTotals ?? null;
+  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg'));
+  const fromFile =
+    fileTotals && fileTotals.weightKg !== null
+      ? totalWeightFrom(
+          state.section,
+          manual,
+          { weightKg: fileTotals.weightKg, ...(fileTotals.weightNetto ? { weightNetto: true } : {}) },
+          asked('weightKg'),
+        )
+      : null;
+  const modelVolume = asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
+  const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
-    ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
-    volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
+    ...(fromFile && fromFile.weightKg != null ? fromFile : fromModel),
+    volumeM3: manual.volumeM3 ?? fileVolume ?? modelVolume,
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.
     ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
@@ -1572,10 +1402,16 @@ export async function analyzeCollected(
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
+  // A packing list's figure doubts the answer only when it came AFTER it
+  // (§1.2.5, the `at` mark): one the seller had in front of him when he
+  // answered is the very figure the answer corrected.
+  const fileAfterAnswer = fileTotals !== null && fileTotals.at.files > at.files;
   const doubts = totalsDoubts(state.totalsAnswer, {
     now: { material: state.material.length, files: state.fileCount },
     since,
-    reading,
+    reading: fileAfterAnswer
+      ? reading
+      : { weightKg: fromModel.weightKg ?? null, volumeM3: manual.volumeM3 ?? modelVolume },
   });
   const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
   return {
@@ -1605,9 +1441,11 @@ export async function analyzeCollected(
  *    the same whole name, or a name it answers to with figures that agree) is
  *    that row, never a second one priced twice — and when it states a figure
  *    the stored row has otherwise or not at all, it is the row's CONFLICT
- *    (law-money-5): asked «qo‘shilsin / o‘rniga / VED hal qilsin», never
- *    written on its own, and the VED's when unanswered. A wide match whose
- *    figures disagree is no match: another factory's line, a NEW line;
+ *    (law-money-5): never written on its own — and since his 1a
+ *    (docs/IKKI-ESHIK.md §1.1) never asked either: the stored figure stands,
+ *    the file's goes on the card for the VED («faylda 200 dona, so‘rovda 300
+ *    — VED hal qiladi»). A wide match whose figures disagree is no match:
+ *    another factory's line, a NEW line;
  *  - totals and cities are NOT read from new material (§0.1(2)): a top-up's
  *    packing list may state its own totals or the whole truck's, and nobody
  *    can tell which. The stored ones stand, a table answer goes on top, and an
@@ -1642,7 +1480,7 @@ function addReading(
       fresh.push(read);
       continue;
     }
-    // Only a STORED row can be ASKED about (a conflict needs its item id). A
+    // Only a STORED row can carry a conflict (it needs the row's item id). A
     // seeded collection's row is a plain line, kept as `pickGoods` keeps an
     // invoice's — and, like `pickGoods`' left-out lines, a re-read that states
     // another figure is NAMED, never dropped in silence: a corrected «Sumka —
@@ -1664,7 +1502,11 @@ function addReading(
         unit: c.unit,
         stored: c.stored,
         read: c.read,
-        choice: before && before.read === c.read ? before.choice : null,
+        // Never asked (his 1a, docs/IKKI-ESHIK.md §1.1): the stored figure
+        // stands and the file's goes to the VED — R3 interp 9's unanswered
+        // default, written. An answer a hydrated collection already holds
+        // stands only while the read figure does.
+        choice: before && before.read === c.read ? before.choice : 'ved',
       });
     }
   }

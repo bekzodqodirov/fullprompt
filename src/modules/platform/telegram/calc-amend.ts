@@ -758,7 +758,7 @@ async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, orig
       ...(part.messageId === original.message_id && text ? { material: [...live.material, text] } : {}),
     };
     live = updateIntake(chatId, patch) ?? { ...live, ...patch };
-    if (read.say) noteOwnMessage(chatId, (await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined)).message_id);
+    if (read.say) noteOwnMessage(chatId, (await sp.reply(read.say)).message_id);
   }
   // The original with no file taken above (a text, or a file that could not
   // be saved): its text and its mark in one patch.
@@ -872,7 +872,7 @@ export async function openAmendFromMedia(
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);
       live = updateIntake(chatId, { ...read.patch, ...unread, fileCount: live.fileCount + 1, ...withCaption }) ?? live;
-      if (read.say) await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+      if (read.say) await sp.reply(read.say);
     } else if (caption) {
       live = updateIntake(chatId, { ...unread, ...withCaption }) ?? live;
     }

@@ -7,6 +7,7 @@ import { logger } from '../logger';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
+import { foldPendingInvoice } from './file-goods';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
 import { quietHour, sendText, type SendResult } from './send';
 
@@ -299,6 +300,7 @@ export function startIntake(
     invoiceTexts: [],
     pendingInvoice: null,
     aiGoods: null,
+    goodsFiles: [],
     clientAskedWith: null,
     usages: [],
     aiFailure: null,
@@ -997,15 +999,32 @@ export function flushBeforeConfirm(): Transformer {
  * place an older collection's shape is brought forward, run on every row the
  * hydrate restores, before it is put in memory. Pure.
  *
- * Today it gives the fields 0140's round added their empty values — a row
- * written before them has neither: no `fileTotals` (null), no `fileNotes`
- * ([]). A stored value always wins over the default.
+ *  - the fields 0140's round added get their empty values — a row written
+ *    before them has no `fileTotals` (null), no `fileNotes` ([]) and no
+ *    `goodsFiles` ([]); a stored value always wins over the default;
+ *  - a collection opened before his 1a may still hold a question no release
+ *    asks any more (§1.1): a second Excel waiting for «qo‘shilsin yoki
+ *    o‘rniga?» (`pendingInvoice`) is resolved by the rule a new one meets
+ *    (`foldPendingInvoice` — compared row by row, its decisions in
+ *    `fileNotes`), an open «boshqa zavodmi?» (`aiGoods: 'ask'`) becomes the
+ *    add path, and a stored row's conflict nobody answered is the VED's.
+ *    `'context'` and `'add'` stay — 'context' was the seller's own answer.
+ *    After the hydrate nothing is pending, so «Bo‘ldi» is refused for no file.
  */
 export function migrateIntakeState(row: IntakeState): IntakeState {
-  return {
+  const base: IntakeState = {
     ...row,
     fileTotals: row.fileTotals ?? null,
     fileNotes: Array.isArray(row.fileNotes) ? row.fileNotes : [],
+    goodsFiles: Array.isArray(row.goodsFiles) ? row.goodsFiles : [],
+  };
+  const resolved: IntakeState = base.pendingInvoice ? { ...base, ...foldPendingInvoice(base) } : base;
+  return {
+    ...resolved,
+    aiGoods: resolved.aiGoods === 'ask' ? 'add' : resolved.aiGoods,
+    conflicts: Array.isArray(resolved.conflicts)
+      ? resolved.conflicts.map((c) => (c.choice === null ? { ...c, choice: 'ved' as const } : c))
+      : resolved.conflicts,
   };
 }
 

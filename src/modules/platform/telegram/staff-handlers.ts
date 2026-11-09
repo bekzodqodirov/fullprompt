@@ -77,13 +77,7 @@ import {
   updateIntake,
   type IntakeMessage,
 } from './calc-store';
-import {
-  invoiceChoice,
-  otherFilesChoice,
-  readIntakeFile,
-  saveBotFile,
-  saveIntakeFile,
-} from './calc-files';
+import { readIntakeFile, saveBotFile, saveIntakeFile } from './calc-files';
 import {
   NOT_FOUND_HINT,
   orphanAnswerSentence,
@@ -92,7 +86,6 @@ import {
   landingReplyText,
   pressCancel,
   pressCertificate,
-  pressConflict,
   pressPick,
   pressSkip,
   pressUndo,
@@ -187,8 +180,6 @@ export { CALC_ENTRY_LABELS };
  */
 export { zoneKeyboard } from './calc-keyboards';
 export {
-  invoiceChoice,
-  otherFilesChoice,
   readIntakeFile,
   receiveGoodsSheet,
   receivePdf,
@@ -819,7 +810,7 @@ export function registerStaffBot(bot: Bot): void {
       material: caption ? [...state.material, caption] : state.material,
       reaskedGroup: group,
     });
-    if (read.say) await ctx.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+    if (read.say) await ctx.reply(read.say);
     if (asked) return;
     if (state.stage === 'section') {
       await ctx.reply('Qabul qilindi. Avval yuk qayerdan chiqishini tanlang:', {
@@ -1483,6 +1474,14 @@ async function answerWithAssistant(
  * (a `go_*`), spent here before the restart wipes anything; null in a test
  * and on a server one migration behind.
  */
+/** What a retired file question's button says (docs/IKKI-ESHIK.md §1.3). */
+export const RETIRED_FILE_STEP = 'Bu tugma eskirgan — fayllar o‘zi solishtirildi.';
+
+/** The buttons of the file questions his 1a retired: the second Excel, «boshqa zavodmi?», a conflict. */
+export function isRetiredFileStep(step: CalcStep): boolean {
+  return step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same' || step.startsWith('conf_');
+}
+
 export async function handleCalcCallback(
   ctx: CalcPressCtx,
   chatId: bigint,
@@ -1597,6 +1596,16 @@ export async function handleCalcCallback(
     return;
   }
 
+  // The file questions his 1a retired (docs/IKKI-ESHIK.md §1.1, §1.3): «a
+  // second Excel arrived», «boshqa zavodmi?» and a stored row's conflict. Their
+  // buttons stay PARSED — an unparsed press spins for ~15 s (#939) — and say
+  // why they do nothing, under any collection or none: the bot now compares
+  // the files itself.
+  if (isRetiredFileStep(step)) {
+    await ctx.reply(RETIRED_FILE_STEP);
+    return;
+  }
+
   let state = activeIntake(chatId);
   if (!state) {
     // A «Saqlash» redelivered after a restart lands here too: never «type it
@@ -1674,38 +1683,6 @@ export async function handleCalcCallback(
     return;
   }
 
-  // A stored row a re-read file disagrees with (P4): add, replace, or leave
-  // it to the VED — by POSITION among the live conflicts.
-  const conflict = /^conf_(\d)_(add|rep|ved)$/.exec(step);
-  if (conflict) {
-    await pressConflict(ctx, chatId, state, Number(conflict[1]), conflict[2] as 'add' | 'rep' | 'ved');
-    return;
-  }
-
-  if (step === 'inv_add' || step === 'inv_replace' || step === 'other_add' || step === 'other_same') {
-    // His 1.13 c: the second invoice waits for this answer — and, beside an
-    // Excel list, a file the AI reads waits for «boshqa zavodmi?» (c4).
-    const choice =
-      step === 'inv_add' || step === 'inv_replace' ? invoiceChoice(state, step) : otherFilesChoice(state, step);
-    if (!choice) {
-      await ctx.reply('Bu tugma eskirgan.');
-      return;
-    }
-    const next = updateIntake(chatId, choice.patch);
-    await ctx.reply(choice.said);
-    // The question the collection is still waiting on is asked again — the
-    // file handler's own words (round-1 review, c0).
-    if (choice.reask === 'section') {
-      await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
-      return;
-    }
-    if (choice.reask === 'client') {
-      await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
-      return;
-    }
-    if (next) await showIntakePrompt(ctx as Parameters<typeof showIntakePrompt>[0], chatId, next);
-    return;
-  }
 
   if (step === 'more') {
     updateIntake(chatId, { stage: 'material' });

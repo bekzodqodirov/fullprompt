@@ -22,7 +22,7 @@ import {
   nothingNewToRead,
   updateIntake,
 } from './calc-store';
-import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
+import { loadIntakeFiles } from './calc-files';
 import { deliverNextStep, intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
 import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
 import { bootedAtSec, isStopping } from './lifecycle';
@@ -163,16 +163,10 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     );
     return;
   }
-  if (state.pendingInvoice) {
-    await sayOwn(ctx, chatId, 'Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
-    return;
-  }
-  if (state.aiGoods === 'ask') {
-    await sayOwn(ctx, chatId, 'Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
-      reply_markup: otherFilesKeyboard(),
-    });
-    return;
-  }
+  // «Bo‘ldi» is never refused because of a file (his 1a, docs/IKKI-ESHIK.md
+  // §1.1): the two file questions it waited for are gone, and a collection
+  // hydrated holding one was resolved before it reached memory
+  // (`migrateIntakeState`).
   if (state.material.length === 0 && state.fileCount === 0) {
     // A collection that carries rows of its own — an add collection's stored
     // rows, a seeded one's returned rows — reaches the table with NO material
@@ -251,8 +245,8 @@ async function refuseStart(ctx: CollectorReply, chatId: bigint, token: string): 
 }
 
 /**
- * A message whose buttons the dispatcher judges by `ownsPress` («Bo‘ldi»,
- * the invoice and other-files choices): it joins `ownMessageIds`, or every
+ * A message whose buttons the dispatcher judges by `ownsPress` («Bo‘ldi»):
+ * it joins `ownMessageIds`, or every
  * button on it answers «Bu tugma eskirgan.» under the very sentence that asked
  * for the press (review adv-1). A refused send is logged, never thrown.
  */

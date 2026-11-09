@@ -14,6 +14,18 @@ import {
   type IntakeState,
   type SheetText,
 } from './calc-intake';
+import {
+  fillsWords,
+  foldInvoice,
+  notedTotalsNote,
+  packingFills,
+  packingNote,
+  packingTotals,
+  rowKindsOf,
+  totalsClashNote,
+  withFileTotals,
+  type GoodsFileMeta,
+} from './file-goods';
 import type { ForwardPart } from './task-draft';
 import { BRIEF_RETRY_MAX_S } from './retry';
 import { botCall } from './send';
@@ -52,52 +64,15 @@ export const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string
   empty: (label) => `📄 ${label} — jadval bo‘sh.`,
 };
 
-/** The two answers to «a second invoice arrived» (his 1.13 c). */
-export function invoiceChoiceKeyboard() {
-  return {
-    inline_keyboard: [
-      [{ text: '➕ Qatorlari qo‘shilsin', callback_data: 'c:inv_add' }],
-      [{ text: '🔁 Oldingisining o‘rniga', callback_data: 'c:inv_replace' }],
-    ],
-  };
-}
-
-/** The two answers to «a PDF or a sheet the AI reads, beside an Excel list» (round-1 review, c4). */
-export function otherFilesKeyboard() {
-  return {
-    inline_keyboard: [
-      [{ text: '➕ Ha, boshqa zavod — tovarlari qo‘shilsin', callback_data: 'c:other_add' }],
-      [{ text: '📄 Yo‘q, o‘sha tovarlar — faqat jami o‘qilsin', callback_data: 'c:other_same' }],
-    ],
-  };
-}
-
-/** What a file is worth to the collection, and what the seller is told — pure. */
+/**
+ * What a file is worth to the collection, and what the seller is told — pure.
+ * No file asks anything (his 1a, docs/IKKI-ESHIK.md §1.1): there is no
+ * keyboard. `say` is a refusal or the receipt's lines; the informational ones
+ * also ride in `patch.fileNotes` (§1.2.5), for the card.
+ */
 export interface FileAnswer {
   patch: Partial<IntakeState>;
   say: string | null;
-  keyboard?: { inline_keyboard: { text: string; callback_data: string }[][] };
-}
-
-/**
- * «Boshqa zavodning tovarlarimi?» — asked when a file the MODEL reads (a PDF,
- * a header-less sheet) meets an Excel list the reader mapped, in either order
- * (round-1 review, c4). The Excel list answers for the goods, so the model's
- * lines were thrown away whatever the file was — after the bot had said «AI
- * o'qiydi». A second factory's invoice is the commonest reason to send two
- * documents (his 1.13), and the same invoice twice is the second commonest:
- * only the seller knows which, and merging blind would double the order.
- * Asked again for each new such file, because one answer about the first PDF
- * says nothing about the next — and the LAST answer then stands for all of
- * them: the model reads the files together and its list names no file per
- * line, so «A's own PDF beside B's» has no right answer (round-2 review, C2;
- * stated, not built — see `IntakeState.aiGoods`). The question says so.
- */
-function otherFilesQuestion(invoiceLines: number): string {
-  return (
-    `\nExcel ro‘yxatida ${invoiceLines} ta tovar bor. AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?` +
-    '\n(Javob AI o‘qiydigan hamma fayllarga tegishli; javobgacha tahlil boshlanmaydi.)'
-  );
 }
 
 /**
@@ -108,9 +83,11 @@ function otherFilesQuestion(invoiceLines: number): string {
 export type SheetFit = (texts: readonly string[]) => { kept: number[]; total: number[] };
 
 /**
- * A PDF: shown to the model, within the count and byte caps — and asked about
- * when an Excel list already answers for the goods. By attachment id (K4); the
- * caps count `bytes`.
+ * A PDF: shown to the model, within the count and byte caps. Beside an Excel
+ * list it is no longer asked about (his 1a, docs/IKKI-ESHIK.md §1.2.2, M3):
+ * the model is shown the Excel's goods and lists only the new ones
+ * (`aiGoods: 'add'`), and the reading says what it added. By attachment id
+ * (K4); the caps count `bytes`.
  */
 export function receivePdf(
   state: IntakeState,
@@ -127,12 +104,19 @@ export function receivePdf(
       say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
     };
   }
-  const invoice = (state.invoiceGoods ?? []).length;
   return {
-    patch: { pdfs: [...state.pdfs, pdf], ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
-    say: `📄 ${label} — AI o‘qiydi.` + (invoice > 0 ? otherFilesQuestion(invoice) : ''),
-    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+    patch: { pdfs: [...state.pdfs, pdf], ...beside(state) },
+    say: `📄 ${label} — AI o‘qiydi.`,
   };
+}
+
+/**
+ * A model-read file beside an Excel list — or an Excel list beside one —
+ * takes the add path (§1.2.2): `add`, written only where nobody has answered
+ * (a hydrated «context» was the seller's own word and stands).
+ */
+function beside(state: IntakeState): Partial<IntakeState> {
+  return (state.invoiceGoods ?? []).length > 0 && state.aiGoods === null ? { aiGoods: 'add' } : {};
 }
 
 /**
@@ -183,35 +167,38 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
         : `\n⚠️ Shu jadval tufayli AI ${whose} boshqa varaqlaridan endi faqat ${now} / ${of} qatorini o‘qiydi.`,
     ];
   });
-  const invoice = (state.invoiceGoods ?? []).length;
   return {
-    patch: { sheetTexts, ...(invoice > 0 ? { aiGoods: 'ask' as const } : {}) },
-    say:
-      `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` +
-      cut +
-      squeezed.join('') +
-      (invoice > 0 ? otherFilesQuestion(invoice) : ''),
-    ...(invoice > 0 ? { keyboard: otherFilesKeyboard() } : {}),
+    patch: { sheetTexts, ...beside(state) },
+    say: `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` + cut + squeezed.join(''),
   };
 }
 
 /**
- * A spreadsheet the reader MAPPED: its lines are exact (P1.6).
- *
- *  - the first one IS the goods list, and its other sheets ride with it as
- *    `invoiceTexts`; when the model already holds a separate PDF or sheet,
- *    the «boshqa zavod?» question is asked here — the same pair in the
- *    other order (round-1 review, c4);
- *  - a further one is ASKED about (his 1.13 c), and while that question is
- *    open every further file FOLDS into it — a third used to overwrite the
- *    second, whose lines then reached nobody (round-1 review, c1). Its other
- *    sheets wait with it, so a replace can drop them (c7).
+ * A spreadsheet the reader MAPPED: its lines are exact (P1.6). Several of them
+ * are no longer ASKED about (his 1a, docs/IKKI-ESHIK.md §1.2.2) — the bot
+ * decides by the sheets' COLUMNS, never their line names, and names what it
+ * did:
+ *  - the FIRST is the goods list, whatever its shape, and its other sheets
+ *    ride with it as `invoiceTexts`;
+ *  - a PACKING-shaped further one (a carton or gross column, no money) adds
+ *    no row and sets no count: it gives the shipment's totals (`fileTotals`,
+ *    brutto only from a gross column, a net Σ as a netto, the cube) and the
+ *    NET weight of a held row that has none, and its whole text joins the
+ *    model's totals-only sheets;
+ *  - an INVOICE-shaped one after a packing list that came first takes the
+ *    goods role — file order never decides which counts land — and the
+ *    packing list becomes totals and gap fills;
+ *  - an INVOICE-shaped further one is compared row by row (`foldInvoice`):
+ *    the same row again is taken once, anything else is added and named.
+ * A TOP-UP (an add or seeded collection, §1.2.3) writes no totals from its
+ * material (R3 interp 2): a packing list's figures go on the note instead.
  *
  * The goods rows are exact whatever the size; the OTHER sheets' text is what
  * the reader cuts (`textCut`), and that is said too — those sheets are where
  * the shipment's totals are read from (round-2 review, C1). Only when ROWS are
  * missing: shortened cells (`cellsCut`) travel to the model and say nothing
- * here (round-3 review, R3-C2).
+ * here (round-3 review, R3-C2). Every line said is also a receipt-time note
+ * (`fileNotes`, §1.2.5), written in the same patch as the file.
  */
 export function receiveGoodsSheet(
   state: IntakeState,
@@ -228,97 +215,122 @@ export function receiveGoodsSheet(
      * and nothing about the rest (round-4 integration S-b).
      */
     capped?: number;
+    /** The sheet's shape by its columns (`SheetShape`); absent = an invoice, nothing summed. */
+    shape?: Partial<Omit<GoodsFileMeta, 'label' | 'rows' | 'text'>>;
+    /** A packing list's own rows as text (`GoodsFileRead.ownText`). */
+    ownText?: string | null;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
   const texts: SheetText[] = sheet.text
     ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
     : [];
-  const cut =
-    (sheet.capped
-      ? `\n⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`
-      : '') +
-    (sheet.text && sheet.textCut
-      ? '\n⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi' +
-        // «the goods list was read in full» is false of a capped one.
-        (sheet.capped ? '.' : ' (tovarlar ro‘yxati to‘liq olindi).')
-      : '');
-  const invoice = state.invoiceGoods ?? [];
-  if (invoice.length > 0) {
-    const waiting = state.pendingInvoice;
-    const pending = waiting
-      ? {
-          goods: [...(waiting.goods ?? []), ...goods],
-          label: `${waiting.label}, ${label}`,
-          texts: [...waiting.texts, ...texts],
-        }
-      : { goods, label, texts };
+  const meta: GoodsFileMeta = {
+    label,
+    shape: sheet.shape?.shape ?? 'invoice',
+    weightKind: sheet.shape?.weightKind ?? null,
+    grossKg: sheet.shape?.grossKg ?? null,
+    grossColumn: sheet.shape?.grossColumn ?? false,
+    volumeM3: sheet.shape?.volumeM3 ?? null,
+    rows: goods.length,
+    text: sheet.shape?.shape === 'packing' ? (sheet.ownText ?? null) : null,
+  };
+  const ownText = (m: Pick<GoodsFileMeta, 'text' | 'label'>): SheetText[] =>
+    m.text ? [{ text: m.text, cut: false, cellsCut: false, label: m.label }] : [];
+  const cutLines = [
+    ...(sheet.capped
+      ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
+      : []),
+    ...(sheet.text && sheet.textCut
+      ? [
+          '⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi' +
+            // «the goods list was read in full» is false of a capped one.
+            (sheet.capped ? '.' : ' (tovarlar ro‘yxati to‘liq olindi).'),
+        ]
+      : []),
+  ];
+  const readLine = `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.`;
+  const topUp = state.amend !== null || state.seed !== null;
+  // Where the material stood: a totals answer given before this file is
+  // older than what it gave (`totalsDoubts`, §1.2.5).
+  const at = { material: state.material.length, files: state.fileCount + 1 };
+  const held = state.invoiceGoods ?? [];
+  const files = state.goodsFiles ?? [];
+  const answer = (patch: Partial<IntakeState>, lines: string[]): FileAnswer => ({
+    patch: { ...patch, fileNotes: [...(state.fileNotes ?? []), ...lines] },
+    say: lines.join('\n'),
+  });
+  // A packing list's totals: the collection's, or — in a top-up — the note's.
+  const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number) => {
+    const totals = packingTotals(m, rows);
+    if (topUp) {
+      return {
+        patch: {},
+        lines: [notedTotalsNote(m.label, totals), ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : [])],
+      };
+    }
+    const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at });
     return {
-      patch: { pendingInvoice: pending },
-      say:
-        `📄 ${label} — ${goods.length} ta tovar${where}.${cut}\n` +
-        (waiting ? `Javob kutayotgan fayllar: ${pending.label} — jami ${pending.goods.length} ta tovar.\n` : '') +
-        `Oldingi faylda ${invoice.length} ta tovar bor. Nima qilamiz?`,
-      keyboard: invoiceChoiceKeyboard(),
+      patch: { fileTotals: kept.fileTotals },
+      lines: [
+        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled),
+        ...(kept.clash && state.fileTotals ? [totalsClashNote(m.label, state.fileTotals.label)] : []),
+      ],
     };
+  };
+
+  if (held.length === 0) {
+    // The goods list. A model-read file already here takes the add path (M3).
+    const noted = topUp && meta.shape === 'packing' ? [notedTotalsNote(label, packingTotals(meta, goods))] : [];
+    return answer(
+      {
+        invoiceGoods: goods,
+        invoiceTexts: [...state.invoiceTexts, ...texts],
+        goodsFiles: [meta],
+        ...(state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0) ? { aiGoods: 'add' as const } : {}),
+      },
+      [readLine, ...cutLines, ...noted],
+    );
   }
-  const ask = state.aiGoods === null && (state.pdfs.length > 0 || state.sheetTexts.length > 0);
-  return {
-    patch: { invoiceGoods: goods, invoiceTexts: texts, ...(ask ? { aiGoods: 'ask' as const } : {}) },
-    say: `📄 ${label} — ${goods.length} ta tovar o‘qildi${where}.` + cut + (ask ? otherFilesQuestion(goods.length) : ''),
-    ...(ask ? { keyboard: otherFilesKeyboard() } : {}),
-  };
-}
-
-/**
- * The answer to «a second invoice arrived» (his 1.13 c), as a patch — pure.
- *
- * A collection still waiting for the customer (or the podklyuch door's
- * «qayerdan?») KEEPS waiting: the answer used to move it to 'material', so the
- * open question was never asked again, a code typed next was filed as
- * material, and the job landed as a nameless lead with no road (round-1
- * review, c0). `reask` names the question to ask again. Null = nothing waits:
- * the button is stale.
- */
-export function invoiceChoice(
-  state: IntakeState,
-  step: 'inv_add' | 'inv_replace',
-): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
-  const pending = state.pendingInvoice;
-  if (!pending) return null;
-  const add = step === 'inv_add';
-  const goods = add ? [...(state.invoiceGoods ?? []), ...(pending.goods ?? [])] : (pending.goods ?? []);
-  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
-  return {
-    patch: {
-      invoiceGoods: goods,
-      // The replaced workbook's other sheets leave with its goods (c7).
-      invoiceTexts: add ? [...state.invoiceTexts, ...pending.texts] : pending.texts,
-      pendingInvoice: null,
-      stage: reask ?? 'material',
+  const kinds = rowKindsOf(files, held.length);
+  if (meta.shape === 'packing') {
+    // The same goods again: totals and the netto gaps, never a row.
+    const fill = packingFills(held, kinds, goods, meta.weightKind);
+    const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled);
+    return answer(
+      {
+        invoiceGoods: fill.goods,
+        invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts],
+        ...totals.patch,
+      },
+      [...totals.lines, ...cutLines],
+    );
+  }
+  const first = files.length === 1 ? files[0]! : null;
+  if (first && first.shape === 'packing' && first.rows === held.length) {
+    // The packing list came first: this invoice takes the goods role, and the
+    // packing list's rows become its totals and its netto gap fills.
+    const fill = packingFills(goods, Array.from({ length: goods.length }, () => meta.weightKind), held, first.weightKind);
+    const totals = totalsOf(first, held, `${label} dan`, fill.filled);
+    return answer(
+      {
+        invoiceGoods: fill.goods,
+        invoiceTexts: [...state.invoiceTexts, ...ownText(first), ...texts],
+        goodsFiles: [meta],
+        ...totals.patch,
+      },
+      [readLine, ...cutLines, ...totals.lines],
+    );
+  }
+  const fold = foldInvoice(held, kinds, goods, meta.weightKind, label);
+  return answer(
+    {
+      invoiceGoods: fold.goods,
+      invoiceTexts: [...state.invoiceTexts, ...texts],
+      goodsFiles: [...files, { ...meta, rows: fold.added }],
     },
-    said: add
-      ? `➕ ${pending.label} qo‘shildi: endi fayllarda ${goods.length} ta tovar.`
-      : `🔁 ${pending.label} oldingisining o‘rniga olindi: ${goods.length} ta tovar.`,
-    reask,
-  };
-}
-
-/** The answer to «boshqa zavodning tovarlarimi?» (round-1 review, c4) — pure, like `invoiceChoice`. */
-export function otherFilesChoice(
-  state: IntakeState,
-  step: 'other_add' | 'other_same',
-): { patch: Partial<IntakeState>; said: string; reask: 'client' | 'section' | null } | null {
-  if (state.aiGoods !== 'ask') return null;
-  const reask = state.stage === 'client' || state.stage === 'section' ? state.stage : null;
-  return {
-    patch: { aiGoods: step === 'other_add' ? 'add' : 'context', stage: reask ?? 'material' },
-    said:
-      step === 'other_add'
-        ? '➕ Boshqa zavod: AI o‘qigan tovarlar Excel ro‘yxatiga qo‘shiladi.'
-        : '📄 O‘sha tovarlar: ro‘yxat Excel fayldan olinadi, qolgan fayllardan faqat jami (kub/kg) o‘qiladi.',
-    reask,
-  };
+    [readLine, ...cutLines, ...fold.notes],
+  );
 }
 
 /**
@@ -335,7 +347,8 @@ export function otherFilesChoice(
  *    read together;
  *  - a SPREADSHEET is read by `readGoodsFile`: the reader's rows when it finds
  *    the header, the model when it does not (his 1.2 b); a second goods file
- *    is ASKED about (his 1.13 c);
+ *    is compared with the first by the bot, never asked about (his 1a,
+ *    `receiveGoodsSheet`);
  *  - a DOCX is refused in words — it is a zip like an xlsx and would read as
  *    «no goods».
  *
@@ -369,9 +382,14 @@ export async function readIntakeFile(
             : `📷 ${label} — rasmni o‘qib bo‘lmadi (buzilgan yoki juda katta).`,
       };
     }
+    // A picture sent as a FILE is said, and the line is a receipt-time note (§1.2.5).
+    const asPicture = saved.isPhoto ? null : `🖼 ${label} — rasm sifatida o‘qiladi.`;
     return {
-      patch: { images: [...state.images, { attachmentId: saved.attachmentId, mediaType: 'image/jpeg' }] },
-      say: saved.isPhoto ? null : `🖼 ${label} — rasm sifatida o‘qiladi.`,
+      patch: {
+        images: [...state.images, { attachmentId: saved.attachmentId, mediaType: 'image/jpeg' }],
+        ...(asPicture ? { fileNotes: [...(state.fileNotes ?? []), asPicture] } : {}),
+      },
+      say: asPicture,
     };
   }
   if (kind === 'pdf') {
@@ -418,6 +436,16 @@ export async function readIntakeFile(
     textCut: sheet.textCut,
     cellsCut: sheet.cellsCut,
     where,
+    // What the sheet IS, by its columns (§1.2.1) — and a packing list's own
+    // rows, for the model's totals-only sheets.
+    shape: {
+      shape: sheet.shape,
+      weightKind: sheet.weightKind,
+      grossKg: sheet.grossKg,
+      grossColumn: sheet.grossColumn,
+      volumeM3: sheet.volumeM3,
+    },
+    ownText: sheet.ownText,
     // The reader stops at its ceiling and says nothing; reaching it is the
     // one sign the file may hold more (round-4 integration S-b).
     ...(sheet.goods.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {}),

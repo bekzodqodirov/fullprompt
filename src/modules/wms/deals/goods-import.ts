@@ -113,6 +113,41 @@ interface ColumnMap {
    * merged over them is stated once (R3-S3).
    */
   amountIsPrice: boolean;
+  /**
+   * A gross-weight column, located and never claimed (docs/IKKI-ESHIK.md
+   * §1.2.1): the line weights come from the net column when there is one, and
+   * the gross Σ is still the shipment's brutto.
+   */
+  gross: number | null;
+  /** A carton column stands in the header — a packing list's sign, whether or not it took the quantity. */
+  cartons: boolean;
+  /** Where the line weights came from (`SheetShape.weightKind`). */
+  weightKind: WeightKind;
+}
+
+/** Which column a sheet's line weights were read from — null = none. */
+export type WeightKind = 'net' | 'gross' | 'plain' | null;
+
+/**
+ * What a MAPPED sheet is, by its columns and never its line names
+ * (docs/IKKI-ESHIK.md §1.2.1, his 1a): `packing` = a carton or gross column
+ * and NO money column — a packing list, whose rows restate an invoice's goods
+ * and whose sums are the shipment's totals; anything else is an `invoice`.
+ *  - `weightKind` — the column the line weights came from;
+ *  - `grossKg` — Σ of the gross column over every row, null when any row
+ *    lacks it (reported even when the line weights came from a net column);
+ *  - `volumeM3` — Σ of the m³ column over every row, all or none
+ *    (`linesVolumeM3`'s rule).
+ * A position a merge DOWN covers is its master's, stated once: it lacks
+ * nothing. A headerless sheet is no mapped sheet: `invoice`, nothing summed.
+ */
+export interface SheetShape {
+  shape: 'invoice' | 'packing';
+  weightKind: WeightKind;
+  grossKg: number | null;
+  /** A gross column stands in the header — so a null `grossKg` is a row lacking it, not «no column». */
+  grossColumn: boolean;
+  volumeM3: number | null;
 }
 
 /** Substring keywords per column, lowercased — ru/uz/zh/en, the four the clients actually write. */
@@ -679,8 +714,23 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
     const isNetWeight = (text: string) =>
       !moneyTotal(text) &&
       (matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
+    const netWeight = weightFromQty === null ? lineWeight(isNetWeight) : null;
     const weight =
-      weightFromQty ?? lineWeight(isNetWeight) ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS) || WEIGHT_ABBREV.test(text));
+      weightFromQty ?? netWeight ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS) || WEIGHT_ABBREV.test(text));
+    const isGrossWeight = (text: string) =>
+      GROSS_HEADER.test(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
+    const weightKind: WeightKind =
+      weight === null
+        ? null
+        : netWeight !== null
+          ? 'net'
+          : weightFromQty === null && isGrossWeight(cellText(header[weight]!))
+            ? 'gross'
+            : 'plain';
+    // The gross column is LOCATED, never claimed: beside a net column it is
+    // still the brutto the shipment's Σ is read from.
+    const grossAt = header.findIndex((cell, i) => (i === weight || !taken.has(i)) && isGrossWeight(cellText(cell)));
+    const gross = grossAt < 0 ? null : grossAt;
     // The line's money is never a weight, a volume or a package count (S10,
     // the second review): «total» is a money key, and a packing list's
     // «TOTAL G.W.» — left free once «TOTAL N.W.» took the weight — or its
@@ -710,7 +760,20 @@ function findHeader(rows: Cell[][]): { found: Detected | null; refused: number |
     return {
       found: {
         headerRow: r,
-        columns: { name, tnved, quantity, quantityUnit, unit, volume, weight, amount, amountIsPrice },
+        columns: {
+          name,
+          tnved,
+          quantity,
+          quantityUnit,
+          unit,
+          volume,
+          weight,
+          amount,
+          amountIsPrice,
+          gross,
+          cartons: cartonCol !== null,
+          weightKind,
+        },
       },
       refused: null,
     };
@@ -859,20 +922,26 @@ export const MAX_GOODS_ROWS = 500;
 export function parseGoods(
   rows: Cell[][],
   covered: Covered | null = null,
-): { goods: GoodsRow[]; headerRow: number | null } {
+): { goods: GoodsRow[]; headerRow: number | null } & SheetShape {
   const header = findHeader(rows);
   const detected = header.found;
   const goods: GoodsRow[] = [];
 
-  const push = (row: GoodsRow) => {
+  const push = (row: GoodsRow): boolean => {
     const description = row.description.trim();
-    if (!description) return;
-    if (matchKey(description, TOTAL_ROW_KEYS)) return;
+    if (!description) return false;
+    if (matchKey(description, TOTAL_ROW_KEYS)) return false;
     goods.push({ ...row, description: description.slice(0, 300) });
+    return true;
   };
 
   if (detected) {
     const { headerRow, columns } = detected;
+    // The sheet's two sums over the rows it LANDS (a total row is arithmetic,
+    // never a line): null as soon as one landed row lacks its figure — a Σ
+    // one line short is a smaller number wearing the shipment's name.
+    let grossKg: number | null = columns.gross === null ? null : 0;
+    let volumeM3: number | null = columns.volume === null ? null : 0;
     const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
     for (let r = headerRow + 1; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
@@ -907,7 +976,7 @@ export function parseGoods(
         ['hajm', volumeCell, parseMeasure(volumeCell, 'm3')],
         ['summa', amountCell, parseNumber(amountCell)],
       ];
-      const [quantity, weightKg, volumeM3, amount] = figures.map(([, , value]) => value);
+      const [quantity, weightKg, rowVolume, amount] = figures.map(([, , value]) => value);
       // A figure cell the reader could not use is SAID, never dropped in
       // silence (round 1): «12,500PCS» and «1,200KGS» read two ways and land
       // empty — the paste door's own promise — and the line's note is where
@@ -915,18 +984,35 @@ export function parseGoods(
       const unread = figures
         .filter(([, cell, value]) => value === null && /\d/.test(cellText(cell)))
         .map(([what, cell]) => `${what} «${cellText(cell).slice(0, 40)}» — aniq emas`);
-      push({
+      const landed = push({
         description: cellText(at(columns.name)),
         quantity: quantity ?? null,
         unit: (cellText(at(columns.unit)) || columns.quantityUnit || '').slice(0, 20) || null,
         weightKg: weightKg ?? null,
-        volumeM3: volumeM3 ?? null,
+        volumeM3: rowVolume ?? null,
         amount: amount ?? null,
         tnvedCode: code && 'code' in code ? code.code : null,
         note: [codeNote, ...unread].filter(Boolean).join(' · ') || null,
       });
+      if (landed) {
+        // A covered position is its master's figure, stated once: it lacks nothing.
+        const sum = (total: number | null, col: number | null, value: number | null): number | null =>
+          total === null || col === null ? null : covered?.has(r, col) ? total : value !== null && value > 0 ? total + value : null;
+        grossKg = sum(grossKg, columns.gross, columns.gross === columns.weight ? (weightKg ?? null) : parseMeasure(once(columns.gross), 'kg'));
+        volumeM3 = sum(volumeM3, columns.volume, rowVolume ?? null);
+      }
     }
-    return { goods, headerRow };
+    const money = columns.amount !== null;
+    const round = (n: number | null, places: number) => (n === null || goods.length === 0 ? null : Number(n.toFixed(places)));
+    return {
+      goods,
+      headerRow,
+      shape: (columns.cartons || columns.gross !== null) && !money ? 'packing' : 'invoice',
+      weightKind: columns.weightKind,
+      grossKg: round(grossKg, 3),
+      grossColumn: columns.gross !== null,
+      volumeM3: round(volumeM3, 3),
+    };
   }
 
   // A one-column list refused a header: its heading and its title are no
@@ -946,5 +1032,5 @@ export function parseGoods(
       note: null,
     });
   }
-  return { goods, headerRow: null };
+  return { goods, headerRow: null, shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
 }
