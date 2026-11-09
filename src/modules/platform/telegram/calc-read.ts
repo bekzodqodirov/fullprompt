@@ -24,8 +24,16 @@ import {
   updateIntake,
 } from './calc-store';
 import { loadIntakeFiles } from './calc-files';
-import { deliverNextStep, intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
-import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
+import {
+  deliverNextStep,
+  drawPromptSoon,
+  intakeNextStep,
+  tableContext,
+  tableHashOf,
+  type CollectorReply,
+  type EditApi,
+} from './calc-dialog';
+import { doneKeyboard } from './calc-keyboards';
 import { bootedAtSec, isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
 
@@ -165,10 +173,9 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     return;
   }
   if (state.stage === 'client' || state.stage === 'section') {
-    await ctx.reply(
-      state.stage === 'client' ? CLIENT_QUESTION : 'Avval yuk qayerdan chiqishini tanlang.',
-      state.stage === 'client' ? { parse_mode: 'Markdown' } : { reply_markup: zoneKeyboard(await pricedZonesNow()) },
-    );
+    // The open question, asked ONCE (docs/IKKI-ESHIK.md §1.5, §1.6): its one
+    // message is redrawn as the last one, never a second copy.
+    drawPromptSoon(ctx as CollectorReply & { api?: EditApi }, chatId);
     return;
   }
   // «Bo‘ldi» is never refused because of a file (his 1a, docs/IKKI-ESHIK.md
@@ -516,7 +523,9 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     let text: string;
     let keyboard: InlineKeyboard | null;
     if (outcome.kind === 'arrived') {
-      patch = outcome.state;
+      // The reading settles the prompt (§1.4) here too: these words carry
+      // their own «Bo‘ldi», and the next material draws a new prompt below.
+      patch = { ...outcome.state, promptMessageId: null };
       text = arrivedWords(outcome.arrived);
       keyboard = doneKeyboard;
     } else {

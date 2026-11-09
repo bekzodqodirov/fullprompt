@@ -36,6 +36,7 @@ import type { TableRow, TableTarget } from './line-address';
 import type { BazaBasis, MeasureUnit } from './pricing';
 import { codeWrittenAsCode, normalizeRowUnit, parseGoodsLine, routeAmount, unitOf } from './units';
 import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
+import { SELLER_TAIL_NO_ASK } from './tail-words';
 import { clipText } from '../../platform/telegram/format';
 
 /** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
@@ -788,7 +789,38 @@ export interface TableInput {
    * the parser it taught.
    */
   nameWord: (rows: readonly TableRow[], row: TableRow) => string | null;
+  /**
+   * The plain door's SUMMARY instead of the asking table (docs/IKKI-ESHIK.md
+   * §2.1, his 2a): a gap is ℹ️ and the VED's to ask — no «✍️» asks, no
+   * doubts asked, no example — and the closing says the job lands as it is.
+   * Absent = the table (the AI door, and a request from before the doors).
+   */
+  plain?: boolean;
+  /** The totals two packing lists disagreed on (`fileTotals.clash`) — the plain summary names them the VED's. */
+  clash?: readonly ('weightKg' | 'volumeM3')[];
+  /**
+   * One line after everything, never cut (§1.4): «⬇️ Yangi ma’lumot
+   * qo‘shildi …» on a table material arrived below. Absent = none.
+   */
+  marker?: string | null;
 }
+
+/**
+ * The plain door's tail on a gap (§2.1): the VED asks the seller — the
+ * landing pass's own lenta words for a seller's fact (`SELLER_TAIL_NO_ASK`),
+ * never restated.
+ */
+const PLAIN_GAP_TAIL = SELLER_TAIL_NO_ASK.lenta;
+
+/** «kg yo‘q — VED xodimi so‘raydi» — what a plain summary row lacks, by its units alone. */
+function plainNeedWhat(line: LineNeed): string {
+  const units = line.pinned.length > 0 ? [...new Set(line.pinned.map((n) => needShortUz(n.unit)))].join(' va ') : 'dona yoki kg';
+  return `${units} yo‘q ${PLAIN_GAP_TAIL}`;
+}
+
+/** The plain summary's last line (§2.1): what a typed figure does here, and that more material is welcome. */
+export const PLAIN_SUMMARY_LAST =
+  'Qator raqami bilan yozsangiz («3: 150 kg», «jami 3500 kg») — shu yerda yangilanadi. Yana ma’lumot bo‘lsa — yuboring.';
 
 /**
  * Every row's number, the ONE numbering (§1's table, product-fit-4,
@@ -931,10 +963,15 @@ export function intakeTableText(input: TableInput): string {
   const goods = input.facts.goods ?? [];
   const conflicts = vedConflicts(input.amend);
   const client = input.clientLabel ?? 'mijoz hali yozilmagan';
+  const plain = input.plain === true;
+  // The plain door's gap mark (§2.1): the VED asks, so the row is told, never warned.
+  const gapMark = plain ? 'ℹ️' : '⚠️';
 
+  // The two doors look different on the screen where the seller decides what
+  // ✅ does (§2.1): «🧮 Hisoblatish · 🛃 Rastamojka».
   const head = input.amend
     ? [`➕ Qo‘shimcha · ${input.amend.cardLabel} · ${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`]
-    : [SECTION_LABEL[input.section], `Mijoz: ${client}`];
+    : [plain ? `🧮 Hisoblatish · ${SECTION_LABEL[input.section]}` : SECTION_LABEL[input.section], `Mijoz: ${client}`];
   if (input.fileCount) head.push(`Fayllar: ${input.fileCount}`);
   head.push('', input.amend ? `So‘rovdagi qatorlar (${input.amend.storedCount}):` : `Tovarlar (${rows.length}):`);
 
@@ -945,14 +982,14 @@ export function intakeTableText(input: TableInput): string {
     const own = itemId === null ? [] : conflicts.filter((c) => c.itemId === itemId);
     // A conflict is said under its row and asks nothing (§1.1): no ⚠️ for it.
     const warn = !freightOnly && need !== undefined;
-    const mark = freightOnly ? '·' : warn ? '⚠️' : '✅';
+    const mark = freightOnly ? '·' : warn ? gapMark : '✅';
     const fresh = input.amend && r.seq === null ? '🆕 ' : '';
     const figures = lineFiguresText(item);
     return {
       no: r.no,
       warn,
       line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}` : ''}`,
-      need: !freightOnly && need ? lineNeedWhat(need) : null,
+      need: !freightOnly && need ? (plain ? plainNeedWhat(need) : lineNeedWhat(need)) : null,
       conflicts: own.map(conflictText),
     };
   });
@@ -966,8 +1003,26 @@ export function intakeTableText(input: TableInput): string {
   // with nothing added — and the table said a new item came. A seeded
   // collection's total is stale only by an added line.
   const staleWhy = !input.amend || rows.some((r) => r.seq === null) ? 'yangi tovar qo‘shildi, yangilansinmi?' : 'yangilansinmi?';
+  const clashed = new Set(input.clash ?? []);
   const totalsRows: string[] = [];
+  let totalsWarn = false;
   const field = (f: 'weightKg' | 'volumeM3', ok: string, staleWords: string) => {
+    const gap = doubted.has(f) || missing.includes(f) || stale.has(f);
+    totalsWarn ||= gap;
+    if (plain && gap) {
+      // Said, never asked (§2.1): a doubt, two files that disagree, a figure
+      // nobody gave or a line added under it — the VED's to ask.
+      const why = doubted.has(f)
+        ? 'ikki xil yozilgan'
+        : missing.includes(f)
+          ? clashed.has(f)
+            ? 'fayllarda ikki xil'
+            : 'yo‘q'
+          : !input.amend || rows.some((r) => r.seq === null)
+            ? 'yangi tovar qo‘shildi'
+            : 'o‘zgardi';
+      return `ℹ️ ${FIELD_LABEL[f]} ${why} ${PLAIN_GAP_TAIL}`;
+    }
     if (doubted.has(f)) return `⚠️ ${FIELD_LABEL[f]} — ikki xil yozilgan (pastda)`;
     if (missing.includes(f)) return `⚠️ ${FIELD_LABEL[f]} — yozilmagan`;
     if (stale.has(f)) return staleWords;
@@ -990,17 +1045,31 @@ export function intakeTableText(input: TableInput): string {
     if (ends.length === 0) {
       totalsRows.push(`✅ Yo‘nalish: ${input.facts.fromCity?.trim()} → ${input.facts.toCity?.trim()}`);
     } else {
-      for (const end of ends) totalsRows.push(`⚠️ ${FIELD_LABEL[end]} — yozilmagan`);
+      totalsWarn = true;
+      for (const end of ends) {
+        totalsRows.push(plain ? `ℹ️ ${FIELD_LABEL[end]} yozilmagan ${PLAIN_GAP_TAIL}` : `⚠️ ${FIELD_LABEL[end]} — yozilmagan`);
+      }
     }
   }
-  const totalsWarn = totalsRows.some((r) => r.startsWith('⚠️'));
-  const doubts = input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
+  // A doubt is a QUESTION («1.2 mi yoki 1200 mi?»): the plain summary asks
+  // none — its total row already says it is the VED's (§2.1).
+  const doubts = plain ? [] : input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
 
   const warnRows = entries.filter((e) => e.warn);
   const confirm = input.amend ? (input.amend.started ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
   const vedLine = `Bilmagan qatoringizni VED to‘ldiradi — ${confirm} ni hozir ham bosishingiz mumkin.`;
   const closing: string[] = [];
-  if (rows.length === 0) {
+  if (plain) {
+    // His 2a: the job lands as it is, and the VED asks for what is missing —
+    // so the closing promises nothing to fill, and the last line says what a
+    // typed figure still does here (§2.2's quiet write).
+    closing.push(
+      rows.length > 0 && warnRows.length === 0 && !totalsWarn
+        ? `✅ Ma’lumot to‘liq — ${confirm} ni bosing, so‘rov VED ga tushadi.`
+        : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
+      PLAIN_SUMMARY_LAST,
+    );
+  } else if (rows.length === 0) {
     closing.push('⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.', vedLine);
   } else if (warnRows.length === 0 && !totalsWarn) {
     closing.push('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
@@ -1016,17 +1085,21 @@ export function intakeTableText(input: TableInput): string {
     );
   }
 
-  const tail = input.tail ? input.tail.split('\n') : [];
+  const marker = input.marker ? ['', input.marker] : [];
+  // The plain summary's closing is its LAST block (§2.1), after the bot's and
+  // the model's notes; the table keeps its closing above them, as it was.
+  const notes = input.tail ? input.tail.split('\n') : [];
+  const tail = plain ? [...notes, '', ...closing, ...marker] : [...notes, ...marker];
   const fixed = (cut: boolean) => [
     '',
     'Umumiy:',
     ...totalsRows,
     ...doubts,
-    '',
-    ...closing,
+    ...(plain ? [] : ['', ...closing]),
     ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
   ];
-  const goodsLines = rows.length === 0 ? [`⚠️ ${FIELD_LABEL.goods} — yozilmagan`] : null;
+  const goodsLines =
+    rows.length === 0 ? [plain ? `ℹ️ ${FIELD_LABEL.goods} yozilmagan ${PLAIN_GAP_TAIL}` : `⚠️ ${FIELD_LABEL.goods} — yozilmagan`] : null;
   const length = (lines: string[], cut = false) => [...head, ...lines, ...fixed(cut), ...tail].join('\n').length;
   const fits = (lines: string[]) => length(lines) <= TELEGRAM_LIMIT;
   const draw = (lines: string[], cut = false) =>

@@ -20,15 +20,14 @@ import {
 import type { IntakeState } from './calc-intake';
 import {
   deliverNextStep,
+  drawPromptSoon,
   landingReplyText,
   QUEUE_REFUSAL,
   queueRefusal,
-  showIntakePrompt,
   type CalcPressCtx,
   type CollectorReply,
   type EditApi,
 } from './calc-dialog';
-import { CLIENT_QUESTION, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
 import { deliverStoredReply, pendingDeliveryAlive, readingAlive, releaseDeadReading } from './calc-read';
 import { landedReplyMarkup, releaseDeadSave, savingAlive } from './calc-amend';
 import { activeCapture } from './note-capture';
@@ -444,7 +443,10 @@ async function resumeLanding(
     const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
     const { replyKeyboardFor } = await import('./keyboards');
     const markup = landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId));
-    await sayOrRetry({ chatId, text: landingReplyText(target, { link, tariffFollows }), replyMarkup: markup });
+    // The ✅ says what the REQUEST's door promises (docs/IKKI-ESHIK.md §2.3,
+    // §3.5) — read off the row the landing wrote, as the pass reads it.
+    const door = await landedDoor(target.requestId ?? null);
+    await sayOrRetry({ chatId, text: landingReplyText(target, { link, tariffFollows, door }), replyMarkup: markup });
     endIntake(chatId);
     sweepMemory.resumeFailures.delete(state.noteId);
   } catch (err) {
@@ -474,6 +476,22 @@ async function resumeLanding(
   } finally {
     sweepMemory.resuming.delete(k);
     sweepMemory.silenced.delete(k);
+  }
+}
+
+/**
+ * The landed request's door, off its row (§0.3) — null for no request (the
+ * queue refused it: the ✅ then promises nothing on either door) and for a
+ * read that failed, which keeps today's words rather than a guess.
+ */
+async function landedDoor(requestId: string | null): Promise<'plain' | 'ai' | null> {
+  if (!requestId) return null;
+  try {
+    const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
+    return await requestIntakeDoor(requestId);
+  } catch (err) {
+    logger.warn({ err, requestId }, '[calc-intake] the landed request’s door not read — today’s words');
+    return null;
   }
 }
 
@@ -534,18 +552,12 @@ export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<bo
   }
   // The touch: the seller pressed, so the collection holds the chat again.
   updateIntake(chatId, {});
-  if (state.stage === 'section') {
-    await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
-    return true;
-  }
-  if (state.stage === 'client') {
-    await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
-    return true;
-  }
-  if (state.stage === 'material') {
-    // The press ctx carries the api in production (grammy's own); a prompt
-    // that cannot be edited is sent fresh, which is all a test's fake does.
-    await showIntakePrompt(ctx as CalcPressCtx & { api: EditApi }, chatId, state);
+  if (state.stage === 'section' || state.stage === 'client' || state.stage === 'material') {
+    // The open question or the prompt, redrawn ONCE as the last message
+    // (docs/IKKI-ESHIK.md §1.4-§1.6) — the pressed notice is newer, so it
+    // moves below it. The press ctx carries the api in production (grammy's
+    // own); a test's fake without one gets a fresh copy.
+    drawPromptSoon(ctx as CalcPressCtx & { api?: EditApi }, chatId);
     return true;
   }
   await deliverNextStep(ctx, chatId, state);

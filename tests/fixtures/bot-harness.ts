@@ -6,6 +6,8 @@ import { __dispatchSettled } from '@/modules/platform/telegram/client-cabinet';
 import { membershipSettled } from '@/modules/platform/telegram/price-channel-handlers';
 import { flushWaitWrites, nowSec } from '@/modules/platform/telegram/waits';
 import { flushIntakeWrites } from '@/modules/platform/telegram/calc-store';
+import { tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 
 /**
  * The bot the server runs, driven without a network (Q5 a).
@@ -177,6 +179,10 @@ export function botHarness(): BotHarness {
       await __dispatchSettled();
       await membershipSettled();
       await flushWaitWrites();
+      // The collector's kept-last prompt and its table edits, dispatched off
+      // the handler (docs/IKKI-ESHIK.md §1.4): drawn before anything is read.
+      await keptLastSettled();
+      await tableEditsSettled();
       // The «Hisoblatish» collections too (docs/SAKKIZ-R3.md §6.1): a no-op
       // unless the file switched the durable store on.
       await flushIntakeWrites();

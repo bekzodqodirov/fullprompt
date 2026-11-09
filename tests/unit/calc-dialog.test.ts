@@ -8,6 +8,13 @@ import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
  * once, echoed with its own ↩️ and the confirm, and the table above it is
  * edited in place. The model and the budget are stand-ins; Telegram is a fake
  * that records what was said and what was edited.
+ *
+ * Since the two doors (docs/IKKI-ESHIK.md §2.2, his 2a) the echo is the AI
+ * door's alone: the plain «🧮» door writes an answer quietly and asks nothing.
+ * So the echo and the unit buttons are pinned here on `ai: true` collections
+ * (moved, not changed — part B reworks the AI door), the `ai: false` ones stay
+ * plain (the «3: 50 dona\n5: 20 kg» probe is that door's own pin), and the
+ * conflict buttons pin their ABSENCE (his 1a, §1.1).
  */
 const model = vi.hoisted(() => ({ analyze: vi.fn() }));
 vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
@@ -40,7 +47,6 @@ import {
   orphanAnswerSentence,
   pressCancel,
   pressCertificate,
-  pressConflict,
   pressPick,
   pressUndo,
   routeCollectorText,
@@ -147,17 +153,19 @@ afterEach(async () => {
 
 describe('an answer in the table stage', () => {
   it('is echoed in its exact words, kept in `lineAnswers`, and the table above it is edited', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka qishki', { quantity: 300, weightKg: 150 }), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka qishki', { quantity: 300, weightKg: 150 }), line('Sumka')] } });
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
     expect(table.text).toContain('⚠️ 2. Sumka');
     await say(ctx, chatId, '2: 50 dona');
     const echo = ctx.replies.at(-1)!;
-    expect(echo.text).toBe('✅ 2-qator «Sumka»: 50 dona yozildi\n✅ Hamma qator to‘liq — «✅ Tasdiqlash» ni bosing.');
+    // The AI door's echo carries the certificate with the confirm (product-fit-20).
+    expect(echo.text).toBe('✅ 2-qator «Sumka»: 50 dona yozildi\n✅ Hamma qator to‘liq — «✅ Tasdiqlash» ni bosing.\n📄 Sertifikat: bor');
     const tag = activeIntake(chatId)!.echoes[0]!.tag;
     expect(buttons(echo)).toEqual([
       { text: '↩️ Shu javobni bekor qilish', callback_data: `cu:${tag}` },
       { text: '✅ Tasdiqlash', callback_data: 'c:save' },
+      { text: '📄 Sertifikat: bor', callback_data: 'c:cert_n' },
     ]);
     expect(activeIntake(chatId)!.lineAnswers).toEqual([{ index: 1, name: 'Sumka', patch: { quantity: 50 }, itemId: null }]);
     expect(ctx.edits.at(-1)).toMatchObject({ id: ctx.replies[0]!.id });
@@ -182,7 +190,7 @@ describe('an answer in the table stage', () => {
   });
 
   it('an unaddressed short text with two open rows and no unit fit is asked, and nothing is written', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Shapka'), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Shapka'), line('Sumka')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '300');
     expect(ctx.texts().at(-1)).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
@@ -228,7 +236,7 @@ describe('an answer in the table stage', () => {
   });
 
   it('every echo that wrote something carries the confirm and what is still missing; the completing one says «Hamma qator to‘liq» (product-fit-2)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka'), line('Shim')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka'), line('Shim')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '2: 50 dona');
     const first = ctx.replies.at(-1)!;
@@ -251,7 +259,7 @@ describe('an answer in the table stage', () => {
 
 describe('a bare figure is answered by a tap (judge UX4, product-fit-9)', () => {
   it('the pick writes the offer’s TARGET row, with its own echo and ↩️ — and no ⏭ anywhere', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '2: 50');
     const asked = ctx.replies.at(-1)!;
@@ -266,12 +274,12 @@ describe('a bare figure is answered by a tap (judge UX4, product-fit-9)', () => 
     expect(activeIntake(chatId)!.facts.goods?.[1]).toEqual(line('Sumka', { weightKg: 50 }));
     const echo = ctx.replies.at(-1)!;
     expect(echo.text).toContain('✅ 2-qator «Sumka»: 50 kg yozildi');
-    expect(buttons(echo).map((b) => b.callback_data)).toEqual([`cu:${activeIntake(chatId)!.echoes[0]!.tag}`, 'c:save']);
+    expect(buttons(echo).map((b) => b.callback_data)).toEqual([`cu:${activeIntake(chatId)!.echoes[0]!.tag}`, 'c:save', 'c:cert_n']);
     expect(buttons(echo).some((b) => b.callback_data === 'c:skip')).toBe(false);
   });
 
   it('a pick from an OLDER offer message while newer offers are live is «eskirgan», and nothing is written (regression-23)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '1: 50');
     const older = ctx.replies.at(-1)!;
@@ -388,47 +396,34 @@ describe('a conflict on an add collection’s stored row (product-fit-17)', () =
       amend,
     );
 
-  it('the add table draws its three buttons; «qo‘shilsin» writes 500 with an echo and ↩️, and ↩️ leaves it unanswered again', async () => {
+  it('the add table draws NO conflict button — the line says the VED decides; a typed figure still resolves it, and ↩️ gives it back to the VED (his 1a, §1.1)', async () => {
     const { chatId } = open();
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
-    // The conflict's LINE is a statement since his 1a (docs/IKKI-ESHIK.md §1.1, intake.ts
-    // `conflictText`); the buttons below are calc-dialog's `conflictRows`, drawn for an unanswered
-    // conflict — retired in the dispatcher («eskirgan») and left to the dialog's own round.
     expect(table.text).toContain('↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi');
-    expect(buttons(table).slice(0, 3)).toEqual([
-      { text: '➕ 1-qator: 500 dona', callback_data: 'c:conf_0_add' },
-      { text: '🔁 1-qator: 200 dona', callback_data: 'c:conf_0_rep' },
-      { text: '📨 1-qator: VED', callback_data: 'c:conf_0_ved' },
-    ]);
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'add');
-    await tableEditsSettled();
+    // The R3 question «qo‘shilsinmi, o‘rniga yoki VED hal qilsinmi?» and its three buttons are gone.
+    expect(buttons(table).filter((b) => b.callback_data.startsWith('c:conf_'))).toEqual([]);
+    await say(ctx, chatId, '1: 500 dona');
     expect(activeIntake(chatId)!.facts.goods?.[0]?.quantity).toBe(500);
     expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('add');
     const echo = ctx.replies.at(-1)!;
-    expect(echo.text).toContain('✅ 1-qator «Kurtka»: 300 + 200 = 500 dona yozildi');
     const tag = activeIntake(chatId)!.echoes[0]!.tag;
-    expect(buttons(echo).map((b) => b.callback_data)).toEqual([`cu:${tag}`, 'c:save']);
-    expect(buttons(echo).at(-1)!.text).toBe('✅ Qo‘shish');
-
     await pressUndo(from(ctx, echo.id), chatId, tag);
     await tableEditsSettled();
     expect(activeIntake(chatId)!.facts.goods?.[0]?.quantity).toBe(300);
-    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBeNull();
+    // The VED's again (R3 interp 9) — never the unanswered null a table drew as buttons.
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('ved');
+    expect(buttons(ctx.edits.at(-1)).filter((b) => b.callback_data.startsWith('c:conf_'))).toEqual([]);
   });
 
-  it('«VED» writes nothing and names it for the VED', async () => {
+  it('an old «📨 VED» button answers «eskirgan» and writes nothing (§1.3)', async () => {
     const { chatId } = open();
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'ved');
-    await tableEditsSettled();
+    await handleCalcCallback(from(ctx, table.id), chatId, 'conf_0_ved');
+    expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan — fayllar o‘zi solishtirildi.');
     expect(activeIntake(chatId)!.facts.goods?.[0]?.quantity).toBe(300);
-    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('ved');
-    expect(ctx.texts().at(-1)).toContain('📨 1-qator «Kurtka»: VED hal qiladi');
-    // A conflict already answered is «eskirgan».
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'add');
-    expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan.');
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBeNull();
   });
 
   it('opened on a job the VED has started: the echo says «📝 VED ga yuboriladi», its button «📨 VED ga yuborish» (product-fit-18)', async () => {
@@ -491,7 +486,7 @@ describe('«✖️ Bekor qilish» asks once before it throws away a day’s coll
 
 describe('a route answer survives a re-read (durability-17)', () => {
   it('«Yiwu → Toshkent», then «➕ Yana ma’lumot» + «Bo‘ldi»: the route is still there; ↩️ takes it away', async () => {
-    const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona'], facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
+    const { chatId } = collection({ stage: 'review', ai: true, material: ['Kurtka 300 dona'], facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
     const ctx = fakeCtx();
     await say(ctx, chatId, 'Yiwu → Toshkent');
     expect(activeIntake(chatId)!.facts).toMatchObject({ fromCity: 'Yiwu', toCity: 'Toshkent' });
@@ -526,7 +521,7 @@ describe('a totals answer and the material it had seen (R2 CONC-2, re-check p3-3
   });
 
   it('answered, ➕ a FORWARDED «brutto 4200 kg», «Bo‘ldi»: asked with both figures, never 3500 in silence', async () => {
-    const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona'], facts: { volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
+    const { chatId } = collection({ stage: 'review', ai: true, material: ['Kurtka 300 dona'], facts: { volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
     const ctx = fakeCtx();
     await say(ctx, chatId, 'jami 3500 kg');
     await handleCalcCallback(ctx, chatId, 'more');
@@ -539,7 +534,7 @@ describe('a totals answer and the material it had seen (R2 CONC-2, re-check p3-3
   });
 
   it('the same «brutto 4200 kg» TYPED while collecting is a totals answer: «3500 → 4200», with its ↩️ — never a silent replace', async () => {
-    const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona'], facts: { volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
+    const { chatId } = collection({ stage: 'review', ai: true, material: ['Kurtka 300 dona'], facts: { volumeM3: 12, goods: [line('Kurtka', { quantity: 300 })] } }, 'yolkira');
     const ctx = fakeCtx();
     await say(ctx, chatId, 'jami 3500 kg');
     await handleCalcCallback(ctx, chatId, 'more');
@@ -630,18 +625,26 @@ describe('the review’s fixes', () => {
     expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('rep');
   });
 
-  it('«📨 VED», then a typed 400, then ↩️ under the VED echo: the 400 stands and the row is named (spec-2, adv-10)', async () => {
+  /** A «📨 VED» echo a collection hydrated from before his 1a still carries (the button is gone, §1.1). */
+  const vedEcho = (chatId: bigint) => {
+    updateIntake(chatId, {
+      conflicts: [{ itemId: 'i1', seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: 'ved' }],
+      echoes: [
+        { tag: 'ved00001', messageId: 777, lines: [{ index: 0, no: 1, itemId: 'i1', name: 'Kurtka', before: { quantity: 300 }, patch: {} }], totals: null, undone: false },
+      ],
+    });
+    return { id: 777, tag: 'ved00001' };
+  };
+
+  it('a hydrated «📨 VED», then a typed 400, then ↩️ under the VED echo: the 400 stands and the row is named (spec-2, adv-10)', async () => {
     const { chatId } = conflicted();
     const ctx = fakeCtx();
-    const table = await drawn(ctx, chatId);
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'ved');
-    await tableEditsSettled();
-    const ved = ctx.replies.at(-1)!;
-    const vedTag = activeIntake(chatId)!.echoes.at(-1)!.tag;
+    await drawn(ctx, chatId);
+    const ved = vedEcho(chatId);
     await say(ctx, chatId, '1: 400 dona');
     // A typed answer to the figure overrides the VED choice — he answered after all.
     expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('rep');
-    await pressUndo(from(ctx, ved.id), chatId, vedTag);
+    await pressUndo(from(ctx, ved.id), chatId, ved.tag);
     await tableEditsSettled();
     const live = activeIntake(chatId)!;
     expect(live.facts.goods?.[0]?.quantity).toBe(400);
@@ -650,21 +653,19 @@ describe('the review’s fixes', () => {
     expect(ctx.edits.find((e) => e.id === ved.id)!.text).toBe('⚠️ 1-qator keyin o‘zgartirilgan — u bekor qilinmadi.');
   });
 
-  it('↩️ under a VED echo nothing later changed: the conflict is open again, no figure moves', async () => {
+  it('↩️ under a hydrated VED echo nothing later changed: the conflict stays the VED’s — it is no question to open again (§1.1)', async () => {
     const { chatId } = conflicted();
     const ctx = fakeCtx();
-    const table = await drawn(ctx, chatId);
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'ved');
+    await drawn(ctx, chatId);
+    const ved = vedEcho(chatId);
+    await pressUndo(from(ctx, ved.id), chatId, ved.tag);
     await tableEditsSettled();
-    const ved = ctx.replies.at(-1)!;
-    await pressUndo(from(ctx, ved.id), chatId, activeIntake(chatId)!.echoes.at(-1)!.tag);
-    await tableEditsSettled();
-    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBeNull();
+    expect(activeIntake(chatId)!.conflicts[0]!.choice).toBe('ved');
     expect(activeIntake(chatId)!.facts.goods?.[0]?.quantity).toBe(300);
     expect(ctx.edits.find((e) => e.id === ved.id)!.text).toBe('↩️ Bekor qilindi: 1-qator «Kurtka» — VED hal qiladi');
   });
 
-  it('five conflicts: once the first three are answered, the next two get their buttons (spec-9)', async () => {
+  it('five conflicts: no button for any, each named the VED’s (his 1a — this pinned three buttons at a time, spec-9)', async () => {
     const names = ['Kurtka', 'Shim', 'Sumka', 'Shapka', 'Futbolka'];
     const items = names.map((name, i) => item(`i${i + 1}`, i + 1, name, { quantity: 100 }));
     const { chatId } = collection(
@@ -679,13 +680,8 @@ describe('the review’s fixes', () => {
     );
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
-    const conf = (sent: Sent | undefined) => buttons(sent).map((b) => b.callback_data).filter((d) => d.startsWith('c:conf_'));
-    expect(conf(table).filter((d) => d.endsWith('_ved'))).toEqual(['c:conf_0_ved', 'c:conf_1_ved', 'c:conf_2_ved']);
-    for (const n of [0, 1, 2]) {
-      await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, n, 'ved');
-      await tableEditsSettled();
-    }
-    expect(conf(ctx.edits.at(-1)).filter((d) => d.endsWith('_ved'))).toEqual(['c:conf_3_ved', 'c:conf_4_ved']);
+    expect(buttons(table).filter((b) => b.callback_data.startsWith('c:conf_'))).toEqual([]);
+    expect(table.text.match(/faylda 50 dona, so‘rovda 100 — VED hal qiladi/gu)).toHaveLength(5);
   });
 
   it('a code typed over a stored row’s own is kept for the VED, never drawn on the row; ↩️ takes it back (adv-11)', async () => {
@@ -736,7 +732,7 @@ describe('the review’s fixes', () => {
 
   it('seventy-five rows answered in one message: the echo fits in 4096, and the table is edited (adv-3)', async () => {
     const names = Array.from({ length: 75 }, (_v, i) => `Tovar ${String(i + 1).padStart(2, '0')} uzun nomli mahsulot qatori`);
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: names.map((n) => line(n)) } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: names.map((n) => line(n)) } });
     const ctx = fakeCtx();
     await drawn(ctx, chatId);
     await say(ctx, chatId, names.map((_n, i) => `${i + 1}: 5 dona`).join('\n'));
@@ -749,7 +745,7 @@ describe('the review’s fixes', () => {
   });
 
   it('an echo Telegram refuses still leaves a truthful table — its edit went out first (adv-3)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka', { quantity: 3 }), line('Sumka')] } });
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
     const refusing = Object.assign(Object.create(ctx) as Ctx, {
@@ -765,7 +761,7 @@ describe('the review’s fixes', () => {
   });
 
   it('one message’s buttons for two rows: both picks write, and a row’s second button is spent (adv-7)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '1: 50\n2: 70');
     const asked = ctx.replies.at(-1)!;
@@ -781,7 +777,7 @@ describe('the review’s fixes', () => {
   });
 
   it('a row whose buttons do not fit is asked in words, never dropped (adv-8)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka'), line('Shim')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Sumka'), line('Shim')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '1: 1,200\n2: 50\n3: 70');
     const echo = ctx.replies.at(-1)!;
@@ -807,7 +803,7 @@ describe('the review’s fixes', () => {
     expect(live.answers).toEqual(['2-qator: 2: 50 dona']);
   });
 
-  it('while the addition is being written, a pick and a conflict button write nothing (adv-13)', async () => {
+  it('while the addition is being written, a pick writes nothing — and the retired conflict button only says so (adv-13)', async () => {
     const { chatId } = conflicted();
     const ctx = fakeCtx();
     const table = await drawn(ctx, chatId);
@@ -817,8 +813,8 @@ describe('the review’s fixes', () => {
     updateIntake(chatId, { saving: { token: 't', at: Date.now(), jobId: null } });
     await pressPick(from(ctx, asked.id), chatId, activeIntake(chatId)!, 0);
     expect(ctx.texts().at(-1)).toBe('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
-    await pressConflict(from(ctx, table.id), chatId, activeIntake(chatId)!, 0, 'add');
-    expect(ctx.texts().at(-1)).toBe('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
+    await handleCalcCallback(from(ctx, table.id), chatId, 'conf_0_add');
+    expect(ctx.texts().at(-1)).toBe('Bu tugma eskirgan — fayllar o‘zi solishtirildi.');
     const live = activeIntake(chatId)!;
     expect(live.facts.goods?.[0]?.quantity).toBe(300);
     expect(live.conflicts[0]!.choice).toBeNull();
@@ -837,14 +833,14 @@ describe('the review’s fixes', () => {
   });
 
   it('«;» alone is asked, never an empty message (adv-17)', async () => {
-    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka')] } });
+    const { chatId } = collection({ stage: 'review', ai: true, facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, ';');
     expect(ctx.texts().at(-1)).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
   });
 
   it('an answer while collecting again points at «Bo‘ldi», never at a «Tasdiqlash» the guard refuses (adv-18)', async () => {
-    const { chatId } = collection({ stage: 'material', material: ['x'], facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Shim')] } });
+    const { chatId } = collection({ stage: 'material', ai: true, material: ['x'], facts: { weightKg: 3500, volumeM3: 12, goods: [line('Kurtka'), line('Shim')] } });
     const ctx = fakeCtx();
     await say(ctx, chatId, '1: 50 dona');
     const echo = ctx.replies.at(-1)!;

@@ -123,6 +123,14 @@ export interface IntakeState {
    */
   seededFrom?: string | null;
   /**
+   * A seeded collection's SOURCE door (docs/IKKI-ESHIK.md §0.3), written when
+   * it opens: what its chat words follow — the plain door's summary, or
+   * today's table on a legacy NULL source, which the `ai` flag alone cannot
+   * tell from a plain yo‘lkira one. Optional — a row written before it reads
+   * as legacy.
+   */
+  seedDoor?: import('../../wms/calc/intake').IntakeDoor | null;
+  /**
    * The customer the DOOR wrote into `clientHintRaw` — an add collection's
    * card label, a seeded one's carried code (review PF-9). Not the seller's
    * typing: a collection holding only this is empty, never reminded and never

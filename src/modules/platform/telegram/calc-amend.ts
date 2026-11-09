@@ -23,6 +23,7 @@ import {
   updateIntake,
 } from './calc-store';
 import {
+  clientQuestionText,
   deliverNextStep,
   routeCollectorText,
   showIntakePrompt,
@@ -31,7 +32,6 @@ import {
   type PressCtx,
 } from './calc-dialog';
 import { fileOf, readIntakeFile, saveIntakeFile, type BotFile } from './calc-files';
-import { CLIENT_QUESTION } from './calc-keyboards';
 import { isBacklog } from './lifecycle';
 import { activeCapture, refuseWhileCapturing } from './note-capture';
 import { claimOnce, type OnceKey } from './once';
@@ -96,6 +96,12 @@ export const SAVE_WORDS = {
   empty:
     'Hech narsa o‘zgarmadi — qatorga javob yozing («3: 50 dona») yoki «➕ Yana ma’lumot» bilan fayl yoki tovar yuboring.',
   aiLine: '\n🤖 AI qayta hisoblayapti — natija shu yerga keladi.',
+  /**
+   * A «🧮» request's re-run (docs/IKKI-ESHIK.md §2.4, §2.6): silent toward the
+   * seller — the AI prepares the card for the VED, and the VED prices it — so
+   * nothing here promises a result in the chat.
+   */
+  plainLine: '\n🤖 AI kartani VED uchun qayta tayyorlaydi — narxni VED beradi.',
   tariffLine: '\n🧮 Yo‘lkira tarif bo‘yicha qayta hisoblanmoqda — natija shu yerga keladi.',
   queueRefused: '\n⚠️ Qayta hisoblash navbatga tushmadi — narxni VED beradi.',
 } as const;
@@ -560,6 +566,7 @@ async function openSeeded(
     amend: null,
     openedBy,
   });
+  const seedDoor = stored.door ?? null;
   // Quiet, as the add door's (dur-1): the opening is no answer to anything.
   const state = updateIntake(
     chatId,
@@ -575,6 +582,9 @@ async function openSeeded(
       },
       seed: lines,
       seededFrom: stored.base.requestId,
+      // What its chat words follow (§0.3, §2.6): the plain door's summary —
+      // or, for a source from before the doors, today's table.
+      seedDoor,
       clientHintRaw: hint,
       doorHint: hint,
       // The certificate answer the request carried — never the collector's
@@ -595,7 +605,13 @@ async function openSeeded(
     ).message_id,
   );
   if (hint) await deliverNextStep(sp, chatId, state);
-  else await sp.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
+  else {
+    // The customer question, asked ONCE (§1.5): the one message a file sent
+    // before the answer redraws, counting, below it.
+    const asked = await sp.reply(clientQuestionText(state), { parse_mode: 'Markdown' });
+    updateIntake(chatId, { promptMessageId: asked.message_id }, { quiet: true });
+    noteOwnMessage(chatId, asked.message_id);
+  }
   return { state: activeIntake(chatId) ?? state, opened: true };
 }
 
@@ -1265,11 +1281,32 @@ function closedWords(ending: CalcEnding | null): string {
 
 const withLines = (head: string, lines: readonly string[]) => (lines.length ? `${head}\n${lines.join('\n')}` : head);
 
-/** The AI line after an applied addition — the tariff's on a section with no customs part. */
-async function repassLine(change: AmendChange, queued: boolean): Promise<string> {
+/**
+ * The AI line after an applied addition — the tariff's on a section with no
+ * customs part, which answers in the chat on either door (his 2.5 b). By the
+ * request's door (pp-handoff seam 1): a «🧮» request's re-run sends the seller
+ * nothing, so its line promises the VED, never a result; the AI door and a
+ * request from before the doors (NULL, §0.2) keep the promise.
+ */
+async function repassLine(change: AmendChange, queued: boolean, door: 'plain' | 'ai' | null): Promise<string> {
   if (!queued) return SAVE_WORDS.queueRefused;
   const { sectionParts } = await import('../../wms/calc/pricing');
-  return sectionParts(change.section).customs ? SAVE_WORDS.aiLine : SAVE_WORDS.tariffLine;
+  if (!sectionParts(change.section).customs) return SAVE_WORDS.tariffLine;
+  return door === 'plain' ? SAVE_WORDS.plainLine : SAVE_WORDS.aiLine;
+}
+
+/**
+ * The request's door, off its row (§0.3) — a read that fails is legacy
+ * (NULL), today's words, never a guess.
+ */
+async function requestDoorOf(requestId: string): Promise<'plain' | 'ai' | null> {
+  try {
+    const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
+    return await requestIntakeDoor(requestId);
+  } catch (err) {
+    logger.warn({ err, requestId }, '[calc-amend] the request’s door not read — today’s words');
+    return null;
+  }
 }
 
 export type Told = Exclude<AmendOutcome, { kind: 'empty' | 'duplicate' | 'not_yours' | 'not_found' | 'refused' }>;
@@ -1279,9 +1316,11 @@ export type Told = Exclude<AmendOutcome, { kind: 'empty' | 'duplicate' | 'not_yo
  * new kind without words is a compile error. `waited`: a stored addition the
  * job wrote after the machine's pass ended.
  */
-const OUTCOME_WORDS: { [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean) => Promise<string> } = {
-  async applied(o, waited) {
-    const line = await repassLine(o.change, o.queued);
+const OUTCOME_WORDS: {
+  [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean, door: 'plain' | 'ai' | null) => Promise<string>;
+} = {
+  async applied(o, waited, door) {
+    const line = await repassLine(o.change, o.queued, door);
     return waited
       ? `✅ Kutib turgan qo‘shimchangiz so‘rovga yozildi (${o.change.card}).${line}`
       : `${withLines(`✅ So‘rovga qo‘shildi (${o.change.card}):`, o.lines)}${line}`;
@@ -1320,9 +1359,12 @@ const OUTCOME_WORDS: { [K in Told['kind']]: (o: Extract<Told, { kind: K }>, wait
   },
 };
 
-/** Words for any told outcome, by its kind (exported for the tests that read them). */
-export function amendWords(o: Told, waited: boolean): Promise<string> {
-  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean) => Promise<string>)(o, waited);
+/**
+ * Words for any told outcome, by its kind (exported for the tests that read
+ * them). `door`: the request's (§2.6) — null keeps today's words.
+ */
+export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null = null): Promise<string> {
+  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean, door: 'plain' | 'ai' | null) => Promise<string>)(o, waited, door);
 }
 
 /** The outcome a stored row records, rebuilt — what a redo says when the words were never sent. */
@@ -1420,7 +1462,7 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
     case 'waiting': {
       // A stored addition whose pass is still running stays stored, unsaid.
       if (outcome.kind === 'waiting' && outcome.stillWaiting) return;
-      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun));
+      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun, await requestDoorOf(data.requestId)));
       // Not delivered and worth another try: the retry is a `duplicate` and
       // says exactly these words, once. With no retry left the collection
       // stays frozen and the sweep tells it from the record.
@@ -1471,7 +1513,7 @@ async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(target, await amendWords(told, waitedRun));
+      const sent = await sendWords(target, await amendWords(told, waitedRun, await requestDoorOf(data.requestId)));
       if (!sent.ok && !sent.permanent) {
         // No retry left: the collection stays frozen; the sweep tells it from the record.
         if (last && !waitedRun) return;

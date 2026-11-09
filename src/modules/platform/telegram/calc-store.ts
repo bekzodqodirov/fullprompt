@@ -468,7 +468,23 @@ export async function retryUnsaid(): Promise<number> {
   return said;
 }
 
-/** §2.7's goodbye, pure. `client` = `intakeClientSummary(clientHintRaw)`. */
+/**
+ * The refusal's pointer to «➕» (docs/IKKI-ESHIK.md §2.5): the AI door's words
+ * name its AI answer, which carries a «➕» and takes a reply; the plain door
+ * gets no AI answer, so its words name only the ✅'s own «➕». A NULL door
+ * (a request from before the doors) keeps the AI door's — today's — words.
+ */
+export function addPointerWords(door: 'plain' | 'ai' | null): string {
+  return door === 'plain'
+    ? 'Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».'
+    : 'Qo‘shimcha bo‘lsa — ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing, yoki AI javobiga reply qilib yozing. Yangi hisob — «🧮 Hisoblatish».';
+}
+
+/**
+ * §2.7's goodbye, pure. `client` = `intakeClientSummary(clientHintRaw)`. An
+ * add collection's points at «➕» by its request's door (docs/IKKI-ESHIK.md
+ * §2.5): a plain request has no AI answer to press it under.
+ */
 export function intakeEndedText(
   state: Pick<IntakeState, 'section' | 'amend'>,
   sections: Record<CalcSection, string>,
@@ -477,7 +493,9 @@ export function intakeEndedText(
   if (state.amend) {
     return (
       `⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ ${state.amend.cardLabel}. ` +
-      'Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.'
+      (state.amend.door === 'plain'
+        ? addPointerWords('plain')
+        : 'Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.')
     );
   }
   return (

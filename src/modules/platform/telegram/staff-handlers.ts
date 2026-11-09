@@ -77,8 +77,11 @@ import {
   updateIntake,
   type IntakeMessage,
 } from './calc-store';
-import { readIntakeFile, saveBotFile, saveIntakeFile } from './calc-files';
+import { readIntakeFile, refusalOf, saveBotFile, saveIntakeFile } from './calc-files';
 import {
+  collectionDoor,
+  drawPromptSoon,
+  editTableSoon,
   NOT_FOUND_HINT,
   orphanAnswerSentence,
   PAUSE_LINE,
@@ -92,11 +95,11 @@ import {
   QUEUE_REFUSAL,
   queueRefusal,
   routeCollectorText,
-  showIntakePrompt,
+  zoneQuestionText,
+  clientQuestionText,
   type CalcPressCtx,
 } from './calc-dialog';
 import {
-  CLIENT_QUESTION,
   doneKeyboard,
   pricedZonesNow,
   restartKeyboard,
@@ -797,32 +800,28 @@ export function registerStaffBot(bot: Bot): void {
     // A file sent BEFORE the customer is named — or before the podklyuch
     // door's «qayerdan?» — is material like any other (his 1.7 b). It used to
     // be refused before the client was named, and in the zone stage it
-    // skipped both questions. The question stays open and is asked again.
+    // skipped both questions. The question stays open.
     const waiting = state.stage === 'client' || state.stage === 'section';
-    // An album is ten messages: the open question is asked again once per
-    // album, not once per photograph.
-    const group = ctx.message.media_group_id ?? null;
-    const asked = waiting && group !== null && group === state.reaskedGroup;
-    const updated = updateIntake(chatId, {
+    updateIntake(chatId, {
       ...read.patch,
       stage: waiting ? state.stage : 'material',
       fileCount: state.fileCount + 1,
       material: caption ? [...state.material, caption] : state.material,
-      reaskedGroup: group,
+      reaskedGroup: ctx.message.media_group_id ?? null,
     });
-    if (read.say) await ctx.reply(read.say);
-    if (asked) return;
-    if (state.stage === 'section') {
-      await ctx.reply('Qabul qilindi. Avval yuk qayerdan chiqishini tanlang:', {
-        reply_markup: zoneKeyboard(await pricedZonesNow()),
-      });
-      return;
-    }
-    if (state.stage === 'client') {
-      await ctx.reply(`Qabul qilindi.\n\n${CLIENT_QUESTION}`, { parse_mode: 'Markdown' });
-      return;
-    }
-    await showIntakePrompt(ctx, chatId, updated ?? state);
+    // A file gets a message of its own only when it is REFUSED (docs/IKKI-
+    // ESHIK.md §1.4): what the bot read of it is a line of the ONE prompt
+    // below — «📄 … N ta tovar o‘qildi», «AI o‘qiydi» — never a message per
+    // file. The refusal joins the collection's own, so the prompt knows it is
+    // no longer the last message.
+    const refusal = refusalOf(read);
+    if (refusal) noteOwnMessage(chatId, (await ctx.reply(refusal)).message_id);
+    // A summary or table this file arrived below points down to the new
+    // prompt and loses its buttons (§1.4); the open question — or the prompt
+    // — is redrawn ONCE, below everything, an album moving it once (§1.5,
+    // §1.6).
+    if (!waiting) editTableSoon(ctx, chatId);
+    drawPromptSoon(ctx, chatId);
   });
 
   // Voice, audio, video, a round video, a place, a sticker — the kinds the
@@ -1460,6 +1459,18 @@ async function answerWithAssistant(
   }
 }
 
+/**
+ * The message a door sent as the collection's live question or control: its
+ * id is the prompt's (§1.4-§1.6), so the next file edits or moves IT, and
+ * never adds a second. Quiet: bookkeeping.
+ */
+function notePrompt(chatId: bigint, sent: unknown): void {
+  const id = (sent as { message_id?: unknown } | null)?.message_id;
+  if (typeof id !== 'number') return;
+  updateIntake(chatId, { promptMessageId: id }, { quiet: true });
+  noteOwnMessage(chatId, id);
+}
+
 /** What a retired file question's button says (docs/IKKI-ESHIK.md §1.3). */
 export const RETIRED_FILE_STEP = 'Bu tugma eskirgan — fayllar o‘zi solishtirildi.';
 
@@ -1576,23 +1587,21 @@ export async function handleCalcCallback(
     if (opening === 'aipk') {
       // The road needs its zone before anything else: it is the one answer
       // on this door that no material can be trusted to carry.
-      startIntake(chatId, 'podklyuch', { ai: true, staffId: staff.id, openedBy });
+      const opened = startIntake(chatId, 'podklyuch', { ai: true, staffId: staff.id, openedBy });
       updateIntake(chatId, { stage: 'section' });
-      await ctx.reply(
-        '🤖 AI podklyuch: rastamojka + yo‘lkira (tarif narxida).\n\nYuk qayerdan chiqadi?',
-        { reply_markup: zoneKeyboard(await pricedZonesNow()) },
-      );
+      // The question is asked ONCE (§1.6): this message is the one a file
+      // sent before the answer edits to count, kept last.
+      notePrompt(chatId, await ctx.reply(zoneQuestionText(opened), { reply_markup: zoneKeyboard(await pricedZonesNow()) }));
       return;
     }
-    startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening, {
+    const opened = startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening, {
       ai: opening === 'ai',
       staffId: staff.id,
       openedBy,
     });
-    await ctx.reply(
-      (opening === 'ai' ? '🤖 AI rastamojka — faqat bojxona to‘lovlari.\n\n' : '') + CLIENT_QUESTION,
-      { parse_mode: 'Markdown' },
-    );
+    // The customer question, asked ONCE (§1.5): the one message every later
+    // file or text before the answer redraws, counting, below them.
+    notePrompt(chatId, await ctx.reply(clientQuestionText(opened), { parse_mode: 'Markdown' }));
     return;
   }
 
@@ -1640,9 +1649,9 @@ export async function handleCalcCallback(
     }
     const { route } = answer;
     updateIntake(chatId, { route, stage: 'client' });
-    await ctx.reply(`✅ ${route.fromCity} → ${route.toCity}\n\n${CLIENT_QUESTION}`, {
-      parse_mode: 'Markdown',
-    });
+    // The zone question BECOMES the customer question (§1.5, §1.6): edited
+    // in place while it is the last message, else redrawn below.
+    drawPromptSoon(ctx as CalcPressCtx & { api?: import('./calc-dialog').EditApi }, chatId);
     return;
   }
 
@@ -1686,9 +1695,12 @@ export async function handleCalcCallback(
 
   if (step === 'more') {
     updateIntake(chatId, { stage: 'material' });
-    await ctx.reply('Yana ma’lumot yuboring, tugagach «Bo‘ldi» ni bosing.', {
-      reply_markup: doneKeyboard,
-    });
+    // The live «Bo‘ldi» control until something is sent (§1.4): the first
+    // material moves it below itself, as the prompt.
+    notePrompt(
+      chatId,
+      await ctx.reply('Yana ma’lumot yuboring, tugagach «Bo‘ldi» ni bosing.', { reply_markup: doneKeyboard }),
+    );
     return;
   }
 
@@ -1780,7 +1792,9 @@ export async function handleCalcCallback(
   // — rather than «VED javob beradi» under a figure already in the chat.
   const { sectionParts } = await import('../../wms/calc/pricing');
   const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
-  await ctx.reply(landingReplyText(target, { link, tariffFollows }), {
+  // The collection's door says what the ✅ promises (docs/IKKI-ESHIK.md §2.3,
+  // §3.5): the plain door the VED, the AI door its figure.
+  await ctx.reply(landingReplyText(target, { link, tariffFollows, door: collectionDoor(state) }), {
     // Re-derived, not named (round 100, 13A): naming staffKeyboard() here
     // took the cabinet buttons off a both-chat's phone.
     reply_markup: landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId)),

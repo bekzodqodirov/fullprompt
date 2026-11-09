@@ -79,6 +79,54 @@ export interface FileAnswer {
 }
 
 /**
+ * The words a file gets as a message of its OWN — only a refusal (docs/IKKI-
+ * ESHIK.md §1.4): HEIC, Word, video, archive, too big, the 4th PDF, a broken
+ * sheet. Everything else the answer says is a line of the ONE «Qabul
+ * qilindi» prompt, which draws it from durable state: an answer appending to
+ * `fileNotes` (the Excel decisions, «🖼 … rasm sifatida o‘qiladi»), a PDF the
+ * model reads (`pdfs`), a header-less sheet (`sheetTexts`, with its current
+ * fit). Null = nothing to send. Every door that reads a file asks this, so a
+ * file is never announced twice.
+ */
+export function refusalOf(answer: FileAnswer): string | null {
+  if (!answer.say) return null;
+  const p = answer.patch;
+  return p.fileNotes !== undefined || p.pdfs !== undefined || p.sheetTexts !== undefined ? null : answer.say;
+}
+
+/**
+ * A header-less sheet's line, and what the model will not read of it — `kept`
+ * of `total` rows by the CURRENT fit (`fitSheetRows`), `readerCut` = the
+ * reader stopped before its end. One home for the receipt's words and the
+ * prompt's (§1.4), which redraws them as later files squeeze the budget.
+ */
+export function sheetTextLine(label: string, fit: { kept: number; total: number }, readerCut: boolean): string {
+  const cut =
+    fit.kept === 0
+      ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
+      : readerCut
+        ? `\n⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi ${fit.kept} qator) — qolganini VED fayldan ko‘radi.`
+        : fit.kept < fit.total
+          ? `\n⚠️ Jadval katta: AI faqat birinchi ${fit.kept} / ${fit.total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
+          : '';
+  return `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.${cut}`;
+}
+
+/**
+ * A workbook's other sheets the shared budget squeezed (round-4 integration
+ * S-d) — `now` of `of` rows still read. `cause`: said at the receipt of the
+ * sheet that squeezed them («Shu jadval tufayli …»); the prompt redraws the
+ * standing fit without it.
+ */
+export function squeezedLine(label: string | undefined, now: number, of: number, cause = true): string {
+  const whose = label ? `${label} ning` : 'oldingi Excel faylning';
+  const lead = cause ? 'Shu jadval tufayli ' : '';
+  return now === 0
+    ? `⚠️ ${lead}${whose} boshqa varaqlari AI ga sig‘madi — u yerdagi jami (kub/kg) o‘qilmaydi.`
+    : `⚠️ ${lead}AI ${whose} boshqa varaqlaridan ${cause ? 'endi ' : ''}faqat ${now} / ${of} qatorini o‘qiydi.`;
+}
+
+/**
  * How spreadsheet texts fit what the model reads, in ROWS — `fitSheetRows` at
  * the reader's cap (round-3 review, R3-C2: counted in lines, a sheet's
  * «[name]» heading was a row, and a 20-row file read «birinchi 21 qator»).
@@ -114,6 +162,37 @@ export function receivePdf(
 }
 
 /**
+ * The prompt's line per model-read file (docs/IKKI-ESHIK.md §1.4) — drawn
+ * from durable state at DRAW time, so a header-less sheet's cut is the fit
+ * as it stands now, after every later file: each PDF the model reads, each
+ * header-less sheet with what of it the model will read, and each
+ * workbook's other sheets the shared budget squeezed. Pure; `fit` is
+ * `fitSheetRows` at the reader's cap (what `receiveSheetText` asks).
+ */
+export function promptFileLines(state: Pick<IntakeState, 'pdfs' | 'sheetTexts' | 'invoiceTexts'>, fit: SheetFit): string[] {
+  const all = [...state.sheetTexts, ...state.invoiceTexts];
+  const fitted = all.length > 0 ? fit(all.map((s) => s.text.trim())) : { kept: [], total: [] };
+  const pdfs = state.pdfs.map((p) => `📄 «${p.name}» — AI o‘qiydi.`);
+  const sheets = state.sheetTexts.map((s, i) =>
+    sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut),
+  );
+  // A workbook's other sheets, by its file: squeezed only when the fit took
+  // rows the reader itself kept — its own cut is a receipt note already.
+  const byLabel = new Map<string, { now: number; of: number }>();
+  state.invoiceTexts.forEach((t, j) => {
+    if (t.cut) return;
+    const at = state.sheetTexts.length + j;
+    const now = fitted.kept[at] ?? 0;
+    const of = fitted.total[at] ?? 0;
+    const key = t.label ?? '';
+    const was = byLabel.get(key) ?? { now: 0, of: 0 };
+    byLabel.set(key, { now: was.now + now, of: was.of + of });
+  });
+  const squeezed = [...byLabel].flatMap(([label, f]) => (f.now < f.of ? [squeezedLine(label || undefined, f.now, f.of, false)] : []));
+  return [...pdfs, ...sheets, ...squeezed];
+}
+
+/**
  * A model-read file beside an Excel list — or an Excel list beside one —
  * takes the add path (§1.2.2): `add`, written only where nobody has answered
  * (a hydrated «context» was the seller's own word and stands).
@@ -145,14 +224,6 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
   const fitted = fit(texts([...sheetTexts, ...state.invoiceTexts]));
   const kept = fitted.kept[at] ?? 0;
   const total = fitted.total[at] ?? 0;
-  const cut =
-    kept === 0
-      ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
-      : sheet.cut
-        ? `\n⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi ${kept} qator) — qolganini VED fayldan ko‘radi.`
-        : kept < total
-          ? `\n⚠️ Jadval katta: AI faqat birinchi ${kept} / ${total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
-          : '';
   // The budget is SHARED and this file stands ahead of the workbooks' other
   // sheets, so it can push THEIR rows out — the packing list the shipment's
   // totals are read from. The model is told under the sheet; the seller was
@@ -163,16 +234,11 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
     const now = fitted.kept[sheetTexts.length + j] ?? 0;
     const of = fitted.total[sheetTexts.length + j] ?? 0;
     if (now >= was) return [];
-    const whose = t.label ? `${t.label} ning` : 'oldingi Excel faylning';
-    return [
-      now === 0
-        ? `\n⚠️ Shu jadval tufayli ${whose} boshqa varaqlari AI ga sig‘madi — u yerdagi jami (kub/kg) o‘qilmaydi.`
-        : `\n⚠️ Shu jadval tufayli AI ${whose} boshqa varaqlaridan endi faqat ${now} / ${of} qatorini o‘qiydi.`,
-    ];
+    return [`\n${squeezedLine(t.label, now, of)}`];
   });
   return {
     patch: { sheetTexts, ...beside(state) },
-    say: `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.` + cut + squeezed.join(''),
+    say: sheetTextLine(label, { kept, total }, sheet.cut) + squeezed.join(''),
   };
 }
 
