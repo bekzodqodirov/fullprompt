@@ -177,6 +177,7 @@ afterAll(async () => {
 async function sealed() {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',

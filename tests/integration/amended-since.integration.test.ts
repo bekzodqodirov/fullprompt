@@ -122,6 +122,7 @@ afterAll(async () => {
 async function answerableRequest(): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

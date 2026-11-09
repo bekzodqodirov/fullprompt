@@ -297,6 +297,8 @@ export async function submitCalcAction(input: SubmitCalcInput): Promise<SubmitCa
         items: landingItems({ weightKg: input.weightKg, goods: input.goods, lineWeightsStated: true }),
         note: input.noteId ? { id: input.noteId, text: input.noteText } : null,
         source: 'card',
+        // Not a bot door (docs/IKKI-ESHIK.md §0.1): the card form keeps today's behaviour.
+        intakeDoor: null,
       },
       { actorId: actor.id, ...meta },
     );

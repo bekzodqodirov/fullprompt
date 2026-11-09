@@ -133,6 +133,7 @@ async function open(items: { name: string; quantity?: number | null; tnvedCode?:
   for (const i of items) madeNames.push(i.name);
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

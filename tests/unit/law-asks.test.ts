@@ -8,6 +8,8 @@ import {
 import type { CalcGoodsFact } from '@/modules/wms/calc/intake';
 import type { NeedLaw } from '@/modules/wms/calc/needs';
 import type { Workspace } from '@/modules/wms/calc/workspace';
+import { aiVedReplyText, type AiVedReplyInput } from '@/modules/wms/calc/ai-reply';
+import { aiNoteText } from '@/modules/wms/calc/ai-note';
 
 /**
  * His 2.8 b (docs/SAKKIZ-R3.md §10.2.6, §10.3) and his 1.14 a: after the AI
@@ -229,5 +231,74 @@ describe('the two adapters (performance-9, p5-p6-12)', () => {
     expect(lawAsksInputOf(ws({ handsoffRev: 4 }))).toBeNull();
     // A request from before 0139 (or a correction) carries no stamp at all.
     expect(lawAsksInputOf(ws({ handsoffRev: null }))).toBeNull();
+  });
+});
+
+/**
+ * Who the rows above are asked OF (docs/IKKI-ESHIK.md §2.7, §3.5): his 5a
+ * moved the law's question into the AI door's table, BEFORE «Tasdiqlash»,
+ * and his 2a/3a give the plain door none at all — so on either bot door the
+ * same rows are still derived here, and named for the VED, never asked of the
+ * seller after the landing. The 2.8 b / 1.14 a ask after the answer stands
+ * only on a request from before the doors (NULL), as today.
+ */
+describe('a bot-door request: the same rows, the VED’s to get — never asked after the landing', () => {
+  const probe = [
+    row(1, 'Kurtka', FLOOR_DONA, { weightKg: 300, bazaBasis: 'kg' }),
+    row(3, 'Krossovka', FLOOR_JUFT, { quantity: 200 }),
+  ];
+  const asks = lawAsksOf(stored(probe));
+  const reply: AiVedReplyInput = {
+    clientLabel: null,
+    cardLabel: 'B-000067',
+    lines: [],
+    ungrouped: [],
+    fee: null,
+    totalUsd: null,
+    feeRefusal: null,
+    hasCertificate: true,
+    freight: null,
+    link: null,
+    aiConfigured: true,
+    estimate: null,
+    pickLeft: null,
+    asks,
+    pass: 'landing',
+    audience: 'chat',
+    noAsk: true,
+  };
+
+  it('the rows are derived as before — the rule did not move, only who is asked', () => {
+    expect(asks.map((a) => a.seq)).toEqual([1, 3]);
+  });
+
+  it('the AI door’s answer asks none of them (his 5a); its card copy names them for the VED', () => {
+    expect(aiVedReplyText(reply)).not.toContain('❓');
+    expect(aiVedReplyText({ ...reply, audience: 'lenta' })).toContain(
+      '⚠️ VED uchun: 1-qator «Kurtka»: soni (dona); 3-qator «Krossovka»: juft soni.',
+    );
+    // A request from before the doors still asks them, after the answer.
+    expect(aiVedReplyText({ ...reply, noAsk: false })).toContain('· 1-qator «Kurtka»: soni (dona) — boj kamida $3/dona');
+  });
+
+  it('the plain door’s note names them for the VED and asks nobody (his 2.7)', () => {
+    const note = aiNoteText({
+      clientLabel: null,
+      cardLabel: 'B-000067',
+      pass: 'landing',
+      rows: [],
+      groups: [],
+      ungrouped: [],
+      asks,
+      freight: null,
+      feeRefusal: null,
+      pickLeft: null,
+      hasCertificate: true,
+      aiConfigured: true,
+      budgetSpent: false,
+    });
+    expect(note.split('\n')[1]).toBe('⚠️ VED uchun: 1-qator «Kurtka»: soni (dona); 3-qator «Krossovka»: juft soni.');
+    expect(note).not.toContain('❓');
+    expect(note).not.toContain('reply qilib');
   });
 });

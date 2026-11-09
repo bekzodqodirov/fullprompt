@@ -24,7 +24,7 @@ import { ensureBotProfile, offerStaffCommands } from './commands';
 import { botCall, noteBotAnswer } from './send';
 import { membershipSettled, registerPriceChannel } from './price-channel-handlers';
 import { registerStaffGroup } from './staff-group-handlers';
-import { installBotShutdown, isStopping, markBoot, stopTelegramBot, stoppingGuard, updateSummary } from './lifecycle';
+import { installBotShutdown, isStopping, markBoot, settleWithin, stopTelegramBot, stoppingGuard, updateSummary } from './lifecycle';
 import { pressMiddleware } from './press';
 import { coalesceBacklogLabels } from './backlog';
 import { briefRetry } from './retry';
@@ -41,6 +41,9 @@ import {
   setDurableIntakes,
 } from './calc-store';
 import { messageKey } from './once';
+import { burstScope, drawOwedBursts } from './burst';
+import { keptLastSettled } from './kept-last';
+import { tableEditsSettled } from './calc-dialog';
 
 /**
  * Staff-linking bot (spec 4.5): handles `/start <one-time-code>` from the
@@ -207,6 +210,13 @@ export function startTelegramBot(): void {
     hydrateWithRetry(hydrateIntakes).catch((err: unknown) => logger.warn({ err }, 'telegram calc intakes not restored')),
   ]).finally(() => {
     markIntakesHydrated();
+    // A burst's ONE message a dead process owed (as-built review BURST-8):
+    // asked now, from the rows just hydrated — never a throw into the boot.
+    try {
+      drawOwedBursts(bot.api);
+    } catch (err) {
+      logger.warn({ err }, 'telegram owed burst messages not drawn');
+    }
     startPolling(30_000);
   });
   logger.info('telegram bot polling started');
@@ -221,10 +231,19 @@ export function startTelegramBot(): void {
  * the budget can never overwrite the row the next process hydrates
  * (docs/SAKKIZ-R3.md §6.2.3, §6.2.11).
  */
+/** The kept-last draws' share of the stop's flush (BOT_STOP_DEADLINE_MS 5 s, the confirm's 1 s kept apart). */
+export const STOP_DRAWS_MS = 1_500;
+
 export function botStopDeps(bot: Parameters<typeof stopTelegramBot>[0]['bot']): Parameters<typeof stopTelegramBot>[0] {
   return {
     bot,
     flush: async () => {
+      // A kept-last draw owed (a burst's ONE message waiting out its album,
+      // the collection's ONE prompt) and a table edit in flight are drawn
+      // before the stop, or they are lost with the process — but within
+      // their OWN share of the budget: a draw is a Telegram call, and one
+      // that hangs must never keep the durable writes below from the disk.
+      await settleWithin(Promise.allSettled([keptLastSettled(), tableEditsSettled()]), STOP_DRAWS_MS);
       await Promise.allSettled([flushWaitWrites(), flushIntakeWrites()]);
     },
     drain: membershipSettled,
@@ -247,6 +266,10 @@ export function registerBotHandlers(bot: Bot): void {
   // The «Hisoblatish» collection's own view of the update: the message a
   // change takes (`takenUpTo`) and the collector messages it sends.
   bot.use(collectorScope());
+  // Beside it, the burst's ONE end (docs/IKKI-ESHIK.md §4.1): an update that
+  // is neither a file nor a forward closes the chat's burst before any
+  // handler reads it.
+  bot.use(burstScope());
   bot.use(pressMiddleware());
   bot.use(coalesceBacklogLabels());
 

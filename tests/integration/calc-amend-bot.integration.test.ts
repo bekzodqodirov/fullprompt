@@ -160,6 +160,7 @@ async function answered(): Promise<{ requestId: string; answerId: number }> {
   madeDeals.push(deal!.id);
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: deal!.id,
       section: 'rastamojka',

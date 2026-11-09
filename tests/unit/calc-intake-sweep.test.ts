@@ -14,6 +14,13 @@ const stub = vi.hoisted(() => ({
   deliveryAlive: false,
   landing: 'none' as 'none' | 'landed' | 'note_only',
   landed: null as null | Promise<unknown>,
+  /** The landed request's door, as its row says (docs/IKKI-ESHIK.md §2.3), and whether its answer was queued. */
+  door: null as null | 'plain' | 'ai',
+  replyQueued: false,
+}));
+vi.mock('@/modules/wms/calc/intake-door', async (original) => ({
+  ...(await original<typeof import('@/modules/wms/calc/intake-door')>()),
+  requestIntakeDoor: vi.fn(async () => stub.door),
 }));
 vi.mock('@/modules/platform/telegram/send', async (original) => ({
   ...(await original<typeof import('@/modules/platform/telegram/send')>()),
@@ -50,7 +57,8 @@ vi.mock('@/modules/platform/telegram/staff-bot', async (original) => ({
   landingLinkFor: vi.fn(async () => null),
   landCollectedIntake: vi.fn(async () => {
     await stub.landed;
-    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false };
+    // The landing reads the door off the row it wrote (as-built review DOORS-3) — the stub's.
+    return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: stub.replyQueued, door: stub.door, aiAvailable: true };
   }),
 }));
 vi.mock('@/modules/platform/telegram/keyboards', () => ({
@@ -97,6 +105,7 @@ import { __resetLifecycle, bootedAtSec, markBoot } from '@/modules/platform/tele
 import { __resetBacklog, backlogSentence, tellBacklogOnce } from '@/modules/platform/telegram/backlog';
 import { __resetDrafts, startDraft } from '@/modules/platform/telegram/task-draft';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { SECTION_LABEL } from '@/modules/wms/calc/intake';
 import type { AmendBase } from '@/modules/wms/calc/amend-types';
 
@@ -418,6 +427,28 @@ describe('a landing cut off halfway (durability-3)', () => {
     expect(peekIntake(id)).toBeNull();
   });
 
+  it('the resumed ✅ says what the landed REQUEST’s door promises — read off its row; a NULL door keeps today’s (§2.3, §3.5)', async () => {
+    const cases = [
+      { door: 'plain' as const, replyQueued: true, says: '🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu yerga yuboradi.' },
+      { door: 'ai' as const, replyQueued: true, says: '🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi.' },
+      { door: 'ai' as const, replyQueued: false, says: '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.' },
+      { door: null, replyQueued: true, says: '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.' },
+    ];
+    for (const c of cases) {
+      stub.door = c.door;
+      stub.replyQueued = c.replyQueued;
+      stub.landing = 'note_only';
+      stub.landed = null;
+      const id = open(Date.now(), 5 * MIN, { stage: 'review' });
+      await runIntakeSweep(Date.now());
+      const ticks = textsTo(id).filter((t) => t.startsWith('✅'));
+      expect(ticks, `${c.door}/${c.replyQueued}`).toHaveLength(1);
+      expect(ticks[0], `${c.door}/${c.replyQueued}`).toContain(c.says);
+    }
+    stub.door = null;
+    stub.replyQueued = false;
+  });
+
   it('a press that started the landing this minute keeps the tick away', async () => {
     const now = Date.now();
     const id = open(now, 5 * MIN, { stage: 'review' });
@@ -481,7 +512,7 @@ describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', 
     vi.mocked(landCollectedIntake).mockReset();
     vi.mocked(landCollectedIntake).mockImplementation(async () => {
       await stub.landed;
-      return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false };
+      return { kind: 'deal', id: 'd-1', label: 'B-000067', leadOwnerId: null, outcome: 'retried', queued: true, requestId: 'r-1', queueError: null, replyQueued: false, door: null, aiAvailable: false };
     });
   });
 
@@ -654,14 +685,33 @@ describe('«▶️ Davom etamiz» and §2.7’s fixed words (SPEC-7)', () => {
     expect(holdingIntake(id)).toBeNull();
     const c = ctx();
     await pressResume(c as never, id);
-    expect(c.replies).toEqual([CLIENT_QUESTION]);
+    // The question once (docs/IKKI-ESHIK.md §1.5): its one message, counting
+    // what arrived, redrawn as the last — through the kept-last draw.
+    await keptLastSettled();
+    expect(c.replies).toEqual([`Qabul qilindi: ✍️ 1 ta xabar.\n\n${CLIENT_QUESTION}`]);
     expect(holdingIntake(id)).not.toBeNull();
     expect(intakeHolds(peekIntake(id)!, Date.now())).toBe(true);
   });
 
   it('the add collection’s end line and the survivor’s backlog sentence, as §2.7 prints them', () => {
-    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
       '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.',
+    );
+    // The door's words (docs/IKKI-ESHIK.md §2.5): a «🧮» request has no AI
+    // answer to press «➕» under; the AI door's and a NULL door's stay today's.
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067', door: 'plain' } as AmendBase }, SECTION_LABEL, null)).toBe(
+      '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».',
+    );
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067', door: 'ai' } as AmendBase }, SECTION_LABEL, null)).toContain(
+      'Kerak bo‘lsa ✅ yoki AI javobi ostidagi',
+    );
+    // A FIRST collection is restarted from the door it came in by (review
+    // PC-SPEC-10): an expired «🤖 AI rastamojka» was sent to the other door.
+    expect(intakeEndedText({ section: 'rastamojka', ai: true, seed: null, amend: null }, SECTION_LABEL, 'GS777')).toBe(
+      '⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: 🛃 Rastamojka · GS777. Kerak bo‘lsa «🤖 AI rastamojka» dan qaytadan boshlang.',
+    );
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: null }, SECTION_LABEL, null)).toBe(
+      '⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: 🛃 Rastamojka · mijoz hali yozilmagan. Kerak bo‘lsa «🧮 Hisoblatish» dan qaytadan boshlang.',
     );
     expect(backlogSentence(true)).toBe(
       '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. Zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.',

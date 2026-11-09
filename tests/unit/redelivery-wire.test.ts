@@ -199,7 +199,12 @@ describe('(6) the start', () => {
     const tail = start.slice(open + callAt(start, open).length + 2);
     const fin = found(tail, '.finally(');
     const body = callAt(tail, tail.indexOf('(', fin));
-    expect(body.replace(/\s+/g, ' ')).toMatch(/^\(\) => \{ markIntakesHydrated\(\); startPolling\(/);
+    // Between them, the bursts a dead process owed are drawn — fenced, never a
+    // throw into the boot (as-built review BURST-8): nothing awaited, so the
+    // first getUpdates still waits on the two restores alone.
+    expect(body.replace(/\s+/g, ' ')).toMatch(
+      /^\(\) => \{ markIntakesHydrated\(\); try \{ drawOwedBursts\(bot\.api\); \} catch \(err\) \{ logger\.warn\(.*?\); \} startPolling\(/,
+    );
   });
 
   it('the stop flushes both stores and seals the collections as it names the oldest unwritten update', () => {
@@ -272,9 +277,13 @@ describe('(8) no collector this process opened takes a backlog message', () => {
     }
   });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
+    // The offer is the burst's now (docs/IKKI-ESHIK.md §4.1): `burstDoor`
+    // first, Door B's single offer for what the burst would not take.
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));
+    expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'burstDoor('));
     expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'offerForwardTask('));
     const media = bodyOf(TASKS, 'export async function draftMedia(');
+    expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'burstDoor('));
     expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'offerForwardTask('));
   });
 });

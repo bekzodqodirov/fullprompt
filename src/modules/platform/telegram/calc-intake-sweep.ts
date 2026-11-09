@@ -20,15 +20,14 @@ import {
 import type { IntakeState } from './calc-intake';
 import {
   deliverNextStep,
+  drawPromptSoon,
   landingReplyText,
   QUEUE_REFUSAL,
   queueRefusal,
-  showIntakePrompt,
   type CalcPressCtx,
   type CollectorReply,
   type EditApi,
 } from './calc-dialog';
-import { CLIENT_QUESTION, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
 import { deliverStoredReply, pendingDeliveryAlive, readingAlive, releaseDeadReading } from './calc-read';
 import { landedReplyMarkup, releaseDeadSave, savingAlive } from './calc-amend';
 import { activeCapture } from './note-capture';
@@ -444,7 +443,14 @@ async function resumeLanding(
     const tariffFollows = target.replyQueued === true && !sectionParts(state.section).customs;
     const { replyKeyboardFor } = await import('./keyboards');
     const markup = landedReplyMarkup(target) ?? (await replyKeyboardFor(chatId));
-    await sayOrRetry({ chatId, text: landingReplyText(target, { link, tariffFollows }), replyMarkup: markup });
+    // The ✅ says what the REQUEST's door promises (docs/IKKI-ESHIK.md §2.3,
+    // §3.5) — read off the row the landing wrote, as the pass reads it; the
+    // landing reads it for both senders (as-built review DOORS-3).
+    await sayOrRetry({
+      chatId,
+      text: landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable }),
+      replyMarkup: markup,
+    });
     endIntake(chatId);
     sweepMemory.resumeFailures.delete(state.noteId);
   } catch (err) {
@@ -514,7 +520,7 @@ export function otherCollectorLive(chatId: bigint): string | null {
  * to resume, said — a caller that would write into it does not (fix review
  * FR-1).
  */
-export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<boolean> {
+export async function pressResume(ctx: CalcPressCtx, chatId: bigint, lead: string | null = null): Promise<boolean> {
   const state = activeIntake(chatId);
   if (!state) {
     await ctx.reply(NO_COLLECTION);
@@ -534,22 +540,39 @@ export async function pressResume(ctx: CalcPressCtx, chatId: bigint): Promise<bo
   }
   // The touch: the seller pressed, so the collection holds the chat again.
   updateIntake(chatId, {});
-  if (state.stage === 'section') {
-    await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', { reply_markup: zoneKeyboard(await pricedZonesNow()) });
+  if (state.stage === 'section' || state.stage === 'client' || state.stage === 'material') {
+    // The open question or the prompt, redrawn ONCE as the last message
+    // (docs/IKKI-ESHIK.md §1.4-§1.6) — the pressed notice is newer, so it
+    // moves below it. The press ctx carries the api in production (grammy's
+    // own); a test's fake without one gets a fresh copy.
+    // `lead`: a door's one line on top (▶️'s «Davom etamiz.» when its take read
+    // nothing) — the draw's own lead, so whichever call of the burst draws
+    // says it (§1.4 as built, as-built review BURST-7).
+    drawPromptSoon(ctx as CalcPressCtx & { api?: EditApi }, chatId, lead);
     return true;
   }
-  if (state.stage === 'client') {
-    await ctx.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
-    return true;
-  }
-  if (state.stage === 'material') {
-    // The press ctx carries the api in production (grammy's own); a prompt
-    // that cannot be edited is sent fresh, which is all a test's fake does.
-    await showIntakePrompt(ctx as CalcPressCtx & { api: EditApi }, chatId, state);
-    return true;
-  }
-  await deliverNextStep(ctx, chatId, state);
+  // The table is sent at once, so the line opens its FIRST message.
+  await deliverNextStep(lead ? headed(ctx, lead) : ctx, chatId, state);
   return true;
+}
+
+/**
+ * The FIRST message a speaker sends opens with `head` — a door's one line,
+ * printed as the first line of what it answers with, never as a message of
+ * its own (§1.4). Only for a step sent at once (`deliverNextStep`): a
+ * kept-last draw takes the line as its lead instead, since it runs with the
+ * newest call's ctx (as-built review BURST-7).
+ */
+function headed<S extends CollectorReply>(sp: S, head: string): S {
+  let said = false;
+  const reply: CollectorReply['reply'] = (text, extra) => {
+    const first = !said;
+    said = true;
+    return sp.reply(first ? `${head}\n${text}` : text, extra);
+  };
+  // Over the speaker, never a copy of it: a grammy ctx carries its
+  // `callbackQuery` and `chat` as prototype getters a spread would drop.
+  return Object.assign(Object.create(sp) as S, { reply });
 }
 
 /**

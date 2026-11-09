@@ -27,8 +27,7 @@ import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-ta
 import { clipText } from '@/modules/platform/telegram/format';
 import { kickPriceChannel, queuePriceChannelPost } from './channel-queue';
 import { insertActivityTx } from '../crm/service';
-import { productKey, tnvedFor } from '../tnved/service';
-import { NO_REQUEST, itemNameNorm, sealedMemoryFor } from './memory';
+import { itemNameNorm } from './memory';
 import {
   isComplete,
   lineNeeds,
@@ -37,10 +36,13 @@ import {
   type CalcFacts,
   type CalcGoodsFact,
   type CalcSection,
+  type IntakeDoor,
   type LineNeed,
 } from './intake';
+import { intakeDoorSql, parseIntakeDoor, stampIntakeDoorInTx, writableIntakeDoor } from './intake-door';
 import { bookLawsFor } from './book-laws';
 import { doorRow } from './door-row';
+import { codedNote, codeRows, type TnvedSource } from './row-coding';
 import { linesVolumeM3 } from './line-totals';
 import { groupLawsOf, type NeedLaw } from './needs';
 import type { AmendBase } from './amend-types';
@@ -229,6 +231,12 @@ export interface CalcItemInput {
   amount?: number | null;
   currency?: string | null;
   tnvedCode?: string | null;
+  /**
+   * Where `tnvedCode` came from, when a door knows (the bot's reading,
+   * docs/IKKI-ESHIK.md §3.1): 'model' lands the row with `AI_CODE_NOTE`.
+   * Absent = the row's own, as every other door has always meant it.
+   */
+  tnvedSource?: TnvedSource;
   note?: string | null;
 }
 
@@ -246,6 +254,16 @@ export interface CalcRequestInput {
   /** A note already written — the bot path, where `landIntake` wrote it. */
   noteId?: string | null;
   source: 'card' | 'bot';
+  /**
+   * Which of the bot's two doors the job came in through (0141,
+   * docs/IKKI-ESHIK.md §0.1): 'plain' = «🧮 Hisoblatish», 'ai' = «🤖 AI
+   * rastamojka», null = no bot door — the card form, the thread door, the AI
+   * sotuvchi — which every reader treats exactly as today (§0.2). REQUIRED,
+   * not optional: every caller names its door or fails to compile, because
+   * an optional one fails OPEN (an absent door would silently read «legacy»
+   * on a door that has one).
+   */
+  intakeDoor: IntakeDoor | null;
   /** Set by the bot, which acts for the staff member who collected. */
   hasMaterials?: boolean;
   /**
@@ -435,27 +453,21 @@ export async function openCalcRequest(
     }
   }
 
-  /**
-   * THE TWO MEMORIES, in the owner's own order (his 2026-09-05 answer).
-   *
-   * 1. What a VED SEALED, matched by NAME similarity — the company's own
-   *    confirmed answer about this product, and the first place to look.
-   * 2. The exact-key TNVED memory (#1.5's rule), for a name written the same
-   *    way as last time.
-   *
-   * Only the CODE is taken here. The baza is the workspace's sweep to fill
-   * (`saveTable`), where the group's law says which unit may price the row —
-   * a price without that check is a number in the wrong unit.
-   */
   // ONE normalisation for every door (P1.2): the number into the column its
   // unit names, the code shape-checked — the kernel's two rules, applied by
   // `doorRow` and by nothing else, so a card row, a bot row, a thread row
   // and an invoice row of the same goods land the same columns.
   const rows = input.items.map((item) => doorRow(item));
-  const [known, sealedMemory] = await Promise.all([
-    tnvedFor(rows.map((row) => row.name)),
-    sealedMemoryFor(rows.map((row) => row.name), { excludeRequestId: NO_REQUEST }),
-  ]);
+  // The code by the ONE coding function the bot's reading also asks
+  // (`row-coding.ts`, docs/IKKI-ESHIK.md §3.1): the row's own, else what a
+  // VED sealed, else the exact-key book — the owner's order. A code the
+  // collection already carries is the row's own here, with the source it
+  // carries: the reading ran the same order before the table asked the
+  // code's unit, so this stores the code that unit was asked for. One the
+  // model proposed lands with `AI_CODE_NOTE`. Pooled, before the transaction.
+  const coded = await codeRows(
+    rows.map((row, i) => ({ name: row.name, own: row.tnvedCode, ownSource: input.items[i]!.tnvedSource ?? null, model: null })),
+  );
   const items = rows.map((row, i) => ({
     seq: i + 1,
     name: row.name,
@@ -468,16 +480,12 @@ export async function openCalcRequest(
     measureQty: num(row.measureQty),
     amount: num(input.items[i]!.amount),
     currency: input.items[i]!.currency?.slice(0, 8) || null,
-    tnvedCode:
-      row.tnvedCode ||
-      sealedMemory.get(itemNameNorm(row.name))?.tnvedCode ||
-      known.get(productKey(row.name))?.tnvedCode ||
-      null,
+    tnvedCode: coded[i]!.code,
     // `memory_item_id` is deliberately NOT written here. It names the seal a
     // BAZA was copied from, and no baza is filled at intake — the workspace's
     // first save does that, under the group's own law, and writes the
     // provenance in the same statement. One column, one fact.
-    note: row.note,
+    note: codedNote(row.note, coded[i]!.source),
   }));
 
   // The shipment's m³: the seller's, else SUMMED from the door-routed lines
@@ -501,6 +509,10 @@ export async function openCalcRequest(
 
   // Pooled, so BEFORE the transaction (#714); the pick itself is inside it.
   const pool = await vedRotaPool();
+  // The door, written only once 0141 has landed (§0.4): on an older schema
+  // the INSERT leaves it out and every reader reads NULL — never a refused
+  // landing. The probe is pooled, so it is asked here, before the transaction.
+  const door = await writableIntakeDoor(input.intakeDoor);
   const hasMaterials = Boolean(noteId) || Boolean(input.hasMaterials);
   const dueAt = new Date(Date.now() + calcDueMinutes(items.length, hasMaterials) * 60_000);
 
@@ -563,6 +575,7 @@ export async function openCalcRequest(
       })
       .returning({ id: calcRequests.id });
     const id = row!.id;
+    if (door) await stampIntakeDoorInTx(tx, id, door);
     if (items.length > 0) {
       await tx.insert(calcRequestItems).values(items.map((item) => ({ ...item, requestId: id })));
     }
@@ -1758,6 +1771,8 @@ export { isComplete };
 export async function storedRequestFacts(requestId: string): Promise<{
   base: AmendBase;
   facts: CalcFacts;
+  /** The bot door it came in through (0141, §0.3) — null = legacy, today's behaviour. */
+  door: IntakeDoor | null;
   rev: number;
   handsoffRev: number | null;
   aiPassRev: number | null;
@@ -1789,6 +1804,8 @@ export async function storedRequestFacts(requestId: string): Promise<{
         completedVia: calcRequests.completedVia,
         returnReason: calcRequests.returnReason,
         answerAmount: calcRequests.answerAmount,
+        // Through the one reader fragment — NULL, not 42703, one migration behind.
+        intakeDoor: intakeDoorSql(calcRequests),
         dealCode: deals.code,
         clientCode: clients.clientCode,
         clientName: clients.name,
@@ -1860,6 +1877,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
     totalsStored: true,
   };
   const deal = row.entityType === 'deal';
+  const door = parseIntakeDoor(row.intakeDoor);
   const clientLabel = deal
     ? [row.clientCode, row.clientName].filter((v): v is string => !!v?.trim()).join(' ') || null
     : [row.leadName, row.leadPhone].filter((v): v is string => !!v?.trim()).join(' ') || null;
@@ -1870,6 +1888,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
     entityId: row.entityId,
     leadOpen: deal ? null : row.leadKind === 'open',
     section: row.section,
+    door,
     clientLabel,
     openedRev: row.rev,
     items: goods.map((g, k) => ({
@@ -1894,6 +1913,7 @@ export async function storedRequestFacts(requestId: string): Promise<{
   return {
     base,
     facts,
+    door,
     rev: row.rev,
     handsoffRev: row.handsoffRev,
     aiPassRev: row.aiPassRev,

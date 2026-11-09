@@ -3,8 +3,9 @@ import { logger } from '../logger';
 import { reachLine } from '../notifications/staff';
 import { appendLine, keyboardOf, staffTextHtml, urlRowsOf, withoutButton } from '../notifications/staff-html';
 import { parseDue } from '../tasks/service';
-import { holdingIntake } from './calc-store';
+import { activeIntake, holdingIntake } from './calc-store';
 import { addOfferRows } from './calc-amend';
+import { pauseKeyboard, pauseLine } from './calc-dialog';
 import { activeCapture } from './note-capture';
 import { editMarkup, editText, sendText } from './send';
 import { REPLY_SENTENCES, threadReplyFromBot } from './reply-door';
@@ -13,6 +14,20 @@ import { isBacklog } from './lifecycle';
 import { tellBacklogOnce } from './backlog';
 import { messageKey, pressKey } from './once';
 import { flushWaitWrites, nowSec } from './waits';
+import { burstDoor } from './burst';
+import {
+  BURST_GONE,
+  BURST_IN_TASK,
+  BURST_TASK_CAP,
+  burstAnswering,
+  burstOneText,
+  endBurst,
+  goneBurst,
+  markBurstTaken,
+  offeredCount,
+  type BurstPart,
+  type BurstPayload,
+} from './burst-wait';
 import {
   acceptTaskFromBot,
   answerFromBot,
@@ -54,7 +69,6 @@ import {
   draftTitle,
   dueFromButton,
   endDraft,
-  forwardAlbumOf,
   lateAckDue,
   lingerFor,
   noteForwardPart,
@@ -124,6 +138,8 @@ export async function startTaskDraft(
   ctx: Context,
   chatId: bigint,
   seed: Parameters<typeof startDraft>[1] = {},
+  /** A line the draft's FIRST question opens with — a burst's cap, said where the seller reads it (review PB-ADV-7). */
+  head: string | null = null,
 ): Promise<boolean> {
   if (holdingIntake(chatId)) {
     await ctx.reply('Hozir hisoblatish davom etyapti. Avval uni tugating yoki bekor qiling.');
@@ -145,9 +161,21 @@ export async function startTaskDraft(
     return false;
   }
   dropTaskPending(chatId);
+  // A draft opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1).
+  endBurst(chatId);
   const draft = startDraft(chatId, seed);
-  await promptFor(sayIn(ctx), chatId, draft, staff.id);
+  await promptFor(head ? headedSay(sayIn(ctx), head) : sayIn(ctx), chatId, draft, staff.id);
   return true;
+}
+
+/** A sayer whose FIRST sentence opens with `head` — one message, never a line of its own below the question. */
+function headedSay(say: Say, head: string): Say {
+  let said = false;
+  return (text, keyboard) => {
+    const first = !said;
+    said = true;
+    return say(first ? `${head}\n${text}` : text, keyboard);
+  };
 }
 
 /** Whatever the draft is waiting for, asked again — one function, so the wording cannot drift. */
@@ -371,11 +399,16 @@ export async function draftText(ctx: Context, chatId: bigint, draft: TaskDraft):
 /** A part of what the author sent, taken into the draft — then the next question. */
 export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft, part: DraftPart): Promise<void> {
   const firstOfAlbum = Boolean(part.mediaGroupId) && !Object.hasOwn(draft.albums, part.mediaGroupId!);
-  const next = updateDraft(chatId, { ...withPart(draft, part, Number(chatId)) })!;
-  if (next.dropped > 0 && draft.dropped === 0) {
-    // The first part past the cap, said ONCE (review bot-11): one
+  // THIS part went past the cap (as-built review BURST-2): it travels to
+  // nobody, so it is never «📎 Qabul qilindi».
+  const withIt = withPart(draft, part, Number(chatId));
+  const droppedNow = withIt.dropped > draft.dropped;
+  const next = updateDraft(chatId, { ...withIt, ...(droppedNow ? { capSaid: true } : {}) })!;
+  if (droppedNow && !draft.capSaid) {
+    // The first part past the cap, said ONCE per draft (review bot-11): one
     // forwardMessages call carries ten, and the rest were going nowhere in
-    // silence.
+    // silence. A draft seeded at the cap (a burst's «📌») says it too, to the
+    // first part he RESENDS: that one went nowhere either.
     await ctx.reply(`⚠ Bitta topshiriqqa ko‘pi bilan ${MAX_DRAFT_SOURCES} ta xabar qo‘shiladi — qolganlari hodimga yuborilmaydi.`);
   }
   // An album is N updates: its settle timer is armed at EVERY stage. Armed
@@ -384,8 +417,9 @@ export async function addToDraft(ctx: Context, chatId: bigint, draft: TaskDraft,
   if (part.mediaGroupId) armAlbumTimer(chatId, part.mediaGroupId);
   if (next.stage === 'who') {
     // Sent before the person was picked: kept, and the question stands —
-    // said once per album, never once per photo.
-    if (!part.mediaGroupId || firstOfAlbum) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
+    // said once per album, never once per photo. A part the cap dropped was
+    // not kept: the cap's line answered it.
+    if (!droppedNow && (!part.mediaGroupId || firstOfAlbum)) await ctx.reply('📎 Qabul qilindi. Endi kimga ekanini tanlang.');
     return;
   }
   // The due keyboard waits until the album has settled; the timer shows it.
@@ -528,6 +562,10 @@ export async function draftMedia(ctx: Context, chatId: bigint): Promise<boolean>
       await tellBacklogOnce(ctx, chatId);
       return true;
     }
+    // A forward joins the chat's burst (docs/IKKI-ESHIK.md §4.1): forwards
+    // in a row get ONE offer, kept last, acting on all of them. A colleague's
+    // contact card ENDS a burst (it is no forward) and keeps Door B's own.
+    if (part.forwarded && (await burstDoor(ctx as never, chatId)) !== 'none') return true;
     await offerForwardTask(ctx, chatId, part.mediaGroupId ?? null);
     return true;
   }
@@ -560,11 +598,17 @@ export async function offerForwardTask(ctx: Context, chatId: bigint, mediaGroupI
 }
 
 /**
- * Door B's two buttons. Both read the forwarded message off the press's own
- * `reply_to_message` — no memory needed for a single message, so a deploy
- * between the forward and the press loses nothing. «🔍 Qidirish» replays
- * TODAY's whole tail on its words (lookup, codes, notes, the AI), so nobody
- * loses the old behaviour of a forwarded text.
+ * Door B's two buttons. Under a burst's ONE message (docs/IKKI-ESHIK.md §4.1)
+ * they act on the WHOLE burst, read from the durable wait by the pressed
+ * message: «📌» takes EVERY part the message counted — a plain photo or file
+ * beside the forwards is a source too, the draft's own rule (`withPart`), or
+ * «5 ta xabar (3 tasi fayl)» would lose three of them unsaid (review
+ * PB-ADV-2) — and «🔍» searches its one text. Under any other — Door B's
+ * single offer, or a burst whose wait is gone (expired, or older than the
+ * row) — they read the forwarded message off the press's own
+ * `reply_to_message`, and SAY when the offer spoke for more than that one.
+ * «🔍 Qidirish» replays TODAY's whole tail on its words (lookup, codes,
+ * notes, the AI), so nobody loses the old behaviour of a forwarded text.
  */
 export async function handleForwardCallback(
   ctx: Context,
@@ -575,7 +619,9 @@ export async function handleForwardCallback(
   await answerPress(ctx);
   const asked = ctx.callbackQuery?.message;
   const original = asked && 'reply_to_message' in asked ? asked.reply_to_message : undefined;
-  if (!original) {
+  const burst = asked ? burstAnswering(chatId, asked.message_id) : null;
+  const gone = asked && !burst ? goneBurst(chatId, asked.message_id) : null;
+  if (!burst && !original) {
     await ctx.reply('Asl xabar topilmadi — uni qaytadan yo‘naltiring.');
     return;
   }
@@ -588,10 +634,18 @@ export async function handleForwardCallback(
     await ctx.reply(BUSY_DRAFT);
     return;
   }
-  // The question goes: it has been answered.
-  if (asked) void editMarkup({ chatId, messageId: asked.message_id }).catch(() => {});
+  // A burst already made a draft: a second «📌» — from a copy that could not
+  // be deleted, or a question asked about it — is no second task of the same
+  // messages (review PB-ADV-3).
+  if (step === 'task' && (burst?.intoTask || gone?.intoTask)) {
+    await ctx.reply(BURST_IN_TASK);
+    return;
+  }
   if (step === 'search') {
-    const text = (original.text ?? original.caption ?? '').trim();
+    // The question goes: it has been answered — under a burst, only its
+    // «🔍»: the ➕ and «📌» rows still act on every part (review PB-ADV-2).
+    if (asked) void editMarkup({ chatId, messageId: asked.message_id, replyMarkup: burst ? withoutSearch(asked) : undefined }).catch(() => {});
+    const text = burst ? (burstOneText(burst.parts) ?? '') : (original!.text ?? original!.caption ?? '').trim();
     if (!text) {
       await ctx.reply('Bu xabarda qidiradigan matn yo‘q.');
       return;
@@ -599,24 +653,14 @@ export async function handleForwardCallback(
     await replayTail(text);
     return;
   }
-  const part = partOf(original as NonNullable<Context['message']>);
-  const album = forwardAlbumOf(chatId, original.media_group_id);
-  let seed = withPart(startDraftSeed(), part, Number(chatId));
-  let withoutFile = 0;
-  if (album) {
-    // The album's other parts, each with the file it arrived with — the web
-    // gets the whole album, and an oversized one lands in `tooBig` to be
-    // told (review bot-4).
-    for (const other of album) {
-      if (other.messageId === original.message_id) continue;
-      if (!other.file) withoutFile += 1;
-      seed = withPart(
-        seed,
-        { messageId: other.messageId, forwarded: true, kind: other.kind ?? part.kind ?? null, file: other.file },
-        Number(chatId),
-      );
-    }
+  if (burst) {
+    await draftFromBurst(ctx, chatId, burst, asked?.message_id ?? null);
+    return;
   }
+  // The question goes: it has been answered.
+  if (asked) void editMarkup({ chatId, messageId: asked.message_id }).catch(() => {});
+  const part = partOf(original as NonNullable<Context['message']>);
+  const seed = withPart(startDraftSeed(), part, Number(chatId));
   const started = await startTaskDraft(ctx, chatId, {
     sources: seed.sources,
     files: seed.files,
@@ -627,12 +671,72 @@ export async function handleForwardCallback(
     tooBig: seed.tooBig,
   });
   if (!started) return;
-  if (original.media_group_id && !album) {
-    // The map is memory and a deploy took it: SAY so, never drop parts in silence.
-    await ctx.reply('⚠ Albomning faqat 1 ta qismi qo‘shildi — qolganlarini qaytadan yo‘naltiring.');
-  } else if (withoutFile > 0) {
-    await ctx.reply(`⚠ Albomning ${withoutFile} ta qismi saytga yuklanmaydi — faqat Telegramda yuboriladi.`);
+  // The wait is gone and only the replied-to message was taken: SAY so,
+  // never drop the burst's other parts in silence.
+  const said = asked && 'text' in asked ? asked.text : undefined;
+  if (original!.media_group_id || (gone?.parts ?? offeredCount(said)) > 1) await ctx.reply(BURST_GONE);
+}
+
+/**
+ * «📌» on a burst's ONE message: a draft of every part — the first
+ * `MAX_DRAFT_SOURCES` as its sources, and a part's file only beside its
+ * source: the parts past the cap reach neither the assignee nor the site,
+ * as the cap's line says, and the draft knows they were dropped so a later
+ * forward does not say the cap again (review PB-SPEC-6, PB-ADV-7). The cap
+ * is the FIRST line of the draft's question, never a line below it.
+ *
+ * The pressed message has answered: an offer loses its buttons (Door B's
+ * own idiom); the pause line becomes the parked collection's plain one —
+ * the parts went to the task, so «bu xabar unga qo‘shilmadi» is now true,
+ * and its «▶️» / «✖️» still act on the collection.
+ */
+async function draftFromBurst(ctx: Context, chatId: bigint, burst: BurstPayload, pressedId: number | null): Promise<void> {
+  const fits = burst.parts.slice(0, MAX_DRAFT_SOURCES);
+  let seed = startDraftSeed();
+  for (const p of fits) seed = withPart(seed, draftPartOf(p), Number(chatId));
+  const dropped = burst.parts.length - fits.length;
+  const started = await startTaskDraft(
+    ctx,
+    chatId,
+    {
+      sources: seed.sources,
+      files: seed.files,
+      texts: seed.texts,
+      facts: seed.facts,
+      firstKind: seed.firstKind,
+      firstForwarded: seed.firstForwarded,
+      tooBig: seed.tooBig,
+      dropped,
+    },
+    dropped > 0 ? BURST_TASK_CAP(MAX_DRAFT_SOURCES) : null,
+  );
+  if (!started) return;
+  markBurstTaken(chatId, burst.id, { task: true });
+  if (pressedId === null) return;
+  const parked = activeIntake(chatId);
+  if (parked && burst.parkedNote === parked.noteId) {
+    void ctx.api
+      .editMessageText(String(chatId), pressedId, pauseLine(parked.stage, false), { reply_markup: pauseKeyboard() })
+      .catch((err: unknown) => logger.info({ err }, '[burst] pause line not redrawn after 📌'));
+  } else {
+    void editMarkup({ chatId, messageId: pressedId }).catch(() => {});
   }
+}
+
+/** The pressed message's own keyboard less its «🔍 Qidirish» — what a burst's other buttons still need. */
+function withoutSearch(asked: object): unknown {
+  const keyboard = (asked as { reply_markup?: { inline_keyboard?: { callback_data?: string }[][] } }).reply_markup?.inline_keyboard ?? [];
+  const rows = keyboard.map((row) => row.filter((b) => b.callback_data !== 'fb:search')).filter((row) => row.length > 0);
+  return rows.length > 0 ? { inline_keyboard: rows } : undefined;
+}
+
+/** A burst's forward as a draft part: a forward's words stay out of the note (access-money-12). */
+function draftPartOf(p: BurstPart): DraftPart {
+  const file =
+    p.fileId !== null && p.kind !== null && p.kind !== 'contact' && p.kind !== 'location'
+      ? { fileId: p.fileId, name: p.name, mime: p.mime, size: p.size }
+      : null;
+  return { messageId: p.messageId, forwarded: p.forwarded, kind: p.kind, file, text: p.forwarded ? null : p.text, fact: p.fact ?? null };
 }
 
 /** An empty draft shape to fold Door B's parts into before the real draft starts. */

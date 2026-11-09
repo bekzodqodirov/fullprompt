@@ -5,6 +5,7 @@ import { enqueue, jobState, type JobState } from '../jobs/boss';
 import {
   analyzeCollected,
   answeredRoute,
+  codeCollectedGoods,
   mergeTotalsAnswer,
   placeByName,
   sameRouteAnswer,
@@ -22,9 +23,17 @@ import {
   nothingNewToRead,
   updateIntake,
 } from './calc-store';
-import { loadIntakeFiles, invoiceChoiceKeyboard, otherFilesKeyboard } from './calc-files';
-import { deliverNextStep, intakeNextStep, tableContext, tableHashOf, type CollectorReply } from './calc-dialog';
-import { CLIENT_QUESTION, doneKeyboard, pricedZonesNow, zoneKeyboard } from './calc-keyboards';
+import { loadIntakeFiles } from './calc-files';
+import {
+  deliverNextStep,
+  drawPromptSoon,
+  intakeNextStep,
+  tableContext,
+  tableHashOf,
+  type CollectorReply,
+  type EditApi,
+} from './calc-dialog';
+import { doneKeyboard } from './calc-keyboards';
 import { bootedAtSec, isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
 
@@ -64,7 +73,14 @@ export const INTAKE_FILES_BUDGET_MS = 30_000;
  */
 export const INTAKE_DELIVERY_RESERVE_MS = 70_000;
 /** The book's laws, the settle's flush and the bill. */
-export const INTAKE_STEP_SLACK_MS = 30_000;
+export const INTAKE_STEP_SLACK_MS = 20_000;
+/**
+ * The reading's coding of the rows (docs/IKKI-ESHIK.md §3.1): two pooled
+ * reads — the sealed memory and the exact-key book — for every row without a
+ * code of its own. Past it the reading keeps the codes it has. Taken out of
+ * the slack, which was sized when the laws read was its biggest step.
+ */
+export const INTAKE_CODING_BUDGET_MS = 10_000;
 /**
  * How long a job fetched in the boot window waits for this process to hydrate
  * the collections (durability-9) — normally milliseconds. ONE home, the
@@ -157,22 +173,15 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     return;
   }
   if (state.stage === 'client' || state.stage === 'section') {
-    await ctx.reply(
-      state.stage === 'client' ? CLIENT_QUESTION : 'Avval yuk qayerdan chiqishini tanlang.',
-      state.stage === 'client' ? { parse_mode: 'Markdown' } : { reply_markup: zoneKeyboard(await pricedZonesNow()) },
-    );
+    // The open question, asked ONCE (docs/IKKI-ESHIK.md §1.5, §1.6): its one
+    // message is redrawn as the last one, never a second copy.
+    drawPromptSoon(ctx as CollectorReply & { api?: EditApi }, chatId);
     return;
   }
-  if (state.pendingInvoice) {
-    await sayOwn(ctx, chatId, 'Avval ikkinchi fayl haqida javob bering:', { reply_markup: invoiceChoiceKeyboard() });
-    return;
-  }
-  if (state.aiGoods === 'ask') {
-    await sayOwn(ctx, chatId, 'Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?', {
-      reply_markup: otherFilesKeyboard(),
-    });
-    return;
-  }
+  // «Bo‘ldi» is never refused because of a file (his 1a, docs/IKKI-ESHIK.md
+  // §1.1): the two file questions it waited for are gone, and a collection
+  // hydrated holding one was resolved before it reached memory
+  // (`migrateIntakeState`).
   if (state.material.length === 0 && state.fileCount === 0) {
     // A collection that carries rows of its own — an add collection's stored
     // rows, a seeded one's returned rows — reaches the table with NO material
@@ -251,8 +260,8 @@ async function refuseStart(ctx: CollectorReply, chatId: bigint, token: string): 
 }
 
 /**
- * A message whose buttons the dispatcher judges by `ownsPress` («Bo‘ldi»,
- * the invoice and other-files choices): it joins `ownMessageIds`, or every
+ * A message whose buttons the dispatcher judges by `ownsPress` («Bo‘ldi»):
+ * it joins `ownMessageIds`, or every
  * button on it answers «Bu tugma eskirgan.» under the very sentence that asked
  * for the press (review adv-1). A refused send is logged, never thrown.
  */
@@ -321,6 +330,15 @@ export function settleAnalysis(
     // The live totals answer too, when it is new (above).
     facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
     lineAnswers: placed.entries,
+    // The add reading's restated rows (his 1a, docs/IKKI-ESHIK.md §1.1): the
+    // stored figure stands and the file's goes to the VED, named on the
+    // summary and in the save's note. Dropped here, `...live` put back the
+    // collection's old list and the file's figure was lost to both (as-built
+    // review CHAT-1). A choice the live collection holds for the same row,
+    // field and read figure stands, as the reading's own rule keeps it.
+    conflicts: analysed.conflicts.map(
+      (c) => live.conflicts.find((x) => x.itemId === c.itemId && x.field === c.field && x.read === c.read) ?? c,
+    ),
     steps: analysed.steps,
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,
@@ -335,6 +353,8 @@ export function settleAnalysis(
       : analysed.ambiguousTotals,
     analysing: null,
     stage: arrived > 0 ? 'material' : 'review',
+    // What this reading read (§1.4): the next «is anything new?» is asked against it.
+    readMark: { material: snapshot.material.length, files: snapshot.fileCount },
   };
   return arrived > 0 ? { kind: 'arrived', state, arrived } : { kind: 'done', state };
 }
@@ -462,7 +482,7 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
   // answer could not be stored, and the next process reads again anyway.
   if (isStopping()) return handOn(deadline);
   const { INTAKE_TIMEOUT_MS } = await import('../../wms/calc/intake-ai');
-  const leash = Math.min(INTAKE_TIMEOUT_MS, deadline - Date.now() - INTAKE_DELIVERY_RESERVE_MS);
+  const leash = Math.min(INTAKE_TIMEOUT_MS, deadline - Date.now() - INTAKE_DELIVERY_RESERVE_MS - INTAKE_CODING_BUDGET_MS);
   // Too little left to read well: the model is not called (a leash of nothing
   // is no call) and the reading settles as R1's «timeout», in words.
   const analysed = await analyzeCollected(state, files, { timeoutMs: leash < INTAKE_MIN_LEASH_MS ? 0 : leash });
@@ -497,25 +517,36 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
   // the same answer again (review adv-12). It is the reading's end, said once.
   let pendingReply: NonNullable<IntakeState['pendingReply']>;
   try {
+    // The rows coded FIRST (docs/IKKI-ESHIK.md §3.1), on the pool and under
+    // its own budget: the laws below are read for the codes the rows will
+    // carry, so the unit the table asks is the law of the code the INSERT
+    // stores. It never throws — past its budget it keeps the codes it has.
+    const coded = await codeCollectedGoods(analysed, { timeoutMs: INTAKE_CODING_BUDGET_MS });
     // The laws on the pool BEFORE the live collection is taken: from here to
     // the store's write nothing is awaited, so no press can land in between
     // and the words stored are the words of the state stored (K's review, U4).
     // The table's own context (laws, the wms module, an addition's stale
     // totals): the table this job sends is the one every later edit redraws.
-    const tc = await tableContext(analysed);
-    const outcome = settleAnalysis(activeIntake(chatId), state, analysed, data.token);
+    const tc = await tableContext(coded);
+    const outcome = settleAnalysis(activeIntake(chatId), state, coded, data.token);
     if (outcome.kind === 'gone') return;
     let patch: Partial<IntakeState>;
     let text: string;
     let keyboard: InlineKeyboard | null;
     if (outcome.kind === 'arrived') {
-      patch = outcome.state;
+      // The reading settles the prompt (§1.4) here too: these words carry
+      // their own «Bo‘ldi», and the next material draws a new prompt below.
+      patch = { ...outcome.state, promptMessageId: null };
       text = arrivedWords(outcome.arrived);
       keyboard = doneKeyboard;
     } else {
       // No keyboard is built here: the step's own (the derived `c:` fence reads
       // every button where it is built).
-      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
+      const step = intakeNextStep(outcome.state, tc.laws, tc.intake, {
+        stale: tc.stale,
+        nameWord: tc.nameWord,
+        aiAvailable: tc.aiAvailable,
+      });
       patch = { ...outcome.state, ...step.patch };
       text = step.text;
       keyboard = step.keyboard;
@@ -643,12 +674,17 @@ function settleDelivered(chatId: bigint, reply: NonNullable<IntakeState['pending
   // Decided by the reply as stored, not by the stage now — the seller may have
   // typed since, and a table did go out.
   const table = ours && messageId !== null && !isArrivedReply(reply);
+  // The «arrived» words carry the collection's «Bo‘ldi» — they ARE its prompt
+  // (§1.4, review PC-SPEC-6 / PC-ADV-9): recorded so, the next material moves
+  // them below it instead of drawing a second «Bo‘ldi» under a live one.
+  const prompt = ours && messageId !== null && isArrivedReply(reply);
   updateIntake(
     chatId,
     {
       ...(ours ? { pendingReply: null } : {}),
       ...(ours && live.analysing === reply.token ? { analysing: null } : {}),
       ...(table ? { tableMessageId: messageId, tableHash: tableHashOf(reply) } : {}),
+      ...(prompt ? { promptMessageId: messageId } : {}),
     },
     { quiet: true },
   );

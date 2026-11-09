@@ -1,5 +1,6 @@
 import type PgBoss from 'pg-boss';
 import { randomUUID } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { Message } from 'grammy/types';
 import type { AmendBase, AmendSubmission } from '../../wms/calc/amend-types';
 import type { AmendChange, AmendOutcome, AmendRowAnswer, AmendStanding, CalcAmendmentRow } from '../../wms/calc/amend';
@@ -19,26 +20,45 @@ import {
   loadIntake,
   noteOwnMessage,
   notTaking,
+  ownsPress,
   startIntake,
   updateIntake,
 } from './calc-store';
 import {
+  clientQuestionText,
   deliverNextStep,
+  drawPromptSoon,
+  editTableSoon,
+  pauseKeyboard,
   routeCollectorText,
   showIntakePrompt,
+  type CalcPressCtx,
   type CollectorReply,
   type EditApi,
   type PressCtx,
 } from './calc-dialog';
-import { fileOf, readIntakeFile, saveIntakeFile, type BotFile } from './calc-files';
-import { CLIENT_QUESTION } from './calc-keyboards';
-import { isBacklog } from './lifecycle';
+import { fileOf, readIntakeFile, refusalOf, saveIntakeFile, type BotFile } from './calc-files';
+import {
+  aliasBurst,
+  BURST_GONE,
+  BURST_IN_REQUEST,
+  BURST_NONE_TAKEN,
+  burstAnswering,
+  burstCounts,
+  goneBurst,
+  isFilePart,
+  markBurstTaken,
+  offeredCount,
+  takenWords,
+  type BurstPart,
+  type BurstPayload,
+} from './burst-wait';
 import { activeCapture, refuseWhileCapturing } from './note-capture';
 import { claimOnce, type OnceKey } from './once';
 import { answerPress } from './press';
 import { botCall, sendText } from './send';
 import { staffForChat } from './staff-bot';
-import { activeDraft, forwardAlbumOf } from './task-draft';
+import { activeDraft } from './task-draft';
 
 /**
  * «➕ Shu so‘rovga qo‘shish» — the add door (docs/SAKKIZ-R3.md §9, his 1.9 a):
@@ -96,6 +116,12 @@ export const SAVE_WORDS = {
   empty:
     'Hech narsa o‘zgarmadi — qatorga javob yozing («3: 50 dona») yoki «➕ Yana ma’lumot» bilan fayl yoki tovar yuboring.',
   aiLine: '\n🤖 AI qayta hisoblayapti — natija shu yerga keladi.',
+  /**
+   * A «🧮» request's re-run (docs/IKKI-ESHIK.md §2.4, §2.6): silent toward the
+   * seller — the AI prepares the card for the VED, and the VED prices it — so
+   * nothing here promises a result in the chat.
+   */
+  plainLine: '\n🤖 AI kartani VED uchun qayta tayyorlaydi — narxni VED beradi.',
   tariffLine: '\n🧮 Yo‘lkira tarif bo‘yicha qayta hisoblanmoqda — natija shu yerga keladi.',
   queueRefused: '\n⚠️ Qayta hisoblash navbatga tushmadi — narxni VED beradi.',
 } as const;
@@ -229,6 +255,9 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
     doubtedTotals,
     material: [...state.material, ...state.answers],
     fileCount: state.fileCount,
+    // The receipt-time notes — a noted packing list's totals among them —
+    // reach the VED, as a seeded landing's do (fix review FR-SELL-6).
+    ...((state.fileNotes ?? []).length > 0 ? { fileNotes: [...state.fileNotes] } : {}),
   };
 }
 
@@ -293,6 +322,19 @@ async function refuse(sp: Speaker, words: string, extra?: Record<string, unknown
 // ---------------------------------------------------------------------------
 
 type Stored = NonNullable<Awaited<ReturnType<typeof import('../../wms/calc/service').storedRequestFacts>>>;
+
+/**
+ * The `ai` flag of a collection opened ON a stored request — the ➕ add door
+ * and the seeded door (docs/IKKI-ESHIK.md §0.3). The request's door decides:
+ * 'plain' → false, 'ai' → true. NULL is legacy — every request before 0141,
+ * the card form's, the thread's, the agent's — and keeps exactly the flag that
+ * door set before 0141 (`legacy`), so nothing a NULL request opens changes.
+ */
+export function collectionAiOf(door: 'plain' | 'ai' | null | undefined, legacy: boolean): boolean {
+  if (door === 'plain') return false;
+  if (door === 'ai') return true;
+  return legacy;
+}
 
 /**
  * The sweep's «▶️», reached dynamically: calc-intake-sweep.ts imports this
@@ -391,7 +433,10 @@ async function openDoor(
     // A reading running: the resume says «kuting», never «davom eting» first.
     if (!live.analysing) {
       await sp.answer(ADD_REFUSAL.sameLive);
-      await sp.reply(ADD_REFUSAL.sameLive);
+      // The collection's own message (as-built review BURST-5): the resume's
+      // kept-last draw must know it, or the prompt is judged still last and
+      // edited in place ABOVE it.
+      noteOwnMessage(chatId, (await sp.reply(ADD_REFUSAL.sameLive)).message_id);
     }
     // Not resumed (the reading's own word said): nothing is taken into it.
     if (!(await resume(sp, chatId))) return null;
@@ -479,7 +524,8 @@ async function openAdd(
     totalsStored: !sum,
     volumeM3: sum ? null : stored.facts.volumeM3,
   };
-  startIntake(chatId, base.section, { ai: true, staffId, amend: base, openedBy });
+  // The request's door (§0.3); a legacy one keeps the add door's own `true`.
+  startIntake(chatId, base.section, { ai: collectionAiOf(stored.door, true), staffId, amend: base, openedBy });
   // Quiet (dur-1): `startIntake` set the clocks, and a non-quiet patch made
   // while a REPLY is handled would mark that reply taken (`takenUpTo`) before
   // its answer is written — a flush in the table's send, a restart, and the
@@ -536,9 +582,17 @@ async function openSeeded(
   // the add door does): copied as a figure, a forgotten line added here would
   // land under the old Σ, labelled typed, and the road priced on it.
   const sum = volumeIsLinesSum(stored.base.volumeM3, stored.base.items);
-  // The certificate is a customs question (review PF-7): a returned yo‘lkira
-  // request carries no certificate line and no «📄 Sertifikat» button.
-  const opening = startIntake(chatId, stored.base.section, { ai: sectionParts(stored.base.section).customs, staffId, amend: null, openedBy });
+  // The source request's door (§0.3). A legacy one keeps the flag this door
+  // always set — a customs section's, because the certificate is a customs
+  // question (review PF-7): a returned yo‘lkira request carries no certificate
+  // line and no «📄 Sertifikat» button.
+  const opening = startIntake(chatId, stored.base.section, {
+    ai: collectionAiOf(stored.door, sectionParts(stored.base.section).customs),
+    staffId,
+    amend: null,
+    openedBy,
+  });
+  const seedDoor = stored.door ?? null;
   // Quiet, as the add door's (dur-1): the opening is no answer to anything.
   const state = updateIntake(
     chatId,
@@ -554,6 +608,9 @@ async function openSeeded(
       },
       seed: lines,
       seededFrom: stored.base.requestId,
+      // What its chat words follow (§0.3, §2.6): the plain door's summary —
+      // or, for a source from before the doors, today's table.
+      seedDoor,
       clientHintRaw: hint,
       doorHint: hint,
       // The certificate answer the request carried — never the collector's
@@ -574,7 +631,13 @@ async function openSeeded(
     ).message_id,
   );
   if (hint) await deliverNextStep(sp, chatId, state);
-  else await sp.reply(CLIENT_QUESTION, { parse_mode: 'Markdown' });
+  else {
+    // The customer question, asked ONCE (§1.5): the one message a file sent
+    // before the answer redraws, counting, below it.
+    const asked = await sp.reply(clientQuestionText(state), { parse_mode: 'Markdown' });
+    updateIntake(chatId, { promptMessageId: asked.message_id }, { quiet: true });
+    noteOwnMessage(chatId, asked.message_id);
+  }
   return { state: activeIntake(chatId) ?? state, opened: true };
 }
 
@@ -593,27 +656,49 @@ export async function pressAdd(
   restartKey: OnceKey | null,
 ): Promise<void> {
   const sp = pressSpeaker(ctx, chatId);
-  const pressed = ctx.callbackQuery?.message?.message_id ?? null;
+  const pressedMessage = ctx.callbackQuery?.message;
+  const pressed = pressedMessage?.message_id ?? null;
   const before = activeIntake(chatId)?.noteId ?? null;
   try {
-    const original = ctx.callbackQuery?.message?.reply_to_message ?? null;
-    const out = await openDoor(chatId, requestId, sp, {
+    const original = pressedMessage?.reply_to_message ?? null;
+    // The burst this press speaks for (docs/IKKI-ESHIK.md §4.1): its ONE
+    // offer, an older copy of it, or the question the door asked about it —
+    // or one a newer burst replaced, of which only what it spoke for is left.
+    const burst = pressed !== null && mode !== 'plain' ? burstAnswering(chatId, pressed) : null;
+    const gone = pressed !== null && mode !== 'plain' && !burst ? goneBurst(chatId, pressed) : null;
+    // Taken into a collection that filed it (saved, landed): a second ➕ —
+    // after the save, or for another request — would file the same parts
+    // twice (review PB-ADV-3). Refused before any door opens or any
+    // collection is wiped. Still live: the door's own resume or question.
+    if (await takenElsewhere(chatId, (burst?.intoNote ?? gone?.intoNote) || null)) {
+      await refuse(sp, BURST_IN_REQUEST);
+      return;
+    }
+    // «Sizda tugallanmagan yig‘ish bor…», asked about the burst, speaks for
+    // it too: its «🗑 Ha» is a press on ANOTHER message, and must still take
+    // every part rather than the one it replies to.
+    const door = burst ? aliasing(sp, (id) => aliasBurst(chatId, burst.id, id)) : sp;
+    const out = await openDoor(chatId, requestId, door, {
       openedBy: pressed,
       restart: mode === 'restart',
       restartKey,
       askAbout: mode === 'replied' ? (original?.message_id ?? null) : null,
     });
+    // How many parts the pressed message spoke for, when its wait is gone: a
+    // replaced burst's own count (its restart question carries none, review
+    // PB-SPEC-3), else the offer's words.
+    const offered = gone?.parts ?? offeredCount(pressedText(pressedMessage));
     if (out && mode === 'replied') {
-      await takeReplied(chatId, sp, out.state, original);
-    } else if (out && mode === 'restart' && original && !original.from?.is_bot) {
-      // The «🗑 Ha» of a question asked about a file (PF-3): the file the
-      // offer was pressed under is this collection's first material, as the
-      // offer's own press would have made it — never dropped without a word.
-      // A redelivered «🗑 Ha» RESUMES the collection it opened (fix review
-      // fdur-3): a stop between the open and the take wrote the open alone,
-      // and the take keyed on `opened` never ran. `repliedTaken` fences a
-      // second take; `out` is null for every other outcome.
-      await takeReplied(chatId, sp, out.state, original);
+      await takeReplied(chatId, sp, out.state, original, { burst, offered });
+    } else if (out && mode === 'restart' && (burst || (original && !original.from?.is_bot))) {
+      // The «🗑 Ha» of a question asked about a file (PF-3) or a burst: what
+      // the offer was pressed under is this collection's first material, as
+      // the offer's own press would have made it — never dropped without a
+      // word. A redelivered «🗑 Ha» RESUMES the collection it opened (fix
+      // review fdur-3): a stop between the open and the take wrote the open
+      // alone, and the take keyed on `opened` never ran. `repliedTaken`
+      // fences a second take; `out` is null for every other outcome.
+      await takeReplied(chatId, sp, out.state, original, { burst, offered });
     }
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-amend] the add door failed');
@@ -640,120 +725,361 @@ function abandonOpened(chatId: bigint, before: string | null, openedBy: number |
 }
 
 /**
+ * Parts a burst gave to the collection `into`, asked about from a press that
+ * would take them into ANOTHER one: taken already when that collection FILED
+ * them — the add collection's save wrote its amendment, a first collection's
+ * landing wrote its card note, both under the collection's note id. A
+ * collection still live is the door's own (a resume, or «Sizda tugallanmagan
+ * yig‘ish bor…»); one cancelled or abandoned filed nothing, and the parts are
+ * free again.
+ */
+async function takenElsewhere(chatId: bigint, into: string | null): Promise<boolean> {
+  if (into === null || activeIntake(chatId)?.noteId === into) return false;
+  const rows = await db.execute(sql`
+    SELECT (EXISTS (SELECT 1 FROM calc_amendments WHERE note_id = ${into}::uuid)
+         OR EXISTS (SELECT 1 FROM crm_activities WHERE id = ${into}::uuid)) AS filed`);
+  return Boolean((rows as unknown as { filed: boolean }[])[0]?.filed);
+}
+
+/** The words a pressed message was drawn with — what a press whose burst is gone counts (`offeredCount`). */
+function pressedText(message: unknown): string | null {
+  const text = (message as { text?: unknown } | null | undefined)?.text;
+  return typeof text === 'string' ? text : null;
+}
+
+/** A speaker whose restart question (a `cg:` button) is remembered as speaking for a burst. */
+function aliasing(sp: Speaker, record: (messageId: number) => void): Speaker {
+  return {
+    ...sp,
+    async reply(text, extra) {
+      const sent = await sp.reply(text, extra);
+      const rows = (extra?.reply_markup as InlineKeyboard | undefined)?.inline_keyboard ?? [];
+      if (rows.some((row) => row.some((b) => b.callback_data.startsWith('cg:')))) record(sent.message_id);
+      return sent;
+    },
+  };
+}
+
+/**
  * What was just taken is unread: the table on screen does not show it, and
  * its «✅ Qo‘shish» would save the stored rows without it — the save guard
  * lets a 'review' stage through as «already read». So the collection moves to
  * 'material' and shows the collector's own prompt with «Bo‘ldi», as the file
  * handler does; a collection still waiting on the customer (a seeded one at
- * 'client') keeps its question.
+ * 'client') or the zone keeps its question — asked again, with the take's
+ * line on top, or the take would be silent (review PB-SPEC-1).
+ *
+ * `head`: the take's own line, on a NEW prompt below what was taken (§4.2):
+ * the parts and the message pressed are newer than the old prompt, so the
+ * old one is retired the kept-last way (§1.4) — deleted, or kept among the
+ * collection's messages when it cannot be, so its «Bo‘ldi» still answers.
+ *
+ * The table above it points down and loses its buttons, as the file
+ * handler's does (§1.4, review PC-SPEC-4): it kept a live «✅ Qo‘shish» the
+ * save guard refuses, with no marker.
  */
-async function awaitReading(chatId: bigint, sp: Speaker, state: IntakeState): Promise<void> {
-  if (state.stage === 'client' || state.stage === 'section') return;
+async function awaitReading(chatId: bigint, sp: Speaker, state: IntakeState, head: string | null = null): Promise<void> {
+  // The question it waits on is drawn again, kept last, with the take's line
+  // on top — or the take would be silent (review PB-SPEC-1).
+  if (state.stage === 'client' || state.stage === 'section') {
+    if (head !== null) drawPromptSoon(sp, chatId, head);
+    return;
+  }
   const moved = updateIntake(chatId, { stage: 'material' }) ?? { ...state, stage: 'material' as const };
-  await showIntakePrompt(sp, chatId, moved);
+  editTableSoon(sp, chatId);
+  // The ONE prompt, kept last (§1.4): what was taken and the message pressed
+  // are newer than the old prompt, so the draw sends a new one below and
+  // deletes the old (kept among the collection's own messages when it cannot
+  // be, so its «Bo‘ldi» still answers) — the take's line its first line.
+  if (head === null) await showIntakePrompt(sp, chatId, moved);
+  else drawPromptSoon(sp, chatId, head);
 }
 
 /** How many taken messages `repliedTaken` keeps — one per album part. */
 export const REPLIED_TAKEN_KEPT = 200;
 
+/** One part a take files: a file, a text, or both (a caption) — or a kind nobody reads. */
+interface TakePart {
+  messageId: number;
+  file: BotFile | null;
+  name: string;
+  mime: string | null;
+  text: string | null;
+  /** A voice note or a video: not read — said once per kind (his 1.12 a). */
+  unread: 'voice' | 'video' | null;
+}
+
+const UNREAD_WORDS: Record<NonNullable<TakePart['unread']>, string> = {
+  voice: '🎤 Ovozli xabar o‘qilmaydi — yozib yuboring.',
+  video: '🎬 Video o‘qilmaydi — rasm yoki matn yuboring.',
+};
+
+/** A burst part, as a take files it. */
+function takePartOfBurst(p: BurstPart): TakePart {
+  return {
+    messageId: p.messageId,
+    file: isFilePart(p)
+      ? { fileId: p.fileId!, isPhoto: p.kind === 'photo', fileName: p.name ?? undefined, mime: p.mime ?? undefined, messageId: p.messageId }
+      : null,
+    name: p.name ?? '',
+    mime: p.mime,
+    // A forwarded contact card or place is its one line — the customer's
+    // phone is the request's client hint as often as not (review PB-ADV-6).
+    text: p.text ?? p.fact ?? null,
+    unread: p.kind === 'voice' || p.kind === 'audio' || p.kind === 'video_note' ? 'voice' : p.kind === 'video' ? 'video' : null,
+  };
+}
+
+/** A message the press replies to, as a take files it. */
+function takePartOfMessage(m: Message): TakePart {
+  return {
+    messageId: m.message_id,
+    file: fileOf(m),
+    name: m.document?.file_name ?? '',
+    mime: m.document?.mime_type ?? null,
+    text: m.text ?? m.caption ?? null,
+    unread: m.voice || m.audio || m.video_note ? 'voice' : m.video ? 'video' : null,
+  };
+}
+
+/** What a take did: the parts it took, and whether every one had been taken before (a redelivery). */
+interface Taken {
+  files: number;
+  texts: number;
+  already: boolean;
+  /** The take's own line, or null — the caller's to print when no prompt carried it. */
+  head: string | null;
+}
+
 /**
- * The message a `cf:` offer replies to, as the add collection's material: its
- * text, its file — and, for a forwarded or a plain album, the other parts the
- * album memory still holds. It is OLDER than what the collection may already
- * have applied, so `takenUpTo` cannot fence it: `repliedTaken` does, and the
- * file's attachment id is the message's either way (K5).
+ * Parts into a collection as its material — the ONE per-part fence the
+ * offer's press, its restart twin and the pause line's «▶️» share (§4.1,
+ * §4.2). They are OLDER than what the collection may already have applied,
+ * so `takenUpTo` cannot fence them: `repliedTaken` does, and the file's
+ * attachment id is the message's either way (K5). Each part is fenced in the
+ * SAME patch that adds its file or its text (review dur-2): one mark at the
+ * end let a flush between the parts, a restart and the redelivered press
+ * file every part a second time — fileCount 2, the same attachment twice.
+ *
+ * A file's informational lines are the prompt's to print (§1.4,
+ * `fileSayIsRefusal`); only a refusal is its own message. `gone`: the press's
+ * burst is gone and only the replied-to message was taken — said
+ * (`BURST_GONE`), never silent. `head` makes the take's line the prompt's
+ * first, on a NEW prompt.
  */
-async function takeReplied(chatId: bigint, sp: Speaker, state: IntakeState, original: Message | null): Promise<void> {
-  if (!original) {
-    noteOwnMessage(chatId, (await sp.reply('Asl xabar topilmadi — qaytadan yuboring.')).message_id);
-    return;
-  }
-  const group = original.media_group_id ?? null;
-  const parts: { messageId: number; file: BotFile | null; name: string; mime: string | null }[] = [];
-  const first = fileOf(original);
-  parts.push({
-    messageId: original.message_id,
-    file: first,
-    name: original.document?.file_name ?? '',
-    mime: original.document?.mime_type ?? null,
-  });
-  // A forwarded album's parts are Door B's memory (`forwardAlbumOf`), a plain
-  // one's this file's own — the same file per part either way.
-  const forwarded = group
-    ? (forwardAlbumOf(chatId, group)?.map((p) => ({
-        messageId: p.messageId,
-        file: fileOf(p),
-        name: p.file?.name ?? '',
-        mime: p.file?.mime ?? null,
-      })) ?? null)
-    : null;
-  const plain = group ? plainAlbumOf(chatId, group) : null;
-  const album = forwarded ?? plain;
-  for (const part of album ?? []) {
-    if (part.messageId === original.message_id) continue;
-    parts.push(part);
-  }
+async function takeParts(
+  chatId: bigint,
+  sp: Speaker,
+  state: IntakeState,
+  parts: readonly TakePart[],
+  opts: { head: ((words: string | null) => string | null) | null; gone: boolean },
+): Promise<Taken> {
   // What was taken is unread (`awaitReading`): the move to 'material' rides
   // in the same patch as the take, so a crash between them cannot leave a
   // taken file under the stored table's «✅ Qo‘shish».
   const unread: Partial<IntakeState> = state.stage === 'client' || state.stage === 'section' ? {} : { stage: 'material' };
   // Every part already taken — a redelivered press after everything landed:
-  // its «Bo‘ldi» prompt again, if the reading is still owed, and nothing else.
+  // nothing is taken again, and the CALLER shows the live stage (the ➕
+  // door's resume of this request's collection, ▶️'s `pressResume`), so a
+  // stop between the take and its prompt still ends on «Bo‘ldi» once — a
+  // prompt here as well was a second copy of it (review PB-SPEC-7). A press
+  // whose burst is gone says so here too (fix review fdur-4): whether the
+  // rest were taken is not known.
   if (parts.every((p) => state.repliedTaken.includes(p.messageId))) {
-    // The album's memory died with the process that took its first parts
-    // (fix review fdur-4): `parts` is the original alone, and whether the
-    // rest were taken is not known — said, as the take below says it.
-    if (group && !album) noteOwnMessage(chatId, (await sp.reply('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.')).message_id);
-    if (state.stage === 'material') await showIntakePrompt(sp, chatId, state);
-    return;
+    if (opts.gone) noteOwnMessage(chatId, (await sp.reply(BURST_GONE)).message_id);
+    return { files: 0, texts: 0, already: true, head: null };
   }
-  const staffId = state.staffId;
-  const text = (original.text ?? original.caption ?? '').trim();
   // One id per PART since dur-2 (fix review fdur-8): twenty was two albums,
   // and the oldest album's evicted marks let a re-tap of its offer take
   // every part again. A collection holds far fewer than this.
   const mark = (taken: number[], id: number) => [...taken, id].slice(-REPLIED_TAKEN_KEPT);
   let live = state;
   let files = 0;
-  // Each part is fenced in the SAME patch that adds its file (review dur-2):
-  // one mark at the end let a flush between the parts, a restart and the
-  // redelivered press file every part a second time — fileCount 2, the same
-  // attachment twice in `pdfs`. The original's own text rides in its own
-  // part's patch, so a part taken is a text taken.
+  let texts = 0;
+  let saveFailed = false;
+  const unreadKinds = new Set<NonNullable<TakePart['unread']>>();
   for (const part of parts) {
-    if (!part.file || live.repliedTaken.includes(part.messageId)) continue;
-    const saved = await saveIntakeFile({}, live.noteId, staffId, part.file).catch((err: unknown) => {
-      logger.warn({ err }, '[calc-amend] replied file save failed');
-      return null;
-    });
-    if (!saved) continue;
-    const read = await readIntakeFile(saved, part.name, part.mime, live);
-    files += 1;
-    const patch: Partial<IntakeState> = {
-      ...read.patch,
-      ...unread,
-      fileCount: live.fileCount + 1,
-      repliedTaken: mark(live.repliedTaken, part.messageId),
-      ...(part.messageId === original.message_id && text ? { material: [...live.material, text] } : {}),
-    };
+    if (live.repliedTaken.includes(part.messageId)) continue;
+    const text = (part.text ?? '').trim();
+    const withText = text ? { material: [...live.material, text] } : {};
+    if (part.file) {
+      const saved = await saveIntakeFile({}, live.noteId, live.staffId, part.file).catch((err: unknown) => {
+        logger.warn({ err }, '[calc-amend] replied file save failed');
+        return null;
+      });
+      // Not marked: the same press again saves it then.
+      if (!saved) {
+        saveFailed = true;
+        continue;
+      }
+      const read = await readIntakeFile(saved, part.name, part.mime, live);
+      files += 1;
+      const patch: Partial<IntakeState> = {
+        ...read.patch,
+        ...unread,
+        fileCount: live.fileCount + 1,
+        repliedTaken: mark(live.repliedTaken, part.messageId),
+        ...withText,
+      };
+      live = updateIntake(chatId, patch) ?? { ...live, ...patch };
+      {
+        const refusal = refusalOf(read);
+        if (refusal) noteOwnMessage(chatId, (await sp.reply(refusal)).message_id);
+      }
+      continue;
+    }
+    if (part.unread) unreadKinds.add(part.unread);
+    if (text) texts += 1;
+    const patch: Partial<IntakeState> = { ...(text ? unread : {}), ...withText, repliedTaken: mark(live.repliedTaken, part.messageId) };
     live = updateIntake(chatId, patch) ?? { ...live, ...patch };
-    if (read.say) noteOwnMessage(chatId, (await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined)).message_id);
   }
-  // The original with no file taken above (a text, or a file that could not
-  // be saved): its text and its mark in one patch.
-  const taken = live.repliedTaken.includes(original.message_id)
-    ? live
-    : (updateIntake(chatId, {
-        ...(text ? unread : {}),
-        material: text ? [...live.material, text] : live.material,
-        repliedTaken: mark(live.repliedTaken, original.message_id),
-      }) ?? live);
-  if (group && !album) noteOwnMessage(chatId, (await sp.reply('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.')).message_id);
-  if (!text && files === 0) {
-    logger.info({ chatId: chatId.toString() }, '[calc-amend] replied message carried nothing to take');
+  for (const kind of unreadKinds) noteOwnMessage(chatId, (await sp.reply(UNREAD_WORDS[kind])).message_id);
+  if (saveFailed) noteOwnMessage(chatId, (await sp.reply('Faylni saqlab bo‘lmadi — qayta bosing yoki matn bilan yozib yuboring.')).message_id);
+  if (opts.gone) noteOwnMessage(chatId, (await sp.reply(BURST_GONE)).message_id);
+  const head = opts.head ? opts.head(takenWords(files, texts)) : null;
+  if (texts === 0 && files === 0) {
+    logger.info({ chatId: chatId.toString() }, '[calc-amend] the take carried nothing to read');
+    return { files, texts, already: false, head };
+  }
+  await awaitReading(chatId, sp, live, head);
+  return { files, texts, already: false, head };
+}
+
+/**
+ * The message a `cf:` offer replies to, as the add collection's material — or,
+ * when the offer is a burst's ONE message (or the question asked about it),
+ * every part of the burst, forwarded texts included (§4.1): «➕ 3 ta fayl va 2
+ * ta xabar qo‘shildi.», counting parts TAKEN, never goods added. A press whose
+ * burst is gone (expired, or older than the row) takes what it replies to and
+ * says so when it spoke for more (`offeredCount`, an album part).
+ *
+ * The add door's re-run is the outcome line's to promise, by the request's
+ * door (calc-amend's `repassLine`); nothing said here speaks of it.
+ */
+async function takeReplied(
+  chatId: bigint,
+  sp: Speaker,
+  state: IntakeState,
+  original: Message | null,
+  from: { burst: BurstPayload | null; offered: number },
+): Promise<void> {
+  if (from.burst) {
+    // Marked BEFORE the take (review PB-ADV-5): a draw the album still owes
+    // fires while a save is slow, and it must not speak for parts this press
+    // is taking. A take cut short is pressed again into this same
+    // collection, which `takenElsewhere` lets through to the per-part fence.
+    markBurstTaken(chatId, from.burst.id, { note: state.noteId });
+    await takeParts(chatId, sp, state, from.burst.parts.map(takePartOfBurst), {
+      head: (words) => (words ? `➕ ${words} qo‘shildi.` : null),
+      gone: false,
+    });
     return;
   }
-  await awaitReading(chatId, sp, taken);
+  if (!original) {
+    noteOwnMessage(chatId, (await sp.reply('Asl xabar topilmadi — qaytadan yuboring.')).message_id);
+    return;
+  }
+  await takeParts(chatId, sp, state, [takePartOfMessage(original)], {
+    head: null,
+    gone: from.offered > 1 || Boolean(original.media_group_id),
+  });
+}
+
+/**
+ * «▶️ Davom etamiz» under a burst's pause line (`c:resume_take`, §4.2): the
+ * parked collection resumes and TAKES the parts its pressed line spoke for —
+ * read from the wait by the pressed message, through the take's per-part
+ * fence, so a redelivered press is a no-op. Only the collection the line was
+ * drawn beside; refused beside another collector or a one-text wait before
+ * anything is taken (review REG-2). The answer is a NEW prompt: «▶️ Davom
+ * etamiz — 3 ta fayl qo‘shildi.\nQabul qilindi: …». Every other ▶️ is
+ * `c:resume`, which takes nothing (1.8 c): this press is his consent.
+ */
+export async function pressResumeTake(ctx: CalcPressCtx, chatId: bigint): Promise<void> {
+  const message = ctx.callbackQuery?.message as (Message & { text?: string }) | undefined;
+  const pressed = message?.message_id ?? null;
+  const sp = messageSpeaker(chatId, ctx as CalcPressCtx & { api?: EditApi });
+  const { pressResume, otherCollectorLive } = await import('./calc-intake-sweep');
+  const state = activeIntake(chatId);
+  // No collection: the sweep's own «yopilgan» words, nothing taken.
+  if (!state) {
+    await pressResume(ctx, chatId);
+    return;
+  }
+  const burst = pressed !== null ? burstAnswering(chatId, pressed) : null;
+  const gone = pressed !== null && !burst ? goneBurst(chatId, pressed) : null;
+  const ours = burst ? burst.parkedNote === state.noteId : ownsPress(state, pressed);
+  if (!ours) {
+    await sp.reply('Bu tugma eskirgan.');
+    return;
+  }
+  // Filed by another collection (this one's own take is the per-part
+  // fence's): said, and the press still does what its words promise — the
+  // collection goes on (review PB-ADV-4: no press of «▶️» is a dead button).
+  if (await takenElsewhere(chatId, (burst?.intoNote ?? gone?.intoNote) || null)) {
+    await sp.reply(BURST_IN_REQUEST);
+    await pressResume(ctx, chatId);
+    return;
+  }
+  if (state.analysing) {
+    await sp.reply('⏳ Tahlil davom etmoqda — natijani kuting.');
+    return;
+  }
+  if (state.saving) {
+    await sp.reply(ADD_REFUSAL.saving);
+    return;
+  }
+  const busy = otherCollectorLive(chatId);
+  if (busy) {
+    await sp.reply(busy);
+    return;
+  }
+  const original = message?.reply_to_message ?? null;
+  const parts = burst ? burst.parts.map(takePartOfBurst) : original ? [takePartOfMessage(original)] : [];
+  if (parts.length === 0) {
+    // The line spoke for a burst that is gone and replies to nothing (the
+    // orphan line, review PB-SPEC-4): nothing is taken, and it is SAID
+    // (as-built review BURST-3) — unless the burst went into this very
+    // collection, which has nothing to say.
+    if (!gone?.intoNote) noteOwnMessage(chatId, (await sp.reply(BURST_NONE_TAKEN)).message_id);
+    await pressResume(ctx, chatId);
+    return;
+  }
+  // Marked BEFORE the take, as the ➕ door's (review PB-ADV-5).
+  if (burst) markBurstTaken(chatId, burst.id, { note: state.noteId });
+  const taken = await takeParts(chatId, sp, state, parts, {
+    head: (words) => (words ? `▶️ Davom etamiz — ${words} qo‘shildi.` : '▶️ Davom etamiz.'),
+    gone: !burst && ((gone?.parts ?? offeredCount(message?.text)) > 1 || Boolean(original?.media_group_id)),
+  });
+  // Taken before — the same line pressed again after the collection parked
+  // once more (review PB-ADV-4), or redelivered: nothing taken twice, and the
+  // collection goes on where it stands, as «c:resume» does. Nothing readable
+  // taken: resumed with the take's line. A taken part `awaitReading` showed.
+  if (taken.already) await pressResume(ctx, chatId);
+  // The take's line is the next draw's lead (§1.4 as built, PC-SPEC-13), never
+  // a head on this ctx: a coalesced draw runs with the NEWEST call's ctx, and
+  // the line went with the older one (as-built review BURST-7).
+  else if (taken.files + taken.texts === 0) await pressResume(ctx, chatId, taken.head);
+  else if (burst) retellPauseLine(sp, chatId, burst, pressed, taken.head);
+}
+
+/**
+ * The pause line «▶️» just took from (as-built review BURST-4): it said the
+ * parts were «hali qo‘shilmagan» right above the prompt saying they were
+ * added. Edited to the take's own line, its keyboard kept — a second «▶️»
+ * goes on (review PB-ADV-4), «📌» may still make the task. Only the line
+ * pressed and the burst's current copy, both drawn beside this collection;
+ * best-effort and off the poller, as 📌's own redraw.
+ */
+function retellPauseLine(sp: Speaker, chatId: bigint, burst: BurstPayload, pressed: number | null, head: string | null): void {
+  if (!head) return;
+  const ids = new Set([pressed, burst.offerIds.at(-1) ?? null].filter((id): id is number => id !== null && burst.offerIds.includes(id)));
+  const keyboard = pauseKeyboard({ forwards: burstCounts(burst.parts).forwards > 0 });
+  for (const id of ids) {
+    void sp.api
+      .editMessageText(String(chatId), id, head, { reply_markup: keyboard })
+      .catch((err: unknown) => logger.info({ err }, '[burst] pause line not redrawn after ▶️'));
+  }
 }
 
 /**
@@ -851,7 +1177,11 @@ export async function openAmendFromMedia(
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);
       live = updateIntake(chatId, { ...read.patch, ...unread, fileCount: live.fileCount + 1, ...withCaption }) ?? live;
-      if (read.say) await sp.reply(read.say, read.keyboard ? { reply_markup: read.keyboard } : undefined);
+      // Its informational lines are the prompt's (docs/IKKI-ESHIK.md §1.4); a refusal is its own message.
+      {
+        const refusal = refusalOf(read);
+        if (refusal) await sp.reply(refusal);
+      }
     } else if (caption) {
       live = updateIntake(chatId, { ...unread, ...withCaption }) ?? live;
     }
@@ -952,25 +1282,17 @@ export async function foreignAddReply(
 const offerCache = new Map<string, { at: number; rows: { text: string; callback_data: string }[][] }>();
 const OFFER_CACHE_MS = 60_000;
 
-/** A plain album's parts, so the one offer's press can take every part (a per-chat 10-minute memory, like Door B's). */
-interface PlainAlbum {
-  parts: { messageId: number; file: BotFile | null; name: string; mime: string | null }[];
-  offered: boolean;
-  expires: number;
-}
-const plainAlbums = new Map<string, Map<string, PlainAlbum>>();
-const PLAIN_ALBUM_TTL_MS = 10 * 60_000;
-
-function plainAlbumOf(chatId: bigint, group: string): PlainAlbum['parts'] | null {
-  const album = plainAlbums.get(String(chatId))?.get(group);
-  if (!album || album.expires <= Date.now()) return null;
-  return [...album.parts].sort((x, y) => x.messageId - y.messageId);
+/**
+ * Forget the chat's cached offer list — the landing's, so the request it just
+ * opened is offered at once (docs/IKKI-ESHIK.md §4.3).
+ */
+export function forgetAddOffers(chatId: bigint): void {
+  offerCache.delete(String(chatId));
 }
 
 /** Tests only: a clean slate. */
 export function __resetAddOffers(): void {
   offerCache.clear();
-  plainAlbums.clear();
 }
 
 /**
@@ -1002,53 +1324,6 @@ export async function addOfferRows(chatId: bigint): Promise<{ text: string; call
 }
 
 const clipLabel = (label: string) => (label.length > 30 ? `${label.slice(0, 29)}…` : label);
-
-/**
- * A plain photo or document with nothing to take it — which today gets
- * silence, because the cabinet answers a staff chat with nothing — gets one
- * offer line as a reply to it, when the sender has an open request it could
- * join. One per album, as a reply to its first part; the other parts are
- * remembered for the press. Never a reply, a forward (Door B's), the
- * backlog, or a voice note. True = answered.
- */
-export async function offerAddForMedia(ctx: CollectorReply & { message: unknown }, chatId: bigint): Promise<boolean> {
-  const message = ctx.message as Message | undefined;
-  if (!message || message.reply_to_message || message.forward_origin || isBacklog(message.date)) return false;
-  const file = fileOf(message);
-  if (!file) return false;
-  if (holdingIntake(chatId) || activeDraft(chatId) || activeCapture(chatId)) return false;
-  const group = message.media_group_id ?? null;
-  let album: PlainAlbum | null = null;
-  if (group) {
-    const key = String(chatId);
-    const now = Date.now();
-    const byGroup = plainAlbums.get(key) ?? new Map<string, PlainAlbum>();
-    for (const [id, a] of byGroup) if (a.expires <= now) byGroup.delete(id);
-    album = byGroup.get(group) ?? null;
-    const part = {
-      messageId: message.message_id,
-      file,
-      name: message.document?.file_name ?? '',
-      mime: message.document?.mime_type ?? null,
-    };
-    if (album) {
-      if (!album.parts.some((p) => p.messageId === part.messageId)) album.parts.push(part);
-      // The album's first part asked already: the rest only join it.
-      return album.offered;
-    }
-    album = { parts: [part], offered: false, expires: now + PLAIN_ALBUM_TTL_MS };
-    byGroup.set(group, album);
-    plainAlbums.set(key, byGroup);
-  }
-  const rows = await addOfferRows(chatId);
-  if (rows.length === 0) return false;
-  if (album) album.offered = true;
-  await ctx.reply('➕ Bu faylni so‘rovga qo‘shamizmi?', {
-    reply_markup: { inline_keyboard: rows },
-    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
-  });
-  return true;
-}
 
 // ---------------------------------------------------------------------------
 // The save.
@@ -1198,7 +1473,8 @@ async function settleDeadSave(chatId: bigint, noteId: string, failWords: string 
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(chatId, await amendWords(told, false));
+      const words = await requestWordsOf(row.requestId);
+      const sent = await sendWords(chatId, await amendWords(told, false, words.door, words.aiAvailable));
       if (!sent.ok && !sent.permanent) return;
       await amend.stampTold(row.id);
     }
@@ -1244,11 +1520,45 @@ function closedWords(ending: CalcEnding | null): string {
 
 const withLines = (head: string, lines: readonly string[]) => (lines.length ? `${head}\n${lines.join('\n')}` : head);
 
-/** The AI line after an applied addition — the tariff's on a section with no customs part. */
-async function repassLine(change: AmendChange, queued: boolean): Promise<string> {
+/**
+ * The AI line after an applied addition — the tariff's on a section with no
+ * customs part, which answers in the chat on either door (his 2.5 b). By the
+ * request's door (pp-handoff seam 1): a «🧮» request's re-run sends the seller
+ * nothing, so its line promises the VED, never a result; the AI door and a
+ * request from before the doors (NULL, §0.2) keep the promise.
+ */
+async function repassLine(change: AmendChange, queued: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean): Promise<string> {
   if (!queued) return SAVE_WORDS.queueRefused;
   const { sectionParts } = await import('../../wms/calc/pricing');
-  return sectionParts(change.section).customs ? SAVE_WORDS.aiLine : SAVE_WORDS.tariffLine;
+  if (!sectionParts(change.section).customs) return SAVE_WORDS.tariffLine;
+  if (door === 'plain') return SAVE_WORDS.plainLine;
+  // An «🤖» request whose pass has no model today promises no AI result: its
+  // table's closing said none (as-built review DOORS-2).
+  if (door === 'ai' && !aiAvailable) return '';
+  return SAVE_WORDS.aiLine;
+}
+
+/**
+ * The request's door, off its row (§0.3) — a read that fails is legacy
+ * (NULL), today's words, never a guess — and, on an «🤖» request, whether its
+ * pass has a model today (`aiCalcAvailable`, the one rule; unreadable = no).
+ */
+async function requestWordsOf(requestId: string): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean }> {
+  let door: 'plain' | 'ai' | null = null;
+  try {
+    const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
+    door = await requestIntakeDoor(requestId);
+  } catch (err) {
+    logger.warn({ err, requestId }, '[calc-amend] the request’s door not read — today’s words');
+  }
+  if (door !== 'ai') return { door, aiAvailable: false };
+  try {
+    const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
+    return { door, aiAvailable: await aiCalcAvailable() };
+  } catch (err) {
+    logger.warn({ err }, '[calc-amend] AI availability unreadable — no AI result promised');
+    return { door, aiAvailable: false };
+  }
 }
 
 export type Told = Exclude<AmendOutcome, { kind: 'empty' | 'duplicate' | 'not_yours' | 'not_found' | 'refused' }>;
@@ -1258,9 +1568,11 @@ export type Told = Exclude<AmendOutcome, { kind: 'empty' | 'duplicate' | 'not_yo
  * new kind without words is a compile error. `waited`: a stored addition the
  * job wrote after the machine's pass ended.
  */
-const OUTCOME_WORDS: { [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean) => Promise<string> } = {
-  async applied(o, waited) {
-    const line = await repassLine(o.change, o.queued);
+const OUTCOME_WORDS: {
+  [K in Told['kind']]: (o: Extract<Told, { kind: K }>, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean) => Promise<string>;
+} = {
+  async applied(o, waited, door, aiAvailable) {
+    const line = await repassLine(o.change, o.queued, door, aiAvailable);
     return waited
       ? `✅ Kutib turgan qo‘shimchangiz so‘rovga yozildi (${o.change.card}).${line}`
       : `${withLines(`✅ So‘rovga qo‘shildi (${o.change.card}):`, o.lines)}${line}`;
@@ -1299,9 +1611,21 @@ const OUTCOME_WORDS: { [K in Told['kind']]: (o: Extract<Told, { kind: K }>, wait
   },
 };
 
-/** Words for any told outcome, by its kind (exported for the tests that read them). */
-export function amendWords(o: Told, waited: boolean): Promise<string> {
-  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean) => Promise<string>)(o, waited);
+/**
+ * Words for any told outcome, by its kind (exported for the tests that read
+ * them). `door`: the request's (§2.6) — null keeps today's words. REQUIRED
+ * (review PC-ADV-7): optional, it failed open — the dead save's sender
+ * compiled without one and promised a plain seller the AI's result.
+ * `aiAvailable`: on an «🤖» request, whether its pass has a model today —
+ * REQUIRED for the same reason (as-built review DOORS-2).
+ */
+export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean): Promise<string> {
+  return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean) => Promise<string>)(
+    o,
+    waited,
+    door,
+    aiAvailable,
+  );
 }
 
 /** The outcome a stored row records, rebuilt — what a redo says when the words were never sent. */
@@ -1399,7 +1723,8 @@ async function runAmendSaveOnce(data: AmendSaveJob, retryCount: number): Promise
     case 'waiting': {
       // A stored addition whose pass is still running stays stored, unsaid.
       if (outcome.kind === 'waiting' && outcome.stillWaiting) return;
-      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun));
+      const words = await requestWordsOf(data.requestId);
+      const sent = await sendWords(chatId, await amendWords(outcome, waitedRun, words.door, words.aiAvailable));
       // Not delivered and worth another try: the retry is a `duplicate` and
       // says exactly these words, once. With no retry left the collection
       // stays frozen and the sweep tells it from the record.
@@ -1450,7 +1775,8 @@ async function redo(chatId: bigint, data: AmendSaveJob, stored: CalcAmendmentRow
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(target, await amendWords(told, waitedRun));
+      const words = await requestWordsOf(data.requestId);
+      const sent = await sendWords(target, await amendWords(told, waitedRun, words.door, words.aiAvailable));
       if (!sent.ok && !sent.permanent) {
         // No retry left: the collection stays frozen; the sweep tells it from the record.
         if (last && !waitedRun) return;

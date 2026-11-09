@@ -232,6 +232,7 @@ afterAll(async () => {
 async function sealedJob(opts: { weightKg?: number; volumeM3?: number } = {}) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'yolkira',
@@ -511,6 +512,7 @@ describe('the low-confidence counter is about the MODEL, not about a mood', () =
     // is refused by design and the group is the whole subject here.
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -570,6 +572,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
   async function groupedJob() {
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -653,6 +656,7 @@ describe('a ✅ must not outlive the numbers it was about', () => {
     const name = `pullbaza ${tag()}`;
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -896,6 +900,7 @@ describe('a quote with no volume is still guarded, by weight', () => {
     const deal = await freshDeal();
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal,
         section: 'rastamojka',
@@ -1022,6 +1027,7 @@ describe('the truck answers for the cargo it carried', () => {
     const deal = await freshDeal();
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal,
         section: 'rastamojka',
@@ -1137,6 +1143,7 @@ describe('a bill that allocated to nobody is a refusal, not a saving', () => {
     const deal = await freshDeal();
     const request = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal,
         section: 'rastamojka',
@@ -1332,6 +1339,7 @@ async function freshDeal(): Promise<string> {
 async function sealedJobOn(deal: string): Promise<string> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: deal,
       section: 'yolkira',

@@ -30,7 +30,11 @@ export type WaitKind =
   // his price, the client code he opened for a stranger.
   | 'agent_edit'
   | 'agent_price'
-  | 'agent_code';
+  | 'agent_code'
+  // Files or forwards sent in a row while no collection, draft or capture is
+  // open (0141, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
+  // deploy. Its payload and its arming are the burst door's own.
+  | 'burst';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {
@@ -132,6 +136,16 @@ export function armWait<P extends object>(
 /** Memory only — the verdict is the caller's. */
 export function readWait<P>(chatId: bigint | number, kind: WaitKind): WaitEntry<P> | null {
   return (memory.get(keyOf(chatId, kind)) as WaitEntry<P> | undefined) ?? null;
+}
+
+/** Every wait of one kind, from memory — the boot's owed bursts (burst.ts `drawOwedBursts`). */
+export function waitsOfKind<P>(kind: WaitKind): { chatId: string; entry: WaitEntry<P> }[] {
+  const prefix = `${kind}:`;
+  const out: { chatId: string; entry: WaitEntry<P> }[] = [];
+  for (const [key, entry] of memory) {
+    if (key.startsWith(prefix)) out.push({ chatId: key.slice(prefix.length), entry: entry as WaitEntry<P> });
+  }
+  return out;
 }
 
 export function dropWait(chatId: bigint | number, kind: WaitKind): void {

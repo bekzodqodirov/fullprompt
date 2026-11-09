@@ -51,12 +51,14 @@ import { getStorage } from '@/modules/platform/files/storage';
 import { createTask } from '@/modules/platform/tasks/service';
 import {
   __resetLifecycle,
+  BOT_STOP_DEADLINE_MS,
   bootedAtSec,
   lastDoneUpdateId,
   markBoot,
   stoppingGuard,
   stopTelegramBot,
 } from '@/modules/platform/telegram/lifecycle';
+import { __forgetKeptLast, keepLastSoon } from '@/modules/platform/telegram/kept-last';
 import {
   __forgetWaitMemory,
   __holdWaitWrites,
@@ -88,8 +90,8 @@ import {
   setDurableIntakes,
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
-import { PAUSE_LINE, orphanAnswerSentence } from '@/modules/platform/telegram/calc-dialog';
-import { botStopDeps } from '@/modules/platform/telegram/bot';
+import { orphanAnswerSentence, pauseLine } from '@/modules/platform/telegram/calc-dialog';
+import { botStopDeps, STOP_DRAWS_MS } from '@/modules/platform/telegram/bot';
 import { logger } from '@/modules/platform/logger';
 import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
 import { __setCabinetPhotoReadMs, beginClientLink } from '@/modules/platform/telegram/client-cabinet';
@@ -493,6 +495,8 @@ describe('TWICE — a crash redelivers what already ran', () => {
     const forward = tg.forward(s.chat, `bu nima ${STAMP}`);
     const m0 = h.mark();
     await h.handle(forward);
+    // The burst's ONE offer, drawn once its debounce settles (docs/IKKI-ESHIK.md §4.1).
+    await h.settle();
     const offer = h.since(m0).api.find((c) => c.method === 'sendMessage' && c.payload.text === '📌 Topshiriq qilamizmi?');
     expect(offer?.messageId, 'the «📌» offer').toBeDefined();
     const original = (forward as unknown as { message: Record<string, unknown> }).message;
@@ -1071,14 +1075,23 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     await h.handle(tg.callback(s.chat, nextMsg(), 'c:rastamojka'));
     const m = h.mark();
     await h.handle(tg.text(s.chat, `Ali ${STAMP} +99890${STAMP}`));
+    // The prompt is drawn kept-last, off the handler (docs/IKKI-ESHIK.md
+    // §1.4): the customer question becomes it — edited in place while it is
+    // the last message the collection knows of (the fake's own ids run apart
+    // from the texts'), sent below otherwise. Either way it is the prompt.
+    await h.settle();
     const chat = BigInt(s.chat);
     const state = activeIntake(chat)!;
     expect(state.stage).toBe('material');
     notesMade.push(state.noteId);
-    const prompt = h
+    const drew = h
       .since(m)
-      .api.filter((c) => c.method === 'sendMessage' && JSON.stringify(c.payload.reply_markup ?? '').includes('c:done'))
-      .at(-1)!.messageId!;
+      .api.filter(
+        (c) => (c.method === 'sendMessage' || c.method === 'editMessageText') && JSON.stringify(c.payload.reply_markup ?? '').includes('c:done'),
+      )
+      .at(-1)!;
+    const prompt = drew.method === 'sendMessage' ? drew.messageId! : Number(drew.payload.message_id);
+    expect(state.promptMessageId).toBe(prompt);
     return { s, chat, prompt };
   }
 
@@ -1180,13 +1193,45 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     expect(h.textsTo(s.chat, m)).toEqual([expected!.text]);
     // …and that sentence is P3's pause line with «▶️» / «✖️» under it (§2.8,
     // the parked half of the orphan guard — asserted here, on the real handler
-    // chain, at the merge: P3's tree could not reach this file).
-    expect(expected!.text).toBe(PAUSE_LINE);
+    // chain, at the merge: P3's tree could not reach this file). Its «reply to
+    // the table» clause only where there IS a table (docs/IKKI-ESHIK.md §4.2):
+    // this collection is still collecting.
+    expect(activeIntake(chat)!.stage).toBe('material');
+    expect(expected!.text).toBe(pauseLine('material', false));
+    expect(expected!.text).not.toContain('jadvalga reply');
     const paused = h.api.filter((c) => c.method === 'sendMessage').at(-1)!;
     expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:resume');
     expect(JSON.stringify(paused.payload.reply_markup ?? '')).toContain('c:cancel');
     expect(await aiQuestions(s)).toBe(0);
     expect(activeIntake(chat)!.material).not.toContain('3500 kg');
+  });
+
+  it('a collection hydrated holding a retired file question: resolved at the hydrate, its old buttons say «eskirgan», «Bo‘ldi» is refused for no file (docs/IKKI-ESHIK.md §1.3)', async () => {
+    const { chat, s, prompt } = await collecting();
+    // A collection written before his 1a: a second Excel waiting for «qo‘shilsin yoki o‘rniga?»,
+    // an open «boshqa zavodmi?», and a stored-row conflict nobody answered.
+    updateIntake(chat, {
+      invoiceGoods: [{ name: `Kurtka ${STAMP}`, quantity: 300 }],
+      pendingInvoice: { goods: [{ name: `Shim ${STAMP}`, quantity: 200 }], label: '«B.xlsx»', texts: [] },
+      aiGoods: 'ask',
+      conflicts: [{ itemId: 'i1', seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null }],
+    });
+    await restart();
+    const live = activeIntake(chat)!;
+    expect(live.pendingInvoice).toBeNull();
+    expect(live.aiGoods).toBe('add');
+    expect(live.invoiceGoods?.map((g) => g.name)).toEqual([`Kurtka ${STAMP}`, `Shim ${STAMP}`]);
+    expect(live.conflicts.map((c) => c.choice)).toEqual(['ved']);
+    for (const step of ['inv_add', 'inv_replace', 'other_add', 'other_same', 'conf_0_add']) {
+      const m = h.mark();
+      await h.handle(tg.callback(s.chat, prompt, `c:${step}`));
+      expect(h.textsTo(s.chat, m), step).toEqual(['Bu tugma eskirgan — fayllar o‘zi solishtirildi.']);
+    }
+    const m = h.mark();
+    await h.handle(tg.callback(s.chat, prompt, 'c:done'));
+    const said = h.textsTo(s.chat, m).join('\n');
+    expect(said).not.toContain('Avval ikkinchi fayl haqida javob bering');
+    expect(said).not.toContain('Avval javob bering');
   });
 
   it('a redelivered «✖️» of an older collection ends nothing it does not own (durability-2)', async () => {
@@ -1212,16 +1257,22 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     });
     const U = tg.text(s.chat, `Shim 200 dona ${STAMP}`);
     await h.handle(U);
-    // …and the batch's next update V is still in flight when the signal comes.
-    hang.chat = s.chat;
-    hang.on = true;
+    await h.settle();
+    // …and the batch's next update V is still in flight when the signal comes
+    // — held by the lifecycle guard itself: the collector's prompt is drawn
+    // off the handler now (docs/IKKI-ESHIK.md §1.4), so no send of V's holds
+    // it in flight, and a hung draw would hold every later settle with it.
     const V = tg.text(s.chat, `Kepka 50 dona ${STAMP}`);
-    void h.handle(V).catch(() => {});
-    await vi.waitFor(() => expect(hang.on).toBe(false));
+    let release: () => void = () => {};
+    void stoppingGuard()(
+      { update: { update_id: (V as { update_id: number }).update_id } } as never,
+      () => new Promise<void>((resolve) => (release = resolve)),
+    );
     const getUpdates = vi.fn(async () => []);
     const outcome = await stopTelegramBot(
       botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never),
     );
+    release();
     const u = (U as { update_id: number }).update_id;
     expect(outcome.via).toBe('confirm');
     expect(outcome.confirmedThrough).toBe(u - 1);
@@ -1233,6 +1284,32 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     await h.handle(tg.again(U));
     await h.handle(tg.again(V));
     expect(activeIntake(chat)!.material).toEqual([`Shim 200 dona ${STAMP}`, `Kepka 50 dona ${STAMP}`]);
+  }, 20_000);
+
+  it('a kept-last draw Telegram never answers does not keep the durable write from the disk at the stop (the merge, STOP_DRAWS_MS)', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    // A draw owed at the signal whose send hangs: grammy's own timeout is
+    // minutes, the stop's budget is seconds.
+    keepLastSoon(`prompt:hung-${STAMP}`, () => new Promise<void>(() => {}), 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await h.handle(tg.text(s.chat, `Shim 200 dona ${STAMP}`));
+    const rowMaterial = async () =>
+      ((await db.execute<{ m: unknown }>(sql`
+        SELECT state -> 'material' AS m FROM telegram_calc_intakes WHERE chat_id = ${String(chat)}::bigint`))[0]?.m ?? null) as
+        | string[]
+        | null;
+    const getUpdates = vi.fn(async () => []);
+    const started = Date.now();
+    await stopTelegramBot(botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never));
+    // The draws get their own share and no more: waited on unbounded, the
+    // hung one ate the flush's whole share (~4 s of the 5 s budget) and the
+    // durable write ran only if its own debounce happened to fall inside it.
+    expect(Date.now() - started).toBeLessThan(STOP_DRAWS_MS + 1_500);
+    expect(STOP_DRAWS_MS + 1_500).toBeLessThan(BOT_STOP_DEADLINE_MS - 1_000);
+    expect(await rowMaterial()).toEqual([`Shim 200 dona ${STAMP}`]);
+    __forgetKeptLast();
+    await restart();
   }, 20_000);
 
   it('every dirty chat is written before grammy confirms its batch — bounded, and never a stopped poll (the lead’s ruling L1)', async () => {

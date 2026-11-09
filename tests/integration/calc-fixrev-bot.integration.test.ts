@@ -60,6 +60,7 @@ import { armWait, dropWait, nowSec } from '@/modules/platform/telegram/waits';
 import { AGENT_WAIT_TTL_MS, waitingAnswerWords } from '@/modules/platform/telegram/agent-bot';
 import { noteReplyPending } from '@/modules/platform/telegram/staff-bot';
 import { ADD_REFUSAL, JOB_CALC_AMEND_SAVE, REPLIED_TAKEN_KEPT, __resetAddOffers } from '@/modules/platform/telegram/calc-amend';
+import { BURST_GONE } from '@/modules/platform/telegram/burst-wait';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
@@ -209,6 +210,7 @@ async function answered(
   }
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       ...entity,
       section,
       fromCity: section === 'rastamojka' ? null : 'Yiwu',
@@ -397,13 +399,15 @@ describe('«↩️» of a PARKED collection beside a task draft (fix review W-15
 });
 
 describe('a file replying to the ➕ answer: ONE patch carries the file, its caption and the move to «material» (fix review FR-5, fdur-1)', () => {
-  it('its «AI o‘qiydi» held, a flush, a restart, the redelivery: the caption kept, the save waits for «Bo‘ldi»', async () => {
+  it('the prompt after the file held, a flush, a restart, the redelivery: the caption kept, the save waits for «Bo‘ldi»', async () => {
     const { answerId } = await answered();
     const fileId = `rfpdf-${STAMP}-b`;
     h.serveFile(fileId, PDF);
     const U = tg.document(chatA, fileId, { replyTo: answerId, fileName: 'packing.pdf', mime: 'application/pdf', caption: 'Shim 20 dona' });
     hang.chat = chatA;
-    hang.needle = 'AI o‘qiydi';
+    // The file's «AI o‘qiydi» is a line of the ONE prompt now (his 1a,
+    // docs/IKKI-ESHIK.md §1.4) — the first send after the file's patch.
+    hang.needle = 'Qabul qilindi';
     hang.on = true;
     hang.reached = false;
     void h.handle(U).catch(() => {});
@@ -494,7 +498,7 @@ describe('«🗑 Ha» redelivered after its open and before its take (fix review
 });
 
 describe('an album press whose memory died with the process (fix review fdur-4)', () => {
-  it('every part it knows already taken: the album line is said, never silence about the rest', async () => {
+  it('every part it knows already taken: the burst-gone line is said, never silence about the rest (docs/IKKI-ESHIK.md §4.1)', async () => {
     const { requestId, answerId } = await answered();
     await h.handle(tg.callback(chatA, answerId, `ca:${requestId}`));
     const fileId = `rfpdf-${STAMP}-e`;
@@ -505,7 +509,7 @@ describe('an album press whose memory died with the process (fix review fdur-4)'
     const m = mark();
     await h.handle(tg.callback(chatA, (seq += 1), `cf:${requestId}`, { message: { reply_to_message: original } }));
     await h.settle();
-    expect(saidTo(chatA, m)).toContain('📎 Albom bo‘lsa, qolgan rasmlarni shu yerga yuboring.');
+    expect(saidTo(chatA, m)).toContain(BURST_GONE);
     expect(activeIntake(BigInt(chatA))!.fileCount).toBe(1);
   });
 });

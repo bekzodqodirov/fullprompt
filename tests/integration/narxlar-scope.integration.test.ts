@@ -64,6 +64,7 @@ async function user(name: string, tail: string) {
 async function sealedVersion(): Promise<{ versionId: string; floor: number }> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',

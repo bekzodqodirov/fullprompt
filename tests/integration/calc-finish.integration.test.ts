@@ -84,6 +84,7 @@ afterAll(async () => {
 async function request(section: 'yolkira' | 'rastamojka') {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section,
@@ -170,6 +171,7 @@ describe('the seller’s lines do not end a queue job', () => {
     const deal = await freshDeal('Q');
     const r = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal,
         section: 'rastamojka',

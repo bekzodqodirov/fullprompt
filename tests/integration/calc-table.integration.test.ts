@@ -118,6 +118,7 @@ async function open(
 ) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',

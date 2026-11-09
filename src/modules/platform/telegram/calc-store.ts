@@ -7,6 +7,9 @@ import { logger } from '../logger';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
+import { endBurst } from './burst-wait';
+import { foldPendingInvoice } from './file-goods';
+import { __forgetKeptLast } from './kept-last';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
 import { quietHour, sendText, type SendResult } from './send';
 
@@ -279,6 +282,7 @@ export function startIntake(
     facts: {},
     steps: [],
     notes: [],
+    fileNotes: [],
     aiUsed: false,
     images: [],
     imagesSkipped: 0,
@@ -287,6 +291,7 @@ export function startIntake(
     hasCertificate: true,
     route: null,
     totalsAnswer: { weightKg: null, volumeM3: null, at: { material: 0, files: 0 } },
+    fileTotals: null,
     routeAnswer: null,
     lineAnswers: [],
     offers: [],
@@ -297,6 +302,7 @@ export function startIntake(
     invoiceTexts: [],
     pendingInvoice: null,
     aiGoods: null,
+    goodsFiles: [],
     clientAskedWith: null,
     usages: [],
     aiFailure: null,
@@ -307,6 +313,9 @@ export function startIntake(
   };
   store.collections.set(key(chatId), state);
   markDirty(key(chatId));
+  // A collection opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1): what
+  // comes next is this collection's, and the burst's message keeps its parts.
+  endBurst(chatId);
   return state;
 }
 
@@ -385,14 +394,21 @@ export function intakeIsEmpty(state: IntakeState): boolean {
 }
 
 /**
- * Nothing new was collected on a collection that carries rows of its own — an
- * add collection's stored rows, a seeded one's returned rows (review PF-8):
- * its table is what there is to read. One home for «Bo‘ldi» (back to the
- * table, calc-read `pressAnalyse`), the save guard and the echo (fix review
+ * Nothing new was collected since what the table shows: since the last
+ * reading (`readMark`, docs/IKKI-ESHIK.md §1.4 — «➕ Yana ma’lumot» and
+ * nothing sent leaves the read table standing on every collection, review
+ * PC-ADV-6), or, before any reading, on a collection that carries rows of its
+ * own — an add collection's stored rows, a seeded one's returned rows (review
+ * PF-8): its table is what there is to read. One home for «Bo‘ldi» (back to
+ * the table, calc-read `pressAnalyse`), the save guard, the echo (fix review
  * W-11: after «➕ Yana ma’lumot» and nothing sent, the save said «Yangi
- * ma’lumot hali o‘qilmagan» about nothing).
+ * ma’lumot hali o‘qilmagan» about nothing) and the table's «⬇️» marker.
  */
-export function nothingNewToRead(state: Pick<IntakeState, 'amend' | 'seed' | 'material' | 'fileCount'>): boolean {
+export function nothingNewToRead(
+  state: Pick<IntakeState, 'amend' | 'seed' | 'material' | 'fileCount' | 'readMark'>,
+): boolean {
+  const mark = state.readMark ?? null;
+  if (mark) return state.material.length <= mark.material && state.fileCount <= mark.files;
   return (state.amend !== null || state.seed !== null) && state.material.length === 0 && state.fileCount === 0;
 }
 
@@ -464,21 +480,42 @@ export async function retryUnsaid(): Promise<number> {
   return said;
 }
 
-/** §2.7's goodbye, pure. `client` = `intakeClientSummary(clientHintRaw)`. */
+/**
+ * The refusal's pointer to «➕» (docs/IKKI-ESHIK.md §2.5): the AI door's words
+ * name its AI answer, which carries a «➕» and takes a reply; the plain door
+ * gets no AI answer, so its words name only the ✅'s own «➕». A NULL door
+ * (a request from before the doors) keeps the AI door's — today's — words.
+ */
+export function addPointerWords(door: 'plain' | 'ai' | null): string {
+  return door === 'plain'
+    ? 'Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».'
+    : 'Qo‘shimcha bo‘lsa — ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing, yoki AI javobiga reply qilib yozing. Yangi hisob — «🧮 Hisoblatish».';
+}
+
+/**
+ * §2.7's goodbye, pure. `client` = `intakeClientSummary(clientHintRaw)`. An
+ * add collection's points at «➕» by its request's door (docs/IKKI-ESHIK.md
+ * §2.5): a plain request has no AI answer to press it under.
+ */
 export function intakeEndedText(
-  state: Pick<IntakeState, 'section' | 'amend'>,
+  state: Pick<IntakeState, 'section' | 'amend' | 'ai' | 'seed'>,
   sections: Record<CalcSection, string>,
   client: string | null,
 ): string {
   if (state.amend) {
     return (
       `⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ ${state.amend.cardLabel}. ` +
-      'Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.'
+      (state.amend.door === 'plain'
+        ? addPointerWords('plain')
+        : 'Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.')
     );
   }
+  // A first collection is restarted from the door it came in by: the two
+  // doors are distinct now (review PC-SPEC-10).
+  const door = state.ai && state.seed === null ? '«🤖 AI rastamojka»' : '«🧮 Hisoblatish»';
   return (
     `⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: ${sections[state.section]} · ${client ?? 'mijoz hali yozilmagan'}. ` +
-    'Kerak bo‘lsa «🧮 Hisoblatish» dan qaytadan boshlang.'
+    `Kerak bo‘lsa ${door} dan qaytadan boshlang.`
   );
 }
 
@@ -991,6 +1028,40 @@ export function flushBeforeConfirm(): Transformer {
 }
 
 /**
+ * A stored row as THIS release reads it (docs/IKKI-ESHIK.md §1.3): the ONE
+ * place an older collection's shape is brought forward, run on every row the
+ * hydrate restores, before it is put in memory. Pure.
+ *
+ *  - the fields 0141's round added get their empty values — a row written
+ *    before them has no `fileTotals` (null), no `fileNotes` ([]) and no
+ *    `goodsFiles` ([]); a stored value always wins over the default;
+ *  - a collection opened before his 1a may still hold a question no release
+ *    asks any more (§1.1): a second Excel waiting for «qo‘shilsin yoki
+ *    o‘rniga?» (`pendingInvoice`) is resolved by the rule a new one meets
+ *    (`foldPendingInvoice` — compared row by row, its decisions in
+ *    `fileNotes`), an open «boshqa zavodmi?» (`aiGoods: 'ask'`) becomes the
+ *    add path, and a stored row's conflict nobody answered is the VED's.
+ *    `'context'` and `'add'` stay — 'context' was the seller's own answer.
+ *    After the hydrate nothing is pending, so «Bo‘ldi» is refused for no file.
+ */
+export function migrateIntakeState(row: IntakeState): IntakeState {
+  const base: IntakeState = {
+    ...row,
+    fileTotals: row.fileTotals ?? null,
+    fileNotes: Array.isArray(row.fileNotes) ? row.fileNotes : [],
+    goodsFiles: Array.isArray(row.goodsFiles) ? row.goodsFiles : [],
+  };
+  const resolved: IntakeState = base.pendingInvoice ? { ...base, ...foldPendingInvoice(base) } : base;
+  return {
+    ...resolved,
+    aiGoods: resolved.aiGoods === 'ask' ? 'add' : resolved.aiGoods,
+    conflicts: Array.isArray(resolved.conflicts)
+      ? resolved.conflicts.map((c) => (c.choice === null ? { ...c, choice: 'ved' as const } : c))
+      : resolved.conflicts,
+  };
+}
+
+/**
  * Restore the durable collections before the first `getUpdates`. Every row
  * that ran out less than 24 hours ago is loaded too, so the sweep ends it WITH
  * its line (durability-12 b); memory wins where it already holds a chat. A
@@ -1030,7 +1101,7 @@ export async function hydrateIntakes(): Promise<number> {
   let loaded = 0;
   for (const row of candidates) {
     if (ended.has(row.note_id) || store.collections.has(row.chat_id)) continue;
-    const state = { ...row.state, expires: row.state.touchedAt + INTAKE_TTL_MS };
+    const state = { ...migrateIntakeState(row.state), expires: row.state.touchedAt + INTAKE_TTL_MS };
     store.collections.set(row.chat_id, state);
     loaded += 1;
   }
@@ -1126,6 +1197,9 @@ async function resendSave(add: UntoldAmendment): Promise<void> {
 
 /** Tests: a restart, as far as this store is concerned — memory, timers, the seal and the hydrate. */
 export function __forgetIntakeMemory(): void {
+  // The process died: its owed kept-last draws die with it (docs/IKKI-ESHIK.md
+  // §1.4) — one Telegram never answered must not hold the next process's settle.
+  __forgetKeptLast();
   for (const p of store.pending.values()) if (p.timer) clearTimeout(p.timer);
   store.collections.clear();
   store.pending.clear();

@@ -6,6 +6,8 @@ import { __dispatchSettled } from '@/modules/platform/telegram/client-cabinet';
 import { membershipSettled } from '@/modules/platform/telegram/price-channel-handlers';
 import { flushWaitWrites, nowSec } from '@/modules/platform/telegram/waits';
 import { flushIntakeWrites } from '@/modules/platform/telegram/calc-store';
+import { tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 
 /**
  * The bot the server runs, driven without a network (Q5 a).
@@ -45,7 +47,7 @@ export interface BotHarness {
   /** Every send.ts and grammy call AFTER this mark — assertions about ONE handle(), never the flat log. */
   mark(): Mark;
   since(mark: Mark): { api: ApiCall[]; sent: SentCall[] };
-  /** Awaits the cabinet's per-chat chains, the membership chain, the wait and collection writes and one setImmediate. */
+  /** Awaits the cabinet's per-chat chains, the membership chain, the owed kept-last draws, the wait and collection writes and one setImmediate. */
   settle(): Promise<void>;
   /** The `date` the fake gives the messages it sends (default nowSec()). */
   setClock(sec: number | null): void;
@@ -176,7 +178,14 @@ export function botHarness(): BotHarness {
     async settle() {
       await __dispatchSettled();
       await membershipSettled();
+      // A kept-last draw owed (docs/IKKI-ESHIK.md §1.4, §4.1): an album's ONE
+      // message waits out its debounce, so a test reads it once it is drawn.
+      await keptLastSettled();
       await flushWaitWrites();
+      // The collector's kept-last prompt and its table edits, dispatched off
+      // the handler (docs/IKKI-ESHIK.md §1.4): drawn before anything is read.
+      await keptLastSettled();
+      await tableEditsSettled();
       // The «Hisoblatish» collections too (docs/SAKKIZ-R3.md §6.1): a no-op
       // unless the file switched the durable store on.
       await flushIntakeWrites();

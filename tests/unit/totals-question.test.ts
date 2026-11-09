@@ -209,13 +209,36 @@ describe('which totals rows are ⚠️', () => {
     expect(table('yolkira', { ...ROAD, volumeM3: 12 })).toContain('✅ Hajm: 12 kub');
   });
 
-  it('a plain-door yolkira collection gets the table after its reading, both totals ⚠️ (the AI-podklyuch gate is gone)', async () => {
+  it('a figure a packing list GAVE is never asked again — below what the seller typed, above the model (docs/IKKI-ESHIK.md §1.2.5, INT-10)', async () => {
+    // The packing list's totals (`fileTotals`) stand where the model's reading would: the brutto
+    // row is ✅ on the AI door's table with no ⚠️ and no «jami 3500 kg» taught.
+    const fileTotals = { weightKg: 3500, volumeM3: 28, weightNetto: false, label: '«packing.xlsx»', at: { material: 1, files: 1 } };
+    const { chatId } = collection({ stage: 'material', ai: true, material: ['Kurtka 300 dona'], fileCount: 1, fileTotals, facts: { ...ROAD } }, 'podklyuch');
+    model.analyze.mockResolvedValueOnce(reads({ weightKg: 9999, volumeM3: 99 }));
+    const ctx = fakeCtx();
+    await pressDone(ctx, chatId);
+    const live = activeIntake(chatId)!;
+    expect([live.facts.weightKg, live.facts.volumeM3]).toEqual([3500, 28]);
+    const text = ctx.replies.at(-1)!;
+    expect(text).toContain('3500 kg');
+    expect(text).not.toContain('⚠️ umumiy brutto');
+    expect(openTotals('podklyuch', live.facts)).toEqual([]);
+    // A typed total outranks it.
+    const typed = collection({ stage: 'material', material: ['jami 4000 kg'], fileCount: 1, fileTotals, facts: { ...ROAD } }, 'podklyuch');
+    model.analyze.mockResolvedValueOnce(reads({}));
+    await pressDone(fakeCtx(), typed.chatId);
+    expect(activeIntake(typed.chatId)!.facts.weightKg).toBe(4000);
+  });
+
+  it('a plain-door yolkira collection gets its SUMMARY after its reading, both totals the VED’s (docs/IKKI-ESHIK.md §2.1, his 2a)', async () => {
     const { chatId, state } = collection({ stage: 'material', ai: false, facts: { ...ROAD } });
     const ctx = fakeCtx();
     await deliverNextStep(ctx, chatId, state);
     const text = ctx.replies.at(-1)!;
-    expect(text).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
-    expect(text).toContain('⚠️ umumiy hajmi (kub) — yozilmagan');
+    // Re-anchored 2026-11-08: this pinned the asking table's ⚠️ rows on the plain door.
+    expect(text).toContain('ℹ️ umumiy brutto og‘irligi (kg, qadoq bilan) yo‘q — VED xodimi so‘raydi');
+    expect(text).toContain('ℹ️ umumiy hajmi (kub) yo‘q — VED xodimi so‘raydi');
+    expect(text).not.toContain('⚠️ umumiy');
     expect(activeIntake(chatId)!.stage).toBe('review');
   });
 });
@@ -294,13 +317,14 @@ describe('the answer', () => {
     expect(ctx.replies.at(-1)).toContain('✅ Og‘irlik (brutto): 3500 kg');
   });
 
-  it('through the door: a re-read that still misses the kilos marks the brutto ⚠️ AGAIN (P3-1)', async () => {
+  it('through the door: a re-read that still misses the kilos marks the brutto open AGAIN (P3-1)', async () => {
     const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona 12 kub'], facts: { volumeM3: 12 } });
     model.analyze.mockResolvedValueOnce(reads({ volumeM3: 12 }));
     const ctx = fakeCtx();
     await pressDone(ctx, chatId);
     const text = ctx.replies.at(-1)!;
-    expect(text).toContain('⚠️ umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+    // The plain door's summary says it is the VED's (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
+    expect(text).toContain('ℹ️ umumiy brutto og‘irligi (kg, qadoq bilan) yo‘q — VED xodimi so‘raydi');
     expect(text).toContain('✅ Hajm: 12 kub');
     expect(openTotals('yolkira', activeIntake(chatId)!.facts)).toEqual(['weightKg']);
   });
@@ -339,7 +363,8 @@ describe('a total typed two ways (review P3-3, P3-R2)', () => {
   ];
 
   it('the answer to the brutto row retires its own «mi yoki» — the table no longer asks about it', async () => {
-    const { chatId } = collection({ stage: 'review', material: ['Kurtka 300 dona 1.2 kub, 1,200 kg'] });
+    // The AI door's table asks a doubt; the plain door's summary asks none (docs/IKKI-ESHIK.md §2.1).
+    const { chatId } = collection({ stage: 'review', ai: true, material: ['Kurtka 300 dona 1.2 kub, 1,200 kg'] });
     model.analyze.mockResolvedValueOnce(reads({ weightKg: 1200, goods: [{ name: 'Kurtka', quantity: 300, volumeM3: 1.2 }] }));
     const ctx = fakeCtx();
     await pressDone(ctx, chatId);
@@ -404,7 +429,8 @@ describe('material sent AFTER the answer (review CONC-2, re-driven through the t
     collection({ stage: 'review', tableMessageId: 900, material: ['Kurtka 300 dona 12 kub'], facts: { ...ROAD, volumeM3: 12 }, ...patch });
 
   it('answer «jami 3500 kg», ➕ a forwarded «brutto 4200 kg», Bo‘ldi — asked with both figures, never 3500 in silence', async () => {
-    const { chatId } = answered();
+    // Asked on the AI door's table; the plain door leaves the doubt to the VED (docs/IKKI-ESHIK.md §2.1).
+    const { chatId } = answered({ ai: true });
     const ctx = fakeCtx();
     await answer(ctx, chatId, 'jami 3500 kg');
     expect(activeIntake(chatId)!.facts.weightKg).toBe(3500);

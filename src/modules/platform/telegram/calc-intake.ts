@@ -1,10 +1,26 @@
 import { logger } from '../logger';
 import { staffForChat } from './staff-bot';
-import { tierWords } from './name-tiers';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
 import type { TableTarget } from '../../wms/calc/line-address';
+import type { CodedRow, CodingLookups, CodingRow } from '../../wms/calc/row-coding';
+import type { KnownCode } from '../../wms/calc/intake-ai';
 import type { IntakeFiles } from './calc-files';
+import {
+  goodsNameKey,
+  goodsNameKeys,
+  LINE_FIGURES,
+  figureOf,
+  namesMeet,
+  packingTotals,
+  sameFigures,
+  sameLine,
+  type GoodsFileMeta,
+  type NameKeys,
+} from './file-goods';
+// The name keys and «the same line» moved to file-goods.ts (docs/IKKI-ESHIK.md
+// §1.2) — the hydrate reads them too; every importer keeps its import here.
+export { goodsNameKey, goodsNameKeys, sameGoodsLine } from './file-goods';
 
 /**
  * The «Hisoblatish» collection, as the bot holds it.
@@ -109,6 +125,14 @@ export interface IntakeState {
    */
   seededFrom?: string | null;
   /**
+   * A seeded collection's SOURCE door (docs/IKKI-ESHIK.md §0.3), written when
+   * it opens: what its chat words follow — the plain door's summary, or
+   * today's table on a legacy NULL source, which the `ai` flag alone cannot
+   * tell from a plain yo‘lkira one. Optional — a row written before it reads
+   * as legacy.
+   */
+  seedDoor?: import('../../wms/calc/intake').IntakeDoor | null;
+  /**
    * The customer the DOOR wrote into `clientHintRaw` — an add collection's
    * card label, a seeded one's carried code (review PF-9). Not the seller's
    * typing: a collection holding only this is empty, never reminded and never
@@ -174,6 +198,24 @@ export interface IntakeState {
   } | null;
   /** The table answers the seller was told, for the undo (P3). */
   echoes: IntakeEcho[];
+  /**
+   * What the last «↩️» took back on the AI door (docs/IKKI-ESHIK.md §3.4):
+   * the table's last block says it — «↩️ Bekor qilindi: …», or that a row a
+   * later answer changed was kept — until the next answer or reading, since
+   * no echo message is left to edit. `tag`: the echo it undid. Optional — a
+   * row written before it reads as none.
+   */
+  lastUndo?: { tag: string; done: string[]; notes: string[] } | null;
+  /**
+   * What the last reading READ — the material and files of its snapshot
+   * (docs/IKKI-ESHIK.md §1.4, review PC-SPEC-5 / PC-ADV-6): «is there
+   * anything new to read» is anything sent beyond it (`nothingNewToRead`).
+   * Without it a first collection collecting again after «➕ Yana ma’lumot»
+   * always counted as unread: the summary lost its buttons and its ✅ was
+   * refused «avval Bo‘ldi» with nothing sent, a billed re-read for a job that
+   * was complete. Optional — a row written before it reads as no reading.
+   */
+  readMark?: TotalsMark | null;
   /** What staff typed to name the customer — a code, a phone, or a name. */
   clientHintRaw: string;
   /** Everything typed or captioned, in the order it came. */
@@ -191,6 +233,17 @@ export interface IntakeState {
    * lenta keeps them ahead of the model's notes, as before.
    */
   notes: string[];
+  /**
+   * The RECEIPT-time notes (docs/IKKI-ESHIK.md §1.2.5, §1.4): what the bot
+   * decided about a file when it arrived — the Excel-vs-Excel comparison, «N
+   * ta tovar o‘qildi», «rasm sifatida o‘qiladi», the reader's cut and size
+   * warnings — written in the same patch as the file. They survive every
+   * reading (`settleAnalysis` keeps the live row's), are lines of the ONE
+   * prompt, and land on the card note ahead of `notes` and `steps`.
+   * READING-time notes stay in `notes`. A row written before it reads []
+   * (`migrateIntakeState`).
+   */
+  fileNotes: string[];
   aiUsed: boolean;
   /**
    * Photographs the model is allowed to LOOK at, downscaled.
@@ -253,6 +306,30 @@ export interface IntakeState {
    * then asked about rather than outranked (`totalsDoubts`).
    */
   totalsAnswer: { weightKg: number | null; volumeM3: number | null; at: TotalsMark };
+  /**
+   * The totals a further packing-shaped Excel GAVE (docs/IKKI-ESHIK.md
+   * §1.2.2, §1.2.5): its gross Σ as the brutto — or, from a net column only,
+   * offered as a netto (`weightNetto`), which the freight total refuses where
+   * the section needs brutto — and its m³ Σ. Written in the same patch as the
+   * file, so a re-read cannot lose it. Ranked below the seller's typed figure
+   * and `totalsAnswer`, above the model; `at` is where the material stood, so
+   * a `totalsAnswer` older than it is doubted (`totalsDoubts`). `label` names
+   * the file. Null = no such file. Optional in the stored row: a row written
+   * before it reads null (`migrateIntakeState`).
+   */
+  fileTotals: {
+    weightKg: number | null;
+    volumeM3: number | null;
+    weightNetto: boolean;
+    label: string;
+    at: TotalsMark;
+    /**
+     * The figures two files disagreed on (`withFileTotals`): left to the VED,
+     * and the model's reading does not land in their place (review
+     * PF-ADV-8). Absent = none.
+     */
+    clash?: ('weightKg' | 'volumeM3')[];
+  } | null;
   /**
    * A route answered in the table (docs/SAKKIZ-R3.md K15; P3 writes it), kept
    * beside `totalsAnswer` so a re-read cannot erase it — a typed «Yiwu →
@@ -336,19 +413,20 @@ export interface IntakeState {
    * goods list (#1458) — under their OWN heading, «for the totals, do not
    * list these goods» (round-2 review, C2: joined into the goods block, a
    * «boshqa zavod» answer re-listed the workbook's own lines). Kept per
-   * accepted workbook so «🔁 Oldingisining o'rniga» drops the replaced file's
-   * totals WITH its goods: they used to stay in `sheetTexts`, and the job's
-   * kg/m³ could come from the very file the seller had just been told was
-   * replaced (round-1 review, c7).
+   * workbook, out of `sheetTexts` (round-1 review, c7); since his 1a no file
+   * replaces another, and a packing-shaped further Excel's WHOLE text joins
+   * here too (docs/IKKI-ESHIK.md §1.2.2) — its «TOTAL G.W.» row is read under
+   * the totals-only heading.
    */
   invoiceTexts: SheetText[];
   /**
-   * Further spreadsheets of goods, waiting for the seller's answer: add their
-   * lines to the first's, or replace them (his 1.13 c — the bot asks). The
-   * second used to REPLACE the first in silence. A THIRD file while the
-   * question is open FOLDS into it — it used to overwrite the second, whose
-   * lines then reached nobody (round-1 review, c1) — and its other sheets wait here
-   * too, until the answer says whether they stay.
+   * RETIRED by his 1a (docs/IKKI-ESHIK.md §1.1): further spreadsheets that
+   * waited for «qo‘shilsin yoki o‘rniga?» (his 1.13 c). Nothing writes it any
+   * more — a further Excel is compared row by row as it arrives
+   * (file-goods.ts `foldInvoice`) — and a collection hydrated holding one is
+   * resolved by the same rule before it is put in memory
+   * (`migrateIntakeState`), so after the hydrate nothing is pending. Kept in
+   * the type for that one read.
    */
   pendingInvoice: {
     goods: import('../../wms/calc/intake').CalcFacts['goods'];
@@ -357,24 +435,33 @@ export interface IntakeState {
   } | null;
   /**
    * What the MODEL's goods are worth once an Excel list exists (round-1
-   * review, c4; his 1.13: two invoices from two factories). A PDF or a header-less sheet
-   * is read by the model, and its lines used to be thrown away whenever a
-   * mapped sheet answered — after the bot had promised «AI o'qiydi». So a
-   * separate model-read file beside an Excel list is ASKED about: `ask` =
-   * the question is open (and «Bo'ldi» waits for it), `add` = another
-   * factory's goods, appended to the Excel's, `context` = the same goods, the
-   * file is read for its totals only. Null = no such pair has arisen.
+   * review, c4; his 1.13: two invoices from two factories). A PDF or a
+   * header-less sheet beside an Excel list is no longer asked about (his 1a,
+   * docs/IKKI-ESHIK.md §1.2.2, M3): the bot writes `add` — the model is shown
+   * the Excel's list (`knownGoods`) and told to list only goods not on it,
+   * `pickGoods` drops a line the Excel already carries (by name, or by a count
+   * AND a weight equal to exactly one row's, M1 c), and the reading names
+   * what it added (`modelAddedNote`). `context` (the same goods, read for the
+   * totals only) and `ask` (the question open) are a hydrated collection's —
+   * `ask` becomes `add` at the hydrate (`migrateIntakeState`); new code only
+   * WRITES `add`. Null = no such pair has arisen: photos and typed text
+   * beside an Excel keep that rule (the Excel answers, the extra lines are
+   * named).
    *
-   * STATED, not built (round-2 review, C2): ONE answer covers every file the
-   * model reads in this collection — the model reads them together and
-   * returns one list, which carries no file per line. So factory A's own
-   * invoice.pdf beside factory B's PDF has no right answer: «add» repeats A's
-   * lines wherever their names differ from the Excel's, «context» drops B's.
-   * The question says so to the seller («Javob AI o‘qiydigan hamma
-   * fayllarga tegishli»); per-file answers would need the model to name a
-   * line's source.
+   * STATED, not built (round-2 review, C2): the model reads the documents
+   * together and returns one list, which names no file per line — the dedup
+   * against the Excel is what stands for per-file answers.
    */
   aiGoods: 'ask' | 'add' | 'context' | null;
+  /**
+   * The mapped Excels' blocks of `invoiceGoods`, in order (docs/IKKI-ESHIK.md
+   * §1.2.2): which file each row came from, its shape and weight kind — so a
+   * further file compares a gross weight only with a gross one, and a packing
+   * list that came FIRST hands the goods role to the invoice after it.
+   * Optional in the stored row: a row written before it reads [] and every
+   * held row's weight kind unknown.
+   */
+  goodsFiles?: GoodsFileMeta[];
   /**
    * The last text the customer question filed as MATERIAL. The same text sent
    * again is the seller insisting it IS the customer, and is taken as one —
@@ -411,7 +498,12 @@ export interface IntakeState {
    * overrule the documents (the diagnosis' cause 5).
    */
   answers: string[];
-  /** The album the open customer question was last re-asked for (one ask per album). */
+  /**
+   * RETIRED (docs/IKKI-ESHIK.md §1.5): the album the customer question was
+   * last re-asked for. The question is one message now, redrawn coalesced
+   * per chat, so nothing writes or reads it; kept, so a row written before
+   * still parses.
+   */
   reaskedGroup: string | null;
   expires: number;
 }
@@ -643,10 +735,34 @@ export function placeByName(
  * «yangi kod yozilmadi» (review adv-11). Pure.
  */
 export function rowPatchOf(row: CalcGoodsFact, patch: Partial<CalcGoodsFact>): Partial<CalcGoodsFact> {
-  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return patch;
+  // A code the seller typed is the row's OWN from here on (docs/IKKI-ESHIK.md
+  // §3.1): it stays on top of the reading's coding, and never lands marked as
+  // the model's proposal it replaced.
+  const typed = (p: Partial<CalcGoodsFact>) => (p.tnvedCode ? { ...p, tnvedSource: 'row' as const } : p);
+  if (!row.itemId || !row.tnvedCode || !patch.tnvedCode || patch.tnvedCode === row.tnvedCode) return typed(patch);
   const rest = { ...patch };
   delete rest.tnvedCode;
   return rest;
+}
+
+/**
+ * A code the seller TYPED in the table is the row's own at the landing too
+ * (docs/IKKI-ESHIK.md §3.1, review PF-ADV-11): the table writes the code onto
+ * its row and leaves the row's `tnvedSource`, so a row the model had coded,
+ * corrected by the seller and confirmed straight away, landed with «TNVED: AI
+ * taklifi (o‘qishda) — tekshiring» over the seller's own code. Only a re-read
+ * cleared it (`rowPatchOf`). A row whose code IS its answer's code is the
+ * seller's; a stored row (the add door's) is the VED's and is left. Pure.
+ */
+export function typedCodesOwn(
+  goods: readonly CalcGoodsFact[],
+  answers: IntakeState['lineAnswers'],
+): CalcGoodsFact[] {
+  return goods.map((g, i) => {
+    if (g.itemId || g.tnvedSource === 'row' || !g.tnvedCode?.trim()) return g;
+    const typed = answers.some((e) => e.index === i && !e.itemId && e.patch.tnvedCode?.trim() === g.tnvedCode!.trim());
+    return typed ? { ...g, tnvedSource: 'row' } : g;
+  });
 }
 
 /**
@@ -943,226 +1059,6 @@ export function intakeClientSummary(raw: string): string | null {
 
 type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>;
 
-/**
- * A goods name as two lists compare it: case, spacing and punctuation are not
- * what makes two lines the same product. Exported for the test.
- */
-export function goodsNameKey(name: string): string {
-  return name.toLowerCase().replace(/[\s\p{P}]+/gu, ' ').trim();
-}
-
-/**
- * A name's OUTERMOST brackets (ASCII and full-width — a Chinese original often
- * comes in （）): what each holds, and the name outside them. «Куртка женская
- * (Ladies jacket (XL))» holds «Ladies jacket (XL)» — the innermost pair alone
- * read «XL» and left the original's half outside (round-3 review, collector
- * C2 note). Unbalanced brackets are no brackets: nothing is guessed open.
- */
-function bracketParts(name: string): { inside: string[]; outside: string } {
-  const inside: string[] = [];
-  let outside = '';
-  let depth = 0;
-  let start = 0;
-  for (let i = 0; i < name.length; i += 1) {
-    const ch = name[i]!;
-    if (ch === '(' || ch === '（') {
-      if (depth === 0) {
-        start = i + 1;
-        outside += ' ';
-      }
-      depth += 1;
-    } else if (ch === ')' || ch === '）') {
-      if (depth === 0) return { inside: [], outside: name };
-      depth -= 1;
-      if (depth === 0) inside.push(name.slice(start, i));
-    } else if (depth === 0) outside += ch;
-  }
-  return depth === 0 ? { inside, outside } : { inside: [], outside: name };
-}
-
-/**
- * The names one goods line answers to (round-2 review, C2/C6), each through
- * `goodsNameKey`:
- *  - `whole` — the name as written: the one name the line IS;
- *  - `outside` / `inside` — the name outside its outermost brackets, and what
- *    each holds;
- *  - `keys` — everything the line answers to: the whole, the outside, the
- *    insides. The model is TOLD to write «Куртка женская (Ladies jacket)»
- *    (its SYSTEM prompt: Russian, the original in brackets), so the whole
- *    name alone never equalled the Excel's «Ladies jacket» and an «add»
- *    landed the same line twice;
- *  - `halves` — for a Chinese factory's bilingual cell with no brackets
- *    («女士夹克 Ladies jacket», «女士夹克\nLadies jacket») its Chinese half and
- *    the rest, each beside the OTHER half (`rest`): the model reads such a
- *    cell as «Куртка женская (女士夹克)» and the Excel's whole name met neither
- *    half (round-3 review, collector C2 note). How a half may meet is
- *    `halfMeets` — not as a name the line IS: «Kurtka 黑色» is a black jacket
- *    and «LED灯泡» a bulb, and nothing says a half is the other's translation
- *    (round-4 probe, collector).
- * Halves only without brackets: in «Kurtka (黑色)» the colour is the bracket.
- * Empty keys are dropped.
- */
-export function goodsNameKeys(name: string): {
-  whole: string;
-  outside: string;
-  inside: string[];
-  keys: string[];
-  halves: { key: string; rest: string }[];
-} {
-  const whole = goodsNameKey(name);
-  const parts = bracketParts(name);
-  const outside = goodsNameKey(parts.outside);
-  const inside = parts.inside.map(goodsNameKey).filter(Boolean);
-  const han = goodsNameKey((name.match(/\p{Script=Han}+/gu) ?? []).join(' '));
-  const rest = goodsNameKey(name.replace(/\p{Script=Han}+/gu, ' '));
-  const split = parts.inside.length === 0 && han !== '' && /\p{L}/u.test(rest);
-  return {
-    whole,
-    outside,
-    inside,
-    keys: [...new Set([whole, outside, ...inside])].filter(Boolean),
-    halves: split ? [{ key: han, rest }, { key: rest, rest: han }] : [],
-  };
-}
-
-/**
- * Do two names point at the same product the WIDE way — a name ONE of them
- * answers to is the name the OTHER is: «Куртка женская (Ladies jacket)» is
- * «Ladies jacket», «Kurtka» is «Kurtka (qora)» (round-2 review, C2/C6)? Never
- * bracket against bracket or outside against outside: a bracket is as often a
- * colour or a size, and «Kurtka (qora)» beside «Kurtka (oq)» are two lines of
- * one order. A bilingual cell's half meets by `halfMeets` alone.
- */
-type NameKeys = ReturnType<typeof goodsNameKeys>;
-function namesMeet(a: NameKeys, b: NameKeys): boolean {
-  return a.keys.includes(b.whole) || b.keys.includes(a.whole) || halfMeets(a, b) || halfMeets(b, a);
-}
-
-const SCRIPTS = [
-  ['han', /\p{Script=Han}/u],
-  ['cyrillic', /\p{Script=Cyrillic}/u],
-  ['latin', /\p{Script=Latin}/u],
-] as const;
-
-/**
- * A key's words for comparing two names: each word's LETTERS under the script
- * of its first one, and the NUMBERS the key states as their own bucket — every
- * run of digits, counted (a multiset), however they are written. A size is
- * «600*600mm» in the cell and «600×600 мм» in the model's reading of it, a
- * range «36~40» and «36–40»: compared as words they were two names and one
- * order landed twice (round-6 probe, collector, 28 common cases); left out,
- * «iPhone 14» met «iPhone 15» and a 800×800 tile met the 600*600 one (the
- * lead's undo, probed: 5 common). Read as numbers both hold. Not read: a unit
- * conversion («0.35L» / «350 мл»), which stays another name.
- */
-function nameWords(key: string): Map<string, Set<string>> {
-  const by = new Map<string, Set<string>>();
-  const add = (bucket: string, word: string) => by.set(bucket, (by.get(bucket) ?? new Set<string>()).add(word));
-  // NFKC writes full-width digits as digits and «№» as «No» — capitalised,
-  // so the case is folded after it.
-  const plain = key.normalize('NFKC').toLowerCase();
-  for (const word of plain.split(' ').filter(Boolean)) {
-    const letters = word.replace(/[^\p{L}]/gu, '');
-    if (letters === '') continue;
-    add(SCRIPTS.find(([, re]) => re.test(letters))?.[0] ?? 'other', letters);
-  }
-  const seen = new Map<string, number>();
-  for (const run of plain.match(/[0-9]+/g) ?? []) {
-    const n = run.replace(/^0+(?=\d)/, '');
-    const nth = (seen.get(n) ?? 0) + 1;
-    seen.set(n, nth);
-    add('number', `${n}#${nth}`);
-  }
-  return by;
-}
-
-// The tier words (#1468) live in name-tiers.ts, one home with the bot table's
-// name address (docs/SAKKIZ-R3.md §8.1); `otherName` reads them from there.
-
-/**
- * Are two keys two DIFFERENT names: in some script both write — or in the
- * numbers both state — each has a word the other lacks: «Shirt» beside
- * «Jacket», «Куртка M» beside «XL», «iPhone 15» beside «iPhone 14», «600*600»
- * beside «800×800». One naming MORE of the same is not another name:
- * «Наушники Bluetooth» shares the Latin of «Bluetooth earphones», «Куртка
- * женская XL» the «XL» of «Ladies jacket XL», and «Мужские кроссовки» is
- * «Кроссовки мужские» (round-5 probe, collector: comparing SCRIPTS alone made
- * each of those a clash, and one order landed twice) — except a model's TIER
- * (`tierWords`): «Чехол iPhone 15» is not «Phone case iPhone 15 Pro», and two
- * stalls' phone cases had one line dropped as the other's (round-6 final
- * probe, collector, 10 common cases).
- */
-function otherName(a: string, b: string): boolean {
-  const tiersA = tierWords(a);
-  const tiersB = tierWords(b);
-  if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
-  const wordsB = nameWords(b);
-  for (const [bucket, ofA] of nameWords(a)) {
-    const ofB = wordsB.get(bucket);
-    if (ofB && [...ofA].some((w) => !ofB.has(w)) && [...ofB].some((w) => !ofA.has(w))) return true;
-  }
-  return false;
-}
-
-/**
- * A bilingual cell meets another line through a half only where a
- * translation stands: the other line's bracket — the model's «Куртка женская
- * (女士夹克)» — unless that line's outside and the cell's other half are two
- * names (`otherName`: «Shirt (黑色)» is not «Jacket 黑色»), or the other's
- * whole bare name («Ladies jacket»). Half against half, or against an
- * outside, met «夹克 XL» with «衬衫 XL» and «Kurtka 黑色» with «Kurtka (oq)»
- * (round-4 probe, collector).
- */
-function halfMeets(cell: NameKeys, other: NameKeys): boolean {
-  return cell.halves.some(({ key, rest }) => {
-    if (other.inside.length === 0) return other.whole === key;
-    if (!other.inside.includes(key)) return false;
-    return other.outside === '' || !otherName(other.outside, rest);
-  });
-}
-
-/**
- * The figures a goods line can state, and what «equal» means for each: a
- * count is exact (300 and 299 are two lines); a weight, volume or amount is
- * equal within rounding — under `unit` apart, or within 0.5 % (a PDF's
- * «1 234,5 kg» read as 1234).
- */
-const LINE_FIGURES: { field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty' | 'amount'; unit: number | null }[] = [
-  { field: 'quantity', unit: null },
-  { field: 'weightKg', unit: 1 },
-  { field: 'volumeM3', unit: 0.01 },
-  { field: 'measureQty', unit: null },
-  { field: 'amount', unit: 0.01 },
-];
-
-function figureOf(g: GoodsList[number], field: (typeof LINE_FIGURES)[number]['field']): number | null {
-  const v = g[field];
-  return typeof v === 'number' && Number.isFinite(v) ? v : null;
-}
-
-/**
- * Is the model's line the Excel line READ AGAIN, by its figures (round-3
- * review, R3-C1)? A packing list re-read carries the Excel line's own count or
- * weight; another factory's same-named product does not. Only the figures
- * BOTH lines state are compared (round-4 review, C-r2 ND2 and integration
- * defect 3): a re-read that states the count beside an Excel line stating
- * only the weight — the Invoice sheet beside the Packing list, or a count the
- * reader took once from a merged cell — shares nothing to disagree on, and
- * counting «the Excel has no count» as a disagreement landed the order twice.
- * So: nothing shared (nothing says it is another line), or a shared figure
- * agrees.
- */
-function figuresAgree(model: GoodsList[number], invoice: GoodsList[number]): boolean {
-  const shared = LINE_FIGURES.filter((f) => figureOf(model, f.field) !== null && figureOf(invoice, f.field) !== null);
-  if (shared.length === 0) return true;
-  return shared.some((f) => {
-    const ours = figureOf(model, f.field)!;
-    const theirs = figureOf(invoice, f.field)!;
-    if (f.unit === null) return ours === theirs;
-    const gap = Math.abs(ours - theirs);
-    return gap < f.unit || gap <= 0.005 * Math.max(Math.abs(ours), Math.abs(theirs));
-  });
-}
 
 /** A line the Excel kept out of the job, and why — see `PickedGoods.sameAsInvoice`. */
 export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' };
@@ -1184,30 +1080,6 @@ export interface PickedGoods {
   sameAsInvoice: LeftOutLine[];
 }
 
-/**
- * Is the line READ the line KEPT, read again — `pickGoods`' «already
- * carries» rule, one home for it (docs/SAKKIZ-R3.md §9.4): the same WHOLE
- * name, or a name one answers to that is the other's (`namesMeet`) with
- * figures that agree (`figuresAgree`). The wide match alone threw factory B's
- * «Kurtka (qora)» 200 away against factory A's «Kurtka» 300 — two factories,
- * one generic name, two lines. The add door asks it of a stored row and a
- * top-up's line: «Куртка женская (Ladies jacket)» against a stored «Ladies
- * jacket» is that row, never a second one priced twice. Pure.
- */
-export function sameGoodsLine(kept: GoodsList[number], read: GoodsList[number]): boolean {
-  return sameLine(kept, goodsNameKeys(kept.name), read, goodsNameKeys(read.name));
-}
-
-/**
- * `sameGoodsLine` over names already keyed — `pickGoods` keys its invoice
- * once. ONE rule for both (§9.1): a name of nothing but spaces and signs keys
- * to nothing, and nothing is no name to be «the same» by — two such lines are
- * not one line.
- */
-function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[number], readNames: NameKeys): boolean {
-  if (!keptNames.whole || !readNames.whole) return false;
-  return keptNames.whole === readNames.whole || (namesMeet(readNames, keptNames) && figuresAgree(read, kept));
-}
 
 /**
  * Which goods list a collection lands, in the order of how EXACT each source
@@ -1216,8 +1088,9 @@ function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[
  *
  *  1. An attached invoice (XLSX/CSV) answers whenever it yields a line
  *     (2026-10-09, P1.6): its rows carry the supplier's own codes, units,
- *     weights and volumes. When the seller said a separate model-read file is
- *     ANOTHER factory's (`aiGoods: 'add'`, round-1 review c4), the model's
+ *     weights and volumes. On the add path — a model-read document beside
+ *     the Excel, `aiGoods: 'add'` (round-1 review c4; since his 1a the bot
+ *     takes it without asking, docs/IKKI-ESHIK.md §1.2.2) — the model's
  *     lines are appended — or, when the model did not read, the TYPED lines
  *     (round-4 integration S-a: «add» answered, the PDF unread, and the typed
  *     «Shim 200 dona» vanished) — except those the Excel already carries,
@@ -1237,7 +1110,10 @@ function sameLine(kept: GoodsList[number], keptNames: NameKeys, read: GoodsList[
  *     C-r1 nit / C-r2 ND: «Куртка женская (Ladies jacket)» 300 beside the
  *     same name at 200 lost the 200 unnamed). What was left out is returned
  *     (`sameAsInvoice`), for the seller to see.
- *     When nobody was asked (`aiGoods` null: no PDF and no header-less sheet
+ *     Also «already carried»: a model line whose count AND weight equal
+ *     exactly ONE Excel row's under another name (M1 c, `sameFigures`),
+ *     unless the names contradict.
+ *     With no model-read document (`aiGoods` null: no PDF and no header-less sheet
  *     beside the Excel), the Excel alone answers — and a typed line the model
  *     read too and the Excel does not carry is NAMED (round-4 integration
  *     S-a). Only one the model read: a typed reading alone is the regex's
@@ -1258,11 +1134,22 @@ export function pickGoods(input: {
   model: GoodsList | null;
   typed: GoodsList;
   typedLabelled: GoodsList;
+  /**
+   * The model was shown PHOTOS (docs/IKKI-ESHIK.md §1.2.2): beside an Excel a
+   * line it read off one is named, never added (review PF-SPEC-3 / PF-ADV-10
+   * — a product the seller photographed vanished in silence). Absent = none.
+   */
+  modelSawImages?: boolean;
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
+    // …or, on the add path, a model line whose count AND weight equal exactly
+    // ONE Excel row's under another name (docs/IKKI-ESHIK.md §1.2.2, M1 c):
+    // the model reads a Chinese PDF's «女士夹克» as «Куртка женская», and only
+    // the figures say it is the Excel's «Ladies jacket».
     const carried = (g: GoodsList[number], names: NameKeys) =>
-      invoice.some((inv) => sameLine(inv.row, inv.names, g, names));
+      invoice.some((inv) => sameLine(inv.row, inv.names, g, names)) ||
+      (input.aiGoods === 'add' && invoice.filter((inv) => sameFigures(inv.row, g)).length === 1);
     if (input.aiGoods !== 'add') {
       if (input.aiGoods !== null || !input.model?.length) return { goods: input.invoice, sameAsInvoice: [] };
       const read = input.model.map((g) => goodsNameKeys(g.name));
@@ -1275,9 +1162,33 @@ export function pickGoods(input: {
         named.add(names.whole);
         sameAsInvoice.push({ ...t, why: 'typed' });
       }
+      // …and a model line read off a PHOTO the Excel does not carry — by name,
+      // or by a count and a weight equal to exactly one row's (a label read
+      // in another script) — is named the same way: «Rasmda/yozuvda Excel’da
+      // yo‘q tovar», never added (M3: a photo of the Excel's own goods would
+      // count them twice). One name once.
+      if (input.modelSawImages) {
+        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
+        for (const g of input.model) {
+          const names = goodsNameKeys(g.name);
+          if (!names.whole || named.has(names.whole) || carried(g, names)) continue;
+          if (invoice.filter((inv) => sameFigures(inv.row, g)).length === 1) continue;
+          if (typedNames.some((t) => namesMeet(t, names))) continue;
+          named.add(names.whole);
+          sameAsInvoice.push({ ...g, why: 'typed' });
+        }
+      }
       return { goods: input.invoice, sameAsInvoice };
     }
     const extra = input.model ?? input.typed;
+    // The add path is for what a MODEL-READ document holds (docs/IKKI-ESHIK.md
+    // §1.2.2). When the model did not read (no key, the day's budget, a
+    // timeout), nothing was model-read: the typed lines beside the Excel keep
+    // today's rule — the Excel answers and a line it does not carry is NAMED,
+    // never appended. Since the bot sets 'add' by itself, an outage otherwise
+    // turned a typed restatement under another name into a second product
+    // (as-built review FILES-3).
+    const typedOnly = input.model === null;
     const addedWholes = new Set<string>();
     const leftOut = new Set<string>();
     const added: GoodsList = [];
@@ -1296,7 +1207,8 @@ export function pickGoods(input: {
       }
       if (addedWholes.has(names.whole)) continue;
       addedWholes.add(names.whole);
-      added.push(g);
+      if (typedOnly) sameAsInvoice.push({ ...g, why: 'typed' });
+      else added.push(g);
     }
     return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
@@ -1321,7 +1233,23 @@ function namedLines(lines: readonly { name: string }[]): string {
 export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: LeftOutLine['why'] })[]): string | null {
   const same = lines.filter((g) => g.why !== 'typed');
   if (same.length === 0) return null;
-  return `⚠️ ${same.length} ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: ${namedLines(same)}.`;
+  // No ⚠️ (docs/IKKI-ESHIK.md §1.2.4): taking the same goods once is the
+  // designed outcome now, not a doubt the seller is asked about.
+  return `📄 ${same.length} ta qator Excel’dagi bilan bir xil — bir marta olindi: ${namedLines(same)}.`;
+}
+
+/**
+ * What the model's documents added beside an Excel list, on the add path
+ * (docs/IKKI-ESHIK.md §1.2.4): how many new goods, and how many it read that
+ * the Excel already had. «AI o‘qigan fayllar», never «PDF»: the model-read
+ * file may be a photo or a header-less sheet. Null = the model did not read,
+ * or read no goods. Pure.
+ */
+export function modelAddedNote(added: number, same: number): string | null {
+  if (added > 0) {
+    return `🤖 AI o‘qigan fayllardan ${added} ta yangi tovar qo‘shildi${same > 0 ? ` (${same} tasi Excel’da bor edi)` : ''}.`;
+  }
+  return same > 0 ? '🤖 AI o‘qigan fayllardagi tovarlar Excel’da bor.' : null;
 }
 
 /**
@@ -1332,7 +1260,9 @@ export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: L
 export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   const typed = lines.filter((g) => g.why === 'typed');
   if (typed.length === 0) return null;
-  return `⚠️ ${typed.length} ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): ${namedLines(typed)}.`;
+  // Named, never added (docs/IKKI-ESHIK.md §1.2.2, M3): beside an Excel the
+  // photos and the typed text keep today's rule — the Excel answers.
+  return `Rasmda/yozuvda Excel’da yo‘q tovar: ${namedLines(typed)} — VED tekshiradi`;
 }
 
 /**
@@ -1393,6 +1323,27 @@ export function intakeFileKind(
   return 'sheet';
 }
 
+/**
+ * Which bot door this COLLECTION is (docs/IKKI-ESHIK.md §0.3): a first
+ * collection's by its own flag; an add collection's by its request's
+ * (`AmendBase.door`); a seeded one's by its source's (`seedDoor`, written at
+ * the open). Null = a request from before the doors, or a collection
+ * hydrated from before them — TODAY's table and words (§0.2). Pure.
+ *
+ * Here, beside `IntakeState`, so the READING asks it too: the raw `ai` flag is
+ * true on every add collection of a NULL request (`collectionAiOf(null,
+ * true)`), and a reading that coded rows by the flag put the model's guess on
+ * a legacy table that does not mark it «(AI taklifi)» — and asked the law
+ * unit of the guess (as-built review DOORS-1).
+ */
+export function collectionDoor(
+  state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>,
+): 'plain' | 'ai' | null {
+  if (state.amend) return state.amend.door ?? null;
+  if (state.seed !== null) return state.seedDoor ?? null;
+  return state.ai ? 'ai' : 'plain';
+}
+
 // The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
 // every importer's import.
 export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
@@ -1423,13 +1374,27 @@ export async function analyzeCollected(
   const { analyzeIntake } = await import('../../wms/calc/intake-ai');
   const { parseManualFacts, readGoodsLines, totalWeightFrom } = await import('../../wms/calc/intake-manual');
   const text = state.material.join('\n');
+  const invoice = state.invoiceGoods ?? [];
+  // Beside goods rows already held — an Excel, a packing list's totals, a
+  // request's stored lines — a typed line's figure is that line's, never the
+  // shipment's (`goodsBeside`, as-built review CHAT-3 / CRITIC-2-NEW): «3: 150
+  // kg», «Sumka 80 kg», «Shapka 50 dona 20 kg» outranked the packing list's
+  // brutto (§1.2.5) and landed as the shipment's weight under a ✅.
+  const goodsBeside = invoice.length > 0 || Boolean(state.fileTotals) || state.amend !== null || state.seed !== null;
   // The section decides whether a NETTO figure may stand for the total
   // (review PF-1): never where the bot asks the brutto.
-  const manual = parseManualFacts(text, state.section);
-  const invoice = state.invoiceGoods ?? [];
+  const manual = parseManualFacts(text, state.section, { goodsBeside });
   // The add door's kept rows (docs/SAKKIZ-R3.md §9.4): a stored request's
   // (`amend`), or a returned one carried into a new collection (`seed`).
   const kept: readonly GoodsList[number][] | null = state.amend?.items ?? state.seed ?? null;
+  // The model codes the Excel's rows on the AI door (docs/IKKI-ESHIK.md
+  // §3.1) — an add or seeded collection's own Excel rows too (review
+  // PF-SPEC-6): they are NEW lines beside the request's rows, never the
+  // request's own (those are shown as `requestGoods` and never coded here).
+  // The DOOR decides, never the flag: an add or seeded collection on a NULL
+  // request is today's, which never asked the model for codes (§0.2,
+  // as-built review DOORS-1).
+  const codeKnown = collectionDoor(state) === 'ai' && invoice.length > 0;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -1463,8 +1428,12 @@ export async function analyzeCollected(
           sheets: state.sheetTexts,
           contextSheets: state.invoiceTexts,
           // Every name: `analyzeIntake` shows what fits its character budget
-          // and counts the rest.
-          knownGoods: state.aiGoods === 'add' ? invoice.map((g) => g.name) : undefined,
+          // and counts the rest. On the AI door they are ALWAYS shown, numbered,
+          // and the model codes them by number (docs/IKKI-ESHIK.md §3.1); the
+          // goods it lists stay «only new goods».
+          knownGoods: state.aiGoods === 'add' || codeKnown ? invoice.map((g) => g.name) : undefined,
+          // A row with a code of its own is listed and never asked (PF-ADV-13).
+          ...(codeKnown ? { codeKnown: true, knownCoded: invoice.map((g) => Boolean(g.tnvedCode?.trim())) } : {}),
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
@@ -1479,30 +1448,66 @@ export async function analyzeCollected(
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
   // which read the same ambiguous text — does not get to answer it either.
   const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
+  // The codes the seller's own text states (as-built review FILES-6), each
+  // with the goods line it was typed on (fix review FR-REGR-3): a model line
+  // carrying one of them on HIS line carries the SELLER's code, read back —
+  // not a proposal. The model copying the jacket's code onto the trousers is
+  // a proposal for the trousers. Only the code nobody wrote for that line is
+  // the model's (§3.1's step 4).
+  const { codeIn } = await import('../../wms/calc/units');
+  const typedCodes = typedCodeOwners(
+    text.split(/\r?\n/).flatMap((l) => {
+      const found = codeIn(l)?.code;
+      return found ? [{ code: found, line: l }] : [];
+    }),
+    manual.goods ?? [],
+  );
+  const modelGoods = ai?.facts.goods ?? [];
   // Three sources, in the order of how EXACT they are (`pickGoods`).
   const picked = pickGoods({
     invoice,
     aiGoods: state.aiGoods,
-    model: ai ? (ai.facts.goods ?? []) : null,
+    // A code on a model-read line is the model's PROPOSAL, never the row's own
+    // (§3.1): the coding asks the memory and the book first — unless the
+    // seller's own text states it.
+    model: ai ? modelGoods.map((g) => modelCoded(g, typedCodes, modelGoods)) : null,
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
+    modelSawImages: files.images.length > 0,
   });
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
   // keeps them (R3-C1; round 4, C-r1 nit and integration S-a).
   // …and the files the reading could not load back from storage (K5), said
   // rather than read past in silence.
+  // …and, on the add path, what the model's documents added (§1.2.4): a
+  // READING-time note, kept in `notes` (the receipt-time ones are `fileNotes`).
+  const modelAdded =
+    state.aiGoods === 'add' && ai && invoice.length > 0 && (ai.facts.goods ?? []).length > 0
+      ? modelAddedNote(
+          picked.goods.length - invoice.length,
+          picked.sameAsInvoice.filter((g) => g.why === 'same').length,
+        )
+      : null;
   const notes = [
+    modelAdded,
     sameAsInvoiceNote(picked.sameAsInvoice),
     typedLeftOutNote(picked.sameAsInvoice),
     filesMissingNote(files.missing),
   ].filter((n): n is string => n !== null);
+  // The model's codes for the Excel's rows, each by the index it was shown
+  // with and re-checked against the row there (`withKnownCodes`) — under the
+  // seller's answers, which go on top next.
+  const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
   if (kept) {
     const { conflictOf } = await import('../../wms/calc/amend');
     const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
     return addReading(
       state,
-      { kept, picked, manual, ai, outcome, notes, text },
+      // A coded line that IS a stored row is that row and carries nothing
+      // onto it (`addReading` keeps the stored row); only the fresh ones keep
+      // the model's proposal.
+      { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
       { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
     );
   }
@@ -1519,12 +1524,34 @@ export async function analyzeCollected(
   // The seller's per-line answers go back on top (P1.3) — a re-read after «➕
   // Yana ma'lumot» must not erase them — and where each landed is what the
   // collection keeps (`placeByName`'s write-back, regression-7).
-  const placed = placeByName(picked.goods, state.lineAnswers);
+  const placed = placeByName(coded, state.lineAnswers);
+  // The totals in their rank (docs/IKKI-ESHIK.md §1.2.5): what the seller
+  // typed, then what a packing list GAVE (`fileTotals` — its gross Σ, or a
+  // net Σ the freight sections refuse as a brutto, `totalWeightFrom`), then
+  // the model's reading; the table answer goes on top of all three below. A
+  // figure the packing list gave is therefore never asked again.
+  const fileTotals = state.fileTotals ?? loneFileTotals(state);
+  // A figure two packing lists disagreed on is the VED's (review PF-ADV-8):
+  // the model read both lists and its figure — their sum, as often as not —
+  // must not land where the note promised «ikkalasi ham olinmadi».
+  const clashed = (field: 'weightKg' | 'volumeM3') => fileTotals?.clash?.includes(field) ?? false;
+  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg') || clashed('weightKg'));
+  const fromFile =
+    fileTotals && fileTotals.weightKg !== null
+      ? totalWeightFrom(
+          state.section,
+          manual,
+          { weightKg: fileTotals.weightKg, ...(fileTotals.weightNetto ? { weightNetto: true } : {}) },
+          asked('weightKg'),
+        )
+      : null;
+  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
+  const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
     toCity: route.toCity ?? manual.toCity ?? ai?.facts.toCity ?? state.route?.toCity ?? null,
-    ...totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg')),
-    volumeM3: manual.volumeM3 ?? (asked('volumeM3') ? null : (ai?.facts.volumeM3 ?? null)),
+    ...(fromFile && fromFile.weightKg != null ? fromFile : fromModel),
+    volumeM3: manual.volumeM3 ?? fileVolume ?? modelVolume,
     // …nor the lines' Σ (review P3-R2): the seller stated a cube, only not
     // which one — the totals question asks it, and the INSERT sums nothing.
     ...(asked('volumeM3') ? { volumeAmbiguous: true } : {}),
@@ -1541,12 +1568,19 @@ export async function analyzeCollected(
     state.material.length > at.material
       ? parseManualFacts(text, state.section, {
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+          goodsBeside,
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
+  // A packing list's figure doubts the answer only when it came AFTER it
+  // (§1.2.5, the `at` mark): one the seller had in front of him when he
+  // answered is the very figure the answer corrected.
+  const fileAfterAnswer = fileTotals !== null && fileTotals.at.files > at.files;
   const doubts = totalsDoubts(state.totalsAnswer, {
     now: { material: state.material.length, files: state.fileCount },
     since,
-    reading,
+    reading: fileAfterAnswer
+      ? reading
+      : { weightKg: fromModel.weightKg ?? null, volumeM3: manual.volumeM3 ?? modelVolume },
   });
   const facts = factsWithAnswer(state.totalsAnswer, doubts, reading);
   return {
@@ -1569,6 +1603,208 @@ export async function analyzeCollected(
 }
 
 /**
+ * The totals of a collection's ONE goods file, read at the reading (as-built
+ * review FILES-4): a packing list sent alone states its brutto and its cube on
+ * every row, and a lone first file writes no `fileTotals` at receipt — that
+ * waits for an invoice, which hands them over (§1.2.2). With no second file
+ * the figure was computed and thrown away, and the seller who sent FEWER
+ * files was asked the brutto his file states (INT-10, his 4a). So, on a first
+ * collection with no `fileTotals`, a lone, uncapped goods file holding every
+ * row gives what the hand-over would: a packing list its `packingTotals` (a
+ * net Σ flagged netto, which the freight sections refuse as a brutto); an
+ * invoice its gross Σ alone, when it has a gross column (its lines' m³ are
+ * the INSERT's to sum, as always). Read here and never
+ * stored, so a later file — another factory's, or the shipment's packing list
+ * — decides as it always has. Null = nothing to give. Pure.
+ */
+export function loneFileTotals(
+  state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed'>,
+): IntakeState['fileTotals'] {
+  if (state.fileTotals || state.amend || state.seed !== null) return null;
+  const files = state.goodsFiles ?? [];
+  const rows = state.invoiceGoods ?? [];
+  const only = files.length === 1 ? files[0]! : null;
+  if (!only || only.capped || rows.length === 0 || only.rows !== rows.length) return null;
+  const totals =
+    only.shape === 'packing'
+      ? packingTotals(only, rows)
+      : { weightKg: only.grossKg, weightNetto: false, volumeM3: null };
+  if (totals.weightKg === null && totals.volumeM3 === null) return null;
+  return {
+    weightKg: totals.weightKg,
+    volumeM3: totals.volumeM3,
+    weightNetto: totals.weightKg !== null && totals.weightNetto,
+    label: only.label,
+    // The file's own receipt mark: an answer given with it in front of the
+    // seller is not doubted by it (PF-ADV-9). Unknown = before everything.
+    at: only.at ?? { material: 0, files: 0 },
+  };
+}
+
+/**
+ * Who typed a code: a goods line's name and figures, or null — a code typed on
+ * a line naming no goods. `countShared`: another typed line has the same count,
+ * so a count alone cannot tell which line a copied code belongs to.
+ */
+type CodeOwner = { names: NameKeys; quantity: number | null; weightKg: number | null; countShared: boolean } | null;
+
+/**
+ * The codes the seller's typed material states, by code (digits only), each
+ * with the goods line it stands on (fix review FR-REGR-3): a typed goods line
+ * carrying a code owns it; a code on a line no typed goods line is — «TNVED
+ * 6201930000» under the list — is owned by nobody in particular (null). Pure.
+ */
+export function typedCodeOwners(
+  lineCodes: readonly { code: string; line: string }[],
+  typed: readonly GoodsList[number][],
+): Map<string, CodeOwner[]> {
+  const digits = (code: string) => code.replace(/\D/g, '');
+  const out = new Map<string, CodeOwner[]>();
+  const add = (code: string, owner: CodeOwner) => out.set(code, [...(out.get(code) ?? []), owner]);
+  const owned = typed.flatMap((g) => {
+    const code = g.tnvedCode?.trim();
+    const quantity = g.quantity ?? null;
+    const countShared = quantity !== null && typed.filter((t) => (t.quantity ?? null) === quantity).length > 1;
+    return code
+      ? [{ code: digits(code), key: goodsNameKey(g.name), owner: { names: goodsNameKeys(g.name), quantity, weightKg: g.weightKg ?? null, countShared } }]
+      : [];
+  });
+  for (const o of owned) add(o.code, o.owner);
+  for (const { code, line } of lineCodes) {
+    const c = digits(code);
+    const lineKey = goodsNameKey(line);
+    if (!owned.some((o) => o.code === c && o.key !== '' && lineKey.includes(o.key))) add(c, null);
+  }
+  return out;
+}
+
+/**
+ * A model-read line, its code marked as the model's proposal (§3.1) — unless
+ * the seller's own typed material states that very code FOR THIS LINE
+ * (`owners`): a typed goods line carrying it whose name meets this line's, or
+ * whose count and weight are this line's; or a code typed on a line of its
+ * own, when the model puts it on this one line alone. Then it is his, read
+ * back, and stays on top of the memory and the book like any code a seller
+ * typed (as-built review FILES-6). A code the seller wrote for the jacket and
+ * the model copied onto the trousers is the trousers' proposal (fix review
+ * FR-REGR-3). A code read off a document cannot be told from the model's
+ * guess and stays a proposal (PF-ADV-16). Pure.
+ */
+function modelCoded(
+  g: GoodsList[number],
+  owners: ReadonlyMap<string, readonly CodeOwner[]>,
+  read: readonly GoodsList[number][],
+): GoodsList[number] {
+  const code = g.tnvedCode?.trim();
+  if (!code) return g;
+  const digits = code.replace(/\D/g, '');
+  const names = goodsNameKeys(g.name);
+  const alone = () => read.filter((r) => r.tnvedCode?.replace(/\D/g, '') === digits).length === 1;
+  const his = (owners.get(digits) ?? []).some((o) =>
+    o === null
+      ? alone()
+      : o.names.whole === names.whole ||
+        namesMeet(o.names, names) ||
+        // The figures name the line when the names cannot (a translation):
+        // count AND weight, or the count alone only when no other typed line
+        // shares it — «Kurtka 6201930000 100 dona / Shim 100 dona» must not
+        // hand the jacket's code to the trousers (check after the fixes' review).
+        (o.quantity !== null &&
+          o.quantity === (g.quantity ?? null) &&
+          (o.weightKg !== null && g.weightKg != null ? o.weightKg === g.weightKg : !o.countShared)),
+  );
+  return his ? g : { ...g, tnvedSource: 'model' };
+}
+
+/**
+ * The model's codes for the Excel's rows (`known_codes`, docs/IKKI-ESHIK.md
+ * §3.1), put on the rows as the model's proposal. `names` is the list the
+ * model was shown, in the order shown; each code names its row by INDEX into
+ * it, and is re-checked against the row there — the `pickImportRows` idiom:
+ * a row that is not there, is not the row that was shown, is a stored row
+ * (the VED's), or already has a code of its own takes nothing. Pure.
+ */
+export function withKnownCodes(
+  goods: GoodsList,
+  names: readonly string[],
+  codes: readonly KnownCode[],
+): GoodsList {
+  if (codes.length === 0) return goods;
+  const out = [...goods];
+  for (const { index, code } of codes) {
+    const row = out[index];
+    if (!row || row.itemId) continue;
+    if (row.name.trim() !== (names[index] ?? '').trim()) continue;
+    if (row.tnvedCode?.trim()) continue;
+    out[index] = { ...row, tnvedCode: code, tnvedSource: 'model' };
+  }
+  return out;
+}
+
+/** A collected row as the one coding function reads it: a model's code is step 4, any other the row's own. */
+function codingRowOf(g: GoodsList[number]): CodingRow {
+  const model = g.tnvedSource === 'model';
+  return {
+    name: g.name,
+    own: model ? null : (g.tnvedCode ?? null),
+    ownSource: model ? null : (g.tnvedSource ?? null),
+    model: model ? (g.tnvedCode ?? null) : null,
+  };
+}
+
+/** The row with the code the coding chose, and where it came from. */
+function withCoded(g: GoodsList[number], c: CodedRow): GoodsList[number] {
+  if (!c.code || !c.source) return g;
+  return { ...g, tnvedCode: c.code, tnvedSource: c.source };
+}
+
+/**
+ * The reading codes the rows (docs/IKKI-ESHIK.md §3.1), by the ONE function
+ * `openCalcRequest` asks before its INSERT (`row-coding.ts`): the row's own
+ * code, the sealed memory, the exact-key book, the model's proposal — so the
+ * table asks the law's unit of the code the card will carry. A stored row
+ * (the add door's, `itemId`) is the VED's and is left as it is.
+ *
+ * Run by the reading job on the POOL, after the model and the bill and before
+ * the table's laws are read. It never throws into the settle: past its own
+ * budget, or on any error, the reading keeps the codes it already has — the
+ * Excel's own and the model's — and says so in the log. Deterministic over
+ * the dictionaries, so a retry codes identically.
+ */
+export async function codeCollectedGoods<S extends IntakeState>(
+  state: S,
+  /** `timeoutMs`: the reading job's `INTAKE_CODING_BUDGET_MS`, part of its pinned time sum. */
+  opts: { timeoutMs: number; lookups?: CodingLookups },
+): Promise<S> {
+  const goods = state.facts.goods ?? [];
+  const at = goods.flatMap((g, i) => (g.itemId ? [] : [i]));
+  if (at.length === 0) return state;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const { codeRows } = await import('../../wms/calc/row-coding');
+    const asked = codeRows(at.map((i) => codingRowOf(goods[i]!)), opts.lookups);
+    const late = new Promise<null>((resolve) => {
+      timer = setTimeout(() => resolve(null), opts.timeoutMs);
+    });
+    const coded = await Promise.race([asked, late]);
+    if (!coded) {
+      logger.warn({ rows: at.length }, '[calc-intake] coding past its budget — the codes the reading has stand');
+      return state;
+    }
+    const next = [...goods];
+    at.forEach((i, k) => {
+      next[i] = withCoded(goods[i]!, coded[k]!);
+    });
+    return { ...state, facts: { ...state.facts, goods: next } };
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] rows not coded — the codes the reading has stand');
+    return state;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/**
  * The add door's reading (docs/SAKKIZ-R3.md §9.4) — an add collection's, and a
  * returned request's seeded one. The rows already on the request are KEPT;
  * the reading only adds:
@@ -1576,9 +1812,11 @@ export async function analyzeCollected(
  *    the same whole name, or a name it answers to with figures that agree) is
  *    that row, never a second one priced twice — and when it states a figure
  *    the stored row has otherwise or not at all, it is the row's CONFLICT
- *    (law-money-5): asked «qo‘shilsin / o‘rniga / VED hal qilsin», never
- *    written on its own, and the VED's when unanswered. A wide match whose
- *    figures disagree is no match: another factory's line, a NEW line;
+ *    (law-money-5): never written on its own — and since his 1a
+ *    (docs/IKKI-ESHIK.md §1.1) never asked either: the stored figure stands,
+ *    the file's goes on the card for the VED («faylda 200 dona, so‘rovda 300
+ *    — VED hal qiladi»). A wide match whose figures disagree is no match:
+ *    another factory's line, a NEW line;
  *  - totals and cities are NOT read from new material (§0.1(2)): a top-up's
  *    packing list may state its own totals or the whole truck's, and nobody
  *    can tell which. The stored ones stand, a table answer goes on top, and an
@@ -1613,7 +1851,7 @@ function addReading(
       fresh.push(read);
       continue;
     }
-    // Only a STORED row can be ASKED about (a conflict needs its item id). A
+    // Only a STORED row can carry a conflict (it needs the row's item id). A
     // seeded collection's row is a plain line, kept as `pickGoods` keeps an
     // invoice's — and, like `pickGoods`' left-out lines, a re-read that states
     // another figure is NAMED, never dropped in silence: a corrected «Sumka —
@@ -1635,7 +1873,11 @@ function addReading(
         unit: c.unit,
         stored: c.stored,
         read: c.read,
-        choice: before && before.read === c.read ? before.choice : null,
+        // Never asked (his 1a, docs/IKKI-ESHIK.md §1.1): the stored figure
+        // stands and the file's goes to the VED — R3 interp 9's unanswered
+        // default, written. An answer a hydrated collection already holds
+        // stands only while the read figure does.
+        choice: before && before.read === c.read ? before.choice : 'ved',
       });
     }
   }
@@ -1683,6 +1925,8 @@ function addReading(
     state.material.length > at.material
       ? deps.parseManualFacts(text, state.section, {
           from: state.material.slice(0, at.material).reduce((n, m) => n + m.length + 1, 0),
+          // The request's stored rows are a goods list: a typed line's figure is the line's.
+          goodsBeside: true,
         })
       : { weightKg: null, volumeM3: null, ambiguous: [] };
   const doubts = totalsDoubts(state.totalsAnswer, {

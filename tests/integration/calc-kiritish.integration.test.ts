@@ -109,6 +109,7 @@ describe('the door routes every row once (P1.2)', () => {
   it('«Kafel, 120, m2» / «Kurtka, 500, kg» / «Futbolka, 20, karobka» land where their units say', async () => {
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -162,6 +163,7 @@ describe('the door routes every row once (P1.2)', () => {
     // carries both laws (pp3818).
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -201,6 +203,7 @@ describe('the bot’s invoice keeps its code column (P1.6)', () => {
       .from(calcRequests)
       .where(eq(calcRequests.requestedBy, actorId));
     const target = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',
       facts: { weightKg: 1100, volumeM3: 5, goods },

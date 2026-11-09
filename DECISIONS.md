@@ -6968,3 +6968,214 @@ truck reads BEHIND that pin's leg (`placedBehindPin` — a newer phone fix overr
 #1597 was for) and otherwise change nothing and audit nothing. The placement is read on the pool
 BEFORE the transaction (`trucksOnRoadRows`, #714) and the pin it was read under is compared under
 the lock (`checkpoint_changed`). 4 red proofs.
+
+**#1599 — Ikki eshik: the door is a fact of the request.** His 2026-11-08 report («har bir fayl
+uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak. oddiy hsoblatishdan
+… shunday turishicha ved hodimiga tushsin ai bergan komentariya bilan birga») and his «sen aytgandek
+bolsin» to six questions (1a-6a, every ⭐) are the spec: `docs/IKKI-ESHIK.md`, judged by five lenses
+before code (55 objections absorbed, v2). The diagnosis: both bot doors were ONE collector —
+`IntakeState.ai` was read only by the certificate control — so «🧮 Hisoblatish» and «🤖 AI
+rastamojka» both asked per file, refused «Bo‘ldi» per open question, drew the asking table, echoed
+every answer and sent the AI answer with a second ask; none of those asks was his choice for a
+door. **Migration 0140 `intake_door`**: `calc_requests.intake_door text NULL CHECK IN
+('plain','ai')`, and `telegram_chat_waits` gains the `'burst'` kind. `CalcRequestInput.intakeDoor`
+is REQUIRED, so every caller failed to compile until it named its door: the bot's collector passes
+'plain' / 'ai' through `landIntake`; the card form, the thread door and the AI sotuvchi (both
+`landIntake` and `requeueLanded`) pass null; `recalcFromSealed` copies it. **NULL is legacy and
+means TODAY's behaviour on every reader** — every request in production is NULL — and only 'plain'
+silences, only 'ai' passes a mute. The column is deliberately NOT on the drizzle table: one raw
+stamp in the INSERT's transaction (`stampIntakeDoorInTx`), one reader module (`intake-door.ts`,
+`to_jsonb(row)->>'intake_door'`), a derived fence (`intake-door-wire.test.ts`) failing any other
+file that names it, and a per-process probe so code ahead of the migration lands with the column
+left out (#472). Readers take the door from the ROW, never a job payload (a job queued before 0140
+carries none): `prefillStanding` reads it, `direct` = an `amend:` pass or door 'ai',
+`storedRequestFacts`/`AmendBase` carry it for the ➕ and seeded doors.
+
+**#1600 — No question per file (his 1a).** The second-Excel question, the other-files question,
+«Bo‘ldi»'s two refusals and the add door's per-row conflict buttons are gone on both doors. The bot
+decides, and names what it did: `parseGoods` classifies a mapped sheet by its COLUMNS (`shape`
+invoice/packing, `weightKind`, `grossKg`, `volumeM3`), never by its line names; the first goods file
+is the list; a packing-shaped further file gives the brutto (only from a gross column), the cube and
+netto gap fills on rows with no weight, and never adds a row; an invoice-shaped further file is
+compared row by row (`sameRowAgain`: names meet, every shared same-unit figure agrees — a carton count
+never against pieces, gross never against netto) and only new goods are added; a same-named row with
+other figures is added and named; a model-read PDF beside an Excel takes `aiGoods 'add'`. The
+decisions ride `IntakeState.fileNotes` (receipt-time, same patch as the file, ahead of notes and steps
+on the card note) and `fileTotals` (rank typed > table answer > fileTotals > model; a packing figure
+doubts an answer only when the file came after it). A conflict is the statement «↳ faylda 200 dona,
+so‘rovda 300 — VED hal qiladi» and its choice is 'ved' at the save. `migrateIntakeState` resolves a
+collection open at deploy (a waiting `pendingInvoice`, `aiGoods 'ask'`, an unanswered conflict) in
+`hydrateIntakes`, so nothing is pending after the restart; every retired callback stays PARSED (#939)
+and answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.». Units are read ONCE at
+`invoiceFacts` (`normalizeRowUnit`: «пар» is juft, m²/litr the measure pair, «мест»/CTN a note). Two
+corpus cases joined (INT-4 two factories, M1 a packing list first) and 38 known cases left the
+ratchet (142 → 104). Reviewed by two lenses: 27 findings (2 blockers — a «Unit price» column claimed
+as the unit column, which moved every count of the commonest invoice into a note), 24 fixed, 3
+rejected in writing.
+
+**#1601 — The reading codes the rows (his 5a).** ONE coding function (`codeRows`, `row-coding.ts`),
+extracted from `openCalcRequest`'s block and used by the reading AND the INSERT (#513), in the order
+row's own code → sealed memory → exact-key book → model, returning each code's source; the collection
+carries it per row (`CalcGoodsFact.tnvedSource`). On the AI door the reading shows the invoice rows
+to the model and asks `known_codes` by INDEX, each re-checked against the row it claims (the
+`pickImportRows` idiom); a model code fills only a row with none, at most `KNOWN_CODES_MAX` (40) are
+asked, an answer cut at `max_tokens` while codes were asked is read once more without them (both
+billed). The step runs on the pool before `tableContext` (the laws of the new codes must be read)
+within `INTAKE_CODING_BUDGET_MS`, catches its own errors and falls back to the codes it has. A
+still-model code lands with the item note `AI_CODE_NOTE` «TNVED: AI taklifi (o‘qishda) — tekshiring»
+(`code-source.ts`, one string for the writer and both readers) and prints «(AI taklifi)»; such a row
+is ℹ️, never ✅ and never a question. «AI available» has ONE body (`aiCalcStanding` in `ai-cost.ts`,
+an unreadable ledger reads as budget left): the table's «↳ kod yo‘q — AI hisoblashda topadi
+(topolmasa VED qo‘yadi)» and the landing pass ask it, and the pass keeps its two words («sozlanmagan»
+/ «limit tugadi») from its two halves (review PF-SPEC-4: the two rules disagreed on exactly the
+unreadable ledger). Stated: on the plain door a model-read line's code ranks below memory and book
+(the owner's 2026-09-05 memory-first order); the real-API token cost of a 200-row reading is not
+measured here — after the deploy, the «[calc intake] model tokens» log line is the check.
+
+**#1602 — The landing pass by door (his 2a, 3a, 4a).** On 'plain' every message the pass would send
+— the reply, each stand-down, the failure, the 'closed' sentence — goes through `sayOnce`'s new
+SILENT mode: the claim row is written `muted` with error «oddiy eshik», the drain never sends it and
+`telegramProblemSql` does not count it; `spoke` stays the gate for the ONE lenta note. That note is
+MONEY-FREE: «🤖 AI izohi (VED uchun)» — groups first (law, rate source, bazas, refusals in words),
+then the codes and where each came from (asked of the workspace's `ai_proposed` / recode mark, the
+seal's E1 rule), each list with its own cap and count (`fitNote`; a 30-row, 3-group request used to
+print no group line). A failed plain pass leaves «🤖 AI hisoblay olmadi — VED qo‘lda hisoblaydi».
+On 'ai' the pass replies with the figure and asks NOTHING: the ❓ block and the seller ask (2.8 b,
+1.14 a) are gone, and ONE `noAsk` flag on the renderer addresses every tail — «— VED xodimi sizdan
+so‘raydi» for a seller fact, «— VED xodimi qo‘yadi / hisoblaydi» for the VED's own gap, «JAMI:
+hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.» — while the lenta lists the gaps under «⚠️ VED
+uchun: …». The AI door's answer passes the «✅ Mening vazifalarim» mute as ONE claim row through the
+drain (`directPass`) — the second half of his 1.20 a reversed, stated in §7. A plain yo‘lkira keeps
+the tariff answer in the chat (his 2.5 b) with `noAsk` tails. NULL keeps today's words byte for byte.
+Two lenses: 9 findings, 7 fixed, 2 handed to the chat package.
+
+**#1603 — One prompt kept last, the plain summary, answers placed per segment (his 1a, 2a).**
+`kept-last.ts` (kernel K2) is the ONE «always the last message» rule for the three messages that must
+stay below what the seller sent — the collection's «Qabul qilindi» prompt, a burst's offer, a parked
+collection's pause line: edit while still last («not modified» is success; a 429 leaves the copy
+standing rather than sending a second), else send below and delete the old copy, kept among the
+collection's own messages when it cannot be deleted so its buttons still answer; `keepLastSoon`
+coalesces per key so an album moves it once. The prompt is a PURE function of durable state (the
+counts, one line per model-read file with its current fit, `fileNotes`, the 4096 cut), drawn off the
+handler; a file gets a message of its own only for a REFUSAL (`refusalOf`, the one rule every door
+asks). The customer and the zone are each ONE counting question kept last. On the plain door the
+reading is followed by a SUMMARY — head «🧮 Hisoblatish · 🛃 Rastamojka», ℹ️ gaps «↳ kg yo‘q — VED
+xodimi so‘raydi», no asks, no certificate, the two closings and last line of §2.1, buttons «✅
+Tasdiqlash» / «➕ Yana ma’lumot» / «✖️ Bekor qilish». A typed text after it is judged PER SEGMENT
+(`plainVerdict`): anything placed is written quietly with a 👍 and no echo; a line refusal is kept
+for the VED and never asked; a courtesy word is nothing; goods with no row go to material on their
+own lines; a lone figure placed nowhere is the VED's words, never material — the reviewers' blocker
+was that «3: 150 kg\nrahmat», judged whole, became material and the re-read made 150 kg the brutto
+over the packing list's 3500 (R3 §0.1(3) reopened). The ✅ texts follow the door at both senders
+(the press and `resumeLanding`): plain «🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu
+yerga yuboradi.», AI «🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi.
+Rasmiy narxni VED xodimi beradi.» only when the reply was queued, NULL today's. The refusals that
+point at an «AI javobi» and the add door's outcome line follow the door; the plain ➕ is a plain
+summary too. `IntakeState.readMark` (what the reading read) keeps «➕» with nothing sent from
+re-reading or dropping the summary's buttons.
+
+**#1604 — The AI door's table answers without an echo (his 4a).** An answer edits the table and
+sends no message of its own: the echo record stays in `echoes[]` with no message id, the table's LAST
+block shows «✍️ Oxirgi javob: 3-qator «Сумка женская» — 50 juft» and the state under it, ONE «↩️
+Oxirgi javobni bekor qilish» sits on the table keyboard naming the newest un-undone tag (redrawn with
+each edit, idempotent), 👍 only when every segment was written, otherwise ONE short reply carrying
+only the refused or asked parts. Head «🤖 AI rastamojka · 🛃 Rastamojka»; complete «✅ Ma’lumot to‘liq —
+«✅ Tasdiqlash» ni bosing, AI hisoblaydi.»; the certificate control stays. A model-proposed code prints
+«(AI taklifi)» from `tnvedSource`; a typed code is 'row' (restored on undo). The add collection on an
+AI request asks the same way. P-chat's two lenses: 23 findings (1 blocker), 21 fixed, 2 rejected.
+
+**#1605 — One question per burst (his 6a).** Files and forwards with no collection, draft or capture
+open, each within 2 minutes of the previous, are ONE burst: a durable `telegram_chat_waits` row of
+kind 'burst' (one per chat, ≤ 20 parts, expiring 2 minutes after the last), ended at ONE point (a
+middleware beside `collectorScope`: any other update, or opening a collection/draft/capture). ONE
+offer, kept last: «➕ Bu faylni so‘rovga qo‘shamizmi?», «➕ 3 ta faylni so‘rovga qo‘shamizmi?», or with a
+forward «📌 5 ta xabar (3 tasi fayl) — topshiriq qilamizmi yoki so‘rovga qo‘shamizmi?» with Door B's
+buttons and the ➕ rows in one message; its buttons act on the WHOLE burst read by the pressed id, and
+a press whose wait is gone takes what it replies to and SAYS so. A full burst stands and says the
+rest («⚠ Bir martada ko‘pi bilan 20 ta xabar olinadi — …»); 📌 takes every part (the first 10 as
+sources); a burst is taken once into each kind. Beside a PARKED collection the pause line is the
+burst's one message, and its own ▶️ `c:resume_take` takes only the parts its line spoke for, through
+`takeReplied`'s per-part fence, after the REG-2 refusal; the other ▶️ keep `c:resume`, which takes
+nothing (1.8 c holds: the press is his consent). The landing clears the add-offer cache. Two lenses:
+14 findings (1 blocker — the 21st part silently dropped the first 20), all fixed.
+
+**#1606 — The merge's seams.** Four packages built in pairs in worktrees on two kernels and merged by
+cherry-pick (pair 2's P-burst as one squashed diff, its commits' messages kept). The lead's calls:
+`refusalOf` is the one «is a file's say a refusal» rule (P-burst's twin retired); the take path's new
+prompt goes through P-chat's coalesced `drawPromptSoon` with the take's line as its lead — P-burst's
+«null the prompt, draw, retire the old copy» read the id before the coalesced draw ran and would have
+left two live prompts — and at the customer / zone question the same draw re-asks it once with the
+line on top (`zoneQuestionText` takes a lead). The whole integration suite on the merged tree found
+what neither package could: P-burst's restart tests held the «Qabul qilindi» send, which in the merged
+tree sits inside a kept-last draw, so the held send never settled and every later `settle()` hung
+(17 failures). Two production consequences fixed: the bot's stop gives the draws their OWN share
+(`STOP_DRAWS_MS` 1.5 s via `settleWithin`) and flushes the durable stores whatever they did — a
+draw whose Telegram call hangs (grammy's timeout is minutes) had eaten the flush's share (red-proven:
+4004 ms against 3000); and a process that dies drops its owed draws (`__forgetKeptLast` in
+`__forgetIntakeMemory`; a run's cleanup deletes only its own entry).
+
+**#1607 — The merged tree reviewed as built: 27 confirmed, 6 blockers, all fixed.** Five lenses
+(doors, files, what the seller sees, bursts and seams, durability), each in its own worktree and
+database, every finding re-tried by an independent refuter, then a completeness critic: 32 candidates,
+27 confirmed, 5 refuted. The blockers: (1) FILES-1 — the reader took a PER-CARTON count column
+(«每箱数量», «Кол-во в коробке») as the line's count, so the commonest Chinese/Russian packing list
+failed «same goods», doubled the rows and lost its brutto and cube (`PER_PACKAGE_COUNT` skipped by the
+quantity loop); (2) CRITIC-1 — a merged «G.W. | PER CTN | TOTAL» header read only the per-carton
+column, so a 190 kg file landed brutto 25 above the model's correct figure (`composedHeader` composes
+parent + child per column; a gross/m³ Σ the sheet's own TOTAL row contradicts is refused); (3)
+DURABILITY-1 — the row-by-row comparison was O(held × read) with both names re-keyed per pair,
+7-22 s of synchronous CPU on the ONE app process at 1000 × 500 (a bounded per-name memo and index
+maps: 11-39 ms, proven equal by a 6000-case differential); (4) CHAT-1 — the add collection's conflict
+was computed and dropped by the settle, so the «VED hal qiladi» line never appeared; (5) CHAT-2 —
+on the AI door after «➕», «3: 150 kg\nrahmat» or «Sumka 80 kg» became material and the re-read made
+the row's figure the shipment's brutto (the AI door's collecting stage now judges per segment through
+ONE placing predicate, `materialSegments` / `placedInMaterial`); (6) CRITIC-2 — the same for a typed
+goods line beside a packing list. Also: DOORS-1 (a NULL add collection got the new model coding —
+`codeKnown` keys on the door, not the legacy flag), DOORS-2/3 (the ✅ promised an AI figure with no key
+/ spent budget; the press and the resume spoke different doors), FILES-2/3/4/6, CHAT-3..8, BURST-2..8,
+DURABILITY-2/3. 13 + 14 fixes by two fixers, each red-proven.
+
+**#1608 — The fixes reviewed before production, and the residue the check found.** Every earlier
+round found regressions in its own fixes (#1114, #1267, #1281, #1581), so the 27 fixes of #1607 were
+reviewed by three lenses with refuters, each against DIFFERENTIALS of the code before them (11cf9bc)
+and after (ead0e7c): 17 candidates, 10 confirmed, 7 refuted (all three performance findings refuted:
+the fold stays linear when every row shares one count or one name, 150-230 ms at 1000 × 500 where the
+old scan took 2.8-121 s, and the spec now states that envelope). The confirmed ten were all the same
+lesson — a fix that closes one complaint reopens the one beside it: CHAT-3's «a lone typed goods line
+is its own figure» had made «Kurtka va shim jami 3600 kg», «Hamma yuk 3500 kg», «Jami: 3500 kg / 15 kub»
+lose to the file or to nothing (`shipmentLine` restores 11cf9bc's answer for a line that speaks of the
+whole shipment); `composedHeader` put the split word last and dropped the parent's unit, so «Кол-во,
+м2» / «QTY (PAIRS)» over «TOTAL» read pieces (§1.7 forbids «120 dona» for «пар»); the TOTAL-row belt
+refused correct sums («1,650» read as 1.65, a one-decimal CBM total, sections each closed by their own
+TOTAL); the typed codes were one set over the whole message (`typedCodeOwners`: a code belongs to the
+line it was typed on); the sub-header vocabulary missed «TTL», «single», «в 1 месте», «1 кор.»; the
+add door's card note carried no file notes. 18 red proofs, 13 corpus cases (c2458-c2470). Then an
+independent checker re-ran all 37 confirmed reproductions against the fixed head (37 fixed, 0 still
+reproduce, 0 regressed), the reader differential over 4000 generated sheets (every change an
+improvement; the only ok → null are pallet-inclusive TOTAL rows the belt refuses by design), the fold
+differential (0 differences over 440,000 calls) and both whole suites on a fresh database (unit 9764,
+integration 3715, 0 failed). It found one more defect, fixed by the lead (f62dee9): two typed lines
+with the SAME count and no weights let a copied code pass as the seller's by count alone
+(`CodeOwner.countShared`; red-proven, the translation control stays green). Stated, not fixed: a real
+product named by a package or totals word («Qop 50 dona 20 kg», «Umumiy maqsadli kabel») typed ALONE
+beside a packing list is read as the shipment's total again — the price of `shipmentLine`,
+19 of 944 corpus goods names; a typed new good the model leaves out is neither added nor named
+(predates the round). Three spec questions refuted as against the spec and left for him: a by-name
+answer on the AI door after «➕», a row answer typed before the reading, a field-labelled line beside
+a just-typed good.
+
+**#1609 — PROCESS.** (1) **Kernels before packages, and a kernel mid-round.** K (the door column) let
+pair 1 build; K2 (`kept-last.ts`) was written by the lead between the pairs because two parallel
+packages each needed «always the last message» and would otherwise have restated it twice (#513).
+(2) **Reserve the shared names.** `code-source.ts` was handed to both pair-1 packages byte-identical,
+so the merge's only conflict was a comment. (3) **Two packages' tests are not one tree's tests.**
+Each package's integration run was green; the merged tree's whole run found 17 failures, all from
+the two packages' mechanisms meeting (a held send inside a coalesced draw). A merge is verified by
+the WHOLE suite on the merged tree, never by the union of the packages' green runs. (4) **Number past open PRs — and renumber anyway.** #137 and #138 were open with DECISIONS from
+#1582, so this round numbered from #1593; #138 merged first (#1582-#1592), then #137 merged renumbered to
+#1593-#1598 with the migration 0140 this round had also minted (same `when`). So this round is
+#1599-#1609 and migration 0141 (`when` …120, ledger 142) — the twenty-ninth collision. Numbering past
+an open PR does not survive that PR renumbering itself on its own merge; only the merge order decides,
+so the second to merge reads main's tail and the journal again. (5) **Red proofs that stay green.** The stop's first test
+asserted the durable row after the stop, and the store's own 1 s debounce wrote it anyway inside the
+unbounded 4 s; it was re-anchored on what only the bound changes (the stop's time).

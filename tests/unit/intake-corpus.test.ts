@@ -102,19 +102,20 @@ import {
   updateIntake,
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
+import { migrateIntakeState } from '@/modules/platform/telegram/calc-store';
 import {
   clientAnswer,
   handleCalcCallback,
-  invoiceChoice,
-  otherFilesChoice,
   readCustomerText,
+  RETIRED_FILE_STEP,
   readIntakeFile,
   receiveGoodsSheet,
   receivePdf,
   receiveSheetText,
   settleAnalysis,
 } from '@/modules/platform/telegram/staff-handlers';
-import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { applyTableAnswer, deliverNextStep, ZONE_OPENING } from '@/modules/platform/telegram/calc-dialog';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { parseTableAnswer, type TableRef } from '@/modules/wms/calc/line-address';
 import {
   attemptStandingCases,
@@ -254,8 +255,13 @@ function fakeCtx(refuse: (text: string) => boolean = () => false) {
     },
   };
 }
-const buttonsOf = (reply: { extra?: Record<string, unknown> } | { keyboard?: unknown } | undefined) =>
-  JSON.stringify(reply && 'extra' in reply ? (reply.extra?.reply_markup ?? null) : ((reply as { keyboard?: unknown })?.keyboard ?? null));
+// A file answer carries no keyboard since his 1a (docs/IKKI-ESHIK.md §1.1): asked of one, «null».
+const buttonsOf = (reply: object | undefined) =>
+  JSON.stringify(
+    reply && 'extra' in reply
+      ? ((reply as { extra?: Record<string, unknown> }).extra?.reply_markup ?? null)
+      : ((reply as { keyboard?: unknown } | undefined)?.keyboard ?? null),
+  );
 
 const reads = (goods: Goods, steps: string[] = []) => ({
   ok: true,
@@ -745,7 +751,6 @@ const ladiesWorkbook = (n: number, packing: 'lines' | 'cut') =>
 const STALE = 'Bu tugma eskirgan.';
 const NOT_READ = 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
 const OTHER_ASK = 'Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?';
-const CLIENT_Q = 'Mijozni yozing: **kodi** (GS777)';
 const OTHER_CUT_SELLER = '⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).';
 const CELLS_NOTE = '[Длинные ячейки сокращены, все строки показаны.]';
 
@@ -866,48 +871,145 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
-const invoiceState = (stage: IntakeState['stage']) =>
-  collection({ stage, invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } }).state;
-
 const SCENARIOS: Record<string, () => Promise<void>> = {
   // ---- «a second invoice arrived»: the open question survives the answer (c0)
   c0000: async () => {
-    const r = invoiceChoice(invoiceState('client'), 'inv_add')!;
-    expect([r.patch.stage, r.reask]).toEqual(['client', 'client']);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'client', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['client', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0001: async () => {
-    const r = invoiceChoice(invoiceState('client'), 'inv_replace')!;
-    expect([r.patch.stage, r.reask]).toEqual(['client', 'client']);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'client', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['client', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0002: async () => {
-    const r = invoiceChoice(invoiceState('section'), 'inv_add')!;
-    expect([r.patch.stage, r.reask]).toEqual(['section', 'section']);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'section', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['section', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0003: async () => {
-    const r = invoiceChoice(invoiceState('section'), 'inv_replace')!;
-    expect([r.patch.stage, r.reask]).toEqual(['section', 'section']);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'section', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['section', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0004: async () => {
-    const r = invoiceChoice(invoiceState('material'), 'inv_add')!;
-    expect([r.patch.stage, r.reask]).toEqual(['material', null]);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'material', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['material', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0005: async () => {
-    const r = invoiceChoice(invoiceState('review'), 'inv_add')!;
-    expect([r.patch.stage, r.reask]).toEqual(['material', null]);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'review', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['review', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
   c0006: async () => {
-    // 'question' is retired (his 1.10 c); the table stage is 'review' — the
-    // claim (inv_add moves to 'material', no re-ask) is unchanged.
-    const r = invoiceChoice(invoiceState('review'), 'inv_add')!;
-    expect([r.patch.stage, r.reask]).toEqual(['material', null]);
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A collection hydrated holding the old question is resolved before it reaches memory, its
+    // stage untouched, and the old button only says why it does nothing.
+    const { chatId, state } = collection({ stage: 'review', invoiceGoods: [line('Kurtka')], pendingInvoice: { goods: [line('Shim')], label: '«B.xlsx»', texts: [] } });
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.pendingInvoice]).toEqual(['review', null]);
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    expect(migrated.fileNotes).toContain('📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    updateIntake(chatId, migrated);
+    const before = JSON.stringify(activeIntake(chatId));
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
-  // «🧮 → section → client», two mapped files, ➕, then «GS777»: the customer, never material.
   c0007: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'client' });
     updateIntake(chatId, receiveGoodsSheet(activeIntake(chatId)!, mapped('«A.xlsx»', [line('Kurtka')])).patch);
-    updateIntake(chatId, receiveGoodsSheet(activeIntake(chatId)!, mapped('«B.xlsx»', [line('Shim')])).patch);
-    await handleCalcCallback(fakeCtx(), chatId, 'inv_add');
+    const b = receiveGoodsSheet(activeIntake(chatId)!, mapped('«B.xlsx»', [line('Shim')]));
+    expect(buttonsOf(b)).toBe('null');
+    updateIntake(chatId, b.patch);
     expect(activeIntake(chatId)!.stage).toBe('client');
+    expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
     const read = await readCustomerText('GS777', 'GS');
     const answer = clientAnswer(activeIntake(chatId)!, 'GS777', read);
     expect(answer.kind).toBe('customer');
@@ -919,6 +1021,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(parseClientHint(after.clientHintRaw, { prefix: 'GS' })).toEqual({ code: 'GS777' });
   },
   c0008: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // Three factories' lists: each further file's new rows are ADDED and the file says how many.
     const { chatId } = collection({ stage: 'material' });
     const says: string[] = [];
     for (const [label, goods] of [
@@ -930,14 +1036,19 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       says.push(a.say ?? '');
       updateIntake(chatId, a.patch);
     }
-    const pending = activeIntake(chatId)!.pendingInvoice!;
-    expect(pending.goods?.map((g) => g.name)).toEqual(['<B line 1>', '<B line 2>', '<B line 3>', 'Poyabzal']);
-    expect(pending.label).toBe('«B.xlsx», «C.xlsx»');
-    expect(says[2]).toContain('«B.xlsx», «C.xlsx»');
-    const choice = invoiceChoice(activeIntake(chatId)!, 'inv_add')!;
-    expect(choice.patch.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', '<B line 1>', '<B line 2>', '<B line 3>', 'Poyabzal']);
+    const s = activeIntake(chatId)!;
+    expect(s.pendingInvoice).toBeNull();
+    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', '<B line 1>', '<B line 2>', '<B line 3>', 'Poyabzal']);
+    expect(says[1]).toContain('📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.');
+    expect(says[2]).toContain('📄 «C.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    for (const say of says) expect(say).not.toContain('Nima qilamiz?');
+    expect(s.fileNotes).toEqual(expect.arrayContaining(['📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.', '📄 «C.xlsx» — 1 ta yangi tovar qo‘shildi.']));
   },
   c0009: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // There is no «o‘rniga» any more: nothing a later file states replaces another file's rows.
     const { chatId } = collection({ stage: 'material' });
     for (const [label, goods] of [
       ['«A.xlsx»', [line('Kurtka'), line('Shim')]],
@@ -946,18 +1057,24 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     ] as const) {
       updateIntake(chatId, receiveGoodsSheet(activeIntake(chatId)!, mapped(label, [...goods])).patch);
     }
-    const choice = invoiceChoice(activeIntake(chatId)!, 'inv_replace')!;
-    expect(choice.patch.invoiceGoods?.map((g) => g.name)).toEqual(['<B line 1>', '<B line 2>', '<B line 3>', 'Poyabzal']);
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', '<B line 1>', '<B line 2>', '<B line 3>', 'Poyabzal']);
   },
   c0010: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // Every press of an old keyboard is the same stale answer, and changes nothing.
     const { chatId } = collection({ stage: 'material' });
     updateIntake(chatId, receiveGoodsSheet(activeIntake(chatId)!, mapped('«A.xlsx»', [line('Kurtka')])).patch);
     updateIntake(chatId, receiveGoodsSheet(activeIntake(chatId)!, mapped('«B.xlsx»', [line('Shim')])).patch);
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'inv_add');
     const before = JSON.stringify(activeIntake(chatId));
     await handleCalcCallback(ctx, chatId, 'inv_add');
-    expect(ctx.texts().at(-1)).toBe(STALE);
+    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP, RETIRED_FILE_STEP]);
     expect(activeIntake(chatId)!.pendingInvoice).toBeNull();
     expect(JSON.stringify(activeIntake(chatId))).toBe(before);
   },
@@ -999,27 +1116,36 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   // ---- «boshqa zavodning tovarlarimi?» in either order (c4)
   c0016: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // A model-read file beside an Excel takes the add path (M3): no question, no keyboard, and
+    // «Bo‘ldi» starts the reading instead of waiting for an answer.
     const base = { stage: 'material' as const, material: ['x'], invoiceGoods: [line('Factory A chair'), line('Factory A table')], aiGoods: null };
     const pdf = receivePdf(collection(base).state, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     const sheet = receiveSheetText(collection(base).state, '«B.csv»', { text: '[CSV]\nB blender | 5', cut: false, cellsCut: false }, fitRows);
     for (const answer of [pdf, sheet]) {
-      expect(answer.patch.aiGoods).toBe('ask');
-      expect(answer.say).toContain('boshqa zavodning tovarlarimi?');
-      expect(buttonsOf(answer)).toContain('c:other_add');
-      expect(buttonsOf(answer)).toContain('c:other_same');
+      expect(answer.patch.aiGoods).toBe('add');
+      expect(answer.say).not.toContain('boshqa zavodning tovarlarimi?');
+      expect(buttonsOf(answer)).toBe('null');
       const { chatId } = collection({ ...base, ...answer.patch });
       const ctx = fakeCtx();
       await handleCalcCallback(ctx, chatId, 'done');
-      expect(ctx.texts().at(-1)).toBe(OTHER_ASK);
+      expect(ctx.texts()).not.toContain(OTHER_ASK);
+      expect(ctx.texts().at(-1)).toBe('⏳ AI o‘qiyapti… (3 daqiqagacha)');
     }
   },
   c0017: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // …and in the reverse order: an Excel after a PDF is the goods list, the PDF the add path.
     const { state } = collection({ stage: 'material', invoiceGoods: [], pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }], aiGoods: null });
     const answer = receiveGoodsSheet(state, mapped('«A.xlsx»', [line('Kurtka')]));
-    expect(answer.patch.aiGoods).toBe('ask');
-    expect(buttonsOf(answer)).toContain('c:other_add');
+    expect(answer.patch.aiGoods).toBe('add');
+    expect(buttonsOf(answer)).toBe('null');
+    expect(answer.say).not.toContain('boshqa zavodning tovarlarimi?');
   },
-  // ---- ⏭ only under the open question (c5)
   c0018: async () => {
     const { chatId } = collection({ stage: 'material', material: ['Kurtka'], analysing: null });
     const ctx = fakeCtx();
@@ -1062,6 +1188,11 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   // ---- 🔁 drops the replaced workbook's other sheets too (c7)
   c0022: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // Two workbooks of different goods: both lists are kept — nothing a later file states drops an
+    // earlier one in silence — and both workbooks' other sheets reach the model's totals heading.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(
       chatId,
@@ -1071,7 +1202,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       ),
       'WRONG.xlsx',
     );
-    await forward(
+    const right = await forward(
       chatId,
       xlsx(
         { name: 'Invoice', rows: [['Description', 'Qty'], ['RIGHT shoes', 10], ['RIGHT shoes B', 20]] },
@@ -1079,19 +1210,25 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       ),
       'RIGHT.xlsx',
     );
-    await handleCalcCallback(fakeCtx(), chatId, 'inv_replace');
+    expect(right.say).toContain('📄 «RIGHT.xlsx» — 2 ta yangi tovar qo‘shildi.');
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
     const s = activeIntake(chatId)!;
-    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['RIGHT shoes', 'RIGHT shoes B']);
+    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['WRONG jackets', 'RIGHT shoes', 'RIGHT shoes B']);
     const texts = s.invoiceTexts.map((t) => t.text).join('\n');
     expect(texts).toContain('1200 KGS');
-    expect(texts).not.toContain('9999');
+    expect(texts).toContain('9999 KGS');
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(s);
     const prompt = promptOf(lastCall());
-    expect(prompt).not.toContain('9999 KGS');
-    expect(prompt).not.toContain('TOTAL CBM | 77');
+    expect(prompt).toContain('9999 KGS');
+    expect(prompt).toContain('1200 KGS');
   },
   c0023: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     for (const name of ['A', 'B']) {
       await forward(
@@ -1103,13 +1240,12 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
         `${name}.xlsx`,
       );
     }
-    await handleCalcCallback(fakeCtx(), chatId, 'inv_add');
+    // Both workbooks' totals sheets are kept without a press.
     const texts = activeIntake(chatId)!.invoiceTexts.map((t) => t.text);
     expect(texts).toHaveLength(2);
     expect(texts[0]).toContain('TOTAL G.W. A');
     expect(texts[1]).toContain('TOTAL G.W. B');
   },
-  // ---- the markup readers are linear (c9)
   c0064: async () => expectLinear(htmlRows, (t) => htmlTableSheets(t)![0]!.rows.length, 2000),
   c0065: async () => expectLinear(xmlRows, (t) => spreadsheetMlSheets(t)![0]!.rows.length, 2000),
   c0066: async () => expectLinear(htmlRows, (t) => htmlTableSheets(t)![0]!.rows.length, 4000),
@@ -1421,15 +1557,16 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   // ---- the fixer's collector pins (#0-#7)
   c0768: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'client' });
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10]] }), 'A.xlsx');
-    await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Shim', 5]] }), 'B.xlsx');
-    const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'inv_add');
+    const b = await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Shim', 5]] }), 'B.xlsx');
+    expect(b.say).not.toContain('Nima qilamiz?');
     const s = activeIntake(chatId)!;
     expect(s.stage).toBe('client');
     expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
-    expect(ctx.texts().at(-1)).toContain(CLIENT_Q);
     const answer = clientAnswer(s, 'GS777', await readCustomerText('GS777', 'GS'));
     expect(answer.kind).toBe('customer');
     updateIntake(chatId, answer.patch);
@@ -1437,28 +1574,43 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(activeIntake(chatId)!.material).not.toContain('GS777');
   },
   c0769: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // The podklyuch door's «qayerdan?» stays open across two files: nothing about them is asked.
     const { chatId } = collection({ stage: 'section', ai: true, route: null }, 'podklyuch');
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10]] }), 'A.xlsx');
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Shim', 5]] }), 'B.xlsx');
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
     const s = activeIntake(chatId)!;
     expect([s.stage, s.route]).toEqual(['section', null]);
-    expect(buttonsOf(ctx.replies.at(-1))).toContain('c:zone_cn');
-    expect(buttonsOf(ctx.replies.at(-1))).toContain('c:zone_kashgar');
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(ctx.texts().at(-1)).toBe('Avval yuk qayerdan chiqishini tanlang.');
+    // Re-anchored by §1.6 (2026-11-08): the zone question is ONE message, counting what arrived,
+    // redrawn as the last one — never a second «Avval … tanlang.».
+    await keptLastSettled();
+    // (The helper reads the files without counting them, so the question is still its opening.)
+    expect(ctx.texts().at(-1)).toBe(ZONE_OPENING);
   },
   c0770: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // An open «boshqa zavodmi?» hydrated at deploy is the add path; its button changes nothing.
     const { chatId, state } = collection({ stage: 'client', aiGoods: 'ask', invoiceGoods: [line('Kurtka')] });
-    const choice = otherFilesChoice(state, 'other_add')!;
-    expect([choice.patch.stage, choice.reask]).toEqual(['client', 'client']);
+    const migrated = migrateIntakeState(state);
+    expect([migrated.stage, migrated.aiGoods]).toEqual(['client', 'add']);
+    updateIntake(chatId, migrated);
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'other_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
     expect(activeIntake(chatId)!.stage).toBe('client');
-    expect(ctx.texts().at(-1)).toContain(CLIENT_Q);
   },
   c0771: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     const files = [
       ['«A.xlsx»', [line('A1'), line('A2')], '[PL A]\nA | 1'],
@@ -1471,16 +1623,18 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       says.push(a.say ?? '');
       updateIntake(chatId, a.patch);
     }
-    expect(says[2]).toContain('«B.xlsx», «C.xlsx» — jami 3 ta tovar');
-    const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(says[2]).toContain('📄 «C.xlsx» — 2 ta yangi tovar qo‘shildi.');
     const s = activeIntake(chatId)!;
     expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['A1', 'A2', 'B1', 'C1', 'C2']);
     expect(s.invoiceTexts.map((t) => t.text)).toEqual(['[PL A]\nA | 1', '[PL B]\nB | 1', '[PL C]\nC | 1']);
+    const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'inv_add');
-    expect(ctx.texts().at(-1)).toBe(STALE);
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
   },
   c0772: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     for (const [label, goods] of [
       ['«A.xlsx»', [line('A1')]],
@@ -1491,8 +1645,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     }
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'inv_replace');
-    expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['B1', 'C1']);
-    expect(ctx.texts()[0]).toContain('«B.xlsx», «C.xlsx» oldingisining o‘rniga olindi');
+    expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['A1', 'B1', 'C1']);
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
+    expect(activeIntake(chatId)!.fileNotes.join('\n')).not.toContain('o‘rniga olindi');
   },
   c0773: async () => {
     const { state } = collection({ stage: 'material', material: ['x'], analysing: 'tok' });
@@ -1520,31 +1675,35 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(buttonsOf(ctx.replies.at(-1))).toContain('c:save');
   },
   c0775: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10]] }), 'A.xlsx');
     const pdf = receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»');
     updateIntake(chatId, pdf.patch);
-    expect(activeIntake(chatId)!.aiGoods).toBe('ask');
-    expect(pdf.say).toContain('boshqa zavodning tovarlarimi?');
-    expect(buttonsOf(pdf)).toContain('c:other_add');
-    expect(buttonsOf(pdf)).toContain('c:other_same');
+    expect(activeIntake(chatId)!.aiGoods).toBe('add');
+    expect(pdf.say).toBe('📄 «B.pdf» — AI o‘qiydi.');
+    expect(buttonsOf(pdf)).toBe('null');
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(ctx.texts().at(-1)).toBe(OTHER_ASK);
-    await handleCalcCallback(ctx, chatId, 'reread');
-    expect(ctx.texts().at(-1)).toBe(OTHER_ASK);
+    expect(ctx.texts()).not.toContain(OTHER_ASK);
+    expect(ctx.texts().at(-1)).toBe('⏳ AI o‘qiyapti… (3 daqiqagacha)');
   },
   c0776: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // The model is shown the Excel's list without a press, and only on the add path.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, csv('X-headerless'), 'X.csv');
     const a = await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Kurtka', 10], ['Shim', 5]] }), 'A.xlsx');
-    expect(activeIntake(chatId)!.aiGoods).toBe('ask');
-    expect(a.say).toContain('boshqa zavodning tovarlarimi?');
-    await handleCalcCallback(fakeCtx(), chatId, 'other_add');
+    expect(activeIntake(chatId)!.aiGoods).toBe('add');
+    expect(a.say).not.toContain('boshqa zavodning tovarlarimi?');
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
     expect(lastCall().knownGoods).toEqual(['Kurtka', 'Shim']);
-    // …and only on «add».
+    // …and only on «add»: a hydrated «context» was the seller's own answer.
     updateIntake(chatId, { aiGoods: 'context' });
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
@@ -1583,6 +1742,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(ctx.texts().at(-1)).toBe(STALE);
   },
   c0785: async () => {
+    // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+    // second file — the reviewer's sentence pinned the question; this pins its ABSENCE and the rule
+    // that replaced it.
+    // Two workbooks of different goods are both kept, and so are both totals sheets — in order.
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, csv('X-headerless'), 'X.csv');
     await forward(
@@ -1595,11 +1758,13 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
       xlsx({ name: 'Invoice', rows: [['Description', 'Qty'], ['Right1', 1]] }, { name: 'Packing list', rows: [['TOTAL G.W.', 1500]] }),
       'right.xlsx',
     );
-    await handleCalcCallback(fakeCtx(), chatId, 'inv_replace');
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'inv_replace');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
     const s = activeIntake(chatId)!;
-    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Right1']);
+    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Wrong1', 'Right1']);
     expect(fitSheetTexts([...s.sheetTexts, ...s.invoiceTexts].map((t) => t.text.trim()), BUDGET).text).toBe(
-      '[CSV]\nX-headerless\n\n[Packing list]\nTOTAL G.W. | 1500',
+      '[CSV]\nX-headerless\n\n[Packing list]\nTOTAL G.W. | 9999\n\n[Packing list]\nTOTAL G.W. | 1500',
     );
   },
   c0789: async () => {
@@ -1659,7 +1824,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     );
     const s = activeIntake(chatId)!;
     expect(s.aiGoods).toBeNull();
-    expect(a.keyboard).toBeUndefined();
+    // A file answer has no keyboard at all since his 1a (docs/IKKI-ESHIK.md §1.1).
+    expect(Object.keys(a).sort()).toEqual(['patch', 'say']);
     expect(s.invoiceTexts.map((t) => t.text).join('\n')).toContain('TOTAL G.W. | 150 KGS');
   },
   c0803: async () => {
@@ -1723,8 +1889,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1336: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(150, 'lines'), 'A.xlsx');
+    // The add path without a press (his 1a, docs/IKKI-ESHIK.md §1.2.2, M3).
     updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
-    updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
+    expect(activeIntake(chatId)!.aiGoods).toBe('add');
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
     const prompt = promptOf(lastCall());
@@ -1737,8 +1904,9 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   c1337: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
     await forward(chatId, ladiesWorkbook(400, 'lines'), 'A.xlsx');
+    // The add path without a press (his 1a, docs/IKKI-ESHIK.md §1.2.2, M3).
     updateIntake(chatId, receivePdf(activeIntake(chatId)!, { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }, '«B.pdf»').patch);
-    updateIntake(chatId, otherFilesChoice(activeIntake(chatId)!, 'other_add')!.patch);
+    expect(activeIntake(chatId)!.aiGoods).toBe('add');
     model.analyze.mockResolvedValueOnce(reads([]));
     await analyzeCollected(activeIntake(chatId)!);
     const known = knownGoodsText(lastCall().knownGoods ?? [], KNOWN_GOODS_CHARS);
@@ -1798,9 +1966,10 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
   },
   c1375: async () => {
     // Re-anchored onto ANSWERS: the answered Kurtka lands on its own line
-    // after the re-read reorders, and only Shim is ⚠️.
+    // after the re-read reorders, and only Shim is open — on the plain door's
+    // summary a gap is ℹ️, the VED's to ask (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
     const { chatId, table } = await answerThenReread();
-    expect(table).toContain('⚠️ 1. Shim');
+    expect(table).toContain('ℹ️ 1. Shim');
     expect(table).toContain('✅ 2. Kurtka — 150 kg');
     expect(activeIntake(chatId)!.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka' }]);
   },
@@ -1861,7 +2030,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     expect(activeIntake(chatId)!.facts.goods?.[0]).toEqual(line('Kurtka', { weightKg: 150 }));
     const table = ctx.texts().at(-1)!;
     expect(table).toContain('✅ 1. Kurtka — 150 kg');
-    expect(table).toContain('⚠️ 2. Shim');
+    // The plain door's summary marks a gap ℹ️ (docs/IKKI-ESHIK.md §2.1, re-anchored 2026-11-08).
+    expect(table).toContain('ℹ️ 2. Shim');
   },
   c1743: async () => {
     const built = await buildFile(xlsx({ name: 'S', rows: [['Name badge holder'], ['Lanyard 100 pcs 5 kg'], ['Clip 200 pcs 3 kg']] }));
@@ -2015,8 +2185,79 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     await driveReading(chatId, ctx);
     expect(activeIntake(chatId)?.analysing).toBeNull();
     const summary = ctx.texts().find((t) => t.includes('Excel’dagi bilan bir xil')) ?? ctx.texts().at(-1)!;
-    expect(summary.split('\n').some((l) => l.startsWith('⚠️') && l.includes('Excel’dagi bilan bir xil'))).toBe(true);
+    // Re-anchored by docs/IKKI-ESHIK.md §1.2.4: taking the same goods once is the designed outcome,
+    // so its line loses the ⚠️; the model's additions are counted on their own line.
+    expect(summary.split('\n').some((l) => l.startsWith('📄') && l.includes('Excel’dagi bilan bir xil — bir marta olindi'))).toBe(true);
+    expect(summary).toContain('🤖 AI o‘qigan fayllardan 1 ta yangi tovar qo‘shildi (2 tasi Excel’da bor edi).');
     for (const step of ['step one', 'step two', 'step three']) expect(summary).toContain(step);
+  },
+  // ---- two files, no question (his 1a, docs/IKKI-ESHIK.md §1.2.2, §5)
+  c2449: async () => {
+    // INT-4: two factories' invoices — a same-named row whose figures disagree is ADDED and named;
+    // a row read again is taken once; nothing is asked.
+    const { chatId } = collection({ stage: 'material', material: ['x'] });
+    await forward(chatId, xlsx({ name: 'Invoice', rows: [['Description', 'Qty', 'Weight, kg'], ['Kurtka', 300, 150], ['Shim', 100, null]] }), 'A.xlsx');
+    const b = await forward(
+      chatId,
+      xlsx({ name: 'Invoice', rows: [['Description', 'Qty', 'Weight, kg'], ['Kurtka', 200, 90], ['Shim', 100, null], ['Sumka', 50, null]] }),
+      'B.xlsx',
+    );
+    const s = activeIntake(chatId)!;
+    expect(s.invoiceGoods?.map((g) => [g.name, g.quantity])).toEqual([
+      ['Kurtka', 300],
+      ['Shim', 100],
+      ['Kurtka', 200],
+      ['Sumka', 50],
+    ]);
+    expect(b.say).toContain('📄 «B.xlsx» — 1 tasi ro‘yxatda bor edi, 2 ta yangi tovar qo‘shildi.');
+    // The held figure in the read's own unit is bare, as §1.2.2's sentence has it (review PF-SPEC-8).
+    expect(b.say).toContain(
+      '📄 «B.xlsx» — «Kurtka» 200 dona: birinchi faylda ham «Kurtka» 300 — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
+    );
+    expect(b.say).not.toContain('Nima qilamiz?');
+    expect(s.pendingInvoice).toBeNull();
+    expect(s.fileNotes).toEqual(expect.arrayContaining([expect.stringContaining('ikkalasi olindi')]));
+  },
+  c2450: async () => {
+    // M1 a: a packing list FIRST, then the invoice — the invoice takes the goods role, the packing
+    // list's rows become its totals (the brutto from the gross column only, M2) and the invoice
+    // rows' missing netto. File order never decides which counts land.
+    const { chatId } = collection({ stage: 'material', material: ['x'] });
+    await forward(
+      chatId,
+      xlsx({
+        name: 'Packing',
+        rows: [
+          ['Description', 'Qty (pcs)', 'CTN', 'N.W.(kg)', 'G.W.(kg)', 'CBM'],
+          ['Kurtka', 300, 10, 150, 165, 1.2],
+          ['Shim', 100, 4, 40, 46, 0.4],
+        ],
+      }),
+      'P.xlsx',
+    );
+    expect(activeIntake(chatId)!.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    const inv = await forward(
+      chatId,
+      // «Unit price», as the case says — the commonest PI header, whose price once took the UNIT
+      // column and sent every count to the note (review PF-SPEC-1).
+      xlsx({ name: 'Invoice', rows: [['Description', 'Qty', 'Unit price', 'Amount'], ['Kurtka', 300, 12.5, 3750], ['Shim', 100, 5, 500]] }),
+      'I.xlsx',
+    );
+    const s = activeIntake(chatId)!;
+    expect(s.invoiceGoods?.map((g) => [g.name, g.quantity, g.weightKg, g.amount])).toEqual([
+      ['Kurtka', 300, 150, 3750],
+      ['Shim', 100, 40, 500],
+    ]);
+    expect(s.fileTotals).toMatchObject({ weightKg: 211, volumeM3: 1.6, weightNetto: false });
+    expect(inv.say).toContain(
+      '📄 «P.xlsx» — o‘sha tovarlar: qatorlar «I.xlsx» dan, bundan faqat umumiy brutto va kub olindi. 2 ta qatorga netto og‘irlik shu fayldan yozildi (yozilgan og‘irlikka tegilmadi).',
+    );
+    // The packing list's own rows join the model's totals-only sheets.
+    expect(s.invoiceTexts.map((t) => t.text).join('\n')).toContain('G.W.(kg)');
+    // …and the reading takes its totals: never asked again.
+    model.analyze.mockResolvedValueOnce(reads([]));
+    const read = await analyzeCollected(s);
+    expect([read.facts.weightKg, read.facts.volumeM3]).toEqual([211, 1.6]);
   },
 };
 

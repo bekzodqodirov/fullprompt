@@ -72,6 +72,7 @@ describe('the ➕ on a CalcPrefilled message', () => {
 const line = (k: number): AiVedLine => ({
   label: `Uzun nomli tovar ${k} — ${'x'.repeat(120)}`,
   code: '8528520000',
+  aiCode: false,
   measureText: '100 dona × $20/dona',
   bazaSource: 'memory',
   dutyText: '10%',
@@ -108,6 +109,8 @@ const base: AiVedReplyInput = {
   asks,
   pass: 'landing',
   audience: 'chat',
+  // A request from before the doors (docs/IKKI-ESHIK.md §0.2): the 2.8 b block stands.
+  noAsk: false,
 };
 
 describe('the 2.8 b block is never cut by the 4096 fit', () => {
@@ -190,7 +193,7 @@ describe('the seller’s tails are worded for their reader (§2.5)', () => {
     expect(chat).toContain(`Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q ${PLUS}`);
     expect(chat).toContain(`kamida $3/dona ${PLUS}`);
     expect(TAXMINIY_BLOCK_WORDS.refused_measure.chat).toBe(`⚠️ qatorda soni yoki og‘irligi yo‘q ${PLUS}`);
-    expect(tariffReplyText({ clientLabel: null, cardLabel: null, link: null, pass: 'landing', audience: 'chat', freight: road })).toContain(PLUS);
+    expect(tariffReplyText({ clientLabel: null, cardLabel: null, link: null, pass: 'landing', audience: 'chat', freight: road, noAsk: false })).toContain(PLUS);
   });
 
   it('the lenta keeps «kartadagi lentaga yozing» on all three', () => {
@@ -199,6 +202,6 @@ describe('the seller’s tails are worded for their reader (§2.5)', () => {
     expect(lenta).toContain(`kamida $3/dona ${LENTA}`);
     expect(lenta).not.toContain('«➕');
     expect(TAXMINIY_BLOCK_WORDS.refused_measure.lenta).toBe(`⚠️ qatorda soni yoki og‘irligi yo‘q ${LENTA}`);
-    expect(tariffReplyText({ clientLabel: null, cardLabel: null, link: null, pass: 'landing', audience: 'lenta', freight: road })).toContain(LENTA);
+    expect(tariffReplyText({ clientLabel: null, cardLabel: null, link: null, pass: 'landing', audience: 'lenta', freight: road, noAsk: false })).toContain(LENTA);
   });
 });

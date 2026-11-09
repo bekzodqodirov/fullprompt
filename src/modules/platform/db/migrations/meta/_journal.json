@@ -988,6 +988,13 @@
       "when": 1785190000119,
       "tag": "0140_truck_queue_alerts",
       "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1785190000120,
+      "tag": "0141_intake_door",
+      "breakpoints": true
     }
   ]
 }

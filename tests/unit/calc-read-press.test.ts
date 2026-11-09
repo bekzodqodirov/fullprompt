@@ -33,6 +33,7 @@ import { INTAKE_TIMEOUT_MS } from '@/modules/wms/calc/intake-ai';
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 import {
   ANALYSIS_STALE_MS,
+  INTAKE_CODING_BUDGET_MS,
   INTAKE_DELIVERY_RESERVE_MS,
   INTAKE_FILES_BUDGET_MS,
   INTAKE_HYDRATE_WAIT_MS,
@@ -191,19 +192,21 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
     expect(readingsEnqueued(chatId)).toHaveLength(1);
   });
 
-  it('the questions a press is answered with first carry buttons of the collection’s own', async () => {
+  it('«Bo‘ldi» is refused for no file: the two file questions are gone (his 1a, docs/IKKI-ESHIK.md §1.1)', async () => {
+    // Re-anchored: this pinned «Avval ikkinchi fayl haqida javob bering» and «Avval javob bering:
+    // …boshqa zavodmi?» with their keyboards. He refused both questions; the press now reads.
     const invoice = collection({ pendingInvoice: { goods: [], label: '«B.xlsx»', texts: [] } });
     const a = fakeCtx();
     await handleCalcCallback(a, invoice, 'done');
-    expect(JSON.stringify(a.replies.at(-1)?.extra?.reply_markup)).toContain('c:inv_add');
-    expect(activeIntake(invoice)!.ownMessageIds).toContain(100 + a.replies.length);
+    expect(a.texts()).toEqual([NOTICE]);
+    expect(JSON.stringify(a.replies.map((r) => r.extra?.reply_markup ?? null))).not.toMatch(/c:inv_|c:other_/);
+    expect(readingsEnqueued(invoice)).toHaveLength(1);
 
     const other = collection({ aiGoods: 'ask' });
     const b = fakeCtx();
     await handleCalcCallback(b, other, 'done');
-    expect(JSON.stringify(b.replies.at(-1)?.extra?.reply_markup)).toContain('c:other_add');
-    expect(activeIntake(other)!.ownMessageIds).toContain(100 + b.replies.length);
-    expect(readingsEnqueued()).toHaveLength(0);
+    expect(b.texts()).toEqual([NOTICE]);
+    expect(readingsEnqueued(other)).toHaveLength(1);
   });
 
   it('a notice that hangs past the sweep’s minute of grace: the press stays alive, and its job id is stored only once the notice is out', async () => {
@@ -248,9 +251,17 @@ describe('the press enqueues the reading and calls no model (§7.2.3)', () => {
 });
 
 describe('the one wall clock and its workers (§7.2.1, §7.2.2)', () => {
-  it('hydrate + files + model + delivery + slack fit pg-boss’s expiry, less the handler’s own 10 s', () => {
+  it('hydrate + files + model + coding + delivery + slack fit pg-boss’s expiry, less the handler’s own 10 s', () => {
+    // The coding step (docs/IKKI-ESHIK.md §3.1) is a step of its own, inside
+    // the sum: two pooled reads after the model, before the table's laws.
+    expect(INTAKE_CODING_BUDGET_MS).toBeGreaterThan(0);
     expect(
-      INTAKE_HYDRATE_WAIT_MS + INTAKE_FILES_BUDGET_MS + INTAKE_TIMEOUT_MS + INTAKE_DELIVERY_RESERVE_MS + INTAKE_STEP_SLACK_MS,
+      INTAKE_HYDRATE_WAIT_MS +
+        INTAKE_FILES_BUDGET_MS +
+        INTAKE_TIMEOUT_MS +
+        INTAKE_CODING_BUDGET_MS +
+        INTAKE_DELIVERY_RESERVE_MS +
+        INTAKE_STEP_SLACK_MS,
     ).toBeLessThanOrEqual(INTAKE_READ_EXPIRE_S * 1000 - 10_000);
     expect(INTAKE_READ_EXPIRE_S).toBe(300);
   });

@@ -93,7 +93,10 @@ describe('«➕ Yana ma’lumot» keeps the per-line answers (P1.3)', () => {
     // answer landed, stored, so the next re-read starts from there (regression-7).
     const intake = code('src/modules/platform/telegram/calc-intake.ts');
     const analyse = intake.slice(intake.indexOf('export async function analyzeCollected'));
-    expect(analyse).toContain('placeByName(picked.goods, state.lineAnswers)');
+    // Placed over the picked goods once the model's codes for the Excel's rows
+    // are on them (docs/IKKI-ESHIK.md §3.1) — so a typed code goes on top.
+    expect(analyse).toContain('withKnownCodes(picked.goods,');
+    expect(analyse).toContain('placeByName(coded, state.lineAnswers)');
     expect(analyse).toContain('lineAnswers: placed.entries');
   });
 });

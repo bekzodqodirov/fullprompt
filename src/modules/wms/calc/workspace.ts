@@ -91,6 +91,7 @@ import {
   vedRotaPool,
 } from './service';
 import { childStateSql } from './chain';
+import { intakeDoorSql, parseIntakeDoor, stampIntakeDoorInTx } from './intake-door';
 import { guessedZoneFor } from './zone-guess';
 import { volumeIsLinesSum } from './line-totals';
 import { advanceHandsOffInTx } from './hands-off';
@@ -2607,11 +2608,15 @@ export async function recalcFromSealed(
       // the pooled `old` would put the correction back on the won lead —
       // superseding the deal's seal from a card no job follows. In the win's
       // order (request, then lead), a lead must still be OPEN to take it.
+      // …and its bot door (0141, docs/IKKI-ESHIK.md §0.1), which the
+      // correction inherits the way it inherits `source`: the VED re-prices,
+      // the seller who chose the door did not change.
       const [locked] = (await tx.execute(sql`
-        SELECT entity_type, entity_id::text AS entity_id
+        SELECT entity_type, entity_id::text AS entity_id, ${intakeDoorSql(sql.raw('calc_requests'))} AS door
           FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`)) as unknown as {
         entity_type: string;
         entity_id: string;
+        door: string | null;
       }[];
       if (!locked) throw new CalcError('not_found');
       if (locked.entity_type === 'lead') {
@@ -2656,6 +2661,10 @@ export async function recalcFromSealed(
           dueAt,
         })
         .returning({ id: calcRequests.id });
+      // A door READ off the row proves the column is there: no probe. NULL
+      // (legacy, or 0141 not landed) is the new row's own default.
+      const door = parseIntakeDoor(locked.door);
+      if (door) await stampIntakeDoorInTx(tx, fresh!.id, door);
 
       const items = await tx
         .select()

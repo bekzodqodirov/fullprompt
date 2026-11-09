@@ -103,6 +103,7 @@ describe('the upsale scales on the cube the lines state', () => {
     // the m³ box left empty — through the REAL door.
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal!.id,
         section: 'rastamojka',

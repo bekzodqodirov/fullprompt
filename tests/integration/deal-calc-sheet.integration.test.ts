@@ -108,6 +108,7 @@ async function mintDeal(): Promise<string> {
 async function open(dealId: string, section: 'rastamojka' | 'podklyuch' | 'yolkira') {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section,

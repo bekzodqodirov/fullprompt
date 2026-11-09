@@ -264,6 +264,7 @@ async function sealedJob(
 ) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: opts.onLead ? 'lead' : 'deal',
       entityId: opts.onLead ? leadId : (opts.dealId ?? dealId),
       section: 'yolkira',
@@ -370,6 +371,7 @@ async function ownDeal(client: string): Promise<string> {
 async function answered(onDeal: string, answer = 1000, price = 1300): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: onDeal,
       section: 'rastamojka',
@@ -607,6 +609,7 @@ describe('one sale, one commission', () => {
 
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: d!.id,
         section: 'rastamojka',

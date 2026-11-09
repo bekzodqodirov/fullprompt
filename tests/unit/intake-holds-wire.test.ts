@@ -45,7 +45,10 @@ const PRESENCE: Record<string, string> = {
   // The table stage (P3, §8.2): the collection an answer, a press or the
   // table's edit is FOR, re-read after their awaits by its note id.
   'calc-dialog.ts:commitWrites': 'an answer’s write and its echo’s id, on the collection it answered',
+  'calc-dialog.ts:applyPlainText': 'the goods beside a quiet answer, filed on the collection the answer was just written to (review PC-ADV-1)',
+  'calc-dialog.ts:applyTableAnswer': 'the AI door’s goods beside a quiet answer, filed on the collection the answer was just written to (as-built review CHAT-2)',
   'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
+  'calc-dialog.ts:drawPrompt': 'the kept-last draw of the collection’s own question or prompt (docs/IKKI-ESHIK.md §1.4)',
   'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',
   // The add door (P4, §9.2, §9.6): a parked collection is still one the door
   // would wipe or resume, and the save job reads only its own note's.
@@ -64,6 +67,15 @@ const PRESENCE: Record<string, string> = {
   'calc-store.ts:collectionSurvived': 'the backlog sentence: did a collection survive the restart',
   'staff-bot.ts:landCollectedIntake': 'the landing of the collection whose «Tasdiqlash» was pressed',
   'staff-handlers.ts:handleCalcCallback': 'the dispatcher’s reads: cancel, the restart question, the press’s state',
+  // The burst (docs/IKKI-ESHIK.md §4.2): beside a PARKED collection its ONE
+  // message is the pause line — a holding one was refused just above
+  // (`holdingIntake`), so what is asked is whether a parked one exists.
+  'burst.ts:burstShows': 'a parked collection beside the burst: its pause line, the holding one refused by the door above',
+  'burst.ts:drawBurst': 'the pause line drawn beside the parked collection, the holding one refused above',
+  'calc-amend.ts:pressResumeTake': 'a press — the pause line’s «▶️» on the parked collection it was drawn beside',
+  // The burst's review fixes: which collection a take went into, read back.
+  'calc-amend.ts:takenElsewhere': 'is the collection a burst went into still the live one — a parked one is (review PB-ADV-3)',
+  'task-handlers.ts:draftFromBurst': 'a press — 📌 on the pause line redraws the parked collection’s own line',
 };
 
 const HOLDS: Record<string, string> = {

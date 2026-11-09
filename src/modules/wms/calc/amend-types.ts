@@ -4,7 +4,7 @@
  * writer. Type-only imports, so the bot's modules can name these without
  * pulling wms into platform at run time.
  */
-import type { CalcGoodsFact, CalcSection } from './intake';
+import type { CalcGoodsFact, CalcSection, IntakeDoor } from './intake';
 import type { NeedLaw } from './needs';
 import type { MeasureUnit } from './pricing';
 
@@ -40,6 +40,14 @@ export interface AmendBase {
    * read in `storedRequestFacts`; asked again under the lock at the save. */
   leadOpen: boolean | null;
   section: CalcSection;
+  /**
+   * The bot door the request came in through (0141, docs/IKKI-ESHIK.md §0.3):
+   * the ➕ door and the seeded door open their collection's `ai` from it
+   * ('plain' → false, 'ai' → true; null keeps today's flag). Optional: an add
+   * collection hydrated with a base built before 0141 reads none — null, so
+   * it keeps the flag it was opened with.
+   */
+  door?: IntakeDoor | null;
   clientLabel: string | null;
   openedRev: number;
   /** Seq order. */
@@ -76,4 +84,12 @@ export interface AmendSubmission {
   /** Law 11: the verbatim words (material, then the answers) and the file count. */
   material: string[];
   fileCount: number;
+  /**
+   * What the bot noted on RECEIVING the files (`IntakeState.fileNotes`, docs/
+   * IKKI-ESHIK.md §1.2.5): a top-up's packing list is a «noted» file, its
+   * totals «so‘rovga yozilmadi, VED fayldan ko‘radi» — said to the VED on the
+   * card and in the thread, as the seeded landing says it (fix review
+   * FR-SELL-6). Optional: a stored «waiting» row from before has none.
+   */
+  fileNotes?: string[];
 }

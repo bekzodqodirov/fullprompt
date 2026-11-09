@@ -415,6 +415,8 @@ export async function threadCalcSend(
       items,
       ...(noteOnCard ? { noteId: input.noteId } : { note: { id: input.noteId, text: note } }),
       source: 'card',
+      // Not a bot door (docs/IKKI-ESHIK.md §0.1): the thread keeps today's behaviour.
+      intakeDoor: null,
       hasMaterials: material.fileCount > 0,
     },
     ctx,

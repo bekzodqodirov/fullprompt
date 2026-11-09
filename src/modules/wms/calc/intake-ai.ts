@@ -54,6 +54,10 @@ const factsSchema = z.object({
     }),
   ),
   steps: z.array(z.string()),
+  // Read leniently and entry by entry (`knownCodesOf`): an answer from before
+  // this field, or one bad entry, must never cost the WHOLE reading — the
+  // codes are a proposal, the goods and totals are the reading.
+  known_codes: z.array(z.unknown()).nullish(),
 });
 
 const SYSTEM = `Ты — помощник карго-компании GSR LOGISTICS (Китай → Узбекистан).
@@ -105,12 +109,31 @@ Excel (её содержимое дано текстом). Это ОДНА за�
 английском, добавь оригинал в скобках: «Куртка женская (女士夹克)».
 
 Ничего не выдумывай. Если факта нет — null. Лучше пустой список товаров, чем придуманный.
-Коды ТН ВЭД ставь только там, где уверен; иначе null.`;
+Коды ТН ВЭД ставь только там, где уверен; иначе null.
+
+known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров:
+коды ТН ВЭД строк этого списка, где ты уверен (n — номер строки в списке,
+tnved_code — код). Сами эти строки в goods не повторяй. Нет такого списка или
+не уверен — пустой массив.`;
+
+/**
+ * A code the model proposed for a row of the «already taken» list, by the
+ * row's INDEX into the `knownGoods` the caller passed (docs/IKKI-ESHIK.md
+ * §3.1) — re-checked by `knownCodesOf`: a number the model was not shown, or
+ * a code that is not one, is dropped. The caller then checks that the row at
+ * that index is still the row that was shown.
+ */
+export interface KnownCode {
+  index: number;
+  code: string;
+}
 
 export interface AiIntakeResult {
   facts: CalcFacts;
   /** What the model says it did — shown on the card's lenta. */
   steps: string[];
+  /** The model's codes for the Excel's rows (`codeKnown`); absent = none. */
+  knownCodes?: KnownCode[];
   /**
    * What the call cost, carried out so the LANDING can record it.
    *
@@ -143,10 +166,12 @@ export type AiIntakeRead =
  * §8.2.7: a call counts when the model ANSWERED it, whatever was made of the
  * answer). Absent when none was: an attempt with no answer — a timeout, the
  * network, a 4xx/5xx — cost nothing knowable and is not billed, so a dead
- * key never spends the day's cap as «budget». Today at most one per reading:
- * a retry follows only a call that never ran (`retryAfterPause`), and an
- * answered attempt ends the reading. The collector APPENDS these across
- * re-reads and the landing bills each one.
+ * key never spends the day's cap as «budget». At most two per reading: a
+ * retry follows a call that never ran (`retryAfterPause`), or an answer cut
+ * at the cap while the rows' codes were asked, which is read once more
+ * without them (review PF-ADV-13) — both answers billed; any other answered
+ * attempt ends the reading. The collector APPENDS these across re-reads and
+ * the landing bills each one.
  */
 export type AiIntakeOutcome = AiIntakeRead & { answered?: AnsweredUsage[] };
 
@@ -427,15 +452,16 @@ export function knownGoodsText(
   budget: number,
   /** Whose names: the invoice's (an Excel) or the REQUEST's own rows (the add door, §9.4). */
   source: 'invoice' | 'request' = 'invoice',
+  /**
+   * Numbered, and the model asked for the rows' codes by number (the AI door,
+   * docs/IKKI-ESHIK.md §3.1) — the invoice's list only. `ask` says which rows
+   * are asked (absent = every one): a row with a code of its own is listed and
+   * not numbered.
+   */
+  opts: { numbered?: boolean; ask?: (index: number) => boolean } = {},
 ): string {
-  const shown: string[] = [];
-  let used = 0;
-  for (const name of names) {
-    const line = `- ${name.slice(0, 120)}`;
-    if (used + line.length + 1 > budget) break;
-    shown.push(line);
-    used += line.length + 1;
-  }
+  const numbered = opts.numbered === true && source === 'invoice';
+  const { lines: shown } = knownGoodsLines(names, budget, numbered ? (opts.ask ?? (() => true)) : null);
   const rest = names.length - shown.length;
   const request = source === 'request';
   return (
@@ -447,13 +473,85 @@ export function knownGoodsText(
         // vanishes; `sameGoodsLine` then matches it to its row, so it is never
         // priced as a second line. Without figures it is the same row — left out.
         'Эти товары уже есть в заявке — НЕ повторяй их в goods, перечисли только новые. Исключение: если в материале у такого товара СВОИ цифры (количество, вес или объём), укажи его в goods с этими цифрами из материала — не придумывай их:\n'
-      : 'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n') +
+      : numbered
+        ? 'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие. ' +
+          'Для строки этого списка, чей код ТН ВЭД ты уверенно определяешь, укажи его в known_codes ' +
+          '(n — номер строки, tnved_code — код); не уверен — не указывай:\n'
+        : 'Эти товары уже взяты из таблицы Excel — НЕ повторяй их в goods, перечисли только другие:\n') +
     shown.join('\n') +
     (rest > 0
       ? `${shown.length > 0 ? '\n' : ''}…и ещё ${rest} строк ${request ? 'этой заявки — для них то же правило.' : 'этой таблицы — их тоже не повторяй.'}`
       : '') +
     '\n\n'
   );
+}
+
+/**
+ * At most this many rows are asked for a code in one reading (review
+ * PF-ADV-13): the codes are output inside the same `INTAKE_MAX_TOKENS` as the
+ * reading's thinking, and an answer cut at the cap costs the WHOLE reading —
+ * the totals, the extra goods, the steps — for a proposal the coding step
+ * does without. The rows past it are coded by the memory and the book.
+ */
+export const KNOWN_CODES_MAX = 40;
+
+/**
+ * The name lines `knownGoodsText` shows — whole lines while they fit
+ * `budget` — and, when the codes are asked for (`ask`), which of them are
+ * numbered: from 1, each row `ask` accepts, up to `KNOWN_CODES_MAX`; the rest
+ * are listed with a dash. ONE fit, so the numbers the model answers by are the
+ * numbers it was shown; `asked` holds each number's position in `names`.
+ */
+function knownGoodsLines(
+  names: readonly string[],
+  budget: number,
+  ask: ((index: number) => boolean) | null,
+): { lines: string[]; asked: number[] } {
+  const lines: string[] = [];
+  const asked: number[] = [];
+  let used = 0;
+  for (const [i, name] of names.entries()) {
+    const numberIt = ask !== null && asked.length < KNOWN_CODES_MAX && ask(i);
+    const line = numberIt ? `${asked.length + 1}. ${name.slice(0, 120)}` : `- ${name.slice(0, 120)}`;
+    if (used + line.length + 1 > budget) break;
+    lines.push(line);
+    if (numberIt) asked.push(i);
+    used += line.length + 1;
+  }
+  return { lines, asked };
+}
+
+/** What the Excel's names may cost after the request's own rows (the two lists share one budget). */
+function knownBudgetAfter(request: readonly string[]): { requestText: string; knownBudget: number } {
+  const requestText = request.length ? knownGoodsText(request, KNOWN_GOODS_CHARS, 'request') : '';
+  return { requestText, knownBudget: Math.max(0, KNOWN_GOODS_CHARS - requestText.length) };
+}
+
+/**
+ * The model's `known_codes`, re-checked (docs/IKKI-ESHIK.md §3.1 — the
+ * `pickImportRows` idiom: the model's output is data, not a command). `shown`
+ * maps each number the model was SHOWN (1-based) to the caller's index; a
+ * number outside it — a row past `KNOWN_GOODS_CHARS`, a row that does not
+ * exist — is dropped, and so is a code that is not 4-10 digits (a typed
+ * nine-digit one included: nobody can say which zero fell off). A row given
+ * two different codes is no answer at all. Pure.
+ */
+export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[] {
+  if (!Array.isArray(raw)) return [];
+  const byIndex = new Map<number, string | null>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const n = (entry as { n?: unknown }).n;
+    const text = (entry as { tnved_code?: unknown }).tnved_code;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > shown.length) continue;
+    if (typeof text !== 'string') continue;
+    const code = normalizeTnved(text);
+    if (!code || !('code' in code)) continue;
+    const index = shown[n - 1]!;
+    const before = byIndex.get(index);
+    byIndex.set(index, before === undefined || before === code.code ? code.code : null);
+  }
+  return [...byIndex].flatMap(([index, code]) => (code ? [{ index, code }] : []));
 }
 
 /**
@@ -510,6 +608,19 @@ export async function analyzeIntake(input: {
    */
   knownGoods?: readonly string[];
   /**
+   * Ask the model for the `knownGoods` rows' codes too (the AI door,
+   * docs/IKKI-ESHIK.md §3.1): the list is shown numbered, and the answer's
+   * `known_codes` come back by index into `knownGoods`. The model is called on
+   * this reading anyway, so this is output, not a call.
+   */
+  codeKnown?: boolean;
+  /**
+   * Which `knownGoods` rows already carry a code of their own (by index):
+   * listed, never asked — their code is the row's, and asking it only spends
+   * the answer's tokens (review PF-ADV-13). Absent = none.
+   */
+  knownCoded?: readonly boolean[];
+  /**
    * The rows already on the REQUEST, by name (the add door, docs/SAKKIZ-R3.md
    * §9.4): a top-up's reading must list only NEW goods, or a stored row read
    * again is priced twice. Printed before the Excel's names, inside the same
@@ -547,8 +658,20 @@ export async function analyzeIntake(input: {
   // left.
   const leash = input.timeoutMs ?? INTAKE_TIMEOUT_MS;
   const started = Date.now();
-  const known = (input.knownGoods ?? []).map((n) => n.trim()).filter(Boolean);
+  // Each shown name keeps its index into the caller's list, so a code the
+  // model gives by NUMBER lands on the row that number was shown for.
+  const knownList = (input.knownGoods ?? []).map((name, index) => ({ index, name: name.trim() })).filter((k) => k.name);
+  const known = knownList.map((k) => k.name);
   const requestNames = (input.requestGoods ?? []).map((n) => n.trim()).filter(Boolean);
+  // Asked: a shown row with no code of its own, by its index into the
+  // caller's list (`knownCoded`).
+  const ask = (i: number) => input.knownCoded?.[knownList[i]!.index] !== true;
+  let numbered = input.codeKnown === true && known.length > 0;
+  let shown = numbered
+    ? knownGoodsLines(known, knownBudgetAfter(requestNames).knownBudget, ask).asked.map((i) => knownList[i]!.index)
+    : [];
+  // What every answered attempt cost — a cut answer retried is two (2.9 c).
+  let answered: AnsweredUsage[] = [];
   let failure: AiReadFailure = 'network';
   for (let attempt = 0; attempt < INTAKE_ATTEMPTS; attempt += 1) {
     const left = leash - (Date.now() - started);
@@ -563,7 +686,18 @@ export async function analyzeIntake(input: {
         messages: [
           {
             role: 'user',
-            content: intakeContent(input.section, input.fileCount, material, images, pdfs, sheets, contextSheets, known, requestNames),
+            content: intakeContent(
+              input.section,
+              input.fileCount,
+              material,
+              images,
+              pdfs,
+              sheets,
+              contextSheets,
+              known,
+              requestNames,
+              numbered ? ask : null,
+            ),
           },
         ],
       });
@@ -577,8 +711,19 @@ export async function analyzeIntake(input: {
       );
       // The model ANSWERED this attempt: it is billed whatever is made of
       // the answer — refused, cut, unreadable or read (2.9 c).
-      const read = readIntakeResponse(response);
-      return read.usage ? { ...read, answered: [{ ...read.usage, at: Date.now() }] } : read;
+      const read = readIntakeResponse(response, shown);
+      if (read.usage) answered = [...answered, { ...read.usage, at: Date.now() }];
+      // An answer cut at the cap WHILE the codes were asked is read once more
+      // without them (review PF-ADV-13): the codes are a proposal the coding
+      // step does without, the reading is not.
+      if (!read.ok && read.failure === 'truncated' && numbered && attempt + 1 < INTAKE_ATTEMPTS) {
+        logger.warn({ shown: shown.length }, '[calc intake] answer cut with the codes asked — read again without them');
+        numbered = false;
+        shown = [];
+        failure = 'truncated';
+        continue;
+      }
+      return answered.length > 0 ? { ...read, answered } : read;
     } catch (err) {
       failure = aiFailureOf(err);
       // Never fatal: the intake goes on with what the person typed, and the
@@ -588,18 +733,22 @@ export async function analyzeIntake(input: {
       await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
     }
   }
-  return { ok: false, failure };
+  return answered.length > 0 ? { ok: false, failure, answered } : { ok: false, failure };
 }
 
 /**
  * The model's answer, read — or the reason it cannot be. Pure over the
  * response's shape, so a truncated or refused answer is tested without a call.
  */
-export function readIntakeResponse(response: {
-  stop_reason: string | null;
-  content: { type: string; text?: string }[];
-  usage?: { input_tokens?: number; output_tokens?: number } | null;
-}): AiIntakeRead {
+export function readIntakeResponse(
+  response: {
+    stop_reason: string | null;
+    content: { type: string; text?: string }[];
+    usage?: { input_tokens?: number; output_tokens?: number } | null;
+  },
+  /** The numbers the «already taken» list was shown with (`knownCodesOf`); none = no codes asked. */
+  shown: readonly number[] = [],
+): AiIntakeRead {
   const usage = {
     model: ANALYST_MODEL,
     inputTokens: response.usage?.input_tokens ?? 0,
@@ -617,6 +766,7 @@ export function readIntakeResponse(response: {
     logger.warn({ err, head: raw.slice(0, 200) }, '[calc intake] answer not readable');
     return { ok: false, failure: 'unreadable', usage };
   }
+  const knownCodes = knownCodesOf(parsed.known_codes ?? [], shown);
   return {
     ok: true,
     usage,
@@ -630,6 +780,7 @@ export function readIntakeResponse(response: {
       goods: parsed.goods.map(aiGoodsLine),
     },
     steps: parsed.steps.slice(0, 20),
+    ...(knownCodes.length > 0 ? { knownCodes } : {}),
   };
 }
 
@@ -670,8 +821,21 @@ const FACTS_JSON_SCHEMA = {
       },
     },
     steps: { type: 'array', items: { type: 'string' } },
+    known_codes: {
+      type: 'array',
+      description: 'Коды ТН ВЭД строк пронумерованного списка «уже взятых» товаров, по номеру строки; нет списка — пустой массив.',
+      items: {
+        type: 'object',
+        properties: {
+          n: { type: 'integer', description: 'номер строки в списке' },
+          tnved_code: { type: 'string' },
+        },
+        required: ['n', 'tnved_code'],
+        additionalProperties: false,
+      },
+    },
   },
-  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'steps'],
+  required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'steps', 'known_codes'],
   additionalProperties: false,
 } as const;
 
@@ -711,9 +875,10 @@ function intakeContent(
   contextSheets: readonly IntakeSheetText[],
   known: readonly string[],
   request: readonly string[] = [],
+  /** The codes asked (numbered), and of which rows — null = none asked. */
+  ask: ((index: number) => boolean) | null = null,
 ): Anthropic.ContentBlockParam[] {
-  const requestText = request.length ? knownGoodsText(request, KNOWN_GOODS_CHARS, 'request') : '';
-  const knownBudget = Math.max(0, KNOWN_GOODS_CHARS - requestText.length);
+  const { requestText, knownBudget } = knownBudgetAfter(request);
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
@@ -743,7 +908,7 @@ function intakeContent(
         // told a table stops reads the visible rows as the whole order.
         sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET) +
         requestText +
-        (known.length ? knownGoodsText(known, knownBudget) : '') +
+        (known.length ? knownGoodsText(known, knownBudget, 'invoice', ask ? { numbered: true, ask } : {}) : '') +
         (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
     },
   ];

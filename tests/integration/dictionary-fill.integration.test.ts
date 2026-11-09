@@ -133,6 +133,7 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -385,6 +386,7 @@ describe('the seal records whether its m³ is the lines’ Σ', () => {
     madeNames.push(a, b);
     const result = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',

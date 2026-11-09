@@ -15,7 +15,7 @@ import {
 import { ftlReady } from '../ftl/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, landingItems, type CalcFacts, type CalcSection, type IntakeDoor } from './intake';
 import { bookLawsFor } from './book-laws';
 import { attachIntakePasses } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
@@ -457,6 +457,12 @@ export async function landIntake(input: {
   hasCertificate?: boolean;
   /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
   freightZone?: string | null;
+  /**
+   * Which bot door collected it (0141, docs/IKKI-ESHIK.md §0.1) — 'plain' /
+   * 'ai' from the bot's collector, null from the AI sotuvchi. REQUIRED, as
+   * `openCalcRequest`'s is: an absent door would read «legacy» in silence.
+   */
+  intakeDoor: IntakeDoor | null;
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -597,6 +603,7 @@ export async function landIntake(input: {
         items: landingItems(input.facts),
         noteId: input.noteId,
         source: 'bot',
+        intakeDoor: input.intakeDoor,
         hasMaterials: input.fileCount > 0,
         hasCertificate: input.hasCertificate ?? true,
         freightZone: input.freightZone ?? null,

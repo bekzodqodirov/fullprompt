@@ -39,6 +39,7 @@ import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/pl
 import { aiConfirmKeyboard, CLIENT_QUESTION, restartKeyboard } from '@/modules/platform/telegram/calc-keyboards';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
 import { deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import type { OnceKey } from '@/modules/platform/telegram/once';
 import { read } from '../fixtures/source-shape';
 
@@ -69,8 +70,10 @@ function pressFrom(messageId: number | null) {
     },
     ...(messageId === null ? {} : { callbackQuery: { message: { message_id: messageId } } }),
     api: {
+      // No edit in a test — the prompt is sent fresh, as kept-last.ts sends it
+      // for a message that is gone (a refusal of another kind keeps the copy).
       editMessageText: async () => {
-        throw new Error('no edit in a test — the prompt is sent fresh');
+        throw Object.assign(new Error('400'), { description: 'Bad Request: message to edit not found' });
       },
     },
   };
@@ -133,6 +136,8 @@ describe('a restart resumes when it would reopen what is live (K11, durability-2
     // …and the same «🔄 Ha» arrives again (a double tap, a redelivery).
     const again = pressFrom(50);
     await handleCalcCallback(again.ctx, id, 'go_rastamojka');
+    // The resume redraws the ONE prompt as the last message (docs/IKKI-ESHIK.md §1.4).
+    await keptLastSettled();
     expect(activeIntake(id)?.material).toEqual(['Kurtka 300 dona']);
     expect(activeIntake(id)?.clientHintRaw).toBe('GS777');
     expect(again.last()).toContain('Qabul qilindi');
@@ -145,9 +150,11 @@ describe('a restart resumes when it would reopen what is live (K11, durability-2
     stub.claimed = false;
     const { ctx, last } = pressFrom(60);
     await handleCalcCallback(ctx, id, 'go_rastamojka', 'q:-1:60:restart' as OnceKey);
+    await keptLastSettled();
     expect(activeIntake(id)?.material).toEqual(['Kurtka 300 dona']);
     expect(activeIntake(id)?.openedBy).toBe(70);
-    expect(last()).toBe(CLIENT_QUESTION);
+    // The customer question ONCE, counting what arrived (§1.5).
+    expect(last()).toBe(`Qabul qilindi: ✍️ 1 ta xabar.\n\n${CLIENT_QUESTION}`);
   });
 
   it('a restart whose claim is free restarts, as it always did', async () => {
@@ -186,6 +193,7 @@ describe('«▶️ Yo‘q, davom etaman» re-prompts the live stage (K7, K9, pro
     startIntake(id, 'rastamojka', { staffId: 'staff-1' });
     const { ctx, last } = pressFrom(null);
     await handleCalcCallback(ctx, id, 'resume');
+    await keptLastSettled();
     expect(activeIntake(id)?.stage).toBe('client');
     expect(last()).toBe(CLIENT_QUESTION);
   });
@@ -258,6 +266,7 @@ describe('every «own» press acts only on the collection whose message carries 
     startIntake(id, 'rastamojka', { staffId: 'staff-1' });
     const { ctx, last } = pressFrom(123);
     await handleCalcCallback(ctx, id, 'resume');
+    await keptLastSettled();
     expect(last()).toBe(CLIENT_QUESTION);
   });
 });
@@ -294,8 +303,14 @@ describe('the callback vocabulary (K12)', () => {
     expect(Object.entries(CALC_STEP_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k).sort()).toEqual(
       ['go_ai', 'go_aipk', 'go_podklyuch', 'go_rastamojka', 'go_yolkira'],
     );
-    for (const step of ['cancel', 'cancel_y', 'save', 'more', 'done', 'reread', 'cert_y', 'cert_n', 'pick_0', 'conf_0_add']) {
+    for (const step of ['cancel', 'cancel_y', 'save', 'more', 'done', 'reread', 'cert_y', 'cert_n', 'pick_0']) {
       expect(CALC_STEP_REPEAT[step as CalcStep], step).toBe('own');
+    }
+    // The file questions his 1a retired (docs/IKKI-ESHIK.md §1.3) — the second Excel, «boshqa
+    // zavodmi?», a stored row's conflict — answer only «eskirgan»: a prompt class, acting on no
+    // collection (it pinned `conf_0_add` as 'own' while the conflict was asked).
+    for (const step of ['inv_add', 'inv_replace', 'other_add', 'other_same', 'conf_0_add', 'conf_1_rep', 'conf_2_ved']) {
+      expect(CALC_STEP_REPEAT[step as CalcStep], step).toBe('prompt');
     }
     expect(PRESS_REPEAT.calc_add).toBe('keyed');
     expect(PRESS_REPEAT.calc_undo).toBe('cas');

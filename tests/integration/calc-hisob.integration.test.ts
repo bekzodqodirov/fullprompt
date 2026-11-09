@@ -133,6 +133,7 @@ async function open(
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section,

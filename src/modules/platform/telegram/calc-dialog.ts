@@ -1,8 +1,10 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { logger } from '../logger';
+import { drawKeptLast, editGone, keepLastSoon, notModified } from './kept-last';
 import { answerPress } from './press';
 import { clientCodePrefix } from './staff-bot';
 import {
+  collectionDoor,
   factsWithAnswer,
   intakeClientSummary,
   MAX_INTAKE_IMAGES,
@@ -12,7 +14,16 @@ import {
   type IntakeEcho,
   type IntakeState,
 } from './calc-intake';
-import { activeIntake, endIntake, holdingIntake, noteOwnMessage, nothingNewToRead, updateIntake } from './calc-store';
+import {
+  activeIntake,
+  addPointerWords,
+  endIntake,
+  holdingIntake,
+  noteOwnMessage,
+  nothingNewToRead,
+  updateIntake,
+} from './calc-store';
+import { promptFileLines } from './calc-files';
 import {
   aiConfirmKeyboard,
   CLIENT_QUESTION,
@@ -35,6 +46,15 @@ import { totalsAnswerShape } from './totals-shape';
  * to take it back («↩️ Shu javobni bekor qilish»), and the table is edited in
  * place. The loop that asked one line at a time, its three-round cap and «⏭»
  * are gone.
+ *
+ * Since the two doors (docs/IKKI-ESHIK.md, his 1a-4a) the plain «🧮» door
+ * draws a SUMMARY that asks nothing and writes a typed answer quietly (§2.2);
+ * the AI door keeps the TABLE, and an answer to it sends no message of its
+ * own either (§3.4): the table is edited, its last block says what the answer
+ * did, its keyboard carries the ↩️, and only what was refused or must still be
+ * asked gets ONE short reply. The echo message lives on only for a request
+ * from before the doors (§0.2). Both share the ONE prompt kept as the last
+ * message, the customer and the zone asked once (§1.4-§1.6).
  */
 
 type Intake = typeof import('../../wms/calc/intake');
@@ -56,6 +76,10 @@ export type CollectorReply = {
 /** What editing a sent message needs of grammy's api. */
 export type EditApi = {
   editMessageText: (chatId: string, messageId: number, text: string, extra?: Record<string, unknown>) => Promise<unknown>;
+  /** The kept-last prompt's delete of its older copy (§1.4) — optional: a test's fake may have none. */
+  deleteMessage?: (chatId: string, messageId: number) => Promise<unknown>;
+  /** §2.2's 👍 under an answer written quietly — optional and best-effort. */
+  setMessageReaction?: (chatId: string, messageId: number, reaction: { type: 'emoji'; emoji: '👍' }[]) => Promise<unknown>;
 };
 
 /**
@@ -105,25 +129,57 @@ export const BARE_FIGURE_NOT_FOUND = `${NOT_FOUND_HINT}\n(Hisoblatish savoliga j
  * product-fit-19 e). After round 3 a restart does not lose a collection, so
  * the old «bot qayta ishga tushgan bo‘lishi mumkin» is retired; what is left
  * is a collection that ended — or a request already sent, which takes its
- * additions through «➕».
+ * additions through «➕». No request is in hand here, so no door is KNOWN
+ * (docs/IKKI-ESHIK.md §2.5): today's words, the legacy door's (§0.2, review
+ * PC-SPEC-10): every request at deploy is NULL, an AI-door one is answered by
+ * the AI too, and the pointer to reply to that answer is the one those
+ * sellers need. Naming the plain words for a chat whose newest request is
+ * 'plain' wants that request read — the orphan guard's.
  */
-export const NO_OPEN_COLLECTION =
-  'Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). Qo‘shimcha bo‘lsa — ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing, yoki AI javobiga reply qilib yozing. Yangi hisob — «🧮 Hisoblatish».';
+export const NO_OPEN_COLLECTION = `Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). ${addPointerWords(null)}`;
+
+/** What every pause line opens with — the collection exists, it only stopped holding the chat. */
+const PAUSE_HEAD = '⏸ Hisoblatish to‘xtab turibdi (30 daqiqa yozilmadi)';
 
 /**
  * A table-shaped text (or a bare figure) while the collection is PARKED (§2.7,
  * regression-1): it exists, so «not found» would be false — and it is never
  * silently added either. Its buttons act on the parked collection (the
  * notice joins its own messages).
+ *
+ * «yoki jadvalga reply qilib yozing» only where there IS a table — the
+ * 'review' stage — and no burst is waiting beside it (docs/IKKI-ESHIK.md
+ * §4.2): a reply to the table resumes the collection WITHOUT the files the
+ * burst's own line offers to take, so it would be the wrong way back.
  */
-export const PAUSE_LINE =
-  '⏸ Hisoblatish to‘xtab turibdi (30 daqiqa yozilmadi) — bu xabar unga qo‘shilmadi.\n' +
-  'Davom etish uchun «▶️ Davom etamiz» ni bosing yoki jadvalga reply qilib yozing.';
+export function pauseLine(stage: IntakeState['stage'], burstWaiting: boolean): string {
+  const reply = stage === 'review' && !burstWaiting ? ' yoki jadvalga reply qilib yozing' : '';
+  return `${PAUSE_HEAD} — bu xabar unga qo‘shilmadi.\nDavom etish uchun «▶️ Davom etamiz» ni bosing${reply}.`;
+}
 
-export function pauseKeyboard(): InlineKeyboard {
+/** The pause line of a parked table with nothing waiting beside it — the full sentence. */
+export const PAUSE_LINE = pauseLine('review', false);
+
+/**
+ * A burst beside a PARKED collection (§4.2): its ONE message, kept last,
+ * covering the forwards too — the files are not taken by themselves (1.8 c),
+ * «▶️» is his consent.
+ */
+export function burstPauseLine(parts: number): string {
+  return `${PAUSE_HEAD}. Hozirgi ${parts} ta xabar unga hali qo‘shilmagan — «▶️ Davom etamiz» ni bossangiz, qo‘shiladi.`;
+}
+
+/**
+ * The pause line's buttons. Beside a burst, «▶️» is `c:resume_take` — it takes
+ * the burst's parts, read by the pressed message (§4.2) — and «📌 Topshiriq
+ * qilish» (Door B's own `fb:task`) appears when the burst holds a forward.
+ * Every other «▶️» stays `c:resume`, which takes nothing.
+ */
+export function pauseKeyboard(burst: { forwards: boolean } | null = null): InlineKeyboard {
   return {
     inline_keyboard: [
-      [{ text: '▶️ Davom etamiz', callback_data: 'c:resume' }],
+      [{ text: '▶️ Davom etamiz', callback_data: burst ? 'c:resume_take' : 'c:resume' }],
+      ...(burst?.forwards ? [[{ text: '📌 Topshiriq qilish', callback_data: 'fb:task' }]] : []),
       [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
     ],
   };
@@ -172,6 +228,32 @@ function ownsMessage(state: IntakeState, id: number): boolean {
   );
 }
 
+// Which bot door this COLLECTION is lives beside `IntakeState` (calc-intake.ts),
+// so the reading asks the very rule the table asks (as-built review DOORS-1).
+export { collectionDoor };
+
+/** The plain door «🧮 Hisoblatish» (§2): a summary, no asks — the job lands as it is and the VED asks. */
+export const plainCollection = (state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>) =>
+  collectionDoor(state) === 'plain';
+
+/**
+ * The last line of a summary or table material arrived BELOW (§1.4): its
+ * buttons go — they would answer «avval Bo‘ldi» — and the new prompt under
+ * the material is the control. Both doors.
+ */
+export const TABLE_SUPERSEDED = '⬇️ Yangi ma’lumot qo‘shildi — pastdagi «✅ Bo‘ldi» ni bosing, qayta o‘qiladi.';
+
+/**
+ * Is the drawn table superseded: collecting again, with something its ✅
+ * would refuse to land unread — something SENT since the reading it shows
+ * (`nothingNewToRead` reads the reading's own mark): «➕ Yana ma’lumot» and a
+ * typed answer alone leave it standing, buttons and closing (review
+ * PC-SPEC-5, PC-ADV-6).
+ */
+function tableSuperseded(state: IntakeState): boolean {
+  return state.stage === 'material' && state.tableMessageId !== null && !nothingNewToRead(state);
+}
+
 /**
  * The book's law for the collection's codes (and any code an answer is about
  * to write), read on the pool (#714) — through a dynamic import, because
@@ -196,6 +278,27 @@ export interface TableContext {
   stale: readonly ('weightKg' | 'volumeM3')[];
   /** The answer parser's own «which words name this row alone» (line-address.ts, review PF-4). */
   nameWord: import('../../wms/calc/intake').TableInput['nameWord'];
+  /**
+   * Will the landing pass have a model today (`aiCalcAvailable`) — read once
+   * per draw, and only for the AI door's table, whose «kod yo‘q» row and
+   * complete closing promise the AI's work only while it holds (§3.1).
+   */
+  aiAvailable: boolean;
+}
+
+/**
+ * `aiCalcAvailable()` — THE one predicate (review PF-SPEC-4) — through a
+ * dynamic import, platform never importing wms statically. A read that fails
+ * promises nothing: the uncoded rows are the VED's.
+ */
+async function aiAvailableNow(): Promise<boolean> {
+  try {
+    const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
+    return await aiCalcAvailable();
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] AI availability unreadable — the uncoded rows are the VED’s');
+    return false;
+  }
 }
 
 /**
@@ -245,8 +348,12 @@ export async function tableContext(
 ): Promise<TableContext> {
   const intake = await import('../../wms/calc/intake');
   const { nameWordFor } = await import('../../wms/calc/line-address');
-  const [laws, stale] = await Promise.all([intakeLaws(state, extraCodes), staleTotalsOf(state)]);
-  return { intake, laws, stale, nameWord: nameWordFor };
+  const [laws, stale, aiAvailable] = await Promise.all([
+    intakeLaws(state, extraCodes),
+    staleTotalsOf(state),
+    collectionDoor(state) === 'ai' ? aiAvailableNow() : Promise.resolve(false),
+  ]);
+  return { intake, laws, stale, nameWord: nameWordFor, aiAvailable };
 }
 
 /**
@@ -279,8 +386,10 @@ function tableTail(state: IntakeState, intake: Intake): string {
       ? `\n\n⚠️ ${intake.AI_READ_FAILURE[failure].text}\n` +
         ((state.invoiceGoods ?? []).length > 0 ? 'Faqat Excel va yozilganidan o‘qildi.' : 'Faqat yozilganidan o‘qildi.')
       : aiStepsText(state.steps)) +
+    // A table that points down has no certificate button (§1.4): the line
+    // states the answer and points at no press (review PC-SPEC-9).
     (state.ai && !state.amend
-      ? `\n\n📄 Sertifikat: ${state.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
+      ? `\n\n📄 Sertifikat: ${state.hasCertificate ? 'bor' : 'yo‘q'}${tableSuperseded(state) ? '' : ' (o‘zgartirish uchun tugmani bosing)'}`
       : '');
   return text.replace(/^\n/u, '');
 }
@@ -312,6 +421,10 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     // null there, and the stale list rode only inside it.
     totalsStale: tc.stale,
     nameWord: tc.nameWord,
+    plain: plainCollection(state),
+    clash: state.fileTotals?.clash ?? [],
+    marker: tableSuperseded(state) ? TABLE_SUPERSEDED : null,
+    ai: collectionDoor(state) === 'ai' ? { available: tc.aiAvailable, last: lastBlockOf(state, tc) } : null,
   };
 }
 
@@ -330,32 +443,20 @@ function tableRefOf(state: IntakeState, tc: TableContext, stage: TableRef['stage
 }
 
 /**
- * A conflict's buttons on the add table (§2.1): at most three at a time, each
- * one row — the first three still OPEN, so once those are answered the next
- * ones get theirs (review spec-9); `N` stays the index in `state.conflicts`.
+ * The table and its keyboard over `state` — the one rendering, read by the
+ * delivery and by every edit. A conflict is never a button on either door
+ * (his 1a, docs/IKKI-ESHIK.md §1.1): the table names it «… — VED hal
+ * qiladi», and the old `conf_N_*` presses answer «eskirgan». A table material
+ * arrived below loses its buttons (§1.4) — an EMPTY keyboard, which the edit
+ * sends, so Telegram takes them off.
  */
-function conflictRows(state: IntakeState, intake: Intake): InlineKeyboard['inline_keyboard'] {
-  const shown = state.conflicts.flatMap((c, n) => (c.choice === null ? [n] : [])).slice(0, 3);
-  return state.conflicts.flatMap((c, n) => {
-    if (!shown.includes(n)) return [];
-    const at = `${c.seq}-qator`;
-    const unit = c.unit as NeedUnit;
-    const ved = { text: `📨 ${at}: VED`, callback_data: `c:conf_${n}_ved` };
-    if (c.stored === null) {
-      return [[{ text: `✅ ${at}: ${intake.figureLabel(c.read, unit)} yozilsin`, callback_data: `c:conf_${n}_rep` }, ved]];
-    }
-    return [
-      [
-        { text: `➕ ${at}: ${intake.figureLabel(c.stored + c.read, unit)}`, callback_data: `c:conf_${n}_add` },
-        { text: `🔁 ${at}: ${intake.figureLabel(c.read, unit)}`, callback_data: `c:conf_${n}_rep` },
-        ved,
-      ],
-    ];
-  });
-}
-
-/** The table and its keyboard over `state` — the one rendering, read by the delivery and by every edit. */
 function tableWords(state: IntakeState, tc: TableContext): Pick<NextStep, 'text' | 'keyboard'> {
+  const text = tc.intake.intakeTableText(tableInputOf(state, tc));
+  // The AI door's ↩️ rides on the table (§3.4) — kept even on a table that
+  // points down: the undo is no press the save guard refuses, and the echo
+  // that used to carry it is gone.
+  const undo = collectionDoor(state) === 'ai' ? undoRows(state) : [];
+  if (tableSuperseded(state)) return { text, keyboard: { inline_keyboard: undo } };
   const failure = readingFailure(state);
   const base = state.amend
     ? amendKeyboard(state.standingAtOpen === 'started')
@@ -363,12 +464,28 @@ function tableWords(state: IntakeState, tc: TableContext): Pick<NextStep, 'text'
       ? aiConfirmKeyboard(state.hasCertificate)
       : confirmKeyboard;
   return {
-    text: tc.intake.intakeTableText(tableInputOf(state, tc)),
+    text,
     keyboard: reviewKeyboard(
-      { inline_keyboard: [...conflictRows(state, tc.intake), ...base.inline_keyboard] },
+      { inline_keyboard: [...undo, ...base.inline_keyboard] },
       failure !== null && tc.intake.AI_READ_FAILURE[failure].retry,
     ),
   };
+}
+
+/** The newest answer not yet taken back — what the table's ↩️ undoes and its last block names (§3.4). */
+function newestEcho(state: IntakeState): IntakeEcho | null {
+  return [...state.echoes].reverse().find((e) => !e.undone) ?? null;
+}
+
+/**
+ * The AI door table's ONE undo (§3.4): «↩️ Oxirgi javobni bekor qilish»,
+ * naming the newest answer not taken back. Re-rendered with every edit, so a
+ * redelivered press names the tag it was drawn with — and `undone` keeps a
+ * second press of it idempotent.
+ */
+function undoRows(state: IntakeState): InlineKeyboard['inline_keyboard'] {
+  const echo = newestEcho(state);
+  return echo ? [[{ text: '↩️ Oxirgi javobni bekor qilish', callback_data: `cu:${echo.tag}` }]] : [];
 }
 
 /**
@@ -391,11 +508,19 @@ export function intakeNextStep(
   state: IntakeState,
   laws: ReadonlyMap<string, NeedLaw>,
   intake: Intake,
-  opts: { stale?: readonly ('weightKg' | 'volumeM3')[]; nameWord: TableContext['nameWord'] },
+  opts: { stale?: readonly ('weightKg' | 'volumeM3')[]; nameWord: TableContext['nameWord']; aiAvailable?: boolean },
 ): NextStep {
+  // A new reading is a new table: what an earlier «↩️» took back is no longer
+  // the last thing that happened on it (§3.4).
+  const patch: Partial<IntakeState> = { stage: 'review', offers: [], offersMessageId: null, promptMessageId: null, lastUndo: null };
   return {
-    patch: { stage: 'review', offers: [], offersMessageId: null },
-    ...tableWords(state, { intake, laws, stale: opts.stale ?? [], nameWord: opts.nameWord }),
+    // The reading SETTLES the prompt (§1.4): the table is the control now,
+    // and the first material after it sends a NEW prompt below it.
+    patch,
+    ...tableWords(
+      { ...state, ...patch },
+      { intake, laws, stale: opts.stale ?? [], nameWord: opts.nameWord, aiAvailable: opts.aiAvailable ?? false },
+    ),
   };
 }
 
@@ -409,7 +534,7 @@ export function intakeNextStep(
  */
 export async function deliverNextStep(ctx: CollectorReply, chatId: bigint, state: IntakeState): Promise<void> {
   const tc = await tableContext(state);
-  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord });
+  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord, aiAvailable: tc.aiAvailable });
   const settled = updateIntake(chatId, step.patch);
   const words = settled ? tableWords(settled, tc) : step;
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
@@ -486,9 +611,8 @@ const rowLabel = (name: string) => {
   return chars.length > 40 ? `${chars.slice(0, 39).join('')}…` : name;
 };
 
-/** «3-qator», «umumiy brutto», «umumiy hajm», «yo‘nalish» — a target as the echo names it. */
-const whereOf = (t: TableTarget) =>
-  'line' in t ? `${t.line}-qator` : 'totals' in t ? (t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm') : 'yo‘nalish';
+/** «3-qator», «umumiy brutto», «umumiy hajm», «yo‘nalish» — a target in words: the table's own (`targetWord`, #513). */
+const whereOf = (t: TableTarget, intake: Intake) => intake.targetWord(t);
 
 /** The figure an answer stated, as the words show it back («50 dona», «20 kg»). */
 function exampleOf(answer: LineAnswer | null, intake: Intake): string {
@@ -563,16 +687,28 @@ function totalsItem(field: 'weightKg' | 'volumeM3', value: number, was: number |
     : `umumiy hajm: ${arrow}${intake.figureLabel(value, 'm3')}`;
 }
 
-/** One change an answer makes — a segment the parser read, or a conflict button (§2.1). */
-type Write = { kind: 'segment'; segment: TableSegment } | { kind: 'conflict'; n: number; choice: 'add' | 'rep' | 'ved' };
+/**
+ * One change an answer makes — a segment the parser read. The conflict
+ * button's write is gone with the button (his 1a, docs/IKKI-ESHIK.md §1.1);
+ * a typed figure still resolves a conflict (`writeLine`).
+ */
+type Write = { kind: 'segment'; segment: TableSegment };
+
+/**
+ * How a plan treats a segment that would ASK — a bare figure's units, an
+ * ambiguous «1,200», a carton count where a count is wanted: offered as
+ * buttons (`ask`), or — on the plain door, which asks nothing (§2.2) — kept
+ * in `answers` as the seller's words for the VED and never asked.
+ */
+interface PlanMode {
+  ask: boolean;
+}
 
 /** What one answer message did, before it is written and said. */
 interface Plan {
   state: IntakeState;
   /** Written, in the echo's words. */
   items: string[];
-  /** Conflicts sent to the VED, each its own line («📨 3-qator …: VED hal qiladi»). */
-  ved: string[];
   refusals: string[];
   offers: IntakeState['offers'];
   questions: { target: TableTarget; text: string }[];
@@ -586,7 +722,13 @@ interface Plan {
  * re-ask; a total R2's CONC-2 mark; a route the K15 carrier every reading
  * re-applies. Every write records what it replaced, for the undo.
  */
-function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef, tc: TableContext): Plan {
+function planWrites(
+  state: IntakeState,
+  writes: readonly Write[],
+  ref: TableRef,
+  tc: TableContext,
+  mode: PlanMode = { ask: true },
+): Plan {
   const { intake } = tc;
   const work: IntakeState = {
     ...state,
@@ -594,7 +736,7 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
     lineAnswers: [...state.lineAnswers],
     conflicts: state.conflicts.map((c) => ({ ...c })),
   };
-  const plan: Plan = { state: work, items: [], ved: [], refusals: [], offers: [], questions: [], lines: [], totals: null };
+  const plan: Plan = { state: work, items: [], refusals: [], offers: [], questions: [], lines: [], totals: null };
   const goods = () => work.facts.goods!;
   const mark = { material: work.material.length, files: work.fileCount };
 
@@ -603,8 +745,12 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
    * drawn on the row («yangi kod yozilmadi»), but carried in the answer, so
    * the addition can name it to the VED (`codesKept`, §9.5; review adv-11).
    */
-  const writeLine = (row: TableRow, patch: Partial<GoodsFact>, opts: { item?: string; kept?: string } = {}) => {
+  const writeLine = (row: TableRow, typed: Partial<GoodsFact>, opts: { item?: string; kept?: string } = {}) => {
     const g = goods()[row.index]!;
+    // A code the seller typed is HIS (review PF-ADV-11): its source goes with
+    // it, so the table never prints it as the model's proposal — and the undo
+    // puts the source back with the code (`before`).
+    const patch: Partial<GoodsFact> = typed.tnvedCode ? { ...typed, tnvedSource: 'row' } : typed;
     const before: Partial<GoodsFact> = {};
     for (const key of Object.keys(patch) as (keyof GoodsFact)[]) {
       (before as Record<string, unknown>)[key] = g[key] ?? null;
@@ -694,13 +840,15 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
   };
 
   const offer = (target: TableTarget, values: { unit: NeedUnit; value: number }[], question: string) => {
+    // The plain door asks nothing (§2.2): the words are in `answers` already.
+    if (!mode.ask) return;
     // A row is offered whole or asked in words: one whose buttons do not fit
     // under R2's cap used to vanish with no sentence at all (review adv-8).
     if (values.length > MAX_OFFERS - plan.offers.length) {
       const last = values.at(-1)!;
       const figure = intake.figureLabel(last.value, last.unit);
       const example = 'line' in target ? `${target.line}: ${figure}` : `jami ${figure}`;
-      plan.refusals.push(`${whereOf(target)}: ${question} Yozib javob bering, masalan «${example}».`);
+      plan.refusals.push(`${whereOf(target, intake)}: ${question} Yozib javob bering, masalan «${example}».`);
       return;
     }
     plan.offers.push(...values.map((v) => ({ ...v, target })));
@@ -726,6 +874,11 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
   const lineAnswer = (row: TableRow, answer: LineAnswer) => {
     const g = goods()[row.index]!;
     if (answer.kind === 'refused') {
+      // Every line refusal asks the seller to write it again — «nechta
+      // dona?», «Kodni 10 xonada yozing», «bittasini yozing» — and the plain
+      // door asks nothing (§2.2, review PC-SPEC-3): the words stay in
+      // `answers`, for the VED, and the message takes its 👍.
+      if (!mode.ask) return;
       plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL[answer.reason](answer.detail)}`);
       return;
     }
@@ -736,7 +889,7 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
       const written = answer.unit ? needUnitOfSeller(answer.unit) : null;
       const units = answer.unit ? (written ? [written] : []) : intake.bareChoices(need, g.unit);
       if (units.length === 0) {
-        plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.cartons(String(answer.thousands))}`);
+        if (mode.ask) plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.cartons(String(answer.thousands))}`);
         return;
       }
       offer(
@@ -751,7 +904,9 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
     }
     const code = codeFor(row, answer.code);
     const kept = code === 'kept' && answer.code ? answer.code : undefined;
-    if (kept) {
+    // Said where the seller reads an answer back; the plain door's quiet
+    // write carries the code to the VED in the answer and says nothing (§2.2).
+    if (kept && mode.ask) {
       plan.refusals.push(`${row.no}-qatorda kod bor (${g.tnvedCode}) — yangi kod yozilmadi, VED ga aytiladi.`);
     }
     const coded = code && code !== 'kept' ? { tnvedCode: code } : {};
@@ -778,37 +933,13 @@ function planWrites(state: IntakeState, writes: readonly Write[], ref: TableRef,
       if (value !== null) Object.assign(patch, { [key]: value });
     }
     if (Object.keys(patch).length === 0 && !kept) {
-      if (code !== 'kept') plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.nothing()}`);
+      if (code !== 'kept' && mode.ask) plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.nothing()}`);
       return;
     }
     writeLine(row, patch, { kept });
   };
 
   for (const write of writes) {
-    if (write.kind === 'conflict') {
-      const c = work.conflicts[write.n]!;
-      const row = ref.rows.find((r) => goods()[r.index]?.itemId === c.itemId);
-      if (!row) continue;
-      const name = goods()[row.index]!.name;
-      if (write.choice === 'ved') {
-        c.choice = 'ved';
-        plan.lines.push({ index: row.index, no: row.no, itemId: c.itemId, name, before: { [c.field]: c.stored }, patch: {} });
-        plan.ved.push(`📨 ${row.no}-qator «${rowLabel(name)}»: VED hal qiladi`);
-        continue;
-      }
-      const value = write.choice === 'add' ? (c.stored ?? 0) + c.read : c.read;
-      const patch: Partial<GoodsFact> =
-        c.field === 'measureQty' ? { measureUnit: c.unit as GoodsFact['measureUnit'], measureQty: value } : { [c.field]: value };
-      const label = intake.figureLabel(value, c.unit as NeedUnit);
-      writeLine(row, patch, {
-        item:
-          write.choice === 'add' && c.stored !== null
-            ? `${row.no}-qator «${rowLabel(name)}»: ${intake.numberText(c.stored)} + ${intake.numberText(c.read)} = ${label}`
-            : undefined,
-      });
-      c.choice = write.choice;
-      continue;
-    }
     const seg = write.segment;
     if (seg.refused) {
       plan.refusals.push(TABLE_REFUSAL[seg.refused.reason](seg, ref, intake));
@@ -896,9 +1027,7 @@ function missingLines(state: IntakeState, tc: TableContext): string[] {
     out.push(`✅ Hamma qator to‘liq — ${confirmName(state)} ni bosing.`);
     return out;
   }
-  const names = open.map(whereOf);
-  const list = names.slice(0, 6).join(', ') + (names.length > 6 ? ` va yana ${names.length - 6} ta` : '');
-  out.push(`⚠️ Yana ${open.length} ta: ${list}. Bilmasangiz — ${confirmName(state)}, qolganini VED to‘ldiradi.`);
+  out.push(`⚠️ Yana ${open.length} ta: ${tc.intake.openTargetsText(open)}. Bilmasangiz — ${confirmName(state)}, qolganini VED to‘ldiradi.`);
   if (state.amend && state.standingAtOpen !== 'started') out.push('Qayta hisoblash uchun «✅ Qo‘shish» ni bosing.');
   return out;
 }
@@ -919,12 +1048,11 @@ function echoWords(
     heading.push(head);
     lines.push(...plan.items.map((i) => `· ${i}`));
   }
-  lines.push(...plan.ved);
   lines.push(...plan.refusals.map((r) => `⚠️ ${r}`));
   // A bare or ambiguous number keeps R1's words; when one message's offers
   // span several rows, each question and button names its row (§2.2).
   const targets = new Set(plan.offers.map((o) => JSON.stringify(o.target)));
-  for (const q of plan.questions) lines.push(targets.size > 1 ? `${whereOf(q.target)}: ${q.text}` : q.text);
+  for (const q of plan.questions) lines.push(targets.size > 1 ? `${whereOf(q.target, tc.intake)}: ${q.text}` : q.text);
   const collecting = next.stage !== 'review';
   const fixed: string[] = [];
   if (echo) {
@@ -933,7 +1061,7 @@ function echoWords(
   }
   const offerLabels = plan.offers.map((o) => {
     const label = tc.intake.figureLabel(o.value, o.unit);
-    return targets.size > 1 ? `${whereOf(o.target)}: ${label}` : label;
+    return targets.size > 1 ? `${whereOf(o.target, tc.intake)}: ${label}` : label;
   });
   const keyboard = [
     ...lineOfferKeyboard(offerLabels).inline_keyboard,
@@ -977,6 +1105,9 @@ function sameTable(live: IntakeState, state: IntakeState): boolean {
  * (regression-23 — an older offer message is «eskirgan» from here on); a
  * press passes the live ones on (a pick marks only its own row's `taken`), so
  * one message's buttons for several rows each still write (review adv-7).
+ *
+ * Answers whether the plan was written: false when the collection is no
+ * longer the one the answer was read against (said, nothing written).
  */
 async function commitWrites(
   ctx: CollectorReply & { api?: EditApi },
@@ -986,11 +1117,12 @@ async function commitWrites(
   ref: TableRef,
   tc: TableContext,
   offers: { offers: IntakeState['offers']; messageId: number | null } | null = null,
-): Promise<void> {
+  quiet: QuietCommit | null = null,
+): Promise<boolean> {
   const live = activeIntake(chatId);
   if (!live || live.noteId !== state.noteId) {
     await ctx.reply(STALE);
-    return;
+    return false;
   }
   if (!sameTable(live, state)) {
     // Not written — but the words are kept for the card (law 11).
@@ -998,11 +1130,11 @@ async function commitWrites(
       updateIntake(chatId, { answers: [...live.answers, ...state.answers.slice(live.answers.length)] });
     }
     await ctx.reply(TABLE_MOVED);
-    return;
+    return false;
   }
   // Planned over the live collection (its echoes and answers as they stand),
   // with the answer's own text — the table it was read against is the same.
-  const plan = planWrites({ ...live, answers: state.answers }, writes, ref, tc);
+  const plan = planWrites({ ...live, answers: state.answers }, writes, ref, tc, { ask: quiet ? quiet.ask : true });
   const wrote = plan.lines.length > 0 || plan.totals !== null;
   const echo: IntakeEcho | null = wrote
     ? { tag: randomBytes(4).toString('hex'), messageId: null, lines: plan.lines, totals: plan.totals, undone: false }
@@ -1018,16 +1150,21 @@ async function commitWrites(
     answers: w.answers,
     offers: offers ? offers.offers : plan.offers,
     offersMessageId: offers ? offers.messageId : null,
-    ...(echo ? { echoes: [...w.echoes, echo].slice(-ECHOES_KEPT) } : {}),
+    // The newest answer is the last thing done (§3.4): an earlier «↩️» is no longer what the table's block says.
+    ...(echo ? { echoes: [...w.echoes, echo].slice(-ECHOES_KEPT), lastUndo: null } : {}),
   });
-  if (!next) return;
+  if (!next) return false;
   if (wrote) editTableSoon(ctx, chatId);
+  if (quiet) {
+    await saidQuietly(ctx, chatId, plan, quiet, tc);
+    return true;
+  }
   const words = echoWords(next, plan, echo, tc);
   if (!words.text) {
     // Nothing read and nothing written («;» alone): asked, never an empty
     // message Telegram refuses (review adv-17).
     await ctx.reply(`⚠️ ${NO_ADDRESS}`);
-    return;
+    return true;
   }
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
   const id = messageIdOf(sent);
@@ -1045,17 +1182,240 @@ async function commitWrites(
       noteOwnMessage(chatId, id);
     }
   }
+  return true;
 }
 
-/** File a text as material — the stage goes back to collecting, and the «Bo‘ldi» prompt says so. */
+/**
+ * The no-echo commit (docs/IKKI-ESHIK.md §2.2, and the AI door's §3.4): the
+ * answer is written and the summary or table edited — and the message itself
+ * sends nothing. `messageId`: the answer's own message, which takes the 👍.
+ * `ask`: whether a segment that needs a question is offered as buttons (the
+ * AI door) or kept as words for the VED (the plain door, which asks nothing).
+ */
+interface QuietCommit {
+  messageId: number | null;
+  ask: boolean;
+}
+
+/**
+ * What a quiet commit says: a 👍 under the answer when every segment was
+ * taken — best-effort, off the poller (#706), a refused reaction changing
+ * nothing — or ONE short reply carrying only what was refused (an addressed
+ * refusal's one line) and, where the door asks, the questions with their
+ * buttons. Never «✅ Yozildi», never a confirm.
+ */
+async function saidQuietly(
+  ctx: CollectorReply & { api?: EditApi },
+  chatId: bigint,
+  plan: Plan,
+  quiet: QuietCommit,
+  tc: TableContext,
+): Promise<void> {
+  if (plan.refusals.length === 0 && plan.questions.length === 0) {
+    // Nothing read and nothing written («;» alone) where the door asks: asked
+    // which row, never a 👍 for an answer that wrote nothing (review adv-17).
+    // The plain door keeps such words for the VED, and the 👍 says so.
+    if (quiet.ask && plan.lines.length === 0 && plan.totals === null) {
+      noteOwnMessage(chatId, (await ctx.reply(`⚠️ ${NO_ADDRESS}`)).message_id);
+      return;
+    }
+    if (quiet.messageId !== null && ctx.api?.setMessageReaction) {
+      void ctx.api
+        .setMessageReaction(String(chatId), quiet.messageId, [{ type: 'emoji', emoji: '👍' }])
+        .catch((err: unknown) => logger.info({ err }, '[calc-intake] 👍 not set'));
+    }
+    return;
+  }
+  const targets = new Set(plan.offers.map((o) => JSON.stringify(o.target)));
+  const lines = [
+    ...plan.refusals.map((r) => `⚠️ ${r}`),
+    ...plan.questions.map((q) => (targets.size > 1 ? `${whereOf(q.target, tc.intake)}: ${q.text}` : q.text)),
+  ];
+  const labels = plan.offers.map((o) => {
+    const label = tc.intake.figureLabel(o.value, o.unit);
+    return targets.size > 1 ? `${whereOf(o.target, tc.intake)}: ${label}` : label;
+  });
+  const keyboard = lineOfferKeyboard(labels);
+  const text = tc.intake.fitTelegram([], lines, [], [], { maxLines: Number.POSITIVE_INFINITY });
+  const sent = await ctx.reply(text, keyboard.inline_keyboard.length > 0 ? { reply_markup: keyboard } : undefined);
+  const id = messageIdOf(sent);
+  if (id === null) return;
+  if (plan.offers.length > 0) updateIntake(chatId, { offersMessageId: id }, { quiet: true });
+  noteOwnMessage(chatId, id);
+}
+
+/**
+ * File a text as material — the stage goes back to collecting (§1.4): the
+ * summary or table above it is edited to point down (its buttons go), and
+ * the ONE prompt is drawn below the text.
+ */
 async function fileAsMaterial(
   ctx: CollectorReply & { api: EditApi },
   chatId: bigint,
   state: IntakeState,
   text: string,
 ): Promise<void> {
-  const updated = updateIntake(chatId, { stage: 'material', material: [...state.material, text] });
-  await showIntakePrompt(ctx, chatId, updated ?? state);
+  updateIntake(chatId, { stage: 'material', material: [...state.material, text] });
+  editTableSoon(ctx, chatId);
+  drawPromptSoon(ctx, chatId);
+}
+
+/** The addressed refusals a plain answer still says in one line (§2.2 a): the seller named a row or a total. */
+const ADDRESSED_REFUSALS: ReadonlySet<TableRefusal> = new Set<TableRefusal>([
+  'no_line',
+  'name_mismatch',
+  'totals_unit',
+  'name_many',
+  'address_unclear',
+]);
+
+/**
+ * §2.2 (b)'s «ok», «ha», «rahmat» — the words a seller answers a summary with
+ * when he has nothing to add, as he types them (apostrophes dropped, both
+ * alphabets). A closed list on purpose (review PC-SPEC-1, PC-ADV-4): «no
+ * goods» used to be the goods reader's own guess, and a single product name
+ * («Shapka», «Ayollar sumkasi») is no goods to it — the forgotten product was
+ * nudged at «Tasdiqlash» and kept nowhere.
+ */
+const ACK_WORDS: ReadonlySet<string> = new Set([
+  'ok', 'okay', 'okey', 'oke', 'ha', 'haa', 'xa', 'xaa', 'hop', 'xop', 'xo', 'mayli', 'maili', 'rahmat', 'raxmat',
+  'rahmad', 'raxmad', 'rahmet', 'tashakkur', 'katta', 'yaxshi', 'zor', 'tushunarli', 'tushundim', 'boldi', 'bopti',
+  'yoq', 'aka', 'opa', 'uka', 'brat', 'akajon', 'spasibo', 'xorosho', 'ponyal', 'thanks', 'thank', 'you', 'thx', 'yes',
+  'good', 'fine', 'ок', 'окей', 'да', 'ага', 'нет', 'спасибо', 'спс', 'понял', 'поняла', 'понятно', 'хорошо', 'ладно',
+  'норм', 'нормально', 'принял', 'принято', 'ха', 'хоп', 'майли', 'рахмат', 'яхши', 'тушунарли',
+]);
+
+/** Says nothing but «understood» (§2.2 b): no figure, and no word beyond `ACK_WORDS` — «ok, rahmat!», «👍». Pure. */
+export function plainAck(text: string): boolean {
+  if (/\d/u.test(text)) return false;
+  const words = text.toLowerCase().replace(/[‘’ʼʻ'`]/gu, '').match(/\p{L}+/gu) ?? [];
+  return words.every((w) => ACK_WORDS.has(w));
+}
+
+/**
+ * What the plain door does with a typed text after its summary (§2.2, as
+ * built after the review). Per segment, never for the text as one piece: a
+ * row's «3: 150 kg» with «rahmat» — or with a second figure the table could
+ * not place — under it used to be «not placed whole», filed as material, and
+ * the next reading made that 150 kg the shipment's brutto over the packing
+ * list's 3500 (review PC-ADV-1, R3 §0.1(3) — the defect §2.2 exists to keep
+ * closed). So:
+ *  - `write`: anything placed is written quietly (a figure, a total, a route —
+ *    or a row's words that would ASK, kept for the VED); an addressed refusal
+ *    keeps its one line; ONE figure placed nowhere beside them gets
+ *    `NO_ADDRESS`; a courtesy word beside them is nothing. Goods the table
+ *    has no row for (`goods` — a name no row has, or, collecting, a number
+ *    naming OTHER goods: «1. Shapka 50 dona» after «➕», review PC-ADV-3) are
+ *    filed as material on their own — never the row's figure with them.
+ *  - `material`: nothing placed, and goods in it — the whole text, §2.2 (c).
+ *  - `unplaced`: nothing placed, a figure placed nowhere («150 kg» the table
+ *    cannot tell a row's from the brutto's): kept for the VED as words, never
+ *    material, and told how to address it.
+ *  - `nudge`: only courtesy words (`plainAck`), or words that name no goods.
+ * Pure, exported for the test.
+ */
+export type PlainVerdict =
+  | { kind: 'write'; segments: TableSegment[]; goods: string | null }
+  | { kind: 'material' }
+  | { kind: 'unplaced' }
+  | { kind: 'nudge' };
+
+export function plainVerdict(
+  parsed: { segments: readonly TableSegment[]; material: boolean },
+  stage: IntakeState['stage'],
+): PlainVerdict {
+  if (parsed.material) return { kind: 'material' };
+  const writes: TableSegment[] = [];
+  const goods: string[] = [];
+  let unplaced: TableSegment | null = null;
+  for (const s of parsed.segments) {
+    if (plainAck(s.raw)) continue;
+    const reason = s.refused?.reason ?? null;
+    if (reason === 'name_none' || (reason === 'name_mismatch' && stage === 'material')) goods.push(s.raw);
+    else if (reason !== null && ADDRESSED_REFUSALS.has(reason)) writes.push(s);
+    else if (reason !== null || s.at === null) {
+      if (/\d/u.test(s.raw)) unplaced ??= s;
+    } else writes.push(s);
+  }
+  if (writes.length > 0) {
+    return { kind: 'write', segments: unplaced ? [...writes, unplaced] : writes, goods: goods.length > 0 ? goods.join('\n') : null };
+  }
+  if (goods.length > 0) return { kind: 'material' };
+  return unplaced ? { kind: 'unplaced' } : { kind: 'nudge' };
+}
+
+/**
+ * §2.2 (b): a text with nothing to write («ok», «ha», «rahmat») is pointed at
+ * the press it is waiting for — «Bo‘ldi» only while something new waits to
+ * be read: after «➕ Yana ma’lumot» with nothing sent, the summary's own ✅
+ * still stands (review PC-ADV-6).
+ */
+function plainNudge(state: IntakeState): string {
+  if (state.stage !== 'review' && !nothingNewToRead(state)) return 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
+  return state.amend
+    ? `${confirmName(state)} ni bosing. Yana ma’lumot bo‘lsa — yuboring.`
+    : 'Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.';
+}
+
+/**
+ * A typed text on the PLAIN door after its summary — in the summary stage
+ * and collecting after a first reading alike (docs/IKKI-ESHIK.md §2.2, DR-1,
+ * INT-3), so the same text sent twice is the same thing both times; what
+ * each part of it becomes is `plainVerdict`'s. Never material merely because
+ * it was typed: a row's «150 kg» filed as material became the shipment's
+ * brutto on the next reading (R3 §0.1(3)).
+ */
+async function applyPlainText(
+  ctx: CollectorReply & { api: EditApi },
+  chatId: bigint,
+  state: IntakeState,
+  text: string,
+  msg: { messageId: number },
+): Promise<void> {
+  const { parseTableAnswer } = await import('../../wms/calc/line-address');
+  let tc = await tableContext(state);
+  const parsed = parseTableAnswer(text, tableRefOf(state, tc, 'review'));
+  const verdict = plainVerdict(parsed, state.stage);
+  if (verdict.kind === 'material') {
+    await fileAsMaterial(ctx, chatId, state, text);
+    return;
+  }
+  if (verdict.kind === 'nudge') {
+    // Joins the collection's own messages, so the prompt knows it is no longer last.
+    noteOwnMessage(chatId, (await ctx.reply(plainNudge(state))).message_id);
+    return;
+  }
+  if (verdict.kind === 'unplaced') {
+    // The seller's words, for the VED (law 11) — never material, never a guess.
+    updateIntake(chatId, { answers: [...state.answers, text] });
+    noteOwnMessage(chatId, (await ctx.reply(`⚠️ ${NO_ADDRESS}`)).message_id);
+    return;
+  }
+  const codes = verdict.segments.flatMap((s) =>
+    s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
+  );
+  if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line
+  // beside it. Goods filed as material on their own are recorded there, once:
+  // the whole text here as well put «Shapka 20 dona» on the VED's verbatim
+  // record twice (fix review FR-SELL-8).
+  const entry = verdict.goods ? answersEntry(verdict.segments.map((s) => s.raw).join('\n'), verdict.segments) : answersEntry(text, parsed.segments);
+  const answered = { ...state, answers: [...state.answers, entry] };
+  const committed = await commitWrites(
+    ctx,
+    chatId,
+    answered,
+    verdict.segments.map((segment) => ({ kind: 'segment', segment }) as const),
+    tableRefOf(answered, tc, 'review'),
+    tc,
+    null,
+    { messageId: msg.messageId, ask: false },
+  );
+  // The goods beside the answer are the next reading's — on their own lines.
+  const live = activeIntake(chatId);
+  if (committed && verdict.goods && live && live.noteId === state.noteId) {
+    await fileAsMaterial(ctx, chatId, live, verdict.goods);
+  }
 }
 
 /**
@@ -1065,62 +1425,94 @@ async function fileAsMaterial(
  * (rule 4's one way in the table stage), everything else is written,
  * refused in words, or offered as buttons — never a figure on a row the
  * seller did not name. `msg` is the message it came in.
+ *
+ * On the AI door the answer sends no message of its own (docs/IKKI-ESHIK.md
+ * §3.4, his 4a): the table is edited and the message takes a 👍 — or ONE
+ * short reply carries only what was refused or must be asked. A request from
+ * before the doors (NULL, §0.2) keeps its echo.
  */
 export async function applyTableAnswer(
   ctx: CollectorReply & { api: EditApi },
   chatId: bigint,
   state: IntakeState,
   text: string,
-  _msg: { date: number; messageId: number; forwarded: boolean; replyTo: number | null },
+  msg: { date: number; messageId: number; forwarded: boolean; replyTo: number | null },
 ): Promise<void> {
   const stage: TableRef['stage'] = state.stage === 'review' ? 'review' : 'material';
-  const { parseTableAnswer } = await import('../../wms/calc/line-address');
-  let tc = await tableContext(state);
-  const parsed = parseTableAnswer(text, tableRefOf(state, tc, stage));
-  if (parsed.material) {
-    await fileAsMaterial(ctx, chatId, state, text);
+  const ai = collectionDoor(state) === 'ai';
+  // The AI door's courtesy words (as-built review CHAT-4): «rahmat», «ok» are
+  // no goods name — answered «jadvalda bunday qator yo‘q» and invited to «➕»
+  // goods called «rahmat», or, collecting, filed as material whose re-read
+  // the ✅ then waited for. Nudged as the plain door nudges them (§2.2 b). A
+  // text with no letter at all («;») keeps its NO_ADDRESS (§3.4 as built). A
+  // NULL door keeps today's reading (§0.2).
+  if (ai && /\p{L}/u.test(text) && plainAck(text)) {
+    noteOwnMessage(chatId, (await ctx.reply(plainNudge(state))).message_id);
     return;
+  }
+  const { parseTableAnswer, materialSegments } = await import('../../wms/calc/line-address');
+  let tc = await tableContext(state);
+  // Collecting after a reading, the AI door judges per SEGMENT (as-built
+  // review CHAT-2, PC-ADV-1's hole on this door): «3: 150 kg\nrahmat» filed
+  // whole as material left row 3 unwritten under the ✅. The material stage's
+  // own rule still says which segments answer (only «N:», «N-qator», a totals
+  // word — R3 §0.1(3)); those are written, a courtesy word is nothing, and
+  // the rest — goods — is filed as material on its own. Nothing placed: the
+  // whole text is material, as before.
+  let segments: TableSegment[];
+  let writes: TableSegment[];
+  let goods: string | null = null;
+  if (ai && stage === 'material') {
+    const read = materialSegments(text, tableRefOf(state, tc, 'material'));
+    if (!read.some((r) => r.placed)) {
+      await fileAsMaterial(ctx, chatId, state, text);
+      return;
+    }
+    segments = read.map((r) => r.segment);
+    writes = read.filter((r) => r.placed).map((r) => r.segment);
+    const rest = read.filter((r) => !r.placed && !plainAck(r.segment.raw)).map((r) => r.segment.raw);
+    goods = rest.length > 0 ? rest.join('\n') : null;
+  } else {
+    const parsed = parseTableAnswer(text, tableRefOf(state, tc, stage));
+    if (parsed.material) {
+      await fileAsMaterial(ctx, chatId, state, text);
+      return;
+    }
+    segments = parsed.segments;
+    // On the AI door a courtesy word beside an answer is nothing (CHAT-4):
+    // the answer keeps its 👍, and nobody is told «rahmat» is no row.
+    writes = ai ? segments.filter((s) => !plainAck(s.raw)) : segments;
   }
   // A code the answer brings may pin the unit of its own bare figure: its law
   // is read before anything is decided (R1's «the code lands first»).
-  const codes = parsed.segments.flatMap((s) =>
+  const codes = writes.flatMap((s) =>
     s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
   );
   if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
-  const answered = { ...state, answers: [...state.answers, answersEntry(text, parsed.segments)] };
-  await commitWrites(
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line
+  // beside it; goods filed on their own are recorded there, once (FR-SELL-8).
+  const entry = goods ? answersEntry(writes.map((s) => s.raw).join('\n'), writes) : answersEntry(text, segments);
+  const answered = { ...state, answers: [...state.answers, entry] };
+  const committed = await commitWrites(
     ctx,
     chatId,
     answered,
-    parsed.segments.map((segment) => ({ kind: 'segment', segment }) as const),
+    writes.map((segment) => ({ kind: 'segment', segment }) as const),
     tableRefOf(answered, tc, stage),
     tc,
+    null,
+    ai ? { messageId: msg.messageId, ask: true } : null,
   );
+  // The goods beside the answer are the next reading's — on their own lines.
+  const live = activeIntake(chatId);
+  if (committed && goods && live && live.noteId === state.noteId) await fileAsMaterial(ctx, chatId, live, goods);
 }
 
 /** A table edit in flight per chat — latest wins, an identical one is never sent (performance-5). */
 const tableEdits = new Map<string, { again: boolean; ctx: CollectorReply & { api?: EditApi }; running: Promise<void> }>();
 
-/** What Telegram said about a refused call. */
-function saidOf(err: unknown): string {
-  const said = (err as { description?: unknown } | null)?.description;
-  return typeof said === 'string' ? said : String(err);
-}
-
-/** Telegram's 400 «message is not modified» — success, never a reason to send again. */
-function notModified(err: unknown): boolean {
-  return /message is not modified/iu.test(saidOf(err));
-}
-
-/**
- * The table message itself is gone or past editing (too old, deleted) — the
- * one refusal a fresh table answers. A 429 past the brief retry, a timeout or
- * a reset is NOT: the edit may even have landed, and a second table would move
- * `tableMessageId` off the one the seller is reading (review adv-16).
- */
-function editGone(err: unknown): boolean {
-  return /message to edit not found|message can'?t be edited|MESSAGE_ID_INVALID/iu.test(saidOf(err));
-}
+// The refused-call predicates live in kept-last.ts — one reading of
+// Telegram's refusals for every message this collector edits (§1.4).
 
 /**
  * Redraw the table in place (§8.2.9), off the poller: dispatched `void`, per
@@ -1263,36 +1655,38 @@ export function clientAnswer(
   raw: string,
   read: CustomerTextRead,
 ):
-  | { kind: 'material'; patch: Partial<IntakeState>; say: string }
+  | { kind: 'material'; patch: Partial<IntakeState>; say: string; lead: string }
   | { kind: 'customer'; patch: Partial<IntakeState> } {
   const text = raw.trim();
   const again = state.clientAskedWith !== null && state.clientAskedWith === text;
   if (read.material && !(again && read.couldBeCustomer)) {
     if (again) {
       // Worded by the reason that is true (R3-C6): a goods list, or a text no
-      // hint reads — «Rustam / Andijon» has no goods in it.
-      return {
-        kind: 'material',
-        patch: {},
-        say:
-          '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. ' +
-          (read.why === 'shape'
-            ? 'Bir necha qatorli (yoki uzun) matn mijoz bo‘la olmaydi.\nIsm, kod yoki telefonni bitta qatorda yozing.\n\n'
-            : 'Tovar ro‘yxati mijoz bo‘la olmaydi.\nMijozni bitta qatorda yozing: kod yoki telefon.\n\n') +
-          CLIENT_QUESTION,
-      };
+      // hint reads — «Rustam / Andijon» has no goods in it. The question is
+      // `CLIENT_QUESTION` below it, asked once (§1.5, review PC-SPEC-11): the
+      // goods line's own «Mijozni bitta qatorda yozing: kod yoki telefon»
+      // asked it a second time. The shape line keeps its HOW — one line.
+      const lead =
+        '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. ' +
+        (read.why === 'shape'
+          ? 'Bir necha qatorli (yoki uzun) matn mijoz bo‘la olmaydi.\nIsm, kod yoki telefonni bitta qatorda yozing.'
+          : 'Tovar ro‘yxati mijoz bo‘la olmaydi.');
+      return { kind: 'material', patch: {}, say: `${lead}\n\n${CLIENT_QUESTION}`, lead };
     }
+    // The question once (docs/IKKI-ESHIK.md §1.5): the line says what became
+    // of the text and why it is not the customer, and the question itself is
+    // `CLIENT_QUESTION` — it used to ask «Mijozni bitta qatorda yozing» right
+    // above the same question.
+    const lead =
+      (read.why === 'shape'
+        ? '✍️ Ma’lumot sifatida olindi — bu matndan mijozni o‘qib bo‘lmadi.'
+        : '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.') +
+      (read.couldBeCustomer ? ' (Shu matnni yana yuborsangiz — mijoz deb olinadi.)' : '');
     return {
       kind: 'material',
       patch: { material: [...state.material, raw], clientAskedWith: text },
-      say:
-        (read.why === 'shape'
-          ? '✍️ Ma’lumot sifatida olindi — bu matndan mijozni o‘qib bo‘lmadi.\n'
-          : '✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.\n') +
-        'Mijozni bitta qatorda yozing: kod yoki telefon.' +
-        (read.couldBeCustomer ? ' (Shu matnni yana yuborsangiz — mijoz deb olinadi.)' : '') +
-        '\n\n' +
-        CLIENT_QUESTION,
+      say: `${lead}\n\n${CLIENT_QUESTION}`,
+      lead,
     };
   }
   let material = state.material;
@@ -1303,46 +1697,192 @@ export function clientAnswer(
   return { kind: 'customer', patch: { clientHintRaw: text, stage: 'material', material, clientAskedWith: null } };
 }
 
-/**
- * ONE live «Bo'ldi» control, edited in place.
- *
- * His second report: «har bir sms uchun "bo'ldi tahlil qil" degan sms
- * chiqvotti» — eight forwards left eight identical keyboards and no way to
- * tell which one was current. The prompt now says what has been collected
- * so far and is EDITED rather than re-sent; only when the edit is refused
- * (the message is too old, or was deleted) does a fresh one appear.
- */
-export async function showIntakePrompt(
-  ctx: CollectorReply & { api: EditApi },
-  chatId: bigint,
-  state: IntakeState,
-): Promise<void> {
+/** «📎 4 ta fayl · ✍️ 1 ta xabar» — what a waiting question counts (§1.5, §1.6), files first, or null. */
+function receivedCounts(state: Pick<IntakeState, 'fileCount' | 'material'>): string | null {
   const parts = [
-    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
+    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** The AI podklyuch door's opening question, before anything was sent. */
+export const ZONE_OPENING = '🤖 AI podklyuch: rastamojka + yo‘lkira (tarif narxida).\n\nYuk qayerdan chiqadi?';
+
+/**
+ * The zone question (§1.6), asked ONCE per collection: the opening, or — once
+ * something has arrived — «Qabul qilindi: 📎 4 ta fayl.» over it, the same
+ * message edited to count and kept last, with the zone keyboard. Pure.
+ */
+export function zoneQuestionText(state: Pick<IntakeState, 'fileCount' | 'material'>, lead: string | null = null): string {
+  const received = receivedCounts(state);
+  // `lead`: what a take just added (§4.2, review PB-SPEC-1) — its line on top,
+  // never a message of its own.
+  const asked = received ? `Qabul qilindi: ${received}.\nAvval yuk qayerdan chiqishini tanlang:` : ZONE_OPENING;
+  return lead ? `${lead}\n${asked}` : asked;
+}
+
+/**
+ * The customer question (§1.5), asked ONCE per collection — one message,
+ * edited to count and kept last: the door's or the road's opening line while
+ * nothing has arrived, «Qabul qilindi: 📎 4 ta fayl · ✍️ 1 ta xabar.» once
+ * something has. `lead`: the one line a typed goods list gets (it was filed,
+ * and why it is not the customer) — said with the question, never as a
+ * second ask. Markdown, as `CLIENT_QUESTION` is. Pure.
+ */
+export function clientQuestionText(
+  state: Pick<IntakeState, 'fileCount' | 'material' | 'route' | 'ai' | 'section' | 'seed' | 'amend'>,
+  lead: string | null = null,
+): string {
+  const received = receivedCounts(state);
+  // The road pressed stays said (the zone question became this one); the AI
+  // door's opening line only on its own opening, until something has arrived.
+  const road = state.route ? `✅ ${state.route.fromCity} → ${state.route.toCity}\n\n` : '';
+  const opening = state.seed === null && state.amend === null && state.ai && state.section === 'rastamojka';
+  const door = !road && !received && opening ? '🤖 AI rastamojka — faqat bojxona to‘lovlari.\n\n' : '';
+  return `${lead ? `${lead}\n\n` : ''}${road}${door}${received ? `Qabul qilindi: ${received}.\n\n` : ''}${CLIENT_QUESTION}`;
+}
+
+/** The prompt's last line: what the seller does next. */
+const PROMPT_LAST = 'Yana yuboring yoki «Bo‘ldi» ni bosing.';
+
+/**
+ * The ONE «Qabul qilindi» prompt (docs/IKKI-ESHIK.md §1.4) — a PURE function
+ * of durable state, so every redraw says the same thing: the customer once he
+ * is named (§1.5 — never «Tovar ro‘yxatini yuboring» about goods it holds),
+ * the counts, a line per model-read file with its CURRENT fit
+ * (`promptFileLines`), and the receipt-time notes (`fileNotes`) — what used to
+ * be a message per file. Cut to Telegram's 4096 by `fitTelegram`, the file
+ * lines first. `tools`: `fitSheetRows` at the reader's cap and wms's
+ * `fitTelegram`, handed in — platform never imports wms statically.
+ */
+export function intakePromptText(
+  state: IntakeState,
+  tools: { sheetFit: import('./calc-files').SheetFit; fitTelegram: Intake['fitTelegram'] },
+  lead: string | null = null,
+): string {
+  const client = intakeClientSummary(state.clientHintRaw);
+  // Files first, as the customer question counts them (§1.5): the prompt that
+  // replaces that question kept the same counts in the other order
+  // (as-built review CHAT-8).
+  const parts = [
+    state.fileCount ? `📎 ${state.fileCount} ta fayl` : '',
+    state.material.length ? `✍️ ${state.material.length} ta xabar` : '',
     state.images.length ? `🖼 ${state.images.length} ta rasm o‘qiladi` : '',
-    state.pdfs.length ? `📄 ${state.pdfs.length} ta PDF o‘qiladi` : '',
     (state.invoiceGoods ?? []).length ? `📊 fayldan ${(state.invoiceGoods ?? []).length} ta tovar` : '',
     state.imagesSkipped
       ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi${state.images.length >= MAX_INTAKE_IMAGES ? ` (${MAX_INTAKE_IMAGES} tadan ortig‘i)` : ''}`
       : '',
   ].filter(Boolean);
-  const text = `Qabul qilindi: ${parts.join(' · ')}\nYana yuboring yoki «Bo‘ldi» ni bosing.`;
+  // A door's one line (§4.2's «▶️ Davom etamiz — …») heads it INSIDE the
+  // cut, so the 4096 counts it (review PC-ADV-8).
+  const head = [
+    ...(lead ? [lead] : []),
+    ...(client ? [`Mijoz: ${client}`] : []),
+    parts.length > 0 ? `Qabul qilindi: ${parts.join(' · ')}` : 'Qabul qilindi.',
+  ];
+  const lines = [...promptFileLines(state, tools.sheetFit), ...(state.fileNotes ?? [])];
+  return tools.fitTelegram(head, lines, [PROMPT_LAST], [], { maxLines: Number.POSITIVE_INFINITY });
+}
 
-  if (state.promptMessageId !== null) {
-    try {
-      await ctx.api.editMessageText(String(chatId), state.promptMessageId, text, {
-        reply_markup: doneKeyboard,
-      });
-      return;
-    } catch {
-      // Too old, deleted, or identical — fall through and send a fresh one.
-    }
+/** What the live stage shows as its ONE control, or null when the table is it ('review'). */
+async function promptWords(
+  state: IntakeState,
+  lead: string | null,
+): Promise<{ text: string; extra: Record<string, unknown> } | null> {
+  if (state.stage === 'section') {
+    return { text: zoneQuestionText(state, lead), extra: { reply_markup: zoneKeyboard(await pricedZonesNow()) } };
   }
-  const sent = await ctx.reply(text, { reply_markup: doneKeyboard });
+  if (state.stage === 'client') return { text: clientQuestionText(state, lead), extra: { parse_mode: 'Markdown' } };
+  if (state.stage !== 'material') return null;
+  if (state.material.length === 0 && state.fileCount === 0) {
+    // Nothing sent yet (the customer just named): what to send, per section.
+    const { collectPromptText } = await import('../../wms/calc/intake');
+    return { text: collectPromptText(state.section), extra: { reply_markup: doneKeyboard } };
+  }
+  const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+  const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const { fitTelegram } = await import('../../wms/calc/intake');
+  // A door's one line above the prompt (the «▶️ Davom etamiz — …» of a take, §4.2): this draw's only.
+  const text = intakePromptText(state, { sheetFit: (texts) => fitSheetRows(texts, SHEET_TEXT_BUDGET), fitTelegram }, lead);
+  return { text, extra: { reply_markup: doneKeyboard } };
+}
+
+/**
+ * The largest message id the collection knows of in its chat — what it took
+ * (`takenUpTo`) and what it drew (its own messages): the prompt is «still
+ * last» while nothing it knows of is newer (`stillLast`).
+ */
+function newestKnown(state: IntakeState): number | null {
+  const ids = [
+    state.takenUpTo,
+    ...state.ownMessageIds,
+    state.tableMessageId ?? 0,
+    state.offersMessageId ?? 0,
+    ...state.echoes.map((e) => e.messageId ?? 0),
+  ];
+  const top = Math.max(0, ...ids);
+  return top > 0 ? top : null;
+}
+
+/** A ctx a kept-last draw speaks through. */
+type DrawCtx = CollectorReply & { api?: EditApi };
+
+/** The lead a queued prompt draw owes, per chat — taken by the run that draws it. */
+const pendingLeads = new Map<string, string>();
+
+/**
+ * The collection's ONE live question or prompt — the zone question, the
+ * customer question, the «Qabul qilindi» prompt (§1.4-§1.6) — drawn AS THE
+ * LAST MESSAGE through kept-last.ts: edited while still last, else sent below
+ * and the old copy deleted (a copy that cannot be deleted stays among the
+ * collection's own messages, so its buttons still work). Coalesced per chat
+ * (`keepLastSoon`), so an album or a forward burst moves it once; dispatched
+ * off the poller, and drawn from the collection as it stands when it runs.
+ * `lead`: one line above it — what a typed goods list at the customer
+ * question became (§1.5), or what a take added (§4.2) — said by the draw
+ * that runs next, whichever call queued it: a later draw in the same burst (a
+ * file of the album, the take's own) replaces the RUN, and it used to take
+ * the lead with it (review PC-SPEC-13). A later lead replaces an earlier one.
+ */
+export function drawPromptSoon(ctx: DrawCtx, chatId: bigint, lead: string | null = null): void {
+  const key = String(chatId);
+  if (lead) pendingLeads.set(key, lead);
+  keepLastSoon(`prompt:${chatId}`, () => {
+    const said = pendingLeads.get(key) ?? null;
+    pendingLeads.delete(key);
+    return drawPrompt(ctx, chatId, said);
+  });
+}
+
+async function drawPrompt(ctx: DrawCtx, chatId: bigint, lead: string | null): Promise<void> {
+  const state = activeIntake(chatId);
+  // A reading in flight answers for itself; an addition being saved takes nothing.
+  if (!state || state.analysing || state.saving) return;
+  const words = await promptWords(state, lead);
+  const live = activeIntake(chatId);
+  if (!words || !live || live.noteId !== state.noteId || live.stage !== state.stage) return;
+  const drawn = await drawKeptLast(ctx, chatId, live.promptMessageId, newestKnown(live), words.text, words.extra);
+  const after = activeIntake(chatId);
+  if (!after || after.noteId !== state.noteId) return;
   // Bookkeeping, so quiet (docs/SAKKIZ-R3.md §6.2.6): the seller's own action
   // before it already touched the clocks.
-  updateIntake(chatId, { promptMessageId: sent.message_id }, { quiet: true });
+  updateIntake(chatId, { promptMessageId: drawn.messageId }, { quiet: true });
+  noteOwnMessage(chatId, drawn.messageId);
+  if (drawn.kept !== null) noteOwnMessage(chatId, drawn.kept);
+}
+
+/**
+ * The live stage's control, drawn kept last (§1.4) — the name every door has
+ * always called; `state` is no longer read: the draw reads the collection as
+ * it stands when it runs.
+ */
+export async function showIntakePrompt(
+  ctx: CollectorReply & { api?: EditApi },
+  chatId: bigint,
+  _state: IntakeState,
+): Promise<void> {
+  drawPromptSoon(ctx, chatId);
 }
 
 /**
@@ -1367,10 +1907,14 @@ export async function routeCollectorText(
   if (intake.stage === 'section') {
     // The podklyuch door is waiting for «qayerdan?» — a typed word here
     // is not the customer's name yet, and filing it as one would skip
-    // the only question that prices the road.
-    await ctx.reply('Avval yuk qayerdan chiqishini tanlang:', {
-      reply_markup: zoneKeyboard(await pricedZonesNow()),
-    });
+    // the only question that prices the road. The question is asked ONCE
+    // (§1.6): its one message is redrawn below this text, never repeated.
+    // The text is TAKEN first (review PC-SPEC-2, PC-ADV-5): the prompt is
+    // «still last» by what the collection knows of, and a text nothing took
+    // was not known — the question was edited in place above it, and the
+    // typed «Yiwu» was answered with silence.
+    updateIntake(chatId, {});
+    drawPromptSoon(ctx, chatId);
     return;
   }
   if (intake.stage === 'client') {
@@ -1392,21 +1936,26 @@ export async function routeCollectorText(
       intake.fileCount === 0;
     const written = updateIntake(chatId, toTable ? { ...answer.patch, stage: 'review' } : answer.patch);
     if (answer.kind === 'material') {
-      await ctx.reply(answer.say, { parse_mode: 'Markdown' });
+      // Asked ONCE (§1.5): the one question, with this text's one line, is
+      // redrawn below it — never a second message asking the same thing.
+      drawPromptSoon(ctx, chatId, answer.lead);
       return;
     }
     if (toTable && written) {
       await deliverNextStep(ctx, chatId, written);
       return;
     }
-    // Per section (judge UX14): a customs job is asked for the LINES —
-    // «300 dona, 150 kg, 120 m², 40 juft» and the code if known — which
-    // the old «kub/kg» prompt never said could be sent.
-    const { collectPromptText } = await import('../../wms/calc/intake');
-    await ctx.reply(collectPromptText(intake.section), { reply_markup: doneKeyboard });
+    // Named: the collection's prompt, its first line «Mijoz: …» (§1.5) — or,
+    // with nothing sent yet, what to send per section (judge UX14): a customs
+    // job is asked for the LINES, «300 dona, 150 kg, 120 m², 40 juft».
+    drawPromptSoon(ctx, chatId);
     return;
   }
   const foreign = msg.replyTo !== null && !ownsMessage(intake, msg.replyTo);
+  // The plain door asks nothing after its summary (§2.2): a typed text is
+  // written quietly, pointed at «Tasdiqlash», or material — one rule in the
+  // summary stage AND collecting after a first reading.
+  const plain = plainCollection(intake);
   if (intake.stage === 'review') {
     // A customer's words forwarded are material — his «brutto 4200 kg» is
     // his, never the seller's answer (R2 P3-R1).
@@ -1419,14 +1968,16 @@ export async function routeCollectorText(
       await ctx.reply(`⚠️ ${NO_ADDRESS}`);
       return;
     }
-    await applyTableAnswer(ctx, chatId, intake, text, msg);
+    if (plain) await applyPlainText(ctx, chatId, intake, text, msg);
+    else await applyTableAnswer(ctx, chatId, intake, text, msg);
     return;
   }
-  // Collecting again after a first reading: an EXPLICIT «N:», «N-qator» or
-  // totals address is still an answer (the stage stays); everything else is
-  // material, as it always was.
+  // Collecting again after a first reading: on the AI door an EXPLICIT «N:»,
+  // «N-qator» or totals address is still an answer (the stage stays) and
+  // everything else is material; the plain door reads it as its summary does.
   if (!msg.forwarded && !foreign && (intake.facts.goods ?? []).length > 0) {
-    await applyTableAnswer(ctx, chatId, intake, text, msg);
+    if (plain) await applyPlainText(ctx, chatId, intake, text, msg);
+    else await applyTableAnswer(ctx, chatId, intake, text, msg);
     return;
   }
   await fileAsMaterial(ctx, chatId, intake, text);
@@ -1492,40 +2043,6 @@ export async function pressCancel(
 const pressedId = (ctx: CalcPressCtx) => ctx.callbackQuery?.message?.message_id ?? null;
 
 /**
- * A conflict button (`conf_N_add|rep|ved`, §2.1): «qo‘shilsin» writes stored +
- * read, «o‘rniga» the file's figure, «VED» names it and writes nothing — each
- * through the same writes as a typed answer, so it gets an echo and its ↩️.
- * Judged against the LIVE conflicts and the table's own message; one already
- * answered is «eskirgan».
- */
-export async function pressConflict(
-  ctx: CalcPressCtx,
-  chatId: bigint,
-  state: IntakeState,
-  n: number,
-  choice: 'add' | 'rep' | 'ved',
-): Promise<void> {
-  const c = state.conflicts[n];
-  const pressed = pressedId(ctx);
-  if (state.saving) {
-    // The collection is frozen for the save job (§2.4): an echo here would
-    // promise a write the job may never read (review adv-13).
-    await ctx.reply(SAVING);
-    return;
-  }
-  if (!c || c.choice !== null || state.analysing || pressed === null || pressed !== state.tableMessageId) {
-    await ctx.reply(STALE);
-    return;
-  }
-  const tc = await tableContext(state);
-  const ref = tableRefOf(state, tc, state.stage === 'review' ? 'review' : 'material');
-  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'conflict', n, choice }], ref, tc, {
-    offers: state.offers,
-    messageId: state.offersMessageId,
-  });
-}
-
-/**
  * A button under a bare or ambiguous figure (judge UX4): `pick_N` — applied to
  * the offer's TARGET row through the same writes as a typed answer, so a press
  * gets the same echo, the same ↩️ and the same missing-line (product-fit-9).
@@ -1533,6 +2050,12 @@ export async function pressConflict(
  * alone let collection A's old offer apply B's live `offers[1]` to B's row.
  */
 export async function pressPick(ctx: CalcPressCtx, chatId: bigint, state: IntakeState, n: number): Promise<void> {
+  // The plain door asks nothing (docs/IKKI-ESHIK.md §1.3, §2.2): a unit
+  // button an older table drew on it writes nothing now.
+  if (plainCollection(state)) {
+    await ctx.reply(STALE);
+    return;
+  }
   const offer = state.offers[n];
   const pressed = pressedId(ctx);
   if (state.saving) {
@@ -1569,13 +2092,131 @@ export async function pressPick(ctx: CalcPressCtx, chatId: bigint, state: Intake
   // The message's buttons for OTHER rows stay live (§2.2 draws one message
   // for several rows); this row's are spent (review adv-7).
   const same = JSON.stringify(offer.target);
-  await commitWrites(ctx as CalcPressCtx & { api?: EditApi }, chatId, state, [{ kind: 'segment', segment }], ref, tc, {
-    offers: state.offers.map((o) => (JSON.stringify(o.target) === same ? { ...o, taken: true } : o)),
-    messageId: state.offersMessageId,
-  });
+  await commitWrites(
+    ctx as CalcPressCtx & { api?: EditApi },
+    chatId,
+    state,
+    [{ kind: 'segment', segment }],
+    ref,
+    tc,
+    {
+      offers: state.offers.map((o) => (JSON.stringify(o.target) === same ? { ...o, taken: true } : o)),
+      messageId: state.offersMessageId,
+    },
+    // The AI door's pick is an answer too (§3.4): the table says what it wrote, nothing else does.
+    collectionDoor(state) === 'ai' ? { messageId: null, ask: true } : null,
+  );
 }
 
 const sameValue = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+
+type EchoLine = IntakeEcho['lines'][number];
+type AnswerEntry = IntakeState['lineAnswers'][number];
+
+/**
+ * The `lineAnswers` entry an echo line wrote: by its stored row's id, else by
+ * name — one still holding what THIS answer wrote, at the place the last
+ * reading wrote back, first. One rule for the undo and the table's last block
+ * (§3.4), so «↩️» takes back the row the block names (product-fit-11).
+ */
+function echoEntryOf(lineAnswers: readonly AnswerEntry[], line: EchoLine): AnswerEntry | undefined {
+  const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+  const ours = (e: AnswerEntry) => (line.itemId ? e.itemId === line.itemId : sameName(e.name, line.name));
+  const holds = (e: AnswerEntry) =>
+    Object.entries(line.patch).every(([k, v]) => sameValue((e.patch as Record<string, unknown>)[k], v));
+  const candidates = lineAnswers.filter(ours);
+  return (
+    candidates.filter(holds).find((e) => e.index === line.index) ??
+    candidates.find(holds) ??
+    candidates.find((e) => e.index === line.index) ??
+    candidates[0]
+  );
+}
+
+/** How many writes of one action the table's last block names; the rest are counted (the block is never cut). */
+const LAST_SHOWN = 3;
+
+/** «head x» — or the head, up to `LAST_SHOWN` «· x» lines and a count: one action's items in the last block. */
+function listed(head: string, items: readonly string[]): string[] {
+  if (items.length === 0) return [];
+  if (items.length === 1) return [`${head} ${items[0]}`];
+  const more = items.length - LAST_SHOWN;
+  return [head, ...items.slice(0, LAST_SHOWN).map((i) => `· ${i}`), ...(more > 0 ? [`· … va yana ${more} ta`] : [])];
+}
+
+/**
+ * What one answer wrote, as the table's last block names it NOW (§3.4): each
+ * row by where it stands in THIS table — a re-read after «➕ Yana ma’lumot»
+ * may have moved it — with the figures it wrote; a total; the road. A code
+ * typed over a stored row's own never reached the row: it is the VED's.
+ */
+function echoItems(state: IntakeState, echo: IntakeEcho, tc: TableContext): string[] {
+  const goods = state.facts.goods ?? [];
+  const rows = tc.intake.tableRowsOf({ section: state.section, facts: state.facts, laws: tc.laws });
+  const items: string[] = [];
+  for (const line of echo.lines) {
+    const at = line.itemId
+      ? goods.findIndex((g) => g.itemId === line.itemId)
+      : (echoEntryOf(state.lineAnswers, line)?.index ?? line.index);
+    const no = at >= 0 ? (rows.find((r) => r.index === at)?.no ?? null) : null;
+    const where = no !== null ? `${no}-qator «${rowLabel(line.name)}»` : `«${rowLabel(line.name)}»`;
+    const kept =
+      line.itemId !== null && typeof line.before.tnvedCode === 'string' && line.before.tnvedCode !== line.patch.tnvedCode;
+    const figures = figuresText(line.before, kept ? { ...line.patch, tnvedCode: undefined } : line.patch, tc.intake);
+    // A «📨 VED» line a collection hydrated from before his 1a wrote no figure.
+    if (Object.keys(line.patch).length === 0) items.push(`${where} — VED hal qiladi`);
+    else if (figures) items.push(`${where} — ${figures}`);
+    else if (kept) items.push(`${where} — kod ${line.patch.tnvedCode ?? ''} VED ga aytiladi`);
+  }
+  const t = echo.totals;
+  if (t) {
+    for (const field of ['weightKg', 'volumeM3'] as const) {
+      const value = t.patch[field];
+      if (typeof value !== 'number') continue;
+      const was = t.before[field] ?? t.answerBefore[field];
+      const arrow = typeof was === 'number' && was > 0 && was !== value ? `${tc.intake.numberText(was)} → ` : '';
+      items.push(`${field === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm'} — ${arrow}${lastBlockTotal(field, value, tc)}`);
+    }
+    if ('fromCity' in t.patch || 'toCity' in t.patch) {
+      const from = t.patch.fromCity ?? state.facts.fromCity ?? '—';
+      const to = t.patch.toCity ?? state.facts.toCity ?? '—';
+      items.push(`yo‘nalish — ${from.trim() || '—'} → ${to.trim() || '—'}`);
+    }
+  }
+  return items;
+}
+
+/**
+ * A total as the table's LAST block prints it — in the table's own word: a
+ * typed volume is «12 kub» on the table's «✅ Hajm: 12 kub» line above it,
+ * never «12 m³» (as-built review CHAT-8). The weight as the table prints it.
+ */
+function lastBlockTotal(field: 'weightKg' | 'volumeM3', value: number, tc: TableContext): string {
+  return field === 'weightKg' ? tc.intake.figureLabel(value, 'kg') : `${tc.intake.numberText(value)} kub`;
+}
+
+/**
+ * The AI door table's LAST block (docs/IKKI-ESHIK.md §3.4, his 4a), right
+ * above the buttons: what the last «↩️» took back, when that was the last
+ * thing done; then the newest answer still standing — the one the table's
+ * ↩️ names — «✍️ Oxirgi javob: 3-qator «Sumka» — 50 juft», or on an
+ * addition the VED has started «📝 VED ga yuboriladi: …». The answer's own
+ * message says nothing, so this is where the seller reads what it did. Pure
+ * over the collection (echo records, not message text), so every redraw says
+ * the same thing.
+ */
+function lastBlockOf(state: IntakeState, tc: TableContext): string[] {
+  const undo = state.lastUndo ?? null;
+  const echo = newestEcho(state);
+  const started = Boolean(state.amend) && state.standingAtOpen === 'started';
+  const notes = undo
+    ? [...undo.notes.slice(0, LAST_SHOWN), ...(undo.notes.length > LAST_SHOWN ? [`… va yana ${undo.notes.length - LAST_SHOWN} ta`] : [])]
+    : [];
+  return [
+    ...(undo ? [...listed('↩️ Bekor qilindi:', undo.done), ...notes] : []),
+    ...(echo ? listed(started ? '📝 VED ga yuboriladi:' : '✍️ Oxirgi javob:', echoItems(state, echo, tc)) : []),
+  ];
+}
 
 /**
  * Take ONE answer message back (§8.2.7) — pure. The row is found where the
@@ -1629,11 +2270,15 @@ function undoEcho(
     }
     return null;
   };
-  /** A «📨 VED» line: it wrote no figure — its `before` names the conflict's field. */
+  /** A «📨 VED» line (an echo a hydrated collection kept from the retired button): it wrote no figure — its `before` names the conflict's field. */
   const vedLine = (l: Line) => Object.keys(l.patch).length === 0;
-  /** The choice a conflict goes back to: «📨 VED», when an older answer still says so. */
-  const priorChoice = (c: (typeof conflicts)[number]) =>
-    older.some((e) => e.lines.some((l) => vedLine(l) && l.itemId === c.itemId && c.field in l.before)) ? ('ved' as const) : null;
+  /**
+   * The choice a conflict goes back to when the figure that resolved it is
+   * taken back: the VED's (R3 interp 9's unanswered default, docs/IKKI-
+   * ESHIK.md §1.1) — never null, which a table once drew as three buttons
+   * that now only answer «eskirgan».
+   */
+  const priorChoice = (_c: (typeof conflicts)[number]) => 'ved' as const;
   /** Take this answer's `keys` out of the entry, an older answer's figure back where one stands. */
   const revert = (entry: Entry, line: Line, keys: readonly string[]) => {
     const patch = { ...entry.patch } as Record<string, unknown>;
@@ -1656,21 +2301,16 @@ function undoEcho(
       // typed AFTER it. Only the choice goes back — while it is still the VED's.
       const c = conflicts.find((x) => x.itemId === line.itemId && x.field in line.before);
       if (c && c.choice === 'ved') {
-        c.choice = null;
+        // The VED's it stays (§1.1): the press is gone, and with it the
+        // question an undone «VED» would open again.
+        c.choice = 'ved';
         done.push(`${rowNo()}-qator «${rowLabel(line.name)}» — VED hal qiladi`);
       } else {
         notes.push(`⚠️ ${rowNo()}-qator keyin o‘zgartirilgan — u bekor qilinmadi.`);
       }
       continue;
     }
-    const ours = (e: Entry) => (line.itemId ? e.itemId === line.itemId : sameName(e.name, line.name));
-    const holds = (e: Entry) => Object.entries(line.patch).every(([k, v]) => sameValue((e.patch as Record<string, unknown>)[k], v));
-    const candidates = lineAnswers.filter(ours);
-    const entry =
-      candidates.filter(holds).find((e) => e.index === line.index) ??
-      candidates.find(holds) ??
-      candidates.find((e) => e.index === line.index) ??
-      candidates[0];
+    const entry = echoEntryOf(lineAnswers, line);
     const at = line.itemId ? goods.findIndex((g) => g.itemId === line.itemId) : (entry?.index ?? -1);
     const figures = figuresText({}, line.patch, tc.intake);
     if (at < 0) {
@@ -1733,7 +2373,10 @@ function undoEcho(
       for (const field of mine) {
         const value = t.patch[field];
         if (typeof value === 'number') {
-          done.push(field === 'weightKg' ? `umumiy brutto — ${tc.intake.figureLabel(value, 'kg')}` : `umumiy hajm — ${tc.intake.figureLabel(value, 'm3')}`);
+          // The AI door says it in the table's last block, in the table's
+          // word; a NULL door's echo keeps today's «m³» (§0.2).
+          const said = collectionDoor(state) === 'ai' ? lastBlockTotal(field, value, tc) : tc.intake.figureLabel(value, field === 'weightKg' ? 'kg' : 'm3');
+          done.push(`${field === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm'} — ${said}`);
         }
       }
       const cities = (['fromCity', 'toCity'] as const).filter((k) => k in t.patch);
@@ -1768,6 +2411,11 @@ function undoEcho(
  * what was taken back, and the table is redrawn. After «✅ Tasdiqlash» the
  * change is on the job — no live collection carries the tag, and the button
  * is «eskirgan»; a second press says it was already done.
+ *
+ * On the AI door the ↩️ is the TABLE's (docs/IKKI-ESHIK.md §3.4): the undo
+ * redraws the table, whose last block says what was taken back
+ * (`lastUndo`), and sends nothing. An echo a collection hydrated from before
+ * the doors still carries its own ↩️, and is still edited.
  */
 export async function pressUndo(ctx: PressCtx & { api?: EditApi }, chatId: bigint, tag: string): Promise<void> {
   const state = activeIntake(chatId);
@@ -1813,7 +2461,10 @@ export async function pressUndo(ctx: PressCtx & { api?: EditApi }, chatId: bigin
     return;
   }
   const undone = undoEcho(live, liveEcho, tc);
-  updateIntake(chatId, undone.patch);
+  // The table carries the result where it is drawn (§3.4); with none drawn,
+  // the words below are the only place it can be said.
+  const onTable = collectionDoor(live) === 'ai' && live.tableMessageId !== null;
+  updateIntake(chatId, onTable ? { ...undone.patch, lastUndo: { tag, done: undone.done, notes: undone.notes } } : undone.patch);
   editTableSoon(ctx, chatId);
   // Fitted like the echo it edits (review adv-3).
   const text = tc.intake.fitTelegram(
@@ -1832,7 +2483,7 @@ export async function pressUndo(ctx: PressCtx & { api?: EditApi }, chatId: bigin
       edited = notModified(err);
     }
   }
-  if (!edited) await ctx.reply(text);
+  if (!edited && !onTable) await ctx.reply(text);
 }
 
 /**
@@ -1887,17 +2538,23 @@ export async function pressCertificate(
  * product-fit-14) gets the no-collection sentence, never the paid assistant;
  * a BARE figure keeps R2's REG-3 answer — «777» is as often a code typed
  * without its letters. Async: the shape is wms's, reached by dynamic import.
+ * `burst`: a burst's pause line stands beside the parked collection
+ * (burst-wait.ts `waitingBurst`) — the line then invites no reply (§4.2), and
+ * its «▶️» is the burst's (`c:resume_take`): a second ▶️ that took nothing
+ * would be the wrong way back the clause was dropped for (review PB-SPEC-4).
+ * The caller makes the line speak for the burst (`aliasBurst`).
  */
 export async function orphanAnswerSentence(
   text: string,
   parked: IntakeState | null,
+  burst: { forwards: boolean } | null = null,
 ): Promise<{ text: string; keyboard: InlineKeyboard | null } | null> {
   const { looksLikeTableAnswer } = await import('../../wms/calc/line-address');
   const tableShaped = looksLikeTableAnswer(text);
   const bare = totalsAnswerShape(text) === 'bare';
   if (parked) {
     return tableShaped || bare || (await answersParkedTable(text, parked))
-      ? { text: PAUSE_LINE, keyboard: pauseKeyboard() }
+      ? { text: pauseLine(parked.stage, burst !== null), keyboard: pauseKeyboard(burst) }
       : null;
   }
   if (tableShaped) return { text: NO_OPEN_COLLECTION, keyboard: null };
@@ -1958,8 +2615,30 @@ export function queueRefusal(code: string | null | undefined): string {
   return (code && QUEUE_REFUSAL[code]) ?? 'kartadan qo‘lda yuboring.';
 }
 
-/** What a landing hands the ✅: the card's words and whether the queue took it. */
-export type LandedTarget = Parameters<typeof landedWords>[0] & { queued?: boolean; queueError?: string | null };
+/** What a landing hands the ✅: the card's words, whether the queue took it, and whether the machine's answer was queued. */
+export type LandedTarget = Parameters<typeof landedWords>[0] & {
+  queued?: boolean;
+  queueError?: string | null;
+  replyQueued?: boolean;
+};
+
+/**
+ * The plain door's ✅ when the job is queued (docs/IKKI-ESHIK.md §2.3, his
+ * 2a/3a): the VED computes and answers — the landing pass is silent toward
+ * the seller there, so nothing here may promise an AI figure.
+ */
+export const PLAIN_QUEUED = '🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu yerga yuboradi.';
+
+/**
+ * The AI door's ✅ when the machine's answer IS queued (§3.5, his 4a): the
+ * figure comes to this chat. Promised only on `replyQueued === true`.
+ */
+export const AI_QUEUED =
+  '🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi. Rasmiy narxni VED xodimi beradi.';
+
+/** The ✅'s queue line before the doors (a NULL door keeps it, §0.2). */
+const LEGACY_QUEUED = '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.';
+
 
 /**
  * The ✅ after «Tasdiqlash» — the save branch's own string, MOVED here pure
@@ -1970,19 +2649,35 @@ export type LandedTarget = Parameters<typeof landedWords>[0] & { queued?: boolea
  * the tariff on its own queue — a reply that can land ABOVE this message, so
  * the sentence says it comes separately, true in either order.
  */
-export function landingReplyText(target: LandedTarget, opts: { link: string | null; tariffFollows: boolean }): string {
+export function landingReplyText(
+  target: LandedTarget,
+  opts: { link: string | null; tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean },
+): string {
   return (
     `✅ Saqlandi — ${landedWords(target)}\n` +
     (opts.link ? `${opts.link}\n` : '') +
     '\n' +
     // Honest about which half landed: the material is on the card either
     // way, but only a queued request will be calculated by anybody.
-    (target.queued
-      ? opts.tariffFollows
-        ? TARIFF_FOLLOWS
-        : '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.'
-      : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`)
+    (target.queued ? queuedLine(target, opts) : `⚠️ Hisoblash navbatiga tushmadi: ${queueRefusal(target.queueError)}`)
   );
+}
+
+/**
+ * Which queue line a queued landing says, by the landed REQUEST's door (§2.3,
+ * §3.5 — what its row says, so both senders say what the pass will do): the
+ * tariff's own answer is on its way whatever the door (his 2.5 b); the AI
+ * door promises its figure only when that answer was queued AND the pass has
+ * a model today (`aiAvailable` — the table's own closing said «… so‘rov VED
+ * ga tushadi» without one, as-built review DOORS-2); the plain door promises
+ * the VED; anything else says what a NULL door always said — a model-free
+ * reply may still follow, as it does there.
+ */
+function queuedLine(target: LandedTarget, opts: { tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean }): string {
+  if (opts.tariffFollows) return TARIFF_FOLLOWS;
+  if (opts.door === 'plain') return PLAIN_QUEUED;
+  if (opts.door === 'ai' && target.replyQueued === true && opts.aiAvailable) return AI_QUEUED;
+  return LEGACY_QUEUED;
 }
 
 /**

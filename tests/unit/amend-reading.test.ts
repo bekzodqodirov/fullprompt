@@ -90,7 +90,7 @@ afterEach(() => {
 });
 
 describe('the model is told the request’s rows — and to bring a stored good back WITH ITS OWN figures (adv-2)', () => {
-  it('the block names the rows and asks for a restated good’s figures, so the conflict can be asked', async () => {
+  it('the block names the rows and asks for a restated good’s figures, so the conflict reaches the VED', async () => {
     model.analyze.mockResolvedValueOnce(reads([line('Kurtka', { quantity: 200 })]));
     const state = collection({ amend: base([item(1, { name: 'Kurtka', quantity: 300 })]) });
     const out = await analyzeCollected(state);
@@ -99,9 +99,11 @@ describe('the model is told the request’s rows — and to bring a stored good 
     // A model that obeys «НЕ повторяй» alone never returns factory B's 200,
     // and the three-way question is never asked.
     expect(block).toContain('укажи его в goods с этими цифрами из материала');
-    // …and the line it brings back is the row's conflict, never a second row.
+    // …and the line it brings back is the row's conflict, never a second row — never ASKED
+    // since his 1a (docs/IKKI-ESHIK.md §1.1): the stored 300 stands, the file's 200 is the VED's
+    // (it pinned `choice: null`, the question open).
     expect(out.conflicts).toEqual([
-      { itemId: id(1), seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: null },
+      { itemId: id(1), seq: 1, field: 'quantity', unit: 'dona', stored: 300, read: 200, choice: 'ved' },
     ]);
     expect(out.facts.goods?.filter((g) => !g.itemId)).toEqual([]);
   });

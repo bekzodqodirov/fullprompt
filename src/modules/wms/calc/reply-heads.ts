@@ -42,5 +42,13 @@ export const MACHINE_REPLY_HEADS: Readonly<Record<MachineReplyKind, string>> = {
   tariff: TARIFF_REPLY_HEAD,
 };
 
+/**
+ * The plain door's note (docs/IKKI-ESHIK.md §2.4): what the machine found,
+ * for the VED, with no money in it. Deliberately NOT in `MACHINE_REPLY_HEADS`
+ * and not prefixed by `AI_REPLY_HEAD`: the lenta's chips name an ANSWER — a
+ * figure, exact or estimated — and this note carries none.
+ */
+export const AI_NOTE_HEAD = '🤖 AI izohi (VED uchun)';
+
 /** The first characters of the lenta's VED line (§2.6) — written by P1, read by P4's chip. */
 export const VED_ESTIMATE_MARK = '🔎 VED uchun:';

@@ -425,7 +425,7 @@ describe('the change lines (§2.4) — one home for the seller, the thread and t
       '· yangi qator: «Shim» — 20 kg · 6203420000',
       '· umumiy hajm: 12.5 m³',
       '· 3-qator «Sumka»: sotuvchi kodi 6402990000 (so‘rovda 6403990000 — VED hal qiladi)',
-      '· 3-qator «Sumka»: faylda 200 dona (so‘rovda 300) — sotuvchi tanlamadi, VED hal qiladi',
+      '· 3-qator «Sumka»: faylda 200 dona (so‘rovda 300) — VED hal qiladi',
       '· ⚠️ umumiy brutto yangilanmagan — yangi tovar qo‘shildi',
       '· 📎 2 ta fayl kartadagi lentada',
     ]);
