@@ -356,7 +356,10 @@ describe('a typed text after the plain summary (§2.2)', () => {
     expect(live.material).toEqual(['ro‘yxat', 'Shapka 20 dona']);
     expect(live.stage).toBe('material');
     expect(ctx.edits.filter((e) => e.id === table.id).at(-1)!.text.split('\n').at(-1)).toBe(TABLE_SUPERSEDED);
-    expect(live.answers).toEqual(['3: 150 kg\nrahmat', '2: 80 kg\n5 dona', '1: 40 kg\nShapka 20 dona']);
+    // The goods went to material on their own, so the answer records only
+    // the row's part — the verbatim record says «Shapka 20 dona» once (fix
+    // review FR-SELL-8; it carried the whole text here too).
+    expect(live.answers).toEqual(['3: 150 kg\nrahmat', '2: 80 kg\n5 dona', '1-qator: 1: 40 kg']);
   });
 
   it('a lone figure the table cannot place is the VED’s words, never material (review PC-ADV-1)', async () => {
