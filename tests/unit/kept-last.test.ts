@@ -143,4 +143,49 @@ describe('keepLastSoon — an album moves it once', () => {
     await keptLastSettled();
     expect(ran).toEqual(['x']);
   });
+
+  /**
+   * The last draw of a burst is never lost (as-built review DURABILITY-3): a
+   * request for the same key made from INSIDE a run, before its first await,
+   * re-armed a timer on an entry the run's cleanup then deleted; one made a
+   * few microtasks after the run's last await set `again` on an entry about
+   * to die. Both drew nothing — the prompt or the offer stayed above what the
+   * seller sent. Every depth from 0 to 12 microtasks is asked.
+   */
+  it('a request for the same key from inside a run — synchronously, or N microtasks after its last await — is drawn', async () => {
+    const pause = () => new Promise<void>((r) => setTimeout(r, 15));
+    const ran: string[] = [];
+    keepLastSoon(
+      'prompt:sync',
+      async () => {
+        ran.push('a');
+        keepLastSoon('prompt:sync', async () => void ran.push('b'), 0);
+        await Promise.resolve();
+      },
+      0,
+    );
+    await keptLastSettled();
+    await pause();
+    await keptLastSettled();
+    expect(ran).toEqual(['a', 'b']);
+    for (let depth = 0; depth <= 12; depth++) {
+      const key = `prompt:depth${depth}`;
+      const seen: string[] = [];
+      keepLastSoon(
+        key,
+        async () => {
+          seen.push('a');
+          await Promise.resolve();
+          let chain = Promise.resolve();
+          for (let i = 0; i < depth; i++) chain = chain.then(() => {});
+          void chain.then(() => keepLastSoon(key, async () => void seen.push('b'), 0));
+        },
+        0,
+      );
+      await keptLastSettled();
+      await pause();
+      await keptLastSettled();
+      expect(seen, `depth ${depth}`).toEqual(['a', 'b']);
+    }
+  });
 });

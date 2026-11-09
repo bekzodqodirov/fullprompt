@@ -147,15 +147,26 @@ function fire(key: string): void {
   const entry = pending.get(key);
   if (!entry) return;
   entry.timer = null;
+  // Two gaps closed (as-built review DURABILITY-3), each of which lost the
+  // LAST draw of a burst — the prompt or the offer left above what the seller
+  // sent. `running` is set before the run is called (the `await null`): a run
+  // asking for its own key before its first await used to find `running`
+  // null, re-arm a timer on this entry, and the entry was deleted under it.
+  // And the entry ends in the SAME synchronous step as the last `again`
+  // check: a `.finally()` on the promise ran microtasks later, and a request
+  // landing in between set `again` on an entry about to die.
   entry.running = (async () => {
-    do {
-      entry.again = false;
-      await entry.run().catch((err: unknown) => logger.warn({ err, key }, '[kept-last] draw failed'));
-    } while (entry.again);
-  })().finally(() => {
-    // Only its own entry: a newer one under the key (after a forget) is not this run's to end.
-    if (pending.get(key) === entry) pending.delete(key);
-  });
+    await null;
+    try {
+      do {
+        entry.again = false;
+        await entry.run().catch((err: unknown) => logger.warn({ err, key }, '[kept-last] draw failed'));
+      } while (entry.again);
+    } finally {
+      // Only its own entry: a newer one under the key (after a forget) is not this run's to end.
+      if (pending.get(key) === entry) pending.delete(key);
+    }
+  })();
 }
 
 /**
