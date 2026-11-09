@@ -74,7 +74,6 @@ const PRESENCE: Record<string, string> = {
   'calc-amend.ts:pressResumeTake': 'a press — the pause line’s «▶️» on the parked collection it was drawn beside',
   // The burst's review fixes: which collection a take went into, read back.
   'calc-amend.ts:takenElsewhere': 'is the collection a burst went into still the live one — a parked one is (review PB-ADV-3)',
-  'calc-amend.ts:awaitReading': 'the prompt id the take’s new prompt was just stored under, to retire the old one',
   'task-handlers.ts:draftFromBurst': 'a press — 📌 on the pause line redraws the parked collection’s own line',
 };
 
