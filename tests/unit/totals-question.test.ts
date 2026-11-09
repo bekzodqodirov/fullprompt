@@ -209,6 +209,27 @@ describe('which totals rows are ⚠️', () => {
     expect(table('yolkira', { ...ROAD, volumeM3: 12 })).toContain('✅ Hajm: 12 kub');
   });
 
+  it('a figure a packing list GAVE is never asked again — below what the seller typed, above the model (docs/IKKI-ESHIK.md §1.2.5, INT-10)', async () => {
+    // The packing list's totals (`fileTotals`) stand where the model's reading would: the brutto
+    // row is ✅ on the AI door's table with no ⚠️ and no «jami 3500 kg» taught.
+    const fileTotals = { weightKg: 3500, volumeM3: 28, weightNetto: false, label: '«packing.xlsx»', at: { material: 1, files: 1 } };
+    const { chatId } = collection({ stage: 'material', ai: true, material: ['Kurtka 300 dona'], fileCount: 1, fileTotals, facts: { ...ROAD } }, 'podklyuch');
+    model.analyze.mockResolvedValueOnce(reads({ weightKg: 9999, volumeM3: 99 }));
+    const ctx = fakeCtx();
+    await pressDone(ctx, chatId);
+    const live = activeIntake(chatId)!;
+    expect([live.facts.weightKg, live.facts.volumeM3]).toEqual([3500, 28]);
+    const text = ctx.replies.at(-1)!;
+    expect(text).toContain('3500 kg');
+    expect(text).not.toContain('⚠️ umumiy brutto');
+    expect(openTotals('podklyuch', live.facts)).toEqual([]);
+    // A typed total outranks it.
+    const typed = collection({ stage: 'material', material: ['jami 4000 kg'], fileCount: 1, fileTotals, facts: { ...ROAD } }, 'podklyuch');
+    model.analyze.mockResolvedValueOnce(reads({}));
+    await pressDone(fakeCtx(), typed.chatId);
+    expect(activeIntake(typed.chatId)!.facts.weightKg).toBe(4000);
+  });
+
   it('a plain-door yolkira collection gets the table after its reading, both totals ⚠️ (the AI-podklyuch gate is gone)', async () => {
     const { chatId, state } = collection({ stage: 'material', ai: false, facts: { ...ROAD } });
     const ctx = fakeCtx();

@@ -254,8 +254,13 @@ function fakeCtx(refuse: (text: string) => boolean = () => false) {
     },
   };
 }
-const buttonsOf = (reply: { extra?: Record<string, unknown> } | { keyboard?: unknown } | undefined) =>
-  JSON.stringify(reply && 'extra' in reply ? (reply.extra?.reply_markup ?? null) : ((reply as { keyboard?: unknown })?.keyboard ?? null));
+// A file answer carries no keyboard since his 1a (docs/IKKI-ESHIK.md §1.1): asked of one, «null».
+const buttonsOf = (reply: object | undefined) =>
+  JSON.stringify(
+    reply && 'extra' in reply
+      ? ((reply as { extra?: Record<string, unknown> }).extra?.reply_markup ?? null)
+      : ((reply as { keyboard?: unknown } | undefined)?.keyboard ?? null),
+  );
 
 const reads = (goods: Goods, steps: string[] = []) => ({
   ok: true,
@@ -745,7 +750,6 @@ const ladiesWorkbook = (n: number, packing: 'lines' | 'cut') =>
 const STALE = 'Bu tugma eskirgan.';
 const NOT_READ = 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
 const OTHER_ASK = 'Avval javob bering: AI o‘qiydigan fayl — boshqa zavodning tovarlarimi?';
-const CLIENT_Q = 'Mijozni yozing: **kodi** (GS777)';
 const OTHER_CUT_SELLER = '⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).';
 const CELLS_NOTE = '[Длинные ячейки сокращены, все строки показаны.]';
 

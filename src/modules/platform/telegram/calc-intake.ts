@@ -1,6 +1,5 @@
 import { logger } from '../logger';
 import { staffForChat } from './staff-bot';
-import { tierWords } from './name-tiers';
 import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
 import type { TableTarget } from '../../wms/calc/line-address';
