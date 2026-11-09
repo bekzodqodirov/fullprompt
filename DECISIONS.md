@@ -6773,3 +6773,15 @@ round's own sentences had promised it restarts the count — the panel, the CHAN
 what does: «Horgosda turibdi» again, or a changed number. STATED, not fixed: a mistaken pin on that
 road cannot be taken off, only replaced by the true place, and if the true place is the Horgos
 queue its count starts from that press.
+
+**#1587 — The fixes reviewed (three lenses, a skeptic each): #1586's re-stamp was too wide.** A
+«confirm» tap of «Qozog‘istonda» on a truck the walk already had late at Yallama re-stamped the
+Kazakh leg: the dot jumped back ~1000 km to the Horgos exit with a fresh date, the Yallama count
+restarted at day 1 and the once-only warning re-armed — 1a, 2a, 3a and 5a broken by the round's own
+safety button, and for a driver with no phone for good. Same for a confirm tap of «O‘zbekistonda»
+on a truck late on the Uzbek leg (§4's «nothing changes after O‘zbekistonda»). Now only «Horgosda
+turibdi» re-stamps (the designed restart); «Qozog‘istonda» / «O‘zbekistonda» re-stamp only when the
+truck reads BEHIND that pin's leg (`placedBehindPin` — a newer phone fix overruled the pin, the case
+#1586 was for) and otherwise change nothing and audit nothing. The placement is read on the pool
+BEFORE the transaction (`trucksOnRoadRows`, #714) and the pin it was read under is compared under
+the lock (`checkpoint_changed`). 4 red proofs.

@@ -4,8 +4,9 @@ import { db } from '../../platform/db/client';
 import { batches, warehouses } from '../../platform/db/schema';
 import { AuthError, type Actor } from '../../platform/rbac/authorize';
 import { assertOnBatchCard } from '../batches/batch-authorize';
-import { checkpointsFor, roadHolds } from './eta';
+import { checkpointsFor, placedBehindPin, roadHolds } from './eta';
 import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
+import { trucksOnRoadRows } from './on-road';
 
 /**
  * The logist's «where is the truck» pin, written (the Mashina tab's buttons).
@@ -25,12 +26,16 @@ import { CHECKPOINT_KEYS, type CheckpointKey } from './map-data';
  * Horgos): there the pin is what moved the truck past a queue, and clearing
  * «Qozog‘istonda» by tapping it again to «confirm» sent a truck in Kazakhstan
  * back into the Horgos queue, late, with a warning to every logist (the
- * design's judge). On that road a press of the standing pin RE-STAMPS it —
- * «it is here now», what every press means: «Horgosda turibdi» again after
- * the call counts the queue from the press (and a wait counted from after
- * the warning re-arms it), and a pin a newer phone fix overruled answers the
- * warning that names it (the review: refusing it left the logist told to
- * press a button that refused). An off-route pin on that road still clears.
+ * design's judge). On that road a press of the standing pin:
+ * - «Horgosda turibdi» RE-STAMPS it: again after the call, the queue counts
+ *   from the press (and a wait counted from after the warning re-arms it);
+ * - «Qozog‘istonda» / «O‘zbekistonda» re-stamps only when the truck reads
+ *   BEHIND that pin's leg — a newer phone fix overruled it, and the warning
+ *   names this very button (the review: refusing it left the logist told to
+ *   press a button that refused). Otherwise it changes nothing: a «confirm»
+ *   tap of «Qozog‘istonda» for a truck at Yallama must not restart the
+ *   Kazakh leg and with it the Yallama count (the fixes' review).
+ * An off-route pin on that road still clears.
  */
 
 export type CheckpointErrorCode =
@@ -77,6 +82,26 @@ export async function setTrackingCheckpoint(
   if (!(CHECKPOINT_KEYS as readonly string[]).includes(key)) throw new CheckpointError('unknown_key');
   const pressed = key as CheckpointKey;
 
+  // Where the truck reads NOW, for a re-press of «Qozog‘istonda» /
+  // «O‘zbekistonda» on a road that holds — on the POOL, before the
+  // transaction opens (#714); the pin it was read under is compared under the
+  // lock below.
+  let readUnder: { key: unknown; behind: boolean } | null = null;
+  if (pressed === 'in_kz' || pressed === 'in_uz') {
+    const [pre] = await db
+      .select({ cp: batches.trackingCheckpoint })
+      .from(batches)
+      .where(eq(batches.id, batchId));
+    const preKey = (pre?.cp as { key?: unknown } | null)?.key;
+    if (preKey === pressed) {
+      const row = (await trucksOnRoadRows([batchId])).get(batchId);
+      readUnder = {
+        key: preKey,
+        behind: row ? placedBehindPin(row.originCode, row.destCode, row.segKey, pressed) : false,
+      };
+    }
+  }
+
   return db.transaction(async (tx) => {
     const [batch] = await tx.select().from(batches).where(eq(batches.id, batchId)).for('update');
     // A truck that is not there is not on the road either — said in words
@@ -105,10 +130,16 @@ export async function setTrackingCheckpoint(
     const offered = checkpointsFor(origin?.code ?? '', dest?.code ?? '', dest?.country ?? null);
     let next: { key: CheckpointKey; at: string } | null;
     if (current === pressed) {
-      next =
-        offered.includes(pressed) && roadHolds(origin?.code ?? '', dest?.code ?? '')
-          ? { key: pressed, at: new Date().toISOString() }
-          : null;
+      if (offered.includes(pressed) && roadHolds(origin?.code ?? '', dest?.code ?? '')) {
+        if (pressed !== 'at_border') {
+          // Read under another pin than the one now locked: say so rather
+          // than decide on a stale placement.
+          if (!readUnder || readUnder.key !== current) throw new CheckpointError('checkpoint_changed');
+          // The screen already shows it there: nothing to write, nothing to audit.
+          if (!readUnder.behind) return batch.trackingCheckpoint as { key: CheckpointKey; at: string };
+        }
+        next = { key: pressed, at: new Date().toISOString() };
+      } else next = null;
     } else {
       if (!offered.includes(pressed)) throw new CheckpointError('not_on_route');
       next = { key: pressed, at: new Date().toISOString() };

@@ -76,6 +76,21 @@ export function isHeldQueue(seg: { span: readonly [number, number]; post?: Borde
 }
 
 /** Does this road hold a truck anywhere (Horgos → Tashkent / Andijan today)? Asked by the pin service. */
+/**
+ * Is a truck placed on `segKey` BEHIND the leg pin `key` names, on its road?
+ * — a newer phone fix overruled that pin (the truck reads at Horgos while
+ * «Qozog‘istonda» stands). The pin door asks it before re-stamping a
+ * re-pressed «Qozog‘istonda» / «O‘zbekistonda»: only then does the press say
+ * something the screen does not already show. Unknown road or leg = false.
+ */
+export function placedBehindPin(originCode: string, destCode: string, segKey: string | null, key: CheckpointKey): boolean {
+  const segments = routeFor(originCode, destCode)?.segments;
+  if (!segments || !segKey) return false;
+  const at = segments.findIndex((s) => s.key === segKey);
+  const pin = segments.findIndex((s) => s.key === CHECKPOINT_SEGMENTS[key]);
+  return at >= 0 && pin >= 0 && at < pin;
+}
+
 export function roadHolds(originCode: string, destCode: string): boolean {
   return routeFor(originCode, destCode)?.segments.some(isHeldQueue) ?? false;
 }

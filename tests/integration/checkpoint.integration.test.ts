@@ -2,9 +2,10 @@ import 'dotenv/config';
 import { eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
-import { batches, users, warehouses } from '@/modules/platform/db/schema';
+import { batches, driverPositions, users, warehouses } from '@/modules/platform/db/schema';
 import { actorGrants } from '@/modules/platform/rbac/authorize';
 import { CheckpointError, setTrackingCheckpoint } from '@/modules/wms/tracking/checkpoint';
+import { routeFor } from '@/modules/wms/tracking/map-data';
 
 /**
  * The «where is the truck» pin, pressed through the SERVICE (the Horgos
@@ -138,7 +139,7 @@ describe('a press is judged against the pin the presser SAW (the batch board)', 
   });
 });
 
-describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is never pressed off — a re-press re-stamps it', () => {
+describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is never pressed off', () => {
   // The Horgos road is keyed by the warehouse CODE and no seed carries one,
   // so the block mints `HOR` when the database has none. The press audits on
   // the truck's origin (audit_log's FK), so a minted warehouse cannot be
@@ -175,6 +176,7 @@ describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is never pr
   });
 
   afterAll(async () => {
+    if (horTruck) await db.delete(driverPositions).where(eq(driverPositions.batchId, horTruck));
     if (horTruck) await db.delete(batches).where(eq(batches.id, horTruck));
     if (mintedHor) {
       await db
@@ -188,15 +190,39 @@ describe('on a road that HOLDS (Horgos, docs/XORGOS-NAVBAT.md) a pin is never pr
     ((await db.query.batches.findFirst({ where: eq(batches.id, id) }))!.trackingCheckpoint as { at?: string } | null)
       ?.at ?? null;
 
-  it('«Qozog‘istonda» pressed again to «confirm» keeps it — stamped with the new press, never cleared', async () => {
+  it('«Qozog‘istonda» pressed again to «confirm» changes nothing — never cleared, and never a restart of the Kazakh leg', async () => {
     expect((await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, ''))?.key).toBe('in_kz');
-    // An hour ago, so the re-stamp is visible.
-    const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
-    await db.update(batches).set({ trackingCheckpoint: { key: 'in_kz', at: hourAgo } }).where(eq(batches.id, horTruck));
+    // Pressed 150 h ago: by now the walk has it standing at Yallama. A
+    // re-stamp would put it back at the Horgos exit with a date and restart
+    // the Yallama count (the fixes' review).
+    const long = new Date(Date.now() - 150 * 3_600_000).toISOString();
+    await db
+      .update(batches)
+      .set({ departedAt: new Date(Date.now() - 200 * 3_600_000), trackingCheckpoint: { key: 'in_kz', at: long } })
+      .where(eq(batches.id, horTruck));
+    const again = await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, 'in_kz');
+    expect(again).toEqual({ key: 'in_kz', at: long });
+    expect(await pinOf(horTruck)).toBe('in_kz');
+    expect(await stampOf(horTruck)).toBe(long);
+  });
+
+  it('…but a «Qozog‘istonda» a newer phone fix overruled is re-stamped: the truck reads at Horgos, the warning names this button', async () => {
+    const hor = routeFor('HOR', 'TAS1')!;
+    const post = hor.points[hor.segments.find((s) => s.key === 'border_wait')!.span[0]]!;
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    await db.insert(driverPositions).values({
+      batchId: horTruck,
+      lat: post.y.toFixed(6),
+      lon: post.x.toFixed(6),
+      recordedAt: twoHoursAgo,
+      receivedAt: twoHoursAgo,
+      source: 'device',
+    });
+    const long = (await stampOf(horTruck))!;
     const again = await setTrackingCheckpoint(actors.logist, horTruck, 'in_kz', META, 'in_kz');
     expect(again?.key).toBe('in_kz');
-    expect(await pinOf(horTruck)).toBe('in_kz');
-    expect(Date.parse((await stampOf(horTruck))!)).toBeGreaterThan(Date.parse(hourAgo));
+    expect(Date.parse(again!.at)).toBeGreaterThan(Date.parse(long));
+    expect(await stampOf(horTruck)).toBe(again!.at);
   });
 
   it('«Horgosda turibdi» again after the call counts the queue from the press; moving it is pressing another place', async () => {

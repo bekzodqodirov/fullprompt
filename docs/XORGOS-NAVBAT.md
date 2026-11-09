@@ -211,13 +211,14 @@ wins.
 11. **The map label shows the day of the wait beside the code** («HR-001 ⏳2»), in both
     renderers.
 
-12. **On the Horgos road a standing pin is never pressed off — a re-press RE-STAMPS it**
-    (checkpoint.ts, «it is here now», what every press means). A second tap of «Qozog‘istonda» to
-    «confirm» used to clear it and send the truck back into the Horgos queue, late. «Horgosda
-    turibdi» pressed again after the call counts the queue from the press. A pin off the road
-    still clears; moving it is pressing another place. (The first build refused it with
-    `pin_kept`; the review found that left a pin a newer phone fix overruled impossible to press,
-    while the warning named it.)
+12. **On the Horgos road a standing pin is never pressed off** (checkpoint.ts). A second tap of
+    «Qozog‘istonda» to «confirm» used to clear it and send the truck back into the Horgos queue,
+    late. A re-press of «Horgosda turibdi» RE-STAMPS it: the queue counts from the press. A re-press
+    of «Qozog‘istonda» / «O‘zbekistonda» re-stamps only when the truck reads BEHIND that pin's leg
+    (`placedBehindPin`: a newer phone fix overruled it); otherwise it changes nothing — a confirm
+    tap must not restart the Kazakh leg and the Yallama count with it. A pin off the road still
+    clears; moving it is pressing another place. (Built first as a refusal, `pin_kept`, then as a
+    re-stamp of every pin — #1586, #1587.)
 13. **The border pin is named «🛃 Horgosda turibdi» on a road that holds** (`pinLabel`), on the
     Mashina tab, the board's ⋯ and the card's road line. A Yallama truck is «at the border» too;
     the Yallama warning says not to press it.

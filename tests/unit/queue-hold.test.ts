@@ -5,6 +5,7 @@ import {
   etaWindow,
   isHeldQueue,
   placeArriveBy,
+  placedBehindPin,
   placeDated,
   placeTruck,
   QUEUE_LATE_HOURS,
@@ -87,6 +88,16 @@ describe('the Horgos road names its border pin', () => {
     expect(pinLabel('at_border', false).label).toBe('cpBorder');
     // Only the border pin changes its words — «Qozog‘istonda» is one place.
     expect(pinLabel('in_kz', true)).toEqual(pinLabel('in_kz', false));
+  });
+
+  it('a truck reads BEHIND a pin only on an earlier leg of its own road (the pin door’s re-stamp rule)', () => {
+    expect(placedBehindPin('HOR', 'TAS1', 'border_wait', 'in_kz')).toBe(true);
+    expect(placedBehindPin('HOR', 'TAS1', 'uz_queue', 'in_uz')).toBe(true);
+    expect(placedBehindPin('HOR', 'TAS1', 'kz', 'in_kz')).toBe(false);
+    expect(placedBehindPin('HOR', 'TAS1', 'uz_queue', 'in_kz')).toBe(false);
+    expect(placedBehindPin('HOR', 'TAS1', 'uz', 'in_uz')).toBe(false);
+    expect(placedBehindPin('HOR', 'TAS1', null, 'in_kz')).toBe(false);
+    expect(placedBehindPin('NOWHERE', 'TAS1', 'border_wait', 'in_kz')).toBe(false);
   });
 });
 

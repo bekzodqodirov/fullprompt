@@ -42,7 +42,10 @@ Javoblaringiz: **1a 2a 3a 4a 5a**, Horgos skladining kodi **HOR**. **Yangi migra
   - Shu paytgacha bunday mashinaning mijoz kabinetidagi chizig'i Horgosda turadi va sanasi ko'rinmaydi.
 - **Qashqar yo'li o'zgarmadi.** Irkeshtam navbati kunlari kiritilmaydi, shuning uchun u yerda mashina avvalgidek jadval bo'yicha yuradi.
 - **Horgos yo'lida «Chegarada» tugmasi «🛃 Horgosda turibdi» deb nomlandi.** Yallamadagi mashina ham «chegarada», shuning uchun eski nom chalg'itardi: uni bosish mashinani Horgosga qaytaradi.
-- **Horgos yo'lida bosilgan belgi qayta bosilganda o'chmaydi, «hozir shu yerda» deb yangilanadi.** Ilgari «Qozog‘istonda» ni «tasdiqlash» uchun yana bosish uni o'chirardi va mashina Horgos navbatiga «kechikkan» bo'lib qaytardi. Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Xato bosilgan belgini o'chirib bo'lmaydi — to'g'ri joyni bosing; agar to'g'ri joy Horgos navbati bo'lsa, navbat shu bosilgan paytdan hisoblanadi. Boshqa yo'llarda tugma avvalgidek ishlaydi.
+- **Horgos yo'lida bosilgan belgi qayta bosilganda o'chmaydi.** Ilgari «Qozog‘istonda» ni «tasdiqlash» uchun yana bosish uni o'chirardi va mashina Horgos navbatiga «kechikkan» bo'lib qaytardi.
+  - «🛃 Horgosda turibdi» ni qayta bossangiz, Horgos navbati shu paytdan hisoblanadi.
+  - «Qozog‘istonda» yoki «O‘zbekistonda» ni qayta bosish hech narsani o'zgartirmaydi — faqat haydovchi telefoni mashinani orqaroqda (masalan hali Horgosda) ko'rsatib turgan bo'lsa, «hozir shu yerda» deb yangilanadi. Shunda xabardagi tugmani bosish ishlaydi.
+  - Mashina boshqa joyda bo'lsa, o'sha joyni bosing. Xato bosilgan belgini o'chirib bo'lmaydi — to'g'ri joyni bosing; agar to'g'ri joy Horgos navbati bo'lsa, navbat shu bosilgan paytdan hisoblanadi. Boshqa yo'llarda tugma avvalgidek ishlaydi.
 - **Logist «Qozog‘istonda» ni erta bossa-yu, haydovchi telefoni hali Horgos navbatidan xabar bersa,** mashina Horgosda ko'rinadi va navbat skladdan chiqqandan beri hisoblanadi (ilgari har xabarda «1-kun» dan qaytadan boshlanardi va hech qachon kechikmasdi).
 - Telefon bilan navbatda 12-16 km dan uzoqroq turgan mashina hali ham «postga ketyapti» deb ko'rinadi.
 
