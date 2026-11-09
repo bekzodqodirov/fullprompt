@@ -387,50 +387,73 @@ describe('a top-up’s packing list is a NOTED file (PF-SPEC-2, PF-SPEC-5)', () 
 });
 
 describe('the add collection’s own Excel rows are coded on the AI door (PF-SPEC-6)', () => {
-  it('shown numbered beside the request’s rows; the code lands on the new line only', async () => {
-    const base: AmendBase = {
-      requestId: '00000000-0000-4000-8000-000000000099',
-      cardLabel: 'B-000067',
-      entityType: 'deal',
-      entityId: '00000000-0000-4000-8000-000000000098',
-      leadOpen: null,
-      section: 'rastamojka',
-      clientLabel: 'GS777',
-      openedRev: 0,
-      items: [
-        {
-          itemId: '00000000-0000-4000-8000-000000000001',
-          seq: 1,
-          name: 'Kurtka',
-          quantity: 300,
-          weightKg: null,
-          volumeM3: null,
-          measureUnit: null,
-          measureQty: null,
-          tnvedCode: null,
-          law: null,
-          confirmed: false,
-        },
-      ],
-      weightKg: null,
-      volumeM3: null,
-      fromCity: null,
-      toCity: null,
-    };
-    const { state } = collection(
+  // The request's DOOR decides (as-built review DOORS-1): re-anchored from a
+  // base with no door — which is a NULL request, today's table, that never
+  // asked the model for codes (§0.2) — onto an 'ai' request's.
+  const addBase = (door: AmendBase['door']): AmendBase => ({
+    requestId: '00000000-0000-4000-8000-000000000099',
+    cardLabel: 'B-000067',
+    entityType: 'deal',
+    entityId: '00000000-0000-4000-8000-000000000098',
+    leadOpen: null,
+    section: 'rastamojka',
+    clientLabel: 'GS777',
+    openedRev: 0,
+    items: [
+      {
+        itemId: '00000000-0000-4000-8000-000000000001',
+        seq: 1,
+        name: 'Kurtka',
+        quantity: 300,
+        weightKg: null,
+        volumeM3: null,
+        measureUnit: null,
+        measureQty: null,
+        tnvedCode: null,
+        law: null,
+        confirmed: false,
+      },
+    ],
+    weightKg: null,
+    volumeM3: null,
+    fromCity: null,
+    toCity: null,
+    ...(door === undefined ? {} : { door }),
+  });
+  const addCollection = (base: AmendBase) =>
+    collection(
       {
         fileCount: 1,
         invoiceGoods: [line('Sumka', { quantity: 50 })],
         facts: { goods: [{ name: 'Kurtka', quantity: 300, itemId: base.items[0]!.itemId, seq: 1 }], lineWeightsStated: true },
       },
+      // The add door opens a NULL request's collection with the legacy flag
+      // set (`collectionAiOf(null, true)`) — the flag alone said «AI door».
       { ai: true, amend: base },
-    );
+    ).state;
+
+  it('shown numbered beside the request’s rows; the code lands on the new line only', async () => {
+    const state = addCollection(addBase('ai'));
     model.analyze.mockResolvedValueOnce({ ...reads([]), knownCodes: [{ index: 0, code: '4202920000' }] });
     const read = await analyzeCollected(state);
     expect(model.analyze.mock.calls[0]![0]).toMatchObject({ knownGoods: ['Sumka'], codeKnown: true, requestGoods: ['Kurtka'] });
     const sumka = read.facts.goods?.find((g) => g.name === 'Sumka');
     expect([sumka?.tnvedCode, sumka?.tnvedSource]).toEqual(['4202920000', 'model']);
     expect(read.facts.goods?.find((g) => g.name === 'Kurtka')?.tnvedCode ?? null).toBeNull();
+  });
+
+  it('a NULL request’s add collection reads as today: no codes asked, the new row uncoded (§0.2, as-built DOORS-1)', async () => {
+    for (const door of [undefined, null, 'plain'] as const) {
+      model.analyze.mockReset();
+      const state = addCollection(addBase(door));
+      model.analyze.mockResolvedValueOnce({ ...reads([]), knownCodes: [{ index: 0, code: '4202920000' }] });
+      const read = await analyzeCollected(state);
+      const call = model.analyze.mock.calls[0]![0] as Record<string, unknown>;
+      expect(call.codeKnown, String(door)).toBeUndefined();
+      expect(call.knownCoded, String(door)).toBeUndefined();
+      const sumka = read.facts.goods?.find((g) => g.name === 'Sumka');
+      expect(sumka?.tnvedCode ?? null, String(door)).toBeNull();
+    }
   });
 });
 

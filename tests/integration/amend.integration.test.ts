@@ -753,8 +753,8 @@ describe('(r) a stored row the new material restates (product-fit-17)', () => {
     expect(rows[1]!.weightKg).toBeNull();
     const note = (await threadOf(r.requestId)).find((t) => t.id === threadIdOf(out.amendmentId, 'applied'))!.note;
     expect(note).toContain(`· 1-qator «Kurtka ${SUFFIX}»: 300 + 200 = 500 dona (ikkinchi fayl qo‘shildi)`);
-    expect(note).toContain(`· 2-qator «Sumka ${SUFFIX}»: faylda 12 dona (so‘rovda 10) — sotuvchi tanlamadi, VED hal qiladi`);
-    expect(note).toContain(`· 2-qator «Sumka ${SUFFIX}»: faylda 120 kg (so‘rovda yo‘q) — sotuvchi tanlamadi, VED hal qiladi`);
+    expect(note).toContain(`· 2-qator «Sumka ${SUFFIX}»: faylda 12 dona (so‘rovda 10) — VED hal qiladi`);
+    expect(note).toContain(`· 2-qator «Sumka ${SUFFIX}»: faylda 120 kg (so‘rovda yo‘q) — VED hal qiladi`);
   });
 });
 

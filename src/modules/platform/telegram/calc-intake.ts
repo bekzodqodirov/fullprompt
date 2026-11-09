@@ -1179,6 +1179,14 @@ export function pickGoods(input: {
       return { goods: input.invoice, sameAsInvoice };
     }
     const extra = input.model ?? input.typed;
+    // The add path is for what a MODEL-READ document holds (docs/IKKI-ESHIK.md
+    // §1.2.2). When the model did not read (no key, the day's budget, a
+    // timeout), nothing was model-read: the typed lines beside the Excel keep
+    // today's rule — the Excel answers and a line it does not carry is NAMED,
+    // never appended. Since the bot sets 'add' by itself, an outage otherwise
+    // turned a typed restatement under another name into a second product
+    // (as-built review FILES-3).
+    const typedOnly = input.model === null;
     const addedWholes = new Set<string>();
     const leftOut = new Set<string>();
     const added: GoodsList = [];
@@ -1197,7 +1205,8 @@ export function pickGoods(input: {
       }
       if (addedWholes.has(names.whole)) continue;
       addedWholes.add(names.whole);
-      added.push(g);
+      if (typedOnly) sameAsInvoice.push({ ...g, why: 'typed' });
+      else added.push(g);
     }
     return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
@@ -1312,6 +1321,27 @@ export function intakeFileKind(
   return 'sheet';
 }
 
+/**
+ * Which bot door this COLLECTION is (docs/IKKI-ESHIK.md §0.3): a first
+ * collection's by its own flag; an add collection's by its request's
+ * (`AmendBase.door`); a seeded one's by its source's (`seedDoor`, written at
+ * the open). Null = a request from before the doors, or a collection
+ * hydrated from before them — TODAY's table and words (§0.2). Pure.
+ *
+ * Here, beside `IntakeState`, so the READING asks it too: the raw `ai` flag is
+ * true on every add collection of a NULL request (`collectionAiOf(null,
+ * true)`), and a reading that coded rows by the flag put the model's guess on
+ * a legacy table that does not mark it «(AI taklifi)» — and asked the law
+ * unit of the guess (as-built review DOORS-1).
+ */
+export function collectionDoor(
+  state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>,
+): 'plain' | 'ai' | null {
+  if (state.amend) return state.amend.door ?? null;
+  if (state.seed !== null) return state.seedDoor ?? null;
+  return state.ai ? 'ai' : 'plain';
+}
+
 // The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
 // every importer's import.
 export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
@@ -1353,7 +1383,10 @@ export async function analyzeCollected(
   // §3.1) — an add or seeded collection's own Excel rows too (review
   // PF-SPEC-6): they are NEW lines beside the request's rows, never the
   // request's own (those are shown as `requestGoods` and never coded here).
-  const codeKnown = state.ai && invoice.length > 0;
+  // The DOOR decides, never the flag: an add or seeded collection on a NULL
+  // request is today's, which never asked the model for codes (§0.2,
+  // as-built review DOORS-1).
+  const codeKnown = collectionDoor(state) === 'ai' && invoice.length > 0;
 
   // The day's budget gates the READING too — it is the most expensive call
   // on this path (Opus, with photographs). Over the cap the manual parser
@@ -1407,13 +1440,25 @@ export async function analyzeCollected(
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
   // which read the same ambiguous text — does not get to answer it either.
   const asked = (field: 'weightKg' | 'volumeM3') => manual.ambiguous.some((a) => a.field === field);
+  // The codes the seller's own text states (as-built review FILES-6): a model
+  // line carrying one of them carries the SELLER's code, read back — not a
+  // proposal. Only the code nobody wrote is the model's (§3.1's step 4).
+  const { codeIn } = await import('../../wms/calc/units');
+  const typedCodes = new Set<string>([
+    ...text.split(/\r?\n/).flatMap((l) => {
+      const found = codeIn(l)?.code;
+      return found ? [found.replace(/\D/g, '')] : [];
+    }),
+    ...(manual.goods ?? []).flatMap((g) => (g.tnvedCode?.trim() ? [g.tnvedCode.replace(/\D/g, '')] : [])),
+  ]);
   // Three sources, in the order of how EXACT they are (`pickGoods`).
   const picked = pickGoods({
     invoice,
     aiGoods: state.aiGoods,
     // A code on a model-read line is the model's PROPOSAL, never the row's own
-    // (§3.1): the coding asks the memory and the book first.
-    model: ai ? (ai.facts.goods ?? []).map(modelCoded) : null,
+    // (§3.1): the coding asks the memory and the book first — unless the
+    // seller's own text states it.
+    model: ai ? (ai.facts.goods ?? []).map((g) => modelCoded(g, typedCodes)) : null,
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
     modelSawImages: files.images.length > 0,
@@ -1544,9 +1589,18 @@ export async function analyzeCollected(
   };
 }
 
-/** A model-read line, its code marked as the model's proposal (§3.1). Pure. */
-function modelCoded(g: GoodsList[number]): GoodsList[number] {
-  return g.tnvedCode?.trim() ? { ...g, tnvedSource: 'model' } : g;
+/**
+ * A model-read line, its code marked as the model's proposal (§3.1) — unless
+ * the seller's own typed material states that very code (`typed`, digits
+ * only): then it is his, read back, and stays on top of the memory and the
+ * book like any code a seller typed (as-built review FILES-6). A code read off
+ * a document cannot be told from the model's guess and stays a proposal
+ * (PF-ADV-16). Pure.
+ */
+function modelCoded(g: GoodsList[number], typed: ReadonlySet<string>): GoodsList[number] {
+  const code = g.tnvedCode?.trim();
+  if (!code) return g;
+  return typed.has(code.replace(/\D/g, '')) ? g : { ...g, tnvedSource: 'model' };
 }
 
 /**

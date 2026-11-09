@@ -4,6 +4,7 @@ import { drawKeptLast, editGone, keepLastSoon, notModified } from './kept-last';
 import { answerPress } from './press';
 import { clientCodePrefix } from './staff-bot';
 import {
+  collectionDoor,
   factsWithAnswer,
   intakeClientSummary,
   MAX_INTAKE_IMAGES,
@@ -227,20 +228,9 @@ function ownsMessage(state: IntakeState, id: number): boolean {
   );
 }
 
-/**
- * Which bot door this COLLECTION is (docs/IKKI-ESHIK.md §0.3): a first
- * collection's by its own flag; an add collection's by its request's
- * (`AmendBase.door`); a seeded one's by its source's (`seedDoor`, written at
- * the open). Null = a request from before the doors, or a collection
- * hydrated from before them — TODAY's table and words (§0.2). Pure.
- */
-export function collectionDoor(
-  state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>,
-): 'plain' | 'ai' | null {
-  if (state.amend) return state.amend.door ?? null;
-  if (state.seed !== null) return state.seedDoor ?? null;
-  return state.ai ? 'ai' : 'plain';
-}
+// Which bot door this COLLECTION is lives beside `IntakeState` (calc-intake.ts),
+// so the reading asks the very rule the table asks (as-built review DOORS-1).
+export { collectionDoor };
 
 /** The plain door «🧮 Hisoblatish» (§2): a summary, no asks — the job lands as it is and the VED asks. */
 export const plainCollection = (state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>) =>

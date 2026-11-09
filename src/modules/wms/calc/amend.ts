@@ -637,7 +637,10 @@ export function amendChangeText(
   }
   for (const c of change.conflicts) {
     const stored = c.stored === null ? 'so‘rovda yo‘q' : `so‘rovda ${Number(c.stored.toFixed(4))}`;
-    lines.push(`· ${c.seq}-qator «${clip(c.name)}»: faylda ${figureText(c.read, c.unit)} (${stored}) — sotuvchi tanlamadi, VED hal qiladi`);
+    // No «sotuvchi tanlamadi»: since his 1a the seller is never asked (docs/
+    // IKKI-ESHIK.md §1.1), so the line is a statement, not a skipped question
+    // (as-built review CHAT-5).
+    lines.push(`· ${c.seq}-qator «${clip(c.name)}»: faylda ${figureText(c.read, c.unit)} (${stored}) — VED hal qiladi`);
   }
   // «yangi tovar qo‘shildi» only when a line was (fix review W-2): a stored
   // row's weight copied from the brutto and corrected (lmp-2), or a stored

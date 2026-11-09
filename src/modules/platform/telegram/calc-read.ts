@@ -330,6 +330,15 @@ export function settleAnalysis(
     // The live totals answer too, when it is new (above).
     facts: answeredMeanwhile ? mergeTotalsAnswer(live.totalsAnswer, facts) : facts,
     lineAnswers: placed.entries,
+    // The add reading's restated rows (his 1a, docs/IKKI-ESHIK.md §1.1): the
+    // stored figure stands and the file's goes to the VED, named on the
+    // summary and in the save's note. Dropped here, `...live` put back the
+    // collection's old list and the file's figure was lost to both (as-built
+    // review CHAT-1). A choice the live collection holds for the same row,
+    // field and read figure stands, as the reading's own rule keeps it.
+    conflicts: analysed.conflicts.map(
+      (c) => live.conflicts.find((x) => x.itemId === c.itemId && x.field === c.field && x.read === c.read) ?? c,
+    ),
     steps: analysed.steps,
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,
