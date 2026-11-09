@@ -382,6 +382,10 @@ describe('the job reads, stores, then sends — once', () => {
     expect(live).toMatchObject({ stage: 'material', analysing: null, pendingReply: null });
     // The «arrived» words are not the table: no answer will ever edit them.
     expect(live.tableMessageId).toBeNull();
+    // They carry the collection's «Bo‘ldi», so they ARE its prompt — the next
+    // material moves them below it, never a second «Bo‘ldi» under a live one
+    // (review PC-SPEC-6, PC-ADV-9).
+    expect(live.promptMessageId).toBe(tg.id);
   });
 });
 

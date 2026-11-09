@@ -932,6 +932,9 @@ describe('the review’s fixes', () => {
     expect(now.text.split('\n').at(-1)).toBe(TABLE_SUPERSEDED);
     expect(now.text).not.toContain('Tasdiqlash');
     expect(buttons(now)).toEqual([undoButton(activeIntake(chatId)!.echoes[0]!.tag)]);
+    // The certificate line points at no button the table no longer has (review PC-SPEC-9).
+    expect(now.text).toMatch(/📄 Sertifikat: (bor|yo‘q)\n/u);
+    expect(now.text).not.toContain('tugmani bosing');
   });
 });
 
@@ -955,7 +958,8 @@ describe('the AI door’s table (§3.1-§3.4)', () => {
     const table = await drawn(fakeCtx(), chatId);
     const lines = table.text.split('\n');
     expect(lines[0]).toBe('🤖 AI rastamojka · 🛃 Rastamojka');
-    expect(table.text).toContain('✅ 1. Kurtka — 300 dona · 6201400000 (AI taklifi)');
+    // ℹ️, never ✅: the model's code is a proposal (review PC-ADV-2, pf-handoff).
+    expect(table.text).toContain('ℹ️ 1. Kurtka — 300 dona · 6201400000 (AI taklifi)');
     expect(table.text).toContain(`ℹ️ 2. Sumka — 50 dona\n   ↳ ${CODE_GAP_AI}`);
     // A code is not the seller's part: the table is complete, and asks nothing about it.
     expect(lines.at(-1)).toBe(AI_TABLE_COMPLETE);

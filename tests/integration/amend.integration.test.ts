@@ -313,7 +313,7 @@ describe('(a) open: the addition goes into the rows and the pass runs again', ()
       pass: `amend:${out.amendmentId}`,
       atRev: out.rev,
     });
-    expect(await amendWords(out, false)).toMatch(/^✅ So‘rovga qo‘shildi \(AM-\d+-\d+\):\n· 3-qator/);
+    expect(await amendWords(out, false, null)).toMatch(/^✅ So‘rovga qo‘shildi \(AM-\d+-\d+\):\n· 3-qator/);
   });
 });
 
@@ -333,7 +333,7 @@ describe('(b) a VED’s screen save after the stamp', () => {
       `➕ Sotuvchi qo‘shimcha yubordi — so‘rovga avtomatik yozilmadi (siz ishlayapsiz), o‘zgartirishni kiriting:\n· 1-qator «Sumka ${SUFFIX}»: 50 dona`,
     );
     expect(vi.mocked(queueCalcPrefill)).not.toHaveBeenCalled();
-    expect(await amendWords(out, false)).toBe(
+    expect(await amendWords(out, false, null)).toBe(
       `📨 VED bu so‘rov ustida ishlayapti — qo‘shimchangiz VED ga yuborildi, o‘zgartirishni VED o‘zi kiritadi:\n· 1-qator «Sumka ${SUFFIX}»: 50 dona`,
     );
   });
@@ -365,7 +365,7 @@ describe('(d) a closed request — keyed on HOW it ended (re-check p4-15)', () =
     const out = await amend(r.requestId, sub({ rowAnswers: [{ itemId: r.items[0]!.id, patch: { quantity: 50 } }] }));
     expect(out).toMatchObject({ kind: 'to_ved', reason: 'closed', ending: 'answered' });
     if (out.kind !== 'to_ved') return;
-    expect(await amendWords(out, false)).toBe(
+    expect(await amendWords(out, false, null)).toBe(
       '📨 Bu so‘rov yopilgan (javob berilgan) — qo‘shimchangiz VED ga yozildi. Yangi hisob kerak bo‘lsa «🧮 Hisoblatish» dan yuboring.',
     );
   });
@@ -376,7 +376,7 @@ describe('(d) a closed request — keyed on HOW it ended (re-check p4-15)', () =
     const out = await amend(r.requestId, sub({ rowAnswers: [{ itemId: r.items[0]!.id, patch: { quantity: 50 } }] }));
     expect(out).toMatchObject({ kind: 'to_ved', reason: 'closed', ending: 'returned', returnReason: 'kg yo‘q' });
     if (out.kind !== 'to_ved') return;
-    const words = await amendWords(out, false);
+    const words = await amendWords(out, false, null);
     expect(words).toContain('VED bu so‘rovni sizga qaytargan');
     expect(words).toContain('yangi so‘rov yuboring');
     expect(words).not.toMatch(/qayta ochil/);
@@ -388,7 +388,7 @@ describe('(d) a closed request — keyed on HOW it ended (re-check p4-15)', () =
     const out = await amend(r.requestId, sub({ rowAnswers: [{ itemId: r.items[0]!.id, patch: { quantity: 50 } }] }));
     expect(out).toMatchObject({ kind: 'to_ved', ending: 'unpriced_task' });
     if (out.kind !== 'to_ved') return;
-    const words = await amendWords(out, false);
+    const words = await amendWords(out, false, null);
     expect(words).toContain('narxsiz yopilgan');
     expect(words).not.toContain('javob berilgan');
   });
@@ -803,7 +803,7 @@ describe('(s) the card is read off the LOCKED row (re-check p4-4)', () => {
     expect(card).toHaveLength(1);
     const thread = (await threadOf(r.requestId)).find((t) => t.id === threadIdOf(out.amendmentId, 'to_ved'))!;
     expect(thread.note.startsWith('➕ Sotuvchi qo‘shimcha yubordi — so‘rov yopilgan, avtomatik yozilmadi:')).toBe(true);
-    expect(await amendWords(out, false)).toBe(
+    expect(await amendWords(out, false, null)).toBe(
       `📨 Lid yopilgan — qo‘shimchangiz so‘rovga yozilmadi, VED ga yozildi.\n· 1-qator «Sumka ${SUFFIX}»: 50 dona`,
     );
   });

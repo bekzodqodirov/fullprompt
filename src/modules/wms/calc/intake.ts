@@ -986,6 +986,12 @@ interface TableEntry {
   need: string | null;
   /** The AI door's «kod yo‘q — …» (§3.1, groupable) — a row with it is ℹ️, never ✅. */
   code: string | null;
+  /**
+   * The AI door's code is the MODEL's proposal (§3.1, P13): the row is ℹ️,
+   * never ✅ on its own, and never folded into «to‘liq» — its «(AI taklifi)»
+   * would go with it (review PC-ADV-2). Never a question either.
+   */
+  proposed: boolean;
   conflicts: string[];
 }
 
@@ -997,8 +1003,8 @@ const entryText = (e: TableEntry, need: boolean, code = true) =>
     ...e.conflicts.map((c) => `   ↳ ${c}`),
   ].join('\n');
 
-/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, and (AI door) no code. */
-const entryOk = (e: TableEntry) => !e.warn && !e.code;
+/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, and (AI door) a code nobody has to check. */
+const entryOk = (e: TableEntry) => !e.warn && !e.code && !e.proposed;
 
 /** A table with no goods row: what to send, on every door that asks. */
 const NO_GOODS_CLOSING = '⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.';
@@ -1067,18 +1073,20 @@ export function intakeTableText(input: TableInput): string {
     // No code on the AI door (§3.1): told, never asked, never ✅ — the code is
     // not the seller's part, so it never makes the table incomplete either.
     const code = codeGap !== null && !freightOnly && !item.tnvedCode?.trim() ? codeGap : null;
-    const mark = freightOnly ? '·' : warn ? gapMark : code ? 'ℹ️' : '✅';
+    // The model's code is its PROPOSAL (§3.1, P13): marked as such, so a code
+    // nobody checked never reads like one the file stated — and the row is
+    // ℹ️ like a row with none, never ✅ on the proposal alone.
+    const proposed = Boolean(ai) && Boolean(item.tnvedCode?.trim()) && item.tnvedSource === 'model';
+    const mark = freightOnly ? '·' : warn ? gapMark : code || proposed ? 'ℹ️' : '✅';
     const fresh = input.amend && r.seq === null ? '🆕 ' : '';
     const figures = lineFiguresText(item);
-    // The model's code is its PROPOSAL (§3.1, P13): marked as such, so a code
-    // nobody checked never reads like one the file stated.
-    const proposed = ai && item.tnvedSource === 'model' ? ` ${AI_CODE_MARK}` : '';
     return {
       no: r.no,
       warn,
-      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed}` : ''}`,
+      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed ? ` ${AI_CODE_MARK}` : ''}` : ''}`,
       need: !freightOnly && need ? (plain ? plainNeedWhat(need) : lineNeedWhat(need)) : null,
       code,
+      proposed,
       conflicts: own.map(conflictText),
     };
   });
@@ -1159,13 +1167,18 @@ export function intakeTableText(input: TableInput): string {
   if (plain) {
     // His 2a: the job lands as it is, and the VED asks for what is missing —
     // so the closing promises nothing to fill, and the last line says what a
-    // typed figure still does here (§2.2's quiet write).
-    closing.push(
-      rows.length > 0 && warnRows.length === 0 && !totalsWarn
-        ? `✅ Ma’lumot to‘liq — ${confirm} ni bosing, so‘rov VED ga tushadi.`
-        : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
-      PLAIN_SUMMARY_LAST,
-    );
+    // typed figure still does here (§2.2's quiet write). Collecting again
+    // (the marker) the summary's ✅ is gone and refused: its closing would
+    // point at it, so the marker alone points at «Bo‘ldi» (review PC-ADV-6,
+    // the AI table's adv-18).
+    if (!input.marker) {
+      closing.push(
+        rows.length > 0 && warnRows.length === 0 && !totalsWarn
+          ? `✅ Ma’lumot to‘liq — ${confirm} ni bosing, so‘rov VED ga tushadi.`
+          : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
+        PLAIN_SUMMARY_LAST,
+      );
+    }
   } else if (ai) {
     // The AI door's closing is the table's LAST block (§3.2, §3.4), under
     // what the last answer did. Collecting again (the marker) it points at no

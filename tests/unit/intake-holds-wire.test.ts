@@ -45,6 +45,7 @@ const PRESENCE: Record<string, string> = {
   // The table stage (P3, §8.2): the collection an answer, a press or the
   // table's edit is FOR, re-read after their awaits by its note id.
   'calc-dialog.ts:commitWrites': 'an answer’s write and its echo’s id, on the collection it answered',
+  'calc-dialog.ts:applyPlainText': 'the goods beside a quiet answer, filed on the collection the answer was just written to (review PC-ADV-1)',
   'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
   'calc-dialog.ts:drawPrompt': 'the kept-last draw of the collection’s own question or prompt (docs/IKKI-ESHIK.md §1.4)',
   'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',

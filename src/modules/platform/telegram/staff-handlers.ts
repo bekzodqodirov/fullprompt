@@ -807,7 +807,6 @@ export function registerStaffBot(bot: Bot): void {
       stage: waiting ? state.stage : 'material',
       fileCount: state.fileCount + 1,
       material: caption ? [...state.material, caption] : state.material,
-      reaskedGroup: ctx.message.media_group_id ?? null,
     });
     // A file gets a message of its own only when it is REFUSED (docs/IKKI-
     // ESHIK.md §1.4): what the bot read of it is a line of the ONE prompt

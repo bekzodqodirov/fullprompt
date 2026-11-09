@@ -22,6 +22,7 @@ vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
 
+import type { Context } from 'grammy';
 import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import {
   AI_QUEUED,
@@ -33,12 +34,13 @@ import {
   deliverNextStep,
   drawPromptSoon,
   intakePromptText,
-  plainAnswerWhole,
+  plainAck,
+  plainVerdict,
   pressPick,
   routeCollectorText,
   tableEditsSettled,
 } from '@/modules/platform/telegram/calc-dialog';
-import { addPointerWords } from '@/modules/platform/telegram/calc-store';
+import { addPointerWords, collectorScope, nothingNewToRead } from '@/modules/platform/telegram/calc-store';
 import { CLIENT_QUESTION } from '@/modules/platform/telegram/calc-keyboards';
 import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
@@ -106,11 +108,19 @@ const buttons = (sent: Sent | undefined) =>
   ((sent?.extra?.reply_markup as { inline_keyboard?: { text: string; callback_data: string }[][] } | undefined)?.inline_keyboard ?? []).flat();
 
 let messageId = 5_000;
-/** A typed message, routed as the collector routes it; the table's edit and the prompt's draw settled. */
+/**
+ * A typed message, routed as the collector routes it — inside the bot's own
+ * message scope (`collectorScope`), so what TAKES it (`takenUpTo`) is
+ * production's: a helper that wrote `takenUpTo` itself pinned a path
+ * production never takes (review PC-SPEC-2 — the zone question was edited
+ * above an untaken «Yiwu»). The table's edit and the prompt's draw settled.
+ */
 async function say(ctx: Ctx, chatId: bigint, text: string, opts: Partial<{ forwarded: boolean }> = {}) {
   const id = (messageId += 1);
-  updateIntake(chatId, { takenUpTo: id }, { quiet: true });
-  await routeCollectorText(ctx, chatId, activeIntake(chatId)!, text, { date: 0, messageId: id, forwarded: opts.forwarded ?? false, replyTo: null });
+  const scoped = { chat: { id: Number(chatId) }, message: { message_id: id }, api: { config: { use() {} } } } as unknown as Context;
+  await collectorScope()(scoped, () =>
+    routeCollectorText(ctx, chatId, activeIntake(chatId)!, text, { date: 0, messageId: id, forwarded: opts.forwarded ?? false, replyTo: null }),
+  );
   await tableEditsSettled();
   await keptLastSettled();
   return id;
@@ -298,17 +308,138 @@ describe('a typed text after the plain summary (§2.2)', () => {
     expect(ctx.replies).toEqual([]);
   });
 
-  it('`plainAnswerWhole`: placed or addressed — never a name alone, a goods list or a line no row has', () => {
+  it('`plainVerdict`: per segment — what is placed is written, goods are material, a courtesy word is nothing (review PC-ADV-1)', () => {
     const rows = THREE.map((g, i) => ({ no: i + 1, index: i, seq: null, name: g.name, needs: [] }));
     const ref: TableRef = { rows, open: [], preferred: [], stage: 'review' };
-    const whole = (text: string) => plainAnswerWhole(parseTableAnswer(text, ref));
-    expect(whole('3: 150 kg')).toBe(true);
-    expect(whole('Sumka 80 kg')).toBe(true);
-    expect(whole('jami 3500 kg')).toBe(true);
-    expect(whole('7: 5 dona')).toBe(true);
-    expect(whole('Sumka')).toBe(false);
-    expect(whole('Shapka 30 dona')).toBe(false);
-    expect(whole('ok')).toBe(false);
+    const verdict = (text: string, stage: IntakeState['stage'] = 'review') => plainVerdict(parseTableAnswer(text, ref), stage);
+    for (const text of ['3: 150 kg', 'Sumka 80 kg', 'jami 3500 kg', '7: 5 dona', '3: 640399000', 'Sumka']) {
+      expect(verdict(text), text).toMatchObject({ kind: 'write', goods: null });
+    }
+    // A row's answer with a courtesy word under it is the row's answer — never material.
+    expect(verdict('3: 150 kg\nrahmat')).toMatchObject({ kind: 'write', goods: null, segments: [{ raw: '3: 150 kg' }] });
+    // Beside it, ONE figure placed nowhere rides along (its NO_ADDRESS line); new goods go to material on their own.
+    expect(verdict('3: 150 kg\n5 dona')).toMatchObject({ kind: 'write', goods: null, segments: [{ raw: '3: 150 kg' }, { raw: '5 dona' }] });
+    expect(verdict('3: 150 kg\nShapka 20 dona')).toMatchObject({ kind: 'write', goods: 'Shapka 20 dona', segments: [{ raw: '3: 150 kg' }] });
+    // Nothing placed: goods are the whole text's material, a lone figure is the VED's words.
+    for (const text of ['Shapka 30 dona', 'Shapka', 'Ayollar sumkasi', 'Shapka va shim', 'qachon tayyor bo‘ladi?']) {
+      expect(verdict(text), text).toEqual({ kind: 'material' });
+    }
+    expect(verdict('150 kg')).toEqual({ kind: 'unplaced' });
+    for (const text of ['ok', 'rahmat', 'Ok, rahmat aka!', 'хорошо', '👍', 'xo‘p']) expect(verdict(text), text).toEqual({ kind: 'nudge' });
+    // A number naming OTHER goods is a refusal in the summary — and, collecting after «➕», the seller’s list (review PC-ADV-3).
+    expect(verdict('1. Shapka 50 dona 20 kg\n2. Kepka 30 dona 10 kg').kind).toBe('write');
+    expect(verdict('1. Shapka 50 dona 20 kg\n2. Kepka 30 dona 10 kg', 'material')).toEqual({ kind: 'material' });
+    expect(plainAck('Shapka')).toBe(false);
+  });
+
+  it('beside a row’s answer: «rahmat» is nothing, a figure placed nowhere is told how, new goods are the next reading’s', async () => {
+    const { chatId } = collection({ stage: 'review', clientHintRaw: 'GS777', material: ['ro‘yxat'], facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    const before = ctx.replies.length;
+    const thanks = await say(ctx, chatId, '3: 150 kg\nrahmat');
+    let live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[2]).toEqual(line('Shim', { quantity: 200, weightKg: 150 }));
+    expect(live.facts.weightKg).toBe(3500);
+    expect(live.material).toEqual(['ro‘yxat']);
+    expect(ctx.replies.length).toBe(before);
+    expect(ctx.reactions).toEqual([{ id: thanks, emoji: '👍' }]);
+    await say(ctx, chatId, '2: 80 kg\n5 dona');
+    live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[1]).toEqual(line('Sumka', { quantity: 100, weightKg: 80 }));
+    expect(live.material).toEqual(['ro‘yxat']);
+    expect(ctx.texts().at(-1)).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
+    expect(ctx.reactions).toHaveLength(1);
+    await say(ctx, chatId, '1: 40 kg\nShapka 20 dona');
+    live = activeIntake(chatId)!;
+    expect(live.facts.goods?.[0]).toEqual(line('Kurtka', { quantity: 300, weightKg: 40 }));
+    expect(live.material).toEqual(['ro‘yxat', 'Shapka 20 dona']);
+    expect(live.stage).toBe('material');
+    expect(ctx.edits.filter((e) => e.id === table.id).at(-1)!.text.split('\n').at(-1)).toBe(TABLE_SUPERSEDED);
+    expect(live.answers).toEqual(['3: 150 kg\nrahmat', '2: 80 kg\n5 dona', '1: 40 kg\nShapka 20 dona']);
+  });
+
+  it('a lone figure the table cannot place is the VED’s words, never material (review PC-ADV-1)', async () => {
+    const { chatId } = collection({ stage: 'review', material: ['ro‘yxat'], facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, '150 kg');
+    const live = activeIntake(chatId)!;
+    expect(live.material).toEqual(['ro‘yxat']);
+    expect(live.stage).toBe('review');
+    expect(live.answers).toEqual(['150 kg']);
+    expect(live.facts.weightKg).toBe(3500);
+    expect(ctx.texts().at(-1)).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
+  });
+
+  it('a forgotten product with no figure is material — on the summary and after «➕» alike (review PC-SPEC-1, PC-ADV-4)', async () => {
+    for (const stage of ['review', 'material'] as const) {
+      const { chatId } = collection({ stage, material: ['x'], readMark: { material: 1, files: 0 }, facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+      const ctx = fakeCtx();
+      await drawn(ctx, chatId);
+      updateIntake(chatId, { stage }, { quiet: true });
+      for (const text of ['Shapka', 'Ayollar sumkasi']) await say(ctx, chatId, text);
+      const live = activeIntake(chatId)!;
+      expect(live.material, stage).toEqual(['x', 'Shapka', 'Ayollar sumkasi']);
+      expect(live.stage, stage).toBe('material');
+      expect(ctx.texts().some((t) => t.startsWith('Tasdiqlash uchun')), stage).toBe(false);
+    }
+  });
+
+  it('a row’s figure the seller must retype is never asked — kept for the VED, a 👍 (review PC-SPEC-3)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    const before = ctx.replies.length;
+    const texts = ['3: 640399000', '3: 50 dona 20 dona', '3: 150 kg 160 kg', '3: 20 karobka'];
+    for (const text of texts) await say(ctx, chatId, text);
+    expect(ctx.replies.length).toBe(before);
+    expect(ctx.reactions).toHaveLength(texts.length);
+    expect(activeIntake(chatId)!.facts.goods).toEqual(THREE);
+    expect(activeIntake(chatId)!.answers).toEqual(texts.map((t) => `3-qator: ${t}`));
+  });
+
+  it('collecting after «➕» on a summary: a numbered list of OTHER goods is the seller’s list, never «press ➕» (review PC-ADV-3)', async () => {
+    const { chatId } = collection({ stage: 'review', material: ['x'], facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    updateIntake(chatId, { stage: 'material' });
+    const list = '1. Shapka 50 dona 20 kg\n2. Kepka 30 dona 10 kg';
+    await say(ctx, chatId, list);
+    const live = activeIntake(chatId)!;
+    expect(live.material).toEqual(['x', list]);
+    expect(ctx.texts().some((t) => t.includes('yangi tovar bo‘lsa «➕ Yana ma’lumot» ni bosing')), 'no press-➕ loop').toBe(false);
+  });
+
+  it('«➕» and nothing sent since the reading: the summary keeps its buttons and its closing (review PC-ADV-6, PC-SPEC-5)', async () => {
+    const { chatId } = collection({ stage: 'review', material: ['ro‘yxat'], readMark: { material: 1, files: 0 }, facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    const table = await drawn(ctx, chatId);
+    updateIntake(chatId, { stage: 'material' });
+    await say(ctx, chatId, '3: 150 kg');
+    const edit = ctx.edits.filter((e) => e.id === table.id).at(-1)!;
+    expect(edit.text).not.toContain(TABLE_SUPERSEDED);
+    expect(edit.text).toContain('✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, so‘rov VED ga tushadi.');
+    expect(buttons(edit).map((b) => b.text)).toEqual(['✅ Tasdiqlash', '➕ Yana ma’lumot', '✖️ Bekor qilish']);
+    // «ok» there points at the ✅ that still stands, never at «Bo‘ldi».
+    await say(ctx, chatId, 'ok');
+    expect(ctx.texts().at(-1)).toBe('Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.');
+    // Something sent since: the marker, and the closing gone with the ✅ it named.
+    await say(ctx, chatId, 'Shapka 30 dona');
+    const marked = ctx.edits.filter((e) => e.id === table.id).at(-1)!;
+    expect(marked.text.split('\n').at(-1)).toBe(TABLE_SUPERSEDED);
+    expect(marked.text).not.toContain('Ma’lumot to‘liq');
+    expect(marked.text).not.toContain('Qator raqami bilan yozsangiz');
+    await say(ctx, chatId, 'ok');
+    expect(ctx.texts().at(-1)).toBe('Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.');
+  });
+
+  it('the nudge joins the collection’s own messages, so the prompt knows it is not last (review PC-ADV-4)', async () => {
+    const { chatId } = collection({ stage: 'review', facts: { weightKg: 3500, volumeM3: 12, goods: THREE } });
+    const ctx = fakeCtx();
+    await drawn(ctx, chatId);
+    await say(ctx, chatId, 'rahmat');
+    expect(activeIntake(chatId)!.ownMessageIds).toContain(ctx.replies.at(-1)!.id);
   });
 
   it('a unit button an older table drew answers «Bu tugma eskirgan.» on the plain door (§1.3)', async () => {
@@ -350,12 +481,32 @@ describe('the ONE prompt (§1.4)', () => {
     ]);
   });
 
-  it('cut to Telegram’s 4096, the closing kept', () => {
+  it('cut to Telegram’s 4096, the closing kept — a door’s lead inside the cut (review PC-ADV-8)', () => {
     const { state } = collection({ stage: 'material', material: ['x'], fileNotes: Array.from({ length: 400 }, (_v, i) => `📄 «F${i}.xlsx» — ${i} ta tovar o‘qildi.`) });
     const text = intakePromptText(state, fit);
     expect(text.length).toBeLessThanOrEqual(4096);
     expect(text).toMatch(/… va yana \d+ ta qator/u);
     expect(text.split('\n').at(-1)).toBe('Yana yuboring yoki «Bo‘ldi» ni bosing.');
+    const lead = '▶️ Davom etamiz — 3 ta fayl qo‘shildi.';
+    const led = intakePromptText(state, fit, lead);
+    expect(led.length).toBeLessThanOrEqual(4096);
+    expect(led.split('\n')[0]).toBe(lead);
+  });
+
+  it('a lead survives the burst it was queued in — a later draw in the same burst says it (review PC-SPEC-13)', async () => {
+    const { chatId } = collection({ stage: 'material', material: ['Kurtka'] });
+    const ctx = fakeCtx();
+    drawPromptSoon(ctx, chatId, '▶️ Davom etamiz — 3 ta fayl qo‘shildi.');
+    // The take's own draw and an album part, coalesced into the same run.
+    drawPromptSoon(ctx, chatId);
+    drawPromptSoon(ctx, chatId);
+    await keptLastSettled();
+    expect(ctx.replies).toHaveLength(1);
+    expect(ctx.replies[0]!.text.split('\n')[0]).toBe('▶️ Davom etamiz — 3 ta fayl qo‘shildi.');
+    // Said once: the next burst's draw does not repeat it.
+    drawPromptSoon(ctx, chatId);
+    await keptLastSettled();
+    expect(ctx.edits.at(-1)!.text).not.toContain('Davom etamiz');
   });
 
   it('kept LAST: edited while nothing is newer, moved below what arrived and the old copy deleted', async () => {
@@ -427,6 +578,9 @@ describe('the customer and the zone are asked ONCE (§1.5, §1.6)', () => {
     expect(answer.lead).toBe('✍️ Ma’lumot sifatida olindi — tovar ro‘yxatiga o‘xshaydi.');
     expect(answer.say).not.toContain('Mijozni bitta qatorda yozing');
     expect(answer.say.match(/Mijozni/gu)).toHaveLength(1);
+    // The same list sent again: the repeat's line says why, and the question is still asked once (review PC-SPEC-11).
+    const again = clientAnswer({ ...state, ...answer.patch }, 'Kurtka 300 dona', { material: true, couldBeCustomer: false, why: 'goods' });
+    expect(again.kind === 'material' && again.say).toBe(`✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. Tovar ro‘yxati mijoz bo‘la olmaydi.\n\n${CLIENT_QUESTION}`);
   });
 
   it('named: the prompt, first line «Mijoz: GS777» — or, with nothing sent yet, what to send', async () => {
@@ -464,12 +618,13 @@ describe('the customer and the zone are asked ONCE (§1.5, §1.6)', () => {
 });
 
 describe('the refusals and the outcome line follow the door (§2.5, §2.6)', () => {
-  it('no open collection: the plain words, true on both doors — never an «AI javobi» a plain seller never got', () => {
+  it('no open collection: no request in hand, so today’s words — the legacy door’s (§0.2, review PC-SPEC-10)', () => {
     expect(NO_OPEN_COLLECTION).toBe(
-      'Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».',
+      'Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). Qo‘shimcha bo‘lsa — ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing, yoki AI javobiga reply qilib yozing. Yangi hisob — «🧮 Hisoblatish».',
     );
     expect(addPointerWords(null)).toContain('AI javobiga reply qilib yozing');
     expect(addPointerWords('ai')).toBe(addPointerWords(null));
+    expect(addPointerWords('plain')).not.toContain('AI javobi');
   });
 
   it('an applied addition’s line: a «🧮» request’s re-run promises the VED, never a result in the chat', async () => {
@@ -508,6 +663,11 @@ describe('the reading settles the prompt through the job too', () => {
     expect(live.stage).toBe('review');
     expect(live.promptMessageId).toBeNull();
     expect(ctx.texts().at(-1)!.split('\n')[0]).toBe('🧮 Hisoblatish · 🛃 Rastamojka');
+    // What the reading read is its mark (review PC-ADV-6): «➕» and nothing
+    // sent is nothing new; one more message is.
+    expect(live.readMark).toEqual({ material: 1, files: 0 });
+    expect(nothingNewToRead(live)).toBe(true);
+    expect(nothingNewToRead({ ...live, material: [...live.material, 'Shim'] })).toBe(false);
   });
 
   it('the summary’s words and the parser read the same rows (`nameWordFor` is the parser’s)', () => {

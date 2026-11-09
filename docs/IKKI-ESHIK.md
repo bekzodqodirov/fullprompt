@@ -264,6 +264,20 @@ The model never decides a price, and nothing here touches money.
 - **When a reading settles, `promptMessageId` is cleared.** The first material after the summary or
   table sends a NEW prompt below it. The summary or table is edited: its buttons go, and its last
   line reads «⬇️ Yangi ma’lumot qo‘shildi — pastdagi «✅ Bo‘ldi» ni bosing, qayta o‘qiladi.»
+- **As built after the review** (PC-SPEC-4/5/6/9/13, PC-ADV-6/8/9):
+  - «New material» is anything SENT beyond what the last reading read (`IntakeState.readMark`,
+    written by the reading's settle; `nothingNewToRead` asks it). «➕ Yana ma’lumot» with nothing
+    sent, or a typed answer alone, leaves the summary or table standing, buttons and closing, and
+    its ✅ lands without a re-read. A row hydrated without the mark keeps today's rule.
+  - Under the marker the plain summary drops its closing and its last line, as the AI table does:
+    both pointed at a ✅ the table no longer carries. The certificate line drops «(o‘zgartirish
+    uchun tugmani bosing)» there too.
+  - Every take that moves a collection to 'material' (the add door's file, a `cf:` take) marks
+    the table, as the collector's file handler does (`awaitReading`).
+  - The «Tahlil paytida yana N ta …» words carry «Bo‘ldi», so they are recorded as the prompt: the
+    next material moves them instead of drawing a second «Bo‘ldi».
+  - A door's lead line («▶️ Davom etamiz — …») is said by the next draw whichever call of the burst
+    queued it, and it is counted inside the 4096.
 
 1.5 **The customer is asked once per collection**, never once per file.
 - The question is ONE message, edited to count and kept last: «Qabul qilindi: 📎 4 ta fayl · ✍️ 1
@@ -272,10 +286,16 @@ The model never decides a price, and nothing here touches money.
 - Once the customer is named, a collection that already holds material shows the prompt, whose
   first line is «Mijoz: GS777». It never shows «Tovar ro‘yxatini yuboring» about goods it already
   has.
+- As built after the review (PC-SPEC-11): the same goods list sent twice keeps its «Tovar ro‘yxati
+  mijoz bo‘la olmaydi.» and loses «Mijozni bitta qatorda yozing: kod yoki telefon.», which asked a
+  second time above the question (corpus c1357/c1358 re-anchored on the question itself). The
+  «bir necha qatorli» repeat keeps «… bitta qatorda yozing», which says HOW.
 
 1.6 **The AI-podklyuch zone question is asked once**, not once per file. It is the same kind of
 edited, counting message, kept last: «Qabul qilindi: 📎 4 ta fayl.\nAvval yuk qayerdan chiqishini
-tanlang:», with the zone keyboard.
+tanlang:», with the zone keyboard. As built after the review (PC-SPEC-2, PC-ADV-5): a text typed at
+it is TAKEN first, so the question moves below it; untaken, the question was judged still last,
+edited in place above the text, and the typed «Yiwu» heard nothing.
 
 1.7 **One function reads unit words for every reader** (M10, F12; v1's §3.2).
 - The table, the plain summary, the completeness verdict, the card note and the landing all draw a
@@ -330,6 +350,27 @@ become the shipment's weight.
   Sumka must be written, and no reply may be sent. The red proof routes the text to
   `fileAsMaterial`. `calc-dialog.test.ts:168` stays on an `ai:false` collection, as this door's own
   pin.
+- **As built after the review** (PC-ADV-1, a blocker; PC-SPEC-1/3, PC-ADV-3/4/10). «Whole» was
+  judged for the text as one piece, so «3: 150 kg» with «rahmat» — or with a figure the table could
+  not place — under it was material, and the re-read made 150 kg the shipment's brutto over the
+  packing list's 3500: the defect this section exists to keep closed. The rule is per SEGMENT
+  (`plainVerdict`):
+  - Anything placed is written quietly: a figure, a total, a route, and a row's words that would
+    ask (every line refusal — «Kodni 10 xonada yozing», «bittasini yozing», «nechta dona?» — is kept
+    in `answers` for the VED with a 👍, never asked). An addressed refusal keeps its one line.
+  - Beside a placed segment, a courtesy word is nothing; ONE figure placed nowhere is told how to
+    address it («⚠️ Qaysi qatorga? …», and then no 👍); goods the table has no row for are filed as
+    material ON THEIR OWN — never the row's figure with them.
+  - Nothing placed: goods (a name no row has — «Shapka», «Ayollar sumkasi») are the whole text's
+    material; a lone figure placed nowhere («150 kg») is kept for the VED as words with the same one
+    line, never material.
+  - (b) is a closed list of courtesy words (`plainAck`: «ok», «ha», «rahmat», «xo‘p», «хорошо», …),
+    or no letters at all. «No goods» used to be the goods reader's guess, and a single product name
+    was nudged at «Tasdiqlash» and kept nowhere. The nudge says «avval Bo‘ldi» only while something
+    new waits to be read, and it joins the collection's own messages.
+  - Collecting after a reading, a number naming OTHER goods («1. Shapka 50 dona …» after «➕») is
+    the seller's list — material — never «yangi tovar bo‘lsa «➕» ni bosing» about the press he just
+    made. In the summary stage it keeps its one line.
 
 2.3 **«✅ Tasdiqlash» lands the job as it is.** The card note carries the AI's commentary and what
 is missing; that machinery is unchanged. The ✅ text (P6):
@@ -373,12 +414,20 @@ is missing; that machinery is unchanged. The ✅ text (P6):
 - Plain (NULL keeps today's text): «Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu
   so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».»
 - AI: today's text.
+- As built after the review (PC-SPEC-10): the no-collection sentence (`NO_OPEN_COLLECTION`) has no
+  request in hand, so it keeps TODAY's text (§0.2) — every request at deploy is NULL, and an AI-door
+  one is answered by the AI; naming the plain words for a chat whose newest request is 'plain'
+  wants that request read in the orphan guard. The expired first collection's goodbye names the
+  door it came in by: «Kerak bo‘lsa «🤖 AI rastamojka» dan qaytadan boshlang.» on the AI door.
 
 2.6 **The ➕ door on a plain request.** «➕ Shu so‘rovga qo‘shish» stays under the plain ✅.
 - The add collection on a plain request is plain too: a summary with no asks. A conflict prints as
   «↳ faylda 200 dona, so‘rovda 300 — VED hal qiladi», with no buttons.
 - Its re-run pass is silent toward the seller (2.4).
 - The add outcome's one line («qo‘shimcha yozildi» / «VED ga yuborildi») stays.
+- As built: the outcome's re-run line follows the request's door — «🤖 AI kartani VED uchun qayta
+  tayyorlaydi — narxni VED beradi.» on a plain customs request (pp seam 1) — on EVERY sender,
+  the dead save's included (`amendWords` takes the door as a required argument, review PC-ADV-7).
 
 2.7 **A plain request never asks a law unit**; 2.8 b and 1.14 a do not apply. The units are the
 VED's, and the lenta note names them.
@@ -427,6 +476,9 @@ VED's, and the lenta note names them.
   - A row still uncoded with no key, or with the day's budget spent: «↳ kod yo‘q — VED xodimi
     qo‘yadi».
   - Such a row is never ✅ and never a question.
+  - As built after the review (PC-ADV-2): a row whose code is the MODEL's is ℹ️ too, never ✅ on
+    the proposal alone, and a long table never folds it into «✅ yana N ta qator to‘liq». It makes
+    the table no less complete: the code is not the seller's part.
 - **A law unit that only the landing pass's coding reveals goes to the VED** (5a).
 
 3.2 **The table** (P5).

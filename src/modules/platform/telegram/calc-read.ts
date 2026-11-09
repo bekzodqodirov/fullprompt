@@ -344,6 +344,8 @@ export function settleAnalysis(
       : analysed.ambiguousTotals,
     analysing: null,
     stage: arrived > 0 ? 'material' : 'review',
+    // What this reading read (§1.4): the next «is anything new?» is asked against it.
+    readMark: { material: snapshot.material.length, files: snapshot.fileCount },
   };
   return arrived > 0 ? { kind: 'arrived', state, arrived } : { kind: 'done', state };
 }
@@ -663,12 +665,17 @@ function settleDelivered(chatId: bigint, reply: NonNullable<IntakeState['pending
   // Decided by the reply as stored, not by the stage now — the seller may have
   // typed since, and a table did go out.
   const table = ours && messageId !== null && !isArrivedReply(reply);
+  // The «arrived» words carry the collection's «Bo‘ldi» — they ARE its prompt
+  // (§1.4, review PC-SPEC-6 / PC-ADV-9): recorded so, the next material moves
+  // them below it instead of drawing a second «Bo‘ldi» under a live one.
+  const prompt = ours && messageId !== null && isArrivedReply(reply);
   updateIntake(
     chatId,
     {
       ...(ours ? { pendingReply: null } : {}),
       ...(ours && live.analysing === reply.token ? { analysing: null } : {}),
       ...(table ? { tableMessageId: messageId, tableHash: tableHashOf(reply) } : {}),
+      ...(prompt ? { promptMessageId: messageId } : {}),
     },
     { quiet: true },
   );

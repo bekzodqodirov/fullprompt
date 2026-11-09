@@ -53,7 +53,8 @@ import {
 } from '@/modules/platform/db/schema';
 import { __resetAddOffers, openAmendFromMedia, offerAddForMedia, pressAdd } from '@/modules/platform/telegram/calc-amend';
 import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
-import { activeIntake, endIntake, holdingIntake, startIntake } from '@/modules/platform/telegram/calc-store';
+import { activeIntake, endIntake, holdingIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
+import { deliverNextStep, TABLE_SUPERSEDED, tableEditsSettled } from '@/modules/platform/telegram/calc-dialog';
 import { saveIntakeFile } from '@/modules/platform/telegram/calc-files';
 import { forwardKeyboard } from '@/modules/platform/telegram/staff-bot';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
@@ -242,6 +243,30 @@ describe('a plain file, with an open request of his', () => {
     expect(live.fileCount).toBe(1);
     expect(live.stage).toBe('material');
     expect(d.replies.at(-1)?.text).toContain(PROMPT_TAIL);
+  });
+
+  it('a file taken below the add table points the table down — its «✅ Qo‘shish» goes (§1.4, review PC-SPEC-4)', async () => {
+    const r = await request();
+    // The stood-in next step draws the add table as message 555.
+    vi.mocked(deliverNextStep).mockImplementationOnce(async (_ctx, chatId) => {
+      updateIntake(chatId, { tableMessageId: 555 }, { quiet: true });
+    });
+    const edits: { id: number; text: string; extra?: Record<string, unknown> }[] = [];
+    const d = ctxOf({ document: { file_id: `BQAS${STAMP}`, file_unique_id: 's', file_name: 'c.pdf', mime_type: 'application/pdf', file_size: 10 } });
+    const ctx = {
+      ...d.ctx,
+      api: {
+        editMessageText: async (_c: string, id: number, text: string, extra?: Record<string, unknown>) => (edits.push({ id, text, extra }), true),
+        deleteMessage: async () => true,
+      },
+    };
+    await openAmendFromMedia(ctx as never, chat, r.id);
+    await tableEditsSettled();
+    await keptLastSettled();
+    expect(activeIntake(chat)!.stage).toBe('material');
+    const table = edits.filter((e) => e.id === 555).at(-1);
+    expect(table?.text.split('\n').at(-1)).toBe(TABLE_SUPERSEDED);
+    expect((table?.extra?.reply_markup as { inline_keyboard: unknown[] }).inline_keyboard).toEqual([]);
   });
 
   it('a plain album of ten photos → ONE offer line, as a reply to its first part; the press files all ten', async () => {

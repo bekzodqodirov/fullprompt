@@ -389,14 +389,21 @@ export function intakeIsEmpty(state: IntakeState): boolean {
 }
 
 /**
- * Nothing new was collected on a collection that carries rows of its own — an
- * add collection's stored rows, a seeded one's returned rows (review PF-8):
- * its table is what there is to read. One home for «Bo‘ldi» (back to the
- * table, calc-read `pressAnalyse`), the save guard and the echo (fix review
+ * Nothing new was collected since what the table shows: since the last
+ * reading (`readMark`, docs/IKKI-ESHIK.md §1.4 — «➕ Yana ma’lumot» and
+ * nothing sent leaves the read table standing on every collection, review
+ * PC-ADV-6), or, before any reading, on a collection that carries rows of its
+ * own — an add collection's stored rows, a seeded one's returned rows (review
+ * PF-8): its table is what there is to read. One home for «Bo‘ldi» (back to
+ * the table, calc-read `pressAnalyse`), the save guard, the echo (fix review
  * W-11: after «➕ Yana ma’lumot» and nothing sent, the save said «Yangi
- * ma’lumot hali o‘qilmagan» about nothing).
+ * ma’lumot hali o‘qilmagan» about nothing) and the table's «⬇️» marker.
  */
-export function nothingNewToRead(state: Pick<IntakeState, 'amend' | 'seed' | 'material' | 'fileCount'>): boolean {
+export function nothingNewToRead(
+  state: Pick<IntakeState, 'amend' | 'seed' | 'material' | 'fileCount' | 'readMark'>,
+): boolean {
+  const mark = state.readMark ?? null;
+  if (mark) return state.material.length <= mark.material && state.fileCount <= mark.files;
   return (state.amend !== null || state.seed !== null) && state.material.length === 0 && state.fileCount === 0;
 }
 
@@ -486,7 +493,7 @@ export function addPointerWords(door: 'plain' | 'ai' | null): string {
  * §2.5): a plain request has no AI answer to press it under.
  */
 export function intakeEndedText(
-  state: Pick<IntakeState, 'section' | 'amend'>,
+  state: Pick<IntakeState, 'section' | 'amend' | 'ai' | 'seed'>,
   sections: Record<CalcSection, string>,
   client: string | null,
 ): string {
@@ -498,9 +505,12 @@ export function intakeEndedText(
         : 'Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.')
     );
   }
+  // A first collection is restarted from the door it came in by: the two
+  // doors are distinct now (review PC-SPEC-10).
+  const door = state.ai && state.seed === null ? '«🤖 AI rastamojka»' : '«🧮 Hisoblatish»';
   return (
     `⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: ${sections[state.section]} · ${client ?? 'mijoz hali yozilmagan'}. ` +
-    'Kerak bo‘lsa «🧮 Hisoblatish» dan qaytadan boshlang.'
+    `Kerak bo‘lsa ${door} dan qaytadan boshlang.`
   );
 }
 

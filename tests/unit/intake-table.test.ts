@@ -681,7 +681,8 @@ describe('the AI door’s TABLE (docs/IKKI-ESHIK.md §3.1-§3.4)', () => {
         'Fayllar: 2',
         '',
         'Tovarlar (4):',
-        '✅ 1. Kurtka qishki — 300 dona · 150 kg · 6201400000 (AI taklifi)',
+        // The model's code is its proposal: ℹ️, never ✅ on it alone (review PC-ADV-2, pf-handoff).
+        'ℹ️ 1. Kurtka qishki — 300 dona · 150 kg · 6201400000 (AI taklifi)',
         '⚠️ 2. Krossovka — 12.5 kg · 6403990000',
         '   ↳ juft soni — boj kamida $3/juft',
         'ℹ️ 3. Sumka — 50 dona · 20 kg',
@@ -766,6 +767,31 @@ describe('the AI door’s TABLE (docs/IKKI-ESHIK.md §3.1-§3.4)', () => {
     expect(table({ facts, amend: amend(false), ai: ai(true) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.');
     expect(table({ facts, amend: amend(false), ai: ai(false) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing.');
     expect(table({ facts, amend: amend(true), ai: ai(true) }).split('\n').at(-1)).toBe('✅ Ma’lumot to‘liq — «📨 VED ga yuborish» ni bosing.');
+  });
+
+  it('a model-coded row with every figure is ℹ️, never ✅ — and never folded into «to‘liq» on a long table (review PC-ADV-2)', () => {
+    const one = table({ facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Kurtka', quantity: 300, weightKg: 150, tnvedCode: '6201400000', tnvedSource: 'model' as const }] }, ai: ai(true) });
+    expect(one).toContain('ℹ️ 1. Kurtka — 300 dona · 150 kg · 6201400000 (AI taklifi)');
+    // Still the seller's part complete: the proposal is no question.
+    expect(one.split('\n').at(-1)).toBe(AI_TABLE_COMPLETE);
+    for (const source of ['row', 'memory', 'book'] as const) {
+      const own = table({ facts: { weightKg: 3500, volumeM3: 12, goods: [{ name: 'Kurtka', quantity: 300, weightKg: 150, tnvedCode: '6201400000', tnvedSource: source }] }, ai: ai(true) });
+      expect(own, source).toContain('✅ 1. Kurtka — 300 dona · 150 kg · 6201400000\n');
+    }
+    const goods = Array.from({ length: 80 }, (_v, i) => ({
+      name: `Tovar ${i + 1} juda uzun nomli mahsulot qatori bu yerda`,
+      quantity: 5,
+      tnvedCode: '4202920000',
+      ...(i >= 45 ? { tnvedSource: 'model' as const } : { tnvedSource: 'row' as const }),
+    }));
+    const text = table({ facts: { weightKg: 3500, volumeM3: 12, goods }, ai: ai(true) });
+    expect(text.length).toBeLessThanOrEqual(4096);
+    const okLine = /✅ yana (\d+) ta qator to‘liq: ([^\n]+)/u.exec(text);
+    const folded = okLine ? okLine[2]!.split(', ').flatMap((part) => {
+      const [a, b] = part.split('–').map(Number);
+      return b === undefined ? [a!] : Array.from({ length: b - a! + 1 }, (_x, k) => a! + k);
+    }) : [];
+    expect(folded.some((n) => n > 45), 'a proposal folded into «to‘liq»').toBe(false);
   });
 
   it('ninety long rows: a row with no code is never folded into «to‘liq» — its reason is grouped like a need, and the closing stays (§2.1’s fit)', () => {

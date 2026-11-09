@@ -128,11 +128,14 @@ export const BARE_FIGURE_NOT_FOUND = `${NOT_FOUND_HINT}\n(Hisoblatish savoliga j
  * product-fit-19 e). After round 3 a restart does not lose a collection, so
  * the old «bot qayta ishga tushgan bo‘lishi mumkin» is retired; what is left
  * is a collection that ended — or a request already sent, which takes its
- * additions through «➕». No request is in hand here, so no door is known to
- * be the AI's (docs/IKKI-ESHIK.md §2.5): the plain door's words, true on
- * both doors — the ✅'s «➕» is under every landing.
+ * additions through «➕». No request is in hand here, so no door is KNOWN
+ * (docs/IKKI-ESHIK.md §2.5): today's words, the legacy door's (§0.2, review
+ * PC-SPEC-10): every request at deploy is NULL, an AI-door one is answered by
+ * the AI too, and the pointer to reply to that answer is the one those
+ * sellers need. Naming the plain words for a chat whose newest request is
+ * 'plain' wants that request read — the orphan guard's.
  */
-export const NO_OPEN_COLLECTION = `Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). ${addPointerWords('plain')}`;
+export const NO_OPEN_COLLECTION = `Ochiq hisoblatish yo‘q (24 soatdan oshgan yoki tugatilgan). ${addPointerWords(null)}`;
 
 /**
  * A table-shaped text (or a bare figure) while the collection is PARKED (§2.7,
@@ -222,7 +225,13 @@ export const plainCollection = (state: Pick<IntakeState, 'ai' | 'amend' | 'seed'
  */
 export const TABLE_SUPERSEDED = '⬇️ Yangi ma’lumot qo‘shildi — pastdagi «✅ Bo‘ldi» ni bosing, qayta o‘qiladi.';
 
-/** Is the drawn table superseded: collecting again, with something its ✅ would refuse to land unread? */
+/**
+ * Is the drawn table superseded: collecting again, with something its ✅
+ * would refuse to land unread — something SENT since the reading it shows
+ * (`nothingNewToRead` reads the reading's own mark): «➕ Yana ma’lumot» and a
+ * typed answer alone leave it standing, buttons and closing (review
+ * PC-SPEC-5, PC-ADV-6).
+ */
 function tableSuperseded(state: IntakeState): boolean {
   return state.stage === 'material' && state.tableMessageId !== null && !nothingNewToRead(state);
 }
@@ -359,8 +368,10 @@ function tableTail(state: IntakeState, intake: Intake): string {
       ? `\n\n⚠️ ${intake.AI_READ_FAILURE[failure].text}\n` +
         ((state.invoiceGoods ?? []).length > 0 ? 'Faqat Excel va yozilganidan o‘qildi.' : 'Faqat yozilganidan o‘qildi.')
       : aiStepsText(state.steps)) +
+    // A table that points down has no certificate button (§1.4): the line
+    // states the answer and points at no press (review PC-SPEC-9).
     (state.ai && !state.amend
-      ? `\n\n📄 Sertifikat: ${state.hasCertificate ? 'bor' : 'yo‘q'} (o‘zgartirish uchun tugmani bosing)`
+      ? `\n\n📄 Sertifikat: ${state.hasCertificate ? 'bor' : 'yo‘q'}${tableSuperseded(state) ? '' : ' (o‘zgartirish uchun tugmani bosing)'}`
       : '');
   return text.replace(/^\n/u, '');
 }
@@ -845,9 +856,11 @@ function planWrites(
   const lineAnswer = (row: TableRow, answer: LineAnswer) => {
     const g = goods()[row.index]!;
     if (answer.kind === 'refused') {
-      // «20 karobka» asks «nechta dona?» — a question the plain door does not
-      // ask (§2.2): the words stay in `answers`, for the VED.
-      if (!mode.ask && answer.reason === 'cartons') return;
+      // Every line refusal asks the seller to write it again — «nechta
+      // dona?», «Kodni 10 xonada yozing», «bittasini yozing» — and the plain
+      // door asks nothing (§2.2, review PC-SPEC-3): the words stay in
+      // `answers`, for the VED, and the message takes its 👍.
+      if (!mode.ask) return;
       plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL[answer.reason](answer.detail)}`);
       return;
     }
@@ -902,7 +915,7 @@ function planWrites(
       if (value !== null) Object.assign(patch, { [key]: value });
     }
     if (Object.keys(patch).length === 0 && !kept) {
-      if (code !== 'kept') plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.nothing()}`);
+      if (code !== 'kept' && mode.ask) plan.refusals.push(`${row.no}-qator: ${LINE_REFUSAL.nothing()}`);
       return;
     }
     writeLine(row, patch, { kept });
@@ -1074,6 +1087,9 @@ function sameTable(live: IntakeState, state: IntakeState): boolean {
  * (regression-23 — an older offer message is «eskirgan» from here on); a
  * press passes the live ones on (a pick marks only its own row's `taken`), so
  * one message's buttons for several rows each still write (review adv-7).
+ *
+ * Answers whether the plan was written: false when the collection is no
+ * longer the one the answer was read against (said, nothing written).
  */
 async function commitWrites(
   ctx: CollectorReply & { api?: EditApi },
@@ -1084,11 +1100,11 @@ async function commitWrites(
   tc: TableContext,
   offers: { offers: IntakeState['offers']; messageId: number | null } | null = null,
   quiet: QuietCommit | null = null,
-): Promise<void> {
+): Promise<boolean> {
   const live = activeIntake(chatId);
   if (!live || live.noteId !== state.noteId) {
     await ctx.reply(STALE);
-    return;
+    return false;
   }
   if (!sameTable(live, state)) {
     // Not written — but the words are kept for the card (law 11).
@@ -1096,7 +1112,7 @@ async function commitWrites(
       updateIntake(chatId, { answers: [...live.answers, ...state.answers.slice(live.answers.length)] });
     }
     await ctx.reply(TABLE_MOVED);
-    return;
+    return false;
   }
   // Planned over the live collection (its echoes and answers as they stand),
   // with the answer's own text — the table it was read against is the same.
@@ -1119,18 +1135,18 @@ async function commitWrites(
     // The newest answer is the last thing done (§3.4): an earlier «↩️» is no longer what the table's block says.
     ...(echo ? { echoes: [...w.echoes, echo].slice(-ECHOES_KEPT), lastUndo: null } : {}),
   });
-  if (!next) return;
+  if (!next) return false;
   if (wrote) editTableSoon(ctx, chatId);
   if (quiet) {
     await saidQuietly(ctx, chatId, plan, quiet, tc);
-    return;
+    return true;
   }
   const words = echoWords(next, plan, echo, tc);
   if (!words.text) {
     // Nothing read and nothing written («;» alone): asked, never an empty
     // message Telegram refuses (review adv-17).
     await ctx.reply(`⚠️ ${NO_ADDRESS}`);
-    return;
+    return true;
   }
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
   const id = messageIdOf(sent);
@@ -1148,6 +1164,7 @@ async function commitWrites(
       noteOwnMessage(chatId, id);
     }
   }
+  return true;
 }
 
 /**
@@ -1235,26 +1252,88 @@ const ADDRESSED_REFUSALS: ReadonlySet<TableRefusal> = new Set<TableRefusal>([
 ]);
 
 /**
- * Is a parsed text one the plain door writes quietly (§2.2 a)? Every segment
- * is PLACED — on a row by its number or its name, on a total, or a route,
- * with something in it (a name alone, with no figure, is no answer) — or is
- * an addressed refusal, which keeps its one line. Anything else — a goods
- * list, a line no row has, a figure placed nowhere — is material (§2.2 c).
- * Pure, exported for the test.
+ * §2.2 (b)'s «ok», «ha», «rahmat» — the words a seller answers a summary with
+ * when he has nothing to add, as he types them (apostrophes dropped, both
+ * alphabets). A closed list on purpose (review PC-SPEC-1, PC-ADV-4): «no
+ * goods» used to be the goods reader's own guess, and a single product name
+ * («Shapka», «Ayollar sumkasi») is no goods to it — the forgotten product was
+ * nudged at «Tasdiqlash» and kept nowhere.
  */
-export function plainAnswerWhole(parsed: { segments: readonly TableSegment[]; material: boolean }): boolean {
-  if (parsed.material || parsed.segments.length === 0) return false;
-  return parsed.segments.every((s) => {
-    if (s.refused) return ADDRESSED_REFUSALS.has(s.refused.reason);
-    if (s.at === null) return false;
-    if (s.totals !== null || s.route !== null) return true;
-    return s.answer !== null && (s.answer.kind !== 'refused' || /\d/u.test(s.raw));
-  });
+const ACK_WORDS: ReadonlySet<string> = new Set([
+  'ok', 'okay', 'okey', 'oke', 'ha', 'haa', 'xa', 'xaa', 'hop', 'xop', 'xo', 'mayli', 'maili', 'rahmat', 'raxmat',
+  'rahmad', 'raxmad', 'rahmet', 'tashakkur', 'katta', 'yaxshi', 'zor', 'tushunarli', 'tushundim', 'boldi', 'bopti',
+  'yoq', 'aka', 'opa', 'uka', 'brat', 'akajon', 'spasibo', 'xorosho', 'ponyal', 'thanks', 'thank', 'you', 'thx', 'yes',
+  'good', 'fine', 'ок', 'окей', 'да', 'ага', 'нет', 'спасибо', 'спс', 'понял', 'поняла', 'понятно', 'хорошо', 'ладно',
+  'норм', 'нормально', 'принял', 'принято', 'ха', 'хоп', 'майли', 'рахмат', 'яхши', 'тушунарли',
+]);
+
+/** Says nothing but «understood» (§2.2 b): no figure, and no word beyond `ACK_WORDS` — «ok, rahmat!», «👍». Pure. */
+export function plainAck(text: string): boolean {
+  if (/\d/u.test(text)) return false;
+  const words = text.toLowerCase().replace(/[‘’ʼʻ'`]/gu, '').match(/\p{L}+/gu) ?? [];
+  return words.every((w) => ACK_WORDS.has(w));
 }
 
-/** §2.2 (b): a text with nothing to write («ok», «ha», «rahmat») is pointed at the press it is waiting for. */
+/**
+ * What the plain door does with a typed text after its summary (§2.2, as
+ * built after the review). Per segment, never for the text as one piece: a
+ * row's «3: 150 kg» with «rahmat» — or with a second figure the table could
+ * not place — under it used to be «not placed whole», filed as material, and
+ * the next reading made that 150 kg the shipment's brutto over the packing
+ * list's 3500 (review PC-ADV-1, R3 §0.1(3) — the defect §2.2 exists to keep
+ * closed). So:
+ *  - `write`: anything placed is written quietly (a figure, a total, a route —
+ *    or a row's words that would ASK, kept for the VED); an addressed refusal
+ *    keeps its one line; ONE figure placed nowhere beside them gets
+ *    `NO_ADDRESS`; a courtesy word beside them is nothing. Goods the table
+ *    has no row for (`goods` — a name no row has, or, collecting, a number
+ *    naming OTHER goods: «1. Shapka 50 dona» after «➕», review PC-ADV-3) are
+ *    filed as material on their own — never the row's figure with them.
+ *  - `material`: nothing placed, and goods in it — the whole text, §2.2 (c).
+ *  - `unplaced`: nothing placed, a figure placed nowhere («150 kg» the table
+ *    cannot tell a row's from the brutto's): kept for the VED as words, never
+ *    material, and told how to address it.
+ *  - `nudge`: only courtesy words (`plainAck`), or words that name no goods.
+ * Pure, exported for the test.
+ */
+export type PlainVerdict =
+  | { kind: 'write'; segments: TableSegment[]; goods: string | null }
+  | { kind: 'material' }
+  | { kind: 'unplaced' }
+  | { kind: 'nudge' };
+
+export function plainVerdict(
+  parsed: { segments: readonly TableSegment[]; material: boolean },
+  stage: IntakeState['stage'],
+): PlainVerdict {
+  if (parsed.material) return { kind: 'material' };
+  const writes: TableSegment[] = [];
+  const goods: string[] = [];
+  let unplaced: TableSegment | null = null;
+  for (const s of parsed.segments) {
+    if (plainAck(s.raw)) continue;
+    const reason = s.refused?.reason ?? null;
+    if (reason === 'name_none' || (reason === 'name_mismatch' && stage === 'material')) goods.push(s.raw);
+    else if (reason !== null && ADDRESSED_REFUSALS.has(reason)) writes.push(s);
+    else if (reason !== null || s.at === null) {
+      if (/\d/u.test(s.raw)) unplaced ??= s;
+    } else writes.push(s);
+  }
+  if (writes.length > 0) {
+    return { kind: 'write', segments: unplaced ? [...writes, unplaced] : writes, goods: goods.length > 0 ? goods.join('\n') : null };
+  }
+  if (goods.length > 0) return { kind: 'material' };
+  return unplaced ? { kind: 'unplaced' } : { kind: 'nudge' };
+}
+
+/**
+ * §2.2 (b): a text with nothing to write («ok», «ha», «rahmat») is pointed at
+ * the press it is waiting for — «Bo‘ldi» only while something new waits to
+ * be read: after «➕ Yana ma’lumot» with nothing sent, the summary's own ✅
+ * still stands (review PC-ADV-6).
+ */
 function plainNudge(state: IntakeState): string {
-  if (state.stage !== 'review') return 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
+  if (state.stage !== 'review' && !nothingNewToRead(state)) return 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
   return state.amend
     ? `${confirmName(state)} ni bosing. Yana ma’lumot bo‘lsa — yuboring.`
     : 'Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.';
@@ -1263,14 +1342,10 @@ function plainNudge(state: IntakeState): string {
 /**
  * A typed text on the PLAIN door after its summary — in the summary stage
  * and collecting after a first reading alike (docs/IKKI-ESHIK.md §2.2, DR-1,
- * INT-3), so the same text sent twice is the same thing both times:
- *  (a) placed whole (`plainAnswerWhole`) → written quietly into the answers,
- *      the summary edited, a 👍 — nothing asked; an addressed refusal gets
- *      its one line;
- *  (b) no digit and no goods → nothing written, one line;
- *  (c) anything else → material, under a new prompt.
- * Never material merely because it was typed: a row's «150 kg» filed as
- * material became the shipment's brutto on the next reading (R3 §0.1(3)).
+ * INT-3), so the same text sent twice is the same thing both times; what
+ * each part of it becomes is `plainVerdict`'s. Never material merely because
+ * it was typed: a row's «150 kg» filed as material became the shipment's
+ * brutto on the next reading (R3 §0.1(3)).
  */
 async function applyPlainText(
   ctx: CollectorReply & { api: EditApi },
@@ -1282,30 +1357,43 @@ async function applyPlainText(
   const { parseTableAnswer } = await import('../../wms/calc/line-address');
   let tc = await tableContext(state);
   const parsed = parseTableAnswer(text, tableRefOf(state, tc, 'review'));
-  if (plainAnswerWhole(parsed)) {
-    const codes = parsed.segments.flatMap((s) =>
-      s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
-    );
-    if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
-    const answered = { ...state, answers: [...state.answers, answersEntry(text, parsed.segments)] };
-    await commitWrites(
-      ctx,
-      chatId,
-      answered,
-      parsed.segments.map((segment) => ({ kind: 'segment', segment }) as const),
-      tableRefOf(answered, tc, 'review'),
-      tc,
-      null,
-      { messageId: msg.messageId, ask: false },
-    );
+  const verdict = plainVerdict(parsed, state.stage);
+  if (verdict.kind === 'material') {
+    await fileAsMaterial(ctx, chatId, state, text);
     return;
   }
-  const { looksLikeMaterial } = await import('../../wms/calc/intake-manual');
-  if (!/\d/u.test(text) && !looksLikeMaterial(text)) {
-    await ctx.reply(plainNudge(state));
+  if (verdict.kind === 'nudge') {
+    // Joins the collection's own messages, so the prompt knows it is no longer last.
+    noteOwnMessage(chatId, (await ctx.reply(plainNudge(state))).message_id);
     return;
   }
-  await fileAsMaterial(ctx, chatId, state, text);
+  if (verdict.kind === 'unplaced') {
+    // The seller's words, for the VED (law 11) — never material, never a guess.
+    updateIntake(chatId, { answers: [...state.answers, text] });
+    noteOwnMessage(chatId, (await ctx.reply(`⚠️ ${NO_ADDRESS}`)).message_id);
+    return;
+  }
+  const codes = verdict.segments.flatMap((s) =>
+    s.answer && (s.answer.kind === 'figures' || s.answer.kind === 'bare') && s.answer.code ? [s.answer.code] : [],
+  );
+  if (codes.some((c) => !tc.laws.has(c))) tc = await tableContext(state, codes);
+  // Labelled «N-qator: …» only when ALL of it went there — never a goods line beside it.
+  const answered = { ...state, answers: [...state.answers, answersEntry(text, parsed.segments)] };
+  const committed = await commitWrites(
+    ctx,
+    chatId,
+    answered,
+    verdict.segments.map((segment) => ({ kind: 'segment', segment }) as const),
+    tableRefOf(answered, tc, 'review'),
+    tc,
+    null,
+    { messageId: msg.messageId, ask: false },
+  );
+  // The goods beside the answer are the next reading's — on their own lines.
+  const live = activeIntake(chatId);
+  if (committed && verdict.goods && live && live.noteId === state.noteId) {
+    await fileAsMaterial(ctx, chatId, live, verdict.goods);
+  }
 }
 
 /**
@@ -1509,12 +1597,15 @@ export function clientAnswer(
   if (read.material && !(again && read.couldBeCustomer)) {
     if (again) {
       // Worded by the reason that is true (R3-C6): a goods list, or a text no
-      // hint reads — «Rustam / Andijon» has no goods in it.
+      // hint reads — «Rustam / Andijon» has no goods in it. The question is
+      // `CLIENT_QUESTION` below it, asked once (§1.5, review PC-SPEC-11): the
+      // goods line's own «Mijozni bitta qatorda yozing: kod yoki telefon»
+      // asked it a second time. The shape line keeps its HOW — one line.
       const lead =
         '✍️ Bu matn allaqachon olingan — ikkinchi marta qo‘shilmadi. ' +
         (read.why === 'shape'
           ? 'Bir necha qatorli (yoki uzun) matn mijoz bo‘la olmaydi.\nIsm, kod yoki telefonni bitta qatorda yozing.'
-          : 'Tovar ro‘yxati mijoz bo‘la olmaydi.\nMijozni bitta qatorda yozing: kod yoki telefon.');
+          : 'Tovar ro‘yxati mijoz bo‘la olmaydi.');
       return { kind: 'material', patch: {}, say: `${lead}\n\n${CLIENT_QUESTION}`, lead };
     }
     // The question once (docs/IKKI-ESHIK.md §1.5): the line says what became
@@ -1600,6 +1691,7 @@ const PROMPT_LAST = 'Yana yuboring yoki «Bo‘ldi» ni bosing.';
 export function intakePromptText(
   state: IntakeState,
   tools: { sheetFit: import('./calc-files').SheetFit; fitTelegram: Intake['fitTelegram'] },
+  lead: string | null = null,
 ): string {
   const client = intakeClientSummary(state.clientHintRaw);
   const parts = [
@@ -1611,7 +1703,10 @@ export function intakePromptText(
       ? `⚠️ ${state.imagesSkipped} ta rasm o‘qilmaydi${state.images.length >= MAX_INTAKE_IMAGES ? ` (${MAX_INTAKE_IMAGES} tadan ortig‘i)` : ''}`
       : '',
   ].filter(Boolean);
+  // A door's one line (§4.2's «▶️ Davom etamiz — …») heads it INSIDE the
+  // cut, so the 4096 counts it (review PC-ADV-8).
   const head = [
+    ...(lead ? [lead] : []),
     ...(client ? [`Mijoz: ${client}`] : []),
     parts.length > 0 ? `Qabul qilindi: ${parts.join(' · ')}` : 'Qabul qilindi.',
   ];
@@ -1637,9 +1732,9 @@ async function promptWords(
   const { fitSheetRows } = await import('../../wms/calc/intake-ai');
   const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const { fitTelegram } = await import('../../wms/calc/intake');
-  const text = intakePromptText(state, { sheetFit: (texts) => fitSheetRows(texts, SHEET_TEXT_BUDGET), fitTelegram });
   // A door's one line above the prompt (the «▶️ Davom etamiz — …» of a take, §4.2): this draw's only.
-  return { text: lead ? `${lead}\n${text}` : text, extra: { reply_markup: doneKeyboard } };
+  const text = intakePromptText(state, { sheetFit: (texts) => fitSheetRows(texts, SHEET_TEXT_BUDGET), fitTelegram }, lead);
+  return { text, extra: { reply_markup: doneKeyboard } };
 }
 
 /**
@@ -1662,6 +1757,9 @@ function newestKnown(state: IntakeState): number | null {
 /** A ctx a kept-last draw speaks through. */
 type DrawCtx = CollectorReply & { api?: EditApi };
 
+/** The lead a queued prompt draw owes, per chat — taken by the run that draws it. */
+const pendingLeads = new Map<string, string>();
+
 /**
  * The collection's ONE live question or prompt — the zone question, the
  * customer question, the «Qabul qilindi» prompt (§1.4-§1.6) — drawn AS THE
@@ -1670,12 +1768,20 @@ type DrawCtx = CollectorReply & { api?: EditApi };
  * collection's own messages, so its buttons still work). Coalesced per chat
  * (`keepLastSoon`), so an album or a forward burst moves it once; dispatched
  * off the poller, and drawn from the collection as it stands when it runs.
- * `lead`: one line above it, for this draw only — what a typed goods list at
- * the customer question became (§1.5), or what a take added (§4.2); a later
- * draw in the same burst wins, lead and all.
+ * `lead`: one line above it — what a typed goods list at the customer
+ * question became (§1.5), or what a take added (§4.2) — said by the draw
+ * that runs next, whichever call queued it: a later draw in the same burst (a
+ * file of the album, the take's own) replaces the RUN, and it used to take
+ * the lead with it (review PC-SPEC-13). A later lead replaces an earlier one.
  */
 export function drawPromptSoon(ctx: DrawCtx, chatId: bigint, lead: string | null = null): void {
-  keepLastSoon(`prompt:${chatId}`, () => drawPrompt(ctx, chatId, lead));
+  const key = String(chatId);
+  if (lead) pendingLeads.set(key, lead);
+  keepLastSoon(`prompt:${chatId}`, () => {
+    const said = pendingLeads.get(key) ?? null;
+    pendingLeads.delete(key);
+    return drawPrompt(ctx, chatId, said);
+  });
 }
 
 async function drawPrompt(ctx: DrawCtx, chatId: bigint, lead: string | null): Promise<void> {
@@ -1732,6 +1838,11 @@ export async function routeCollectorText(
     // is not the customer's name yet, and filing it as one would skip
     // the only question that prices the road. The question is asked ONCE
     // (§1.6): its one message is redrawn below this text, never repeated.
+    // The text is TAKEN first (review PC-SPEC-2, PC-ADV-5): the prompt is
+    // «still last» by what the collection knows of, and a text nothing took
+    // was not known — the question was edited in place above it, and the
+    // typed «Yiwu» was answered with silence.
+    updateIntake(chatId, {});
     drawPromptSoon(ctx, chatId);
     return;
   }

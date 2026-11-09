@@ -152,4 +152,67 @@ describe('the plain door writes a typed figure quietly — never as material (§
     expect(ctx.replies.length).toBe(before);
     expect(ctx.reactions).toEqual([50_001, 50_002]);
   });
+
+  it('a courtesy word or a second figure UNDER the row’s answer: still the row’s, never material — and a re-read keeps 3500 (review PC-ADV-1)', async () => {
+    seq += 1;
+    const chatId = BigInt(-9_650_000_000) - BigInt(seq);
+    chats.push(chatId);
+    startIntake(chatId, 'rastamojka', { staffId: 'staff-test', ai: false });
+    updateIntake(chatId, { stage: 'material', clientHintRaw: 'GS777' });
+    const invoice = await workbook([
+      ['Description', 'Qty', 'Unit price', 'Amount'],
+      ['Kurtka', 300, 5, 1500],
+      ['Sumka', 100, 3, 300],
+      ['Shim', 200, 4, 800],
+    ]);
+    const packing = await workbook([
+      ['Description', 'Qty', 'Cartons', 'G.W. (kg)'],
+      ['Kurtka', 300, 10, 1500],
+      ['Sumka', 100, 5, 1000],
+      ['Shim', 200, 8, 1000],
+    ]);
+    for (const [body, name] of [[invoice, 'A.xlsx'], [packing, 'packing.xlsx']] as const) {
+      const live = activeIntake(chatId)!;
+      const read = await readIntakeFile({ isPhoto: false, body, attachmentId: `att2-${name}` }, name, XLSX, live);
+      updateIntake(chatId, { ...read.patch, fileCount: live.fileCount + 1 });
+    }
+    model.analyze.mockResolvedValue({
+      ok: true,
+      facts: { fromCity: null, toCity: null, weightKg: null, volumeM3: null, goods: [] },
+      steps: [],
+      usage: { model: 'm', inputTokens: 1, outputTokens: 1 },
+      answered: [{ model: 'm', inputTokens: 1, outputTokens: 1 }],
+    });
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'done');
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)!.facts.weightKg).toBe(3500);
+
+    let id = 60_000;
+    for (const text of ['3: 150 kg\nrahmat', '2: 80 kg\n5 dona']) {
+      id += 1;
+      updateIntake(chatId, { takenUpTo: id }, { quiet: true });
+      await routeCollectorText(ctx, chatId, activeIntake(chatId)!, text, { date: 0, messageId: id, forwarded: false, replyTo: null });
+      await tableEditsSettled();
+      await keptLastSettled();
+    }
+    const typed = activeIntake(chatId)!;
+    expect(typed.material).toEqual([]);
+    expect(typed.stage).toBe('review');
+    expect(typed.facts.goods?.[2]).toMatchObject({ name: 'Shim', weightKg: 150 });
+    expect(typed.facts.goods?.[1]).toMatchObject({ name: 'Sumka', weightKg: 80 });
+    expect(typed.facts.weightKg).toBe(3500);
+    // The courtesy word took a 👍; the figure placed nowhere is told how, once.
+    expect(ctx.reactions).toEqual([60_001]);
+    expect(ctx.replies.at(-1)!.text).toBe('⚠️ Qaysi qatorga? Raqami bilan yozing: «3: 50 dona». Umumiy og‘irlik bo‘lsa: «jami 3500 kg».');
+
+    // «Bo‘ldi» again: the reading of the same files keeps the packing list’s
+    // brutto, and the rows keep what was typed to them.
+    await handleCalcCallback(ctx, chatId, 'done');
+    await driveReading(chatId, ctx);
+    const reread = activeIntake(chatId)!;
+    expect(reread.facts.weightKg).toBe(3500);
+    expect(reread.facts.goods?.[2]).toMatchObject({ name: 'Shim', weightKg: 150 });
+    expect(reread.facts.goods?.[1]).toMatchObject({ name: 'Sumka', weightKg: 80 });
+  });
 });

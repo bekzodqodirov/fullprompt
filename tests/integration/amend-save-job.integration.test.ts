@@ -149,15 +149,15 @@ afterAll(async () => {
   await pgClient.end();
 });
 
-/** A landed request and an add collection on it, as the door opens it. */
-async function addCollection(): Promise<{ chatId: bigint; requestId: string; itemId: string }> {
+/** A landed request and an add collection on it, as the door opens it. `door`: the request's (§0.1). */
+async function addCollection(door: 'plain' | 'ai' | null = null): Promise<{ chatId: bigint; requestId: string; itemId: string }> {
   const [deal] = await db
     .insert(deals)
     .values({ code: `AJ-${SUFFIX}-${madeDeals.length}`, clientId, stageId: openDealStage, title: 'Job', createdBy: sellerId })
     .returning();
   madeDeals.push(deal!.id);
   const r = await openCalcRequest(
-    { intakeDoor: null, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: `Sumka ${SUFFIX}`, quantity: 10 }], source: 'card' },
+    { intakeDoor: door, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: `Sumka ${SUFFIX}`, quantity: 10 }], source: 'card' },
     { actorId: sellerId },
   );
   madeRequests.push(r.id);
@@ -439,6 +439,19 @@ describe('the press and the job', () => {
     expect(activeIntake(c.chatId)).toBeNull();
     const [row] = await db.select().from(calcAmendments).where(eq(calcAmendments.noteId, job.noteId));
     expect(row!.outcomeSentAt).not.toBeNull();
+  });
+
+  it('a dead save on a «🧮» request tells the plain line — never the AI result its silent re-run never sends (review PC-ADV-7)', async () => {
+    const c = await addCollection('plain');
+    const job = await press(c.chatId);
+    failSends = 1;
+    await runAmendSave(job, 0).catch(() => {});
+    expect(activeIntake(c.chatId)!.saving).not.toBeNull();
+    await releaseDeadSave(c.chatId, activeIntake(c.chatId)!);
+    const told = outcomeWords(c.chatId);
+    expect(told).toHaveLength(1);
+    expect(told[0]!.text).toContain(SAVE_WORDS.plainLine.trim());
+    expect(told[0]!.text).not.toContain(SAVE_WORDS.aiLine.trim());
   });
 
   it('the last attempt’s words undelivered: no throw, kept frozen — the sweep tells it once (adv-4, spec-14)', async () => {

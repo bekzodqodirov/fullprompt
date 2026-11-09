@@ -693,16 +693,24 @@ describe('«▶️ Davom etamiz» and §2.7’s fixed words (SPEC-7)', () => {
   });
 
   it('the add collection’s end line and the survivor’s backlog sentence, as §2.7 prints them', () => {
-    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067' } as AmendBase }, SECTION_LABEL, null)).toBe(
       '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Kerak bo‘lsa ✅ yoki AI javobi ostidagi «➕ Shu so‘rovga qo‘shish» ni qayta bosing.',
     );
     // The door's words (docs/IKKI-ESHIK.md §2.5): a «🧮» request has no AI
     // answer to press «➕» under; the AI door's and a NULL door's stay today's.
-    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067', door: 'plain' } as AmendBase }, SECTION_LABEL, null)).toBe(
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067', door: 'plain' } as AmendBase }, SECTION_LABEL, null)).toBe(
       '⌛ Qo‘shimcha 24 soat ichida yuborilmadi va o‘chirildi: ➕ B-000067. Qo‘shimcha bo‘lsa — «✅ Saqlandi» xabari ostidagi «➕ Shu so‘rovga qo‘shish» ni bosing. Yangi hisob — «🧮 Hisoblatish».',
     );
-    expect(intakeEndedText({ section: 'rastamojka', amend: { cardLabel: 'B-000067', door: 'ai' } as AmendBase }, SECTION_LABEL, null)).toContain(
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: { cardLabel: 'B-000067', door: 'ai' } as AmendBase }, SECTION_LABEL, null)).toContain(
       'Kerak bo‘lsa ✅ yoki AI javobi ostidagi',
+    );
+    // A FIRST collection is restarted from the door it came in by (review
+    // PC-SPEC-10): an expired «🤖 AI rastamojka» was sent to the other door.
+    expect(intakeEndedText({ section: 'rastamojka', ai: true, seed: null, amend: null }, SECTION_LABEL, 'GS777')).toBe(
+      '⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: 🛃 Rastamojka · GS777. Kerak bo‘lsa «🤖 AI rastamojka» dan qaytadan boshlang.',
+    );
+    expect(intakeEndedText({ section: 'rastamojka', ai: false, seed: null, amend: null }, SECTION_LABEL, null)).toBe(
+      '⌛ Hisoblatish 24 soat ichida tugatilmadi va o‘chirildi: 🛃 Rastamojka · mijoz hali yozilmagan. Kerak bo‘lsa «🧮 Hisoblatish» dan qaytadan boshlang.',
     );
     expect(backlogSentence(true)).toBe(
       '⏸ Bu xabar bot yangilanayotgan paytda yozilgan — u nimaga javob ekanini bot bilmaydi. Zametka yoki topshiriq yozayotgan bo‘lsangiz, qaytadan boshlang; savol bo‘lsa, qaytadan yuboring.',

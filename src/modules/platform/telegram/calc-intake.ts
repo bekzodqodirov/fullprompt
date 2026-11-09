@@ -204,6 +204,16 @@ export interface IntakeState {
    * row written before it reads as none.
    */
   lastUndo?: { tag: string; done: string[]; notes: string[] } | null;
+  /**
+   * What the last reading READ — the material and files of its snapshot
+   * (docs/IKKI-ESHIK.md §1.4, review PC-SPEC-5 / PC-ADV-6): «is there
+   * anything new to read» is anything sent beyond it (`nothingNewToRead`).
+   * Without it a first collection collecting again after «➕ Yana ma’lumot»
+   * always counted as unread: the summary lost its buttons and its ✅ was
+   * refused «avval Bo‘ldi» with nothing sent, a billed re-read for a job that
+   * was complete. Optional — a row written before it reads as no reading.
+   */
+  readMark?: TotalsMark | null;
   /** What staff typed to name the customer — a code, a phone, or a name. */
   clientHintRaw: string;
   /** Everything typed or captioned, in the order it came. */
@@ -486,7 +496,12 @@ export interface IntakeState {
    * overrule the documents (the diagnosis' cause 5).
    */
   answers: string[];
-  /** The album the open customer question was last re-asked for (one ask per album). */
+  /**
+   * RETIRED (docs/IKKI-ESHIK.md §1.5): the album the customer question was
+   * last re-asked for. The question is one message now, redrawn coalesced
+   * per chat, so nothing writes or reads it; kept, so a row written before
+   * still parses.
+   */
   reaskedGroup: string | null;
   expires: number;
 }

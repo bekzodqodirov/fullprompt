@@ -32983,10 +32983,10 @@
     "first": "material",
     "second": "material",
     "secondSayIncludes": [
-     "kod yoki telefon"
+     "**kodi** (GS777) yoki **telefon raqami**"
     ]
    },
-   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone)",
+   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone) — re-anchored 2026-11-09 on the question itself, CLIENT_QUESTION: the repeat's own «Mijozni bitta qatorda yozing: kod yoki telefon» asked the customer a second time in the same message (docs/IKKI-ESHIK.md §1.5, review PC-SPEC-11)",
    "why": "C3 side effect reviewer 1 accepted («I did not list this as a defect»).",
    "source": "r3 collector rv1 C3 note",
    "weight": "pinned"
@@ -33002,10 +33002,10 @@
     "first": "material",
     "second": "material",
     "secondSayIncludes": [
-     "kod yoki telefon"
+     "**kodi** (GS777) yoki **telefon raqami**"
     ]
    },
-   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone)",
+   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone) — re-anchored 2026-11-09 on the question itself, CLIENT_QUESTION: the repeat's own «Mijozni bitta qatorda yozing: kod yoki telefon» asked the customer a second time in the same message (docs/IKKI-ESHIK.md §1.5, review PC-SPEC-11)",
    "why": "C3 side effect reviewer 1 accepted («I did not list this as a defect»).",
    "source": "r3 collector rv1 C3 note",
    "weight": "pinned"

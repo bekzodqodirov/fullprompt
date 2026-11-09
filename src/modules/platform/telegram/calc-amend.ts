@@ -25,6 +25,7 @@ import {
 import {
   clientQuestionText,
   deliverNextStep,
+  editTableSoon,
   routeCollectorText,
   showIntakePrompt,
   type CollectorReply,
@@ -682,11 +683,14 @@ function abandonOpened(chatId: bigint, before: string | null, openedBy: number |
  * lets a 'review' stage through as «already read». So the collection moves to
  * 'material' and shows the collector's own prompt with «Bo‘ldi», as the file
  * handler does; a collection still waiting on the customer (a seeded one at
- * 'client') keeps its question.
+ * 'client') keeps its question. The table above it points down and loses its
+ * buttons, as the file handler's does (§1.4, review PC-SPEC-4): it kept a live
+ * «✅ Qo‘shish» the save guard refuses, with no marker.
  */
 async function awaitReading(chatId: bigint, sp: Speaker, state: IntakeState): Promise<void> {
   if (state.stage === 'client' || state.stage === 'section') return;
   const moved = updateIntake(chatId, { stage: 'material' }) ?? { ...state, stage: 'material' as const };
+  editTableSoon(sp, chatId);
   await showIntakePrompt(sp, chatId, moved);
 }
 
@@ -1235,7 +1239,7 @@ async function settleDeadSave(chatId: bigint, noteId: string, failWords: string 
   if (row.outcomeSentAt === null) {
     const told = await toldOfRow(row);
     if (told) {
-      const sent = await sendWords(chatId, await amendWords(told, false));
+      const sent = await sendWords(chatId, await amendWords(told, false, await requestDoorOf(row.requestId)));
       if (!sent.ok && !sent.permanent) return;
       await amend.stampTold(row.id);
     }
@@ -1361,9 +1365,11 @@ const OUTCOME_WORDS: {
 
 /**
  * Words for any told outcome, by its kind (exported for the tests that read
- * them). `door`: the request's (§2.6) — null keeps today's words.
+ * them). `door`: the request's (§2.6) — null keeps today's words. REQUIRED
+ * (review PC-ADV-7): optional, it failed open — the dead save's sender
+ * compiled without one and promised a plain seller the AI's result.
  */
-export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null = null): Promise<string> {
+export function amendWords(o: Told, waited: boolean, door: 'plain' | 'ai' | null): Promise<string> {
   return (OUTCOME_WORDS[o.kind] as (o: Told, waited: boolean, door: 'plain' | 'ai' | null) => Promise<string>)(o, waited, door);
 }
 
