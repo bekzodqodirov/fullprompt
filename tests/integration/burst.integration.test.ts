@@ -170,6 +170,9 @@ async function parked(): Promise<void> {
   await h.handle(tg.callback(chat, 40_000 + Math.floor(Math.random() * 1000), 'c:rastamojka'));
   await h.handle(tg.text(chat, 'GS777'));
   await h.handle(tg.text(chat, 'Kurtka 300 dona'));
+  // The collection's own prompt is drawn kept-last within a second of its
+  // line (docs/IKKI-ESHIK.md §1.4) — thirty minutes before it parks.
+  await h.settle();
   updateIntake(BigInt(chat), { touchedAt: Date.now() - HOLD_MS - 60_000 }, { quiet: true });
   expect(holdingIntake(BigInt(chat))).toBeNull();
 }
@@ -686,7 +689,10 @@ describe('the take’s other edges (review PB-ADV-4..6, PB-SPEC-1..4, PB-SPEC-7)
     await h.handle(tg.callback(chat, offer!.messageId!, `cf:${r.id}`, { message: { text: offer!.payload.text, reply_to_message: msgOf(parts[2]!) } }));
     await h.settle();
     expect(activeIntake(BigInt(chat))!.fileCount).toBe(3);
-    expect(h.textsTo(chat, m)).toContain(`➕ 3 ta fayl qo‘shildi.\n${CLIENT_QUESTION}`);
+    // ONE customer question, counting what it holds, the take's line on top
+    // (§1.5's counting question absorbs PB-SPEC-1's line — the merge, 89b1592).
+    const asked = h.textsTo(chat, m).filter((t) => t.includes(CLIENT_QUESTION));
+    expect(asked).toEqual([`➕ 3 ta fayl qo‘shildi.\n\nQabul qilindi: 📎 3 ta fayl.\n\n${CLIENT_QUESTION}`]);
   });
 
   it('▶️ beside a collection holding a «Bo‘ldi» prompt: the old prompt goes — ONE stands (PB-SPEC-2)', async () => {

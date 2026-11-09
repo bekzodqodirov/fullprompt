@@ -153,7 +153,8 @@ function fire(key: string): void {
       await entry.run().catch((err: unknown) => logger.warn({ err, key }, '[kept-last] draw failed'));
     } while (entry.again);
   })().finally(() => {
-    pending.delete(key);
+    // Only its own entry: a newer one under the key (after a forget) is not this run's to end.
+    if (pending.get(key) === entry) pending.delete(key);
   });
 }
 
@@ -171,4 +172,14 @@ export async function keptLastSettled(): Promise<void> {
     }
     await Promise.all([...pending.values()].map((e) => e.running ?? Promise.resolve()));
   }
+}
+
+/**
+ * Tests only: the process died. Its owed draws die with it — a draw still
+ * running (a send Telegram never answered) is let go, not awaited, as a
+ * killed process lets it go; the next process starts with none owed.
+ */
+export function __forgetKeptLast(): void {
+  for (const entry of pending.values()) if (entry.timer) clearTimeout(entry.timer);
+  pending.clear();
 }

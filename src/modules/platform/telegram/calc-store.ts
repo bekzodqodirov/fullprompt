@@ -9,6 +9,7 @@ import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
 import { endBurst } from './burst-wait';
 import { foldPendingInvoice } from './file-goods';
+import { __forgetKeptLast } from './kept-last';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
 import { quietHour, sendText, type SendResult } from './send';
 
@@ -1196,6 +1197,9 @@ async function resendSave(add: UntoldAmendment): Promise<void> {
 
 /** Tests: a restart, as far as this store is concerned — memory, timers, the seal and the hydrate. */
 export function __forgetIntakeMemory(): void {
+  // The process died: its owed kept-last draws die with it (docs/IKKI-ESHIK.md
+  // §1.4) — one Telegram never answered must not hold the next process's settle.
+  __forgetKeptLast();
   for (const p of store.pending.values()) if (p.timer) clearTimeout(p.timer);
   store.collections.clear();
   store.pending.clear();

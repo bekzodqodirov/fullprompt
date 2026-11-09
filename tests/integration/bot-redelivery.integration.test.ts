@@ -51,12 +51,14 @@ import { getStorage } from '@/modules/platform/files/storage';
 import { createTask } from '@/modules/platform/tasks/service';
 import {
   __resetLifecycle,
+  BOT_STOP_DEADLINE_MS,
   bootedAtSec,
   lastDoneUpdateId,
   markBoot,
   stoppingGuard,
   stopTelegramBot,
 } from '@/modules/platform/telegram/lifecycle';
+import { __forgetKeptLast, keepLastSoon } from '@/modules/platform/telegram/kept-last';
 import {
   __forgetWaitMemory,
   __holdWaitWrites,
@@ -89,7 +91,7 @@ import {
   updateIntake,
 } from '@/modules/platform/telegram/calc-store';
 import { orphanAnswerSentence, pauseLine } from '@/modules/platform/telegram/calc-dialog';
-import { botStopDeps } from '@/modules/platform/telegram/bot';
+import { botStopDeps, STOP_DRAWS_MS } from '@/modules/platform/telegram/bot';
 import { logger } from '@/modules/platform/logger';
 import { __resetDrafts, activeDraft } from '@/modules/platform/telegram/task-draft';
 import { __setCabinetPhotoReadMs, beginClientLink } from '@/modules/platform/telegram/client-cabinet';
@@ -1282,6 +1284,32 @@ describe('the durable «Hisoblatish» collection (docs/SAKKIZ-R3.md §6, his 1.8
     await h.handle(tg.again(U));
     await h.handle(tg.again(V));
     expect(activeIntake(chat)!.material).toEqual([`Shim 200 dona ${STAMP}`, `Kepka 50 dona ${STAMP}`]);
+  }, 20_000);
+
+  it('a kept-last draw Telegram never answers does not keep the durable write from the disk at the stop (the merge, STOP_DRAWS_MS)', async () => {
+    const { chat, s } = await collecting();
+    await h.settle();
+    // A draw owed at the signal whose send hangs: grammy's own timeout is
+    // minutes, the stop's budget is seconds.
+    keepLastSoon(`prompt:hung-${STAMP}`, () => new Promise<void>(() => {}), 0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await h.handle(tg.text(s.chat, `Shim 200 dona ${STAMP}`));
+    const rowMaterial = async () =>
+      ((await db.execute<{ m: unknown }>(sql`
+        SELECT state -> 'material' AS m FROM telegram_calc_intakes WHERE chat_id = ${String(chat)}::bigint`))[0]?.m ?? null) as
+        | string[]
+        | null;
+    const getUpdates = vi.fn(async () => []);
+    const started = Date.now();
+    await stopTelegramBot(botStopDeps({ isRunning: () => true, stop: vi.fn(async () => {}), api: { getUpdates } } as never));
+    // The draws get their own share and no more: waited on unbounded, the
+    // hung one ate the flush's whole share (~4 s of the 5 s budget) and the
+    // durable write ran only if its own debounce happened to fall inside it.
+    expect(Date.now() - started).toBeLessThan(STOP_DRAWS_MS + 1_500);
+    expect(STOP_DRAWS_MS + 1_500).toBeLessThan(BOT_STOP_DEADLINE_MS - 1_000);
+    expect(await rowMaterial()).toEqual([`Shim 200 dona ${STAMP}`]);
+    __forgetKeptLast();
+    await restart();
   }, 20_000);
 
   it('every dirty chat is written before grammy confirms its batch — bounded, and never a stopped poll (the lead’s ruling L1)', async () => {
