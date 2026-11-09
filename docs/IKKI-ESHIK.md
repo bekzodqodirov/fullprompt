@@ -227,7 +227,8 @@ and the ratchet holds. `goods-import.ts` and `goods-file.ts` join §5's list.
   - The file rule keys each name once and looks rows up by index (`rowIndex`, every clause of
     `namesMeet` its own map; a twin by figures by its count) — same answers, in list order. Scanning,
     two 500-row files cost 3-9 s and 1000 × 500 up to 22 s of synchronous CPU in the one process the
-    bot shares with every web request (DRILL-1's shape); now tens of ms, pinned under 600 ms.
+    bot shares with every web request (DRILL-1's shape); now tens of ms (up to ~0.2 s when 1000+
+    held rows all share one count or one name, fix review FR-PERF-1), pinned under 600 ms.
 
 1.2.3 **An add or seeded collection** compares its files with the request's kept rows through R3's
 `addReading`/`conflictOf`, unchanged.
