@@ -22,7 +22,7 @@ import { mayReadBatches } from '../batches/read-door';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
 import { loadBorderHours } from '../tracking/border-queue';
-import { batchByFormerCode, formerCodesFor, formerNames } from '../batches/former-codes';
+import { batchByFormerCode, batchByReleasedName, formerCodesFor, formerNames } from '../batches/former-codes';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -114,7 +114,12 @@ export async function botLookupAnswer(actor: BotActor, raw: string): Promise<Bot
     // LAST, after the client book: a name a truck USED to wear (renamed on
     // the road, the owner's 1a) must never shadow a live client code.
     const former = await lookupFormerBatch(actor, upper);
-    return former ? { text: former } : null;
+    if (former) return { text: former };
+    // …and after it, a number a cancelled truck GAVE BACK and nobody wears
+    // yet (docs/NARX-VA-RAQAM.md §3.2.5): «YW-010» used to answer «bekor
+    // qilingan» and would otherwise answer nothing until it is minted again.
+    const released = await lookupReleasedBatch(actor, upper);
+    return released ? { text: released } : null;
   }
   return {
     text: client.text,
@@ -264,6 +269,20 @@ async function lookupFormerBatch(actor: BotActor, code: string): Promise<string 
     `↩️ ${hit.formerCode} — bu partiyaning oldingi nomi. Hozirgi nomi: ${row.batch.code}\n` +
     (await batchAnswer(row))
   );
+}
+
+/**
+ * A number a cancelled truck gave back: «YW-010» finds «YW-010 (bekor)» while
+ * no truck wears the number. Out of scope it answers the typed name and
+ * «not yours», like the former name.
+ */
+async function lookupReleasedBatch(actor: BotActor, code: string): Promise<string | null> {
+  const hit = await batchByReleasedName(code);
+  if (!hit) return null;
+  const row = await batchRowWhere(eq(batches.id, hit.batchId));
+  if (!row) return null;
+  if (!batchInScope(actor, row)) return `🚚 ${code}\n${outOfScope()}`;
+  return `↩️ ${code} — bekor qilingan, raqami qaytarildi. Hozirgi nomi: ${row.batch.code}\n` + (await batchAnswer(row));
 }
 
 /** The in-scope answer about one truck, by whichever name it was asked. */

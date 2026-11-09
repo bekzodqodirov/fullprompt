@@ -36,7 +36,13 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
   const dest = aliasedTable(warehouses, 'dest');
   const rows = await db
-    .select({ plan: loadPlans, originCode: warehouses.code, destCode: dest.code, batchCode: batches.code })
+    .select({
+      plan: loadPlans,
+      originCode: warehouses.code,
+      destCode: dest.code,
+      batchCode: batches.code,
+      batchDestId: batches.destWarehouseId,
+    })
     .from(loadPlans)
     .innerJoin(warehouses, eq(loadPlans.originWarehouseId, warehouses.id))
     .innerJoin(dest, eq(loadPlans.destWarehouseId, dest.id))
@@ -48,7 +54,12 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
   // The LIST is warehouse-filtered and this was not, so a uuid from a
   // colleague's link opened another warehouse's cargo.
   if (!inScope(actor, hit.plan.originWarehouseId)) notFound();
-  const { plan, originCode, destCode, batchCode } = hit;
+  const { plan, originCode, destCode, batchCode, batchDestId } = hit;
+  // The truck's LIVE destination, read only when it differs from the plan's.
+  const truckDestCode =
+    batchDestId && batchDestId !== plan.destWarehouseId
+      ? ((await db.query.warehouses.findFirst({ where: eq(warehouses.id, batchDestId) }))?.code ?? null)
+      : null;
 
   const versions = await db
     .select()
@@ -102,6 +113,15 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
             </Link>
           )}
         </div>
+        {/* The plan keeps the destination it was approved for (the record of
+            what was agreed); the truck's own is the live one — changed before
+            departure (his 6a) or rerouted on the road. Said here, on the
+            working screen, so the two never read as one (§3.2.8). */}
+        {truckDestCode && truckDestCode !== destCode && (
+          <p className="text-sm font-semibold text-warn" data-testid="plan-truck-now">
+            ↪ {t('truckNow', { dest: truckDestCode, planned: destCode })}
+          </p>
+        )}
         {current && (
           <p className="text-sm text-ink-700">
             v{current.versionNo} · {current.totalBoxes} 📦 · {current.totalKg} kg · {current.totalM3} m³
