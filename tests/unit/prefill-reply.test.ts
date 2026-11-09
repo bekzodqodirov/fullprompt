@@ -52,6 +52,9 @@ const tariff = {
   link: 'https://gsrwms.uz/bitimlar/x',
   pass: 'landing' as const,
   audience: 'chat' as const,
+  // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
+  // The doors' own words have their case at the end of this file.
+  noAsk: false,
 };
 
 describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () => {
@@ -263,5 +266,44 @@ describe('the fee’s blocker names whose job it is', () => {
     expect(blockerText({ kind: 'fee', reason: 'fee_bhm_bad' })).toBe(
       'bojxona yig‘imi: BHM sozlamasi noto‘g‘ri — admin tuzatadi',
     );
+  });
+});
+
+/**
+ * The plain door's yo‘lkira answer (docs/IKKI-ESHIK.md §2.4): it still goes to
+ * the chat — his 2.5 b, no model — and asks the seller nothing (§3.5). A cube
+ * or a brutto the tariff needs reads «— VED xodimi sizdan so‘raydi»; the card's
+ * copy names it for the VED under «⚠️ VED uchun:». Brutto is no longer asked
+ * on that door, so this answer will mostly say it is missing — stated (§7).
+ */
+describe('a bot-door yo‘lkira answer asks nothing (§2.4, §3.5)', () => {
+  const door = { ...tariff, noAsk: true };
+  const cube = { ok: false as const, refusal: 'umumiy hajm (m³) yo‘q', tail: 'seller' as const };
+
+  it('the chat: «Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi sizdan so‘raydi», and no «➕» ask', () => {
+    const t = tariffReplyText({ ...door, freight: cube });
+    expect(t).toBe(
+      [
+        `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · GS777 · B-000067`,
+        'Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi sizdan so‘raydi',
+        'Karta: https://gsrwms.uz/bitimlar/x',
+      ].join('\n'),
+    );
+    expect(t).not.toContain('mijozdan so‘rab');
+    expect(t).not.toContain('VED uchun');
+  });
+
+  it('the card’s copy names the gap for the VED under the heading, and its tail is his', () => {
+    const lenta = tariffReplyText({ ...door, link: null, audience: 'lenta', freight: cube }).split('\n');
+    expect(lenta[1]).toBe('⚠️ VED uchun: umumiy hajm (m³) yo‘q.');
+    expect(lenta[2]).toBe('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi so‘raydi');
+  });
+
+  it('a priced road is the same answer as before — the figure, the caveat, nothing asked', () => {
+    expect(tariffReplyText({ ...door, freight: priced() })).toBe(tariffReplyText({ ...tariff, freight: priced() }));
+    // …and a VED-side refusal keeps its own tail, with no «VED uchun» line.
+    const band = tariffReplyText({ ...door, link: null, audience: 'lenta', freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' } });
+    expect(band).toContain('Yo‘lkira: ⚠️ bu zichlikka tarif yo‘q — VED xodimi hisoblaydi');
+    expect(band).not.toContain('VED uchun');
   });
 });

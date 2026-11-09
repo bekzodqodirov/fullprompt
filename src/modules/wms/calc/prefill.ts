@@ -34,6 +34,7 @@ import { freightAnswerFor } from './freight-answer';
 import { applyMemory, pickBazas } from './prefill-steps';
 import {
   TAXMINIY_BLOCK_WORDS,
+  refusedMeasureWords,
   declarationCounts,
   estimateCustoms,
   estimateInputOf,
@@ -50,6 +51,8 @@ import { weightFromTotalNote, type IntakeDoor } from './intake';
 import { intakeDoorSql, parseIntakeDoor } from './intake-door';
 import { CalcError } from './service';
 import { lawAsksInputOf, lawAsksOf, type LawAsk } from './law-asks';
+import { aiNoteText } from './ai-note';
+import { carriesAiCode, codesOf, noteGroups, noteRows } from './note-facts';
 
 /**
  * The AI VED hodimi (docs/VED-IMPORT-AI.md §3).
@@ -305,12 +308,27 @@ export async function aiPrefill(
    * it is answered from the tariff table (his 2.5 b).
    */
   const [row] = await db
-    .select({ section: calcRequests.section })
+    .select({ section: calcRequests.section, door: intakeDoorSql(calcRequests) })
     .from(calcRequests)
     .where(eq(calcRequests.id, requestId));
   const parts = row?.section
     ? sectionParts(row.section as CalcSectionName)
     : { customs: true, freight: true, extras: true };
+  /**
+   * THE DOOR the request came in through (0140, docs/IKKI-ESHIK.md §0.3) —
+   * read off the ROW in the statement above, which this pass already makes,
+   * so a direct caller and the worker render alike. It decides WHAT the pass
+   * says, never what it writes:
+   *  - `noAsk` (either bot door): the answer asks the seller nothing — no ❓
+   *    block, the seller's tails say the VED will ask him (his 4a, 5a, §3.5);
+   *  - `plain` («🧮 Hisoblatish»): the answer is for the VED alone, with no
+   *    money in it (his 3a, §2.4) — the worker sends the seller nothing.
+   * NULL — every request before 0140, the card form, the thread door, the
+   * agent — keeps today's words exactly (§0.2).
+   */
+  const door = parseIntakeDoor(row?.door);
+  const noAsk = door !== null;
+  const plain = door === 'plain';
 
   if (opts.expectCustoms !== undefined && parts.customs !== opts.expectCustoms) {
     logger.info(
@@ -320,7 +338,7 @@ export async function aiPrefill(
     return { ...NOTHING_DONE, text: '', lentaText: '', stood: 'touched' };
   }
   const amend = amendmentOf(opts.pass);
-  if (!parts.customs) return tariffOnly(requestId, deps, amend);
+  if (!parts.customs) return tariffOnly(requestId, deps, amend, noAsk);
 
   /**
    * Configured AND within the day's budget — one flag, because to everything
@@ -335,6 +353,16 @@ export async function aiPrefill(
   const hasKey = deps.configured ?? aiConfigured();
   const budgetLeft = hasKey ? await aiCalcBudgetLeft() : 0;
   const configured = hasKey && budgetLeft > 0;
+
+  /**
+   * Where each code came from, for the plain door's note (§2.4): the codes
+   * the request landed with, read before the pass writes anything, and the
+   * rows the memory coded in step 0 — every other code the pass leaves is
+   * its model's. One read, the plain door's only; a read that fails says no
+   * source rather than a wrong one.
+   */
+  const landedCodes = plain ? await codesOf(requestId) : null;
+  let memoryCodedIds: string[] = [];
 
   let codesStamped = 0;
   let ratesPulled = 0;
@@ -418,6 +446,7 @@ export async function aiPrefill(
   try {
     const out = await applyMemory(requestId, ctx, rev);
     memoryCoded = out.coded;
+    memoryCodedIds = out.codedIds;
     memoryFilled = out.filled;
     // Step 0's save fills from the book too (round 2) — counted, or the
     // outcome under-reports where the bazas came from (review REG-2/P2-9).
@@ -567,7 +596,9 @@ export async function aiPrefill(
    * logged and leaves the rows unestimated; it never costs the reply.
    */
   let estimate: CustomsEstimate | null = null;
-  if (ws.parts.customs && ws.customsUsd === null) {
+  // Not on the plain door: its note carries no estimate (§2.4), so the
+  // median read would be paid for nothing — the VED reads the 📊 in his 📥.
+  if (ws.parts.customs && ws.customsUsd === null && !plain) {
     let medians = new Map<string, RowMedian>();
     if (Date.now() > deadline) pastDeadline = true;
     try {
@@ -599,34 +630,10 @@ export async function aiPrefill(
    */
   const asksInput = overtaken === null ? lawAsksInputOf(ws) : null;
   const asks: LawAsk[] | null = asksInput ? lawAsksOf(asksInput) : null;
-  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) =>
-    aiVedReplyText({
-      clientLabel: about?.clientCode ?? null,
-      cardLabel: about?.cardLabel ?? null,
-      lines,
-      ungrouped: ws.ungrouped.map((i) => i.label),
-      fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
-      totalUsd: customsUsd,
-      feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
-      hasCertificate: ws.hasCertificate,
-      freight: road,
-      link,
-      aiConfigured: hasKey,
-      budgetSpent: hasKey && budgetLeft <= 0,
-      estimate: estimate ? totalsWords(estimate, audience) : null,
-      // A pick skipped past the deadline is news only while a row still
-      // waits for a baza; with none, there was nothing it could have chosen.
-      pickLeft: pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft,
-      asks: asked ? asks : null,
-      pass: amend === null ? 'landing' : 'amend',
-      audience,
-    });
-
-  return {
+  const pickShown =
+    pickLeft?.skipped && !ws.groups.some((g) => g.items.some((i) => i.bazaUsd === null)) ? null : pickLeft;
+  const outcome = {
     ...NOTHING_DONE,
-    text: reply(about?.link ?? null, 'chat'),
-    lentaText: reply(null, 'lenta'),
-    ...(asks && asks.length > 0 ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
     customsUsd,
     // A stale road printed no figure, and the outcome carries none either.
     freightUsd: stale ? null : freightUsd,
@@ -645,6 +652,60 @@ export async function aiPrefill(
     // says which step stopped it.
     overtaken,
   };
+  if (plain) {
+    // His 3a: «🧮»'s estimate does not reach the seller — the VED's note, one
+    // rendering for the claim and the card alike (the worker sends it nowhere).
+    const note = aiNoteText({
+      clientLabel: about?.clientCode ?? null,
+      cardLabel: about?.cardLabel ?? null,
+      pass: amend === null ? 'landing' : 'amend',
+      rows: await noteRows(requestId, ws, landedCodes, new Set(memoryCodedIds), aiUsed),
+      groups: noteGroups(ws, lines),
+      ungrouped: ws.ungrouped.map((i) => i.label),
+      // His 2.7: the plain door never asks a law unit — the rows the law
+      // still wants a figure for are named for the VED.
+      asks: asks ?? [],
+      freight: road,
+      feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
+      pickLeft: pickShown,
+      hasCertificate: ws.hasCertificate,
+      aiConfigured: hasKey,
+      budgetSpent: hasKey && budgetLeft <= 0,
+    });
+    return { ...outcome, text: note, lentaText: note };
+  }
+  const reply = (link: string | null, audience: 'chat' | 'lenta', asked = true) =>
+    aiVedReplyText({
+      clientLabel: about?.clientCode ?? null,
+      cardLabel: about?.cardLabel ?? null,
+      lines,
+      ungrouped: ws.ungrouped.map((i) => i.label),
+      fee: ws.fee && ws.fee.ok ? { bhm: ws.fee.bhmCoefficient, usd: ws.fee.feeUsd } : null,
+      totalUsd: customsUsd,
+      feeRefusal: ws.fee && !ws.fee.ok ? feeRefusalText(ws.fee.reason) : null,
+      hasCertificate: ws.hasCertificate,
+      freight: road,
+      link,
+      aiConfigured: hasKey,
+      budgetSpent: hasKey && budgetLeft <= 0,
+      estimate: estimate ? totalsWords(estimate, audience, noAsk) : null,
+      // A pick skipped past the deadline is news only while a row still
+      // waits for a baza; with none, there was nothing it could have chosen.
+      pickLeft: pickShown,
+      asks: asked ? asks : null,
+      pass: amend === null ? 'landing' : 'amend',
+      audience,
+      noAsk,
+    });
+
+  return {
+    ...outcome,
+    text: reply(about?.link ?? null, 'chat'),
+    lentaText: reply(null, 'lenta'),
+    // Only where the chat ASKS (a request from before the doors): a door
+    // request's lenta never says the seller was asked (§3.5).
+    ...(!noAsk && asks && asks.length > 0 ? { lentaUnasked: reply(null, 'lenta', false) } : {}),
+  };
 }
 
 /**
@@ -652,7 +713,12 @@ export async function aiPrefill(
  * memory, no model, no save — with the card's labels and the road through
  * the ONE freight answer the podklyuch reply prints too.
  */
-async function tariffOnly(requestId: string, deps: PrefillDeps, amend: string | null): Promise<PrefillOutcome> {
+async function tariffOnly(
+  requestId: string,
+  deps: PrefillDeps,
+  amend: string | null,
+  noAsk: boolean,
+): Promise<PrefillOutcome> {
   const ws = await loadWorkspace(requestId);
   if (!ws) throw new Error(`calc request ${requestId} vanished during the pass`);
   // The section that is ONLY the road prices it from the stored totals
@@ -677,6 +743,9 @@ async function tariffOnly(requestId: string, deps: PrefillDeps, amend: string | 
       link,
       pass: amend === null ? 'landing' : 'amend',
       audience,
+      // A door request keeps this answer in the chat (his 2.5 b) and asks
+      // nothing in it (§2.4, §3.5).
+      noAsk,
     });
   return {
     ...NOTHING_DONE,
@@ -766,9 +835,10 @@ async function roadOf(ws: Workspace): Promise<AiVedFreight | null> {
  * the reader's words where they differ: a missing count is the seller's to
  * send with «➕» in the chat, and the lenta's reader writes it on the card.
  */
-function blockWords(block: CustomsEstimate['taxminiyBlock'], audience: 'chat' | 'lenta'): string | null {
+function blockWords(block: CustomsEstimate['taxminiyBlock'], audience: 'chat' | 'lenta', noAsk: boolean): string | null {
   if (block === null) return null;
-  if (block === 'refused_measure') return TAXMINIY_BLOCK_WORDS.refused_measure[audience];
+  // The seller's fact, addressed by the one tail rule (a door request: the VED asks him, §3.5).
+  if (block === 'refused_measure') return refusedMeasureWords(audience, noAsk);
   if (block === 'ungrouped' || block === 'budget' || block === 'refused') {
     return TAXMINIY_BLOCK_WORDS[block];
   }
@@ -777,7 +847,7 @@ function blockWords(block: CustomsEstimate['taxminiyBlock'], audience: 'chat' | 
 }
 
 /** The estimate's two totals, in the reply's vocabulary. */
-function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta'): AiVedEstimate {
+function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta', noAsk: boolean): AiVedEstimate {
   return {
     rows: e.rows,
     exactRows: e.exactRows,
@@ -786,7 +856,7 @@ function totalsWords(e: CustomsEstimate, audience: 'chat' | 'lenta'): AiVedEstim
     taxminiyFee: e.taxminiy
       ? { bhm: e.taxminiy.fee.overridden ? null : e.taxminiy.fee.bhmCoefficient, usd: e.taxminiy.fee.feeUsd }
       : null,
-    taxminiyBlock: blockWords(e.taxminiyBlock, audience),
+    taxminiyBlock: blockWords(e.taxminiyBlock, audience, noAsk),
   };
 }
 
@@ -869,6 +939,8 @@ function replyLines(ws: Workspace, estimate: CustomsEstimate | null): AiVedLine[
     return {
       label: g.items.map((i) => i.label).join(', ') || g.label,
       code: g.tnvedCode,
+      // The reading's model proposed it (§3.1) — the table's «(AI taklifi)».
+      aiCode: g.tnvedCode !== null && g.items.some((i) => carriesAiCode(i.note)),
       // The shorthand «100 dona × $20/dona» is printed only where it is TRUE
       // of the whole group; the figure beside it is exact either way.
       measureText: measureTextOf(g.items),

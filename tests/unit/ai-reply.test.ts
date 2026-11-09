@@ -25,6 +25,7 @@ import type { LawAsk } from '@/modules/wms/calc/law-asks';
 const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   label: 'Monitor 24"',
   code: '8528520000',
+  aiCode: false,
   measureText: '100 dona × $20/dona',
   bazaSource: 'memory',
   dutyText: '10%',
@@ -75,6 +76,9 @@ const base: AiVedReplyInput = {
   asks: null,
   pass: 'landing',
   audience: 'chat',
+  // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
+  // The two doors' own words have their cases at the end of this file.
+  noAsk: false,
 };
 
 /** An estimated group's line — 📊 beside a figure from the medians. */
@@ -850,5 +854,117 @@ describe('the 2.8 b block and the re-run heading (round 3)', () => {
       expect(text).not.toContain('Yo‘lkira: ≈');
       expect(text).not.toContain('JAMI (rastamojka + yo‘lkira)');
     }
+  });
+});
+
+/**
+ * The two bot doors (docs/IKKI-ESHIK.md §3.5, his 4a and 5a, 2026-11-08): the
+ * answer after «Tasdiqlash» ASKS NOTHING — «Tasdiqlash» was the last question,
+ * and what is still missing is the VED's to get. `noAsk` is the one switch:
+ * no ❓ block, a seller's fact reads «— VED xodimi sizdan so‘raydi», the VED's
+ * own gaps keep their words, the JAMI that cannot be made is the VED's, and
+ * the lenta names the same gaps under «⚠️ VED uchun:». The words are the
+ * spec's, typed from it. A request from before the doors (NULL, `noAsk`
+ * false) keeps every word above this block — the cases above are its pins.
+ */
+describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
+  const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
+  const asks: LawAsk[] = [
+    ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
+    ask(5, 'Kurtka', [{ unit: 'dona', why: 'duty', present: false, rate: 2 }]),
+  ];
+  const door: AiVedReplyInput = { ...base, noAsk: true };
+  const sellerLine = line({
+    customsUsd: null,
+    refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+    refusalTail: 'seller',
+  });
+  const vedLine = line({ label: 'Sumka', customsUsd: null, refusal: 'baza yo‘q', refusalTail: 'ved' });
+  const ASK_WORDS = ['❓', 'mijozdan so‘rab', '«➕ Shu so‘rovga qo‘shish» bilan yuboring', 'kartadagi lentaga yozing', 'reply qilib yozing', 'to‘ldiring'];
+
+  it('the ❓ block is gone — the rows the law wants are not asked of the seller (his 5a; the 2.8 b ask superseded)', () => {
+    const chat = aiVedReplyText({ ...door, asks });
+    expect(chat).not.toContain('❓');
+    expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
+    // …while a request from before the doors still asks it, word for word.
+    expect(aiVedReplyText({ ...base, asks })).toContain('❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak');
+  });
+
+  it('a seller’s fact on a customs line: «— VED xodimi sizdan so‘raydi»; the VED’s own gap keeps «— VED xodimi qo‘yadi»', () => {
+    const chat = aiVedReplyText({ ...door, lines: [sellerLine, vedLine], totalUsd: null });
+    expect(chat).toContain('   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — VED xodimi sizdan so‘raydi');
+    expect(chat).toContain('   ⚠️ baza yo‘q — VED xodimi qo‘yadi');
+    for (const w of ASK_WORDS) expect(chat, w).not.toContain(w);
+    // The lenta's reader is the VED: «so‘raydi», nobody's chat.
+    const lenta = aiVedReplyText({ ...door, link: null, audience: 'lenta', lines: [sellerLine], totalUsd: null });
+    expect(lenta).toContain('kamida $3/dona — VED xodimi so‘raydi');
+    expect(lenta).not.toContain('sizdan');
+  });
+
+  it('the road’s seller facts — brutto, cube, both, the city — say the VED asks; the VED’s own refusals are his', () => {
+    for (const refusal of [
+      'umumiy brutto og‘irlik (kg) yo‘q',
+      'umumiy hajm (m³) yo‘q',
+      'umumiy hajm (m³) va brutto og‘irlik (kg) yo‘q',
+      'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan',
+    ]) {
+      const chat = aiVedReplyText({ ...door, freight: { ok: false, refusal, tail: 'seller' } });
+      expect(chat).toContain(`Yo‘lkira: ⚠️ ${refusal} — VED xodimi sizdan so‘raydi`);
+      for (const w of ASK_WORDS) expect(chat, w).not.toContain(w);
+    }
+    const zone = aiVedReplyText({
+      ...door,
+      freight: {
+        ok: false,
+        refusal: 'yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi',
+        tail: 'ved',
+        also: { refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+      },
+    });
+    expect(zone).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — VED xodimi sizdan so‘raydi',
+    );
+  });
+
+  it('a podklyuch JAMI that cannot be made is the VED’s: «JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.»', () => {
+    const refused = { ok: false as const, refusal: 'umumiy hajm (m³) yo‘q', tail: 'seller' as const };
+    expect(aiVedReplyText({ ...door, freight: refused })).toContain('JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.');
+    // NULL keeps today's «…to‘ldiring».
+    expect(aiVedReplyText({ ...base, freight: refused })).toContain(
+      'JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.',
+    );
+  });
+
+  it('the figure still goes out — the AI door’s answer is the estimate he pressed for, and its caveat', () => {
+    const chat = aiVedReplyText(door);
+    expect(chat).toContain('Rastamojka jami: ≈ $661.76');
+    expect(chat).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+  });
+
+  it('the lenta names the same gaps under «⚠️ VED uchun:» — never «Sotuvchidan so‘raldi»', () => {
+    const lenta = aiVedReplyText({
+      ...door,
+      link: null,
+      audience: 'lenta',
+      asks,
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    }).split('\n');
+    expect(lenta[1]).toBe('⚠️ VED uchun: 2-qator «Krossovka»: juft soni; 5-qator «Kurtka»: soni (dona); umumiy brutto og‘irlik (kg) yo‘q.');
+    expect(lenta.join('\n')).not.toContain('Sotuvchidan so‘raldi');
+    // No gaps, no line; and the chat never carries it.
+    expect(aiVedReplyText({ ...door, link: null, audience: 'lenta' })).not.toContain('VED uchun:');
+    expect(aiVedReplyText({ ...door, asks })).not.toContain('⚠️ VED uchun');
+  });
+
+  it('a code the model proposed while reading wears «(AI taklifi)» in the chat and on the lenta, as the table prints it (§3.1)', () => {
+    const ai = line({ aiCode: true });
+    for (const audience of ['chat', 'lenta'] as const) {
+      const text = aiVedReplyText({ ...door, audience, lines: [ai] });
+      expect(text).toContain('1. Monitor 24" · 8528520000 (AI taklifi) · 100 dona × $20/dona 🧠');
+    }
+    // Not on a code the file or a memory stated — and the NULL door marks it too.
+    expect(aiVedReplyText(door)).not.toContain('(AI taklifi)');
+    expect(aiVedReplyText({ ...base, lines: [ai] })).toContain('8528520000 (AI taklifi)');
   });
 });

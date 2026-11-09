@@ -4,7 +4,7 @@
  * the law's unit once, and a code nobody stated — not the row's own, not the
  * sealed memory's, not the exact-key book's — reaches the VED marked as the
  * model's proposal, to be checked. ONE string, because two readers key on it:
- * the INSERT that writes it and the AI answer's marker that reads it back
- * from the stored item.
+ * the INSERT that writes it and the AI answer's marker, which reads it back
+ * from the stored item and marks such a code «(AI taklifi)» on its line.
  */
 export const AI_CODE_NOTE = 'TNVED: AI taklifi (o‘qishda) — tekshiring';
