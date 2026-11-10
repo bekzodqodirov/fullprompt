@@ -1,7 +1,8 @@
 # Tarkib tuzatishlari — six fixes to the lot composition (2026-11-10)
 
-Status: **v1 — the design after the readers' maps, before the judge.** The kernel (§1, §3.2)
-is written and red-proven; everything else is open to the judge.
+Status: **v2 — the design after six readers' maps, before the judge.** The kernel (§1, §3.2)
+and package 1 (§2, §3.5, the receipt card) are WRITTEN on the branch and red-proven; they are
+judged as built, everything else as a design.
 
 ## 0. His words and the reading
 
@@ -179,12 +180,15 @@ ALLOWED; readers import only that module (its name is not one of the fence's tok
 DENY list is re-stated as «may not name the tables» — the recorded reversal of rule 1, not a
 loosened list.
 
-### 3.5 The lot check
+### 3.5 The lot check (as built)
 
-`tarkibVouchesSql` → `lot_tarkib.n >= 1` (`one_name` leaves `lotTarkibJoinSql`);
+Any STANDING tarkib makes the lot ✅ — `tarkibVouchesSql`, `one_name` in `lotTarkibJoinSql`,
 `documentOtherName`, `linesVouchForLot` and the editor's «no vouch» hint are deleted with
-their keys; lot-check test 12b and the fence's «1a reversed» sentence pins are rewritten as
-the recorded reversal of 8.6.
+their keys, and `lotCheckStateSql` reads `tarkibStandsSql` alone. A tarkib that no longer
+matches the lot is «o'zgardi» whatever its line count (a one-line tarkib of another good
+never vouched, so it never went stale; it vouches now, so it can). Lot-check test 12b is
+rewritten as the recorded reversal of 8.6, and asserts in the same breath that the lists
+print the tarkib's name while the stored name has not moved.
 
 ## 4. Item 2 — the agent Excel: one row per tarkib line
 
