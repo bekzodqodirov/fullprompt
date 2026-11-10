@@ -493,7 +493,14 @@ export async function buildInvoiceXlsx(batchId: string, answer: InvoiceMergeAnsw
     // below sets the CELL's font and does not reach runs.
     const marks = labelRuns(position, model.redLabels);
     const cell = row.getCell(2);
+    // A row of several stickers (or a merged position's several names) is
+    // several text lines tall: every cell reads from the TOP, so the number,
+    // the first sticker and the name stand on one line.
+    row.eachCell((c) => {
+      c.alignment = { ...(c.alignment ?? {}), vertical: 'top' };
+    });
     cell.alignment = { wrapText: true, vertical: 'top' };
+    row.getCell(3).alignment = { wrapText: true, vertical: 'top' };
     if (marks.some((m) => m.red)) {
       cell.value = {
         richText: marks.flatMap((m, i) => [
