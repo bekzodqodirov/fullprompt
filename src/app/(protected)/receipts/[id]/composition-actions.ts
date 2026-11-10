@@ -48,7 +48,7 @@ function refusalOf(err: unknown): CompositionActionResult {
   if (err instanceof ZodError) return { ok: false, error: 'validation' };
   if (isBusyError(err)) return { ok: false, error: 'busy' };
   if (isServerBehind(err)) return { ok: false, error: 'server_behind' };
-  // One migration behind (0142 not landed yet): a tarkib saved with no
+  // One migration behind (0143 not landed yet): a tarkib saved with no
   // document is a NULL the old column still refuses. That one column, by
   // name — a NULL anywhere else is a fault the error page must show.
   const notNull = violatedNotNull(err);

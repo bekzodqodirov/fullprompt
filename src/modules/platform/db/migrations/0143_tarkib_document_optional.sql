@@ -1,4 +1,5 @@
--- Tarkib tuzatishlari (docs/TARKIB-TUZATISH.md §1-§2), migration 0142 — after 0141_intake_door.
+-- Tarkib tuzatishlari (docs/TARKIB-TUZATISH.md §1-§2), migration 0143 — after 0142_chat_rule_bound_via
+-- (minted as 0142; main's «✅ Yuborish chiqmadi» round took that number and its `when` first).
 -- The owner, 2026-11-10: «tarkib qo'shganda tasdiq so'rash rasm file» — saving a lot
 -- composition demanded the client's document (0122, his own answer 6 of 2026-10-01), and in
 -- practice the VED often has only what the client said. The document becomes OPTIONAL: a
@@ -7,6 +8,6 @@
 --
 -- Catalog-only and additive; nothing is rewritten (every existing row has a document).
 -- Going BELOW this release: older code INNER JOINs the document, so a composition with none
--- vanishes from the receipt card — docs/UPDATE.md, «0142 dan PASTGA».
+-- vanishes from the receipt card — docs/UPDATE.md, «0143 dan PASTGA».
 -- Not granted to gsr_ai_reader — 0080's allowlist denies a table no migration names (0122).
 ALTER TABLE "lot_compositions" ALTER COLUMN "attachment_id" DROP NOT NULL;

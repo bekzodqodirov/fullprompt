@@ -7179,3 +7179,269 @@ an open PR does not survive that PR renumbering itself on its own merge; only th
 so the second to merge reads main's tail and the journal again. (5) **Red proofs that stay green.** The stop's first test
 asserted the durable row after the stop, and the store's own 1 s debounce wrote it anyway inside the
 unbounded 4 s; it was re-anchored on what only the bound changes (the stop's time).
+
+## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29, merged with main 2026-11-10; migration 0142 `chat_rule_bound_via` since #1615 — renamed from 0139, ledger 143; numbered #1610-#1620, renumbered from #1571-#1581 on the merge — the THIRTIETH collision: main's Sakkiz band round 3, «narx jadvali», Horgos and «Ikki eshik» took #1571-#1609 and 0139-0141 first, and 0139 had this round's `when` …118, so it moved to …121)
+
+1610. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
+evening as #1544: a customer wrote «Assalomu alaykum», the card came with «✏️ O‘zim yozaman · ❌ · 🙋» and no ✅,
+and he answered in Telegram himself. The card draws ✅ only while `payload.blocked !== true` — the policy refused the
+draft. A read-only investigation (four tracers, each verified by a skeptic) found the refusals an ordinary opener
+meets, then probed them through the real `checkAgentReply` with sources built as `memoryFor` builds them: prompt
+rule 3 TOLD the model to ask several things as «bitta raqamlangan ro'yxat» and `calc_checklist` printed `1) …`,
+while `extractNumbers` read every list marker as a figure — as MONEY once «narx» stood anywhere — so «1. Tovar nomi
+2. Kub 3. Kg» was «manbasi yo‘q raqam: 1 $ … 3 $»; two «?» were a hard block though the spec's own table
+(AI-SOTUVCHI.md:378) sends G4 to «qoralama»; a word numeral ANYWHERE blocked once «kub» or «kg» stood ANYWHERE
+(«Ming rahmat! … necha kub?»); «necha kunda», «bir necha daqiqada», «несколько дней» were spelled durations;
+«Yuk necha kunda kerak?» — a question TO the customer — was our dispatch promise. He chose «a»: soften exactly
+these, keep every dangerous refusal. Built so that each softening keeps the door beside it shut, because the
+first cut's own review showed three of them opening doors (blockers, fixed and pinned): list markers are DROPPED
+(a `fixed` figure still needs an equal-valued source) only in an in-order run of at least two in one style, never
+with a currency for an item and never after a price or unit word, and the prompt asks for «•»; `questions` is a
+warning; a word numeral blocks beside its unit, past copulas and per-unit words («kub uchun uch», «Narxi esa, besh
+yuz»), and «xil / yo'l / variant / rahmat» is no figure; G1 has its own definite-duration list while G2 keeps
+«bir necha kunda yetib keladi»; a «?» statement is exempt from the dispatch promise only for an ASKING count with no
+certainty word and no first-person delivery verb; `normalizeDigits` folds ʼ ` ´ ′ ʹ to «'» before NFKC (the seed's
+«vaʼda emas» is a disclaimer, and «muammo boʼlmaydi» — a guarantee that PASSED before — blocks); the figures the
+prompt dictates (minimum 1 m³ / 100 kg, avia 1 kg and 2-5 days) are company-rule sources whatever the kb holds,
+each with its UNIT and road, and a source with a mode vouches only for a figure on that road (a figure naming none
+is the truck's); a kb address number («29号», «3栋», «168米») vouches only for a plain figure — «taxminan 29 kunda
+yetib keladi» passed on Guangzhou's street number before; «the calculation is free» is exempt only as the
+calculation NOUN beside the free word, with no service stem anywhere in the statement; the Russian «оплата по
+прибытии, перед получением» is exempt only when the paid-first phrase is the statement's tail with no deny, no
+hand-over-first and no taking-back next statement. 136 cases in `tests/unit/agent-policy-first-reply.test.ts`
+plus the review's, end-to-end first replies in uz Latin / ru / uz Cyrillic / en with `ok === true`, and the
+dangerous neighbours on the same memory blocked with their codes; ~40 red proofs by string edit.
+
+1611. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
+said «⛔ ✅ yo‘q — tuzatish kerak:» and its reasons printed codes («word_numeral», «latin→cyrillic», «1 $»);
+nothing said that ✏️ is the way out or where to type, and «✏️ O‘zim yozaman» beside «🙋 O‘zim javob beraman» on
+the page read as «answer him yourself». Now: «⛔ Bu matn shunday yuborilmaydi (✅ yo‘q). Sabab:», the reasons in
+words, and one remedy line true to the flow; the button is «✏️ O‘zgartirish» (his own word for it); the prompt
+says «SHU BOTGA — mijozning chatiga emas» and the AI's text follows as its own copyable message, recorded on the
+card's row so the chat purge blanks it too (leak-9); ONE rule `cardDrawsSend({blocked, status, ownText})` decides
+the ✅ for the bot and the page; ✅ on an editing draft with no own text sends the machine text through the same
+digest, policy and chatMoved checks (CAS on the read status and `final_body IS NULL`), and when the chat moved
+`redraftNewest` asks the newest customer line again or says «bu javob ketmaydi» — never a promised card that does
+not come; a dead ✏️ wait lets his next text fall through to the rest of the bot; after his own text the bot answers
+with an inline ✅ carrying the card's digest and names the actions ✅ will also run; a crowded card loses parts in
+a fixed order (`fitCard`: our last message cut first, keeping ✅) and only a reply that cannot be shown loses ✅;
+a machine draft with no stored memory is blocked in words (`memory_missing`). A taken-over draft says WHO: «✋ Siz
+mijozga Telegramda o‘zingiz yozdingiz (HH:MM) — AI javobi bekor qilindi», the time of his first outgoing message
+after the anchor that is not the AI's own send, plus the real pause the run applies after his message
+(`human_pause_min`), against «🙋 Suhbatni o‘zingizga oldingiz — AI bu chatga 24 soat yozmaydi» (one constant,
+`HUMAN_TAKEOVER_HOURS`, for the write, the card and the toast). A draft written > 3 min after its anchor says
+«⏱ Mijoz N daqiqadan beri javob kutyapti» and why when the job's origin knows (pull / sweep / edit).
+
+1612. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
+was waiting upstream; the most likely road was a stranger card answered by hand. Four things fixed. The work-account
+switch is read by its own 30-second shared clock (`workModeSwitch` — concurrent lines share one read; a line about
+to be STORED on the switch's say-so reads it afresh), because the stale-book branch was its only reader and every
+stranger's miss refresh pushed that clock back; the start line names the mode and a change prints one line. A
+web-tray answer to a pending chat on the AI's account queues the same pull the bot's door does — only when the
+HOLDER presses, as the bot requires. The `[agent] inbound` line carries origin, attempt, lagMs and queuedMs from
+pg-boss's own columns (`includeMetadata` on that worker), no identity. The gap and retry passes skip an anchor with
+a waiting job (created/retry — not active, or a killed process's job would hold the recovery for 15 min). And the
+live lookups (#1544) got a deadline ABOVE gramjs's own 60 s flood sleep (`lookupDeadlineMs` = threshold + 15 s):
+the first cut's 30 s would have passed over a line Telegram was only making us wait for.
+
+1613. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
+yashirgan odam yangi raqamingizga yozsa — ⭐ a) avtomatik lid va AI darhol javob», he answered «1 a». #1544's
+`unknownChatAction` comment argued «a lead nobody can ring is a row with a name in it»; on a number bought only for
+customers the Telegram chat IS the contact. On a work account `no_phone` → `open_lead`; a personal account is
+unchanged. ONE minting door, `phonelessLeadForChat`, shared with the «📵» card's «🆕 Yangi lid»: the chat's
+`tg_chat_rules` row is the fence (inserted pending if absent, held FOR UPDATE for the mint, committed `include`
+with `decided_by NULL` — the listener's own binding), a bound chat is one read, three lines at once mint one lead
+(proven by a held row), the same Telegram user's OPEN lead on another account is reused, and the name is never
+empty or an id (display name → @username → «Telegram (raqam yashirin)», with invisible filler characters
+stripped). The machine binding YIELDS: to a person's answer on the tray, to the client book once the phone shows
+(the binding is retired, audited `book_match`), to a client the chat's rows already belong to, to a closed lead
+(a lost lead's next enquiry opens a new one, as a visible number's does), and to the switch turned back to
+«Shaxsiy raqam» (REVERSED by #1615: the switch governs new strangers only). The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
+accounts are fenced beyond 777000 (`isTelegramOfficialPeer`: 489000, «Replies», the `support` flag, early
+round-thousand ids). Backfill still stops at a new stranger; catch-up never sees a stranger it never stored.
+STATED: a colleague or a contact writing with a hidden number becomes a lead too (nothing can see the phone); a
+hidden-number stranger's lines written while the listener was down are not fetched.
+
+1614. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
+two lenses (regression, safety) with the findings fixed and red-proven before the cherry-pick, then the merged
+delta was reviewed again for what no single package could see (the interactions, customer safety on the merged
+policy, the owner's live day walked through the real functions).
+
+1615. **The listener's own binding is a MARK, not a shape — and the switch governs new strangers only.** The
+review of the merged branch (two skeptics per finding, re-verified against HEAD) found the blocker in #1613 itself:
+«machine» was read off the rule's shape — include, a lead, no client, no `decided_by` — and round 113's website door
+(`landSiteTag`) has written exactly that shape since it shipped, with no actor. Production holds such rows, so a
+website visitor's later lines would have stopped being stored on a personal number, the book's claim would have
+DELETED the site rule, `nobodyDecided` called it nobody's. No column of the row and no lead fact can tell the two
+apart (the machine door reuses any open lead of the chat, a website lead included), so migration **0142** (minted as 0139) adds
+`tg_chat_rules.bound_via` (`'work_account'` or NULL, CHECK) — positive for the work-number door, NULL on every
+existing row. SQL-only this release (0127's reason, #472: the table is read whole-row by the tray, the bot's
+stranger buttons and the minting door, and drizzle names every declared column), written by ONE raw statement in
+`phonelessLeadForChat`'s transaction (set by the machine, cleared by a person's press over it), read through
+`to_jsonb(row)` (`boundViaSql` — NULL, never 42703, one migration behind: walked on a copy with the column dropped);
+the writer asks `boundViaReady()` first and mints nothing while 0142 is absent, because an unmarked machine binding
+would read as a door's answer for good. `isMachineBinding` = the mark AND the shape (a person's write always carries
+`decided_by`); `nobodyDecided`, `rulesFor`, `retireMachineBinding` and the bot's stranger buttons all ask it.
+Fenced by `tests/unit/chat-rule-bound-via.test.ts` (not declared, named by chat-lead alone, written once).
+
+The switch (his «1 a» was about NEW strangers): a chat the work number bound stays on its OPEN lead after
+«Shaxsiy raqam» — `decideIncoming` no longer asks the switch for it and `switchDecides` drops it; the first cut
+passed its lines over, and the binding's row kept every question (the tray's, the «📵» card's) from ever being
+asked. The visible-number twin — a chat kept on an open lead by its own rows, which the phone path writes no rule
+for — stays there too (`keptLeadOfChat`, on the live line and the catch-up; REVERSED by #1616: rows never decide,
+that chat is the tray's question again). Chosen over «re-ask»: a hidden number
+cannot be asked on most accounts at all (the tray refuses `chat_no_phone`; only the agent owner gets a card), so a
+re-ask would have been the same hole on every other account. A binding whose lead CLOSED is retired on a personal
+number (`retireMachineBinding(…, 'lead_closed')`, the closed lead checked in the statement, not in the ten-minute
+map) so the chat is a new stranger's: the tray lists it and `noteStranger`'s `reopened` gives the one-card claim
+back. A mistaken binding is undone per chat, by a person: the tray's ↩ and «hech qachon», the card's «🚫 Shaxsiy».
+
+The presses: the binding closes a live «📵» card for its chat (`closeStrangerCards`, best-effort after the commit);
+a press on a machine-bound chat is the FIRST decision — «🚫 Shaxsiy» excludes and purges what the listener stored,
+«👤 Mijoz — kod» re-points to the client (the confirm's clock is a person's, not the machine's), «🆕 Yangi lid»
+makes the binding the person's. A tray ↩ (pending WITH `decided_by`) is a person's answer the work number no longer
+re-binds over (a pre-check and the same refusal under the lock — either alone holds); so a work number's tray can
+open a hidden-number lead itself (`PhonelessVia` `tray`), a personal one still refuses. Telegram's own accounts are
+neither on the tray nor carded (`officialPeerSql`, built from the live predicate's own list and bound; the `support`
+flag is on no stored row), and a stale card's buttons answer in words instead of `service_chat`. 22 red proofs by
+string edit, plus one that stayed green by design: the ↩ pre-check stripped alone (the lock's re-check holds; both
+stripped is red). The flipped-back hidden chat has two roads too — its binding (`decideIncoming`) and its rows
+(`keptLeadOfChat`): stripping the first is red in the unit test and green in the integration through the second,
+both stripped is red. (Since #1616 the rows road is gone and the binding is the one road.)
+
+1616. **Rows never keep a line the switch passed over; the manager's own line retires nothing; «🚫 Shaxsiy» takes
+the listener's leftovers.** An adversarial verifier re-ran the reviewers' probes against #1615 (all seven findings
+held) and then probed what the fix newly let through — seven more, each reproduced, re-verified here against the
+code:
+
+- **The rows road was a door with no way out (defect).** #1615 made a VISIBLE chat a work number had kept by its
+  number (the phone path writes no rule) go on being stored on a personal number by its ROWS (`keptLeadOfChat`).
+  At 0b3f32d that line was a tray question, which a person could answer or refuse; on HEAD it was stored with no
+  rule at all — no tray row, no «hech qachon» (a lead's thread is read-only, `excludeChatForClient` is a client's),
+  the AI drafting on — until somebody happened to close the lead. The visible path has no binding to be consistent
+  WITH (the task's own condition), and the question it falls back to CAN be asked: the tray lists it and its «Lid
+  ochish» files the chat on the same open lead, because `leadForChat` finds a lead by its number. So `keptLeadOfChat`
+  is DELETED, on the live line and the catch-up; what is not a new stranger stands by a RULE (the listener's own
+  binding, a person's, a door's) and never by rows. «A personal number unchanged» is his «1 a» word for word.
+- **The same road stored lines while a question stood (defect).** `nobodyDecided` reads a pending row nobody
+  wrote as «no answer», so `keptLeadOfChat` filed lines beside a live «📵» card and a pending tray row — a lapse
+  retire whose lead a person then reopened, a scan's pending row beside work-era rows. Gone with the road: such a
+  line is passed over, the question stands, and the card's «🆕 Yangi lid» files the chat on the lead its lines are
+  on (`phonelessLeadForChat`'s `onRows` — no second lead).
+- **«🚫 Shaxsiy» left what the listener kept (defect, and F's second half).** #1615 purged on «Shaxsiy» only over
+  the listener's own binding. A question standing while a work number kept the chat by its number (a card from the
+  personal-number days, the number shown on the work number) and a lapse-retired binding's lines were both kept on
+  the listener's say-so, and «saqlanmaydi» answered while they stayed. Now «Shaxsiy» on ANY chat no person answered
+  (`nobodyDecided` — the binding, or a pending row nobody wrote) deletes what is stored of it when every stored line
+  is a LEAD's (`storedOnLeadsOnly`): a client's line is a client's history, and a press about a stranger is never
+  the door to it (the tray's purge after «hech qachon» stays that, #388). A person's ↩ is an answer: nothing past it
+  is purged. The machine case narrows by the same guard, stated.
+- **The manager's own line spent `reopened` (nit).** The lapse retire ran on an outgoing line too, and the card's
+  note is never asked about his own line (`strangerSeen` returns on `out`), so the claim was not given back and the
+  card never came. `settlePassedChat` takes the line's DIRECTION and retires on an inbound line only — a closed lead
+  WRITING again is the new enquiry, the manager's line is not.
+- **An echo card's ↩ on one of Telegram's own accounts posted a «📵» card (nit).** `reopenStrangerCard` asks
+  `officialChat` first; the ↩ still takes its typed bind back.
+- **A ↩'d hidden chat on a work number re-read the whole book per line, silently (nit).** The refusal is about one
+  chat, so the listener re-reads that chat's rule alone (`chatRuleFor`, `rulesFor`'s shape from one `toChatRule`)
+  and swaps its entry; on the AI's account it says why (`passedLine` `held`: «javobingizni kutyapti (↩)»).
+  DECIDED, as asked: a ↩ on a work number does NOT hold a VISIBLE number — a visible chat's lead is the NUMBER's
+  (`leadForChat` finds it every line, round 79), a hidden chat's lead is the RULE's; a ↩ takes the rule back and
+  cannot take back a number. Lines between a ↩ and its answer are not stored — the same promise a personal
+  number's question has always made (round 79).
+- REFUSED, with reasons: the live «📵» card when the number is shown on a work number (F's first half) — the rule
+  is still `pending`, so every press on that card is a first answer that works (🆕 → the same lead by its rows, 👤,
+  🚫 now with the purge above), and the web tray closes no bot card by design either (review I1); the deploy-morning
+  window with 0142 absent (G) — the verifier's own «acceptable as stated»: tg-listen does not wait for `migrate`, the
+  window is the migration's seconds, and a test of it would have to drop a column from a database other test files
+  share.
+
+13 red proofs by string edit, restored byte-identical: the rows road (the harness restating the listener, the live
+and the catch-up fences), the direction guard (behaviour and fence), the official ↩, the three purge guards, the
+own-chat re-read (fence and parity), the `held` words and their gated call site.
+
+1617. **The policy, reviewed a third time: key each door on the thing itself, not on the words around it.** The
+merged-delta review (#1614) found the first softening's leaks — a spelled price with no unit right beside it
+(«3 kub yukingiz uchun besh yuz atrofida»), the pay-first exemption taken back a statement later, «hisoblash bepul,
+qolgani ham», «Shuncha kunda yetkazib beramiz» after an asking question, a hedged vague travel time, the company-rule
+minimum vouching for «your 100 kg arrived» — and the first fix tuned word lists, which its own verifier broke again
+in both directions. The third pass keys each door on its subject: a spelled hundred, thousand, ten or teen is a
+figure in ANY reply, exactly like its digits (only a thanks word frees it — «Ming rahmat»), while a small count 2-9
+is judged only beside its unit, so qualification replies stay free; the paid-first exemption reads every other
+statement of the reply for a take-back (softenings, talk-or-wait, a contrast turning to the money), and the rule
+restated («после оплаты», «avval to'lov») is not one; the free-calculation exemption carries over through a likeness,
+an also-word or a nothing-charged phrase in any later statement, but not through a question, a request or a price we
+will tell; a back-reference to the customer's deadline (shuncha kunda, в срок, on time, ulguramiz) is a dispatch
+promise unless a condition or purpose wraps it; a vague travel time is a G1 figure (as at a4e1b1c) where the cargo
+or the trip is the subject; a minimum source vouches only for a sentence said as a minimum, never an arrival or the
+customer's own cargo, and the road a figure belongs to is the one named last before it; «GSR Logistics» (any case
+ending) is the company, not a colleague. STATED: «O'n yillik tajribamiz bor» loses ✅ like «10 yillik» did; a 2-9
+«price» beside no unit passes (no real price here is that small). Probed on four trees over the verifier's 265-case
+corpus; every case pinned in `tests/unit/agent-policy-first-reply.test.ts`.
+
+1618. **The ✅ sends the words he pressed, and a press promises only the card that is coming.** The own-text race
+(#1614 finding 16): ✅ pressed while his new text was being placed could queue the OLD text while the card showed
+the new one. The approval transaction now locks the draft row and compares status, `final_body` and the card digest
+over the digest's own inputs before the outbox insert; a stale press answers «Karta o'zgargan» in words.
+`redraftNewest` counts a waiting edit job (created, retry, or active within the interrupted-run window) as the card
+that is coming, judges a line by its NEWEST ask, takes its own attempt band (never the sweep's retry slot), and runs
+as origin `redraft`; a job that waits for typing keeps its attempt and its asker (it had fallen to attempt 0 and stood
+down as a duplicate of its own draft — a card that never came, before this round too). Words are true to the case:
+«Mijoz xabarini tahrirladi …», «… javob allaqachon tasdiqlangan», and the pull cause names both doors.
+
+1619. **The last independent check, and where the policy stops.** A check of the merged tree (#1614) wrote 293
+ordinary first replies and 303 dangerous ones and ran both through the real `checkAgentReply`: 274 ordinary passed,
+and four of this round's own softenings had reopened doors a4e1b1c had shut — the pay-first exemption with a part
+payment or «the rest later» beside it, «几»/«چند» before a tag question, a vague arrival time with no verb («Bir
+necha kun ichida Toshkentda»), and «hisoblash bepul» next to «берём на себя». Fixed, and the fixes checked again
+three times (each round's verifier found regressions in the previous round's fixes — #1463's pattern): the
+exemption is refused when the statement names a part of the money (a part of the CARGO is not), and taken back by a
+later statement offering the rest, a shortfall release or a sale-day settlement (the rule said again is not);
+a tag question (可以吗, خوب است, xo'pmi, ok) does not make an earlier clause asked; an arrival place is a trip's
+subject; WE_COVER reads Russian and Uzbek. On the ordinary side, the owner's own bug in a new shape: the prompt says
+«write numbers in digits», so «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou va Xorgos» was an unsourced 3 —
+`listedCount` sources a count 2-9 of a whitelisted noun that the reply itself enumerates exactly (never cargo,
+boxes, trucks, money or an arrival), and the prompt now says counts of options go in words; «15 дан 25 кунгача» is
+a range; a trailing «bu taxmin» / «это примерно» hedges the days unless a contrast, the price or an exactness
+stands between; «eng oz», «va undan ko'p», «or more» say a minimum; «1688» beside a marketplace and no money is a
+name. **G10 is softened** under his «a»: the same text to more than three other chats in 24 h WARNS (✅ stays, the
+card says how many chats) when the reply is ≤ 160 characters with no figure, word numeral, phone or link —
+otherwise it still blocks; on a client-only number every new chat opens with the same greeting, and the fuse was
+removing ✅ from exactly the reply he reported. Closed on the way (they passed on both trees): a bare figure under
+«Jami / Итого / Total» is money, a client code glued to its marking («GS778MANIKEN») is a code, «точно» is
+certainty. MEASURED at the end: the 62-reply ordinary corpus 62/62 before and after, the 303-case safety corpus
+0 newly passing and 41 newly blocked (all dangerous), the last verifier's 62 inputs as expected.
+**The stopping rule** (#1466): the policy is a word-list fence and every list misses a phrasing; it is the SECOND
+fence, behind his own reading of every card in phase 1. STATED, passing on both trees and left open on purpose
+(each fix is another list that blocks ordinary replies): credit said in words the rows lack («после реализации»,
+month-end settlement, «ishonchga», «pay whenever»), discounts said softly («narxda yon beramiz», «по себестоимости»,
+«negotiable»), customs/duty promises outside the rows, «yo'qolmaydi» / «qoplab beramiz», a price lock, per-unit
+shapes with no price word («Куб у нас по 800»), spelled numbers with case endings («yuzdan»), a per-kg rate quoted
+per cube, an arrival claim with no figure for a lead with no cargo, «Truck freight takes 15–25 days» unhedged.
+
+1620. **A press promises only the card that is coming.** The same check found three more on the card: ❌ on a ✏️
+draft whose ANCHOR the customer had edited re-asked nothing (the edited question got no card from anyone); ✅/❌
+said «yangi qoralama tayyorlanadi» and queued a run for a chat already at a run cap (no card ever came — the press
+now reads the same counts `reserve()` uses and says «bu javob ketmaydi» instead); and «javob allaqachon
+tasdiqlangan» was read off the draft's status alone, so a reply he approved and then cancelled told him not to
+answer the customer — now only an outbox row that is live or sent counts as answered. A press that loses the status
+check answers «not live», never «o‘zingiz javob bering».
+
+1621. **Found while writing his usage guide (2026-11-10).** His «nima ishlar qilindi va qanday ishlatish yo'riqnoma
+tuz»: six readers took the AI sotuvchi apart surface by surface for the guide and a critic spot-checked them, every
+fact quoted from the code. Three things the guide would have had to call broken were fixed instead. (1) **The page's
+«📌 Umumiy qoida» could never save**: `agentRememberAction` passed no token and `kbPress` saves a general fact only
+on the arm's token, which the bot's «📌 Ha, hammaga» carries in its callback — so both page presses only asked again,
+in a sentence naming a button the page does not draw. The page now draws the arm's token (`WebDraft.kbArmToken`, null
+until armed, so a page drawn before the 📌 can never be the yes) and its arming sentence names its own button; red-proven
+(projection nulled → the new test red). (2) **«Bu chatni olmang» promised «Eski xabarlar qoladi»** while
+`excludeAndPurgeChat` deletes the stored messages and photos — the hint says so now, in all four bundles. (3) **The
+restriction alarm named «Tekshirdim»**; the button reads «Tekshirdim, qayta yoqish» and sits behind the red «⛔
+To‘xtatilgan» line — the test reads the label out of the bundle, red-proven. Also: `m8-crm.desktop`'s reload raced the
+move action (the database held the move, the page did not — red twice in a QUIET run, so not the shared-CPU flake
+recorded before); it waits for the action's answer now, green three times. STATED in the guide, not changed: a
+visible-number colleague who is not in the client book becomes a lead on a work number and the AI drafts for him (the
+colleague check reads card and rule phones, never the lead's — his open question); the website truck table copied
+into `site-estimate.ts` stops on 2026-12-31 and the AI quotes no yo'lkira after it until the code is renewed; the
+14-day ramp counts his STORED sends on that number; nothing ends a 🙋 early or un-mutes a chat; /suhbatlar/ai does not
+refresh by itself.

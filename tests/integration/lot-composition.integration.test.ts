@@ -623,7 +623,7 @@ describe('lot tarkibi — the writer', () => {
       code: 'm3_sum',
       sums: { sum: '2.5001', lot: '2.5000' },
     });
-    // No document is no refusal any more (0142 — test 2c); one that IS cited
+    // No document is no refusal any more (0143 — test 2c); one that IS cited
     // is still held to the prixod and to being a paper.
     expect((await r(OWNER_CASE(), { docKey: 'DOC2' })).code).toBe('document_not_on_receipt');
     expect((await r(OWNER_CASE(), { docKey: 'PHOTO_EARLY' })).code).toBe('document_is_photo');
@@ -632,7 +632,7 @@ describe('lot tarkibi — the writer', () => {
     expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
   });
 
-  it('2c. the document is OPTIONAL (0142, the owner 2026-11-10): none is a save, the card reads it back, a cited file is let go', async () => {
+  it('2c. the document is OPTIONAL (0143, the owner 2026-11-10): none is a save, the card reads it back, a cited file is let go', async () => {
     const lines = () => [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')];
     const holder = { id: vedId, permissions: new Set(['receipts.edit']) };
     // H cites a document of its own prixod: in use while cited.

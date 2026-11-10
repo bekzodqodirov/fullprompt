@@ -11,7 +11,7 @@ import {
   setAviaRate,
   type AgentConfig,
 } from '@/modules/wms/agent/config';
-import { agentRules } from '@/modules/wms/agent/web-page';
+import { agentRules, pageDrawsSend, webDrafts } from '@/modules/wms/agent/web-page';
 import { approveStyleGuide } from '@/modules/wms/agent/style';
 import {
   AgentCancelError,
@@ -437,5 +437,48 @@ describe('a new avia rate retires the pending drafts quoted at the old one (revi
     await setAviaRate({ id: holderId, roles: [] }, null, ctx(holderId));
     expect((await statusOf(same)).status).toBe('superseded');
     expect((await statusOf(plain)).status).toBe('pending');
+  });
+});
+
+describe('the page’s ✅ follows the bot’s card (C7, C10 a)', () => {
+  async function live(over: { finalBody?: string | null; status?: string }) {
+    const n = next();
+    const [row] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: holderId,
+        peerId: BigInt(`6${SUFFIX}${String(n).padStart(3, '0')}`),
+        clientId,
+        anchorTgMessageId: BigInt(3000 + n),
+        proposedBody: `Salom ${SUFFIX}-${n}`,
+        finalBody: over.finalBody ?? null,
+        status: over.status ?? 'pending',
+        policy: { blocks: [], warnings: [], ledger: [], notes: [] },
+      })
+      .returning({ id: agentDrafts.id });
+    draftIds.push(row!.id);
+    return row!.id;
+  }
+
+  it('a card too long to show is blocked on the page too, and says so in its text', async () => {
+    const cut = await live({ finalBody: 'Ш'.repeat(3800) });
+    const drawn = (await webDrafts({ id: holderId })).pending.find((d) => d.id === cut)!;
+    expect(drawn.blocked).toBe(true);
+    expect(drawn.cardText).toContain('✅ yo‘q');
+    expect(pageDrawsSend(drawn)).toBe(false);
+  });
+
+  it('a draft he pressed ✏️ on and wrote nothing for keeps its ✅; with his words, not until he sends new ones', async () => {
+    const unused = await live({ status: 'editing' });
+    const own = await live({ status: 'editing', finalBody: 'Ertaga aytaman.' });
+    const page = (await webDrafts({ id: holderId })).pending;
+    const a = page.find((d) => d.id === unused)!;
+    const b = page.find((d) => d.id === own)!;
+    expect(a.ownText).toBe(false);
+    expect(pageDrawsSend(a)).toBe(true);
+    expect(b.ownText).toBe(true);
+    expect(pageDrawsSend(b)).toBe(false);
+    // The page's own words for the editing line name the bot AND the page's box.
+    expect(a.cardText).toContain('✏️ Botda tahrir boshlangan');
   });
 });

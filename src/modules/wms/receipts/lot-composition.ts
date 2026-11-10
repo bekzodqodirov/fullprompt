@@ -257,7 +257,7 @@ async function lockCompositionHeader(
  * then the write and the audit. No composition write locks a truck row, so
  * the count door's «lot, then truck» meets nothing here.
  *
- * The client's document is OPTIONAL (0142; the owner, 2026-11-10 — «tarkib
+ * The client's document is OPTIONAL (0143; the owner, 2026-11-10 — «tarkib
  * qo'shganda tasdiq so'rash rasm file»: the VED often has only what the
  * client said). A document that IS cited is held to the same two rules as
  * before — a file of THIS prixod, and a paper rather than a receive-time
@@ -464,7 +464,7 @@ export interface CompositionView {
   lotId: string;
   rev: number;
   seenBoxCount: number;
-  /** The client's document, when one is cited — optional since 0142. */
+  /** The client's document, when one is cited — optional since 0143. */
   attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   savedAt: Date;
@@ -600,7 +600,7 @@ export async function oneGoodPrefillFor(
 
 /**
  * ONE statement: headers ⟕ attachments ⋈ users ⋈ LATERAL json_agg(lines
- * ORDER BY seq) — the document LEFT-joined since 0142 made it optional: an
+ * ORDER BY seq) — the document LEFT-joined since 0143 made it optional: an
  * inner join would drop a document-less composition from the receipt card
  * (which could then neither edit nor clear it) and from the plan-stage agent
  * file, while the invoice went on printing its lines (#600's rule: a column

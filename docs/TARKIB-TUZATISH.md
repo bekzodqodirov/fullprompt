@@ -33,7 +33,10 @@ Earlier decisions this round REVERSES (each recorded in DECISIONS):
 - UCH-BAND 8.6 («a one-line tarkib vouches ✅ only when its name is the lot's») — any standing tarkib vouches, because the screens now print the tarkib's name.
 - LOT-TARKIBI §5 («a line row has no 🤖») and UCH-BAND 7b's «the agent file stays one row per plan line».
 
-## 1. Data — migration `0142_tarkib_document_optional` (`when` 1785190000121, ledger 143)
+## 1. Data — migration `0143_tarkib_document_optional` (`when` 1785190000122, ledger 144)
+
+Minted as 0142 / `when` …121; main's «✅ Yuborish chiqmadi» round (PR #140) merged first with
+the same number AND the same `when`, so this one moved on the merge — the thirty-first collision.
 
 ```sql
 -- Lot tarkibi: the client's document is optional (the owner, 2026-11-10 —
@@ -91,7 +94,7 @@ Built (the map's option A + L1):
   bundles: `lotCheck.byDocument` «Tarkib bo'yicha tekshirilgan», `staleDocument`,
   `documentOld`, `documentOtherName`, `otherAnswers`, `otherAnswersAskLogist` (🧩 and the
   logist word stay — the fence pins them) and `receipts.attachInUse`.
-- **Rollback** (docs/UPDATE.md, «0142 dan PASTGA»): code below this release inner-joins, so
+- **Rollback** (docs/UPDATE.md, «0143 dan PASTGA»): code below this release inner-joins, so
   `SELECT count(*) FROM lot_compositions WHERE attachment_id IS NULL` must be 0 first.
 
 ## 3. Items 3-4 — the Russian name every screen shows follows the tarkib
@@ -428,7 +431,7 @@ the AI button has no daily limit, as before.
 
 ## 8. Packages
 
-Kernel K (the lead — WRITTEN, commits on the branch): migration 0142 + journal + schema;
+Kernel K (the lead — WRITTEN, commits on the branch): migration 0143 + journal + schema;
 `violatedNotNull`; `compositionsFor` LEFT JOIN + the nullable `attachment`; `tarkibLabel`;
 `receipts/lot-name.ts`; `lot-composition-fence` lists. P1 (the lead — WRITTEN): §2 and §3.5
 and the receipt card (`lot-composition.ts` save, `composition-panel.tsx`,

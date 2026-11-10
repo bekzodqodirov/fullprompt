@@ -39,6 +39,13 @@ export type AgentErrorCode =
   | CancelRefusal
   | RetireRefusal
   | PriceRefusal
+  // `superseded` as the press found it (decide `redraftNewest`) — web-actions `SUPERSEDED_ERROR`.
+  | 'superseded_no_draft'
+  | 'superseded_capped'
+  | 'superseded_edited'
+  | 'superseded_edited_no_draft'
+  | 'superseded_edited_capped'
+  | 'superseded_answered'
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -53,6 +60,12 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   listener_behind: 'errors.listener_behind',
   sending_disabled: 'errors.sending_disabled',
   superseded: 'errors.superseded',
+  superseded_no_draft: 'errors.superseded_no_draft',
+  superseded_capped: 'errors.superseded_capped',
+  superseded_edited: 'errors.superseded_edited',
+  superseded_edited_no_draft: 'errors.superseded_edited_no_draft',
+  superseded_edited_capped: 'errors.superseded_edited_capped',
+  superseded_answered: 'errors.superseded_answered',
   taken_over: 'errors.taken_over',
   budget_spent: 'errors.budget_spent',
   calc_not_queued: 'errors.calc_not_queued',

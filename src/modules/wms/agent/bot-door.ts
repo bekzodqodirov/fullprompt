@@ -1,21 +1,25 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, inArray, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { agentConversations, agentDrafts, clients, leads, notifications, tgChatRules, tgPeerPulls } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { phoneSiblingClients } from '../client-cabinet/service';
+import { digestBody, hitWords } from './card';
+import { actionLines } from './card-io';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
 import { chatProof } from './context';
-import { decideDraft, submitOwnText, type DecideRefusal } from './decide';
+import { decideDraft, submitOwnText, type DecideRefusal, type SupersededDetail } from './decide';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
+import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { extractNumbers } from './numbers';
 import { knownNamesForMask } from './style';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
-import type { DraftPolicyJson } from './types';
+import type { PolicyHit } from './policy';
+import type { ComposedAction, DraftPolicyJson } from './types';
 
 /**
  * The bot's side of the agent, as plain functions the grammY shell calls
@@ -32,10 +36,38 @@ export interface PressAnswer {
   reply?: string;
   /** Inline buttons under `reply` — the question's own answer (the 📌 confirm, I3). */
   buttons?: { text: string; callback_data: string }[][];
+  /**
+   * A second message right after `reply`, on its own (C4): the draft's text
+   * as it stands, so he can long-press it, copy it and change it — the bot
+   * cannot put text into his typing box. A swipe-reply to it answers the
+   * wait like one to the prompt.
+   */
+  followUp?: string;
   /** A one-text wait the shell arms (and drops the other agent waits). */
   arm?: { kind: AgentWaitKind; payload: Record<string, string> };
   /** Drop this wait (the press answered it). */
   drop?: AgentWaitKind;
+  /** Drop the ✏️ wait only if it names THIS draft — a ✅ ended the edit it was armed for (C7). */
+  dropEditOf?: string;
+  /**
+   * Said when that wait WAS armed and this press dropped it — a ✅ refused
+   * because the draft is gone: his next text would otherwise go down the
+   * ladder (a code lookup, the AI assistant) while he meant it for the card.
+   */
+  editClosed?: string;
+  /**
+   * The draft whose WORDS a message of this answer carries — ✏️'s copy to
+   * change, a refusal handing the text over to send by hand. The shell
+   * records each such message on the draft's card row (`recordCardCopies`),
+   * where the chat's purge blanks it like the card (review leak-9).
+   */
+  quotes?: { draftId: string; parts: ('reply' | 'followUp')[] };
+}
+
+/** What his typed text is answered with — words, and a button under them when the words lead to one. */
+export interface AgentTextAnswer {
+  text: string;
+  buttons?: { text: string; callback_data: string }[][];
 }
 
 const DECIDE_WORDS: Record<DecideRefusal, string> = {
@@ -45,9 +77,10 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   not_live: 'Bu qoralama endi faol emas.',
   editing: "Avval o'z matningizni yozing.",
   stale_card: "Karta o'zgargan — yangi kartadagi ✅ ni bosing.",
-  policy_block: "Qoidaga to'g'ri kelmaydi — ✏️ bilan o'zingiz yozing.",
+  policy_block: 'Bu matn shunday yuborilmaydi — «✏️ O‘zgartirish»ni bosing va to‘g‘ri matnni shu botga yozing.',
   listener_behind: "Telegram ko'prigi (tinglovchi) yangilanmagan — xabar ketmaydi. Serverda tg-listen'ni qayta quring.",
   sending_disabled: "CRM'dan Telegramga yuborish o'chirilgan (Sozlamalar) — javob ketmaydi. Matnni nusxalab o'zingiz yuboring.",
+  // A newer card is coming (decide `redraftNewest`); the other answers are `SUPERSEDED_WORDS`.
   superseded: 'Mijoz yana yozdi — yangi qoralama tayyorlanadi.',
   taken_over: "Siz allaqachon o'zingiz javob bergansiz.",
   budget_spent: "Bugungi AI yuborish chegarasi tugadi — matnni nusxalab o'zingiz yuboring.",
@@ -58,6 +91,29 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
     "Bu lidni mijoz topuvchi agent topgan: unga faqat dushanba–shanba 10:00–17:00 da yoziladi, o'sha paytgacha mijozning xabari 24 soatdan eskiradi — javob navbatga qo'yilmadi. Ish vaqtida o'zingiz yozing.",
   empty: "Javob bo'sh.",
 };
+
+/** ✅ refused because the customer wrote again and no run will draft the newer message — he answers it. */
+export const SUPERSEDED_NO_DRAFT = 'Mijoz yana yozdi — bu javob ketmaydi. Yangi xabariga o‘zingiz javob bering.';
+
+/**
+ * A ✅ refused as `superseded`, in the words of what the press found (decide
+ * `SUPERSEDED_AS`): a customer who EDITED his line did not write again, and a
+ * line whose reply he already approved is not his to answer a second time
+ * (review). The page says the same through its own labels (web-actions).
+ */
+export const SUPERSEDED_WORDS: Record<SupersededDetail, string> = {
+  redrafting: DECIDE_WORDS.superseded,
+  no_draft: SUPERSEDED_NO_DRAFT,
+  // A run would draft the line, and the chat is at a daily cap that run meets (decide `capReached`): no card comes.
+  capped: 'Mijoz yana yozdi — bu javob ketmaydi. Bugungi AI chegarasi tugagan, yangi qoralama bo‘lmaydi — yangi xabariga o‘zingiz javob bering.',
+  edited_redrafting: 'Mijoz xabarini tahrirladi — yangi qoralama tayyorlanadi.',
+  edited_no_draft: 'Mijoz xabarini tahrirladi — bu javob ketmaydi. Unga o‘zingiz javob bering.',
+  edited_capped: 'Mijoz xabarini tahrirladi — bu javob ketmaydi. Bugungi AI chegarasi tugagan, yangi qoralama bo‘lmaydi — unga o‘zingiz javob bering.',
+  answered: 'Mijozning so‘nggi xabariga javob allaqachon tasdiqlangan — bu javob ketmaydi.',
+};
+
+/** A ✅ refusal that RETIRED the draft (or found it gone): the edit armed for it is over. */
+const RETIRING: ReadonlySet<DecideRefusal> = new Set(['superseded', 'taken_over', 'not_live', 'identity_changed']);
 
 /**
  * How a figure is typed AGAIN after a refusal. The text that was refused
@@ -122,7 +178,7 @@ async function deciderFor(userId: string) {
  * further up the chat. Said on the press, in a message that stays.
  */
 export function humanTakeoverWords(withdrawn: { total: number; own: number } | undefined): { toast: string; reply?: string } {
-  const toast = '🙋 Suhbat 24 soat sizniki';
+  const toast = `🙋 Suhbat ${HUMAN_TAKEOVER_HOURS} soat sizniki`;
   if (!withdrawn || withdrawn.total === 0) return { toast };
   const own = withdrawn.own > 0 ? ` (${withdrawn.own} tasi — o‘zingiz yozgan matn)` : '';
   return {
@@ -143,19 +199,32 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
         if (r.code === 'budget_spent' || r.code === 'sending_disabled') {
           const [d] = await db.select({ body: agentDrafts.finalBody, proposed: agentDrafts.proposedBody }).from(agentDrafts).where(eq(agentDrafts.id, id));
           const toast = r.code === 'budget_spent' ? '⛔ Chegara tugadi' : '⛔ Yuborish o‘chirilgan';
-          return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}` };
+          return { toast, reply: `${DECIDE_WORDS[r.code]}\n\n${d?.body ?? d?.proposed ?? ''}`, quotes: { draftId: id, parts: ['reply'] } };
         }
-        return { toast: DECIDE_WORDS[r.code].slice(0, 190), reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined };
+        const words =
+          r.code === 'superseded' ? (SUPERSEDED_WORDS[r.detail as SupersededDetail] ?? DECIDE_WORDS.superseded) : DECIDE_WORDS[r.code];
+        return {
+          toast: words.slice(0, 190),
+          reply: r.code === 'listener_behind' ? DECIDE_WORDS.listener_behind : undefined,
+          ...(RETIRING.has(r.code) ? { dropEditOf: id, editClosed: `✏️ ${words} Endi shu botga yozganingiz bu kartaga qo‘yilmaydi.` } : {}),
+        };
       }
       const soon = !r.sendAt || r.sendAt.getTime() <= Date.now() + 60_000;
-      return { toast: soon ? '✅ Yuborilmoqda' : `✅ ${hhmm(r.sendAt!)} da ketadi` };
+      // An edit he armed for this draft and did not use is over: the ✅ sent the card's words.
+      return { toast: soon ? '✅ Yuborilmoqda' : `✅ ${hhmm(r.sendAt!)} da ketadi`, dropEditOf: id };
     }
     case 'e': {
       const r = await decideDraft(actor, id, 'edit', {}, ctx);
       if (!r.ok) return { toast: DECIDE_WORDS[r.code].slice(0, 190) };
+      const [d] = await db.select({ finalBody: agentDrafts.finalBody, proposedBody: agentDrafts.proposedBody }).from(agentDrafts).where(eq(agentDrafts.id, id));
+      const current = d ? digestBody(d) : '';
       return {
         toast: '✏️',
-        reply: "✏️ Mijozga ketadigan javobni yozing — shu kartaga javob (reply) qilib yoki oddiy xabar bilan. Men uni kartaga qo'yaman, siz ✅ bosasiz.",
+        reply: EDIT_PROMPT,
+        // Telegram's own cap is 4 096; a text that long is a blocked one to shorten anyway.
+        ...(current
+          ? { followUp: current.length > 4000 ? `${current.slice(0, 4000)}…` : current, quotes: { draftId: id, parts: ['followUp'] } }
+          : {}),
         arm: { kind: 'agent_edit', payload: { draftId: id } },
       };
     }
@@ -189,6 +258,38 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
 }
 
 /**
+ * ✏️'s question (2026-10-29): «O‘zim yozaman» and «oddiy xabar bilan» read as
+ * «I will answer the customer myself», and he did — in the customer's chat,
+ * which threw the draft away. So the words say WHERE: into this bot, not the
+ * customer's chat, as a reply to the card or a plain message while the wait
+ * lasts (agent-bot `AGENT_WAIT_TTL_MS`, 30 minutes), and that nothing reaches
+ * the customer before his ✅. Starts with «✏️»: the ladder's tests find it so.
+ */
+export const EDIT_PROMPT =
+  '✏️ Mijozga ketadigan to‘g‘ri matnni SHU BOTGA yozing — mijozning chatiga emas (shu kartaga javob qilib yoki 30 daqiqa ichida oddiy xabar bilan). Men uni kartaga qo‘yaman; mijozga faqat siz ✅ bosganda ketadi.';
+
+/** His words are on the card and may go — the button under this sentence is the card's own ✅. */
+export const OWN_TEXT_PLACED = '✏️ Matningiz kartaga qo‘yildi. Mijozga yuborish uchun ✅ Yuborish ni bosing.';
+
+/**
+ * The confirmation, with what its ✅ ALSO does (review): the button approves
+ * the card, and the card carries the draft's actions — a mute, a
+ * calculation, a follow-up — so a sentence naming only his words approved
+ * side effects it did not show. The lines are the card's own (`actionLines`).
+ */
+export function ownTextPlaced(actions: readonly ComposedAction[]): string {
+  const lines = actionLines([...actions]);
+  return lines.length === 0 ? OWN_TEXT_PLACED : `${OWN_TEXT_PLACED}\n\n✅ bilan birga:\n${lines.map((l) => `➕ ${l}`).join('\n')}`;
+}
+
+/**
+ * A text typed at a draft that is no longer live — answered, rejected,
+ * expired, or retired by his own message in the customer's chat. Says that the
+ * text went nowhere: «faol emas» alone left him wondering whether it was kept.
+ */
+export const OWN_TEXT_NOT_LIVE = 'Bu qoralama endi faol emas — matningiz hech qayerga yozilmadi.';
+
+/**
  * His typed text, for the agent: a reply (swipe) to an agent card names its
  * own target; otherwise the one live agent wait does. Null = not the agent's.
  */
@@ -196,19 +297,69 @@ export async function agentText(
   staffId: string,
   target: { kind: AgentWaitKind; payload: Record<string, string> } | null,
   text: string,
-): Promise<string | null> {
+): Promise<AgentTextAnswer | null> {
   if (!target) return null;
   const actor = await deciderFor(staffId);
   const ctx = { actorId: staffId };
   if (target.kind === 'agent_edit') {
-    const r = await submitOwnText(actor, target.payload.draftId!, text, ctx);
-    return r.ok ? '✏️ Matningiz kartaga qo‘yildi — tekshirib ✅ bosing.' : DECIDE_WORDS[r.code];
+    const draftId = target.payload.draftId!;
+    const r = await submitOwnText(actor, draftId, text, ctx);
+    if (!r.ok) return { text: r.code === 'not_live' ? OWN_TEXT_NOT_LIVE : DECIDE_WORDS[r.code] };
+    // A ✅ only where the card draws one (C9): «tekshirib ✅ bosing» promised it over a text
+    // the owner subset had blocked, and the card's ✅ was an edited message somewhere above.
+    if (r.blocked || !r.digest) return { text: ownTextBlocked(r.blocks ?? []) };
+    return { text: ownTextPlaced(r.actions ?? []), buttons: [[{ text: '✅ Yuborish', callback_data: `ag:s:${draftId}:${r.digest}` }]] };
   }
   if (target.kind === 'agent_price') {
     const r = await priceDraftFromText(staffId, target.payload.requestId!, text);
-    return r.ok ? PRICE_DRAFTED : priceRefusalText(r, text);
+    return { text: r.ok ? PRICE_DRAFTED : priceRefusalText(r, text) };
   }
-  return codeEcho(staffId, target.payload.ruleId!, text);
+  return { text: await codeEcho(staffId, target.payload.ruleId!, text) };
+}
+
+/**
+ * His words are on the card and may NOT go, said with the reason and the way
+ * to type them again — the wait was consumed by this text (the redelivery
+ * rule), so «qayta yozing» names the two doors that still lead to the draft.
+ */
+export function ownTextBlocked(blocks: readonly PolicyHit[]): string {
+  const why = blocks.length > 0 ? blocks.map((b) => hitWords(b)).join('; ') : 'matn kartaga sig‘maydi (juda uzun)';
+  return `⛔ Matningiz kartaga qo‘yildi, lekin shunday yuborilmaydi: ${why}. Qisqartirib, kartaga javob (reply) qilib qayta yozing yoki «✏️ O‘zgartirish»ni qayta bosing.`;
+}
+
+/**
+ * Is the draft a ✏️ wait names still one his text would land on — his own,
+ * pending or editing (`submitOwnText`'s own test)? Asked by the text slot
+ * before it consumes a plain text (C8): a wait outlives its draft (nothing
+ * that retires a draft can reach the bot's waits), and a dead one must not
+ * swallow the next thing he types.
+ */
+export async function editStillLive(staffId: string, draftId: string | undefined): Promise<boolean> {
+  if (!draftId) return false;
+  const [d] = await db
+    .select({ status: agentDrafts.status })
+    .from(agentDrafts)
+    .where(and(eq(agentDrafts.id, draftId), eq(agentDrafts.managerUserId, staffId)));
+  return d?.status === 'pending' || d?.status === 'editing';
+}
+
+/**
+ * The bot's messages that carry a draft's WORDS (`PressAnswer.quotes`),
+ * recorded on HIS card row of that draft as `payload.copies` — where the
+ * chat's purge finds them and blanks them like the card (purge
+ * `blankQuotedCopies`, review leak-9). Sent by `ctx.reply`, each was a copy of
+ * the customer-facing text that no row named, and «🚫 Shaxsiy» left it
+ * standing in his chat with the bot for ever. Every card row re-render merges
+ * over the payload (`||`), so the list survives them.
+ */
+export async function recordCardCopies(staffId: string, draftId: string, copies: readonly { chatId: number; messageId: number }[]): Promise<void> {
+  if (copies.length === 0) return;
+  await db
+    .update(notifications)
+    .set({
+      payload: sql`${notifications.payload} || jsonb_build_object('copies', coalesce(${notifications.payload}->'copies', '[]'::jsonb) || ${JSON.stringify(copies)}::jsonb)`,
+    })
+    .where(and(eq(notifications.userId, staffId), eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`));
 }
 
 /** Which agent card a swipe-reply answers — resolved from HIS OWN notification row by `payload.tg` (reply-door's rule). */
@@ -393,10 +544,25 @@ async function keptQuestion(
   return question;
 }
 
-type RuleRow = typeof tgChatRules.$inferSelect;
+/** A rule as the stranger and echo cards judge it — with the 0142 mark of the listener's own binding. */
+type RuleRow = typeof tgChatRules.$inferSelect & { boundVia: string | null };
 type ConvIdentity = { clientId: string | null; strength: string | null; updatedAt: Date } | undefined;
 
 const tailOf = (id: string | null | undefined) => (id ?? '').slice(-8).toLowerCase();
+
+/**
+ * The rule a stranger or echo card names, read with its 0142 mark (chat-lead
+ * `boundViaSql` — NULL, never 42703, one migration behind): a press must tell
+ * the listener's own binding (nobody's answer) from a decision.
+ */
+async function ruleFor(ruleId: string): Promise<RuleRow | undefined> {
+  const { boundViaSql } = await import('../crm/chat-lead');
+  const [rule] = await db
+    .select({ ...getTableColumns(tgChatRules), boundVia: boundViaSql })
+    .from(tgChatRules)
+    .where(eq(tgChatRules.id, ruleId));
+  return rule;
+}
 
 async function convIdentity(staffId: string, peerId: bigint): Promise<ConvIdentity> {
   const [conv] = await db
@@ -526,6 +692,21 @@ async function closeRuleCards(
 }
 
 /**
+ * The stranger cards still asking about one chat, closed with `line` — for a
+ * door outside the bot whose own act answered their question: chat-lead's
+ * work-number binding (`phonelessLeadForChat`, the 2026-10-29 review — a card
+ * a personal number posted stayed live after the switch to «Ish raqami», and
+ * offered «🆕 Yangi lid» about a chat that already was one).
+ */
+export async function closeStrangerCards(staffId: string, ruleId: string, line: string): Promise<void> {
+  await closeRuleCards(staffId, 'AgentStranger', ruleId, () => line);
+}
+
+/** A Telegram account of Telegram's own (`officialChat`) — no answer but «Shaxsiy». */
+const OFFICIAL_CHAT_WORDS =
+  "Bu Telegram'ning o'z xizmat akkaunti (kodlar, bildirishnomalar) — mijoz ham, lid ham emas. Faqat «🚫 Shaxsiy» bosish mumkin.";
+
+/**
  * A chat ↩ leaves in question again gets a stranger card back when it has no
  * live one (review I1): the ✅ closed the first, the one-card-per-peer claim
  * is spent, and the listener stores nothing for a pending chat — without a
@@ -534,6 +715,10 @@ async function closeRuleCards(
 async function reopenStrangerCard(staffId: string, ruleId: string): Promise<void> {
   const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
   if (!rule || rule.decision !== 'pending') return;
+  // One of Telegram's own accounts is no stranger to ask about (the sweep's
+  // `officialPeerSql`): an old echo card's ↩ takes its bind back and posts nothing.
+  const { officialChat } = await import('../crm/chat-rules');
+  if (officialChat(rule.peerId)) return;
   const [live] = await db
     .select({ id: notifications.id })
     .from(notifications)
@@ -565,10 +750,24 @@ function decidedWords(rule: RuleRow): string {
 
 /**
  * The stranger card's buttons (§17.11): a lead, a client by its code (echoed
- * first), or personal. The card is an answer to a PENDING chat, and only to
- * one: once the chat is decided — here, or on the web tray, whose door closes
- * no card of the bot's — a press on it is late (a live copy nobody closed, a
- * backlog press), and a late press is never a second decision (review I1).
+ * first), or personal. The card is an answer to a chat still IN QUESTION,
+ * and only to one: once the chat is decided — here, or on the web tray, whose
+ * door closes no card of the bot's — a press on it is late (a live copy
+ * nobody closed, a backlog press), and a late press is never a second
+ * decision (review I1).
+ *
+ * In question = `pending`, or the listener's OWN binding (chat-lead
+ * `isMachineBinding` — a work number's hidden-number lead, his «1 a»): that
+ * binding is nobody's answer, so a press on its chat is the FIRST decision
+ * and wins (the 2026-10-29 review — it was refused «allaqachon hal
+ * qilingan», and the AI went on drafting for a chat he called private).
+ * «🆕 Yangi lid» makes the binding his, «👤 Mijoz — kod» moves the chat onto
+ * the client. «🚫 Shaxsiy» on ANY chat no person answered — the binding, or
+ * a question beside which a work number kept the lines by the number — also
+ * deletes what was stored of it on the listener's say-so, a lead's lines and
+ * never a client's (`storedOnLeadsOnly`; `purgeExcludedChat`,
+ * `excludeAndPurgeChat`'s rule). Telegram's own accounts (`officialChat`)
+ * take no answer but «Shaxsiy», in words.
  */
 async function strangerPress(
   staffId: string,
@@ -576,12 +775,19 @@ async function strangerPress(
   ruleId: string,
   echoedTail: string | undefined,
 ): Promise<PressAnswer> {
-  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  const rule = await ruleFor(ruleId);
   if (!rule || rule.managerUserId !== staffId) return { toast: 'Topilmadi' };
   const ctx = { actorId: staffId };
-  const { decideChat, openLeadForChat } = await import('../crm/chat-rules');
+  const { decideChat, officialChat, openLeadForChat, purgeExcludedChat } = await import('../crm/chat-rules');
+  const { isMachineBinding, nobodyDecided, storedOnLeadsOnly } = await import('../crm/chat-lead');
+  if (officialChat(rule.peerId) && (op === 'n' || op === 'k' || op === 'c')) {
+    await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
+    await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Telegram xizmati — mijoz emas.');
+    return { toast: '⚠️ Telegram xizmati', reply: OFFICIAL_CHAT_WORDS };
+  }
+  const machine = isMachineBinding(rule);
   if (op === 'n' || op === 'k' || op === 'x') {
-    if (rule.decision !== 'pending') {
+    if (rule.decision !== 'pending' && !machine) {
       await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '↪️ Bu chat boshqa joyda hal qilingan.');
       // The same answer again (a redelivered press) is not a refusal — it is done.
       if (op === 'n' && rule.decision === 'include' && rule.leadId && !rule.clientId) return { toast: '🆕 Lid allaqachon ochilgan' };
@@ -590,14 +796,26 @@ async function strangerPress(
     }
   }
   if (op === 'x') {
+    // What is stored of a chat no person had answered was kept on the
+    // listener's say-so — its own binding, or a work number's lead by the
+    // number while this card's question still stood (the second 2026-10-29
+    // review: «saqlanmaydi» answered and the lines stayed) — and «Shaxsiy»
+    // takes that past too, as the conversation's own «qo'shma» does. Never
+    // a client's line (`storedOnLeadsOnly`), and never past a person's answer
+    // (a ↩ is one). Asked BEFORE the press writes its own.
+    const purgeable = nobodyDecided(rule) && (await storedOnLeadsOnly(staffId, rule.peerId));
     await decideChat({ id: ruleId, decision: 'exclude' }, ctx);
+    const purged = purgeable ? await purgeExcludedChat(ruleId, ctx) : null;
     await db
       .update(agentConversations)
       .set({ identityClientId: null, identityStrength: null, updatedAt: new Date() })
       .where(and(eq(agentConversations.managerUserId, staffId), eq(agentConversations.peerId, rule.peerId)));
     await closeRuleCards(staffId, 'AgentStranger', ruleId, () => '🚫 Shaxsiy deb belgilandi.');
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '🚫 Chat shaxsiy deb belgilandi.');
-    return { toast: '🚫 Shaxsiy — saqlanmaydi' };
+    return {
+      toast: '🚫 Shaxsiy — saqlanmaydi',
+      ...(purged && purged.messages > 0 ? { reply: `🗑 Lidga saqlangan ${purged.messages} ta xabar o‘chirildi.` } : {}),
+    };
   }
   if (op === 'n') {
     try {
@@ -626,8 +844,9 @@ async function strangerPress(
     // naming the client the owner had just said this chat is NOT…
     const withdrawn = await withdrawTypedBind(staffId, rule, conv);
     // …and nothing it did not write: a chat decided since (here, on the web
-    // tray, even «Bu mijoz» for this very client) is that decision's.
-    if (!withdrawn && rule.decision !== 'pending') {
+    // tray, even «Bu mijoz» for this very client) is that decision's. The
+    // listener's own binding decided nothing.
+    if (!withdrawn && rule.decision !== 'pending' && !machine) {
       await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
       return { toast: 'Chat boshqa joyda hal qilingan', reply: decidedWords(rule) };
     }
@@ -655,8 +874,13 @@ async function strangerPress(
   // the web tray, before or after the code was typed — is newer than this
   // card (a backlog ✅ never undoes it). The pending rule's own clock is
   // asked too: the web tray may have put the chat back in question after the
-  // echo, and its last word is «ask again», not «this client».
-  if (rule.decision !== 'pending' || (rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime())) {
+  // echo, and its last word is «ask again», not «this client». The
+  // listener's own binding is no decision: its clock is the machine's, and
+  // the code he typed wins over it.
+  if (
+    (rule.decision !== 'pending' && !machine) ||
+    (rule.decision === 'pending' && rule.decidedAt && rule.decidedAt.getTime() > conv.updatedAt.getTime())
+  ) {
     await closeRuleCards(staffId, 'AgentCodeEcho', ruleId, () => '↪️ Eskirgan — chat boshqa joyda hal qilingan.');
     return { toast: 'Chat boshqa joyda hal qilingan', reply: "Bu chat kod yozilgandan keyin boshqa joyda (Qaysi chatlar) hal qilingan — karta eskirgan." };
   }
@@ -693,15 +917,17 @@ function proofLine(proof: Awaited<ReturnType<typeof chatProof>>, chatPhone: stri
 async function codeEcho(staffId: string, ruleId: string, text: string): Promise<string> {
   const code = text.trim().toUpperCase();
   if (!/^[A-Z0-9]{2,10}$/u.test(code)) return 'Kod bitta so‘z bo‘lishi kerak, masalan GS777.';
-  const [rule] = await db.select().from(tgChatRules).where(eq(tgChatRules.id, ruleId));
+  const rule = await ruleFor(ruleId);
   if (!rule || rule.managerUserId !== staffId) return 'Topilmadi.';
   const conv = await convIdentity(staffId, rule.peerId);
-  // A code is asked about a chat still in question — or one the flow itself
-  // bound (a second code typed after a ✅, I1 B). A chat the web tray decided
-  // while the wait was armed is that decision's (review I1): no echo, no
-  // card whose ✅ could undo it.
+  // A code is asked about a chat still in question — the listener's own
+  // binding included (`strangerPress`) — or one the flow itself bound (a
+  // second code typed after a ✅, I1 B). A chat the web tray decided while
+  // the wait was armed is that decision's (review I1): no echo, no card whose
+  // ✅ could undo it.
   const ownBind = await typedBindStands(staffId, rule, conv);
-  if (rule.decision !== 'pending' && !ownBind) return decidedWords(rule);
+  const { isMachineBinding } = await import('../crm/chat-lead');
+  if (rule.decision !== 'pending' && !ownBind && !isMachineBinding(rule)) return decidedWords(rule);
   const [client] = await db
     .select({ id: clients.id, code: clients.clientCode, name: clients.name, phones: clients.phones })
     .from(clients)
@@ -731,11 +957,15 @@ async function codeEcho(staffId: string, ruleId: string, text: string): Promise<
   return '👆 Tekshiring va tasdiqlang.';
 }
 
-/** One stranger's chat pulled into the CRM by the listener (tg_peer_pulls, one open per chat). */
-async function queuePull(managerUserId: string, peerId: bigint): Promise<void> {
+/**
+ * One stranger's chat pulled into the CRM by the listener (tg_peer_pulls, one
+ * open per chat — a second ask while one is open is the same ask). The web
+ * tray's answer asks through here too (chat-rules `pullForAgent`).
+ */
+export async function queuePull(managerUserId: string, peerId: bigint, requestedBy: string = managerUserId): Promise<void> {
   await db
     .insert(tgPeerPulls)
-    .values({ managerUserId, peerId, requestedBy: managerUserId })
+    .values({ managerUserId, peerId, requestedBy })
     .onConflictDoNothing()
     .catch((err: unknown) => logger.warn({ err }, '[agent] pull not queued'));
 }

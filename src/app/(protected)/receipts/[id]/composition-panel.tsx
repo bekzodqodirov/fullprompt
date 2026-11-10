@@ -74,7 +74,7 @@ export interface PanelComposition {
   rev: number;
   seenBoxCount: number;
   lines: PanelLine[];
-  /** The client's document, when one is cited (optional since 0142). */
+  /** The client's document, when one is cited (optional since 0143). */
   attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   /** The Tashkent day of the save (`tashkentDay`), never an ISO instant's UTC date. */
@@ -563,7 +563,7 @@ function CompositionEditor({
         seenBoxCount: totals.boxCount,
         seenKg: totals.kg,
         seenM3: totals.m3,
-        // Optional since 0142 — and only an id that is among the DRAWN chips:
+        // Optional since 0143 — and only an id that is among the DRAWN chips:
         // a draft restored from localStorage may name a file since deleted,
         // which answered «hujjat shu prixodga yuklangan bo'lishi kerak» about
         // a chip nobody could see, let alone un-tick.
@@ -907,7 +907,7 @@ function CompositionEditor({
         </div>
       )}
 
-      {/* 5. The client's document — OPTIONAL since 0142 (the owner,
+      {/* 5. The client's document — OPTIONAL since 0143 (the owner,
           2026-11-10): it stood first and was demanded last, after every
           line was typed and balanced. Below the lines now, and «none» is a
           real choice: a chosen chip un-chooses on a second press. */}

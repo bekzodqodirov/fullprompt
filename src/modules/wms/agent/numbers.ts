@@ -57,7 +57,18 @@ export interface FoundNumber {
   perUnit?: boolean;
   /** Its FORM says what it is (an ordinal, an hour, a clock) — never read as money. */
   fixed?: boolean;
+  /** A measure's or a day count's unit, when its word says one — «1 kub» is no «1 kg» (`FigureUnit`). */
+  unit?: FigureUnit;
 }
+
+/**
+ * The unit a measure or a duration is written in. A source that names one
+ * vouches only for a figure in it (review): the company rule's «1 kub» stood
+ * behind «Mashina uchun eng kamida 1 kg kerak», its «100 kg» behind «Sizning
+ * 100 ta karobkangiz omborga keldi», the flight's «2 kun» behind «Narxni 2
+ * soatda hisoblab beraman».
+ */
+export type FigureUnit = 'm3' | 'kg' | 'tonne' | 'm2' | 'day' | 'week' | 'month' | 'hour' | 'minute';
 
 /**
  * What a money source IS (K21): the price of the whole load, a per-unit rate,
@@ -108,6 +119,14 @@ export interface NumberSource {
    * backed by the AVIA fact's five. Absent = said of no road in particular.
    */
   mode?: TravelMode;
+  /** The unit it is said in; absent = any (the customer's, the tools', a fact's bare figure). */
+  unit?: FigureUnit;
+  /**
+   * The one SHAPE of sentence it vouches for (second review): the company's minimum is a source for «eng
+   * kamida 100 kg», «Минимум — 1 куб», «от 1 кг», «1 kg dan qabul qilamiz» (`saidAsMinimum`) — never for «Sizning
+   * 100 kg yukingiz Toshkentga yetib keldi», a weight nobody stated. Absent = any sentence.
+   */
+  said?: 'minimum';
 }
 
 /** How cargo travels — the three roads a day count can be the time of. */
@@ -163,9 +182,86 @@ function spanAt(text: string, index: number, boundary: RegExp): string {
 const FIGURE_CLAUSE = /(?<!\d)[,—–]|[,—–](?!\d)|[;:!?؟。！？\n]+|\.(?=\s|$)|\s-\s/gu;
 const FIGURE_SENTENCE = /[!?؟。！？\n]+|\.(?=\s|$)/gu;
 
-/** A figure's road: the one its clause names, else its sentence's, else the whole text's — or null. */
+/**
+ * A figure's road: the one its clause names, else its sentence's, else the road the text named LAST BEFORE it — or
+ * null. The text's one road read anywhere (third review) took a road named AFTER the figure, in a sentence of its
+ * own: «Eng kamida 1 kub yoki 100 kg qabul qilamiz. Avia orqali ham yuborish mumkin», «The minimum is 1 m3 or 100
+ * kg. Air freight is also available» — the canonical answer to «what is your minimum?» — read the truck's minimum
+ * as the flight's and refused it. A road named before it is the topic the figure stands in: «Avia orqali
+ * yuboramiz. Eng kamida 1 kg» is the flight's.
+ */
 function modeAt(text: string, index: number): TravelMode | null {
-  return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? oneModeIn(text);
+  return oneModeIn(spanAt(text, index, FIGURE_CLAUSE)) ?? oneModeIn(spanAt(text, index, FIGURE_SENTENCE)) ?? lastModeBefore(text, index);
+}
+
+/** The road whose word stands nearest before `index`, or null. */
+function lastModeBefore(text: string, index: number): TravelMode | null {
+  const before = text.slice(0, index);
+  let best: { mode: TravelMode; end: number } | null = null;
+  for (const mode of Object.keys(MODE_WORDS) as TravelMode[]) {
+    const every = new RegExp(MODE_WORDS[mode].source, `${MODE_WORDS[mode].flags.replace('g', '')}g`);
+    for (const m of before.matchAll(every)) {
+      const end = m.index + m[0].length;
+      if (best === null || end > best.end) best = { mode, end };
+    }
+  }
+  return best?.mode ?? null;
+}
+
+/**
+ * «Eng kamida», «eng oz», «kamida», «minimal», «… va undan ko'p», «минимум», «не менее», «… и более», «at least»,
+ * «… or more» — a minimum said anywhere in a figure's
+ * sentence; and its threshold, «меньше», «менее», «less than», «under», «kamroq» (third review): «Если меньше 1
+ * куба или 100 кг, то не принимаем» is the minimum said the other way round.
+ */
+const MINIMUM_WORD =
+  /(?<![\p{L}])(?:eng\s+(?:kam(?:ida)?|oz)|kamida|kamdan[\s-]kam|kamroq|minimum\p{L}*|minimal\p{L}*|энг\s+(?:кам(?:ида)?|оз)|камида|камроқ|минимум\p{L}*|минимальн\p{L}*|не\s+менее|не\s+меньше|меньше|менее|at\s+least|less\s+than|under|(?:va|ва)\s+(?:undan|ундан)\s+(?:ko['‘’ʻ`]?p(?:roq)?|ortiq|yuqori|кўп(?:роқ)?|ортиқ|юқори)|и\s+(?:более|больше|выше)|(?:or|and)\s+(?:more|above|over))(?![\p{L}])/iu;
+/**
+ * …or the figure's own «from»: «от 1 кг», «from 1 kg» before it, «1 kg dan», «1 kubdan» after its unit — and over
+ * a pair (third review): «Biz 1 kub yoki 100 kg dan qabul qilamiz», «Принимаем от 1 куба или 100 кг», «We accept
+ * from 1 m3 or 100 kg» say one «from» for both figures, and the one without its own marker was refused.
+ */
+const MIN_UNIT = '(?:kub|kg|kilo|куб|кг|кило|m3|м3|cbm)\\p{L}*?';
+const FROM_BEFORE = new RegExp(
+  `(?<![\\p{L}])(?:от|from)\\s*(?:\\d+(?:[.,]\\d+)?\\s*${MIN_UNIT}\\s+(?:или|либо|и|or|and)\\s*)?$`,
+  'iu',
+);
+const FROM_AFTER = new RegExp(
+  `^\\s*${MIN_UNIT}\\s*(?:(?:yoki|va|ёки|ва)\\s+\\d+(?:[.,]\\d+)?\\s*${MIN_UNIT}\\s*)?(?:dan|дан)(?![\\p{L}])`,
+  'iu',
+);
+
+/**
+ * A minimum is said of what the company TAKES (third review), never of cargo that came: one hedge word made a
+ * fabricated status the company's own — «Yukingizdan kamida 100 kg Toshkentga yetib keldi», «100 kg dan ortiq
+ * yukingiz Toshkentga yetib keldi», «Груз от 100 кг уже прибыл в Ташкент» each passed on the 100 kg minimum.
+ * So a sentence that says cargo arrived or stands somewhere is no minimum's; nor a clause about the customer's
+ * own cargo, unless it states the condition or the obligation the minimum is — «Agar yukingiz 1 kub yoki 100 kg
+ * dan kam bo'lsa», «Yukingiz kamida 1 kub bo'lishi kerak» — or our taking it in.
+ */
+const ARRIVED = new RegExp(
+  [
+    `(?<![\\p{L}])(?:kel(?:di|gan|ibdi)|tush(?:di|gan)|yetkazildi|keltirildi|topshirildi|turibdi|qabul\\s+qilin(?:di|gan))(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:кел(?:ди|ган|ибди)|туш(?:ди|ган)|етказилди|келтирилди|топширилди|турибди|қабул\\s+қилин(?:ди|ган))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:прибыл[аои]?|пришл[аои]|пришёл|пришел|доставлен[аоы]?|получен[аоы]?|поступил[аои]?|приехал[аои]?|дош[её]л|дошл[аои]|лежит|наход(?:ит|ят)ся)(?![\\p{L}])|уже\\s+(?:на\\s+склад\\p{L}*|в\\s+ташкент\\p{L}*|здесь)',
+    "(?<![\\p{L}])(?:arrived|came\\s+in|reached|landed|(?:has|have)\\s+come|(?:was|were|been)\\s+delivered|(?:is|are)\\s+(?:here|in\\s+(?:the\\s+)?warehouse|in\\s+tashkent))(?![\\p{L}])",
+  ].join('|'),
+  'iu',
+);
+const HIS_CARGO =
+  /(?<![\p{L}])(?:yuk(?:lar)?ingiz\p{L}*|юк(?:лар)?ингиз\p{L}*|ваш\p{L}*\s+(?:груз|товар|посылк)\p{L}*|your\s+(?:cargo|goods|shipment|parcel|order|boxes))/iu;
+const MIN_SHAPE =
+  /(?<![\p{L}])(?:agar|агар|если|if|kerak|керак|shart|шарт|lozim|лозим|должн\p{L}*|нужно|надо|must|need\p{L}*|should|has\s+to|qabul|қабул|olamiz|оламиз|принима\p{L}*|берём|берем|accept\p{L}*|take)(?![\p{L}])|bo['‘’ʻ`]?l(?:sa|ishi)(?![\p{L}])|бўл(?:са|иши)(?![\p{L}])/iu;
+
+/** A figure said as a MINIMUM — the only shape the company's minimum vouches for (`NumberSource.said`). */
+export function saidAsMinimum(text: string, index: number, end: number): boolean {
+  const sentence = spanAt(text, index, FIGURE_SENTENCE);
+  const marked =
+    MINIMUM_WORD.test(sentence) ||
+    FROM_BEFORE.test(spanAt(text.slice(0, index), index, FIGURE_CLAUSE)) ||
+    FROM_AFTER.test(text.slice(end));
+  if (!marked || ARRIVED.test(sentence)) return false;
+  return !HIS_CARGO.test(spanAt(text, index, FIGURE_CLAUSE)) || MIN_SHAPE.test(sentence);
 }
 
 /** The two roads a person can CHOOSE between in a chat about price; rail is his, never the machine's. */
@@ -568,8 +664,12 @@ const MONTH_AFTER = new RegExp(
 const UZ_CYRL_TIMES = /^\s*марта(?![\p{L}])/iu;
 const UZ_CYRL_LETTERS = /[ўқғҳ]/iu;
 
-/** A range: «15-25 kun», «15 dan 25 gacha», «15 до 25». The unit after the second number names both. */
-const RANGE_TAIL = /^\s*(?:[-–—~]|dan|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
+/**
+ * A range: «15-25 kun», «15 dan 25 gacha», «15 дан 25 кунгача», «15 до 25». The unit after the second number names
+ * both. The Uzbek Cyrillic «дан» was missing (fourth check), so «Авто карго одатда 15 дан 25 кунгача келади» read
+ * its 15 as a bare figure and the kb's own transit days lost their ✅.
+ */
+const RANGE_TAIL = /^\s*(?:[-–—~]|dan|дан|до|to|تا|到|至)\s*\d+(?:[.,]\d+)?(?:\s*(?:gacha|гача))?/iu;
 
 /**
  * A scale word after a figure is part of it: «1,5 mln so'm» is 1 500 000 and
@@ -598,6 +698,16 @@ const SCALES: readonly (readonly [RegExp, number])[] = [
  */
 const PRICE_VERB_BEFORE =
   /(?<![\p{L}])(?:сто(?:ит|ят|ить|ило|ила|или|ил)|обойд[её]тся|обойдутся)\s+(?:(?:всего|около|примерно|только|лишь)\s+)?$/iu;
+/**
+ * …and the TOTAL's heading right before a bare figure (fourth check): «Hisob:\nJami: 800», «Итого — 2255», «Your
+ * quote:\nTotal: 168», «5 kub uchun jami 800 bo'ladi», «Total comes to 800» name no currency and are the price of
+ * the load all the same — read as bare figures, the customer's own 800 kg or an address's «2255号» vouched for
+ * them. A money figure needs a money source. Only right before the figure: «jami 3 ta savol» is a count.
+ */
+// «Hammasi bo'lib», «всего выйдет», «in total», «~» / «≈» before the figure too (fifth check): «Hammasi bo'lib 800
+// bo'ladi», «Всего выйдет 800», «Jami: ~800». «Всего» only with its verb or colon — «всего 3 склада» is a count.
+const TOTAL_BEFORE =
+  /(?:(?<![\p{L}])(?:jami|жами|итого|total|hammasi\s+bo['‘’ʻ`]?lib|ҳаммаси\s+бўлиб|in\s+total|altogether|all\s+in)(?:\s+(?:bo['‘’ʻ`]?ladi|bo['‘’ʻ`]?lib|chiqadi|бўлади|получается|получится|выйдет|выходит|составит|составляет|comes\s+to|is|will\s+be|of|amounts?\s+to))?|(?<![\p{L}])(?:всего|в\s+сумме|в\s+итоге)(?:\s+(?:получается|получится|выйдет|выходит|составит|составляет|будет)|\s*[:：]))\s*[:：—–=-]?\s*(?:(?:taxminan|тахминан|примерно|около|about|around|approximately|roughly)\s+|[~≈]\s*)?$/iu;
 
 /**
  * Figures whose FORM says what they are, so a money word elsewhere in the text never makes them money:
@@ -685,6 +795,24 @@ interface Reading {
   token: string | null;
   /** What follows the figure, its range, its scale word and its currency — where a per-unit word stands (K21). */
   rest: string;
+  /** A measure's or a duration's unit, as its word says. */
+  unit?: FigureUnit;
+}
+
+/** Which unit the word after a measure or a duration is — read on the tail `MEASURE_AFTER` / `DURATION_AFTER` matched. */
+const UNIT_OF: readonly (readonly [RegExp, FigureUnit])[] = [
+  [/^\s*(?:kub|куб|cbm|cubic|cubes?|m3|м3|m³|м³|立方|متر\s*مکعب)/iu, 'm3'],
+  [/^\s*(?:kg|кг|kilo|кило|公斤|千克|کیلو)/iu, 'kg'],
+  [/^\s*(?:tonn|тонн|tons?|吨)/iu, 'tonne'],
+  [/^\s*(?:m2|м2)/iu, 'm2'],
+  [/^\s*(?:(?:ish|иш)\s+|(?:рабоч|календарн)\p{L}*\s+|(?:business|working|calendar)\s+)?(?:kun|кун|день|дн|сут|sutka|day|天|日|روز|个?工作)/iu, 'day'],
+  [/^\s*(?:hafta|ҳафта|недел|week|周|星期|هفته)/iu, 'week'],
+  [/^\s*(?:soat|соат|час|hour|小时|ساعت)/iu, 'hour'],
+  [/^\s*(?:oy(?![\p{L}])|ой(?![\p{L}])|месяц|month|个月|ماه)/iu, 'month'],
+  [/^\s*(?:daqiqa|дақиқа|минут|minute|分钟|دقیقه)/iu, 'minute'],
+];
+function unitOf(tail: string): FigureUnit | undefined {
+  return UNIT_OF.find(([re]) => re.test(tail))?.[1];
 }
 
 /** The word beside a figure — before it, after it, after its range and its scale word. */
@@ -712,8 +840,8 @@ function readAt(text: string, start: number, end: number): Reading {
   if (PERCENT_AFTER.test(tail)) return at('percent');
   const money = MONEY_AFTER.exec(tail);
   if (money) return at('money', money[0], tail.slice(money[0].length));
-  if (MEASURE_AFTER.test(tail)) return at('measure');
-  if (DURATION_AFTER.test(tail)) return at('duration');
+  if (MEASURE_AFTER.test(tail)) return { ...at('measure'), unit: unitOf(tail) };
+  if (DURATION_AFTER.test(tail)) return { ...at('duration'), unit: unitOf(tail) };
   if (MONTH_AFTER.test(tail) && !(UZ_CYRL_TIMES.test(tail) && UZ_CYRL_LETTERS.test(text))) return at('date');
   if (COUNT_AFTER.test(tail)) return at('count');
   // «480 ming», «1,5 mln» with no unit: a scaled figure is money.
@@ -733,6 +861,117 @@ function blanked(text: string, removeWhole: readonly string[]): string {
   }
   for (const u of urlsIn(t)) t = t.split(u).join(' '.repeat(u.length));
   return t.replace(PHONE_RE, (m) => ' '.repeat(m.length));
+}
+
+/**
+ * A list's own numbers are no figures (incident 2026-10-29). Prompt rule 3
+ * asked for «bitta raqamlangan ro'yxat» and calc_checklist wrote «1) … 2) …»,
+ * and every marker read as a bare figure — as MONEY in a reply that names
+ * money anywhere — so the commonest first reply, «Narxni hisoblashim uchun
+ * yozing: 1. Tovar nomi 2. Hajmi (kub) …», lost its ✅ as «manbasi yo‘q
+ * raqam: 1 $». A marker is taken OUT, not marked `fixed`: a fixed figure
+ * still asks a source of its own value, and nothing vouches for a «4».
+ *
+ * A marker is a one- or two-digit number with «.», «)» or a keycap after it
+ * and a word — or the item's own figure, «1. 500 $» — after that. The list's
+ * FIRST item stands where an item starts: a line's head, after «:» or «;».
+ * The rest may follow a comma or a space too («…: 1) tovar nomi, 2) necha
+ * kub», «1️⃣ tovar 2️⃣ hajmi»), in the same style. And the markers count 1, 2,
+ * 3 in order, two at least: a lone «5.», a «2)» no «1)» came before, a
+ * «Narxi: 1.» stand as figures — a list of one is no list to prove itself.
+ * «1.5 kub» is a decimal, and the item's figure after a marker is read as
+ * ever.
+ *
+ * Reviewed both ways. The model writes markdown, so «**1.** Tovar», «1.
+ * **Tovar**», «📦 1. Tovar», «1.Tovar» and «1 - tovar» are markers too, and a
+ * «1)» or a keycap may open a list inside a sentence — «…uchun 1) tovar
+ * nomi, 2) hajmi», «напишите 1) товар 2) объём» — when its «2)» follows in
+ * that sentence. And a marker never swallows a PRICE: «narxi kg uchun 2.
+ * Avto», «цена за кг 2) доллара», «1️⃣ avia kg 2️⃣ dollar» each took the rate
+ * out of the ledger. So an item that is a currency is no item, a «1.»-style
+ * marker inside a line continues no list, and no marker continues after a
+ * price or a unit word.
+ */
+const LIST_MARKER =
+  /(?<![\p{L}\p{N}.,])(\(?)(\d{1,2})(\.(?!\d)|\)|️?⃣|[ \t ]+[-–—](?=[ \t ]+[*_«"“(]*\p{L}))(?=[*_]*(?:[ \t ]+[*_«"“(]*[\p{L}\p{N}]|\p{L}))/gu;
+const ITEM_HEAD = /[\n:;：；]/u;
+/** What may stand between an item's head and its marker: spaces, markdown, an emoji. Never a line's end. */
+const DECORATION = /[ \t \r*_\p{Extended_Pictographic}\u{FE0F}\u{200D}]+$/u;
+const LAST_WORD = /([\p{L}$€¥£₽][\p{L}'‘’ʻ`]*)(?:\s+([\p{L}'‘’ʻ`]+))?$/u;
+/** A price word or a unit — a marker after it is the figure it prices: «kg 2️⃣», «цена за кг 2)», «kg uchun 2)». */
+const PRICE_OR_UNIT = new RegExp(`^(?:${UNIT_WORD}|m[23]|м[23])$|${MONEY_WORD.source}`, 'iu');
+const PER_WORD = /^(?:uchun|учун|ga|га|за|per|for|each|по)$/iu;
+
+function pricedBefore(head: string): boolean {
+  const m = LAST_WORD.exec(head);
+  if (!m) return false;
+  const [, first, second] = m;
+  if (second === undefined) return PRICE_OR_UNIT.test(first!);
+  return PRICE_OR_UNIT.test(second) || (PER_WORD.test(second) && PRICE_OR_UNIT.test(first!));
+}
+
+function listMarkerSpans(t: string): [number, number][] {
+  const out: [number, number][] = [];
+  let run: [number, number][] = [];
+  let style = '';
+  // The run opened inside a sentence: its second item must stand in that sentence.
+  let inline = false;
+  for (const m of t.matchAll(LIST_MARKER)) {
+    const raw = t.slice(0, m.index);
+    const head = raw.replace(DECORATION, '');
+    const last = head.at(-1);
+    const atHead = last === undefined || ITEM_HEAD.test(last);
+    const spaced = head.length < raw.length;
+    const afterComma = last === ',' || last === '，';
+    const at = m.index + m[1]!.length;
+    const span: [number, number] = [at, at + m[2]!.length];
+    const mark = m[3]!.trim().replace('️', '');
+    const shape = `${m[1]}${mark}`;
+    const dash = /^[-–—]$/u.test(mark);
+    // «1)», «(1)», «1️⃣» are written inside a line; «1.» and «1 -» only at its head.
+    const inlineStyle = mark === ')' || mark === '⃣';
+    const value = Number(m[2]);
+    const end = m.index + m[0].length;
+    if (MONEY_AFTER.test(t.slice(end, end + 24))) continue;
+    const midLine = !dash && inlineStyle && spaced && !pricedBefore(head);
+    if (value === 1 && (atHead || midLine)) {
+      if (run.length >= 2) out.push(...run);
+      run = [span];
+      style = shape;
+      inline = !atHead;
+    } else if (run.length > 0 && value === run.length + 1 && shape === style && (atHead || (!dash && afterComma) || midLine)) {
+      if (inline && run.length === 1 && /[.!?\n]/u.test(t.slice(run[0]![1], m.index))) continue;
+      run.push(span);
+    }
+  }
+  if (run.length >= 2) out.push(...run);
+  return out;
+}
+
+/**
+ * «1688» beside the marketplaces it is one of (fourth check): «Tovar havolasini (1688, Taobao) yuborsangiz ham
+ * bo'ladi», «ссылку с 1688 или Taobao», «1688.com» — a NAME, never a figure, so it asks no source. Only beside
+ * another marketplace, a link or a site, and only bare: «1688 $», «Narxi 1688» (no marketplace beside it) are figures.
+ */
+const MARKETPLACE =
+  "(?:taobao|tmall|alibaba|aliexpress|ali\\s*express|pinduoduo|pdd|jd\\.com|wechat|淘宝|天猫|阿里巴巴|拼多多|京东|таобао|алибаба|алиэкспресс)";
+const MARKET_LINK = '(?:sayt\\p{L}*|havola\\p{L}*|link\\p{L}*|site|сайт\\p{L}*|ссылк\\p{L}*|платформ\\p{L}*|platform\\p{L}*|marketplace\\p{L}*)';
+const MARKET_JOIN = "\\s*(?:[,/;]|\\s(?:yoki|va|или|и|or|and|ёки|ва))?\\s*";
+const MARKET_LINK_AFTER = new RegExp(`^(?:\\.com(?![\\p{L}])|\\s*(?:dagi|dan|da|ga)?\\s*${MARKET_LINK})`, 'iu');
+const MARKET_LINK_BEFORE = new RegExp(`${MARKET_LINK}${MARKET_JOIN}(?:\\(\\s*)?$`, 'iu');
+const MARKET_PEER_AFTER = new RegExp(`^${MARKET_JOIN}${MARKETPLACE}`, 'iu');
+const MARKET_PEER_BEFORE = new RegExp(`${MARKETPLACE}${MARKET_JOIN}(?:\\(\\s*)?$`, 'iu');
+/**
+ * …and beside another MARKETPLACE only when its own clause names no price before it (fifth check): «Narxi 1688,
+ * Taobao narxi bilan bir xil», «Kubiga 1688, Alibaba'dagi kabi» are prices said beside a marketplace. A list in
+ * brackets is names whatever stands before it: «Tovar havolasini (1688, Taobao) yuborsangiz ham bo'ladi».
+ */
+function marketplaceName(t: string, start: number, after: string): boolean {
+  if (MARKET_LINK_AFTER.test(after) || MARKET_LINK_BEFORE.test(t.slice(Math.max(0, start - 40), start))) return true;
+  if (!MARKET_PEER_AFTER.test(after) && !MARKET_PEER_BEFORE.test(t.slice(Math.max(0, start - 40), start))) return false;
+  if (/\(\s*$/u.test(t.slice(Math.max(0, start - 3), start))) return true;
+  const clause = t.slice(0, start).split(/[,;:.!?\n—–(]/u).at(-1) ?? '';
+  return !MONEY_WORD.test(clause) && !PER_UNIT_BEFORE.test(clause) && !PRICE_VERB_BEFORE.test(clause) && !TOTAL_BEFORE.test(clause);
 }
 
 /** Whether a text names money anywhere — read after the phones and links are out: «gsrlogistics.uz/narxlar» names none. */
@@ -764,8 +1003,10 @@ export function extractNumbers(
     return textCurrency;
   };
   const out: FoundNumber[] = [];
-  const taken: [number, number][] = [];
+  // A list's markers are out before anything is read: never a figure, never a date's day.
+  const taken: [number, number][] = listMarkerSpans(t);
   for (const m of t.matchAll(DATE_RE)) {
+    if (taken.some(([a, b]) => m.index < b && m.index + m[0].length > a)) continue;
     const day = Number(m[1]);
     const month = Number(m[2]);
     // «1.50 kg», «12.50 $» are figures with a unit, not the first of May.
@@ -797,9 +1038,17 @@ export function extractNumbers(
     const read = readAt(t, start, end);
     const value = parseFigure(m[0]) * read.scale;
     if (!Number.isFinite(value)) continue;
+    if (
+      m[0] === '1688' &&
+      !glued &&
+      read.kind === 'plain' &&
+      marketplaceName(t, start, after)
+    ) {
+      continue;
+    }
     const before = t.slice(Math.max(0, start - 24), start);
     const fixed = ORDINAL_AFTER.test(after) || HOUR_BEFORE.test(before) || ID_BEFORE.test(before) || ID_AFTER.test(after);
-    const priced = PRICE_VERB_BEFORE.test(before);
+    const priced = PRICE_VERB_BEFORE.test(before) || TOTAL_BEFORE.test(before);
     // In a text that names money anywhere, a bare figure is money (P1): «Narx (dollarda): 480».
     const kind: NumberKind =
       glued || (read.kind === 'plain' && !fixed && (moneyText || priced)) ? 'money' : read.kind;
@@ -813,6 +1062,7 @@ export function extractNumbers(
       ...(kind === 'money' ? { currency: token !== null ? currencyOf(token) : currencyOfText() } : {}),
       ...(perUnit ? { perUnit } : {}),
       ...(fixed ? { fixed } : {}),
+      ...(kind === read.kind && read.unit ? { unit: read.unit } : {}),
     });
   }
   return out.sort((a, b) => a.index - b.index);
@@ -871,19 +1121,31 @@ export function sourceFor(
   found: FoundNumber,
   sources: readonly NumberSource[],
   mode: TravelMode | null = null,
+  minimum = false,
 ): NumberSource | null {
   const fits = (s: NumberSource) => {
     if (!sameValue(s.value, found.value)) return false;
+    if (s.said === 'minimum' && !minimum) return false;
+    if (s.unit !== undefined && found.unit !== s.unit) return false;
     if (s.kind === 'customer_money') return false;
     if (COMPANY_KINDS.has(found.kind) && !companySaid(s)) return false;
     // His percent, day count or date is his wish or his guess, whatever form the reply figure takes.
     if (COMPANY_KINDS.has(s.kind) && !companySaid(s)) return false;
     // His clock, his hour, his order number — said as the same fixed figure — and nothing bare of his.
     if (s.kind === 'plain' && !companySaid(s)) return s.fixed === true && found.fixed === true;
+    // A fact's bare figure is a house, a building, a distance in an address — «29号», «3栋», «168米» — and
+    // vouches for that address said again, never for a time or a count of the same value: «Yukingiz taxminan
+    // 29 kunda yetib keladi» passed on Guangzhou's house number (incident 2026-10-29, the fail-open side).
+    if (s.kind === 'plain' && s.origin === 'kb' && found.kind !== 'plain') return false;
     if (found.kind === 'plain' && s.kind === 'money') return false;
     // A day count said of one road is never vouched for by another road's: a truck's «5 kunda» on the
-    // flight's five is a promise nobody made.
-    if (found.kind === 'duration' && mode !== null && s.mode !== undefined && s.mode !== mode) return false;
+    // flight's five is a promise nobody made. A day count naming NO road — and the customer asked none —
+    // is the truck's, the road the company is (review): «Yukingiz taxminan 5 kunda yetib keladi» passed on
+    // the flight's 2-5 days in every first chat, the commonest chat there is.
+    // A measure the same: the flight's «eng kamida 1 kg» is no truck's minimum («Mashina uchun eng kamida 1 kg»).
+    if ((found.kind === 'duration' || found.kind === 'measure') && s.mode !== undefined && s.mode !== (mode ?? 'road')) {
+      return false;
+    }
     if (found.kind === 'money') return moneyFits(found, s);
     if (found.kind === 'plain') return true;
     // A measure can be stated as a bare count of the same thing and vice versa.
@@ -891,6 +1153,103 @@ export function sourceFor(
     return s.kind === found.kind || s.kind === 'plain';
   };
   return sources.find(fits) ?? null;
+}
+
+/**
+ * A small COUNT the reply makes good itself (fourth check): «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou va
+ * Xorgos», «2 xil yo'l bor: avto va avia», «4 ta ma'lumot kerak: tovar nomi, kub, kg va shahar», «Есть 2
+ * варианта: авто и авиа», «There are 2 options: truck and air». Prompt rule 1 asked for digits and the knowledge
+ * counts in words, so each was «manbasi yo‘q raqam» while «uchta» passed — and a plain «3» passed only when an
+ * address's «3栋» happened to stand behind it. The list right after it, opened by a colon, holding EXACTLY that many
+ * items, is its source; nothing else is. Never a count of cartons or cargo, nor of something that came — «3 ta
+ * karobka keldi: …» is a status nobody stated —, never a figure with a unit, a currency or a «per», never one the
+ * list does not match, and never past nine.
+ *
+ * Read as a WHITELIST since the fifth check: the guard on «cartons, cargo, something that came» missed the forms it
+ * did not list — «Omborimizda 3 ta joyingiz saqlanyapti: kiyim, poyabzal va sumka», «Готовы к выдаче 2 позиции:
+ * одежда и обувь», «Yukingizdan 2 tasi yo'lga chiqdi: …», «Your order has 2 items waiting: …», «Sizga 2 ta reys
+ * bor: dushanba va payshanba» — each a status or a schedule nobody stated, vouched for by its own list. So the
+ * head must NAME what a first reply counts — warehouses, roads, options, ways, questions, things, details, steps,
+ * cities, services, documents —, and neither it nor the sentence before the figure may say where cargo stands or
+ * that it moved. A dash opens the list as a colon does («3 ta omborimiz bor — Ivu, …»), and «…, ular:» too.
+ */
+export const LISTED_COUNT = 'javobdagi ro‘yxat';
+const AP = "['‘’ʻ`]";
+const LISTED_HEAD =
+  /^\s*((?:[\p{L}'‘’ʻ`-]+\s+){0,6}?[\p{L}'‘’ʻ`-]+)(?:\s*,\s*(?:ular|bular|улар|булар|они|это|they\s+are|these\s+are))?\s*(?:[:：]|[—–](?=\s))/iu;
+const LISTED_NOUN = new RegExp(
+  [
+    `(?<![\\p{L}])(?:ombor\\p{L}*|sklad\\p{L}*|yo${AP}?l(?:i|lar|lari|imiz|larimiz)?|variant\\p{L}*|savol\\p{L}*|usul\\p{L}*|shahar\\p{L}*|qadam\\p{L}*|bosqich\\p{L}*|xizmat\\p{L}*|hujjat\\p{L}*|shart\\p{L}*|tur(?:i|lari)?|xil)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:омбор\\p{L}*|склад\\p{L}*|йўл(?:и|лар|лари|имиз)?|вариант\\p{L}*|савол\\p{L}*|усул\\p{L}*|шаҳар\\p{L}*|қадам\\p{L}*|босқич\\p{L}*|хизмат\\p{L}*|ҳужжат\\p{L}*|шарт\\p{L}*|хил)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:вариант\\p{L}*|способ\\p{L}*|вопрос\\p{L}*|шаг\\p{L}*|этап\\p{L}*|город\\p{L}*|услуг\\p{L}*|документ\\p{L}*|услови\\p{L}*|маршрут\\p{L}*|пут(?:ь|и|ей)|вид(?:а|ов)?|тип(?:а|ов)?)(?![\\p{L}])',
+    '(?<![\\p{L}])(?:warehouses?|options?|ways?|questions?|steps?|routes?|roads?|city|cities|services?|documents?|conditions?|types?|kinds?|choices?|methods?)(?![\\p{L}])',
+  ].join('|'),
+  'iu',
+);
+/**
+ * …and the nouns a list of HIS goods would count as well — things, details, items of information (sixth check):
+ * «You have 2 things in our warehouse: shoes and bags», «У вас на складе 2 вещи: …», «Toshkentda 2 ta narsangiz
+ * bor: …» were a status nobody stated, vouched for by its own list. Only what the reply ASKS him for: «3 narsa
+ * kerak: …», «нужны 3 вещи: …», «I need 3 things: …», «4 ta ma'lumot kerak: …».
+ */
+const LISTED_ITEM = new RegExp(
+  [
+    `(?<![\\p{L}])(?:narsa\\p{L}*|ma${AP}?lumot\\p{L}*|нарса\\p{L}*|маълумот\\p{L}*)(?![\\p{L}])`,
+    '(?<![\\p{L}])(?:вещ\\p{L}*|пункт\\p{L}*|данн(?:ых|ые))(?![\\p{L}])',
+    '(?<![\\p{L}])(?:things?|details?)(?![\\p{L}])',
+  ].join('|'),
+  'iu',
+);
+const LISTED_ASKS = new RegExp(
+  `(?<![\\p{L}])(?:kerak\\p{L}*|zarur\\p{L}*|lozim|bering|yuboring|yozing|ayting|so${AP}?ra\\p{L}*|керак\\p{L}*|зарур\\p{L}*|беринг|юборинг|ёзинг|айтинг|сўра\\p{L}*|нуж\\p{L}*|надо|необходим\\p{L}*|требу\\p{L}*|напишите|пришлите|скажите|укажите|сообщите|need\\p{L}*|require\\p{L}*|please|send|tell|let\\s+me\\s+know|ask\\p{L}*)(?![\\p{L}])`,
+  'iu',
+);
+/** Where cargo stands, or that it moved — said before the count or in its head, a status no list may vouch for. */
+// …and IN a warehouse (sixth check): «По вашему заказу 2 позиции на складе: …», «Omborimizda sizning 2 ta narsangiz
+// bor: …», «2 things in our warehouse: …» — never the warehouses counted: «Xitoyda 3 ta omborimiz bor: …».
+const LISTED_STATUS = new RegExp(
+  `(?<![\\p{L}])(?:saqlan\\p{L}*|yo${AP}?lga\\s+chiq\\p{L}*|jo${AP}?natil\\p{L}*|turib\\p{L}*|tayyor\\p{L}*|сақлан\\p{L}*|йўлга\\s+чиқ\\p{L}*|жўнатил\\p{L}*|туриб\\p{L}*|тайёр\\p{L}*|готов\\p{L}*|выдач\\p{L}*|отправлен\\p{L}*|хран\\p{L}*|waiting|ready|stored|shipped|dispatched|on\\s+the\\s+way|in\\s+stock|ombor\\p{L}*?da(?:n|gi)?|омбор\\p{L}*?да(?:н|ги)?|(?:на|в)\\s+склад\\p{L}*|склад(?:е|ах)|(?:in|at)\\s+(?:the\\s+|our\\s+|your\\s+)?warehouses?)(?![\\p{L}])`,
+  'iu',
+);
+/** The ways to PAY are a count of ways: «2 способа оплаты: наличные и карта», «3 ta to'lov usuli: …». */
+const PAY_WAYS = new RegExp(
+  `(?<![\\p{L}])(?:способ\\p{L}*\\s+оплат\\p{L}*|оплат\\p{L}*\\s+способ\\p{L}*|to${AP}?lov\\s+usul\\p{L}*|usul\\p{L}*\\s+to${AP}?lov\\p{L}*|тўлов\\s+усул\\p{L}*|ways?\\s+to\\s+pay|payment\\s+(?:methods?|options?)|(?:methods?|options?)\\s+of\\s+payment)(?![\\p{L}])`,
+  'giu',
+);
+const LISTED_NOT =
+  /(?<![\p{L}])(?:karob\p{L}*|korob\p{L}*|коробк\p{L}*|коробок|quti\p{L}*|қути\p{L}*|box\p{L}*|carton\p{L}*|mesta|мест\p{L}*|joy(?:i)?|yuk\p{L}*|юк\p{L}*|груз\p{L}*|cargo|goods|shipments?|posilka\p{L}*|посылк\p{L}*|parcels?|packages?|paket\p{L}*|пакет\p{L}*|pallet\p{L}*|паллет\p{L}*|qop\p{L}*|қоп\p{L}*|мешк\p{L}*|мешок|bags?|sacks?|partiya\p{L}*|парти\p{L}*|mashina\p{L}*|машин\p{L}*|fura\p{L}*|фур\p{L}*|trucks?)(?![\p{L}])/iu;
+const LIST_END = /[.!?؟。！？\n]|$/u;
+const LIST_JOIN = /\s*[,،，;/]\s*|\s+(?:va|ва|и|and|or|yoki|ёки|или|hamda|ҳамда|yoxud|&)\s+/iu;
+const BULLET_LINE = /^[ \t]*(?:[•·▪●◦\-–—*]|\d{1,2}[.)]|\p{Extended_Pictographic})/u;
+
+function listItems(after: string): number {
+  const line = after.slice(0, after.search(/\n|$/u));
+  const tail = line.slice(0, line.search(LIST_END));
+  if (tail.trim() !== '') return tail.split(LIST_JOIN).filter((x) => x.trim() !== '').length;
+  // The items on lines of their own, each with its bullet: «4 ta ma'lumot kerak:\n• tovar nomi\n• kub …».
+  if (line.trim() !== '') return 0;
+  let n = 0;
+  for (const l of after.split('\n').slice(1)) {
+    if (!BULLET_LINE.test(l)) break;
+    n += 1;
+  }
+  return n;
+}
+
+function listedCount(t: string, f: FoundNumber): boolean {
+  if (f.fixed === true || f.perUnit === true || !Number.isInteger(f.value) || f.value < 2 || f.value > 9) return false;
+  const end = f.index + f.raw.length;
+  if (MONEY_GLUED_AFTER.test(t.slice(end)) || MONEY_GLUED_BEFORE.test(t.slice(Math.max(0, f.index - 12), f.index))) return false;
+  const read = readAt(t, f.index, end);
+  if (read.kind !== 'plain' && read.kind !== 'count') return false;
+  const head = LISTED_HEAD.exec(t.slice(end));
+  if (!head) return false;
+  const words = head[1]!;
+  const sentence = t.slice(Math.max(0, t.slice(0, f.index).search(/[^.!?؟。！？\n]*$/u)), f.index);
+  if (!LISTED_NOUN.test(words) && !(LISTED_ITEM.test(words) && LISTED_ASKS.test(`${sentence} ${words}`))) return false;
+  if (LISTED_NOT.test(words) || ARRIVED.test(words) || LISTED_STATUS.test(words) || MONEY_WORD.test(words.replace(PAY_WAYS, ' '))) return false;
+  if (LISTED_STATUS.test(sentence) || ARRIVED.test(sentence)) return false;
+  return listItems(t.slice(end + head[0].length)) === f.value;
 }
 
 /** A ledger line and where its figure stands in the (digit-normalised) text — the policy reads clauses around it. */
@@ -926,13 +1285,26 @@ export function placedLedger(
       source = sourceFor(asMoney, sources);
       if (source) found = asMoney;
     }
-    source ??= sourceFor(f, sources, f.kind === 'duration' ? (modeAt(t, f.index) ?? askedMode) : null);
+    source ??= sourceFor(
+      f,
+      sources,
+      f.kind === 'duration' || f.kind === 'measure' ? (modeAt(t, f.index) ?? askedMode) : null,
+      f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length),
+    );
+    // A count the reply's own list makes good — read as a count, whatever money the text names, and named by the
+    // list even where another source holds the same digit (fifth check): an address's «3栋» vouching for «3 narsa
+    // kerak: …» made it a figure, and the same greeting to a fifth chat lost its ✅ to G10.
+    let listed = false;
+    if (listedCount(t, f)) {
+      listed = true;
+      found = { ...f, kind: 'count' };
+    }
     const money = found.kind === 'money';
     const currency = money ? (found.currency ?? null) : undefined;
     return {
       raw: money ? `${f.raw} ${currency ? CURRENCY_LABEL[currency] : '(valyuta noma’lum)'}` : f.raw,
       kind: found.kind,
-      source: source?.label ?? null,
+      source: listed ? LISTED_COUNT : (source?.label ?? null),
       ...(money ? { currency } : {}),
       index: f.index,
       end: f.index + f.raw.length,
@@ -999,14 +1371,20 @@ export function customerSources(texts: readonly { text: string; label: string }[
 export function factSources(text: string, label: string): NumberSource[] {
   const t = blanked(text, []);
   return extractNumbers(text).map((f): NumberSource => {
-    // The road a fact's day count is the time of — its own clause's, sentence's or the fact's.
-    const mode = f.kind === 'duration' ? modeAt(t, f.index) : null;
+    // The road a fact's day count is the time of — its own clause's, sentence's or the fact's; and so a measure's
+    // (second review): the seed's «Avto orqali eng kamida 1 kub yoki 100 kg» is the truck's minimum, and vouched
+    // for «Avia orqali eng kamida 100 kg» — the flight's is 1 kg.
+    const mode = f.kind === 'duration' || f.kind === 'measure' ? modeAt(t, f.index) : null;
     return {
       value: f.value,
       kind: f.kind === 'money' ? 'customer_money' : f.kind,
       label,
       origin: 'kb',
       ...(mode ? { mode } : {}),
+      // A fact's «15–25 kun» is days and its «100 kg» kilos — never minutes, cubes or cartons (review).
+      ...(f.unit ? { unit: f.unit } : {}),
+      // …and a minimum it states vouches for a minimum, as the company's rule does (second review).
+      ...(f.kind === 'measure' && saidAsMinimum(t, f.index, f.index + f.raw.length) ? { said: 'minimum' as const } : {}),
     };
   });
 }

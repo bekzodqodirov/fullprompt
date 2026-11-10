@@ -174,6 +174,24 @@ describe('the tray doors refuse 777000 in words', () => {
   });
 });
 
+describe('…and so do they for Telegram’s OTHER accounts (2026-10-29 review)', () => {
+  it('«Verification Codes» (489000) and «Replies» are no card’s, by any door', async () => {
+    for (const peer of [489000n, 1271266957n]) {
+      const [row] = await db
+        .insert(tgChatRules)
+        .values({ managerUserId: managerId, peerId: peer, decision: 'pending', peerTitle: 'Verification Codes', peerPhone: null })
+        .returning({ id: tgChatRules.id });
+      await expect(decideChat({ id: row!.id, decision: 'include', clientId }, ctx()), String(peer)).rejects.toThrow('service_chat');
+      await expect(openLeadForChat(row!.id, ctx(), { phoneless: 'agent_stranger' }), String(peer)).rejects.toThrow('service_chat');
+      await expect(attachPeerToCard({ peerId: peer, managerUserId: managerId, clientId }, ctx()), String(peer)).rejects.toThrow('service_chat');
+      expect(await ruleOf(managerId, peer)).toMatchObject({ decision: 'pending', clientId: null, leadId: null });
+      // Gone again before the lists below count this account's questions.
+      await db.delete(tgChatRules).where(eq(tgChatRules.id, row!.id));
+    }
+    expect(await db.select({ id: leads.id }).from(leads).where(eq(leads.ownerId, managerId))).toHaveLength(0);
+  });
+});
+
 describe('the lists leave 777000 out', () => {
   it('the badge counts the ordinary question and not the service chat', async () => {
     await serviceRule();

@@ -17,7 +17,7 @@ import {
   setAgentOwner,
   setAviaRate,
 } from './config';
-import { decideDraft, submitOwnText, type DraftDecision } from './decide';
+import { decideDraft, submitOwnText, type DraftDecision, type SupersededDetail } from './decide';
 import { KbError } from './kb';
 import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
@@ -99,6 +99,22 @@ async function run(work: (g: Gate) => Promise<AgentActionResult | void>): Promis
   }
 }
 
+/**
+ * A `superseded` ✅ in the page's own labels (`/suhbatlar/ai` labels.ts), by
+ * what the press found (decide `SUPERSEDED_AS`) — the bot says the same in its
+ * words (bot-door `SUPERSEDED_WORDS`): «a new draft is coming» only when one
+ * is, an edit said as an edit, an approved line as answered.
+ */
+const SUPERSEDED_ERROR: Record<SupersededDetail, string> = {
+  redrafting: 'superseded',
+  no_draft: 'superseded_no_draft',
+  capped: 'superseded_capped',
+  edited_redrafting: 'superseded_edited',
+  edited_no_draft: 'superseded_edited_no_draft',
+  edited_capped: 'superseded_edited_capped',
+  answered: 'superseded_answered',
+};
+
 /** ✅ / ❌ / 🙋 on a draft card. The ✅ posts the digest of what the page SHOWED (leak-3). */
 export async function agentDecideAction(
   draftId: string,
@@ -108,7 +124,8 @@ export async function agentDecideAction(
   if (decision !== 'send' && decision !== 'reject' && decision !== 'human') return { ok: false, error: 'bad_value' };
   return run(async ({ actor, ctx }) => {
     const r = await decideDraft(actor, draftId, decision, { digest: decision === 'send' ? digest : undefined }, ctx);
-    if (!r.ok) return { ok: false, error: r.code };
+    // The chat moved: «a new draft is coming» only when one is (`SUPERSEDED_ERROR`).
+    if (!r.ok) return { ok: false, error: r.code === 'superseded' ? (SUPERSEDED_ERROR[r.detail as SupersededDetail] ?? r.code) : r.code };
     revalidatePath('/suhbatlar', 'layout');
     return { ok: true, sendAt: r.sendAt?.toISOString() };
   });
@@ -127,14 +144,29 @@ export async function agentOwnTextAction(draftId: string, text: string): Promise
  * «Bilimga yozaymi?» after he answered the agent's question himself — the
  * bot's own press (`agentPress` 'g' | 'u' | 'z'), so the two-press general
  * fact, the money refusal and the «faqat shu mijoz» scope are one code path.
+ *
+ * The general fact's yes carries the arm's token the page DREW
+ * (`WebDraft.kbArmToken`), exactly as the bot's «📌 Ha, hammaga» carries it in
+ * its callback: without it every page press only asked again, so 📌 could
+ * never save from the page (found while writing his guide, 2026-11-10).
  */
-export async function agentRememberAction(draftId: string, op: 'g' | 'u' | 'z'): Promise<AgentActionResult> {
+export async function agentRememberAction(
+  draftId: string,
+  op: 'g' | 'u' | 'z',
+  armToken?: string,
+): Promise<AgentActionResult> {
   if (op !== 'g' && op !== 'u' && op !== 'z') return { ok: false, error: 'bad_value' };
+  if (armToken !== undefined && (op !== 'g' || !/^[0-9a-f]{8}$/.test(armToken))) return { ok: false, error: 'bad_value' };
   return run(async ({ actor }) => {
-    const answer = await agentPress(actor.id, op, draftId, undefined);
+    const answer = await agentPress(actor.id, op, draftId, armToken);
+    // The arming answer names the BOT's button; the page draws its own yes.
+    if (answer.buttons) return { ok: true, message: PAGE_ARM_SENTENCE };
     return { ok: true, message: answer.reply ?? answer.toast };
   });
 }
+
+const PAGE_ARM_SENTENCE =
+  "📌 Bu javob BARCHA mijozlarga qo'llanadi. Rozi bo'lsangiz, «📌 Ha, barcha mijozlar uchun» tugmasini bosing.";
 
 /** A general fact typed on the page — through `writeKbFact` (money and personal refusals). */
 export async function agentAddFactAction(question: string, answer: string): Promise<AgentActionResult> {

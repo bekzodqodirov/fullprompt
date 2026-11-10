@@ -54,6 +54,36 @@ export async function dayRunCounts(
   };
 }
 
+/** A daily cap a run meets at its reservation — the `capped` ledger row's reason (run `reserve`). */
+export type DayCap = 'daily_draft_cap' | 'chat_runs' | 'daily_token_cap';
+
+/**
+ * Which cap a run reserved NOW would meet, in the reservation's own order, or
+ * null. One home for the reservation (run `reserve`, under its lock) and for
+ * a press that promises a card some future run will write (decide
+ * `redraftNewest`): «yangi qoralama tayyorlanadi» over a chat already at its
+ * cap was a promise the very next reservation refused (review).
+ */
+export function capReached(
+  counts: Pick<DayRunCounts, 'runs' | 'chat' | 'tokens'>,
+  config: { dailyDraftCap: number; dailyTokenCap: number },
+): DayCap | null {
+  if (!(counts.runs < config.dailyDraftCap)) return 'daily_draft_cap';
+  if (!(counts.chat < AGENT_LIMITS.runsPerChatPerDay)) return 'chat_runs';
+  if (!(counts.tokens < config.dailyTokenCap)) return 'daily_token_cap';
+  return null;
+}
+
+/**
+ * An approved reply that went, or is still going — the outbox statuses a
+ * send counts in: today's sends against the ceiling (`sendsToday`), the
+ * same-text count (policy-input `sendCounts`), and a line «already answered»
+ * (decide `redraftNewest`). A reply he cancelled, one that failed or expired,
+ * reached nobody (review: «javob allaqachon tasdiqlangan» over a cancelled
+ * send told him not to answer a line nothing had answered).
+ */
+export const OUTBOX_GOING = ['agent', 'sending', 'sent', 'unknown'] as const;
+
 /**
  * Today's AI sends on an account against the day's ceiling (fit-8, his Q11 ⭐):
  * what a ✅ beyond the ceiling is refused by, and what the page prints.
@@ -67,7 +97,10 @@ export async function sendsToday(
   const [used] = await db.execute<{ n: number }>(sql`
     SELECT count(*)::int AS n FROM agent_outbox
      WHERE manager_user_id = ${managerUserId}
-       AND status IN ('agent', 'sending', 'sent', 'unknown')
+       AND status IN (${sql.join(
+         OUTBOX_GOING.map((s) => sql`${s}`),
+         sql`, `,
+       )})
        AND queued_at >= ${dayStart}::timestamptz`);
   // His own average daily sends over the 30 days before the agent started (his Q11 ⭐).
   let ownAverage: number = AGENT_LIMITS.perDay;

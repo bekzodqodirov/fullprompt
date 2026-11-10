@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * The client's document is OPTIONAL (0142; the owner, 2026-11-10 — «tarkib
+ * The client's document is OPTIONAL (0143; the owner, 2026-11-10 — «tarkib
  * qo'shganda tasdiq so'rash rasm file»; docs/TARKIB-TUZATISH.md §2): the two
  * halves an integration test on a migrated database cannot reach.
  *

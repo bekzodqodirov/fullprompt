@@ -1,6 +1,7 @@
 import {
+  classifyDialog,
   classifyWithRules,
-  isTelegramServicePeer,
+  isTelegramOfficialPeer,
   isWorthKeeping,
   toMessageRow,
   type ChatRule,
@@ -82,19 +83,153 @@ export function shouldRefreshOnMiss(
   return now - book.missRefreshedAt >= cooldownMs;
 }
 
+/**
+ * The account's «Ish raqami / Shaxsiy raqam» switch, as the running listener
+ * holds it (2026-10-29). It used to be re-read only with the ten-minute book —
+ * and every stranger's miss refresh resets that clock, so on a number that
+ * strangers keep writing to a switch to «Ish raqami» could wait for ever:
+ * each of them got a tray question instead of a lead, nothing they wrote was
+ * stored, and the AI saw none of it. So it has a clock of its own, as short
+ * as the agent's settings' (tg-listen `AGENT_CONFIG_TTL_MS`): one indexed
+ * row, read at most once a half-minute however many strangers write at once
+ * (`workModeSwitch` — they share the read in flight), and only when a
+ * stranger's line hangs on the answer.
+ */
+export interface WorkModeState {
+  work: boolean;
+  readAt: number;
+}
+
+/** Thirty seconds — a switch flipped on the screen reaches the next stranger's line inside half a minute. */
+export const WORK_MODE_TTL_MS = 30 * 1000;
+
+export function workModeIsStale(state: WorkModeState, now: number, ttlMs = WORK_MODE_TTL_MS): boolean {
+  return now - state.readAt >= ttlMs;
+}
+
+/** The mode in the owner's words — the start line prints it, so «which mode is it in» is in the log. */
+export function workModeWord(work: boolean): string {
+  return work ? 'ish raqami' : 'shaxsiy raqam';
+}
+
+/** One line when the switch changed under a running listener, or null when it did not. */
+export function workModeChangeLine(before: boolean, after: boolean): string | null {
+  if (before === after) return null;
+  return after
+    ? '  ⚙ akkaunt endi «ish raqami»: notanish odam yozsa — raqami yashirin bo‘lsa ham — lid ochiladi'
+    : '  ⚙ akkaunt endi «shaxsiy raqam»: notanish odam «Qaysi chatlar»da so‘raladi';
+}
+
+/**
+ * The switch as one running listener holds it: the value, its clock, and the
+ * one read in flight. gramjs dispatches each update without awaiting the one
+ * before (`sequentialUpdates: false`), so two strangers' first lines after a
+ * flip are decided at the same moment — and the old reader answered «did MY
+ * read see it change», which the second of them never does: A's read printed
+ * the change and re-decided A as a lead, B's found nothing new and kept the
+ * tray question it was decided with (the review of this fix). Now every
+ * caller that finds the clock due while a read runs awaits THAT read, and
+ * each line asks whether the switch differs from the value IT was decided
+ * with (`movedFrom`) — who happened to see the change does not enter.
+ *
+ * A failed read is not a personal number: the last answer stands, asked again
+ * on the next clock — not on the next line of a database outage.
+ */
+export interface WorkModeSwitch {
+  readonly work: boolean;
+  /** Read the switch when its clock is due (or `force`) — the read already running, if one is. */
+  refresh(now: number, force?: boolean): Promise<void>;
+  /**
+   * After `refresh`: does the switch now differ from `decidedWith` — must the line be decided again?
+   * `force` reads it afresh whatever its clock says: a line about to be WRITTEN on the switch's
+   * say-so (a stranger's lead) must not be stored on a half-minute-old «Ish raqami» — a flip to
+   * «Shaxsiy raqam» is made to stop exactly that (the 2026-10-29 review). A line passed over may
+   * keep the clock: a late «yes» costs one line, a late «no» would cost a stored one.
+   */
+  movedFrom(decidedWith: boolean, now: number, force?: boolean): Promise<boolean>;
+}
+
+export function workModeSwitch(opts: {
+  initial: boolean;
+  now: number;
+  read: () => Promise<boolean>;
+  log: (line: string) => void;
+  warn: (err: unknown) => void;
+  ttlMs?: number;
+}): WorkModeSwitch {
+  let state: WorkModeState = { work: opts.initial, readAt: opts.now };
+  let inFlight: Promise<void> | null = null;
+  const refresh = (now: number, force = false): Promise<void> => {
+    if (inFlight) return inFlight;
+    if (!force && !workModeIsStale(state, now, opts.ttlMs)) return Promise.resolve();
+    inFlight = (async () => {
+      try {
+        const work = await opts.read();
+        const line = workModeChangeLine(state.work, work);
+        state = { work, readAt: now };
+        if (line) opts.log(line);
+      } catch (err) {
+        state = { work: state.work, readAt: now };
+        opts.warn(err);
+      }
+    })().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  };
+  return {
+    get work() {
+      return state.work;
+    },
+    refresh,
+    async movedFrom(decidedWith: boolean, now: number, force = false): Promise<boolean> {
+      await refresh(now, force);
+      return state.work !== decidedWith;
+    },
+  };
+}
+
+/**
+ * Does the «Ish raqami» switch decide what this line becomes — so the line
+ * must ask the switch's own clock before it is acted on? A stranger with a
+ * number (a lead, or a tray question) since round 79; a hidden number too
+ * since his «1 a» (2026-10-29): on a work number it is a lead, on a personal
+ * one it is passed over, so a flip to «Ish raqami» must reach the next
+ * hidden-number line as quickly as the next visible one. NOT a line of a chat
+ * the listener already bound to a lead (`ChatRule.machine`): the switch
+ * decides about NEW strangers only (the 2026-10-29 review), so that line is
+ * the binding's whatever the switch says, and reading the switch afresh for
+ * each of them would be a query per line for nothing. Deliberately not
+ * `suspectsStaleBook` — that one asks whether the BOOK may be old, and a
+ * hidden number can never be found in a book.
+ */
+export function switchDecides(verdict: LiveVerdict): boolean {
+  if (verdict.store) return 'openLead' in verdict;
+  return 'ask' in verdict || verdict.reason === 'no_phone' || verdict.reason === 'not_a_client';
+}
+
 export type LiveVerdict =
-  | { store: true; clientId: string; clientCode: string; row: MessageRow }
+  /**
+   * A client we know. `retiresMachineRule`: the chat carries the listener's
+   * own lead binding (`ChatRule.machine`) and the phone book has just claimed
+   * it — the binding is taken back where the line is filed (chat-lead
+   * `ownerOfVerdict`), or it would go on naming a lead the chat is not.
+   */
+  | { store: true; clientId: string; clientCode: string; row: MessageRow; retiresMachineRule?: true }
   /**
    * A stranger, on an account that says it is a WORK number (0064): mint a
    * lead and keep the conversation on it. Carries the peer's identity because
    * the lead has to be named and reachable — that is the trade the switch
-   * makes, and it is why the switch defaults to personal.
+   * makes, and it is why the switch defaults to personal. `phone` is null for
+   * a hidden number (his «1 a», 2026-10-29): such a lead is found again by
+   * the chat (`peerId`, its tray rule), never by a number.
    */
-  | { store: true; openLead: true; peer: { phone: string; title: string }; row: MessageRow }
+  | { store: true; openLead: true; peer: { peerId: bigint; phone: string | null; title: string }; row: MessageRow }
   /**
-   * A chat somebody attached to a lead by hand, from the tray (0065). The
-   * lead already exists, so unlike `openLead` there is nothing to mint and
-   * nothing to name — only where to put the message.
+   * A chat somebody attached to a lead by hand, from the tray (0065) — or a
+   * door did (round 113's website rule), or the listener did (a work number's
+   * hidden-number lead). The lead already exists, so unlike `openLead` there
+   * is nothing to mint and nothing to name — only where to put the message.
    */
   | { store: true; leadId: string; row: MessageRow }
   /**
@@ -136,7 +271,7 @@ export type LiveVerdict =
  */
 export function isClientVerdict(
   verdict: LiveVerdict,
-): verdict is { store: true; clientId: string; clientCode: string; row: MessageRow } {
+): verdict is { store: true; clientId: string; clientCode: string; row: MessageRow; retiresMachineRule?: true } {
   return verdict.store && !('openLead' in verdict) && !('leadId' in verdict);
 }
 
@@ -169,27 +304,57 @@ export function decideIncoming(
    * `not_a_client` and — on a personal account — be put back on the tray as
    * a question somebody has already answered. `isSelf` still wins: Saved
    * Messages is not a customer under any decision anybody could write down.
+   *
+   * A binding the LISTENER made by itself (`machine` — a work number's
+   * hidden-number lead, his «1 a», marked by 0142) is nobody's answer, so it
+   * stands only while it is still the best fact about the chat (the
+   * 2026-10-29 review):
+   *  - while its lead is OPEN: a lost lead writing again is a new enquiry
+   *    (round 79), and a won one is the client it became — both decided by
+   *    the hidden-number door again (`ownerOfVerdict`), and on a personal
+   *    number asked about afresh (chat-lead `settlePassedChat`);
+   *  - until the phone BOOK claims the chat: a client of ours who wrote to the
+   *    new number before it was saved in its contacts is that client the
+   *    moment Telegram shows the number, not a «Telegram» lead for good — the
+   *    line goes to the client and the binding is retired with it.
+   * Whatever the SWITCH says: «Ish raqami / Shaxsiy raqam» decides about new
+   * strangers only. The first cut let the binding stand on a work number
+   * alone, and a switch turned back left a known lead's customer in a hole —
+   * not stored, and (a hidden number) asked about by nobody, because the
+   * binding's row stops every question the tray or the «📵» card would ask.
+   * A mistaken binding is undone by a person, per chat: the tray's ↩ and
+   * «hech qachon», the card's «🚫 Shaxsiy».
+   * A person's lead binding (the tray's «Yangi lid», the «📵» card) and
+   * another door's (round 113's website rule) are answers and outrank both,
+   * as they always have.
    */
   const rule = rules.get(peer.id);
-  if (!peer.isSelf && !isTelegramServicePeer(peer) && rule?.decision === 'include' && rule.leadId) {
-    const leadRow = toMessageRow(peer.id, msg);
-    if (!isWorthKeeping(leadRow)) return { store: false, reason: 'empty' };
-    return { store: true, leadId: rule.leadId, row: leadRow };
+  const machine = rule?.machine === true;
+  if (
+    !peer.isSelf &&
+    !isTelegramOfficialPeer(peer) &&
+    rule?.decision === 'include' &&
+    rule.leadId &&
+    (!machine || (rule.leadOpen !== false && !classifyDialog(peer, clients).keep))
+  ) {
+    return keptOnLead(peer, msg, rule.leadId);
   }
 
   const verdict = classifyWithRules(peer, clients, rules);
   if (!verdict.keep) {
     // Round 79: a stranger is no longer automatically nothing. Whether they
     // are a customer or the manager's own life is a question about the
-    // NUMBER, and the account answers it about itself.
-    // `not_a_client` is only reached once the number was visible, so the
-    // non-null assertions below are the classifier's guarantee, not a guess.
+    // NUMBER, and the account answers it about itself. On a work number that
+    // includes a number Telegram hides (2026-10-29), so the lead's phone may
+    // be null; a tray question is only ever asked about `not_a_client`, which
+    // is reached once the number was visible — the non-null assertion below
+    // is the classifier's guarantee, not a guess.
     const phone = (peer.phone ?? '').trim() || null;
     const action = unknownChatAction(verdict, workAccount);
     if (action.action === 'open_lead') {
       const row = toMessageRow(peer.id, msg);
       if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
-      return { store: true, openLead: true, peer: { phone: phone!, title: peerTitle(peer) }, row };
+      return { store: true, openLead: true, peer: { peerId: peer.id, phone, title: peerTitle(peer) }, row };
     }
     if (action.action === 'ask') {
       return { store: false, ask: true, peerId: peer.id, phone: phone!, title: peerTitle(peer) };
@@ -198,7 +363,17 @@ export function decideIncoming(
   }
   const row = toMessageRow(peer.id, msg);
   if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
-  return { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
+  // A machine binding has no client, so a keep here is the phone book's.
+  return machine
+    ? { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row, retiresMachineRule: true }
+    : { store: true, clientId: verdict.clientId, clientCode: verdict.clientCode, row };
+}
+
+/** A line filed on the lead its chat's rule names — the same «nothing in it» refusal every stored verdict makes. */
+function keptOnLead(peer: DialogPeer, msg: RawMessage, leadId: string): LiveVerdict {
+  const row = toMessageRow(peer.id, msg);
+  if (!isWorthKeeping(row)) return { store: false, reason: 'empty' };
+  return { store: true, leadId, row };
 }
 
 /**

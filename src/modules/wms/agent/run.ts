@@ -8,6 +8,7 @@ import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { canLogInSql } from '../../platform/users/login';
 import { pumpIsFresh, readGuard } from '../crm/account-guard';
+import { lateNote } from './card';
 import { agentRunning, agentTablesReady, readAgentConfig, type AgentConfig } from './config';
 import { chatForm, loadContext, type AgentContext, type AviaCargo, type ChatMessage, type QuotedRoad } from './context';
 import { eligibleForRun, type Ineligible } from './eligibility';
@@ -16,8 +17,8 @@ import { AGENT_LIMITS } from './limits';
 import { detectLocale, dominantScript, type AgentLocale } from './locale';
 import { askedLocation, customerNumberSources, policyFor, splitUrls, type PolicyMemory } from './policy-input';
 import { chatBlock, runTail, stableHead } from './prompt';
-import { JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
-import { dayRunCounts } from './today';
+import { EDIT_ATTEMPT_BASE, JOB_AGENT_INBOUND, type AgentInboundJob } from './queues';
+import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
@@ -97,8 +98,17 @@ interface LoopResult {
 const CAP_LOCK = 'agent_run_cap';
 const LOOP_WALL_MS = 90_000;
 
-async function reschedule(job: AgentInboundJob, startAfterS: number, deps: RunDeps): Promise<void> {
-  const next: AgentInboundJob = { ...job, origin: 'typing_wait' };
+/**
+ * Look again shortly — as the SAME ask: the attempt this job runs as is fixed
+ * now and carried (an edit's 100 + n is counted from the ledger, and the next
+ * look would count again and land on 0 or on the draft's own slot), and the
+ * asker's origin stays, so the late note and the `[agent] inbound` line still
+ * name who asked (review: an edit that met the customer typing came back as
+ * 'typing_wait' on attempt 0, stood down as a duplicate of the draft it was
+ * re-thinking, and the card his press had promised never came).
+ */
+async function reschedule(job: AgentInboundJob, attempt: number, startAfterS: number, deps: RunDeps, waited: 'typing' | 'greeting'): Promise<void> {
+  const next: AgentInboundJob = { ...job, attempt, waited };
   if (deps.enqueue) return deps.enqueue(next, startAfterS);
   await enqueue(JOB_AGENT_INBOUND, next, { startAfter: Math.max(1, Math.round(startAfterS)), retryLimit: 0 });
 }
@@ -308,10 +318,8 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
   const dayStart = tashkentDayStart(tashkentDay(now)).toISOString();
   return db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${CAP_LOCK}))`);
-    const { runs, chat, tokens } = await dayRunCounts(dayStart, { managerUserId: job.managerUserId, peerId: BigInt(job.peerId) }, tx);
-    if (!(runs < config.dailyDraftCap)) return 'capped:daily_draft_cap';
-    if (!(chat < AGENT_LIMITS.runsPerChatPerDay)) return 'capped:chat_runs';
-    if (!(tokens < config.dailyTokenCap)) return 'capped:daily_token_cap';
+    const cap = capReached(await dayRunCounts(dayStart, { managerUserId: job.managerUserId, peerId: BigInt(job.peerId) }, tx), config);
+    if (cap) return `capped:${cap}`;
     const rows = await tx
       .insert(agentRuns)
       .values({
@@ -328,9 +336,16 @@ async function reserve(job: AgentInboundJob, attempt: number, config: AgentConfi
   });
 }
 
-/** The attempt this job runs as: the sweep's retry is 1, an edit of the anchor gets its own from 100 (regression-10). */
+/**
+ * The attempt this job runs as: the job's own (0, the sweep's retry 1, his
+ * press's from 50 — queues `nextRedraftAttempt`, a waited job's carried by
+ * `reschedule`), and an edit of the anchor its own from 100 (regression-10),
+ * counted here because the listener that queues an edit does not read the
+ * ledger.
+ */
 async function attemptFor(job: AgentInboundJob): Promise<number> {
-  if (job.origin !== 'edit') return job.attempt ?? 0;
+  if (job.attempt !== undefined) return job.attempt;
+  if (job.origin !== 'edit') return 0;
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(agentRuns)
@@ -339,10 +354,10 @@ async function attemptFor(job: AgentInboundJob): Promise<number> {
         eq(agentRuns.managerUserId, job.managerUserId),
         eq(agentRuns.peerId, BigInt(job.peerId)),
         eq(agentRuns.anchorTgMessageId, BigInt(job.anchorTgMessageId)),
-        gte(agentRuns.attempt, 100),
+        gte(agentRuns.attempt, EDIT_ATTEMPT_BASE),
       ),
     );
-  return 100 + Number(row?.n ?? 0);
+  return EDIT_ATTEMPT_BASE + Number(row?.n ?? 0);
 }
 
 const lastOutAsked = (ctx: AgentContext) => /[?؟？]\s*$/u.test(ctx.lastOut?.body ?? '');
@@ -368,8 +383,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     .select({ typingAt: agentConversations.peerTypingAt })
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, job.managerUserId), eq(agentConversations.peerId, peerId)));
+  const attempt = await attemptFor(job);
   if (conv?.typingAt && t.getTime() - conv.typingAt.getTime() < 6_000 && ageMs < AGENT_LIMITS.typingWaitCapMs) {
-    await reschedule(job, AGENT_LIMITS.typingExtendMs / 1000, deps);
+    await reschedule(job, attempt, AGENT_LIMITS.typingExtendMs / 1000, deps, 'typing');
     return { outcome: 'rescheduled', reason: 'peer_typing' };
   }
 
@@ -377,7 +393,6 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     ctx.burst.map((m) => ({ text: m.body, media: m.media })),
     lastOutAsked(ctx),
   );
-  const attempt = await attemptFor(job);
   if (!worthy.worthy) {
     if ('notice' in worthy) {
       if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
@@ -388,7 +403,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     return { outcome: 'skipped', reason: worthy.reason };
   }
   if (worthy.greetingOnly && ageMs < AGENT_LIMITS.greetingWaitMs) {
-    await reschedule(job, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps);
+    await reschedule(job, attempt, (AGENT_LIMITS.greetingWaitMs - ageMs) / 1000, deps, 'greeting');
     return { outcome: 'rescheduled', reason: 'greeting_only' };
   }
 
@@ -442,6 +457,10 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     if (rail) notes.push(rail);
     const tariffMismatch = loop.outcomes.some((o) => o.tariffMismatch);
     if (tariffMismatch) notes.push("Sayt narxi va /admin/tarif farq qiladi — yo'lkira narxi aytilmadi.");
+    // A card written long after the customer's message says so, first, with the job's reason
+    // when it has one (2026-10-29: a pull-made card 23 minutes late looked like a fresh one).
+    const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
+    if (late) notes.unshift(late);
 
     const written = await writeDraft({
       runId,
@@ -478,6 +497,31 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   }
 }
 
+/**
+ * The figures the PROMPT dictates (incident 2026-10-29): rule 8 tells the
+ * model the truck takes «eng kamida 1 kub yoki 100 kg», rule 9 the flight
+ * «eng kamida 1 kg … taxminan 2-5 kun» — from `AGENT_LIMITS`, the numbers the
+ * tools obey. Their only source in the policy was the seeded knowledge, which
+ * he may retire or re-word: then the reply said the minimum it was told to
+ * say and lost its ✅ for it. The company's rule is a source of its own,
+ * whatever the knowledge holds — said as the kinds it is (a measure, the
+ * flight's days), never as money, and in its own UNIT (review): unitless, its
+ * «1 kub» vouched for «1 kg», its «100 kg» for «100 kub» and a count of 100
+ * cartons, the flight's «2 kun» for «2 soatda». The flight's days vouch only
+ * for a day count said of the flight (`sourceFor`). Each minimum is its road's
+ * and a MINIMUM's (second review): unmoded, the truck's «100 kg» vouched for
+ * «Avia orqali eng kamida 100 kg» (the flight takes 1 kg), and shapeless, for
+ * «Sizning 100 kg yukingiz Toshkentga yetib keldi» — a weight nobody stated.
+ */
+const COMPANY_RULE = 'kompaniya qoidasi';
+const COMPANY_RULE_SOURCES: readonly NumberSource[] = [
+  { value: AGENT_LIMITS.minShipment.m3, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'm3', said: 'minimum' },
+  { value: AGENT_LIMITS.minShipment.kg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'road', unit: 'kg', said: 'minimum' },
+  { value: AGENT_LIMITS.avia.minKg, kind: 'measure', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'kg', said: 'minimum' },
+  { value: AGENT_LIMITS.avia.daysMin, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
+  { value: AGENT_LIMITS.avia.daysMax, kind: 'duration', label: COMPANY_RULE, origin: 'kb', mode: 'air', unit: 'day' },
+];
+
 /** What the run learned, kept on the draft so ✅ re-runs the policy on the same evidence (leak-3). */
 export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], canary: string): PolicyMemory {
   // His «Temir yo'l mendan so'rasin»: in a chat about rail no figure the
@@ -499,6 +543,7 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
   // payment fact names money, and joined to the rest it made every street
   // number and hour of every other fact a price nobody may repeat.
   for (const f of facts) sources.push(...factSources(f.answer, 'kompaniya bilimi'));
+  sources.push(...COMPANY_RULE_SOURCES);
   const urls = [...facts.flatMap((f) => f.urls), ...loop.outcomes.flatMap((o) => o.allowedUrls ?? [])];
   const { mapUrls, allowedUrls } = splitUrls(urls);
   return {

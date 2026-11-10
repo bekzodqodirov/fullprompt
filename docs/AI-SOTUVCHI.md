@@ -397,7 +397,7 @@ mijozga bitta qisqa xabar («Hozir Bekzod akaga yetkazaman»), keyin jim.
    yozaman») — `client_holding_sent_at`. `shadow` da mijozga hech narsa.
 3. Egasiga xodimlar botida: mijoz konteksti (kim, nima so'radi, oxirgi 3 xabar) + agentning
    taklif javobi + tugmalar:
-   **✅ Shunday yubor** · **✏️ O'zim yozaman** (keyingi matn xabari = javob,
+   **✅ Shunday yubor** · **✏️ O'zim yozaman** (2026-10-29 dan: «✏️ O‘zgartirish», DECISIONS #1611; keyingi matn xabari = javob,
    `telegram_chat_waits` orqali 10 daqiqalik bardoshli kutish) · **🙋 O'zim bog'lanaman**
    (`taken_over`, suhbat `human` rejimga).
 4. Javobdan keyin agent uni persona uslubida qayta yozadi (ma'no o'zgarmaydi), yuboradi, va
@@ -733,7 +733,8 @@ no URL except an approved kb fact's (the Tashkent map link), no @mention, no den
 - Card `AgentDraft` (new mute group `agent`, its own FOUNDERS, night-silent): customer (name · code
   or «lid»), their last ≤ 3 messages clipped, the proposed reply, warnings, the proposed action
   (e.g. «📦 Hisoblatishga: podklyuch · 5 kub · 800 kg · …»). Buttons `ag:s|e|r|h:<uuid>`:
-  ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman.
+  ✅ Yubor · ✏️ O'zim yozaman · ❌ Rad · 🙋 O'zim bog'lanaman (as built: ✅ Yuborish · ✏️ O‘zgartirish ·
+  ❌ Kerak emas · 🙋 Suhbat meniki — #1611).
 - ✅ → `decideDraft` (CAS pending→approved), re-validate (newer inbound → superseded and a fresh run;
   he wrote meanwhile → taken_over), insert the tg_outbox row (status 'agent', peer pinned, client or
   lead, queued_by = the approver, answers = the anchor), execute the approved action, audit.
@@ -916,7 +917,7 @@ Digits normalised (Persian, Arabic-Indic, full-width; any other numeral beside m
 [leak-7]; G1 by kind and source [money-1]; G2 closed promise table × six locales [money-8]; G4 ≤ 700 chars,
 ≤ 1 of [?؟？]; G5 the dominant script of the last 5 inbound [fit-6]; G6 other clients' codes, system shapes,
 foreign phones, staff names, a canary from the system prompt; no denial of being an AI; no URL except an
-approved kb fact's, no @mention; G10 the fingerprint (> 3 peers / 24 h) and URL caps [ban-6]; G11 a yo'lkira
+approved kb fact's, no @mention; G10 the fingerprint (> 3 peers / 24 h) and URL caps [ban-6] — since 2026-10-29 (his «a», DECISIONS #1619) the fingerprint only WARNS on a reply of ≤ 160 characters with no figure, word numeral, phone or link; G11 a yo'lkira
 figure carries the approximation word and «boj, QQS alohida» in its locale. His own ✏️ text passes the owner
 subset (length, other-client codes as a warning) — his words are his.
 

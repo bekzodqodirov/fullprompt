@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
 import { agentOffAlarmText, pausedAlarmText, sessionDeadOthersText } from '@/modules/wms/crm/account-alarm';
 import { isTelegramServiceNotice, TELEGRAM_SERVICE_PEER, telegramNoticeKind } from '@/modules/wms/agent/listener-hooks';
 import { wasAutoSent } from '@/modules/wms/crm/message-flags';
+
+const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { crm: Record<string, string> };
 
 /**
  * The words the listener's alarms carry, and how it tells a customer's own
@@ -39,7 +42,8 @@ describe('the alarms', () => {
     expect(text).toContain('Siroj');
     expect(text).toContain('PEER_FLOOD');
     expect(text).toContain('«Suhbatlar»');
-    expect(text).toContain('«Tekshirdim»');
+    // The button's OWN words, read from the bundle the page draws it with.
+    expect(text).toContain(`«${uz.crm.pauseClear}»`);
     expect(text).toContain('AI sotuvchi ham o‘chirildi');
     expect(pausedAlarmText({ managerName: 'Siroj', pause: 'frozen', code: 'FROZEN_', agentOff: false })).not.toContain('AI');
   });
@@ -80,6 +84,11 @@ describe('Telegram’s own service account (his ⭐2, final review K33)', () => 
     expect(isTelegramServiceNotice({ ...service, isSelf: true }, false)).toBe(false);
     expect(isTelegramServiceNotice({ ...service, isPrivate: false }, false)).toBe(false);
     expect(isTelegramServiceNotice({ ...service, id: 777001n }, false)).toBe(false);
+  });
+
+  it('is 777000 alone — Telegram’s OTHER accounts are never a customer, and never a notice about HIS account either', () => {
+    // A bank's code through «Verification Codes» must not switch the AI off and cancel the morning's ✅s.
+    for (const id of [489000n, 1271266957n, 333000n]) expect(isTelegramServiceNotice({ ...service, id }, false), String(id)).toBe(false);
   });
 });
 

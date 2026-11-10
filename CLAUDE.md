@@ -3352,7 +3352,39 @@ five lenses + a critic (27 confirmed, 6 blockers, all fixed), then the fixes rev
 ratchet is 104 known (38 left it). DEPLOY: ledger 142 (#137's 0140 rides with it if not yet on the server), rebuild tg-listen, `/api/version` today; the first real «🧮» and «🤖» after the deploy are
 the proof (no Telegram here).
 
-**Latest migration: 0141** (`intake_door`, `when` …120; ledger must reach **142**). Before
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening, merged 2026-11-10; DECISIONS #1610-#1620; migration 0142 `chat_rule_bound_via` (minted as 0139), ledger must reach 143; renumbered from #1571-#1581 and 0139 on the merge, the THIRTIETH collision — main's Sakkiz R3, narx jadvali, Horgos and Ikki eshik took #1571-#1609 and 0139-0141 first).** His
+«oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
+ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
+packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
+reviewed again. POLICY (#1610): list markers are dropped from figures (in-order runs of ≥2, one style, never a
+currency item, never after a price/unit word) and the prompt asks for «•»; `questions` is a WARNING; word numerals
+block beside their unit only; G1 keeps its own definite-duration list (G2 still reads «bir necha kunda»); an asking
+«?» is no dispatch promise; `normalizeDigits` folds ʼ ` ´ ′ ʹ; the prompt's own figures are company-rule sources WITH
+unit and road (a figure naming no road is the truck's); a kb address number vouches for a plain figure only;
+«hisoblash bepul» and «оплата … перед получением» are narrow exemptions. Probe ANY change there with
+`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1611): «✏️ O‘zgartirish», the remedy line, reasons in
+words, `cardDrawsSend` the one ✅ rule (bot AND page), ✅ on an editing draft without own text sends the machine
+text, `redraftNewest`, a dead ✏️ wait falls through, the inline ✅ under his own text, `fitCard` stages,
+`memory_missing`, ✋ (his Telegram reply, its own time) vs 🙋 (`HUMAN_TAKEOVER_HOURS`), the late-card note; the bot's
+copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1612): `workModeSwitch`
+(30 s, shared read, fresh read for a line about to be stored), the start line names the mode, the web tray's
+holder press queues the pull, `[agent] inbound` carries origin/lag, the gap/retry passes skip a waiting job, lookup
+deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1613): `no_phone` on a work account → `open_lead` through
+ONE door `phonelessLeadForChat` (the rule row is the fence; the listener's own binding is marked by 0142's
+`bound_via = 'work_account'` — SQL-only, read through `to_jsonb(row)` (`boundViaSql`), because round 113's website
+rule has the same shape with no `decided_by` either — and YIELDS to a person, the book and a closed lead, never to
+the switch: the switch governs NEW strangers only, and a chat the work number bound stays on its open lead by its
+RULE — never by its rows, a visible number it kept by the number is the tray's question again (#1615, #1616);
+«🚫 Shaxsiy» on a chat no person answered also deletes its lines when all are a lead's, `storedOnLeadsOnly`;
+a closed lead's binding retires on an INBOUND line only, `settlePassedChat`); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
+is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
+listener was down are not fetched. LAST CHECK (#1619-#1620): two corpora measured both ways (62 ordinary first
+replies, 303 dangerous) — keep them green on ANY policy change; G10's same-text fuse only WARNS on a short reply
+with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
+phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
+
+**Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
+it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before
 it: 0139 (`calc_intake_durable`, `when` …118). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before
@@ -3498,7 +3530,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **142** since 0141 (141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **143** since 0142 (142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

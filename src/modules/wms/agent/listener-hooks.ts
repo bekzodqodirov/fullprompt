@@ -151,7 +151,18 @@ export function strangerUserOf(chat: unknown): StrangerUser | null {
  *       Every button of that card works: «🆕 Yangi lid» opens the lead BY
  *       NAME through `openLeadForChat(…, { phoneless: 'agent_stranger' })`,
  *       the one door that may (the tray's own still refuses
- *       `chat_no_phone`).
+ *       `chat_no_phone`). Only on a PERSONAL number: on a work number a
+ *       hidden number's line is a lead by itself (his «1 a», 2026-10-29) and
+ *       is kept, so it never reaches the not-kept branch that asks this.
+ *
+ *
+ *   (c) `reopened` — the listener has just retired its own binding of this
+ *       chat because the binding's lead closed (chat-lead `settlePassedChat`,
+ *       the 2026-10-29 review): the chat is a new stranger again and its
+ *       question a NEW one, so the one-card-per-peer claim an earlier card
+ *       spent (`stranger_card_at`) is given back and the sweep asks once more
+ *       — without it a chat once carded, then bound, then lost was never
+ *       asked about again by the bot.
  *
  * Nothing about the message is stored — no text, no row in tg_messages: the
  * chat stays unkept until he answers the card (round 79's promise). The
@@ -164,6 +175,7 @@ export async function noteStranger(input: {
   title: string;
   verdict: 'ask' | 'no_phone';
   user: StrangerUser;
+  reopened?: boolean;
 }): Promise<{ contactStamped: boolean; ruleAdded: boolean }> {
   const none = { contactStamped: false, ruleAdded: false };
   if (input.user.deleted || input.peerId <= 0n) return none;
@@ -192,6 +204,11 @@ export async function noteStranger(input: {
       .onConflictDoNothing({ target: [tgChatRules.managerUserId, tgChatRules.peerId] })
       .returning({ id: tgChatRules.id });
     ruleAdded = added.length > 0;
+  }
+  if (input.reopened && !input.user.contact) {
+    await db.execute(sql`
+      UPDATE agent_conversations SET stranger_card_at = NULL, updated_at = now()
+       WHERE manager_user_id = ${m} AND peer_id = ${p} AND stranger_card_at IS NOT NULL`);
   }
   return { contactStamped: stamped.length > 0, ruleAdded };
 }

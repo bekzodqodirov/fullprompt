@@ -61,7 +61,7 @@ describe('tarkibLabel — «first +N»', () => {
 });
 
 /**
- * 0142 dropped a NOT NULL; one migration behind, the app writes the NULL the
+ * 0143 dropped a NOT NULL; one migration behind, the app writes the NULL the
  * old column still refuses. The helper names the column so a caller answers
  * «server yangilanmoqda» for THAT one and nothing else.
  */

@@ -56,10 +56,13 @@ describe('what one history message means for the walk', () => {
     const v: LiveVerdict = {
       store: true,
       openLead: true,
-      peer: { phone: '+998901112233', title: 'Somebody' },
+      peer: { peerId: 1n, phone: '+998901112233', title: 'Somebody' },
       row,
     };
     expect(backfillStep(v)).toEqual({ kind: 'stop' });
+    // A hidden number on a work account is the same verdict since his «1 a»
+    // (2026-10-29) — and history mints it no lead either: only the live line does.
+    expect(backfillStep({ ...v, peer: { peerId: 2n, phone: null, title: 'Yashirin' } })).toEqual({ kind: 'stop' });
   });
 
   it('steps over a client\'s empty service row without ending the chat', () => {

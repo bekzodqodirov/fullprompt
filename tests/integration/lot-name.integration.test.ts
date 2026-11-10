@@ -36,7 +36,7 @@ async function mint(ru: string | null): Promise<string> {
 }
 
 async function compose(lotId: string, names: { seq: number; name: string }[]): Promise<void> {
-  // No document: optional since 0142 — which this insert also proves.
+  // No document: optional since 0143 — which this insert also proves.
   await db.insert(lotCompositions).values({ lotId, seenBoxCount: 2, savedBy: actorId });
   if (names.length > 0) {
     await db
@@ -168,7 +168,7 @@ describe('the shown Russian name — SQL and its pure twin', () => {
   });
 });
 
-describe('a tarkib with no document (0142) is still a tarkib to its reader', () => {
+describe('a tarkib with no document (0143) is still a tarkib to its reader', () => {
   it('compositionsFor returns it, `attachment` null — an inner join on the file dropped it from the card', async () => {
     const view = (await compositionsFor([lot.three])).get(lot.three);
     expect(view?.lines.map((l) => l.name)).toEqual(['Клавиатура', 'Мышь', 'Наушники']);

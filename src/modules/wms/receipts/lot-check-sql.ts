@@ -37,7 +37,7 @@ export {
  *    lot's own name and a ✅ beside it would have vouched for the name the
  *    tarkib contradicts. The screens print the tarkib's name now
  *    (`receipts/lot-name.ts`), so what the ✅ stands beside IS what a person
- *    stated. With or without a document: 0142 made the file optional, and
+ *    stated. With or without a document: 0143 made the file optional, and
  *    this sentence never read it. Only the composition's STATE leaves this
  *    module — never a line.
  *

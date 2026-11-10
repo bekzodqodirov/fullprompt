@@ -267,7 +267,7 @@ export const lotCompositions = pgTable(
       .primaryKey()
       .references(() => receiptLots.id, { onDelete: 'cascade' }),
     /**
-     * The client's document on THIS prixod — OPTIONAL since 0142 (the owner,
+     * The client's document on THIS prixod — OPTIONAL since 0143 (the owner,
      * 2026-11-10; docs/TARKIB-TUZATISH.md §2). NO ACTION: a file a composition
      * does cite is `in_use`.
      */
@@ -2679,6 +2679,24 @@ export const tgPeerIndex = pgTable(
   ],
 );
 
+/**
+ * One answer per chat, per manager — the tray's, the listener's or a door's.
+ *
+ * 0142 added `bound_via` and it is deliberately NOT declared here this
+ * release: 'work_account' marks the listener's OWN lead binding for a hidden
+ * number on a work number (chat-lead `phonelessLeadForChat`, his «1 a») — the
+ * one binding nobody decided, which yields to a person, the book and a closed
+ * lead — and NULL is every other row, round 113's website rule included
+ * (which has no `decided_by` either, so the row's shape cannot tell them
+ * apart). Drizzle names EVERY declared column in every INSERT, every bare
+ * `.returning()` and every whole-row select, and this table is read whole-row
+ * by the tray, the bot's stranger buttons and the minting door: declared, the
+ * column would turn all of them into a 42703 one migration behind (#472,
+ * 0127's reason). So it is written by one raw statement in chat-lead and read
+ * through `to_jsonb(row)` (`boundViaSql` — NULL, never 42703, on an old
+ * schema). A LATER release may declare it once 0142 is everywhere. Fenced by
+ * tests/unit/chat-rule-bound-via.test.ts.
+ */
 export const tgChatRules = pgTable(
   'tg_chat_rules',
   {
