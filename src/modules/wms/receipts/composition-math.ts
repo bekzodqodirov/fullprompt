@@ -260,20 +260,16 @@ export function nameKey(name: string): string {
 
 /**
  * Does this line name the lot's OWN good — Chinese or Russian, by `nameKey`
- * (the TNVED memory's `productKey`, character for character)? The pure twin
- * of the equality inside `tarkibVouchesSql` (lot-check-sql.ts), pinned
- * against it by lot-check.integration.test.ts (#1267): the editor's hint, the
- * packing lists' Chinese name and the ✅ cannot disagree about it.
+ * (the TNVED memory's `productKey`, character for character)? Asked by the
+ * papers (the lot's Chinese name is printed only beside the line that IS the
+ * lot's good), by the one-line code guard and by the 🤖's question — always
+ * against the lot's STORED names, which a tarkib never rewrites
+ * (`receipts/lot-name.ts`). The ✅ no longer asks it: since 2026-11-10 any
+ * standing tarkib vouches (docs/TARKIB-TUZATISH.md §3.5).
  */
 export function lineIsLotGood(lineName: string, lot: { zh: string; ru: string | null }): boolean {
   const key = nameKey(lineName);
   return key !== '' && (key === nameKey(lot.zh) || key === nameKey(lot.ru ?? ''));
-}
-
-/** A tarkib vouches for its lot's ✅ «hujjat bo'yicha»: several lines always, ONE line only when it names the lot's own good (8.6). */
-export function linesVouchForLot(lines: readonly { name: string }[], lot: { zh: string; ru: string | null }): boolean {
-  if (lines.length >= 2) return true;
-  return lines.length === 1 && lineIsLotGood(lines[0]!.name, lot);
 }
 
 /**

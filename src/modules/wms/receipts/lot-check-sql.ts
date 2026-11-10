@@ -2,7 +2,6 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { PgSelect } from 'drizzle-orm/pg-core';
 import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
-import { productKeySql } from '../tnved/service';
 
 export {
   LOT_CHECK_STATES,
@@ -29,17 +28,18 @@ export {
  *    vouched count reads checked again by itself, which a clear-on-write
  *    could never do. kg/m³ are deliberately not compared: a re-weigh is the
  *    warehouse's correction, not «what is it»;
- *  · the DOCUMENT's (his 3a) — a lot tarkibi that still stands: the same
+ *  · the TARKIB's (his 3a) — a lot tarkibi that still stands: the same
  *    three terms `isStale` (composition-math.ts) compares, restated here in
- *    SQL and pinned against it by `lot-check.integration.test.ts` — and it
- *    VOUCHES only when it says something about the lot's identity a person
- *    would: two or more lines, or ONE line whose name is the lot's own
- *    (his 8.6, 2026-10-21; a one-line tarkib became possible on 2026-10-27).
- *    A single line naming ANOTHER good says the lot's name is wrong, and the
- *    warehouse screens keep that name (LOT-TARKIBI §9) — a ✅ beside it would
- *    vouch for the name the document contradicts. Only the composition's
- *    STATE leaves this module — never a line — so the stock and plan screens
- *    still learn nothing about the contents.
+ *    SQL and pinned against it by `lot-check.integration.test.ts`. ANY
+ *    standing tarkib vouches (2026-11-10, docs/TARKIB-TUZATISH.md §3.5 — the
+ *    recorded reversal of his 8.6): a one-line tarkib naming another good
+ *    used to leave ❓, because the warehouse screens went on printing the
+ *    lot's own name and a ✅ beside it would have vouched for the name the
+ *    tarkib contradicts. The screens print the tarkib's name now
+ *    (`receipts/lot-name.ts`), so what the ✅ stands beside IS what a person
+ *    stated. With or without a document: 0142 made the file optional, and
+ *    this sentence never read it. Only the composition's STATE leaves this
+ *    module — never a line.
  *
  * Every reader LEFT JOINs `lot_checks` and `lotTarkibJoinSql()` on the lot
  * and asks `lotCheckStateSql`. A JOIN and never a correlated subquery in a
@@ -62,8 +62,7 @@ export const LOT_TARKIB = sql.raw('lot_tarkib');
  */
 export function lotTarkibJoinSql(): SQL {
   return sql`(
-    SELECT c.lot_id, c.seen_box_count, sum(l.weight_kg) AS kg, sum(l.volume_m3) AS m3,
-           count(*)::int AS n, min(l.name) AS one_name
+    SELECT c.lot_id, c.seen_box_count, sum(l.weight_kg) AS kg, sum(l.volume_m3) AS m3
       FROM lot_compositions c
       JOIN lot_composition_lines l ON l.lot_id = c.lot_id
      GROUP BY c.lot_id, c.seen_box_count
@@ -86,19 +85,6 @@ export function tarkibStandsSql(lot: SQL): SQL {
     AND ${LOT_TARKIB}.seen_box_count = ${lot}.box_count
     AND ${LOT_TARKIB}.kg = ${lot}.total_weight_kg
     AND ${LOT_TARKIB}.m3 = ${lot}.total_volume_m3)`;
-}
-
-/**
- * The composition says who the lot is (his 8.6): two or more lines, or ONE
- * line named as the lot itself — Chinese or Russian, by the TNVED memory's
- * key (`productKeySql`: every whitespace run collapsed, trimmed, lowered —
- * one rule for «the same name», #513). A one-line tarkib naming ANOTHER good
- * fixes the papers and vouches for nothing on the warehouse screens, which
- * still print the lot's own name.
- */
-export function tarkibVouchesSql(lot: SQL): SQL {
-  return sql`(${LOT_TARKIB}.n >= 2
-    OR ${productKeySql(sql`${LOT_TARKIB}.one_name`)} IN (${productKeySql(sql`${lot}.product_name_zh`)}, ${productKeySql(sql`coalesce(${lot}.product_name_ru, '')`)}))`;
 }
 
 /**
@@ -127,10 +113,10 @@ export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; clie
 export function lotCheckStateSql(refs: LotCheckRefs): SQL {
   const terms = checkTermsSql(refs);
   return sql`(CASE
-    WHEN ${tarkibStandsSql(refs.lot)} AND ${tarkibVouchesSql(refs.lot)} THEN 'checked'
+    WHEN ${tarkibStandsSql(refs.lot)} THEN 'checked'
     WHEN ${refs.receipt}.client_id IS NULL THEN 'unclaimed'
     WHEN ${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client} THEN 'checked'
-    WHEN ${refs.check}.lot_id IS NOT NULL OR (${LOT_TARKIB}.lot_id IS NOT NULL AND ${tarkibVouchesSql(refs.lot)}) THEN 'stale'
+    WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL THEN 'stale'
     ELSE 'none'
   END)`;
 }

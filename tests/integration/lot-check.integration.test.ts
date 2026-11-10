@@ -56,6 +56,7 @@ import { GET as stockXlsx } from '@/app/api/reports/stock/route';
 import { checkLotAction, uncheckLotAction } from '@/app/(protected)/receipts/[id]/lot-check-actions';
 import { isStale } from '@/modules/wms/receipts/composition-math';
 import { clearComposition, compositionsFor, saveComposition } from '@/modules/wms/receipts/lot-composition';
+import { lotRuShownFor } from '@/modules/wms/receipts/lot-name';
 import { checkLot, LotCheckError, lotCheckViewsFor, uncheckLot as uncheckRaw, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
 import { groupHistory } from '@/modules/platform/audit/history';
 import {
@@ -441,7 +442,7 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
       .where(eq(receiptLots.id, lot.T));
   });
 
-  it('12b. a ONE-line tarkib vouches only for a lot of that name (his 8.6, 2026-10-27); another good leaves ❓ and names the rename', async () => {
+  it('12b. ANY standing tarkib vouches — the recorded reversal of his 8.6 (2026-11-10): a one-line tarkib naming another good reads ✅, because the lists print ITS name now', async () => {
     const one = (name: string) => ({ name, pieces: '', cartons: '10', kg: '1000', m3: '2.5', tnved: '' });
     const replace = async (lines: ReturnType<typeof composition>['lines']) => {
       const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
@@ -450,21 +451,28 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     // The lot's own name, spaced and cased otherwise — an ideographic space
     // too, the one a Chinese name is typed with: the paper says what the lot says.
     await replace([one(`\u3000混合${SFX.toLowerCase()}  `)]);
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false, documentOtherName: false });
-    // Another good: the papers are right, the warehouse screens are not.
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false });
+    // Another good. Until 2026-11-10 this left ❓ («the logist's rename is
+    // what is left»): the warehouse screens printed the lot's own name and a
+    // ✅ beside it would have vouched for the name the tarkib contradicts.
+    // The screens print the tarkib's name now — so the ✅ stands beside what
+    // a person stated, and the STORED name still has not moved.
     await replace([one('Клавиатура')]);
-    expect(await stateOf('T')).toMatchObject({ state: 'none', byDocument: false, documentStale: false, documentOtherName: true });
-    // …and the lot outgrowing it is not «stale»: it never vouched.
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false });
+    expect((await lotRuShownFor([lot.T])).get(lot.T)).toBe('Клавиатура');
+    const [stored] = await db
+      .select({ ru: receiptLots.productNameRu })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lot.T));
+    expect(stored!.ru).toBeNull();
+    // …and the lot outgrowing it IS «the tarkib moved» now: it vouched.
     await db.update(receiptLots).set({ boxCount: 11 }).where(eq(receiptLots.id, lot.T));
-    expect(await stateOf('T')).toMatchObject({ state: 'none', documentStale: false });
+    expect(await stateOf('T')).toMatchObject({ state: 'stale', byDocument: false, documentStale: true });
     await db.update(receiptLots).set({ boxCount: 10 }).where(eq(receiptLots.id, lot.T));
-    // The logist's rename is the cure — the Russian name now IS the line's.
-    await db.update(receiptLots).set({ productNameRu: 'клавиатура' }).where(eq(receiptLots.id, lot.T));
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
-    await db.update(receiptLots).set({ productNameRu: null }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true });
     // Two lines vouch whatever they are called, as they always did.
     await replace(composition().lines);
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true });
   });
 });
 

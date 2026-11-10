@@ -26,7 +26,6 @@ export interface LotCheckFace {
   askable: boolean;
   byDocument: boolean;
   documentStale: boolean;
-  documentOtherName: boolean;
   person: {
     by: string | null;
     day: string;
@@ -158,13 +157,6 @@ export function LotCheckPanel({
           {t('documentOld')}
         </p>
       ),
-    );
-  }
-  if (face.documentOtherName && asking) {
-    lines.push(
-      <p key="doc-other" className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="lot-check-face-document-other">
-        🧩 {t('documentOtherName')}
-      </p>,
     );
   }
   if (face.state === 'none' && face.askable) {

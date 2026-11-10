@@ -7,7 +7,7 @@ import { db } from '@/modules/platform/db/client';
 import { receiptLots } from '@/modules/platform/db/schema';
 import { requestMeta } from '@/modules/platform/auth/session';
 import { AuthError, requireActor } from '@/modules/platform/rbac/authorize';
-import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
+import { isBusyError, isServerBehind, violatedNotNull } from '@/modules/platform/db/errors';
 import {
   clearComposition,
   CompositionError,
@@ -48,6 +48,13 @@ function refusalOf(err: unknown): CompositionActionResult {
   if (err instanceof ZodError) return { ok: false, error: 'validation' };
   if (isBusyError(err)) return { ok: false, error: 'busy' };
   if (isServerBehind(err)) return { ok: false, error: 'server_behind' };
+  // One migration behind (0142 not landed yet): a tarkib saved with no
+  // document is a NULL the old column still refuses. That one column, by
+  // name — a NULL anywhere else is a fault the error page must show.
+  const notNull = violatedNotNull(err);
+  if (notNull?.table === 'lot_compositions' && notNull.column === 'attachment_id') {
+    return { ok: false, error: 'server_behind' };
+  }
   // A CHECK the parse should have refused first — a belt, never a white page.
   const code = (err as { code?: string; cause?: { code?: string } } | null)?.code;
   if (code === '23514' || (err as { cause?: { code?: string } })?.cause?.code === '23514') {

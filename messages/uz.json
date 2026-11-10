@@ -1085,7 +1085,7 @@
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
-    "attachInUse": "Bu hujjat lot tarkibida ishlatilgan — VED yoki logist boshqa hujjatni tanlamaguncha o'chirib bo'lmaydi"
+    "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -5720,7 +5720,7 @@
     "title": "Tarkibi",
     "open": "Tarkib qo'shish",
     "edit": "Tarkibni o'zgartirish",
-    "hint": "Lot, stiker va karobkalar o'zgarmaydi — faqat invoys, packing list va agent fayli shu qatorlarni chiqaradi",
+    "hint": "Lot, stiker va karobkalar o'zgarmaydi. Invoys, packing list va agent fayli shu qatorlarni chiqaradi; ro'yxatlarda lotning ruscha nomi o'rnida tarkib nomi ko'rinadi",
     "modeSeparate": "Alohida karobkalar",
     "modeMixed": "Aralash karobkalar",
     "modeMixedHint": "Har karobkada aralash — karobka soni yozilmaydi",
@@ -5736,7 +5736,6 @@
     "tnved": "TNVED",
     "addLine": "+ qator",
     "oneGood": "Bitta tovar — lotdan to'ldirish",
-    "oneLineNoVouch": "Nom lot nomidan farq qiladi — ✅ «hujjat bo'yicha» avtomatik qo'yilmaydi",
     "removeLine": "Qatorni o'chirish",
     "line": "{n}-qator",
     "prefill": "Karobka soniga qarab taqsimlash",
@@ -5749,16 +5748,16 @@
     "remainderDone": "{label} ✓",
     "remainderIncomplete": "to'ldirilmagan katak bor",
     "cartonsShort": "kar",
-    "document": "Mijozning hujjati",
+    "document": "Mijozning hujjati (ixtiyoriy)",
     "documentUpload": "Hujjat yuklash",
-    "documentNone": "Prixodda hali hujjat yo'q — yuklang",
+    "documentNone": "Hujjat biriktirilmagan — bo'lsa yuklang",
     "docWhere": "Hujjat shu prixodga yuklanadi (mashinaga emas)",
     "uploading": "Hujjat yuklanmoqda — tugashini kuting",
     "save": "Saqlash",
     "saved": "Tarkib saqlandi",
     "savedFrozen": "{trucks} yuborilgan — uning hujjatlari o'zgarmaydi",
     "clear": "Tarkibni o'chirish",
-    "clearConfirm": "Tarkib o'chiriladi — invoys va packing list yana lotning o'z nomini chiqaradi. Davom etasizmi?",
+    "clearConfirm": "Tarkib o'chiriladi — invoys, packing list va ro'yxatlar yana lotning o'z nomini chiqaradi. Davom etasizmi?",
     "cleared": "Tarkib o'chirildi",
     "stale": "Lot tarkib yozilgandan keyin o'zgardi: tarkibda {stated}, hozir {current} — qayta tekshiring",
     "staleShort": "Lot o'zgardi — tarkibni tekshiring",
@@ -5789,7 +5788,6 @@
       "cartons_sum": "Karobkalar {sum} ta — lotda {lot} ta. Hujjatda boshqacha bo'lsa — «aralash»ni tanlang",
       "kg_sum": "Kg yig'indisi {sum} — skladda {lot} kg o'lchangan. «Sklad o'lchoviga moslashtirish»ni bosing",
       "m3_sum": "Kub yig'indisi {sum} — skladda {lot} m³. «Sklad o'lchoviga moslashtirish»ni bosing",
-      "document_required": "Mijozning hujjatini biriktiring (packing list / invoys)",
       "document_not_on_receipt": "Hujjat shu prixodga yuklangan bo'lishi kerak (mashinaga emas)",
       "document_is_photo": "Bu karobka rasmi — mijozning hujjatini yuklang",
       "lot_changed": "Lot o'zgardi — yangilang, yozganlaringiz qoladi",
@@ -5799,7 +5797,9 @@
       "busy": "Band edi — qaytadan bosing",
       "server_behind": "Server yangilanmoqda — birozdan keyin",
       "validation": "Ma'lumot to'liq emas"
-    }
+    },
+    "shownName": "Ro'yxatlarda lot shu nom bilan ko'rinadi: {name}",
+    "lotFormShown": "Lotda tarkib bor — ro'yxatlarda tarkib nomi ko'rinadi: {name}. Bu yerdagi ruscha nom skladchi yozgan nom, o'zgartirilsa ham ro'yxatlarda tarkib nomi qoladi"
   },
   "lotCheck": {
     "chipChecked": "tekshirilgan",
@@ -5812,12 +5812,11 @@
     "hiddenPicked": "{n} ta tanlangan yuk bu filtrda ko'rinmayapti — rejada qoladi",
     "noMatch": "Bu filtrga mos yuk yo'q",
     "homeRow": "❓ Tekshirilmagan yuk (Xitoy)",
-    "byDocument": "Tarkib hujjati bo'yicha tekshirilgan",
+    "byDocument": "Tarkib bo'yicha tekshirilgan",
     "byClient": "Mijoz tasdiqladi",
     "stalePerson": "Tekshirilgandan keyin o'zgardi: {what} — qayta so'rang",
     "staleWas": "Avval tasdiqlagan: {by} · {day}",
-    "staleDocument": "Tarkib hujjatidan keyin lot o'zgardi — qayta so'rang",
-    "documentOtherName": "Tarkibda lotdan boshqa nom yozilgan — logist lot nomini to'g'rilasa, hujjat bo'yicha ✅ bo'ladi",
+    "staleDocument": "Tarkib yozilgandan keyin lot o'zgardi — qayta so'rang",
     "none": "Ma'lumot tekshirilmagan",
     "unclaimed": "Egasi aniqlanmagan — avval mijozni biriktiring",
     "movedName": "tovar nomi",
@@ -5828,7 +5827,7 @@
     "confirm": "To'g'ri — mijoz tasdiqladi",
     "undo": "Mijoz tasdig'ini bekor qilish",
     "undoConfirm": "Tekshiruv belgisi olib tashlansinmi?",
-    "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — hujjati bilan 🧩 lot tarkibini yozing.",
+    "otherAnswers": "Mijoz «boshqa tovar» desa — pastdagi ✏️ orqali nomini o'zgartiring; «aralash» desa — 🧩 lot tarkibini yozing.",
     "done": "✅ Saqlandi",
     "errors": {
       "forbidden": "Bu prixodga belgi qo'yishga ruxsatingiz yo'q",
@@ -5842,8 +5841,8 @@
       "check_changed": "Belgi siz ko'rgan holatdan keyin o'zgargan — hozirgi holat ko'rsatildi, qayta qarang"
     },
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
-    "documentOld": "Tarkib hujjati endi lotga mos emas — tarkibni tekshiring",
-    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — hujjati bilan 🧩 lot tarkibini bitta qator qilib yozing, hujjatlar shu nomni chiqaradi; sklad ekranlari va stikerlarda nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
+    "documentOld": "Tarkib endi lotga mos emas — tarkibni tekshiring",
+    "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — 🧩 lot tarkibini bitta qator qilib yozing: hujjatlar ham, ro'yxatlar ham shu nomni chiqaradi; stikerdagi va xitoycha nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
     "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
   },
   "qarzIzoh": {

@@ -12,12 +12,12 @@ import {
   M3_SCALE,
   MAX_LINES,
   MIN_LINES,
-  lineIsLotGood,
   parseDraft,
   prefillByCartons,
   remainderOf,
   scaleToLot,
   storedUnits,
+  tarkibLabel,
   toCount,
   type DraftLine,
   type DraftRefusal,
@@ -124,6 +124,7 @@ function refusalOfDraft(r: DraftRefusal): Refusal {
 function useRefusalText(): (r: Refusal) => string {
   const t = useTranslations('tarkib');
   const tr = useTranslations('receipts');
+  const tv = useTranslations('receive');
   return (r: Refusal): string => {
     const seq = r.seq ?? 0;
     switch (r.error) {
@@ -131,6 +132,12 @@ function useRefusalText(): (r: Refusal) => string {
         return t('uploading');
       case 'upload_failed':
         return tr('attachFailed');
+      // The card's own «Hujjatlar» panel says which — a scanned PDF over the
+      // cap and a file type nobody stores both read «Fayl yuklanmadi» here.
+      case 'too_large':
+        return tv('fileTooLarge');
+      case 'unsupported_type':
+        return tv('fileTypeUnsupported');
       case 'in_use':
         return tr('attachInUse');
       case 'remove_failed':
@@ -163,8 +170,6 @@ function useRefusalText(): (r: Refusal) => string {
         return t('errors.kg_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
       case 'm3_sum':
         return t('errors.m3_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
-      case 'document_required':
-        return t('errors.document_required');
       case 'document_not_on_receipt':
         return t('errors.document_not_on_receipt');
       case 'document_is_photo':
@@ -476,6 +481,10 @@ function CompositionEditor({
         : lines.map((l) => (mode === 'mixed' ? { ...l, cartons: '' } : l)),
     [lines, mode, single, totals.boxCount],
   );
+  // The pure twin of `lotRuShownSql`: rows a person has named, in screen order.
+  const shownName = tarkibLabel(
+    posted.map((l, i) => ({ seq: i + 1, name: l.name.trim() })).filter((l) => l.name !== ''),
+  );
   const remainder = remainderOf(posted, totals);
   const prefill = shownMode === 'separate' ? prefillByCartons(posted, totals) : null;
   const scaleKg = scaleToLot(posted, totals, 'kg');
@@ -498,12 +507,18 @@ function CompositionEditor({
           setUploads((prev) => [...prev, { id: res.item.id, fileName: res.item.fileName, removable: true }]);
           setDoc(res.item.id);
         } else {
-          setRefusal({ error: res.error === 'forbidden' ? 'forbidden' : 'upload_failed' });
+          setRefusal({ error: res.error === 'failed' ? 'upload_failed' : res.error });
         }
       }
       // The card's own «Hujjatlar» panel re-seeds from the server (no action
       // revalidated anything here, so this refresh is the only one, #1242).
       router.refresh();
+    } catch {
+      // A photo the browser cannot decode (an HEIC with no codec) or a phone
+      // gone offline THROWS out of the uploader; called as `void
+      // addDocument(…)`, that was a rejection nobody heard — no chip, no
+      // sentence, and a save that then said nothing either.
+      setRefusal({ error: 'upload_failed' });
     } finally {
       setUploading((n) => n - 1);
     }
@@ -539,7 +554,6 @@ function CompositionEditor({
     if (!parsed.ok) return setRefusal(refusalOfDraft(parsed.refusal));
     const sums = checkSums(parsed.lines, totals);
     if (sums) return setRefusal(refusalOfDraft(sums));
-    if (!doc) return setRefusal({ error: 'document_required' });
     setPending(true);
     setRefusal(null);
     try {
@@ -549,7 +563,11 @@ function CompositionEditor({
         seenBoxCount: totals.boxCount,
         seenKg: totals.kg,
         seenM3: totals.m3,
-        attachmentId: doc,
+        // Optional since 0142 — and only an id that is among the DRAWN chips:
+        // a draft restored from localStorage may name a file since deleted,
+        // which answered «hujjat shu prixodga yuklangan bo'lishi kerak» about
+        // a chip nobody could see, let alone un-tick.
+        attachmentId: doc !== null && docs.some((d) => d.id === doc) ? doc : null,
         lines: posted,
       });
       if (res.ok) {
@@ -620,61 +638,7 @@ function CompositionEditor({
     <div className="space-y-3 rounded-lg border border-line p-2" data-testid="tarkib-editor">
       <p className="text-xs text-ink-500">{t('hint')}</p>
 
-      {/* 1. The document FIRST — the VED types FROM it. */}
-      <div className="space-y-1">
-        <p className="label">{t('document')}</p>
-        <div className="flex flex-wrap gap-2">
-          {docs.length === 0 && <span className="text-xs text-ink-500">{t('documentNone')}</span>}
-          {docs.map((d) => (
-            <span key={d.id} className="inline-flex max-w-full items-center gap-1">
-              <button
-                type="button"
-                data-testid="tarkib-doc"
-                data-id={d.id}
-                aria-pressed={doc === d.id}
-                className={`chip !min-h-10 max-w-[14rem] border ${doc === d.id ? 'border-brand-600 bg-brand-50 text-brand-800 ring-2 ring-brand-500' : 'border-line bg-surface'}`}
-                onClick={() => setDoc(doc === d.id ? null : d.id)}
-              >
-                <span className="truncate">📄 {d.fileName}</span>
-              </button>
-              <a
-                href={`/api/attachments/${d.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-brand-700 underline"
-                aria-label={d.fileName}
-              >
-                ↗
-              </a>
-              {d.removable && d.id !== composition?.attachment?.id && (
-                <button
-                  type="button"
-                  aria-label="✕"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs text-bad"
-                  onClick={() => void removeDocument(d.id)}
-                >
-                  ✕
-                </button>
-              )}
-            </span>
-          ))}
-          <label className="btn-secondary !min-h-10 cursor-pointer whitespace-normal px-3 text-sm">
-            {uploading > 0 ? '⏳' : '📎'} {t('documentUpload')}
-            <input
-              type="file"
-              className="hidden"
-              data-testid="tarkib-upload"
-              onChange={(e) => {
-                void addDocument(e.target.files);
-                e.currentTarget.value = '';
-              }}
-            />
-          </label>
-        </div>
-        <p className="text-xs text-ink-500">{t('docWhere')}</p>
-      </div>
-
-      {/* 2. The mode — only once there is more than one good to divide. */}
+      {/* 1. The mode — only once there is more than one good to divide. */}
       {!single && (
         <div className="flex flex-wrap gap-2">
           {!oneCarton && (
@@ -703,7 +667,7 @@ function CompositionEditor({
         <p className="text-xs text-ink-500">{oneCarton ? t('oneCartonMixed') : t('modeMixedHint')}</p>
       )}
 
-      {/* 3. The lines. One header row of labels from xl up. */}
+      {/* 2. The lines. One header row of labels from xl up. */}
       <div className="hidden text-xs font-semibold text-ink-700 xl:grid xl:grid-cols-[minmax(9rem,1fr)_minmax(4.5rem,6rem)_minmax(4.5rem,6rem)_minmax(5.5rem,7rem)_minmax(5.5rem,7rem)_minmax(7rem,9rem)_2.75rem] xl:items-end xl:gap-2">
         <span>{t('name')}</span>
         <span>{t('pieces')}</span>
@@ -750,14 +714,6 @@ function CompositionEditor({
                   placeholder={i === 0 ? t('nameHint') : undefined}
                   onChange={(e) => setCell(i, 'name', e.target.value)}
                 />
-                {/* The VED is told to write the INVOICE name, and a one-line
-                    tarkib that names another good earns no ✅ (8.6) — said
-                    here, by the very key the ✅ asks (judge product-20). */}
-                {single && oneGood && l.name.trim() !== '' && !lineIsLotGood(l.name, oneGood) ? (
-                  <span className="mt-1 block text-xs text-ink-500" data-testid="tarkib-no-vouch">
-                    {t('oneLineNoVouch')}
-                  </span>
-                ) : null}
               </label>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5 xl:contents">
                 <label className="block">
@@ -902,6 +858,16 @@ function CompositionEditor({
         )}
       </div>
 
+      {/* 3. What the lists will call the lot (items 3-4): the tarkib's name
+          stands where the lot's Russian name is shown — said here, live,
+          before the save, because the name typed for the INVOICE is also
+          what the stock, the plan and the truck card print from now on. */}
+      {shownName !== null && (
+        <p className="text-xs text-ink-500" data-testid="tarkib-shown-name">
+          {t('shownName', { name: shownName })}
+        </p>
+      )}
+
       {/* 4. The person-pressed helpers. */}
       {(prefill || scaleKg || scaleM3) && (
         <div className="space-y-1">
@@ -941,6 +907,63 @@ function CompositionEditor({
         </div>
       )}
 
+      {/* 5. The client's document — OPTIONAL since 0142 (the owner,
+          2026-11-10): it stood first and was demanded last, after every
+          line was typed and balanced. Below the lines now, and «none» is a
+          real choice: a chosen chip un-chooses on a second press. */}
+      <div className="space-y-1">
+        <p className="label">{t('document')}</p>
+        <div className="flex flex-wrap gap-2">
+          {docs.length === 0 && <span className="text-xs text-ink-500">{t('documentNone')}</span>}
+          {docs.map((d) => (
+            <span key={d.id} className="inline-flex max-w-full items-center gap-1">
+              <button
+                type="button"
+                data-testid="tarkib-doc"
+                data-id={d.id}
+                aria-pressed={doc === d.id}
+                className={`chip !min-h-10 max-w-[14rem] border ${doc === d.id ? 'border-brand-600 bg-brand-50 text-brand-800 ring-2 ring-brand-500' : 'border-line bg-surface'}`}
+                onClick={() => setDoc(doc === d.id ? null : d.id)}
+              >
+                <span className="truncate">📄 {d.fileName}</span>
+              </button>
+              <a
+                href={`/api/attachments/${d.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-brand-700 underline"
+                aria-label={d.fileName}
+              >
+                ↗
+              </a>
+              {d.removable && d.id !== composition?.attachment?.id && (
+                <button
+                  type="button"
+                  aria-label="✕"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs text-bad"
+                  onClick={() => void removeDocument(d.id)}
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))}
+          <label className="btn-secondary !min-h-10 cursor-pointer whitespace-normal px-3 text-sm">
+            {uploading > 0 ? '⏳' : '📎'} {t('documentUpload')}
+            <input
+              type="file"
+              className="hidden"
+              data-testid="tarkib-upload"
+              onChange={(e) => {
+                void addDocument(e.target.files);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+        </div>
+        <p className="text-xs text-ink-500">{t('docWhere')}</p>
+      </div>
+
       {/* 6. The refusal, and the way out of the two that need a reload. */}
       {refusal && (
         <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad" data-testid="tarkib-error">
@@ -963,7 +986,7 @@ function CompositionEditor({
         </div>
       )}
 
-      {/* 5. The sticky bar: the remainder on screen while the keyboard is up. */}
+      {/* 7. The sticky bar: the remainder on screen while the keyboard is up. */}
       <div className="sticky bottom-20 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface p-2 shadow md:bottom-2">
         <p className="min-w-0 flex-1 text-xs font-semibold" data-testid="tarkib-remainder">
           {remainderParts.map((p, i) => (

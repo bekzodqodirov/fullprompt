@@ -623,11 +623,46 @@ describe('lot tarkibi — the writer', () => {
       code: 'm3_sum',
       sums: { sum: '2.5001', lot: '2.5000' },
     });
-    expect((await r(OWNER_CASE(), { docKey: null })).code).toBe('document_required');
+    // No document is no refusal any more (0142 — test 2c); one that IS cited
+    // is still held to the prixod and to being a paper.
     expect((await r(OWNER_CASE(), { docKey: 'DOC2' })).code).toBe('document_not_on_receipt');
     expect((await r(OWNER_CASE(), { docKey: 'PHOTO_EARLY' })).code).toBe('document_is_photo');
     // A photo uploaded AFTER the confirmation is somebody's document.
     await save('H', [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')], { docKey: 'PHOTO_LATE' });
+    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
+  });
+
+  it('2c. the document is OPTIONAL (0142, the owner 2026-11-10): none is a save, the card reads it back, a cited file is let go', async () => {
+    const lines = () => [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')];
+    const holder = { id: vedId, permissions: new Set(['receipts.edit']) };
+    // H cites a document of its own prixod: in use while cited.
+    await mintDoc('DOC_H', 'R2', 'file');
+    await save('H', lines(), { docKey: 'DOC_H' });
+    await expect(deleteAttachment(doc.DOC_H!, holder)).rejects.toMatchObject({ code: 'in_use' });
+    // Saved again with NONE — it answered `document_required`.
+    await save('H', lines(), { docKey: null });
+    const view = (await compositionsFor([lot.H])).get(lot.H)!;
+    expect(view.attachment).toBeNull();
+    expect(view.lines.map((l) => l.name)).toEqual(['Мышь', 'Клавиатура']);
+    // The prixod's history says a tarkib with no document, not a missing key.
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2)))
+      .orderBy(sql`${auditLog.createdAt} DESC`)
+      .limit(1);
+    expect((audit!.after as { lotComposition: { document: unknown; attachmentId: unknown; lines: string[] } }).lotComposition).toMatchObject({
+      document: null,
+      attachmentId: null,
+      lines: [expect.stringContaining('Мышь'), expect.stringContaining('Клавиатура')],
+    });
+    // The papers read it like any tarkib — they never joined the file.
+    expect((await paperCompositionsFor(truck.CROSS!, [lot.H])).has(lot.H)).toBe(true);
+    // …and the file it let go can be deleted now.
+    await expect(deleteAttachment(doc.DOC_H!, holder)).resolves.toBeUndefined();
+    delete doc.DOC_H;
+    // Back to the document test 2 left on H.
+    await save('H', lines(), { docKey: 'PHOTO_LATE' });
     expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
   });
 

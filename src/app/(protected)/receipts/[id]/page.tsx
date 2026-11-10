@@ -34,7 +34,7 @@ import {
   mayWriteComposition,
   oneGoodPrefillFor,
 } from '@/modules/wms/receipts/lot-composition';
-import { isStale } from '@/modules/wms/receipts/composition-math';
+import { isStale, tarkibLabel } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
@@ -195,6 +195,13 @@ export default async function ReceiptDetailPage({
   const compositions = await compositionsFor(lotIds);
   const lotTrucks = await lotTrucksFor(db, lotIds);
   const mayCompose = mayWriteComposition(actor.permissions);
+  // What every list calls a composed lot (docs/TARKIB-TUZATISH.md §3).
+  const shownRu = new Map(
+    [...compositions].flatMap(([lotId, c]) => {
+      const label = tarkibLabel(c.lines);
+      return label === null ? [] : [[lotId, label] as const];
+    }),
+  );
   // «Bitta tovar» — read only for the writer: the receipt card is opened by
   // warehouse staff too, and the prefill carries the memory's code.
   const oneGood = mayCompose && receipt.status === 'confirmed' ? await oneGoodPrefillFor(receipt, lots) : new Map();
@@ -573,10 +580,13 @@ export default async function ReceiptDetailPage({
           <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
-              <span className="font-semibold">
+              <span className="font-semibold" data-testid="lot-name">
                 {lot.productNameZh}
-                {lot.productNameRu && (
-                  <span className="font-normal text-ink-700"> ({lot.productNameRu})</span>
+                {/* The Russian name SHOWN: the tarkib's, while one stands
+                    (items 3-4 — the pure twin of `lotRuShownSql`, off the
+                    compositions this page already holds); else the lot's own. */}
+                {(shownRu.get(lot.id) ?? lot.productNameRu) && (
+                  <span className="font-normal text-ink-700"> ({shownRu.get(lot.id) ?? lot.productNameRu})</span>
                 )}
               </span>
               {canPrint && receipt.status === 'confirmed' && (qrState.get(lot.id)?.printable ?? 0) > 0 && (
@@ -604,7 +614,6 @@ export default async function ReceiptDetailPage({
                     askable: view.askable,
                     byDocument: view.byDocument,
                     documentStale: view.documentStale,
-                    documentOtherName: view.documentOtherName,
                     person: view.person
                       ? {
                           by: view.person.by,
@@ -719,6 +728,7 @@ export default async function ReceiptDetailPage({
               <div className="mt-2">
                 <LotEditForm
                   hasComposition={compositions.has(lot.id)}
+                  shownName={shownRu.get(lot.id) ?? null}
                   lot={{
                     lotId: lot.id,
                     dimsMode: lot.dimsMode,

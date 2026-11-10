@@ -1085,7 +1085,7 @@
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
-    "attachInUse": "This document backs a lot's contents — it cannot be deleted until the VED or the logist picks another"
+    "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them"
   },
   "stock": {
     "title": "Warehouse stock",
@@ -5720,7 +5720,7 @@
     "title": "Contents",
     "open": "Add contents",
     "edit": "Edit contents",
-    "hint": "The lot, its stickers and cartons do not change — only the invoice, the packing lists and the agent file print these lines",
+    "hint": "The lot, its stickers and cartons do not change. The invoice, the packing lists and the agent file print these lines; in the lists the contents' name shows in place of the lot's Russian name",
     "modeSeparate": "Separate cartons",
     "modeMixed": "Mixed cartons",
     "modeMixedHint": "Every carton holds a mix — no carton counts",
@@ -5736,7 +5736,6 @@
     "tnved": "HS code",
     "addLine": "+ line",
     "oneGood": "One good — fill from the lot",
-    "oneLineNoVouch": "The name differs from the lot's — ✅ «by document» is not set by itself",
     "removeLine": "Remove line",
     "line": "Line {n}",
     "prefill": "Split by cartons",
@@ -5749,16 +5748,16 @@
     "remainderDone": "{label} ✓",
     "remainderIncomplete": "some cells are empty",
     "cartonsShort": "ctn",
-    "document": "The client's document",
+    "document": "The client's document (optional)",
     "documentUpload": "Upload the document",
-    "documentNone": "No document on this receipt yet — upload one",
+    "documentNone": "No document attached — upload one if you have it",
     "docWhere": "The document is filed on this receipt (not on the truck)",
     "uploading": "The document is uploading — wait for it",
     "save": "Save",
     "saved": "Contents saved",
     "savedFrozen": "{trucks} already sent — their papers do not change",
     "clear": "Remove contents",
-    "clearConfirm": "The contents go — the invoice and packing lists print the lot's own name again. Continue?",
+    "clearConfirm": "The contents go — the invoice, the packing lists and the lists print the lot's own name again. Continue?",
     "cleared": "Contents removed",
     "stale": "The lot changed after the contents were stated: stated {stated}, now {current} — check it",
     "staleShort": "The lot changed — check the contents",
@@ -5789,7 +5788,6 @@
       "cartons_sum": "Cartons {sum} — the lot has {lot}. If the paper says otherwise, choose «mixed»",
       "kg_sum": "Kg add up to {sum} — the warehouse weighed {lot} kg. Press «fit to the warehouse»",
       "m3_sum": "m³ add up to {sum} — the warehouse has {lot} m³. Press «fit to the warehouse»",
-      "document_required": "Attach the client's document (packing list / invoice)",
       "document_not_on_receipt": "The document must be on this receipt (not on the truck)",
       "document_is_photo": "That is a carton photo — upload the client's document",
       "lot_changed": "The lot changed — reload; what you typed stays",
@@ -5799,7 +5797,9 @@
       "busy": "It was busy — press again",
       "server_behind": "The server is updating — try shortly",
       "validation": "The data is incomplete"
-    }
+    },
+    "shownName": "In the lists the lot will read: {name}",
+    "lotFormShown": "This lot has contents — the lists show the contents' name: {name}. The Russian name here is the warehouse's own; changing it leaves the contents' name in the lists"
   },
   "lotCheck": {
     "chipChecked": "checked",
@@ -5812,12 +5812,11 @@
     "hiddenPicked": "{n} selected rows are hidden by this filter — they stay in the plan",
     "noMatch": "No cargo matches this filter",
     "homeRow": "❓ Unchecked cargo (China)",
-    "byDocument": "Checked against the contents document",
+    "byDocument": "Checked against the contents",
     "byClient": "Client confirmed",
     "stalePerson": "Changed after the check: {what} — ask again",
     "staleWas": "Confirmed earlier by: {by} · {day}",
-    "staleDocument": "The lot changed after the contents document — ask again",
-    "documentOtherName": "The contents name another good — once the logist renames the lot, it reads ✅ by document",
+    "staleDocument": "The lot changed after the contents were stated — ask again",
     "none": "Information not checked",
     "unclaimed": "Owner unknown — assign the client first",
     "movedName": "goods name",
@@ -5828,7 +5827,7 @@
     "confirm": "Correct — client confirmed",
     "undo": "Remove the client's confirmation",
     "undoConfirm": "Remove the check mark?",
-    "otherAnswers": "If the client says «other goods» — fix the name with ✏️ below; if «mixed» — fill in the 🧩 lot contents with their document.",
+    "otherAnswers": "If the client says «other goods» — fix the name with ✏️ below; if «mixed» — fill in the 🧩 lot contents.",
     "done": "✅ Saved",
     "errors": {
       "forbidden": "You may not mark this receipt",
@@ -5842,8 +5841,8 @@
       "check_changed": "The check changed after you saw it — the current state is shown, look again"
     },
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
-    "documentOld": "The contents document no longer matches the lot — check the contents",
-    "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line from their document, and the papers print that name; on the warehouse screens and stickers the logist changes the name. If «mixed» — one line per good.",
+    "documentOld": "The contents no longer match the lot — check the contents",
+    "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line: the papers and the lists both print that name; the name on the sticker and the Chinese name are the logist's to change. If «mixed» — one line per good.",
     "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
   },
   "qarzIzoh": {

@@ -55,7 +55,6 @@ export type CompositionRefusalCode =
   | 'cartons_sum'
   | 'kg_sum'
   | 'm3_sum'
-  | 'document_required'
   | 'document_not_on_receipt'
   | 'document_is_photo'
   | 'lot_changed'
@@ -252,11 +251,17 @@ async function lockCompositionHeader(
 
 /**
  * Save (or replace) a lot's composition. On the pool: the shape, the door,
- * the parse, the document's presence. In ONE transaction, in this lock order
- * — lot (NO KEY UPDATE) → prixod (SHARE NOWAIT) → document (KEY SHARE) →
- * header (UPDATE) — the compare-and-sets and the sums against the LOCKED
- * totals, then the write and the audit. No composition write locks a truck
- * row, so the count door's «lot, then truck» meets nothing here.
+ * the parse. In ONE transaction, in this lock order — lot (NO KEY UPDATE) →
+ * prixod (SHARE NOWAIT) → document (KEY SHARE, when one is cited) → header
+ * (UPDATE) — the compare-and-sets and the sums against the LOCKED totals,
+ * then the write and the audit. No composition write locks a truck row, so
+ * the count door's «lot, then truck» meets nothing here.
+ *
+ * The client's document is OPTIONAL (0142; the owner, 2026-11-10 — «tarkib
+ * qo'shganda tasdiq so'rash rasm file»: the VED often has only what the
+ * client said). A document that IS cited is held to the same two rules as
+ * before — a file of THIS prixod, and a paper rather than a receive-time
+ * carton photo — and stays `in_use` while cited.
  */
 export async function saveComposition(
   input: unknown,
@@ -267,7 +272,6 @@ export async function saveComposition(
   const { receipt } = await compositionDoor(actor, parsedInput.lotId, { requireConfirmed: true });
   const parsed = parseDraft(parsedInput.lines as DraftLine[]);
   if (!parsed.ok) throw refusalError(parsed.refusal);
-  if (!parsedInput.attachmentId) throw new CompositionError('document_required');
   const attachmentId = parsedInput.attachmentId;
   // ON THE POOL, before the transaction (#714).
   await refuseVanishingCode(parsedInput.lotId, parsed.lines);
@@ -291,26 +295,29 @@ export async function saveComposition(
         FROM receipts WHERE id = ${lot.receipt_id}::uuid
     `)) as unknown as { status: string; confirmed_at: string | null; created_at: string }[];
     if (!current || current.status !== 'confirmed') throw new CompositionError('receipt_not_confirmed');
-    // 7. The document, FOR KEY SHARE: a concurrent deleteAttachment waits for
-    //    this commit and then answers `in_use` — a plain SELECT let it slip
-    //    between this check and the FK insert (an unmapped 23503).
-    const [doc] = (await tx.execute(sql`
-      SELECT entity_type, entity_id, kind, created_at::text AS created_at, file_name
-        FROM attachments WHERE id = ${attachmentId}::uuid FOR KEY SHARE
-    `)) as unknown as { entity_type: string; entity_id: string; kind: string; created_at: string; file_name: string }[];
-    if (!doc || doc.entity_type !== 'receipt' || doc.entity_id !== lot.receipt_id) {
-      throw new CompositionError('document_not_on_receipt');
-    }
-    if (
-      !isPaperDocument(
-        { kind: doc.kind, createdAt: new Date(doc.created_at) },
-        {
-          confirmedAt: current.confirmed_at ? new Date(current.confirmed_at) : null,
-          createdAt: new Date(current.created_at),
-        },
-      )
-    ) {
-      throw new CompositionError('document_is_photo');
+    // 7. The document, when one is cited — FOR KEY SHARE: a concurrent
+    //    deleteAttachment waits for this commit and then answers `in_use` — a
+    //    plain SELECT let it slip between this check and the FK insert (an
+    //    unmapped 23503). None cited: nothing to lock, nothing to check.
+    if (attachmentId !== null) {
+      const [doc] = (await tx.execute(sql`
+        SELECT entity_type, entity_id, kind, created_at::text AS created_at, file_name
+          FROM attachments WHERE id = ${attachmentId}::uuid FOR KEY SHARE
+      `)) as unknown as { entity_type: string; entity_id: string; kind: string; created_at: string; file_name: string }[];
+      if (!doc || doc.entity_type !== 'receipt' || doc.entity_id !== lot.receipt_id) {
+        throw new CompositionError('document_not_on_receipt');
+      }
+      if (
+        !isPaperDocument(
+          { kind: doc.kind, createdAt: new Date(doc.created_at) },
+          {
+            confirmedAt: current.confirmed_at ? new Date(current.confirmed_at) : null,
+            createdAt: new Date(current.created_at),
+          },
+        )
+      ) {
+        throw new CompositionError('document_is_photo');
+      }
     }
     // 8. The header: the revision the editor was drawn from.
     const header = await lockCompositionHeader(tx, lot.id, parsedInput.seenRev, actor.id);

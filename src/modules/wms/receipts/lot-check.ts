@@ -12,7 +12,6 @@ import {
   lotCheckStateSql,
   lotTarkibJoinSql,
   tarkibStandsSql,
-  tarkibVouchesSql,
   type LotCheckState,
 } from './lot-check-sql';
 import { lotChecksReady } from './lot-check-ready';
@@ -310,16 +309,10 @@ export interface LotCheckView {
    * the card ask ❓ / ⚠ and offer the button — elsewhere it shows ✅ or nothing.
    */
   askable: boolean;
-  /** The composition stands and vouches for the lot — «✅ hujjat bo'yicha». */
+  /** The tarkib stands, so it vouches for the lot — «✅ tarkib bo'yicha». */
   byDocument: boolean;
-  /** A composition that would vouch exists and no longer matches the lot. */
+  /** A tarkib exists and no longer matches the lot. */
   documentStale: boolean;
-  /**
-   * A ONE-line tarkib naming a good other than the lot's own (8.6): it fixes
-   * the papers and vouches for nothing on the warehouse screens, which still
-   * print the lot's name — the card says the rename is what is left.
-   */
-  documentOtherName: boolean;
   /** The person's row, when there is one, and which of its terms moved. */
   person: {
     by: string | null;
@@ -349,7 +342,6 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
            ${lotCheckStateSql(refs)} AS state,
            ${lotAskableSql(sql`l`)} AS askable,
            ${tarkibStandsSql(sql`l`)} AS document_stands,
-           ${tarkibVouchesSql(sql`l`)} AS document_vouches,
            (lot_tarkib.lot_id IS NOT NULL) AS has_document,
            lc.lot_id IS NOT NULL AS has_person,
            ${terms.name} AS name_ok,
@@ -370,7 +362,6 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     state: LotCheckState;
     askable: boolean;
     document_stands: boolean | null;
-    document_vouches: boolean | null;
     has_document: boolean;
     has_person: boolean;
     name_ok: boolean | null;
@@ -388,11 +379,11 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
         {
           state: row.state,
           askable: row.askable === true,
-          byDocument: row.document_stands === true && row.document_vouches === true,
-          // «The paper moved» only for a tarkib that WOULD vouch: a one-line
-          // tarkib naming another good never vouched, so it did not go stale.
-          documentStale: row.has_document && row.document_vouches === true && row.document_stands !== true,
-          documentOtherName: row.has_document && row.document_vouches !== true,
+          // Any standing tarkib vouches (2026-11-10 — the screens print its
+          // name now, `receipts/lot-name.ts`); one that no longer matches the
+          // lot is «the tarkib moved».
+          byDocument: row.document_stands === true,
+          documentStale: row.has_document && row.document_stands !== true,
           person: row.has_person
             ? {
                 by: row.checked_by,
