@@ -135,6 +135,20 @@ describe('a further sheet, by its shape (§4.2)', () => {
     expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, 13.58]);
   });
 
+  it('R1 with another factory folded in before the packing list: its Σ is not the list’s — today’s reading', async () => {
+    const chatId = collection();
+    const body = await B.bookOf((wb) => {
+      B.englishInvoice(wb.addWorksheet('INVOICE'));
+      B.plainSheet(wb.addWorksheet('Zavod B'), ['Description', 'Quantity'], [['Electric kettle', 50], ['Hair dryer', 80]]);
+      B.chinesePacking(wb.addWorksheet('PACKING'), B.GOODS, { net: true });
+    });
+    const answer = await forward(chatId, body, 'CI-PL.xlsx');
+    const s = activeIntake(chatId)!;
+    expect(s.invoiceGoods).toHaveLength(14);
+    expect(s.fileTotals ?? null).toBeNull();
+    expect(answer.say).toContain(`📄 «CI-PL.xlsx», «PACKING» varag‘i ${SAME_SENTENCE}`);
+  });
+
   it('a bilingual CI + PL of the same goods (`packingOfHeld`): the totals and every netto, as two files give them (xlsxN-11)', async () => {
     const chatId = collection();
     const body = await B.bookOf((wb) => {
