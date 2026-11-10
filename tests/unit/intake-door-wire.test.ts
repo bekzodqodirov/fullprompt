@@ -56,7 +56,11 @@ describe('every door reaches the request', () => {
     const bot = read('src/modules/platform/telegram/staff-bot.ts');
     // The collection's ONE door (`collectionDoor`) — a seeded one's `seedDoor`
     // (as-built review DOORS-3), never a second read of the source.
-    expect(bodyOf(bot, 'export async function landCollectedIntake(')).toContain('intakeDoor: collectionDoor(state)');
+    // Re-anchored (docs/FAYL-OQISH.md §1.3 a): the door is still that one
+    // home's, and an AI-door job landed for the VED alone is written «🧮».
+    const landing = bodyOf(bot, 'export async function landCollectedIntake(');
+    expect(landing).toContain('const door = collectionDoor(state);');
+    expect(landing).toContain("intakeDoor: toVed ? 'plain' : door,");
     const land = read('src/modules/wms/calc/intake-land.ts');
     expect(bodyOf(land, 'export async function landIntake(')).toContain('intakeDoor: input.intakeDoor');
     // The agent on BOTH its paths: `landIntake` and the re-queue's own open.

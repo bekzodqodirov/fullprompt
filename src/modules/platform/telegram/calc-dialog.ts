@@ -385,6 +385,10 @@ export async function tableContext(
  */
 function readingFailure(state: IntakeState): import('../../wms/calc/intake').AiReadFailure | null {
   if (state.aiUsed) return null;
+  // «Nothing for the model to read» beside an Excel whose rows WERE read is no
+  // failure, on either door (docs/FAYL-OQISH.md §2.1, door-nothing-ai): «⚠️ AI
+  // ga o‘qish uchun … yo‘q edi» stood under «📄 … 3 ta tovar o‘qildi».
+  if (state.aiFailure === 'nothing_to_read' && (state.invoiceGoods ?? []).length > 0) return null;
   if (state.aiFailure) return state.aiFailure;
   return state.amend || state.seed ? null : 'not_configured';
 }
