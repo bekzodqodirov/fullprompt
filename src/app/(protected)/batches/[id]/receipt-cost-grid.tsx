@@ -6,10 +6,19 @@ import { useTranslations } from 'next-intl';
 import { saveReceiptCostGridAction } from '../../costs/actions';
 import { LightboxImg } from '@/components/lightbox-img';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { clipKeepingCount } from '@/modules/platform/text/label-count';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
 import type { TwinGap, TwinView } from '@/modules/wms/accounting/twins';
+
+/**
+ * How much of a lot's name the grid's two-line cell draws. The cell clamps
+ * its END — and the end is a tarkib label's «+N» and the carton figure after
+ * it, the two things on the line a person reads for. Cut here instead, the
+ * count kept (`clipKeepingCount`); the sheet's filter still reads the whole name.
+ */
+const GRID_NAME_CHARS = 56;
 
 export interface GridLotLine {
   letter: string | null;
@@ -410,7 +419,7 @@ export function ReceiptCostGrid({
                         <li key={`${lot.letter}-${index}`} className="line-clamp-2">
                           {lot.letter && <b className="num">{lot.letter}</b>}
                           {lot.letter && ' · '}
-                          {lot.name}{' '}
+                          <span title={lot.name}>{clipKeepingCount(lot.name, GRID_NAME_CHARS)}</span>{' '}
                           <span
                             className="num whitespace-nowrap text-ink-500"
                             title={
