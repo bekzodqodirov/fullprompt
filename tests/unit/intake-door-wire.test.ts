@@ -110,3 +110,20 @@ describe('the pass reads the door from the ROW', () => {
     expect(store).toContain('const state = { ...migrateIntakeState(row.state), expires:');
   });
 });
+
+describe('the zero-item rule guards every landing door’s pass (docs/FAYL-OQISH.md §1.3 c, door-break-4)', () => {
+  // The landing doors that queue the machine's pass for a request they just
+  // opened: `landIntake` (the bot, and the AI sotuvchi through it) and the
+  // AI sotuvchi's re-queue (K26). Every `queueCalcPrefill(` in them is decided
+  // by `landingOwesPass` — derived, so a third call joins the fence on its own.
+  const DOORS = ['src/modules/wms/calc/intake-land.ts', 'src/modules/wms/agent/decide.ts'];
+  it.each(DOORS)('%s', (path) => {
+    const text = read(path);
+    const calls = [...text.matchAll(/queueCalcPrefill\(\{/g)].map((m) => m.index!);
+    expect(calls.length, 'the door queues a pass').toBeGreaterThan(0);
+    for (const at of calls) {
+      const before = text.slice(Math.max(0, at - 400), at);
+      expect(/landingOwesPass\(|\bowesPass\b/.test(before), `${path}: the queue call at ${at} asks landingOwesPass`).toBe(true);
+    }
+  });
+});
