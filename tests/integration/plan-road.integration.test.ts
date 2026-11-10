@@ -588,6 +588,60 @@ describe('the readers say the road part', () => {
   });
 });
 
+describe('the same plan’s file does not change its goods at the approval (the tarkib round’s review)', () => {
+  it('an approved plan whose truck holds no carton of the lot yet prints what the pending plan printed', async () => {
+    // A lot of five: «А» 3, «Б» 1, «В» 1. Two cartons crossed the border
+    // earlier (positions 0-1: two «А»). The other three are on the road to
+    // the hub, and the hub's plan takes them as a road part: «А» 1, «Б» 1,
+    // «В» 1. Approved with nothing on the shelf, every carton is OWED and
+    // the new truck holds none of the lot — it is not among the lot's
+    // trucks, and the file took the plan's goods from position 0: «А» 2,
+    // «Б» 1, no «В». Over the earlier truck's paper that is four «А» of
+    // three. It went back when the first carton landed.
+    const lot = await mkLot(W.yw, 5);
+    const toHub = await roadTruck(W.yw, W.hor, lot, 2, 0);
+    await unloadRemaining(toHub.id, ctx());
+    const crossed = await roadTruck(W.hor, W.and, lot, 2, 0);
+    const inbound = await roadTruck(W.yw, W.hor, lot, 3, 2);
+    await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 5, savedBy: actorId });
+    await db.insert(lotCompositionLines).values([
+      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 3, weightKg: '30', volumeM3: '0.18' },
+      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+    ]);
+    const sub = await submit(W.hor, W.and, [{ lot, take: 3 }], true);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 0, missed: 0 });
+
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+    const ExcelJS = (await import('exceljs')).default;
+    const roadGoods = async () => {
+      const book = new ExcelJS.Workbook();
+      await book.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+      const cells: string[][] = [];
+      book.worksheets[0]!.eachRow((row) => cells.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+      const at = cells.findIndex((r) => r[0]!.startsWith('В пути / On the road'));
+      expect(at).toBeGreaterThan(0);
+      const out: string[][] = [];
+      for (let i = at + 1; i < cells.length && (cells[i]![1] ?? '') !== ''; i += 1) out.push(cells[i]!);
+      return out.map((r) => [r[1]!.split('\n')[0], r[3]]);
+    };
+    const pending = await roadGoods();
+    expect(pending).toEqual([
+      ['Товар А', '1'],
+      ['Товар Б', '1'],
+      ['Товар В', '1'],
+    ]);
+
+    const onward = await approve(sub.version.id);
+    // The premise: all three are owed, and the new truck holds none of the lot.
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 3, missed: 0 });
+    expect((await statusOf(lot, { X: crossed.id, I: inbound.id, O: onward.id })).filter((s) => s.endsWith('@O'))).toEqual([]);
+    expect(await roadGoods()).toEqual(pending);
+
+    await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.lotId));
+  });
+});
+
 /*
  * The review of the BUILT round (four lenses, 2026-10-27): each case is a
  * defect a reviewer traced through the shipped code, red before its fix.

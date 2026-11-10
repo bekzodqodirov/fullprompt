@@ -860,7 +860,20 @@ describe('lot tarkibi — the papers', () => {
       .values({ code: `CR-LTG${SFX}`, warehouseId: wh.CN1, clientId, kind: 'yashik', createdBy: vedId })
       .returning({ id: crates.id });
     crateIds.push(crate!.id);
-    type SheetRow = { code: string; product: string; pieces: unknown; boxes: unknown; kg: unknown; m3: unknown; note: string | null; filled: boolean };
+    type SheetRow = {
+      code: string;
+      product: string;
+      pieces: unknown;
+      boxes: unknown;
+      kg: unknown;
+      m3: unknown;
+      note: string | null;
+      filled: boolean;
+      /** The product cell wraps; the carton cell wraps; the row's height in points. */
+      wrap: boolean;
+      boxesWrap: boolean;
+      height: number;
+    };
     const plan = async (rows: { lotKey: LotKey; crateId: string | null; n: number; kg: string; m3: string }[]) => {
       const [p] = await db
         .insert(loadPlans)
@@ -892,6 +905,9 @@ describe('lot tarkibi — the papers', () => {
           note: cell.note ? JSON.stringify(cell.note) : null,
           // A styled cell with no fill reads back as pattern «none»: only a SOLID fill is the estimate's.
           filled: cell.fill?.type === 'pattern' && cell.fill.pattern === 'solid',
+          wrap: cell.alignment?.wrapText === true,
+          boxesWrap: row.getCell(4).alignment?.wrapText === true,
+          height: row.height,
         });
       });
       return out;
@@ -914,6 +930,14 @@ describe('lot tarkibi — the papers', () => {
     ]);
     expect(g.every((r) => r.code.startsWith(label))).toBe(true);
     expect(g.every((r) => r.note === null && !r.filled)).toBe(true);
+    // EVERY good's cell wraps — the code in brackets is the cell's END, and
+    // an unwrapped 40-wide cell cut «[8471606000]» to what looked like a
+    // valid eight-digit code (the review of the built round). The first row
+    // is a photograph tall; the others as tall as their text.
+    expect(g.map((r) => [r.wrap, r.height])).toEqual([
+      [true, 60],
+      [true, 20],
+    ]);
     // Nothing of the old shape is left: no row under the lot's own name, no «Состав лота».
     expect(full.filter((r) => r.product.startsWith(NAME_G))).toHaveLength(0);
     expect(full.some((r) => r.product.includes('Состав лота') || r.product.includes('Lot contents'))).toBe(false);
@@ -945,6 +969,10 @@ describe('lot tarkibi — the papers', () => {
       ['Мышь', 10, 10, 60],
       ['Клавиатура', 5, DOC.sameCartons, 40],
     ]);
+    // «same cartons» is a sentence in a 10-wide column: it wraps, and its
+    // row is tall enough to show both halves — it read «(в тех же ко».
+    expect([mixed[1]!.boxesWrap, mixed[1]!.height >= 60]).toEqual([true, true]);
+    expect(mixed[0]!.boxesWrap).toBe(false);
   });
 
   it('9b. every photograph sits under «Фото» in BOTH photo files — the «шт» column moved the anchor once (his 7b)', async () => {

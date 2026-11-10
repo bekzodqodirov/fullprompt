@@ -32,8 +32,13 @@ import {
   estimateNote,
   packingBoxesCell,
   packingPiecesCell,
+  wrappedLines,
 } from './composition-cells';
 import { planRoadReady, roadOfVersion, roadTrucksByLot } from '../planning/road';
+
+/** The «Товар» and «Коробок» columns' widths — also what a wrapped row's height is estimated from. */
+const PRODUCT_WIDTH = 40;
+const BOXES_WIDTH = 10;
 
 /**
  * Agent approval Excel (W3, spec 6.3): one row per planned line with an
@@ -185,10 +190,10 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
   const sheet = workbook.addWorksheet(`План v${versionNo}`);
   sheet.columns = [
     { header: DOC.code, key: 'code', width: 14 },
-    { header: DOC.product, key: 'product', width: 40 },
+    { header: DOC.product, key: 'product', width: PRODUCT_WIDTH },
     // BEFORE the carton count, blank when unknown (his 8.5 and 7b, 2026-10-27).
     { header: DOC.pieces, key: 'pieces', width: 10 },
-    { header: DOC.boxes, key: 'boxCount', width: 10 },
+    { header: DOC.boxes, key: 'boxCount', width: BOXES_WIDTH },
     { header: DOC.kg, key: 'kg', width: 10 },
     { header: DOC.m3, key: 'm3', width: 10 },
     { header: DOC.density, key: 'density', width: 10 },
@@ -335,15 +340,32 @@ export async function buildAgentXlsx(planId: string, versionNo: number): Promise
             ...arrivalCells,
           };
           const cell = row.getCell('product');
-          const textLines = product.split('\n').length;
-          if (textLines > 1) cell.alignment = { wrapText: true, vertical: 'top' };
+          const boxes = row.getCell('boxCount');
+          const boxesText = typeof boxes.value === 'string' ? boxes.value : '';
+          // EVERY good's row wraps and is as tall as its text. Only a first
+          // row with the sticker's name under it wrapped, and the others
+          // were 20 pt whatever they held — so a name with its code in
+          // brackets ran past the 40-wide column and lost the END: «Мышь
+          // компьютерная беспроводная [84716060», a ten-digit code read as a
+          // valid eight-digit one (the review of the built round). The
+          // «same cartons» sentence of an «aralash» lot sits in a 10-wide
+          // column and was «(в тех же ко» for the same reason.
+          row.eachCell((each) => {
+            each.alignment = { ...each.alignment, vertical: 'top' };
+          });
+          cell.alignment = { wrapText: true, vertical: 'top' };
+          if (boxesText) boxes.alignment = { wrapText: true, vertical: 'top' };
+          const textLines = Math.max(
+            wrappedLines(product, PRODUCT_WIDTH),
+            boxesText ? wrappedLines(boxesText, BOXES_WIDTH) : 1,
+          );
           if (view.estimate) {
             cell.note = estimateNote(view, cartons, lot.boxCount, 'block');
             cell.fill = ESTIMATE_FILL;
           }
-          // The photographs once per block, beside the group's first good;
-          // the other goods' rows are as tall as their text.
-          row.height = i === 0 ? 60 : Math.max(20, 15 * textLines);
+          // The photographs once per block, beside the group's first good —
+          // a row never shorter than a photograph, nor than its own text.
+          row.height = Math.max(i === 0 ? 60 : 20, 15 * textLines);
           if (i === 0) photos(rowNo);
           rowNo += 1;
         });
@@ -445,7 +467,18 @@ async function planContents(
     const comp = comps.get(lotId)!;
     const ofLot = trucks.get(lotId) ?? [];
     const total = BLOCK_KINDS.reduce((n, kind) => n + agg.parts[kind].cartons, 0);
-    const segments = plan.batchId ? truckSegments(ofLot, plan.batchId) : planSegments(ofLot, total, crosses);
+    // The plan's truck, when it already holds (or carried) a carton of this
+    // lot; else the plan's own positions — after every truck the lot has
+    // crossed on. An APPROVED plan whose truck holds no carton of the lot
+    // yet (every carton owed from the road, or missed) is not among the
+    // lot's trucks, and `truckSegments` answers «from position 0» for a
+    // truck it does not know: the file printed the lot's FIRST goods where
+    // the plan takes its last cartons — «А 2, Б 1» of a lot whose first two
+    // cartons had crossed earlier — and went back to «А 1, Б 1, В 1» when
+    // the first carton landed. The same plan's file must not change its
+    // goods at the approval (the review of the built round).
+    const onTruck = plan.batchId !== null && ofLot.some((t) => t.batchId === plan.batchId);
+    const segments = onTruck ? truckSegments(ofLot, plan.batchId!) : planSegments(ofLot, total, crosses);
     const views = paperLinesByPart(
       comp,
       { boxCount: agg.lot.boxCount, kg: agg.lot.totalWeightKg, m3: agg.lot.totalVolumeM3 },

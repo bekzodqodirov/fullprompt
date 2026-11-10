@@ -6,6 +6,7 @@ import {
   packingBoxesCell,
   packingPiecesCell,
   packingProductCell,
+  wrappedLines,
 } from '@/modules/wms/documents/composition-cells';
 import { DOC } from '@/modules/wms/documents/labels';
 import { paperLines, type PaperLine, type StoredLine } from '@/modules/wms/receipts/composition-math';
@@ -138,6 +139,24 @@ describe('the agent file — one row per tarkib line (his item 2, 2026-11-10)', 
 
   it('the old «Состав лота …» text and its label are gone — a composed lot is rows now, never a cell', () => {
     expect(Object.keys(DOC)).not.toContain('contents');
+  });
+
+  it('a wrapped row is as tall as its text: the code in brackets is the END of the cell, and a row one line short hides it', () => {
+    // The review of the built round: «Мышь компьютерная беспроводная
+    // [84716060» — a ten-digit code read as a valid eight-digit one.
+    // Calibrated against LibreOffice's own layout of these very strings
+    // (the 40-wide «Товар» column, the 10-wide «Коробок»): never SHORT.
+    expect(wrappedLines('Мышь', 40)).toBe(1);
+    expect(wrappedLines('Мышь компьютерная беспроводная [8471606000]', 40)).toBe(2);
+    expect(wrappedLines('Наушники беспроводные Bluetooth с микрофоном [8518300000]', 40)).toBe(2);
+    // An explicit second line (the sticker's name) counts by itself…
+    expect(wrappedLines('Клавиатура\nНа коробке / On the carton: 键盘', 40)).toBe(2);
+    // …and a Chinese character is two columns wide: 16 of them fill a 32-column line.
+    expect(wrappedLines('有线键盘机械键盘带背光数字键盘套装', 40)).toBe(2);
+    expect(wrappedLines('有线键盘机械键盘带背光数字键盘套', 40)).toBe(1);
+    // The «aralash» sentence in the narrow carton column: four lines on the sheet, room for five.
+    expect(wrappedLines(DOC.sameCartons, 10)).toBeGreaterThanOrEqual(4);
+    expect(wrappedLines('', 40)).toBe(1);
   });
 });
 

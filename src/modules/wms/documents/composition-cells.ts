@@ -84,6 +84,25 @@ export function agentProductCell(line: PaperLine, lot: { zh: string; ru: string 
  * truck. «aralash»: every carton holds a mix, so the lot's cartons go on the
  * FIRST line and the others say «(в тех же коробках) / (same cartons)».
  */
+/**
+ * How many sheet lines a text takes in a WRAPPED cell `width` characters
+ * wide — an estimate, for the row's height: Excel gives a wrapped cell no
+ * room by itself when the row's height is written, and a row one line short
+ * hides the END of the cell (on the agent file that is the TNVED code in
+ * brackets). A CJK character is two columns wide; a spreadsheet breaks at
+ * words, so a line holds less than the column's width — a fifth is kept
+ * back, which measured right against LibreOffice's own layout for the
+ * 40-wide product column and the 10-wide carton column alike. Pure.
+ */
+export function wrappedLines(text: string, width: number): number {
+  const room = Math.max(1, Math.floor(width * 0.8));
+  return text.split('\n').reduce((lines, line) => {
+    let units = 0;
+    for (const ch of line) units += /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(ch) ? 2 : 1;
+    return lines + Math.max(1, Math.ceil(units / room));
+  }, 0);
+}
+
 export function packingBoxesCell(
   line: PaperLine,
   mode: 'separate' | 'mixed',
