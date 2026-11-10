@@ -288,8 +288,8 @@ test('the customs invoice prints the two goods, each with its own weight, places
   // show either good (item 6).
   const label = `${run.marker}-A`;
   expect(rows.map((r) => [r.marks, r.redMarks])).toEqual([
-    [[label], [label]],
-    [[label], [label]],
+    [label, [label]],
+    [label, [label]],
   ]);
 });
 
@@ -346,11 +346,13 @@ test('«Invoys» asks before it merges: one code, two names → the dialog; merg
   await expect(group).toHaveAttribute('data-merge', 'yes');
   await expect(page.getByTestId('invoice-merged-as')).toContainText('Клавиатура, Мышь');
   await page.screenshot({ path: `${SHOTS}/invoice-dialog-360.png` });
+  // The answer travels in the file's ADDRESS — the one the signed download
+  // link is minted for — so Telegram's in-app browser gets the merged file too.
+  const asked = page.waitForRequest((r) => r.url().endsWith('/api/dl') && r.method() === 'POST');
   file = page.waitForEvent('download');
   await page.getByTestId('invoice-get').click();
-  const merged = await file;
-  expect(merged.url()).toContain('merge=');
-  expect(await downloaded(merged)).toEqual([
+  expect((await asked).postDataJSON().path).toMatch(/\/invoice\?merge=all\.[0-9a-f]{8}$/);
+  expect(await downloaded(await file)).toEqual([
     {
       product: 'Клавиатура, Мышь',
       code: '8471607000',
@@ -359,7 +361,7 @@ test('«Invoys» asks before it merges: one code, two names → the dialog; merg
       places: 100,
       brutto: 1000,
       // The whole lot is in ONE position now: its sticker is not a warning.
-      marks: [label],
+      marks: label,
       redMarks: [],
     },
   ]);

@@ -96,7 +96,18 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
 
-  const initialCode = (key: string) => initial.find((r) => rowKey(r) === key)?.code ?? '';
+  /**
+   * What a save has just written, until the refresh brings the rows back.
+   * «Changed» is «differs from what the server holds», and for the moment
+   * between the ✅ and the refreshed page that is NOT the rows the editor was
+   * handed: the invoice button beside it said «1 ta kod saqlanmagan» about a
+   * code saved a third of a second earlier (found by the browser test — the
+   * press came before the refresh landed).
+   */
+  const [written, setWritten] = useState<Record<string, string>>({});
+  const initialCode = (key: string) => written[key] ?? initial.find((r) => rowKey(r) === key)?.code ?? '';
+  const markWritten = (saved: readonly TnvedRow[]) =>
+    setWritten((prev) => ({ ...prev, ...Object.fromEntries(saved.map((r) => [rowKey(r), r.code])) }));
 
   function setCode(key: string, code: string, source: 'manual' | 'ai') {
     setRows((prev) => prev.map((r) => (rowKey(r) === key ? { ...r, code, source } : r)));
@@ -306,6 +317,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
           setStale(res.error === 'not_on_truck');
           return;
         }
+        markWritten(changedProducts);
         said.push(t('saved', { n: res.saved ?? 0 }));
       }
       if (changedLines.length > 0) {
@@ -323,6 +335,8 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                 : r,
             ),
           );
+          // …and those lots' codes are on their lines now, refusal or not.
+          markWritten(changedLines.filter((r) => res.revs[r.line!.lotId] !== undefined));
         }
         if (!res.ok) {
           setError(lineError(res.error));
