@@ -353,14 +353,17 @@ export type GoodsFileRead =
       pictures: number;
     }
   /**
+   * A workbook whose cells are empty and which carries pictures: the goods
+   * are in a picture this reader does not read (docs/FAYL-OQISH.md §4.4), and
+   * «jadval bo‘sh» alone sent nobody to the cure.
+   */
+  | { kind: 'refused'; reason: 'pictures' }
+  /**
    * A spreadsheet that cannot be read, and why — said to the seller. A markup
    * text past `MAX_MARKUP_CHARS` is `broken`: «save it again» (as .xlsx) is
-   * the honest cure. `pictures` — a workbook whose cells are empty and which
-   * carries pictures: the goods are in a picture this reader does not read
-   * (docs/FAYL-OQISH.md §4.4), and «jadval bo‘sh» alone sent nobody to the
-   * cure.
+   * the honest cure.
    */
-  | { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' | 'pictures' };
+  | { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };
 
 /**
  * Sheets as text for the model: `[name]`, then one line per row with its
