@@ -79,6 +79,23 @@ export function lotGoodsShownSql(lot: SQL): SQL {
 }
 
 /**
+ * The NAMES a lot's goods go by, as a `text[]`: the tarkib's line names in
+ * their order while it has a label, else the one name a `ru || zh` reader
+ * prints. For the lists that already say «first +N» over SEVERAL lots (a
+ * deal's cargo, the uncollected list): fed the label they would print
+ * «Клавиатура +2 +1» — two counts of two different things. They count goods
+ * KINDS instead, `unnest`-ing this, so there is still ONE number and a lot of
+ * three goods counts as three.
+ */
+export function lotGoodsKindsSql(lot: SQL): SQL {
+  return sql`coalesce((SELECT array_agg(tarkib_line.name ORDER BY tarkib_line.seq)
+                         FROM lot_composition_lines tarkib_line
+                        WHERE tarkib_line.lot_id = ${lot}.id
+                       HAVING ${labelHavingSql(sql`${lot}.product_name_zh`)}),
+                      ARRAY[coalesce(nullif(btrim(${lot}.product_name_ru), ''), ${lot}.product_name_zh)])`;
+}
+
+/**
  * A search predicate's extra arm: the lot has a tarkib LINE whose name
  * matches — so «мышь» finds the lot whose second line is mice, which no
  * stored name of the lot says. OR it into the screen's own zh/ru predicate.

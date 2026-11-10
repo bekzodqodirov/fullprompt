@@ -479,6 +479,12 @@ P2a and P2b — builders in worktrees, on the base commit the lead names; §9.1-
   non-shrinking element. The count is found in the TEXT, so the helpers never need to know
   whether a string came from a tarkib.
 
+- **Goods KINDS for the lists that already count.** `lotGoodsKindsSql(lot)` (lot-name.ts) is
+  a `text[]`: the tarkib's line names in order while it has a label, else the one `ru || zh`
+  name. A deal's cargo label and the uncollected list print «first +N» over SEVERAL lots; fed
+  the lot's label they would print «Клавиатура +2 +1». They `unnest` the kinds instead, so
+  there is ONE number: the first kind and how many more kinds there are in all.
+
 ### 9.2 Rules for the two «names» packages
 
 1. **Swap the SELECT expression through `receipts/lot-name.ts` only** — `lotRuShownSql(sql\`${receiptLots}\`)`

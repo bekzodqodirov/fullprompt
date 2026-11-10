@@ -4,7 +4,13 @@ import { db } from '@/modules/platform/db/client';
 import { clients, lotCompositionLines, lotCompositions, receiptLots, users } from '@/modules/platform/db/schema';
 import { tarkibLabel } from '@/modules/wms/receipts/composition-math';
 import { compositionsFor } from '@/modules/wms/receipts/lot-composition';
-import { lotGoodsShownSql, lotRuShownFor, lotRuShownSql, tarkibLineMatchSql } from '@/modules/wms/receipts/lot-name';
+import {
+  lotGoodsKindsSql,
+  lotGoodsShownSql,
+  lotRuShownFor,
+  lotRuShownSql,
+  tarkibLineMatchSql,
+} from '@/modules/wms/receipts/lot-name';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 
 /**
@@ -197,6 +203,39 @@ describe('the shown Russian name — SQL and its pure twin', () => {
     await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.one));
     expect(await shown(lot.one)).toEqual({ ru: 'клавиатура', goods: 'клавиатура', stored: 'клавиатура' });
     await compose(lot.one, [{ seq: 1, name: 'Мышь' }]);
+  });
+});
+
+describe('the goods KINDS of a lot — for the lists that already print «first +N» over several lots', () => {
+  const kinds = async (lotId: string): Promise<string[]> => {
+    const [row] = await db
+      .select({ kinds: sql<string[]>`${lotGoodsKindsSql(sql`${receiptLots}`)}` })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lotId));
+    return row!.kinds;
+  };
+
+  it('the line names in their order while the tarkib has a label, else the one name a `ru || zh` reader prints', async () => {
+    expect(await kinds(lot.none)).toEqual(['клавиатура']);
+    expect(await kinds(lot.three)).toEqual(['Клавиатура', 'Мышь', 'Наушники']);
+    expect(await kinds(lot.gap)).toEqual(['Первая', 'Вторая']);
+    expect(await kinds(lot.noRu)).toEqual(['Клавиатура', 'Мышь', 'Наушники']);
+    // A one-line tarkib that only repeats the Chinese name adds no kind of its own.
+    expect(await kinds(lot.sameZh)).toEqual(['клавиатура']);
+    expect(await kinds(lot.sameZhNoRu)).toEqual([ZH]);
+    // A header with no lines is no tarkib.
+    expect(await kinds(lot.torn)).toEqual(['клавиатура']);
+  });
+
+  it('unnested in a grouped select: three goods and a plain lot are FOUR kinds and one number — never «+2 +1»', async () => {
+    const [row] = (await db.execute(sql`
+      SELECT count(DISTINCT kind.name)::int AS n,
+             (array_agg(kind.name ORDER BY l.id = ${lot.three}::uuid DESC, kind.at))[1] AS first
+        FROM receipt_lots l
+       CROSS JOIN LATERAL unnest(${lotGoodsKindsSql(sql.raw('l'))}) WITH ORDINALITY AS kind(name, at)
+       WHERE l.id IN (${lot.three}::uuid, ${lot.none}::uuid)
+    `)) as unknown as { n: number; first: string }[];
+    expect(row).toEqual({ n: 4, first: 'Клавиатура' });
   });
 });
 
