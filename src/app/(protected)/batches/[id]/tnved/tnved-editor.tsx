@@ -390,7 +390,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         </p>
       )}
       {error && (
-        <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad">
+        <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad" data-testid="tnved-error">
           <p>{error}</p>
           {stale && (
             <button type="button" className="btn-secondary mt-1 !min-h-9 px-3" onClick={() => router.refresh()}>

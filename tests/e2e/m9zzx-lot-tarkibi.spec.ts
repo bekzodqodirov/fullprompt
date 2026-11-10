@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { expect, test, type Download, type Page } from '@playwright/test';
 import { cleanup, cleanupEarlier, database, memoryRows, mint, newRun, type Minted } from './lot-tarkibi-fixture';
 import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 
@@ -15,7 +16,12 @@ import { readInvoiceSheet } from '../fixtures/invoice-sheet';
  * 2026-11-10 — docs/TARKIB-TUZATISH.md §2) and one can be uploaded from the
  * editor afterwards, the card's lot header then reads «Клавиатура +1» (§3),
  * and on the Bojxona tab typing the mouse's code leaves the keyboard's line
- * EMPTY (the judge's blocker R1: a `lotId` key wrote both).
+ * EMPTY (the judge's blocker R1: a `lotId` key wrote both). Since 2026-11-10
+ * every tarkib line has its 🤖 and the bulk button counts lines (§5 — there
+ * is no AI key here or in CI, so what a browser proves is the button, its
+ * count and the honest refusal), and «Invoys» ASKS before it merges two
+ * names under one code (§6): the dialog, the merged position, the stickers
+ * in red when the lot stays apart.
  * The rules underneath are proven in
  * tests/integration/lot-composition.integration.test.ts.
  *
@@ -74,6 +80,21 @@ async function invoice(page: Page, query = '') {
 }
 
 const line = (page: Page, i: number) => page.getByTestId('tarkib-line').nth(i);
+
+/** The invoice the BROWSER was handed — the file behind a download event, read by header. */
+async function downloaded(file: Download) {
+  const { rows } = await readInvoiceSheet(readFileSync((await file.path())!));
+  return rows.map((r) => ({
+    product: r.product,
+    code: r.code,
+    unit: r.unit,
+    quantity: r.quantity,
+    places: r.places,
+    brutto: r.brutto,
+    marks: r.marks,
+    redMarks: r.redMarks,
+  }));
+}
 
 test('mint: the owner’s case, 100 cartons of «键盘» on a truck on the road', async () => {
   const sql = database();
@@ -212,7 +233,29 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
   await expect(page.getByTestId('tnved-row').filter({ hasText: run.lotName })).toHaveCount(0);
   const keyboard = rows.filter({ hasText: 'Клавиатура' });
   const mouse = rows.filter({ hasText: 'Мышь' });
+
+  // Item 5: a tarkib line has its 🤖, and the bulk button counts the lines —
+  // a truck of composed lots used to have no AI at all. With no key the
+  // press is refused IN WORDS and the walk stops at the first shut door
+  // instead of pressing it once per row; with one, the answer lands under
+  // the row. Either way nothing is written and the button comes back.
+  await expect(rows.getByTestId('tnved-tarkib-ai')).toHaveCount(2);
+  await expect(page.getByTestId('tnved-ai-all')).toContainText('(2)');
+  await mouse.getByTestId('tnved-tarkib-ai').click();
+  await expect(page.getByTestId('tnved-error').or(mouse.getByTestId('tnved-ai-note'))).toBeVisible();
+  await expect(mouse.getByTestId('tnved-tarkib-ai')).toBeEnabled();
+  if (await page.getByTestId('tnved-error').isVisible()) {
+    await expect(mouse.getByTestId('tnved-tarkib-code')).toHaveValue('');
+    await page.getByTestId('tnved-ai-all').click();
+    await expect(page.getByTestId('tnved-ai-all')).toBeEnabled();
+    await expect(page.getByTestId('tnved-ai-all')).toContainText('(2)');
+    await expect(keyboard.getByTestId('tnved-tarkib-code')).toHaveValue('');
+  }
+  // The invoice button beside the editor knows nothing is typed yet…
+  await expect(page.locator('[data-tnved-unsaved]')).toHaveAttribute('data-tnved-unsaved', '0');
+
   await mouse.getByTestId('tnved-tarkib-code').fill('8471607000');
+  await expect(page.locator('[data-tnved-unsaved]')).toHaveAttribute('data-tnved-unsaved', '1');
   // R1, the blocker: per-row state keyed by the lot wrote this into BOTH.
   await expect(keyboard.getByTestId('tnved-tarkib-code')).toHaveValue('');
   await page.screenshot({ path: `${SHOTS}/lot-tnved-tab-360.png`, fullPage: true });
@@ -240,14 +283,114 @@ test('the customs invoice prints the two goods, each with its own weight, places
     ['Мышь', 400, 50, 'шт', '8471607000'],
   ]);
   expect(rows.every((r) => r.note === null)).toBe(true);
+  // The new column after «№» names the lot behind each row, and both are RED:
+  // one lot's cartons stand on two rows, so opening a carton of «…-A» may
+  // show either good (item 6).
+  const label = `${run.marker}-A`;
+  expect(rows.map((r) => [r.marks, r.redMarks])).toEqual([
+    [[label], [label]],
+    [[label], [label]],
+  ]);
+});
+
+test('«Invoys» asks before it merges: one code, two names → the dialog; merged, ONE position; apart, the stickers in red', async ({ page }) => {
+  expect(minted).not.toBeNull();
+  await login(page, VED);
+  await page.goto(tnvedPath());
+  const button = page.getByTestId('invoice-download');
+  const dialog = page.getByTestId('invoice-dialog');
+  const label = `${run.marker}-A`;
+
+  // Nothing to ask (the keyboard has no code yet): the file comes at once.
+  let file = page.waitForEvent('download');
+  await button.click();
+  expect((await downloaded(await file)).map((r) => r.product)).toEqual(['Клавиатура', 'Мышь']);
+  await expect(dialog).toHaveCount(0);
+
+  // The keyboard gets the mouse's code — TYPED, not saved. The invoice is
+  // made from the SAVED codes, so the press says one code is not saved and
+  // has no group to ask about yet.
+  const keyboard = page.getByTestId('tnved-tarkib-row').filter({ hasText: 'Клавиатура' });
+  await keyboard.getByTestId('tnved-tarkib-code').fill('8471607000');
+  await button.click();
+  await expect(dialog).toBeVisible();
+  await expect(page.getByTestId('invoice-unsaved')).toBeVisible();
+  await expect(page.getByTestId('invoice-group')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await page.getByTestId('tnved-save').click();
+  await expect(page.getByTestId('tnved-saved')).toBeVisible();
+
+  // Saved: two names under one code — the question, both names shown with
+  // their stickers, and «Alohida» until a person says otherwise.
+  await button.click();
+  await expect(dialog).toBeVisible();
+  const group = page.getByTestId('invoice-group');
+  await expect(group).toHaveCount(1);
+  await expect(group).toHaveAttribute('data-merge', 'no');
+  await expect(group).toContainText('8471607000');
+  await expect(group).toContainText('Клавиатура');
+  await expect(group).toContainText('Мышь');
+  await expect(group).toContainText(label);
+  await expect(page.getByTestId('invoice-unsaved')).toHaveCount(0);
+  // The phone: the sheet is inside the screen, its button a thumb can reach.
+  const sheet = (await dialog.boundingBox())!;
+  expect(sheet.x).toBeGreaterThanOrEqual(0);
+  expect(sheet.x + sheet.width).toBeLessThanOrEqual(360);
+  const get = (await page.getByTestId('invoice-get').boundingBox())!;
+  expect(get.y + get.height).toBeLessThanOrEqual(800);
+  expect((await widths(page)).scroll).toBeLessThanOrEqual(360);
+
+  // «Qo'shish»: the dialog says what the ONE position will read, and the file is that.
+  await group.getByTestId('invoice-merge-yes').click();
+  await expect(group).toHaveAttribute('data-merge', 'yes');
+  await expect(page.getByTestId('invoice-merged-as')).toContainText('Клавиатура, Мышь');
+  await page.screenshot({ path: `${SHOTS}/invoice-dialog-360.png` });
+  file = page.waitForEvent('download');
+  await page.getByTestId('invoice-get').click();
+  const merged = await file;
+  expect(merged.url()).toContain('merge=');
+  expect(await downloaded(merged)).toEqual([
+    {
+      product: 'Клавиатура, Мышь',
+      code: '8471607000',
+      unit: 'шт',
+      quantity: 1500,
+      places: 100,
+      brutto: 1000,
+      // The whole lot is in ONE position now: its sticker is not a warning.
+      marks: [label],
+      redMarks: [],
+    },
+  ]);
+  await expect(dialog).toHaveCount(0);
+
+  // The device remembers the answer for this truck; «Alohida» takes it back
+  // and the two rows return, each with the lot's sticker in red.
+  await button.click();
+  await expect(group).toHaveAttribute('data-merge', 'yes');
+  await group.getByTestId('invoice-merge-no').click();
+  file = page.waitForEvent('download');
+  await page.getByTestId('invoice-get').click();
+  expect((await downloaded(await file)).map((r) => [r.product, r.quantity, r.redMarks])).toEqual([
+    ['Клавиатура', 500, [label]],
+    ['Мышь', 1000, [label]],
+  ]);
+  // A bare address — a bookmark, the print sheet, another device — never merges.
+  expect((await invoice(page)).map((r) => r.product)).toEqual(['Клавиатура', 'Мышь']);
 });
 
 test('the freeze: the sent truck keeps its papers; un-ticked, it reads the correction', async ({ page }) => {
   expect(minted).not.toBeNull();
   await login(page, VED);
   await page.goto(tnvedPath());
+  await expect(page.getByTestId('tnved-tarkib-ai')).toHaveCount(2);
   await page.getByTestId('tnved-sent-toggle').click();
   await expect(page.getByTestId('tnved-sent-toggle')).toContainText('✅');
+  // A ticked truck prints its frozen copy: its lines are read-only, and a
+  // code the 🤖 suggested could never be saved — so it is not offered.
+  await expect(page.getByTestId('tnved-tarkib-row')).toHaveCount(2);
+  await expect(page.getByTestId('tnved-tarkib-ai')).toHaveCount(0);
 
   await page.goto(receiptPath());
   await expect(page.getByTestId('tarkib-frozen')).toContainText(run.truckCode);
