@@ -488,10 +488,11 @@ describe('what the customer reads', () => {
   it('a 📷 button keeps the count when its 40 characters cut the name; the caption keeps it at 200', async () => {
     const long = (await cargoOverview(clientId)).find((l) => l.lotId === lot.long.lotId)!;
     expect(long.productNameRu).toBe(LONG_LABEL);
-    const [[button]] = photoButtonRows([{ ...long, hasPhotos: true }]);
-    expect(button!.text.length).toBeLessThanOrEqual(MAX_BUTTON_CHARS);
-    expect(button!.text.startsWith('📷 D · Клавиатура провод')).toBe(true);
-    expect(button!.text.endsWith('… +2')).toBe(true);
+    const button = photoButtonRows([{ ...long, hasPhotos: true }])[0]![0]!;
+    // Telegram counts a button in UTF-16 units, and 📷 is two of them.
+    expect(button.text.length).toBe(MAX_BUTTON_CHARS);
+    expect(button.text.startsWith('📷 D · Клавиатура провод')).toBe(true);
+    expect(button.text.endsWith('… +2')).toBe(true);
     // A short name is the button it always was.
     const plain = (await cargoOverview(clientId)).find((l) => l.lotId === lot.plain.lotId)!;
     expect(photoButtonRows([{ ...plain, hasPhotos: true }])[0]![0]!.text).toBe(`📷 B · ${PLAIN_RU}`);
