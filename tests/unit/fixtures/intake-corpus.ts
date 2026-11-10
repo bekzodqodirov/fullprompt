@@ -96,6 +96,10 @@ export interface HintExpect {
 export interface ParseGoodsExpect {
   goods?: GoodsExpect;
   headerRow?: number | null;
+  /** The sheet's own sums and shape (`SheetShape`), where the reviewer named them. */
+  grossKg?: number | null;
+  volumeM3?: number | null;
+  shape?: 'invoice' | 'packing';
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */

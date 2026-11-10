@@ -309,6 +309,9 @@ describe('parseGoods', () => {
     const parsed = parseGoods(rows);
     if (c.expected.goods) expect(goodsProblems(parsed.goods as unknown as Line[], c.expected.goods)).toEqual([]);
     if (c.expected.headerRow !== undefined) expect(parsed.headerRow, 'headerRow').toBe(c.expected.headerRow);
+    for (const key of ['grossKg', 'volumeM3', 'shape'] as const) {
+      if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
+    }
   });
 });
 

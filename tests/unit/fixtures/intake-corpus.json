@@ -23229,11 +23229,13 @@
      "rows": [
       {
        "name": "女士夹克",
-       "quantity": 10
+       "quantity": 10,
+       "unit": null
       },
       {
        "name": "男士裤子",
-       "quantity": 5
+       "quantity": 5,
+       "unit": null
       }
      ],
      "count": 2
@@ -23242,7 +23244,8 @@
    "said": "{\"goods\":[{\"description\":\"女士夹克\",\"quantity\":10},{\"description\":\"男士裤子\",\"quantity\":5}]}",
    "why": "a brand/party column must not name the products",
    "source": "S-r2 ND close-variant",
-   "weight": "close-variant"
+   "weight": "close-variant",
+   "note": "unit asserted (FAYL-OQISH §5 preamble: 件数 is a count, never «ctn»)"
   },
   {
    "id": "c1779",
@@ -29139,12 +29142,14 @@
       {
        "name": "女士夹克",
        "quantity": 300,
-       "weightKg": 150
+       "weightKg": 150,
+       "unit": null
       },
       {
        "name": "裤子",
        "quantity": 100,
-       "weightKg": 40
+       "weightKg": 40,
+       "unit": null
       }
      ],
      "count": 2
@@ -29153,7 +29158,8 @@
    "said": "«每箱件数» was the line count",
    "why": "every «每…» count header is one package's",
    "source": "as-built A (Ikki eshik) FILES-1",
-   "weight": "blocker"
+   "weight": "blocker",
+   "note": "unit asserted (FAYL-OQISH §5 preamble: 件数 is a count, never «ctn»)"
   },
   {
    "id": "c2454",
@@ -29554,6 +29560,1999 @@
    "why": "«/мест» (plural) is the carton column; only «/место» is one place's (FR-REGR-6)",
    "source": "fix review (Ikki eshik) FR-REGR-6",
    "weight": "regression"
+  },
+  {
+   "id": "c2601",
+   "input": [
+    [
+     "Line 1 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8501"
+    ],
+    [],
+    [
+     "Line 4 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8504"
+    ],
+    [],
+    [
+     "Line 7 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8507"
+    ],
+    [],
+    [
+     "Наименование товара",
+     "Кол-во",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "Куртка женская",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Брюки мужские",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 9,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки мужские",
+       "quantity": 200
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255,
+    "volumeM3": 2
+   },
+   "said": "9 preamble rows: the header on the tenth row is found, as today",
+   "why": "§5.1 boundary (xlsx1-02 verifier: 6-9 rows found, 10-20 not)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-at9"
+  },
+  {
+   "id": "c2602",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Куртка модель 12",
+     111,
+     31
+    ],
+    [
+     "Куртка модель 13",
+     112,
+     32
+    ],
+    [
+     "Куртка модель 14",
+     113,
+     33
+    ],
+    [
+     "Товары для кухни набор",
+     64,
+     54
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ],
+    [
+     "Куртка модель 17",
+     116,
+     36
+    ],
+    [
+     "Куртка модель 18",
+     117,
+     37
+    ],
+    [
+     "Куртка модель 19",
+     118,
+     38
+    ],
+    [
+     "Куртка модель 20",
+     119,
+     39
+    ],
+    [
+     "Куртка модель 21",
+     120,
+     40
+    ],
+    [
+     "Куртка модель 22",
+     121,
+     41
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 22,
+     "includes": [
+      "Товары для кухни набор",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «Товары для кухни набор» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-kitchen14"
+  },
+  {
+   "id": "c2603",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Куртка модель 12",
+     111,
+     31
+    ],
+    [
+     "Куртка модель 13",
+     112,
+     32
+    ],
+    [
+     "Куртка модель 14",
+     113,
+     33
+    ],
+    [
+     "Куртка модель 15",
+     114,
+     34
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ],
+    [
+     "Куртка модель 17",
+     116,
+     36
+    ],
+    [
+     "Куртка модель 18",
+     117,
+     37
+    ],
+    [
+     "Куртка модель 19",
+     118,
+     38
+    ],
+    [
+     "Куртка модель 20",
+     119,
+     39
+    ],
+    [
+     "Name badge holder",
+     70,
+     60
+    ],
+    [
+     "Куртка модель 22",
+     121,
+     41
+    ],
+    [
+     "Куртка модель 23",
+     122,
+     42
+    ],
+    [
+     "Куртка модель 24",
+     123,
+     43
+    ],
+    [
+     "Куртка модель 25",
+     124,
+     44
+    ],
+    [
+     "Куртка модель 26",
+     125,
+     45
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 26,
+     "includes": [
+      "Name badge holder",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «Name badge holder» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-badge20"
+  },
+  {
+   "id": "c2604",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Куртка модель 12",
+     111,
+     31
+    ],
+    [
+     "Item 12 kreslo",
+     62,
+     52
+    ],
+    [
+     "Куртка модель 14",
+     113,
+     33
+    ],
+    [
+     "Куртка модель 15",
+     114,
+     34
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ],
+    [
+     "Куртка модель 17",
+     116,
+     36
+    ],
+    [
+     "Куртка модель 18",
+     117,
+     37
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 18,
+     "includes": [
+      "Item 12 kreslo",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «Item 12 kreslo» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-item12"
+  },
+  {
+   "id": "c2605",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Sports goods bag",
+     61,
+     51
+    ],
+    [
+     "Куртка модель 13",
+     112,
+     32
+    ],
+    [
+     "Куртка модель 14",
+     113,
+     33
+    ],
+    [
+     "Куртка модель 15",
+     114,
+     34
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 16,
+     "includes": [
+      "Sports goods bag",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «Sports goods bag» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-sports11"
+  },
+  {
+   "id": "c2606",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Куртка модель 12",
+     111,
+     31
+    ],
+    [
+     "Куртка модель 13",
+     112,
+     32
+    ],
+    [
+     "Куртка модель 14",
+     113,
+     33
+    ],
+    [
+     "Куртка модель 15",
+     114,
+     34
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ],
+    [
+     "Куртка модель 17",
+     116,
+     36
+    ],
+    [
+     "Куртка модель 18",
+     117,
+     37
+    ],
+    [
+     "Куртка модель 19",
+     118,
+     38
+    ],
+    [
+     "Куртка модель 20",
+     119,
+     39
+    ],
+    [
+     "Куртка модель 21",
+     120,
+     40
+    ],
+    [
+     "Куртка модель 22",
+     121,
+     41
+    ],
+    [
+     "Куртка модель 23",
+     122,
+     42
+    ],
+    [
+     "Куртка модель 24",
+     123,
+     43
+    ],
+    [
+     "Куртка модель 25",
+     124,
+     44
+    ],
+    [
+     "电子产品配件",
+     75,
+     65
+    ],
+    [
+     "Куртка модель 27",
+     126,
+     46
+    ],
+    [
+     "Куртка модель 28",
+     127,
+     47
+    ],
+    [
+     "Куртка модель 29",
+     128,
+     48
+    ],
+    [
+     "Куртка модель 30",
+     129,
+     49
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 30,
+     "includes": [
+      "电子产品配件",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «电子产品配件» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-zh25"
+  },
+  {
+   "id": "c2607",
+   "input": [
+    [
+     "Куртка модель 1",
+     100,
+     20
+    ],
+    [
+     "Куртка модель 2",
+     101,
+     21
+    ],
+    [
+     "Куртка модель 3",
+     102,
+     22
+    ],
+    [
+     "Куртка модель 4",
+     103,
+     23
+    ],
+    [
+     "Куртка модель 5",
+     104,
+     24
+    ],
+    [
+     "Куртка модель 6",
+     105,
+     25
+    ],
+    [
+     "Куртка модель 7",
+     106,
+     26
+    ],
+    [
+     "Куртка модель 8",
+     107,
+     27
+    ],
+    [
+     "Куртка модель 9",
+     108,
+     28
+    ],
+    [
+     "Куртка модель 10",
+     109,
+     29
+    ],
+    [
+     "Куртка модель 11",
+     110,
+     30
+    ],
+    [
+     "Куртка модель 12",
+     111,
+     31
+    ],
+    [
+     "Куртка модель 13",
+     112,
+     32
+    ],
+    [
+     "Enamel mug white",
+     63,
+     53
+    ],
+    [
+     "Куртка модель 15",
+     114,
+     34
+    ],
+    [
+     "Куртка модель 16",
+     115,
+     35
+    ],
+    [
+     "Куртка модель 17",
+     116,
+     36
+    ],
+    [
+     "Куртка модель 18",
+     117,
+     37
+    ],
+    [
+     "Куртка модель 19",
+     118,
+     38
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "count": 19,
+     "includes": [
+      "Enamel mug white",
+      "Куртка модель 1"
+     ]
+    }
+   },
+   "said": "a header-less list longer than ten rows, «Enamel mug white» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-enamel13"
+  },
+  {
+   "id": "c2608",
+   "input": [
+    [
+     "Item",
+     "Specification",
+     "Qty"
+    ],
+    [
+     "Ladies jacket",
+     "polyester 100%",
+     300
+    ],
+    [
+     "Men trousers",
+     "cotton",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item | Specification»: the item names the goods, never the spec",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-item-spec"
+  },
+  {
+   "id": "c2609",
+   "input": [
+    [
+     "Item",
+     "Country of production",
+     "Qty"
+    ],
+    [
+     "Ladies jacket",
+     "China",
+     300
+    ],
+    [
+     "Men trousers",
+     "China",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item | Country of production»: never «China»",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-item-country"
+  },
+  {
+   "id": "c2610",
+   "input": [
+    [
+     "Item",
+     "Product colour",
+     "Qty"
+    ],
+    [
+     "Ladies jacket",
+     "white",
+     300
+    ],
+    [
+     "Men trousers",
+     "black",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item | Product colour»: never «white»",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-item-colour"
+  },
+  {
+   "id": "c2611",
+   "input": [
+    [
+     "Item",
+     "Product type",
+     "Qty"
+    ],
+    [
+     "Office chair",
+     "furniture",
+     10
+    ],
+    [
+     "Desk",
+     "furniture",
+     5
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair"
+      },
+      {
+       "name": "Desk"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item | Product type»: never «furniture»",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-item-type"
+  },
+  {
+   "id": "c2612",
+   "input": [
+    [
+     "Specification",
+     "Description",
+     "Qty"
+    ],
+    [
+     "mesh, black",
+     "Office chair",
+     10
+    ],
+    [
+     "oak",
+     "Desk",
+     5
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair"
+      },
+      {
+       "name": "Desk"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Specification | Description»: the description names the goods",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-spec-desc"
+  },
+  {
+   "id": "c2613",
+   "input": [
+    [
+     "Product category",
+     "Description",
+     "Qty"
+    ],
+    [
+     "Furniture",
+     "Office chair",
+     10
+    ],
+    [
+     "Furniture",
+     "Desk",
+     5
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair"
+      },
+      {
+       "name": "Desk"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product category | Description»: never «Furniture»",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-category-desc"
+  },
+  {
+   "id": "c2614",
+   "input": [
+    [
+     "Yuk egasi",
+     "Description",
+     "Qty"
+    ],
+    [
+     "Alisher",
+     "Ladies jacket",
+     300
+    ],
+    [
+     "Bobur",
+     "Men trousers",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Yuk egasi | Description»: the cargo owner is no product",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-yukegasi-desc"
+  },
+  {
+   "id": "c2615",
+   "input": [
+    [
+     "Product Name",
+     "Brand name",
+     "Qty"
+    ],
+    [
+     "RTX-4090",
+     "NVIDIA",
+     2
+    ],
+    [
+     "GTX-1660",
+     "NVIDIA",
+     3
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "RTX-4090"
+      },
+      {
+       "name": "GTX-1660"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product Name | Brand name» over model numbers: the model is the product, never the brand (the fourth review)",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-rtx"
+  },
+  {
+   "id": "c2616",
+   "input": [
+    [
+     "Item No.",
+     "Description",
+     "Qty"
+    ],
+    [
+     "YW-2301",
+     "Ladies jacket",
+     300
+    ],
+    [
+     "YW-2302",
+     "Men trousers",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item No. | Description»: the description, never the article",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-itemname-desc"
+  },
+  {
+   "id": "c2617",
+   "input": [
+    [
+     "Наименование"
+    ],
+    [
+     "1"
+    ],
+    [
+     "2"
+    ],
+    [
+     "3"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "1"
+      },
+      {
+       "name": "2"
+      },
+      {
+       "name": "3"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "«Наименование» over 1, 2, 3 and no other column: the header stays (the serial guard needs a wordier column)",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-naim-serial"
+  },
+  {
+   "id": "c2618",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во"
+    ],
+    [
+     1,
+     5
+    ],
+    [
+     2,
+     6
+    ],
+    [
+     3,
+     7
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "1"
+      },
+      {
+       "name": "2"
+      },
+      {
+       "name": "3"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "«Наименование | Кол-во» over 1, 2, 3: no wordier column, the header stays",
+   "why": "xlsxN-06 / xlsx1-03 verifiers: the claim's NAME_KEYS widening flipped these neighbours (c1936's shape); read right today",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape L-name-serial-qty"
+  },
+  {
+   "id": "c2619",
+   "input": [
+    [
+     "Весы напольные",
+     100,
+     120
+    ],
+    [
+     "Весы кухонные",
+     50,
+     30
+    ],
+    [
+     "Кубик Рубика",
+     10,
+     2
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Весы напольные"
+      },
+      {
+       "name": "Весы кухонные"
+      },
+      {
+       "name": "Кубик Рубика"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a real list whose names carry «вес» / «куб»: never a card, kept as a list",
+   "why": "xlsx1-07 verifier skeptic07-3: a substring label test would send it to the model as a card",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape K-scales"
+  },
+  {
+   "id": "c2620",
+   "input": [
+    [
+     "Весы напольные"
+    ],
+    [
+     "Весы кухонные"
+    ],
+    [
+     "Кубик Рубика"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Весы напольные"
+      },
+      {
+       "name": "Весы кухонные"
+      },
+      {
+       "name": "Кубик Рубика"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "the same names in one column: all three",
+   "why": "xlsx1-07 verifier skeptic07-3",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape K-scales-col"
+  },
+  {
+   "id": "c2621",
+   "input": [
+    [
+     "Товар",
+     "Цвет"
+    ],
+    [
+     "Куртка",
+     "чёрный"
+    ],
+    [
+     "Брюки",
+     "синий"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Товар | Цвет»: a two-column table whose second header is no key stays a table",
+   "why": "xlsx1-07 verifier skeptic07-4",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape K-color"
+  },
+  {
+   "id": "c2622",
+   "input": [
+    [
+     "Наименование",
+     "Примечание"
+    ],
+    [
+     "Куртка",
+     "300 шт"
+    ],
+    [
+     "Брюки",
+     "200 шт"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Наименование | Примечание» over notes that carry a count: still the header, never a card",
+   "why": "§5.6 (a): a note column is a key, not a value",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape K-note-qty"
+  },
+  {
+   "id": "c2623",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес"
+    ],
+    [
+     "Куртка женская",
+     300,
+     150
+    ],
+    [
+     "Товары для дома",
+     100,
+     50
+    ],
+    [
+     "Сумка",
+     80,
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "the same rows under a real header: every row with its figures",
+   "why": "unmapped-product-name-as-header verifier V7",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape V7"
+  },
+  {
+   "id": "c2624",
+   "input": [
+    [
+     "Куртка женская",
+     300,
+     150
+    ],
+    [
+     "Брюки мужские",
+     200,
+     100
+    ],
+    [
+     "Сумка",
+     80,
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a header-less list with no goods word: to the model whole",
+   "why": "unmapped-product-name-as-header verifier V8",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape V8"
+  },
+  {
+   "id": "c2625",
+   "input": [
+    [
+     "Товары:"
+    ],
+    [
+     "Стол"
+    ],
+    [
+     "Стул"
+    ],
+    [
+     "Шкаф"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол"
+      },
+      {
+       "name": "Стул"
+      },
+      {
+       "name": "Шкаф"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "Товары:"
+     ]
+    }
+   },
+   "said": "a names-only list under «Товары:»: the heading is found and is no product",
+   "why": "reader-5.8-colon: a header-cell colon rule turned this heading into product #1",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape C-tovary"
+  },
+  {
+   "id": "c2626",
+   "input": [
+    [
+     "Goods to be shipped:"
+    ],
+    [
+     "Table"
+    ],
+    [
+     "Chair"
+    ],
+    [
+     "Wardrobe"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Table"
+      },
+      {
+       "name": "Chair"
+      },
+      {
+       "name": "Wardrobe"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "Goods to be shipped:"
+     ]
+    }
+   },
+   "said": "a names-only list under «Goods to be shipped:»: the heading is found and is no product",
+   "why": "reader-5.8-colon: a header-cell colon rule turned this heading into product #1",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape C-goods"
+  },
+  {
+   "id": "c2627",
+   "input": [
+    [
+     "产品清单如下："
+    ],
+    [
+     "桌子"
+    ],
+    [
+     "椅子"
+    ],
+    [
+     "衣柜"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "桌子"
+      },
+      {
+       "name": "椅子"
+      },
+      {
+       "name": "衣柜"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "产品清单如下："
+     ]
+    }
+   },
+   "said": "a names-only list under «产品清单如下：»: the heading is found and is no product",
+   "why": "reader-5.8-colon: a header-cell colon rule turned this heading into product #1",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape C-zh"
+  },
+  {
+   "id": "c2628",
+   "input": [
+    [
+     "Наименование:",
+     "Кол-во:",
+     "Вес:"
+    ],
+    [
+     "Стол",
+     5,
+     100
+    ],
+    [
+     "Стул",
+     10,
+     50
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол",
+       "quantity": 5,
+       "weightKg": 100
+      },
+      {
+       "name": "Стул",
+       "quantity": 10,
+       "weightKg": 50
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Наименование: | Кол-во: | Вес:»: a colon header stays a header with its figures",
+   "why": "reader-5.8-colon",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape C-naim"
+  },
+  {
+   "id": "c2629",
+   "input": [
+    [
+     "Наименование",
+     "Примечание"
+    ],
+    [
+     "Стол",
+     "дубовый"
+    ],
+    [
+     "Стул",
+     "мягкий"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол"
+      },
+      {
+       "name": "Стул"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Наименование | Примечание»: a name-only header stays a header (the deal import and the paste lose nothing)",
+   "why": "unmapped-letterhead verifier S11",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape C-note"
+  },
+  {
+   "id": "c2630",
+   "input": [
+    [
+     "YIWU HUAYANG TRADING CO., LTD"
+    ],
+    [
+     "PROFORMA INVOICE"
+    ],
+    [
+     "TO:",
+     "GSR LOGISTICS",
+     "PI NO.:",
+     "HY-118"
+    ],
+    [
+     "ADD:",
+     "Tashkent",
+     "DATE:",
+     "2026-11-01"
+    ],
+    [],
+    [],
+    [],
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "Unit price",
+     "Amount"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     5,
+     1500
+    ],
+    [
+     2,
+     "Men trousers",
+     200,
+     5,
+     1000
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100,
+     8,
+     800
+    ]
+   ],
+   "expected": {
+    "headerRow": 7,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "amount": 1500
+      },
+      {
+       "name": "Men trousers"
+      },
+      {
+       "name": "Kids sneakers"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "the ordinary Yiwu PI letterhead (TO: / PI NO.: / ADD: / DATE: pairs) reads its table",
+   "why": "unmapped-letterhead verifier S1",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape S1-yiwu"
+  },
+  {
+   "id": "c2631",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     }
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "the Chinese header alone: 12 goods, brutto 1592, cube 13.58",
+   "why": "xlsxN-10 verifier skx10: the Σ is lost only by the extra row",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape T-zh-alone"
+  },
+  {
+   "id": "c2632",
+   "input": [
+    [
+     "Description",
+     "Unit",
+     "Qty"
+    ],
+    [
+     "Goods trolley",
+     "pcs",
+     5
+    ],
+    [
+     "Hand truck",
+     "pcs",
+     3
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Goods trolley",
+       "quantity": 5,
+       "unit": "pcs"
+      },
+      {
+       "name": "Hand truck"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a goods row whose name carries a name key and whose unit cell is a word stays a good",
+   "why": "§5.12: the second-header test needs a mapped cell of the column's OWN key family",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape T-goods-trolley"
   }
  ],
  "parseGoodsLineCases": [
@@ -58702,6 +60701,963 @@
    "why": "«Вес брутто, кг» merged over «1 коробки | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
    "source": "fix review (Ikki eshik) FR-SELL-2",
    "weight": "blocker"
+  },
+  {
+   "id": "c2701",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Line 1 of the letterhead"
+       ],
+       [
+        "TEL:",
+        "+86 579 8501"
+       ],
+       [],
+       [
+        "Line 4 of the letterhead"
+       ],
+       [
+        "TEL:",
+        "+86 579 8504"
+       ],
+       [],
+       [
+        "Line 7 of the letterhead"
+       ],
+       [
+        "TEL:",
+        "+86 579 8507"
+       ],
+       [],
+       [
+        "Наименование товара",
+        "Кол-во",
+        "Вес брутто, кг",
+        "Объём, м3"
+       ],
+       [
+        "Куртка женская",
+        300,
+        165,
+        1.2
+       ],
+       [
+        "Брюки мужские",
+        200,
+        90,
+        0.8
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 2
+    }
+   },
+   "said": "9 preamble rows: the header on the tenth row is found, as today",
+   "why": "§5.1 boundary (xlsx1-02 verifier: 6-9 rows found, 10-20 not)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-at9, one xlsx sheet"
+  },
+  {
+   "id": "c2702",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Куртка модель 12",
+        111,
+        31
+       ],
+       [
+        "Куртка модель 13",
+        112,
+        32
+       ],
+       [
+        "Куртка модель 14",
+        113,
+        33
+       ],
+       [
+        "Товары для кухни набор",
+        64,
+        54
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ],
+       [
+        "Куртка модель 17",
+        116,
+        36
+       ],
+       [
+        "Куртка модель 18",
+        117,
+        37
+       ],
+       [
+        "Куртка модель 19",
+        118,
+        38
+       ],
+       [
+        "Куртка модель 20",
+        119,
+        39
+       ],
+       [
+        "Куртка модель 21",
+        120,
+        40
+       ],
+       [
+        "Куртка модель 22",
+        121,
+        41
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Товары для кухни набор",
+     "Куртка модель 1",
+     "Куртка модель 22"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «Товары для кухни набор» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-kitchen14, one xlsx sheet"
+  },
+  {
+   "id": "c2703",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Куртка модель 12",
+        111,
+        31
+       ],
+       [
+        "Куртка модель 13",
+        112,
+        32
+       ],
+       [
+        "Куртка модель 14",
+        113,
+        33
+       ],
+       [
+        "Куртка модель 15",
+        114,
+        34
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ],
+       [
+        "Куртка модель 17",
+        116,
+        36
+       ],
+       [
+        "Куртка модель 18",
+        117,
+        37
+       ],
+       [
+        "Куртка модель 19",
+        118,
+        38
+       ],
+       [
+        "Куртка модель 20",
+        119,
+        39
+       ],
+       [
+        "Name badge holder",
+        70,
+        60
+       ],
+       [
+        "Куртка модель 22",
+        121,
+        41
+       ],
+       [
+        "Куртка модель 23",
+        122,
+        42
+       ],
+       [
+        "Куртка модель 24",
+        123,
+        43
+       ],
+       [
+        "Куртка модель 25",
+        124,
+        44
+       ],
+       [
+        "Куртка модель 26",
+        125,
+        45
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Name badge holder",
+     "Куртка модель 1",
+     "Куртка модель 26"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «Name badge holder» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-badge20, one xlsx sheet"
+  },
+  {
+   "id": "c2704",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Куртка модель 12",
+        111,
+        31
+       ],
+       [
+        "Item 12 kreslo",
+        62,
+        52
+       ],
+       [
+        "Куртка модель 14",
+        113,
+        33
+       ],
+       [
+        "Куртка модель 15",
+        114,
+        34
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ],
+       [
+        "Куртка модель 17",
+        116,
+        36
+       ],
+       [
+        "Куртка модель 18",
+        117,
+        37
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Item 12 kreslo",
+     "Куртка модель 1",
+     "Куртка модель 18"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «Item 12 kreslo» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-item12, one xlsx sheet"
+  },
+  {
+   "id": "c2705",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Sports goods bag",
+        61,
+        51
+       ],
+       [
+        "Куртка модель 13",
+        112,
+        32
+       ],
+       [
+        "Куртка модель 14",
+        113,
+        33
+       ],
+       [
+        "Куртка модель 15",
+        114,
+        34
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Sports goods bag",
+     "Куртка модель 1",
+     "Куртка модель 16"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «Sports goods bag» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-sports11, one xlsx sheet"
+  },
+  {
+   "id": "c2706",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Куртка модель 12",
+        111,
+        31
+       ],
+       [
+        "Куртка модель 13",
+        112,
+        32
+       ],
+       [
+        "Куртка модель 14",
+        113,
+        33
+       ],
+       [
+        "Куртка модель 15",
+        114,
+        34
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ],
+       [
+        "Куртка модель 17",
+        116,
+        36
+       ],
+       [
+        "Куртка модель 18",
+        117,
+        37
+       ],
+       [
+        "Куртка модель 19",
+        118,
+        38
+       ],
+       [
+        "Куртка модель 20",
+        119,
+        39
+       ],
+       [
+        "Куртка модель 21",
+        120,
+        40
+       ],
+       [
+        "Куртка модель 22",
+        121,
+        41
+       ],
+       [
+        "Куртка модель 23",
+        122,
+        42
+       ],
+       [
+        "Куртка модель 24",
+        123,
+        43
+       ],
+       [
+        "Куртка модель 25",
+        124,
+        44
+       ],
+       [
+        "电子产品配件",
+        75,
+        65
+       ],
+       [
+        "Куртка модель 27",
+        126,
+        46
+       ],
+       [
+        "Куртка модель 28",
+        127,
+        47
+       ],
+       [
+        "Куртка модель 29",
+        128,
+        48
+       ],
+       [
+        "Куртка модель 30",
+        129,
+        49
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "电子产品配件",
+     "Куртка модель 1",
+     "Куртка модель 30"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «电子产品配件» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-zh25, one xlsx sheet"
+  },
+  {
+   "id": "c2707",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка модель 1",
+        100,
+        20
+       ],
+       [
+        "Куртка модель 2",
+        101,
+        21
+       ],
+       [
+        "Куртка модель 3",
+        102,
+        22
+       ],
+       [
+        "Куртка модель 4",
+        103,
+        23
+       ],
+       [
+        "Куртка модель 5",
+        104,
+        24
+       ],
+       [
+        "Куртка модель 6",
+        105,
+        25
+       ],
+       [
+        "Куртка модель 7",
+        106,
+        26
+       ],
+       [
+        "Куртка модель 8",
+        107,
+        27
+       ],
+       [
+        "Куртка модель 9",
+        108,
+        28
+       ],
+       [
+        "Куртка модель 10",
+        109,
+        29
+       ],
+       [
+        "Куртка модель 11",
+        110,
+        30
+       ],
+       [
+        "Куртка модель 12",
+        111,
+        31
+       ],
+       [
+        "Куртка модель 13",
+        112,
+        32
+       ],
+       [
+        "Enamel mug white",
+        63,
+        53
+       ],
+       [
+        "Куртка модель 15",
+        114,
+        34
+       ],
+       [
+        "Куртка модель 16",
+        115,
+        35
+       ],
+       [
+        "Куртка модель 17",
+        116,
+        36
+       ],
+       [
+        "Куртка модель 18",
+        117,
+        37
+       ],
+       [
+        "Куртка модель 19",
+        118,
+        38
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Enamel mug white",
+     "Куртка модель 1",
+     "Куртка модель 19"
+    ]
+   },
+   "said": "a header-less list longer than ten rows, «Enamel mug white» a data row with its figures: no header — every line reaches the model",
+   "why": "xlsx1-02 verifier: a plain 40-row search took this data row as the header and lost every row above it; today it is header-less (guard (a): a row carrying a figure is data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape D-hl-enamel13, one xlsx sheet"
+  },
+  {
+   "id": "c2708",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Весы напольные",
+        100,
+        120
+       ],
+       [
+        "Весы кухонные",
+        50,
+        30
+       ],
+       [
+        "Кубик Рубика",
+        10,
+        2
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Весы напольные",
+     "Кубик Рубика"
+    ]
+   },
+   "said": "a real list whose names carry «вес» / «куб»: never a card, kept as a list",
+   "why": "xlsx1-07 verifier skeptic07-3: a substring label test would send it to the model as a card",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape K-scales, one xlsx sheet"
+  },
+  {
+   "id": "c2709",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка женская",
+        300,
+        150
+       ],
+       [
+        "Брюки мужские",
+        200,
+        100
+       ],
+       [
+        "Сумка",
+        80,
+        30
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка женская",
+     "Сумка"
+    ]
+   },
+   "said": "a header-less list with no goods word: to the model whole",
+   "why": "unmapped-product-name-as-header verifier V8",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape V8, one xlsx sheet"
   }
  ],
  "isArticleNumberCases": [
