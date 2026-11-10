@@ -407,6 +407,8 @@ describe('the pure rules under the judgement (file-goods.ts)', () => {
     expect(provenOther([line('Куртка женская зимняя на синтепоне', { quantity: 300 })], [line('Куртка женская', { quantity: 150 })])).toBe(false);
     // A Chinese row beside an English one may be its translation.
     expect(provenOther([line('Ladies jacket', { quantity: 300 })], [line('女士夹克', { quantity: 150 })])).toBe(false);
+    // …even where their numbers differ: a pair that shares no letter script proves nothing.
+    expect(provenOther([line('Кружка 350мл', { quantity: 480 })], [line('陶瓷杯 500ml', { quantity: 240 })])).toBe(false);
   });
 
   it('`otherName` is exported as the one rule for «two names» (each has a word the other lacks)', () => {
