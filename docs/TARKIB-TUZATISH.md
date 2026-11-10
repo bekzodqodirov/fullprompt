@@ -248,6 +248,22 @@ Built:
 - The plan view and the plan editor on screen stay one row per lot (he said «yuklamada») and
   show the label of §3.
 
+**As built — two defects the review of the built round found, fixed:**
+
+- **Every good's row wraps and is as tall as its text** (`wrappedLines`, composition-cells.ts —
+  an estimate calibrated against LibreOffice's own layout, never short). Only a first row
+  carrying the sticker's name wrapped; the others were 20 pt whatever they held, so a name
+  with its code in brackets ran past the 40-wide column and lost its END — «Мышь компьютерная
+  беспроводная [84716060», a ten-digit code read as a valid eight-digit one — and the
+  «aralash» sentence in the 10-wide carton column read «(в тех же ко».
+- **An approved plan keeps its positions.** `plan.batchId` is set at the approval, but a truck
+  that holds no carton of the lot yet (every carton owed from the road, or missed) is not
+  among the lot's trucks, and `truckSegments` answers «from position 0» for a truck it does
+  not know: the file printed the lot's FIRST goods where the plan takes its last cartons, and
+  went back when the first carton landed. Such a plan takes its positions as a truckless one
+  does (`planSegments` — after every truck the lot already crossed on). Pinned in
+  `plan-road.integration.test.ts` on a crossing plan.
+
 ## 5. Item 5 — 🤖 for tarkib lines
 
 Today: the per-row 🤖 is drawn for product rows only (`{!line && …}`); «🤖 AI taklif (N)»
@@ -425,6 +441,33 @@ sheet come from the SAME source rows (#513):
 - The tab's editor root carries `data-tnved-unsaved` (P4); the button reads it at the press
   and says «N ta kod saqlanmagan — invoysga kirmaydi» first: the invoice reads SAVED codes,
   and an AI answer is a draft until «Saqlash».
+
+**As built — the review of the built round changed three things here (they override the
+bullets above):**
+
+- **A file is followed only right after the list was read.** The button replaced an
+  `<a target="_blank">`; its download is a navigation of the tab it stands in. A list that
+  could not be read (a deploy recreating the server, a session run out) used to fall back to
+  the plain file — whose address fails for the same reason, answers with a page instead of a
+  file, and so REPLACED the Bojxona screen and every code typed or suggested and not saved.
+  Now `readGroups()` answers null for any failure, the screen says so
+  (`invoys.listFailed`, inside the open dialog too) and nothing is followed.
+- **«Invoysni olish» reads the list again.** A dialog left open while a colleague saved a
+  code, a name or a tarkib sent answers about a list that no longer existed, and they were
+  dropped without a word. When the list's fingerprint moved, the dialog shows the new list,
+  keeps the answers that still name a group, says `invoys.moved` and waits for a second press.
+- **Pairs first in the address.** `mergeQuery` writes `code.sig` pairs whenever they fit
+  (≤ `MERGE_PICKS_MAX`) and `all.<fp>` only when EVERY group is chosen and they do not: `all`
+  names the whole list, so one changed group took every other answer with it.
+- The editor counts as «unsaved» only what differs from what the SERVER holds: for the moment
+  between «✅ Saqlandi» and the refreshed page it used to compare with the rows it was handed,
+  and the dialog warned about a code saved a third of a second earlier (found by the browser
+  run).
+- Pinned by `tests/unit/invoice-rows.test.ts` (the pure model, incl. «one group renamed under
+  an open dialog»), `tests/integration/invoice-merge.integration.test.ts` (the file, by
+  header), `tests/unit/invoice-dialog-wire.test.ts` (the dialog's two rules, source-shape) and
+  the browser half in `m9zzx` (the list held at the CONTEXT — the service worker answers
+  `/api/*`; a code changed under the open dialog by SQL).
 
 ## 7. Questions to him (⭐ = built if unanswered)
 
