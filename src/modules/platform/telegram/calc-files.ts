@@ -35,6 +35,7 @@ import {
   type GoodsFileMeta,
 } from './file-goods';
 import type { ForwardPart } from './task-draft';
+import { MAX_TELEGRAM_DOWNLOAD_BYTES } from './limits';
 import { BRIEF_RETRY_MAX_S } from './retry';
 import { botCall } from './send';
 import { clipUnits } from '../text/clip';
@@ -55,6 +56,46 @@ const FILE_DOWNLOAD_MS = 30_000;
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 /**
+ * A file refused AT ARRIVAL, kept by name for the table (docs/FAYL-OQISH.md
+ * §1.1, judge critic-refused-unread): the seller was told then, and the table
+ * names it again — «X o‘qilmadi (sabab) — undagi tovarlar hisobga kirmaydi» —
+ * because its goods are not in the figure. Named, never blocking: there is no
+ * door to take a file back out of a collection. `why` is the reason the
+ * seller was told, in the same words.
+ */
+export function refusedFilePatch(
+  state: Pick<IntakeState, 'refusedFiles'>,
+  name: string,
+  why: string,
+): Pick<IntakeState, 'refusedFiles'> {
+  return { refusedFiles: [...(state.refusedFiles ?? []), { name, why }] };
+}
+
+/** Telegram hands a bot no file past 20 MB (docs/FAYL-OQISH.md §3.4, pdfimg-5): said, never «saqlab bo‘lmadi». */
+export const TOO_BIG_SAY = 'Fayl 20 MB dan katta — Telegram uni botga bermaydi. Kichikroq qilib (yoki Excel) yuboring.';
+export const TOO_BIG_WHY = '20 MB dan katta';
+
+/**
+ * Does the PDF say it is ENCRYPTED (docs/FAYL-OQISH.md §3.4, judge
+ * model-encrypt-sniff)? Its trailer's `/Encrypt n g R` — looked for in the
+ * trailer region only: the last 4 KB, and the first 2 KB where a linearized
+ * file keeps its first-page trailer. Never the whole file, where a page's own
+ * text may say «/Encrypt» (measured: an uncompressed page about the
+ * dictionary greps true and is no encrypted file). A WARNING, never a
+ * refusal: an owner-password-only PDF (no-print, no-edit — how many supplier
+ * ERPs export) carries the same entry and opens with no password; whether the
+ * API reads it is learned at the reading, where a refusal is named
+ * (`unreadPdfs`).
+ */
+export function pdfMayBeEncrypted(body: Buffer): boolean {
+  const entry = /\/Encrypt\s+\d+\s+\d+\s+R\b/;
+  return (
+    entry.test(body.subarray(Math.max(0, body.length - 4096)).toString('latin1')) ||
+    entry.test(body.subarray(0, 2048).toString('latin1'))
+  );
+}
+
+/**
  * The namespace of an intake file's attachment id: `uuidv5(noteId:messageId)`
  * (durability-1), so the same Telegram message stored twice is one row.
  */
@@ -72,6 +113,14 @@ export const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string
   broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
   empty: (label) => `📄 ${label} — jadval bo‘sh.`,
   pictures: (label) => `📄 ${label} — jadval bo‘sh. ${PICTURES_LINE}`,
+};
+
+/** The same refusals as a table's reason (`refusedFiles`); null = nothing of it was lost. */
+const SHEET_REFUSAL_WHY: Record<SheetRefusalReason, string | null> = {
+  old_format: 'Excel 95 yoki undan eski format',
+  encrypted: 'parol bilan himoyalangan',
+  broken: 'Excel fayl buzilgan',
+  empty: null,
 };
 
 /**
@@ -173,19 +222,40 @@ export function receivePdf(
   state: IntakeState,
   pdf: { attachmentId: string; name: string; bytes: number },
   label: string,
+  /** Its trailer names an `/Encrypt` dictionary (`pdfMayBeEncrypted`) — warned, still read. */
+  opts: { encrypted?: boolean } = {},
 ): FileAnswer {
+  // Every refusal here is named on the table too (`refusedFiles`), with the
+  // reason the seller is told now.
   if (pdf.bytes > MAX_PDF_BYTES) {
-    return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
-  }
-  const bytes = state.pdfs.reduce((n, p) => n + p.bytes, 0);
-  if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + pdf.bytes > MAX_INTAKE_PDF_BYTES) {
     return {
-      patch: {},
+      patch: refusedFilePatch(state, pdf.name, 'PDF 10 MB dan katta'),
+      say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.`,
+    };
+  }
+  // Two caps, two sentences (pdfimg-8): the third of three 5 MB PDFs was
+  // told «3 tadan ortiq PDF» — it was the third, and the bytes stopped it.
+  if (state.pdfs.length >= MAX_INTAKE_PDFS) {
+    return {
+      patch: refusedFilePatch(state, pdf.name, `${MAX_INTAKE_PDFS} tadan ortiq PDF`),
       say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
     };
   }
+  const bytes = state.pdfs.reduce((n, p) => n + p.bytes, 0);
+  if (bytes + pdf.bytes > MAX_INTAKE_PDF_BYTES) {
+    const mb = Math.round(MAX_INTAKE_PDF_BYTES / (1024 * 1024));
+    return {
+      patch: refusedFilePatch(state, pdf.name, `PDFlar jami ${mb} MB dan oshdi`),
+      say: `📄 ${label} — PDFlar jami ${mb} MB dan oshdi, bu PDF AI ga o‘qilmaydi. Kichikroq qilib yuboring. Kartada saqlandi.`,
+    };
+  }
+  // A PDF that may be password-protected is READ and warned about (§3.4):
+  // the warning is a receipt-time note, which the ONE prompt draws.
+  const warned = opts.encrypted
+    ? { fileNotes: [...(state.fileNotes ?? []), `⚠️ ${label} parol bilan himoyalangan bo‘lishi mumkin — AI o‘qiy olmasa, parolsiz saqlab yuboring.`] }
+    : {};
   return {
-    patch: { pdfs: [...state.pdfs, pdf], ...beside(state) },
+    patch: { pdfs: [...state.pdfs, pdf], ...beside(state), ...warned },
     say: `📄 ${label} — AI o‘qiydi.`,
   };
 }
@@ -652,8 +722,17 @@ export async function readIntakeFile(
   const label = fileName ? `«${fileName}»` : 'Fayl';
   const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
   if (kind === 'image' || kind === 'isomedia') {
-    // Counted, never silent: the prompt says how many will not be read.
-    if (state.images.length >= MAX_INTAKE_IMAGES) return { patch: { imagesSkipped: state.imagesSkipped + 1 }, say: null };
+    // Counted, never silent: the prompt says how many will not be read — and
+    // the table names them after the reading (pdfimg-12, `refusedFiles`).
+    if (state.images.length >= MAX_INTAKE_IMAGES) {
+      return {
+        patch: {
+          imagesSkipped: state.imagesSkipped + 1,
+          ...refusedFilePatch(state, fileName || 'rasm', `${MAX_INTAKE_IMAGES} tadan ortiq rasm`),
+        },
+        say: null,
+      };
+    }
     const reduced = await reduceForModel(saved.body).catch(() => null);
     // The reduction this needs anyway is KEPT, beside the original, for the
     // reading to send (docs/SAKKIZ-R3.md §7.2.4): a dozen 3-5 MB photos read
@@ -662,7 +741,10 @@ export async function readIntakeFile(
     if (reduced) void storeModelCopy(saved.attachmentId, reduced);
     if (!reduced) {
       return {
-        patch: { imagesSkipped: state.imagesSkipped + 1 },
+        patch: {
+          imagesSkipped: state.imagesSkipped + 1,
+          ...refusedFilePatch(state, fileName || 'rasm', kind === 'isomedia' ? 'HEIC rasm o‘qib bo‘lmaydi' : 'rasmni o‘qib bo‘lmadi'),
+        },
         say:
           kind === 'isomedia'
             ? `📷 ${label} — HEIC rasm, o‘qib bo‘lmaydi. JPG yoki skrinshot qilib yuboring.`
@@ -684,12 +766,26 @@ export async function readIntakeFile(
       state,
       { attachmentId: saved.attachmentId, name: fileName || 'invoice.pdf', bytes: saved.body.length },
       label,
+      { encrypted: pdfMayBeEncrypted(saved.body) },
     );
   }
-  if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
-  if (kind === 'video') return { patch: {}, say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  // Refused at arrival, and named on the table after the reading too
+  // (`refusedFiles`, docs/FAYL-OQISH.md §1.1).
+  const named = fileName || 'fayl';
+  if (kind === 'docx') {
+    return {
+      patch: refusedFilePatch(state, named, 'Word fayl o‘qilmaydi'),
+      say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.`,
+    };
+  }
+  if (kind === 'video') {
+    return { patch: refusedFilePatch(state, named, 'video o‘qilmaydi'), say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  }
   if (kind === 'archive') {
-    return { patch: {}, say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.` };
+    return {
+      patch: refusedFilePatch(state, named, 'arxiv o‘qilmaydi'),
+      say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.`,
+    };
   }
 
   const { readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
@@ -698,9 +794,16 @@ export async function readIntakeFile(
     return { kind: 'refused', reason: 'broken' } as const;
   });
   if (!sheet) {
-    return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
+    return {
+      patch: refusedFilePatch(state, named, 'bu turdagi fayl o‘qilmaydi'),
+      say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.`,
+    };
   }
-  if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  if (sheet.kind === 'refused') {
+    // An EMPTY sheet held no goods to lose; every other refusal did.
+    const why = SHEET_REFUSAL_WHY[sheet.reason];
+    return { patch: why ? refusedFilePatch(state, named, why) : {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  }
   // The reader's own two words travel with the text (round-2 review,
   // C1/C4/C5; round-3, R3-C2): `textCut` = rows are missing — the seller and
   // the model are told; `cellsCut` = every row is there, some cells shortened
@@ -803,12 +906,24 @@ export async function readIntakeFile(
  * collection's attachment id, `uuidv5(noteId:messageId)`, would have been
  * minted at random on exactly the paths that re-run (durability-1).
  */
-export type BotFile = { fileId: string; isPhoto: boolean; fileName?: string; mime?: string; messageId?: number };
+export type BotFile = {
+  fileId: string;
+  isPhoto: boolean;
+  fileName?: string;
+  mime?: string;
+  messageId?: number;
+  /**
+   * What Telegram says the file weighs (`file_size`) — checked BEFORE the
+   * download, because a bot is handed nothing past 20 MB (docs/FAYL-OQISH.md
+   * §3.4): absent when Telegram did not say.
+   */
+  size?: number;
+};
 
 type BotMessage = {
   message_id?: number;
-  photo?: { file_id: string }[];
-  document?: { file_id: string; file_name?: string; mime_type?: string };
+  photo?: { file_id: string; file_size?: number }[];
+  document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
 };
 
 /**
@@ -825,12 +940,15 @@ export function fileOf(src: BotMessage | ForwardPart): BotFile | null {
       fileName: src.file.name ?? undefined,
       mime: src.file.mime ?? undefined,
       messageId: src.messageId,
+      ...(typeof src.file.size === 'number' ? { size: src.file.size } : {}),
     };
   }
   const message = src as BotMessage;
   const messageId = message.message_id;
   const photo = message.photo?.length ? message.photo[message.photo.length - 1] : undefined;
-  if (photo) return { fileId: photo.file_id, isPhoto: true, messageId };
+  if (photo) {
+    return { fileId: photo.file_id, isPhoto: true, messageId, ...(typeof photo.file_size === 'number' ? { size: photo.file_size } : {}) };
+  }
   if (message.document) {
     return {
       fileId: message.document.file_id,
@@ -838,6 +956,7 @@ export function fileOf(src: BotMessage | ForwardPart): BotFile | null {
       fileName: message.document.file_name,
       mime: message.document.mime_type,
       messageId,
+      ...(typeof message.document.file_size === 'number' ? { size: message.document.file_size } : {}),
     };
   }
   return null;
@@ -856,7 +975,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * a 400 «file is too big» (a document past 20 MB, an ordinary case) must say
  * why in the log, not only «Faylni saqlab bo‘lmadi» in the chat.
  */
-async function filePathOf(fileId: string): Promise<string | null> {
+async function filePathOf(fileId: string): Promise<string | BotFileRefusal> {
   let meta = await botCall('getFile', { file_id: fileId }, FILE_DOWNLOAD_MS);
   for (let i = 0; i < 2; i += 1) {
     if (meta.ok || meta.status !== 429 || meta.retryAfter === null || meta.retryAfter > BRIEF_RETRY_MAX_S) break;
@@ -869,11 +988,25 @@ async function filePathOf(fileId: string): Promise<string | null> {
     { status: meta.status, description: meta.description, retryAfter: meta.retryAfter },
     '[bot-file] getFile refused',
   );
-  return null;
+  // Telegram's own word for a file past the bot's 20 MB — when the message
+  // did not say its size, this is where it is learned (note-send.ts reads the
+  // same description).
+  return { refused: /file is too big/i.test(meta.description ?? '') ? 'too_big' : 'download_failed' };
 }
 
 /** A stored bot file: its bytes (for the readers) and its attachment. */
 export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: string };
+
+/**
+ * Why a file the bot was sent is not stored (docs/FAYL-OQISH.md §3.4) — a
+ * typed refusal, never a bare null: `too_big` is past what Telegram hands a
+ * bot (20 MB) and is SAID so, never «Faylni saqlab bo‘lmadi», which invites
+ * the same file again; `download_failed` is everything else.
+ */
+export type BotFileRefusal = { refused: 'too_big' | 'download_failed' };
+
+/** Is this a refusal rather than a stored file? */
+export const isFileRefusal = (saved: SavedBotFile | BotFileRefusal): saved is BotFileRefusal => 'refused' in saved;
 
 /**
  * A file the bot was sent, stored.
@@ -900,11 +1033,13 @@ export async function saveBotFile(
     keyName?: string;
   },
   file: BotFile | null = fileOf(ctx.message ?? {}),
-): Promise<SavedBotFile | null> {
+): Promise<SavedBotFile | BotFileRefusal> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || !file) return null;
+  if (!token || !file) return { refused: 'download_failed' };
+  // Past Telegram's bot limit nothing is asked of it at all: it would refuse.
+  if (typeof file.size === 'number' && file.size > MAX_TELEGRAM_DOWNLOAD_BYTES) return { refused: 'too_big' };
   const path = await filePathOf(file.fileId);
-  if (!path) return null;
+  if (typeof path !== 'string') return path;
   // A deadline, because there was none: a Telegram file endpoint that accepts
   // the connection and then stops sending held this handler — and grammy's
   // poller is SEQUENTIAL, so it held every customer's cabinet with it. Thirty
@@ -912,9 +1047,9 @@ export async function saveBotFile(
   const res = await fetch(`https://api.telegram.org/file/bot${token}/${path}`, {
     signal: AbortSignal.timeout(FILE_DOWNLOAD_MS),
   });
-  if (!res.ok) return null;
+  if (!res.ok) return { refused: 'download_failed' };
   const body = Buffer.from(await res.arrayBuffer());
-  if (body.length === 0) return null;
+  if (body.length === 0) return { refused: 'download_failed' };
 
   const isPhoto = file.isPhoto;
   const { saveAttachment } = await import('../files/service');
@@ -954,8 +1089,11 @@ export async function saveIntakeFile(
   noteId: string,
   uploadedBy: string,
   file: BotFile | null = fileOf(ctx.message ?? {}),
-): Promise<SavedBotFile | null> {
-  if (!file) return null;
+): Promise<SavedBotFile | BotFileRefusal> {
+  if (!file) return { refused: 'download_failed' };
+  // Checked before anything else (docs/FAYL-OQISH.md §3.4): a file past the
+  // limit was never stored either, so there is no row to find.
+  if (typeof file.size === 'number' && file.size > MAX_TELEGRAM_DOWNLOAD_BYTES) return { refused: 'too_big' };
   const messageId = file.messageId ?? ctx.message?.message_id ?? null;
   const id = messageId !== null ? uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS) : undefined;
   if (id !== undefined) {
@@ -1037,7 +1175,8 @@ export async function storeModelCopy(attachmentId: string, reduced: Buffer): Pro
 /** The bytes a reading sends the model, loaded from storage (K5). */
 export interface IntakeFiles {
   images: { data: Buffer; mediaType: 'image/jpeg' }[];
-  pdfs: { data: Buffer; name: string }[];
+  /** Each PDF with its attachment, so a PDF the API refuses is named by it (docs/FAYL-OQISH.md §3.4). */
+  pdfs: { data: Buffer; name: string; attachmentId?: string }[];
   missing: number;
 }
 
@@ -1097,9 +1236,14 @@ export async function loadIntakeFiles(state: IntakeState, opts: { deadline: numb
     if (reduced) out.images.push({ data: reduced, mediaType: image.mediaType });
     else out.missing += 1;
   }
+  // A PDF the API refused is not sent again (docs/FAYL-OQISH.md §3.4,
+  // pdfimg-9 S9a): it sank every re-read after it, the photos' goods with it.
+  // Neither read nor missing — the table names it by `unreadPdfs`.
+  const refused = new Set(state.unreadPdfs ?? []);
   for (const pdf of state.pdfs) {
+    if (refused.has(pdf.attachmentId)) continue;
     const data = await bytesOf(pdf.attachmentId);
-    if (data) out.pdfs.push({ data, name: pdf.name });
+    if (data) out.pdfs.push({ data, name: pdf.name, attachmentId: pdf.attachmentId });
     else out.missing += 1;
   }
   return out;

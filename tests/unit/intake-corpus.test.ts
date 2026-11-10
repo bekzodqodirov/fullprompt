@@ -788,7 +788,7 @@ async function realAnalyze(script: Scripted[], timeoutMs: number) {
   const real = await vi.importActual<typeof import('@/modules/wms/calc/intake-ai')>('@/modules/wms/calc/intake-ai');
   return withStandIn(script, async (calls) => {
     const started = Date.now();
-    const out = await real.analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 0, timeoutMs });
+    const out = await real.analyzeIntake({ section: 'rastamojka', salvage: true, text: 'Kurtka', fileCount: 0, timeoutMs });
     return { out, ms: Date.now() - started, calls: calls() };
   });
 }

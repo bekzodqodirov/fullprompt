@@ -1,84 +1,41 @@
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { analyzeIntake } from '@/modules/wms/calc/intake-ai';
+import { goodJson, readingJson, startSseStandIn, type SseStandIn } from '../fixtures/sse-anthropic';
 
 /**
  * What a reading BILLS (his 2.9 c, docs/SAKKIZ-R2.md §8.2.7): every attempt
  * the model ANSWERED, whatever was made of the answer — and nothing for an
- * attempt it never answered. Against a local stand-in for the Messages API,
- * so the SDK makes the calls and the shape measured is the one the collector
- * appends and the landing writes.
+ * attempt it never answered. Against the shared STREAMING stand-in for the
+ * Messages API (re-anchored, docs/FAYL-OQISH.md §3.2), so the SDK makes the
+ * calls and parses the events, and the shape measured is the one the
+ * collector appends and the landing writes. Since the stream, «answered» is
+ * «received `message_start`»: a cut, an abort and a drop are billed too
+ * (§3.3, judge model-cut-unbilled).
  */
-type Scripted = { status: number; body?: unknown };
-const script: Scripted[] = [];
+let api: SseStandIn;
 /** What the SDK actually sent, request by request. */
-const sent: string[] = [];
-let calls = 0;
-let server: http.Server;
-const saved = { key: process.env.ANTHROPIC_API_KEY, url: process.env.ANTHROPIC_BASE_URL };
-
-const message = (stop: string, text: string, usage: { input_tokens: number; output_tokens: number }) => ({
-  id: 'msg_stand_in',
-  type: 'message',
-  role: 'assistant',
-  model: 'stand-in',
-  content: [{ type: 'text', text }],
-  stop_reason: stop,
-  stop_sequence: null,
-  usage,
-});
-const READING = JSON.stringify({
-  from_city: null,
-  to_city: null,
-  weight_kg: 150,
-  volume_m3: null,
-  goods: [],
-  steps: [],
-});
+const sent = () => api.bodies.map((b) => JSON.stringify(b));
+const script = { push: (...r: Parameters<SseStandIn['script']['push']>) => api.script.push(...r) };
+const READING = readingJson({ weight_kg: 150 });
 
 beforeAll(async () => {
-  server = http.createServer((req, res) => {
-    let body = '';
-    req.on('data', (chunk: Buffer) => {
-      body += chunk.toString('utf8');
-    });
-    req.on('end', () => {
-      calls += 1;
-      sent.push(body);
-      const next = script.shift() ?? { status: 400 };
-      res.writeHead(next.status, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify(
-          next.body ?? { type: 'error', error: { type: next.status === 529 ? 'overloaded_error' : 'invalid_request_error', message: 'stand-in' } },
-        ),
-      );
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  process.env.ANTHROPIC_API_KEY = 'test-key';
-  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  api = await startSseStandIn();
 });
 
 afterAll(async () => {
-  if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = saved.key;
-  if (saved.url === undefined) delete process.env.ANTHROPIC_BASE_URL;
-  else process.env.ANTHROPIC_BASE_URL = saved.url;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await api.close();
 });
 
 beforeEach(() => {
-  script.length = 0;
-  sent.length = 0;
-  calls = 0;
+  api.script.length = 0;
+  api.bodies.length = 0;
 });
 
-const read = () => analyzeIntake({ section: 'yolkira', text: 'Kurtka 300 dona', fileCount: 0, timeoutMs: 20_000 });
+const read = (timeoutMs = 20_000) => analyzeIntake({ section: 'yolkira', text: 'Kurtka 300 dona', fileCount: 0, timeoutMs, salvage: true });
 
 describe('the reading names every attempt the model answered', () => {
   it('a reading that came back is billed', async () => {
-    script.push({ status: 200, body: message('end_turn', READING, { input_tokens: 900, output_tokens: 120 }) });
+    script.push({ text: READING, usage: { input_tokens: 900, output_tokens: 120 } });
     const before = Date.now();
     const out = await read();
     expect(out.ok).toBe(true);
@@ -90,19 +47,16 @@ describe('the reading names every attempt the model answered', () => {
   });
 
   it('a reading cut short is billed too — the model answered it', async () => {
-    script.push({ status: 200, body: message('max_tokens', '{"goods":', { input_tokens: 40_000, output_tokens: 16_000 }) });
+    script.push({ stop: 'max_tokens', text: '{"goods":', usage: { input_tokens: 40_000, output_tokens: 16_000 } });
     const out = await read();
     expect(out).toMatchObject({ ok: false, failure: 'truncated' });
     expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 40_000, outputTokens: 16_000, at: expect.any(Number) }]);
   });
 
   it('an attempt nobody answered is not billed — the retry that WAS answered is', async () => {
-    script.push(
-      { status: 529 },
-      { status: 200, body: message('end_turn', READING, { input_tokens: 700, output_tokens: 90 }) },
-    );
+    script.push({ status: 529 }, { text: READING, usage: { input_tokens: 700, output_tokens: 90 } });
     const out = await read();
-    expect(calls).toBe(2);
+    expect(api.bodies).toHaveLength(2);
     expect(out.answered).toEqual([{ model: expect.any(String), inputTokens: 700, outputTokens: 90, at: expect.any(Number) }]);
   });
 
@@ -117,9 +71,9 @@ describe('the reading names every attempt the model answered', () => {
 describe('what the reading is told about a netto-only total (review P3-R3)', () => {
   /** The text the model is handed beside the material, for one section. */
   async function told(section: 'yolkira' | 'rastamojka' | 'podklyuch') {
-    script.push({ status: 200, body: message('end_turn', READING, { input_tokens: 10, output_tokens: 10 }) });
-    await analyzeIntake({ section, text: 'Kurtka 300 dona, N.W. 450 kg', fileCount: 0, timeoutMs: 20_000 });
-    const request = JSON.parse(sent.at(-1)!) as {
+    script.push({ text: READING, usage: { input_tokens: 10, output_tokens: 10 } });
+    await analyzeIntake({ section, text: 'Kurtka 300 dona, N.W. 450 kg', fileCount: 0, timeoutMs: 20_000, salvage: true });
+    const request = JSON.parse(sent().at(-1)!) as {
       system: unknown;
       messages: { content: { type: string; text?: string }[] }[];
     };
@@ -141,5 +95,71 @@ describe('what the reading is told about a netto-only total (review P3-R3)', () 
     expect(text).not.toContain('сотрудник спросит брутто');
     // …and the shared instruction promises no question to every section.
     expect(system).not.toContain('сотрудник спросит брутто');
+  });
+});
+
+describe('a reading the STREAM ended early keeps what it completed, and is billed (docs/FAYL-OQISH.md §3.2-§3.3)', () => {
+  const two = readingJson({
+    weight_kg: 900,
+    goods: [goodJson('Kurtka {ayollar}', { quantity: 300, weight_kg: 150 }), goodJson('Shim "classic"', { quantity: 200 })],
+    steps: ['o‘qildi'],
+  });
+  /** The text up to the second good's closing brace — and the third good begun. */
+  const throughSecond = `${two.slice(0, two.indexOf(']'))},{"name":"Sumka","quantity":4`;
+
+  it('the caller’s clock aborts a stream that drips past it — within the leash plus a second, the goods it completed kept', async () => {
+    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 0, usage: { input_tokens: 777, output_tokens: 1 } });
+    const started = Date.now();
+    const out = await read(1_500);
+    const took = Date.now() - started;
+    expect(took).toBeLessThan(1_500 + 1_000);
+    expect(out).toMatchObject({ ok: true, cut: { goods: 2, why: 'clock' }, facts: { weightKg: 900 } });
+    expect(out.ok && out.facts.goods?.map((g) => g.name)).toEqual(['Kurtka {ayollar}', 'Shim "classic"']);
+    // Billed though no final message exists: the input from `message_start`,
+    // the output an estimate from what was streamed.
+    expect(out.answered).toHaveLength(1);
+    expect(out.answered![0]!.inputTokens).toBe(777);
+    expect(out.answered![0]!.outputTokens).toBe(Math.ceil(throughSecond.length / 3));
+  });
+
+  it('the thread door’s leash too: 20 s of a slow drip ends at 20 s, a cut NOT kept when the caller said so', async () => {
+    script.push({ text: throughSecond, chunk: 1, paceMs: 200 });
+    const started = Date.now();
+    const out = await analyzeIntake({ section: 'yolkira', text: 'x', fileCount: 0, timeoutMs: 2_000, salvage: false });
+    expect(Date.now() - started).toBeLessThan(2_000 + 1_000);
+    expect(out).toMatchObject({ ok: false, failure: 'timeout' });
+    expect(out.answered).toHaveLength(1);
+  });
+
+  it('a mid-stream `event: error` overload with goods completed is a «dropped» cut, never «rejected»', async () => {
+    script.push({ text: throughSecond, errorType: 'overloaded_error' });
+    const out = await read();
+    expect(out).toMatchObject({ ok: true, cut: { goods: 2, why: 'dropped' } });
+    expect(api.bodies).toHaveLength(1);
+    expect(out.answered).toHaveLength(1);
+  });
+
+  it('a mid-stream overload with NOTHING completed is «overloaded» and read once more — both attempts billed', async () => {
+    script.push({ text: '{"from_city":null,"goods":[{"na', errorType: 'overloaded_error' }, { text: READING, usage: { input_tokens: 5, output_tokens: 6 } });
+    const out = await read();
+    expect(api.bodies).toHaveLength(2);
+    expect(out).toMatchObject({ ok: true, facts: { weightKg: 150 } });
+    expect(out.answered).toHaveLength(2);
+  });
+
+  it('a socket dropped mid-body with goods completed is kept; with none it is «network»', async () => {
+    script.push({ text: throughSecond, drop: true });
+    const kept = await read();
+    expect(kept).toMatchObject({ ok: true, cut: { goods: 2, why: 'dropped' } });
+    script.push({ text: '{"goods":[', drop: true }, { text: '{"goods":[', drop: true });
+    const lost = await read();
+    expect(lost).toMatchObject({ ok: false, failure: 'network' });
+    expect(lost.answered).toHaveLength(2);
+  });
+
+  it('a refusal is never salvaged', async () => {
+    script.push({ stop: 'refusal', text: throughSecond });
+    const out = await read();
+    expect(out).toMatchObject({ ok: false, failure: 'refused' });
   });
 });

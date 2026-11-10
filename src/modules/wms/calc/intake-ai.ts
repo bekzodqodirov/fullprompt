@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { logger } from '../../platform/logger';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
+import { clipUnits } from '../../platform/text/clip';
 import { SHEET_TEXT_BUDGET } from '../deals/goods-file';
 import type { AiUsage } from '../tnved/service';
 import type { AiReadFailure, CalcFacts, CalcGoodsFact, CalcSection } from './intake';
@@ -30,6 +31,25 @@ import { normalizeRowUnit, normalizeTnved, unitOf } from './units';
  */
 const AI_UNITS = ['dona', 'kg', 'm2', 'juft', 'litr', 'm3', 'karobka'] as const;
 
+/**
+ * One good of the answer — every key present, nothing defaulted: it is also
+ * the test a CUT answer's goods must pass one by one (`salvageCut`), where a
+ * key absent is a good the stream did not finish.
+ */
+const goodSchema = z.object({
+  name: z.string(),
+  quantity: z.number().nullable(),
+  weight_kg: z.number().nullable(),
+  volume_m3: z.number().nullable(),
+  // Read leniently: the schema below offers the model a closed list, and a
+  // word outside it is routed (and noted) by the kernel rather than
+  // throwing away the WHOLE reading on one odd line.
+  unit: z.string().nullable(),
+  measure_qty: z.number().nullable(),
+  tnved_code: z.string().nullable(),
+  note: z.string().nullable(),
+});
+
 const factsSchema = z.object({
   from_city: z.string().nullable(),
   to_city: z.string().nullable(),
@@ -38,21 +58,7 @@ const factsSchema = z.object({
   // stand-in that omits it, still parses — and «not said» is the brutto label.
   weight_netto: z.boolean().nullish(),
   volume_m3: z.number().nullable(),
-  goods: z.array(
-    z.object({
-      name: z.string(),
-      quantity: z.number().nullable(),
-      weight_kg: z.number().nullable(),
-      volume_m3: z.number().nullable(),
-      // Read leniently: the schema below offers the model a closed list, and a
-      // word outside it is routed (and noted) by the kernel rather than
-      // throwing away the WHOLE reading on one odd line.
-      unit: z.string().nullable(),
-      measure_qty: z.number().nullable(),
-      tnved_code: z.string().nullable(),
-      note: z.string().nullable(),
-    }),
-  ),
+  goods: z.array(goodSchema),
   steps: z.array(z.string()),
   // Read leniently and entry by entry (`knownCodesOf`): an answer from before
   // this field, or one bad entry, must never cost the WHOLE reading — the
@@ -185,7 +191,14 @@ export type AiIntakeRead =
  * attempt ends the reading. The collector APPENDS these across re-reads and
  * the landing bills each one.
  */
-export type AiIntakeOutcome = AiIntakeRead & { answered?: AnsweredUsage[] };
+export type AiIntakeOutcome = AiIntakeRead & {
+  answered?: AnsweredUsage[];
+  /**
+   * The PDFs (attachment ids) the API refused (docs/FAYL-OQISH.md §3.4): the
+   * request was refused WITH them and read again without them. Absent = none.
+   */
+  unreadPdfs?: string[];
+};
 
 /**
  * One answered attempt's bill, and WHEN the model answered it (judge
@@ -202,10 +215,21 @@ export type AnsweredUsage = AiUsage & { at: number };
  * The heavy model thinks by default and its thinking is counted INSIDE
  * `max_tokens`. At 4096 a forty-line packing list left the JSON no room: the
  * answer stopped mid-object, `JSON.parse` threw, and the catch reported «no
- * AI» — the most likely reading of his 2026-10-21 screenshot. Below the SDK's
- * non-streaming ceiling (it refuses a request it estimates past ten minutes).
+ * AI» — the most likely reading of his 2026-10-21 screenshot. 32 000 since the
+ * call is streamed (docs/FAYL-OQISH.md §3.2): the clock, not this cap, is what
+ * stops a long invoice, and a cut keeps the goods it completed (§3.3).
  */
-export const INTAKE_MAX_TOKENS = 16_000;
+export const INTAKE_MAX_TOKENS = 32_000;
+
+/**
+ * How hard the model thinks before it writes (docs/FAYL-OQISH.md §3.1). The
+ * reading is a transcription plus a code PROPOSAL a person confirms and the
+ * landing pass codes again; at the default (`high`) the thinking spent the
+ * 150 s leash a long invoice needed for its rows (zero-06, pdfimg-10).
+ * Measured nowhere here — the container has no key; the log line (§3.5)
+ * carries `thinking`, so its effect is read off production.
+ */
+export const INTAKE_EFFORT = 'medium' as const;
 
 /**
  * How long the bot waits for one reading (his 3.4 b: up to three minutes with
@@ -230,8 +254,21 @@ export function aiFailureOf(err: unknown): AiReadFailure {
   }
   if (err instanceof Anthropic.RateLimitError) return 'rate_limited';
   if (err instanceof Anthropic.InternalServerError) return 'overloaded';
+  // A streamed answer's own `event: error` has no HTTP status — the stream
+  // throws `new APIError(undefined, body, …, type)` (core/streaming.ts) — so
+  // only its `type` says what it is (docs/FAYL-OQISH.md §3.3, judge
+  // model-midstream-errors): an overload mid-answer read as «rejected» told
+  // the seller «fayllarni boshqacha yuboring» about the server's load.
+  if (err instanceof Anthropic.APIError && err.status === undefined) {
+    if (err.type === 'overloaded_error' || err.type === 'api_error') return 'overloaded';
+    if (err.type === 'rate_limit_error') return 'rate_limited';
+    return 'rejected';
+  }
   if (err instanceof Anthropic.APIError) return 'rejected';
   if (err instanceof SyntaxError || err instanceof z.ZodError) return 'unreadable';
+  // A socket that dropped mid-body is a bare `AnthropicError('terminated')`
+  // (undici's word) — no response class at all: the connection's, said so.
+  if (err instanceof Anthropic.AnthropicError) return 'network';
   return 'network';
 }
 
@@ -524,7 +561,9 @@ function knownGoodsLines(
   let used = 0;
   for (const [i, name] of names.entries()) {
     const numberIt = ask !== null && asked.length < KNOWN_CODES_MAX && ask(i);
-    const line = numberIt ? `${asked.length + 1}. ${name.slice(0, 120)}` : `- ${name.slice(0, 120)}`;
+    // Cut by UTF-16 units and never inside an emoji (apireq-1): a lone half
+    // in the request body is a 400 for the whole reading.
+    const line = numberIt ? `${asked.length + 1}. ${clipUnits(name, 120)}` : `- ${clipUnits(name, 120)}`;
     if (used + line.length + 1 > budget) break;
     lines.push(line);
     if (numberIt) asked.push(i);
@@ -567,8 +606,259 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
 }
 
 /**
- * Read the collected material. Returns null when AI is not available at all
- * — the caller then keeps whatever the person typed and says so plainly.
+ * What a cut answer COMPLETED (docs/FAYL-OQISH.md §3.3, judge
+ * model-salvage-scanner) — pure, over the text the stream delivered.
+ *
+ * A hand tokenizer, never the SDK's `partialParse` nor MessageStream's partial
+ * snapshot: both keep the trailing half-object, number and all — a cut after
+ * `"weight_kg":15` of «150» was a good weighing 15 with the rest of its keys
+ * absent, priced per kg. Here a string is tracked with its escapes, so a «}»
+ * inside «Куртка {женская}» or a `\"` closes nothing; a good is kept only once
+ * its own closing «}» is reached at the array's depth, and is then re-checked
+ * by the per-good schema with every key present and nothing defaulted. A
+ * number counts as ended only when a character follows it. The totals are
+ * kept when their value closed BEFORE the goods array opened (the schema's
+ * order puts them first); `steps` only when its whole array closed; the
+ * codes never (they come last — a cut drops them, and the landing pass codes
+ * the rows).
+ */
+export function salvageCut(text: string): {
+  totals: Partial<Pick<z.infer<typeof factsSchema>, keyof typeof TOTALS>>;
+  goods: z.infer<typeof goodSchema>[];
+  steps: string[];
+} {
+  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [] };
+  let i = skipWs(text, 0);
+  if (text[i] !== '{') return out;
+  i += 1;
+  let goodsOpened = false;
+  for (;;) {
+    i = skipWs(text, i);
+    // A closing «}» (a whole answer) or the cut: either way nothing more.
+    if (text[i] !== '"') return out;
+    const keyEnd = stringEnd(text, i);
+    if (keyEnd === null) return out;
+    const key = jsonOf(text.slice(i, keyEnd));
+    i = skipWs(text, keyEnd);
+    if (text[i] !== ':') return out;
+    i = skipWs(text, i + 1);
+    if (key === 'goods') {
+      goodsOpened = true;
+      if (text[i] !== '[') return out;
+      i += 1;
+      for (;;) {
+        i = skipWs(text, i);
+        if (text[i] === ']') {
+          i += 1;
+          break;
+        }
+        const end = valueEnd(text, i);
+        if (end === null) return out;
+        if (text[i] === '{') {
+          const good = goodSchema.safeParse(jsonOf(text.slice(i, end)));
+          if (good.success) out.goods.push(good.data);
+        }
+        i = skipWs(text, end);
+        if (text[i] === ',') i += 1;
+        else if (text[i] !== ']') return out;
+      }
+    } else {
+      const end = valueEnd(text, i);
+      if (end === null) return out;
+      const value = jsonOf(text.slice(i, end));
+      if (!goodsOpened && typeof key === 'string' && key in TOTALS) {
+        const total = TOTALS[key as keyof typeof TOTALS].safeParse(value);
+        if (total.success) (out.totals as Record<string, unknown>)[key] = total.data;
+      }
+      if (key === 'steps') {
+        const steps = z.array(z.string()).safeParse(value);
+        if (steps.success) out.steps = steps.data;
+      }
+      i = end;
+    }
+    i = skipWs(text, i);
+    if (text[i] !== ',') return out;
+    i += 1;
+  }
+}
+
+/** The totals a cut answer may keep, each checked as the whole answer's schema checks it. */
+const TOTALS = {
+  from_city: z.string().nullable(),
+  to_city: z.string().nullable(),
+  weight_kg: z.number().nullable(),
+  weight_netto: z.boolean().nullable(),
+  volume_m3: z.number().nullable(),
+} as const;
+
+const skipWs = (t: string, i: number): number => {
+  let j = i;
+  while (j < t.length && (t[j] === ' ' || t[j] === '\n' || t[j] === '\r' || t[j] === '\t')) j += 1;
+  return j;
+};
+
+/** Where the string opening at `i` ends (past its quote), or null when the text stops inside it. */
+function stringEnd(t: string, i: number): number | null {
+  for (let j = i + 1; j < t.length; j += 1) {
+    if (t[j] === '\\') {
+      j += 1;
+      continue;
+    }
+    if (t[j] === '"') return j + 1;
+  }
+  return null;
+}
+
+/** Where the JSON value opening at `i` ends, or null when the text stops inside it. */
+function valueEnd(t: string, i: number): number | null {
+  const c = t[i];
+  if (c === undefined) return null;
+  if (c === '"') return stringEnd(t, i);
+  if (c === '{' || c === '[') {
+    let depth = 0;
+    for (let j = i; j < t.length; j += 1) {
+      const d = t[j];
+      if (d === '"') {
+        const e = stringEnd(t, j);
+        if (e === null) return null;
+        j = e - 1;
+      } else if (d === '{' || d === '[') depth += 1;
+      else if (d === '}' || d === ']') {
+        depth -= 1;
+        if (depth === 0) return j + 1;
+      }
+    }
+    return null;
+  }
+  // A number or a literal: only a following character proves it ended.
+  let j = i;
+  while (j < t.length && /[-+0-9.eEa-z]/.test(t[j]!)) j += 1;
+  return j > i && j < t.length ? j : null;
+}
+
+/** A complete span, parsed — or nothing, never a throw (a malformed one is simply not kept). */
+function jsonOf(span: string): unknown {
+  try {
+    return JSON.parse(span) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** What one attempt cost, as far as the stream said it. */
+interface AttemptUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /** The model's thinking tokens, from the raw `message_delta` — null when none arrived. */
+  thinking: number | null;
+  /** `outputTokens` is the characters' estimate, not the API's count (no `message_delta` arrived). */
+  estimated: boolean;
+}
+
+/**
+ * One streamed attempt, as it ended:
+ *  - `answered` — the stream finished with a message (any stop reason);
+ *  - `cut` — it ended AFTER `message_start`, with text in hand: the caller's
+ *    clock aborted it (`clock`), or a mid-stream `event: error` or a dropped
+ *    socket ended it (`dropped`) — the model was paid for what it wrote;
+ *  - `failed` — it ended before the model began: a refusal of the request, a
+ *    connection that never answered — billed nothing, as before.
+ */
+type Attempt =
+  | { kind: 'answered'; message: Anthropic.Message; usage: AttemptUsage; stop: string | null; ms: number }
+  | { kind: 'cut'; why: 'clock' | 'dropped'; err: unknown; text: string; usage: AttemptUsage; ms: number }
+  | { kind: 'failed'; err: unknown; ms: number };
+
+/**
+ * One call, STREAMED, under the caller's leash (docs/FAYL-OQISH.md §3.2, judge
+ * model-leash-unbounded). The client's `timeout` bounds the connection and the
+ * response headers only: for a stream the SDK clears it once fetch() resolves,
+ * on the headers, so the BODY had no deadline at all — measured, a stand-in
+ * dripping for 4 s past a 1.5 s timeout ran to its end. The clock is an
+ * `AbortController` this function aborts at `leftMs`, and `stream.abort()`
+ * runs on every exit, so nothing outlives the attempt.
+ *
+ * What the model wrote is accumulated off the raw events, beside the SDK's own
+ * accumulator: on an abort there is no final message, and the usage the final
+ * message would carry (`output_tokens_details` included, which the SDK's
+ * accumulator drops — judge model-thinking-null) only ever arrives in
+ * `message_delta`.
+ */
+async function streamAttempt(content: Anthropic.ContentBlockParam[], leftMs: number): Promise<Attempt> {
+  const began = Date.now();
+  const clock = new AbortController();
+  const timer = setTimeout(() => clock.abort(), Math.max(0, leftMs));
+  let stream: { abort(): void } | null = null;
+  let inputTokens: number | null = null;
+  let delta: { in: number | null; out: number; thinking: number | null; stop: string | null } | null = null;
+  let textIndex: number | null = null;
+  let text = '';
+  let chars = 0;
+  const usage = (): AttemptUsage => ({
+    inputTokens: delta?.in ?? inputTokens ?? 0,
+    // No `message_delta` arrived (an abort, a drop): every streamed character
+    // of the answer AND the thinking, at three to a token — an ESTIMATE, so
+    // the attempt is billed and the day's cap counts it, never a nothing.
+    outputTokens: delta?.out ?? Math.ceil(chars / 3),
+    thinking: delta?.thinking ?? null,
+    estimated: delta === null,
+  });
+  try {
+    const client = new Anthropic({ timeout: Math.max(1, leftMs), maxRetries: 0 });
+    const live = client.messages.stream(
+      {
+        model: ANALYST_MODEL,
+        max_tokens: INTAKE_MAX_TOKENS,
+        system: SYSTEM,
+        output_config: { effort: INTAKE_EFFORT, format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
+        messages: [{ role: 'user', content }],
+      },
+      { signal: clock.signal },
+    );
+    stream = live;
+    live.on('streamEvent', (event: Anthropic.RawMessageStreamEvent) => {
+      switch (event.type) {
+        case 'message_start':
+          inputTokens = event.message.usage.input_tokens ?? 0;
+          break;
+        case 'content_block_start':
+          if (event.content_block.type === 'text' && textIndex === null) textIndex = event.index;
+          break;
+        case 'content_block_delta':
+          if (event.delta.type === 'text_delta') {
+            chars += event.delta.text.length;
+            if (event.index === textIndex) text += event.delta.text;
+          } else if (event.delta.type === 'thinking_delta') chars += event.delta.thinking.length;
+          break;
+        case 'message_delta':
+          delta = {
+            in: event.usage.input_tokens ?? null,
+            out: event.usage.output_tokens,
+            thinking: event.usage.output_tokens_details?.thinking_tokens ?? null,
+            stop: event.delta.stop_reason,
+          };
+          break;
+        default:
+          break;
+      }
+    });
+    const message = await live.finalMessage();
+    const stop = (delta as { stop: string | null } | null)?.stop ?? message.stop_reason;
+    return { kind: 'answered', message, usage: usage(), stop, ms: Date.now() - began };
+  } catch (err) {
+    const ms = Date.now() - began;
+    if (inputTokens === null) return { kind: 'failed', err, ms };
+    return { kind: 'cut', why: clock.signal.aborted ? 'clock' : 'dropped', err, text, usage: usage(), ms };
+  } finally {
+    clearTimeout(timer);
+    stream?.abort();
+  }
+}
+
+/**
+ * Read the collected material. Never throws: no key, no answer, a refusal —
+ * each is a named failure, and the caller keeps whatever the person typed and
+ * says why.
  */
 export async function analyzeIntake(input: {
   section: CalcSection;
@@ -589,16 +879,15 @@ export async function analyzeIntake(input: {
    *
    * XLSX and CSV are READ by `goodsFromFile` — exact rows, no model, no
    * tokens — and a PDF cannot be, so it is shown to the model as a document
-   * block instead. One document: a seller forwarding a folder is forwarding
-   * context, and a second invoice about the same shipment is a contradiction
-   * nobody can resolve from here.
+   * block instead. `attachmentId` names it in `unreadPdfs` when the API
+   * refuses it (docs/FAYL-OQISH.md §3.4).
    */
-  pdf?: { data: Buffer; name: string } | null;
+  pdf?: IntakePdf | null;
   /**
    * Further PDFs (his 1.4 b, 1.13: two invoices from two factories are read
    * TOGETHER, not the first one alone). The caller caps the count and bytes.
    */
-  morePdfs?: { data: Buffer; name: string }[];
+  morePdfs?: IntakePdf[];
   /**
    * Spreadsheets the reader could not map onto columns, as text — the model
    * reads them with everything else and lists their goods (his 1.2 b: the
@@ -612,6 +901,15 @@ export async function analyzeIntake(input: {
    */
   contextSheets?: readonly IntakeSheetText[];
   /**
+   * The mapped goods sheet's OWN rows as text (a packing-shaped list keeps
+   * them, `GoodsFileMeta.text`) — shown under the totals heading only while
+   * its rows' codes are asked, so the model codes a row from its specs and
+   * not its name alone (docs/FAYL-OQISH.md §3.7, sheets-04 (3)). Never
+   * something to read by itself: a lone Excel with every row coded makes no
+   * call.
+   */
+  goodsSheetText?: IntakeSheetText | null;
+  /**
    * Line names the seller's Excel already lists (round-1 review, c4): the
    * seller said a separate PDF or sheet is ANOTHER factory's goods, so the
    * model's lines are appended to the Excel's — and a model not told what is
@@ -622,8 +920,9 @@ export async function analyzeIntake(input: {
   /**
    * Ask the model for the `knownGoods` rows' codes too (the AI door,
    * docs/IKKI-ESHIK.md §3.1): the list is shown numbered, and the answer's
-   * `known_codes` come back by index into `knownGoods`. The model is called on
-   * this reading anyway, so this is output, not a call.
+   * `known_codes` come back by index into `knownGoods`. A row asked is
+   * something to read by itself (docs/FAYL-OQISH.md §3.7): a lone Excel on
+   * the AI door is coded by the model, not met with «nothing to read».
    */
   codeKnown?: boolean;
   /**
@@ -640,8 +939,16 @@ export async function analyzeIntake(input: {
    */
   requestGoods?: readonly string[];
   /**
-   * The caller's leash. The bot answers asynchronously and affords the
-   * default 60 s; an interactive press (the thread door) cannot hold a
+   * Keep what a CUT answer completed (docs/FAYL-OQISH.md §3.3, §3.6) —
+   * REQUIRED, so every caller chooses (judge model-thread-door-cut): the bot
+   * carries a cut as `aiCut` and draws no «✅ Tasdiqlash» over it; the thread
+   * door's preview has no word for a partial list, so it passes false and a
+   * cut stays the «timeout» / «truncated» it always was.
+   */
+  salvage: boolean;
+  /**
+   * The caller's leash. The bot answers asynchronously and affords
+   * `INTAKE_TIMEOUT_MS`; an interactive press (the thread door) cannot hold a
    * person that long and passes ~20 s — past it the manual parser answers.
    */
   timeoutMs?: number;
@@ -649,16 +956,27 @@ export async function analyzeIntake(input: {
   if (!aiConfigured()) return { ok: false, failure: 'not_configured' };
   const material = input.text.trim();
   const images = input.images ?? [];
-  const pdfs = [input.pdf ?? null, ...(input.morePdfs ?? [])].filter(
-    (p): p is { data: Buffer; name: string } => p !== null,
-  );
+  let pdfs = [input.pdf ?? null, ...(input.morePdfs ?? [])].filter((p): p is IntakePdf => p !== null);
   const sheets = input.sheets ?? [];
   const contextSheets = input.contextSheets ?? [];
   const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');
+  // Each shown name keeps its index into the caller's list, so a code the
+  // model gives by NUMBER lands on the row that number was shown for. Built
+  // ABOVE the guard (docs/FAYL-OQISH.md §3.7, known-3): a row whose code is
+  // asked is material too — the AI door's commonest order is a lone Excel
+  // with no caption, and the guard used to answer it «nothing to read»
+  // without ever counting this list.
+  const knownList = (input.knownGoods ?? []).map((name, index) => ({ index, name: name.trim() })).filter((k) => k.name);
+  const known = knownList.map((k) => k.name);
+  const requestNames = (input.requestGoods ?? []).map((n) => n.trim()).filter(Boolean);
+  // Asked: a shown row with no code of its own, by its index into the
+  // caller's list (`knownCoded`).
+  const ask = (i: number) => input.knownCoded?.[knownList[i]!.index] !== true;
+  const codesAsked = input.codeKnown === true && knownList.some((_, i) => ask(i));
   // A collection of nothing but photographs — or nothing but an invoice — is
   // still a collection: before this round the empty-text guard refused it
   // outright.
-  if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets) {
+  if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets && !codesAsked) {
     return { ok: false, failure: 'nothing_to_read' };
   }
 
@@ -670,82 +988,160 @@ export async function analyzeIntake(input: {
   // left.
   const leash = input.timeoutMs ?? INTAKE_TIMEOUT_MS;
   const started = Date.now();
-  // Each shown name keeps its index into the caller's list, so a code the
-  // model gives by NUMBER lands on the row that number was shown for.
-  const knownList = (input.knownGoods ?? []).map((name, index) => ({ index, name: name.trim() })).filter((k) => k.name);
-  const known = knownList.map((k) => k.name);
-  const requestNames = (input.requestGoods ?? []).map((n) => n.trim()).filter(Boolean);
-  // Asked: a shown row with no code of its own, by its index into the
-  // caller's list (`knownCoded`).
-  const ask = (i: number) => input.knownCoded?.[knownList[i]!.index] !== true;
   let numbered = input.codeKnown === true && known.length > 0;
   let shown = numbered
     ? knownGoodsLines(known, knownBudgetAfter(requestNames).knownBudget, ask).asked.map((i) => knownList[i]!.index)
     : [];
+  // What else is there besides the numbered list — a codes-free re-read of a
+  // list that WAS the only material would read nothing at all.
+  const otherMaterial = () => Boolean(material) || images.length > 0 || pdfs.length > 0 || hasSheets;
   // What every answered attempt cost — a cut answer retried is two (2.9 c).
   let answered: AnsweredUsage[] = [];
   let failure: AiReadFailure = 'network';
-  for (let attempt = 0; attempt < INTAKE_ATTEMPTS; attempt += 1) {
+  // PDFs the API refused (§3.4): read once more without them, and named.
+  let unreadPdfs: string[] = [];
+  let pdfsDropped = false;
+  const withUnread = <T extends AiIntakeOutcome>(out: T): T =>
+    unreadPdfs.length > 0 ? { ...out, unreadPdfs } : out;
+  const withBill = <T extends AiIntakeRead>(out: T): T & { answered?: AnsweredUsage[] } =>
+    answered.length > 0 ? { ...out, answered } : out;
+  const counts = () => ({
+    images: images.length,
+    pdfs: pdfs.length,
+    sheets: sheets.filter((s) => s.text.trim()).length + contextSheets.filter((s) => s.text.trim()).length,
+    known: shown.length,
+  });
+  // The attempts that count against `INTAKE_ATTEMPTS`; the PDF-less re-read
+  // after a refusal is not one of them (a 400 is instant and never billed).
+  let counted = 0;
+  while (counted < INTAKE_ATTEMPTS) {
+    const attempt = counted;
     const left = leash - (Date.now() - started);
     if (attempt > 0 && left < leash / 2) break;
-    try {
-      const client = new Anthropic({ timeout: left, maxRetries: 0 });
-      const response = await client.messages.create({
-        model: ANALYST_MODEL,
-        max_tokens: INTAKE_MAX_TOKENS,
-        system: SYSTEM,
-        output_config: { format: { type: 'json_schema', schema: FACTS_JSON_SCHEMA } },
-        messages: [
-          {
-            role: 'user',
-            content: intakeContent(
-              input.section,
-              input.fileCount,
-              material,
-              images,
-              pdfs,
-              sheets,
-              contextSheets,
-              known,
-              requestNames,
-              numbered ? ask : null,
-            ),
-          },
-        ],
-      });
-      // Spec §3: «no new cap in v1, but log token use». Until this round
-      // every model call was a person pressing a button; the pass makes
-      // them automatic, so what it costs has to be readable in the log or
-      // the owner cannot answer whether it is affordable.
-      logger.info(
-        { in: response.usage?.input_tokens, out: response.usage?.output_tokens, stop: response.stop_reason },
-        '[calc intake] model tokens',
-      );
-      // The model ANSWERED this attempt: it is billed whatever is made of
-      // the answer — refused, cut, unreadable or read (2.9 c).
-      const read = readIntakeResponse(response, shown);
-      if (read.usage) answered = [...answered, { ...read.usage, at: Date.now() }];
-      // An answer cut at the cap WHILE the codes were asked is read once more
-      // without them (review PF-ADV-13): the codes are a proposal the coding
-      // step does without, the reading is not.
-      if (!read.ok && read.failure === 'truncated' && numbered && attempt + 1 < INTAKE_ATTEMPTS) {
-        logger.warn({ shown: shown.length }, '[calc intake] answer cut with the codes asked — read again without them');
-        numbered = false;
-        shown = [];
-        failure = 'truncated';
-        continue;
-      }
-      return answered.length > 0 ? { ...read, answered } : read;
-    } catch (err) {
-      failure = aiFailureOf(err);
+    counted += 1;
+    const coding = numbered && shown.length > 0 && input.goodsSheetText?.text.trim() ? [input.goodsSheetText] : [];
+    const content = intakeContent(
+      input.section,
+      input.fileCount,
+      material,
+      images,
+      pdfs,
+      sheets,
+      [...contextSheets, ...coding],
+      known,
+      requestNames,
+      numbered ? ask : null,
+    );
+    const run = await streamAttempt(content, left);
+    if (run.kind === 'failed') {
+      failure = aiFailureOf(run.err);
       // Never fatal: the intake goes on with what the person typed, and the
       // seller is told WHY. The reason is in the log beside the error.
-      logger.warn({ err, failure, attempt }, 'calc intake AI failed');
+      logger.warn({ err: run.err, failure, attempt, ms: run.ms, ...counts() }, 'calc intake AI failed');
+      // A request REFUSED with documents in it is read once more without
+      // them (docs/FAYL-OQISH.md §3.4, pdfimg-9 a+b): one bad PDF used to sink
+      // the photos' and the text's reading with it, and every re-read after.
+      // The PDFs are named unread (`unreadPdfs`) and later readings skip them.
+      if (failure === 'rejected' && pdfs.length > 0 && !pdfsDropped) {
+        pdfsDropped = true;
+        unreadPdfs = pdfs.flatMap((p) => (p.attachmentId ? [p.attachmentId] : []));
+        pdfs = [];
+        if (!otherMaterial() && !codesAsked) break;
+        counted -= 1;
+        continue;
+      }
+      // Refused WITHOUT them as well: the PDFs were not the cause, and are
+      // not named for it.
+      if (failure === 'rejected' && pdfsDropped) unreadPdfs = [];
       if (!retryAfterPause(failure, attempt, Date.now() - started, leash)) break;
       await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
+      continue;
     }
+    // The model ANSWERED this attempt — or began to: it is billed whatever is
+    // made of the answer (2.9 c), a cut by what the stream said it cost
+    // (docs/FAYL-OQISH.md §3.3, judge model-cut-unbilled).
+    const bill: AnsweredUsage = {
+      model: ANALYST_MODEL,
+      inputTokens: run.usage.inputTokens,
+      outputTokens: run.usage.outputTokens,
+      at: Date.now(),
+    };
+    answered = [...answered, bill];
+    // Spec §3: «no new cap in v1, but log token use» — read off the RAW
+    // `message_delta` (docs/FAYL-OQISH.md §3.5): the thinking share is what
+    // the effort change moves, and the SDK's final message drops it.
+    logger.info(
+      {
+        in: run.usage.inputTokens,
+        out: run.usage.outputTokens,
+        thinking: run.usage.thinking,
+        stop: run.kind === 'answered' ? run.stop : run.why === 'clock' ? 'aborted' : 'dropped',
+        ms: run.ms,
+        cut: run.kind === 'cut' || run.stop === 'max_tokens',
+        ...(run.kind === 'cut' ? { textChars: run.text.length, estimated: run.usage.estimated } : {}),
+        ...counts(),
+      },
+      '[calc intake] model tokens',
+    );
+    if (run.kind === 'answered') {
+      const read = readIntakeResponse(run.message, shown);
+      if (read.ok) return withUnread(withBill(read));
+      if (read.failure === 'truncated') {
+        // Cut at the size (`max_tokens`): what it completed is the reading.
+        const kept = input.salvage ? keptOf(textOf(run.message), 'size') : null;
+        if (kept) return withUnread(withBill(kept));
+        // An answer cut at the cap WHILE the codes were asked, with no good
+        // completed, is read once more without them (review PF-ADV-13): the
+        // codes are a proposal the coding step does without, the reading is
+        // not.
+        if (numbered && counted < INTAKE_ATTEMPTS && otherMaterial()) {
+          logger.warn({ shown: shown.length }, '[calc intake] answer cut with the codes asked — read again without them');
+          numbered = false;
+          shown = [];
+          failure = 'truncated';
+          continue;
+        }
+      }
+      return withUnread(withBill(read));
+    }
+    // Cut by the clock or a dropped stream, after the model began.
+    const kept = input.salvage ? keptOf(run.text, run.why) : null;
+    if (kept) return withUnread(withBill(kept));
+    failure = run.why === 'clock' ? 'timeout' : aiFailureOf(run.err);
+    logger.warn({ err: run.err, failure, attempt, ms: run.ms, ...counts() }, 'calc intake AI failed');
+    if (run.why === 'clock' || !retryAfterPause(failure, attempt, Date.now() - started, leash)) break;
+    await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
   }
-  return answered.length > 0 ? { ok: false, failure, answered } : { ok: false, failure };
+  // The clock ran out between attempts: what stopped the reading is time.
+  return withUnread(answered.length > 0 ? { ok: false, failure, answered } : { ok: false, failure });
+}
+
+/** One PDF the model is shown, and the attachment that names it if the API refuses it. */
+export interface IntakePdf {
+  data: Buffer;
+  name: string;
+  attachmentId?: string;
+}
+
+/** The answer's text block — what the schema's JSON is written in. */
+const textOf = (message: { content: { type: string; text?: string }[] }): string =>
+  message.content.find((b) => b.type === 'text')?.text ?? '';
+
+/**
+ * A cut answer as a reading — null when it completed no good (then it stays
+ * the failure it was, and a drop or an overload may be read again). Its codes
+ * are dropped (`known_codes` is the schema's last property, and a cut
+ * finishes no list it began): the landing pass codes the rows.
+ */
+function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut: AiReadingCut } & AiIntakeResult) | null {
+  const cut = salvageCut(text);
+  if (cut.goods.length === 0) return null;
+  return {
+    ok: true,
+    cut: { goods: cut.goods.length, why },
+    facts: factsOf({ ...cut.totals, goods: cut.goods }),
+    steps: cut.steps.slice(0, 20),
+  };
 }
 
 /**
@@ -770,7 +1166,7 @@ export function readIntakeResponse(
   // Cut short: the JSON is half an object, and parsing it would throw and be
   // reported as «the AI could not be reached» (the 4096 trap).
   if (response.stop_reason === 'max_tokens') return { ok: false, failure: 'truncated', usage };
-  const raw = response.content.find((b) => b.type === 'text')?.text ?? '';
+  const raw = textOf(response);
   let parsed: z.infer<typeof factsSchema>;
   try {
     parsed = factsSchema.parse(JSON.parse(raw));
@@ -782,17 +1178,22 @@ export function readIntakeResponse(
   return {
     ok: true,
     usage,
-    facts: {
-      fromCity: parsed.from_city,
-      toCity: parsed.to_city,
-      weightKg: parsed.weight_kg,
-      volumeM3: parsed.volume_m3,
-      // Only a figure that IS there can be netto (review PF-3).
-      ...(parsed.weight_netto === true && parsed.weight_kg !== null ? { weightNetto: true } : {}),
-      goods: parsed.goods.map(aiGoodsLine),
-    },
+    facts: factsOf(parsed),
     steps: parsed.steps.slice(0, 20),
     ...(knownCodes.length > 0 ? { knownCodes } : {}),
+  };
+}
+
+/** A whole answer's facts — or what a cut one completed of them (`salvageCut`). */
+function factsOf(p: Partial<Pick<z.infer<typeof factsSchema>, keyof typeof TOTALS>> & { goods: z.infer<typeof goodSchema>[] }): CalcFacts {
+  return {
+    fromCity: p.from_city ?? null,
+    toCity: p.to_city ?? null,
+    weightKg: p.weight_kg ?? null,
+    volumeM3: p.volume_m3 ?? null,
+    // Only a figure that IS there can be netto (review PF-3).
+    ...(p.weight_netto === true && p.weight_kg != null ? { weightNetto: true } : {}),
+    goods: p.goods.map(aiGoodsLine),
   };
 }
 
@@ -891,6 +1292,20 @@ function intakeContent(
   ask: ((index: number) => boolean) | null = null,
 ): Anthropic.ContentBlockParam[] {
   const { requestText, knownBudget } = knownBudgetAfter(request);
+  const sheetsText = sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET);
+  // The closing line is chosen by what was SENT (xlsxN-14, docs/FAYL-OQISH.md
+  // §3.7): «read the photos and documents» to a model shown neither
+  // contradicted its own input — and to the AI door's lone Excel, whose only
+  // material is the numbered list, it was no instruction at all.
+  const closing = material
+    ? `Материалы:\n${clipUnits(material, 20000)}`
+    : images.length > 0 || pdfs.length > 0
+      ? 'Текста нет — читай фото и документы.'
+      : sheetsText
+        ? 'Текста нет — читай таблицу выше.'
+        : ask
+          ? 'Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.'
+          : 'Текста нет.';
   return [
     // Images FIRST: the model reads them as context for the text that
     // follows, which is how the packing list and its caption actually relate.
@@ -910,18 +1325,24 @@ function intakeContent(
     ),
     {
       type: 'text',
-      text:
+      // `.toWellFormed()` — the one fence at the request boundary (apireq-1):
+      // a lone surrogate from any cut, or inside a file's own text, is a 400
+      // that sinks every image and PDF with it.
+      text: (
         `Раздел: ${section}\n` +
         `${NETTO_ONLY[section]}\n` +
-        (fileCount ? `Прикреплено файлов: ${fileCount}\n` : '') +
-        (images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
+        // What it was SHOWN (pdfimg-12): the attached count includes files
+        // refused at arrival or not loaded, which the model never sees.
+        (fileCount ? `Прикреплено файлов: ${fileCount}; из них тебе показано: ${images.length} фото, ${pdfs.length} PDF\n` : '') +
+        (!fileCount && images.length ? `Фотографий для чтения: ${images.length}\n` : '') +
         (pdfs.length ? `Приложены PDF: ${pdfs.map((p) => p.name).join(', ')}\n` : '') +
         // Said, never silent (round-1 review, a17; round-2, C1): a model not
         // told a table stops reads the visible rows as the whole order.
-        sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET) +
+        sheetsText +
         requestText +
         (known.length ? knownGoodsText(known, knownBudget, 'invoice', ask ? { numbered: true, ask } : {}) : '') +
-        (material ? `Материалы:\n${material.slice(0, 20000)}` : 'Текста нет — читай фото и документы.'),
+        closing
+      ).toWellFormed(),
     },
   ];
 }
@@ -937,7 +1358,7 @@ function intakeContent(
  * digits or nothing, so «6907.21» and a heading «6403» were thrown away; a
  * typed nine-digit code is noted, never padded.
  */
-export function aiGoodsLine(g: z.infer<typeof factsSchema>['goods'][number]): CalcGoodsFact {
+export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
   const notes = [g.note?.trim() || null];
   let quantity = g.quantity;
   let weightKg = g.weight_kg;

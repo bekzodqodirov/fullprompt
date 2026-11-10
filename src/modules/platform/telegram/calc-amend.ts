@@ -37,7 +37,18 @@ import {
   type EditApi,
   type PressCtx,
 } from './calc-dialog';
-import { fileOf, readIntakeFile, refusalOf, saveIntakeFile, type BotFile } from './calc-files';
+import {
+  fileOf,
+  isFileRefusal,
+  readIntakeFile,
+  refusalOf,
+  refusedFilePatch,
+  saveIntakeFile,
+  TOO_BIG_SAY,
+  TOO_BIG_WHY,
+  type BotFile,
+  type BotFileRefusal,
+} from './calc-files';
 import {
   aliasBurst,
   BURST_GONE,
@@ -903,12 +914,28 @@ async function takeParts(
     const text = (part.text ?? '').trim();
     const withText = text ? { material: [...live.material, text] } : {};
     if (part.file) {
-      const saved = await saveIntakeFile({}, live.noteId, live.staffId, part.file).catch((err: unknown) => {
+      const saved = await saveIntakeFile({}, live.noteId, live.staffId, part.file).catch((err: unknown): BotFileRefusal => {
         logger.warn({ err }, '[calc-amend] replied file save failed');
-        return null;
+        return { refused: 'download_failed' };
       });
-      // Not marked: the same press again saves it then.
-      if (!saved) {
+      // A file past Telegram's 20 MB is never handed over, so no press will
+      // save it (docs/FAYL-OQISH.md §3.4): it is said, named on the table
+      // (`refusedFiles`), and the part is TAKEN with its text — a caption's
+      // typed goods are not lost with the file. Never counted as a file.
+      if (isFileRefusal(saved) && saved.refused === 'too_big') {
+        const patch: Partial<IntakeState> = {
+          ...refusedFilePatch(live, part.name || (part.file.isPhoto ? 'rasm' : 'fayl'), TOO_BIG_WHY),
+          ...(text ? unread : {}),
+          ...withText,
+          repliedTaken: mark(live.repliedTaken, part.messageId),
+        };
+        live = updateIntake(chatId, patch) ?? { ...live, ...patch };
+        if (text) texts += 1;
+        noteOwnMessage(chatId, (await sp.reply(TOO_BIG_SAY)).message_id);
+        continue;
+      }
+      // Not marked: the same press again saves it — the file and its text.
+      if (isFileRefusal(saved)) {
         saveFailed = true;
         continue;
       }
@@ -1167,12 +1194,22 @@ export async function openAmendFromMedia(
     const withCaption = caption ? { material: [...live.material, caption] } : {};
     const file = fileOf(message);
     if (file) {
-      const saved = await saveIntakeFile({ message }, live.noteId, live.staffId, file).catch((err: unknown) => {
+      const saved = await saveIntakeFile({ message }, live.noteId, live.staffId, file).catch((err: unknown): BotFileRefusal => {
         logger.warn({ err }, '[calc-amend] replied media save failed');
-        return null;
+        return { refused: 'download_failed' };
       });
-      if (!saved) {
-        await sp.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+      if (isFileRefusal(saved)) {
+        // The caption is read on every refusal (docs/FAYL-OQISH.md §3.4) —
+        // goods typed under the file were lost with it — and a file past
+        // Telegram's 20 MB is said so and named on the table.
+        const tooBig = saved.refused === 'too_big';
+        const patch: Partial<IntakeState> = {
+          ...(tooBig ? refusedFilePatch(live, message.document?.file_name || (message.photo ? 'rasm' : 'fayl'), TOO_BIG_WHY) : {}),
+          ...(caption ? { ...unread, ...withCaption } : {}),
+        };
+        if (Object.keys(patch).length > 0) live = updateIntake(chatId, patch) ?? live;
+        await sp.reply(tooBig ? TOO_BIG_SAY : 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+        if (caption) await awaitReading(chatId, sp, live);
         return;
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);

@@ -94,6 +94,7 @@ describe('a spreadsheet is cut on a ROW, and the cut is said (review a17)', () =
     const sheet = rows(40).join('\n');
     const out = await analyzeIntake({
       section: 'rastamojka',
+      salvage: true,
       text: '',
       fileCount: 1,
       sheets: [{ text: sheet, cut: false, cellsCut: false }],
@@ -111,7 +112,7 @@ describe('a spreadsheet is cut on a ROW, and the cut is said (review a17)', () =
 describe('the Excel’s line names reach the model when the seller said «another factory» (review c4)', () => {
   it('listed, so its lines are not repeated', async () => {
     script.push({ status: 400, delayMs: 0 });
-    await analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 1, knownGoods: ['Kurtka', 'Shim'], timeoutMs: 10_000 });
+    await analyzeIntake({ section: 'rastamojka', salvage: true, text: 'Kurtka', fileCount: 1, knownGoods: ['Kurtka', 'Shim'], timeoutMs: 10_000 });
     expect(promptText()).toContain('НЕ повторяй их в goods');
     expect(promptText()).toContain('- Shim');
   });
@@ -161,6 +162,7 @@ describe('what the model is told of each spreadsheet (round-2 review, C1/C2)', (
     script.push({ status: 400, delayMs: 0 });
     await analyzeIntake({
       section: 'rastamojka',
+      salvage: true,
       text: 'Kurtka',
       fileCount: 2,
       sheets: [{ text: 'A | 1', cut: true, cellsCut: false }],
@@ -187,7 +189,7 @@ describe('no pause after the last attempt, and none past the leash (review a19)'
   it('two instant 529s answer after ONE pause, not two', async () => {
     script.push({ status: 529, delayMs: 0 }, { status: 529, delayMs: 0 });
     const started = Date.now();
-    const out = await analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 0, timeoutMs: 20_000 });
+    const out = await analyzeIntake({ section: 'rastamojka', salvage: true, text: 'Kurtka', fileCount: 0, timeoutMs: 20_000 });
     const took = Date.now() - started;
     expect(out).toEqual({ ok: false, failure: 'overloaded' });
     expect(bodies).toHaveLength(2);
@@ -197,7 +199,7 @@ describe('no pause after the last attempt, and none past the leash (review a19)'
   it('a failure late in the leash answers at once — never past the leash', async () => {
     script.push({ status: 529, delayMs: 1_600 }, { status: 529, delayMs: 0 });
     const started = Date.now();
-    const out = await analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 0, timeoutMs: 3_000 });
+    const out = await analyzeIntake({ section: 'rastamojka', salvage: true, text: 'Kurtka', fileCount: 0, timeoutMs: 3_000 });
     const took = Date.now() - started;
     expect(out).toEqual({ ok: false, failure: 'overloaded' });
     expect(bodies).toHaveLength(1);

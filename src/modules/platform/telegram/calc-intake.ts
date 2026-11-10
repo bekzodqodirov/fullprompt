@@ -1383,9 +1383,14 @@ export function fileLeftOutNote(lines: readonly LeftOutLine[]): string | null {
  * had promised it the photos, with nothing on the screen to say so. Null =
  * every file was read.
  */
-export function filesMissingNote(missing: number): string | null {
+export function filesMissingNote(missing: number, retry = false): string | null {
   if (missing <= 0) return null;
-  return `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
+  // Where the table draws «🔄» for it (the AI door's first or seeded
+  // collection, docs/FAYL-OQISH.md §2.5) the note IS the 🔄 sentence: a re-read
+  // loads the files again, a re-send doubles them for the model (pdfimg-3 b).
+  return retry
+    ? `⚠️ ${missing} ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.`
+    : `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
 }
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
@@ -1517,7 +1522,17 @@ export async function analyzeCollected(
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
   const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
   type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
-  const outcome: Outcome =
+  // A packing-shaped goods sheet keeps its own rows as text (`GoodsFileMeta.
+  // text`): beside the numbered list they let the model code a row by its
+  // specs, under the totals heading (docs/FAYL-OQISH.md §3.7, sheets-04 (3)).
+  // Read here, never stored in `invoiceTexts` — and not when a branch already
+  // put the very text there.
+  const goodsFile = state.goodsFiles?.[0] ?? null;
+  const goodsSheetText =
+    codeKnown && goodsFile?.text && !state.invoiceTexts.some((t) => t.text === goodsFile.text)
+      ? { text: goodsFile.text, cut: goodsFile.textCut ?? false, cellsCut: goodsFile.textCellsCut ?? false }
+      : null;
+  const read: Outcome =
     opts.timeoutMs !== undefined && opts.timeoutMs <= 0
       ? { ok: false, failure: 'timeout' }
       : budgetLeft <= 0
@@ -1546,13 +1561,44 @@ export async function analyzeCollected(
           ...(codeKnown ? { codeKnown: true, knownCoded: invoice.map((g) => Boolean(g.tnvedCode?.trim())) } : {}),
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
+          ...(goodsSheetText ? { goodsSheetText } : {}),
+          // A cut keeps the goods it completed, and the collection carries
+          // the cut (`aiCut`, docs/FAYL-OQISH.md §3.3): the AI door draws no
+          // «✅ Tasdiqlash» over a reading that did not finish.
+          salvage: true,
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
           ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
         });
+  // A stored file that did not load is a storage blip, which a re-read heals
+  // (docs/FAYL-OQISH.md §2.5, pdfimg-3) — never «nothing to read» under a
+  // prompt that said «📎 2 ta fayl qabul qilindi».
+  const outcome: Outcome =
+    !read.ok && read.failure === 'nothing_to_read' && files.missing > 0 ? { ...read, failure: 'files_missing' } : read;
   const ai = outcome.ok ? outcome : null;
+  // What this reading left unread, as state (docs/FAYL-OQISH.md §10): the
+  // table, the save branch, the landing and the sweep ask `aiReadingWhole`
+  // of these, never of this job's locals. Written on EVERY reading, so a whole
+  // re-read clears what a cut one left.
+  const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+  const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const sheetFit = fitSheetRows([...state.sheetTexts, ...state.invoiceTexts].map((t) => t.text.trim()), SHEET_TEXT_BUDGET);
+  const stillPdfs = new Set(state.pdfs.map((p) => p.attachmentId));
+  const unread: Pick<IntakeState, 'aiCut' | 'aiInputCut' | 'filesMissing' | 'unreadPdfs'> = {
+    aiCut: outcome.ok && outcome.cut ? outcome.cut : null,
+    // A goods sheet the model was not shown whole — the reader stopped
+    // before its end, or the shared budget kept fewer rows than it has
+    // (§1.1 f). The workbooks' other sheets are read for the totals only.
+    aiInputCut: state.sheetTexts.some(
+      (t, i) => t.text.trim() !== '' && (t.cut || (sheetFit.kept[i] ?? 0) < (sheetFit.total[i] ?? 0)),
+    ),
+    filesMissing: files.missing,
+    // Refused once, skipped by every later reading (`loadIntakeFiles`) and
+    // so still unread: the earlier ones stand beside this reading's own.
+    unreadPdfs: [...new Set([...(state.unreadPdfs ?? []), ...(outcome.unreadPdfs ?? [])])].filter((id) => stillPdfs.has(id)),
+  };
 
   // Typed facts win over read ones: the person is looking at the material.
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
@@ -1605,7 +1651,13 @@ export async function analyzeCollected(
     sameAsInvoiceNote(picked.sameAsInvoice),
     typedLeftOutNote(picked.sameAsInvoice),
     fileLeftOutNote(picked.sameAsInvoice),
-    filesMissingNote(files.missing),
+    // One sentence per fact (§2.5, critic-said-twice): a reading whose files
+    // ALL failed to load says it as its failure (`files_missing`); beside
+    // other material read, the note says it — with the «🔄» the AI door's
+    // first or seeded table draws for it (§1.2), elsewhere today's words.
+    outcome.ok || outcome.failure !== 'files_missing'
+      ? filesMissingNote(files.missing, collectionDoor(state) === 'ai' && !state.amend)
+      : null,
   ].filter((n): n is string => n !== null);
   // The model's codes for the Excel's rows, each by the index it was shown
   // with and re-checked against the row there (`withKnownCodes`) — under the
@@ -1614,14 +1666,17 @@ export async function analyzeCollected(
   if (kept) {
     const { conflictOf } = await import('../../wms/calc/amend');
     const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
-    return addReading(
-      state,
-      // A coded line that IS a stored row is that row and carries nothing
-      // onto it (`addReading` keeps the stored row); only the fresh ones keep
-      // the model's proposal.
-      { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
-      { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
-    );
+    return {
+      ...addReading(
+        state,
+        // A coded line that IS a stored row is that row and carries nothing
+        // onto it (`addReading` keeps the stored row); only the fresh ones keep
+        // the model's proposal.
+        { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
+        { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
+      ),
+      ...unread,
+    };
   }
   // A route the seller answered in the table goes above everything a reading
   // finds — unless the material AFTER the answer names another city, read
@@ -1711,6 +1766,7 @@ export async function analyzeCollected(
     // refused, unreadable) included (r1-fix typed #21), each re-read its own
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
+    ...unread,
   };
 }
 

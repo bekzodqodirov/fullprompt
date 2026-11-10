@@ -77,7 +77,17 @@ import {
   updateIntake,
   type IntakeMessage,
 } from './calc-store';
-import { readIntakeFile, refusalOf, saveBotFile, saveIntakeFile } from './calc-files';
+import {
+  isFileRefusal,
+  readIntakeFile,
+  refusalOf,
+  refusedFilePatch,
+  saveBotFile,
+  saveIntakeFile,
+  TOO_BIG_SAY,
+  TOO_BIG_WHY,
+  type BotFileRefusal,
+} from './calc-files';
 import {
   drawPromptSoon,
   editTableSoon,
@@ -758,25 +768,39 @@ export function registerStaffBot(bot: Bot): void {
     }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {
+    const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown): BotFileRefusal => {
       logger.warn({ err }, 'intake file save failed');
-      return null;
+      return { refused: 'download_failed' };
     });
-    if (!saved) {
-      // A save failure is a refusal of its own (§1.4), and the ONE prompt is
-      // drawn below it, kept last — it stood above the failed file.
-      noteOwnMessage(chatId, (await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id);
-      drawPromptSoon(ctx, chatId);
-      return;
-    }
     const caption = ctx.message.caption?.trim();
     const fileName = ctx.message.document?.file_name ?? '';
-    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
     // A file sent BEFORE the customer is named — or before the podklyuch
     // door's «qayerdan?» — is material like any other (his 1.7 b). It used to
     // be refused before the client was named, and in the zone stage it
     // skipped both questions. The question stays open.
     const waiting = state.stage === 'client' || state.stage === 'section';
+    if (isFileRefusal(saved)) {
+      // A save failure is a refusal of its own (§1.4), and the ONE prompt is
+      // drawn below it, kept last — it stood above the failed file. Its
+      // CAPTION is read all the same (docs/FAYL-OQISH.md §3.4): goods typed
+      // under a 25 MB invoice were lost with the file. A file past Telegram's
+      // limit is said so, and named on the table (`refusedFiles`) — it never
+      // counts as received.
+      const tooBig = saved.refused === 'too_big';
+      const patch: Partial<IntakeState> = {
+        ...(tooBig ? refusedFilePatch(state, fileName || (ctx.message.photo ? 'rasm' : 'fayl'), TOO_BIG_WHY) : {}),
+        ...(caption ? { material: [...state.material, caption], stage: waiting ? state.stage : 'material' } : {}),
+      };
+      if (Object.keys(patch).length > 0) updateIntake(chatId, patch);
+      noteOwnMessage(
+        chatId,
+        (await ctx.reply(tooBig ? TOO_BIG_SAY : 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id,
+      );
+      if (caption && !waiting) editTableSoon(ctx, chatId);
+      drawPromptSoon(ctx, chatId);
+      return;
+    }
+    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
     updateIntake(chatId, {
       ...read.patch,
       stage: waiting ? state.stage : 'material',
@@ -2191,7 +2215,8 @@ async function capturePart(
     logger.warn({ err }, 'note capture file save failed');
     return null;
   });
-  if (!saved) {
+  // The zametka door keeps its own words for every refusal (docs/FAYL-OQISH.md §3.4).
+  if (!saved || isFileRefusal(saved)) {
     await ctx.reply('Faylni saqlab bo‘lmadi. Qaytadan yuboring.');
     return;
   }
