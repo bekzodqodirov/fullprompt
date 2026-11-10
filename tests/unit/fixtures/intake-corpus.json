@@ -31553,6 +31553,4113 @@
    "source": "fayl-oqish P-reader-A",
    "weight": "regression",
    "note": "shape T-goods-trolley"
+  },
+  {
+   "id": "c2633",
+   "input": [
+    [
+     "YIWU HUAYANG TRADING CO., LTD"
+    ],
+    [
+     "No. 12 Chouzhou Road, Yiwu, Zhejiang"
+    ],
+    [
+     "TEL: +86 579 8512 3456  FAX: +86 579 8512 3457"
+    ],
+    [
+     "PACKING LIST"
+    ],
+    [
+     "To:",
+     "GSR LOGISTICS",
+     "Invoice No:",
+     "HY-2026-118"
+    ],
+    [
+     "Address:",
+     "Tashkent, Uzbekistan",
+     "Date:",
+     "2026-11-01"
+    ],
+    [
+     "From:",
+     "Yiwu",
+     "To:",
+     "Tashkent"
+    ],
+    [
+     "Shipping mark:",
+     "GS777"
+    ],
+    [
+     "Payment:",
+     "T/T"
+    ],
+    [],
+    [],
+    [],
+    [
+     "Description",
+     "Qty (pcs)",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     90,
+     0.8
+    ],
+    [
+     "TOTAL",
+     500,
+     255,
+     2
+    ]
+   ],
+   "expected": {
+    "headerRow": 12,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Men trousers",
+       "quantity": 200
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255,
+    "volumeM3": 2
+   },
+   "said": "a packing list with a twelve-row title block: the header on row 13 is found, its brutto and cube summed",
+   "why": "xlsx1-02",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-title12"
+  },
+  {
+   "id": "c2634",
+   "input": [
+    [
+     "Line 1 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8501"
+    ],
+    [],
+    [
+     "Line 4 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8504"
+    ],
+    [],
+    [
+     "Line 7 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8507"
+    ],
+    [],
+    [
+     "Line 10 of the letterhead"
+    ],
+    [
+     "Наименование товара",
+     "Кол-во",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "Куртка женская",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Брюки мужские",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 10,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255,
+    "volumeM3": 2
+   },
+   "said": "10 preamble rows: the header is found below row 10 (rows 10-49 are searched)",
+   "why": "xlsx1-02 verifier boundary",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-at10"
+  },
+  {
+   "id": "c2635",
+   "input": [
+    [
+     "Line 1 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8501"
+    ],
+    [],
+    [
+     "Line 4 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8504"
+    ],
+    [],
+    [
+     "Line 7 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8507"
+    ],
+    [],
+    [
+     "Line 10 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8510"
+    ],
+    [],
+    [
+     "Line 13 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8513"
+    ],
+    [],
+    [
+     "Line 16 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8516"
+    ],
+    [],
+    [
+     "Line 19 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8519"
+    ],
+    [
+     "Наименование товара",
+     "Кол-во",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "Куртка женская",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Брюки мужские",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 20,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255,
+    "volumeM3": 2
+   },
+   "said": "20 preamble rows: the header is found below row 10 (rows 10-49 are searched)",
+   "why": "xlsx1-02 verifier boundary",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-at20"
+  },
+  {
+   "id": "c2636",
+   "input": [
+    [
+     "Line 1 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8501"
+    ],
+    [],
+    [
+     "Line 4 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8504"
+    ],
+    [],
+    [
+     "Line 7 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8507"
+    ],
+    [],
+    [
+     "Line 10 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8510"
+    ],
+    [],
+    [
+     "Line 13 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8513"
+    ],
+    [],
+    [
+     "Line 16 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8516"
+    ],
+    [],
+    [
+     "Line 19 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8519"
+    ],
+    [],
+    [
+     "Line 22 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8522"
+    ],
+    [],
+    [
+     "Line 25 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8525"
+    ],
+    [],
+    [
+     "Line 28 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8528"
+    ],
+    [],
+    [
+     "Line 31 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8531"
+    ],
+    [],
+    [
+     "Line 34 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8534"
+    ],
+    [],
+    [
+     "Line 37 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8537"
+    ],
+    [],
+    [
+     "Line 40 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8540"
+    ],
+    [],
+    [
+     "Line 43 of the letterhead"
+    ],
+    [
+     "TEL:",
+     "+86 579 8543"
+    ],
+    [],
+    [
+     "Наименование товара",
+     "Кол-во",
+     "Вес брутто, кг",
+     "Объём, м3"
+    ],
+    [
+     "Куртка женская",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Брюки мужские",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 45,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255,
+    "volumeM3": 2
+   },
+   "said": "45 preamble rows: the header is found below row 10 (rows 10-49 are searched)",
+   "why": "xlsx1-02 verifier boundary",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-at45"
+  },
+  {
+   "id": "c2637",
+   "input": [
+    [
+     "HUAYANG TRADING"
+    ],
+    [
+     "PACKING LIST"
+    ],
+    [],
+    [
+     "Invoice No:",
+     "HY-118"
+    ],
+    [
+     "Date:",
+     "2026-11-01"
+    ],
+    [],
+    [
+     "Shipper:",
+     "HUAYANG TRADING"
+    ],
+    [
+     "Address:",
+     "Yiwu"
+    ],
+    [],
+    [],
+    [],
+    [
+     "Consignee name:",
+     "GSR LOGISTICS"
+    ],
+    [
+     "Contact:",
+     "Ali"
+    ],
+    [],
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 14,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Contact:",
+      "Consignee name:",
+      "Description"
+     ]
+    }
+   },
+   "said": "«Consignee name: | GSR LOGISTICS» inside a long title block is no header: a deep header must name a figure column",
+   "why": "xlsx1-02 verifier guard (b)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-party"
+  },
+  {
+   "id": "c2638",
+   "input": [
+    [
+     "Header line 0"
+    ],
+    [],
+    [
+     "Header line 2"
+    ],
+    [],
+    [
+     "Header line 4"
+    ],
+    [],
+    [
+     "Header line 6"
+    ],
+    [],
+    [
+     "Header line 8"
+    ],
+    [],
+    [
+     "Header line 10"
+    ],
+    [],
+    [
+     "Header line 12"
+    ],
+    [
+     "Description",
+     "Qty",
+     "G.W. (KG)",
+     null,
+     "CBM"
+    ],
+    [
+     null,
+     null,
+     "PER CTN",
+     "TOTAL",
+     null
+    ],
+    [
+     "Ladies jacket",
+     300,
+     16.5,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     9,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 13,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 165
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 255
+   },
+   "said": "a two-row «G.W. (KG)» over «PER CTN | TOTAL» header at row 14: composed, the TOTAL column is the line",
+   "why": "xlsx1-02 verifier (the plain search found it; the guards keep it)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-tworow13"
+  },
+  {
+   "id": "c2639",
+   "input": [
+    [
+     "ITEM",
+     "PRODUCTS",
+     "QTY"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300
+    ],
+    [
+     2,
+     "Men trousers",
+     200
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      },
+      {
+       "name": "Kids sneakers"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "«ITEM | PRODUCTS» with a serial: the products, never «1», «2», «3»",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-products"
+  },
+  {
+   "id": "c2640",
+   "input": [
+    [
+     "Item No.",
+     "Product",
+     "Qty"
+    ],
+    [
+     "LJ-2023",
+     "Ladies jacket",
+     300
+    ],
+    [
+     "MJ-1108",
+     "Men trousers",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Item No. | Product» with article numbers: the product, never «LJ-2023»",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-itemno-product"
+  },
+  {
+   "id": "c2641",
+   "input": [
+    [
+     "Product",
+     "Brand name",
+     "Qty"
+    ],
+    [
+     "Vacuum cleaner",
+     "Xiaomi",
+     10
+    ],
+    [
+     "Hair dryer",
+     "Philips",
+     20
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Vacuum cleaner"
+      },
+      {
+       "name": "Hair dryer"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product | Brand name»: the product, never the brand",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-product-brand"
+  },
+  {
+   "id": "c2642",
+   "input": [
+    [
+     "货名",
+     "品牌名称",
+     "数量"
+    ],
+    [
+     "女士夹克",
+     "优衣库",
+     300
+    ],
+    [
+     "男士裤子",
+     "李宁",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«货名 | 品牌名称»: 货名 names the goods, never the brand",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-huoming-brand"
+  },
+  {
+   "id": "c2643",
+   "input": [
+    [
+     "Commodity",
+     "Customer name",
+     "Quantity"
+    ],
+    [
+     "Ladies jacket",
+     "Ali",
+     300
+    ],
+    [
+     "Men trousers",
+     "Vali",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Commodity | Customer name»: never the customer",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-commodity-customer"
+  },
+  {
+   "id": "c2644",
+   "input": [
+    [
+     "Номенклатура",
+     "Количество",
+     "Цена",
+     "Сумма"
+    ],
+    [
+     "Куртка женская",
+     300,
+     5,
+     1500
+    ],
+    [
+     "Брюки мужские",
+     200,
+     4,
+     800
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "amount": 1500
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Номенклатура» (a 1C export) names the goods",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-nomenklatura"
+  },
+  {
+   "id": "c2645",
+   "input": [
+    [
+     "№",
+     "Наим.",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     1,
+     "Куртка женская",
+     300,
+     150
+    ],
+    [
+     2,
+     "Брюки мужские",
+     200,
+     90
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Наим.» names the goods (the last rung)",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-naim"
+  },
+  {
+   "id": "c2646",
+   "input": [
+    [
+     "Product",
+     "Qty",
+     "Unit price",
+     "Amount"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     5,
+     1500
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "amount": 1500
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Product | Qty | Unit price | Amount»: one good, read by its columns",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-product-one"
+  },
+  {
+   "id": "c2647",
+   "input": [
+    [
+     "Commodity",
+     "Quantity",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Commodity | Quantity | G.W. | CBM»: one good, read by its columns",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-commodity-gw"
+  },
+  {
+   "id": "c2648",
+   "input": [
+    [
+     "Yuk turi",
+     "Soni",
+     "Kg",
+     "Kub"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Yuk turi» names the goods (the last rung)",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-yukturi"
+  },
+  {
+   "id": "c2649",
+   "input": [
+    [
+     "货名",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     300,
+     10,
+     165,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 165,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«货名» names the goods",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-huoming"
+  },
+  {
+   "id": "c2650",
+   "input": [
+    [
+     "Product",
+     "Description",
+     "Qty"
+    ],
+    [
+     "Office chair",
+     "mesh, black",
+     10
+    ],
+    [
+     "Desk",
+     "oak, 120 cm",
+     5
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair"
+      },
+      {
+       "name": "Desk"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product | Description» with the spec in Description: the product (chosen: Product outranks Description)",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-product-desc-spec"
+  },
+  {
+   "id": "c2651",
+   "input": [
+    [
+     "Product",
+     "Description",
+     "Qty"
+    ],
+    [
+     "Chair",
+     "Office chair ergonomic X1",
+     10
+    ],
+    [
+     "Table",
+     "Desk oak 120 cm",
+     5
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Chair"
+      },
+      {
+       "name": "Table"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product | Description» with a category in Product: still Product — the coarse name is a product, a spec is none (chosen, written down)",
+   "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-product-desc-category"
+  },
+  {
+   "id": "c2652",
+   "input": [
+    [
+     "ITEM",
+     "MERCHANDISE",
+     "QTY"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300
+    ],
+    [
+     2,
+     "Men trousers",
+     200
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-merch"
+  },
+  {
+   "id": "c2653",
+   "input": [
+    [
+     "ITEM",
+     "DESIGNATION",
+     "QTY"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300
+    ],
+    [
+     2,
+     "Men trousers",
+     200
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-desig"
+  },
+  {
+   "id": "c2654",
+   "input": [
+    [
+     "ITEM",
+     "MERCHANDISE",
+     "QTY"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300
+    ],
+    [
+     2,
+     "Men trousers",
+     200
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100
+    ],
+    [
+     "TOTAL",
+     "",
+     600
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-merch-total"
+  },
+  {
+   "id": "c2655",
+   "input": [
+    [
+     "Item No.",
+     "Merchandise",
+     "Qty"
+    ],
+    [
+     "LJ-2023",
+     "Ladies jacket",
+     300
+    ],
+    [
+     "MJ-1108",
+     "Men trousers",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-itemno-merch"
+  },
+  {
+   "id": "c2656",
+   "input": [
+    [
+     "Tovar nomi:",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Soni:",
+     300
+    ],
+    [
+     "Vazni:",
+     150
+    ],
+    [
+     "TNVED:",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-uz"
+  },
+  {
+   "id": "c2657",
+   "input": [
+    [
+     "Tovar nomi",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Soni",
+     300
+    ],
+    [
+     "Vazni",
+     150
+    ],
+    [
+     "TNVED",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-uz-nocolon"
+  },
+  {
+   "id": "c2658",
+   "input": [
+    [
+     "Наименование товара",
+     "Куртка женская"
+    ],
+    [
+     "Количество",
+     300
+    ],
+    [
+     "Вес нетто",
+     150
+    ],
+    [
+     "Код ТН ВЭД",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru"
+  },
+  {
+   "id": "c2659",
+   "input": [
+    [
+     "Product name",
+     "Ladies jacket"
+    ],
+    [
+     "Quantity",
+     300
+    ],
+    [
+     "N.W.",
+     150
+    ],
+    [
+     "HS code",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-en"
+  },
+  {
+   "id": "c2660",
+   "input": [
+    [
+     "Product name:",
+     "Ladies jacket"
+    ],
+    [
+     "Quantity:",
+     300
+    ],
+    [
+     "N.W.:",
+     150
+    ],
+    [
+     "HS code:",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-en-colon"
+  },
+  {
+   "id": "c2661",
+   "input": [
+    [
+     "品名",
+     "女士夹克"
+    ],
+    [
+     "数量",
+     300
+    ],
+    [
+     "净重",
+     150
+    ],
+    [
+     "海关编码",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-zh"
+  },
+  {
+   "id": "c2662",
+   "input": [
+    [
+     "Наименование",
+     "Куртка"
+    ],
+    [
+     "Количество",
+     "300 шт"
+    ],
+    [
+     "Вес",
+     "150 кг"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru-text"
+  },
+  {
+   "id": "c2663",
+   "input": [
+    [
+     "Soni",
+     300
+    ],
+    [
+     "Tovar nomi",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Vazni",
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-name-second"
+  },
+  {
+   "id": "c2664",
+   "input": [
+    [
+     "Tovar nomi",
+     null,
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Soni",
+     null,
+     300
+    ],
+    [
+     "Vazni",
+     null,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-colC"
+  },
+  {
+   "id": "c2665",
+   "input": [
+    [
+     "Товар",
+     "Куртка женская"
+    ],
+    [
+     "Кол-во",
+     30
+    ],
+    [
+     "Вес брутто, кг",
+     150
+    ],
+    [
+     "Объём, м3",
+     1.2
+    ],
+    [
+     "ТН ВЭД",
+     "6202930000"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 30,
+       "weightKg": null,
+       "volumeM3": 1.2,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "a card with «Вес брутто, кг»: the brutto is the shipment's gross, never the line's netto",
+   "why": "reader-5.6-card: netto label only for the line weight",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru-brutto"
+  },
+  {
+   "id": "c2666",
+   "input": [
+    [
+     "Tovar nomi",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Soni",
+     300
+    ],
+    [
+     "Vazni",
+     150
+    ],
+    [
+     "Tovar nomi",
+     "Erkaklar shimi"
+    ],
+    [
+     "Soni",
+     200
+    ],
+    [
+     "Vazni",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-stacked"
+  },
+  {
+   "id": "c2667",
+   "input": [
+    [
+     "Tovar nomi",
+     "Ayollar kurtkasi",
+     null
+    ],
+    [
+     "Soni",
+     300,
+     "dona"
+    ],
+    [
+     "Vazni",
+     150,
+     "kg"
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-unitcol"
+  },
+  {
+   "id": "c2668",
+   "input": [
+    [
+     "Mijoz:",
+     "GS777"
+    ],
+    [
+     "Tovar nomi:",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Soni:",
+     300
+    ],
+    [
+     "Vazni:",
+     150
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-client"
+  },
+  {
+   "id": "c2669",
+   "input": [
+    [
+     "Product name",
+     "Hair dryer"
+    ],
+    [
+     "Model",
+     "HX-01"
+    ],
+    [
+     "Material",
+     "ABS"
+    ],
+    [
+     "Quantity",
+     50
+    ],
+    [
+     "G.W.",
+     40
+    ],
+    [
+     "HS Code",
+     "8516310000"
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-spec"
+  },
+  {
+   "id": "c2670",
+   "input": [
+    [
+     "Куртка женская",
+     300,
+     150
+    ],
+    [
+     "Брюки мужские",
+     200,
+     100
+    ],
+    [
+     "Товары для дома",
+     100,
+     50
+    ],
+    [
+     "Сумка",
+     80,
+     30
+    ],
+    [
+     "Шапка",
+     60,
+     10
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Сумка"
+      },
+      {
+       "name": "Шапка"
+      }
+     ],
+     "count": 5
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q1"
+  },
+  {
+   "id": "c2671",
+   "input": [
+    [
+     "女士夹克",
+     300,
+     150
+    ],
+    [
+     "男士裤子",
+     200,
+     100
+    ],
+    [
+     "塑料产品",
+     100,
+     50
+    ],
+    [
+     "背包",
+     80,
+     30
+    ],
+    [
+     "帽子",
+     60,
+     10
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      },
+      {
+       "name": "塑料产品"
+      },
+      {
+       "name": "背包"
+      },
+      {
+       "name": "帽子"
+      }
+     ],
+     "count": 5
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q2"
+  },
+  {
+   "id": "c2672",
+   "input": [
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ],
+    [
+     "Erkaklar shimi",
+     200,
+     100
+    ],
+    [
+     "Plastik mahsulotlar",
+     100,
+     50
+    ],
+    [
+     "Sumka",
+     80,
+     30
+    ],
+    [
+     "Shapka",
+     60,
+     10
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi"
+      },
+      {
+       "name": "Erkaklar shimi"
+      },
+      {
+       "name": "Plastik mahsulotlar"
+      },
+      {
+       "name": "Sumka"
+      },
+      {
+       "name": "Shapka"
+      }
+     ],
+     "count": 5
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q3"
+  },
+  {
+   "id": "c2673",
+   "input": [
+    [
+     "Kettle",
+     30,
+     20
+    ],
+    [
+     "Enamel mug white",
+     300,
+     60
+    ],
+    [
+     "Steel bowl",
+     100,
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kettle"
+      },
+      {
+       "name": "Enamel mug white"
+      },
+      {
+       "name": "Steel bowl"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V2"
+  },
+  {
+   "id": "c2674",
+   "input": [
+    [
+     "Куртка",
+     "300 шт",
+     "150 кг"
+    ],
+    [
+     "Товары для дома",
+     "100 шт",
+     "50 кг"
+    ],
+    [
+     "Сумка",
+     "80 шт",
+     "30 кг"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V3"
+  },
+  {
+   "id": "c2675",
+   "input": [
+    [
+     "Куртка женская",
+     300,
+     "шт",
+     150
+    ],
+    [
+     "Товары для дома",
+     100,
+     "шт",
+     50
+    ],
+    [
+     "Сумка",
+     80,
+     "шт",
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V4"
+  },
+  {
+   "id": "c2676",
+   "input": [
+    [
+     1,
+     "Куртка",
+     300,
+     150
+    ],
+    [
+     2,
+     "Товары для дома",
+     100,
+     50
+    ],
+    [
+     3,
+     "Сумка",
+     80,
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a numbered header-less list: no row is the header",
+   "why": "unmapped-product-name-as-header V9",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V9"
+  },
+  {
+   "id": "c2677",
+   "input": [
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Товары для дома"
+    ],
+    [
+     "Сумка"
+    ],
+    [
+     "Шапка"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Сумка"
+      },
+      {
+       "name": "Шапка"
+      }
+     ],
+     "count": 5
+    }
+   },
+   "said": "a one-column list of names with «Товары для дома» among them: all five, no header",
+   "why": "reader-5.7-onecell (2): a one-cell header must be a list heading or a title",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q4"
+  },
+  {
+   "id": "c2678",
+   "input": [
+    [
+     "Хозтовары"
+    ],
+    [
+     "Куртка"
+    ],
+    [
+     "Брюки"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Хозтовары"
+      },
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "«Хозтовары» over a one-column list: chosen — no heading (it opens with no list word as a whole word), it lands as the first line, which the VED can delete; a heading dropped would be a product lost",
+   "why": "reader-5.7-onecell: the answer written down",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V10"
+  },
+  {
+   "id": "c2679",
+   "input": [
+    [
+     "Company Name:",
+     "Yiwu Trading Co."
+    ],
+    [
+     "Address:",
+     "Yiwu, Zhejiang"
+    ],
+    [
+     "Tel:",
+     "+86 579 8555 1234"
+    ],
+    [
+     "Buyer:",
+     "GSR LOGISTICS"
+    ],
+    [],
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "Amount"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     1500
+    ],
+    [
+     2,
+     "Men trousers",
+     200,
+     1000
+    ],
+    [
+     3,
+     "Kids sneakers",
+     100,
+     800
+    ]
+   ],
+   "expected": {
+    "headerRow": 5,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      },
+      {
+       "name": "Kids sneakers"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "Address:",
+      "Tel:",
+      "Buyer:",
+      "No.",
+      "1"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I1"
+  },
+  {
+   "id": "c2680",
+   "input": [
+    [
+     "Company Name",
+     "Yiwu Trading Co."
+    ],
+    [
+     "Address",
+     "Yiwu, Zhejiang"
+    ],
+    [
+     "Tel",
+     "+86 579 8555 1234"
+    ],
+    [],
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "Amount"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     1500
+    ],
+    [
+     2,
+     "Men trousers",
+     200,
+     1000
+    ]
+   ],
+   "expected": {
+    "headerRow": 4,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Address",
+      "Tel",
+      "No.",
+      "1"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I1-nocolon"
+  },
+  {
+   "id": "c2681",
+   "input": [
+    [
+     "公司名称：",
+     "义乌贸易有限公司"
+    ],
+    [
+     "地址：",
+     "义乌"
+    ],
+    [
+     "电话：",
+     "0579-85551234"
+    ],
+    [
+     "买方：",
+     "GSR"
+    ],
+    [],
+    [
+     "序号",
+     "品名",
+     "数量",
+     "金额"
+    ],
+    [
+     1,
+     "女士夹克",
+     300,
+     1500
+    ],
+    [
+     2,
+     "男士裤子",
+     200,
+     1000
+    ]
+   ],
+   "expected": {
+    "headerRow": 5,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "地址：",
+      "电话：",
+      "序号",
+      "1"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape P1-zh"
+  },
+  {
+   "id": "c2682",
+   "input": [
+    [
+     "公司名称",
+     "义乌贸易有限公司"
+    ],
+    [
+     "地址",
+     "义乌"
+    ],
+    [
+     "电话",
+     "0579-85551234"
+    ],
+    [],
+    [
+     "序号",
+     "品名",
+     "数量",
+     "金额"
+    ],
+    [
+     1,
+     "女士夹克",
+     300,
+     1500
+    ],
+    [
+     2,
+     "男士裤子",
+     200,
+     1000
+    ]
+   ],
+   "expected": {
+    "headerRow": 4,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "地址",
+      "电话",
+      "序号",
+      "1"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape P1-zh-nocolon"
+  },
+  {
+   "id": "c2683",
+   "input": [
+    [
+     "Customer name:",
+     "GSR LOGISTICS"
+    ],
+    [
+     "Address:",
+     "Tashkent"
+    ],
+    [
+     "Tel:",
+     "+998 90 123 45 67"
+    ],
+    [],
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "Amount"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     1500
+    ],
+    [
+     2,
+     "Men trousers",
+     200,
+     1000
+    ]
+   ],
+   "expected": {
+    "headerRow": 4,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Address:",
+      "Tel:",
+      "No.",
+      "1"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape S2-customer"
+  },
+  {
+   "id": "c2684",
+   "input": [
+    [
+     "Product name:",
+     "Hair dryer"
+    ],
+    [
+     "Brand:",
+     "Xiaomi"
+    ],
+    [
+     "Origin:",
+     "China"
+    ],
+    [],
+    [
+     "Item",
+     "Description",
+     "Qty"
+    ],
+    [
+     "HX-01",
+     "Hair dryer 2000W",
+     50
+    ],
+    [
+     "HX-02",
+     "Hair dryer 1600W",
+     30
+    ]
+   ],
+   "expected": {
+    "headerRow": 4,
+    "goods": {
+     "rows": [
+      {
+       "name": "Hair dryer 2000W"
+      },
+      {
+       "name": "Hair dryer 1600W"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Brand:",
+      "Origin:",
+      "Item",
+      "HX-01"
+     ]
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I2"
+  },
+  {
+   "id": "c2685",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-zh-en"
+  },
+  {
+   "id": "c2686",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-en-zh"
+  },
+  {
+   "id": "c2687",
+   "input": [
+    [
+     "№",
+     "Наименование товара",
+     "Код ТН ВЭД",
+     "Кол-во",
+     "Мест",
+     "Вес брутто",
+     "Объём"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-ru-en"
+  },
+  {
+   "id": "c2688",
+   "input": [
+    [
+     "NO.",
+     "DESCRIPTION",
+     "HS CODE",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KG)",
+     "MEAS.(CBM)"
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-enunits-zh"
+  },
+  {
+   "id": "c2689",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-pagebreak"
+  },
+  {
+   "id": "c2690",
+   "input": [
+    [
+     "№",
+     "Наименование товара",
+     "Код ТН ВЭД",
+     "Кол-во",
+     "Мест",
+     "Вес брутто",
+     "Объём"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     "№",
+     "Наименование товара",
+     "Код ТН ВЭД",
+     "Кол-во",
+     "Мест",
+     "Вес брутто",
+     "Объём"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-pagebreak-ru"
+  },
+  {
+   "id": "c2691",
+   "input": [
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket",
+     "6202930000",
+     300,
+     10,
+     165,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克 Ladies jacket",
+       "quantity": 300,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 165,
+    "volumeM3": 1.2
+   },
+   "said": "ONE good under a bilingual two-row header: no «Description» line, and its supplier code is kept (the sampling skips the second header)",
+   "why": "reader-5.12-twoheader (2)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-one"
+  },
+  {
+   "id": "c2692",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket",
+     "6202930000",
+     300,
+     10,
+     165,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克 Ladies jacket",
+       "quantity": 300,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 165,
+    "volumeM3": 1.2
+   },
+   "said": "ONE good under a bilingual two-row header: no «Description» line, and its supplier code is kept (the sampling skips the second header)",
+   "why": "reader-5.12-twoheader (2)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-one-en-zh"
+  },
+  {
+   "id": "c2693",
+   "input": [
+    [
+     "№",
+     "Наименование товара",
+     "Код ТН ВЭД",
+     "Кол-во",
+     "Мест",
+     "Вес брутто",
+     "Объём"
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     1,
+     "Куртка женская",
+     "6202930000",
+     300,
+     10,
+     165,
+     1.2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 165,
+    "volumeM3": 1.2
+   },
+   "said": "ONE good under a bilingual two-row header: no «Description» line, and its supplier code is kept (the sampling skips the second header)",
+   "why": "reader-5.12-twoheader (2)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-one-ru-en"
+  },
+  {
+   "id": "c2694",
+   "input": [
+    [
+     "Customer name:",
+     "GSR LOGISTICS"
+    ],
+    [
+     "HUAYANG TRADING CO"
+    ],
+    [
+     "No. 12 Chouzhou Road"
+    ],
+    [
+     "Yiwu Zhejiang China"
+    ],
+    [
+     "PACKING LIST"
+    ],
+    [],
+    [
+     "Invoice HY-118"
+    ],
+    [],
+    [
+     "Shipping mark GS777"
+    ],
+    [],
+    [],
+    [],
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 12,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "HUAYANG TRADING CO",
+      "Description"
+     ]
+    }
+   },
+   "said": "«Customer name: | GSR LOGISTICS» over plain title lines is no header: the last name-key rung never takes a party, and the table on row 13 is found",
+   "why": "reader-5.8-colon: «the rung at :780 never takes a NAME_PARTY head» (isolates that rule: the title lines are no labels)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-customer-top"
+  },
+  {
+   "id": "c2695",
+   "input": [
+    [
+     "Company Name",
+     "Yiwu Trading Co."
+    ],
+    [
+     "Yiwu Zhejiang China"
+    ],
+    [
+     "www.yiwu-trading.com"
+    ],
+    [],
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "Amount"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     1500
+    ],
+    [
+     2,
+     "Men trousers",
+     200,
+     1000
+    ]
+   ],
+   "expected": {
+    "headerRow": 4,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Yiwu Zhejiang China",
+      "No.",
+      "1"
+     ]
+    }
+   },
+   "said": "«Company Name | Yiwu Trading Co.» over lines that are no labels: the table that maps the most columns is the header",
+   "why": "unmapped-letterhead verifier (a), best-of-ten (isolates it: no label data under the letterhead)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-letterhead-plain"
+  },
+  {
+   "id": "c2696",
+   "input": [
+    [
+     "Product name",
+     "Hair dryer"
+    ],
+    [
+     "Model",
+     "HX-01"
+    ],
+    [
+     "Material",
+     "ABS plastic"
+    ],
+    [
+     "Color",
+     "white"
+    ],
+    [
+     "Origin",
+     "China"
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a one-good spec card whose values are words («Model | HX-01», «Material | ABS plastic»): its field labels are no goods, the model reads it",
+   "why": "reader-5.6-card (b) / reader-5.8 label data (isolates it: no figure under the value)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-spec-words"
+  },
+  {
+   "id": "c2697",
+   "input": [
+    [
+     "Tovar nomi",
+     "Ayollar kurtkasi"
+    ],
+    [
+     "Jami dona",
+     300
+    ],
+    [
+     "Og'irlik kg",
+     150
+    ]
+   ],
+   "expected": {
+    "headerRow": null
+   },
+   "said": "a card whose labels are no known field («Jami dona», «Og‘irlik kg») over figures: «Tovar nomi | Ayollar kurtkasi» is no header — the other cell is a value, the model reads the card",
+   "why": "reader-5.6-card (a) (isolates it: (b) sees no label it knows)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-unknown-labels"
+  },
+  {
+   "id": "c2698",
+   "input": [
+    [
+     "Product Name",
+     "Remarks",
+     "Qty"
+    ],
+    [
+     "RTX-4090",
+     "with fan",
+     2
+    ],
+    [
+     "GTX-1660",
+     "used box",
+     3
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "RTX-4090",
+       "quantity": 2
+      },
+      {
+       "name": "GTX-1660"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Product Name» over model numbers beside a «Remarks» column of words: the model number is the product — the article guard is the «item» header's alone",
+   "why": "§5.3 article guard scope (the fourth review: a model number is no word, but it is the product)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "regression",
+   "note": "shape X-productname-remarks"
+  },
+  {
+   "id": "c2699",
+   "input": [
+    [
+     "HUAYANG TRADING"
+    ],
+    [
+     "PACKING LIST"
+    ],
+    [],
+    [
+     "Invoice No:",
+     "HY-118"
+    ],
+    [
+     "Date:",
+     "2026-11-01"
+    ],
+    [],
+    [
+     "Shipper:",
+     "HUAYANG TRADING"
+    ],
+    [
+     "Address:",
+     "Yiwu"
+    ],
+    [],
+    [],
+    [],
+    [
+     "Company name:",
+     "GSR LOGISTICS"
+    ],
+    [
+     "Contact:",
+     "Ali"
+    ],
+    [],
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 14,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Contact:",
+      "Description"
+     ]
+    }
+   },
+   "said": "«Company name: | GSR LOGISTICS» at row 12 of a long title block (no party word, no label data under it) is no header: a header found below row 10 names a figure column",
+   "why": "xlsx1-02 verifier guard (b) (isolates it: the party rung does not see «company»)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-company-deep"
+  },
+  {
+   "id": "c2700",
+   "input": [
+    [
+     "Customer name:",
+     "GSR LOGISTICS",
+     "Tel:",
+     "+998 90 123 45 67"
+    ],
+    [
+     "HUAYANG TRADING CO"
+    ],
+    [
+     "No. 12 Chouzhou Road"
+    ],
+    [
+     "Yiwu Zhejiang China"
+    ],
+    [
+     "PACKING LIST"
+    ],
+    [],
+    [
+     "Invoice HY-118"
+    ],
+    [],
+    [
+     "Shipping mark GS777"
+    ],
+    [],
+    [],
+    [],
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     165,
+     1.2
+    ],
+    [
+     "Men trousers",
+     200,
+     90,
+     0.8
+    ]
+   ],
+   "expected": {
+    "headerRow": 12,
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "HUAYANG TRADING CO",
+      "Description"
+     ]
+    }
+   },
+   "said": "«Customer name: | GSR LOGISTICS | Tel: | …» on the first row is no header: the last name-key rung never takes a party, and the table on row 13 is found",
+   "why": "reader-5.8-colon: the :780 rung and NAME_PARTY (isolates it: two other cells, no card refusal)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-customer-tel"
   }
  ],
  "parseGoodsLineCases": [
@@ -61658,6 +65765,2745 @@
    "source": "fayl-oqish P-reader-A",
    "weight": "regression",
    "note": "shape V8, one xlsx sheet"
+  },
+  {
+   "id": "c2710",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "YIWU HUAYANG TRADING CO., LTD"
+       ],
+       [
+        "No. 12 Chouzhou Road, Yiwu, Zhejiang"
+       ],
+       [
+        "TEL: +86 579 8512 3456  FAX: +86 579 8512 3457"
+       ],
+       [
+        "PACKING LIST"
+       ],
+       [
+        "To:",
+        "GSR LOGISTICS",
+        "Invoice No:",
+        "HY-2026-118"
+       ],
+       [
+        "Address:",
+        "Tashkent, Uzbekistan",
+        "Date:",
+        "2026-11-01"
+       ],
+       [
+        "From:",
+        "Yiwu",
+        "To:",
+        "Tashkent"
+       ],
+       [
+        "Shipping mark:",
+        "GS777"
+       ],
+       [
+        "Payment:",
+        "T/T"
+       ],
+       [],
+       [],
+       [],
+       [
+        "Description",
+        "Qty (pcs)",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "Ladies jacket",
+        300,
+        165,
+        1.2
+       ],
+       [
+        "Men trousers",
+        200,
+        90,
+        0.8
+       ],
+       [
+        "TOTAL",
+        500,
+        255,
+        2
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 2
+    },
+    "replyIncludes": [
+     "📄 «file.xlsx» — 2 ta tovar o‘qildi"
+    ],
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "a packing list with a twelve-row title block: the header on row 13 is found, its brutto and cube summed",
+   "why": "xlsx1-02",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape D-title12, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2711",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "ITEM",
+        "MERCHANDISE",
+        "QTY"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300
+       ],
+       [
+        2,
+        "Men trousers",
+        200
+       ],
+       [
+        3,
+        "Kids sneakers",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ladies jacket",
+     "Men trousers"
+    ],
+    "replyIncludes": [
+     "jadval sarlavhasini topa olmadim"
+    ],
+    "replyExcludes": [
+     "ta tovar o‘qildi"
+    ]
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-merch, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2712",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "ITEM",
+        "DESIGNATION",
+        "QTY"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300
+       ],
+       [
+        2,
+        "Men trousers",
+        200
+       ],
+       [
+        3,
+        "Kids sneakers",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ladies jacket",
+     "Men trousers"
+    ]
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-desig, one xlsx sheet"
+  },
+  {
+   "id": "c2713",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "ITEM",
+        "MERCHANDISE",
+        "QTY"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300
+       ],
+       [
+        2,
+        "Men trousers",
+        200
+       ],
+       [
+        3,
+        "Kids sneakers",
+        100
+       ],
+       [
+        "TOTAL",
+        "",
+        600
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ladies jacket",
+     "Men trousers"
+    ]
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-item-merch-total, one xlsx sheet"
+  },
+  {
+   "id": "c2714",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Item No.",
+        "Merchandise",
+        "Qty"
+       ],
+       [
+        "LJ-2023",
+        "Ladies jacket",
+        300
+       ],
+       [
+        "MJ-1108",
+        "Men trousers",
+        200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ladies jacket",
+     "Men trousers"
+    ]
+   },
+   "said": "a serial / article ITEM column beside an unknown name header is no name: the sheet goes to the model whole",
+   "why": "xlsxN-06 verifier fileB",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape L-itemno-merch, one xlsx sheet"
+  },
+  {
+   "id": "c2715",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi:",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Soni:",
+        300
+       ],
+       [
+        "Vazni:",
+        150
+       ],
+       [
+        "TNVED:",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    },
+    "replyIncludes": [
+     "1 ta tovar o‘qildi"
+    ]
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-uz, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2716",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Soni",
+        300
+       ],
+       [
+        "Vazni",
+        150
+       ],
+       [
+        "TNVED",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-uz-nocolon, one xlsx sheet"
+  },
+  {
+   "id": "c2717",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование товара",
+        "Куртка женская"
+       ],
+       [
+        "Количество",
+        300
+       ],
+       [
+        "Вес нетто",
+        150
+       ],
+       [
+        "Код ТН ВЭД",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru, one xlsx sheet"
+  },
+  {
+   "id": "c2718",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Product name",
+        "Ladies jacket"
+       ],
+       [
+        "Quantity",
+        300
+       ],
+       [
+        "N.W.",
+        150
+       ],
+       [
+        "HS code",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-en, one xlsx sheet"
+  },
+  {
+   "id": "c2719",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Product name:",
+        "Ladies jacket"
+       ],
+       [
+        "Quantity:",
+        300
+       ],
+       [
+        "N.W.:",
+        150
+       ],
+       [
+        "HS code:",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-en-colon, one xlsx sheet"
+  },
+  {
+   "id": "c2720",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "品名",
+        "女士夹克"
+       ],
+       [
+        "数量",
+        300
+       ],
+       [
+        "净重",
+        150
+       ],
+       [
+        "海关编码",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150,
+       "tnvedCode": "6202930000"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-zh, one xlsx sheet"
+  },
+  {
+   "id": "c2721",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Куртка"
+       ],
+       [
+        "Количество",
+        "300 шт"
+       ],
+       [
+        "Вес",
+        "150 кг"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru-text, one xlsx sheet"
+  },
+  {
+   "id": "c2722",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Soni",
+        300
+       ],
+       [
+        "Tovar nomi",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Vazni",
+        150
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-name-second, one xlsx sheet"
+  },
+  {
+   "id": "c2723",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        null,
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Soni",
+        null,
+        300
+       ],
+       [
+        "Vazni",
+        null,
+        150
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a two-column label|value card of ONE good, every label a known field: the good, read deterministically",
+   "why": "xlsx1-07 / unmapped-vertical-card / reader-5.6-card (the transpose extra)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-colC, one xlsx sheet"
+  },
+  {
+   "id": "c2724",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Товар",
+        "Куртка женская"
+       ],
+       [
+        "Кол-во",
+        30
+       ],
+       [
+        "Вес брутто, кг",
+        150
+       ],
+       [
+        "Объём, м3",
+        1.2
+       ],
+       [
+        "ТН ВЭД",
+        "6202930000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a card with «Вес брутто, кг»: the brutto is the shipment's gross, never the line's netto",
+   "why": "reader-5.6-card: netto label only for the line weight",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-ru-brutto, one xlsx sheet"
+  },
+  {
+   "id": "c2725",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Soni",
+        300
+       ],
+       [
+        "Vazni",
+        150
+       ],
+       [
+        "Tovar nomi",
+        "Erkaklar shimi"
+       ],
+       [
+        "Soni",
+        200
+       ],
+       [
+        "Vazni",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ayollar kurtkasi",
+     "Erkaklar shimi"
+    ]
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-stacked, one xlsx sheet"
+  },
+  {
+   "id": "c2726",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Ayollar kurtkasi",
+        null
+       ],
+       [
+        "Soni",
+        300,
+        "dona"
+       ],
+       [
+        "Vazni",
+        150,
+        "kg"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ayollar kurtkasi"
+    ]
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-unitcol, one xlsx sheet"
+  },
+  {
+   "id": "c2727",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Mijoz:",
+        "GS777"
+       ],
+       [
+        "Tovar nomi:",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Soni:",
+        300
+       ],
+       [
+        "Vazni:",
+        150
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ayollar kurtkasi",
+     "GS777"
+    ]
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-client, one xlsx sheet"
+  },
+  {
+   "id": "c2728",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Product name",
+        "Hair dryer"
+       ],
+       [
+        "Model",
+        "HX-01"
+       ],
+       [
+        "Material",
+        "ABS"
+       ],
+       [
+        "Quantity",
+        50
+       ],
+       [
+        "G.W.",
+        40
+       ],
+       [
+        "HS Code",
+        "8516310000"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Hair dryer",
+     "HX-01",
+     "8516310000"
+    ]
+   },
+   "said": "a card the transpose does not take (two goods, a unit column, a client line, spec lines) is no table: the model reads it whole",
+   "why": "reader-5.6-card: the refusal inside findHeader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape K-spec, one xlsx sheet"
+  },
+  {
+   "id": "c2729",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка женская",
+        300,
+        150
+       ],
+       [
+        "Брюки мужские",
+        200,
+        100
+       ],
+       [
+        "Товары для дома",
+        100,
+        50
+       ],
+       [
+        "Сумка",
+        80,
+        30
+       ],
+       [
+        "Шапка",
+        60,
+        10
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка женская",
+     "Брюки мужские",
+     "Товары для дома",
+     "Сумка",
+     "Шапка"
+    ],
+    "replyIncludes": [
+     "jadval sarlavhasini topa olmadim"
+    ],
+    "replyExcludes": [
+     "ta tovar o‘qildi"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q1, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2730",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "女士夹克",
+        300,
+        150
+       ],
+       [
+        "男士裤子",
+        200,
+        100
+       ],
+       [
+        "塑料产品",
+        100,
+        50
+       ],
+       [
+        "背包",
+        80,
+        30
+       ],
+       [
+        "帽子",
+        60,
+        10
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "女士夹克",
+     "男士裤子",
+     "塑料产品",
+     "背包",
+     "帽子"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q2, one xlsx sheet"
+  },
+  {
+   "id": "c2731",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Ayollar kurtkasi",
+        300,
+        150
+       ],
+       [
+        "Erkaklar shimi",
+        200,
+        100
+       ],
+       [
+        "Plastik mahsulotlar",
+        100,
+        50
+       ],
+       [
+        "Sumka",
+        80,
+        30
+       ],
+       [
+        "Shapka",
+        60,
+        10
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ayollar kurtkasi",
+     "Erkaklar shimi",
+     "Plastik mahsulotlar",
+     "Sumka",
+     "Shapka"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape Q3, one xlsx sheet"
+  },
+  {
+   "id": "c2732",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Kettle",
+        30,
+        20
+       ],
+       [
+        "Enamel mug white",
+        300,
+        60
+       ],
+       [
+        "Steel bowl",
+        100,
+        30
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Kettle",
+     "Enamel mug white",
+     "Steel bowl"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V2, one xlsx sheet"
+  },
+  {
+   "id": "c2733",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка",
+        "300 шт",
+        "150 кг"
+       ],
+       [
+        "Товары для дома",
+        "100 шт",
+        "50 кг"
+       ],
+       [
+        "Сумка",
+        "80 шт",
+        "30 кг"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка",
+     "Товары для дома",
+     "Сумка"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V3, one xlsx sheet"
+  },
+  {
+   "id": "c2734",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Куртка женская",
+        300,
+        "шт",
+        150
+       ],
+       [
+        "Товары для дома",
+        100,
+        "шт",
+        50
+       ],
+       [
+        "Сумка",
+        80,
+        "шт",
+        30
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка женская",
+     "Товары для дома",
+     "Сумка"
+    ]
+   },
+   "said": "a data row whose name carries a goods word and whose other cells are figures is data, never the header: every line reaches the model",
+   "why": "unmapped-product-name-as-header (1)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V4, one xlsx sheet"
+  },
+  {
+   "id": "c2735",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        1,
+        "Куртка",
+        300,
+        150
+       ],
+       [
+        2,
+        "Товары для дома",
+        100,
+        50
+       ],
+       [
+        3,
+        "Сумка",
+        80,
+        30
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка",
+     "Товары для дома",
+     "Сумка"
+    ]
+   },
+   "said": "a numbered header-less list: no row is the header",
+   "why": "unmapped-product-name-as-header V9",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape V9, one xlsx sheet"
+  },
+  {
+   "id": "c2736",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Company Name:",
+        "Yiwu Trading Co."
+       ],
+       [
+        "Address:",
+        "Yiwu, Zhejiang"
+       ],
+       [
+        "Tel:",
+        "+86 579 8555 1234"
+       ],
+       [
+        "Buyer:",
+        "GSR LOGISTICS"
+       ],
+       [],
+       [
+        "No.",
+        "Description",
+        "Qty",
+        "Amount"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300,
+        1500
+       ],
+       [
+        2,
+        "Men trousers",
+        200,
+        1000
+       ],
+       [
+        3,
+        "Kids sneakers",
+        100,
+        800
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      },
+      {
+       "name": "Kids sneakers"
+      }
+     ],
+     "count": 3
+    },
+    "replyIncludes": [
+     "3 ta tovar o‘qildi"
+    ]
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I1, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2737",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Company Name",
+        "Yiwu Trading Co."
+       ],
+       [
+        "Address",
+        "Yiwu, Zhejiang"
+       ],
+       [
+        "Tel",
+        "+86 579 8555 1234"
+       ],
+       [],
+       [
+        "No.",
+        "Description",
+        "Qty",
+        "Amount"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300,
+        1500
+       ],
+       [
+        2,
+        "Men trousers",
+        200,
+        1000
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I1-nocolon, one xlsx sheet"
+  },
+  {
+   "id": "c2738",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "公司名称：",
+        "义乌贸易有限公司"
+       ],
+       [
+        "地址：",
+        "义乌"
+       ],
+       [
+        "电话：",
+        "0579-85551234"
+       ],
+       [
+        "买方：",
+        "GSR"
+       ],
+       [],
+       [
+        "序号",
+        "品名",
+        "数量",
+        "金额"
+       ],
+       [
+        1,
+        "女士夹克",
+        300,
+        1500
+       ],
+       [
+        2,
+        "男士裤子",
+        200,
+        1000
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape P1-zh, one xlsx sheet"
+  },
+  {
+   "id": "c2739",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "公司名称",
+        "义乌贸易有限公司"
+       ],
+       [
+        "地址",
+        "义乌"
+       ],
+       [
+        "电话",
+        "0579-85551234"
+       ],
+       [],
+       [
+        "序号",
+        "品名",
+        "数量",
+        "金额"
+       ],
+       [
+        1,
+        "女士夹克",
+        300,
+        1500
+       ],
+       [
+        2,
+        "男士裤子",
+        200,
+        1000
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      },
+      {
+       "name": "男士裤子"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape P1-zh-nocolon, one xlsx sheet"
+  },
+  {
+   "id": "c2740",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Customer name:",
+        "GSR LOGISTICS"
+       ],
+       [
+        "Address:",
+        "Tashkent"
+       ],
+       [
+        "Tel:",
+        "+998 90 123 45 67"
+       ],
+       [],
+       [
+        "No.",
+        "Description",
+        "Qty",
+        "Amount"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        300,
+        1500
+       ],
+       [
+        2,
+        "Men trousers",
+        200,
+        1000
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men trousers"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape S2-customer, one xlsx sheet"
+  },
+  {
+   "id": "c2741",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Product name:",
+        "Hair dryer"
+       ],
+       [
+        "Brand:",
+        "Xiaomi"
+       ],
+       [
+        "Origin:",
+        "China"
+       ],
+       [],
+       [
+        "Item",
+        "Description",
+        "Qty"
+       ],
+       [
+        "HX-01",
+        "Hair dryer 2000W",
+        50
+       ],
+       [
+        "HX-02",
+        "Hair dryer 1600W",
+        30
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Hair dryer 2000W"
+      },
+      {
+       "name": "Hair dryer 1600W"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a letterhead label row («Company Name», «公司名称», «Customer name», «Product name:») is no header: the table that maps the most columns is",
+   "why": "unmapped-letterhead-false-header / reader-5.8-colon (best-of-ten, the party rung, label data)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape I2, one xlsx sheet"
+  },
+  {
+   "id": "c2742",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "序号",
+        "品名",
+        "海关编码",
+        "数量",
+        "箱数",
+        "毛重",
+        "体积"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    },
+    "replyIncludes": [
+     "12 ta tovar o‘qildi"
+    ]
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-zh-en, one xlsx sheet · the bot's file reply (readIntakeFile) asserted too"
+  },
+  {
+   "id": "c2743",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        "序号",
+        "品名",
+        "海关编码",
+        "数量",
+        "箱数",
+        "毛重",
+        "体积"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    }
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-en-zh, one xlsx sheet"
+  },
+  {
+   "id": "c2744",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "№",
+        "Наименование товара",
+        "Код ТН ВЭД",
+        "Кол-во",
+        "Мест",
+        "Вес брутто",
+        "Объём"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    }
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-ru-en, one xlsx sheet"
+  },
+  {
+   "id": "c2745",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "NO.",
+        "DESCRIPTION",
+        "HS CODE",
+        "QTY(PCS)",
+        "CTNS",
+        "G.W.(KG)",
+        "MEAS.(CBM)"
+       ],
+       [
+        "序号",
+        "品名",
+        "海关编码",
+        "数量",
+        "箱数",
+        "毛重",
+        "体积"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    }
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-enunits-zh, one xlsx sheet"
+  },
+  {
+   "id": "c2746",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "序号",
+        "品名",
+        "海关编码",
+        "数量",
+        "箱数",
+        "毛重",
+        "体积"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        "序号",
+        "品名",
+        "海关编码",
+        "数量",
+        "箱数",
+        "毛重",
+        "体积"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    }
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-pagebreak, one xlsx sheet"
+  },
+  {
+   "id": "c2747",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "№",
+        "Наименование товара",
+        "Код ТН ВЭД",
+        "Кол-во",
+        "Мест",
+        "Вес брутто",
+        "Объём"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        1,
+        "女士夹克 Ladies jacket 1",
+        "6202930000",
+        100,
+        10,
+        120,
+        1.1
+       ],
+       [
+        2,
+        "女士夹克 Ladies jacket 2",
+        "6202930000",
+        101,
+        10,
+        130,
+        1.2
+       ],
+       [
+        3,
+        "女士夹克 Ladies jacket 3",
+        "6202930000",
+        102,
+        10,
+        140,
+        1.15
+       ],
+       [
+        4,
+        "女士夹克 Ladies jacket 4",
+        "6202930000",
+        103,
+        10,
+        125,
+        1.1
+       ],
+       [
+        5,
+        "女士夹克 Ladies jacket 5",
+        "6202930000",
+        104,
+        10,
+        135,
+        1.05
+       ],
+       [
+        6,
+        "女士夹克 Ladies jacket 6",
+        "6202930000",
+        105,
+        10,
+        128,
+        1.12
+       ],
+       [
+        "№",
+        "Наименование товара",
+        "Код ТН ВЭД",
+        "Кол-во",
+        "Мест",
+        "Вес брутто",
+        "Объём"
+       ],
+       [
+        "No.",
+        "Description",
+        "HS Code",
+        "Qty",
+        "Ctns",
+        "G.W.",
+        "CBM"
+       ],
+       [
+        7,
+        "女士夹克 Ladies jacket 7",
+        "6202930000",
+        106,
+        10,
+        132,
+        1.13
+       ],
+       [
+        8,
+        "女士夹克 Ladies jacket 8",
+        "6202930000",
+        107,
+        10,
+        126,
+        1.1
+       ],
+       [
+        9,
+        "女士夹克 Ladies jacket 9",
+        "6202930000",
+        108,
+        10,
+        134,
+        1.14
+       ],
+       [
+        10,
+        "女士夹克 Ladies jacket 10",
+        "6202930000",
+        109,
+        10,
+        138,
+        1.16
+       ],
+       [
+        11,
+        "女士夹克 Ladies jacket 11",
+        "6202930000",
+        110,
+        10,
+        142,
+        1.11
+       ],
+       [
+        12,
+        "女士夹克 Ladies jacket 12",
+        "6202930000",
+        111,
+        10,
+        142,
+        1.22
+       ],
+       [
+        "TOTAL",
+        "",
+        "",
+        1266,
+        120,
+        1592,
+        13.58
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "count": 12
+    }
+   },
+   "said": "a bilingual header on two unmerged rows (or repeated at a page break): the second row is a header, its brutto and cube summed",
+   "why": "xlsxN-10 / reader-5.12-twoheader",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape T-pagebreak-ru, one xlsx sheet"
+  },
+  {
+   "id": "c2748",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Product name",
+        "Hair dryer"
+       ],
+       [
+        "Model",
+        "HX-01"
+       ],
+       [
+        "Material",
+        "ABS plastic"
+       ],
+       [
+        "Color",
+        "white"
+       ],
+       [
+        "Origin",
+        "China"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Hair dryer",
+     "ABS plastic"
+    ]
+   },
+   "said": "a one-good spec card whose values are words («Model | HX-01», «Material | ABS plastic»): its field labels are no goods, the model reads it",
+   "why": "reader-5.6-card (b) / reader-5.8 label data (isolates it: no figure under the value)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-spec-words, one xlsx sheet"
+  },
+  {
+   "id": "c2749",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Ayollar kurtkasi"
+       ],
+       [
+        "Jami dona",
+        300
+       ],
+       [
+        "Og'irlik kg",
+        150
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Ayollar kurtkasi",
+     "300",
+     "150"
+    ]
+   },
+   "said": "a card whose labels are no known field («Jami dona», «Og‘irlik kg») over figures: «Tovar nomi | Ayollar kurtkasi» is no header — the other cell is a value, the model reads the card",
+   "why": "reader-5.6-card (a) (isolates it: (b) sees no label it knows)",
+   "source": "fayl-oqish P-reader-A",
+   "weight": "defect",
+   "note": "shape X-unknown-labels, one xlsx sheet"
   }
  ],
  "isArticleNumberCases": [

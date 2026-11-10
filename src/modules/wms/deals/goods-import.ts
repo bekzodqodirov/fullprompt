@@ -1,3 +1,4 @@
+import { clipUnits } from '../../platform/text/clip';
 import { readNumberCell } from '../calc/number-cell';
 import { normalizeTnved, unitOf } from '../calc/units';
 
@@ -151,7 +152,7 @@ export interface SheetShape {
 }
 
 /** Substring keywords per column, lowercased — ru/uz/zh/en, the four the clients actually write. */
-const NAME_KEYS = ['наимен', 'товар', 'описан', 'назван', 'nomi', 'mahsulot', 'tovar', 'name', 'descri', 'goods', 'item', '品名', '名称', '货物', '商品', '产品'];
+const NAME_KEYS = ['наимен', 'товар', 'описан', 'назван', 'nomi', 'mahsulot', 'tovar', 'name', 'descri', 'goods', 'item', '品名', '货名', '名称', '货物', '商品', '产品'];
 /**
  * The keys tried first: every name key but «item» (2026-10-21, the diagnosis'
  * cause 1 — «Item No.» took the name column from «Description» two cells
@@ -161,6 +162,21 @@ const NAME_KEYS = ['наимен', 'товар', 'описан', 'назван',
  * the fabric spec became the product (the review).
  */
 const NAME_KEYS_FIRST = NAME_KEYS.filter((key) => key !== 'item');
+/**
+ * A header that names the PRODUCT with a word no key holds — «Product»,
+ * «PRODUCTS», «Commodity», a 1C export's «Номенклатура» (FAYL-OQISH §5.2,
+ * xlsxN-06 variant C). Never name keys: a key feeds every rung, and a
+ * «Product» category to the left of «Name» took the name from it (c1936).
+ * Asked on its own rung, right after the first and only by `namesTheProduct`
+ * («Product colour», «Product No.», «Product category» name something else).
+ */
+const PRODUCT_KEYS = ['product', 'commodit', 'номенклат'];
+/**
+ * …and the last resort: «Наим.» (the abbreviation) and «Yuk turi» (the
+ * cargo's kind, Uzbek) — never a bare «yuk»: «Yuk egasi» is the owner and
+ * «Yuk og‘irligi» a weight (xlsx1-03's verifier).
+ */
+const LAST_NAME_KEYS = ['наим', 'yuk turi'];
 /**
  * A header that carries a name key and names something ELSE (S5, the second
  * review): «Код товара», «Артикул товара», «Товарный знак», «Tovar kodi»,
@@ -225,7 +241,7 @@ const namesTheGoods = (header: string): boolean => {
  */
 const NAMING_WORD =
   /^(?:наимен|назван|номенклатур|товар|продук|маҳсулот|махсулот|номи$|номлари$|tovar|mahsulot|nomi$|nomlari$|name|goods$|product|item|commodit|of$|груз(?:а|ы|ов)?$|cargo(?:e?s)?$|yuk(?:lar)?(?:ning)?$|юк(?:лар)?(?:нинг)?$)/;
-const NAMING_HAN = ['品名', '名称', '商品', '货物', '产品', '货品'];
+const NAMING_HAN = ['品名', '名称', '商品', '货物', '产品', '货品', '货名'];
 /** Which name — its language, its length, its customs — said beside a naming word and never naming one. */
 const WHICH_NAME =
   /^(?:the|a|an|на|по|in|рус(?:ск\p{L}*)?|англ(?:ийск\p{L}*)?|китайск\p{L}*|узбекск\p{L}*|russian|english|chinese|uzbek|ru|en|zh|cn|uz|eng|rus|chn|язык\p{L}*|ruscha|inglizcha|xitoycha|o'zbekcha|tilida|tilidagi|русча|инглизча|хитойча|ўзбекча|тилида|тилидаги|полн\p{L}*|кратк\p{L}*|таможенн\p{L}*|официальн\p{L}*|full|short|customs|declared|official)$/u;
@@ -245,6 +261,11 @@ const namesTheProduct = (header: string): boolean => {
     const naming = (word: string) => NAMING_WORD.test(word) || hanRunOf(word.replace(WHICH_NAME_HAN, ''), NAMING_HAN);
     return words.some(naming) && words.every((word) => naming(word) || WHICH_NAME.test(word));
   });
+};
+/** The last rung's header: a `LAST_NAME_KEYS` head that names no party and no attribute. */
+const lastNames = (header: string): boolean => {
+  const head = header.split(/[(,;]/)[0] ?? '';
+  return !NAME_PARTY.test(head) && !NAME_ATTRIBUTE.test(head) && matchKey(head, LAST_NAME_KEYS);
 };
 /**
  * The TNVED / HS column (judge MR-19). Never a bare «hs» or «kod»: header
@@ -385,6 +406,88 @@ const TOTAL_ROW_KEYS = ['итого', 'всего', 'подытог', 'jami', 't
  */
 const SUBTOTAL_HAN = /^(?:小计|小計|共计|共計|合計|總計)(?!\p{Script=Han})/u;
 const isTotalRow = (text: string): boolean => matchKey(text, TOTAL_ROW_KEYS) || SUBTOTAL_HAN.test(text.trim());
+
+/**
+ * What a whole cell LABELS, when it is nothing but a field's name — the left
+ * column of a label|value card («Soni: | 300», «Вес брутто, кг | 150», «HS
+ * code | 6202930000») and of a letterhead («Address: | Yiwu», «电话 | …»).
+ * An EXACT vocabulary, never `matchKey`: as a substring «вес» is inside
+ * «Весы напольные» and «куб» inside «Кубик Рубика», and a real list of scales
+ * would read as a card (xlsx1-07's verifier, c2619). The cell is judged
+ * without its trailing colon and the unit it names («(kg)», «, м3»), must
+ * carry no digit and at most three words (reader-5.6-card).
+ */
+type FieldKind = 'name' | 'count' | 'unit' | 'net' | 'weight' | 'gross' | 'volume' | 'tnved' | 'price' | 'total' | 'other';
+const FIELD_WORDS: Record<FieldKind, string[]> = {
+  name: [
+    'tovar', 'tovar nomi', 'tovarning nomi', 'mahsulot', 'mahsulot nomi', 'nomi', 'товар номи', 'маҳсулот', 'махсулот',
+    'наименование', 'наименование товара', 'наименование продукции', 'товар', 'название', 'название товара', 'описание',
+    'описание товара', 'номенклатура', 'product', 'product name', 'name', 'goods', 'description', 'description of goods',
+    'item', 'item name', 'commodity', '品名', '名称', '商品', '商品名称', '产品', '产品名称', '货名', '货物', '货物名称',
+  ],
+  count: [
+    'soni', 'miqdori', 'miqdor', 'dona', 'количество', 'кол-во', 'кол.', 'колич', 'qty', 'quantity', 'pcs', 'pieces',
+    'total qty', 'total quantity', '数量', '件数',
+  ],
+  unit: ['birlik', "o'lchov birligi", 'ед. изм.', 'ед.изм.', 'ед изм', 'ед. изм', 'единица', 'единица измерения', 'unit', 'units', '单位'],
+  net: [
+    'netto', 'нетто', 'вес нетто', 'масса нетто', 'net weight', 'n.w.', 'n.w', 'nw', 'net wt', '净重',
+    "sof og'irligi", "sof og'irlik", 'sof vazni', 'sof vazn',
+  ],
+  weight: ['vazni', 'vazn', "og'irligi", "og'irlik", 'ogirligi', 'ogirlik', 'вес', 'масса', 'weight', '重量'],
+  gross: [
+    'brutto', 'брутто', 'вес брутто', 'масса брутто', 'gross weight', 'gross', 'g.w.', 'g.w', 'gw', 'gross wt', '毛重',
+    "yalpi og'irligi", "umumiy og'irligi", 'umumiy vazni',
+  ],
+  volume: ['hajmi', 'hajm', 'kub', 'kubi', 'объём', 'объем', 'куб', 'кубатура', 'volume', 'cbm', 'meas', 'measurement', '体积', '立方'],
+  tnved: ['tnved', 'tn ved', 'tn-ved', 'tnved kodi', 'тн вэд', 'тнвэд', 'код тн вэд', 'hs code', 'hs', 'hs-code', 'hs код', '海关编码', '商品编码', 'hs编码', '税号'],
+  price: ['narxi', 'narx', 'birlik narxi', 'цена', 'price', 'unit price', '单价', '价格'],
+  total: ['summa', 'jami summa', 'qiymati', 'сумма', 'стоимость', 'amount', 'total amount', '总价', '金额'],
+  // A field the card carries and no column of ours holds — its attributes, its
+  // packages, a letterhead's lines: a label all the same, never a product.
+  other: [
+    'model', 'модель', 'material', 'materiali', 'материал', 'brand', 'бренд', 'марка', 'origin', 'country of origin', 'страна',
+    'страна происхождения', 'color', 'colour', 'цвет', 'rang', 'rangi', 'size', 'размер', "o'lcham", "o'lchami", 'spec',
+    'specification', 'спецификация', 'примечание', 'note', 'notes', 'remark', 'remarks', 'comment', 'izoh', 'артикул',
+    'article', 'sku', 'barcode', 'штрих-код', 'karobka', 'karobka soni', 'quti', 'qutilar', 'мест', 'кол-во мест',
+    'ctns', 'ctn', 'cartons', 'carton', 'packages', '型号', '材质', '品牌', '颜色', '尺寸', '产地', '规格', '备注', '箱数',
+    'address', 'add', 'tel', 'phone', 'fax', 'e-mail', 'email', 'date', 'buyer', 'seller', 'consignee', 'shipper',
+    'supplier', 'customer', 'client', 'company', 'company name', 'manzil', 'telefon', 'sana', 'mijoz', 'адрес', 'телефон',
+    'факс', 'дата', 'покупатель', 'продавец', 'получатель', 'отправитель', 'клиент', '地址', '电话', '传真', '日期',
+    '买方', '卖方', '收货人', '发货人', '公司名称', '客户', '序号', 'no.', 'no', '№',
+  ],
+};
+const FIELD_LABELS = new Map<string, FieldKind>(
+  (Object.entries(FIELD_WORDS) as [FieldKind, string[]][]).flatMap(([kind, words]) => words.map((word): [string, FieldKind] => [word, kind])),
+);
+/** The unit a label names after itself: «(kg)», «（公斤）», «, кг», «, м3». */
+const LABEL_UNIT = /\s*(?:[(（][^()（）]{1,12}[)）]|,\s*[\p{L}\d²³.$/]{1,8})$/u;
+function fieldLabel(cell: Cell): FieldKind | null {
+  if (typeof cell !== 'string' || cell.length > 60) return null;
+  const text = cell
+    .trim()
+    .toLowerCase()
+    .replace(/[ʻ‘’`ʼ]/g, "'")
+    .replace(/\s+/g, ' ')
+    .replace(/\s*[:：]$/, '')
+    .replace(LABEL_UNIT, '')
+    .replace(/\s*[:：]$/, '')
+    .trim();
+  if (text === '' || /\d/.test(text) || text.split(' ').length > 3) return null;
+  return FIELD_LABELS.get(text) ?? null;
+}
+/** A cell that announces a value after it — «Address:», «电话：» — or is a field's name. */
+const labelCell = (cell: Cell): boolean => /[:：]\s*$/.test(cellText(cell)) || fieldLabel(cell) !== null;
+/**
+ * …as a name column's DATA: the label of ANOTHER field. A card's name column
+ * holds «Soni», «Vazni», «TNVED» under its «Tovar nomi», a letterhead's
+ * «Address:», «Tel:» under «Company Name»; a line named «Товар» or «Product»
+ * is a placeholder, not a card (goods-import.test.ts writes its rows so).
+ */
+const otherLabel = (cell: Cell): boolean => {
+  const kind = fieldLabel(cell);
+  return kind !== null ? kind !== 'name' : /[:：]\s*$/.test(cellText(cell));
+};
 
 /** How many data rows a column's content is judged by. */
 const SAMPLE_ROWS = 50;
@@ -536,13 +639,20 @@ const isHeaderText = (cell: Cell, own: string): boolean => {
  * «not mostly codes» and the supplier's TNVED was dropped. The same rule
  * `parseGoods` skips a repeated header by.
  */
-function columnCells(rows: Cell[][], headerRow: number, col: number): Cell[] {
+function columnCells(rows: Cell[][], headerRow: number, col: number, skip: ReadonlySet<number> = NO_ROWS): Cell[] {
   const own = cellText(rows[headerRow]?.[col] ?? null).toLowerCase();
-  return rows
-    .slice(headerRow + 1, headerRow + 1 + SAMPLE_ROWS)
-    .map((row) => row[col] ?? null)
-    .filter((cell) => cellText(cell) !== '' && !isHeaderText(cell, own));
+  const out: Cell[] = [];
+  for (let d = headerRow + 1; d < Math.min(rows.length, headerRow + 1 + SAMPLE_ROWS); d++) {
+    // …nor a row that is the header again in its second language (§5.12):
+    // «HS Code» sampled as data made a one-good file's TNVED column «not
+    // mostly codes», and the supplier's code was dropped.
+    if (skip.has(d)) continue;
+    const cell = rows[d]![col] ?? null;
+    if (cellText(cell) !== '' && !isHeaderText(cell, own)) out.push(cell);
+  }
+  return out;
 }
+const NO_ROWS: ReadonlySet<number> = new Set();
 
 function findColumn(
   header: Cell[],
@@ -579,6 +689,8 @@ function headerUnitWord(text: string): string | null {
 
 interface Detected {
   headerRow: number;
+  /** The first data row: past a second header row directly under the header (§5.12). */
+  dataFrom: number;
   columns: ColumnMap;
 }
 
@@ -680,34 +792,124 @@ function composedHeader(rows: Cell[][], r: number, covered: Covered | null): Cel
 }
 
 /**
- * Find the header row (within the first ten — files open with logos and
- * legal names) and map its columns. Null when the file has no header we can
- * read: that is not a failure, it is single-column mode.
+ * Find the header row and map its columns. Null when the file has no header
+ * we can read: that is not a failure, it is single-column mode.
  */
 export function detectColumns(rows: Cell[][], covered: Covered | null = null): Detected | null {
   return findHeader(rows, covered).found;
 }
+
+/** The rows a header is chosen among — files open with logos and legal names. */
+const TOP_ROWS = 10;
+/** …and how deep one is looked for when none of them is a header (§5.1). */
+const DEEP_ROWS = 50;
 
 /**
  * The header — or, when a one-column list carries its figures and so has no
  * header anywhere, the last of its opening lines that is no product
  * (`refused`, `listOpening`), which `parseGoods`' headerless pass starts
  * after.
+ *
+ * The ORDER of the tests is the design (docs/FAYL-OQISH.md §5), each one's
+ * answer the next one's input:
+ *  0. A two-column label|value CARD of one good is read before any of this
+ *     (`cardGood`, §5.6's extra): a card has no header row to find.
+ *  1. Rows 0-9: every row is a candidate (`headerAt`) and the BEST wins
+ *     (§5.8) — the one that maps the most columns besides the name, a tie the
+ *     earliest. A letterhead's label row («Company Name | Yiwu Trading Co.»,
+ *     «公司名称», «Product name: | Hair dryer») maps the name alone and loses to
+ *     the table under it; it was taken because it came first.
+ *  2. Only when none of them is a header: rows 10-49, the first that holds
+ *     (§5.1), under two guards that apply there alone — a row carrying a
+ *     figure is data, and a header found that deep names a figure column.
+ * Inside one candidate (`headerAt`):
+ *  a. a one-cell row (rows 0-9 only): the table-below skip, the list refusal
+ *     and the numbered title as before, then it must READ as a heading or a
+ *     title (§5.7 (2));
+ *  b. the columns (`mapColumns`): TNVED first, then the name ladder — never
+ *     a column whose own data are field labels (§5.6 (b), §5.8), the product
+ *     rung after the first (§5.2), the serial guard on the stated rungs and on
+ *     the last NAME_KEYS rung, which never takes a party (§5.3, §5.8), the
+ *     last-resort rung (§5.2 (d)) — then the figures;
+ *  c. a second header row below it (§5.12) is taken out of the sampling and
+ *     the columns are mapped again, so the checks after it read the final
+ *     map;
+ *  d. a candidate with a FIGURE beside its name is a data row (§5.7 (1));
+ *  e. one whose only other cell is a VALUE over the card's figures is a
+ *     transposed card (§5.6 (a));
+ *  f. the deep guard (b), on the final map.
  */
 function findHeader(rows: Cell[][], covered: Covered | null = null): { found: Detected | null; refused: number | null } {
-  const filled = (row: Cell[] | undefined) => (row ?? []).filter((cell) => cellText(cell) !== '').length;
-  for (let r = 0; r < Math.min(rows.length, 10); r++) {
-    // A two-row header is read as one (CRITIC-1); a one-row header is itself.
-    const header = composedHeader(rows, r, covered);
-    const taken = new Set<number>();
-    const mostlyCodes = (i: number) => {
-      const cells = columnCells(rows, r, i);
-      return cells.length === 0 || cells.filter(isCodeCell).length * 2 > cells.length;
-    };
-    const allCodes = (i: number) => {
-      const cells = columnCells(rows, r, i);
-      return cells.length > 0 && cells.every(isCodeCell);
-    };
+  let best: { detected: Detected; score: number } | null = null;
+  for (let r = 0; r < Math.min(rows.length, TOP_ROWS); r++) {
+    // The header again, word for word, maps nothing the first did not (c0425:
+    // 2,000 rows of one cell would be ten candidates of the same header).
+    if (best && sameCells(rows[r], rows[best.detected.headerRow])) continue;
+    const at = headerAt(rows, r, covered, false);
+    // A list refused below a header already found leaves that header standing:
+    // the first-found rule returned it before this row was ever read.
+    if (at === 'refused') {
+      if (best) break;
+      return { found: null, refused: listOpening(rows) };
+    }
+    if (at && (best === null || at.score > best.score)) best = at;
+  }
+  if (best) return { found: best.detected, refused: null };
+  for (let r = TOP_ROWS; r < Math.min(rows.length, DEEP_ROWS); r++) {
+    const at = headerAt(rows, r, covered, true);
+    if (at && at !== 'refused') return { found: at.detected, refused: null };
+  }
+  return { found: null, refused: null };
+}
+
+const filled = (row: Cell[] | undefined) => (row ?? []).filter((cell) => cellText(cell) !== '').length;
+
+/** Two rows holding the same text cell for cell. */
+function sameCells(a: Cell[] | undefined, b: Cell[] | undefined): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  for (let i = 0; i < Math.max(x.length, y.length); i++) if (cellText(x[i] ?? null) !== cellText(y[i] ?? null)) return false;
+  return true;
+}
+
+/** How many columns a header maps besides the name — best-of-ten's measure. */
+const mappedBeside = (c: ColumnMap): number =>
+  [c.tnved, c.quantity, c.unit, c.volume, c.weight, c.amount].filter((i) => i !== null).length +
+  (c.gross !== null && c.gross !== c.weight ? 1 : 0) +
+  (c.cartons ? 1 : 0);
+
+/** Every column key, for «is this cell a header word or a value». */
+const COLUMN_KEYS = [
+  ...NAME_KEYS, ...PRODUCT_KEYS, ...TNVED_KEYS, ...QTY_KEYS, ...UNIT_KEYS, ...WEIGHT_KEYS, ...NET_WEIGHT_KEYS,
+  ...VOLUME_KEYS, ...AMOUNT_TOTAL_KEYS, ...AMOUNT_PRICE_KEYS,
+];
+/**
+ * A header cell that names a column — any key, a field's name, an attribute
+ * or a party — as against a VALUE («Ayollar kurtkasi»).
+ */
+const keyish = (text: string): boolean =>
+  fieldLabel(text) !== null ||
+  matchKey(text, COLUMN_KEYS) ||
+  [MONEY_HEADER, PACKAGE_COUNT, GROSS_HEADER, VOLUME_WORD, WEIGHT_ABBREV, NET_WORD, NAME_ATTRIBUTE, NAME_PARTY].some((re) => re.test(text));
+
+/** Row `r` as a header candidate (`findHeader`'s order, steps a-f). */
+function headerAt(
+  rows: Cell[][],
+  r: number,
+  covered: Covered | null,
+  deep: boolean,
+): { detected: Detected; score: number } | 'refused' | null {
+  const raw = rows[r] ?? [];
+  const own = (i: number) => !covered?.has(r, i);
+  // (§5.1 a) Below the top rows a header carries no figure: «Sports goods
+  // bag | 50 | 40» at row 11 of a header-less list is data, and taken as the
+  // header it lost every line above it (xlsx1-02's verifier, c2602-c2607). A
+  // one-cell line that deep names no figure column either. (§5.7 (1) below
+  // says the same of any row the ladder can name; asked here first, a deep
+  // data row of a 5,000-line list is never mapped at all.)
+  if (deep && (filled(raw) < 2 || raw.some((cell, i) => own(i) && readsAsFigure(cell)))) return null;
+  // A two-row header is read as one (CRITIC-1); a one-row header is itself.
+  const header = composedHeader(rows, r, covered);
     // A title row is one merged cell («COMMERCIAL INVOICE / Товарная
     // накладная»): it names «товар» and is no header. A header has columns —
     // when the table under it HAS columns: a one-column list keeps its
@@ -715,7 +917,7 @@ function findHeader(rows: Cell[][], covered: Covered | null = null): { found: De
     // became the first product (the review).
     if (filled(header) < 2) {
       const below = rows.slice(r + 1, r + 1 + SAMPLE_ROWS);
-      if (below.some((row) => filled(row) > 1)) continue;
+      if (below.some((row) => filled(row) > 1)) return null;
       // …and only a HEADER over a LIST (S7, the second review): «Товарная
       // накладная № 15 от 01.10.2026» over «Стол офисный 5 шт 100 кг» was
       // taken as the header, every line landed with no quantity and no
@@ -735,247 +937,467 @@ function findHeader(rows: Cell[][], covered: Covered | null = null): { found: De
       const listed = below.flat().filter((cell) => cellText(cell) !== '');
       const most = (test: (cell: Cell) => boolean) => listed.filter(test).length * 2 > listed.length;
       const hasDigit = (cell: Cell) => /\d/.test(cellText(cell));
-      if (most(carriesFigure)) return { found: null, refused: listOpening(rows) };
+      if (most(carriesFigure)) return 'refused';
       // A numbered TITLE («Заявка от 15.10.2026», «Заказ № 15») over a list
       // of names is passed over, not a refusal: the real one-cell header may
       // stand on the next row (S-r2 ND1 — stopping here made «Наименование»
       // over Труба ППР 32 / Кран 1/2 / Муфта 25 a text sheet, and the VED
       // paste landed the title and the header as items).
-      if (header.some(hasDigit) && most(hasDigit)) continue;
+      if (header.some(hasDigit) && most(hasDigit)) return null;
+      // …and a one-cell line is a header only when it READS as one (§5.7
+      // (2)): a heading made of list words, one announcing the lines under it
+      // («Товары:»), or a document's title — never because a name key is
+      // somewhere inside it. «Товары для дома» among a list of names was
+      // taken as the header, and every name above it was lost with it
+      // (unmapped-product-name-as-header, Q4). All 23 one-cell headers the
+      // corpus finds pass: 22 headings, and c0169's «Invoice for goods No 12»
+      // a title. «Хозтовары» does not, and lands as a line (c2678).
+      const line = cellText(header.find((cell) => cellText(cell) !== '') ?? null);
+      if (!listHeadingLine(line) && !TITLE_LINE.test(line)) return null;
     }
-    // The TNVED column is claimed BEFORE the name keys run: «Код ТН ВЭД
-    // товара» contains «товар», and taken as the NAME it named every
-    // product by its code and lost the code (the audit, reproduced).
-    const tnved = findColumn(header, TNVED_KEYS, taken, mostlyCodes);
-    if (tnved !== null) taken.add(tnved);
-    // …and a name column is never one whose data are all codes («Goods
-    // code», «Tovar kodi» to the left of the real name), and prefers a
-    // column whose data READ as words over an article number («YW-2301»).
-    // A column with no data at all is no evidence of a name: a Chinese PI's
-    // «产品图片» holds pictures, which are not cell values, and taken as the
-    // name it left every line nameless (the fourth review) — so it is
-    // chosen only when no name column has data (the last resort).
-    const sampled = (i: number) => columnCells(rows, r, i);
-    const wordy = (i: number) => {
-      const cells = sampled(i);
-      return cells.length > 0 && cells.filter(isWordCell).length * 2 > cells.length;
-    };
-    const stated = (i: number) => sampled(i).length > 0 && !allCodes(i);
-    // One ladder, the header's rank before the data's: a header that names
-    // the PRODUCT alone (`namesTheProduct`, which outranks a description)
-    // over words, then one that names the GOODS (never a code, a brand or a
-    // party — S5 — unless it only mentions one beside the name,
-    // `namesTheGoods`) over words, then over any data, then any name key at
-    // all. The fourth review found the round-3
-    // tiers' «any header over words» rung naming RTX-4090 / GTX-1660 by the
-    // «Brand name» column beside them: a model number is not a word, but it
-    // is the product.
-    const goods = (i: number) => namesTheGoods(cellText(header[i]!));
-    const name =
-      findColumn(header, NAME_KEYS_FIRST, taken, (i) => namesTheProduct(cellText(header[i]!)) && wordy(i)) ??
-      findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && wordy(i)) ??
-      findColumn(header, NAME_KEYS, taken, (i) => goods(i) && wordy(i)) ??
-      findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && stated(i)) ??
-      findColumn(header, NAME_KEYS, taken, (i) => goods(i) && stated(i)) ??
-      findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i));
-    if (name === null) continue;
-    taken.add(name);
-    const claim = (keys: string[], accept?: (index: number) => boolean): number | null => {
-      const idx = findColumn(header, keys, taken, accept);
-      if (idx !== null) taken.add(idx);
-      return idx;
-    };
-
-    // The quantity header's OWN unit word decides what its numbers are: a
-    // «Кол-во, кг» column is a WEIGHT, «Кол-во, м3» a volume, and a carton
-    // column («Кол-во мест») is never preferred over a piece column.
-    let quantity: number | null = null;
-    let quantityUnit: string | null = null;
-    let weightFromQty: number | null = null;
-    let volumeFromQty: number | null = null;
-    let cartonCol: { index: number; word: string } | null = null;
-    for (let i = 0; i < header.length; i++) {
-      if (taken.has(i) || !matchKey(cellText(header[i]!), QTY_KEYS)) continue;
-      // One package's count is nobody's count (FILES-1): passed over, so the
-      // line's own total count column is the line's.
-      if (PER_PACKAGE_COUNT.test(cellText(header[i]!))) continue;
-      const word = headerUnitWord(cellText(header[i]!));
-      const unit = unitOf(word);
-      if (unit === 'kg') weightFromQty ??= i;
-      else if (unit === 'm3') volumeFromQty ??= i;
-      else if (unit === 'karobka') cartonCol ??= { index: i, word: word! };
-      else if (quantity === null) {
-        quantity = i;
-        quantityUnit = unit === 'dona' || unit === null ? null : word;
-      } else continue;
-      taken.add(i);
-    }
-    if (quantity === null && cartonCol) {
-      // Only cartons: their number goes where a carton count goes — through
-      // the door's rule into the note, never into the piece column.
-      quantity = cartonCol.index;
-      quantityUnit = cartonCol.word;
-    } else if (cartonCol) {
-      taken.delete(cartonCol.index);
-    }
-    // A unit PRICE is no unit (docs/IKKI-ESHIK.md review PF-SPEC-1): «Unit
-    // price», «Цена за ед.», «单价» carry a unit key, and claimed as the unit
-    // the price became every line's unit word («50») while the count beside
-    // it went to the note at the door as a count of nobody knows what.
-    const unit = claim(UNIT_KEYS, (i) => !MONEY_HEADER.test(cellText(header[i]!)));
-    // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
-    // and the volume keys are the more specific set.
-    const claimWhere = (test: (text: string) => boolean): number | null => {
-      const idx = findWhere(header, taken, test);
-      if (idx !== null) taken.add(idx);
-      return idx;
-    };
-    // ONE carton's volume is not the line's (his 2.7 b, probe P1: a
-    // «CBM/CTN» standing before «TOTAL CBM» on a Chinese packing list was
-    // read as the line and landed 14× short — the weight's PER_PACKAGE rule,
-    // which the volume never learned). The same test on the abbreviation
-    // rung: «MEAS./CTN» is one carton's too.
-    const volume =
-      volumeFromQty ??
-      claimWhere((text) => matchKey(text, VOLUME_KEYS) && !PER_PACKAGE.test(text)) ??
-      claimWhere(
-        (text) =>
-          VOLUME_WORD.test(text) && !PER_PACKAGE.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)),
-      );
-    const invoiced = invoiceHeader(header.map(cellText));
-    const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
-    // What a weight column's figures add up to, over the data rows (a merged
-    // position is its master's, counted once).
-    const columnKg = (i: number): number => {
-      let sum = 0;
-      for (let d = r + 1; d < rows.length; d++) {
-        if (covered?.has(d, i)) continue;
-        const value = parseMeasure(rows[d]![i] ?? null, 'kg');
-        if (value !== null && value > 0) sum += value;
-      }
-      return sum;
-    };
-    // Two columns of one kind are one carton's figure and the line's (review
-    // PF-ADV-1): a Chinese packing list writes «N.W.(KG) | G.W.(KG)» under a
-    // «PER CTN» super-header beside the «TOTAL» pair, or an unmarked
-    // «G.W.(KG)» before «TOTAL G.W.», and the leftmost was one carton's — the
-    // line 10× light and the shipment's brutto the Σ of single cartons. One
-    // carton's figure is never more than its line's, so the line's column is
-    // the heaviest; one column, or a tie, keeps the leftmost.
-    const heaviest = (candidates: number[]): number | null => {
-      if (candidates.length <= 1) return candidates[0] ?? null;
-      let best = candidates[0]!;
-      let bestKg = columnKg(best);
-      for (const i of candidates.slice(1)) {
-        const kg = columnKg(i);
-        if (kg > bestKg) {
-          best = i;
-          bestKg = kg;
-        }
-      }
-      return best;
-    };
-    // The line's weight, never one package's and never a price — and never a
-    // GROSS column while another weight column stands (a line's weight is
-    // netto): the heaviest is chosen among one kind only.
-    const lineWeight = (isWeight: (text: string) => boolean): number | null => {
-      const candidates = header.flatMap((cell, i) => {
-        const text = cellText(cell);
-        return !taken.has(i) && isWeight(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text)
-          ? [i]
-          : [];
-      });
-      const plain = candidates.filter((i) => !GROSS_HEADER.test(cellText(header[i]!)));
-      const idx = heaviest(plain.length > 0 ? plain : candidates);
-      if (idx !== null) taken.add(idx);
-      return idx;
-    };
-    // A gross WEIGHT — «Gross amount | Discount | Net» is an invoice's money,
-    // and so is «Gross total | Discount | Net total» (R3-S8).
-    const grossBeside = header.some((cell) => {
-      const text = cellText(cell);
-      return GROSS_HEADER.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
-    });
-    const isNetWeight = (text: string) =>
-      !moneyTotal(text) &&
-      (matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
-    const netWeight = weightFromQty === null ? lineWeight(isNetWeight) : null;
-    const weight =
-      weightFromQty ?? netWeight ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS) || WEIGHT_ABBREV.test(text));
-    const isGrossWeight = (text: string) =>
-      GROSS_HEADER.test(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
-    const weightKind: WeightKind =
-      weight === null
-        ? null
-        : netWeight !== null
-          ? 'net'
-          : weightFromQty === null && isGrossWeight(cellText(header[weight]!))
-            ? 'gross'
-            : 'plain';
-    // The gross column is LOCATED, never claimed: beside a net column it is
-    // still the brutto the shipment's Σ is read from — the line weight's own
-    // column when that is a gross one, else the heaviest gross column (one
-    // carton's G.W. stands beside the line's, PF-ADV-1).
-    const grossCandidates = header.flatMap((cell, i) => ((i === weight || !taken.has(i)) && isGrossWeight(cellText(cell)) ? [i] : []));
-    const gross = weight !== null && grossCandidates.includes(weight) ? weight : heaviest(grossCandidates);
-    // The line's money is never a weight, a volume or a package count (S10,
-    // the second review): «total» is a money key, and a packing list's
-    // «TOTAL G.W.» — left free once «TOTAL N.W.» took the weight — or its
-    // «TOTAL CTNS» became the line's sum. A money word keeps a column money
-    // whatever else it says («Gross amount», «Цена за кг»).
-    const money = (keys: string[]): number | null => {
-      const idx = findColumn(header, keys, taken, (i) => {
-        const text = cellText(header[i]!);
-        if (MONEY_HEADER.test(text)) return true;
-        return !(
-          matchKey(text, WEIGHT_KEYS) ||
-          WEIGHT_ABBREV.test(text) ||
-          isNetWeight(text) ||
-          matchKey(text, VOLUME_KEYS) ||
-          VOLUME_WORD.test(text) ||
-          matchKey(text, QTY_KEYS) ||
-          PER_PACKAGE.test(text) ||
-          PACKAGE_COUNT.test(text)
-        );
-      });
-      if (idx !== null) taken.add(idx);
-      return idx;
-    };
-    const total = money(AMOUNT_TOTAL_KEYS);
-    const amount = total ?? money(AMOUNT_PRICE_KEYS);
-    const amountIsPrice = total === null && amount !== null;
-    return {
-      found: {
-        headerRow: r,
-        columns: {
-          name,
-          tnved,
-          quantity,
-          quantityUnit,
-          unit,
-          volume,
-          weight,
-          amount,
-          amountIsPrice,
-          gross,
-          // A carton column is any header that counts packages — «Кол-во
-          // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
-          // quantity keys never claimed (review PF-ADV-4: an invoice's own
-          // packing list with such a header and a plain weight read as a
-          // second invoice, and every row landed twice).
-          cartons:
-            cartonCol !== null ||
-            header.some((cell, i) => {
-              const text = cellText(cell);
-              return i !== name && PACKAGE_COUNT.test(text) && !MONEY_HEADER.test(text);
-            }),
-          weightKind,
-        },
-      },
-      refused: null,
-    };
+  const first = mapColumns(rows, r, header, NO_ROWS, covered);
+  if (first === null) return null;
+  // (§5.12) A row under the header that is the header again in its second
+  // language — «No. | Description | HS Code | Qty | G.W. | CBM» under «序号 |
+  // 品名 | 海关编码 | 数量 | 毛重 | 体积», directly or repeated at a page break —
+  // is no data: its words were sampled as the columns' cells, so the one-good
+  // file's code column read «not mostly codes» and the supplier's TNVED was
+  // dropped. Mapped again without it.
+  const repeats = new Set<number>();
+  for (let d = r + 1; d < Math.min(rows.length, r + 1 + SAMPLE_ROWS); d++) {
+    if (repeatsHeader(rows[d]!, d, first, covered)) repeats.add(d);
   }
-  return { found: null, refused: null };
+  const columns = repeats.size > 0 ? mapColumns(rows, r, header, repeats, covered) : first;
+  if (columns === null) return null;
+  // (§5.7 (1)) A header never carries a figure: a data row whose name holds a
+  // goods word («Товары для дома | 100 | 50», «塑料产品», «Plastik
+  // mahsulotlar») was taken as the header — every row above it, the row
+  // itself and every figure column lost, and the sheet never reached the
+  // model. ANY non-name cell, or a «шт» unit column lets it through (V4).
+  if (filled(header) >= 2 && raw.some((cell, i) => i !== columns.name && own(i) && readsAsFigure(cell))) return null;
+  // (§5.6 (a)) A label|value card's first line is no header: in «Tovar nomi:
+  // | Ayollar kurtkasi» the other cell is a VALUE, not a key, and the column
+  // under it holds the card's figures and codes (300, 150, 6202930000).
+  // «Товар | Цвет» over «Куртка | чёрный» and «Наименование | Примечание»
+  // over «300 шт» name their columns (c2621, c2622).
+  const others = raw.flatMap((cell, i) => (i !== columns.name && own(i) && cellText(cell) !== '' ? [i] : []));
+  if (others.length === 1 && !keyish(cellText(raw[others[0]!] ?? null))) {
+    const under = columnCells(rows, r, others[0]!, repeats);
+    const figures = under.filter((cell) => readsAsFigure(cell) || isCodeCell(cell) || carriesFigure(cell)).length;
+    if (under.length > 0 && figures * 2 > under.length) return null;
+  }
+  // (§5.1 b) …and a header found that deep must name a figure column, not
+  // just the name: «Consignee name: | GSR LOGISTICS» inside a long title
+  // block is no table (c2637).
+  if (deep && [columns.quantity, columns.weight, columns.volume, columns.amount, columns.gross].every((i) => i === null)) return null;
+  return { detected: { headerRow: r, dataFrom: repeats.has(r + 1) ? r + 2 : r + 1, columns }, score: mappedBeside(columns) };
+}
+
+/**
+ * The columns a header row maps — its TNVED, its name, its figures — with
+ * `skip` rows left out of the sampling that judges a column by its data.
+ * Null when no column names the goods.
+ */
+function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet<number>, covered: Covered | null): ColumnMap | null {
+  const taken = new Set<number>();
+  // Each column's sample is read once: every rung, guard and claim below
+  // judges a column by it, and a 30,000-character cell (c0425) was lower-cased
+  // again for every question asked of its column.
+  const samples = new Map<number, Cell[]>();
+  const sampled = (i: number): Cell[] => {
+    let cells = samples.get(i);
+    if (cells === undefined) samples.set(i, (cells = columnCells(rows, r, i, skip)));
+    return cells;
+  };
+  const mostlyCodes = (i: number) => {
+    const cells = sampled(i);
+    return cells.length === 0 || cells.filter(isCodeCell).length * 2 > cells.length;
+  };
+  const allCodes = (i: number) => {
+    const cells = sampled(i);
+    return cells.length > 0 && cells.every(isCodeCell);
+  };
+  // The TNVED column is claimed BEFORE the name keys run: «Код ТН ВЭД
+  // товара» contains «товар», and taken as the NAME it named every
+  // product by its code and lost the code (the audit, reproduced).
+  const tnved = findColumn(header, TNVED_KEYS, taken, mostlyCodes);
+  if (tnved !== null) taken.add(tnved);
+  // …and a name column is never one whose data are all codes («Goods
+  // code», «Tovar kodi» to the left of the real name), and prefers a
+  // column whose data READ as words over an article number («YW-2301»).
+  // A column with no data at all is no evidence of a name: a Chinese PI's
+  // «产品图片» holds pictures, which are not cell values, and taken as the
+  // name it left every line nameless (the fourth review) — so it is
+  // chosen only when no name column has data (the last resort).
+  const wordy = (i: number) => {
+    const cells = sampled(i);
+    return cells.length > 0 && cells.filter(isWordCell).length * 2 > cells.length;
+  };
+  const stated = (i: number) => sampled(i).length > 0 && !allCodes(i);
+  // (§5.6 (b), §5.8) A column whose own data are field LABELS names no goods
+  // on any rung: «Soni:», «Вес нетто», «HS code» under a card's «Tovar
+  // nomi»; «Address:», «Tel:», «Buyer:» under a letterhead's «Company Name».
+  // The labels landed as the goods and the good's own name, beside the
+  // header, was lost — and the model was shown the labels as goods already
+  // taken (xlsx1-07, unmapped-vertical-card).
+  const labels = (i: number) => {
+    const cells = sampled(i);
+    return cells.length > 0 && cells.filter(otherLabel).length * 2 > cells.length;
+  };
+  // (§5.3) A running serial — 1, 2, 3 … under «ITEM» — or, under a header
+  // that names the goods by «item» alone, article numbers («LJ-2023»), is no
+  // name while a wordier column stands beside it: every product was called
+  // «1» … «12» (xlsxN-06), and the sheet then goes to the model whole
+  // (c2652-c2655). The serial is read past a TOTAL row in the same column.
+  // The wordier column is one that could hold the goods — never a party's
+  // or an attribute's: beside «Customer name» the item numbers are all the
+  // file names its lines by (c1782). Alone, either stays the name:
+  // «Наименование» over 1, 2, 3 is all the file says (c2617, c2618).
+  // Article numbers under any other name header
+  // ARE the product — «Product Name» over RTX-4090 / GTX-1660 beside a
+  // «Brand name» column (the fourth review, c2615) — so the article half is
+  // scoped to «item».
+  const serial = (i: number) => {
+    const cells = sampled(i).map(cellText).filter((text) => !isTotalRow(text));
+    return cells.length > 1 && cells.every((text, at) => /^\d+\.?$/.test(text) && Number.parseInt(text, 10) === at + 1);
+  };
+  const itemOnly = (i: number) => !matchKey(cellText(header[i]!), NAME_KEYS_FIRST);
+  const articles = (i: number) => {
+    const cells = sampled(i);
+    return cells.length > 0 && cells.every((cell) => isArticleNumber(cellText(cell)));
+  };
+  const party = (i: number) => NAME_PARTY.test(cellText(header[i]!).split(/[(,;]/)[0] ?? '');
+  const goodsBeside = (i: number) =>
+    header.some((_, j) => j !== i && wordy(j) && !party(j) && !NAME_ATTRIBUTE.test(cellText(header[j] ?? null).split(/[(,;]/)[0] ?? ''));
+  const named = (i: number) => !((serial(i) || (itemOnly(i) && articles(i))) && goodsBeside(i));
+  // One ladder, the header's rank before the data's: a header that names
+  // the PRODUCT alone (`namesTheProduct`, which outranks a description)
+  // over words — first by a name key, then by a product word no key holds
+  // («Product», «Commodity», «Номенклатура», §5.2) — then one that names the
+  // GOODS (never a code, a brand or a party — S5 — unless it only mentions
+  // one beside the name, `namesTheGoods`) over words, then over any data,
+  // then any name key at all — never a party's («Customer name:»,
+  // «Consignee name:», §5.8) — and last «Наим.» / «Yuk turi». The fourth
+  // review found the round-3 tiers' «any header over words» rung naming
+  // RTX-4090 / GTX-1660 by the «Brand name» column beside them: a model
+  // number is not a word, but it is the product.
+  const head = (i: number) => cellText(header[i]!);
+  const goods = (i: number) => namesTheGoods(head(i));
+  const name =
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => namesTheProduct(head(i)) && wordy(i) && !labels(i)) ??
+    findColumn(header, PRODUCT_KEYS, taken, (i) => namesTheProduct(head(i)) && wordy(i) && !labels(i)) ??
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && wordy(i) && !labels(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && wordy(i) && !labels(i)) ??
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && stated(i) && named(i) && !labels(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && stated(i) && named(i) && !labels(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i) && named(i) && !party(i) && !labels(i)) ??
+    findColumn(header, LAST_NAME_KEYS, taken, (i) => lastNames(head(i)) && wordy(i) && !labels(i));
+  if (name === null) return null;
+  taken.add(name);
+  const claim = (keys: string[], accept?: (index: number) => boolean): number | null => {
+    const idx = findColumn(header, keys, taken, accept);
+    if (idx !== null) taken.add(idx);
+    return idx;
+  };
+
+  // The quantity header's OWN unit word decides what its numbers are: a
+  // «Кол-во, кг» column is a WEIGHT, «Кол-во, м3» a volume, and a carton
+  // column («Кол-во мест») is never preferred over a piece column.
+  let quantity: number | null = null;
+  let quantityUnit: string | null = null;
+  let weightFromQty: number | null = null;
+  let volumeFromQty: number | null = null;
+  let cartonCol: { index: number; word: string } | null = null;
+  for (let i = 0; i < header.length; i++) {
+    if (taken.has(i) || !matchKey(cellText(header[i]!), QTY_KEYS)) continue;
+    // One package's count is nobody's count (FILES-1): passed over, so the
+    // line's own total count column is the line's.
+    if (PER_PACKAGE_COUNT.test(cellText(header[i]!))) continue;
+    const word = headerUnitWord(cellText(header[i]!));
+    const unit = unitOf(word);
+    if (unit === 'kg') weightFromQty ??= i;
+    else if (unit === 'm3') volumeFromQty ??= i;
+    else if (unit === 'karobka') cartonCol ??= { index: i, word: word! };
+    else if (quantity === null) {
+      quantity = i;
+      quantityUnit = unit === 'dona' || unit === null ? null : word;
+    } else continue;
+    taken.add(i);
+  }
+  if (quantity === null && cartonCol) {
+    // Only cartons: their number goes where a carton count goes — through
+    // the door's rule into the note, never into the piece column.
+    quantity = cartonCol.index;
+    quantityUnit = cartonCol.word;
+  } else if (cartonCol) {
+    taken.delete(cartonCol.index);
+  }
+  // A unit PRICE is no unit (docs/IKKI-ESHIK.md review PF-SPEC-1): «Unit
+  // price», «Цена за ед.», «单价» carry a unit key, and claimed as the unit
+  // the price became every line's unit word («50») while the count beside
+  // it went to the note at the door as a count of nobody knows what.
+  const unit = claim(UNIT_KEYS, (i) => !MONEY_HEADER.test(cellText(header[i]!)));
+  // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
+  // and the volume keys are the more specific set.
+  const claimWhere = (test: (text: string) => boolean): number | null => {
+    const idx = findWhere(header, taken, test);
+    if (idx !== null) taken.add(idx);
+    return idx;
+  };
+  // ONE carton's volume is not the line's (his 2.7 b, probe P1: a
+  // «CBM/CTN» standing before «TOTAL CBM» on a Chinese packing list was
+  // read as the line and landed 14× short — the weight's PER_PACKAGE rule,
+  // which the volume never learned). The same test on the abbreviation
+  // rung: «MEAS./CTN» is one carton's too.
+  const volume =
+    volumeFromQty ??
+    claimWhere((text) => matchKey(text, VOLUME_KEYS) && !PER_PACKAGE.test(text)) ??
+    claimWhere(
+      (text) =>
+        VOLUME_WORD.test(text) && !PER_PACKAGE.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)),
+    );
+  const invoiced = invoiceHeader(header.map(cellText));
+  const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
+  // What a weight column's figures add up to, over the data rows (a merged
+  // position is its master's, counted once).
+  const columnKg = (i: number): number => {
+    let sum = 0;
+    for (let d = r + 1; d < rows.length; d++) {
+      if (covered?.has(d, i)) continue;
+      const value = parseMeasure(rows[d]![i] ?? null, 'kg');
+      if (value !== null && value > 0) sum += value;
+    }
+    return sum;
+  };
+  // Two columns of one kind are one carton's figure and the line's (review
+  // PF-ADV-1): a Chinese packing list writes «N.W.(KG) | G.W.(KG)» under a
+  // «PER CTN» super-header beside the «TOTAL» pair, or an unmarked
+  // «G.W.(KG)» before «TOTAL G.W.», and the leftmost was one carton's — the
+  // line 10× light and the shipment's brutto the Σ of single cartons. One
+  // carton's figure is never more than its line's, so the line's column is
+  // the heaviest; one column, or a tie, keeps the leftmost.
+  const heaviest = (candidates: number[]): number | null => {
+    if (candidates.length <= 1) return candidates[0] ?? null;
+    let best = candidates[0]!;
+    let bestKg = columnKg(best);
+    for (const i of candidates.slice(1)) {
+      const kg = columnKg(i);
+      if (kg > bestKg) {
+        best = i;
+        bestKg = kg;
+      }
+    }
+    return best;
+  };
+  // The line's weight, never one package's and never a price — and never a
+  // GROSS column while another weight column stands (a line's weight is
+  // netto): the heaviest is chosen among one kind only.
+  const lineWeight = (isWeight: (text: string) => boolean): number | null => {
+    const candidates = header.flatMap((cell, i) => {
+      const text = cellText(cell);
+      return !taken.has(i) && isWeight(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text)
+        ? [i]
+        : [];
+    });
+    const plain = candidates.filter((i) => !GROSS_HEADER.test(cellText(header[i]!)));
+    const idx = heaviest(plain.length > 0 ? plain : candidates);
+    if (idx !== null) taken.add(idx);
+    return idx;
+  };
+  // A gross WEIGHT — «Gross amount | Discount | Net» is an invoice's money,
+  // and so is «Gross total | Discount | Net total» (R3-S8).
+  const grossBeside = header.some((cell) => {
+    const text = cellText(cell);
+    return GROSS_HEADER.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
+  });
+  const isNetWeight = (text: string) =>
+    !moneyTotal(text) &&
+    (matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
+  const netWeight = weightFromQty === null ? lineWeight(isNetWeight) : null;
+  const weight =
+    weightFromQty ?? netWeight ?? lineWeight((text) => matchKey(text, WEIGHT_KEYS) || WEIGHT_ABBREV.test(text));
+  const isGrossWeight = (text: string) =>
+    GROSS_HEADER.test(text) && !PER_PACKAGE.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text);
+  const weightKind: WeightKind =
+    weight === null
+      ? null
+      : netWeight !== null
+        ? 'net'
+        : weightFromQty === null && isGrossWeight(cellText(header[weight]!))
+          ? 'gross'
+          : 'plain';
+  // The gross column is LOCATED, never claimed: beside a net column it is
+  // still the brutto the shipment's Σ is read from — the line weight's own
+  // column when that is a gross one, else the heaviest gross column (one
+  // carton's G.W. stands beside the line's, PF-ADV-1).
+  const grossCandidates = header.flatMap((cell, i) => ((i === weight || !taken.has(i)) && isGrossWeight(cellText(cell)) ? [i] : []));
+  const gross = weight !== null && grossCandidates.includes(weight) ? weight : heaviest(grossCandidates);
+  // The line's money is never a weight, a volume or a package count (S10,
+  // the second review): «total» is a money key, and a packing list's
+  // «TOTAL G.W.» — left free once «TOTAL N.W.» took the weight — or its
+  // «TOTAL CTNS» became the line's sum. A money word keeps a column money
+  // whatever else it says («Gross amount», «Цена за кг»).
+  const money = (keys: string[]): number | null => {
+    const idx = findColumn(header, keys, taken, (i) => {
+      const text = cellText(header[i]!);
+      if (MONEY_HEADER.test(text)) return true;
+      return !(
+        matchKey(text, WEIGHT_KEYS) ||
+        WEIGHT_ABBREV.test(text) ||
+        isNetWeight(text) ||
+        matchKey(text, VOLUME_KEYS) ||
+        VOLUME_WORD.test(text) ||
+        matchKey(text, QTY_KEYS) ||
+        PER_PACKAGE.test(text) ||
+        PACKAGE_COUNT.test(text)
+      );
+    });
+    if (idx !== null) taken.add(idx);
+    return idx;
+  };
+  const total = money(AMOUNT_TOTAL_KEYS);
+  const amount = total ?? money(AMOUNT_PRICE_KEYS);
+  const amountIsPrice = total === null && amount !== null;
+  return {
+    name,
+    tnved,
+    quantity,
+    quantityUnit,
+    unit,
+    volume,
+    weight,
+    amount,
+    amountIsPrice,
+    gross,
+    // A carton column is any header that counts packages — «Кол-во
+    // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
+    // quantity keys never claimed (review PF-ADV-4: an invoice's own
+    // packing list with such a header and a plain weight read as a
+    // second invoice, and every row landed twice).
+    cartons:
+      cartonCol !== null ||
+      header.some((cell, i) => {
+        const text = cellText(cell);
+        return i !== name && PACKAGE_COUNT.test(text) && !MONEY_HEADER.test(text);
+      }),
+    weightKind,
+  };
+}
+
+/**
+ * Is this row the header again — in its second language under the header, or
+ * repeated at a page break (§5.12, xlsxN-10)? By its CONTENT, at any place
+ * under the header, all three:
+ *  - no figure in any mapped figure column (a goods row states its figures);
+ *  - its name cell is a header phrase: a name key and no figure in it;
+ *  - another mapped cell names its OWN column's kind — «Qty» over the
+ *    quantity, «G.W.» over the weight, «HS Code» over the TNVED.
+ * «Goods trolley | pcs | 5» is a good: its count is a figure, and «pcs» is
+ * no unit KEY (c2632). The unit column's own key is «Unit» / «Ед. изм.».
+ * SUB_HEADER_WORDS stays what it is: a second language is not a PER CTN /
+ * TOTAL split, and composing it would map nothing the first row did not.
+ */
+function repeatsHeader(row: Cell[], d: number, columns: ColumnMap, covered: Covered | null): boolean {
+  const at = (i: number | null): Cell => (i === null ? null : (row[i] ?? null));
+  const figure = (i: number | null) => i !== null && (readsAsFigure(at(i)) || parseNumber(at(i)) !== null);
+  if ([columns.quantity, columns.weight, columns.gross, columns.volume, columns.amount].some(figure)) return false;
+  const name = cellText(at(columns.name));
+  if (!matchKey(name, NAME_KEYS) || carriesFigure(name) || /\d/.test(name)) return false;
+  const own: [number | null, (text: string) => boolean][] = [
+    [columns.quantity, (text) => matchKey(text, QTY_KEYS)],
+    [columns.weight, (text) => matchKey(text, WEIGHT_KEYS) || matchKey(text, NET_WEIGHT_KEYS) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
+    [columns.gross, (text) => GROSS_HEADER.test(text) || matchKey(text, WEIGHT_KEYS)],
+    [columns.volume, (text) => matchKey(text, VOLUME_KEYS) || VOLUME_WORD.test(text)],
+    [columns.amount, (text) => matchKey(text, AMOUNT_TOTAL_KEYS) || matchKey(text, AMOUNT_PRICE_KEYS) || MONEY_HEADER.test(text)],
+    [columns.tnved, (text) => matchKey(text, TNVED_KEYS)],
+    [columns.unit, (text) => matchKey(text, UNIT_KEYS)],
+  ];
+  return own.some(([i, names]) => i !== null && i !== columns.name && !covered?.has(d, i) && names(cellText(at(i))));
+}
+
+/** A card's field kinds that land on the good — an attribute or a letterhead line is no card's. */
+const CARD_FIELDS = new Set<FieldKind>(['name', 'count', 'unit', 'net', 'weight', 'gross', 'volume', 'tnved', 'price', 'total']);
+
+/**
+ * A two-column label|value CARD of ONE good, read deterministically
+ * (docs/FAYL-OQISH.md §5.6's extra, reader-5.6-card): «Tovar nomi: | Ayollar
+ * kurtkasi / Soni: | 300 / Vazni: | 150 / TNVED: | 6202930000». Only when it
+ * is clearly that, all at once:
+ *  - exactly two columns hold anything (a unit column, a merged title, a
+ *    third cell is no such card);
+ *  - every filled row is a known field's label (`fieldLabel`) and its value,
+ *    at least two of them, each field once;
+ *  - exactly ONE of them names the goods, and its value is no label itself.
+ * Anything else that looks like a card — two goods stacked, a client line,
+ * spec lines (Model, Material) — is refused as a header inside `findHeader`
+ * (§5.6 (a), (b)) and goes to the model whole.
+ *
+ * The line's weight is a NETTO label's, or a plain weight's («Vazni», «Вес»),
+ * as a plain weight column is the line's on a table; a BRUTTO label is the
+ * shipment's gross and never the line's netto (the house rule, CalcField).
+ * The result carries the name label's row as its header row, so
+ * `readGoodsFile` keeps the card's good as the sheet's goods — an INVOICE by
+ * shape whatever its weight is called: a card states the good itself, where a
+ * packing list's rows restate an invoice's (docs/IKKI-ESHIK.md §1.2.1).
+ */
+function cardGood(rows: Cell[][], covered: Covered | null): ({ goods: GoodsRow[]; headerRow: number } & SheetShape) | null {
+  const cols = new Set<number>();
+  const lines: { r: number; cells: Cell[] }[] = [];
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r] ?? [];
+    const at = row.flatMap((cell, i) => (cellText(cell) !== '' && !covered?.has(r, i) ? [i] : []));
+    if (at.length === 0) continue;
+    for (const i of at) cols.add(i);
+    if (cols.size > 2) return null;
+    lines.push({ r, cells: row });
+  }
+  if (cols.size !== 2 || lines.length < 2) return null;
+  const [labelCol, valueCol] = [...cols].sort((a, b) => a - b) as [number, number];
+  const fields = new Map<FieldKind, { r: number; value: Cell }>();
+  for (const { r, cells } of lines) {
+    const kind = fieldLabel(cells[labelCol] ?? null);
+    if (kind === null || !CARD_FIELDS.has(kind) || fields.has(kind)) return null;
+    fields.set(kind, { r, value: cells[valueCol] ?? null });
+  }
+  const named = fields.get('name');
+  const description = cellText(named?.value ?? null);
+  if (!named || description === '' || labelCell(named.value)) return null;
+  const value = (kind: FieldKind) => fields.get(kind)?.value ?? null;
+  const code = normalizeTnved(value('tnved'));
+  const tnvedText = cellText(value('tnved'));
+  const read = (kind: FieldKind, unit: 'dona' | 'kg' | 'm3') => parseMeasure(value(kind), unit);
+  const weightKg = read('net', 'kg') ?? read('weight', 'kg');
+  const grossKg = read('gross', 'kg');
+  const volumeM3 = read('volume', 'm3');
+  const unread = (['count', 'net', 'weight', 'gross', 'volume', 'price', 'total'] as const)
+    .filter((kind) => /\d/.test(cellText(value(kind))) && (kind === 'price' || kind === 'total' ? parseNumber(value(kind)) : read(kind, kind === 'count' ? 'dona' : kind === 'volume' ? 'm3' : 'kg')) === null)
+    .map((kind) => `${cellText(lines.find((l) => l.r === fields.get(kind)!.r)!.cells[labelCol] ?? null).slice(0, 40)} «${cellText(value(kind)).slice(0, 40)}» — aniq emas`);
+  const good: GoodsRow = {
+    description: clipUnits(description, 300),
+    quantity: read('count', 'dona'),
+    unit: cellText(value('unit')).slice(0, 20) || null,
+    weightKg,
+    volumeM3,
+    amount: parseNumber(value('total')) ?? parseNumber(value('price')),
+    tnvedCode: code && 'code' in code ? code.code : null,
+    note:
+      [
+        tnvedText === '' ? null : code && 'problem' in code ? `TNVED «${code.text}» — 9 xonali: boshida 0 tushib qolganmi?` : code === null ? `TNVED «${tnvedText.slice(0, 40)}» — kod emas` : null,
+        ...unread,
+      ]
+        .filter(Boolean)
+        .join(' · ') || null,
+  };
+  const weightKind: WeightKind = value('net') !== null && read('net', 'kg') !== null ? 'net' : weightKg !== null ? 'plain' : null;
+  return {
+    goods: [good],
+    headerRow: named.r,
+    shape: 'invoice',
+    weightKind,
+    grossKg,
+    grossColumn: fields.has('gross'),
+    volumeM3,
+  };
 }
 
 /**
@@ -1190,6 +1612,8 @@ export function parseGoods(
   rows: Cell[][],
   covered: Covered | null = null,
 ): { goods: GoodsRow[]; headerRow: number | null } & SheetShape {
+  const card = cardGood(rows, covered);
+  if (card) return card;
   const header = findHeader(rows, covered);
   const detected = header.found;
   const goods: GoodsRow[] = [];
@@ -1198,27 +1622,31 @@ export function parseGoods(
     const description = row.description.trim();
     if (!description) return false;
     if (isTotalRow(description)) return false;
-    goods.push({ ...row, description: description.slice(0, 300) });
+    // Cut by UTF-16 units as before, never through an emoji (§3.8): the half
+    // left at the edge reached the state, the table and the next model pass.
+    goods.push({ ...row, description: clipUnits(description, 300) });
     return true;
   };
 
   if (detected) {
-    const { headerRow, columns } = detected;
+    const { headerRow, dataFrom, columns } = detected;
     // The sheet's two sums over the rows it LANDS (a total row is arithmetic,
     // never a line): null as soon as one landed row lacks its figure — a Σ
     // one line short is a smaller number wearing the shipment's name.
     let grossKg: number | null = columns.gross === null ? null : 0;
     let volumeM3: number | null = columns.volume === null ? null : 0;
     const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
-    let r = headerRow + 1;
+    let r = dataFrom;
     for (; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
       const at = (idx: number | null): Cell => (idx === null ? null : (row[idx] ?? null));
       const once = (idx: number | null): Cell => (idx !== null && covered?.has(r, idx) ? null : at(idx));
       // A row whose name IS the header's is the header again (S8, the second
       // review): repeated at a page break, or the sub-header row under a
-      // two-row header, whose merged name cell now reads as its text.
-      if (isHeaderText(at(columns.name), headerName)) continue;
+      // two-row header, whose merged name cell now reads as its text — and so
+      // is the header in its second language, wherever it stands (§5.12):
+      // landed, «Description» was a product and nulled the sheet's Σ.
+      if (isHeaderText(at(columns.name), headerName) || repeatsHeader(row, r, columns, covered)) continue;
       // The code cell as the file holds it: a NUMERIC nine-digit cell lost
       // its leading zero to Excel and is padded; typed text of nine digits is
       // a question, and any other non-code is said rather than dropped.
@@ -1275,9 +1703,9 @@ export function parseGoods(
     // name, and it outranks the model that may read the TOTAL row.
     const stoppedShort =
       goods.length >= MAX_GOODS_ROWS &&
-      rows.slice(r).some((row) => {
+      rows.slice(r).some((row, k) => {
         const name = cellText(row[columns.name] ?? null);
-        return name !== '' && !isTotalRow(name);
+        return name !== '' && !isTotalRow(name) && !repeatsHeader(row, r + k, columns, covered);
       });
     if (stoppedShort) {
       grossKg = null;
