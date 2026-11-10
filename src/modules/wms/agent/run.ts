@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gte, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { aiConfigured, realCallModel, STAFF_MODEL, type CallModel, type ModelBlock, type ModelMessage, type ModelUsage } from '../../platform/ai/model';
 import { db } from '../../platform/db/client';
-import { agentConversations, agentOutbox, agentRuns, clients, tgChatRules, tgOutbox, users } from '../../platform/db/schema';
+import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
@@ -79,7 +79,8 @@ export interface ComposeReply {
   language: AgentLocale;
   glossUz: string;
   category: string;
-  confidence: number;
+  /** 0-1, the model's own judgement that he sends it unchanged; null = it gave none we can read (#1625). */
+  confidence: number | null;
   needsOwner: boolean;
   ownerQuestion: string;
   nextStep: string;
@@ -135,6 +136,18 @@ function asText(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
+/**
+ * The model's `confidence` as stored (#1625): a number from 0 to 1 — the
+ * chance, in its own judgement, that he sends the text unchanged — kept to
+ * two places, the column's scale. Anything else is UNKNOWN (null), never
+ * clamped: «85» used to become 1.00 and «-1» 0, two confident numbers nobody
+ * gave. Strict tool schemas cannot carry a range, so this is the range.
+ */
+export function confidenceOf(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) return null;
+  return Math.round(v * 100) / 100;
+}
+
 function parseCompose(input: Record<string, unknown>): ComposeReply {
   const lang = AGENT_LOCALES.find((l) => l === input.language) ?? 'uz';
   const actions = Array.isArray(input.actions) ? (input.actions as Record<string, unknown>[]) : [];
@@ -144,7 +157,7 @@ function parseCompose(input: Record<string, unknown>): ComposeReply {
     language: lang,
     glossUz: asText(input.gloss_uz).trim(),
     category: asText(input.category) || 'other',
-    confidence: Math.min(1, Math.max(0, Number(input.confidence) || 0)),
+    confidence: confidenceOf(input.confidence),
     needsOwner: input.needs_owner === true,
     ownerQuestion: asText(input.owner_question).trim(),
     nextStep: asText(input.next_step) || 'wait',
@@ -175,7 +188,9 @@ export async function runLoop(input: {
   const { ctx } = input;
   const started = input.now().getTime();
   const opening = input.instruction ? `${chatBlock(ctx)}\n\nVAZIFA: ${input.instruction}` : chatBlock(ctx);
-  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening }] }];
+  // The chat is the same bytes in every round of this run: cached once, read at a tenth of the price after
+  // (#1622 — a hundred messages re-billed per tool round is what would have made the wider window expensive).
+  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening, cache: true }] }];
   const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const tools: LoopResult['tools'] = [];
   const outcomes: ToolOutcome[] = [];
@@ -240,17 +255,31 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, ctx.managerUserId), eq(agentConversations.peerId, ctx.peerId)));
 
-  // A person's own message in this chat — his phone, a colleague in the CRM — within the pause.
-  const outIds = ctx.messages.filter((m) => m.direction === 'out').map((m) => m.tgMessageId);
-  const agentIds = outIds.length
-    ? await db
-        .select({ id: agentOutbox.tgMessageId })
-        .from(agentOutbox)
-        .where(and(eq(agentOutbox.managerUserId, ctx.managerUserId), inArray(agentOutbox.tgMessageId, outIds)))
-    : [];
-  const agentSet = new Set(agentIds.map((r) => String(r.id)));
-  const lastHuman = [...ctx.messages].reverse().find((m) => m.direction === 'out' && !agentSet.has(String(m.tgMessageId)));
+  // A person's own message in this chat — his phone, a colleague in the CRM — within the pause. Asked of the
+  // chat itself and not of a window (#1623): thirty photos after his reply pushed it out of the window, and the AI
+  // drafted while he was mid-conversation. Live rows only, as the window reads them; the AI's own sends are not his,
+  // and neither is the account's robot — a Telegram Business greeting or away message (`auto_sent`, #1568's «the
+  // account's robot is not a person»): reached over the whole pause now, it would stand the AI down exactly while he
+  // is away (#1627).
   const pauseMs = config.humanPauseMin * 60_000;
+  const humanSince = new Date(now.getTime() - pauseMs);
+  const [lastHuman] = await db
+    .select({ sentAt: tgMessages.sentAt })
+    .from(tgMessages)
+    .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
+    .where(
+      and(
+        eq(tgMessages.managerUserId, ctx.managerUserId),
+        eq(tgMessages.peerId, ctx.peerId),
+        eq(tgMessages.direction, 'out'),
+        gt(tgMessages.sentAt, humanSince),
+        isNull(tgMessageFlags.deletedAt),
+        sql`coalesce(${tgMessageFlags.autoSent}, false) = false`,
+        sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = ${tgMessages}.manager_user_id AND o.peer_id = ${tgMessages}.peer_id AND o.tg_message_id = ${tgMessages}.tg_message_id)`,
+      ),
+    )
+    .orderBy(desc(tgMessages.sentAt))
+    .limit(1);
   const [queued] = await db
     .select({ id: tgOutbox.id })
     .from(tgOutbox)
@@ -1034,7 +1063,9 @@ export function validateActions(
   const actions: ComposedAction[] = [];
   const notes: string[] = [];
   const lastChecklist = [...outcomes].reverse().find((o) => o.checklist)?.checklist ?? null;
-  const refs = new Map(ctx.messages.map((m) => [m.ref, m]));
+  // Citations reach the whole chat the model read (#1622): a line it quotes is a line it saw. The figures a job
+  // carries still come only from the checklist, which counts the recent window.
+  const refs = new Map(ctx.history.map((m) => [m.ref, m]));
   for (const a of c.actions) {
     if (a.type === 'calc_submit') {
       const cl: ChecklistState | null = lastChecklist && lastChecklist.section === a.section ? lastChecklist : null;

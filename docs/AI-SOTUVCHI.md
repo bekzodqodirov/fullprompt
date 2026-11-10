@@ -897,7 +897,8 @@ DECISIONS #1569). The AI does not know the source; only the send window does.
 
 - Model `STAFF_MODEL` (the style proposal: `ANALYST_MODEL`); the stable head (persona, rules, approved style
   guide, kb general facts) behind the cache breakpoint; per-chat context after it. Context: THIS chat only
-  (last 30 live messages, each ≤ 1 000 chars, total ≤ 8 000), our last out message, the customer-safe card
+  (last 30 live messages, each ≤ 1 000 chars, total ≤ 8 000 — **since 2026-11-10 the model reads up to 100 /
+  24 000 and every rule still counts these 30, §18.1**), our last out message, the customer-safe card
   (codes incl. phone siblings, the customer's own manager's name), open calc links, scoped kb top-8. No
   cross-chat examples [leak-1].
 - Tools (closed literal list; the identity comes from the server): `cargo_status` (cabinet `cargoOverview` over
@@ -1103,3 +1104,209 @@ mayli», «Без авиа никак»), and rail turned down for the flight is
 the rail rule. Our priced line is read by the road its clause chooses or opens with, never the goods. The card's
 kilos are the shipment's (a correction counts, a single piece or a what-if does not), its origin a place not turned
 down. A knowledge fact is the flight's only when it declares itself the flight's receiving point and names no truck.
+
+## 18. «Avtonom sotuv menejeri» — the architecture from here (2026-11-10)
+
+His message, verbatim: «kopi bn 30 ta emas 100 tagacha oshirish kerak. va ozi yozsin hammaga agarda 80foiz shu
+javob bolishiga togri kelishiga ishonchi bolsa javobni yozish huquqini ber va sotuv manageri bolsin u iloji bolsa
+keyinchalik quramiz toliq avtanom sotuv manageriga aylantiramiz shuni arxetekturangga yozib ol».
+
+Three asks:
+1. **Read up to 100 messages, not 30.** BUILT (§18.1).
+2. **Send by itself, to everyone, when it is ≥ 80 % sure.**
+   - DESIGNED (§18.3).
+   - The measurement that turns «80 %» into a number is BUILT (§18.2).
+   - The sending waits on his six answers (§18.7) and on that measurement. On deploy day there is no record yet that
+     proves any kind of reply, and the design opens nothing without one.
+3. **A sales manager, later a fully autonomous one.** This section is that record (§18.4-§18.6). Designed by a
+   map → three designs (risk-first, measurement-first, owner-first) → a judge, before any code (DECISIONS #1626).
+
+### 18.1 Two windows (DECISIONS #1622-#1624, reviewed #1627) — built
+
+- **Why raising 30 alone does nothing safe.**
+  - Raising `contextMessages` alone mostly changes nothing: the 8 000-character total already stops a chat of real
+    300-700-character replies before 30 messages.
+  - The ONE window fed both the model and ~20 rule readers. If it widened for all of them, the policy would change in
+    both directions with no test to see it:
+    - an old «poyezd» drops every truck price;
+    - an old «Qashqar» refuses every truck quote;
+    - an old flight choice makes the chat avia-only;
+    - `avia_maybe` only grows;
+    - an old shipment's kilos become a source;
+    - the checklist completes a VED job with stale figures.
+- **How it works now.** `chatMessages` reads 100 rows and `chatWindows` (pure) cuts two windows:
+  - **`history`** — what the MODEL reads: ≤ 100 messages, ≤ 24 000 body characters, refs #1..#N.
+  - **`recent`** (still `ctx.messages`) — what EVERY RULE counts: ≤ 30 messages, ≤ 8 000 characters. It is cut by the
+    old rule exactly, as `history`'s tail (the same objects).
+  - The measures the tools take, the policy's sources, the road, rail and avia guards, the checklist, the burst, the
+    card and the script all stay on `recent`. So the policy corpora (#1619) keep the window they were measured on.
+  - Only the prompt and the citations read the older part.
+  - Pinned by a differential against the old loop copied verbatim, and by an integration chat whose old part asks rail,
+    names Kashgar, states 500 kg and picks the flight.
+- **What the model sees.**
+  - The older part comes under «Oldingi suhbat (faqat tushunish uchun — bu qism oldingi yuk haqida bo'lishi mumkin:
+    undagi son, narx, o'lcham, manzil, yo'l turi, bo'lim va tovar hozirgi so'rov emas …)», then «Suhbat (eski →
+    yangi)».
+  - Rule 1 says figures come from «Suhbat» only, and scopes every «so'ralsa» of rules 8-12 to it. No code guard reads
+    the older part, so only the words can keep an old flight, rail or podklyuch from steering the model (#1627).
+  - A line from another year carries its year.
+  - A document's name is cut at 80 characters.
+  - Otherwise a chat that fits in 30 messages reads exactly as before.
+  - A calc_submit may cite an older line (goods described long ago), and the VED's note dates every cited line.
+- **The human pause is asked of the chat itself** (#1623):
+  - It is the newest live out row within the pause that is neither an AI send nor the account's Business robot
+    (`auto_sent`, #1627).
+  - Before, it was «his last out message in the window», so thirty photos after his reply pushed the reply out and
+    the AI drafted while he was mid-conversation.
+- **The chat is a cache breakpoint** (#1624). Every tool round of a run re-sends it. Now rounds 2-6 read it at a tenth
+  of the price, and the daily token cap (which does not count cache reads) pays for it once per run.
+- **Cost** (an estimate from the code's own sizes — his `agent_runs` hold the truth):
+  - about $5-7 a day at 150 runs, against $5-6 before;
+  - without the breakpoint it would have been $6.6-10.6.
+  - The 3 000 000 daily token cap stands.
+
+### 18.2 «80 %» as a number (DECISIONS #1625) — built
+
+- **The model's `confidence`.**
+  - It is now defined to the model: «Bekzod shu matnni hech o'zgartirmay yuborish ehtimoli, 0-1».
+  - The seven categories are defined in one line each.
+  - It is stored as given or as NULL (`confidenceOf`). The old clamp turned «85» into 1.00.
+  - It is never the gate alone: a model's self-report is not calibrated.
+- **The measured part is his presses.**
+  - The «unchanged» rate is `agentStats`' own (the page's «O'zgarishsiz ketdi»). A ✏️ rewrite, a ❌, a 🙋 and his own
+    reply count against it; superseded and expired drafts stay out.
+  - It is taken per CATEGORY over the drafts that pass every deterministic condition (`cleanForAuto`) at confidence
+    ≥ 0.80.
+  - «80 %» is the one-sided 95 % **Wilson lower bound** of that rate, over at least 50 decided: 45/50, 87/100,
+    170/200 — never a raw 40/50.
+- **`scripts/agent-calibration.ts`** prints the whole table and «would it open today?». It is read-only and run
+  through `migrate`. Drafts before 2026-11-10 carry the old, undefined confidence: the table shows them, and they are
+  no gate.
+
+### 18.3 Auto-send — the design (phase 2), waiting on his answers and on the record
+
+- **Shape: a MACHINE PRESS of the same ✅.**
+  - It goes through `decideDraft` and then the pump, so every check a human press runs runs again: policy re-check,
+    identity, chat moved on, send window, night, caps, ramp, CRM send switch, listener current.
+  - It is a LAYER over shadow, not a new mode. `agent_config.mode` stays 'shadow', because `toConfig` maps any other
+    value to 'off' and a tg-listen that was not rebuilt would cancel every approved reply.
+  - «Off» disarms the layer in the same transaction. Re-arming is always his press.
+- **What may go without his press — ALL must hold, re-checked at the press.**
+  - The draft:
+    - kind 'reply', status strictly 'pending', no `final_body`;
+    - not blocked, not needs_owner, and ZERO warnings on the fresh policy re-run;
+    - no card note;
+    - actions none or a follow-up date only (never `calc_submit` or `mute`);
+    - no money (no money ledger entry, no estimate, no `own_balance` / `yolkira_estimate` / `avia_estimate` call —
+      money makes it «price» whatever the model labelled it);
+    - category greeting / status / faq / qualification, and the label agrees with the facts;
+    - language uz, uz_cyrl or ru;
+    - no photo, voice or file in the burst;
+    - ≤ 400 characters.
+  - The chat and the account:
+    - a client or a lead, never an agent-found prospect;
+    - the account marked «Ish raqami»;
+    - daytime only;
+    - at most 2 auto replies in a row in one chat;
+    - at most 30 auto sends a day, inside the existing min(ramp, 80).
+  - The proof: the category's cell proven (§18.2) and switched on by him, and the draft not drawn into the 1-in-5
+    holdback.
+- **The holdback keeps the measurement honest.**
+  - 1 in 5 eligible drafts stays an ordinary, unmarked card, and positive labels come only from those.
+  - From auto cards come only negative signals (his ⏸ / ✏️ / ❌ / 🙋, 👎, his correction).
+  - A cell closes on 4 failures in its last 20 true labels.
+  - If he stops deciding, the record shrinks and the cell closes by itself.
+- **What he sees.**
+  - The card arrives as today plus «⏱ 14:32 da o'zi ketadi (2 daqiqa)», with [⏸ To'xtat] [✏️] [❌] [✅ Hozir yubor].
+  - His own message or a new customer line also stops it.
+  - After the hold, a bot «⏹ Bekor qilish» works until the read step. Nothing can unsend.
+  - After sending: «🤖 O'zi yuborildi» with [👎 Xato edi] [🙋 Suhbat meniki].
+  - A daily line «🤖 AI bugun: o'zi yubordi N · to'xtatdingiz M · sizga qoldi K».
+  - A «Yuborilganlar» list and the cell table on the page.
+- **Step-down.** On top of every existing fuse and forced-off, the layer disarms itself (the AI keeps drafting, an
+  alarm to the holder and super_admins) on any of:
+  - 2 × 👎 in 7 days;
+  - any block by a customer it auto-answered within 7 days;
+  - a «botmisiz?» within 30 minutes of an auto reply (that chat off for 30 days; 2 in 7 days disarm);
+  - 3 failure signals in 24 h.
+- **Build (phase 2, not started).**
+  - Migration (next free number) with side tables only, behind a ready probe:
+    - `agent_auto_config` (armed, hold, per-day, holdback, max chars, pause);
+    - `agent_auto_categories` (a CHECK that admits only the four);
+    - `agent_auto_verdicts` (one row per reply draft: verdict, reasons, cell snapshot, state — the calibration
+      dataset itself);
+    - `agent_auto_chats`.
+  - Code:
+    - `auto-gate.ts` (pure), `auto-cells.ts`, `auto-send.ts` (the claim of due rows by the minute sweep);
+    - `decideDraft({auto})`;
+    - the disarm inside off / forceAgentOff / setAgentOwner;
+    - card, bot and page.
+  - `stats.ts` counts auto sends APART, or the gate grades itself.
+  - Order:
+    1. a rehearsal that writes verdict rows and sends nothing;
+    2. his answers;
+    3. arming.
+
+### 18.4 The roadmap
+
+| Phase | For the business | Built | True before the next |
+|---|---|---|---|
+| **0 — Draft** (live since 2026-10-29) | every reply drafted in seconds; he presses ✅ | phase 1 (§17) | — |
+| **1 — Wide memory + measuring** (this round) | the AI reads up to 100 messages; the system measures which replies could have gone alone; nothing changes for customers | §18.1-§18.2; next: the rehearsal's verdict rows, the page's table, the 20:00 AI line, the bot ⏹ | ≥ 2 weeks on the current brain; one category at lower95 ≥ 0.80 over ≥ 50 blind labels; his six answers |
+| **2 — It answers by itself** | greetings, qualifying questions, standard information and cargo status go out in 2-4 minutes without him | §18.3 | 4 weeks armed with no forced-off and no block traced to an auto reply; ≤ 1 👎 per category a week; the holdback still ≥ 0.80 |
+| **3 — A sales manager's actions** | each act rehearsed, then switched on, with its own measured cell: (a) `calc_submit` by itself when the checklist is complete (label = the VED did not hand it back); (b) yo'lkira estimates from the website table (a money cell, lower95 ≥ 0.95); (c) the holding line on escalation; (d) hand-back questions; (e) follow-ups that ACT on the date — the first controlled exception to «never first»: chats that wrote within 30 days, an open lead, a small daily cap; (f) lead stage moves through `moveLead` (never won — that mints codes; never lost — a person's reason) | per act | each act's cell proven; customer blocks and complaints per 100 auto messages not rising |
+| **4 — Autonomous sales manager** | an AI seat that owns leads end to end, measured against the sellers | the AI as a no-login `users` row (0120's pattern) owning leads, in /crm/tahlil, out of the rating and KPI pay; its own KPI page (response time, conversion, money won); payment reminders from `own_balance` with his template; a weekly self-report; the style refreshed from his edits; more accounts, each with its holder's consent; and, for full autonomy, an OFFICIAL channel (Telegram Business bot / WhatsApp Cloud API) so a ban never costs a person's account — §0 forbade AI sends through personal sessions, and his 10-23 override covered shadow | phase-3 cells stable for a quarter; conversion of AI-owned leads ≥ the median seller's |
+| **5 — Other channels** | WhatsApp, Instagram, on the same gate | the channel adapters | — |
+
+### 18.5 What stays the owner's forever
+
+- the price of a calculation: the VED and his 💵; the floor is never in the AI's context (law 4, his answer 8);
+- discounts, guarantees, credit, refunds and any promise (G2);
+- complaints, legal and money disputes;
+- opening a GS code;
+- winning or losing a lead;
+- the avia address and the rail price;
+- arming the AI, opening each new kind of act, and the kill switch.
+
+### 18.6 Risks stated to him (in Uzbek, in the reply of 2026-11-10)
+
+- A personal Telegram account that sends by itself can be restricted. The worst case is that this number and its CRM
+  replies stop for a while. The guards: ≤ 30 auto a day, none at night, and it stops itself on any danger sign.
+- A sent message cannot be taken back. He has 2 minutes of ⏸ and then a short ⏹.
+- A mistake goes out in his name, in the first person.
+- Telegram never tells us «spam»; only a block and «botmisiz?» are seen.
+- Weeks of measuring come first, and each kind of reply opens separately.
+- One in five eligible replies still comes to him; if he stops pressing, the measurement stops and auto closes itself.
+- Price, complaints and calculations never go by themselves in phase 2.
+- The original plan said the AI never writes from a personal session. His shadow permission did not cover sending by
+  itself; auto-send makes that risk his decision.
+
+### 18.7 His six questions (sent 2026-11-10) — the ⭐ is what is built when he says «sen aytgandek»
+
+1. How «80 %» is measured:
+   - ⭐ a: the AI's ≥ 0.80 AND that kind proven by his presses (45/50, 87/100, 170/200);
+   - b: the AI's own word;
+   - c: a raw 40/50.
+2. Which replies:
+   - ⭐ a: greeting, qualifying questions, standard information (China addresses, hours), «where is my cargo» — each
+     opened separately after its own 50 — and never price, complaint, a calculation or a message that came with a
+     photo or file;
+   - b: greeting and qualifying only;
+   - c: a + the website's yo'lkira figure.
+3. The hold before it goes:
+   - ⭐ a: 2 minutes with ⏸;
+   - b: none;
+   - c: 5 minutes.
+4. The night:
+   - ⭐ a: none at night, the card waits for the morning;
+   - b: if the customer wrote within 2 hours;
+   - c: no difference.
+5. To whom, from which number:
+   - ⭐ a: every client and lead who writes to the connected number, only once he marks it «Ish raqami»; never the
+     client-finding agent's prospects;
+   - b: GS-coded clients only;
+   - c: a + the sellers' numbers, each with consent.
+6. Whose name:
+   - ⭐ a: his, in his style, as today; «botmisiz?» goes to him;
+   - b: a small «(avto-javob)» mark;
+   - c: a separate «GSR sotuv menejeri» persona (phase 4, its own number).

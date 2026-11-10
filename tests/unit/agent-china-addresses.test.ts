@@ -66,6 +66,7 @@ function ctxOf(
     managerUserId: 'u',
     peerId: 1n,
     messages,
+    history: messages,
     anchor: m,
     burst: messages.slice(lastOutIndex + 1).filter((x) => x.direction === 'in'),
     lastOut: lastOutIndex >= 0 ? messages[lastOutIndex]! : null,
