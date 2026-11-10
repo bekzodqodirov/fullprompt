@@ -270,6 +270,35 @@ describe('the question over a PARKED collection holds the material too (§2.4, d
   });
 });
 
+describe('«Bo‘ldi» over files all refused at arrival, through the REAL file door (§2.3, door-break-2)', () => {
+  it('a lone DOCX — counted by the door — is named with its reason, and no reading starts', async () => {
+    await h.handle(tg.callback(chat, 1, 'c:ai'));
+    await h.settle();
+    await h.handle(tg.text(chat, 'GS777'));
+    await h.settle();
+    h.serveFile(`refused-docx-${STAMP}`, Buffer.from('PK\u0003\u0004 not really a docx'));
+    await h.handle(
+      tg.document(chat, `refused-docx-${STAMP}`, {
+        fileName: 'invoice.docx',
+        mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+    );
+    await h.settle();
+    const after = activeIntake(BigInt(chat))!;
+    // The door counts the file it refused: the old `fileCount === 0` branch never saw this.
+    expect(after.fileCount).toBe(1);
+    expect(after.material).toEqual([]);
+    // What P-model writes at that refusal (docs/FAYL-OQISH.md §10), as it will write it.
+    updateIntake(BigInt(chat), { refusedFiles: [{ name: 'invoice.docx', why: 'Word fayl o‘qilmaydi.' }] }, { quiet: true });
+    const m = h.mark();
+    await h.handle(tg.callback(chat, after.promptMessageId ?? 3, 'c:done'));
+    await h.settle();
+    expect(h.textsTo(chat, m)).toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: invoice.docx — Word fayl o‘qilmaydi.');
+    expect(h.textsTo(chat, m).some((t) => t.startsWith('⏳ AI o‘qiyapti'))).toBe(false);
+    expect(activeIntake(BigInt(chat))!.analysing).toBeNull();
+  });
+});
+
 /** An «🤖» request of this seller, returned by the VED, with its ➕-bearing answer in the chat. */
 async function returnedAi(items: { name: string; quantity: number }[]): Promise<{ requestId: string; answerId: number }> {
   const stage = (await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') }))!;

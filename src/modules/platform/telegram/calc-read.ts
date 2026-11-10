@@ -141,20 +141,53 @@ const NO_CALL: ReadonlySet<string> = new Set(['nothing_to_read', 'not_configured
 
 /**
  * The notice's kind for a settled reading — pure, so the five words are a
- * test. A cut is said as a cut; a model that answered, as read; material only
- * the model reads, a stored file that did not load, or a call that failed, as
- * failed («sababi pastda» — the table says which); a reading that never
- * needed the model, as the file read («Fayl o‘qildi») — or, with no file,
- * plainly read.
+ * test. A reading that did not reach the end of what it was shown — the
+ * model's own cut, a sheet text it was shown only part of, an Excel past the
+ * row ceiling — is said as a cut. A stored file that did not load or a PDF
+ * the API refused is failed even where the model answered for the rest: the
+ * table under it is not whole, and «✅ O‘qildi» over it said the opposite
+ * (door-break-3). Then a model that answered, as read; material only the
+ * model reads, or a call that failed, as failed («sababi pastda» — the table
+ * says which). «📊 Fayl o‘qildi» only where a file's goods WERE read without
+ * the model: a collection whose one file was refused at arrival still counts
+ * that file, and «Fayl o‘qildi» stood over «Hech narsa o‘qilmadi». Typed text
+ * alone is plainly read; nothing read at all is failed.
  */
 export function noticeKindOf(
-  state: Pick<IntakeState, 'aiUsed' | 'aiFailure' | 'aiCut' | 'filesMissing' | 'fileCount' | 'images' | 'pdfs' | 'sheetTexts' | 'unreadPdfs' | 'goodsFiles'>,
+  state: Pick<
+    IntakeState,
+    'aiUsed' | 'aiFailure' | 'aiCut' | 'aiInputCut' | 'filesMissing' | 'images' | 'pdfs' | 'sheetTexts' | 'unreadPdfs' | 'goodsFiles' | 'invoiceGoods' | 'material'
+  >,
 ): 'read' | 'cut' | 'failed' | 'no_model' {
-  if (state.aiCut) return 'cut';
+  if (state.aiCut || state.aiInputCut || (state.goodsFiles ?? []).some((f) => f.capped === true)) return 'cut';
+  if ((state.filesMissing ?? 0) > 0 || (state.unreadPdfs ?? []).length > 0) return 'failed';
   if (state.aiUsed) return 'read';
-  if ((state.filesMissing ?? 0) > 0 || modelOnlyMaterial(state)) return 'failed';
+  if (modelOnlyMaterial(state)) return 'failed';
   if (state.aiFailure !== null && !NO_CALL.has(state.aiFailure)) return 'failed';
-  return state.fileCount > 0 ? 'no_model' : 'read';
+  if ((state.invoiceGoods ?? []).length > 0 || (state.goodsFiles ?? []).length > 0) return 'no_model';
+  return state.material.some((s) => s.trim() !== '') ? 'read' : 'failed';
+}
+
+/**
+ * Did the collection ACCEPT anything the reading could read (docs/FAYL-OQISH.md
+ * §2.3, door-break-2)? Typed text, a photo, a PDF, a sheet's text or its
+ * mapped goods. Asked by what was taken, never by `fileCount`: the file door
+ * counts every file it receives, the ones refused at arrival included — a
+ * lone DOCX made the count 1, and «Bo‘ldi» started a reading of nothing
+ * instead of naming the refusal.
+ */
+export function acceptedAnything(
+  state: Pick<IntakeState, 'material' | 'images' | 'pdfs' | 'sheetTexts' | 'invoiceTexts' | 'invoiceGoods' | 'goodsFiles'>,
+): boolean {
+  return (
+    state.material.some((s) => s.trim() !== '') ||
+    state.images.length > 0 ||
+    state.pdfs.length > 0 ||
+    state.sheetTexts.length > 0 ||
+    state.invoiceTexts.length > 0 ||
+    (state.invoiceGoods ?? []).length > 0 ||
+    (state.goodsFiles ?? []).length > 0
+  );
 }
 
 const ARRIVED_LEAD = 'Tahlil paytida yana ';
@@ -221,6 +254,23 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
   // §1.1): the two file questions it waited for are gone, and a collection
   // hydrated holding one was resolved before it reached memory
   // (`migrateIntakeState`).
+  // Every file sent was refused at arrival, and nothing else was taken
+  // (docs/FAYL-OQISH.md §2.3, door-break-2): the seller sent something, and
+  // «hech narsa yuborilmadi» said he had not — nor is a reading of nothing
+  // started. Judged by what was ACCEPTED: the refused files are counted in
+  // `fileCount` too. A collection that carries rows of its own (an add
+  // collection's stored rows, a seeded one's returned rows) then goes back to
+  // its table, as it does with nothing new.
+  const refused = state.refusedFiles ?? [];
+  if (refused.length > 0 && !acceptedAnything(state)) {
+    const named = refused.map((f) => `${f.name} — ${f.why.trim().replace(/[.\s]+$/u, '')}`).join('; ');
+    await ctx.reply(`Yuborilgan fayllarning birortasi ham o‘qiladigan emas: ${named}.`);
+    if (state.amend !== null || state.seed !== null) {
+      const back = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' as const };
+      await deliverNextStep(ctx, chatId, back);
+    }
+    return;
+  }
   if (state.material.length === 0 && state.fileCount === 0) {
     // A collection that carries rows of its own — an add collection's stored
     // rows, a seeded one's returned rows — reaches the table with NO material
@@ -230,15 +280,6 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     if (nothingNewToRead(state)) {
       const back = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' as const };
       await deliverNextStep(ctx, chatId, back);
-      return;
-    }
-    // Every file sent was refused at arrival (docs/FAYL-OQISH.md §2.3): the
-    // seller sent something, and «hech narsa yuborilmadi» said he had not.
-    // Each is named with its own reason, and no reading starts.
-    const refused = state.refusedFiles ?? [];
-    if (refused.length > 0) {
-      const named = refused.map((f) => `${f.name} — ${f.why.trim().replace(/[.\s]+$/u, '')}`).join('; ');
-      await ctx.reply(`Yuborilgan fayllarning birortasi ham o‘qiladigan emas: ${named}.`);
       return;
     }
     await ctx.reply('Hali hech narsa yuborilmadi.');

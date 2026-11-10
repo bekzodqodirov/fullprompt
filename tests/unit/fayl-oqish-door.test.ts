@@ -360,7 +360,20 @@ describe('the tail says what WAS read (§2.2, critic-tail-both)', () => {
 });
 
 describe('the reading notice (§2.3, critic-notice-kind)', () => {
-  const base = { aiUsed: false, aiFailure: null, aiCut: null, filesMissing: 0, fileCount: 1, images: [], pdfs: [], sheetTexts: [], unreadPdfs: [], goodsFiles: [] };
+  const base = {
+    aiUsed: false,
+    aiFailure: null,
+    aiCut: null,
+    aiInputCut: false,
+    filesMissing: 0,
+    images: [],
+    pdfs: [],
+    sheetTexts: [],
+    unreadPdfs: [],
+    goodsFiles: [],
+    invoiceGoods: [],
+    material: [],
+  };
   it('five kinds, decided at the settle', () => {
     expect(noticeKindOf({ ...base, aiUsed: true })).toBe('read');
     expect(noticeKindOf({ ...base, aiUsed: true, aiCut: { goods: 3, why: 'clock' } })).toBe('cut');
@@ -368,10 +381,10 @@ describe('the reading notice (§2.3, critic-notice-kind)', () => {
     // Material only the model reads, unread for want of a key: failed, «sababi pastda».
     expect(noticeKindOf({ ...base, aiFailure: 'not_configured', pdfs: [PDF] })).toBe('failed');
     expect(noticeKindOf({ ...base, aiFailure: 'files_missing', filesMissing: 1 })).toBe('failed');
-    // An Excel the model was never needed for.
-    expect(noticeKindOf({ ...base, aiFailure: 'nothing_to_read' })).toBe('no_model');
+    // An Excel whose goods were read without the model.
+    expect(noticeKindOf({ ...base, aiFailure: 'nothing_to_read', invoiceGoods: TWO })).toBe('no_model');
     // Typed text alone, no key: read by the bot, no file to call read.
-    expect(noticeKindOf({ ...base, fileCount: 0, aiFailure: 'not_configured' })).toBe('read');
+    expect(noticeKindOf({ ...base, material: ['Kurtka 300 dona'], aiFailure: 'not_configured' })).toBe('read');
     expect(READING_NOTICE).toEqual({
       read: '✅ O‘qildi — natija pastda ⬇️',
       cut: '⚠️ AI oxirigacha o‘qimadi — natija pastda ⬇️',
@@ -379,6 +392,19 @@ describe('the reading notice (§2.3, critic-notice-kind)', () => {
       no_model: '📊 Fayl o‘qildi — natija pastda ⬇️',
       arrived: '⬇️ Yangi xabarlar keldi — pastda',
     });
+  });
+
+  it('never says the opposite of the table below it (door-break-3)', () => {
+    // The one file was refused at arrival — the state the file door leaves
+    // (it counts that file): nothing read, so never «📊 Fayl o‘qildi».
+    expect(noticeKindOf({ ...base, aiFailure: 'nothing_to_read' })).toBe('failed');
+    // A file that did not load, a PDF the API refused: the table is not
+    // whole even where the model answered for the rest — never «✅ O‘qildi».
+    expect(noticeKindOf({ ...base, aiUsed: true, filesMissing: 1 })).toBe('failed');
+    expect(noticeKindOf({ ...base, aiUsed: true, pdfs: [PDF], unreadPdfs: [PDF.attachmentId] })).toBe('failed');
+    // Shown only part of what it was sent: said as a cut.
+    expect(noticeKindOf({ ...base, aiUsed: true, aiInputCut: true })).toBe('cut');
+    expect(noticeKindOf({ ...base, invoiceGoods: TWO, goodsFiles: [{ capped: true } as never], aiFailure: 'nothing_to_read' })).toBe('cut');
   });
 });
 
@@ -485,6 +511,23 @@ describe('«Bo‘ldi» with every file refused at arrival (§2.3)', () => {
     expect(ctx.replies.at(-1)!.text).toBe('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi; b.zip — Arxiv o‘qilmaydi.');
     expect(activeIntake(chatId)!.analysing).toBeNull();
     expect(model.analyze).not.toHaveBeenCalled();
+  });
+
+  it('judged by what was ACCEPTED, never by the count — the file door counts the refused files too (door-break-2)', async () => {
+    const { chatId } = collection({ stage: 'material', fileCount: 2, refusedFiles: [{ name: 'a.docx', why: 'Word fayl o‘qilmaydi.' }] });
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(ctx.replies.map((r) => r.text)).toEqual(['Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi.']);
+    expect(activeIntake(chatId)!.analysing).toBeNull();
+    expect(readingsEnqueued(chatId)).toEqual([]);
+  });
+
+  it('a refused file beside something accepted is a reading as before', async () => {
+    const { chatId } = collection({ stage: 'material', fileCount: 2, material: ['Kurtka 300 dona'], refusedFiles: [{ name: 'a.docx', why: 'Word fayl o‘qilmaydi.' }] });
+    const ctx = fakeCtx();
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(activeIntake(chatId)!.analysing).not.toBeNull();
+    expect(ctx.replies.map((r) => r.text)).not.toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi.');
   });
 });
 
