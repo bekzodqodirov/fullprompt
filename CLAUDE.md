@@ -3383,16 +3383,18 @@ replies, 303 dangerous) — keep them green on ANY policy change; G10's same-tex
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
 phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
 
-**Round — «kontekst 100» and the road to an autonomous sales manager (2026-11-10; DECISIONS #1622-#1626; NO
+**Round — «kontekst 100» and the road to an autonomous sales manager (2026-11-10; DECISIONS #1622-#1627; NO
 migration, ledger 143; spec `docs/AI-SOTUVCHI.md` §18).** His «30 ta emas 100 tagacha … 80foiz … ishonchi bolsa
 javobni yozish huquqini ber … toliq avtanom sotuv manageriga aylantiramiz shuni arxetekturangga yozib ol». Mapped and
 designed by a workflow (consumers · cost · plumbing → three designs → a judge) before code. **TWO WINDOWS**:
 `chatMessages` reads 100 rows, pure `chatWindows` cuts `history` (≤ 100 / 24 000, what the MODEL reads, refs over
 it) and `recent` (≤ 30 / 8 000 by the OLD rule exactly, its tail, the same objects) — `ctx.messages` stays `recent`,
 so every rule (measures, sources, road/rail/avia guards, checklist, burst, card) keeps the window #1619 measured;
-only `chatBlock` (older part under `OLDER_CHAT_HEADING`, year when it differs) and the citations read `history`.
+only `chatBlock` (older part under `OLDER_CHAT_HEADING`, year when it differs) and the citations read `history` —
+and no code guard reads the older part, so its heading and rule 1 name the old road, section and goods as not the
+current request (review #1627); the VED's note dates every cited line.
 Raising the constants alone would have moved the policy both ways with no test able to see it. The human pause is a
-direct query on the chat (#1623, a pre-existing hole), and the opening chat block is a cache breakpoint (`cache: true`
+direct query on the chat that skips AI sends and the account's Business robot (`auto_sent`) (#1623, #1627), and the opening chat block is a cache breakpoint (`cache: true`
 on a text `ModelBlock`, #1624). **«80 %»**: the model's `confidence` is defined («o'zgartirmay yuborish ehtimoli»)
 and stored as given or NULL (`confidenceOf`); `calibration.ts` + `scripts/agent-calibration.ts` (read-only) give the
 one-sided 95 % Wilson lower bound of `agentStats`' own unchanged rate per category over the clean drafts at ≥ 0.80 —
