@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -53,7 +53,7 @@ vi.mock('@/modules/platform/telegram/send', async (original) => ({
 }));
 
 import { db, pgClient } from '@/modules/platform/db/client';
-import { calcRequestItems, calcRequests, crmActivities, events, leads, tasks, telegramLinks, users } from '@/modules/platform/db/schema';
+import { calcRequestItems, calcRequests, crmActivities, events, leads, notifications, tasks, telegramLinks, users } from '@/modules/platform/db/schema';
 import { sendText } from '@/modules/platform/telegram/send';
 import {
   __forgetIntakeMemory,
@@ -74,7 +74,8 @@ import { AI_QUEUED, PLAIN_QUEUED } from '@/modules/platform/telegram/calc-dialog
 import { amendWords, amendSubmissionOf, unreadRepassLine } from '@/modules/platform/telegram/calc-amend';
 import { amendRequest } from '@/modules/wms/calc/amend';
 import { requestIntakeDoor } from '@/modules/wms/calc/intake-door';
-import { directPass, silentPass } from '@/modules/wms/calc/jobs';
+import { directPass, registerCalcPrefillWorker, silentPass, type CalcPrefillJob } from '@/modules/wms/calc/jobs';
+import { SILENT_DOOR_ERROR } from '@/modules/wms/calc/say-once';
 import { storedRequestFacts } from '@/modules/wms/calc/service';
 
 const STAMP = String(Date.now()).slice(-7);
@@ -85,6 +86,8 @@ const notes: string[] = [];
 const requests: string[] = [];
 
 const PDF = { attachmentId: 'pdf-door-1', name: 'invoice.pdf', bytes: 10 };
+/** The prefill worker's handler, as pg-boss would call it. */
+type PassHandler = (jobs: { id: string; name: string; data: CalcPrefillJob; retryCount: number }[]) => Promise<void>;
 const KURTKA = [{ name: 'Kurtka', quantity: 300, weightKg: 150, tnvedCode: '6201400000' }];
 
 /** A staff chat (one person, one link) with an AI-door collection at its table. */
@@ -179,6 +182,7 @@ afterAll(async () => {
     await db.delete(leads).where(inArray(leads.id, cards));
   }
   if (staffIds.length) {
+    await db.delete(notifications).where(inArray(notifications.userId, staffIds));
     await db.execute(sql`DELETE FROM telegram_calc_intakes WHERE staff_id IN (${sql.join(staffIds.map((id) => sql`${id}::uuid`), sql`, `)})`);
     await db.delete(telegramLinks).where(inArray(telegramLinks.userId, staffIds));
     // An audited fixture is deactivated, never deleted (audit_log FK).
@@ -359,8 +363,34 @@ describe('after a VED landing, «➕» brings no AI figure back (door-ved-then-a
     expect(directPass('amend:x', door)).toBe(true);
     expect(silentPass(door, true)).toBe(true);
     const words = await amendWords(out as Parameters<typeof amendWords>[0], false, door, true);
+    // §1.5's «no qayta» is «no «AI qayta hisoblayapti»» (door-spec-ved-then-add-pin-weak):
+    // §1.3 a's plainLine words — the card prepared again for the VED — stand.
     expect(words).toContain('🤖 AI kartani VED uchun qayta tayyorlaydi — narxni VED beradi.');
     expect(words).not.toContain('AI qayta hisoblayapti');
+
+    // …and the re-pass the addition queued, run as pg-boss hands it over:
+    // whatever it says is the «oddiy eshik» claim, written muted — nothing
+    // reaches the seller's chat, though his chat is linked and he mutes nothing.
+    const calls = passesFor(landed.id).filter(([c]) => c.pass?.startsWith('amend:'));
+    expect(calls, 'the addition queued its re-pass').toHaveLength(1);
+    const handlers = new Map<string, PassHandler>();
+    await registerCalcPrefillWorker({
+      createQueue: async () => {},
+      work: async (name: string, _opts: unknown, handler: PassHandler) => {
+        handlers.set(name, handler);
+        return 'w';
+      },
+    } as never);
+    await handlers.get('calc.prefill')!([{ id: randomUUID(), name: 'calc.prefill', data: { ...calls[0]![0], section: 'rastamojka' } as CalcPrefillJob, retryCount: 0 }]);
+    const said = await db
+      .select({ status: notifications.status, error: notifications.error, payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.userId, staffId), eq(notifications.type, 'CalcPrefilled')));
+    expect(said.length, 'the pass ran and claimed its one message').toBeGreaterThan(0);
+    for (const row of said) {
+      expect(row).toMatchObject({ status: 'muted', error: SILENT_DOOR_ERROR });
+      expect((row.payload as { text?: string }).text ?? '').not.toContain('AI qayta hisoblayapti');
+    }
   });
 });
 

@@ -248,7 +248,8 @@ READING changes with §4 and §5, because `readIntakeFile` serves both doors.
     queued silently;
   - a `c:save` on a not-whole collection → the same;
   - 📨 pressed, the landing cut after the note → the sweep's resume → still 'plain', no AI words;
-  - 👤 → ➕ addition → no CalcPrefilled chat message and no «qayta».
+  - 👤 → ➕ addition → no CalcPrefilled chat message (its queued re-pass run, its claim written muted) and never
+    «AI qayta hisoblayapti». §1.3 a's `plainLine` words («AI kartani VED uchun qayta tayyorlaydi») stand.
 - a unit test that `settleAnalysis` carries every new reading field (§10) and that a cut then a whole
   re-read clears `aiCut`.
 
