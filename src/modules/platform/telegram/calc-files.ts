@@ -37,6 +37,7 @@ import {
 import type { ForwardPart } from './task-draft';
 import { BRIEF_RETRY_MAX_S } from './retry';
 import { botCall } from './send';
+import { clipUnits } from '../text/clip';
 
 /**
  * What a file the seller forwards becomes in a «Hisoblatish» collection, and
@@ -512,7 +513,7 @@ export function receiveGoodsSheet(
 }
 
 /** A sheet's name as the seller's words carry it — capped, it is anybody's text. */
-const sheetName = (name: string) => `«${name.length > 60 ? `${name.slice(0, 59)}…` : name}»`;
+const sheetName = (name: string) => `«${name.length > 60 ? `${clipUnits(name, 59)}…` : name}»`;
 
 /**
  * A FURTHER mapped sheet of a workbook, by its SHAPE (docs/FAYL-OQISH.md §4.2,
@@ -581,8 +582,11 @@ function receiveFurtherSheet(
     if (ofHeld || inLine) {
       const fill = ofHeld ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
       const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled);
+      // The text keeps the FILE's label: a later file that squeezes it names
+      // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
+      // name is the text's first line for the model.
       return tools.answer(
-        { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText(m)], ...totals.patch },
+        { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText({ ...m, label })], ...totals.patch },
         totals.lines,
       );
     }
@@ -595,14 +599,15 @@ function receiveFurtherSheet(
       fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines,
     );
   }
-  // Today's reading, said (§4.2): the sheet's text for the totals.
+  // Today's reading, said (§4.2): the sheet's text for the totals — and when
+  // the reader cut it (the further sheets share one budget), that is said too.
   const own = sheet.ownText;
-  const cut = own?.text && own.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
+  const cut = own?.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
   return tools.answer(
     {
       invoiceTexts: [
         ...state.invoiceTexts,
-        ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label: sheetLabel }] : []),
+        ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : []),
       ],
     },
     [`📄 ${sheetLabel} — o‘sha tovarlar deb olindi (faqat jami uchun o‘qildi); boshqa tovar bo‘lsa, alohida fayl qilib yuboring.`, ...cut],

@@ -16,7 +16,7 @@ import { afterEach, describe, expect, it } from 'vitest';
  */
 
 import { activeIntake, endIntake, pickGoods, fileLeftOutNote, sameAsInvoiceNote, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
-import { PICTURES_LINE, readIntakeFile, receiveSheetText, sheetTextLine } from '@/modules/platform/telegram/calc-files';
+import { PICTURES_LINE, promptFileLines, readIntakeFile, receiveSheetText, sheetTextLine } from '@/modules/platform/telegram/calc-files';
 import { readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { otherName, positionalFills, provenOther, samePositions, sameWorkbookAgain } from '@/modules/platform/telegram/file-goods';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
@@ -97,7 +97,15 @@ describe('a further sheet, by its shape (§4.2)', () => {
         '📄 «CI-PL.xlsx», «PACKING» varag‘i — o‘sha tovarlar: qatorlar «INVOICE» varag‘idan, bundan faqat umumiy brutto va kub olindi.',
     );
     // Its text still rides to the model under the totals heading (the C2/C6 fence stands).
-    expect(s.invoiceTexts.map((t) => [t.label, t.text.split('\n')[0], t.unmapped])).toEqual([['«CI-PL.xlsx», «PACKING» varag‘i', '[PACKING]', undefined]]);
+    // The FILE's label: a later file that squeezes it says ««CI-PL.xlsx» ning boshqa varaqlari».
+    expect(s.invoiceTexts.map((t) => [t.label, t.text.split('\n')[0], t.unmapped])).toEqual([['«CI-PL.xlsx»', '[PACKING]', undefined]]);
+  });
+
+  it('a packing sheet’s text squeezed out of the model’s budget later is named by its FILE', async () => {
+    const chatId = collection();
+    await forward(chatId, await r1Book(), 'CI-PL.xlsx');
+    const lines = promptFileLines(activeIntake(chatId)!, (texts) => ({ kept: texts.map(() => 1), total: texts.map(() => 12) }));
+    expect(lines).toEqual(['⚠️ AI «CI-PL.xlsx» ning boshqa varaqlaridan faqat 1 / 12 qatorini o‘qiydi.']);
   });
 
   it('R1 with a net column: each row takes its netto from the packing line at its PLACE', async () => {
