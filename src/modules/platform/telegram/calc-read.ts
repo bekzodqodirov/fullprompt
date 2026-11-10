@@ -343,6 +343,13 @@ export function settleAnalysis(
     notes: analysed.notes,
     aiUsed: analysed.aiUsed,
     aiFailure: analysed.aiFailure,
+    // What this reading left unread (docs/FAYL-OQISH.md §10) — the reading's
+    // own, or `...live` keeps the previous reading's: a cut then never reached
+    // the table (✅ drawn), or a stale cut survived a whole «🔄».
+    aiCut: analysed.aiCut ?? null,
+    aiInputCut: analysed.aiInputCut ?? false,
+    filesMissing: analysed.filesMissing ?? 0,
+    unreadPdfs: analysed.unreadPdfs ?? [],
     // The reading's bill is no longer carried here: the job writes it to the
     // ledger the moment the model answered (§7.2.10), so the collection's
     // own count would bill it twice.

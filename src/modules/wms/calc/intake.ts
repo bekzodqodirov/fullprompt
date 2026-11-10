@@ -158,7 +158,10 @@ export type AiReadFailure =
   | 'auth'
   | 'rejected'
   | 'unreadable'
-  | 'network';
+  | 'network'
+  // A stored file the reading could not load (docs/FAYL-OQISH.md §2.5): a
+  // storage blip, which a re-read heals — never «nothing to read».
+  | 'files_missing';
 
 /** The sentence per failure, and whether pressing «🔄 Qayta o‘qish» can help. */
 export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boolean }> = {
@@ -186,6 +189,7 @@ export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boole
   },
   unreadable: { text: 'AI javobini o‘qib bo‘lmadi.', retry: true },
   network: { text: 'AI bilan aloqa uzildi.', retry: true },
+  files_missing: { text: 'Yuborilgan fayl saqlangan joydan olinmadi.', retry: true },
 };
 
 /** What the AI (or a human) managed to read out of the sent material. */

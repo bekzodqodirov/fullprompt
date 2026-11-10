@@ -147,6 +147,18 @@ export interface AiIntakeResult {
 }
 
 /**
+ * A reading the model did not finish (docs/FAYL-OQISH.md §3.3), kept for the
+ * goods it DID complete: `goods` is how many, `why` what stopped it — the
+ * clock (an abort at the leash), the size (`max_tokens`), or a stream that
+ * dropped mid-answer. A cut is never whole, so the AI door draws no
+ * «✅ Tasdiqlash» over it (§1.1 b).
+ */
+export interface AiReadingCut {
+  goods: number;
+  why: 'clock' | 'size' | 'dropped';
+}
+
+/**
  * ONE response, read: the reading, or why there is none (his 1.6 a — never
  * one sentence for all).
  *
@@ -156,7 +168,7 @@ export interface AiIntakeResult {
  * answer is exactly the one that costs the most.
  */
 export type AiIntakeRead =
-  | ({ ok: true } & AiIntakeResult)
+  | ({ ok: true; cut?: AiReadingCut } & AiIntakeResult)
   | { ok: false; failure: AiReadFailure; usage?: AiIntakeResult['usage'] };
 
 /**

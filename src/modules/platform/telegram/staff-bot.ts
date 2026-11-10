@@ -532,6 +532,9 @@ const CALC_STEPS = [
   'pick_5',
   'done',
   'save',
+  // docs/FAYL-OQISH.md §1.2: «👤 VED hisoblasin» — the AI door's landing when
+  // the reading is not whole; the VED computes, the AI promises nothing.
+  'to_ved',
   'more',
   'cancel',
   // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
@@ -619,6 +622,7 @@ export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'ow
   pick_5: 'own',
   done: 'own',
   save: 'own',
+  to_ved: 'own',
   more: 'own',
   cancel: 'own',
   cancel_y: 'own',

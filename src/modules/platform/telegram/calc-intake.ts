@@ -195,6 +195,13 @@ export interface IntakeState {
     at: number;
     jobId: string | null;
     noticeMessageId?: number | null;
+    /**
+     * What the «⏳ AI o‘qiyapti…» notice is edited to (docs/FAYL-OQISH.md
+     * §2.3), decided at SETTLE from what the reading did — never from the
+     * stage at delivery. Absent on a reply stored before it: today's
+     * «✅ O‘qildi».
+     */
+    notice?: 'read' | 'cut' | 'failed' | 'no_model' | 'arrived';
   } | null;
   /** The table answers the seller was told, for the undo (P3). */
   echoes: IntakeEcho[];
@@ -479,6 +486,30 @@ export interface IntakeState {
   usages?: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
+  /**
+   * docs/FAYL-OQISH.md §10 — what the reading did NOT read, as state, so the
+   * table, the save branch, the landing and the sweep all ask the same
+   * `aiReadingWhole` (reading-whole.ts). Optional: a row written before this
+   * round reads as «nothing unread» (`migrateIntakeState` defaults them).
+   *
+   * `aiCut` — the model stopped before the end; the goods it completed are
+   * the reading's, and the rest is unread (§3.3). Written by every reading.
+   */
+  aiCut?: import('../../wms/calc/intake-ai').AiReadingCut | null;
+  /** «🔄» was pressed once on a clock cut; new material clears it (§1.2). */
+  aiCutRetried?: boolean;
+  /** The model was not shown all of an accepted sheet text (§1.1 f). Written by every reading. */
+  aiInputCut?: boolean;
+  /** Stored files the reading could not load (§2.5). Written by every reading. */
+  filesMissing?: number;
+  /** PDFs the API refused (attachment ids) — skipped by later readings, named on the table (§3.4). */
+  unreadPdfs?: string[];
+  /** Files refused AT ARRIVAL, with the words the seller was told — named, never blocking (§1.1). */
+  refusedFiles?: { name: string; why: string }[];
+  /** The restart question stands: material is refused in words until it is answered (§2.4). */
+  restartAsked?: { messageId: number | null; at: number } | null;
+  /** What the landing press chose — the AI's figure, or the VED alone (§1.3 a). */
+  landAs?: 'ai' | 'ved' | null;
   /**
    * The analysis in flight, by a token minted at «Bo'ldi».
    *
