@@ -120,6 +120,19 @@ export interface InvoiceMergeAnswer {
 
 export const NO_MERGE: InvoiceMergeAnswer = { all: null, picks: new Set() };
 
+/** What the «qo'shaymi?» dialog is told (the groups route's answer). */
+export interface InvoiceGroupsView {
+  fp: string;
+  /** Each group with WHO clears its cargo when that is not the truck's own answer. */
+  groups: (InvoiceMergeGroup & { customs: { kind: 'client' | 'firm'; name: string } | null })[];
+  /** How many rows the invoice has with nothing merged by answer. */
+  positions: number;
+  /** The stickers that would print red on that paper. */
+  red: string[];
+  /** The truck's papers were already sent to the agent. */
+  sent: boolean;
+}
+
 export interface InvoiceModel {
   positions: InvoicePosition[];
   /** The codes that hold two or more positions (inside one scope) — what the dialog lists. Empty = nothing to ask. */

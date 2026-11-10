@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import ExcelJS from 'exceljs';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -233,14 +233,9 @@ describe('the customs invoice counts a pallet as ONE place', () => {
     const all = [a!, b!, c!].flatMap((lot) => lot.boxes.map((x) => x.id));
     await db.update(boxes).set({ currentBatchId: truck!.id }).where(inArray(boxes.id, all));
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load((await buildInvoiceXlsx(truck!.id))! as unknown as ArrayBuffer);
-    const sheet = workbook.worksheets[0]!;
-    const places = new Map<string, number>();
-    for (let r = 21; r < 21 + 3; r += 1) {
-      const row = sheet.getRow(r);
-      places.set(String(row.getCell(2).value), Number(row.getCell(6).value));
-    }
+    const invoice = await readInvoiceSheet(await buildInvoiceXlsx(truck!.id));
+    const places = new Map<string, number>(invoice.rows.map((r) => [r.product, Number(r.places)]));
+    expect(invoice.rows).toHaveLength(3);
     // Loose cartons: A 2, B 2; one pallet; C's yashik counted by cartons: 2.
     expect([...places.values()].reduce((sum, n) => sum + n, 0)).toBe(2 + 2 + 1 + 2);
     expect(places.get('托盘货0')).toBe(3); // 2 loose + the pallet

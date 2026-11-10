@@ -100,11 +100,14 @@ describe('the handover act asks one door, from every place that reads or links i
   });
 });
 
-/** The four that share `guardBatchDocument`. */
+/** The ones that share `guardBatchDocument` — the four documents, and the invoice's «what would be asked» list. */
 const batchDocumentRoutes = [
   { file: 'src/app/api/batches/[id]/manifest/route.ts', permissions: ['ved.docs', 'plans.manage'] },
   { file: 'src/app/api/batches/[id]/packing/route.ts', permissions: ['ved.docs', 'plans.manage'] },
   { file: 'src/app/api/batches/[id]/invoice/route.ts', permissions: ['ved.docs', 'plans.manage'] },
+  // The same door as the file it previews: it names every lot, client code
+  // and weight the invoice would (2026-11-10).
+  { file: 'src/app/api/batches/[id]/invoice/groups/route.ts', permissions: ['ved.docs', 'plans.manage'] },
   {
     file: 'src/app/api/batches/[id]/packing-photos/route.ts',
     permissions: ['ved.docs', 'plans.manage', 'scan.load'],
@@ -135,6 +138,10 @@ describe('document routes gate on permission AND warehouse, not just a session',
     expect(guard, 'refuses with 403').toContain('403');
     expect(guard, 'still answers 401 unauthenticated').toContain('401');
     expect(guard, 'and 404s a batch that is not there').toContain('404');
+    // …and an id that is not an id at all, BEFORE the query: bound into it,
+    // a malformed uuid is a 22P02 — a 500 on every document route.
+    expect(guard.indexOf('isUuidShaped(batchId)')).toBeGreaterThan(-1);
+    expect(guard.indexOf('isUuidShaped(batchId)')).toBeLessThan(guard.indexOf('db.query.batches.findFirst'));
   });
 
   it('the builders themselves stay unauthorized — the ROUTE is the gate', () => {

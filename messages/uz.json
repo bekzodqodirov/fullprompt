@@ -6514,5 +6514,23 @@
       "recalculated": "VED bu hisobni qayta hisoblayapti — eski javobga narx yozilmaydi. Yangi javob kelganda narx bering.",
       "unknown": "Bo‘lmadi — qayta urinib ko‘ring."
     }
+  },
+  "invoys": {
+    "title": "Bir xil TNVED kodli tovarlar",
+    "intro": "Quyidagi kodlarda bir nechta qator bor. «Qo'shish» tanlansa — invoysda bitta pozitsiya bo'ladi, «Alohida» tanlansa — qatorlar alohida qoladi.",
+    "merge": "Qo'shish",
+    "apart": "Alohida",
+    "all": "Hammasini:",
+    "mergedAs": "Qo'shilsa: {name} — {quantity} {unit}",
+    "mixedUnits": "Birida dona (шт), birida faqat kg yozilgan. Qo'shilsa pozitsiya kg bilan chiqadi, dona soni katak izohida qoladi.",
+    "customsClient": "Bojxonani mijoz o'z firmasi bilan rasmiylashtiradi: {name}",
+    "customsFirm": "Bojxona firmasi: {name}",
+    "unsaved": "{n} ta TNVED kod saqlanmagan — invoysga kirmaydi. Avval «Saqlash»ni bosing.",
+    "sent": "Bu mashinaning hujjatlari agentga yuborilgan — yangi fayl yuborilganidan farq qilishi mumkin.",
+    "redNote": "Invoysda qizil bilan yozilgan lotlar: bitta karobkada bir necha xil tovar bo'lishi mumkin.",
+    "tooMany": "Juda ko'p guruh tanlandi — «Hammasini: Qo'shish»ni bosing yoki kamroq tanlang.",
+    "get": "Invoysni olish",
+    "listFailed": "Ro'yxatni o'qib bo'lmadi — invoys qo'shilmagan holda yuklandi.",
+    "close": "Yopish"
   }
 }

@@ -55,6 +55,11 @@ const serwist = new Serwist({
        * `/api/dl/*` is a download link: one person's file under an address
        * that dies in minutes. Cached, it is the whole file kept in the
        * phone's storage under a key nobody will ask for again.
+       *
+       * `/api/batches/<id>/invoice` and its `/groups` (the tarkib round): the
+       * invoice is rebuilt from the codes saved a minute ago and its groups
+       * are what the «qo'shaymi?» dialog asks — a cached list would ask about
+       * yesterday's names, and a merge is signed against the names it lists.
        */
       matcher: ({ url: { pathname }, sameOrigin }) =>
         sameOrigin &&
@@ -63,7 +68,8 @@ const serwist = new Serwist({
           pathname.startsWith('/api/cabinet/') ||
           pathname.startsWith('/api/calc/rev/') ||
           pathname === '/api/receive/pickups' ||
-          pathname.startsWith('/api/dl/')),
+          pathname.startsWith('/api/dl/') ||
+          /^\/api\/batches\/[^/]+\/invoice(\/groups)?$/.test(pathname)),
       handler: new NetworkOnly(),
     },
     ...defaultCache,

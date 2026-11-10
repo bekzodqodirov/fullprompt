@@ -145,7 +145,9 @@ describe('the rules the shape can hold', () => {
 
   it('4. the invoice prints a composed lot through paperLines, never the memory’s code; places come from the parts', () => {
     const src = read('src/modules/wms/documents/ved-xlsx.ts');
-    const invoice = fn(src, 'buildInvoiceXlsx');
+    // The walk over the lots lives in `invoiceSourceRows` since the sheet is
+    // written from positions (2026-11-10) — the rule moved with it.
+    const invoice = fn(src, 'invoiceSourceRows');
     const from = invoice.indexOf('if (comp) {');
     const to = invoice.indexOf('continue;', from);
     expect(from).toBeGreaterThan(-1);
@@ -155,6 +157,13 @@ describe('the rules the shape can hold', () => {
     expect(branch).not.toContain('tnvedFor(');
     expect(branch).not.toContain('tnved.get(');
     expect(fn(src, 'invoicePlaces')).toContain('invoicePlaceParts(');
+    // …and the sheet is written from that ONE list through the row model:
+    // the builder itself walks no lot and reads no memory.
+    const sheet = fn(src, 'buildInvoiceXlsx');
+    expect(sheet).toContain('invoiceSourceRows(');
+    expect(sheet).toContain('invoiceModel(');
+    expect(sheet).not.toContain('tnvedFor(');
+    expect(sheet).not.toContain('paperLines(');
   });
 
   it('5. the price history counts kinds in their own CTE, never inside `load` (#432)', () => {

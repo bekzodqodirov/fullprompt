@@ -68,6 +68,12 @@ export const DOC = {
    * line of the lot's first row — the agent finds the cartons by it.
    */
   onCarton: 'На коробке / On the carton',
+  /**
+   * The invoice's column after «№» (the owner, 2026-11-10 — «shu TNVED kod
+   * qaysi karobkalar, ya'ni qaysi klientni qaysi prixodiligini yozib ket»):
+   * the stickers behind a position, client code + lot letter.
+   */
+  lotMarks: 'Маркировка / Marks',
   packaging: 'Упаковка / Packaging',
   /**
    * Lot tarkibi: a line of a composed lot whose share of the places rounds

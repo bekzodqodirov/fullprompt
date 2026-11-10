@@ -7,6 +7,7 @@ import {
   boxes,
   clients,
   crates,
+  partners,
   receiptLots,
   receipts,
   scanEvents,
@@ -26,6 +27,16 @@ import {
   packingProductCell,
 } from './composition-cells';
 import { tashkentDay } from '@/modules/platform/time/tashkent';
+import { effectiveCustoms } from '../partners/customs';
+import {
+  NO_MERGE,
+  invoiceModel,
+  labelRuns,
+  positionEstimateNote,
+  positionPiecesNote,
+  type InvoiceMergeAnswer,
+  type InvoiceSourceRow,
+} from './invoice-rows';
 
 async function batchLines(batchId: string) {
   const rows = await db
@@ -35,6 +46,10 @@ async function batchLines(batchId: string) {
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
       liveCrateId: boxes.crateId,
+      receiptId: receipts.id,
+      clientId: receipts.clientId,
+      customsPartnerId: receipts.customsPartnerId,
+      customsByClient: receipts.customsByClient,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -78,6 +93,10 @@ async function batchLines(batchId: string) {
       lot: row.lot,
       clientCode: row.clientCode,
       marking: row.marking,
+      receiptId: row.receiptId,
+      clientId: row.clientId,
+      customsPartnerId: row.customsPartnerId,
+      customsByClient: row.customsByClient,
       crateCode: crate ? (crateById.get(crate)?.code ?? null) : null,
       crateId: crate,
       crateKind: crate ? (crateById.get(crate)?.kind ?? null) : null,
@@ -196,20 +215,195 @@ async function header(sheet: ExcelJS.Worksheet, batchId: string, title: string) 
 }
 
 /**
+ * What a sticker of this lot says, as the invoice's «Маркировка» column
+ * writes it: the client's code and the lot's letter («GS777-AB» — his
+ * «klient kodini va berilgan kod (AA, AB, AC)»). Cargo received under a
+ * hand-written marking and claimed later still CARRIES the marking on its
+ * cartons, so it follows in brackets; unclaimed cargo has only the marking.
+ */
+export function invoiceLotLabel(lot: { clientCode: string | null; marking: string | null; letter: string | null }): string {
+  const letter = lot.letter ?? '';
+  if (lot.clientCode && lot.marking) return `${lot.clientCode}-${letter} (${lot.marking})`;
+  return `${lot.clientCode ?? lot.marking ?? '?'}-${letter}`;
+}
+
+/** Who clears a scope, for the dialog — absent for the truck's own answer. */
+export interface InvoiceScopeNote {
+  kind: 'client' | 'firm';
+  name: string;
+}
+
+export interface InvoiceSource {
+  batch: typeof batches.$inferSelect;
+  rows: InvoiceSourceRow[];
+  /** scope token → who clears it, only for the scopes that are NOT the truck's own. */
+  scopes: Map<string, InvoiceScopeNote>;
+}
+
+/**
+ * The invoice's SOURCE rows (docs/TARKIB-TUZATISH.md §6.1) — exactly what
+ * this builder printed before positions existed, unmerged: one row per lot
+ * with no tarkib (its own name, the memory's code, «кг»), one per printed
+ * tarkib line (the line's own name and code — never the memory's, a line has
+ * no memory key; «шт» when its pieces land here). The sheet AND the dialog
+ * that asks «qo'shaymi?» are computed from this one list (#513).
+ *
+ * Lots stand in a TOTAL order — letter, then label, then id: the query's
+ * `ORDER BY letter, seq_in_lot` interleaves lots that share a letter, so the
+ * same truck could print its rows in another order on the next download, and
+ * a merged position takes its FIRST member's slot.
+ */
+export async function invoiceSourceRows(batchId: string): Promise<InvoiceSource | null> {
+  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
+  if (!batch) return null;
+  const rows = await batchLines(batchId);
+  const placeRows = rows.map(({ lot, crateId, crateKind }) => ({ lotId: lot.id, letter: lot.letter, crateId, crateKind }));
+  const places = invoicePlaces(placeRows);
+  const placeParts = invoicePlaceParts(placeRows);
+  const byLot = new Map<
+    string,
+    {
+      lot: typeof receiptLots.$inferSelect;
+      product: string;
+      nameZh: string;
+      boxCount: number;
+      kg: number;
+      label: string;
+      at: number;
+      first: (typeof rows)[number];
+    }
+  >();
+  // The letters in the query's own order (the database's collation, NULL last).
+  const letterAt = new Map<string | null, number>();
+  for (const row of rows) {
+    const { lot } = row;
+    if (!letterAt.has(lot.letter)) letterAt.set(lot.letter, letterAt.size);
+    const agg = byLot.get(lot.id) ?? {
+      lot,
+      product: lot.productNameRu?.trim() || lot.productNameZh,
+      nameZh: lot.productNameZh,
+      boxCount: 0,
+      kg: 0,
+      label: invoiceLotLabel({ clientCode: row.clientCode, marking: row.marking, letter: lot.letter }),
+      at: letterAt.get(lot.letter)!,
+      first: row,
+    };
+    agg.boxCount += 1;
+    agg.kg += Number(lot.totalWeightKg) / lot.boxCount;
+    byLot.set(lot.id, agg);
+  }
+  const lots = [...byLot.entries()].sort(
+    ([idA, a], [idB, b]) => a.at - b.at || (a.label < b.label ? -1 : a.label > b.label ? 1 : idA < idB ? -1 : 1),
+  );
+  // ТНВЭД memory (Phase 1.5): known products prefill; unknown stay blank.
+  const tnved = await tnvedFor(lots.map(([, a]) => a.nameZh));
+  // Lot tarkibi: a composed lot prints one row per line on this truck.
+  const papers = await paperContext(batchId, lots.map(([id]) => id));
+
+  // Who clears each prixod (the Rastamojka panel's own rule): rows of
+  // different answers never share a position.
+  const own = effectiveCustoms({ customsPartnerId: null, customsByClient: null }, batch);
+  const scopeOf = (row: (typeof rows)[number]) => {
+    const choice = effectiveCustoms(row, batch);
+    return {
+      key: choice.byClient ? `client:${row.clientId ?? row.receiptId}` : `firm:${choice.partnerId ?? ''}`,
+      choice,
+    };
+  };
+  const ownKey = own.byClient ? null : `firm:${own.partnerId ?? ''}`;
+  const firmIds = [...new Set(lots.map(([, a]) => scopeOf(a.first).choice.partnerId).filter((id): id is string => id !== null))];
+  const firms = firmIds.length
+    ? await db.select({ id: partners.id, name: partners.name }).from(partners).where(inArray(partners.id, firmIds))
+    : [];
+  const firmName = new Map(firms.map((f) => [f.id, f.name]));
+  const scopes = new Map<string, InvoiceScopeNote>();
+
+  const out: InvoiceSourceRow[] = [];
+  for (const [lotId, agg] of lots) {
+    const kg = Math.round(agg.kg * 10) / 10;
+    const comp = papers.compositions.get(lotId);
+    const { key: scope, choice } = scopeOf(agg.first);
+    if (scope !== ownKey && !scopes.has(scope)) {
+      scopes.set(
+        scope,
+        choice.byClient
+          ? { kind: 'client', name: agg.first.clientCode ?? agg.first.marking ?? '?' }
+          : { kind: 'firm', name: choice.partnerId ? (firmName.get(choice.partnerId) ?? '?') : '—' },
+      );
+    }
+    const lot = { lotId, label: agg.label, lines: comp ? comp.lines.length : 0 };
+    if (comp) {
+      // The composed lot's rows: netto = brutto = the line's kg, which sum to
+      // exactly the single figure the lot printed before.
+      const view = paperLines(comp, lotTotalsOf(agg.lot), {
+        segments: papers.segments(lotId),
+        cartons: agg.boxCount,
+        kg,
+        places: placeParts.get(lotId) ?? { loose: agg.boxCount, pallets: 0, onPallets: 0 },
+      });
+      const estimate = view.estimate ? estimateNote(view, agg.boxCount, agg.lot.boxCount) : null;
+      for (const line of view.lines) {
+        const cells = invoiceRowCells(line);
+        out.push({
+          lot,
+          name: cells.product,
+          code: cells.code,
+          unit: cells.unit,
+          pieces: cells.unit === 'шт' ? cells.quantity : null,
+          places: line.places,
+          kgTenths: Math.round(cells.kg * 10),
+          estimate,
+          scope,
+        });
+      }
+      continue;
+    }
+    // ТНВЭД prefills from memory (still editable in Excel); the measured
+    // weight goes into both netto and brutto — netto is corrected by hand
+    // when the tare matters.
+    out.push({
+      lot,
+      name: agg.product,
+      code: tnved.get(productKey(agg.nameZh))?.tnvedCode ?? '',
+      unit: 'кг',
+      pieces: null,
+      places: places.get(lotId) ?? agg.boxCount,
+      kgTenths: Math.round(kg * 10),
+      estimate: null,
+      scope,
+    });
+  }
+  return { batch, rows: out, scopes };
+}
+
+/** The red of a sticker that may hold another good — bold too, so it survives a black-and-white print. */
+const RED_MARK = { name: 'Arial', size: 11, bold: true, color: { argb: 'FFC00000' } } as const;
+const PLAIN_MARK = { name: 'Arial', size: 11 } as const;
+
+/**
  * INVOICE & PACKING LIST draft (W6) mirroring the owner's real ka23 invoice
  * file (feedback round 6): the same header block (Invoice №, date, container,
  * Sender / Seller / Consignee requisites from settings, transport + delivery
- * terms) and the same table columns incl. ТНВЭД. Prices, ТНВЭД codes and the
- * netto correction are left for the VED manager; the amount column and totals
- * are live formulas.
+ * terms) and the same table columns incl. ТНВЭД. Prices and the netto
+ * correction are left for the VED manager; the amount column and totals are
+ * live formulas.
+ *
+ * Since 2026-11-10 (his item 6) the rows are POSITIONS (`invoice-rows.ts`):
+ * same code + same name + same unit is one row; a code that still holds
+ * several rows is merged only by the answers the address carries (`answer`);
+ * column B names the stickers behind each row, and a sticker whose lot holds
+ * several goods that do not stand in one row is RED — «shu karobkani
+ * ochganimda 3-4 TNVED koddagi tovardan birini ochishim mumkin».
  */
-export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> {
-  const batch = await db.query.batches.findFirst({ where: eq(batches.id, batchId) });
-  if (!batch) return null;
+export async function buildInvoiceXlsx(batchId: string, answer: InvoiceMergeAnswer = NO_MERGE): Promise<Buffer | null> {
+  const source = await invoiceSourceRows(batchId);
+  if (!source) return null;
+  const { batch } = source;
+  const model = invoiceModel(source.rows, answer);
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('invoice packinglist');
   sheet.columns = [
-    { width: 4 }, { width: 46 }, { width: 13 }, { width: 8 }, { width: 11 },
+    { width: 4 }, { width: 22 }, { width: 46 }, { width: 13 }, { width: 8 }, { width: 11 },
     { width: 11 }, { width: 13 }, { width: 14 }, { width: 12 }, { width: 15 },
   ];
 
@@ -231,112 +425,100 @@ export async function buildInvoiceXlsx(batchId: string): Promise<Buffer | null> 
     sheet.getCell(cell).alignment = { wrapText: true, vertical: 'top' };
   };
 
-  sheet.mergeCells('B1:I1');
-  sheet.getCell('B1').value = 'I N V O I C E  &  PACKING LIST';
-  sheet.getCell('B1').font = { bold: true, size: 14 };
-  sheet.getCell('B1').alignment = { horizontal: 'center' };
+  // The header's VALUES stand in column C since «Маркировка» took B — and B
+  // is left empty beside the labels of column A, which is only 4 wide: with a
+  // value beside it «Отправитель/Sender:» was cut to «Отпр»; with none the
+  // label spills over and reads whole.
+  sheet.mergeCells('C1:J1');
+  sheet.getCell('C1').value = 'I N V O I C E  &  PACKING LIST';
+  sheet.getCell('C1').font = { bold: true, size: 14 };
+  sheet.getCell('C1').alignment = { horizontal: 'center' };
 
   sheet.getCell('A3').value = 'Invoice № :';
-  sheet.getCell('B3').value = `${dateCompact}${batch.code.replace('-', '').toLowerCase()}`;
+  sheet.getCell('C3').value = `${dateCompact}${batch.code.replace('-', '').toLowerCase()}`;
   sheet.getCell('A4').value = 'Date :';
-  sheet.getCell('B4').value = today;
+  sheet.getCell('C4').value = today;
   sheet.getCell('A5').value = '№ Контейнер /Container:';
-  sheet.getCell('B5').value = batch.vehiclePlate ?? 'by track';
+  sheet.getCell('C5').value = batch.vehiclePlate ?? 'by track';
 
   sheet.getCell('A7').value = 'Отправитель/Sender:';
-  sheet.mergeCells('B7:I8');
-  setWrapped('B7', String(sender));
+  sheet.mergeCells('C7:J8');
+  setWrapped('C7', String(sender));
   sheet.getCell('A10').value = 'Seller/ Продавец:';
-  sheet.mergeCells('B10:I11');
-  setWrapped('B10', String(seller));
+  sheet.mergeCells('C10:J11');
+  setWrapped('C10', String(seller));
   sheet.getCell('A13').value = 'Получатель/Consignee:';
-  sheet.mergeCells('B13:I15');
-  setWrapped('B13', String(consignee));
+  sheet.mergeCells('C13:J15');
+  setWrapped('C13', String(consignee));
 
   sheet.getCell('A17').value = 'Способ транспортировки:';
-  sheet.getCell('B17').value = String(transport);
-  sheet.getCell('H17').value = String(customsPost);
+  sheet.getCell('C17').value = String(transport);
+  sheet.getCell('I17').value = String(customsPost);
   sheet.getCell('A18').value = 'Условия поставки:';
-  sheet.getCell('B18').value = String(delivery);
+  sheet.getCell('C18').value = String(delivery);
 
   const head = sheet.getRow(20);
   head.values = [
-    '№', DOC.productName, DOC.hsCode, DOC.unit, DOC.quantity, DOC.places,
+    '№', DOC.lotMarks, DOC.productName, DOC.hsCode, DOC.unit, DOC.quantity, DOC.places,
     DOC.netWeight, DOC.grossWeight, DOC.price, DOC.totalAmount,
   ];
   head.font = { bold: true };
   head.alignment = { wrapText: true, vertical: 'middle' };
 
-  const rows = await batchLines(batchId);
-  const placeRows = rows.map(({ lot, crateId, crateKind }) => ({ lotId: lot.id, letter: lot.letter, crateId, crateKind }));
-  const places = invoicePlaces(placeRows);
-  const placeParts = invoicePlaceParts(placeRows);
-  const byLot = new Map<
-    string,
-    { lot: typeof receiptLots.$inferSelect; product: string; nameZh: string; boxCount: number; kg: number }
-  >();
-  for (const { lot } of rows) {
-    const agg = byLot.get(lot.id) ?? {
-      lot,
-      product: lot.productNameRu?.trim() || lot.productNameZh,
-      nameZh: lot.productNameZh,
-      boxCount: 0,
-      kg: 0,
-    };
-    agg.boxCount += 1;
-    agg.kg += Number(lot.totalWeightKg) / lot.boxCount;
-    byLot.set(lot.id, agg);
-  }
-  // ТНВЭД memory (Phase 1.5): known products prefill; unknown stay blank.
-  const tnved = await tnvedFor([...byLot.values()].map((a) => a.nameZh));
-  // Lot tarkibi: a composed lot prints one row per line on this truck.
-  const papers = await paperContext(batchId, [...byLot.keys()]);
-
   let n = 0;
   let rowNo = head.number;
-  for (const [lotId, agg] of byLot) {
-    const kg = Math.round(agg.kg * 10) / 10;
-    const comp = papers.compositions.get(lotId);
-    if (comp) {
-      // The composed lot's rows: the line's own name and code (never the
-      // memory's — a line has no memory key), netto = brutto = the line's
-      // kg, which sum to exactly the single figure the lot printed before.
-      const view = paperLines(comp, lotTotalsOf(agg.lot), {
-        segments: papers.segments(lotId),
-        cartons: agg.boxCount,
-        kg,
-        places: placeParts.get(lotId) ?? { loose: agg.boxCount, pallets: 0, onPallets: 0 },
-      });
-      for (const line of view.lines) {
-        n += 1;
-        rowNo += 1;
-        const cells = invoiceRowCells(line);
-        const row = sheet.getRow(rowNo);
-        row.values = [n, cells.product, cells.code, cells.unit, cells.quantity, cells.places, cells.kg, cells.kg, '', ''];
-        row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
-        if (view.estimate) {
-          row.getCell(2).note = estimateNote(view, agg.boxCount, agg.lot.boxCount);
-          row.getCell(2).fill = ESTIMATE_FILL;
-        }
-      }
-      continue;
-    }
+  for (const position of model.positions) {
     n += 1;
     rowNo += 1;
     const row = sheet.getRow(rowNo);
-    // ТНВЭД prefills from memory (still editable in Excel); price stays for
-    // the VED manager; measured weight goes into both netto and brutto —
-    // netto is corrected by hand when the tare matters. Amount is live.
-    const code = tnved.get(productKey(agg.nameZh))?.tnvedCode ?? '';
-    row.values = [n, agg.product, code, 'кг', kg, places.get(lotId) ?? agg.boxCount, kg, kg, '', ''];
-    row.getCell(10).value = { formula: `I${rowNo}*E${rowNo}` };
+    const kg = position.kgTenths / 10;
+    row.values = [
+      n,
+      '',
+      position.name,
+      position.code,
+      position.unit,
+      position.quantity,
+      position.places === 'part' ? DOC.partOfPlace : (position.places ?? ''),
+      kg,
+      kg,
+      '',
+      '',
+    ];
+    // Price stays for the VED manager; the amount is live.
+    row.getCell(11).value = { formula: `J${rowNo}*F${rowNo}` };
+
+    // Column B: the stickers behind the row. Rich text only where something
+    // is red — every run names its own face, because the «all Arial» pass
+    // below sets the CELL's font and does not reach runs.
+    const marks = labelRuns(position, model.redLabels);
+    const cell = row.getCell(2);
+    cell.alignment = { wrapText: true, vertical: 'top' };
+    if (marks.some((m) => m.red)) {
+      cell.value = {
+        richText: marks.flatMap((m, i) => [
+          ...(i > 0 ? [{ text: ', ', font: { ...PLAIN_MARK } }] : []),
+          { text: m.text, font: m.red ? { ...RED_MARK } : { ...PLAIN_MARK } },
+        ]),
+      };
+    } else {
+      cell.value = marks.map((m) => m.text).join(', ');
+    }
+
+    const estimate = positionEstimateNote(position);
+    if (estimate) {
+      row.getCell(3).note = estimate;
+      row.getCell(3).fill = ESTIMATE_FILL;
+    }
+    const pieces = positionPiecesNote(position);
+    if (pieces) row.getCell(6).note = pieces;
   }
   const total = sheet.getRow(rowNo + 1);
   total.font = { bold: true };
-  total.getCell(6).value = { formula: `SUM(F${head.number + 1}:F${rowNo})` };
   total.getCell(7).value = { formula: `SUM(G${head.number + 1}:G${rowNo})` };
   total.getCell(8).value = { formula: `SUM(H${head.number + 1}:H${rowNo})` };
-  total.getCell(10).value = { formula: `SUM(J${head.number + 1}:J${rowNo})` };
+  total.getCell(9).value = { formula: `SUM(I${head.number + 1}:I${rowNo})` };
+  total.getCell(11).value = { formula: `SUM(K${head.number + 1}:K${rowNo})` };
 
   sheet.eachRow((row) => {
     row.eachCell((cell) => {

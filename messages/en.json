@@ -6514,5 +6514,23 @@
       "recalculated": "The VED is recalculating this — no price is written on the old answer. Give the price when the new answer arrives.",
       "unknown": "That did not work — try again."
     }
+  },
+  "invoys": {
+    "title": "Goods under one HS code",
+    "intro": "These codes hold several rows. “Merge” prints one position on the invoice; “Separate” keeps the rows apart.",
+    "merge": "Merge",
+    "apart": "Separate",
+    "all": "All:",
+    "mergedAs": "Merged: {name} — {quantity} {unit}",
+    "mixedUnits": "One row counts pieces, another only kilos. Merged, the position is in kg and the piece count stays in the cell's note.",
+    "customsClient": "Cleared by the client's own firm: {name}",
+    "customsFirm": "Customs firm: {name}",
+    "unsaved": "{n} HS codes are not saved — they will not be on the invoice. Press “Save” first.",
+    "sent": "This truck's papers were already sent to the agent — a new file may differ from the one sent.",
+    "redNote": "Lots printed red on the invoice: one carton may hold several goods.",
+    "tooMany": "Too many groups chosen — press “All: Merge” or choose fewer.",
+    "get": "Download the invoice",
+    "listFailed": "The list could not be read — the invoice was downloaded with nothing merged.",
+    "close": "Close"
   }
 }

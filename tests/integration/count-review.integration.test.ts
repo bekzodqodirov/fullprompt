@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
   attachments,
@@ -388,13 +389,8 @@ describe('the stocktake never writes off a count-moved pile (review cargo-2, pho
 describe('the customs invoice’s places are the truck’s own (review cargo-4)', () => {
   /** «Кол-во мест» of every goods line, as the file prints it. */
   async function invoicePlaces(batchId: string): Promise<number[]> {
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load((await buildInvoiceXlsx(batchId))! as never);
-    const out: number[] = [];
-    wb.worksheets[0]!.eachRow((row) => {
-      if (row.getCell(4).value === 'кг') out.push(Number(row.getCell(6).value));
-    });
-    return out;
+    const { rows } = await readInvoiceSheet(await buildInvoiceXlsx(batchId));
+    return rows.filter((r) => r.unit === 'кг').map((r) => Number(r.places));
   }
 
   it('a pallet that crossed as one place stays one after the hub dissolves it and builds another', async () => {

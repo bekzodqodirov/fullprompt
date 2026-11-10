@@ -1,6 +1,6 @@
-import ExcelJS from 'exceljs';
 import { expect, test, type Page } from '@playwright/test';
 import { cleanup, cleanupEarlier, database, memoryRows, mint, newRun, type Minted } from './lot-tarkibi-fixture';
+import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 
 /**
  * Lot tarkibi in a real browser (docs/LOT-TARKIBI.md §11.4): the owner's case
@@ -56,27 +56,21 @@ async function widths(page: Page) {
   }));
 }
 
-/** The customs invoice's table rows, parsed the way customs reads them. */
-async function invoice(page: Page) {
-  const res = await page.request.get(`/api/batches/${minted!.truckId}/invoice`);
+/** The customs invoice's table rows, parsed the way customs reads them — by header (a column was added after «№»). */
+async function invoice(page: Page, query = '') {
+  const res = await page.request.get(`/api/batches/${minted!.truckId}/invoice${query}`);
   expect(res.status()).toBe(200);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load((await res.body()) as unknown as ExcelJS.Buffer);
-  const sheet = wb.worksheets[0]!;
-  const rows: { product: string; code: string; unit: string; places: unknown; brutto: number; note: unknown }[] = [];
-  for (let r = 21; r < 100; r += 1) {
-    const row = sheet.getRow(r);
-    if (typeof row.getCell(1).value !== 'number') break;
-    rows.push({
-      product: String(row.getCell(2).value),
-      code: String(row.getCell(3).value ?? ''),
-      unit: String(row.getCell(4).value),
-      places: row.getCell(6).value,
-      brutto: Number(row.getCell(8).value),
-      note: row.getCell(2).note ?? null,
-    });
-  }
-  return rows;
+  const { rows } = await readInvoiceSheet(await res.body());
+  return rows.map((r) => ({
+    product: r.product,
+    code: r.code,
+    unit: r.unit,
+    places: r.places,
+    brutto: r.brutto,
+    note: r.note,
+    marks: r.marks,
+    redMarks: r.redMarks,
+  }));
 }
 
 const line = (page: Page, i: number) => page.getByTestId('tarkib-line').nth(i);

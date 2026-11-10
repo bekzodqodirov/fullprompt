@@ -21,6 +21,7 @@ import { CustomsCleared } from '../customs-cleared';
 import { CustomsFirm } from '../customs-firm';
 import { CustomsPerReceipt } from '../customs-per-receipt';
 import { TnvedEditor } from './tnved-editor';
+import { InvoiceDownload } from './invoice-download';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'bojxona');
@@ -180,9 +181,9 @@ export default async function BatchTnvedPage({
       <section id="hujjatlar" className="card max-w-3xl scroll-mt-20 space-y-2">
         <h2 className="text-lg font-bold">📑 {t('vedDocs')}</h2>
         <div className="flex flex-wrap gap-2">
-          <a href={`/api/batches/${batch.id}/invoice`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
-            ⬇️ {t('invoice')}
-          </a>
+          {/* A button with a question first (his item 6): codes that hold
+              several rows are listed and asked before the file is made. */}
+          <InvoiceDownload batchId={batch.id} label={`⬇️ ${t('invoice')}`} />
           {/* The photo packing list replaced the draft one in practice
               (owner); the generator stays reachable at /api/batches/[id]/packing. */}
           {loaded && (

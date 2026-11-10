@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 
 /**
  * Lot tarkibi against a real database (docs/LOT-TARKIBI.md §11.2): the owner's
@@ -324,48 +325,29 @@ async function refusal(press: Promise<unknown>): Promise<CompositionError> {
   throw new Error('the press went through');
 }
 
-/** The invoice's table rows: № … amount, plus the product cell's note. */
+/** The invoice's table rows, read by HEADER (tests/fixtures/invoice-sheet.ts): № … amount, plus the product cell's note. */
 async function invoiceRows(batchKey: string) {
-  const buf = await buildInvoiceXlsx(truck[batchKey]!);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-  const sheet = wb.worksheets[0]!;
-  const out: { product: string; code: string; unit: string; quantity: number; places: unknown; kg: number; note: string | null }[] = [];
-  for (let r = 21; r < 400; r += 1) {
-    const row = sheet.getRow(r);
-    if (typeof row.getCell(1).value !== 'number') break;
-    const note = row.getCell(2).note;
-    out.push({
-      product: String(row.getCell(2).value),
-      code: String(row.getCell(3).value ?? ''),
-      unit: String(row.getCell(4).value),
-      quantity: Number(row.getCell(5).value),
-      places: row.getCell(6).value,
-      kg: Number(row.getCell(8).value),
-      note: note ? (typeof note === 'string' ? note : JSON.stringify(note)) : null,
-    });
-  }
-  return out;
+  const { rows } = await readInvoiceSheet(await buildInvoiceXlsx(truck[batchKey]!));
+  return rows.map((r) => ({
+    product: r.product,
+    code: r.code,
+    unit: r.unit,
+    quantity: r.quantity,
+    places: r.places,
+    kg: r.brutto,
+    note: r.note,
+  }));
 }
 
 /**
- * Every invoice row's amount cell (J) as the sheet stores it: the price the
- * VED types (I) times the row's quantity (E), live — so a composed line's
- * «шт» or «кг» is what the amount multiplies, never a figure written in.
+ * Every invoice row's amount cell as the sheet stores it: the price the VED
+ * types times the row's quantity, live — so a composed line's «шт» or «кг»
+ * is what the amount multiplies, never a figure written in. `expected` is
+ * built from the columns the sheet's own header names.
  */
 async function invoiceAmounts(batchKey: string) {
-  const buf = await buildInvoiceXlsx(truck[batchKey]!);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-  const sheet = wb.worksheets[0]!;
-  const out: { row: number; formula: string | null }[] = [];
-  for (let r = 21; r < 400; r += 1) {
-    const row = sheet.getRow(r);
-    if (typeof row.getCell(1).value !== 'number') break;
-    const value = row.getCell(10).value;
-    out.push({ row: r, formula: value && typeof value === 'object' && 'formula' in value ? String(value.formula) : null });
-  }
-  return out;
+  const { rows, letters } = await readInvoiceSheet(await buildInvoiceXlsx(truck[batchKey]!));
+  return rows.map((r) => ({ row: r.row, formula: r.amount, expected: `${letters.price}${r.row}*${letters.quantity}${r.row}` }));
 }
 
 const sum1 = (values: number[]) => Math.round(values.reduce((s, v) => s + v, 0) * 10) / 10;
@@ -840,7 +822,7 @@ describe('lot tarkibi — the papers', () => {
     for (const key of ['CROSS', 'CROSS2', 'NOC', 'PAL', 'ONE']) {
       const amounts = await invoiceAmounts(key);
       expect(amounts.length, key).toBeGreaterThan(0);
-      expect(amounts.map((a) => a.formula), key).toEqual(amounts.map((a) => `I${a.row}*E${a.row}`));
+      expect(amounts.map((a) => a.formula), key).toEqual(amounts.map((a) => a.expected));
     }
   });
 
