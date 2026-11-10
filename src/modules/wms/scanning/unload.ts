@@ -31,6 +31,7 @@ import { ARRIVED_ON_A_TRUCK, notSentBackSql } from '../documents/arrivals';
 import { byShelf, shelfBefore } from '../boxes/shelf';
 import { claimLandedForRoadTx, closeRoadOwedTx, planRoadReady, type RoadOn } from '../planning/road';
 import { codeIdentity } from '../labels/code-identity';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { doorOpens, type CountDoor } from './count-door';
 import {
   BULK_ACCEPT_REASON,
@@ -1055,7 +1056,9 @@ async function missingLotLines(
       id: receiptLots.id,
       letter: receiptLots.letter,
       product: receiptLots.productNameZh,
-      productRu: receiptLots.productNameRu,
+      // As SHOWN (a standing tarkib's «first +N», lot-name.ts) — one
+      // statement on the finish's own transaction, never the pool (#714).
+      productRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
     })

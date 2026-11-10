@@ -11,6 +11,7 @@ import {
   type LotCheckState,
 } from '../receipts/lot-check-sql';
 import { lotChecksReady } from '../receipts/lot-check-ready';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { lotSplitAt, roadCartonSql } from './road';
 import { trucksOnRoadRows } from '../tracking/on-road';
 import { incomingForWarehouses } from '../pickups/service';
@@ -53,7 +54,10 @@ export async function plannableStock(warehouseId: string) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      // As SHOWN (the owner's items 3-4, 2026-11-10): a standing tarkib's
+      // «first +N», else the lot's own word — `receipts/lot-name.ts`. The
+      // planner reads a name here and nothing keys on it.
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,
@@ -206,7 +210,8 @@ export async function roadStock(warehouseId: string) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      // The shelf list's own row shape — the shown name too (lot-name.ts).
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,

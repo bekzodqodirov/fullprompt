@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { v4 as uuidv4 } from 'uuid';
 import { createCrateAction } from '../actions';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 interface WarehouseOption {
   id: string;
@@ -24,6 +25,7 @@ interface CratableBox {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /** As the lists show it: a standing tarkib's «first +N», else the lot's own (`/api/crates/boxes`). */
   productNameRu: string | null;
   receiptNumber: string | null;
 }
@@ -396,12 +398,7 @@ export function CrateBuilder({
                   <span className="font-mono text-lg font-extrabold text-brand-700">
                     {first.letter ?? '·'}
                   </span>
-                  <span className="truncate">
-                    {first.productNameZh}
-                    {first.productNameRu && (
-                      <span className="text-ink-500"> ({first.productNameRu})</span>
-                    )}
-                  </span>
+                  <LotGoodsName zh={first.productNameZh} ru={first.productNameRu} />
                   <span className="ml-auto whitespace-nowrap text-sm font-semibold">
                     {counted ? countOf(lotId) : lotBoxes.filter((b) => selected.has(b.boxId)).length}/
                     {lotBoxes.length} 📦

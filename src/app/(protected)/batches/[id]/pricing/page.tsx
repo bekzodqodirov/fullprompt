@@ -474,11 +474,14 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
     const rows = candidates.deals.map((dealId): PricingTableRow => {
       const head = dealHeads.get(dealId);
       const share = shares.find((row) => row.dealId === dealId);
+      // Goods KINDS, not lot names: a lot whose tarkib names three goods is
+      // three of them, so the «+N» below stays ONE number — fed the lot's own
+      // label it would read «Клавиатура +2 +1» (`BatchLot.goodsKinds`).
       const names = [
         ...new Set(
           group.lots
             .filter((lot) => ownDealOf(lot, group.clientId) === dealId)
-            .map((lot) => lot.productNameRu?.trim() || lot.productNameZh),
+            .flatMap((lot) => lot.goodsKinds ?? [lot.productNameRu?.trim() || lot.productNameZh]),
         ),
       ];
       const code = head?.code ?? share?.dealCode ?? '—';
@@ -657,7 +660,12 @@ export default async function BatchPricingPage({ params }: { params: Promise<{ i
                   {lot.letter && `-${lot.letter}`}
                 </b>{' '}
                 <span className="text-ink-700">{lot.productNameZh}</span>
-                {lot.productNameRu && <span className="text-ink-500"> · {lot.productNameRu}</span>}
+                {/* As the lists show it: a tarkib's «first +N» while one
+                    stands. The 📈 history below still asks by the lot's OWN
+                    name (`productNameRu`). */}
+                {(lot.shownNameRu ?? lot.productNameRu) && (
+                  <span className="text-ink-500"> · {lot.shownNameRu ?? lot.productNameRu}</span>
+                )}
               </p>
               <p className="text-xs text-ink-500">
                 <Link

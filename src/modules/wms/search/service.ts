@@ -17,11 +17,13 @@ import {
 import { inScope, warehouseScope, warehouseScopeEither } from '../../platform/rbac/scope';
 import { dealBoardShape } from '../deals/door';
 import { vedWorkSql } from '../deals/ved-work';
-import { likeNeedle, parseQuery } from './query';
+import { MIN_QUERY, likeNeedle, parseQuery } from './query';
 import { mayReadBatches } from '../batches/read-door';
 import { batchTextMatchSql, formerCodeHitSql } from '../batches/former-codes';
 import { maySeeStaffMoney, staffPartnerSql } from '../partners/staff';
 import { roadLossBatchSql, roadLossInScope } from '../boxes/road-loss';
+import { withoutLabelCount } from '../../platform/text/label-count';
+import { lotRuShownSql, tarkibLineMatchSql } from '../receipts/lot-name';
 
 /**
  * One search box for the whole system.
@@ -88,7 +90,9 @@ export async function globalSearch(actor: SearchActor, raw: string): Promise<Sea
         id: receiptLots.id,
         letter: receiptLots.letter,
         zh: receiptLots.productNameZh,
-        ru: receiptLots.productNameRu,
+        // The Russian name as the lists show it (lot-name.ts) — a result row
+        // must read like the screen it leads to.
+        ru: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
         clientCode: clients.clientCode,
       })
       .from(receiptLots)
@@ -111,6 +115,13 @@ export async function globalSearch(actor: SearchActor, raw: string): Promise<Sea
     }));
   }
 
+  // A label copied off a row («Клавиатура +2») means the goods: no stored
+  // name and no tarkib line says «+2». The lots' needle alone loses the count
+  // — a lead or a counterparty may really be called «… +2» — and only while
+  // what is left is still a query.
+  const goods = withoutLabelCount(parsed.text);
+  const lotLike = goods.length >= MIN_QUERY ? likeNeedle(goods) : like;
+
   const [clientHits, leadHits, dealHits, batchHits, partnerHits, boxHits, receiptHits, lotHits] =
     await Promise.all([
       searchClients(actor, like, parsed.phone),
@@ -120,7 +131,7 @@ export async function globalSearch(actor: SearchActor, raw: string): Promise<Sea
       searchPartners(actor, like, parsed.phone),
       searchBoxes(actor, like),
       searchReceipts(actor, like),
-      searchLots(actor, like),
+      searchLots(actor, lotLike),
     ]);
 
   // Order is a judgement about what people look for: a person or a job first,
@@ -400,7 +411,7 @@ async function searchLots(actor: SearchActor, like: string): Promise<SearchHit[]
       id: receiptLots.id,
       letter: receiptLots.letter,
       zh: receiptLots.productNameZh,
-      ru: receiptLots.productNameRu,
+      ru: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       clientCode: clients.clientCode,
       marking: receipts.unclaimedMarking,
     })
@@ -411,7 +422,9 @@ async function searchLots(actor: SearchActor, like: string): Promise<SearchHit[]
       and(
         // The unclaimed marking is where a factory's own text code lives
         // (DECISIONS #1224) — /stock's box finds a lot by it, so ⌘K must too.
-        sql`(${receiptLots.productNameZh} ILIKE ${like} OR ${receiptLots.productNameRu} ILIKE ${like} OR ${receipts.unclaimedMarking} ILIKE ${like})`,
+        // And any LINE of a standing tarkib: the row prints «Клавиатура +2»,
+        // and «мышь» is its second good, which no stored name says.
+        sql`(${receiptLots.productNameZh} ILIKE ${like} OR ${receiptLots.productNameRu} ILIKE ${like} OR ${tarkibLineMatchSql(sql`${receiptLots}`, like)} OR ${receipts.unclaimedMarking} ILIKE ${like})`,
         ...scopeOf(warehouseScope(actor, receipts.warehouseId)),
       ),
     )

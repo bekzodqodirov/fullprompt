@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import type { SearchHit } from '@/modules/wms/search/service';
+import { LotNameText } from '@/components/lot-goods-name';
 
 /**
  * The search box that opens over whatever you were doing.
@@ -170,13 +171,16 @@ export function SearchPalette({ children }: { children: React.ReactNode }) {
                           instead. */}
                       <span className="shrink-0 whitespace-nowrap font-semibold">{hit.code}</span>
                       {(hit.label || hit.formerCode) && (
-                        <span className="truncate text-sm text-ink-500">
-                          {/* A truck found by an OLD name says so, or the row
-                              reads as a wrong answer to what was typed. */}
-                          {[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
+                        // A truck found by an OLD name says so, or the row
+                        // reads as a wrong answer to what was typed. A lot's
+                        // label may end in a tarkib's «+N», the half that
+                        // must not truncate away (LotNameText).
+                        <LotNameText
+                          className="min-w-0 text-sm text-ink-500"
+                          text={[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
                             .filter(Boolean)
                             .join(' · ')}
-                        </span>
+                        />
                       )}
                     </button>
                   </li>

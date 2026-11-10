@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { lotGoodsShownSql } from '../receipts/lot-name';
 
 /**
  * What stands in ONE warehouse, or rides ONE truck, lot by lot — the staff
@@ -22,6 +23,7 @@ export interface PlaceCargoLot {
   receivedAt: string;
   /** The client's code, or the box's marking while nobody has claimed it. */
   clientCode: string;
+  /** The one name the popup prints: a standing tarkib's «first +N», else the lot's Russian name, else the Chinese one. */
   goods: string;
   boxes: number;
   kg: number | null;
@@ -47,7 +49,7 @@ export async function placeCargo(
     SELECT l.id AS lot_id, r.id AS receipt_id, r.number AS receipt_number,
            r.received_at::text AS received_at,
            coalesce(c.client_code, r.unclaimed_marking, '?') AS client_code,
-           coalesce(nullif(trim(l.product_name_ru), ''), l.product_name_zh) AS goods,
+           ${lotGoodsShownSql(sql`l`)} AS goods,
            count(*)::int AS boxes,
            l.total_weight_kg::float8 * count(*) / nullif(l.box_count, 0) AS kg,
            l.total_volume_m3::float8 * count(*) / nullif(l.box_count, 0) AS m3,

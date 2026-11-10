@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { asc, desc, eq } from 'drizzle-orm';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
@@ -25,6 +25,8 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { planRoadReady, roadOfVersion } from '@/modules/wms/planning/road';
+import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -73,6 +75,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
         .select({
           line: loadPlanLines,
           lot: receiptLots,
+          // The Russian name as the lists show it (lot-name.ts): a standing
+          // tarkib's «first +N», else the lot's own.
+          shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
           clientCode: clients.clientCode,
           marking: receipts.unclaimedMarking,
           crateCode: crates.code,
@@ -152,7 +157,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('lines')}</h2>
-        {lines.map(({ line, lot, clientCode, marking, crateCode }) => {
+        {lines.map(({ line, lot, shownNameRu, clientCode, marking, crateCode }) => {
           const id = codeIdentity(marking, clientCode);
           return (
           <div key={line.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
@@ -175,10 +180,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
                 🧰 {crateCode}
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate">
-              {lot.productNameZh}
-              {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
-            </span>
+            <LotGoodsName className="min-w-0 flex-1" zh={lot.productNameZh} ru={shownNameRu} />
             <span className="font-semibold">
               {line.plannedBoxCount}/{lot.boxCount} 📦
               {roadByLine.has(line.id) && (

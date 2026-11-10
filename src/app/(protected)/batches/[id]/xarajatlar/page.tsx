@@ -235,9 +235,12 @@ function groupLotsByReceipt(lots: Awaited<ReturnType<typeof batchLots>>): GridRe
     row.boxes += lot.onBatch;
     row.kg = Math.round((row.kg + lot.kg) * 10) / 10;
     row.m3 = Math.round((row.m3 + lot.m3) * 1000) / 1000;
+    // The Russian name as the lists show it: a tarkib's «first +N» while one
+    // stands (`BatchLot.shownNameRu`), else the lot's own.
+    const nameRu = lot.shownNameRu ?? lot.productNameRu;
     row.lots.push({
       letter: lot.letter,
-      name: lot.productNameRu ? `${lot.productNameZh} · ${lot.productNameRu}` : lot.productNameZh,
+      name: nameRu ? `${lot.productNameZh} · ${nameRu}` : lot.productNameZh,
       onBatch: lot.onBatch,
       lotBoxCount: lot.lotBoxCount,
     });

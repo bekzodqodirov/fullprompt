@@ -18,6 +18,7 @@ import {
   type LotCheckState,
 } from '@/modules/wms/receipts/lot-check-sql';
 import { lotChecksReady } from '@/modules/wms/receipts/lot-check-ready';
+import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
 
 /**
  * Stock report XLSX (spec §9/§13 report 1) with the current stock-browser
@@ -82,6 +83,10 @@ export async function GET(request: Request) {
   const linesQuery = db
     .select({
       lot: receiptLots,
+      // The screen's own Russian name for the row — a standing tarkib's
+      // «first +N», else the lot's stored word (lot-name.ts): the file is the
+      // screen here too.
+      shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       receivedAt: receipts.receivedAt,
       marking: receipts.unclaimedMarking,
       whCode: warehouses.code,

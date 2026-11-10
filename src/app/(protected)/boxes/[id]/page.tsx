@@ -23,6 +23,7 @@ import { printableStatuses } from '@/modules/wms/labels/qrless';
 import { QrlessChip } from '@/components/qrless-chip';
 import { moneyHidden } from '@/modules/platform/rbac/money-sight';
 import { mayOpenBoxCard } from '@/modules/wms/boxes/road-loss';
+import { lotRuShownFor } from '@/modules/wms/receipts/lot-name';
 
 /** Box card: identity + full movement timeline (spec 5.5 / §10). */
 export default async function BoxPage({ params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +38,9 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
   const format = await getFormatter();
 
   const lot = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, box.lotId) }))!;
+  // The Russian name as the lists show it (the owner's items 3-4,
+  // 2026-11-10): a standing tarkib's «first +N», else the lot's own.
+  const lotRu = (await lotRuShownFor([lot.id])).get(lot.id) ?? lot.productNameRu;
   const receipt = (await db.query.receipts.findFirst({ where: eq(receipts.id, lot.receiptId) }))!;
   // Where it IS, or where it came from — or, lost on the road, the truck it
   // was lost from (U38): the rule lives beside the one that names the truck.
@@ -110,7 +114,7 @@ export default async function BoxPage({ params }: { params: Promise<{ id: string
           <QrlessChip n={qrless ? 1 : 0} total={1} label={tq('chip')} />
         </p>
         <p>
-          {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
+          {lot.productNameZh} {lotRu && `(${lotRu})`}
         </p>
         <p className="mt-1">
           <span className="rounded bg-surface-sunken px-2 py-0.5 font-semibold">
