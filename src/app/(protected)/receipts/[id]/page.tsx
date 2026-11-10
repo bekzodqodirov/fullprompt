@@ -629,7 +629,9 @@ export default async function ReceiptDetailPage({
                 })()}
                 seen={{
                   nameZh: lot.productNameZh,
-                  nameRu: lot.productNameRu ?? '',
+                  // What the header above PRINTS — the tarkib's label while one
+                  // is written: a person confirms the name they saw (§9.3).
+                  nameRu: shownRu.get(lot.id) ?? lot.productNameRu ?? '',
                   boxCount: lot.boxCount,
                   clientId: receipt.clientId,
                 }}

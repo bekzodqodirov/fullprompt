@@ -2,6 +2,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { PgSelect } from 'drizzle-orm/pg-core';
 import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
+import { lotRuShownSql } from './lot-name';
 
 export {
   LOT_CHECK_STATES,
@@ -27,7 +28,12 @@ export {
  *    new client make it read «stale» by COMPARISON — and a take-back to the
  *    vouched count reads checked again by itself, which a clear-on-write
  *    could never do. kg/m³ are deliberately not compared: a re-weigh is the
- *    warehouse's correction, not «what is it»;
+ *    warehouse's correction, not «what is it». The Russian name compared is
+ *    the one the screens SHOW (`lotRuShownSql` — the tarkib's label while one
+ *    is written, standing or not): a person confirms what the card printed,
+ *    so a tarkib written, changed or cleared after the tick makes it «stale»,
+ *    and a tick pressed under a stale tarkib is for the label it was pressed
+ *    under (docs/TARKIB-TUZATISH.md §9.3);
  *  · the TARKIB's (his 3a) — a lot tarkibi that still stands: the same
  *    three terms `isStale` (composition-math.ts) compares, restated here in
  *    SQL and pinned against it by `lot-check.integration.test.ts`. ANY
@@ -91,13 +97,16 @@ export function tarkibStandsSql(lot: SQL): SQL {
  * The person's snapshot, term by term — the card names WHICH one moved, and
  * the state below is their conjunction, so the two cannot disagree.
  * `NULLIF(…, '')` on the lot's Russian name: the column stores an absent name
- * as NULL, and a row written before that rule must not read «renamed».
+ * as NULL, and a row written before that rule must not read «renamed». The
+ * SHOWN Russian name, never the stored one alone: with the stored name here a
+ * tick made as «Клавиатура», then a one-line tarkib «Мышь» and a re-weigh,
+ * read ✅ «mijoz tasdiqladi» beside «键盘 (Мышь)».
  */
 export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; client: SQL } {
   const { lot, receipt, check } = refs;
   return {
     name: sql`(${check}.seen_name_zh = ${lot}.product_name_zh
-      AND ${check}.seen_name_ru IS NOT DISTINCT FROM NULLIF(${lot}.product_name_ru, ''))`,
+      AND ${check}.seen_name_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`,
     count: sql`(${check}.seen_box_count = ${lot}.box_count)`,
     client: sql`(${check}.seen_client_id IS NOT DISTINCT FROM ${receipt}.client_id)`,
   };

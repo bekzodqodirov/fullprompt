@@ -162,11 +162,15 @@ async function mintLot(key: LotKey, receipt: keyof typeof rc, seq: number, name:
   );
 }
 
-/** What the prixod card showed, read off the lot as it stands. */
+/**
+ * What the prixod card showed, read off the lot as it stands — the Russian
+ * name is the one the header PRINTS (the tarkib's label while one is written).
+ */
 async function seenOf(key: LotKey) {
   const row = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, lot[key]) }))!;
   const r = (await db.query.receipts.findFirst({ where: eq(receipts.id, row.receiptId) }))!;
-  return { nameZh: row.productNameZh, nameRu: row.productNameRu ?? '', boxCount: row.boxCount, clientId: r.clientId ?? '' };
+  const shown = (await lotRuShownFor([row.id])).get(row.id);
+  return { nameZh: row.productNameZh, nameRu: shown ?? row.productNameRu ?? '', boxCount: row.boxCount, clientId: r.clientId ?? '' };
 }
 
 /** The person's check as a panel would draw it now — the token a press posts back. */
@@ -481,6 +485,73 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     // Two lines vouch whatever they are called, as they always did.
     await replace(composition().lines);
     expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true });
+  });
+
+  it('12c. a tick is for the name the card SHOWS: pressed under a stale tarkib it records the label, and the tarkib going away makes it «stale» (2026-11-10)', async () => {
+    // The lot outgrows its two-line tarkib: ⚠, and the card — which prints
+    // «混合 (Клавиатура +1)» while the lines exist — offers the button.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'stale', documentStale: true, person: null });
+    const shown = await seenOf('T');
+    expect(shown.nameRu).toBe('Клавиатура +1');
+    // A press that posts the lot's STORED name (none) is a press against a
+    // name the card did not print: «a person cannot confirm a name they did not see».
+    expect(await refusal(press('T', logist(), { seen: { ...shown, nameRu: '' } }))).toBe('lot_changed');
+    expect((await press('T', logist())).changed).toBe(true);
+    const [row] = (await db.execute(
+      sql`SELECT seen_name_ru FROM lot_checks WHERE lot_id = ${lot.T}::uuid`,
+    )) as unknown as { seen_name_ru: string | null }[];
+    expect(row!.seen_name_ru).toBe('Клавиатура +1');
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
+    // The History says what was confirmed — the label, not the stored name.
+    expect(JSON.stringify((await checkAudits('R2')).at(-1)!.after)).toContain('(Клавиатура +1)');
+    // The tarkib is cleared: the lists print the lot's own name again, which
+    // is NOT what the person confirmed.
+    const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
+    await clearComposition({ lotId: lot.T, seenRev: rev }, logist(), ctx(logistId));
+    const after = await stateOf('T');
+    expect(after.state).toBe('stale');
+    expect(after.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false } });
+    // Back to how the next tests expect lot T: no person row, the tarkib standing.
+    await uncheckLot({ lotId: lot.T }, logist(), ctx(logistId));
+    await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.T));
+    await saveComposition(composition(), logist(), ctx(logistId));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, person: null });
+  });
+
+  it('12d. ticked under its own name, then a one-line tarkib of ANOTHER good, then a re-weigh: «stale» naming the name — never ✅ beside a name nobody confirmed', async () => {
+    // Lot K carries the logist's tick for its own name (tests 1-8; test 2
+    // left that name «Мышь»).
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
+    await saveComposition(
+      {
+        lotId: lot.K,
+        seenRev: 0,
+        seenBoxCount: 100,
+        seenKg: '1000.000',
+        seenM3: '2.5000',
+        attachmentId: null,
+        lines: [{ name: 'Наушники', pieces: '', cartons: '100', kg: '1000', m3: '2.5', tnved: '' }],
+      },
+      logist(),
+      ctx(logistId),
+    );
+    // While the tarkib stands it answers first.
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: true });
+    // A re-weigh — which a person's tick alone survives (test 5) — and the
+    // tarkib no longer stands. The lists print «键盘 (Наушники)»; the tick
+    // was for the lot's own name. With the STORED name compared this read ✅.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.K));
+    expect((await lotRuShownFor([lot.K])).get(lot.K)).toBe('Наушники');
+    const view = await stateOf('K');
+    expect(view.state).toBe('stale');
+    expect(view.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false } });
+    // No writer clears anything: with the tarkib gone the lot shows the name
+    // the person confirmed, and the tick stands again by itself.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.K));
+    const rev = (await compositionsFor([lot.K])).get(lot.K)!.rev;
+    await clearComposition({ lotId: lot.K, seenRev: rev }, logist(), ctx(logistId));
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
   });
 });
 

@@ -15,6 +15,7 @@ import {
   type LotCheckState,
 } from './lot-check-sql';
 import { lotChecksReady } from './lot-check-ready';
+import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
 /**
@@ -112,6 +113,15 @@ interface LockedLot {
  * The lot, FOR NO KEY UPDATE — the composition writer's prefix, so the lot
  * tarkibi, `editLot` and the count doors (FOR UPDATE) all meet this as a
  * wait and never as a cycle.
+ *
+ * `name_ru` is the Russian name the screens SHOW: the tarkib's label while
+ * one is written, else the lot's own (docs/TARKIB-TUZATISH.md §9.3). It is
+ * read in a SECOND statement, after the lock — the composition's save and
+ * clear take this same lock first, so the label cannot move under the
+ * snapshot — and on the transaction's own handle, as a statement of its own
+ * (#714: the pooled reader would ask an eleventh connection of ten). The lock
+ * itself stays on the lot row ALONE (a locking read over a join can lose the
+ * row after a wait, #1585).
  */
 async function lockLot(tx: Tx, lotId: string): Promise<LockedLot> {
   const rows = (await tx.execute(sql`
@@ -120,7 +130,10 @@ async function lockLot(tx: Tx, lotId: string): Promise<LockedLot> {
   `)) as unknown as LockedLot[];
   const lot = rows[0];
   if (!lot) throw new LotCheckError('forbidden');
-  return { ...lot, box_count: Number(lot.box_count) };
+  const [named] = (await tx.execute(sql`
+    SELECT NULLIF(${lotRuShownSql(sql`l`)}, '') AS shown FROM receipt_lots l WHERE l.id = ${lot.id}::uuid
+  `)) as unknown as { shown: string | null }[];
+  return { ...lot, name_ru: named?.shown ?? null, box_count: Number(lot.box_count) };
 }
 
 /**
