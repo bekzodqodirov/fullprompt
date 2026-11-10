@@ -136,6 +136,15 @@ describe('a reading the STREAM ended early keeps what it completed, and is bille
     expect(size).toMatchObject({ ok: false, failure: 'truncated' });
   });
 
+  it('a stream gone silent right after `message_start` completed nothing: «timeout», billed by the input it said it read', async () => {
+    // `abortAfterMs: 0` — no delta is ever written (review
+    // model-spec-fixture-abortafter-unused: the value was read nowhere, so
+    // every «silent» stream had sent all its text first).
+    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 0, usage: { input_tokens: 55, output_tokens: 1 } });
+    const out = await read(1_000);
+    expect(out).toEqual({ ok: false, failure: 'timeout', answered: [expect.objectContaining({ inputTokens: 55, outputTokens: 0 })] });
+  });
+
   it('the caller’s clock aborts a stream STILL DRIPPING past it — the body has no deadline of its own (judge model-leash-unbounded)', async () => {
     // Forty goods at twenty characters every 50 ms: ~13 s of answer, still
     // arriving when the 1 s leash fires. Only the goods whole by then are kept.

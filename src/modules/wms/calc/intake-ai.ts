@@ -1314,8 +1314,13 @@ const NETTO_ONLY: Record<CalcSection, string> = {
  * sheet is «the table to read»: the totals-only sheets (a workbook's other
  * sheets, a packing list's own rows beside its codes) say «НЕ перечисляй»
  * under their own heading, and a closing that sent the model to read them
- * would undo it. Beside a workbook's other sheets the codes-only closing
- * keeps the totals asked: they are what those sheets are shown for.
+ * would undo it. Beside a workbook's OTHER sheets (`totalsShown`) the
+ * codes-only closing keeps the totals asked: those sheets carry the
+ * shipment's brutto and cube, and only the model reads them there
+ * (`fromModel` — `loneFileTotals` reads the goods file, never its
+ * neighbours), so «no other material, codes only» told it to drop both
+ * (review model-break-closing-context-sheets). The coding text is not one of
+ * them: that file's own totals outrank the model's (`loneFileTotals`).
  */
 function intakeContent(
   section: CalcSection,
@@ -1334,12 +1339,6 @@ function intakeContent(
 ): Anthropic.ContentBlockParam[] {
   const { requestText, knownBudget } = knownBudgetAfter(request);
   const sheetsText = sheetsPromptText(sheets, [...contextSheets, ...coding], SHEET_TEXT_BUDGET);
-  // A workbook's OTHER sheets carry the shipment's totals, and only the
-  // model reads them there (`fromModel` — `loneFileTotals` reads the goods
-  // file, never its neighbours): a closing «no other material, codes only»
-  // beside them told the model to drop the brutto and the cube they state
-  // (review model-break-closing-context-sheets). The coding text is not one
-  // of them: that file's own totals outrank the model's (`loneFileTotals`).
   const totalsShown = contextSheets.some((t) => sheetRowCount(t.text.trim()) > 0);
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
