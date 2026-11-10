@@ -168,7 +168,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
-| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, the auto-send design and his six questions of 2026-11-10) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3382,6 +3382,25 @@ listener was down are not fetched. LAST CHECK (#1619-#1620): two corpora measure
 replies, 303 dangerous) — keep them green on ANY policy change; G10's same-text fuse only WARNS on a short reply
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
 phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
+
+**Round — «kontekst 100» and the road to an autonomous sales manager (2026-11-10; DECISIONS #1622-#1626; NO
+migration, ledger 143; spec `docs/AI-SOTUVCHI.md` §18).** His «30 ta emas 100 tagacha … 80foiz … ishonchi bolsa
+javobni yozish huquqini ber … toliq avtanom sotuv manageriga aylantiramiz shuni arxetekturangga yozib ol». Mapped and
+designed by a workflow (consumers · cost · plumbing → three designs → a judge) before code. **TWO WINDOWS**:
+`chatMessages` reads 100 rows, pure `chatWindows` cuts `history` (≤ 100 / 24 000, what the MODEL reads, refs over
+it) and `recent` (≤ 30 / 8 000 by the OLD rule exactly, its tail, the same objects) — `ctx.messages` stays `recent`,
+so every rule (measures, sources, road/rail/avia guards, checklist, burst, card) keeps the window #1619 measured;
+only `chatBlock` (older part under `OLDER_CHAT_HEADING`, year when it differs) and the citations read `history`.
+Raising the constants alone would have moved the policy both ways with no test able to see it. The human pause is a
+direct query on the chat (#1623, a pre-existing hole), and the opening chat block is a cache breakpoint (`cache: true`
+on a text `ModelBlock`, #1624). **«80 %»**: the model's `confidence` is defined («o'zgartirmay yuborish ehtimoli»)
+and stored as given or NULL (`confidenceOf`); `calibration.ts` + `scripts/agent-calibration.ts` (read-only) give the
+one-sided 95 % Wilson lower bound of `agentStats`' own unchanged rate per category over the clean drafts at ≥ 0.80 —
+proven = ≥ 50 decided and ≥ 0.80 (45/50). **Auto-send is DESIGNED (§18.3), not built**: a machine press of the same
+✅ as a layer over shadow (never a new mode — `toConfig` maps any other mode to 'off'), a blind 1-in-5 holdback, a
+2-minute ⏸, step-downs; it waits on his six answers (§18.7) and on the record. Any change to `context.ts` /
+`prompt.ts` must keep `recent` exactly the old window — `tests/unit/agent-context-window.test.ts` holds the old loop
+verbatim as its oracle.
 
 **Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
 it: 0141 (`intake_door`, `when` …120). Before
