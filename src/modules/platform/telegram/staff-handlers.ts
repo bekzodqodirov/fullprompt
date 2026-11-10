@@ -65,6 +65,7 @@ import { mayCollect, type IntakeState } from './calc-intake';
 import {
   activeIntake,
   endIntake,
+  flushIntakeWrites,
   holdingIntake,
   intakeHolds,
   intakeIsEmpty,
@@ -1823,6 +1824,13 @@ export async function handleCalcCallback(
   if (aiDoorFirst(state)) {
     const landAs = step === 'to_ved' || !readingOf(state).whole ? 'ved' : 'ai';
     state = updateIntake(chatId, { landAs }) ?? { ...state, landAs };
+    // In the ROW before the note can commit, not a debounce later
+    // (door-spec-landas-not-durable): a process killed within the quiet
+    // second after the note left the sweep a state with no choice, and it
+    // re-derived the landing from the reading — a «👤» pressed on a table a
+    // «🔄» had made whole landed as the AI door. As `saveAmendment` flushes
+    // its `saving` mark.
+    await flushIntakeWrites(chatId);
   }
   // The restart question over it is over: it is being saved (§2.4).
   clearRestartAsked(chatId, state);

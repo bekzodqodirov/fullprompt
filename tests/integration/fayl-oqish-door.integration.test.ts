@@ -275,6 +275,9 @@ describe('the choice is durable: the sweep resumes a cut landing the way it was 
   it('the press writes its choice to the durable state BEFORE anything lands', async () => {
     setDurableIntakes(true);
     const { chat, noteId } = await collected({ fileCount: 1, invoiceGoods: KURTKA, aiUsed: true, facts: { weightKg: 300, volumeM3: 2, goods: KURTKA } });
+    // The collection is in its row as it stood before the press — and nothing
+    // here flushes again: the press's own write is what the row must show.
+    expect(await flushIntakeWrites()).toBe(true);
     let open: () => void = () => {};
     fault.gate = new Promise<void>((resolve) => {
       open = resolve;
@@ -284,8 +287,7 @@ describe('the choice is durable: the sweep resumes a cut landing the way it was 
     // The note is on its card, the request held back: the choice is already in the ROW.
     await vi.waitFor(async () => {
       expect((await db.select({ id: crmActivities.id }).from(crmActivities).where(eq(crmActivities.id, noteId))).length).toBe(1);
-    }, { timeout: 15_000, interval: 50 });
-    expect(await flushIntakeWrites()).toBe(true);
+    }, { timeout: 15_000, interval: 20 });
     const rows = (await db.execute(sql`SELECT state ->> 'landAs' AS land_as FROM telegram_calc_intakes WHERE note_id = ${noteId}::uuid`)) as unknown as {
       land_as: string | null;
     }[];
