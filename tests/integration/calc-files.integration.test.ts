@@ -87,7 +87,9 @@ describe('fileOf — the file a message or an album part carries', () => {
     // a press and an album part key the attachment by it, not by the update.
     expect(fileOf({ message_id: 31, photo: [{ file_id: 'x' }] })).toEqual({ fileId: 'x', isPhoto: true, messageId: 31 });
     const part = { messageId: 5, kind: 'photo' as const, file: { fileId: 'p', name: null, mime: null, size: 1 } };
-    expect(fileOf(part)).toEqual({ fileId: 'p', isPhoto: true, fileName: undefined, mime: undefined, messageId: 5 });
+    // …and the size it arrived with (docs/FAYL-OQISH.md §3.4): the 20 MB
+    // refusal is decided before Telegram is asked anything.
+    expect(fileOf(part)).toEqual({ fileId: 'p', isPhoto: true, fileName: undefined, mime: undefined, messageId: 5, size: 1 });
     expect(fileOf({ ...part, kind: 'voice' })).toBeNull();
     expect(fileOf({ ...part, file: null })).toBeNull();
   });

@@ -49,6 +49,8 @@ export interface SseStandIn {
   script: SseReply[];
   /** Every request body the SDK sent, parsed. */
   bodies: { messages: { content: { type: string; text?: string }[] }[]; output_config?: unknown; max_tokens?: number }[];
+  /** …and as the bytes on the wire, for what parsing would hide (a lone surrogate's `\udXXX` escape). */
+  raws: string[];
   calls(): number;
   /** Point the SDK at this stand-in (key + base URL) — and back on `close()`. */
   close(): Promise<void>;
@@ -59,6 +61,7 @@ const ev = (type: string, data: Record<string, unknown>) => `event: ${type}\ndat
 export async function startSseStandIn(): Promise<SseStandIn> {
   const script: SseReply[] = [];
   const bodies: SseStandIn['bodies'] = [];
+  const raws: string[] = [];
   let calls = 0;
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -67,6 +70,7 @@ export async function startSseStandIn(): Promise<SseStandIn> {
     });
     req.on('end', () => {
       calls += 1;
+      raws.push(raw);
       try {
         bodies.push(JSON.parse(raw) as SseStandIn['bodies'][number]);
       } catch {
@@ -172,6 +176,7 @@ export async function startSseStandIn(): Promise<SseStandIn> {
     url,
     script,
     bodies,
+    raws,
     calls: () => calls,
     close: async () => {
       if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;

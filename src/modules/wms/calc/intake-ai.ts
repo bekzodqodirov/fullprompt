@@ -1277,6 +1277,11 @@ const NETTO_ONLY: Record<CalcSection, string> = {
  * What the model is shown, in the order a person reads a forwarded pile. The
  * two name lists share one budget: the request's own rows first (the add
  * door), the Excel's in what is left.
+ *
+ * The closing line is chosen by what was SENT (xlsxN-14, docs/FAYL-OQISH.md
+ * §3.7): «read the photos and documents» to a model shown neither
+ * contradicted its own input — and to the AI door's lone Excel, whose only
+ * material is the numbered list, it was no instruction at all.
  */
 function intakeContent(
   section: CalcSection,
@@ -1293,10 +1298,6 @@ function intakeContent(
 ): Anthropic.ContentBlockParam[] {
   const { requestText, knownBudget } = knownBudgetAfter(request);
   const sheetsText = sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET);
-  // The closing line is chosen by what was SENT (xlsxN-14, docs/FAYL-OQISH.md
-  // §3.7): «read the photos and documents» to a model shown neither
-  // contradicted its own input — and to the AI door's lone Excel, whose only
-  // material is the numbered list, it was no instruction at all.
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0
