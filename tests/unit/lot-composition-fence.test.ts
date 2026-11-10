@@ -53,6 +53,8 @@ const MUST = [
   ...MODULES,
   // The shown name (items 3-4): the one module display readers import.
   'src/modules/wms/receipts/lot-name.ts',
+  // The invoice's rows as data (item 6): it merges by the composition's own name key.
+  'src/modules/wms/documents/invoice-rows.ts',
   'src/modules/wms/documents/composition-cells.ts',
   'src/modules/wms/documents/ved-xlsx.ts',
   'src/modules/wms/documents/packing-photos-xlsx.ts',
