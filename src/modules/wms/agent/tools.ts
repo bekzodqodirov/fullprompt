@@ -156,7 +156,11 @@ export const TOOL_SPECS: ModelToolSpec[] = [
   {
     name: 'compose_reply',
     description:
-      "YAKUNIY javob — har run shu bilan tugaydi. reply_needed=false bo'lsa hech narsa yozilmaydi. Har bir son vositalardan yoki mijoz xabaridan bo'lsin. actions — faqat tasdiqlanganda bajariladi.",
+      "YAKUNIY javob — har run shu bilan tugaydi. reply_needed=false bo'lsa hech narsa yozilmaydi. Har bir son vositalardan yoki mijoz xabaridan bo'lsin. actions — faqat tasdiqlanganda bajariladi. " +
+      "category — javob nima haqida: greeting — faqat salomlashish, minnatdorchilik yoki xayrlashish; status — mijozning o'z yuki qayerda yoki qachon keladi; " +
+      "faq — kompaniya haqida umumiy savol (manzil, ish tartibi, qoidalar, taqiqlangan tovar); qualification — yuk haqida ma'lumot so'rash (nima, necha kub/kg, qayerdan, qayerga); " +
+      "price — narx aytilgan yoki so'ralgan har qanday javob; complaint — shikoyat, norozilik, pul yoki zarar talabi; other — boshqasi. " +
+      "confidence — 0 dan 1 gacha son: Bekzod shu matnni HECH O'ZGARTIRMAY yuborish ehtimoli, sening bahoing (0.8 = shunday 10 ta javobdan 8 tasini o'zgartirmay yuboradi). Oshirib yuborma: shubha bo'lsa past qo'y.",
     strict: true,
     input_schema: obj({
       reply_needed: { type: 'boolean' },

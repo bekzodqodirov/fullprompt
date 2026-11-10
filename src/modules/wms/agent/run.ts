@@ -79,7 +79,8 @@ export interface ComposeReply {
   language: AgentLocale;
   glossUz: string;
   category: string;
-  confidence: number;
+  /** 0-1, the model's own judgement that he sends it unchanged; null = it gave none we can read (#1625). */
+  confidence: number | null;
   needsOwner: boolean;
   ownerQuestion: string;
   nextStep: string;
@@ -135,6 +136,18 @@ function asText(v: unknown): string {
   return typeof v === 'string' ? v : '';
 }
 
+/**
+ * The model's `confidence` as stored (#1625): a number from 0 to 1 — the
+ * chance, in its own judgement, that he sends the text unchanged — kept to
+ * two places, the column's scale. Anything else is UNKNOWN (null), never
+ * clamped: «85» used to become 1.00 and «-1» 0, two confident numbers nobody
+ * gave. Strict tool schemas cannot carry a range, so this is the range.
+ */
+export function confidenceOf(v: unknown): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) return null;
+  return Math.round(v * 100) / 100;
+}
+
 function parseCompose(input: Record<string, unknown>): ComposeReply {
   const lang = AGENT_LOCALES.find((l) => l === input.language) ?? 'uz';
   const actions = Array.isArray(input.actions) ? (input.actions as Record<string, unknown>[]) : [];
@@ -144,7 +157,7 @@ function parseCompose(input: Record<string, unknown>): ComposeReply {
     language: lang,
     glossUz: asText(input.gloss_uz).trim(),
     category: asText(input.category) || 'other',
-    confidence: Math.min(1, Math.max(0, Number(input.confidence) || 0)),
+    confidence: confidenceOf(input.confidence),
     needsOwner: input.needs_owner === true,
     ownerQuestion: asText(input.owner_question).trim(),
     nextStep: asText(input.next_step) || 'wait',
