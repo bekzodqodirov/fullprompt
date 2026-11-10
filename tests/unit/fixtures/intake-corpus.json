@@ -32629,7 +32629,8 @@
    "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
    "source": "fayl-oqish P-reader-A",
    "weight": "defect",
-   "note": "shape L-product-desc-spec"
+   "note": "shape L-product-desc-spec",
+   "pick": "chosen (FAYL-OQISH §5.2): «Product» outranks «Description» — a header that names the product alone is the product rung, the description holds its spec («mesh, black»)"
   },
   {
    "id": "c2651",
@@ -32668,7 +32669,8 @@
    "why": "xlsxN-06 / xlsx1-03 / reader-5.2-5.3-ladder",
    "source": "fayl-oqish P-reader-A",
    "weight": "defect",
-   "note": "shape L-product-desc-category"
+   "note": "shape L-product-desc-category",
+   "pick": "chosen (FAYL-OQISH §5.2): «Product» stays the name even when it holds a category and «Description» the fuller words — the coarse name is a product, a spec is none; the VED reads the description in the file"
   },
   {
    "id": "c2652",
@@ -33740,7 +33742,8 @@
    "why": "reader-5.7-onecell: the answer written down",
    "source": "fayl-oqish P-reader-A",
    "weight": "defect",
-   "note": "shape V10"
+   "note": "shape V10",
+   "pick": "chosen (FAYL-OQISH §5.7 (2)): «Хозтовары» is no heading (it opens with no list word as a whole word), so it lands as the first line, which the VED can delete — a heading dropped by a guess would be a product lost"
   },
   {
    "id": "c2679",
@@ -35660,6 +35663,2746 @@
    "source": "fayl-oqish P-reader-A",
    "weight": "defect",
    "note": "shape X-customer-tel"
+  },
+  {
+   "id": "c2750",
+   "input": [
+    [
+     "Наименование",
+     "Цвет",
+     38,
+     40,
+     42,
+     "Всего",
+     "Цена",
+     "Сумма"
+    ],
+    [
+     "Платье",
+     "красный",
+     10,
+     20,
+     10,
+     40,
+     5,
+     200
+    ],
+    [
+     "Юбка",
+     "синий",
+     5,
+     5,
+     2,
+     12,
+     5,
+     60
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Платье",
+       "amount": 200,
+       "unit": null,
+       "note": null
+      },
+      {
+       "name": "Юбка",
+       "amount": 60
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "a dress order heads its size run with the sizes («Наименование | Цвет | 38 | 40 | 42 | Всего | Цена | Сумма»): still the header, every figure kept",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-ru"
+  },
+  {
+   "id": "c2752",
+   "input": [
+    [
+     "Description",
+     "Color",
+     36,
+     38,
+     40,
+     "Total Qty",
+     "Unit Price",
+     "Amount"
+    ],
+    [
+     "Dress",
+     "red",
+     10,
+     20,
+     10,
+     40,
+     5,
+     200
+    ],
+    [
+     "Skirt",
+     "blue",
+     5,
+     5,
+     2,
+     12,
+     5,
+     60
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Dress",
+       "quantity": 40,
+       "amount": 200,
+       "unit": null
+      },
+      {
+       "name": "Skirt",
+       "quantity": 12,
+       "amount": 60
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Description"
+     ]
+    }
+   },
+   "said": "the English size grid («Description | Color | 36 | 38 | 40 | Total Qty …»): the header, Dress 40 pcs $200",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-en"
+  },
+  {
+   "id": "c2753",
+   "input": [
+    [
+     "Наименование",
+     "Цвет",
+     "36",
+     "37",
+     "38",
+     "39",
+     "40",
+     "41",
+     "Итого пар",
+     "Вес брутто"
+    ],
+    [
+     "Кроссовки",
+     "белый",
+     2,
+     4,
+     6,
+     6,
+     4,
+     2,
+     24,
+     18
+    ],
+    [
+     "Туфли",
+     "чёрный",
+     1,
+     2,
+     3,
+     3,
+     2,
+     1,
+     12,
+     21
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "grossKg": 39,
+    "goods": {
+     "rows": [
+      {
+       "name": "Кроссовки",
+       "weightKg": 18
+      },
+      {
+       "name": "Туфли",
+       "weightKg": 21
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "a shoe order with its sizes 36-41 written as TEXT in the header: the header, the brutto summed (39)",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-shoe"
+  },
+  {
+   "id": "c2755",
+   "input": [
+    [
+     "款号",
+     "品名",
+     "颜色",
+     90,
+     100,
+     110,
+     120,
+     "数量",
+     "毛重",
+     "体积"
+    ],
+    [
+     "K-01",
+     "儿童T恤",
+     "白",
+     10,
+     10,
+     10,
+     10,
+     40,
+     12,
+     0.1
+    ],
+    [
+     "K-02",
+     "儿童裤子",
+     "蓝",
+     5,
+     5,
+     5,
+     5,
+     20,
+     8,
+     0.08
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "grossKg": 20,
+    "volumeM3": 0.18,
+    "shape": "packing",
+    "goods": {
+     "rows": [
+      {
+       "name": "儿童T恤",
+       "quantity": 40,
+       "weightKg": 12,
+       "unit": null
+      },
+      {
+       "name": "儿童裤子",
+       "quantity": 20,
+       "weightKg": 8
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "款号",
+      "K-01"
+     ]
+    }
+   },
+   "said": "a kids-wear packing list with the size run 90/100/110/120 in its header: the header, 儿童T恤 40 pcs 12 kg, brutto 20",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-kids"
+  },
+  {
+   "id": "c2757",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Курс",
+     12500
+    ],
+    [
+     "Куртка",
+     300,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "weightKg": 100
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "a header row with a stray figure in it («… | Курс | 12500»): still the header",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-kurs"
+  },
+  {
+   "id": "c2758",
+   "input": [
+    [
+     "Позиция",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Куртка модель 1",
+     300,
+     150
+    ],
+    [
+     "Куртка модель 2",
+     301,
+     151
+    ],
+    [
+     "Куртка модель 3",
+     302,
+     152
+    ],
+    [
+     "Куртка модель 4",
+     303,
+     153
+    ],
+    [
+     "Куртка модель 5",
+     304,
+     154
+    ],
+    [
+     "Куртка модель 6",
+     305,
+     155
+    ],
+    [
+     "Куртка модель 7",
+     306,
+     156
+    ],
+    [
+     "Куртка модель 8",
+     307,
+     157
+    ],
+    [
+     "Куртка модель 9",
+     308,
+     158
+    ],
+    [
+     "Куртка модель 10",
+     309,
+     159
+    ],
+    [
+     "Куртка модель 11",
+     310,
+     160
+    ],
+    [
+     "Куртка модель 12",
+     311,
+     161
+    ],
+    [
+     "Куртка модель 13",
+     312,
+     162
+    ],
+    [
+     "Куртка модель 14",
+     313,
+     163
+    ],
+    [],
+    [
+     "Всего наименований",
+     "Количество мест",
+     "Вес брутто, кг"
+    ],
+    [
+     14,
+     30,
+     2500
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "includes": [
+      "Куртка модель 1",
+      "Куртка модель 14"
+     ],
+     "absent": [
+      "14"
+     ]
+    }
+   },
+   "said": "a goods table the top rows cannot read, over a «Всего наименований | Количество мест | Вес брутто» summary: no header — the model reads the whole sheet, never the totals as the only good",
+   "why": "the fix round: reader-a-break-deep-summary-wins (§5.1: the deep search is for a title block, and two table lines above end it; a totals line is no header)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape DS-summary"
+  },
+  {
+   "id": "c2760",
+   "input": [
+    [
+     "Модель",
+     "Цвет",
+     38,
+     40,
+     42,
+     "Всего"
+    ],
+    [
+     "Платье 1",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 2",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 3",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 4",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 5",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 6",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 7",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 8",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 9",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 10",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 11",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [
+     "Платье 12",
+     "красный",
+     10,
+     20,
+     10,
+     40
+    ],
+    [],
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес брутто"
+    ],
+    [
+     "Платья",
+     480,
+     300
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "includes": [
+      "Платье 1",
+      "Платье 12"
+     ]
+    }
+   },
+   "said": "a size-grid table under «Модель» (no name word) over a «Наименование | Кол-во | Вес брутто» summary: the summary is no header for the dresses above it",
+   "why": "the fix round: reader-a-break-deep-summary-wins (§5.1: the deep search is for a title block, and two table lines above end it; a totals line is no header)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape DS-grid"
+  },
+  {
+   "id": "c2762",
+   "input": [
+    [
+     "Наименование продукции"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование продукции"
+     ]
+    }
+   },
+   "said": "«Наименование продукции» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2764",
+   "input": [
+    [
+     "Наименование груза"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование груза"
+     ]
+    }
+   },
+   "said": "«Наименование груза» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2765",
+   "input": [
+    [
+     "Наименование изделия"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование изделия"
+     ]
+    }
+   },
+   "said": "«Наименование изделия» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2766",
+   "input": [
+    [
+     "Наименование материала"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование материала"
+     ]
+    }
+   },
+   "said": "«Наименование материала» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2767",
+   "input": [
+    [
+     "Наименование работ"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование работ"
+     ]
+    }
+   },
+   "said": "«Наименование работ» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2768",
+   "input": [
+    [
+     "Название продукта"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Название продукта"
+     ]
+    }
+   },
+   "said": "«Название продукта» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2769",
+   "input": [
+    [
+     "Описание груза"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Описание груза"
+     ]
+    }
+   },
+   "said": "«Описание груза» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2770",
+   "input": [
+    [
+     "Вид товара"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Вид товара"
+     ]
+    }
+   },
+   "said": "«Вид товара» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2771",
+   "input": [
+    [
+     "Наименование и описание товара"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Наименование и описание товара"
+     ]
+    }
+   },
+   "said": "«Наименование и описание товара» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2773",
+   "input": [
+    [
+     "Yuk nomi"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Yuk nomi"
+     ]
+    }
+   },
+   "said": "«Yuk nomi» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2775",
+   "input": [
+    [
+     "Tovar turi"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Tovar turi"
+     ]
+    }
+   },
+   "said": "«Tovar turi» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2776",
+   "input": [
+    [
+     "Cargo description"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "Cargo description"
+     ]
+    }
+   },
+   "said": "«Cargo description» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2777",
+   "input": [
+    [
+     "产品描述"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "产品描述"
+     ]
+    }
+   },
+   "said": "«产品描述» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2779",
+   "input": [
+    [
+     "品名规格"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "品名规格"
+     ]
+    }
+   },
+   "said": "«品名规格» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2780",
+   "input": [
+    [
+     "品名/规格"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "品名/规格"
+     ]
+    }
+   },
+   "said": "«品名/规格» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2781",
+   "input": [
+    [
+     "货物描述"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "货物描述"
+     ]
+    }
+   },
+   "said": "«货物描述» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2782",
+   "input": [
+    [
+     "商品描述"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ],
+    [
+     "Шапка"
+    ],
+    [
+     "Сумка"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4,
+     "absent": [
+      "商品描述"
+     ]
+    }
+   },
+   "said": "«商品描述» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC"
+  },
+  {
+   "id": "c2783",
+   "input": [
+    [
+     "Name and address labels"
+    ],
+    [
+     "Куртка женская"
+    ],
+    [
+     "Брюки мужские"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Name and address labels"
+      },
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "«Name and address labels» opening a one-column list is a product: a joining word sits only INSIDE a heading of list words",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格) — the join’s own guard",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "regression",
+   "note": "shape OC-join"
+  },
+  {
+   "id": "c2784",
+   "input": [
+    [
+     "Наименование",
+     "Шт"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "«Наименование | Шт» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2786",
+   "input": [
+    [
+     "Товар",
+     "шт."
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Товар"
+     ]
+    }
+   },
+   "said": "«Товар | шт.» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2787",
+   "input": [
+    [
+     "Наименование",
+     "Штук"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "«Наименование | Штук» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2788",
+   "input": [
+    [
+     "Наименование",
+     "Кол"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Наименование"
+     ]
+    }
+   },
+   "said": "«Наименование | Кол» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2789",
+   "input": [
+    [
+     "Товар",
+     "Остаток"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Товар"
+     ]
+    }
+   },
+   "said": "«Товар | Остаток» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2790",
+   "input": [
+    [
+     "Name",
+     "Count"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Name"
+     ]
+    }
+   },
+   "said": "«Name | Count» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2791",
+   "input": [
+    [
+     "品名",
+     "件"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "品名"
+     ]
+    }
+   },
+   "said": "«品名 | 件» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2793",
+   "input": [
+    [
+     "品名",
+     "个"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "品名"
+     ]
+    }
+   },
+   "said": "«品名 | 个» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2794",
+   "input": [
+    [
+     "Товар номи",
+     "Сони"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Товар номи"
+     ]
+    }
+   },
+   "said": "«Товар номи | Сони» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2796",
+   "input": [
+    [
+     "Товар номи",
+     "Вазни"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Товар номи"
+     ]
+    }
+   },
+   "said": "«Товар номи | Вазни» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2797",
+   "input": [
+    [
+     "Tovar nomi",
+     "Nechta"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Tovar nomi"
+     ]
+    }
+   },
+   "said": "«Tovar nomi | Nechta» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC"
+  },
+  {
+   "id": "c2799",
+   "input": [
+    [
+     "Item No.",
+     "Color",
+     "Qty",
+     "Unit Price",
+     "Amount"
+    ],
+    [
+     "LJ-2023",
+     "Black",
+     300,
+     5,
+     1500
+    ],
+    [
+     "LJ-2024",
+     "Red",
+     200,
+     6,
+     1200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "LJ-2023",
+       "quantity": 300,
+       "amount": 1500,
+       "unit": null
+      },
+      {
+       "name": "LJ-2024",
+       "quantity": 200,
+       "amount": 1200
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Black",
+      "Item No."
+     ]
+    }
+   },
+   "said": "the commonest Chinese clothing PI «Item No. | Color | Qty | Unit Price | Amount»: the article numbers are the products, with their figures",
+   "why": "the fix round: reader-a-break-item-color-not-goods (§5.3: a colour, material, packing or remark column is no goods column the serial or article guard yields to)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape IC-color"
+  },
+  {
+   "id": "c2801",
+   "input": [
+    [
+     "Item",
+     "Material",
+     "Qty (pcs)",
+     "G.W. (kg)"
+    ],
+    [
+     "A-101",
+     "Cotton",
+     300,
+     150
+    ],
+    [
+     "A-102",
+     "Polyester",
+     200,
+     90
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "A-101",
+       "quantity": 300
+      },
+      {
+       "name": "A-102",
+       "quantity": 200
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Cotton"
+     ]
+    }
+   },
+   "said": "«Item | Material | Qty (pcs) | G.W. (kg)» over article numbers and fabrics: the articles are the products",
+   "why": "the fix round: reader-a-break-item-color-not-goods (§5.3: a colour, material, packing or remark column is no goods column the serial or article guard yields to)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape IC-material"
+  },
+  {
+   "id": "c2802",
+   "input": [
+    [
+     "Item No.",
+     "Packing",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "YW-2301",
+     "10pcs/ctn",
+     300,
+     1500
+    ],
+    [
+     "YW-2302",
+     "20pcs/ctn",
+     200,
+     1200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "YW-2301",
+       "quantity": 300,
+       "amount": 1500
+      },
+      {
+       "name": "YW-2302",
+       "quantity": 200
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "10pcs/ctn"
+     ]
+    }
+   },
+   "said": "«Item No. | Packing | Qty | Amount»: the packing is no product",
+   "why": "the fix round: reader-a-break-item-color-not-goods (§5.3: a colour, material, packing or remark column is no goods column the serial or article guard yields to)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape IC-packing"
+  },
+  {
+   "id": "c2803",
+   "input": [
+    [
+     "ITEM",
+     "COLOR",
+     "QTY",
+     "AMOUNT"
+    ],
+    [
+     1,
+     "Black",
+     300,
+     1500
+    ],
+    [
+     2,
+     "Red",
+     200,
+     1200
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "1",
+       "quantity": 300,
+       "amount": 1500
+      },
+      {
+       "name": "2",
+       "quantity": 200
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Black",
+      "Red"
+     ]
+    }
+   },
+   "said": "«ITEM | COLOR | QTY | AMOUNT» over serials: the serial stays the name (all the file says), never the colour",
+   "why": "the fix round: reader-a-break-item-color-not-goods (§5.3: a colour, material, packing or remark column is no goods column the serial or article guard yields to)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "pick": "chosen (the fix round): beside a colour alone, the serial is what the file names its lines by, as «Наименование» over 1, 2, 3 is (c2617) — the colours landed as the products on the deal import, and the figures were lost on every door",
+   "note": "shape IC-serial"
+  },
+  {
+   "id": "c2804",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Vazni"
+    ],
+    [
+     "Karobka",
+     500,
+     100
+    ],
+    [
+     "Quti",
+     300,
+     60
+    ],
+    [
+     "Skotch",
+     100,
+     20
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Karobka",
+       "quantity": 500,
+       "weightKg": 100
+      },
+      {
+       "name": "Quti",
+       "quantity": 300
+      },
+      {
+       "name": "Skotch"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "Tovar nomi"
+     ]
+    }
+   },
+   "said": "a list of packaging goods (Karobka, Quti) with their counts: goods, never a card’s labels",
+   "why": "the fix round: reader-a-break-goods-named-like-labels (§5.6 (b), §5.8: a name cell is a label only when its row states no figure under a figure label)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape GL-uz"
+  },
+  {
+   "id": "c2806",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W."
+    ],
+    [
+     "Carton",
+     500,
+     100
+    ],
+    [
+     "Cartons",
+     300,
+     60
+    ],
+    [
+     "Tape",
+     100,
+     20
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Carton",
+       "quantity": 500
+      },
+      {
+       "name": "Cartons",
+       "quantity": 300
+      },
+      {
+       "name": "Tape"
+      }
+     ],
+     "count": 3,
+     "absent": [
+      "Description"
+     ]
+    }
+   },
+   "said": "«Description | Qty | G.W.» over Carton / Cartons / Tape: goods",
+   "why": "the fix round: reader-a-break-goods-named-like-labels (§5.6 (b), §5.8: a name cell is a label only when its row states no figure under a figure label)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape GL-en"
+  },
+  {
+   "id": "c2807",
+   "input": [
+    [
+     "Товар",
+     "Примечание"
+    ],
+    [
+     "Куртка",
+     "синяя"
+    ],
+    [
+     "Сумка для товаров",
+     "вес уточняется"
+    ],
+    [
+     "Шапка",
+     "зимняя"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Сумка для товаров"
+      },
+      {
+       "name": "Шапка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a names-and-notes table whose note says «вес»: the data row is no header, and Куртка is not lost",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-ru"
+  },
+  {
+   "id": "c2809",
+   "input": [
+    [
+     "Description",
+     "Remarks"
+    ],
+    [
+     "Jacket",
+     "blue"
+    ],
+    [
+     "Goods bag",
+     "weight to confirm"
+    ],
+    [
+     "Cap",
+     "winter"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Goods bag"
+      },
+      {
+       "name": "Cap"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "the same in English",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-en"
+  },
+  {
+   "id": "c2810",
+   "input": [
+    [
+     "Наименование",
+     "Примечание"
+    ],
+    [
+     "Куртка",
+     "синяя"
+    ],
+    [
+     "Товары для дома",
+     "кол-во по факту"
+    ],
+    [
+     "Шапка",
+     "зимняя"
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Товары для дома"
+      },
+      {
+       "name": "Шапка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "«Наименование | Примечание» with «кол-во» in a note",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-naim"
+  },
+  {
+   "id": "c2811",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во"
+    ],
+    [
+     "Стол",
+     5
+    ],
+    [
+     "Стул",
+     10
+    ],
+    [],
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Объём, м3"
+    ],
+    [
+     "Шкаф",
+     2,
+     100,
+     1.5
+    ],
+    [
+     "Диван",
+     1,
+     80,
+     2
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол",
+       "quantity": 5
+      },
+      {
+       "name": "Стул",
+       "quantity": 10
+      },
+      {
+       "name": "Шкаф",
+       "quantity": 2
+      },
+      {
+       "name": "Диван",
+       "quantity": 1
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "two tables in the first ten rows, the second fuller: Стол and Стул above it are not lost",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-two"
+  },
+  {
+   "id": "c2813",
+   "input": [
+    [
+     "Tovar nomi",
+     "Plastik mahsulotlar"
+    ],
+    [
+     "Soni",
+     300
+    ],
+    [
+     "Vazni",
+     150
+    ],
+    [
+     "Tovar nomi",
+     "Kitchen goods set"
+    ],
+    [
+     "Soni",
+     200
+    ],
+    [
+     "Vazni",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "absent": [
+      "300",
+      "150"
+     ]
+    }
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-uz"
+  },
+  {
+   "id": "c2815",
+   "input": [
+    [
+     "Наименование",
+     "Товары для дома"
+    ],
+    [
+     "Количество",
+     300
+    ],
+    [
+     "Вес",
+     150
+    ],
+    [
+     "Наименование",
+     "Куртка женская"
+    ],
+    [
+     "Количество",
+     200
+    ],
+    [
+     "Вес",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "absent": [
+      "300",
+      "150"
+     ]
+    }
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-ru"
+  },
+  {
+   "id": "c2817",
+   "input": [
+    [
+     "品名",
+     "塑料产品"
+    ],
+    [
+     "数量",
+     300
+    ],
+    [
+     "重量",
+     150
+    ],
+    [
+     "品名",
+     "厨房用品"
+    ],
+    [
+     "数量",
+     200
+    ],
+    [
+     "重量",
+     100
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "absent": [
+      "300",
+      "150"
+     ]
+    }
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-zh"
+  },
+  {
+   "id": "c2819",
+   "input": [
+    [
+     "Tovar nomi:",
+     "Plastik mahsulotlar",
+     null
+    ],
+    [
+     "Soni:",
+     300,
+     "dona"
+    ],
+    [
+     "Vazni:",
+     150,
+     "kg"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "absent": [
+      "300",
+      "150"
+     ]
+    }
+   },
+   "said": "a unit-column card whose value holds «mahsulot»: no header, the model reads it",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-unit"
+  },
+  {
+   "id": "c2821",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     1,
+     "女士夹克 Ladies jacket 1",
+     "6202930000",
+     100,
+     10,
+     120,
+     1.1
+    ],
+    [
+     2,
+     "女士夹克 Ladies jacket 2",
+     "6202930000",
+     101,
+     10,
+     130,
+     1.2
+    ],
+    [
+     3,
+     "女士夹克 Ladies jacket 3",
+     "6202930000",
+     102,
+     10,
+     140,
+     1.15
+    ],
+    [
+     4,
+     "女士夹克 Ladies jacket 4",
+     "6202930000",
+     103,
+     10,
+     125,
+     1.1
+    ],
+    [
+     5,
+     "女士夹克 Ladies jacket 5",
+     "6202930000",
+     104,
+     10,
+     135,
+     1.05
+    ],
+    [
+     6,
+     "女士夹克 Ladies jacket 6",
+     "6202930000",
+     105,
+     10,
+     128,
+     1.12
+    ],
+    [
+     "No.",
+     "Description",
+     "HS Code",
+     "Qty",
+     "Ctns",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "序号",
+     "品名",
+     "海关编码",
+     "数量",
+     "箱数",
+     "毛重",
+     "体积"
+    ],
+    [
+     7,
+     "女士夹克 Ladies jacket 7",
+     "6202930000",
+     106,
+     10,
+     132,
+     1.13
+    ],
+    [
+     8,
+     "女士夹克 Ladies jacket 8",
+     "6202930000",
+     107,
+     10,
+     126,
+     1.1
+    ],
+    [
+     9,
+     "女士夹克 Ladies jacket 9",
+     "6202930000",
+     108,
+     10,
+     134,
+     1.14
+    ],
+    [
+     10,
+     "女士夹克 Ladies jacket 10",
+     "6202930000",
+     109,
+     10,
+     138,
+     1.16
+    ],
+    [
+     11,
+     "女士夹克 Ladies jacket 11",
+     "6202930000",
+     110,
+     10,
+     142,
+     1.11
+    ],
+    [
+     12,
+     "女士夹克 Ladies jacket 12",
+     "6202930000",
+     111,
+     10,
+     142,
+     1.22
+    ],
+    [
+     "TOTAL",
+     "",
+     "",
+     1266,
+     120,
+     1592,
+     13.58
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 12,
+     "every": {
+      "tnvedCode": "6202930000"
+     },
+     "absent": [
+      "Description",
+      "品名"
+     ]
+    },
+    "grossKg": 1592,
+    "volumeM3": 13.58,
+    "shape": "packing"
+   },
+   "said": "the EN/ZH bilingual header repeated at a page break (c2689 with each pair of header rows swapped): both rows are headers, the brutto and cube summed",
+   "why": "the fix round: reader-a-spec-512-enzh-pagebreak-unpinned (§5.12)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape T-pagebreak-enzh"
+  },
+  {
+   "id": "c2822",
+   "input": [
+    [
+     "YIWU HUAYANG TRADING CO., LTD"
+    ],
+    [
+     "TEL:",
+     "+86 579 8512 3456"
+    ],
+    [
+     "Invoice No:",
+     "HY-2026-118"
+    ],
+    [
+     "Date:",
+     "2026-11-01"
+    ],
+    [
+     "To:",
+     "GSR LOGISTICS"
+    ],
+    [
+     "Address:",
+     "Tashkent"
+    ],
+    [
+     "From:",
+     "Yiwu"
+    ],
+    [
+     "Shipping mark:",
+     "GS777"
+    ],
+    [
+     "Payment:",
+     "T/T"
+    ],
+    [
+     "Remarks:",
+     "see attached"
+    ],
+    [],
+    [],
+    [
+     "Всего наименований",
+     "Количество мест",
+     "Вес брутто, кг"
+    ],
+    [
+     14,
+     30,
+     2500
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "absent": [
+      "14"
+     ]
+    }
+   },
+   "said": "a title block over nothing but a «Всего наименований | Количество мест | Вес брутто» summary: no header — a totals line names figure columns over the shipment's sums, and its «14» is no good",
+   "why": "the fix round: reader-a-break-deep-summary-wins (§5.1: a total word in the name cell is no goods header however deep — isolates it: no table lines above)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape DS-total-only"
   }
  ],
  "parseGoodsLineCases": [
@@ -68504,6 +71247,1292 @@
    "source": "fayl-oqish P-reader-A",
    "weight": "defect",
    "note": "shape X-unknown-labels, one xlsx sheet"
+  },
+  {
+   "id": "c2751",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Цвет",
+        38,
+        40,
+        42,
+        "Всего",
+        "Цена",
+        "Сумма"
+       ],
+       [
+        "Платье",
+        "красный",
+        10,
+        20,
+        10,
+        40,
+        5,
+        200
+       ],
+       [
+        "Юбка",
+        "синий",
+        5,
+        5,
+        2,
+        12,
+        5,
+        60
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Платье"
+      },
+      {
+       "name": "Юбка"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "a dress order heads its size run with the sizes («Наименование | Цвет | 38 | 40 | 42 | Всего | Цена | Сумма»): still the header, every figure kept",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-ru, one xlsx sheet"
+  },
+  {
+   "id": "c2754",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Цвет",
+        "36",
+        "37",
+        "38",
+        "39",
+        "40",
+        "41",
+        "Итого пар",
+        "Вес брутто"
+       ],
+       [
+        "Кроссовки",
+        "белый",
+        2,
+        4,
+        6,
+        6,
+        4,
+        2,
+        24,
+        18
+       ],
+       [
+        "Туфли",
+        "чёрный",
+        1,
+        2,
+        3,
+        3,
+        2,
+        1,
+        12,
+        21
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Кроссовки"
+      },
+      {
+       "name": "Туфли"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a shoe order with its sizes 36-41 written as TEXT in the header: the header, the brutto summed (39)",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-shoe, one xlsx sheet"
+  },
+  {
+   "id": "c2756",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "款号",
+        "品名",
+        "颜色",
+        90,
+        100,
+        110,
+        120,
+        "数量",
+        "毛重",
+        "体积"
+       ],
+       [
+        "K-01",
+        "儿童T恤",
+        "白",
+        10,
+        10,
+        10,
+        10,
+        40,
+        12,
+        0.1
+       ],
+       [
+        "K-02",
+        "儿童裤子",
+        "蓝",
+        5,
+        5,
+        5,
+        5,
+        20,
+        8,
+        0.08
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "儿童T恤"
+      },
+      {
+       "name": "儿童裤子"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "a kids-wear packing list with the size run 90/100/110/120 in its header: the header, 儿童T恤 40 pcs 12 kg, brutto 20",
+   "why": "the fix round: reader-a-break-size-grid-header, reader-a-spec-sizegrid-header-refused (§5.7 (1) exempts a header whose name cell is the field’s own word)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SG-kids, one xlsx sheet"
+  },
+  {
+   "id": "c2759",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Позиция",
+        "Кол-во",
+        "Вес, кг"
+       ],
+       [
+        "Куртка модель 1",
+        300,
+        150
+       ],
+       [
+        "Куртка модель 2",
+        301,
+        151
+       ],
+       [
+        "Куртка модель 3",
+        302,
+        152
+       ],
+       [
+        "Куртка модель 4",
+        303,
+        153
+       ],
+       [
+        "Куртка модель 5",
+        304,
+        154
+       ],
+       [
+        "Куртка модель 6",
+        305,
+        155
+       ],
+       [
+        "Куртка модель 7",
+        306,
+        156
+       ],
+       [
+        "Куртка модель 8",
+        307,
+        157
+       ],
+       [
+        "Куртка модель 9",
+        308,
+        158
+       ],
+       [
+        "Куртка модель 10",
+        309,
+        159
+       ],
+       [
+        "Куртка модель 11",
+        310,
+        160
+       ],
+       [
+        "Куртка модель 12",
+        311,
+        161
+       ],
+       [
+        "Куртка модель 13",
+        312,
+        162
+       ],
+       [
+        "Куртка модель 14",
+        313,
+        163
+       ],
+       [],
+       [
+        "Всего наименований",
+        "Количество мест",
+        "Вес брутто, кг"
+       ],
+       [
+        14,
+        30,
+        2500
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Куртка модель 1 |",
+     "Куртка модель 14 |",
+     "Всего наименований"
+    ]
+   },
+   "said": "a goods table the top rows cannot read, over a «Всего наименований | Количество мест | Вес брутто» summary: no header — the model reads the whole sheet, never the totals as the only good",
+   "why": "the fix round: reader-a-break-deep-summary-wins (§5.1: the deep search is for a title block, and two table lines above end it; a totals line is no header)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape DS-summary, one xlsx sheet"
+  },
+  {
+   "id": "c2761",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Модель",
+        "Цвет",
+        38,
+        40,
+        42,
+        "Всего"
+       ],
+       [
+        "Платье 1",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 2",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 3",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 4",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 5",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 6",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 7",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 8",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 9",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 10",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 11",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [
+        "Платье 12",
+        "красный",
+        10,
+        20,
+        10,
+        40
+       ],
+       [],
+       [
+        "Наименование",
+        "Кол-во",
+        "Вес брутто"
+       ],
+       [
+        "Платья",
+        480,
+        300
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Платье 1 |",
+     "Платье 12 |"
+    ]
+   },
+   "said": "a size-grid table under «Модель» (no name word) over a «Наименование | Кол-во | Вес брутто» summary: the summary is no header for the dresses above it",
+   "why": "the fix round: reader-a-break-deep-summary-wins (§5.1: the deep search is for a title block, and two table lines above end it; a totals line is no header)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape DS-grid, one xlsx sheet"
+  },
+  {
+   "id": "c2763",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование продукции"
+       ],
+       [
+        "Куртка женская"
+       ],
+       [
+        "Брюки мужские"
+       ],
+       [
+        "Шапка"
+       ],
+       [
+        "Сумка"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Наименование продукции» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC, one xlsx sheet"
+  },
+  {
+   "id": "c2772",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование и описание товара"
+       ],
+       [
+        "Куртка женская"
+       ],
+       [
+        "Брюки мужские"
+       ],
+       [
+        "Шапка"
+       ],
+       [
+        "Сумка"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Наименование и описание товара» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC, one xlsx sheet"
+  },
+  {
+   "id": "c2774",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Yuk nomi"
+       ],
+       [
+        "Куртка женская"
+       ],
+       [
+        "Брюки мужские"
+       ],
+       [
+        "Шапка"
+       ],
+       [
+        "Сумка"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Yuk nomi» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC, one xlsx sheet"
+  },
+  {
+   "id": "c2778",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "产品描述"
+       ],
+       [
+        "Куртка женская"
+       ],
+       [
+        "Брюки мужские"
+       ],
+       [
+        "Шапка"
+       ],
+       [
+        "Сумка"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      },
+      {
+       "name": "Шапка"
+      },
+      {
+       "name": "Сумка"
+      }
+     ],
+     "count": 4
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«产品描述» over a one-column list of names: the heading, never product #1",
+   "why": "the fix round: reader-a-break-onecell-heading-too-narrow (§5.7 (2): the list words name WHAT the list holds — продукции, груза, изделия, вид, yuk, turi, cargo, 描述, 规格)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape OC, one xlsx sheet"
+  },
+  {
+   "id": "c2785",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Шт"
+       ],
+       [
+        "Куртка женская",
+        300
+       ],
+       [
+        "Брюки мужские",
+        200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Наименование | Шт» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC, one xlsx sheet"
+  },
+  {
+   "id": "c2792",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "品名",
+        "件"
+       ],
+       [
+        "Куртка женская",
+        300
+       ],
+       [
+        "Брюки мужские",
+        200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«品名 | 件» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC, one xlsx sheet"
+  },
+  {
+   "id": "c2795",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Товар номи",
+        "Сони"
+       ],
+       [
+        "Куртка женская",
+        300
+       ],
+       [
+        "Брюки мужские",
+        200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Товар номи | Сони» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC, one xlsx sheet"
+  },
+  {
+   "id": "c2798",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Nechta"
+       ],
+       [
+        "Куртка женская",
+        300
+       ],
+       [
+        "Брюки мужские",
+        200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "«Tovar nomi | Nechta» over names and counts: a two-column list with its header, never a card",
+   "why": "the fix round: reader-a-break-twocol-value-refusal (§5.6 (a): a claimed column, a unit header or a count word is a key, never a card’s value)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape TC, one xlsx sheet"
+  },
+  {
+   "id": "c2800",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Item No.",
+        "Color",
+        "Qty",
+        "Unit Price",
+        "Amount"
+       ],
+       [
+        "LJ-2023",
+        "Black",
+        300,
+        5,
+        1500
+       ],
+       [
+        "LJ-2024",
+        "Red",
+        200,
+        6,
+        1200
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "LJ-2023"
+      },
+      {
+       "name": "LJ-2024"
+      }
+     ],
+     "count": 2
+    },
+    "replyExcludes": [
+     "jadval sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "the commonest Chinese clothing PI «Item No. | Color | Qty | Unit Price | Amount»: the article numbers are the products, with their figures",
+   "why": "the fix round: reader-a-break-item-color-not-goods (§5.3: a colour, material, packing or remark column is no goods column the serial or article guard yields to)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape IC-color, one xlsx sheet"
+  },
+  {
+   "id": "c2805",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Soni",
+        "Vazni"
+       ],
+       [
+        "Karobka",
+        500,
+        100
+       ],
+       [
+        "Quti",
+        300,
+        60
+       ],
+       [
+        "Skotch",
+        100,
+        20
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Karobka"
+      },
+      {
+       "name": "Quti"
+      },
+      {
+       "name": "Skotch"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a list of packaging goods (Karobka, Quti) with their counts: goods, never a card’s labels",
+   "why": "the fix round: reader-a-break-goods-named-like-labels (§5.6 (b), §5.8: a name cell is a label only when its row states no figure under a figure label)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape GL-uz, one xlsx sheet"
+  },
+  {
+   "id": "c2808",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Товар",
+        "Примечание"
+       ],
+       [
+        "Куртка",
+        "синяя"
+       ],
+       [
+        "Сумка для товаров",
+        "вес уточняется"
+       ],
+       [
+        "Шапка",
+        "зимняя"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Сумка для товаров"
+      },
+      {
+       "name": "Шапка"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a names-and-notes table whose note says «вес»: the data row is no header, and Куртка is not lost",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-ru, one xlsx sheet"
+  },
+  {
+   "id": "c2812",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Кол-во"
+       ],
+       [
+        "Стол",
+        5
+       ],
+       [
+        "Стул",
+        10
+       ],
+       [],
+       [
+        "Наименование",
+        "Кол-во",
+        "Вес, кг",
+        "Объём, м3"
+       ],
+       [
+        "Шкаф",
+        2,
+        100,
+        1.5
+       ],
+       [
+        "Диван",
+        1,
+        80,
+        2
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол"
+      },
+      {
+       "name": "Стул"
+      },
+      {
+       "name": "Шкаф"
+      },
+      {
+       "name": "Диван"
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "two tables in the first ten rows, the second fuller: Стол and Стул above it are not lost",
+   "why": "the fix round: reader-a-spec-best-of-ten-drops-rows-above (§5.8: a later candidate replaces the header found only when no row between would land as a good under it)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape BT-two, one xlsx sheet"
+  },
+  {
+   "id": "c2814",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi",
+        "Plastik mahsulotlar"
+       ],
+       [
+        "Soni",
+        300
+       ],
+       [
+        "Vazni",
+        150
+       ],
+       [
+        "Tovar nomi",
+        "Kitchen goods set"
+       ],
+       [
+        "Soni",
+        200
+       ],
+       [
+        "Vazni",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Plastik mahsulotlar",
+     "Kitchen goods set"
+    ]
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-uz, one xlsx sheet"
+  },
+  {
+   "id": "c2816",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Наименование",
+        "Товары для дома"
+       ],
+       [
+        "Количество",
+        300
+       ],
+       [
+        "Вес",
+        150
+       ],
+       [
+        "Наименование",
+        "Куртка женская"
+       ],
+       [
+        "Количество",
+        200
+       ],
+       [
+        "Вес",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Товары для дома",
+     "Куртка женская"
+    ]
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-ru, one xlsx sheet"
+  },
+  {
+   "id": "c2818",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "品名",
+        "塑料产品"
+       ],
+       [
+        "数量",
+        300
+       ],
+       [
+        "重量",
+        150
+       ],
+       [
+        "品名",
+        "厨房用品"
+       ],
+       [
+        "数量",
+        200
+       ],
+       [
+        "重量",
+        100
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "塑料产品",
+     "厨房用品"
+    ]
+   },
+   "said": "stacked cards whose first value holds a name word: no header — the model reads both goods, numbers never become products",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-zh, one xlsx sheet"
+  },
+  {
+   "id": "c2820",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Tovar nomi:",
+        "Plastik mahsulotlar",
+        null
+       ],
+       [
+        "Soni:",
+        300,
+        "dona"
+       ],
+       [
+        "Vazni:",
+        150,
+        "kg"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "Plastik mahsulotlar",
+     "Soni: | 300 | dona"
+    ]
+   },
+   "said": "a unit-column card whose value holds «mahsulot»: no header, the model reads it",
+   "why": "the fix round: reader-a-spec-56b-column-exclusion-not-refusal (§5.6 (b): the chosen column holding labels refuses the CANDIDATE)",
+   "source": "fayl-oqish P-reader-A fix round",
+   "weight": "defect",
+   "note": "shape SC-unit, one xlsx sheet"
   }
  ],
  "isArticleNumberCases": [

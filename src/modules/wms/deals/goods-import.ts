@@ -204,6 +204,13 @@ const NAME_PARTY =
  * customer column to the left of the real name named every product again.
  */
 const NAME_PARTS = /[/／&＆+]|\s(?:и|and|va)\s|及|和/i;
+/**
+ * What a column says ABOUT the goods beside their name — the colour, the
+ * material, the size, the packing, a remark (`goodsBeside`). Whole words in
+ * Latin («Orange», «Range» are no colour); stems elsewhere.
+ */
+const NAME_DETAIL =
+  /\b(?:colou?rs?|rangi?|materials?|materiali|sizes?|packing|packaging|packages?|remarks?|comments?|notes?|izoh)\b|цвет|материал|размер|упаков|примечан|комментар|o['ʻ‘’]?lcham|qadoq|颜色|材质|面料|尺寸|尺码|包装|备注/i;
 const namesTheGoods = (header: string): boolean => {
   const head = header.split(/[(,;]/)[0] ?? '';
   if (NAME_PARTY.test(head)) return false;
@@ -425,16 +432,21 @@ const FIELD_WORDS: Record<FieldKind, string[]> = {
     'описание товара', 'номенклатура', 'product', 'product name', 'name', 'goods', 'description', 'description of goods',
     'item', 'item name', 'commodity', '品名', '名称', '商品', '商品名称', '产品', '产品名称', '货名', '货物', '货物名称',
   ],
+  // …a count however a two-column list names it, Uzbek Cyrillic and a bare
+  // «Шт» / «件» included: «Наименование | Шт», «Товар номи | Сони», «品名 | 件»
+  // over figures are a header, never a card's first line (§5.6 (a), the
+  // fix round's reader-a-break-twocol-value-refusal).
   count: [
-    'soni', 'miqdori', 'miqdor', 'dona', 'количество', 'кол-во', 'кол.', 'колич', 'qty', 'quantity', 'pcs', 'pieces',
-    'total qty', 'total quantity', '数量', '件数',
+    'soni', 'miqdori', 'miqdor', 'dona', 'nechta', 'сони', 'миқдори', 'миқдор', 'нечта', 'количество', 'кол-во', 'кол.',
+    'колич', 'кол', 'остаток', 'шт', 'шт.', 'штук', 'qty', 'quantity', 'pcs', 'pieces', 'count', 'total qty',
+    'total quantity', '数量', '件数', '件', '个',
   ],
   unit: ['birlik', "o'lchov birligi", 'ед. изм.', 'ед.изм.', 'ед изм', 'ед. изм', 'единица', 'единица измерения', 'unit', 'units', '单位'],
   net: [
     'netto', 'нетто', 'вес нетто', 'масса нетто', 'net weight', 'n.w.', 'n.w', 'nw', 'net wt', '净重',
     "sof og'irligi", "sof og'irlik", 'sof vazni', 'sof vazn',
   ],
-  weight: ['vazni', 'vazn', "og'irligi", "og'irlik", 'ogirligi', 'ogirlik', 'вес', 'масса', 'weight', '重量'],
+  weight: ['vazni', 'vazn', "og'irligi", "og'irlik", 'ogirligi', 'ogirlik', 'вазни', 'вазн', 'оғирлиги', 'оғирлик', 'вес', 'масса', 'weight', '重量'],
   gross: [
     'brutto', 'брутто', 'вес брутто', 'масса брутто', 'gross weight', 'gross', 'g.w.', 'g.w', 'gw', 'gross wt', '毛重',
     "yalpi og'irligi", "umumiy og'irligi", 'umumiy vazni',
@@ -457,6 +469,8 @@ const FIELD_WORDS: Record<FieldKind, string[]> = {
     '买方', '卖方', '收货人', '发货人', '公司名称', '客户', '序号', 'no.', 'no', '№',
   ],
 };
+/** The labels that name a FIGURE column — a goods row's count stands under one (`labels`). */
+const FIGURE_FIELDS = new Set<FieldKind>(['count', 'net', 'weight', 'gross', 'volume', 'price', 'total']);
 const FIELD_LABELS = new Map<string, FieldKind>(
   (Object.entries(FIELD_WORDS) as [FieldKind, string[]][]).flatMap(([kind, words]) => words.map((word): [string, FieldKind] => [word, kind])),
 );
@@ -816,35 +830,53 @@ const DEEP_ROWS = 50;
  *     (`cardGood`, §5.6's extra): a card has no header row to find.
  *  1. Rows 0-9: every row is a candidate (`headerAt`) and the BEST wins
  *     (§5.8) — the one that maps the most columns besides the name, a tie the
- *     earliest. A letterhead's label row («Company Name | Yiwu Trading Co.»,
- *     «公司名称», «Product name: | Hair dryer») maps the name alone and loses to
- *     the table under it; it was taken because it came first.
+ *     earliest, and a later one only when no row between would land as a
+ *     good under the earlier (`landsBetween`). A letterhead's label row
+ *     («Company Name | Yiwu Trading Co.», «公司名称», «Product name: | Hair
+ *     dryer») maps the name alone and loses to the table under it; it was
+ *     taken because it came first. A row the same as one already judged is
+ *     not judged again.
  *  2. Only when none of them is a header: rows 10-49, the first that holds
- *     (§5.1), under two guards that apply there alone — a row carrying a
- *     figure is data, and a header found that deep names a figure column.
+ *     (§5.1), under guards that apply there alone — the search stops at the
+ *     second TABLE line above it (`tableLine`: a title block states no
+ *     goods), a row carrying a figure is data unless it names the goods by
+ *     the field's own word, and a header found that deep names a figure
+ *     column and no total.
  * Inside one candidate (`headerAt`):
  *  a. a one-cell row (rows 0-9 only): the table-below skip, the list refusal
  *     and the numbered title as before, then it must READ as a heading or a
  *     title (§5.7 (2));
- *  b. the columns (`mapColumns`): TNVED first, then the name ladder — never
- *     a column whose own data are field labels (§5.6 (b), §5.8), the product
- *     rung after the first (§5.2), the serial guard on the stated rungs and on
- *     the last NAME_KEYS rung, which never takes a party (§5.3, §5.8), the
- *     last-resort rung (§5.2 (d)) — then the figures;
+ *  b. the columns (`mapColumns`): TNVED first, then the name ladder — the
+ *     product rung after the first (§5.2), the serial guard on the stated
+ *     rungs and on the last NAME_KEYS rung, which never takes a party (§5.3,
+ *     §5.8), the last-resort rung (§5.2 (d)); the column chosen holding field
+ *     LABELS refuses the row (§5.6 (b), §5.8) — then the figures;
  *  c. a second header row below it (§5.12) is taken out of the sampling and
  *     the columns are mapped again, so the checks after it read the final
  *     map;
- *  d. a candidate with a FIGURE beside its name is a data row (§5.7 (1));
- *  e. one whose only other cell is a VALUE over the card's figures is a
- *     transposed card (§5.6 (a));
- *  f. the deep guard (b), on the final map.
+ *  d. a candidate with a FIGURE beside its name is a data row (§5.7 (1)),
+ *     unless its name cell is the field's own word (a size run's header);
+ *  e. one whose only other cell is a VALUE — no key, no unit, no column the
+ *     map claimed — over the card's figures is a transposed card (§5.6 (a));
+ *  f. the deep guards (b), on the final map.
+ * Each answers on the map the step before it settled: (d) reads which column
+ * the ladder named, (e) which the figures claimed, (f) the final map.
  */
 function findHeader(rows: Cell[][], covered: Covered | null = null): { found: Detected | null; refused: number | null } {
   let best: { detected: Detected; score: number } | null = null;
+  // A row word for word one already judged is judged the same: the header
+  // again maps nothing the first did not, and a row refused once is refused
+  // again (c0425: 2,000 rows of one cell). Best-of-ten and the deep search
+  // judged every row anew — 2,000 × 100 cells of «Customer name xxx…» (no
+  // header anywhere) took 3.8 s for 0.1, two 30,000-character rows taking
+  // turns 1.5 s for 0.6 (the fix round's reader-a-break-candidate-cost).
+  const judged: number[] = [];
+  const seen = (r: number) => judged.some((j) => sameCells(rows[r], rows[j]));
+  let tableLines = 0;
   for (let r = 0; r < Math.min(rows.length, TOP_ROWS); r++) {
-    // The header again, word for word, maps nothing the first did not (c0425:
-    // 2,000 rows of one cell would be ten candidates of the same header).
-    if (best && sameCells(rows[r], rows[best.detected.headerRow])) continue;
+    if (tableLine(rows, r, covered)) tableLines += 1;
+    if (seen(r)) continue;
+    judged.push(r);
     const at = headerAt(rows, r, covered, false);
     // A list refused below a header already found leaves that header standing:
     // the first-found rule returned it before this row was ever read.
@@ -852,14 +884,65 @@ function findHeader(rows: Cell[][], covered: Covered | null = null): { found: De
       if (best) break;
       return { found: null, refused: listOpening(rows) };
     }
-    if (at && (best === null || at.score > best.score)) best = at;
+    if (at && (best === null || (at.score > best.score && !landsBetween(rows, best.detected, r, covered)))) best = at;
   }
   if (best) return { found: best.detected, refused: null };
   for (let r = TOP_ROWS; r < Math.min(rows.length, DEEP_ROWS); r++) {
+    // (§5.1, the fix round's reader-a-break-deep-summary-wins) The search goes
+    // deep for a TITLE BLOCK's table, and a title block states no goods: under
+    // a table of lines the top rows could not read, a «Всего наименований |
+    // Количество мест | Вес брутто» summary was taken as the whole sheet's
+    // header, its one row of totals the only good, and the lines above it —
+    // the real goods — were lost with nothing shown to the model.
+    if (tableLines >= 2) break;
+    if (tableLine(rows, r, covered)) tableLines += 1;
+    if (seen(r)) continue;
+    judged.push(r);
     const at = headerAt(rows, r, covered, true);
     if (at && at !== 'refused') return { found: at.detected, refused: null };
   }
   return { found: null, refused: null };
+}
+
+/**
+ * A line of a TABLE, as a title block has none: a word or a serial with a
+ * figure beside it («Куртка модель 3 | 302 | 152», «1 | Ladies jacket |
+ * 300»), or a typed line carrying its own («Стол офисный 5 шт»). Never a
+ * label's line — «TEL: | +86 579 8501», «Date | 2026-11-01», «Invoice No: |
+ * HY-118» — and never a merged cell's repeats. Two of them above a deep
+ * candidate are a table the top rows did not read (one may be a letterhead's
+ * «PI NO | 12345»).
+ */
+function tableLine(rows: Cell[][], r: number, covered: Covered | null): boolean {
+  const cells = (rows[r] ?? []).filter((cell, i) => cellText(cell) !== '' && !covered?.has(r, i));
+  if (cells.length === 0 || labelCell(cells[0]!)) return false;
+  return cells.length === 1 ? carriesFigure(cells[0]!) : cells.some(readsAsFigure);
+}
+
+/**
+ * (§5.8, the fix round's reader-a-spec-best-of-ten-drops-rows-above) Would a
+ * row between the header found and a later candidate land as a GOOD under the
+ * one found? Then the later one is no better: «Наименование | Кол-во» over
+ * Стол / Стул, then a fuller table further down, lost Стол and Стул to the
+ * second header; «Товар | Примечание» lost every line above «Сумка для
+ * товаров | вес уточняется», whose «вес» mapped a weight. The letterhead a
+ * later table outranks has no goods between: its lines are labels («Brand: |
+ * Xiaomi» under «Product name:»), or its name column is a letterhead's own
+ * field («Company Name | Yiwu Trading Co.» over its address lines, c2695).
+ */
+function landsBetween(rows: Cell[][], found: Detected, r: number, covered: Covered | null): boolean {
+  const { headerRow, dataFrom, columns } = found;
+  const head = rows[headerRow]?.[columns.name] ?? null;
+  if (fieldLabel(head) === 'other' || NAME_PARTY.test(cellText(head).split(/[(,;]/)[0] ?? '')) return false;
+  const own = cellText(head).toLowerCase();
+  for (let d = dataFrom; d < r; d++) {
+    const name = rows[d]?.[columns.name] ?? null;
+    const text = cellText(name);
+    if (text === '' || labelCell(name) || isHeaderText(name, own) || isTotalRow(text)) continue;
+    if (repeatsHeader(rows[d]!, d, columns, covered)) continue;
+    return true;
+  }
+  return false;
 }
 
 const filled = (row: Cell[] | undefined) => (row ?? []).filter((cell) => cellText(cell) !== '').length;
@@ -906,8 +989,10 @@ function headerAt(
   // header it lost every line above it (xlsx1-02's verifier, c2602-c2607). A
   // one-cell line that deep names no figure column either. (§5.7 (1) below
   // says the same of any row the ladder can name; asked here first, a deep
-  // data row of a 5,000-line list is never mapped at all.)
-  if (deep && (filled(raw) < 2 || raw.some((cell, i) => own(i) && readsAsFigure(cell)))) return null;
+  // data row of a 5,000-line list is never mapped at all — unless the row
+  // names the goods by the field's own word, as a size run's header does.)
+  const namesField = raw.some((cell, i) => own(i) && fieldLabel(cell) === 'name');
+  if (deep && (filled(raw) < 2 || (!namesField && raw.some((cell, i) => own(i) && readsAsFigure(cell))))) return null;
   // A two-row header is read as one (CRITIC-1); a one-row header is itself.
   const header = composedHeader(rows, r, covered);
     // A title row is one merged cell («COMMERCIAL INVOICE / Товарная
@@ -974,22 +1059,44 @@ function headerAt(
   // mahsulotlar») was taken as the header — every row above it, the row
   // itself and every figure column lost, and the sheet never reached the
   // model. ANY non-name cell, or a «шт» unit column lets it through (V4).
-  if (filled(header) >= 2 && raw.some((cell, i) => i !== columns.name && own(i) && readsAsFigure(cell))) return null;
+  // But a header whose NAME cell is the field's own word is a header, figures
+  // and all: a garment or shoe order heads its size run with the sizes
+  // («Наименование | Цвет | 38 | 40 | 42 | Всего», «款号 | 品名 | 颜色 | 90 | 100
+  // | 110»), and refused it lost every figure on every door (the fix round's
+  // reader-a-break-size-grid-header). «Товары для дома», «塑料产品», «Plastik
+  // mahsulotlar», «Куртка» are no field's word, so Q1-Q4 and V1-V9 stay data.
+  if (
+    filled(header) >= 2 &&
+    fieldLabel(raw[columns.name] ?? null) !== 'name' &&
+    raw.some((cell, i) => i !== columns.name && own(i) && readsAsFigure(cell))
+  )
+    return null;
   // (§5.6 (a)) A label|value card's first line is no header: in «Tovar nomi:
   // | Ayollar kurtkasi» the other cell is a VALUE, not a key, and the column
   // under it holds the card's figures and codes (300, 150, 6202930000).
   // «Товар | Цвет» over «Куртка | чёрный» and «Наименование | Примечание»
-  // over «300 шт» name their columns (c2621, c2622).
+  // over «300 шт» name their columns (c2621, c2622) — and so does a column
+  // the map CLAIMED, or one headed by a unit: «Наименование | Шт», «品名 | 个»
+  // over counts are a list, never a card (the fix round's
+  // reader-a-break-twocol-value-refusal).
   const others = raw.flatMap((cell, i) => (i !== columns.name && own(i) && cellText(cell) !== '' ? [i] : []));
-  if (others.length === 1 && !keyish(cellText(raw[others[0]!] ?? null))) {
+  const claimed = [columns.tnved, columns.quantity, columns.unit, columns.volume, columns.weight, columns.gross, columns.amount];
+  const valueCell = (i: number) => {
+    const text = cellText(raw[i] ?? null);
+    return !claimed.includes(i) && !keyish(text) && headerUnitWord(text) === null;
+  };
+  if (others.length === 1 && valueCell(others[0]!)) {
     const under = columnCells(rows, r, others[0]!, repeats);
     const figures = under.filter((cell) => readsAsFigure(cell) || isCodeCell(cell) || carriesFigure(cell)).length;
     if (under.length > 0 && figures * 2 > under.length) return null;
   }
   // (§5.1 b) …and a header found that deep must name a figure column, not
   // just the name: «Consignee name: | GSR LOGISTICS» inside a long title
-  // block is no table (c2637).
+  // block is no table (c2637). Nor is a TOTALS line: «Всего наименований |
+  // Количество мест | Вес брутто» names figure columns over the shipment's
+  // sums, and is no goods header however deep.
   if (deep && [columns.quantity, columns.weight, columns.volume, columns.amount, columns.gross].every((i) => i === null)) return null;
+  if (deep && isTotalRow(cellText(raw[columns.name] ?? null))) return null;
   return { detected: { headerRow: r, dataFrom: repeats.has(r + 1) ? r + 2 : r + 1, columns }, score: mappedBeside(columns) };
 }
 
@@ -1040,9 +1147,23 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // The labels landed as the goods and the good's own name, beside the
   // header, was lost — and the model was shown the labels as goods already
   // taken (xlsx1-07, unmapped-vertical-card).
+  // But a GOOD named like a label is a good: «Karobka | 500 | 100», «Carton |
+  // 500 | 100» under «Tovar nomi | Soni | Vazni» are boxes sold by the piece,
+  // their count standing in the header's own count column — where a card's
+  // value stands under the card's first VALUE, which names no figure (the
+  // fix round's reader-a-break-goods-named-like-labels).
+  const figureHeads = header.flatMap((cell, j) => (FIGURE_FIELDS.has(fieldLabel(cell) ?? 'other') ? [j] : []));
   const labels = (i: number) => {
-    const cells = sampled(i);
-    return cells.length > 0 && cells.filter(otherLabel).length * 2 > cells.length;
+    const own = cellText(rows[r]?.[i] ?? null).toLowerCase();
+    let cells = 0;
+    let hits = 0;
+    for (let d = r + 1; d < Math.min(rows.length, r + 1 + SAMPLE_ROWS); d++) {
+      const cell = skip.has(d) ? null : (rows[d]![i] ?? null);
+      if (cellText(cell) === '' || isHeaderText(cell, own)) continue;
+      cells += 1;
+      if (otherLabel(cell) && !figureHeads.some((j) => j !== i && readsAsFigure(rows[d]![j] ?? null))) hits += 1;
+    }
+    return cells > 0 && hits * 2 > cells;
   };
   // (§5.3) A running serial — 1, 2, 3 … under «ITEM» — or, under a header
   // that names the goods by «item» alone, article numbers («LJ-2023»), is no
@@ -1067,8 +1188,18 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     return cells.length > 0 && cells.every((cell) => isArticleNumber(cellText(cell)));
   };
   const party = (i: number) => NAME_PARTY.test(cellText(header[i]!).split(/[(,;]/)[0] ?? '');
-  const goodsBeside = (i: number) =>
-    header.some((_, j) => j !== i && wordy(j) && !party(j) && !NAME_ATTRIBUTE.test(cellText(header[j] ?? null).split(/[(,;]/)[0] ?? ''));
+  // …nor a column that DESCRIBES the goods — their colour, material, size,
+  // packing or a remark: beside «Color», «Material», «Packing» the article
+  // numbers under «Item No.» are the products, and the commonest Chinese
+  // clothing PI («Item No. | Color | Qty | Unit Price | Amount») lost its
+  // header to the colour column (the fix round's
+  // reader-a-break-item-color-not-goods).
+  const describes = (j: number) => {
+    const text = cellText(header[j] ?? null);
+    const first = text.split(/[(,;]/)[0] ?? '';
+    return party(j) || NAME_ATTRIBUTE.test(first) || NAME_DETAIL.test(first) || fieldLabel(text) === 'other';
+  };
+  const goodsBeside = (i: number) => header.some((_, j) => j !== i && wordy(j) && !describes(j));
   const named = (i: number) => !((serial(i) || (itemOnly(i) && articles(i))) && goodsBeside(i));
   // One ladder, the header's rank before the data's: a header that names
   // the PRODUCT alone (`namesTheProduct`, which outranks a description)
@@ -1084,15 +1215,23 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const head = (i: number) => cellText(header[i]!);
   const goods = (i: number) => namesTheGoods(head(i));
   const name =
-    findColumn(header, NAME_KEYS_FIRST, taken, (i) => namesTheProduct(head(i)) && wordy(i) && !labels(i)) ??
-    findColumn(header, PRODUCT_KEYS, taken, (i) => namesTheProduct(head(i)) && wordy(i) && !labels(i)) ??
-    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && wordy(i) && !labels(i)) ??
-    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && wordy(i) && !labels(i)) ??
-    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && stated(i) && named(i) && !labels(i)) ??
-    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && stated(i) && named(i) && !labels(i)) ??
-    findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i) && named(i) && !party(i) && !labels(i)) ??
-    findColumn(header, LAST_NAME_KEYS, taken, (i) => lastNames(head(i)) && wordy(i) && !labels(i));
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => namesTheProduct(head(i)) && wordy(i)) ??
+    findColumn(header, PRODUCT_KEYS, taken, (i) => namesTheProduct(head(i)) && wordy(i)) ??
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && wordy(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && wordy(i)) ??
+    findColumn(header, NAME_KEYS_FIRST, taken, (i) => goods(i) && stated(i) && named(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => goods(i) && stated(i) && named(i)) ??
+    findColumn(header, NAME_KEYS, taken, (i) => !allCodes(i) && named(i) && !party(i)) ??
+    findColumn(header, LAST_NAME_KEYS, taken, (i) => lastNames(head(i)) && wordy(i));
   if (name === null) return null;
+  // (§5.6 (b)) …and the column the ladder chose holding LABELS refuses the
+  // whole row as a header, never only the column: passed over, the climb
+  // went on and named the goods by the card's VALUE column whenever its
+  // first value held a name word — «Tovar nomi | Plastik mahsulotlar», «…
+  // | Товары для дома», «… | Kitchen goods set» — numbers became products and
+  // the first good's name was lost, with nothing shown to the model (the fix
+  // round's reader-a-spec-56b-column-exclusion-not-refusal).
+  if (labels(name)) return null;
   taken.add(name);
   const claim = (keys: string[], accept?: (index: number) => boolean): number | null => {
     const idx = findColumn(header, keys, taken, accept);
@@ -1160,13 +1299,24 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
   // What a weight column's figures add up to, over the data rows (a merged
   // position is its master's, counted once).
+  // Read once per column, and never a cell longer than any figure is
+  // (`readsAsFigure`'s 64): best-of-ten maps every candidate, and a row of a
+  // hundred «… Вес …» cells over 2,000 rows asked this of 99 columns each a
+  // whole sheet long — 7 s of parsing 30,000-character cells as numbers (the
+  // fix round's reader-a-break-candidate-cost). It only ranks columns; the
+  // figures themselves are read by the rows.
+  const kgOf = new Map<number, number>();
   const columnKg = (i: number): number => {
+    const known = kgOf.get(i);
+    if (known !== undefined) return known;
     let sum = 0;
     for (let d = r + 1; d < rows.length; d++) {
-      if (covered?.has(d, i)) continue;
-      const value = parseMeasure(rows[d]![i] ?? null, 'kg');
+      const cell = rows[d]![i] ?? null;
+      if (covered?.has(d, i) || (typeof cell === 'string' && cell.length > 64)) continue;
+      const value = parseMeasure(cell, 'kg');
       if (value !== null && value > 0) sum += value;
     }
+    kgOf.set(i, sum);
     return sum;
   };
   // Two columns of one kind are one carton's figure and the line's (review
@@ -1465,12 +1615,27 @@ const TITLE_LINE =
 const LIST_WORDS = new Set([
   'наименование', 'наименования', 'название', 'товар', 'товара', 'товары', 'товаров', 'список', 'перечень',
   'продукция', 'описание', 'номенклатура',
-  'tovar', 'tovarlar', 'tovarlarning', 'nomi', 'nomlari', 'mahsulot', 'mahsulotlar', "ro'yxati", "ro'yxat",
+  // …and WHAT the list names, as the forwarder's own headers say it: «Наименование
+  // продукции / груза / изделия / материала / работ», «Описание груза», «Вид
+  // товара», «Yuk nomi», «Tovar turi», «Cargo description» (the fix round's
+  // reader-a-break-onecell-heading-too-narrow: each was refused as a heading and
+  // landed as product #1).
+  'продукции', 'продукта', 'продуктов', 'груза', 'грузов', 'изделия', 'изделий', 'материала', 'материалов', 'работ',
+  'услуг', 'вид',
+  'tovar', 'tovarlar', 'tovarlarning', 'nomi', 'nomlari', 'mahsulot', 'mahsulotlar', "ro'yxati", "ro'yxat", 'yuk', 'turi',
   'товарлар', 'товарларнинг', 'номи', 'номлари', 'маҳсулот', 'маҳсулотлар', 'махсулот', 'махсулотлар', 'рўйхати', 'рўйхат',
-  'name', 'names', 'goods', 'list', 'item', 'items', 'product', 'products', 'description', 'of',
+  'юк', 'тури',
+  'name', 'names', 'goods', 'list', 'item', 'items', 'product', 'products', 'description', 'of', 'cargo',
 ]);
-/** …and in Chinese, which writes them with nothing between: «商品名称», «货物清单». */
-const LIST_WORDS_HAN = ['品名', '名称', '货物', '商品', '产品', '清单', '列表', '货品', '明细'];
+/**
+ * A joining word INSIDE a heading made of list words — «Наименование и
+ * описание товара», «Names and quantities» — and never one that opens or
+ * closes it, nor a heading's second word: «Name and address labels» is a
+ * product.
+ */
+const LIST_JOINS = new Set(['и', 'and', 'va', 'ва']);
+/** …and in Chinese, which writes them with nothing between: «商品名称», «货物清单», «产品描述», «品名规格». */
+const LIST_WORDS_HAN = ['品名', '名称', '货物', '商品', '产品', '清单', '列表', '货品', '明细', '描述', '规格'];
 
 /** A line's words, lower-cased, the Uzbek apostrophe in one spelling. */
 const lineWords = (text: string): string[] => text.toLowerCase().replace(/[ʻ‘’`]/g, "'").match(/[\p{L}']+/gu) ?? [];
@@ -1479,7 +1644,9 @@ const lineWords = (text: string): string[] => text.toLowerCase().replace(/[ʻ‘
 function listHeading(text: string): boolean {
   const words = lineWords(text);
   if (words.length === 0 || words.length > 4) return false;
-  return words.every((word) => LIST_WORDS.has(word) || hanListWords(word));
+  return words.every(
+    (word, at) => LIST_WORDS.has(word) || hanListWords(word) || (LIST_JOINS.has(word) && at > 0 && at < words.length - 1),
+  );
 }
 
 /**

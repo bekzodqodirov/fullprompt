@@ -197,6 +197,13 @@ describe('the VED paste never asks, and lands every column (P1.6, TT-16)', () =>
     expect(kurtka).toMatchObject({ quantity: null, weightKg: null, note: 'qatorda: «Kurtka; 300; 150» — aniq emas' });
   });
 
+  it('a two-column paste headed by a count word keeps its header (the fix round’s reader-a-break-twocol-value-refusal)', () => {
+    // «Наименование | Шт» was refused as a card's first line, so the paste
+    // read line by line and posted an item named «Наименование Шт».
+    const items = pasteItems('Наименование\tШт\nКуртка женская\t300\nБрюки мужские\t200');
+    expect(items.map((i) => i.name)).toEqual(['Куртка женская', 'Брюки мужские']);
+  });
+
   it('nothing pasted is nothing posted', () => {
     expect(pasteItems('')).toEqual([]);
     expect(pasteItems('\n  \n')).toEqual([]);
