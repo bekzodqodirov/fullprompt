@@ -6533,7 +6533,8 @@
     "redNote": "Lots printed red on the invoice: one carton may hold several goods.",
     "tooMany": "Too many groups chosen — press “All: Merge” or choose fewer.",
     "get": "Download the invoice",
-    "listFailed": "The list could not be read — the invoice was downloaded with nothing merged.",
-    "close": "Close"
+    "listFailed": "The list could not be read (the connection or the server). Nothing was downloaded and this page is as it was — press again in a moment.",
+    "close": "Close",
+    "moved": "The list changed while this window was open (a code, a name or a tarkib was saved). Look at the new list and press again."
   }
 }

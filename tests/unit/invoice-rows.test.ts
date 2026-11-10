@@ -264,12 +264,37 @@ describe('same code, different names — asked, never merged by itself', () => {
     const two = [...rows, kg(C, 'Чай зелёный', '0902', 5), kg(B, 'Чай чёрный', '0902', 6)];
     const m = invoiceModel(two);
     expect(m.groups.map((g) => g.code)).toEqual(['8471607000', '0902']);
-    expect(mergeQuery(m, keysOf(m, ['8471607000', '0902']))).toBe(`?merge=all.${m.fp}`);
+    // The address carries PAIRS whenever it can hold them — every group ticked included.
+    expect(mergeQuery(m, keysOf(m, ['8471607000', '0902']))).toBe(
+      `?merge=8471607000.${m.groups[0]!.sig},0902.${m.groups[1]!.sig}`,
+    );
     expect(invoiceModel(two, { all: m.fp, picks: new Set() }).positions.map((p) => p.code)).toEqual(['8471607000', '8471606000', '0902']);
     expect(invoiceModel(two, { all: '00000000', picks: new Set() }).positions).toHaveLength(5);
-    // One of two: a pair, not «all».
     expect(mergeQuery(m, keysOf(m, ['0902']))).toBe(`?merge=0902.${m.groups[1]!.sig}`);
     expect(mergeQuery(m, new Set())).toBe('');
+  });
+
+  it('one group renamed under an open dialog asks about THAT group again — the other answers stand', () => {
+    // The review of the built round: three codes ticked «Qo'shish», a tarkib
+    // name under 0902 corrected in another tab, «Invoysni olish» pressed on
+    // the still-open dialog. As `all.<fp>` the one changed group took the
+    // other two answers with it — six rows apart and not a word.
+    const before = [
+      ...rows,
+      kg(C, 'Чай зелёный', '0902', 5),
+      kg(B, 'Чай чёрный', '0902', 6),
+      kg(A, 'Одежда женская', '6204', 7),
+      kg(C, 'Одежда детская', '6204', 8),
+    ];
+    const shown = invoiceModel(before);
+    expect(shown.groups.map((g) => g.code)).toEqual(['8471607000', '0902', '6204']);
+    const address = mergeQuery(shown, new Set(shown.groups.map((g) => g.key)))!;
+    expect(address).not.toContain('all.');
+    const after = before.map((r) => (r.name === 'Чай чёрный' ? { ...r, name: 'Чай чёрный байховый' } : r));
+    const file = invoiceModel(after, parseMergeParam(address.replace('?merge=', '')));
+    // 8471607000 and 6204 merged as answered; the renamed 0902 stays two rows, to be asked again.
+    expect(file.positions.map((p) => p.code)).toEqual(['8471607000', '8471606000', '0902', '0902', '6204']);
+    expect(file.groups.find((g) => g.code === '0902')!.key).not.toBe(shown.groups[1]!.key);
   });
 });
 

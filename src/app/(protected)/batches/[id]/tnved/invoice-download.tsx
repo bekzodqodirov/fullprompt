@@ -26,6 +26,18 @@ import { mergeQuery, type InvoiceGroupsView } from '@/modules/wms/documents/invo
  * The device remembers this truck's last answers (a convenience, never a
  * record): a group is pre-selected only while its key — code AND the names
  * it was shown with — is still the same.
+ *
+ * The file is asked for only right after the LIST was read — at the press
+ * and again at «Invoysni olish» (the review of the built round, two defects
+ * with one cure). A download is a navigation of THIS tab: when the address
+ * answers with a page instead of a file — the server recreated by a deploy,
+ * the session run out — the Bojxona screen is replaced by that page and
+ * every code typed or suggested and not saved goes with it. So a list that
+ * cannot be read is SAID and nothing is followed; the person stays where
+ * they are. And a dialog left open while a colleague saved a code or a
+ * tarkib would have sent answers about a list that no longer exists: the
+ * second read shows the new list and asks again instead of handing over a
+ * file that ignores the answer.
  */
 
 const STORE = (batchId: string) => `gsr.invoys.merge.${batchId}`;
@@ -64,18 +76,36 @@ export function InvoiceDownload({ batchId, label }: { batchId: string; label: st
   const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
   const [unsaved, setUnsaved] = useState(0);
   const [listFailed, setListFailed] = useState(false);
+  /** The list changed while the dialog stood open — it is shown afresh and asked again. */
+  const [moved, setMoved] = useState(false);
   const base = `/api/batches/${batchId}/invoice`;
+
+  /** The asked groups, or null when the list cannot be read (offline, a deploy, a session that ran out). */
+  async function readGroups(): Promise<InvoiceGroupsView | null> {
+    try {
+      const res = await fetch(`${base}/groups`, { cache: 'no-store' });
+      if (!res.ok) return null;
+      return (await res.json()) as InvoiceGroupsView;
+    } catch {
+      return null;
+    }
+  }
 
   async function press() {
     if (busy) return;
     setBusy(true);
     setListFailed(false);
+    setMoved(false);
     const drafts = unsavedCodes();
     setUnsaved(drafts);
     try {
-      const res = await fetch(`${base}/groups`, { cache: 'no-store' });
-      if (!res.ok) throw new Error(String(res.status));
-      const body = (await res.json()) as InvoiceGroupsView;
+      const body = await readGroups();
+      // Nothing is followed: the file's address would fail for the same
+      // reason, and a failed download REPLACES this screen.
+      if (!body) {
+        setListFailed(true);
+        return;
+      }
       if (body.groups.length === 0 && drafts === 0) {
         await followDownload(base);
         return;
@@ -83,11 +113,6 @@ export function InvoiceDownload({ batchId, label }: { batchId: string; label: st
       setView(body);
       setChosen(remembered(batchId, body));
       setOpen(true);
-    } catch {
-      // The list could not be read. The plain draft is still the draft —
-      // every asked group apart — and the screen says the question was skipped.
-      setListFailed(true);
-      await followDownload(base);
     } finally {
       setBusy(false);
     }
@@ -105,7 +130,22 @@ export function InvoiceDownload({ batchId, label }: { batchId: string; label: st
   async function download() {
     if (!view || query === null || busy) return;
     setBusy(true);
+    setListFailed(false);
     try {
+      const now = await readGroups();
+      if (!now) {
+        setListFailed(true);
+        return;
+      }
+      if (now.fp !== view.fp) {
+        // The answers that still name a group stand; the rest are asked again.
+        const known = new Set(now.groups.map((g) => g.key));
+        setView(now);
+        setChosen(new Set([...chosen].filter((key) => known.has(key))));
+        setMoved(true);
+        return;
+      }
+      setMoved(false);
       remember(batchId, chosen);
       await followDownload(`${base}${query}`);
       setOpen(false);
@@ -126,8 +166,8 @@ export function InvoiceDownload({ batchId, label }: { batchId: string; label: st
       >
         {label}
       </button>
-      {listFailed && (
-        <p className="basis-full text-xs text-warn" data-testid="invoice-list-failed">
+      {listFailed && !open && (
+        <p className="basis-full text-xs font-semibold text-bad" data-testid="invoice-list-failed">
           {t('listFailed')}
         </p>
       )}
@@ -148,6 +188,16 @@ export function InvoiceDownload({ batchId, label }: { batchId: string; label: st
           {unsaved > 0 && (
             <p className="text-sm font-semibold text-warn" data-testid="invoice-unsaved">
               ⚠ {t('unsaved', { n: unsaved })}
+            </p>
+          )}
+          {moved && (
+            <p className="text-sm font-semibold text-warn" data-testid="invoice-moved">
+              ⚠ {t('moved')}
+            </p>
+          )}
+          {listFailed && (
+            <p className="text-sm font-semibold text-bad" data-testid="invoice-list-failed">
+              {t('listFailed')}
             </p>
           )}
           {view?.sent && <p className="text-sm text-warn">{t('sent')}</p>}

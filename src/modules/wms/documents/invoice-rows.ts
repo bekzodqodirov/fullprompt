@@ -417,15 +417,21 @@ export function parseMergeParam(raw: string | null | undefined): InvoiceMergeAns
 
 /**
  * The query the download carries for the groups a person chose to merge
- * (by group KEY): '' for none, `?merge=all.<fp>` when it is every group (one
- * token, however many), else the keys. More than `MERGE_PICKS_MAX` chosen but
- * not all → null: the address cannot carry them, and the screen says so
- * instead of silently merging fewer.
+ * (by group KEY): '' for none, else the keys themselves while the address
+ * can hold them. PAIRS first, on purpose: a pair is an answer about ONE
+ * group, so when one group's names change under an open dialog (or under a
+ * bookmarked address) only that group is asked again — `all.<fp>` names the
+ * whole list, and one changed group took every other answer with it (the
+ * review of the built round: three groups ticked, one renamed, six rows
+ * apart). `?merge=all.<fp>` is kept for the one case pairs cannot serve:
+ * EVERY group chosen and more of them than the address carries. More than
+ * `MERGE_PICKS_MAX` chosen but not all → null: the screen says so instead of
+ * silently merging fewer.
  */
 export function mergeQuery(model: Pick<InvoiceModel, 'groups' | 'fp'>, keys: ReadonlySet<string>): string | null {
   const chosen = model.groups.filter((g) => keys.has(g.key));
   if (chosen.length === 0) return '';
+  if (chosen.length <= MERGE_PICKS_MAX) return `?merge=${chosen.map((g) => g.key).join(',')}`;
   if (chosen.length === model.groups.length) return `?merge=all.${model.fp}`;
-  if (chosen.length > MERGE_PICKS_MAX) return null;
-  return `?merge=${chosen.map((g) => g.key).join(',')}`;
+  return null;
 }

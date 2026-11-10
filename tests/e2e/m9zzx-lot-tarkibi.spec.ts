@@ -301,11 +301,30 @@ test('«Invoys» asks before it merges: one code, two names → the dialog; merg
   const dialog = page.getByTestId('invoice-dialog');
   const label = `${run.marker}-A`;
 
+  // The list cannot be read (a deploy recreating the server, a dead link):
+  // NOTHING is followed. A download is a navigation of this tab, and the
+  // file's address would fail for the same reason — the Bojxona screen and
+  // every unsaved code on it would be replaced by an error page. The route
+  // is held at the CONTEXT: the service worker answers `/api/*`.
+  const stall = '**/api/batches/*/invoice/groups';
+  await page.context().route(stall, (route) => route.abort());
+  const strayDownloads: string[] = [];
+  const onDownload = (d: Download) => strayDownloads.push(d.url());
+  page.on('download', onDownload);
+  await button.click();
+  await expect(page.getByTestId('invoice-list-failed')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${tnvedPath()}$`));
+  await expect(page.getByTestId('tnved-tarkib-row')).toHaveCount(2);
+  expect(strayDownloads).toEqual([]);
+  page.off('download', onDownload);
+  await page.context().unroute(stall);
+
   // Nothing to ask (the keyboard has no code yet): the file comes at once.
   let file = page.waitForEvent('download');
   await button.click();
   expect((await downloaded(await file)).map((r) => r.product)).toEqual(['Клавиатура', 'Мышь']);
   await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId('invoice-list-failed')).toHaveCount(0);
 
   // The keyboard gets the mouse's code — TYPED, not saved. The invoice is
   // made from the SAVED codes, so the press says one code is not saved and
@@ -351,7 +370,7 @@ test('«Invoys» asks before it merges: one code, two names → the dialog; merg
   const asked = page.waitForRequest((r) => r.url().endsWith('/api/dl') && r.method() === 'POST');
   file = page.waitForEvent('download');
   await page.getByTestId('invoice-get').click();
-  expect((await asked).postDataJSON().path).toMatch(/\/invoice\?merge=all\.[0-9a-f]{8}$/);
+  expect((await asked).postDataJSON().path).toMatch(/\/invoice\?merge=8471607000\.[0-9a-f]{8}$/);
   expect(await downloaded(await file)).toEqual([
     {
       product: 'Клавиатура, Мышь',
@@ -380,6 +399,27 @@ test('«Invoys» asks before it merges: one code, two names → the dialog; merg
   ]);
   // A bare address — a bookmark, the print sheet, another device — never merges.
   expect((await invoice(page)).map((r) => r.product)).toEqual(['Клавиатура', 'Мышь']);
+
+  // The list moves under an OPEN dialog (a colleague saves another code for
+  // the keyboard): «Invoysni olish» reads it again, shows what is true now
+  // and asks again — it never hands over a file that ignores the answer.
+  await button.click();
+  await expect(group).toHaveCount(1);
+  await group.getByTestId('invoice-merge-yes').click();
+  const sql = database();
+  page.on('download', onDownload);
+  try {
+    await sql`UPDATE lot_composition_lines SET tnved_code = '8471300000' WHERE lot_id = ${minted!.lotId} AND name = 'Клавиатура'`;
+    await page.getByTestId('invoice-get').click();
+    await expect(page.getByTestId('invoice-moved')).toBeVisible();
+    await expect(page.getByTestId('invoice-group')).toHaveCount(0);
+    await expect(dialog).toBeVisible();
+    expect(strayDownloads).toEqual([]);
+  } finally {
+    await sql`UPDATE lot_composition_lines SET tnved_code = '8471607000' WHERE lot_id = ${minted!.lotId} AND name = 'Клавиатура'`;
+    await sql.end();
+    page.off('download', onDownload);
+  }
 });
 
 test('the freeze: the sent truck keeps its papers; un-ticked, it reads the correction', async ({ page }) => {
