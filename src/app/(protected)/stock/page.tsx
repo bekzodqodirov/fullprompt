@@ -833,7 +833,11 @@ function cellClass(key: string, numeric?: boolean): string {
   if (key === 'photo') return 'p-1.5';
   if (numeric) return key === 'boxes' || key === 'stockKg' ? 'p-2 text-right font-semibold' : 'p-2 text-right';
   if (key === 'code') return 'whitespace-nowrap p-2';
-  if (key === 'product') return 'max-w-56 p-2';
+  // On a phone the cell ends where the screen does: at 14rem it ran 60 px past
+  // the edge, and the part past the edge is its END — a tarkib label's «+N»
+  // (measured at 360 px: the count sat at x 399). The 12.5rem is what the
+  // photograph and the code beside it take; from 424 px up it is 14rem again.
+  if (key === 'product') return 'max-w-[min(14rem,calc(100vw-12.5rem))] p-2';
   if (key === 'note') return 'max-w-32 truncate p-2 text-xs text-ink-500';
   if (key === 'whCode') return 'p-2 font-mono font-bold';
   if (key === 'receivedAt') return 'whitespace-nowrap p-2 text-ink-500';
