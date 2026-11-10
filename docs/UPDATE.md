@@ -369,6 +369,26 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Tarkib tuzatishlari (2026-11-10, 0143) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0143** — deploydan keyin son **144** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Migratsiya bitta ustunni «majburiy emas» qiladi
+(tarkibning hujjati), hech qanday ma’lumotni o‘zgartirmaydi.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. Sonni o‘qing — **144**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov (bitta prixodda, 5 daqiqa):
+   - prixod kartasi → lot → «🧩 Tarkibi» → ikki tovar yozing va **hujjat tanlamasdan** saqlang — saqlanishi kerak;
+   - «Sklad qoldig‘i»da shu lotning nomi «Birinchi tovar +1» bo‘lib turishi kerak;
+   - shu lotni rejaga qo‘shib «Agent uchun Excel»ni oling — har bir tovar alohida qatorda;
+   - mashina → «Bojxona» → tarkib qatorining yonida 🤖 tugmasi bor;
+   - «Invoys» tugmasi: bir xil TNVED kodli, nomi har xil tovarlar bo‘lsa oyna ochiladi («Qo‘shish / Alohida»);
+     faylda «№» dan keyingi «Маркировка» ustunida mijoz kodi va lot harfi turadi, bitta lot bir necha
+     qatorga bo‘lingan bo‘lsa — qizilda.
+
 ## «✅ Yuborish chiqmadi» tuzatishi (2026-10-29 kechqurun, 0142)
 
 Bitta migratsiya bor: **0142** (avval 0139 edi) — deploydan keyin son **143** bo‘ladi (repo’dagi fayllar soni:
@@ -457,6 +477,16 @@ Avvalgi ishlaydigan holatga qaytish (kod):
 git log --oneline -5                 # ishlagan commit'ni toping
 git checkout <commit>
 docker compose --profile https up -d --build
+```
+
+**0143 dan (tarkib tuzatishlari) PASTGA qaytishdan oldin — o‘qing.** Eski kod har bir
+tarkibda hujjat bor deb hisoblaydi. Hujjatsiz saqlangan tarkib bo‘lsa, eski kodda shu prixod
+kartasi va tarkib oynasi xato berishi mumkin. Qaytishdan oldin sanang; soni nol bo‘lmasa —
+avval shu tarkiblarga hujjat biriktiring yoki menga yuboring:
+
+```bash
+docker compose exec -T postgres psql -U gsr -d gsr -tAc \
+  "SELECT count(*) FROM lot_compositions WHERE attachment_id IS NULL"
 ```
 
 **0136 dan (uch band) PASTGA qaytishdan oldin — o‘qing.** Migratsiya bir

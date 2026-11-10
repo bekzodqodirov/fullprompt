@@ -296,6 +296,33 @@ Built:
 - `tnved.lineNoAi` leaves the four bundles; new `tnved.aiNameOnly`, `aiSameName`,
   `suggestProgress`, `suggestStop`.
 
+**As built** (overrides the bullets above where they differ):
+
+- The walk's stop rule is simpler than (d): ANY refusal that is not the model's own failure
+  ends it (`forbidden`, `frozen`, `composition_changed`, `ai_not_configured`,
+  `receipt_not_confirmed`, a lot that is gone), and so do two `ai_failed` in a row. A shut
+  door is shut for the next row too, and one sentence on the screen is enough.
+- The walk's write is `fillEmpty` — the emptiness check is INSIDE the state updater, so «a
+  code typed meanwhile is never overwritten» is a property of the write and not of a ref read
+  a moment earlier; the ref (`rowsRef`) only saves the model a call for a row that got a code.
+  A single 🤖 press on a row still replaces that row's code — the person asked for it.
+- The photograph has ONE reader in the action file (`firstLotPhoto`), called by both 🤖
+  actions after every door; the line action returns `photo: boolean`, and the row says
+  «rasmsiz, faqat nomga qarab» when none was read.
+- The context names the warehouse's word for the cartons («приняты под названием «键盘» — это
+  название может быть неточным») only for a line that is NOT the lot's own good, and the
+  system prompt gained one rule: «Контекст» is a hint, classify only «Товар».
+- The editor's root carries `data-tnved-unsaved` (typed and not saved, product rows and
+  lines) — the invoice button reads it (§6.4).
+- Pinned by `tests/unit/tnved-question.test.ts` (the question, pure),
+  `tests/integration/tnved-line-ai.integration.test.ts` (every door with a model stand-in
+  that records what it is asked — the card door proven ALONE by a prixod received at a third
+  warehouse, so the composition's own door would have let the person through),
+  `tests/unit/batch-door-wire.test.ts` (door order, the walk's write, the changed-only save)
+  and the browser half in `m9zzx` (no AI key here or in CI: the button, its count, the honest
+  refusal). 12 red proofs by string edit; one stayed green first (the card door, masked by
+  the composition's door) and its fixture was re-shaped.
+
 ## 6. Item 6 — the invoice draft
 
 Today (`documents/ved-xlsx.ts` `buildInvoiceXlsx`): cells are written WHILE the lots are
