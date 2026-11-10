@@ -7,6 +7,7 @@ import { clients } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { clientHistory } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 /** Report §13.6: one client's full cargo journey per lot. */
 export default async function ClientHistoryPage({
@@ -112,9 +113,8 @@ export default async function ClientHistoryPage({
                 {rows.map((row) => (
                   <tr key={row.lotId} className="border-b border-line last:border-0">
                     <td className="p-2 font-mono font-extrabold text-brand-700">{row.letter}</td>
-                    <td className="max-w-52 truncate p-2">
-                      {row.productNameZh}
-                      {row.productNameRu && <span className="text-ink-500"> ({row.productNameRu})</span>}
+                    <td className="max-w-52 p-2">
+                      <LotGoodsName zh={row.productNameZh} ru={row.productNameRu} />
                     </td>
                     <td className="p-2 text-xs">
                       {format.dateTime(row.receivedAt, { dateStyle: 'short' })}{' '}

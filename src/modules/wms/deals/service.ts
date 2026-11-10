@@ -20,6 +20,7 @@ import { emitEvent } from '@/modules/platform/events/service';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
+import { lotGoodsKindsSql, lotGoodsShownSql } from '../receipts/lot-name';
 import { likeNeedle } from '../search/query';
 import { dealCargoLabel, type DealCargo } from './cargo-label';
 import { dealCarriesCalcSql, dealMissingTnvedSql, vedWorkSql } from './ved-work';
@@ -1000,6 +1001,13 @@ export async function dealReality(dealId: string): Promise<DealReality> {
  * the lines are the fallback for a deal whose goods are still only agreed.
  * Russian before Chinese, the precedence #583 set for the mirror picker —
  * `product_name_zh` is the supplier's own label and the office reads this.
+ *
+ * The count is over goods KINDS (`lotGoodsKindsSql`, the owner's item 4,
+ * 2026-11-10): a lot whose tarkib names three goods is three kinds, a plain
+ * lot is its one name. Fed the lot's LABEL the picker printed «Клавиатура +2
+ * +1» — the tarkib's count and its own, two numbers about two things. The
+ * first is the alphabetically first of the lots' FIRST kinds, which for a
+ * deal with no tarkib is the name it always printed.
  */
 export async function dealCargoFor(
   dealIds: string[],
@@ -1007,17 +1015,20 @@ export async function dealCargoFor(
   const map = new Map<string, Omit<DealCargo, 'quotedVolumeM3' | 'quotedWeightKg'>>();
   if (dealIds.length === 0) return map;
 
-  const name = sql<string>`coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh})`;
   const [realities, fromReceipts, fromLines] = await Promise.all([
     dealRealitiesFor(dealIds),
     db
       .select({
         dealId: receipts.dealId,
-        first: sql<string>`(array_agg(DISTINCT ${name}))[1]`,
-        n: sql<number>`count(DISTINCT ${name})`,
+        first: sql<string>`(array_agg(kind.name ORDER BY kind.at, kind.name))[1]`,
+        n: sql<number>`count(DISTINCT kind.name)`,
       })
       .from(receipts)
       .innerJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))
+      .innerJoin(
+        sql`LATERAL unnest(${lotGoodsKindsSql(sql`${receiptLots}`)}) WITH ORDINALITY AS kind(name, at)`,
+        sql`true`,
+      )
       .where(and(inArray(receipts.dealId, dealIds), isNull(receipts.voidedAt)))
       .groupBy(receipts.dealId),
     db
@@ -1818,7 +1829,9 @@ export async function dealById(id: string) {
 /**
  * What a set of prixods CONTAINS — goods (ru name preferred), kg, m³ — in
  * ONE grouped query (#432). The picker and the linked list both read this,
- * so the two say the same words about the same cargo.
+ * so the two say the same words about the same cargo. Each lot goes by the
+ * name the screens show it under (`lotGoodsShownSql`): its tarkib's while
+ * one stands.
  */
 async function receiptContents(receiptIds: string[]) {
   if (receiptIds.length === 0)
@@ -1826,7 +1839,7 @@ async function receiptContents(receiptIds: string[]) {
   const rows = await db
     .select({
       receiptId: receiptLots.receiptId,
-      goods: sql<string>`string_agg(DISTINCT coalesce(nullif(${receiptLots.productNameRu}, ''), ${receiptLots.productNameZh}), ', ')`,
+      goods: sql<string>`string_agg(DISTINCT ${lotGoodsShownSql(sql`${receiptLots}`)}, ', ')`,
       volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
       weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
     })

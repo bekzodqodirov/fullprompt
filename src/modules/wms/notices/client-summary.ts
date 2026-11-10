@@ -12,6 +12,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { cargoOverview } from '../client-cabinet/service';
+import { lotRuShownSql } from '../receipts/lot-name';
 import {
   cargoStage,
   milestoneCounts,
@@ -32,6 +33,10 @@ import { pushLotName, type IssuedSummary, type PushLot, type ReceivedSummary } f
  * to send the payload as it was frozen, so all three reached a customer as
  * news. Every reader here answers either the message's facts or a `skip` with
  * the reason, which the sweep writes onto the row.
+ *
+ * The same holds for a lot's NAME: the event's stored payload keeps the lot's
+ * own Russian name, and these reads are where a push learns the name the
+ * screens show — the lot's tarkib while one stands (`lotRuShownSql`).
  */
 
 export type Skip = { skip: string };
@@ -140,7 +145,7 @@ export async function receivedFacts(clientId: string, receiptId: string): Promis
     .select({
       id: receiptLots.id,
       letter: receiptLots.letter,
-      nameRu: receiptLots.productNameRu,
+      nameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       nameZh: receiptLots.productNameZh,
       boxCount: receiptLots.boxCount,
       kg: receiptLots.totalWeightKg,
@@ -229,7 +234,7 @@ export async function issuedFacts(clientId: string, handoverId: string): Promise
     .select({
       lotId: receiptLots.id,
       letter: receiptLots.letter,
-      nameRu: receiptLots.productNameRu,
+      nameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       nameZh: receiptLots.productNameZh,
       lotBoxes: receiptLots.boxCount,
       lotKg: receiptLots.totalWeightKg,
@@ -249,7 +254,6 @@ export async function issuedFacts(clientId: string, handoverId: string): Promise
     .groupBy(
       receiptLots.id,
       receiptLots.letter,
-      receiptLots.productNameRu,
       receiptLots.productNameZh,
       receiptLots.boxCount,
       receiptLots.totalWeightKg,

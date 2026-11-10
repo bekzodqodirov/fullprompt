@@ -23,6 +23,7 @@ import { roundKg, roundM3, shareOf } from '../../platform/telegram/format';
 import { telegramPhoneUrl } from '../../platform/telegram/map-link';
 import { chatLocaleFor } from '../../platform/telegram/cabinet-locale';
 import { ARRIVED_ON_A_TRUCK } from '../documents/arrivals';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { arrivalCleared } from '../notices/arrival-text';
 import { clientBalanceUsd, clientLedger } from '../finance/service';
@@ -266,6 +267,11 @@ export interface CabinetLot {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /**
+   * The Russian name as SHOWN — the lot's tarkib while one stands («Клавиатура
+   * +2», the owner's items 3-4 of 2026-11-10), else the lot's own. The Mini
+   * App, the bot's «📦 Yuklarim» and its 📷 buttons all print this field.
+   */
   productNameRu: string | null;
   /**
    * Where this lot's boxes are on the customer's ladder, biggest group first.
@@ -545,7 +551,7 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       status: boxes.status,
       warehousePlace: warehouses.name,
       // The ladder is derived from WHERE the box stands, never from a list of
@@ -591,7 +597,6 @@ export async function cargoOverview(clientId: string): Promise<CabinetLot[]> {
       receiptLots.id,
       receiptLots.letter,
       receiptLots.productNameZh,
-      receiptLots.productNameRu,
       receiptLots.totalWeightKg,
       receiptLots.boxCount,
       receiptLots.totalVolumeM3,
@@ -824,6 +829,7 @@ export interface IssuedLotView {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /** The Russian name as SHOWN (`CabinetLot.productNameRu`'s rule), read live. */
   productNameRu: string | null;
   receivedAt: string;
   n: number;
@@ -914,7 +920,7 @@ export async function issuedHandoversPage(
         lotId: receiptLots.id,
         letter: receiptLots.letter,
         productNameZh: receiptLots.productNameZh,
-        productNameRu: receiptLots.productNameRu,
+        productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
         boxCount: receiptLots.boxCount,
         lotKg: receiptLots.totalWeightKg,
         lotM3: receiptLots.totalVolumeM3,

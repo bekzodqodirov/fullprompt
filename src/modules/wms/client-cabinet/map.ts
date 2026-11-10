@@ -3,6 +3,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '../../platform/db/client';
 import { batches, boxes, receiptLots, receipts, warehouses } from '../../platform/db/schema';
 import { roundKg, roundM3, shareOf, sumRounded } from '../../platform/telegram/format';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
 import { loadBorderHours } from '../tracking/border-queue';
@@ -26,6 +27,7 @@ export interface CabinetMapLot {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /** The Russian name as SHOWN — the cabinet's own field (`CabinetLot.productNameRu`). */
   productNameRu: string | null;
   boxes: number;
   kg: number;
@@ -70,7 +72,7 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       n: sql<number>`count(*)`,
       lotKg: receiptLots.totalWeightKg,
       lotM3: receiptLots.totalVolumeM3,
@@ -93,7 +95,6 @@ export async function cabinetMap(clientIds: string[]): Promise<CabinetMapPlace[]
       receiptLots.id,
       receiptLots.letter,
       receiptLots.productNameZh,
-      receiptLots.productNameRu,
       receiptLots.totalWeightKg,
       receiptLots.totalVolumeM3,
       receiptLots.boxCount,

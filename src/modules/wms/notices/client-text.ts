@@ -1,4 +1,5 @@
-import { b, clipText, code, groupDigits, h, roundKg, roundM3, stepBar, sumRounded } from '@/modules/platform/telegram/format';
+import { b, code, groupDigits, h, roundKg, roundM3, stepBar, sumRounded } from '@/modules/platform/telegram/format';
+import { clipKeepingCount } from '@/modules/platform/text/label-count';
 import {
   boxWord,
   clientLabels,
@@ -104,8 +105,13 @@ export function boxesText(n: number, locale?: string | null): string {
   return `${groupDigits(n)} ${boxWord(n, locale)}`;
 }
 
+/**
+ * The start of a name — and, on a tarkib's label, its count: «Клавиатура
+ * проводн… +2». A cut at the end took the «+2» first, the one half of the
+ * label the owner asked to see (item 4, 2026-11-10).
+ */
 function clip(text: string, max = PUSH_NAME_CHARS): string {
-  return clipText(text.replace(/\s+/g, ' ').trim(), max);
+  return clipKeepingCount(text.replace(/\s+/g, ' ').trim(), max);
 }
 
 /** `<b>GS777</b> · Yiwu · 27.09.2026` — whose, where, when. */

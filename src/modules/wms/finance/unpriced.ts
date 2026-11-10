@@ -6,6 +6,7 @@ import { FOUND_BACK_SQL, RIDE_CAUSES, leftBehindSql, rideMovementSql, riderRowsS
 import { crossesBorderSql, receivedInUzSql } from '../batches/internal';
 import { ISSUABLE_STATUSES } from '../issue/parties';
 import { loadFilterSql, type LoadFilter } from '../ftl/sql';
+import { lotGoodsShownSql } from '../receipts/lot-name';
 import { zeroedByCompensationSql } from './standing-price-sql';
 
 /**
@@ -641,7 +642,8 @@ export async function unpricedReceiptsOn(
     )
     SELECT h.receipt_id, r.number, h.client_id, c.client_code, c.name AS client_name,
            r.deal_id, d.code AS deal_code,
-           (SELECT string_agg(coalesce(nullif(gl.product_name_ru, ''), gl.product_name_zh), ', ' ORDER BY gl.seq)
+           -- Each lot by the name the screens show it under (its tarkib's while one stands).
+           (SELECT string_agg(${lotGoodsShownSql(sql.raw('gl'))}, ', ' ORDER BY gl.seq)
               FROM receipt_lots gl WHERE gl.receipt_id = h.receipt_id) AS goods,
            h.boxes, h.issued_boxes, h.kg, h.m3, h.first_landed_at, h.walk_in, h.issuable_road,
            coalesce(ua.trucks, '[]'::json) AS arrival_trucks,

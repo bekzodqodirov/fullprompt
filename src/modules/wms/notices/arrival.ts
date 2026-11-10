@@ -11,6 +11,7 @@ import {
 import { roundKg, roundM3, shareOf, sumRounded } from '@/modules/platform/telegram/format';
 import { isPermanentFailure } from '@/modules/platform/telegram/send';
 import { landedHereSql } from '../documents/arrivals';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { pushLotName, type PushLot } from './client-text';
 
 /**
@@ -161,6 +162,10 @@ export interface ArrivedSummary {
  * computes them (#440): a box carries no weight of its own, the lot does, so
  * eight boxes of a twenty-box lot are eight twentieths of its kilos. Anything
  * else would report a partial delivery at the full lot's weight.
+ *
+ * The lot's Russian name is the one the screens SHOW (its tarkib while one
+ * stands) — read here, at send time, in the summary's own statement and on
+ * its own handle, so the push names the goods the Mini App names.
  */
 export async function arrivedSummary(
   clientId: string,
@@ -205,7 +210,7 @@ export async function arrivedSummary(
     .select({
       lotId: receiptLots.id,
       letter: receiptLots.letter,
-      nameRu: receiptLots.productNameRu,
+      nameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       nameZh: receiptLots.productNameZh,
       lotBoxes: receiptLots.boxCount,
       lotKg: receiptLots.totalWeightKg,
@@ -219,7 +224,6 @@ export async function arrivedSummary(
     .groupBy(
       receiptLots.id,
       receiptLots.letter,
-      receiptLots.productNameRu,
       receiptLots.productNameZh,
       receiptLots.boxCount,
       receiptLots.totalWeightKg,
