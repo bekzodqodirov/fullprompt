@@ -290,51 +290,106 @@ Built:
 
 ## 6. Item 6 — the invoice draft
 
+Today (`documents/ved-xlsx.ts` `buildInvoiceXlsx`): cells are written WHILE the lots are
+walked — one row per uncomposed lot (name = the lot's ru || zh, code = the TNVED memory by
+the CHINESE name, «кг»), one row per printed tarkib line (the line's own name and code, «шт»
+when its pieces land ≥ 1 here, else «кг»). Nothing merges, no row says which lots it is, and
+the Bojxona tab links the file as a plain `<a target=_blank>`.
+
 ### 6.1 One pure row model — `documents/invoice-rows.ts`
 
-`buildInvoiceXlsx` stops writing cells while it walks lots. It builds SOURCE rows (one per
-uncomposed lot, one per printed tarkib line — exactly today's rows, each carrying its lot's
-label), then `mergeInvoiceRows(source, mergeCodes)` → FINAL rows, then writes. The dialog's
-list (`invoiceMergeGroups(source)`) and the sheet come from the same source rows (#513).
+Imports only `nameKey`. `buildInvoiceXlsx` becomes three steps, and the dialog's list and the
+sheet come from the SAME source rows (#513):
+
+1. `invoiceSourceRows(batchId)` (`ved-xlsx.ts`, exported) — exactly today's rows, unshifted and
+   unmerged, each carrying its lot (`{ lotId, label, lines }` — `lines` = the tarkib's line
+   count as this paper reads it, 0 = none), `name`, `code` ('' = none), `unit`, `pieces`,
+   `places` (a number, `'part'` or null — turned into «(часть места)» only at the sheet),
+   `kgTenths` (an INTEGER: every row is already a tenth), `estimate` (the note, or null).
+   Lots in a TOTAL order — letter, then label, then lot id (today's `ORDER BY letter,
+   seq_in_lot` interleaves lots that share a letter, so the same truck could print its rows
+   in another order on the next download).
+2. `invoiceModel(source, answer)` (pure) → `{ positions, groups, fp, redLabels }`.
+3. The sheet is written from `positions`.
 
 ### 6.2 Merging
 
-- **Automatic**: rows with the same non-empty TNVED code AND the same name (`nameKey`: trimmed,
-  lower-cased, whitespace collapsed) become one position, wherever they come from (two
-  clients' lots included). Rows with NO code never merge.
-- **Asked**: a code whose rows carry two or more different names is a GROUP. Listed in the
-  dialog; merged only when the download names that code (`?merge=<code>,<code>`). A merged
-  group prints ONE row named with its distinct names joined «, » in row order (the draft is
-  finished by hand in Excel; nothing is lost).
-- A merged row: quantity = Σ when every member has the same unit, else «кг» with Σ kg;
-  places = Σ of the numeric places («(часть места)» only when every member says so);
-  netto = brutto = Σ kg (members are already tenths; re-rounded to a tenth); the estimate
-  fill and a note joining the members' notes when any member is an estimate. Position =
-  its first member's. `SUM(G)`/`SUM(H)`/`SUM(F)` equal today's.
+- **Automatic** — rows with the same NON-EMPTY code and the same name (`nameKey`: trimmed,
+  lower-cased, whitespace collapsed) are one position, wherever they come from: two clients'
+  lots, a tarkib line and a lot with no tarkib. The first member keeps the slot and the
+  spelling. A row with NO code is never merged and never asked.
+- **Asked** — a non-empty code that still holds two or more positions is a GROUP. It merges
+  only when the download names it WITH the signature it was listed under
+  (`merge=<code>.<sig>`, `sig` = 8 hex of a pure FNV-1a over the code and its SORTED name
+  keys): names that changed between the list and the file are asked again, never merged
+  blind. A merged group is ONE position in its first member's slot, named with its distinct
+  names joined «, » in slot order (the draft is finished by hand in Excel; nothing is lost).
+- **A merged position's figures**: `kgTenths` = Σ as integers (so `SUM` netto / brutto equal
+  today's by construction — never floats re-rounded); places = Σ of the numeric members,
+  «(часть места)» only when none is numeric; unit «шт» with Σ pieces only when EVERY member
+  is «шт», otherwise «кг» with Σ kg and a NOTE on the quantity cell naming the pieces that
+  were stated («шт: GS777-A 500») — mixed units are common, an uncomposed lot is always «кг»;
+  the estimate fill when any member is an estimate, the name cell's note one member's text
+  verbatim or `label: note` joined «; ».
 
 ### 6.3 The new column and the red
 
-- Columns: A «№» · **B «Маркировка / Marking»** (new) · C name · D code · E unit · F quantity ·
-  G places · H netto · I brutto · J price · K amount (`=J*F`). Totals row and header merges
-  move one column right.
-- B = the labels of the lots behind the row (`client code or marking` + `-` + letter),
-  «, »-joined in row order. Everything is keyed by LOT ID, never by label: labels are not
-  unique (two lots of different warehouses or letter cycles can both be «GS777-A»), so a
-  label string is printed once per row but stands for every lot that carries it.
-- A lot that stands behind MORE THAN ONE final row is written red + bold in every row it is
-  in — the label is red when ANY lot behind that string in that row is such a lot (rich text
-  runs, so a merged row can hold a red and a black label).
+- Columns: A «№» · **B «Маркировка / Marks»** (new, width 22) · C name · D code · E unit ·
+  F quantity · G places · H netto · I brutto · J price · K amount (`=J*F`); totals `SUM(G)`,
+  `SUM(H)`, `SUM(I)`, `SUM(K)`. The header block's VALUES move from B to C (merges `C1:J1`,
+  `C7:J8`, `C10:J11`, `C13:J15`; the customs post to `I17`) and B stays empty in rows 1-18 —
+  which also cures a live defect the map rendered: column A is 4 wide, so «Отправитель/Sender:»
+  reads «Отпр» today; with B empty beside it the label spills and is readable.
+- B = the labels of the lots behind the position — `client code + '-' + letter`, and for a
+  prixod received by marking and claimed later the marking in brackets, «GS444-B
+  (444MANIKEN-AL)» — distinct strings, «, »-joined in slot order.
+- **Red** = «opening a carton with this sticker you may find another good»: a lot whose tarkib
+  has two or more lines that do NOT all stand in one position of this invoice — whether the
+  others stand in other rows or (a partial truck, «alohida») are not on this truck at all.
+  Decided per LABEL STRING over the whole truck, never per lot or per row: labels are not
+  unique (the letter counter is per warehouse and cycles; gsr_ci holds 28 strings carried by
+  two or more lots), and the person at the carton has only the sticker — the same string red
+  in one row and black in the next would be a riddle. A red label is red + bold in every row
+  it appears in (bold survives a black-and-white print).
+- Rich text: every run carries `font: { name: 'Arial', size: 11 }` (a run without a name
+  came out in the workbook's default face — the «all fonts Arial» pass sets the CELL's font
+  and does not reach runs); tests read `cell.text`, never `String(cell.value)`.
 
-### 6.4 The dialog — «ask, then give the invoice»
+### 6.4 «Ask, then give the invoice»
 
-`InvoiceDownload` (client) replaces the plain link. Press → `invoiceGroupsAction(batchId)`
-(the invoice route's own door) → no group: the file at once; groups: a sheet listing each
-code with its names (lots, kg), a «Qo'shish / Alohida» choice per code, «Hammasini qo'shish»,
-«Hammasini alohida», «Invoysni olish». The answers go in the address
-(`/api/batches/<id>/invoice?merge=…`) through `signedDownloadUrl`, so Telegram's in-app
-browser downloads it; the last answers per truck are remembered in `localStorage` (a
-convenience, pre-selected next time). No table, nothing to freeze: a bare address (an old
-link) prints every asked group separately.
+- **The list is a GET route**, `api/batches/[id]/invoice/groups` (`force-dynamic`,
+  `Cache-Control: private, no-store`, the invoice's own `guardBatchDocument`), not a server
+  action: Next runs actions one at a time, so an action would queue behind the editor's AI
+  walk — which this round makes longer. `src/app/sw.ts` lists the invoice and its groups
+  NetworkOnly (every other same-origin `/api/*` GET is NetworkFirst with a day-long cache —
+  a list of merge candidates must never be yesterday's).
+- **The trigger is a BUTTON** (`InvoiceDownload`, client, in the tab's folder), not a link with
+  an `onClick`: `download-links.tsx` is a capture listener on `document` and takes a press on
+  an `<a href="/api/…">` before React hears it — on a phone the file would download unmerged
+  AND the dialog would open.
+- Press → the groups. None → the file at once. Some → a dialog (`Overlay`, always mounted and
+  toggled — an Overlay mounted already-open closes itself): per group the code, its names with
+  their lots / kg / pieces, a «Qo'shish / Alohida» pair; one row «Hammasini: Qo'shish ·
+  Alohida»; what a merged position will be called; the mixed-units warning; the red note;
+  «Invoysni olish». An unanswered group stands at «Alohida» — what a bare address prints.
+- The answers go in the address: `?merge=<code>.<sig>,…` (or `merge=all.<fp>` when every
+  group is merged — `fp` = the hash of all the signatures), followed through
+  `signedDownloadUrl` + the shared `followDownload` at the moment of the press, so Telegram's
+  in-app browser downloads it (a POST-then-blob cannot reach its download manager). The
+  signed path is capped at 2048 characters — about 95 pairs; `all` covers the rest.
+  `parseMergeParam` treats the parameter as a forged post (shape-checked, capped, garbage
+  dropped — never a 500).
+- This device's last answers per truck are kept in `localStorage` (try/catch on every read
+  and write; applied only where the signature still matches; a convenience, never a record)
+  and stand pre-selected next time. No table, nothing to freeze: «hujjat yuborildi» freezes
+  only tarkibs and carton positions today — an uncomposed lot's name and memory code are
+  live on a sent truck — so a stored, locked answer could not make a sent truck's file
+  identical anyway. The dialog says when the papers went.
+- `guardBatchDocument` gains `isUuidShaped` (a malformed id is a 22P02 → 500 on all four
+  document routes today).
+- The tab's editor root carries `data-tnved-unsaved` (P4); the button reads it at the press
+  and says «N ta kod saqlanmagan — invoysga kirmaydi» first: the invoice reads SAVED codes,
+  and an AI answer is a draft until «Saqlash».
 
 ## 7. Questions to him (⭐ = built if unanswered)
 
@@ -344,36 +399,50 @@ Sent with the round's report, in Uzbek, numbered:
    b) majburiy qolsin, lekin skladchi qabulda olgan rasm ham o'tsin · c) boshqa narsa.
 2. (band 1) Hujjatsiz yozilgan tarkib lotni «✅ tekshirilgan» qiladimi: ⭐ a) ha · b) yo'q,
    faqat hujjatli tarkib.
-3. (band 2) «Yuklama» = reja sahifasidagi «Agent uchun Excel»: ⭐ a) ha · b) boshqa joy (qaysi).
+3. (band 2) «Yuklama» = reja sahifasidagi «Agent uchun Excel»: ⭐ a) ha, faqat shu fayl ·
+   b) ha, va rejaning ekrandagi ro'yxatida ham · c) yo'q — partiya kartasidagi «Ichidagilar» ·
+   d) boshqa joy.
 4. (band 4) Ko'p tovarli tarkibda: ⭐ a) «Клавиатура +2» (birinchisidan tashqari yana 2 ta) ·
    b) «Клавиатура +3» (jami 3 ta) · c) hammasi vergul bilan.
 5. (band 3-4) Mijoz ko'radigan joylarda ham (Mini App, «yukingiz keldi» xabari, topshirish
    akti) tarkib nomi chiqsinmi: ⭐ a) ha · b) yo'q, mijoz skladchi yozgan nomni ko'radi.
-6. (band 3-4) Stiker qayta chop etilsa: ⭐ a) skladchi yozgan nom (stiker o'zgarmaydi) ·
-   b) tarkib nomi.
-7. (band 6) Bir xil kod + bir xil nom har xil MIJOZLARNING yukida bo'lsa ham bitta
+6. (band 6) Bir xil kod + bir xil nom har xil MIJOZLARNING yukida bo'lsa ham bitta
    pozitsiyaga qo'shilsinmi: ⭐ a) ha · b) faqat bitta mijoz ichida.
-8. (band 6) TNVED kodi hali yozilmagan qatorlar: ⭐ a) qo'shilmaydi · b) nomi bir xil bo'lsa qo'shilsin.
-9. (band 6) Kod bir xil, nom har xil, «qo'shish» tanlandi — invoysda qaysi nom: ⭐ a) hamma
-   nomlar vergul bilan · b) oynada o'zim tanlayman/yozaman.
-10. (band 6) Javob eslab qolinsinmi: ⭐ a) shu telefonda/kompyuterda oxirgi javob tayyor
-    turadi, har safar oyna chiqadi · b) bir marta so'rab, keyin so'ramasin.
-11. (band 6) Bir pozitsiyaga qo'shilganlarning birida «dona», birida «kg» bo'lsa: ⭐ a) kg
-    bilan chiqadi · b) bunday qatorlar qo'shilmasin.
-12. (band 5) Ko'p tovarli lotda AI rasmga qaramaydi, faqat nomga qaraydi (rasmda qaysi tovar
-    ekani noma'lum): ⭐ a) shunday · b) rasm ham yuborilsin.
+7. (band 6) Kod bir xil, nom har xil, «Qo'shish» tanlandi — invoysda qaysi nom: ⭐ a) hamma
+   nomlar vergul bilan · b) oynada bittasini tanlayman · c) o'zim yozaman.
+8. (band 6) Javob eslab qolinsinmi: ⭐ a) shu telefon/kompyuter oxirgi javobni belgilab
+   turadi, oyna har safar chiqadi · b) mashina bo'yicha bir marta so'ralib, hamma uchun saqlansin.
+9. (band 6) Bir pozitsiyaga qo'shilganlarning birida «dona», birida faqat «kg» bo'lsa:
+   ⭐ a) kg bilan chiqadi, donasi izohda qoladi · b) bunday qatorlar qo'shilmasin.
+10. (band 5) Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi (rasmda
+    qaysi tovar ekani noma'lum): ⭐ a) shunday · b) rasm ham yuborilsin.
+
+Stated, not asked (each a one-line «aytib qo'yay»): the sticker keeps the warehouse's name;
+the scan screens print the Chinese name only; a plan's agent file gains rows when a tarkib is
+written; a sent truck's invoice still follows later TNVED/name changes of lots with no tarkib;
+the AI button has no daily limit, as before.
 
 ## 8. Packages
 
-Kernel K (the lead, first — every package compiles against it): migration 0142 + journal +
-schema; `violatedNotNull`; `compositionsFor` LEFT JOIN + the nullable `attachment` type with
-its compile fixes; `tarkibLabel`; `receipts/lot-name.ts`; the two fences' scaffolding.
+Kernel K (the lead — WRITTEN, commits on the branch): migration 0142 + journal + schema;
+`violatedNotNull`; `compositionsFor` LEFT JOIN + the nullable `attachment`; `tarkibLabel`;
+`receipts/lot-name.ts`; `lot-composition-fence` lists. P1 (the lead — WRITTEN): §2 and §3.5
+and the receipt card (`lot-composition.ts` save, `composition-panel.tsx`,
+`composition-actions.ts`, `receipts/[id]/page.tsx`, `lot-edit-form.tsx`, `lot-check*.ts`,
+`lot-check-panel.tsx`, bundles `tarkib.*` `lotCheck.*` `receipts.attachInUse`), with its
+integration, unit and e2e tests and nine red proofs.
 
 | Package | Owns | Files it alone edits |
 |---|---|---|
-| P1 tarkib editor + lot check | §2, §3.5, the receipt card | `lot-composition.ts` (save/clear), `composition-panel.tsx`, `composition-actions.ts`, `receipts/[id]/page.tsx`, `lot-edit-form.tsx`, `lot-check*.ts`, `lot-check-panel.tsx`, bundles `tarkib.*` `lotCheck.*` `receipts.*` |
-| P2a names — warehouse | §3.3 warehouse + search | stock, plans, `batches/lots.ts`, scanning count panels, crates, issue list, QR-siz list, bot lookup, `client-cargo-now.ts`, search |
-| P2b names — office + customer | §3.3 office + customer | deals, lenta, costing labels, reports, unpriced/compensation, pickups, tracking, annul registry, uncollected, manifest, `receipts/edit.ts` payload, client-cabinet, notices, handover act |
-| P3 agent Excel | §4 | `agent-xlsx.ts`, `composition-cells.ts` (agent cells), `composition-math.ts` (`sliceSegments`), `labels.ts` |
-| P4 🤖 for lines | §5 | `tnved/service.ts`, `tnved/actions.ts`, `tnved-editor.tsx`, bundle `tnved.*` |
-| P5 invoice | §6 | `ved-xlsx.ts` (invoice), new `documents/invoice-rows.ts`, `api/batches/[id]/invoice`, new `invoice-download.tsx`, `batches/[id]/tnved/page.tsx` (the link), bundle `invoys.*` |
+| P2a names — warehouse | §3.3 warehouse + search | stock (page, XLSX, filter), `planning/stock.ts`, plan view, `batches/lots.ts` and its three screens, scanning count panels and texts, box / crate pages, issue list, QR-siz list, bot lookup, `client-cargo-now.ts`, `search/service.ts`, broadcast filter |
+| P2b names — office + customer | §3.3 office + customer | deals cargo labels, lenta, costing labels, reports + XLSX, unpriced / compensation, pickups, tracking, annul registry, uncollected list, manifest, `receipts/edit.ts` payload, client-cabinet, notices, `issue/service.ts` payload, handover act |
+| P3 agent Excel | §4 | `agent-xlsx.ts`, `composition-cells.ts` (agent cells only), `composition-math.ts` (`paperLinesByPart` only), `labels.ts` (`contents` out, the carton-name label in) |
+| P4 🤖 for lines | §5 | `tnved/service.ts` (the question + the call), `tnved/actions.ts`, `tnved-editor.tsx`, bundle `tnved.*` |
+| P5 invoice | §6 | `ved-xlsx.ts` (invoice), new `documents/invoice-rows.ts`, `labels.ts` (`lotMarks` only), `api/batches/[id]/invoice/**`, `route-guard.ts`, `sw.ts`, `download-url.ts` / `download-links.tsx` (`followDownload`), new `invoice-download.tsx`, `batches/[id]/tnved/page.tsx` (the button only), bundle `invoys.*` |
+
+Shared files, one rule each: `messages/*.json` — every package edits only its own namespaces
+through a script; `tests/integration/lot-composition.integration.test.ts` — P3 edits tests 9 /
+9b only, P5 test 7 and the `invoiceRows` helper only, everything else goes into NEW test files;
+`tests/e2e/m9zzx-lot-tarkibi.spec.ts` — P5 edits the `invoice()` helper's column numbers only;
+`tests/unit/lot-composition-fence.test.ts` — the lead registers new modules at the merge.
+The derived `lot-name-fence.test.ts` (§3.4) is written by the lead on the merged tree.
