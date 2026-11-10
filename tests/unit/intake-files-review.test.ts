@@ -356,6 +356,11 @@ describe('a code the seller typed lands as his own (PF-ADV-11)', () => {
 });
 
 describe('a top-up’s packing list is a NOTED file (PF-SPEC-2, PF-SPEC-5)', () => {
+  // Re-anchored by docs/FAYL-OQISH.md §4.5 (known-2, 2026-11-10): the rule is
+  // about a request that HAS rows for the packing list to be the totals of —
+  // here one stored row. On a request with none it is the goods list
+  // (fayl-sheets.test.ts pins that): noting it priced nothing twice and
+  // withheld the only goods there were.
   const amend: AmendBase = {
     requestId: '00000000-0000-4000-8000-000000000099',
     cardLabel: 'B-000067',
@@ -365,7 +370,9 @@ describe('a top-up’s packing list is a NOTED file (PF-SPEC-2, PF-SPEC-5)', () 
     section: 'rastamojka',
     clientLabel: 'GS777',
     openedRev: 0,
-    items: [],
+    items: [
+      { itemId: '00000000-0000-4000-8000-000000000097', seq: 1, name: 'Ladies jacket', quantity: 300, weightKg: null, volumeM3: null, measureUnit: null, measureQty: null, tnvedCode: null, law: null, confirmed: false },
+    ],
     weightKg: null,
     volumeM3: null,
     fromCity: null,
