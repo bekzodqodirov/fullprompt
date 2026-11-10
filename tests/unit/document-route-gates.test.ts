@@ -140,8 +140,12 @@ describe('document routes gate on permission AND warehouse, not just a session',
     expect(guard, 'and 404s a batch that is not there').toContain('404');
     // …and an id that is not an id at all, BEFORE the query: bound into it,
     // a malformed uuid is a 22P02 — a 500 on every document route.
-    expect(guard.indexOf('isUuidShaped(batchId)')).toBeGreaterThan(-1);
-    expect(guard.indexOf('isUuidShaped(batchId)')).toBeLessThan(guard.indexOf('db.query.batches.findFirst'));
+    // The REFUSING statement, verbatim — a fence on the predicate's name
+    // alone held with the refusal switched off (`isUuidShaped(batchId) &&
+    // false`), which is the same file answering the 500 again.
+    const refusal = "if (!isUuidShaped(batchId)) return new Response('Not found', { status: 404 });";
+    expect(guard.indexOf(refusal)).toBeGreaterThan(-1);
+    expect(guard.indexOf(refusal)).toBeLessThan(guard.indexOf('db.query.batches.findFirst'));
   });
 
   it('the builders themselves stay unauthorized — the ROUTE is the gate', () => {
