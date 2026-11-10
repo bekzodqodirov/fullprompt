@@ -122,13 +122,17 @@ describe('a reading the STREAM ended early keeps what it completed, and is bille
     expect(out.answered![0]!.outputTokens).toBe(Math.ceil(throughSecond.length / 3));
   });
 
-  it('the thread door’s leash too: 20 s of a slow drip ends at 20 s, a cut NOT kept when the caller said so', async () => {
-    script.push({ text: throughSecond, chunk: 1, paceMs: 200 });
+  it('the thread door’s leash too — and a cut is NOT kept when the caller said so (§3.6): today’s «timeout», «truncated»', async () => {
+    // Two goods completed, then silence: kept for the bot, not for the
+    // thread door, whose preview has no word for a partial list.
+    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 0 });
     const started = Date.now();
     const out = await analyzeIntake({ section: 'yolkira', text: 'x', fileCount: 0, timeoutMs: 2_000, salvage: false });
     expect(Date.now() - started).toBeLessThan(2_000 + 1_000);
-    expect(out).toMatchObject({ ok: false, failure: 'timeout' });
-    expect(out.answered).toHaveLength(1);
+    expect(out).toEqual({ ok: false, failure: 'timeout', answered: [expect.objectContaining({ inputTokens: 10 })] });
+    script.push({ stop: 'max_tokens', text: throughSecond });
+    const size = await analyzeIntake({ section: 'yolkira', text: 'x', fileCount: 0, timeoutMs: 2_000, salvage: false });
+    expect(size).toMatchObject({ ok: false, failure: 'truncated' });
   });
 
   it('a mid-stream `event: error` overload with goods completed is a «dropped» cut, never «rejected»', async () => {

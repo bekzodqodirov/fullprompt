@@ -43,7 +43,9 @@ describe('salvageCut — only what the stream COMPLETED (§3.3, judge model-salv
     volume_m3: 7.25,
     goods: [
       goodJson('Куртка {женская} \\"Lux\\"', { quantity: 300, weight_kg: 150, note: 'a } b { c' }),
-      goodJson('Сумка "кожа"', { quantity: 120, volume_m3: 1.5, tnved_code: '4202210000' }),
+      // A brace BETWEEN escaped quotes: read as outside the string, it
+      // would close the element early.
+      goodJson('Сумка "кожа }" {', { quantity: 120, volume_m3: 1.5, tnved_code: '4202210000' }),
     ],
     steps: ['o‘qildi'],
   });
@@ -194,6 +196,8 @@ describe('no lone surrogate reaches the request (§3.8, apireq-1)', () => {
     });
     expect(LONE.test(api.raws[0]!)).toBe(false);
     expect(promptOf(0)).toContain(`1. ${'Ж'.repeat(119)}\n`);
+    // Left out WHOLE by the cut — not mended into «�» by the boundary's fence.
+    expect(promptOf(0)).not.toContain('\uFFFD');
   });
 
   it('a lone half INSIDE a file’s own text is mended at the boundary (the fence, not a cut)', async () => {
@@ -257,5 +261,16 @@ describe('what is refused at arrival is named (§1.1, §3.4)', () => {
 
   it('the 20 MB words are the spec’s', () => {
     expect(TOO_BIG_SAY).toBe('Fayl 20 MB dan katta — Telegram uni botga bermaydi. Kichikroq qilib (yoki Excel) yuboring.');
+  });
+});
+
+describe('the thread door keeps no cut (§3.6, judge model-thread-door-cut)', () => {
+  it('its call says `salvage: false` — the preview has no word for a partial list', async () => {
+    const { readFileSync } = await import('node:fs');
+    const code = readFileSync('src/modules/wms/calc/from-thread.ts', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const call = code.slice(code.indexOf('await analyzeIntake({'), code.indexOf('});', code.indexOf('await analyzeIntake({')));
+    expect(call).toContain('salvage: false');
   });
 });

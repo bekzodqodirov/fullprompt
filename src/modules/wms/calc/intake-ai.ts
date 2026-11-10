@@ -1009,7 +1009,8 @@ export async function analyzeIntake(input: {
     images: images.length,
     pdfs: pdfs.length,
     sheets: sheets.filter((s) => s.text.trim()).length + contextSheets.filter((s) => s.text.trim()).length,
-    known: shown.length,
+    known: known.length,
+    asked: shown.length,
   });
   // The attempts that count against `INTAKE_ATTEMPTS`; the PDF-less re-read
   // after a refusal is not one of them (a 400 is instant and never billed).

@@ -138,3 +138,41 @@ describe('the goods sheet’s own rows beside the codes asked (§3.7)', () => {
     expect((model.analyze.mock.calls[1]![0] as { goodsSheetText?: unknown }).goodsSheetText).toBeUndefined();
   });
 });
+
+describe('the add door’s reading writes them too (§1.6)', () => {
+  it('a ➕ collection over a stored request: the cut and the refused PDF are the collection’s, as on a first one', async () => {
+    const id = (n: number) => `00000000-0000-4000-8000-0000000000${String(n).padStart(2, '0')}`;
+    const amend = {
+      requestId: id(99),
+      cardLabel: 'B-000067',
+      entityType: 'deal' as const,
+      entityId: id(98),
+      leadOpen: null,
+      section: 'rastamojka' as const,
+      clientLabel: 'GS777',
+      openedRev: 0,
+      items: [{ itemId: id(1), seq: 1, name: 'Sumka', quantity: 10, weightKg: null, volumeM3: null, measureUnit: null, measureQty: null, tnvedCode: null, law: null, confirmed: false }],
+      weightKg: null,
+      volumeM3: null,
+      fromCity: null,
+      toCity: null,
+    };
+    const chatId = BigInt(-9_934_000_000) - BigInt(chats.length + 1);
+    chats.push(chatId);
+    startIntake(chatId, 'rastamojka', { ai: true, staffId: 'staff-test', amend });
+    const state = updateIntake(chatId, {
+      stage: 'material',
+      material: ['Kurtka 300 dona'],
+      fileCount: 1,
+      pdfs: [{ attachmentId: 'p-add', name: 'add.pdf', bytes: 4 }],
+    })!;
+    model.analyze.mockResolvedValueOnce(read({ cut: { goods: 1, why: 'size' }, unreadPdfs: ['p-add'] }));
+    const out = await analyzeCollected(state, { ...NO_FILES, missing: 1 });
+    expect(out.aiCut).toEqual({ goods: 1, why: 'size' });
+    expect(out.unreadPdfs).toEqual(['p-add']);
+    expect(out.filesMissing).toBe(1);
+    // An add collection draws no «🔄» for a missing file (its keyboard is
+    // `amendKeyboard`), so its note keeps today's words.
+    expect(out.notes).toContain('⚠️ 1 ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.');
+  });
+});

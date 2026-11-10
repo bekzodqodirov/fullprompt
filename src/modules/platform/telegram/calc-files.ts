@@ -1036,7 +1036,9 @@ export async function saveBotFile(
 ): Promise<SavedBotFile | BotFileRefusal> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token || !file) return { refused: 'download_failed' };
-  // Past Telegram's bot limit nothing is asked of it at all: it would refuse.
+  // Past Telegram's bot limit nothing is asked of it at all: it would refuse
+  // (docs/FAYL-OQISH.md §3.4). Here, the one home of the crossing, so the
+  // collection's doors and the zametka door all meet it.
   if (typeof file.size === 'number' && file.size > MAX_TELEGRAM_DOWNLOAD_BYTES) return { refused: 'too_big' };
   const path = await filePathOf(file.fileId);
   if (typeof path !== 'string') return path;
@@ -1091,9 +1093,6 @@ export async function saveIntakeFile(
   file: BotFile | null = fileOf(ctx.message ?? {}),
 ): Promise<SavedBotFile | BotFileRefusal> {
   if (!file) return { refused: 'download_failed' };
-  // Checked before anything else (docs/FAYL-OQISH.md §3.4): a file past the
-  // limit was never stored either, so there is no row to find.
-  if (typeof file.size === 'number' && file.size > MAX_TELEGRAM_DOWNLOAD_BYTES) return { refused: 'too_big' };
   const messageId = file.messageId ?? ctx.message?.message_id ?? null;
   const id = messageId !== null ? uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS) : undefined;
   if (id !== undefined) {
