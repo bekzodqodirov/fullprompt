@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, gte, inArray, isNotNull, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from 'drizzle-orm';
 import { aiConfigured, realCallModel, STAFF_MODEL, type CallModel, type ModelBlock, type ModelMessage, type ModelUsage } from '../../platform/ai/model';
 import { db } from '../../platform/db/client';
-import { agentConversations, agentOutbox, agentRuns, clients, tgChatRules, tgOutbox, users } from '../../platform/db/schema';
+import { agentConversations, agentRuns, clients, tgChatRules, tgMessageFlags, tgMessages, tgOutbox, users } from '../../platform/db/schema';
 import { enqueue } from '../../platform/jobs/boss';
 import { logger } from '../../platform/logger';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
@@ -175,7 +175,9 @@ export async function runLoop(input: {
   const { ctx } = input;
   const started = input.now().getTime();
   const opening = input.instruction ? `${chatBlock(ctx)}\n\nVAZIFA: ${input.instruction}` : chatBlock(ctx);
-  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening }] }];
+  // The chat is the same bytes in every round of this run: cached once, read at a tenth of the price after
+  // (#1622 — a hundred messages re-billed per tool round is what would have made the wider window expensive).
+  const messages: ModelMessage[] = [{ role: 'user', content: [{ type: 'text', text: opening, cache: true }] }];
   const usage: ModelUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   const tools: LoopResult['tools'] = [];
   const outcomes: ToolOutcome[] = [];
@@ -240,17 +242,27 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, ctx.managerUserId), eq(agentConversations.peerId, ctx.peerId)));
 
-  // A person's own message in this chat — his phone, a colleague in the CRM — within the pause.
-  const outIds = ctx.messages.filter((m) => m.direction === 'out').map((m) => m.tgMessageId);
-  const agentIds = outIds.length
-    ? await db
-        .select({ id: agentOutbox.tgMessageId })
-        .from(agentOutbox)
-        .where(and(eq(agentOutbox.managerUserId, ctx.managerUserId), inArray(agentOutbox.tgMessageId, outIds)))
-    : [];
-  const agentSet = new Set(agentIds.map((r) => String(r.id)));
-  const lastHuman = [...ctx.messages].reverse().find((m) => m.direction === 'out' && !agentSet.has(String(m.tgMessageId)));
+  // A person's own message in this chat — his phone, a colleague in the CRM — within the pause. Asked of the
+  // chat itself and not of a window (#1622): thirty photos after his reply pushed it out of the window, and the AI
+  // drafted while he was mid-conversation. Live rows only, as the window reads them; the AI's own sends are not his.
   const pauseMs = config.humanPauseMin * 60_000;
+  const humanSince = new Date(now.getTime() - pauseMs);
+  const [lastHuman] = await db
+    .select({ sentAt: tgMessages.sentAt })
+    .from(tgMessages)
+    .leftJoin(tgMessageFlags, eq(tgMessageFlags.messageId, tgMessages.id))
+    .where(
+      and(
+        eq(tgMessages.managerUserId, ctx.managerUserId),
+        eq(tgMessages.peerId, ctx.peerId),
+        eq(tgMessages.direction, 'out'),
+        gt(tgMessages.sentAt, humanSince),
+        isNull(tgMessageFlags.deletedAt),
+        sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = ${tgMessages}.manager_user_id AND o.tg_message_id = ${tgMessages}.tg_message_id)`,
+      ),
+    )
+    .orderBy(desc(tgMessages.sentAt))
+    .limit(1);
   const [queued] = await db
     .select({ id: tgOutbox.id })
     .from(tgOutbox)
@@ -1034,7 +1046,9 @@ export function validateActions(
   const actions: ComposedAction[] = [];
   const notes: string[] = [];
   const lastChecklist = [...outcomes].reverse().find((o) => o.checklist)?.checklist ?? null;
-  const refs = new Map(ctx.messages.map((m) => [m.ref, m]));
+  // Citations reach the whole chat the model read (#1622): a line it quotes is a line it saw. The figures a job
+  // carries still come only from the checklist, which counts the recent window.
+  const refs = new Map(ctx.history.map((m) => [m.ref, m]));
   for (const a of c.actions) {
     if (a.type === 'calc_submit') {
       const cl: ChecklistState | null = lastChecklist && lastChecklist.section === a.section ? lastChecklist : null;

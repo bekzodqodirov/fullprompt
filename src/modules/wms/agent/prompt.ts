@@ -20,7 +20,7 @@ export function stableHead(input: { styleGuide: string | null; facts: readonly K
   return `Sen GSR LOGISTICS (Xitoy → O'zbekiston yuk tashish) rahbari Bekzodning shaxsiy Telegram akkauntidagi mijozlarga javob QORALAMASINI yozasan. Bekzod har bir qoralamani o'qiydi va o'zi tasdiqlaydi; javob uning nomidan, birinchi shaxsda ("men") yoziladi.
 
 QOIDALAR (har biri koddagi tekshiruvdan o'tadi — buzilgan qoralama tasdiqlanmaydi; "ogohlantirish" deyilgani to'xtatmaydi, Bekzodga ko'rsatiladi):
-1. Har bir son (narx, kub, kg, kun, sana, foiz) faqat VOSITA natijasidan yoki mijozning o'z xabaridan bo'ladi. O'zingdan son to'qima. Narx, kub, kg, kun, sana va foizni raqam bilan yoz; nechta ombor, yo'l, variant yoki savol borligini esa so'z bilan yoz ("uchta qabul ombori", "ikki xil yo'l"). Narx faqat vosita aytgan valyutada ($) — so'm, yuan, rubl, tumanga o'girma. Umumiy narxni umumiy narx, kub/kg tarifini tarif deb ayt. Mijozning o'zi aytgan narx yoki foiz — bizning narximiz emas.
+1. Har bir son (narx, kub, kg, kun, sana, foiz) faqat VOSITA natijasidan yoki mijozning "Suhbat" qismidagi o'z xabaridan bo'ladi. "Oldingi suhbat" qismi faqat tushunish uchun: undagi son, narx, o'lcham va manzil eskirgan — javobda takrorlama, vositaga berma. O'zingdan son to'qima. Narx, kub, kg, kun, sana va foizni raqam bilan yoz; nechta ombor, yo'l, variant yoki savol borligini esa so'z bilan yoz ("uchta qabul ombori", "ikki xil yo'l"). Narx faqat vosita aytgan valyutada ($) — so'm, yuan, rubl, tumanga o'girma. Umumiy narxni umumiy narx, kub/kg tarifini tarif deb ayt. Mijozning o'zi aytgan narx yoki foiz — bizning narximiz emas.
 2. Hech qachon va'da berma: chegirma ("yaxshi narx qilamiz" ham), kafolat, qarzga berish (to'lovsiz berish ham), pul qaytarish/kompensatsiya, bepul xizmat (yetkazish, sug'urta, saqlash, foto), "ertaga / dushanba / keyingi hafta jo'natamiz yoki keladi" kabi kun yoki sana va'dasi, "bojxona narx ichida", "boj yo'q". Oddiy ko'ringan bu iboralar ham va'da hisoblanadi va javobni to'xtatadi — yozma: "qulay narx", "yaxshi narx", "hech qanday muammo bo'lmaydi", "без проблем", "выгодные цены". Hisoblash haqida "bepul" dema — "hisoblash uchun pul olinmaydi" de.
 3. Javob qisqa: ${AGENT_LIMITS.maxReplyChars} belgidan kam. Imkon qadar savol belgisi bitta bo'lsin — bir nechtasi ogohlantirish. Bir nechta narsa so'rash kerak bo'lsa — bitta ro'yxat, har bir bandi "•" belgisi bilan (1. 2. 3. kabi raqamlar bilan EMAS), savol belgisi faqat oxirida.
 4. Mijoz qaysi tilda va qaysi alifboda yozgan bo'lsa, o'shanda yoz (uz lotin, uz kirill, rus, ingliz, fors, xitoy). Fors, xitoy yoki ingliz tilida yozsang — gloss_uz ga o'zbekcha tarjimasini yoz; fors va xitoy javobi tarjimasiz tasdiqlanmaydi.
@@ -49,11 +49,25 @@ export function runTail(input: { day: string; canary: string }): string {
   return `Bugun: ${input.day} (Toshkent). Ichki belgi (hech qachon yozma): ${input.canary}`;
 }
 
-function when(d: Date): string {
+/** Tashkent's dd.mm hh:mm — with the year when the line is from another year than `year` (#1622: a hundred messages can span one). */
+function when(d: Date, year: number): string {
   const t = new Date(d.getTime() + 5 * 3_600_000);
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(t.getUTCDate())}.${p(t.getUTCMonth() + 1)} ${p(t.getUTCHours())}:${p(t.getUTCMinutes())}`;
+  const y = t.getUTCFullYear() === year ? '' : `.${t.getUTCFullYear()}`;
+  return `${p(t.getUTCDate())}.${p(t.getUTCMonth() + 1)}${y} ${p(t.getUTCHours())}:${p(t.getUTCMinutes())}`;
 }
+
+/** The Tashkent year of a moment. */
+const tashkentYear = (d: Date) => new Date(d.getTime() + 5 * 3_600_000).getUTCFullYear();
+
+/**
+ * The heading over the part of the chat only the model reads (#1622). Every
+ * rule counts the recent part alone, so a figure from here that reaches a
+ * reply has no source and blocks it — the heading says so before the policy
+ * has to.
+ */
+export const OLDER_CHAT_HEADING =
+  "Oldingi suhbat (faqat tushunish uchun — bu qismdagi son, narx, o'lcham va manzil eskirgan: javobda takrorlama, vositaga berma):";
 
 const MEDIA_WORD: Record<string, string> = {
   photo: 'rasm',
@@ -77,20 +91,26 @@ export function chatBlock(ctx: AgentContext): string {
   const measures = ctx.measures.length
     ? ctx.measures.map((m) => `${m.ref} = ${m.value} ${m.kind === 'weight' ? 'kg' : 'kub'} (${m.messageRef})`).join(', ')
     : "yo'q";
-  const lines = ctx.messages.map((m) => {
+  // The recent part is the history's tail; the older part is everything the rules do not count (#1622).
+  const recent = new Set(ctx.messages);
+  const older = ctx.history.filter((m) => !recent.has(m));
+  const newest = ctx.messages.at(-1) ?? ctx.history.at(-1);
+  const year = newest ? tashkentYear(newest.sentAt) : 0;
+  const line = (m: AgentContext['messages'][number]) => {
     const side = m.direction === 'in' ? 'Mijoz' : 'Biz';
     const media = m.media ? ` [${MEDIA_WORD[m.media]}${m.fileName && m.media === 'document' ? `: ${m.fileName}` : ''}]` : '';
     const auto = m.autoSent ? ' [avtojavob]' : '';
-    return `${m.ref} ${side} ${when(m.sentAt)}${media}${auto}: ${m.body || '—'}`;
-  });
+    return `${m.ref} ${side} ${when(m.sentAt, year)}${media}${auto}: ${m.body || '—'}`;
+  };
   return [
     who,
     `Suhbat tili (avval): ${ctx.storedLocale ?? "noma'lum"}`,
     `Ochiq hisoblatishlar: ${calcs}`,
     `O'lchovlar (yolkira_estimate uchun havolalar): ${measures}`,
     '',
+    ...(older.length ? [OLDER_CHAT_HEADING, ...older.map(line), ''] : []),
     'Suhbat (eski → yangi):',
-    ...lines,
+    ...ctx.messages.map(line),
     '',
     ctx.anchor ? `Javob kerak bo'lgan xabar: ${ctx.anchor.ref}` : '',
   ].join('\n');
