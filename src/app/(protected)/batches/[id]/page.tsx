@@ -175,12 +175,10 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                           </span>
                         )}
                       </td>
-                      <td className="max-w-[min(14rem,calc(100vw-14.25rem))] p-2">
+                      <td className="max-w-56 p-2">
                         {/* The name the lists show — a tarkib's «first +N»
                             while one stands — and the count never truncates
-                            away (LotGoodsName). On a phone the cell ends
-                            where the screen does (the stock table's rule):
-                            past the edge is the cell's END, i.e. the count. */}
+                            away (LotGoodsName). */}
                         <Link href={`/receipts/${lot.receiptId}`} className="block">
                           <LotGoodsName zh={lot.productNameZh} ru={lot.shownNameRu ?? lot.productNameRu} />
                         </Link>
