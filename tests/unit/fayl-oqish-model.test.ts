@@ -144,6 +144,51 @@ describe('the lone Excel on the AI door is coded by the model (§3.7, known-3)',
     // …and what it was SHOWN of the attached (pdfimg-12).
     expect(promptOf(1)).toContain('Прикреплено файлов: 1; из них тебе показано: 1 фото, 0 PDF');
   });
+
+  it('a packing list’s own rows beside the asked codes are totals-only — the closing never sends the model to list them', async () => {
+    api.script.push({ text: readingJson({}) });
+    await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      knownGoods: ['Kurtka'],
+      codeKnown: true,
+      goodsSheetText: { text: '[PL]\n1 | Kurtka | 300 | 150', cut: false, cellsCut: false },
+      salvage: true,
+    });
+    const prompt = promptOf(0);
+    expect(prompt).toContain('Товары отсюда НЕ перечисляй в goods:\n[PL]\n1 | Kurtka | 300 | 150');
+    expect(prompt).toContain('Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.');
+    expect(prompt).not.toContain('читай таблицу выше');
+  });
+
+  it('the goods sheet’s own rows are never something to read by themselves: every row coded → no call', async () => {
+    const out = await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      knownGoods: ['Kurtka'],
+      codeKnown: true,
+      knownCoded: [true],
+      goodsSheetText: { text: '[PL]\n1 | Kurtka | 300 | 150', cut: false, cellsCut: false },
+      salvage: true,
+    });
+    expect(out).toEqual({ ok: false, failure: 'nothing_to_read' });
+    expect(api.bodies).toHaveLength(0);
+    // …and beside other material, rows with no code asked show none of it.
+    api.script.push({ text: readingJson({}) });
+    await analyzeIntake({
+      section: 'rastamojka',
+      text: 'brutto 300 kg',
+      fileCount: 1,
+      knownGoods: ['Kurtka'],
+      codeKnown: true,
+      knownCoded: [true],
+      goodsSheetText: { text: '[PL]\n1 | Kurtka | 300 | 150', cut: false, cellsCut: false },
+      salvage: true,
+    });
+    expect(promptOf(0)).not.toContain('[PL]');
+  });
 });
 
 describe('a request the API refused WITH a PDF is read again without it (§3.4, pdfimg-9)', () => {

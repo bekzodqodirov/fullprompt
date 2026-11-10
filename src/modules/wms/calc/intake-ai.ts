@@ -1113,7 +1113,8 @@ export async function analyzeIntake(input: {
     if (run.why === 'clock' || !retryAfterPause(failure, attempt, Date.now() - started, leash)) break;
     await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
   }
-  // The clock ran out between attempts: what stopped the reading is time.
+  // No attempt gave a reading: the last one's failure, and the bill of every
+  // attempt the model answered.
   return withUnread(answered.length > 0 ? { ok: false, failure, answered } : { ok: false, failure });
 }
 
@@ -1282,7 +1283,11 @@ const NETTO_ONLY: Record<CalcSection, string> = {
  * The closing line is chosen by what was SENT (xlsxN-14, docs/FAYL-OQISH.md
  * §3.7): «read the photos and documents» to a model shown neither
  * contradicted its own input — and to the AI door's lone Excel, whose only
- * material is the numbered list, it was no instruction at all.
+ * material is the numbered list, it was no instruction at all. Only a GOODS
+ * sheet is «the table to read»: the totals-only sheets (a workbook's other
+ * sheets, a packing list's own rows beside its codes) say «НЕ перечисляй»
+ * under their own heading, and a closing that sent the model to read them
+ * would undo it.
  */
 function intakeContent(
   section: CalcSection,
@@ -1303,7 +1308,7 @@ function intakeContent(
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0
       ? 'Текста нет — читай фото и документы.'
-      : sheetsText
+      : sheets.some((t) => t.text.trim() !== '')
         ? 'Текста нет — читай таблицу выше.'
         : ask
           ? 'Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.'
