@@ -252,8 +252,9 @@ describe('the owner’s answers of 2026-10-01 (1a 2a 3a) and the 1a reversal of 
         lotCheck: { otherAnswersAskLogist: string };
       };
       expect(bundle.tarkib.errors.lines_count, locale).not.toMatch(who);
-      // «Other goods»: the VED writes a one-line 🧩 for the papers; the logist
-      // still renames for the warehouse screens (the lot keeps its body).
+      // «Other goods»: the VED writes a one-line 🧩 — the papers AND the lists
+      // print that name since 2026-11-10 (docs/TARKIB-TUZATISH.md §3); what is
+      // still the logist's is the name on the sticker and the Chinese name.
       expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(/🧩/);
       expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(who);
     }

@@ -409,6 +409,14 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
     await clearComposition({ lotId: lot.T, seenRev: rev }, logist(), ctx(logistId));
     expect((await stateOf('T')).state).toBe('none');
+    // With NO document (optional since 0142): the tarkib still vouches — the
+    // sentence reads the lines and the totals, never the file.
+    await saveComposition({ ...composition(), attachmentId: null }, logist(), ctx(logistId));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, person: null });
+    const bare = (await compositionsFor([lot.T])).get(lot.T)!;
+    expect(bare.attachment).toBeNull();
+    await clearComposition({ lotId: lot.T, seenRev: bare.rev }, logist(), ctx(logistId));
+    expect((await stateOf('T')).state).toBe('none');
     await saveComposition(composition(), logist(), ctx(logistId));
   });
 
