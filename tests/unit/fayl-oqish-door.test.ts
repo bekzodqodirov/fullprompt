@@ -246,6 +246,15 @@ describe('the AI table over a reading that is not whole (§1.2)', () => {
     expect(table.text).toContain('⚠️ 1 ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.');
     expect(table.text).not.toContain('Yuborilgan fayl saqlangan joydan olinmadi.');
     expect(data(table)[0]).toBe('c:reread');
+    // The press named ONCE (door-break-6): the remedy under it starts at «Faylni …».
+    expect(table.text.split('«🔄 AI qayta o‘qisin»').length - 1).toBe(1);
+    expect(table.text).toContain(`Faylni Excel qilib / tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring. Yoki ${NOT_WHOLE_PRESS}`);
+  });
+
+  it('a retryable failure the tail does not name «🔄» for keeps the remedy’s «🔄» lead', async () => {
+    const { chatId } = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'timeout', facts: FULL });
+    const table = await drawn(chatId);
+    expect(table.text).toContain('«🔄 AI qayta o‘qisin» ni bosing, yoki faylni Excel qilib');
   });
 
   it('a PDF the API refused is named on the table, every time it is drawn', async () => {
@@ -341,6 +350,15 @@ describe('the tail says what WAS read (§2.2, critic-tail-both)', () => {
     expect(readInsteadWords({ material: ['  '], invoiceGoods: TWO })).toBe('Faqat Excel’dan o‘qildi.');
     expect(readInsteadWords({ material: ['Kurtka'], invoiceGoods: [] })).toBe('Faqat yozilganidan o‘qildi.');
     expect(readInsteadWords({ material: [], invoiceGoods: [] })).toBe('Hech narsa o‘qilmadi.');
+  });
+
+  it('neither read, yet rows on the table — the returned request’s own: the line is left out (door-break-7)', async () => {
+    expect(readInsteadWords({ material: [], invoiceGoods: [] }, 2)).toBeNull();
+    const { chatId } = collection({ seed: TWO, seedDoor: 'ai', seededFrom: 'r-7', fileCount: 1, images: [PHOTO], aiUsed: false, aiFailure: 'timeout', facts: { ...FULL, goods: TWO } });
+    const table = await drawn(chatId);
+    expect(table.text).toContain('⚠️ AI belgilangan vaqtda javob bermadi.');
+    expect(table.text).not.toContain('Hech narsa o‘qilmadi.');
+    expect(table.text).toContain('⚠️ 2 ta tovar so‘rovdan olindi; 1 ta rasm o‘qilmadi.');
   });
 
   it('on the table: a PDF that did not read and nothing typed is «Hech narsa o‘qilmadi», never «yozilganidan»', async () => {

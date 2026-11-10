@@ -409,9 +409,7 @@ function tableTail(state: IntakeState, intake: Intake): string {
     // What WAS read, by what was actually read (docs/FAYL-OQISH.md §2.2): the
     // Excel and the typed text, either, or neither — «Faqat yozilganidan» was
     // said when nothing was typed at all.
-    (failure
-      ? `\n\n⚠️ ${failureWords(state, failure, intake)}\n${intake.readInsteadWords(state)}`
-      : aiStepsText(state.steps)) +
+    (failure ? `\n\n⚠️ ${failureWords(state, failure, intake)}${readInstead(state, intake)}` : aiStepsText(state.steps)) +
     // A table that points down has no certificate button (§1.4): the line
     // states the answer and points at no press (review PC-SPEC-9).
     (state.ai && !state.amend
@@ -426,10 +424,14 @@ function tableTail(state: IntakeState, intake: Intake): string {
  * words would leave the seller a second remedy to read beside it.
  */
 function failureWords(state: IntakeState, failure: import('../../wms/calc/intake').AiReadFailure, intake: Intake): string {
-  if (failure === 'files_missing' && (state.filesMissing ?? 0) > 0) {
-    return `${state.filesMissing} ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.`;
-  }
+  if (failure === 'files_missing' && intake.tailNamesRetry(state)) return intake.filesMissingRetryLine(state.filesMissing ?? 0);
   return intake.AI_READ_FAILURE[failure].text;
+}
+
+/** The tail's «what WAS read» line under a failure, or nothing when the table's own rows already say it (§2.2). */
+function readInstead(state: IntakeState, intake: Intake): string {
+  const words = intake.readInsteadWords(state, (state.facts.goods ?? []).length);
+  return words ? `\n${words}` : '';
 }
 
 /**

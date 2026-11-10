@@ -1079,15 +1079,34 @@ export const typedSomething = (material: readonly string[]) => material.some((s)
  * The tail's «what WAS read» when the model's reading is missing (§2.2, his
  * 1.6 a), by what was actually read: the Excel rows and the typed text, either,
  * or neither. The Excel-and-typed words are today's (c1892, the r4 pin).
+ *
+ * `rows`: the table's goods rows. Neither read, yet rows on the table — a
+ * returned request's own, an addition's stored ones (door-break-7): the line
+ * is left out (null), because «Hech narsa o‘qilmadi» stood right above
+ * «⚠️ 2 ta tovar so‘rovdan olindi», and the closing below already says where
+ * the rows came from. One sentence per fact.
  */
-export function readInsteadWords(state: Pick<ReadingState, 'material' | 'invoiceGoods'>): string {
+export function readInsteadWords(state: Pick<ReadingState, 'material' | 'invoiceGoods'>, rows = 0): string | null {
   const excel = (state.invoiceGoods ?? []).length > 0;
   const typed = typedSomething(state.material);
   if (excel && typed) return 'Faqat Excel va yozilganidan o‘qildi.';
   if (excel) return 'Faqat Excel’dan o‘qildi.';
   if (typed) return 'Faqat yozilganidan o‘qildi.';
-  return 'Hech narsa o‘qilmadi.';
+  return rows > 0 ? null : 'Hech narsa o‘qilmadi.';
 }
+
+/**
+ * A stored file that did not load, said on the tail with its count and the
+ * press that heals it (§2.5) — once: the tail's failure line when the reading
+ * had nothing else to read. The not-whole remedy below it then starts at
+ * «Faylni …», never naming «🔄» a second time (door-break-6, critic-said-twice).
+ */
+export function tailNamesRetry(state: Pick<ReadingState, 'aiUsed' | 'aiFailure' | 'filesMissing'>): boolean {
+  return !state.aiUsed && state.aiFailure === 'files_missing' && (state.filesMissing ?? 0) > 0;
+}
+
+/** §2.5's words for that line. */
+export const filesMissingRetryLine = (missing: number) => `${missing} ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.`;
 
 /** Where a not-whole table's rows came from — «Excel’dan», «yozilganidan», both, or the returned request's own. */
 function rowsFromWords(state: ReadingState): string {
@@ -1434,7 +1453,8 @@ export function intakeTableText(input: TableInput): string {
     } else if (unread) {
       const first = notWholeClosing(unread.state, unread.whole, rows.length, unread.inputCut);
       const said = [...(first ? [first] : []), ...refusedPdfLines(unread.state)];
-      const remedy = notWholeRemedy(notWholeRetry(unread.state));
+      // «🔄» is drawn either way; named once — on the tail when it said it there.
+      const remedy = notWholeRemedy(notWholeRetry(unread.state) && !tailNamesRetry(unread.state));
       if (rows.length > 0 && !complete) {
         if (!collecting) closing.push(...said);
         closing.push(openLine());
