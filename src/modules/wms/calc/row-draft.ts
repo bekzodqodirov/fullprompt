@@ -811,3 +811,24 @@ export function refreshWait(state: RefreshWait, event: RefreshEvent): RefreshWai
       return state;
   }
 }
+
+/**
+ * The rev the oldest draft still held was TYPED over (fix review FR-9): set
+ * when the first draft is typed, kept while any stands — a refresh moves the
+ * screen's rev under held drafts, never this — and cleared when none is held.
+ * Pure.
+ */
+export function typedAtNext(prev: number | null, holds: boolean, rev: number): number | null {
+  if (!holds) return null;
+  return prev ?? rev;
+}
+
+/**
+ * What the grid's save posts as `sawRev`: the older of the screen's rev and
+ * the rev its drafts were typed over — a seller's addition the screen drew
+ * UNDER a held draft (the desktop cell shows the draft, not the addition) is
+ * one the VED never saw (lmp-1, fix review FR-9). Pure.
+ */
+export function sawRevFor(revAtPress: number, typedAt: number | null | undefined): number {
+  return typedAt != null ? Math.min(revAtPress, typedAt) : revAtPress;
+}

@@ -1,6 +1,6 @@
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
 
 /**
@@ -17,28 +17,20 @@ import { MUTE_GROUPS } from '@/modules/platform/notifications/mutes';
  * Four halves, none of which any behavioural test can reach — the bot needs
  * a Telegram and the worker needs a running boss (#531's rule: a
  * service-level test of a queued path proves the service, not the wiring).
- * Round 2's routing (§6.8) IS reachable on a stand-in `enqueue`, so it is
- * asserted behaviourally below.
+ * Round 2's routing (§6.8) is asserted behaviourally in
+ * calc-pass-settle.integration since round 3: the sender takes a TICKET on
+ * the request's row first (docs/SAKKIZ-R3.md §10.2.1), a statement with
+ * nothing to stand in for it here.
  */
 const read = (path: string) =>
   readFileSync(path, 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
 
-const sent = vi.hoisted(() => vi.fn());
-vi.mock('@/modules/platform/jobs/boss', () => ({ enqueue: sent }));
-// The real module, with the revision read stood in: the sender stamps it.
-vi.mock('@/modules/wms/calc/prefill', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/modules/wms/calc/prefill')>()),
-  prefillTicket: async () => 7,
-}));
-
-import { queueCalcPrefill } from '@/modules/wms/calc/prefill-queue';
 import {
   JOB_CALC_PREFILL,
   JOB_CALC_TARIFF_REPLY,
   PASS_EXPIRE_S,
-  TARIFF_EXPIRE_S,
   registerCalcPrefillWorker,
 } from '@/modules/wms/calc/jobs';
 import { PASS_DEADLINE_MS } from '@/modules/wms/calc/prefill';
@@ -76,41 +68,12 @@ describe('every door hands the job to the machine', () => {
 });
 
 describe('the section picks the queue (§6.8)', () => {
-  beforeEach(() => sent.mockReset());
-
-  // Re-anchored for round 2: this pinned «the sender refuses a freight-only
-  // job» (decision 8), which the owner overturned on 2026-09-26 and reversed
-  // on 2026-10-21 (his 2.5 b: a yolkira request is answered from the tariff
-  // at once). The sender now queues EVERY section; that the freight-only
-  // pass calls no model is proven by calc-prefill.integration («a
-  // freight-only job is left ALONE»), which stays.
-  it('a yolkira job goes to the tariff queue — no longer refused', async () => {
-    expect(await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section: 'yolkira' })).toBe(true);
-    expect(sent).toHaveBeenCalledTimes(1);
-    expect(sent).toHaveBeenCalledWith(
-      JOB_CALC_TARIFF_REPLY,
-      { requestId: 'r1', staffId: 's1', rev: 7, section: 'yolkira' },
-      { expireInSeconds: TARIFF_EXPIRE_S },
-    );
-  });
-
-  it('a rastamojka or podklyuch job goes to the customs queue, with an expiry above the pass', async () => {
-    for (const section of ['rastamojka', 'podklyuch']) {
-      sent.mockReset();
-      await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section });
-      expect(sent).toHaveBeenCalledWith(
-        JOB_CALC_PREFILL,
-        { requestId: 'r1', staffId: 's1', rev: 7, section },
-        { expireInSeconds: PASS_EXPIRE_S },
-      );
-    }
-    // A request with no section yet reads as customs (the only kind queued
-    // before the section existed).
-    sent.mockReset();
-    await queueCalcPrefill({ requestId: 'r1', staffId: 's1', section: null });
-    expect(sent.mock.calls[0]?.[0]).toBe(JOB_CALC_PREFILL);
-  });
-
+  // Re-anchored for round 3 (docs/SAKKIZ-R3.md §10.1): the two routing cases
+  // — a yolkira job on the tariff queue, every other section on the customs
+  // one, each with its expiry — moved to calc-pass-settle.integration with
+  // `pass` in the payload and the ticket's `id` in the options: the sender
+  // now takes the ticket on the request's row before it sends, a statement
+  // a stand-in cannot answer. The derived expiries stay here.
   it('the customs expiry clears the pass deadline plus one worst step (2 × 60 s)', () => {
     // pg-boss re-delivers a job past its expiry while the first run is still
     // going; the default 15 minutes would have run a second pass beside it.
@@ -147,7 +110,9 @@ describe('the prefill survives a deploy', () => {
     // promise in the container the owner restarts on every deploy.
     const sender = read('src/modules/wms/calc/prefill-queue.ts');
     expect(sender).toContain('JOB_CALC_PREFILL');
-    expect(sender).toContain('enqueue(JOB_CALC_PREFILL');
+    // Re-anchored for round 3 (§10.2.1): the queue is named by the one
+    // routing home, `passQueueOf`, which the ticket's reader asks too.
+    expect(sender).toContain('enqueue(passQueueOf(');
     const bot = read('src/modules/platform/telegram/staff-handlers.ts');
     expect(bot).not.toContain('void prefillAndReply');
     expect(bot).not.toContain('aiPrefill');
@@ -169,7 +134,9 @@ describe('the prefill survives a deploy', () => {
     // (§6.8), which queues on the drain's own rows (`queueStaffTelegram`)
     // and kicks it after the commit.
     const jobs = read('src/modules/wms/calc/jobs.ts');
-    expect(jobs).toContain('sayOnce(requestId, {');
+    // Round 3 (§10.2.4): the claim is per PASS — the job's own, the
+    // landing's when it names none.
+    expect(jobs).toContain('sayOnce(requestId, pass, {');
     expect(jobs).not.toContain('notifyStaffTelegram(');
     const once = read('src/modules/wms/calc/say-once.ts');
     expect(once).toContain('queueStaffTelegram(tx,');
@@ -190,10 +157,15 @@ describe('the prefill survives a deploy', () => {
     expect(jobs.indexOf('prefillStanding(')).toBeLessThan(jobs.indexOf('aiPrefill(requestId'));
     // …and the revision it compares against travels ON the job, stamped by
     // the sender: read at drain time it would always agree with itself.
-    expect(jobs).toContain('prefillStanding(requestId, data.rev ?? null)');
+    // Re-anchored for Ikki eshik (docs/IKKI-ESHIK.md §0.3): the same read
+    // hands back the request's door (`seen`), read from the ROW.
+    expect(jobs).toContain('prefillStanding(requestId, data.rev ?? null, seen)');
+    // Re-anchored for round 3 (§10.2.1): the revision is the TICKET's — taken
+    // on the request's row in the statement that marks the pass owed — and
+    // it travels in the payload the job is sent with.
     const sender = read('src/modules/wms/calc/prefill-queue.ts');
-    expect(sender).toContain('prefillTicket(');
-    expect(sender).toMatch(/enqueue\(JOB_CALC_PREFILL, \{[^}]*rev[^}]*\}, \{ expireInSeconds: PASS_EXPIRE_S \}\)/);
+    expect(sender).toContain('SET ai_pass_rev = rev');
+    expect(sender).toMatch(/enqueue\(passQueueOf\(section\), \{[^}]*\brev\b[^}]*\}/);
   });
 
   it('the machine writes as NOBODY, and the seller is only told', () => {
@@ -211,7 +183,9 @@ describe('the prefill survives a deploy', () => {
     // compare-and-set chain starts (the review's P1-R2: a fresh read there
     // adopted a save landing after the check as the machine's own base).
     expect(jobs).toContain('const expected = { expectCustoms: writes, expectRev: data.rev ?? null };');
-    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected)');
+    // Round 3 (§10.2.9): the pass rides along, so an addition's re-run reads
+    // what that addition left stale.
+    expect(jobs).toContain('aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { ...expected, pass })');
     expect(jobs).not.toContain('actorId: staffId');
     // …and `staffId` still names who hears about it.
     expect(jobs).toContain('userIds: [staffId]');
@@ -226,6 +200,9 @@ describe('the prefill survives a deploy', () => {
     expect(at).toBeGreaterThan(-1);
     const body = jobs.slice(at, jobs.indexOf('async function writeReplyToLenta'));
     expect(body).toContain('[calc-prefill] pass failed');
+    // …and the settle, which runs on every way out (round 3, §10.2.2), is
+    // caught and logged inside the same body.
+    expect(body).toContain('[calc-prefill] settle failed');
     expect(body).not.toContain('throw err');
   });
 });

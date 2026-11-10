@@ -26,15 +26,33 @@ describe('the ✅ after «Hisoblatish» links what its sender can open', () => {
   const at = handlers.indexOf('await landCollectedIntake(');
   const save = handlers.slice(at, handlers.indexOf('\n}', at) + 2);
 
+  // The ✅'s words moved into calc-dialog.ts's pure `landingReplyText`
+  // (docs/SAKKIZ-R3.md K11, the subject moved): the save branch asks the link
+  // and hands it over, the text prints it.
+  const replyText = bodyOf(read('src/modules/platform/telegram/calc-dialog.ts'), 'landingReplyText');
+
   it('asks `landingLinkFor` and prints the line only when it answers', () => {
     expect(at).toBeGreaterThan(-1);
     expect(save).toContain('landingLinkFor(staff.id, target)');
-    expect(save).toMatch(/\(link \? `\$\{link\}\\n` : ''\)/);
+    // …and the landed request's door (docs/IKKI-ESHIK.md §2.3, §3.5) at BOTH
+    // senders, read off the row by the landing they share (as-built review
+    // DOORS-2, DOORS-3) — the press said the collection's own door.
+    expect(save).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable })');
+    const sweep = read('src/modules/platform/telegram/calc-intake-sweep.ts');
+    const resumed = sweep.slice(sweep.indexOf('async function resumeLanding('));
+    expect(resumed).toContain('landingReplyText(target, { link, tariffFollows, door: target.door, aiAvailable: target.aiAvailable })');
+    const bot = read('src/modules/platform/telegram/staff-bot.ts');
+    const land = bot.slice(bot.indexOf('export async function landCollectedIntake('), bot.indexOf('export async function landingLinkFor('));
+    expect(land).toContain('await landedWordsOf(');
+    expect(bodyOf(bot, 'landedWordsOf')).toContain("await import('../../wms/calc/intake-door')");
+    expect(replyText).toMatch(/\(opts\.link \? `\$\{opts\.link\}\\n` : ''\)/);
   });
 
   it('holds no card path of its own', () => {
-    expect(save).not.toMatch(/crm\/leads|bitimlar/);
-    expect(save).not.toContain('APP_URL');
+    for (const body of [save, replyText]) {
+      expect(body).not.toMatch(/crm\/leads|bitimlar/);
+      expect(body).not.toContain('APP_URL');
+    }
   });
 
   it('`landingLinkFor` reaches the one rule by dynamic import and fails to NO link', () => {

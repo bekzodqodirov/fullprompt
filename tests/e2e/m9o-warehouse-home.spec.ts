@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 
 /**
  * The skladchi's home screen is his work order, not a menu.
@@ -55,13 +56,9 @@ test('the warehouse day, in order, with live numbers', async ({ page }) => {
   // A truck forming AT his warehouse moves HIS number.
   const before = await batchCount(page);
   await login(page, OWNER);
-  await page.goto('/batches');
   // The origin has to be HIS warehouse or his number would not move — the
   // quick form defaults to the first code alphabetically.
-  await page.locator('select[name="originId"]').selectOption({ label: 'YW' });
-  await page.locator('select[name="destId"]').selectOption({ label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   const batchUrl = page.url();
 
   await login(page, YW_OPERATOR);

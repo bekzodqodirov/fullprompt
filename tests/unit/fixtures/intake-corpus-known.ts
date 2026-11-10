@@ -16,7 +16,9 @@
  * bounded probe's cases joined (c2278-c2381, after the model-tier rule), and
  * 142 once round 2's «Kiritish» gave the volume path the weight's PER_PACKAGE
  * refusal (c2115, c2116 — one carton's m³ is no longer the line's,
- * docs/SAKKIZ-R2.md §8.2.1):
+ * docs/SAKKIZ-R2.md §8.2.1), and 104 once Ikki eshik's M1 c read a model line
+ * with an Excel row's count AND weight as that row (38 pickGoods cases,
+ * docs/IKKI-ESHIK.md §1.2.2):
  * each a reviewer's input the readers still get wrong. They run
  * as `it.fails`: a fix that makes one pass turns it RED here until its id
  * leaves this list, so the list can only shrink, and nothing on it is
@@ -82,10 +84,6 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   'c2136', 'c2137',
 
   // ── r6-probe collector (recorded, not fixed) ─────────────────────────────
-  // pickGoods: `otherName` reads the numbers in a name however they are
-  // written, never a unit conversion — «Cup 0.35L» and «Кружка 350 мл», «Bed
-  // sheet 1.5m» and «Простыня 150 см» are two names. Rare.
-  'c2154', 'c2155',
   // intakeClientLabel: nameOwnWord keeps a contact word only written
   // Capital+lower (or hyphened), so an all-caps shop name joined by a space
   // («MEGA MOBILE», «SMART PHONE», «ТЕХНО КОНТАКТ», «MOBILE CENTER») loses its
@@ -105,15 +103,15 @@ export const KNOWN_FAILING: ReadonlySet<string> = new Set([
   // pickGoods: the numbers in a name compare as written, so a unit conversion
   // («1.2m» / «120 см», «10 000 мАч» / «10000mAh»), a Chinese numeral, a
   // translated qualifier (front / задние, black / прозрачный) or an
-  // equivalent description (24 pcs / 6 персон) reads as another name or the
-  // same one where the reader cannot tell. Rare.
-  'c2304', 'c2305', 'c2306', 'c2307', 'c2308', 'c2309', 'c2310', 'c2311',
-  'c2312', 'c2313', 'c2314', 'c2315', 'c2316', 'c2317', 'c2318', 'c2319',
-  'c2320', 'c2321', 'c2322', 'c2323', 'c2324', 'c2325', 'c2326', 'c2327',
+  // equivalent description (24 pcs / 6 persons) reads as another name or the
+  // same one where the reader cannot tell. Rare. The cases where the model
+  // line carries the Excel row's count AND weight left this list with
+  // Ikki eshik's M1 c (docs/IKKI-ESHIK.md §1.2.2, file-goods.ts
+  // `sameFigures`): one count and one weight equal to exactly one row's ARE
+  // that row unless the names contradict (a tier, a size in the same unit).
+  'c2304', 'c2327',
   'c2328', 'c2340', 'c2342', 'c2343', 'c2344', 'c2346', 'c2347', 'c2349',
-  'c2354', 'c2355', 'c2356', 'c2357', 'c2358', 'c2359', 'c2360', 'c2365',
-  'c2371', 'c2372', 'c2373', 'c2374', 'c2375', 'c2376', 'c2377', 'c2378',
-  'c2379', 'c2380', 'c2381',
+  'c2371', 'c2372', 'c2373', 'c2374', 'c2375',
   // pickGoods: a model suffix glued to its number («Redmi 13C») is no tier
   // word, so «Чехол Redmi 13» meets the 13C line. Common (one case) — a glued-
   // suffix rule would also part «А4» in Cyrillic from «A4» and «600mm» from

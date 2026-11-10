@@ -24,6 +24,16 @@ export const TARIFF_ESTIMATE_WORD = 'taxminiy';
 /** What a PRICED yolkira reply starts with — the chip's anchor. */
 export const TARIFF_PRICED_HEAD = `${TARIFF_REPLY_TITLE} · ${TARIFF_ESTIMATE_WORD}`;
 
+/**
+ * A re-run's word (docs/SAKKIZ-R3.md §2.5): the pass a seller's addition
+ * queued again answers under the same heading with this after the TITLE
+ * phrase — never between `TARIFF_REPLY_TITLE` and its estimate word — so
+ * every heading still starts with its `MACHINE_REPLY_HEADS[kind]`, a priced
+ * tariff re-run with `TARIFF_PRICED_HEAD`, and the lenta chip classifies it
+ * unchanged.
+ */
+export const RERUN_WORD = 'qayta hisob';
+
 export type MachineReplyKind = 'ai' | 'tariff';
 
 /** Keyed by kind, so a third kind with no heading is a compile error. */
@@ -31,6 +41,14 @@ export const MACHINE_REPLY_HEADS: Readonly<Record<MachineReplyKind, string>> = {
   ai: AI_REPLY_HEAD,
   tariff: TARIFF_REPLY_HEAD,
 };
+
+/**
+ * The plain door's note (docs/IKKI-ESHIK.md §2.4): what the machine found,
+ * for the VED, with no money in it. Deliberately NOT in `MACHINE_REPLY_HEADS`
+ * and not prefixed by `AI_REPLY_HEAD`: the lenta's chips name an ANSWER — a
+ * figure, exact or estimated — and this note carries none.
+ */
+export const AI_NOTE_HEAD = '🤖 AI izohi (VED uchun)';
 
 /** The first characters of the lenta's VED line (§2.6) — written by P1, read by P4's chip. */
 export const VED_ESTIMATE_MARK = '🔎 VED uchun:';

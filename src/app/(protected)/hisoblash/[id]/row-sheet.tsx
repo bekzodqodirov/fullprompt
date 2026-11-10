@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { Overlay } from '@/components/ui/overlay';
-import { reloadFresh } from '@/components/build-check';
+import { reloadCure, runReload } from '@/components/build-check';
 import type { BazaBasis, CustomsResult, MeasureUnit } from '@/modules/wms/calc/pricing';
 import { basisLabel } from '@/modules/wms/calc/basis';
 import { readNumberCell } from '@/modules/wms/calc/number-cell';
@@ -321,12 +321,12 @@ function SheetBody({
         {error ? (
           <p className="chip chip-warn" data-testid="calc-phone-error">
             {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_ready') : error}
-            {error === 'stale_build' ? (
+            {reloadCure(error) ? (
               <button
                 type="button"
                 className="btn-primary ml-2 !min-h-9"
                 data-testid="calc-reload"
-                onClick={() => void reloadFresh()}
+                onClick={() => runReload(reloadCure(error)!)}
               >
                 {t('reloadPage')}
               </button>

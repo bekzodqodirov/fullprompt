@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
+import { driveReading, resetReadingDrive } from '../fixtures/calc-read-drive';
 
 /**
  * The «Hisoblatish» collector after the round-4 review (the regression
@@ -15,16 +16,20 @@ vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
   analyzeIntake: model.analyze,
 }));
-vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
+// The reading job bills each answered reading itself (docs/SAKKIZ-R3.md §7.2.10).
+vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100, recordAiPass: async () => {} }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (§7.1).
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
   analyzeCollected,
-  carryLineDone,
   endIntake,
   intakeClientLabel,
   pickGoods,
-  resolveLineDone,
+  placeByName,
   sameAsInvoiceNote,
   startIntake,
   typedLeftOutNote,
@@ -49,7 +54,7 @@ function collection(patch: Partial<IntakeState> = {}): { chatId: bigint; state: 
   seq += 1;
   const chatId = BigInt(-9_300_000_000) - BigInt(seq);
   chats.push(chatId);
-  startIntake(chatId, 'rastamojka');
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-test' });
   return { chatId, state: updateIntake(chatId, patch)! };
 }
 function fakeCtx() {
@@ -68,7 +73,10 @@ function fakeCtx() {
   };
 }
 
-beforeEach(() => model.analyze.mockReset());
+beforeEach(() => {
+  model.analyze.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
@@ -100,22 +108,24 @@ describe('the lead’s name: the hint cut out of one line, contact lines dropped
   });
 });
 
-describe('a ⏭ survives a reading without the goods (round 4, C-r2)', () => {
-  it('stored: placed where the reading has the line, kept as it was where it has not', () => {
-    expect(carryLineDone([], [{ index: 0, name: 'Kurtka' }])).toEqual([{ index: 0, name: 'Kurtka' }]);
-    expect(
-      carryLineDone([line('Shim'), line('Kurtka')], [
-        { index: 0, name: 'Kurtka' },
-        { index: 3, name: 'Sharf' },
-      ]),
-    ).toEqual([
-      { index: 1, name: 'Kurtka' },
-      { index: 3, name: 'Sharf' },
+describe('an answer survives a reading without the goods (round 4, C-r2; R3 regression-7)', () => {
+  // ⏭ is retired (his 1.10 c); the rule `carryLineDone` held is carried by
+  // `placeByName`'s WRITE-BACK: the same fixtures, the placed index asserted.
+  const at = (index: number, name: string) => ({ index, name, patch: {} });
+  it('stored: placed where the reading has the line, kept (unplaced, -1) where it has not', () => {
+    expect(placeByName([], [at(0, 'Kurtka')]).entries).toEqual([at(-1, 'Kurtka')]);
+    expect(placeByName([line('Shim'), line('Kurtka')], [at(0, 'Kurtka'), at(3, 'Sharf')]).entries).toEqual([
+      at(1, 'Kurtka'),
+      at(-1, 'Sharf'),
     ]);
   });
 
-  it('the question is still chosen by the placed ones only', () => {
-    expect(resolveLineDone([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf' }])).toEqual([]);
+  it('an unplaced answer writes nothing, and comes back with its line on the next reading', () => {
+    const once = placeByName([line('Shim'), line('Kurtka')], [{ index: 3, name: 'Sharf', patch: { quantity: 5 } }]);
+    expect(once.goods).toEqual([line('Shim'), line('Kurtka')]);
+    const again = placeByName([line('Sharf'), line('Shim')], once.entries);
+    expect(again.goods[0]).toEqual(line('Sharf', { quantity: 5 }));
+    expect(again.entries.map((e) => e.index)).toEqual([0]);
   });
 });
 
@@ -135,10 +145,19 @@ describe('which lines land beside an Excel (round 4)', () => {
     expect(picked.sameAsInvoice).toEqual([{ name: 'Ladies jacket', quantity: 300, why: 'same' }]);
   });
 
-  it('«add» with no reading: the typed lines take the model’s place, the Excel’s own named', () => {
+  // Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.2.2; as-built review
+  // FILES-3): round 4's «the typed lines take the model’s place» was right
+  // while «add» meant the seller had SAID the other file was another
+  // factory's goods. The bot sets «add» by itself now, and with no reading
+  // nothing was model-read: the typed lines keep today's rule beside an Excel
+  // — the Excel answers, a line it does not carry is NAMED, never added.
+  it('«add» with no reading: the Excel answers — its own line named «same», a line it does not carry named «typed»', () => {
     const picked = add([line('Kurtka', { quantity: 300 })], null, [line('Kurtka', { quantity: 300 }), line('Shim', { quantity: 200 })]);
-    expect(picked.goods.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
-    expect(picked.sameAsInvoice).toEqual([{ name: 'Kurtka', quantity: 300, why: 'same' }]);
+    expect(picked.goods.map((g) => g.name)).toEqual(['Kurtka']);
+    expect(picked.sameAsInvoice).toEqual([
+      { name: 'Kurtka', quantity: 300, why: 'same' },
+      { name: 'Shim', quantity: 200, why: 'typed' },
+    ]);
   });
 
   it('one reading is named once, two readings of one name with different figures both', () => {
@@ -173,10 +192,10 @@ describe('which lines land beside an Excel (round 4)', () => {
       { ...line('Куртка женская (Ladies jacket)'), why: 'same' as const },
       { ...line('Shim'), why: 'typed' as const },
     ];
-    expect(sameAsInvoiceNote(lines)).toBe('⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Куртка женская (Ladies jacket)».');
-    expect(typedLeftOutNote(lines)).toBe(
-      '⚠️ 1 ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): «Shim».',
-    );
+    // Re-worded by docs/IKKI-ESHIK.md §1.2.2/§1.2.4: «bir xil» is the designed outcome (no ⚠️), and
+    // a line in the photos or the typing that the Excel lacks is named for the VED, never added.
+    expect(sameAsInvoiceNote(lines)).toBe('📄 1 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Куртка женская (Ladies jacket)».');
+    expect(typedLeftOutNote(lines)).toBe('Rasmda/yozuvda Excel’da yo‘q tovar: «Shim» — VED tekshiradi');
     expect(typedLeftOutNote([lines[0]!])).toBeNull();
   });
 });
@@ -192,7 +211,7 @@ describe('the summary beside an Excel (round 4)', () => {
     const out = await analyzeCollected(
       collection({ stage: 'material', material: ['Shim 200 dona'], invoiceGoods: [line('Kurtka', { quantity: 300 })] }).state,
     );
-    expect(out.notes).toEqual(['⚠️ 1 ta yozilgan qator Excel’da yo‘q, ro‘yxatga qo‘shilmadi (tovarlar Excel’dan olindi): «Shim».']);
+    expect(out.notes).toEqual(['Rasmda/yozuvda Excel’da yo‘q tovar: «Shim» — VED tekshiradi']);
     expect(out.steps).toEqual(['a', 'b', 'c']);
   });
 
@@ -202,15 +221,17 @@ describe('the summary beside an Excel (round 4)', () => {
       material: ['Kurtka 300 dona'],
       aiGoods: 'add',
       invoiceGoods: [line('Kurtka', { quantity: 300, weightKg: 150 })],
-      pdfs: [{ data: Buffer.from('%PDF-1.4 B'), name: 'B.pdf' }],
+      pdfs: [{ attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 }],
     });
     model.analyze.mockResolvedValueOnce({ ok: false, failure: 'not_configured' });
     const ctx = fakeCtx();
+    // Reached through the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
     await handleCalcCallback(ctx, chatId, 'done');
-    await vi.waitFor(() => expect(activeIntake(chatId)?.stage).toBe('review'));
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.stage).toBe('review');
     const summary = ctx.replies.at(-1)!;
     expect(summary).toContain('Faqat Excel va yozilganidan o‘qildi.');
-    expect(summary).toContain('\n\n⚠️ 1 ta qator Excel’dagi bilan bir xil deb qo‘shilmadi: «Kurtka».');
+    expect(summary).toContain('\n\n📄 1 ta qator Excel’dagi bilan bir xil — bir marta olindi: «Kurtka».');
   });
 });
 

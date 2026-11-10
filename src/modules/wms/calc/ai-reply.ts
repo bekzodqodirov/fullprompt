@@ -1,7 +1,19 @@
 import { dutyText } from './duty-text';
+import { AI_CODE_MARK } from './code-source';
+import { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT } from './fit-telegram';
 import { SMALL_FREIGHT_USD, type BazaSource } from './pricing';
-import { AI_REPLY_HEAD, VED_ESTIMATE_MARK } from './reply-heads';
-import type { TotalWeightBasis } from './intake';
+import { AI_REPLY_HEAD, RERUN_WORD, VED_ESTIMATE_MARK } from './reply-heads';
+import { figureLabel, type TotalWeightBasis } from './intake';
+import { needWhatUz, needWhyUz, type NeedUnit } from './needs';
+import type { LawAsk } from './law-asks';
+import {
+  CUSTOMS_TAIL_WORDS,
+  FREIGHT_TAIL_WORDS,
+  SELLER_TAIL_NO_ASK,
+  tailWords,
+  type FreightTail,
+  type ReplyAudience,
+} from './tail-words';
 
 /**
  * The AI-VED's answer in the seller's own chat — RASTAMOJKA, and on a
@@ -36,15 +48,31 @@ import type { TotalWeightBasis } from './intake';
  *    total, because the seller reads this on a phone and repeats it.
  */
 
-/** Telegram refuses a message past this; the caller never sends a longer one. */
-export const TELEGRAM_LIMIT = 4096;
-/** Past this many lines the list collapses — with a count, never in silence. */
-export const MAX_REPLY_LINES = 25;
+// The cap's one home is fit-telegram.ts (K15); re-exported, so every reader
+// of this module keeps its import.
+export { fitTelegram, MAX_REPLY_LINES, TELEGRAM_LIMIT };
+// …and the tails' one home is tail-words.ts (docs/IKKI-ESHIK.md §3.5), for the
+// same reason.
+export { CUSTOMS_TAIL_WORDS, FREIGHT_TAIL_WORDS, SELLER_TAIL_NO_ASK, tailWords };
+export type { FreightTail, ReplyAudience };
+
+// A group's code the model proposed while reading (§3.1, P13), as the line
+// prints it — «· 6403990000 (AI taklifi)», the table's own mark — so a code
+// nobody has checked never reads like one the file stated. Its home is
+// code-source.ts, beside the item note it stands for; re-exported here.
+export { AI_CODE_MARK };
 
 export interface AiVedLine {
   /** What the group is, in the seller's words — its items, joined. */
   label: string;
   code: string | null;
+  /**
+   * The code is the model's READING-time proposal (`AI_CODE_NOTE` on an item
+   * of the group, docs/IKKI-ESHIK.md §3.1): printed «(AI taklifi)» beside it.
+   * REQUIRED (#790) — a builder that forgot would pass an unchecked code off
+   * as the file's.
+   */
+  aiCode: boolean;
   /**
    * «100 dona × $20/dona» — the group's own measure and baza, when every
    * member states the same one. Null where the group is priced from mixed
@@ -179,9 +207,29 @@ export interface AiVedReplyInput {
    * key, the budget, a person or a close stood the machine down first).
    */
   pickLeft: PickLeft | null;
+  /**
+   * His 2.8 b (docs/SAKKIZ-R3.md §2.5): the figures the LAW pins that the
+   * rows still lack — asked of the seller in the chat, named for the VED on
+   * the lenta. REQUIRED-nullable (#790): null when it was not asked (a person
+   * has written since the machine, the pass was overtaken), [] when nothing
+   * is owed.
+   */
+  asks: LawAsk[] | null;
+  /** The landing's pass, or the re-run after a seller's addition — whose
+   * heading says «qayta hisob» (§2.5). REQUIRED (#790). */
+  pass: 'landing' | 'amend';
   /** Who reads THIS rendering — the seller's chat, or the card's lenta, which
    * carries the VED's own line under its heading (§2.6). */
-  audience: 'chat' | 'lenta';
+  audience: ReplyAudience;
+  /**
+   * The request came in through a bot door (docs/IKKI-ESHIK.md §3.5): the
+   * answer ASKS nothing — no ❓ block, the seller's tails say the VED will ask
+   * him (`tailWords`), the JAMI that cannot be made is the VED's to make, and
+   * the lenta names the same gaps under «⚠️ VED uchun:». False — a request
+   * from before the doors (NULL), the card form, the thread, the agent —
+   * keeps today's words exactly (§0.2). REQUIRED (#790).
+   */
+  noAsk: boolean;
 }
 
 /** The pick's own counts of what it left for the VED (`pickBazas`). */
@@ -235,10 +283,6 @@ export function pickLeftLine(left: PickLeft | null): string | null {
   return parts.length === 0 ? null : `⚠️ AI bazasini qo‘ymadi: ${parts.join(', ')} — VED to‘ldiradi`;
 }
 
-/** Who can fix a refused road: a fact only the seller or the customer has, or
- * one the VED decides (docs/SAKKIZ-R2.md §2.5). */
-export type FreightTail = 'seller' | 'ved';
-
 export type AiVedFreight =
   | {
       ok: true;
@@ -279,28 +323,18 @@ export type AiVedFreight =
        * only after the VED had chosen the zone. One fixer per sentence.
        */
       also?: { refusal: string; tail: 'seller' };
+      /**
+       * Not priced because a seller's addition left a total the road needs
+       * behind (law-money-1, docs/SAKKIZ-R3.md §10.2.9) — said in its own
+       * words (`ROAD_STALE_LINE`), never a figure on the stale column.
+       */
+      stale?: boolean;
     };
 
-/**
- * The tail of a refused road — WHO fixes it (§0.1(7)). Until round 3's
- * «➕ Shu so‘rovga qo‘shish» door, the card's lenta is the seller's one way to
- * add a fact to a request that has already landed.
- */
-export const FREIGHT_TAIL_WORDS: Record<FreightTail, string> = {
-  seller: '— mijozdan so‘rab, kartadagi lentaga yozing',
-  ved: '— VED xodimi hisoblaydi',
-};
-
-/**
- * The tail of a refused CUSTOMS line — the same two fixers as the road's,
- * worded for a line (the VED «qo‘yadi» a baza; the road he «hisoblaydi»).
- * The seller's words are the Taxminiy block's own (`refused_measure`), so a
- * reply that says the count is missing says once who gets it.
- */
-export const CUSTOMS_TAIL_WORDS: Record<FreightTail, string> = {
-  seller: FREIGHT_TAIL_WORDS.seller,
-  ved: '— VED xodimi qo‘yadi',
-};
+/** Why a re-run's road is not priced (law-money-1) — the line below says it whole. */
+export const ROAD_STALE_WORDS = 'qo‘shimchadan keyin umumiy hajm/og‘irlik yangilanmagan';
+/** The road's line after an addition that left its totals behind (§2.5). */
+export const ROAD_STALE_LINE = `🚚 Yo‘lkira: ${ROAD_STALE_WORDS} — yo‘lkirani VED hisoblaydi.`;
 
 /** The tiny-invoice warning (law 8: priced honestly, flagged loudly). */
 export const SMALL_ROAD_LINE = `⚠️ Juda kichik yuk (yo‘lkira $${SMALL_FREIGHT_USD} dan kam) — VED ko‘rib chiqadi.`;
@@ -313,10 +347,45 @@ export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
 }
 
 /** A refused road — the words and who fixes them, and the seller's own gap
- * on a line of its own when the refusal is the VED's (PF-5). */
-export function roadRefusalLine(f: Extract<AiVedFreight, { ok: false }>): string {
-  const first = `Yo‘lkira: ⚠️ ${f.refusal} ${FREIGHT_TAIL_WORDS[f.tail]}`;
-  return f.also ? `${first}\n⚠️ ${f.also.refusal} ${FREIGHT_TAIL_WORDS[f.also.tail]}` : first;
+ * on a line of its own when the refusal is the VED's (PF-5). In the
+ * reader's words (`audience`): the tails differ between the chat and the
+ * lenta — and on a door request (`noAsk`, §3.5) the seller's tail says the
+ * VED will ask him, in all four of the seller's cases alike. */
+export function roadRefusalLine(
+  f: Extract<AiVedFreight, { ok: false }>,
+  audience: ReplyAudience,
+  noAsk: boolean,
+): string {
+  if (f.stale) return ROAD_STALE_LINE;
+  const first = `Yo‘lkira: ⚠️ ${f.refusal} ${tailWords(FREIGHT_TAIL_WORDS, f.tail, audience, noAsk)}`;
+  return f.also ? `${first}\n⚠️ ${f.also.refusal} ${tailWords(FREIGHT_TAIL_WORDS, f.also.tail, audience, noAsk)}` : first;
+}
+
+/**
+ * The gaps a door request leaves for the VED (docs/IKKI-ESHIK.md §3.5), in
+ * ONE line under the lenta's heading — where `lawAsksLentaLine` told him what
+ * the seller had been asked, this tells him what is his to get: each row the
+ * LAW still wants a figure for (the 2.8 b block's own rows, never asked of the
+ * seller any more), and the road's facts only the customer has. Null when
+ * there are none. Capped like the old line: it sits in the head the fit
+ * never cuts (review p5-adv-5).
+ *
+ * The LAW's figures and the road's facts, and nothing else (review
+ * PP-SPEC-4, stated): a group the engine refused for a measure the law does
+ * not pin is the seller's fact too, and it is said on that GROUP's own line
+ * with its tail — the refusal names the row — not here, where it would name a
+ * law-pinned row a second time.
+ */
+export function vedGapsLine(asks: readonly LawAsk[], freight: AiVedFreight | null): string | null {
+  const parts = asks
+    .slice(0, LAW_ASKS_NAMED)
+    .map((a) => `${a.seq}-qator «${shortName(a.name)}»: ${a.needs.map((n) => needWhatUz(n.unit)).join(', ')}`);
+  if (asks.length > LAW_ASKS_NAMED) parts.push(`yana ${asks.length - LAW_ASKS_NAMED} ta qator`);
+  if (freight && !freight.ok && !freight.stale) {
+    if (freight.tail === 'seller') parts.push(freight.refusal);
+    if (freight.also) parts.push(freight.also.refusal);
+  }
+  return parts.length === 0 ? null : `⚠️ VED uchun: ${parts.join('; ')}.`;
 }
 
 /**
@@ -400,8 +469,9 @@ function measureWithMark(measureText: string | null, fromTotal: TotalWeightBasis
   return at === -1 ? `${measureText} ${mark}` : `${quantity} ${mark}${measureText.slice(at)}`;
 }
 
-/** The law's parts of a priced line: «boj 10% · QQS 12%». */
-function lawParts(line: AiVedLine): string {
+/** The law's parts of a priced line: «boj 10% · QQS 12%». Exported for the
+ * plain door's note (`ai-note.ts`), which prints the law and never its figure. */
+export function lawParts(line: Pick<AiVedLine, 'dutyText' | 'addDutyPct' | 'exciseText' | 'vatPct'>): string {
   const parts = [`boj ${line.dutyText}`];
   if (line.addDutyPct > 0) parts.push(`qo‘shimcha boj ${line.addDutyPct}% (sertifikat yo‘q)`);
   if (line.exciseText) parts.push(line.exciseText);
@@ -410,7 +480,7 @@ function lawParts(line: AiVedLine): string {
 }
 
 /** One group, as two (or three) lines: what it is, and what the law makes of it. */
-function lineText(line: AiVedLine, index: number): string {
+function lineText(line: AiVedLine, index: number, audience: ReplyAudience, noAsk: boolean): string {
   const est = line.estimated;
   const priced = est?.priced ? est : null;
   const measure = measureWithMark(priced ? priced.measureText : line.measureText, line.weightFromTotal);
@@ -422,7 +492,7 @@ function lineText(line: AiVedLine, index: number): string {
   // shape of the line prints (exact, estimated, refused).
   const head =
     `${index + 1}. ${shortName(line.label)}` +
-    (line.code ? ` · ${line.code}` : '') +
+    (line.code ? ` · ${line.code}${line.aiCode ? ` ${AI_CODE_MARK}` : ''}` : '') +
     (measure ? ` · ${measure}` : '') +
     (marks ? ` ${marks}` : '') +
     (line.staleBaza ? ` · ${STALE_BAZA_WORDS}` : '');
@@ -440,7 +510,7 @@ function lineText(line: AiVedLine, index: number): string {
   if (line.customsUsd === null) {
     // Law 6: a refusal is a sentence, and the line still exists — a seller
     // who cannot see the row cannot tell the customer what is missing.
-    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} ${CUSTOMS_TAIL_WORDS[line.refusalTail]}`;
+    const refused = `${head}\n   ⚠️ ${line.refusal ?? 'hisoblanmadi'} ${tailWords(CUSTOMS_TAIL_WORDS, line.refusalTail, audience, noAsk)}`;
     if (!est || est.priced || est.misses.length === 0) return refused;
     const shown = est.misses.slice(0, 3).join('; ');
     return `${refused}\n   ${MEDIAN_MARK} taxmin yo‘q: ${shown}${est.misses.length > 3 ? ' …' : ''}`;
@@ -482,31 +552,16 @@ function vedLine(anyMedian: boolean, guessedFrom: string | null, roadFromLines: 
   return `${VED_ESTIMATE_MARK} bu taxminiy javob, rasmiy emas — ${parts.join(' · ')}. Muhrlashdan yoki «Bajarildi» (Готово) bosishdan oldin o‘zingiz tekshiring.`;
 }
 
-/**
- * Within Telegram's cap WITHOUT losing the end (§2.9).
- *
- * The head and the tail — the totals, the road, the JAMI, the caveat, the
- * legend, the link — are what the seller acts on and repeats; a trailing
- * `slice` cut exactly those off a long invoice and kept the lines. So the
- * LINE LIST shrinks, with «… va yana N ta qator», until the text fits, and a
- * slice is the last resort for a single head line longer than the cap.
- */
-export function fitTelegram(head: string[], lines: string[], fixed: string[], tail: string[]): string {
-  for (let k = Math.min(lines.length, MAX_REPLY_LINES); k >= 0; k -= 1) {
-    const more = lines.length > k ? [`… va yana ${lines.length - k} ta qator`] : [];
-    const text = [...head, ...lines.slice(0, k), ...more, ...fixed, ...tail].join('\n');
-    if (text.length <= TELEGRAM_LIMIT) return text;
-  }
-  const text = [...head, ...fixed, ...tail].join('\n');
-  return text.length <= TELEGRAM_LIMIT ? text : `${text.slice(0, TELEGRAM_LIMIT - 20)}\n… (qisqartirildi)`;
-}
-
 export function aiVedReplyText(input: AiVedReplyInput): string {
   const title = [
     input.freight
       ? `${AI_REPLY_HEAD} · taxminiy podklyuch (rastamojka + yo‘lkira)`
       : `${AI_REPLY_HEAD} · taxminiy rastamojka`,
   ]
+    // A re-run after a seller's addition says so AFTER the title phrase, so
+    // the heading still starts with AI_REPLY_HEAD and the lenta's chip reads
+    // it unchanged (feed.ts, PF-9).
+    .concat(input.pass === 'amend' ? [RERUN_WORD] : [])
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
@@ -518,12 +573,20 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   const roadFromLines = Boolean(f && f.ok && !f.exact && !f.zoneGuessed);
   const anyMedian = input.lines.some((l) => l.estimated?.priced === true);
   const head = [title];
+  const asks = input.asks ?? [];
   if (input.audience === 'lenta') {
     const ved = vedLine(anyMedian, guessedFrom, roadFromLines);
     if (ved) head.push(ved);
+    // The VED skimming the lenta reads its first lines: what the seller was
+    // asked goes there, in one line (§2.5) — or, on a door request, which
+    // asks nothing (docs/IKKI-ESHIK.md §3.5), the same gaps as his to get.
+    if (input.noAsk) {
+      const gaps = vedGapsLine(asks, f);
+      if (gaps) head.push(gaps);
+    } else if (asks.length > 0) head.push(lawAsksLentaLine(asks));
   }
 
-  const lines = input.lines.map(lineText);
+  const lines = input.lines.map((line, index) => lineText(line, index, input.audience, input.noAsk));
 
   const fixed: string[] = [];
   if (input.ungrouped.length > 0) {
@@ -536,6 +599,11 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   if (input.fee) {
     fixed.push(`Deklaratsiya yig‘imi (VMQ-55): ${input.fee.bhm} BHM ≈ ${money(input.fee.usd)}`);
   }
+  // His 2.8 b — in `fixed`, which the fit never cuts: on a 40-line invoice
+  // the group lines shrink and the question the seller must answer stays.
+  // Never on a door request (his 5a): «Tasdiqlash» was the last question, and
+  // what is still missing is the VED's to get.
+  if (input.audience === 'chat' && !input.noAsk && asks.length > 0) fixed.push(...lawAsksBlock(asks));
 
   const tail: string[] = ['━━━━━━━━━━━━'];
   // NO PARTIAL SUMS under the job's name (the kernel's rule, restated as a
@@ -576,7 +644,7 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     if (f.ok) {
       tail.push(...roadLines(f));
     } else {
-      tail.push(roadRefusalLine(f));
+      tail.push(roadRefusalLine(f, input.audience, input.noAsk));
     }
     // The sum only when BOTH halves are figures: half a price labelled
     // «jami» is the partial total law 6 forbids, one line lower. And when
@@ -589,7 +657,13 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
     } else if (f.ok && (total ?? taxminiy) !== null) {
       tail.push(`JAMI taxminiy (rastamojka + yo‘lkira): ≈ ${money((total ?? taxminiy)! + f.listUsd)}`);
     } else {
-      tail.push('JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.');
+      // «…to‘ldiring» is a request to the seller; on a door request nothing is
+      // asked of him, and the sum is the VED's to make (§3.5).
+      tail.push(
+        input.noAsk
+          ? 'JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.'
+          : 'JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.',
+      );
     }
   }
   tail.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
@@ -613,6 +687,56 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   if (input.link) tail.push(`Karta: ${input.link}`);
 
   return fitTelegram(head, lines, fixed, tail);
+}
+
+/** At most this many rows are named in the 2.8 b block; the rest are counted. */
+export const LAW_ASKS_NAMED = 8;
+
+/** An example figure per unit, for the block's «✍️» line — the bot's
+ * question's own examples (150 kg, 300 dona) and §2.5's «40 juft». */
+const EXAMPLE_FIGURE: Record<NeedUnit, number> = {
+  dona: 300,
+  '1000_dona': 300,
+  juft: 40,
+  kg: 150,
+  m2: 120,
+  m3: 2,
+  litr: 50,
+  sm3: 1500,
+};
+
+/**
+ * The 2.8 b block in the CHAT rendering (docs/SAKKIZ-R3.md §2.5): each asked
+ * row by its `seq` — the number the add table and the VED's screen print,
+ * so «3: 40 juft» typed from it lands on the row it names — with what the
+ * law wants and why, in the kernel's own words (`needWhatUz`/`needWhyUz`).
+ */
+export function lawAsksBlock(asks: readonly LawAsk[]): string[] {
+  const shown = asks.slice(0, LAW_ASKS_NAMED).map(
+    (a) => `· ${a.seq}-qator «${shortName(a.name)}»: ${a.needs.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')}`,
+  );
+  if (asks.length > LAW_ASKS_NAMED) shown.push(`· … yana ${asks.length - LAW_ASKS_NAMED} ta qator — «➕» jadvalida`);
+  // A 1000-dona floor is answered in pieces: the law divides.
+  const example = asks
+    .slice(0, 2)
+    .map((a) => {
+      const unit = a.needs[0]!.unit === '1000_dona' ? 'dona' : a.needs[0]!.unit;
+      return `${a.seq}: ${figureLabel(EXAMPLE_FIGURE[unit], unit)}`;
+    })
+    .join('; ');
+  return [
+    '❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak — qonun shuni so‘raydi:',
+    ...shown,
+    `✍️ Shu xabarga reply qilib yozing: «${example}» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.`,
+  ];
+}
+
+/** …and the one line the LENTA carries under its heading instead (§2.5) —
+ * capped like the chat block: it sits in the head `fitTelegram` never cuts,
+ * so 900 asked rows would push the groups and the totals off the card's copy
+ * (review p5-adv-5). The rows past the cap are on the VED's own screen. */
+export function lawAsksLentaLine(asks: readonly LawAsk[]): string {
+  return `❓ Sotuvchidan so‘raldi: ${asks.slice(0, LAW_ASKS_NAMED).map((a) => a.seq).join(', ')}${asks.length > LAW_ASKS_NAMED ? ', …' : ''}-qator o‘lchovi (qonun so‘raydi).`;
 }
 
 /** Re-exported so a caller need not reach into the screen's own module. */

@@ -48,6 +48,7 @@ import { voidExpense } from '@/modules/wms/accounting/service';
 import { companyBalance } from '@/modules/wms/accounting/reports';
 import { forgetUpsaleLiability } from '@/modules/wms/calc/liability-memo';
 import { addTransaction } from '@/modules/wms/finance/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase D — the upsale, against a real database.
@@ -263,6 +264,7 @@ async function sealedJob(
 ) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: opts.onLead ? 'lead' : 'deal',
       entityId: opts.onLead ? leadId : (opts.dealId ?? dealId),
       section: 'yolkira',
@@ -284,6 +286,7 @@ async function sealedJob(
       discountReason: opts.discountUsd ? 'test' : null,
       bandOverrideMin: opts.bandOverrideMin ?? null,
       bandOverrideReason: opts.bandOverrideMin ? 'test' : null,
+      sawRev: await sawRev(request.id),
     },
     ctx(),
   );
@@ -368,6 +371,7 @@ async function ownDeal(client: string): Promise<string> {
 async function answered(onDeal: string, answer = 1000, price = 1300): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: onDeal,
       section: 'rastamojka',
@@ -382,7 +386,7 @@ async function answered(onDeal: string, answer = 1000, price = 1300): Promise<st
   );
   madeRequests.push(opened.id);
   await takeCalcRequest(opened.id, ctx());
-  await finishCalcRequest(opened.id, { amountText: String(answer), currency: 'USD', note: 'fifo', internalNote: 'ichki: fifo' }, ctx());
+  await finishCalcRequest(opened.id, { amountText: String(answer), currency: 'USD', note: 'fifo', internalNote: 'ichki: fifo' }, ctx(), await sawRev(opened.id));
   const offer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: price, locale: 'uz' }, sellerCtx());
   return offer.id;
 }
@@ -560,7 +564,7 @@ describe('one sale, one commission', () => {
     const fixId = (await recalcFromSealed(job.requestId, ctx())).id;
     madeRequests.push(fixId);
     await setFreightZone(fixId, 'cn', ctx());
-    await sealCalc(fixId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await sealCalc(fixId, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(fixId) }, ctx());
     const v2 = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, fixId) });
     // The premise: the correction's floor is the original's, so the new
     // promise is worth exactly what was already paid.
@@ -605,6 +609,7 @@ describe('one sale, one commission', () => {
 
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: d!.id,
         section: 'rastamojka',
@@ -619,7 +624,7 @@ describe('one sale, one commission', () => {
     );
     madeRequests.push(opened.id);
     await takeCalcRequest(opened.id, ctx());
-    await finishCalcRequest(opened.id, { amountText: '1000', currency: 'USD', note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
+    await finishCalcRequest(opened.id, { amountText: '1000', currency: 'USD', note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx(), await sawRev(opened.id));
     const onAnswer = await recordOffer({ requestId: opened.id }, { clientPriceUsd: 1300, locale: 'uz' }, sellerCtx());
     await invoiceAndCollect(d!.id, 1300);
     const paid = await payUpsale([onAnswer.id], { accountId, currency: 'USD', expenseDate: today() }, ctx());
@@ -970,7 +975,7 @@ describe('a correction retires the released offer', () => {
     madeRequests.push(freshId);
     await sealCalc(
       freshId,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(freshId) },
       ctx(),
     );
     const v = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, freshId) });

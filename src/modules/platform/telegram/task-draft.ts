@@ -62,6 +62,14 @@ export interface TaskDraft {
   tooBig: string[];
   /** Parts that came past the source cap and travel to nobody — told once (review bot-11). */
   dropped: number;
+  /**
+   * The cap's line was said to a part THIS draft dropped (as-built review
+   * BURST-2): said once per draft — a seed cut at the cap (a burst's «📌»)
+   * starts without it, because the seller resending what did not fit must
+   * hear that it goes nowhere, never «📎 Qabul qilindi». Optional — a draft
+   * started before it reads as not said.
+   */
+  capSaid?: boolean;
   /** media_group_id → when its last part arrived (ms) — the album settle. */
   albums: Record<string, number>;
   /** The bot message whose keyboard the draft edits. */
@@ -98,7 +106,7 @@ const drafts = new Map<string, TaskDraft>();
 
 export function startDraft(
   chatId: bigint,
-  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts' | 'tooBig'>> = {},
+  seed: Partial<Pick<TaskDraft, 'sources' | 'files' | 'firstKind' | 'firstForwarded' | 'texts' | 'facts' | 'tooBig' | 'dropped'>> = {},
 ): TaskDraft {
   const state: TaskDraft = {
     stage: 'who',
@@ -113,7 +121,9 @@ export function startDraft(
     // A seed's oversized files are still told at the end (review bot-7): a
     // hard [] here dropped Door B's «20 MB dan katta» sentence.
     tooBig: seed.tooBig ?? [],
-    dropped: 0,
+    // A seed cut at the cap says so once, itself (a burst's «📌»): carried,
+    // so the draft's next forward does not say the cap a second time.
+    dropped: seed.dropped ?? 0,
     albums: {},
     promptMessageId: null,
     pendingDue: null,

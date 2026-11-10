@@ -131,7 +131,7 @@ describe('one machine message per request, however often the queue runs the job'
     expect(await getSetting('ai_calc_reply_lenta')).toBeTruthy();
     const dealId = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: dealId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Yuk ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: dealId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Yuk ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -150,7 +150,7 @@ describe('one machine message per request, however often the queue runs the job'
   it('a customs job whose first run answered and «died»: the retry sends no «hisoblay olmadi»', async () => {
     const dealId = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Profil ${SUFFIX}`, tnvedCode: '3916100000', weightKg: 100 }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Profil ${SUFFIX}`, tnvedCode: '3916100000', weightKg: 100 }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -184,7 +184,7 @@ describe('overlapping runs — the advisory lock, not the EXISTS alone', () => {
       const requestId = randomUUID();
       const spoke = await Promise.all(
         Array.from({ length: 8 }, (_, k) =>
-          sayOnce(requestId, { userIds: [actorId], type: 'CalcPrefilled', text: `burst ${burst} run ${k}` }),
+          sayOnce(requestId, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: `burst ${burst} run ${k}` }),
         ),
       );
       expect(spoke.filter(Boolean), `burst ${burst}: one run speaks`).toHaveLength(1);
@@ -210,7 +210,7 @@ describe('the speaking door and its claim (R2 late pass)', () => {
   it('a reply is not spoken on a request the VED has closed; a stand-down sentence still is (review CONC-1)', async () => {
     const dealId = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Yopiq ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Yopiq ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -218,10 +218,10 @@ describe('the speaking door and its claim (R2 late pass)', () => {
       // «Готово» or a hand-back, after the pass's last step and before it speaks.
       await returnCalcRequest(r.id, 'VED qaytardi — test', { actorId });
       const reply = { userIds: [actorId], type: 'CalcPrefilled', text: `${AI_REPLY_HEAD} · yopiq so‘rov` };
-      expect(await sayOnce(r.id, reply, { whileOpen: true })).toBe(false);
+      expect(await sayOnce(r.id, 'landing', reply, { whileOpen: true })).toBe(false);
       expect(await said(r.id), 'the reply is not queued').toHaveLength(0);
       // The door refuses the REPLY only: the closed sentence is the one message.
-      expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yopilgan' })).toBe(true);
+      expect(await sayOnce(r.id, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: 'yopilgan' })).toBe(true);
       expect(await said(r.id)).toHaveLength(1);
     } finally {
       await sweepHandBacks(dealId);
@@ -236,7 +236,7 @@ describe('the speaking door and its claim (R2 late pass)', () => {
     try {
       const dealId = await freshDeal();
       const r = await openCalcRequest(
-        { entityType: 'deal', entityId: dealId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Ketgan ${SUFFIX}` }], source: 'card' },
+        { intakeDoor: null, entityType: 'deal', entityId: dealId, section: 'yolkira', freightZone: 'cn', weightKg: 500, volumeM3: 10, items: [{ name: `Ketgan ${SUFFIX}` }], source: 'card' },
         { actorId: leaver!.id },
       );
       madeRequests.push(r.id);
@@ -261,7 +261,7 @@ describe('the speaking door and its claim (R2 late pass)', () => {
   it('the claim reads from the day the request was asked, never the seller’s whole history (review perf-5)', async () => {
     const dealId = await freshDeal();
     const r = await openCalcRequest(
-      { entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Tarix ${SUFFIX}` }], source: 'card' },
+      { intakeDoor: null, entityType: 'deal', entityId: dealId, section: 'rastamojka', items: [{ name: `Tarix ${SUFFIX}` }], source: 'card' },
       { actorId },
     );
     madeRequests.push(r.id);
@@ -275,6 +275,6 @@ describe('the speaking door and its claim (R2 late pass)', () => {
       status: 'sent',
       createdAt: new Date(Date.now() - 3 * 86_400_000),
     });
-    expect(await sayOnce(r.id, { userIds: [actorId], type: 'CalcPrefilled', text: 'yangi' })).toBe(true);
+    expect(await sayOnce(r.id, 'landing', { userIds: [actorId], type: 'CalcPrefilled', text: 'yangi' })).toBe(true);
   });
 });

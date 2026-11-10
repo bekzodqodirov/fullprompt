@@ -28,6 +28,7 @@ import {
   takeCalcRequest,
   rekeyLeadCalcRequests,
 } from '@/modules/wms/calc/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * VED phase A — the queue against a real database.
@@ -177,6 +178,7 @@ afterAll(async () => {
 async function open(overrides: Partial<Parameters<typeof openCalcRequest>[0]> = {}) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -399,7 +401,7 @@ describe('the endings', () => {
 
   it('finishing records the ANSWER, not just the fact that it ended', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx());
+    await finishCalcRequest(id, { amountText: '480', currency: 'USD', note: '3 guruh', internalNote: 'ichki: 3 guruh' }, ctx(), await sawRev(id));
     const row = await calcRequestDetail(id);
     expect(row!.completedVia).toBe('task');
     expect(row!.answerAmount).toBe(480);
@@ -409,9 +411,9 @@ describe('the endings', () => {
 
   it('a closed request cannot be closed twice', async () => {
     const { id } = await open();
-    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx());
+    await finishCalcRequest(id, { amountText: '100', currency: 'USD', note: '', internalNote: 'ichki' }, ctx(), await sawRev(id));
     await expect(
-      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx()),
+      finishCalcRequest(id, { amountText: '200', currency: 'USD', note: '', internalNote: 'ichki' }, ctx(), await sawRev(id)),
     ).rejects.toThrow('already_closed');
   });
 });
@@ -442,6 +444,7 @@ describe('a lead’s request follows the cargo onto the deal', () => {
   it('re-keys on win, so the deal’s own save can stop the clock', async () => {
     const { id } = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'lead',
         entityId: leadId,
         section: 'yolkira',
@@ -486,6 +489,7 @@ describe('the materials are the seller’s own note', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'deal',
           entityId: dealId,
           section: 'podklyuch',

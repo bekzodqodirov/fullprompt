@@ -35,6 +35,7 @@ import {
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
 import { offerFileName, offerSheetFile } from '@/modules/wms/calc/offer-sheet-file';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The seller's offer arrives WITH its sheet (his 2026-10-27: «narx taklifi
@@ -176,6 +177,7 @@ afterAll(async () => {
 async function sealed() {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -201,10 +203,10 @@ async function sealed() {
     ctx(),
   );
   await setFreightZone(request.id, 'cn', ctx());
-  await confirmAllGroups(request.id, ctx());
+  await confirmAllGroups(request.id, ctx(), await sawRev(request.id));
   await sealCalc(
     request.id,
-    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) },
     ctx(),
   );
   const version = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, request.id) });

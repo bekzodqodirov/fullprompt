@@ -48,6 +48,16 @@ const PAIR_CAP = 1e10;
 
 const fmt = (n: number) => String(Number(n.toFixed(4)));
 
+/**
+ * The line's name as the INSERT stores it. Exported for the one coding
+ * function (`row-coding.ts`): the memory and the book are asked by this very
+ * string at the reading AND at the INSERT, so a name past the cap cannot be
+ * coded one way in the table and another way on the card (#513).
+ */
+export function doorName(name: string): string {
+  return name.trim().slice(0, 300) || '(nomsiz)';
+}
+
 export function doorRow(item: DoorItemInput): DoorRow {
   const notes: string[] = [];
   const figure = (value: number | null | undefined, cap: number, word: string): number | null => {
@@ -95,7 +105,7 @@ export function doorRow(item: DoorItemInput): DoorRow {
   }
 
   return {
-    name: item.name.trim().slice(0, 300) || '(nomsiz)',
+    name: doorName(item.name),
     quantity: row.quantity,
     unit: row.unit,
     weightKg: row.weightKg,

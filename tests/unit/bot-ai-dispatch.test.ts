@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { collectorFiles } from '../fixtures/calc-collector-source';
 
 /**
  * The AI answer must never hold the Telegram poller.
@@ -80,24 +81,35 @@ describe('the AI answer never holds the Telegram poller', () => {
  * staff member pressing analyse froze the customer bot for as long as it
  * took, and on a hung socket for the SDK's default ten minutes, because the
  * client was constructed with no timeout at all.
+ *
+ * Re-anchored (docs/SAKKIZ-R3.md §7.2.3, §11, P2): «dispatches the analysis
+ * off the middleware chain» is now «the press enqueues `JOB_CALC_INTAKE_READ`
+ * and calls no model» — the reading is a pg-boss job, so it is not on the
+ * poller, nor in a `void` the next deploy kills.
  */
 describe('the hisoblatish analysis never holds the poller either', () => {
-  const source = readFileSync('src/modules/platform/telegram/staff-handlers.ts', 'utf8');
-  // The helper sits ABOVE its own call site in this file, so «everything
-  // before the helper» is the wrong slice — it excludes the very line under
-  // test and the assertion passes on nothing. Anchor on POSITIONS instead:
-  // the one legitimate await lives inside the helper's body and nowhere else.
-  const helperStart = source.indexOf('async function analyseIntakeAndReply');
-  const helperEnd = source.indexOf('\n}\n', helperStart);
+  const source = readFileSync('src/modules/platform/telegram/calc-read.ts', 'utf8');
+  const bodyOf = (head: string) => {
+    const at = source.indexOf(head);
+    return at < 0 ? '' : source.slice(at, source.indexOf('\n}\n', at));
+  };
+  const press = bodyOf('export async function pressAnalyse(');
+  // The job's own body: the one place the model is awaited.
+  const jobStart = source.indexOf('async function readOnce(');
+  const jobEnd = source.indexOf('\n}\n', jobStart);
 
-  it('dispatches the analysis off the middleware chain', () => {
-    expect(helperStart, 'the helper exists').toBeGreaterThan(0);
-    expect(source, 'fire-and-deliver, not await').toContain('void analyseIntakeAndReply(');
+  it('the press enqueues JOB_CALC_INTAKE_READ and calls no model', () => {
+    expect(press.length, 'the press exists').toBeGreaterThan(0);
+    expect(press).toMatch(/await enqueue<IntakeReadJob>\(\s*JOB_CALC_INTAKE_READ,/);
+    expect(press, 'no model in the press').not.toMatch(/analyzeCollected\(|analyzeIntake\(|runIntakeRead\(|readOnce\(/);
     const awaits = [...source.matchAll(/await\s+analyzeCollected\(/g)].map((m) => m.index ?? -1);
     expect(awaits.length, 'somebody still calls it').toBeGreaterThan(0);
     for (const at of awaits) {
-      expect(at, 'awaited only inside the off-chain helper').toBeGreaterThan(helperStart);
-      expect(at, 'and inside its body, not after it').toBeLessThan(helperEnd);
+      expect(at, 'awaited only inside the job').toBeGreaterThan(jobStart);
+      expect(at, 'and inside its body, not after it').toBeLessThan(jobEnd);
+    }
+    for (const { file, text } of collectorFiles().filter((f) => f.file !== 'calc-read.ts')) {
+      expect(text, `${file} awaits the reading`).not.toMatch(/await\s+analyzeCollected\(/);
     }
   });
 
@@ -109,7 +121,15 @@ describe('the hisoblatish analysis never holds the poller either', () => {
   });
 
   it('cannot leave the person on «⏳» with no answer', () => {
-    expect(source.slice(helperStart, helperEnd), 'catches and says so').toContain('catch');
+    // An enqueue that throws releases the token and says so; a job that fails
+    // for the last time says so too (calc-read-press / calc-read-job tests).
+    // Re-anchored (P2's review fixes): the words moved into `refuseStart`,
+    // which the press calls for BOTH of its refusals — the enqueue that threw
+    // and the flush that did not write the collection (review adv-10).
+    expect(press, 'the press catches its enqueue').toContain('catch');
+    expect([...press.matchAll(/await refuseStart\(ctx, chatId, token\)/g)], 'both refusals are said').toHaveLength(2);
+    expect(bodyOf('async function refuseStart('), 'and released').toContain('analysing: null');
+    expect(bodyOf('async function refuseStart(')).toContain('READING.queueRefused');
+    expect(bodyOf('export async function runIntakeRead('), 'the last attempt answers').toContain('lastAttemptFailed(');
   });
 });
-

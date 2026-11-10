@@ -378,6 +378,16 @@ export type BotCallback =
    */
   | { kind: 'thread_reply' }
   /**
+   * «➕ Shu so‘rovga qo‘shish» (docs/SAKKIZ-R3.md K12, his 1.9 a) — lines or
+   * files onto a request the seller already sent: `ca:<request>` plain,
+   * `cg:<request>` its restart twin («🗑 Ha, uni o‘chirib …», a live
+   * collection is ended first), `cf:<request>` the offer under a forward or a
+   * plain file, whose replied-to message becomes the first material.
+   */
+  | { kind: 'calc_add'; requestId: string; mode: 'plain' | 'restart' | 'replied' }
+  /** «↩️ Bekor qilish» under an echo — `cu:<8 hex>`, the echo's own tag. */
+  | { kind: 'calc_undo'; tag: string }
+  /**
    * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
    * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
    * calculation request (p) or a tray rule (n k x c b); the digest rides only
@@ -405,6 +415,10 @@ export type AgentOp = (typeof AGENT_OPS)[number];
  * `note` is 'read': a repeated send is one more copy of the note into the
  * presser's OWN chat, and save/cancel end the capture the first time; `draft`
  * is 'cas': the draft its due buttons finish is consumed by the first run.
+ * `calc` is 'prompt' as a KIND and is classed per step below
+ * (`CALC_STEP_REPEAT`); `calc_add` is 'keyed' for its restart form, whose
+ * claim ends a live collection only once, and its plain form resumes the
+ * request's own collection; `calc_undo` is 'cas' on the echo's `undone`.
  */
 export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt' | 'read'> = {
   task_done: 'prompt',
@@ -427,6 +441,8 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   draft_pick: 'prompt',
   forward: 'keyed',
   thread_reply: 'prompt',
+  calc_add: 'keyed',
+  calc_undo: 'cas',
   // Every agent press is decided by a CAS in its service: a draft that is no
   // longer pending, a rule already decided, an offer already written. The 📌
   // general fact's yes is the one two-press op, and its second press is a
@@ -449,6 +465,9 @@ export type DraftStep = (typeof DRAFT_STEPS)[number];
 
 export const FORWARD_STEPS = ['task', 'search'] as const;
 export type ForwardStep = (typeof FORWARD_STEPS)[number];
+
+/** The add door's three prefixes → its mode (K12). One table, read by the parser. */
+const ADD_MODES = { ca: 'plain', cg: 'restart', cf: 'replied' } as const;
 
 /** The uuid-bearing task callbacks: prefix → kind. One table, read by the parser. */
 const TASK_PREFIXES = {
@@ -474,8 +493,10 @@ export type NoteStep = 'send' | 'new' | 'save' | 'cancel' | 'share' | 'page';
 
 /**
  * `go_*` are the RESTART confirmations: a section pressed while a collection
- * is live asks first and only then discards (sub-round C). `cert` flips the
- * certificate answer, `ai` opens the AI-rastamojka door, `skip` moves past a
+ * is live asks first and only then discards (sub-round C). `cert_y`/`cert_n`
+ * SET the certificate answer (the legacy `cert` flipped it, and a press
+ * delivered twice undid itself — it stays parseable for old messages and is
+ * «eskirgan», #939), `ai` opens the AI-rastamojka door, `skip` moves past a
  * follow-up question the seller cannot answer.
  */
 const CALC_STEPS = [
@@ -515,6 +536,9 @@ const CALC_STEPS = [
   'cancel',
   // 2026-10-21 (his 1.6 a, 1.13 c): read again after a transient AI
   // failure; answer «a second invoice arrived» — add its lines or replace.
+  // The invoice and «boshqa zavod» answers, and the conflict buttons below,
+  // were RETIRED by his 1a (docs/IKKI-ESHIK.md §1.3): still parsed, answered
+  // «eskirgan — fayllar o‘zi solishtirildi».
   'reread',
   'inv_add',
   'inv_replace',
@@ -523,9 +547,98 @@ const CALC_STEPS = [
   // or the same goods, read for their totals.
   'other_add',
   'other_same',
+  // Round 3 (docs/SAKKIZ-R3.md K12): «▶️ Yo‘q, davom etaman» re-prompts the
+  // live stage (it was `more`, which threw a reviewed collection back to
+  // material); the certificate pair carries its answer; «✖️» asks once
+  // before it ends a collection (`cancel_y` is the «yes»); and a stored row
+  // that a re-read file disagrees with is answered add / replace / leave it
+  // to the VED — parsed like `pick_N`, by POSITION among the live conflicts
+  // (three at most), never by a figure.
+  'resume',
+  // «▶️ Davom etamiz» under a burst's pause line (docs/IKKI-ESHIK.md §4.2):
+  // the one ▶️ that TAKES — the burst parts its pressed message speaks for.
+  'resume_take',
+  'cert_y',
+  'cert_n',
+  'cancel_y',
+  'conf_0_add',
+  'conf_0_rep',
+  'conf_0_ved',
+  'conf_1_add',
+  'conf_1_rep',
+  'conf_1_ved',
+  'conf_2_add',
+  'conf_2_rep',
+  'conf_2_ved',
 ] as const;
 
 export type CalcStep = (typeof CALC_STEPS)[number];
+
+/**
+ * What a REPEAT of each calc step does — `PRESS_REPEAT`'s question asked per
+ * step, because one kind carries presses of every class. A `Record`, so a new
+ * step without a class does not compile (Q5 a, re-check kernel-18):
+ *   own    — acts only on the collection whose message carries it
+ *            (`ownsPress`; `pick_N` only from the message that drew the live
+ *            offers): the redelivered «✖️» of an older collection must not end
+ *            the newer one, and an old offer must not apply the live
+ *            `offers[n]`;
+ *   keyed  — the restart: a press from the message that opened the live
+ *            collection resumes it, and the dispatcher's `pressKey(…,
+ *            'restart')` claim lets one message restart once;
+ *   prompt — it only asks (a section, a zone the stage itself refuses once
+ *            answered, ▶️, ⏭) or is «eskirgan» (the legacy `cert`, and the
+ *            file questions his 1a retired — docs/IKKI-ESHIK.md §1.3);
+ *   cas    — the service refuses the second one.
+ */
+export const CALC_STEP_REPEAT: Record<CalcStep, 'prompt' | 'cas' | 'keyed' | 'own'> = {
+  yolkira: 'prompt',
+  rastamojka: 'prompt',
+  podklyuch: 'prompt',
+  ai: 'prompt',
+  aipk: 'prompt',
+  go_yolkira: 'keyed',
+  go_rastamojka: 'keyed',
+  go_podklyuch: 'keyed',
+  go_ai: 'keyed',
+  go_aipk: 'keyed',
+  zone_cn: 'prompt',
+  zone_kashgar: 'prompt',
+  zone_horgos: 'prompt',
+  cert: 'prompt',
+  skip: 'prompt',
+  resume: 'prompt',
+  // Acts only on the parked collection its pause line was drawn beside, and a
+  // repeat takes nothing twice (each part is fenced by `repliedTaken`).
+  resume_take: 'own',
+  pick_0: 'own',
+  pick_1: 'own',
+  pick_2: 'own',
+  pick_3: 'own',
+  pick_4: 'own',
+  pick_5: 'own',
+  done: 'own',
+  save: 'own',
+  more: 'own',
+  cancel: 'own',
+  cancel_y: 'own',
+  reread: 'own',
+  inv_add: 'prompt',
+  inv_replace: 'prompt',
+  other_add: 'prompt',
+  other_same: 'prompt',
+  cert_y: 'own',
+  cert_n: 'own',
+  conf_0_add: 'prompt',
+  conf_0_rep: 'prompt',
+  conf_0_ved: 'prompt',
+  conf_1_add: 'prompt',
+  conf_1_rep: 'prompt',
+  conf_1_ved: 'prompt',
+  conf_2_add: 'prompt',
+  conf_2_rep: 'prompt',
+  conf_2_ved: 'prompt',
+};
 
 /** The podklyuch door's «Yuk qayerdan chiqadi?» answers — one per zone the bot can name. */
 export type ZoneStep = Extract<CalcStep, `zone_${string}`>;
@@ -642,6 +755,13 @@ export function parseCallback(data: string): BotCallback | null {
       verdict: calcLink[1] === '1' ? 'confirm' : 'drop',
     };
   }
+  // Round 3's add door and the echo's undo. None collides: `c:` is anchored
+  // to one word, `cl:` and `lc:` are their own letters, `ag:` is the AI
+  // sotuvchi's, and the cabinet's `lang:` / `ph:` / `mg` are distinct.
+  const add = /^(ca|cg|cf):([0-9a-f-]{36})$/.exec(data);
+  if (add) return { kind: 'calc_add', requestId: add[2]!, mode: ADD_MODES[add[1] as keyof typeof ADD_MODES] };
+  const undo = /^cu:([0-9a-f]{8})$/.exec(data);
+  if (undo) return { kind: 'calc_undo', tag: undo[1]! };
   const agent = /^ag:([a-z]):([0-9a-f-]{36})(?::([0-9a-f]{8}))?$/.exec(data);
   if (agent && (AGENT_OPS as readonly string[]).includes(agent[1]!)) {
     return {
@@ -734,6 +854,13 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
         { text: '❌', callback_data: `cl:0:${ask.receiptId}:${ask.req8}` },
       ]);
     return rows.length > 0 ? rows : null;
+  }
+  // The machine's answer about a request still open (docs/SAKKIZ-R3.md
+  // §10.2.5, his proposal 2): «➕» opens the add collection on THAT request.
+  // `add` is decided by the worker (`addFor`) — never on a closed request's
+  // sentence — and only a uuid reaches `ca:`, the one shape the parser takes.
+  if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
+    return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
   }
   return null;
 }
@@ -1353,6 +1480,39 @@ export async function clientCodePrefix(): Promise<string> {
 }
 
 /**
+ * What the ✅ says about the landed request (as-built review DOORS-2,
+ * DOORS-3) — read on the pool AFTER the landing committed, so BOTH senders
+ * (the press, the sweep's resumed landing) say what the ROW says, which is
+ * what the pass will do: the door the landing actually wrote (NULL when 0141
+ * was not there yet, §0.4, or the read fails — today's words), and, on an
+ * «🤖» request whose answer was queued, whether the pass will have a model
+ * today (`aiCalcAvailable`, the one rule the table's closing read): with none
+ * the table said «… so‘rov VED ga tushadi», and the ✅ must not say «AI
+ * hisoblayapti» under it.
+ */
+async function landedWordsOf(
+  requestId: string | null | undefined,
+  replyQueued: boolean | undefined,
+): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean }> {
+  if (!requestId) return { door: null, aiAvailable: false };
+  let door: 'plain' | 'ai' | null = null;
+  try {
+    const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
+    door = await requestIntakeDoor(requestId);
+  } catch (err) {
+    logger.warn({ err, requestId }, '[calc-intake] the landed request’s door not read — today’s words');
+  }
+  if (door !== 'ai' || replyQueued !== true) return { door, aiAvailable: false };
+  try {
+    const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
+    return { door, aiAvailable: await aiCalcAvailable() };
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] AI availability unreadable — the ✅ promises no AI figure');
+    return { door, aiAvailable: false };
+  }
+}
+
+/**
  * Land a confirmed «Hisoblatish» on a card. Everything it decides — which
  * client the typed hint names, deal or lead, what the note says — lives in
  * wms and is tested there; this is the crossing.
@@ -1377,8 +1537,12 @@ export async function landCollectedIntake(
   outcome?: string;
   /** On a lead about a colleague's client: whose client it is. */
   about?: { clientCode: string; sellerName: string | null } | null;
+  /** The landed request's door as its ROW reads (`landedWordsOf`) — what the ✅ says. */
+  door: 'plain' | 'ai' | null;
+  /** On an «🤖» request whose answer was queued: whether the pass has a model today. */
+  aiAvailable: boolean;
 } | null> {
-  const { activeIntake, intakeClientLabel } = await import('./calc-intake');
+  const { activeIntake, collectionDoor, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
   const { parseClientHint } = await import('../../wms/calc/intake');
@@ -1386,13 +1550,29 @@ export async function landCollectedIntake(
 
   const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
-  return landIntake({
+  const landed = await landIntake({
+    // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1) — a
+    // seeded collection its source's, NULL included (§0.3) — written on the
+    // request for every later reader. ONE home for the collection's door
+    // (`collectionDoor`, as-built review DOORS-3): a seeded one's is the
+    // `seedDoor` its open read off the source's immutable row, the value its
+    // chat words already followed — a second read here could fail and land a
+    // plain chat's request as legacy, its estimate then sent to the seller.
+    // A legacy source (every request before 0141, the card form's, the
+    // thread's, the agent's) gives NULL: never «🤖» by the collection's flag,
+    // which for a legacy source is only `openSeeded`'s «a customs section».
+    intakeDoor: collectionDoor(state),
     noteId: state.noteId,
     section: state.section,
-    facts: state.facts,
-    // The bot's own notes (the lines an Excel kept out) ahead of the model's,
-    // as the lenta has always carried them; the summary prints them apart.
-    steps: [...state.notes, ...state.steps],
+    // A code the seller typed lands as his own, never as the model's
+    // proposal it replaced (review PF-ADV-11).
+    facts: state.facts.goods ? { ...state.facts, goods: typedCodesOwn(state.facts.goods, state.lineAnswers) } : state.facts,
+    // What the bot decided about each FILE as it arrived (docs/IKKI-ESHIK.md
+    // §1.2.5 — the Excel-vs-Excel decisions, «N ta tovar o‘qildi», a packing
+    // list's totals), then its notes on the reading (the lines an Excel kept
+    // out), then the model's — as the lenta has always carried them; the
+    // summary prints them apart.
+    steps: [...(state.fileNotes ?? []), ...state.notes, ...state.steps],
     // Law 11: the words themselves go onto the card, not only what the
     // parser made of them — the per-line answers included, labelled, since
     // they are kept out of the material the totals are read from.
@@ -1414,11 +1594,17 @@ export async function landCollectedIntake(
     hasCertificate: state.hasCertificate,
     // The AI podklyuch door's «qayerdan?» answer; every other door has none.
     freightZone: state.route?.zone ?? null,
-    // What every reading cost, so the day's AI budget counts the most
-    // expensive call on this path rather than the two cheap ones — every
-    // answered one, a re-read after «➕ Yana ma'lumot» included (2.9 c).
-    usages: state.usages,
+    // No usages: every reading was billed by its job the moment the model
+    // answered, on this collection's note, and the landing ATTACHES those
+    // rows to the request it opens (docs/SAKKIZ-R3.md §7.2.9).
   });
+  // The request just landed is offered at once (docs/IKKI-ESHIK.md §4.3): the
+  // offer list is cached a minute per chat, so the files he forwards right
+  // after the ✅ met a list that did not know it yet. Both senders — the press
+  // and the sweep's resumed landing — come through here.
+  const { forgetAddOffers } = await import('./calc-amend');
+  forgetAddOffers(chatId);
+  return { ...landed, ...(await landedWordsOf(landed.queued ? landed.requestId : null, landed.replyQueued)) };
 }
 
 /**
@@ -1847,11 +2033,13 @@ export function dueKeyboard(): CallbackButton[][] {
 }
 
 /** Door B's question under a forwarded message (spec §3). */
-export function forwardKeyboard(): CallbackButton[][] {
+export function forwardKeyboard(opts: { search: boolean } = { search: true }): CallbackButton[][] {
+  // «🔍 Qidirish» searches ONE text: a burst of several has no one text to
+  // search (docs/IKKI-ESHIK.md §4.1), so its offer draws the task button alone.
   return [
     [
       { text: '📌 Topshiriq qilish', callback_data: 'fb:task' },
-      { text: '🔍 Qidirish', callback_data: 'fb:search' },
+      ...(opts.search ? [{ text: '🔍 Qidirish', callback_data: 'fb:search' }] : []),
     ],
   ];
 }

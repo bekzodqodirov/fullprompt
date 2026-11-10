@@ -20,12 +20,13 @@ import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { AUDIT_FIELD_LABELS } from '@/modules/platform/audit/fields';
 import {
   intakeNoteText,
-  intakeSummaryText,
+  intakeTableText,
   isComplete,
   missingFields,
   parseClientHint,
   type CalcFacts,
 } from '@/modules/wms/calc/intake';
+import { nameWordFor } from '@/modules/wms/calc/line-address';
 import { parseManualFacts } from '@/modules/wms/calc/intake-manual';
 import { landIntake, resolveIntakeClient } from '@/modules/wms/calc/intake-land';
 import { openCalcRequest } from '@/modules/wms/calc/service';
@@ -128,29 +129,21 @@ describe('what a quote cannot be made without', () => {
   });
 
   it('the review message shows what is there AND what is missing', () => {
-    const text = intakeSummaryText({
-      section: 'yolkira',
-      facts: { ...full, toCity: null },
-      laws: noLaws,
-      clientLabel: 'GS777',
-      fileCount: 2,
-    });
-    expect(text).toContain('GS777');
-    expect(text).toContain('Yiwu');
-    expect(text).toContain('250 kg');
+    // The table replaced the summary (docs/SAKKIZ-R3.md §2.1): a missing end
+    // is its own ⚠️ row, the ends that ARE there print on the ✅ route row.
+    const table = (facts: CalcFacts, clientLabel: string | null, fileCount: number) =>
+      intakeTableText({ section: 'yolkira', facts, laws: noLaws, clientLabel, fileCount, ambiguous: [], amend: null, tail: '', nameWord: nameWordFor });
+    const text = table({ ...full, toCity: null }, 'GS777', 2);
+    expect(text).toContain('Mijoz: GS777');
+    expect(text).toContain('✅ Og‘irlik (brutto): 250 kg');
     expect(text).toContain('Fayllar: 2');
-    expect(text).toContain('Yetishmayapti');
-    expect(text).toContain('qaysi shaharga');
+    expect(text).toContain('⚠️ qaysi shaharga — yozilmagan');
+    expect(text).toContain('⚠️ Umumiyda ma’lumot yetishmayapti.');
 
-    const complete = intakeSummaryText({
-      section: 'yolkira',
-      facts: full,
-      laws: noLaws,
-      clientLabel: null,
-      fileCount: 0,
-    });
-    expect(complete).toContain('to‘liq');
-    expect(complete).not.toContain('Yetishmayapti');
+    const complete = table(full, null, 0);
+    expect(complete).toContain('✅ Yo‘nalish: Yiwu → Toshkent');
+    expect(complete).toContain('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
+    expect(complete).not.toContain('yetishmayapti');
   });
 
   it("the card's note carries the AI's working, which is the point of it", () => {
@@ -255,6 +248,7 @@ describe('where a confirmed intake lands', () => {
 
     const noteId = uuidv4();
     const first = await landIntake({
+      intakeDoor: null,
       noteId,
       section: 'podklyuch',
       facts: { weightKg: 100, volumeM3: 2, goods: [{ name: 'Chexol' }] },
@@ -284,6 +278,7 @@ describe('where a confirmed intake lands', () => {
     // A second request from the same client is a NEW job and a new deal (his
     // 2026-10-27, «har so'rovga yangi bitim» — they used to pile into one).
     const second = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',
       facts: { weightKg: 50, volumeM3: 1, goods: [] },
@@ -303,6 +298,7 @@ describe('where a confirmed intake lands', () => {
     // The SAME note again (a retried «Saqlash»): its own card, no third deal,
     // and the job it already queued is answered, not opened twice (conc-1/13).
     const retried = await landIntake({
+      intakeDoor: null,
       noteId,
       section: 'podklyuch',
       facts: { weightKg: 100, volumeM3: 2, goods: [{ name: 'Chexol' }] },
@@ -337,6 +333,7 @@ describe('where a confirmed intake lands', () => {
     madeOwnedClients.push(client!.id);
     const land = (noteId: string) =>
       landIntake({
+        intakeDoor: null,
         noteId,
         section: 'rastamojka',
         facts: { weightKg: 20, volumeM3: 1, goods: [{ name: 'Lampa' }] },
@@ -384,6 +381,7 @@ describe('where a confirmed intake lands', () => {
       .returning();
     madeOwnedClients.push(client!.id);
     const about = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'rastamojka',
       facts: { weightKg: 20, volumeM3: 1, goods: [{ name: 'Lampa' }] },
@@ -399,6 +397,7 @@ describe('where a confirmed intake lands', () => {
     const [aboutLead] = await db.select().from(leads).where(eq(leads.id, about.id));
     expect(aboutLead!.phone).toBe(phone);
     const stranger = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
       facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 80, volumeM3: 1, goods: [] },
@@ -418,6 +417,7 @@ describe('where a confirmed intake lands', () => {
   it('a stranger gets a LEAD, and their second request joins it', async () => {
     const phone = `+99894${STAMP}1`;
     const target = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
       facts: { fromCity: 'Yiwu', toCity: 'Toshkent', weightKg: 80, volumeM3: 1, goods: [] },
@@ -432,6 +432,7 @@ describe('where a confirmed intake lands', () => {
     expect(target.kind).toBe('lead');
 
     const again = await landIntake({
+      intakeDoor: null,
       noteId: uuidv4(),
       section: 'yolkira',
       facts: { fromCity: 'Yiwu', toCity: 'Andijon', weightKg: 40, volumeM3: 1, goods: [] },
@@ -468,6 +469,7 @@ describe('where a confirmed intake lands', () => {
     try {
       const phone = `+99897${STAMP}3`;
       const landed = await landIntake({
+        intakeDoor: null,
         noteId: uuidv4(),
         section: 'rastamojka',
         facts: { weightKg: 90, volumeM3: 1, goods: [{ name: 'Chiroq' }] },
@@ -491,6 +493,7 @@ describe('where a confirmed intake lands', () => {
       if (ahead.id !== calc.id) {
         await db.update(leads).set({ stageId: ahead.id }).where(eq(leads.id, landed.id));
         await landIntake({
+          intakeDoor: null,
           noteId: uuidv4(),
           section: 'rastamojka',
           facts: { weightKg: 10, volumeM3: 1, goods: [{ name: 'Yana' }] },
@@ -509,6 +512,7 @@ describe('where a confirmed intake lands', () => {
       // And with nothing configured the card stays where the funnel puts it.
       await setSetting('crm_calc_stage', '', actorId);
       const plain = await landIntake({
+        intakeDoor: null,
         noteId: uuidv4(),
         section: 'rastamojka',
         facts: { weightKg: 5, volumeM3: 1, goods: [{ name: 'Yo' }] },
@@ -562,6 +566,7 @@ describe('the cube the landing stores', () => {
     madeLeads.push(lead!.id);
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'lead',
         entityId: lead!.id,
         section: 'rastamojka',
@@ -605,6 +610,7 @@ describe('the cube the landing stores', () => {
   it('…and the bot’s landing carries that to the INSERT', async () => {
     const land = async (facts: CalcFacts) => {
       const target = await landIntake({
+        intakeDoor: null,
         noteId: uuidv4(),
         section: 'yolkira',
         facts,

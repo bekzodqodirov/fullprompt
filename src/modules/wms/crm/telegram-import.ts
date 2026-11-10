@@ -159,7 +159,7 @@ export interface ChatRule {
   leadId: string | null;
   /**
    * The listener's own binding and nobody's answer: a work number's
-   * hidden-number lead (his «1 a», 2026-10-29), marked by 0139's `bound_via`
+   * hidden-number lead (his «1 a», 2026-10-29), marked by 0142's `bound_via`
    * (chat-lead `isMachineBinding` — an include on a lead with no
    * `decided_by` is NOT enough: round 113's website rule is that too). It
    * stands only while it is still the best fact about the chat

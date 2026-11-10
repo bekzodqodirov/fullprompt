@@ -10,6 +10,7 @@ import {
 import { zoneKeyboard } from '@/modules/platform/telegram/staff-handlers';
 import { KNOWN_TARIFF_ZONES, OWNER_TARIFF_ZONES, ownerTariffRows } from '@/modules/wms/calc/tariff-seed';
 import { ZONE_ROUTE } from '@/modules/wms/calc/freight-answer';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * The «🤖 AI rastamojka» door (the owner's own words, 2026-09-05).
@@ -56,7 +57,9 @@ describe('the callback vocabulary', () => {
 });
 
 describe('the rules a shell cannot exercise', () => {
-  const handlers = read('src/modules/platform/telegram/staff-handlers.ts');
+  // The collector's files, not staff-handlers.ts alone: K moved its halves
+  // into calc-*.ts (docs/SAKKIZ-R3.md K16 — the subject moved).
+  const handlers = collectorCode();
 
   it('the AI door opens rastamojka OR podklyuch — never a section the engine lacks', () => {
     // Decision 8 («no freight») was overturned by the owner on 2026-09-26
@@ -64,7 +67,7 @@ describe('the rules a shell cannot exercise', () => {
     // carries the road. A `startIntake(chatId, 'ai')` would be a section the
     // whole engine does not have.
     expect(handlers).toContain("startIntake(chatId, opening === 'ai' ? 'rastamojka' : opening");
-    expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true })");
+    expect(handlers).toContain("startIntake(chatId, 'podklyuch', { ai: true, staffId: staff.id, openedBy })");
   });
 
   it('every zone button is a zone the app can name, and the reply names each one', () => {
@@ -138,10 +141,11 @@ describe('the rules a shell cannot exercise', () => {
     );
   });
 
-  it('a live collection is never replaced without asking', () => {
+  it('a live collection with something in it is never replaced without asking', () => {
     // The restart question is what stands between «I pressed the wrong
-    // button» and twenty forwarded messages gone.
-    const at = handlers.indexOf("if (!step.startsWith('go_') && activeIntake(chatId))");
+    // button» and twenty forwarded messages gone. An EMPTY one is replaced
+    // with no question (review PF-11) — a frozen add collection never is.
+    const at = handlers.indexOf("if (!step.startsWith('go_') && live && (live.saving || !intakeIsEmpty(live)))");
     expect(at, 'the restart guard has moved — re-anchor this fence').toBeGreaterThan(-1);
     // …and it must come BEFORE the state is minted, or it guards nothing.
     expect(at).toBeLessThan(handlers.indexOf('startIntake(chatId, opening'));
@@ -156,7 +160,9 @@ describe('the rules a shell cannot exercise', () => {
     // to be rewritten every time a button is added tells you nothing about
     // whether the escapes survived. The escapes themselves are asserted
     // behaviourally in tests/unit/zametka-bot.test.ts.
-    expect(handlers).toContain('if (intake && !escapesIntake(ctx.message.text) && !late)');
+    // K3: the collector's own `!late` became the one `intakeTakes(` verdict,
+    // asked only of a text the predicate does not let escape.
+    expect(handlers).toContain('intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming)');
     expect(escapesIntake('🧮 Hisoblatish')).toBe(true);
     expect(escapesIntake('🤖 AI rastamojka')).toBe(true);
     expect(escapesIntake('📋 Bugun')).toBe(true);
@@ -174,13 +180,20 @@ describe('the rules a shell cannot exercise', () => {
     );
   });
 
-  it('a photo sent before the customer is named gets an answer', () => {
+  it('a photo sent before the customer is named gets an answer — the ONE question, never one per file', () => {
     // It used to fall through to the cabinet, which answers a staff chat
     // with nothing at all — the first thing a seller does after pressing the
     // button vanished. Since 2026-10-21 (his 1.7 b) the file is KEPT as
-    // material and the customer question is asked again — an answer still.
-    expect(handlers).toContain("if (state.stage === 'client') {");
-    expect(handlers).toContain('`Qabul qilindi.\\n\\n${CLIENT_QUESTION}`');
+    // material and the customer question stays open. Since his 1a
+    // (docs/IKKI-ESHIK.md §1.5, 2026-11-08) it is asked ONCE per collection:
+    // the file redraws the one question, counting, kept last — the
+    // «Qabul qilindi.\n\n» + question sent per file is gone.
+    const handler = handlers.slice(handlers.indexOf("bot.on(['message:photo', 'message:document']"));
+    const body = handler.slice(0, handler.indexOf('bot.on(', 10));
+    expect(body).toContain("const waiting = state.stage === 'client' || state.stage === 'section';");
+    expect(body).toContain('drawPromptSoon(ctx, chatId);');
+    expect(body).not.toContain('CLIENT_QUESTION');
+    expect(body).not.toContain('Qabul qilindi');
   });
 
   it('the Telegram file download has a deadline', () => {

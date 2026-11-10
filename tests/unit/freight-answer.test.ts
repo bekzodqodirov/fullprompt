@@ -9,6 +9,7 @@ import {
 } from '@/modules/wms/calc/freight-answer';
 import { freightFor, type FreightBand } from '@/modules/wms/calc/pricing';
 import { guessedZoneFor } from '@/modules/wms/calc/zone-guess';
+import { roadRefusalLine } from '@/modules/wms/calc/ai-reply';
 
 /**
  * What the machine's reply says about the road (docs/SAKKIZ-R2.md §6.4) —
@@ -242,5 +243,48 @@ describe('every refusal names what is missing and who can fix it (§2.5)', () =>
       expect(words.length, c).toBeGreaterThan(5);
       expect(words, c).not.toContain(c);
     }
+  });
+});
+
+/**
+ * The bot doors (docs/IKKI-ESHIK.md §2.4, §3.5): the seller is asked nothing,
+ * so EVERY case whose fixer is the seller — the four of them, not only the
+ * cube — reads «— VED xodimi sizdan so‘raydi» in his chat (the plain door's
+ * yo‘lkira answer keeps going there, his 2.5 b), and the VED's cases keep
+ * their «— VED xodimi hisoblaydi». The words are the spec's; NULL keeps
+ * today's tails (the cases above, and ai-reply.test.ts's).
+ */
+describe('a door request’s road: the VED asks the seller, in all four of the seller’s cases', () => {
+  const lineOf = (over: Partial<FreightAnswerInput>, noAsk: boolean) => {
+    const out = freightAnswerFor(input(over), TARIFF);
+    if (!out || out.ok) throw new Error(`expected a refusal, got ${JSON.stringify(out)}`);
+    return roadRefusalLine(out, 'chat', noAsk);
+  };
+  const SELLER: [string, Partial<FreightAnswerInput>, string][] = [
+    ['no_city', { freightZone: null, fromCity: null }, 'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan'],
+    ['kg_missing', { weightKg: null }, 'umumiy brutto og‘irlik (kg) yo‘q'],
+    ['m3_missing', { volumeM3: null, lines: [{ volumeM3: null }] }, 'umumiy hajm (m³) yo‘q'],
+    ['both_missing', { weightKg: null, volumeM3: null, lines: [{ volumeM3: null }] }, 'umumiy hajm (m³) va brutto og‘irlik (kg) yo‘q'],
+  ];
+
+  it.each(SELLER)('%s → «— VED xodimi sizdan so‘raydi», never «mijozdan so‘rab»', (_c, over, words) => {
+    expect(lineOf(over, true)).toBe(`Yo‘lkira: ⚠️ ${words} — VED xodimi sizdan so‘raydi`);
+    // A request from before the doors keeps today's tail.
+    expect(lineOf(over, false)).toBe(`Yo‘lkira: ⚠️ ${words} — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring`);
+  });
+
+  it('the four are exactly the seller’s cases — a new seller case must say how the VED asks', () => {
+    const sellers = (Object.keys(FREIGHT_TAIL) as FreightRefusalCase[]).filter((c) => FREIGHT_TAIL[c] === 'seller');
+    expect(sellers.sort()).toEqual(SELLER.map(([c]) => c).sort());
+  });
+
+  it('the VED’s own cases keep their words on a door request; the seller’s gap beside one says the VED asks', () => {
+    expect(lineOf({ freightZone: null, fromCity: 'Foshan' }, true)).toBe(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi',
+    );
+    expect(lineOf({ freightZone: null, fromCity: 'Foshan', weightKg: null }, true)).toBe(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — VED xodimi sizdan so‘raydi',
+    );
   });
 });

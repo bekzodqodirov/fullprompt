@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import { openFold } from './fold';
+import { createQuickBatch } from './quick-batch';
 
 /**
  * Getting a batch off the board.
@@ -28,13 +30,39 @@ async function login(page: import('@playwright/test').Page, phone: string) {
   await expect(page).toHaveURL('/');
 }
 
-test('a batch created by mistake is cancelled and leaves the board', async ({ page }) => {
+test('the quick batch asks first, and «Bekor» posts nothing', async ({ page }) => {
+  // His 6a (docs/NARX-VA-RAQAM.md §3.2.9): one line of confirm before a
+  // number is minted. The question is IN the page — a native dialog would be
+  // dismissed by Playwright and eat the cancel's own `page.once` below.
   await login(page, OWNER);
   await page.goto('/batches');
-  await page.getByTestId('create-quick-batch').click();
-  // The quick batch opens its own card.
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
-  const url = page.url();
+  const trucksOnBoard = page.getByTestId('batch-board').locator('a[href^="/batches/"]');
+  const before = await trucksOnBoard.count();
+  const confirm = page.getByTestId('quick-batch-confirm');
+  await expect(async () => {
+    if (!(await confirm.isVisible())) await page.getByTestId('create-quick-batch').click();
+    await expect(confirm).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  // It names what the form will post, in words.
+  await expect(confirm).toContainText('→');
+  const origin = await confirm.getAttribute('data-origin');
+  const dest = await confirm.getAttribute('data-dest');
+  expect(origin).toBeTruthy();
+  expect(dest).toBeTruthy();
+  expect(origin).not.toBe(dest);
+  // «Bekor» closes the question and nothing is created: still on the board.
+  await page.getByTestId('quick-batch-no').click();
+  await expect(confirm).toHaveCount(0);
+  await expect(page).toHaveURL(/\/batches$/);
+  await expect(page.getByTestId('create-quick-batch')).toBeVisible();
+  await page.reload();
+  await expect(trucksOnBoard).toHaveCount(before);
+});
+
+test('a batch created by mistake is cancelled, leaves the board and gives its number back', async ({ page }) => {
+  await login(page, OWNER);
+  await createQuickBatch(page);
+  const path = new URL(page.url()).pathname;
   const code = (await page.locator('h1').first().innerText()).trim();
 
   await page.getByTestId('cancel-batch').click();
@@ -52,34 +80,71 @@ test('a batch created by mistake is cancelled and leaves the board', async ({ pa
   // Once it lands, the card stops offering the controls of a live batch.
   await expect(page.getByTestId('cancel-batch')).toHaveCount(0, { timeout: 15_000 });
   await expect(page.getByTestId('depart-batch')).toHaveCount(0);
-  await page.goto(url);
+  await page.goto(path);
   await expect(page.getByTestId('cancel-batch')).toHaveCount(0);
 
+  // His 4a: the truck was the counter's top and never left, so its number
+  // came back — said on the card, durably (the dialog that heard the answer
+  // is gone with the refresh), and the truck now wears «… (bekor)».
+  const state = page.getByTestId('batch-number-state');
+  await expect(state).toHaveAttribute('data-state', 'returned');
+  await expect(state).toContainText(code);
+  await expect(page.locator('h1').first()).toContainText(`${code} (bekor`);
+
   // And it is off the working board: findable in the archive, not in the way.
-  // The board by its testid — `.grid` first matched whatever grid came first
-  // on the page, which since the board's phone tabs is a row of four tab
-  // labels that could never hold a truck code, i.e. an assertion that could
-  // not fail. The archive row is the positive control: the same code, found.
+  // By the truck's OWN link — a released number comes back, so a retry or a
+  // second run on this database mints «code» again and cancels it as
+  // «code (bekor 2)», and a count over the code as a substring would find both.
   await page.goto('/batches');
   const board = page.getByTestId('batch-board');
   await expect(board).toBeAttached();
-  await expect(board).not.toContainText(code);
+  await expect(board.locator(`a[href="${path}"]`)).toHaveCount(0);
   await page.goto(`/batches?archive=1&q=${encodeURIComponent(code)}`);
-  await expect(page.getByTestId('batch-archive-row').filter({ hasText: code })).toHaveCount(1);
+  await expect(page.locator(`[data-testid="batch-archive-row"][href="${path}"]`)).toHaveCount(1);
+});
+
+test('a truck that has not left takes another receiving warehouse — the same truck, the same number', async ({ page }) => {
+  // His 6a (docs/NARX-VA-RAQAM.md §2.4): a mis-picked destination is fixed in
+  // place instead of a cancel and a new number.
+  await login(page, OWNER);
+  const path = new URL(await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' })).pathname;
+  const code = (await page.locator('h1').first().innerText()).trim();
+  await expect(page.getByTestId('batch-head')).toContainText('YW → TAS1');
+
+  await page.goto(`${path}/mashina`);
+  await openFold(page.getByTestId('batch-dest-change-panel').locator('xpath=..'));
+  const select = page.getByTestId('dest-change-target');
+  const tas2 = await select.locator('option', { hasText: /^TAS2 · / }).getAttribute('value');
+  expect(tas2).toBeTruthy();
+  // A pick that lands while the form is hydrating is taken back — pick until
+  // the button wakes (fold.ts's lesson).
+  await expect(async () => {
+    await select.selectOption(tas2!);
+    await expect(page.getByTestId('dest-change-submit')).toBeEnabled({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+  await page.getByTestId('dest-change-submit').click();
+  await expect(page.getByTestId('dest-change-done')).toContainText('TAS2', { timeout: 15_000 });
+
+  await page.goto(path);
+  await expect(page.getByTestId('batch-head')).toContainText('YW → TAS2');
+  await expect(page.locator('h1').first()).toHaveText(code);
+
+  // Cleanup — the truck was the top of YW, so its number comes back too.
+  await page.getByTestId('cancel-batch').click();
+  await page.locator('#cancel-reason').fill('yo‘nalish sinov');
+  page.once('dialog', (d) => void d.accept());
+  await page.getByTestId('cancel-batch-confirm').click();
+  await expect(page.getByTestId('cancel-batch')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.getByTestId('batch-number-state')).toHaveAttribute('data-state', 'returned');
 });
 
 test('a warehouse operator is not offered the way out', async ({ page }) => {
   // Departure the loader may do — he is the one standing at the truck. Giving
   // the cargo back and retiring the trip is a manager's call.
   await login(page, OWNER);
-  await page.goto('/batches');
   // Out of the operator's own warehouse, so the batch is one he really works
   // on — a card he could not open at all would prove nothing about the button.
-  await page.selectOption('select[name="originId"]', { label: 'YW' });
-  await page.selectOption('select[name="destId"]', { label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
-  const url = page.url();
+  const url = await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   await expect(page.getByTestId('cancel-batch')).toBeVisible();
 
   // Same batch, same screen, different person.

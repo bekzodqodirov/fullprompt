@@ -905,18 +905,24 @@ export async function paperStampFor(batchId: string): Promise<string> {
  * advisory → lot → truck and the unload doors truck → lot, so the tick meets
  * both as a wait and never closes a cycle (the review's 40P01: the copy took
  * the lots before the truck). A wait past `lock_timeout` is a 55P03 the
- * action says as «band». Answers the row's `sent_to_agent_at` as LOCKED,
- * undefined when the truck is gone. Lives here and not in the action: the
- * count rules are imported only where a count door may be opened
- * (`count-kernel-wire.test.ts`).
+ * action says as «band». Answers the row's `sent_to_agent_at` and `status`
+ * as LOCKED, undefined when the truck is gone — the status because a
+ * cancelled truck's papers can no longer be «sent» (its number may already
+ * be another truck's, docs/NARX-VA-RAQAM.md §3.2.3), and only the locked row
+ * can say so against a cancel committing beside the press. Lives here and not
+ * in the action: the count rules are imported only where a count door may be
+ * opened (`count-kernel-wire.test.ts`).
  */
-export async function lockTruckForTickInTx(tx: Tx, batchId: string): Promise<{ sentToAgentAt: string | null } | undefined> {
+export async function lockTruckForTickInTx(
+  tx: Tx,
+  batchId: string,
+): Promise<{ sentToAgentAt: string | null; status: string } | undefined> {
   await setCountLockTimeout(tx);
   await lockTruckLoading(tx, batchId);
   const [row] = (await tx.execute(sql`
-    SELECT sent_to_agent_at::text AS sent_at FROM batches WHERE id = ${batchId}::uuid FOR NO KEY UPDATE
-  `)) as unknown as { sent_at: string | null }[];
-  return row ? { sentToAgentAt: row.sent_at } : undefined;
+    SELECT sent_to_agent_at::text AS sent_at, status FROM batches WHERE id = ${batchId}::uuid FOR NO KEY UPDATE
+  `)) as unknown as { sent_at: string | null; status: string }[];
+  return row ? { sentToAgentAt: row.sent_at, status: row.status } : undefined;
 }
 
 /**

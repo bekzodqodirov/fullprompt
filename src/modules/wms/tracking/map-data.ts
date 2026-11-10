@@ -550,6 +550,20 @@ export const CHECKPOINT_LABEL: Record<
 };
 
 /**
+ * A pin's words on THIS truck's road. On a road that holds (Horgos — two
+ * queues, docs/XORGOS-NAVBAT.md) «Chegarada turibdi» names the FIRST of them
+ * and says so — «Horgosda turibdi» — or a logist pressing it for a truck
+ * standing at Yallama sends it 1,200 km back to Horgos (the design's judge).
+ * `held` = `roadHolds` for the truck's two ends.
+ */
+export function pinLabel(
+  key: CheckpointKey,
+  held: boolean,
+): { icon: string; label: (typeof CHECKPOINT_LABEL)[CheckpointKey]['label'] | 'cpBorderHorgos' } {
+  return key === 'at_border' && held ? { icon: '🛃', label: 'cpBorderHorgos' } : CHECKPOINT_LABEL[key];
+}
+
+/**
  * A lat/lon grid for the fallback drawing, generated from the projection.
  *
  * It replaces two hand-drawn "country hint" blobs that were never real

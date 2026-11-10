@@ -114,7 +114,7 @@ const PHONELESS_NOTE: Record<PhonelessVia, string> = {
 };
 
 /**
- * The listener's mark on its OWN lead binding (0139, `bound_via`), read
+ * The listener's mark on its OWN lead binding (0142, `bound_via`), read
  * through the row's jsonb: the column is SQL-only this release (the schema's
  * note on `tgChatRules`), so a server one migration behind reads NULL — «no
  * machine binding» — and never answers 42703. Inside a select FROM
@@ -122,11 +122,11 @@ const PHONELESS_NOTE: Record<PhonelessVia, string> = {
  */
 export const boundViaSql = sql<string | null>`to_jsonb(${tgChatRules})->>'bound_via'`;
 
-/** The one value 0139's CHECK admits — written by `phonelessLeadForChat`'s machine door and nobody else. */
+/** The one value 0142's CHECK admits — written by `phonelessLeadForChat`'s machine door and nobody else. */
 const WORK_ACCOUNT_BINDING = 'work_account';
 
 /**
- * Whether 0139 has landed — asked by the one writer of the mark, never by a
+ * Whether 0142 has landed — asked by the one writer of the mark, never by a
  * reader (they read NULL). Held once true: a ledger does not go backwards. A
  * false answer is asked again next time, because the listener does not wait
  * for `migrate` and may be a few seconds ahead of it on deploy morning.
@@ -196,7 +196,7 @@ export function nobodyDecided(rule: RuleFacts): boolean {
   return isMachineBinding(rule);
 }
 
-/** The rule's columns plus its 0139 mark — what `nobodyDecided` reads. */
+/** The rule's columns plus its 0142 mark — what `nobodyDecided` reads. */
 const ruleWithMark = { ...getTableColumns(tgChatRules), boundVia: boundViaSql };
 
 /** The machine door found the chat is a client's after all — nothing it wrote may stay. */
@@ -238,7 +238,7 @@ class KeptOnClient extends Error {}
  * the answer and takes the chat whatever the rule said — the listener's own
  * binding included, which it then records as the PERSON's.
  *
- * Its binding is the MACHINE's — `decided_by` NULL and the 0139 mark
+ * Its binding is the MACHINE's — `decided_by` NULL and the 0142 mark
  * `bound_via = 'work_account'` (`isMachineBinding`, read as
  * `ChatRule.machine`), written in the same transaction and by no other door:
  * nobody decided it, so `decideIncoming` lets it stand while its lead is open
@@ -291,11 +291,11 @@ export async function phonelessLeadForChat(
   if (machine && (await keptClientOfChat(input.managerUserId, input.peerId))) return null;
   // The machine's binding must carry its mark, or it would read as a door's
   // answer for good (never yielding to the book). One migration behind there
-  // is no mark to write, so the door mints nothing until 0139 lands — the
+  // is no mark to write, so the door mints nothing until 0142 lands — the
   // line is passed over, the next one decided on the landed schema.
   const markable = await boundViaReady();
   if (machine && !markable) {
-    logger.warn({ managerUserId: input.managerUserId }, '[chat-lead] 0139 not applied — a hidden number on a work number is not bound until it is');
+    logger.warn({ managerUserId: input.managerUserId }, '[chat-lead] 0142 not applied — a hidden number on a work number is not bound until it is');
     return null;
   }
   const stageId = await defaultStageId();
@@ -427,7 +427,7 @@ export async function phonelessLeadForChat(
         })
         .where(eq(tgChatRules.id, rule.id));
       // The mark `ChatRule.machine` reads, in the same transaction — the ONE
-      // writer of `bound_via` (0139): set by the machine's binding, cleared by
+      // writer of `bound_via` (0142): set by the machine's binding, cleared by
       // a person's press over it.
       if (markable) {
         await tx.execute(sql`UPDATE tg_chat_rules SET bound_via = ${machine ? WORK_ACCOUNT_BINDING : null} WHERE id = ${rule.id}`);
@@ -525,7 +525,7 @@ export async function keptClientOfChat(
 
 /**
  * The listener's own lead binding, taken back — and only it (`isMachineBinding`,
- * restated here in SQL over the 0139 mark): a person's answer is never deleted
+ * restated here in SQL over the 0142 mark): a person's answer is never deleted
  * by a machine, and neither is another door's binding (round 113's website
  * rule has the same shape and no mark). Two reasons:
  *

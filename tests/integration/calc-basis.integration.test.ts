@@ -36,6 +36,7 @@ import {
   type TableItemEdit,
   type TableNewItem,
 } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * 0125 — the baza unit widened, against a real database (his 18a/19a/20a).
@@ -147,6 +148,7 @@ async function open(
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -700,10 +702,10 @@ describe('every fill answers a CHOSEN unit in that unit or not at all', () => {
     await save(sealed, { items: [await editOf(sealed, 1, { tnvedCode: '8528520000' })] });
     await save(sealed, { items: [await editOf(sealed, 1, { bazaUsd: 22, bazaBasis: 'unit' })] });
     await setFreightZone(sealed, 'cn', ctx());
-    await confirmAllGroups(sealed, ctx());
+    await confirmAllGroups(sealed, ctx(), await sawRev(sealed));
     await sealCalc(
       sealed,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(sealed) },
       ctx(),
     );
 

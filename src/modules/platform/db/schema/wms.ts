@@ -1009,6 +1009,28 @@ export const borderQueue = pgTable(
 );
 
 /**
+ * «Navbatda kechikdi» told (0140, docs/XORGOS-NAVBAT.md §3): one row per
+ * (truck, post) the logists were warned about — his 3a, once per queue — and
+ * the entry that wait counted from. The claim, written in the same
+ * transaction as the message rows (`tracking/queue-alert.ts`), never deleted
+ * by the app; time never re-arms it, a LATER entry (a «Chegarada» press after
+ * the call) does. `post` is a `BorderPost` with no CHECK, for `border_queue`'s
+ * reason.
+ */
+export const truckQueueAlerts = pgTable(
+  'truck_queue_alerts',
+  {
+    batchId: uuid('batch_id')
+      .notNull()
+      .references(() => batches.id, { onDelete: 'cascade' }),
+    post: text('post').notNull(),
+    enteredAt: timestamp('entered_at', { withTimezone: true }).notNull(),
+    alertedAt: timestamp('alerted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: 'truck_queue_alerts_pk', columns: [t.batchId, t.post] })],
+);
+
+/**
  * Load plans (W3). "Quick batch" internal transfers may create a batch with
  * no plan; a plan's batch_id is set at approval.
  */
@@ -2658,7 +2680,7 @@ export const tgPeerIndex = pgTable(
 /**
  * One answer per chat, per manager — the tray's, the listener's or a door's.
  *
- * 0139 added `bound_via` and it is deliberately NOT declared here this
+ * 0142 added `bound_via` and it is deliberately NOT declared here this
  * release: 'work_account' marks the listener's OWN lead binding for a hidden
  * number on a work number (chat-lead `phonelessLeadForChat`, his «1 a») — the
  * one binding nobody decided, which yields to a person, the book and a closed
@@ -2670,7 +2692,7 @@ export const tgPeerIndex = pgTable(
  * column would turn all of them into a 42703 one migration behind (#472,
  * 0127's reason). So it is written by one raw statement in chat-lead and read
  * through `to_jsonb(row)` (`boundViaSql` — NULL, never 42703, on an old
- * schema). A LATER release may declare it once 0139 is everywhere. Fenced by
+ * schema). A LATER release may declare it once 0142 is everywhere. Fenced by
  * tests/unit/chat-rule-bound-via.test.ts.
  */
 export const tgChatRules = pgTable(
@@ -2856,9 +2878,47 @@ export const calcRequests = pgTable(
      * timestamp collides, a counter cannot.
      */
     rev: integer('rev').notNull().default(0),
+    /**
+     * The revision the machine's pass or the seller's own addition left (0139,
+     * his 1.9 a). Equal to `rev` = no person has written since, which is «VED
+     * hali boshlamagan»; behind it for good once a person saves. NULL = not
+     * known (requests before 0139, corrections — a correction is the VED's
+     * job). The landing writes 0, rev's own default. One mover:
+     * `advanceHandsOffInTx`, inside the save that earns it.
+     */
+    handsoffRev: integer('handsoff_rev'),
+    /**
+     * A machine pass owed or running (0139): the revision it was queued at,
+     * when, and its own pg-boss job — «busy» is «that job is alive», never a
+     * time window. Set by `queueCalcPrefill` on whichever queue the section
+     * names and cleared by that queue's settle. Neither moves `rev`.
+     */
+    aiPassRev: integer('ai_pass_rev'),
+    aiPassAt: timestamp('ai_pass_at', { withTimezone: true }),
+    aiPassJob: uuid('ai_pass_job'),
+    /*
+     * `intake_door` (0141, docs/IKKI-ESHIK.md §0) — 'plain' | 'ai' | NULL,
+     * which of the bot's two doors the job came in through — is deliberately
+     * NOT declared here this release, as 0127's three `crm_activities`
+     * columns were not. Drizzle names EVERY declared column in every INSERT
+     * (an absent value is rendered `default`), in a bare `.returning()` and in
+     * every whole-row select (`db.query.calcRequests.findFirst`, `.select()`),
+     * and those are every calc writer and reader in the app: declared, each
+     * would be a 42703 on a database one migration behind (#472), and the
+     * landing would answer `server_behind` — exactly what §0.4 forbids. So it
+     * lives in raw SQL only, through ONE module (`wms/calc/intake-door.ts`):
+     * written by `stampIntakeDoorInTx` behind a probe, read everywhere through
+     * `to_jsonb(row)->>'intake_door'` (NULL, not 42703, on an old schema).
+     * Fenced by tests/unit/intake-door-wire.test.ts. A LATER release, once
+     * 0141 is everywhere, may declare it.
+     */
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
+    check(
+      'calc_requests_ai_pass_check',
+      sql`(${t.aiPassRev} IS NULL) = (${t.aiPassAt} IS NULL) AND (${t.aiPassRev} IS NULL) = (${t.aiPassJob} IS NULL)`,
+    ),
     check(
       'calc_requests_fee_override_check',
       sql`${t.feeOverrideUsd} IS NULL OR (${t.feeOverrideUsd} >= 0 AND ${t.feeOverrideUsd} <> 'NaN'::numeric)`,
@@ -3919,6 +3979,12 @@ export const aiCalcPasses = pgTable(
     staffId: uuid('staff_id').references(() => users.id),
     /** 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar'. */
     kind: text('kind').notNull(),
+    /**
+     * A collection's model reading is billed when the model answers, before
+     * any request exists (0139): the collection's note anchors it, and the
+     * landing fills `request_id` (`attachIntakePasses`). 'intake' only.
+     */
+    intakeNoteId: uuid('intake_note_id'),
     model: text('model').notNull(),
     inputTokens: integer('input_tokens').notNull().default(0),
     outputTokens: integer('output_tokens').notNull().default(0),
@@ -3926,16 +3992,82 @@ export const aiCalcPasses = pgTable(
   },
   (t) => [
     index('ai_calc_passes_day_idx').on(t.createdAt),
+    index('ai_calc_passes_intake_note_idx')
+      .on(t.intakeNoteId)
+      .where(sql`${t.intakeNoteId} IS NOT NULL`),
     check(
       'ai_calc_passes_kind_check',
       sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
     ),
-    // One anchor per kind. Safe beside the FK: CASCADE, not SET NULL (#809).
-    check('ai_calc_passes_anchor_check', sql`(${t.kind} = 'similar') = (${t.requestId} IS NULL)`),
+    // One anchor per kind (0119's two rules, 0139's third: an intake reading
+    // may stand on its note alone until the landing). Safe beside the FK:
+    // CASCADE, not SET NULL (#809).
+    check(
+      'ai_calc_passes_anchor_check',
+      sql`CASE ${t.kind}
+        WHEN 'similar' THEN ${t.requestId} IS NULL AND ${t.intakeNoteId} IS NULL
+        WHEN 'intake' THEN ${t.requestId} IS NOT NULL OR ${t.intakeNoteId} IS NOT NULL
+        ELSE ${t.requestId} IS NOT NULL AND ${t.intakeNoteId} IS NULL
+      END`,
+    ),
     check(
       'ai_calc_passes_tokens_check',
       sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,
     ),
+  ],
+);
+
+/**
+ * What a seller added to a landed request, and what became of it (0139, his
+ * 1.9 a): written into the rows ('applied'), handed to the VED ('to_ved'),
+ * stored until the running machine pass ends ('waiting'), or only filed on the
+ * card ('noted'). The note id is the once-key, inserted in the save's own
+ * transaction — a redelivered or repeated «✅ Qo‘shish» finds it and redoes
+ * only what is missing (the words, the ping). The submission is kept so a
+ * 'waiting' row can be written later by the job alone, and the chat so its
+ * words reach the seller. `staff_id` SET NULL sits beside no CHECK that spans
+ * it (#809).
+ */
+export const calcAmendments = pgTable(
+  'calc_amendments',
+  {
+    id: uuid('id').primaryKey(),
+    requestId: uuid('request_id')
+      .notNull()
+      .references(() => calcRequests.id, { onDelete: 'cascade' }),
+    noteId: uuid('note_id').notNull(),
+    staffId: uuid('staff_id').references(() => users.id, { onDelete: 'set null' }),
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    /** 'waiting' | 'applied' | 'to_ved' | 'noted'. */
+    outcome: text('outcome').notNull(),
+    /** The revision the applied write left — set exactly when 'applied'. */
+    rev: integer('rev'),
+    submission: jsonb('submission').notNull(),
+    change: jsonb('change').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When the seller was told the CURRENT outcome (NULL again when a 'waiting' row moves on). */
+    outcomeSentAt: timestamp('outcome_sent_at', { withTimezone: true }),
+    /** When the thread message's ping finished (the message itself is in the save's transaction). */
+    announcedAt: timestamp('announced_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('calc_amendments_note_unique').on(t.noteId),
+    check(
+      'calc_amendments_outcome_check',
+      sql`${t.outcome} IN ('waiting', 'applied', 'to_ved', 'noted')`,
+    ),
+    check('calc_amendments_rev_check', sql`(${t.outcome} = 'applied') = (${t.rev} IS NOT NULL)`),
+    check('calc_amendments_change_check', sql`jsonb_typeof(${t.change}) = 'object'`),
+    check('calc_amendments_submission_check', sql`jsonb_typeof(${t.submission}) = 'object'`),
+    index('calc_amendments_request_idx').on(t.requestId, t.createdAt),
+    // P6's refusal asks «an applied addition after the revision the VED saw», on every door press.
+    index('calc_amendments_applied_idx')
+      .on(t.requestId, t.rev)
+      .where(sql`${t.outcome} = 'applied'`),
+    // The settle and the sweep look for what waits.
+    index('calc_amendments_waiting_idx')
+      .on(t.requestId)
+      .where(sql`${t.outcome} = 'waiting'`),
   ],
 );
 

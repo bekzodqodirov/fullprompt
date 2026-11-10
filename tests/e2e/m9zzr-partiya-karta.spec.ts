@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 
 /**
  * The truck card's tabs, opened by the people who use them (docs/CARD-TABS.md).
@@ -57,11 +58,7 @@ async function statusOf(page: Page, path: string): Promise<number> {
 
 test('a quick truck out of YW for the tabs to be opened on', async ({ page }) => {
   await login(page, OWNER);
-  await page.goto('/batches');
-  await page.selectOption('select[name="originId"]', { label: 'YW' });
-  await page.selectOption('select[name="destId"]', { label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   batchPath = new URL(page.url()).pathname;
 });
 

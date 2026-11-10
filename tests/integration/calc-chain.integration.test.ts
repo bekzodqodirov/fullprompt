@@ -40,6 +40,7 @@ import {
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
 import { addDays, tashkentDay } from '@/modules/platform/time/tashkent';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The correction CHAIN — what «V2» counts, and the registry that lists it.
@@ -152,6 +153,7 @@ afterAll(async () => {
 async function open(overrides: Partial<Parameters<typeof openCalcRequest>[0]> = {}) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -184,8 +186,8 @@ async function sealed(overrides: Partial<Parameters<typeof openCalcRequest>[0]> 
     ctx(),
   );
   await setFreightZone(request.id, 'cn', ctx());
-  await confirmAllGroups(request.id, ctx());
-  await sealCalc(request.id, NO_DISCOUNT, ctx());
+  await confirmAllGroups(request.id, ctx(), await sawRev(request.id));
+  await sealCalc(request.id, { ...NO_DISCOUNT, sawRev: await sawRev(request.id) }, ctx());
   return request.id;
 }
 
@@ -194,8 +196,8 @@ async function sealed(overrides: Partial<Parameters<typeof openCalcRequest>[0]> 
 async function corrected(parentId: string) {
   const freshId = (await recalcFromSealed(parentId, ctx())).id;
   madeRequests.push(freshId);
-  await confirmAllGroups(freshId, ctx());
-  await sealCalc(freshId, NO_DISCOUNT, ctx());
+  await confirmAllGroups(freshId, ctx(), await sawRev(freshId));
+  await sealCalc(freshId, { ...NO_DISCOUNT, sawRev: await sawRev(freshId) }, ctx());
   return freshId;
 }
 

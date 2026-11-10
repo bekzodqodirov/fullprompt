@@ -25,6 +25,7 @@ import {
   setFreightZone,
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The AI-VED's memory: what this company has SEALED answers the next job
@@ -113,6 +114,7 @@ async function open(items: { name: string; quantity?: number | null }[]) {
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -151,10 +153,10 @@ async function sealOne(name: string, bazaUsd: number) {
   await save(id, [await editOf(id, 1, { tnvedCode: '8528520000' })]);
   await save(id, [await editOf(id, 1, { bazaUsd, bazaBasis: 'unit' })]);
   await setFreightZone(id, 'cn', ctx());
-  await confirmAllGroups(id, ctx());
+  await confirmAllGroups(id, ctx(), await sawRev(id));
   await sealCalc(
     id,
-    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+    { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(id) },
     ctx(),
   );
   return id;
@@ -187,7 +189,7 @@ describe('what the company sealed is what the machine reads first', () => {
     const open1 = await open([{ name, quantity: 10 }]);
     await save(open1, [await editOf(open1, 1, { tnvedCode: '8528520000' })]);
     await save(open1, [await editOf(open1, 1, { bazaUsd: 44, bazaBasis: 'unit' })]);
-    await confirmAllGroups(open1, ctx());
+    await confirmAllGroups(open1, ctx(), await sawRev(open1));
 
     const hits = await sealedMemoryFor([name], { excludeRequestId: NO_REQUEST });
     expect(hits.size, 'a price nobody sealed is nobody’s answer').toBe(0);

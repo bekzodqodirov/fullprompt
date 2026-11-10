@@ -9,7 +9,7 @@ import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import type { Workspace } from '@/modules/wms/calc/workspace';
 import type { ChainVersion } from '@/modules/wms/calc/chain';
 import { ChainStateChip } from '@/components/calc-chain-chip';
-import { isBuildStale, reloadFresh } from '@/components/build-check';
+import { isBuildStale, reloadCure, runReload } from '@/components/build-check';
 import { draftStorageKey, forgetStored } from '@/modules/wms/calc/draft-store';
 import { measureNeedText, refusalWord, type CalcT } from './words';
 import {
@@ -135,12 +135,12 @@ export function CalcWorkspace({
       {error ? (
         <p className="chip chip-warn" data-testid="calc-ws-error">
           {t.has(`errors.${error}`) ? t(`errors.${error}` as 'errors.not_ready') : error}
-          {error === 'stale_build' ? (
+          {reloadCure(error) ? (
             <button
               type="button"
               className="btn-primary ml-2 !min-h-8"
               data-testid="calc-reload"
-              onClick={() => void reloadFresh()}
+              onClick={() => runReload(reloadCure(error)!)}
             >
               {t('reloadPage')}
             </button>
@@ -645,6 +645,9 @@ function SealPanel({
               // The fee THIS screen showed (P2.6): the seal refuses `conflict`
               // when the rate or the setting moved between render and press.
               sawFeeUsd: workspace.parts.customs ? (workspace.fee?.ok ? workspace.fee.feeUsd : null) : undefined,
+              // …and the revision it was drawn at (P6): a seller's addition
+              // written since refuses the seal in words.
+              sawRev: workspace.rev,
             }),
           )
         }

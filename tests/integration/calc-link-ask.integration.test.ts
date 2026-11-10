@@ -30,6 +30,7 @@ import { claimLinkAsks, linkAskEligible } from '@/modules/wms/calc/link-ask';
 import { decideLinkFromBot } from '@/modules/wms/calc/link-bot';
 import { buildHomeFlow } from '@/modules/wms/home/role-flows';
 import { linkReceipt } from '@/modules/wms/deals/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * 0119 — the VED is ASKED about a calc↔prixod guess (owner's 20a).
@@ -153,6 +154,7 @@ async function newDeal(): Promise<string> {
 async function openJob(dealId: string): Promise<string> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'yolkira',
@@ -219,7 +221,7 @@ describe('the seal stamps the cargo that arrived while it was being worked on', 
     // Neither has a link yet: nothing was sealed when they were confirmed.
     expect((await read(during))!.calcRequestId).toBeNull();
 
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
 
     const stamped = await read(during);
     expect(stamped!.calcRequestId).toBe(requestId);
@@ -238,7 +240,7 @@ describe('a ❌ stays a ❌, and a correction asks its own sealer', () => {
     const refused = await receiptOn(dealId, later());
     const unasked = await receiptOn(dealId, later());
     const answered = await receiptOn(dealId, later());
-    await sealCalc(first, SEAL, ctx());
+    await sealCalc(first, { ...SEAL, sawRev: await sawRev(first) }, ctx());
     for (const id of [refused, unasked, answered]) expect((await read(id))!.calcRequestId).toBe(first);
 
     expect(await answerLinkAsk(refused, prefix(first), 'drop', 'all', ctx())).toBe('dropped');
@@ -253,7 +255,7 @@ describe('a ❌ stays a ❌, and a correction asks its own sealer', () => {
     const second = (await recalcFromSealed(first, ctx())).id;
     madeRequests.push(second);
     await setFreightZone(second, 'cn', ctx());
-    await sealCalc(second, SEAL, ctx());
+    await sealCalc(second, { ...SEAL, sawRev: await sawRev(second) }, ctx());
 
     // The refused prixod was confirmed before the correction was requested,
     // so the correction's window cannot reach it.
@@ -279,7 +281,7 @@ describe('filing a prixod onto the deal it is already on moves nothing (review, 
     const requestId = await openJob(dealId);
     const refused = await receiptOn(dealId, later());
     const kept = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
     expect(await answerLinkAsk(refused, prefix(requestId), 'drop', 'all', ctx())).toBe('dropped');
     expect(await answerLinkAsk(kept, prefix(requestId), 'confirm', 'all', ctx())).toBe('confirmed');
     const askedAt = new Date(Date.now() - 60_000);
@@ -305,7 +307,7 @@ describe('a press answers about the request it named', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'own', ctx())).toBe('confirmed');
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'own', ctx())).toBe('already');
   });
@@ -314,7 +316,7 @@ describe('a press answers about the request it named', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
     await confirmCalcLink(id, 'all', { actorId: bystanderId });
     expect(await answerLinkAsk(id, prefix(requestId), 'drop', 'own', ctx())).toBe('already');
     const row = await read(id);
@@ -331,7 +333,7 @@ describe('a press answers about the request it named', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
 
     let answer: Promise<string> | null = null;
     let waited = false;
@@ -363,13 +365,13 @@ describe('a press answers about the request it named', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
     // The deal it moves to has a standing seal of its own, so the re-file
     // stamps the prixod with ANOTHER request — the old button must not
     // confirm that one (the prefix is the request the question was about).
     const other = await newDeal();
     const otherRequest = await openJob(other);
-    await sealCalc(otherRequest, SEAL, ctx());
+    await sealCalc(otherRequest, { ...SEAL, sawRev: await sawRev(otherRequest) }, ctx());
     await linkReceipt(id, other, ctx(), null);
     expect((await read(id))!.calcRequestId).toBe(otherRequest);
     expect(await answerLinkAsk(id, prefix(requestId), 'confirm', 'all', ctx())).toBe('changed');
@@ -380,7 +382,7 @@ describe('a press answers about the request it named', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
 
     expect(await decideLinkFromBot(colleagueChat, id, prefix(requestId), 'drop')).toBe('not_mine');
     expect((await read(id))!.calcRequestId).toBe(requestId);
@@ -406,8 +408,8 @@ describe('the sweep’s claim', () => {
       await receiptOn(dealA, later()),
       await receiptOn(dealB, later()),
     ];
-    await sealCalc(reqA, SEAL, { actorId: claimSealer });
-    await sealCalc(reqB, SEAL, { actorId: claimSealer });
+    await sealCalc(reqA, { ...SEAL, sawRev: await sawRev(reqA) }, { actorId: claimSealer });
+    await sealCalc(reqB, { ...SEAL, sawRev: await sawRev(reqB) }, { actorId: claimSealer });
 
     let held: string[] = [];
     let second: string[] | 'waited' = [];
@@ -447,7 +449,7 @@ describe('the sweep’s claim', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, { actorId: lost });
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, { actorId: lost });
     expect((await read(id))!.calcRequestId).toBe(requestId);
 
     // Every OTHER unasked guess in the database is parked for the length of
@@ -491,7 +493,7 @@ describe('«Tasdiqlash kerak: N» is the control screen’s list, counted', () =
     const pending = await receiptOn(dealId, later());
     const voided = await receiptOn(dealId, later());
     const confirmed = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, ctx());
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, ctx());
     await answerLinkAsk(confirmed, prefix(requestId), 'confirm', 'all', ctx());
     // Voided AFTER the stamp: the guess stays on the row, and it is not cargo.
     await db
@@ -539,7 +541,7 @@ describe('a colleague’s link: listed to read, refused to decide', () => {
     const dealId = await newDeal();
     const requestId = await openJob(dealId);
     const id = await receiptOn(dealId, later());
-    await sealCalc(requestId, SEAL, { actorId: colleagueId });
+    await sealCalc(requestId, { ...SEAL, sawRev: await sawRev(requestId) }, { actorId: colleagueId });
 
     const mine = { scope: 'own' as const, actorId: sealerId };
     const mineList = await linkSuggestions(mine, 100_000);

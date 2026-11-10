@@ -42,6 +42,7 @@ import { __forgetWaitMemory, flushWaitWrites, nowSec, readWait } from '@/modules
 import { __resetPresses } from '@/modules/platform/telegram/press';
 import { __resetBacklog } from '@/modules/platform/telegram/backlog';
 import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
+import { endIntake, HOLD_MS, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
 import { readAgentConfig, __restoreAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { retireOnHumanReply } from '@/modules/wms/agent/jobs';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
@@ -259,6 +260,22 @@ describe('the newest question on the screen is the one a text answers (I2 b)', (
     expect((await draftOf(draftId)).status).toBe('pending');
   });
 
+  it('a PARKED «Hisoblatish» collection is no reason to refuse ✏️; a HOLDING one is (review REG-1)', async () => {
+    const { me, draftId } = await owner();
+    const c = BigInt(me.chat);
+    startIntake(c, 'rastamojka', { staffId: me.id });
+    updateIntake(c, { stage: 'material', material: ['Kurtka 300 dona'] }, { quiet: true });
+    const m = h.mark();
+    await h.handle(tg.callback(me.chat, nextMsg(), `ag:e:${draftId}`));
+    expect(h.textsTo(me.chat, m)).toContain('Avval boshlangan ishni tugating (hisoblatish, zametka yoki topshiriq).');
+    expect(readWait(c, 'agent_edit')).toBeNull();
+    // Idle past the half hour: parked, it takes no text — ✏️ arms.
+    updateIntake(c, { touchedAt: Date.now() - HOLD_MS - 60_000 }, { quiet: true });
+    await pressEdit(me, draftId);
+    expect(readWait(c, 'agent_edit')).not.toBeNull();
+    endIntake(c);
+  });
+
   it('…and while «💬 Javob yozish» awaits a reply, the words name THAT, not a task', async () => {
     const { me, draftId } = await owner();
     noteReplyPending(BigInt(me.chat), nextMsg(), { armedAt: nowSec() });
@@ -347,6 +364,8 @@ describe('a forward is never the typed answer (I2 c)', () => {
     await pressEdit(me, draftId);
     const m = h.mark();
     await h.handle(tg.forward(me.chat, `mijoz yozdi ${STAMP}`));
+    // The burst's ONE offer is drawn once its debounce settles (docs/IKKI-ESHIK.md §4.1).
+    await h.settle();
     expect((await draftOf(draftId)).finalBody).toBeNull();
     expect(h.textsTo(me.chat, m)).toContain('📌 Topshiriq qilamizmi?');
     expect(readWait(BigInt(me.chat), 'agent_edit')).not.toBeNull();

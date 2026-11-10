@@ -33,6 +33,8 @@ import {
   startTaskDraft,
 } from '@/modules/platform/telegram/task-handlers';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { keptLastSettled } from '@/modules/platform/telegram/kept-last';
+import { __forgetWaitMemory } from '@/modules/platform/telegram/waits';
 
 const APP = 'https://test.gsrwms.uz';
 const STAMP = String(Date.now()).slice(-7);
@@ -63,9 +65,9 @@ async function mintStaff(): Promise<Person> {
   return { id: user!.id, name, chat };
 }
 
-/** What the bot said back, in order — the reply, and the toast of a press. */
+/** What the bot said back, in order — the reply (with the id the fake gave it), and the toast of a press. */
 interface Said {
-  replies: { text: string; extra?: Record<string, unknown> }[];
+  replies: { text: string; extra?: Record<string, unknown>; id?: number }[];
   toasts: (string | undefined)[];
 }
 
@@ -79,8 +81,9 @@ function ctxFor(chat: bigint, extra: Record<string, unknown> = {}): { ctx: never
     // on its id and read its date — never an id of 0.
     message: { message_id: (messageSeq += 1), date: Math.floor(Date.now() / 1000), chat: { id: Number(chat), type: 'private' } },
     reply: async (text: string, e?: Record<string, unknown>) => {
-      said.replies.push({ text, extra: e });
-      return { message_id: (messageSeq += 1) };
+      const id = (messageSeq += 1);
+      said.replies.push({ text, extra: e, id });
+      return { message_id: id };
     },
     answerCallbackQuery: async (e?: { text?: string }) => {
       said.toasts.push(e?.text);
@@ -117,7 +120,9 @@ beforeAll(async () => {
   stageId = (await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'open')))[0]!.id;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  await keptLastSettled();
+  __forgetWaitMemory();
   __resetDrafts();
   sent = [];
   queuedJobs.length = 0;
@@ -204,10 +209,14 @@ describe('an open calc job’s refusal names the job’s page on every door (rev
 });
 
 
-/** A press on Door B's «📌 Topshiriq qilish», under the forwarded message it replied to. */
-async function pressDoorB(person: Person, original: Record<string, unknown>, step: 'task' | 'search' = 'task') {
+/**
+ * A press on Door B's «📌 Topshiriq qilish», under the forwarded message it
+ * replied to — on `offerId`, a burst's ONE message (docs/IKKI-ESHIK.md §4.1),
+ * or on a message no burst knows.
+ */
+async function pressDoorB(person: Person, original: Record<string, unknown>, step: 'task' | 'search' = 'task', offerId?: number) {
   const { ctx, said } = ctxFor(person.chat, {
-    callbackQuery: { data: `fb:${step}`, message: { message_id: (messageSeq += 1), reply_to_message: original } },
+    callbackQuery: { data: `fb:${step}`, message: { message_id: offerId ?? (messageSeq += 1), reply_to_message: original } },
   });
   await handleForwardCallback(ctx, person.chat, step, async () => {});
   return said;
@@ -281,16 +290,22 @@ describe('Door B takes what was forwarded WHOLE (review bot-4, bot-7)', () => {
     const author = await mintStaff();
     const group = `fwd-${STAMP}`;
     const parts: Record<string, unknown>[] = [];
-    const offers: string[] = [];
+    const saids: Said[] = [];
     for (let i = 0; i < 4; i++) {
-      const part = message(author.chat, (messageSeq += 1), { ...forwarded, media_group_id: group, photo: photo(20 + i) });
+      // A part's date is its own (the burst's window is two minutes from the last).
+      const part = message(author.chat, (messageSeq += 1), { ...forwarded, media_group_id: group, photo: photo(20 + i), date: Math.floor(Date.now() / 1000) });
       parts.push(part);
       const { ctx, said } = ctxFor(author.chat, { message: part });
       expect(await draftMedia(ctx, author.chat)).toBe(true);
-      offers.push(...said.replies.map((r) => r.text));
+      saids.push(said);
     }
-    expect(offers).toEqual(['📌 Topshiriq qilamizmi?']);
-    const said = await pressDoorB(author, parts[0]!);
+    // ONE offer for the album — the burst's (docs/IKKI-ESHIK.md §4.1, his
+    // 6a) — drawn once it settles, below its newest part; the press reads
+    // every part from the wait by the offer's own id.
+    await keptLastSettled();
+    const offers = saids.flatMap((s) => s.replies);
+    expect(offers.map((r) => r.text)).toEqual(['📌 4 ta xabar (4 tasi fayl) — topshiriq qilamizmi?']);
+    const said = await pressDoorB(author, parts[3]!, 'task', offers[0]!.id);
     const draft = activeDraft(author.chat)!;
     expect(draft.sources).toHaveLength(4);
     expect(draft.files.map((f) => f.fileId).sort()).toEqual([20, 21, 22, 23].map((n) => `AgACphoto${STAMP}${n}`).sort());

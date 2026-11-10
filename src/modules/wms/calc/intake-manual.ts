@@ -142,6 +142,44 @@ function lineSpans(text: string): [number, number][] {
 }
 
 /**
+ * A typed line that addresses a ROW of the goods list by its number — «3: 150
+ * kg», «3-qator 150 kg» — in the material stage (line-address.ts reads its
+ * answers by this same form, regression-3; a numbered list «1. Kurtka …» is
+ * goods). One home for both readers.
+ */
+export const MATERIAL_ROW_ADDRESS = /^\s*(\d{1,4})(?:-?(?:chi|nchi))?(?:\s*:|\s*-?\s*(?:qator|строк)\p{L}*(?=[\s:,.]|$))\s*/iu;
+
+/**
+ * A word that makes a line the SHIPMENT's, wherever it stands in the line: a
+ * totals word (`TOTALS_WORDS`' own vocabulary — line-address.ts reads it, and
+ * imports this module, so it is restated here), «xammasi», «faktik», and the
+ * misspelt «обший».
+ */
+const SHIPMENT_WORD =
+  /(?<![\p{L}\p{N}])(?:jami(?:si)?|жами(?:си)?|umumiy|умумий|obsh(?:iy|ii)|обш\p{L}*|общ\p{L}*|итог\p{L}*|всего|brutto|брутто|gross|totals?|ttl|[hx]ammasi|хаммаси|ҳаммаси|barchasi|барчаси|faktik|фактик|фактическ\p{L}*)(?![\p{L}\p{N}])/iu;
+/** «Hamma yuk», «Barcha tovar», «Весь груз», «Hamma karobka/qop»: ALL of the cargo. */
+const WHOLE_SHIPMENT =
+  /(?<![\p{L}])(?:hamma|barcha|butun|весь|вся|всё|все)\s+(?:yuk|tovar|mahsulot|karobka|korobka|qop|quti|груз|товар|короб|мест)\p{L}*/iu;
+/** The words a head that names no goods is made of: a measure, a package, the cargo itself. */
+const SHIPMENT_HEAD = new Set(['massa', 'масса', 'mass', 'yuk', 'груз']);
+
+/**
+ * A line about the WHOLE shipment, whatever goods name the goods reader finds
+ * on it (fix review FR-REGR-1, FR-SELL-1). `typedGoods` takes «Kurtka va shim
+ * jami 3600 kg», «Jami: 3500 kg / 15 kub» («Jami /»), «Faktik vazn 3600 kg»,
+ * «Karobka 20 ta, 3600 kg» and «Massa 3500 kg» for goods lines, and beside a
+ * held list (`goodsBeside`) a lone goods line became the line's — the
+ * seller's own total was dropped and the packing list's figure landed over
+ * his correction. A totals word anywhere, all of the cargo, or a head made
+ * only of measure and package words: the line is the shipment's, as it was.
+ */
+function shipmentLine(line: string): boolean {
+  if (SHIPMENT_WORD.test(line) || WHOLE_SHIPMENT.test(line)) return true;
+  const head = (line.split(/\d/u)[0] ?? '').toLowerCase().match(/\p{L}+/gu) ?? [];
+  return head.length > 0 && head.every((w) => MEASURE_FIELDS.has(fieldKey(w)) || CARTON_NOUNS.has(w) || SHIPMENT_HEAD.has(w));
+}
+
+/**
  * The shipment's totals and route, as TYPED.
  *
  * Two rules decide which typed figure may be the SHIPMENT's (round 2's merged
@@ -166,6 +204,19 @@ function lineSpans(text: string): [number, number][] {
  *    told to take the netto (`NETTO_ONLY`), it stands as the total when the
  *    text states nothing else — and says so (`weightNetto`), so the row note
  *    and the reply call it netto, never brutto (PF-3).
+ *  - **Beside a goods list, a line's figure is the line's** (`goodsBeside`,
+ *    as-built review CHAT-3 / CRITIC-2-NEW). When the collection already
+ *    holds rows — an Excel, a packing list's totals, a request's stored
+ *    lines — ONE typed goods line is no longer the shipment: «Sumka 80 kg»
+ *    corrects a row, «Shapka 50 dona 20 kg» names a forgotten good, and a
+ *    line addressing a row by its number («3: 150 kg») is that row's. Read as
+ *    totals they outranked the packing list's 3500 kg (§1.2.5) and became the
+ *    brutto under a ✅ — R3 §0.1(3)'s defect one press earlier. A figure on
+ *    any other line («jami 3500 kg», «brutto 3500 kg», «3500 kg») is still a
+ *    total there, and so is a lone line that speaks of the whole shipment
+ *    («Kurtka va shim jami 3600 kg», «Jami: 3500 kg / 15 kub»: `shipmentLine`,
+ *    fix review FR-REGR-1) — what the goods reader calls goods there is a
+ *    totals line misread.
  */
 export function parseManualFacts(
   text: string,
@@ -176,16 +227,24 @@ export function parseManualFacts(
    * goods lines are still the WHOLE text's — «Shim 50 dona 120 kg» added to
    * a typed list is that line's figure, exactly as in the full reading, and
    * an old «1,200 kg» the answer settled no longer poisons a new «1300 kg».
+   *
+   * `goodsBeside`: the collection already holds goods rows (above).
    */
-  opts: { from?: number } = {},
+  opts: { from?: number; goodsBeside?: boolean } = {},
 ): CalcFacts & { ambiguous: AmbiguousTotal[] } {
   const route = readRoute(text);
   const typed = typedGoods(text);
   const spans = lineSpans(text);
   const onGoodsLine = (start: number) => {
-    if (typed.lines.size < 2) return false;
+    if (!opts.goodsBeside && typed.lines.size < 2) return false;
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
-    return typed.lines.has(line);
+    const lineText = line >= 0 ? text.slice(spans[line]![0], spans[line]![1]) : '';
+    if (opts.goodsBeside && line >= 0 && MATERIAL_ROW_ADDRESS.test(lineText)) return true;
+    if (!typed.lines.has(line)) return false;
+    // Two goods lines keep PF-2's rule. A LONE one is the line's only beside
+    // held rows — and never when it speaks of the whole shipment (FR-REGR-1):
+    // there the goods reader's «goods name» is a totals line misread.
+    return typed.lines.size >= 2 || !shipmentLine(lineText);
   };
   // A figure that is not the shipment's: a goods line's own, or one written
   // before the part of the text being read.

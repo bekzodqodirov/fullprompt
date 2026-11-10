@@ -544,14 +544,14 @@ async function keptQuestion(
   return question;
 }
 
-/** A rule as the stranger and echo cards judge it — with the 0139 mark of the listener's own binding. */
+/** A rule as the stranger and echo cards judge it — with the 0142 mark of the listener's own binding. */
 type RuleRow = typeof tgChatRules.$inferSelect & { boundVia: string | null };
 type ConvIdentity = { clientId: string | null; strength: string | null; updatedAt: Date } | undefined;
 
 const tailOf = (id: string | null | undefined) => (id ?? '').slice(-8).toLowerCase();
 
 /**
- * The rule a stranger or echo card names, read with its 0139 mark (chat-lead
+ * The rule a stranger or echo card names, read with its 0142 mark (chat-lead
  * `boundViaSql` — NULL, never 42703, one migration behind): a press must tell
  * the listener's own binding (nobody's answer) from a decision.
  */

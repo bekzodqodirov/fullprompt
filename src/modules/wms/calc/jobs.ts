@@ -4,6 +4,8 @@ import { sectionParts, type CalcSectionName } from './pricing';
 import { notifyOverdueCalcs } from './service';
 import { notifyDictionaryReview } from './review';
 import { sendLinkAsks } from './link-ask';
+import type { IntakeDoor } from './intake';
+import type { PrefillSeen } from './prefill';
 
 export const JOB_CALC_OVERDUE = 'calc.overdue';
 export const JOB_CALC_REVIEW = 'calc.dict-review';
@@ -57,6 +59,12 @@ export interface CalcPrefillJob {
    * customs job, the only kind there was.
    */
   section?: string | null;
+  /**
+   * Which pass this is — `sayOnce`'s key, so a seller's addition gets its
+   * own answer (docs/SAKKIZ-R3.md K15). On both queues. Absent = the
+   * landing's pass (every job queued before this field existed).
+   */
+  pass?: string;
 }
 
 /**
@@ -133,6 +141,12 @@ export async function registerCalcLinkAskWorker(boss: PgBoss): Promise<void> {
 
 /** The seller's sentence when the pass itself failed. */
 export const PASS_FAILED = '🤖 AI bu so‘rovni hisoblay olmadi — so‘rov VED navbatida, narxni VED beradi.';
+/**
+ * …and the card's ONE line when it failed on a «🧮 Hisoblatish» request
+ * (docs/IKKI-ESHIK.md §2.4): the seller is told nothing there, and the VED,
+ * who would otherwise wait for the AI's note, is told it is not coming.
+ */
+export const PLAIN_PASS_FAILED_NOTE = '🤖 AI hisoblay olmadi — VED qo‘lda hisoblaydi';
 /** …and when a yolkira job's tariff reply failed (§2.8) — no AI was asked. */
 export const TARIFF_PASS_FAILED = '🧮 Yo‘lkira taxmini chiqmadi — so‘rov VED navbatida, narxni VED beradi.';
 
@@ -234,9 +248,10 @@ export function attemptStanding(
  * grammy context that no longer exists by then: the drain owns the claim
  * (0082) and round 101's transient-vs-permanent budget, so a Telegram 429
  * costs a retry instead of the message. And it goes through `sayOnce`: ONE
- * machine message per request, so a re-delivered job sends nothing at all
- * once one is queued — no second reply, no second lenta note, no «hisoblay
- * olmadi» after a real answer.
+ * machine message per pass, so a re-delivered job sends nothing at all once
+ * one is queued — no second reply, no second lenta note, no «hisoblay
+ * olmadi» after a real answer — while a seller's addition, which queues the
+ * pass again under its own key, is answered again.
  *
  * A failure is NOT rethrown. The pass is best-effort by construction — the
  * request is in the VED's queue whatever happens here, and a person will
@@ -251,30 +266,130 @@ export async function registerCalcPrefillWorker(boss: PgBoss): Promise<void> {
     // `includeMetadata`: the stand-down sentence depends on whether this is a
     // re-delivery (`attemptStanding`) — customs/jobs.ts asks for it the same way.
     await boss.work<CalcPrefillJob>(queue, { includeMetadata: true }, async (jobs) => {
-      for (const job of jobs) await runPrefillJob(job.data, job.retryCount ?? 0);
+      for (const job of jobs) await runPrefillJob(job.data, job.retryCount ?? 0, job.id);
     });
   }
 }
 
+/**
+ * Which machine messages carry «➕ Shu so‘rovga qo‘shish» (docs/SAKKIZ-R3.md
+ * §10.2.5, his proposal 2): every message about a request that is still
+ * open — the reply, «hisoblay olmadi», and the stand-downs (a person on the
+ * job is the add door's own question: it then hands the addition to the VED
+ * in words). Not a closed request's: nothing can be added to an answer that
+ * is out, and not one that is gone.
+ */
+export function addFor(standing: StandDown | 'ok'): boolean {
+  return standing !== 'closed' && standing !== 'not_found';
+}
+
+/**
+ * Does this pass's answer reach the seller past his «✅ Mening vazifalarim»
+ * mute (`direct`)? Two passes do, and no other:
+ *  - a re-run the seller started himself with «✅ Qo‘shish» (his ⭐ of
+ *    Question 7): he was just told the result comes to this chat;
+ *  - any pass on a request that came in through «🤖 AI rastamojka»
+ *    (docs/IKKI-ESHIK.md §3.6, INT-5): he pressed that door FOR the answer —
+ *    its stand-downs and «hisoblay olmadi» included, the answer to his press.
+ * The door is the ROW's (`prefillStanding`'s read), never the job's: a job
+ * queued before 0141 carries none. 'plain' and NULL keep the mute — NULL is
+ * every request before 0141, the card form, the thread door and the agent,
+ * which stay exactly as today (§0.2).
+ */
+export function directPass(pass: string, door: IntakeDoor | null): boolean {
+  return pass.startsWith('amend:') || door === 'ai';
+}
+
+/**
+ * Is this pass SILENT toward the seller (docs/IKKI-ESHIK.md §2.4, his 3a)? A
+ * customs pass — rastamojka, podklyuch, and an addition's re-run alike (§2.6)
+ * — on a «🧮 Hisoblatish» request: the machine prepares the card for the VED
+ * and the seller hears nothing, its claim written `muted` («oddiy eshik») so
+ * a redelivery stays one note. Silence outranks `direct`: a plain request's
+ * «✅ Qo‘shish» re-run is told by the add door's own line, never by the pass.
+ * The yolkira tariff answer (`writes` false) still goes to the chat — his
+ * 2.5 b, no model. NULL is today's (§0.2); only 'plain' silences.
+ */
+export function silentPass(door: IntakeDoor | null, writes: boolean): boolean {
+  return writes && door === 'plain';
+}
+
+/** `sayOnce`'s mode for one pass: silent, past the mute, or today's (no options). */
+function voiceOf(direct: boolean, silent: boolean): [] | [{ direct: true }] | [{ silent: true }] {
+  if (silent) return [{ silent: true }];
+  return direct ? [{ direct: true }] : [];
+}
+
+/**
+ * Does the seller's copy of the machine's answer reach him — the drain's own
+ * three conditions, asked once (`reachOf`): he can log in, his chat is
+ * linked, and he has not muted the answers, or this re-run is one he started
+ * (`direct`, which sends past the mute). A read that fails answers no: the
+ * lenta then claims nothing about him.
+ */
+async function sellerHears(staffId: string, direct: boolean): Promise<boolean> {
+  try {
+    const { reachOf } = await import('../../platform/notifications/staff');
+    const reach = (await reachOf([staffId], 'CalcPrefilled')).get(staffId);
+    return reach === 'ok' || (direct && reach === 'muted');
+  } catch (err) {
+    logger.warn({ err, staffId }, '[calc-prefill] the seller’s reach not read — the lenta names no ask');
+    return false;
+  }
+}
+
 /** One job, on either queue — the payload's section says which pass it is. */
-async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<void> {
+async function runPrefillJob(data: CalcPrefillJob, retryCount: number, jobId: string): Promise<void> {
   const { requestId, staffId } = data;
   // K16: the section rides the payload, so this is no database read. A job
   // queued before round 2 carries none — it was a customs job, the only kind.
   const writes = sectionParts((data.section ?? 'rastamojka') as CalcSectionName).customs;
+  // Which pass this is — `sayOnce`'s key, so a seller's addition gets its
+  // own answer and a redelivery of either stays silent (§10.2.4). A job
+  // queued before passes had names was the landing's.
+  const pass = data.pass ?? 'landing';
+  // Which passes reach the seller past his mute (`directPass`): an «✅
+  // Qo‘shish» re-run, and any pass on a «🤖 AI rastamojka» request; which
+  // reach him not at all (`silentPass`): a customs pass on a «🧮» request.
+  // Every other pass keeps his mute — and its calls stay exactly the
+  // landing's (no options at all, `whileOpen` alone). Until the standing has
+  // read the request's door, only the pass name decides; a standing that
+  // throws has the door asked once more in the catch, and a read that fails
+  // there too is answered as a landing pass was before 0141.
+  let direct = directPass(pass, null);
+  let silent = false;
+  let voice = voiceOf(direct, silent);
+  /** Has the standing read the door? A read that threw has not (the catch asks once more). */
+  let doorRead = false;
   try {
     const { aiPrefill, prefillStanding } = await import('./prefill');
     const { sayOnce } = await import('./say-once');
     // A person may have reached the request first — the queue drains
     // when it drains, and pg-boss re-delivers. The machine stands down
-    // rather than deleting their groups and un-ticking their ✅.
-    const standing = attemptStanding(await prefillStanding(requestId, data.rev ?? null), retryCount, writes);
+    // rather than deleting their groups and un-ticking their ✅. The same
+    // read hands back the request's door (§0.3).
+    const seen: PrefillSeen = { door: null };
+    const standing = attemptStanding(await prefillStanding(requestId, data.rev ?? null, seen), retryCount, writes);
+    direct = directPass(pass, seen.door);
+    silent = silentPass(seen.door, writes);
+    voice = voiceOf(direct, silent);
+    doorRead = true;
     if (standing !== 'ok') {
       logger.info({ requestId, standing, retryCount }, '[calc-prefill] stood down — the request has moved');
       // Said, not silent (2026-10-21): the seller was promised a figure in
       // this chat, and a pass that stood down used to leave him waiting.
       const said = standDownWords(standing, writes);
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) {
+        const spoke = await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: said,
+          extra: { add: addFor(standing) },
+        }, ...voice);
+        // A re-delivery that found the dead pass unfinished is a failed pass:
+        // on a plain request the VED is told so on the card, once (§2.4).
+        if (spoke && silent && standing === 'unfinished') await failedNote(requestId);
+      }
       return;
     }
     // NOBODY typed this. The pass ran under the seller's id, so every
@@ -292,27 +407,53 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // the pass's compare-and-set chain starts there, so a save landing after
     // this check is a conflict and never the machine's base.
     const expected = { expectCustoms: writes, expectRev: data.rev ?? null };
-    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, expected);
+    // `pass`: an addition's re-run reads what that addition left stale, so the
+    // road is never priced on a total the new lines outgrew (law-money-1).
+    // The pass reads the door off the same row itself (`aiPrefill`'s first
+    // read) to choose its words; this worker decides only who hears them.
+    const out = await aiPrefill(requestId, { actorId: null }, { replyTo: staffId }, { ...expected, pass });
     if (out.stood) {
       // The section moved since queueing (§2.8) — the customs sentence — or
       // the pass stood down mid-run: the VED closed the request (CONC-1), or
       // a person overtook the machine before it wrote anything (CONC-5).
       logger.info({ requestId, stood: out.stood, overtaken: out.overtaken }, '[calc-prefill] stood down mid-pass');
       const said = STOOD_DOWN[out.stood];
-      if (said) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: said });
+      if (said) {
+        await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: said,
+          extra: { add: addFor(out.stood) },
+        }, ...voice);
+      }
       return;
     }
     // `whileOpen` (review CONC-1): the request is read under the claim's own
     // lock, and a VED who closed it after the pass's last step — «Готово»,
     // a hand-back — has sent the official answer; the machine's reply and its
     // lenta note must not follow it.
-    const spoke = await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: out.text }, { whileOpen: true });
+    // `silent` (§2.4): the claim is still taken — `spoke` stays the gate for
+    // the lenta note below, so a redelivered pass writes exactly one — and
+    // the seller hears nothing.
+    const spoke = await sayOnce(requestId, pass, {
+      userIds: [staffId],
+      type: 'CalcPrefilled',
+      text: out.text,
+      extra: { add: addFor('ok') },
+    }, { whileOpen: true, ...(silent ? { silent } : direct ? { direct } : {}) });
     if (!spoke) {
       // Withheld because the request closed: the seller is told so, once. Or
       // withheld because a message already went out (a re-delivery): the
       // claim drops this one too.
       const closed = (writes ? STOOD_DOWN : TARIFF_STOOD_DOWN).closed;
-      if (closed) await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: closed });
+      if (closed) {
+        await sayOnce(requestId, pass, {
+          userIds: [staffId],
+          type: 'CalcPrefilled',
+          text: closed,
+          extra: { add: addFor('closed') },
+        }, ...voice);
+      }
     }
     // The AI-VED's estimate, «rasmiy emas», to the AI sotuvchi's owner when
     // the agent sent this job (his Q5 ⭐ c) — a no-op otherwise. Only when
@@ -322,7 +463,8 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // failed» because the owner's copy could not be written.
     const customs = typeof out.customsUsd === 'number' ? out.customsUsd : null;
     const freight = typeof out.freightUsd === 'number' ? out.freightUsd : null;
-    if (spoke && (customs !== null || freight !== null)) {
+    // Never from a plain request: its estimate reaches nobody (§2.4, 3a).
+    if (spoke && !silent && (customs !== null || freight !== null)) {
       const parts = [
         customs !== null ? `rastamojka ≈ $${customs.toFixed(2)}` : null,
         freight !== null ? `yo'lkira ≈ $${freight.toFixed(2)}` : null,
@@ -341,6 +483,13 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     // reader already stands, or one the seller reading it is bounced from.
     // Only when THIS run spoke: a re-delivery writes no second note.
     if (spoke) {
+      // His 2.8 b's lenta line says the seller WAS asked for the law's figure.
+      // `spoke` is true for a claim row nobody receives too — a seller who
+      // muted the AI's answers (unless he started this re-run: `direct`), one
+      // with no linked chat, one who can no longer log in — and the VED must
+      // not wait on a question that never reached him (review p5-adv-2): the
+      // card then carries the rendering without the line.
+      if (out.lentaUnasked !== undefined && !(await sellerHears(staffId, direct))) out.lentaText = out.lentaUnasked;
       await writeReplyToLenta(requestId, out.lentaText).catch((err) =>
         logger.warn({ err, requestId }, '[calc-prefill] lenta note not written'),
       );
@@ -362,16 +511,63 @@ async function runPrefillJob(data: CalcPrefillJob, retryCount: number): Promise<
     );
   } catch (err) {
     logger.error({ err, requestId }, '[calc-prefill] pass failed — the VED still has the job');
+    // The standing itself threw, so the door was never read (K-SPEC-3): one
+    // more try, on its own, before the failure is said — a plain request's
+    // must stay silent, an AI request's must pass the mute. A read that fails
+    // too leaves the pass name alone deciding, as a landing was before 0141.
+    if (!doorRead) {
+      try {
+        const { requestIntakeDoor } = await import('./intake-door');
+        const door = await requestIntakeDoor(requestId);
+        direct = directPass(pass, door);
+        silent = silentPass(door, writes);
+        voice = voiceOf(direct, silent);
+      } catch (doorErr) {
+        logger.warn({ err: doorErr, requestId }, '[calc-prefill] the door not read either — the pass name decides');
+      }
+    }
     // …and the seller is told so, rather than waiting for a figure that
     // will not come — unless a message for this request already went out.
     // Best-effort: the drain may be what failed.
     try {
       const { sayOnce } = await import('./say-once');
-      await sayOnce(requestId, { userIds: [staffId], type: 'CalcPrefilled', text: writes ? PASS_FAILED : TARIFF_PASS_FAILED });
+      const spoke = await sayOnce(requestId, pass, {
+        userIds: [staffId],
+        type: 'CalcPrefilled',
+        text: writes ? PASS_FAILED : TARIFF_PASS_FAILED,
+        extra: { add: addFor('ok') },
+      }, ...voice);
+      // On a plain request the seller hears nothing, and the VED is told on
+      // the card that no AI note is coming — once, behind the same claim.
+      if (spoke && silent) await failedNote(requestId);
     } catch {
       /* the log line above is the record */
     }
+  } finally {
+    // The pass has ended, whichever way it went (§10.2.2): its ticket is
+    // cleared — by THIS job's id only — and an addition the seller made
+    // meanwhile is handed to its own job now. Never rethrown: the answer is
+    // out, and a settle that failed leaves a ticket the next standing clears
+    // when its job reads terminal.
+    try {
+      const { settlePass } = await import('./prefill-queue');
+      await settlePass(requestId, jobId);
+    } catch (err) {
+      logger.error({ err, requestId, jobId }, '[calc-prefill] settle failed');
+    }
   }
+}
+
+/**
+ * The plain door's «hisoblay olmadi» line on the card (§2.4) — best-effort,
+ * like every lenta note: a line that failed to write must not cost the claim
+ * that was taken. Behind the same setting as the pass's note, which it stands
+ * in for.
+ */
+async function failedNote(requestId: string): Promise<void> {
+  await writeReplyToLenta(requestId, PLAIN_PASS_FAILED_NOTE).catch((err) =>
+    logger.warn({ err, requestId }, '[calc-prefill] the failed pass’s lenta line not written'),
+  );
 }
 
 /**

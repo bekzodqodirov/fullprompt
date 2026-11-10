@@ -8,7 +8,9 @@ node_modules/
 test-results/
 playwright-report/
 coverage/
-tsconfig.tsbuildinfo
+# TypeScript incremental caches — `tsc` writes tsconfig.tsbuildinfo, `next build`
+# writes tsconfig.build.tsbuildinfo (it types src/ through tsconfig.build.json, #1223).
+*.tsbuildinfo
 public/sw.js
 public/sw.js.map
 

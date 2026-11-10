@@ -90,6 +90,7 @@ import { deleteImportBatch } from '@/modules/wms/customs/import-service';
 import { CalcError } from '@/modules/wms/calc/service';
 import { GET as listRoute } from '@/app/api/calc/import-baza/route';
 import { GET as statsRoute } from '@/app/api/calc/import-baza/stats/route';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * Import search by a HEADING (docs/SAKKIZ-R2.md §7.4).
@@ -253,6 +254,7 @@ afterAll(async () => {
 async function open(items: { name: string; tnvedCode: string; weightKg?: number | null; quantity?: number | null }[]) {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -641,7 +643,7 @@ describe('the AI pick recodes the row, and says so', () => {
     const [repriced] = await rowsOf(id);
     expect(repriced).toMatchObject({ tnvedCode: TK, bazaUsd: '9.5000', bazaSource: 'typed', bazaReason: mark });
     expect((await loadWorkspace(id))!.groups[0]!.warnings).toContain('ai_recode');
-    await confirmAllGroups(id, ctx());
+    await confirmAllGroups(id, ctx(), await sawRev(id));
     const [confirmed] = await db.select().from(calcGroups).where(eq(calcGroups.requestId, id));
     expect(confirmed!.confirmedWarnings).toContain('ai_recode');
 
@@ -669,10 +671,10 @@ describe('the AI pick recodes the row, and says so', () => {
       { items: [{ id: row!.id, seq: row!.seq, bazaUsd: 8.5, bazaBasis: 'kg' }], adds: [] },
       ctx(),
     );
-    await confirmAllGroups(recodedRequest, ctx());
+    await confirmAllGroups(recodedRequest, ctx(), await sawRev(recodedRequest));
     await sealCalc(
       recodedRequest,
-      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null },
+      { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(recodedRequest) },
       ctx(),
     );
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, recodedRequest));

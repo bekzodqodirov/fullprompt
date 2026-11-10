@@ -4,20 +4,25 @@ import {
   bareChoices,
   bareUnitFor,
   collectPromptText,
-  lineQuestionText,
+  lineNeedText,
+  lineNeedWhat,
+  lineNeeds,
   needFigure,
-  nextLineToAsk,
+  tableRowsOf,
+  type CalcFacts,
+  type CalcSection,
 } from '@/modules/wms/calc/intake';
 import { needLawOf, type NeedLaw } from '@/modules/wms/calc/needs';
 
 /**
- * The follow-up loop's decision, without a Telegram.
+ * Which rows the table marks ⚠️, without a Telegram.
  *
- * It asks about exactly the rows the ENGINE would refuse — a row stating no
- * figure at all, or a row stating a figure its LAW does not price in — and
- * about nothing else. A bot that asks about a row it could already price is a
- * bot the office stops answering, and that costs the feature more than a
- * missing number does.
+ * The table (docs/SAKKIZ-R3.md §2.1, his 1.10 c) replaced the question per
+ * line; what it marks is still exactly the rows the ENGINE would refuse — a
+ * row stating no figure at all, or a row stating a figure its LAW does not
+ * price in — and nothing else. A bot that asks about a row it could already
+ * price is a bot the office stops answering, and that costs the feature more
+ * than a missing number does.
  */
 const goods = (
   rows: {
@@ -29,7 +34,7 @@ const goods = (
     tnvedCode?: string | null;
     unit?: string | null;
   }[],
-) => ({ weightKg: 500, volumeM3: 10, goods: rows });
+): CalcFacts => ({ weightKg: 500, volumeM3: 10, goods: rows });
 
 const noLaws: ReadonlyMap<string, NeedLaw> = new Map();
 const laws = new Map<string, NeedLaw>([
@@ -37,31 +42,39 @@ const laws = new Map<string, NeedLaw>([
   ['6403990000', needLawOf({ dutyMode: 'max', dutyUnit: 'juft', dutySpecific: 3, dutyFree: false })],
 ]);
 
-describe('nextLineToAsk', () => {
+/** The first ⚠️ line, and the numbers the table marks ⚠️ — the same rule twice. */
+const firstNeed = (section: CalcSection, facts: CalcFacts, l: ReadonlyMap<string, NeedLaw>) =>
+  lineNeeds(section, facts, l)[0] ?? null;
+const warned = (section: CalcSection, facts: CalcFacts, l: ReadonlyMap<string, NeedLaw>) =>
+  tableRowsOf({ section, facts, laws: l })
+    .filter((r) => r.needs.length > 0)
+    .map((r) => r.no);
+
+describe('the table’s ⚠️ lines', () => {
   it('names the first row that states no figure at all', () => {
     const facts = goods([{ name: 'Monitor', quantity: 10 }, { name: 'Sumka' }, { name: 'Choynak' }]);
-    expect(nextLineToAsk('rastamojka', facts, noLaws)).toMatchObject({ index: 1, name: 'Sumka' });
+    expect(firstNeed('rastamojka', facts, noLaws)).toMatchObject({ index: 1, name: 'Sumka' });
+    expect(warned('rastamojka', facts, noLaws)).toEqual([2, 3]);
   });
 
-  it('walks past every row already dealt with — answered OR skipped', () => {
-    // `skip` replaced `after` (P1.3): a re-analysis after «➕ Yana
-    // ma'lumot» rebuilds the facts, and a cursor would have asked the
-    // first line again.
-    const facts = goods([{ name: 'Sumka' }, { name: 'Choynak' }]);
-    expect(nextLineToAsk('rastamojka', facts, noLaws, { skip: [0] })).toMatchObject({
-      index: 1,
-      name: 'Choynak',
-    });
-    expect(nextLineToAsk('rastamojka', facts, noLaws, { skip: [0, 1] })).toBeNull();
-    // A skip set is not a cursor: skipping only the second still asks the first.
-    expect(nextLineToAsk('rastamojka', facts, noLaws, { skip: [1] })).toMatchObject({ index: 0 });
+  it('walks past every row already dealt with — an answered line is ✅', () => {
+    // R2's «skipped» half is retired with ⏭ (1.10 c): a line left ⚠️ at
+    // «Tasdiqlash» is the VED's, and the table has no per-line skip.
+    const answered = goods([{ name: 'Sumka', quantity: 50 }, { name: 'Choynak' }]);
+    expect(firstNeed('rastamojka', answered, noLaws)).toMatchObject({ index: 1, name: 'Choynak' });
+    const both = goods([{ name: 'Sumka', quantity: 50 }, { name: 'Choynak', weightKg: 20 }]);
+    expect(firstNeed('rastamojka', both, noLaws)).toBeNull();
+    expect(warned('rastamojka', both, noLaws)).toEqual([]);
+    // Not a cursor: answering only the second still marks the first.
+    const second = goods([{ name: 'Sumka' }, { name: 'Choynak', weightKg: 20 }]);
+    expect(warned('rastamojka', second, noLaws)).toEqual([1]);
   });
 
   it('a weight, a count OR a pair all answer an uncoded line', () => {
     const two = (row: Parameters<typeof goods>[0][number]) => goods([row, { name: 'B', quantity: 1 }]);
-    expect(nextLineToAsk('rastamojka', two({ name: 'A', weightKg: 300 }), noLaws)).toBeNull();
-    expect(nextLineToAsk('rastamojka', two({ name: 'A', quantity: 5 }), noLaws)).toBeNull();
-    expect(nextLineToAsk('rastamojka', two({ name: 'A', measureUnit: 'm2', measureQty: 12 }), noLaws)).toBeNull();
+    expect(firstNeed('rastamojka', two({ name: 'A', weightKg: 300 }), noLaws)).toBeNull();
+    expect(firstNeed('rastamojka', two({ name: 'A', quantity: 5 }), noLaws)).toBeNull();
+    expect(firstNeed('rastamojka', two({ name: 'A', measureUnit: 'm2', measureQty: 12 }), noLaws)).toBeNull();
   });
 
   it('a CODED line is asked the figure its law counts in, even when it states another', () => {
@@ -70,10 +83,11 @@ describe('nextLineToAsk', () => {
       { name: 'Sviter', weightKg: 150, tnvedCode: '6110200000' },
       { name: 'B', quantity: 1 },
     ]);
-    const line = nextLineToAsk('rastamojka', facts, laws);
+    const line = firstNeed('rastamojka', facts, laws);
     expect(line).toMatchObject({ index: 0, units: ['dona'], anyMeasure: false });
     expect(bareUnitFor(line!)).toBe('dona');
-    expect(lineQuestionText(line!)).toContain('boj kamida $1/dona');
+    expect(lineNeedText(line!)).toContain('boj kamida $1/dona');
+    expect(tableRowsOf({ section: 'rastamojka', facts, laws })[0]!.needs).toEqual(['dona']);
   });
 
   it('a SINGLE line inherits the shipment weight and is never asked about', () => {
@@ -81,13 +95,22 @@ describe('nextLineToAsk', () => {
     // shipment's weight IS that line's weight (said in its note), and
     // asking a person to retype a number they have given reads as a broken
     // form.
-    expect(nextLineToAsk('rastamojka', goods([{ name: 'Sumka' }]), noLaws)).toBeNull();
+    expect(firstNeed('rastamojka', goods([{ name: 'Sumka' }]), noLaws)).toBeNull();
+  });
+
+  it('a missing CODE is never a question — on the AI door the reading or the VED codes the row (docs/IKKI-ESHIK.md §3.1, his 5a)', () => {
+    // The table tells such a row «kod yo‘q — …» (intake-table.test.ts); what it ASKS
+    // stays the rows the engine would refuse, and an uncoded row with a figure prices.
+    const facts = goods([{ name: 'Sumka', quantity: 50 }, { name: 'Choynak', weightKg: 20, tnvedCode: null }]);
+    expect(firstNeed('rastamojka', facts, noLaws)).toBeNull();
+    expect(warned('rastamojka', facts, laws)).toEqual([]);
   });
 
   it('a freight-only job is asked nothing — a truck is priced on the totals', () => {
     const facts = goods([{ name: 'Sumka' }, { name: 'Choynak' }]);
-    expect(nextLineToAsk('yolkira', facts, noLaws)).toBeNull();
-    expect(nextLineToAsk('podklyuch', facts, noLaws)).toMatchObject({ index: 0 });
+    expect(firstNeed('yolkira', facts, noLaws)).toBeNull();
+    expect(warned('yolkira', facts, noLaws)).toEqual([]);
+    expect(firstNeed('podklyuch', facts, noLaws)).toMatchObject({ index: 0 });
   });
 });
 
@@ -113,15 +136,14 @@ describe('what a bare «50» means, and how it is asked', () => {
 });
 
 describe('the words', () => {
-  it('the question names the row by its number and its name', () => {
-    expect(lineQuestionText(anyMeasureLine(2, 'Sumka'))).toContain('3-qator «Sumka»');
+  it('the ↳ names the row by its number and its name', () => {
+    expect(lineNeedText(anyMeasureLine(2, 'Sumka'))).toContain('3-qator «Sumka»');
   });
 
-  it('an uncoded line is asked for a count OR a weight, never one unit', () => {
-    // judge UX5: «nechta dona yoki necha kg?» — either prices it.
-    const text = lineQuestionText(anyMeasureLine(0, 'Sumka'));
-    expect(text).toContain('nechta dona yoki necha kg');
-    expect(text).toContain('120 m²');
+  it('an uncoded line owes a count OR a weight, never one unit', () => {
+    // judge UX5, and product-fit-19 c: «soni (dona) yoki sof og‘irligi (kg)»
+    // — never a bare «og‘irligi» that reads like the table's brutto.
+    expect(lineNeedWhat(anyMeasureLine(0, 'Sumka'))).toBe('soni (dona) yoki sof og‘irligi (kg)');
   });
 
   it('the «send everything» prompt names a code and a pair on the customs sections', () => {

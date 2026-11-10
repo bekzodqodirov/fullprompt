@@ -8,16 +8,16 @@ import { AI_READ_FAILURE, parseClientHint, type AiReadFailure } from '@/modules/
 import { looksLikeMaterial, parseManualFacts, readGoodsLines } from '@/modules/wms/calc/intake-manual';
 import { intakeFileKind, startIntake, endIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import { aiStepsText, settleAnalysis } from '@/modules/platform/telegram/staff-handlers';
+import { collectorSource } from '../fixtures/calc-collector-source';
 
 /**
  * Round 1 of his eight items (docs/SAKKIZ-BAND.md, 2026-10-21): the bot stops
  * losing what it is sent, and says why when the model does not read it.
  */
 
-const HANDLERS = readFileSync(
-  path.join(__dirname, '..', '..', 'src', 'modules', 'platform', 'telegram', 'staff-handlers.ts'),
-  'utf8',
-);
+// The collector's files (docs/SAKKIZ-R3.md K16): the summary's words moved
+// into calc-dialog.ts with the rest of the dialogue.
+const HANDLERS = collectorSource();
 
 describe('the model’s answer, read — or the reason it is missing (his 1.6 a)', () => {
   const good = JSON.stringify({
@@ -162,7 +162,7 @@ describe('the first message: the customer, or material (his 1.7 b)', () => {
 describe('an analysis lands only where it still belongs (the diagnosis’ cause 7)', () => {
   const chat = 990_000_001n;
   const base = (): IntakeState => {
-    const s = startIntake(chat, 'rastamojka');
+    const s = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
     endIntake(chat);
     return { ...s, stage: 'material', material: ['Kurtka 300 dona'], fileCount: 1, analysing: 'T1' };
   };
@@ -201,7 +201,8 @@ describe('an analysis lands only where it still belongs (the diagnosis’ cause 
 
   it('the confirm lands only what the seller was shown', () => {
     const save = HANDLERS.slice(HANDLERS.indexOf('  // save — only what the seller was SHOWN.'));
-    expect(save.slice(0, 1100)).toContain("if (state.stage !== 'review' && state.stage !== 'question') {");
+    // R3 narrows it to the table stage: 'question' is retired (his 1.10 c).
+    expect(save.slice(0, 1100)).toContain("if (state.stage !== 'review') {");
     expect(save.slice(0, 1100)).toContain('if (state.analysing) {');
   });
 });
@@ -241,19 +242,33 @@ describe('the queued AI pass is never silent when it does not answer', () => {
     expect(told, 'the stand-down no longer speaks — re-anchor').toBeGreaterThan(-1);
     const leaves = branch.indexOf('return;');
     expect(told).toBeLessThan(leaves);
-    expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, {');
-    const failed = JOBS.slice(JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'"));
-    expect(failed.slice(0, 600)).toContain('await sayOnce(requestId, {');
-    expect(failed.slice(0, 600)).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
+    // Round 3 (docs/SAKKIZ-R3.md §10.2.4): the claim is the job's PASS.
+    expect(branch.slice(told, leaves)).toContain('await sayOnce(requestId, pass, {');
+    // Re-anchored for Ikki eshik (docs/IKKI-ESHIK.md §2.4, K-SPEC-3): the
+    // catch first asks the door once more when the standing never read it,
+    // so its sentence sits past the old 600-character window — the pin reads
+    // the whole catch body instead, up to its `finally`.
+    const at = JOBS.indexOf("'[calc-prefill] pass failed — the VED still has the job'");
+    const failed = JOBS.slice(at, JOBS.indexOf('} finally {', at));
+    expect(failed).toContain('await sayOnce(requestId, pass, {');
+    expect(failed).toContain('text: writes ? PASS_FAILED : TARIFF_PASS_FAILED');
   });
 });
 
 describe('an album before the customer is named is asked about once', () => {
-  it('the re-ask is skipped for the rest of the same album', () => {
+  // Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.4-§1.6, 2026-11-08): the
+  // per-album guard is gone because nothing is asked per file at all — every
+  // file redraws the ONE question through the kept-last draw, coalesced per
+  // chat, so an album (or a forward burst) moves it once. The behaviour is
+  // pinned in calc-plain-door.test.ts; this pins the wire.
+  it('every file redraws the one question through the coalesced draw — no ask of its own', () => {
     const handler = HANDLERS.slice(HANDLERS.indexOf("const waiting = state.stage === 'client' || state.stage === 'section';"));
-    const skip = handler.indexOf('if (asked) return;');
-    expect(skip, 'the album guard has moved — re-anchor').toBeGreaterThan(-1);
-    expect(skip).toBeLessThan(handler.indexOf("if (state.stage === 'section') {"));
-    expect(handler.slice(0, 600)).toContain('group === state.reaskedGroup');
+    const body = handler.slice(0, handler.indexOf('\n  });'));
+    expect(body).toContain('drawPromptSoon(ctx, chatId);');
+    expect(body).not.toContain('if (asked) return;');
+    expect(body).not.toContain('zoneKeyboard(');
+    const dialog = readFileSync('src/modules/platform/telegram/calc-dialog.ts', 'utf8');
+    const draw = dialog.slice(dialog.indexOf('export function drawPromptSoon('));
+    expect(draw.slice(0, draw.indexOf('\n}'))).toContain('keepLastSoon(`prompt:${chatId}`');
   });
 });

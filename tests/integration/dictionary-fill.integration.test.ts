@@ -50,6 +50,7 @@ import {
   setGroupRates,
   type TableItemEdit,
 } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * `calc_bazas` SECOND, inside `saveTable`'s fill (docs/SAKKIZ-R2.md §7.2).
@@ -132,6 +133,7 @@ async function open(items: { name: string; tnvedCode?: string | null; quantity?:
   for (const i of items) madeNames.push(i.name);
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -184,8 +186,8 @@ async function sealOne(product: string, bazaUsd: number) {
   const id = await open([{ name: product, tnvedCode: CODE, weightKg: 100 }]);
   await save(id);
   await save(id, [await editOf(id, 1, { bazaUsd, bazaBasis: 'kg' })]);
-  await confirmAllGroups(id, ctx());
-  await sealCalc(id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await confirmAllGroups(id, ctx(), await sawRev(id));
+  await sealCalc(id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(id) }, ctx());
   return id;
 }
 
@@ -384,6 +386,7 @@ describe('the seal records whether its m³ is the lines’ Σ', () => {
     madeNames.push(a, b);
     const result = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: dealId,
         section: 'rastamojka',
@@ -405,8 +408,8 @@ describe('the seal records whether its m³ is the lines’ Σ', () => {
       await editOf(result.id, 1, { bazaUsd: 3, bazaBasis: 'kg' }),
       await editOf(result.id, 2, { bazaUsd: 4, bazaBasis: 'kg' }),
     ]);
-    await confirmAllGroups(result.id, ctx());
-    await sealCalc(result.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+    await confirmAllGroups(result.id, ctx(), await sawRev(result.id));
+    await sealCalc(result.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(result.id) }, ctx());
     const [row] = await db.execute<{ fromLines: string | null }>(sql`
       SELECT breakdown->>'volumeFromLines' AS "fromLines" FROM calc_versions WHERE request_id = ${result.id}::uuid`);
     return row?.fromLines ?? null;

@@ -15,13 +15,12 @@ import {
 import { ftlReady } from '../ftl/service';
 import { activeClientsByPhone } from '../client-cabinet/service';
 import { logger } from '../../platform/logger';
-import { intakeNoteText, landingItems, type CalcFacts, type CalcSection } from './intake';
+import { intakeNoteText, landingItems, type CalcFacts, type CalcSection, type IntakeDoor } from './intake';
 import { bookLawsFor } from './book-laws';
-import { recordAiPass } from './ai-cost';
-import type { AiUsage } from '../tnved/service';
+import { attachIntakePasses } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
 import { dealTitleFor } from './deal-title';
-import { CalcError, calcOpenRefusal, leadTakesJobs } from './service';
+import { CalcError, calcOpenRefusal, leadTakesJobs, rootOfNoteSql } from './service';
 
 /**
  * Where a confirmed «Hisoblatish» lands (owner: «hammasi lead yoki ochilgan
@@ -215,10 +214,7 @@ export async function cardOfNote(
 /** The ROOT request an earlier attempt opened on this note — a retry returns it instead of opening a second. */
 export async function rootRequestOfNote(noteId: string): Promise<string | null> {
   const rows = (await db.execute(sql`
-    SELECT id::text AS id FROM calc_requests
-     WHERE note_id = ${noteId}::uuid AND supersedes_request_id IS NULL
-     ORDER BY requested_at
-     LIMIT 1
+    SELECT id::text AS id FROM calc_requests WHERE ${rootOfNoteSql(noteId)}
   `)) as unknown as { id: string }[];
   return rows[0]?.id ?? null;
 }
@@ -462,11 +458,11 @@ export async function landIntake(input: {
   /** The zone the seller chose on the AI podklyuch door («qayerdan?»). */
   freightZone?: string | null;
   /**
-   * What the intake's model calls cost — EVERY reading the model answered,
-   * ok or not, a re-read included (his 2.9 c) — recorded once the request
-   * exists, one `'intake'` row each.
+   * Which bot door collected it (0141, docs/IKKI-ESHIK.md §0.1) — 'plain' /
+   * 'ai' from the bot's collector, null from the AI sotuvchi. REQUIRED, as
+   * `openCalcRequest`'s is: an absent door would read «legacy» in silence.
    */
-  usages?: readonly (AiUsage & { at?: number })[];
+  intakeDoor: IntakeDoor | null;
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -534,9 +530,45 @@ export async function landIntake(input: {
   }
 
   // An earlier attempt already queued this very note: the job is in the
-  // queue, and neither it nor the AI pass is opened twice (judge conc-13).
+  // queue, and it is never opened twice (judge conc-13). ONE exit for both
+  // ways of finding that out — the pooled re-read here, and
+  // `openCalcRequest`'s in-transaction one under the note's lock, which
+  // catches a concurrent twin of this very landing (docs/SAKKIZ-R3.md K2).
+  //
+  // Both exits FINISH what the earlier attempt may not have reached, in this
+  // order (docs/SAKKIZ-R3.md §17.3):
+  //  - the collection's readings are attached (§7.2.9): a landing cut after
+  //    `openCalcRequest` committed, or whose attach logged and failed, is
+  //    finished through here, and without it the readings kept `request_id`
+  //    NULL for ever;
+  //  - the pass is queued and the card moved (§10.2.1, re-check p5-p6-6): the
+  //    earlier attempt returned before the queue and the stage move, so a
+  //    landing cut after `openCalcRequest` committed was resumed with ZERO
+  //    passes while the retried ✅ promised a VED answer. The pass goes through
+  //    the ticket — a no-op beside a pass that stands, refused (`atRev: 0`, the
+  //    revision every request is born at) once anybody has written on the
+  //    request — and the stage move is the forward-only move the landing
+  //    makes, a no-op on a card already there.
+  const landedTarget = target;
+  async function retried(requestId: string): Promise<IntakeTarget> {
+    await attachIntakePasses(input.noteId, requestId).catch((err: unknown) =>
+      logger.warn({ err, requestId }, '[calc-intake] readings not attached'),
+    );
+    const replyQueued = await queueCalcPrefill({
+      requestId,
+      staffId: input.collectedBy,
+      section: input.section,
+      atRev: 0,
+    });
+    try {
+      await moveToCalcStage(landedTarget, input.collectedBy);
+    } catch (err) {
+      logger.error({ err, kind: landedTarget.kind, id: landedTarget.id }, '[calc-intake] stage move failed');
+    }
+    return { ...landedTarget, queued: true, requestId, queueError: null, replyQueued };
+  }
   const queuedBefore = await rootRequestOfNote(input.noteId);
-  if (queuedBefore) return { ...target, queued: true, requestId: queuedBefore, queueError: null };
+  if (queuedBefore) return await retried(queuedBefore);
 
   // The collected job goes into the VED queue — the bot and the card form are
   // two doors into ONE queue (docs/VED.md, phase A). Fenced for the same
@@ -571,36 +603,24 @@ export async function landIntake(input: {
         items: landingItems(input.facts),
         noteId: input.noteId,
         source: 'bot',
+        intakeDoor: input.intakeDoor,
         hasMaterials: input.fileCount > 0,
         hasCertificate: input.hasCertificate ?? true,
         freightZone: input.freightZone ?? null,
       },
       { actorId: input.collectedBy },
     );
+    if (opened.existing) return await retried(opened.id);
     queued = true;
     requestId = opened.id;
-    // Each bill in its OWN try (judge concurrency-8): the records shared one
-    // `try` with the queue below, so a failed bookkeeping insert skipped the
-    // pass — the request landed with no reply — and every extra record is
-    // one more chance of that. Still BEFORE the queue, so the soft budget
-    // the pass reads already counts the intake's calls.
-    for (const usage of input.usages ?? []) {
-      try {
-        await recordAiPass({
-          requestId: opened.id,
-          staffId: input.collectedBy,
-          kind: 'intake',
-          model: usage.model,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          // Billed on the day it was SPENT (judge concurrency-11), not the
-          // day the collection landed.
-          createdAt: usage.at === undefined ? null : new Date(usage.at),
-        });
-      } catch (err) {
-        logger.warn({ err, requestId: opened.id }, '[calc-intake] usage not recorded');
-      }
-    }
+    // The collection's readings were billed by the reading job the moment the
+    // model answered, on the note (docs/SAKKIZ-R3.md §7.2.9) — the landing
+    // only hands them to the request it opened. Never in front of the queue:
+    // a failing attach logs and the pass is queued all the same (judge
+    // concurrency-8), and the soft budget counted the rows at answer time.
+    await attachIntakePasses(input.noteId, opened.id).catch((err: unknown) =>
+      logger.warn({ err, requestId: opened.id }, '[calc-intake] readings not attached'),
+    );
     // …and the AI VED hodimi is handed the job HERE rather than by the
     // caller. The bot did it from its own handler, so any second caller of
     // this landing would silently get no pass at all — the same asymmetry

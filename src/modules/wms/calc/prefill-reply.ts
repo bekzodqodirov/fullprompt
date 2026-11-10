@@ -8,8 +8,8 @@ import type {
 } from './pricing';
 import { needPhraseUz, needUnitOf } from './needs';
 import type { SealBlocker } from './workspace';
-import { fitTelegram, roadLines, roadRefusalLine, type AiVedFreight } from './ai-reply';
-import { TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
+import { fitTelegram, roadLines, roadRefusalLine, vedGapsLine, type AiVedFreight, type ReplyAudience } from './ai-reply';
+import { RERUN_WORD, TARIFF_ESTIMATE_WORD, TARIFF_REPLY_TITLE, VED_ESTIMATE_MARK } from './reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -156,16 +156,30 @@ export interface TariffReplyInput {
   /** `freightAnswerFor`'s answer — a yolkira job always has a road. */
   freight: AiVedFreight;
   link: string | null;
-  /** The card's copy carries the VED's line under its heading when the zone was guessed. */
-  audience: 'chat' | 'lenta';
+  /** The landing's pass, or the re-run after a seller's addition — whose
+   * heading says «qayta hisob» (docs/SAKKIZ-R3.md §2.5). REQUIRED (#790). */
+  pass: 'landing' | 'amend';
+  /** The card's copy carries the VED's line under its heading when the zone
+   * was guessed, and a refusal's tail is worded for its reader. */
+  audience: ReplyAudience;
+  /**
+   * A bot-door request (docs/IKKI-ESHIK.md §2.4, §3.5): the plain door keeps
+   * this answer in the chat (his 2.5 b) and asks nothing — a missing cube or
+   * brutto reads «— VED xodimi sizdan so‘raydi», and the lenta names it under
+   * «⚠️ VED uchun:». False keeps today's words (§0.2). REQUIRED (#790).
+   */
+  noAsk: boolean;
 }
 
 export function tariffReplyText(input: TariffReplyInput): string {
   const f = input.freight;
   // The words of the title are reply-heads.ts's, so the lenta chip that
   // anchors on the PRICED title cannot drift from what this writes (#513).
+  // A re-run's word after the title AND its estimate word: a priced re-run
+  // still starts with TARIFF_PRICED_HEAD, the chip's anchor (PF-9).
   const title = [TARIFF_REPLY_TITLE]
     .concat(f.ok ? [TARIFF_ESTIMATE_WORD] : [])
+    .concat(input.pass === 'amend' ? [RERUN_WORD] : [])
     .concat(input.clientLabel ? [input.clientLabel] : [])
     .concat(input.cardLabel ? [input.cardLabel] : [])
     .join(' · ');
@@ -175,13 +189,16 @@ export function tariffReplyText(input: TariffReplyInput): string {
     // him to do: choose the zone before he prices it.
     out.push(`${VED_ESTIMATE_MARK} zona «${f.zoneReadFrom ?? ''}»dan taxmin, rasmiy emas — zonani o‘zingiz tanlang.`);
   }
+  // A door request's gaps are the VED's to get (§3.5) — said where he reads first.
+  const gaps = input.noAsk && input.audience === 'lenta' ? vedGapsLine([], f) : null;
+  if (gaps) out.push(gaps);
   if (f.ok) {
     // The road's own lines — ONE shape for this reply and the podklyuch one.
     out.push(...roadLines(f));
     out.push('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
   } else {
     // Law 6: a refusal is a sentence, and it says who can fix it.
-    out.push(roadRefusalLine(f));
+    out.push(roadRefusalLine(f, input.audience, input.noAsk));
   }
   if (input.link) out.push(`Karta: ${input.link}`);
   return fitTelegram(out, [], [], []);

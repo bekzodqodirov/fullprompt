@@ -79,6 +79,7 @@ function land(
   opts: { section: CalcSection; facts: CalcFacts; phone?: string | null; client?: { id: string; clientCode: string; name: string } | null },
 ) {
   return landIntake({
+    intakeDoor: null,
     noteId: uuidv4(),
     section: opts.section,
     facts: opts.facts,

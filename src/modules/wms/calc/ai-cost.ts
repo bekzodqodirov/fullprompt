@@ -33,7 +33,13 @@ export type AiPassKind = 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar';
  */
 type AiPassAnchor =
   | { kind: 'similar'; requestId: null }
-  | { kind: Exclude<AiPassKind, 'similar'>; requestId: string };
+  | { kind: 'intake'; requestId: string; intakeNoteId?: string | null }
+  // A collection's reading is billed when the model answers, before any
+  // request exists (0139): the collection's note anchors it, and the landing
+  // fills the request (`attachIntakePasses`). `string | null`, so the reading
+  // job passes an add collection's request or none without a branch.
+  | { kind: 'intake'; requestId: string | null; intakeNoteId: string }
+  | { kind: Exclude<AiPassKind, 'similar' | 'intake'>; requestId: string };
 
 /**
  * Record one model call. Never throws: a ledger that cannot be written must
@@ -46,9 +52,10 @@ export async function recordAiPass(
     inputTokens?: number | null;
     outputTokens?: number | null;
     /**
-     * When the call was MADE, for a bill written later than it was spent (the
-     * intake bills at the landing, judge concurrency-11) — the day's count
-     * reads this column. Absent = now, the column's own default.
+     * When the call was MADE: a reading's bill is dated when the model
+     * ANSWERED (the reading job, docs/SAKKIZ-R3.md §7.2.10; judge
+     * concurrency-11) — the day's count reads this column. Absent = now, the
+     * column's own default.
      */
     createdAt?: Date | null;
   },
@@ -56,6 +63,7 @@ export async function recordAiPass(
   try {
     await db.insert(aiCalcPasses).values({
       requestId: input.requestId,
+      intakeNoteId: 'intakeNoteId' in input ? (input.intakeNoteId ?? null) : null,
       staffId: input.staffId ?? null,
       kind: input.kind,
       model: input.model,
@@ -65,6 +73,26 @@ export async function recordAiPass(
     });
   } catch (err) {
     logger.warn({ err, requestId: input.requestId }, '[ai-cost] pass not recorded');
+  }
+}
+
+/**
+ * A collection's readings, billed on its note before it landed, now belong to
+ * the request the landing opened (0139). Only rows still standing on the note
+ * alone are moved, so a repeat is a no-op. Never throws, like the bill: a
+ * ledger row left on the note still counts in the day's budget.
+ */
+export async function attachIntakePasses(noteId: string, requestId: string): Promise<number> {
+  try {
+    const rows = await db.execute<{ id: string }>(sql`
+      UPDATE ai_calc_passes SET request_id = ${requestId}::uuid
+       WHERE intake_note_id = ${noteId}::uuid AND request_id IS NULL
+      RETURNING id::text AS id
+    `);
+    return rows.length;
+  } catch (err) {
+    logger.warn({ err, noteId, requestId }, '[ai-cost] intake passes not attached');
+    return 0;
   }
 }
 
@@ -102,4 +130,41 @@ export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<numbe
        AND ${kind}
   `);
   return Math.max(0, configured - Number(row?.used ?? 0));
+}
+
+/**
+ * Will the AI VED pass have a model today — a key AND budget left? The two
+ * mean the same thing to a reader that says what happens next: the table's
+ * «↳ kod yo‘q — AI hisoblashda topadi» is a promise only while both hold, and
+ * «VED xodimi qo‘yadi» otherwise (docs/IKKI-ESHIK.md §3.1). An unreadable
+ * ledger is not a spent budget (as the reading's own gate reads it).
+ *
+ * ONE home for «available» (review PF-SPEC-4, #513): the table's words and
+ * the landing pass ask THIS, never each its own `aiConfigured() &&
+ * aiCalcBudgetLeft() > 0` — written twice, the two disagreed on exactly the
+ * unreadable ledger, and the table promised a pass that would not run.
+ */
+export async function aiCalcAvailable(): Promise<boolean> {
+  const { hasKey, budgetLeft } = await aiCalcStanding();
+  return hasKey && budgetLeft > 0;
+}
+
+/**
+ * The two halves of «available», for the one reader that must say WHICH half
+ * failed: the landing pass prints «AI sozlanmagan» (the server) apart from
+ * «AI kunlik limiti tugadi» (today). Same rule as `aiCalcAvailable`, from the
+ * same body — an unreadable ledger reads as budget left — so the table's
+ * promise and the pass cannot disagree (review PF-SPEC-4: prefill read the
+ * ledger bare, threw, and failed the pass the table had promised).
+ *
+ * `hasKey` lets a test stand in for the environment's key, as the pass's
+ * `deps.configured` always has.
+ */
+export async function aiCalcStanding(
+  hasKey?: boolean,
+): Promise<{ hasKey: boolean; budgetLeft: number }> {
+  const { aiConfigured } = await import('../../platform/ai/model');
+  const key = hasKey ?? aiConfigured();
+  if (!key) return { hasKey: false, budgetLeft: 0 };
+  return { hasKey: true, budgetLeft: await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY) };
 }

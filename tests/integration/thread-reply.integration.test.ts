@@ -333,6 +333,21 @@ describe('15. what does not land says so — never the paid AI', () => {
     expect((await reply(P.S, customer, 'x'))?.text).toBe(REPLY_SENTENCES.customer);
   });
 
+  // Re-anchored for round 3's add door (docs/SAKKIZ-R3.md §9.6, regression-2):
+  // a reply to an AI answer that carries ➕ is HANDLED with no words of the
+  // door's own — the add door says everything by chat id — and never null,
+  // which would hand the text on to Door B, an armed task and the paid AI.
+  // Without `add` the same ping stays not replyable (Q2 a).
+  it('a reply to an AI answer with ➕ is handled with no words; without ➕ it is not replyable', async () => {
+    const requestId = '00000000-0000-4000-8000-00000000ca01';
+    const add = await sentPing(P.S, 'CalcPrefilled', { add: true, requestId });
+    expect(await replyVerdictFor(CHAT[P.S]!, add, P.S)).toEqual({ kind: 'calc_add', requestId });
+    expect(await reply(P.S, add, `2: 40 juft ${SFX}`)).toEqual({ text: null });
+    const plain = await sentPing(P.S, 'CalcPrefilled', { requestId });
+    expect(await replyVerdictFor(CHAT[P.S]!, plain, P.S)).toEqual({ kind: 'not_replyable' });
+    expect((await reply(P.S, plain, 'x'))?.text).toBe(REPLY_SENTENCES.not_replyable);
+  });
+
   // Q2 a («hozircha javob qabul qilinmaydi»): the four «Hisob tayyor» pings
   // are queued with the text alone — no thread, no task — so a swipe-reply
   // to one is refused in words and writes NOTHING, and the ping carries no

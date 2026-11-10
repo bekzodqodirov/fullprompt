@@ -25,6 +25,7 @@ import { finishCalcRequest, leadTakesJobs, openCalcRequest, takeCalcRequest } fr
 import { recalcFromSealed, recordOffer, sealCalc, setFreightZone } from '@/modules/wms/calc/workspace';
 import { answerFloorStandsSql } from '@/modules/wms/calc/version-set';
 import { winLead } from '@/modules/wms/crm/service';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * «Yutildi» on a lead that collected several calculations (his Q5 a,
@@ -65,6 +66,7 @@ async function mintLead(name: string): Promise<string> {
 async function sealedOn(leadId: string) {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'lead',
       entityId: leadId,
       section: 'yolkira',
@@ -79,7 +81,7 @@ async function sealedOn(leadId: string) {
   );
   madeRequests.push(request.id);
   await setFreightZone(request.id, 'cn', ctx());
-  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx());
   const version = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, request.id) });
   return { requestId: request.id, versionId: version!.id, floor: Number(version!.totalUsd), sealedAt: version!.sealedAt };
 }
@@ -88,6 +90,7 @@ async function sealedOn(leadId: string) {
 async function openOn(leadId: string, goods = `monitor ${tag()}`): Promise<string> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'lead',
       entityId: leadId,
       section: 'rastamojka',
@@ -108,7 +111,7 @@ async function openOn(leadId: string, goods = `monitor ${tag()}`): Promise<strin
 async function answeredOn(leadId: string, amount: number): Promise<string> {
   const id = await openOn(leadId);
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amountText: String(amount), currency: 'USD', note: 'gotovo', internalNote: 'ichki' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency: 'USD', note: 'gotovo', internalNote: 'ichki' }, ctx(), await sawRev(id));
   return id;
 }
 
@@ -297,6 +300,7 @@ describe('a won lead opens a deal per SALE', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',
@@ -318,6 +322,7 @@ describe('a won lead opens a deal per SALE', () => {
     await expect(
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',
@@ -348,15 +353,19 @@ describe('a won lead opens a deal per SALE', () => {
     expect(await cardOf(job)).toEqual({ type: 'lead', id: leadId });
   });
 
-  it('two presses of one form with one note id: one job, and the second hears note_taken, not a 23505', async () => {
+  it('two presses of one form with one note id: one job, and the second finds it — never a 23505', async () => {
     // Both pass the pooled «is the note taken» check while a third party holds
     // the lead; released together, the first writes the note in its
-    // transaction and the second meets the note's KEY (review).
+    // transaction. The second used to meet the note's KEY (review) and is now
+    // parked on the note's own lock first (docs/SAKKIZ-R3.md K2): it reads
+    // the first's request and answers `existing` with it — which the card
+    // form's action words as the same `note_taken`.
     const leadId = await mintLead('Ikki bosish');
     const noteId = randomUUID();
     const press = () =>
       openCalcRequest(
         {
+          intakeDoor: null,
           entityType: 'lead',
           entityId: leadId,
           section: 'rastamojka',
@@ -370,7 +379,7 @@ describe('a won lead opens a deal per SALE', () => {
         },
         ctx(),
       ).then(
-        (r) => ({ ok: true as const, id: r.id }),
+        (r) => ({ ok: true as const, id: r.id, existing: r.existing }),
         (e: unknown) => ({ ok: false as const, code: (e as { code?: string }).code }),
       );
     let both: Promise<[Awaited<ReturnType<typeof press>>, Awaited<ReturnType<typeof press>>]> | null = null;
@@ -391,9 +400,13 @@ describe('a won lead opens a deal per SALE', () => {
       await held`COMMIT`;
     });
     const results = await both!;
-    for (const r of results) if (r.ok) madeRequests.push(r.id);
-    expect(results.filter((r) => r.ok)).toHaveLength(1);
-    expect(results.filter((r) => !r.ok).map((r) => (r.ok ? '' : r.code))).toEqual(['note_taken']);
+    for (const r of results) if (r.ok && !r.existing) madeRequests.push(r.id);
+    expect(results.filter((r) => !r.ok)).toEqual([]);
+    const opened = results.flatMap((r) => (r.ok ? [r] : []));
+    expect(opened.map((r) => r.existing).sort()).toEqual([false, true]);
+    expect(new Set(opened.map((r) => r.id)).size).toBe(1);
+    const jobs = await db.select({ id: calcRequests.id }).from(calcRequests).where(eq(calcRequests.entityId, leadId));
+    expect(jobs).toHaveLength(1);
   });
 
   it('a «Qayta hisoblash» racing the win lands on the DEAL the win moved its parent to', async () => {

@@ -81,6 +81,104 @@ export function mayRerouteTruck(
 }
 
 /**
+ * «Qabul skladini o'zgartirish» BEFORE departure (the owner's 6a,
+ * docs/NARX-VA-RAQAM.md §2.4 + §3.2.8) — a mis-picked destination fixed on
+ * the same truck under the same number, instead of a cancel and a new number.
+ * Every refusal is a sentence (`batches.destChange.errors`, fenced).
+ */
+export const DEST_CHANGE_REFUSALS = [
+  'forbidden',
+  'batch_not_found',
+  'batch_cancelled',
+  'not_before_departure',
+  'already_unloaded',
+  'dest_changed',
+  'bad_target',
+  'dest_agent_sent',
+  'same_destination',
+  'destination_is_origin',
+  'target_inactive',
+  'dest_money_country',
+] as const;
+export type DestChangeErrorCode = (typeof DEST_CHANGE_REFUSALS)[number];
+
+/**
+ * The cancel's door, at the ORIGIN (his 6a: whoever may cancel the truck and
+ * open it again may fix it in place): `batches.depart_close` there, or
+ * `plans.manage` there — unscoped holders are in scope everywhere. The
+ * truck's status is a separate question so the service can ask the door on
+ * the locked row before it says anything about the truck.
+ */
+export function mayChangeDestDoor(
+  actor: ScopedActor & { permissions: ReadonlySet<string> },
+  originWarehouseId: string,
+): boolean {
+  return mayAt(actor, 'batches.depart_close', originWarehouseId) || mayAt(actor, 'plans.manage', originWarehouseId);
+}
+
+/**
+ * Why a truck that is no longer forming or loading cannot take another
+ * receiving warehouse here — by what it IS, because the advice differs
+ * (review D3): only a truck ON THE ROAD has the road's own door
+ * («Yo'nalishni o'zgartirish», `mayRerouteTruck` is `in_transit` alone); a
+ * cancelled truck never left, and an arrived, unloaded or closed one is past
+ * every door. The panel goes stale under a colleague's cancel or a departure,
+ * so the press is where a person learns it.
+ */
+export function notBeforeDepartureWhy(status: string): 'batch_cancelled' | 'not_before_departure' | 'already_unloaded' {
+  if (status === 'cancelled') return 'batch_cancelled';
+  if (status === 'in_transit') return 'not_before_departure';
+  return 'already_unloaded';
+}
+
+/** Who is OFFERED the form: the door, on a truck still forming or loading. */
+export function mayChangeDestBeforeDeparture(
+  actor: ScopedActor & { permissions: ReadonlySet<string> },
+  batch: { status: string; originWarehouseId: string },
+): boolean {
+  return ['forming', 'loading'].includes(batch.status) && mayChangeDestDoor(actor, batch.originWarehouseId);
+}
+
+/**
+ * Whether THIS warehouse may take a truck that has not left, judged on the
+ * rows as read under the truck's lock (the status and the compare-and-set are
+ * the service's). In the order a person can act on: nothing chosen, then the
+ * agent (the papers name the destination — take the tick off first), then
+ * the truck's own two ends, then the target's state, then the money.
+ *
+ * MONEY: with a live cost or price on the truck, the destination's COUNTRY
+ * may not change — not merely «internal ⇄ crossing»: `crossesBorderSql` and
+ * `bearsPriceSql` read the countries, so an Andijan truck mis-picked to a
+ * Chinese warehouse and fixed back to Tashkent would move what its stored
+ * price covers (the judge's P2-dest-3). The same country keeps the reroute's
+ * own invariant, so it stays allowed with money. An unknown country with
+ * money is refused too: «the same» cannot be proven.
+ */
+export function destChangeRefusal(
+  truck: {
+    originWarehouseId: string;
+    destWarehouseId: string;
+    destCountry: string | null;
+    hasMoney: boolean;
+    sentToAgent: boolean;
+  },
+  target: { id: string; active: boolean; country: string | null } | null,
+): DestChangeErrorCode | null {
+  if (!target) return 'bad_target';
+  if (truck.sentToAgent) return 'dest_agent_sent';
+  if (target.id === truck.destWarehouseId) return 'same_destination';
+  // `batches_route_check` would refuse it as a 23514 and a white page.
+  if (target.id === truck.originWarehouseId) return 'destination_is_origin';
+  if (!target.active) return 'target_inactive';
+  if (truck.hasMoney) {
+    const from = countryKey(truck.destCountry);
+    const to = countryKey(target.country);
+    if (!from || !to || from !== to) return 'dest_money_country';
+  }
+  return null;
+}
+
+/**
  * A person who could act at a warehouse the truck was heading to and cannot
  * act at the one it heads to now — the old destination's staff after a
  * reroute. They are told «endi {to} ga boradi» instead of «not your

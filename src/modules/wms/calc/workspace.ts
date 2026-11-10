@@ -91,8 +91,11 @@ import {
   vedRotaPool,
 } from './service';
 import { childStateSql } from './chain';
+import { intakeDoorSql, parseIntakeDoor, stampIntakeDoorInTx } from './intake-door';
 import { guessedZoneFor } from './zone-guess';
 import { volumeIsLinesSum } from './line-totals';
+import { advanceHandsOffInTx } from './hands-off';
+import { amendedSinceSql, refuseIfAmendedSinceInTx } from './amended-since';
 import { isAnswer, isAnswerSql } from './credit';
 import { createTask } from '@/modules/platform/tasks/service';
 import { retireTaskCopiesSoon } from '@/modules/platform/notifications/retire-tasks';
@@ -279,6 +282,12 @@ export interface Workspace {
    * capture taken any later would pass on a torn snapshot.
    */
   rev: number;
+  /**
+   * The revision the machine's pass or the seller's own addition left (0139).
+   * Equal to `rev` = no person has written since; null = not known (a request
+   * before 0139, a correction). Read off the same first query as `rev`.
+   */
+  handsoffRev: number | null;
   /** Is there an ANTHROPIC key on this server at all? The ✨ button is not
    * drawn without one: «ИИ не ответил» on a keyless server is an invitation
    * to press again, and the honest word belongs before the press (audit A25). */
@@ -757,6 +766,7 @@ export async function loadWorkspace(
   return {
     requestId,
     rev: request.rev,
+    handsoffRev: request.handsoffRev,
     bhmUzs,
     fxUzsPerUsd,
     fxDate: fx?.effectiveDate ?? null,
@@ -938,21 +948,7 @@ export async function setCargoFacts(
   },
   ctx: AuditContext,
 ): Promise<void> {
-  mustBeNumber(input.weightKg, input.volumeM3);
-  for (const v of [input.weightKg, input.volumeM3]) {
-    if (v === null) continue;
-    if (!(v > 0)) throw new CalcError('measure_positive');
-    // numeric(12,3) holds nine whole digits; past it the UPDATE dies 22003
-    // as a white page rather than as a sentence (#867's rule).
-    if (v >= 1e9) throw new CalcError('bad_number');
-  }
-  const city = (raw: string | null) => (raw ?? '').trim().slice(0, 120) || null;
-  const patch = {
-    fromCity: city(input.fromCity),
-    toCity: city(input.toCity),
-    weightKg: input.weightKg === null ? null : input.weightKg.toFixed(3),
-    volumeM3: input.volumeM3 === null ? null : input.volumeM3.toFixed(3),
-  };
+  const patch = cargoPatchOf(input);
   await mutateRequest(requestId, async (tx) => {
     await tx.update(calcRequests).set(patch).where(eq(calcRequests.id, requestId));
     await writeAudit(tx, ctx, {
@@ -962,6 +958,36 @@ export async function setCargoFacts(
       after: { cargoFacts: patch },
     });
   });
+}
+
+/**
+ * The cargo facts' one validation, as a PATCH: only the keys present are
+ * returned, each in its column's shape. `setCargoFacts` posts all four;
+ * `saveTable`'s `cargo` (the add door, docs/SAKKIZ-R3.md K15) posts only what
+ * a table answer set, so an absent key is untouched there.
+ */
+export function cargoPatchOf(input: {
+  fromCity?: string | null;
+  toCity?: string | null;
+  weightKg?: number | null;
+  volumeM3?: number | null;
+}): { fromCity?: string | null; toCity?: string | null; weightKg?: string | null; volumeM3?: string | null } {
+  mustBeNumber(input.weightKg, input.volumeM3);
+  for (const v of [input.weightKg, input.volumeM3]) {
+    if (v === null || v === undefined) continue;
+    if (!(v > 0)) throw new CalcError('measure_positive');
+    // numeric(12,3) holds nine whole digits; past it the UPDATE dies 22003
+    // as a white page rather than as a sentence (#867's rule).
+    if (v >= 1e9) throw new CalcError('bad_number');
+  }
+  const city = (raw: string | null) => (raw ?? '').trim().slice(0, 120) || null;
+  const measure = (v: number | null) => (v === null ? null : v.toFixed(3));
+  return {
+    ...(input.fromCity !== undefined ? { fromCity: city(input.fromCity) } : {}),
+    ...(input.toCity !== undefined ? { toCity: city(input.toCity) } : {}),
+    ...(input.weightKg !== undefined ? { weightKg: measure(input.weightKg) } : {}),
+    ...(input.volumeM3 !== undefined ? { volumeM3: measure(input.volumeM3) } : {}),
+  };
 }
 
 export async function createGroup(
@@ -1101,8 +1127,9 @@ export async function setGroupRates(
     note?: string | null;
   },
   ctx: AuditContext,
-  /** The machine's compare-and-set (`mutateRequest`'s); a screen passes none. */
-  opts: { expectRev?: number } = {},
+  /** The machine's compare-and-set (`mutateRequest`'s, with its hands-off
+   * stamp); a screen passes none. */
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ) {
   const found = await db.query.calcGroups.findFirst({
     where: eq(calcGroups.id, groupId),
@@ -1322,7 +1349,7 @@ export async function pullRatesFromDictionary(
   groupId: string,
   ctx: AuditContext,
   /** The proposal tail's compare-and-set, handed on to `setGroupRates`. */
-  opts: { expectRev?: number } = {},
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ): Promise<void> {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
@@ -1510,8 +1537,16 @@ export async function confirmGroup(
    * the VAT and the ✨ chips and a ✅ pressed on a card that shows none of
    * them read identically to phase E1. They are different facts about how
    * carefully a rate was blessed, and E1 exists to measure exactly that.
+   * Required since P6: a default ahead of `sawRev` would make every caller
+   * spell it anyway.
    */
-  via: 'single' | 'phone' = 'single',
+  via: 'single' | 'phone',
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, never optional: an optional one fails open (#790), and a
+   * required one made every caller a compile error that named itself.
+   */
+  sawRev: number,
 ) {
   const group = await db.query.calcGroups.findFirst({ where: eq(calcGroups.id, groupId) });
   if (!group) throw new CalcError('not_found');
@@ -1520,6 +1555,10 @@ export async function confirmGroup(
   // month from now asks a different question about a different world.
   const warnings = await warningsNow(group.requestId);
   await mutateRequest(group.requestId, async (tx, locked) => {
+    // A seller's addition written after the screen was drawn (P6): the ✅
+    // would bless figures the VED never saw as «what stood on the screen».
+    // First, under the lock, before anything is written.
+    await refuseIfAmendedSinceInTx(tx, group.requestId, sawRev);
     // The clock: a save committing after the warnings were computed makes
     // that list a description of numbers that no longer stand — refuse, the
     // screen re-renders, the person presses again over the truth.
@@ -1547,13 +1586,21 @@ export async function confirmGroup(
   });
 }
 
-export async function confirmAllGroups(requestId: string, ctx: AuditContext): Promise<number> {
+export async function confirmAllGroups(
+  requestId: string,
+  ctx: AuditContext,
+  /** The revision the VED's screen was drawn at — required (P6, §10A). */
+  sawRev: number,
+): Promise<number> {
   const warnings = await warningsNow(requestId);
   // ONE transaction under the request lock, with the SAME clock check as the
   // single door — bulk is the COMMON press, and a save landing between the
   // warnings compute and the stamps would otherwise record lists describing
   // numbers that no longer stand (the drift E1's record exists to prevent).
   const rows = await mutateRequest(requestId, async (tx, locked) => {
+    // The single door's P6 refusal, at the same place: a bulk ✅ over a
+    // seller's addition the screen never showed blesses all of it at once.
+    await refuseIfAmendedSinceInTx(tx, requestId, sawRev);
     if (locked.rev !== warnings.rev) throw new CalcError('conflict');
     const pending = await tx
       .select({ id: calcGroups.id })
@@ -1668,9 +1715,10 @@ export async function applyProposal(
    * The machine's compare-and-set (K14): `proposeGroups` hands the revision
    * its claim was taken at. A person's save inside a claim that went stale
    * mid-call (`AI_CLAIM_STALE_MS`) is then `conflict`, never deleted and
-   * re-grouped under them. The screen's ✨ passes none.
+   * re-grouped under them. The screen's ✨ passes none. `handsOff`: the
+   * machine's own write moves the hands-off stamp with the clock.
    */
-  opts: { expectRev?: number } = {},
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ): Promise<{ rev: number }> {
   const rev = await db.transaction(async (tx) => {
     // Its OWN flow holds the AI claim it would otherwise refuse on; the lock
@@ -1763,6 +1811,9 @@ export async function applyProposal(
     }
     await bumpRevInTx(tx, requestId);
     // The bump is `rev + 1` under this transaction's FOR UPDATE.
+    if (opts.handsOff && opts.expectRev !== undefined) {
+      await advanceHandsOffInTx(tx, requestId, opts.expectRev, locked.rev + 1);
+    }
     return locked.rev + 1;
   });
 
@@ -1821,6 +1872,15 @@ export interface SealInput {
    * from an open tab during the deploy window.
    */
   sawFeeUsd?: number | null;
+  /**
+   * The revision the VED's SCREEN was drawn at (docs/SAKKIZ-R3.md §10A, P6).
+   * REQUIRED, unlike `sawFeeUsd`: the clock CAS below compares the seal's own
+   * press-time compute, which already includes a seller's addition that
+   * landed after the page loaded — only the screen's revision can tell. A
+   * page from an older build cannot call this build's action at all (action
+   * ids are per build), so there is no «posted none» case to tolerate.
+   */
+  sawRev: number;
 }
 
 /**
@@ -2019,6 +2079,11 @@ export async function sealCalc(
     // saved between the compute and this line, and sealing the pre-save
     // snapshot would lock a price nobody is looking at onto a client card.
     const locked = await lockRequestInTx(tx, requestId);
+    // P6: a seller's addition written after the VED's screen was drawn. The
+    // CAS on the next line cannot see it — `workspace` was computed at the
+    // PRESS, over the seller's figures — so the seal would lock a price for
+    // goods nobody on the screen looked at.
+    await refuseIfAmendedSinceInTx(tx, requestId, input.sawRev);
     if (locked.rev !== workspace.rev) throw new CalcError('conflict');
     const closed = await tx
       .update(calcRequests)
@@ -2543,11 +2608,15 @@ export async function recalcFromSealed(
       // the pooled `old` would put the correction back on the won lead —
       // superseding the deal's seal from a card no job follows. In the win's
       // order (request, then lead), a lead must still be OPEN to take it.
+      // …and its bot door (0141, docs/IKKI-ESHIK.md §0.1), which the
+      // correction inherits the way it inherits `source`: the VED re-prices,
+      // the seller who chose the door did not change.
       const [locked] = (await tx.execute(sql`
-        SELECT entity_type, entity_id::text AS entity_id
+        SELECT entity_type, entity_id::text AS entity_id, ${intakeDoorSql(sql.raw('calc_requests'))} AS door
           FROM calc_requests WHERE id = ${requestId}::uuid FOR UPDATE`)) as unknown as {
         entity_type: string;
         entity_id: string;
+        door: string | null;
       }[];
       if (!locked) throw new CalcError('not_found');
       if (locked.entity_type === 'lead') {
@@ -2592,6 +2661,10 @@ export async function recalcFromSealed(
           dueAt,
         })
         .returning({ id: calcRequests.id });
+      // A door READ off the row proves the column is there: no probe. NULL
+      // (legacy, or 0141 not landed) is the new row's own default.
+      const door = parseIntakeDoor(locked.door);
+      if (door) await stampIntakeDoorInTx(tx, fresh!.id, door);
 
       const items = await tx
         .select()
@@ -2951,9 +3024,10 @@ export async function proposeGroups(
    * write after it — the proposal and the whole pricing tail — compares the
    * revision the machine's own previous write left: a person's save in
    * either gap is `conflict`, which writes nothing. The screen's ✨ passes
-   * none, and nothing about it changes.
+   * none, and nothing about it changes. `handsOff` rides the chain to every
+   * write that moves the clock (docs/SAKKIZ-R3.md K15).
    */
-  opts: { expectRev?: number } = {},
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ): Promise<{
   groups: number;
   batches: number;
@@ -3099,7 +3173,12 @@ export async function proposeGroups(
       if (failed === batches.length) throw new CalcError('ai_failed');
 
       drafts = mergeProposals(results, items.map((i) => i.seq));
-      const applied = await applyProposal(requestId, drafts, ctx, chain === undefined ? {} : { expectRev: chain });
+      const applied = await applyProposal(
+        requestId,
+        drafts,
+        ctx,
+        chain === undefined ? {} : { expectRev: chain, handsOff: opts.handsOff },
+      );
       if (chain !== undefined) chain = applied.rev;
     }
     // …and then the proposal is turned into a CALCULATION.
@@ -3141,7 +3220,11 @@ export async function proposeGroups(
     // revision at every write: a person's save in the unclaimed seconds after
     // this line is `conflict`, never the machine's next base (review P1-R2).
     await releaseAiClaim(requestId);
-    const priced = await priceProposedGroups(requestId, ctx, chain === undefined ? {} : { expectRev: chain });
+    const priced = await priceProposedGroups(
+      requestId,
+      ctx,
+      chain === undefined ? {} : { expectRev: chain, handsOff: opts.handsOff },
+    );
     return { groups: drafts.length, batches: batchCount, failed, ...priced };
   } finally {
     await releaseAiClaim(requestId);
@@ -3178,8 +3261,8 @@ export async function priceProposedGroups(
   requestId: string,
   ctx: AuditContext,
   /** The revision chain `proposeGroups` hands on (review P1-R2) — compared at
-   * every write here; absent, no write compares. */
-  opts: { expectRev?: number } = {},
+   * every write here; absent, no write compares. `handsOff` rides with it. */
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ): Promise<{
   ratesPulled: number;
   codesStamped: number;
@@ -3206,7 +3289,7 @@ export async function priceProposedGroups(
     if (!(g.tnvedCode ?? '').trim()) continue;
     if (g.dutyPct !== null && g.vatPct !== null) continue;
     try {
-      await pullRatesFromDictionary(g.id, ctx, chain === undefined ? {} : { expectRev: chain });
+      await pullRatesFromDictionary(g.id, ctx, chain === undefined ? {} : { expectRev: chain, handsOff: opts.handsOff });
       ratesPulled += 1;
       // `setGroupRates` writes through `mutateRequest`, which moves the clock
       // exactly once: the chain's next revision. A miscount here could only
@@ -3250,7 +3333,12 @@ export async function priceProposedGroups(
     return { ratesPulled, codesStamped: 0, importFilled: 0, memoryFilled: 0, dictionaryFilled: 0, rev: chain ?? null };
   }
 
-  const saved = await saveTable(requestId, { items: edits, adds: [] }, ctx, chain === undefined ? undefined : { expectRev: chain });
+  const saved = await saveTable(
+    requestId,
+    { items: edits, adds: [] },
+    ctx,
+    chain === undefined ? undefined : { expectRev: chain, handsOff: opts.handsOff },
+  );
   return {
     ratesPulled,
     codesStamped: edits.length,
@@ -3429,6 +3517,35 @@ export function movedUnder(
   return false;
 }
 
+/**
+ * Every refusal `saveTable` and the functions it calls can throw, by code —
+ * read off the throw sites and pinned by `tests/unit/save-table-refusal.test.ts`,
+ * which walks them with TypeScript's parser, so a new refusal in the save is
+ * a red test until it is named here. The add door words each one
+ * (`AMEND_REFUSAL: Record<SaveTableRefusal, string>`, docs/SAKKIZ-R3.md §2.4),
+ * so a missing sentence is a compile error rather than a code on a phone.
+ */
+export type SaveTableRefusal =
+  | 'ai_running'
+  | 'already_closed'
+  | 'amended_since'
+  | 'bad_basis'
+  | 'bad_code'
+  | 'bad_number'
+  | 'basis_shown_changed'
+  | 'baza_positive'
+  | 'changed_under'
+  | 'conflict'
+  | 'import_row_missing'
+  | 'measure_positive'
+  | 'name_required'
+  | 'not_found'
+  | 'too_many_items';
+
+/** What a save really wrote of the measures — the add door's words read it,
+ * so a figure the law dropped is never said «yozildi» (regression-16). */
+export type SaveTableApplied = Pick<TableSaveResult, 'measuresDropped' | 'measuresCleared' | 'basisConflict'>;
+
 export interface TableSaveResult {
   /** Freshly minted codes, so the bar can say «+N yangi kod: …» — a typo'd
    * code shows up as a surprise one-item block instead of pricing silently
@@ -3597,15 +3714,21 @@ async function mutateRequest<T>(
    * `saveTable` takes it: the proposal's pricing tail threads it through
    * `pullRatesFromDictionary`, so a person's save landing after the claim is
    * released is `conflict` rather than the machine's next base (review
-   * P1-R2). Screens pass none.
+   * P1-R2). Screens pass none. `handsOff` (with `expectRev`): the machine's
+   * own write moves the hands-off stamp along with the clock, in this same
+   * transaction (docs/SAKKIZ-R3.md K15).
    */
-  opts: { expectRev?: number } = {},
+  opts: { expectRev?: number; handsOff?: boolean } = {},
 ): Promise<T> {
   return db.transaction(async (tx) => {
     const locked = await lockRequestInTx(tx, requestId);
     if (opts.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
     const out = await fn(tx, locked);
     await bumpRevInTx(tx, requestId);
+    // The bump is `rev + 1` under this transaction's FOR UPDATE.
+    if (opts.handsOff && opts.expectRev !== undefined) {
+      await advanceHandsOffInTx(tx, requestId, opts.expectRev, locked.rev + 1);
+    }
     return out;
   });
 }
@@ -4146,7 +4269,17 @@ async function suggestImportFills(input: {
 
 export async function saveTable(
   requestId: string,
-  input: { items: TableItemEdit[]; adds: TableNewItem[] },
+  input: {
+    items: TableItemEdit[];
+    adds: TableNewItem[];
+    /**
+     * The shipment's totals and cities as a PATCH (the add door's table
+     * answers, docs/SAKKIZ-R3.md K15): only the keys present are written,
+     * each by `setCargoFacts`' own rules (`cargoPatchOf`). No `null`: an
+     * addition never clears a total or a city.
+     */
+    cargo?: { weightKg?: number; volumeM3?: number; fromCity?: string; toCity?: string };
+  },
   ctx: AuditContext,
   /**
    * `expectRev` — the MACHINE's compare-and-set (docs/SAKKIZ-R2.md K14). A
@@ -4155,9 +4288,32 @@ export async function saveTable(
    * and writes nothing. Screens post none: a person's save is never refused
    * for being later than another person's (the phone round's per-cell
    * `expect` is that rule's own door).
+   *
+   * `handsOff` (with `expectRev`) — the save moves the hands-off stamp from
+   * the revision it expected to the one it wrote, in its own transaction.
+   * `inTx` runs LAST inside the same transaction, after the clock moved and
+   * after the measure pass, and is told what the save really wrote — the add
+   * door's thread message and words say exactly that. Nothing on a screen
+   * passes either.
    */
-  opts?: { expectRev?: number },
+  opts?: {
+    expectRev?: number;
+    handsOff?: boolean;
+    inTx?: (tx: TxHandle, rev: number, applied: SaveTableApplied) => Promise<void>;
+    /**
+     * `sawRev` — a SCREEN's save: the revision its grid was drawn at (review
+     * lmp-1). A seller's APPLIED addition newer than that refuses the save
+     * `amended_since` (P6's own predicate, `amendedSinceSql`), so a VED's
+     * figure typed over the stale screen never overwrites the seller's
+     * «2: 50 dona» it never saw. Keyed on `calc_amendments`, never on `rev`
+     * moving: another VED's save and the machine's pass still never refuse it
+     * — his 2b, the desktop is last-writer-wins between people. The add door
+     * and the machine pass none.
+     */
+    sawRev?: number;
+  },
 ): Promise<TableSaveResult> {
+  const cargo = input.cargo ? cargoPatchOf(input.cargo) : null;
   // Validate every cell BEFORE anything is written, naming the row. A ghost
   // (new) row is named by a NEGATIVE seq — the screen renders «yangi qator».
   const itemEdits = input.items.map((e) => ({
@@ -4327,6 +4483,19 @@ export async function saveTable(
     // `confirmGroup`'s idiom, under the same lock: a revision that moved since
     // the caller read it means a person has been here.
     if (opts?.expectRev !== undefined && locked.rev !== opts.expectRev) throw new CalcError('conflict');
+    // Under the same lock, on this transaction (#714): an addition that
+    // committed while the save waited is seen by the next statement. Thrown
+    // HERE, by P6's one predicate, so `SaveTableRefusal`'s derived fence reads
+    // the code off this body.
+    if (opts?.sawRev !== undefined) {
+      const [seen] = await tx.execute<{ amended: boolean }>(
+        sql`SELECT ${amendedSinceSql(requestId, opts.sawRev)} AS amended`,
+      );
+      if (seen?.amended) throw new CalcError('amended_since');
+    }
+    if (cargo && Object.keys(cargo).length > 0) {
+      await tx.update(calcRequests).set(cargo).where(eq(calcRequests.id, requestId));
+    }
 
     // Every import row this save will point at, re-read with its batch held
     // against a delete until we commit (review concurrency-10): the picks
@@ -5122,6 +5291,9 @@ export async function saveTable(
 
     await unconfirmInTx(tx, touched);
     const clock = await recountItemsInTx(tx, requestId);
+    if (opts?.handsOff && opts.expectRev !== undefined) {
+      await advanceHandsOffInTx(tx, requestId, opts.expectRev, clock.rev);
+    }
 
     // ONE audit row per save, changed cells only — a row per cell is noise
     // and writeAudit(db, …) inside this tx is #714's deadlock.
@@ -5148,8 +5320,10 @@ export async function saveTable(
         dictionaryFilled,
         unitsMoved,
         sellerUnitUnresolved,
+        ...(cargo && Object.keys(cargo).length > 0 ? { cargoFacts: cargo } : {}),
       },
     });
+    if (opts?.inTx) await opts.inTx(tx, clock.rev, { measuresDropped, measuresCleared, basisConflict });
     return {
       minted: grouped.minted.map((m) => m.code),
       swept,

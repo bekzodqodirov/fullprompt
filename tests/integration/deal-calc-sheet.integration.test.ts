@@ -32,6 +32,7 @@ import {
   setGroupRates,
   setItemBaza,
 } from '@/modules/wms/calc/workspace';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * «🧮 Bitim hisobi» (0119, 19/26a/27a) read back from real seals and real
@@ -107,6 +108,7 @@ async function mintDeal(): Promise<string> {
 async function open(dealId: string, section: 'rastamojka' | 'podklyuch' | 'yolkira') {
   const result = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section,
@@ -127,7 +129,7 @@ async function open(dealId: string, section: 'rastamojka' | 'podklyuch' | 'yolki
 async function answered(dealId: string, amount: number, currency = 'USD') {
   const id = await open(dealId, 'rastamojka');
   await takeCalcRequest(id, ctx());
-  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx());
+  await finishCalcRequest(id, { amountText: String(amount), currency, note: 'gotovo', internalNote: 'ichki: gotovo' }, ctx(), await sawRev(id));
   return id;
 }
 
@@ -146,23 +148,23 @@ async function sealed(dealId: string) {
     ctx(),
   );
   await setFreightZone(id, 'cn', ctx());
-  await confirmAllGroups(id, ctx());
-  await sealCalc(id, NO_DISCOUNT, ctx());
+  await confirmAllGroups(id, ctx(), await sawRev(id));
+  await sealCalc(id, { ...NO_DISCOUNT, sawRev: await sawRev(id) }, ctx());
   return id;
 }
 
 async function sealedYolkira(dealId: string) {
   const id = await open(dealId, 'yolkira');
   await setFreightZone(id, 'cn', ctx());
-  await sealCalc(id, NO_DISCOUNT, ctx());
+  await sealCalc(id, { ...NO_DISCOUNT, sawRev: await sawRev(id) }, ctx());
   return id;
 }
 
 async function corrected(parentId: string) {
   const freshId = (await recalcFromSealed(parentId, ctx())).id;
   madeRequests.push(freshId);
-  await confirmAllGroups(freshId, ctx());
-  await sealCalc(freshId, NO_DISCOUNT, ctx());
+  await confirmAllGroups(freshId, ctx(), await sawRev(freshId));
+  await sealCalc(freshId, { ...NO_DISCOUNT, sawRev: await sawRev(freshId) }, ctx());
   return freshId;
 }
 

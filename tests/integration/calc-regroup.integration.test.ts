@@ -27,6 +27,7 @@ import {
 import { aiPrefill } from '@/modules/wms/calc/prefill';
 import { rehomeCodeOf } from '@/modules/wms/calc/screen-row';
 import type { ProposedGroup } from '@/modules/wms/calc/grouping';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The ✨ regroup against the company's own memory (P2.10d — the critic's
@@ -132,6 +133,7 @@ async function open(items: { name: string; quantity?: number | null; tnvedCode?:
   for (const i of items) madeNames.push(i.name);
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -160,8 +162,8 @@ async function editOf(requestId: string, seqNo: number, patch: Omit<TableItemEdi
 async function sealOne(name: string, code: string) {
   const id = await open([{ name, quantity: 10 }]);
   await saveTable(id, { items: [await editOf(id, 1, { tnvedCode: code, bazaUsd: 20, bazaBasis: 'unit' })], adds: [] }, ctx());
-  await confirmAllGroups(id, ctx());
-  await sealCalc(id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await confirmAllGroups(id, ctx(), await sawRev(id));
+  await sealCalc(id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(id) }, ctx());
 }
 
 describe('the model is asked only about what nobody has coded (P2.10d)', () => {

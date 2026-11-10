@@ -32,6 +32,7 @@ import {
 } from '@/modules/wms/calc/workspace';
 import { quoteHistoryFor } from '@/modules/wms/calc/history';
 import { upsaleScopeFor } from '@/modules/wms/calc/upsale-scope';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * His F1 a (2026-10-07) on /hisoblash/narxlar, BEHAVIOURAL over every seeded
@@ -63,6 +64,7 @@ async function user(name: string, tail: string) {
 async function sealedVersion(): Promise<{ versionId: string; floor: number }> {
   const request = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'podklyuch',
@@ -89,8 +91,8 @@ async function sealedVersion(): Promise<{ versionId: string; floor: number }> {
     ctx,
   );
   await setFreightZone(request.id, 'cn', ctx);
-  await confirmAllGroups(request.id, ctx);
-  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx);
+  await confirmAllGroups(request.id, ctx, await sawRev(request.id));
+  await sealCalc(request.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(request.id) }, ctx);
   const v = await db.query.calcVersions.findFirst({ where: eq(calcVersions.requestId, request.id) });
   return { versionId: v!.id, floor: Number(v!.totalUsd) };
 }

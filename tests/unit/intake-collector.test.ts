@@ -14,6 +14,11 @@ vi.mock('@/modules/platform/telegram/calc-intake', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/modules/platform/telegram/calc-intake')>()),
   analyzeCollected: analyse.fn,
 }));
+// «Bo‘ldi» only enqueues since the reading is a pg-boss job (docs/SAKKIZ-R3.md
+// §7.1); the one drive helper runs the captured job.
+vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
+  (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
+);
 
 import {
   activeIntake,
@@ -23,12 +28,15 @@ import {
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
 import { parseCallback } from '@/modules/platform/telegram/staff-bot';
+import { INTAKE_READ_RETRY } from '@/modules/platform/telegram/calc-read';
+import { driveReading, readingsEnqueued, resetReadingDrive } from '../fixtures/calc-read-drive';
+import { applyTableAnswer, deliverNextStep } from '@/modules/platform/telegram/calc-dialog';
+import { migrateIntakeState } from '@/modules/platform/telegram/calc-store';
 import {
   clientAnswer,
   handleCalcCallback,
-  invoiceChoice,
-  otherFilesChoice,
   readCustomerText,
+  RETIRED_FILE_STEP,
   readIntakeFile,
   receiveGoodsSheet,
   receivePdf,
@@ -54,7 +62,7 @@ function collection(patch: Partial<IntakeState> = {}, section: IntakeState['sect
   state: IntakeState;
 } {
   const chatId = freshChat();
-  startIntake(chatId, section);
+  startIntake(chatId, section, { staffId: 'staff-test' });
   const state = updateIntake(chatId, patch)!;
   return { chatId, state };
 }
@@ -79,43 +87,44 @@ function fakeCtx(opts: { refuse?: RegExp } = {}) {
   };
 }
 
-const callbacksOf = (kb: { inline_keyboard: { callback_data: string }[][] } | undefined) =>
-  (kb?.inline_keyboard ?? []).flat().map((b) => b.callback_data);
-
-beforeEach(() => analyse.fn.mockReset());
+beforeEach(() => {
+  analyse.fn.mockReset();
+  resetReadingDrive();
+});
 afterEach(() => {
   for (const id of chats.splice(0)) endIntake(id);
 });
 
-describe('«➕ / 🔁» keeps the question the collection is waiting on (review c0)', () => {
+// Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+// second file. These pinned the question; they now pin its ABSENCE and the rule that replaced it.
+describe('a second Excel no longer waits on a question — the stage it stood in stays (review c0)', () => {
   const pending = { goods: [line('Shim')], label: '«B.xlsx»', texts: [] };
 
-  it('a collection still waiting for the customer stays waiting — and is asked again', async () => {
-    const { chatId } = collection({ invoiceGoods: [line('Kurtka')], pendingInvoice: pending });
+  it('a collection hydrated still waiting for the customer stays waiting; the old button only says why', async () => {
+    const { chatId, state } = collection({ invoiceGoods: [line('Kurtka')], pendingInvoice: pending });
+    updateIntake(chatId, migrateIntakeState(state));
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'inv_add');
+    expect(ctx.texts()).toEqual([RETIRED_FILE_STEP]);
     const live = activeIntake(chatId)!;
     expect(live.stage).toBe('client');
     expect(live.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
     expect(live.pendingInvoice).toBeNull();
-    // The customer question, not «Yana yuboring yoki Bo'ldi».
-    expect(ctx.texts().at(-1)).toContain('Mijozni yozing');
     // …so the code typed next is the customer, never material.
     expect(clientAnswer(live, 'GS777', { material: false, couldBeCustomer: true, why: null })).toMatchObject({ kind: 'customer', patch: { clientHintRaw: 'GS777' } });
   });
 
-  it('the podklyuch door’s «qayerdan?» is kept too; only a collecting stage moves to material', () => {
+  it('the podklyuch door’s «qayerdan?» is kept too, and a collecting stage stays a collecting stage', () => {
     const base = { invoiceGoods: [line('Kurtka')], pendingInvoice: pending };
-    const section = invoiceChoice({ ...collection(base, 'podklyuch').state, stage: 'section' }, 'inv_replace');
-    expect(section).toMatchObject({ reask: 'section', patch: { stage: 'section' } });
-    const material = invoiceChoice({ ...collection(base).state, stage: 'material' }, 'inv_add');
-    expect(material).toMatchObject({ reask: null, patch: { stage: 'material' } });
-    expect(invoiceChoice({ ...collection().state, pendingInvoice: null }, 'inv_add')).toBeNull();
+    const section = migrateIntakeState({ ...collection(base, 'podklyuch').state, stage: 'section' });
+    expect([section.stage, section.pendingInvoice]).toEqual(['section', null]);
+    const material = migrateIntakeState({ ...collection(base).state, stage: 'material' });
+    expect([material.stage, material.pendingInvoice]).toEqual(['material', null]);
   });
 });
 
-describe('a third goods file folds into the open question (review c1)', () => {
-  it('A, then B, then C: one press lands all three — B is never overwritten', () => {
+describe('a third goods file is compared like the second (review c1)', () => {
+  it('A, then B, then C: every file’s new rows land and each says how many — nothing waits, nothing is overwritten', () => {
     let state = collection().state;
     const take = (file: Parameters<typeof receiveGoodsSheet>[1]) => {
       const answer = receiveGoodsSheet(state, file);
@@ -123,21 +132,21 @@ describe('a third goods file folds into the open question (review c1)', () => {
       return answer;
     };
     take({ goods: [line('Kurtka'), line('Shim')], label: '«A.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
-    take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
+    const second = take({ goods: [line('Choynak'), line('Piyola'), line('Lagan')], label: '«B.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
     const third = take({ goods: [line('Poyabzal')], label: '«C.xlsx»', text: '', textCut: false, cellsCut: false, where: '' });
-    // The waiting files are named, both of them.
-    expect(third.say).toContain('«B.xlsx», «C.xlsx»');
-    expect(callbacksOf(third.keyboard)).toEqual(['c:inv_add', 'c:inv_replace']);
-    const added = invoiceChoice(state, 'inv_add')!;
-    expect(added.patch.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', 'Choynak', 'Piyola', 'Lagan', 'Poyabzal']);
-    const replaced = invoiceChoice(state, 'inv_replace')!;
-    expect(replaced.patch.invoiceGoods?.map((g) => g.name)).toEqual(['Choynak', 'Piyola', 'Lagan', 'Poyabzal']);
+    // One line per further file (§1.2.4; as-built review CHAT-6): the fold's
+    // own head names the rows, «N ta tovar o‘qildi» above it said it twice.
+    expect(second.say).toBe('📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.');
+    expect(third.say).toBe('📄 «C.xlsx» — 1 ta yangi tovar qo‘shildi.');
+    expect(Object.keys(third).sort()).toEqual(['patch', 'say']);
+    expect(state.pendingInvoice).toBeNull();
+    expect(state.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim', 'Choynak', 'Piyola', 'Lagan', 'Poyabzal']);
   });
 });
 
 describe('an answer given while the analysis ran is kept (review c2)', () => {
   it('the live per-line answer goes back onto the new reading', () => {
-    const snapshot = { ...collection({ stage: 'question', analysing: 'T1', material: ['Kurtka'] }).state };
+    const snapshot = { ...collection({ stage: 'material', analysing: 'T1', material: ['Kurtka'] }).state };
     const live: IntakeState = {
       ...snapshot,
       answers: ['1-qator: 150 kg'],
@@ -154,45 +163,59 @@ describe('an answer given while the analysis ran is kept (review c2)', () => {
 });
 
 describe('a refused «⏳» notice cannot strand the lock (review c3)', () => {
-  it('the analysis is dispatched anyway, and its own exit releases the token', async () => {
+  it('the reading is enqueued anyway, and its own exit releases the token', async () => {
+    // Re-anchored (docs/SAKKIZ-R3.md §11, P2): the press ENQUEUES the reading
+    // — the notice's failure is caught as before — and the job is the
+    // reading's exit; its last attempt releases the token and says so.
     analyse.fn.mockRejectedValueOnce(new Error('model down'));
     const { chatId } = collection({ stage: 'material', material: ['Kurtka 300 dona'] });
     const ctx = fakeCtx({ refuse: /^⏳/ });
     await expect(handleCalcCallback(ctx, chatId, 'done')).resolves.toBeUndefined();
-    await vi.waitFor(() => expect(activeIntake(chatId)?.analysing).toBeNull());
+    expect(readingsEnqueued(chatId)).toHaveLength(1);
+    await driveReading(chatId, ctx, { retryCount: INTAKE_READ_RETRY });
+    expect(activeIntake(chatId)?.analysing).toBeNull();
     expect(analyse.fn).toHaveBeenCalledTimes(1);
+    expect(ctx.texts().at(-1)).toBe('Tahlil qilib bo‘lmadi. «Bo‘ldi» ni qayta bosing.');
     // …and the next «Bo'ldi» is a «Bo'ldi», not «Tahlil davom etmoqda».
+    await handleCalcCallback(ctx, chatId, 'done');
+    expect(readingsEnqueued(chatId)).toHaveLength(2);
     expect(ctx.texts().some((t) => t.includes('Tahlil davom etmoqda'))).toBe(false);
   });
 });
 
-describe('a PDF or a header-less sheet beside an Excel list is ASKED about (review c4)', () => {
-  const pdf = { data: Buffer.from('%PDF-1.4 x'), name: 'B.pdf' };
+// Re-anchored by his 1a (docs/IKKI-ESHIK.md §1.1, 2026-11-08): the bot no longer asks about a
+// second file. These pinned the question; they now pin its ABSENCE and the rule that replaced it.
+describe('a PDF or a header-less sheet beside an Excel list takes the add path, never a question (review c4, M3)', () => {
+  const pdf = { attachmentId: 'a-pdf-b', name: 'B.pdf', bytes: 10 };
 
-  it('a PDF after the Excel: the question, two buttons the parser takes, and «Bo‘ldi» waits', async () => {
+  it('a PDF after the Excel: no question, no keyboard, and «Bo‘ldi» reads — the old buttons only say why', async () => {
     const { chatId, state } = collection({ stage: 'material', invoiceGoods: [line('Kurtka')], fileCount: 2 });
     const answer = receivePdf(state, pdf, '«B.pdf»');
-    expect(answer.patch).toMatchObject({ aiGoods: 'ask' });
-    expect(answer.say).toContain('boshqa zavodning tovarlarimi');
-    const data = callbacksOf(answer.keyboard);
-    expect(data).toEqual(['c:other_add', 'c:other_same']);
-    for (const d of data) expect(parseCallback(d), d).not.toBeNull();
+    expect(answer.patch).toMatchObject({ aiGoods: 'add' });
+    expect(answer).toEqual({ patch: answer.patch, say: '📄 «B.pdf» — AI o‘qiydi.' });
 
     updateIntake(chatId, answer.patch);
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(activeIntake(chatId)?.analysing).toBeNull();
-    expect(analyse.fn).not.toHaveBeenCalled();
-    expect(callbacksOf(ctx.replies.at(-1)?.extra?.reply_markup as never)).toEqual(['c:other_add', 'c:other_same']);
+    expect(activeIntake(chatId)?.analysing).not.toBeNull();
+    expect(readingsEnqueued(chatId)).toHaveLength(1);
+    expect(ctx.texts().join('\n')).not.toContain('boshqa zavodning tovarlarimi');
 
-    await handleCalcCallback(ctx, chatId, 'other_add');
+    // The retired buttons stay PARSED (#939) and answer in words.
+    for (const step of ['other_add', 'other_same'] as const) {
+      expect(parseCallback(`c:${step}`), step).not.toBeNull();
+      const press = fakeCtx();
+      await handleCalcCallback(press, chatId, step);
+      expect(press.texts()).toEqual([RETIRED_FILE_STEP]);
+    }
     expect(activeIntake(chatId)?.aiGoods).toBe('add');
   });
 
-  it('a header-less sheet after the Excel, and an Excel after a PDF (the other order), ask too', () => {
+  it('a header-less sheet after the Excel, and an Excel after a PDF (the other order), take the add path too', () => {
     const fit = (texts: readonly string[]) => fitSheetRows(texts, 10_000);
     const sheetAfter = receiveSheetText(collection({ invoiceGoods: [line('Kurtka')] }).state, '«B.xlsx»', { text: 'a | b', cut: false, cellsCut: false }, fit);
-    expect(sheetAfter.patch).toMatchObject({ aiGoods: 'ask' });
+    expect(sheetAfter.patch).toMatchObject({ aiGoods: 'add' });
+    expect(Object.keys(sheetAfter).sort()).toEqual(['patch', 'say']);
     const excelAfterPdf = receiveGoodsSheet(collection({ pdfs: [pdf] }).state, {
       goods: [line('Kurtka')],
       label: '«A.xlsx»',
@@ -201,17 +224,16 @@ describe('a PDF or a header-less sheet beside an Excel list is ASKED about (revi
       cellsCut: false,
       where: '',
     });
-    expect(excelAfterPdf.patch).toMatchObject({ aiGoods: 'ask', invoiceGoods: [line('Kurtka')] });
-    expect(callbacksOf(excelAfterPdf.keyboard)).toEqual(['c:other_add', 'c:other_same']);
-    // No Excel list, nothing to ask: the model's lines ARE the goods.
+    expect(excelAfterPdf.patch).toMatchObject({ aiGoods: 'add', invoiceGoods: [line('Kurtka')] });
+    expect(excelAfterPdf.say).toBe('📄 «A.xlsx» — 1 ta tovar o‘qildi.');
+    // No Excel list: the model's lines ARE the goods.
     expect(receivePdf(collection().state, pdf, '«B.pdf»').patch).not.toHaveProperty('aiGoods');
   });
 
-  it('the answer is the seller’s: add or context, and a stale press changes nothing', () => {
-    const asked = collection({ aiGoods: 'ask', stage: 'material' }).state;
-    expect(otherFilesChoice(asked, 'other_add')?.patch.aiGoods).toBe('add');
-    expect(otherFilesChoice(asked, 'other_same')?.patch.aiGoods).toBe('context');
-    expect(otherFilesChoice({ ...asked, aiGoods: 'add' }, 'other_same')).toBeNull();
+  it('a hydrated answer stands: «context» was the seller’s own word; «ask» becomes the add path', () => {
+    expect(receivePdf(collection({ invoiceGoods: [line('Kurtka')], aiGoods: 'context' }).state, pdf, '«C.pdf»').patch).not.toHaveProperty('aiGoods');
+    expect(migrateIntakeState(collection({ aiGoods: 'ask', stage: 'material' }).state).aiGoods).toBe('add');
+    expect(migrateIntakeState(collection({ aiGoods: 'context', stage: 'material' }).state).aiGoods).toBe('context');
   });
 });
 
@@ -224,12 +246,14 @@ describe('a stale ⏭ moves nothing (review c5)', () => {
     expect(activeIntake(chatId)?.stage).toBe('material');
   });
 
-  it('nor while an analysis runs', async () => {
-    const { chatId } = collection({ stage: 'question', askingIndex: 0, analysing: 'T9' });
+  it('nor while an analysis runs — the stage is unchanged', async () => {
+    // R3: the per-line question stage is retired (his 1.10 c), so the claim
+    // this pinned is held on the table stage: a stale ⏭ moves nothing.
+    const { chatId } = collection({ stage: 'review', analysing: 'T9' });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'skip');
     expect(ctx.texts()).toEqual(['Bu tugma eskirgan.']);
-    expect(activeIntake(chatId)?.stage).toBe('question');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 
@@ -249,17 +273,25 @@ describe('a replaced workbook takes its other sheets with it (review c7)', () =>
     expect(first.patch).not.toHaveProperty('sheetTexts');
   });
 
-  it('🔁 drops the replaced one’s totals; ➕ keeps both', () => {
+  it('a second workbook keeps its totals beside the first’s — there is no «🔁» to drop them (his 1a)', () => {
+    // Re-anchored by docs/IKKI-ESHIK.md §1.1/§1.3: this pinned «🔁» dropping the replaced file's
+    // totals. Nothing replaces a file now; a hydrated waiting one is compared like a new one.
     const state = collection({
       invoiceGoods: [line('Kurtka')],
       invoiceTexts: [{ text: 'WRONG 9999 KGS', cut: false, cellsCut: false }],
       pendingInvoice: { goods: [line('Kurtka')], label: '«RIGHT.xlsx»', texts: [{ text: 'RIGHT 1200 KGS', cut: true, cellsCut: false }] },
       stage: 'material',
     }).state;
-    expect(invoiceChoice(state, 'inv_replace')?.patch.invoiceTexts).toEqual([{ text: 'RIGHT 1200 KGS', cut: true, cellsCut: false }]);
-    expect(invoiceChoice(state, 'inv_add')?.patch.invoiceTexts).toEqual([
+    const migrated = migrateIntakeState(state);
+    expect(migrated.invoiceTexts).toEqual([
       { text: 'WRONG 9999 KGS', cut: false, cellsCut: false },
       { text: 'RIGHT 1200 KGS', cut: true, cellsCut: false },
+    ]);
+    // The same «Kurtka» with no figure to agree on is no duplicate: added, and named.
+    expect(migrated.invoiceGoods?.map((g) => g.name)).toEqual(['Kurtka', 'Kurtka']);
+    expect(migrated.fileNotes).toEqual([
+      '📄 «RIGHT.xlsx» — 1 ta yangi tovar qo‘shildi.',
+      '📄 «RIGHT.xlsx» — «Kurtka»: birinchi faylda ham «Kurtka» — ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi).',
     ]);
   });
 });
@@ -346,54 +378,57 @@ describe('a goods list sent twice stays goods (round-2 review, C3/C7)', () => {
   });
 });
 
-describe('a line passed with ⏭ is never asked again (round-2 review, C10)', () => {
-  it('⏭ on line 1, then ⏭ on line 2: line 3 is asked — the stored collection remembers both', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+describe('a line answered in the table stays answered across «➕ Yana ma’lumot» (round-2 review, C10; R3 1.10 c)', () => {
+  // ⏭ is retired with the per-line question (docs/SAKKIZ-R3.md §11): the
+  // defect C10 pinned — a record of a line carried by index onto another line
+  // after a re-read — is held on ANSWERS, which `placeByName` places by name.
+  it('row 1 answered, ➕, a re-read that moves it: the answer lands on its own line', async () => {
+    const { chatId, state } = collection({
+      stage: 'review',
+      material: ['Kurtka, Shim, Sharf'],
       facts: { goods: [line('Kurtka'), line('Shim'), line('Sharf')] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'question', askingIndex: 1, lineDone: [{ index: 0, name: 'Kurtka' }] });
-    await handleCalcCallback(ctx, chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({
-      stage: 'question',
-      askingIndex: 2,
-      lineDone: [
-        { index: 0, name: 'Kurtka' },
-        { index: 1, name: 'Shim' },
-      ],
-    });
-    expect(ctx.texts().map((t) => t.split(' — ')[0])).toEqual(['❓ 2-qator «Shim»', '❓ 3-qator «Sharf»']);
-  });
-
-  it('the summary keeps the list too, so «➕ Yana ma’lumot» cannot bring a passed line back', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
-      facts: { goods: [line('Kurtka')] },
-    });
-    await handleCalcCallback(fakeCtx(), chatId, 'skip');
-    expect(activeIntake(chatId)).toMatchObject({ stage: 'review', lineDone: [{ index: 0, name: 'Kurtka' }] });
+    await applyTableAnswer(ctx, chatId, state, '1: 150 kg', { date: 0, messageId: 50, forwarded: false, replyTo: null });
+    expect(activeIntake(chatId)?.facts.goods?.[0]).toMatchObject({ name: 'Kurtka', weightKg: 150 });
+    await handleCalcCallback(ctx, chatId, 'more');
+    expect(activeIntake(chatId)?.stage).toBe('material');
+    analyse.fn.mockImplementationOnce(async (s: IntakeState) => ({
+      ...s,
+      facts: { goods: [line('Shim'), line('Kurtka'), line('Sharf')] },
+      stage: 'review',
+      // analyzeCollected's own shape: the job bills what it answered (§7.2.10).
+      answered: [],
+    }));
+    // The re-read runs as the job (docs/SAKKIZ-R3.md §11, P2): «Bo‘ldi» only enqueues.
+    await handleCalcCallback(ctx, chatId, 'done');
+    await driveReading(chatId, ctx);
+    expect(activeIntake(chatId)?.analysing).toBeNull();
+    const after = activeIntake(chatId)!;
+    expect(after.facts.goods?.map((g) => [g.name, g.weightKg ?? null])).toEqual([
+      ['Shim', null],
+      ['Kurtka', 150],
+      ['Sharf', null],
+    ]);
+    // …and the stored answer says where it now is, so the next re-read starts there.
+    expect(after.lineAnswers).toMatchObject([{ index: 1, name: 'Kurtka', patch: { weightKg: 150 } }]);
   });
 });
 
-describe('the summary names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
+describe('the table names the customer on ONE line (round-2 review, C9; round-3, R3-C3)', () => {
   it('«Ali aka» over the phone reads «Mijoz: Ali aka · +998 …» — one line, and the phone the landing reads', async () => {
-    const { chatId } = collection({
-      stage: 'question',
-      askingIndex: 0,
-      round: 1,
+    // The summary reached through ⏭ is retired; the table is what the reading
+    // delivers (`deliverNextStep`), with the same `Mijoz:` line.
+    const { chatId, state } = collection({
+      stage: 'material',
       clientHintRaw: 'Ali aka\n+998 90 123 45 67',
       facts: { goods: [line('Kurtka', { weightKg: 150 })] },
     });
     const ctx = fakeCtx();
-    await handleCalcCallback(ctx, chatId, 'skip');
-    const summary = ctx.texts().at(-1)!;
-    expect(summary).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    await deliverNextStep(ctx, chatId, state);
+    const table = ctx.texts().at(-1)!;
+    expect(table).toContain('Mijoz: Ali aka · +998 90 123 45 67\n');
+    expect(activeIntake(chatId)?.stage).toBe('review');
   });
 });
 
@@ -428,7 +463,7 @@ describe('a file the READER stopped short is said, and carries its cut (round-2 
       (_, i) => `${i + 1};Куртка женская модель YW-${i} (女士夹克);${300 + i};PCS;${i}.5;${i}.9;0.${i}`,
     ).join('\n');
     const state = collection().state;
-    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv) }, 'PL.csv', 'text/csv', state);
+    const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from(csv), attachmentId: 'a-file' }, 'PL.csv', 'text/csv', state);
     expect(answer.say).toContain('⚠️ Jadval katta');
     expect(answer.patch.sheetTexts?.[0]?.cut).toBe(true);
   });

@@ -22,7 +22,7 @@ import { mayReadBatches } from '../batches/read-door';
 import { latestPositions } from '../tracking/devices';
 import { truckFor } from '../tracking/truck';
 import { loadBorderHours } from '../tracking/border-queue';
-import { batchByFormerCode, formerCodesFor, formerNames } from '../batches/former-codes';
+import { batchByFormerCode, batchByReleasedName, formerCodesFor, formerNames } from '../batches/former-codes';
 
 /**
  * "Where is it?" — answered in the bot (owner's item 2).
@@ -39,6 +39,12 @@ import { batchByFormerCode, formerCodesFor, formerNames } from '../batches/forme
  * the bot than through the app would be a back door, and this bot is used by
  * everyone.
  */
+
+/** A held queue's given wait in days, as the bot writes it — «2–3», «2,5», «3». */
+function botDays(days: [number, number]): string {
+  const one = (d: number) => String(d).replace('.', ',');
+  return days[0] === days[1] ? one(days[1]) : `${one(days[0])}–${one(days[1])}`;
+}
 
 export interface BotActor extends ScopedActor {
   id: string;
@@ -114,7 +120,12 @@ export async function botLookupAnswer(actor: BotActor, raw: string): Promise<Bot
     // LAST, after the client book: a name a truck USED to wear (renamed on
     // the road, the owner's 1a) must never shadow a live client code.
     const former = await lookupFormerBatch(actor, upper);
-    return former ? { text: former } : null;
+    if (former) return { text: former };
+    // …and after it, a number a cancelled truck GAVE BACK and nobody wears
+    // yet (docs/NARX-VA-RAQAM.md §3.2.5): «YW-010» used to answer «bekor
+    // qilingan» and would otherwise answer nothing until it is minted again.
+    const released = await lookupReleasedBatch(actor, upper);
+    return released ? { text: released } : null;
   }
   return {
     text: client.text,
@@ -264,6 +275,20 @@ async function lookupFormerBatch(actor: BotActor, code: string): Promise<string 
     `↩️ ${hit.formerCode} — bu partiyaning oldingi nomi. Hozirgi nomi: ${row.batch.code}\n` +
     (await batchAnswer(row))
   );
+}
+
+/**
+ * A number a cancelled truck gave back: «YW-010» finds «YW-010 (bekor)» while
+ * no truck wears the number. Out of scope it answers the typed name and
+ * «not yours», like the former name.
+ */
+async function lookupReleasedBatch(actor: BotActor, code: string): Promise<string | null> {
+  const hit = await batchByReleasedName(code);
+  if (!hit) return null;
+  const row = await batchRowWhere(eq(batches.id, hit.batchId));
+  if (!row) return null;
+  if (!batchInScope(actor, row)) return `🚚 ${code}\n${outOfScope()}`;
+  return `↩️ ${code} — bekor qilingan, raqami qaytarildi. Hozirgi nomi: ${row.batch.code}\n` + (await batchAnswer(row));
 }
 
 /** The in-scope answer about one truck, by whichever name it was asked. */
@@ -486,6 +511,14 @@ async function lookupClient(
       : marker.atGate && marker.gateDays !== null
         ? (marker.gateDays === 0 ? ' · bugun keldi' : ` · ${marker.gateDays} kundan beri turibdi`) +
           (marker.gateStuck ? ' — ⏱ tushirishni tekshiring' : '')
+        : marker.queue
+          ? // Held at Horgos or Yallama (docs/XORGOS-NAVBAT.md, his 5a): the day
+            // of the wait and the wait given; past it, no date — said so.
+            ` · ⏱ ${marker.queue.post === 'khorgos' ? 'Horgos' : 'Yallama'} navbatida ${marker.queue.day}-kun` +
+            (marker.queue.over
+              ? ` — ${marker.queue.typed ? 'kiritilgan' : 'odatdagi'} ${botDays(marker.queue.givenDays)} kundan oshdi`
+              : ` (${botDays(marker.queue.givenDays)} kundan)` +
+                (marker.dated ? ` · ~${marker.remainingDays[0]}–${marker.remainingDays[1]} kun` : ''))
         : marker.overdue
           ? ' · ⏱ muddatdan oshdi'
           : marker.dated

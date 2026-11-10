@@ -163,11 +163,15 @@ pnpm build && pnpm e2e  # 44 e2e
 | The staff Telegram group — celebrations, the Saturday 18:00 rating, the month's champion, /reyting | `docs/JAMOA-GURUHI.md` — agreed 2026-10-20 (his «3. 2 3 gif … tabriklash ham / qolgani sen aytkandek»), SHIPPED |
 | Every truck in one place — the board by place, the % by distance, GPS, the gate | `docs/PARTIYA-DOSKASI.md` — agreed 2026-10-17 (his 1A 2a 3a 4a 5a 6c 7a 8b 9b 10b 11A 12A, then «1 hozirgidek qolsin»), SHIPPED; §2 is the placement as built; §3a = «Yo'lda» in two columns, inside / outside China (2026-10-21) |
 | LTL / FTL — which cargo the KPI and the rating count, who may mark it, the paid-month freeze, the logist's hint | `docs/LTL-FTL.md` — agreed 2026-10-20 (his «3 b / qolgani sen aytgandek» = 1a 2a 3b 4a 5a 6a 7a), SHIPPED |
-| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; R3 designed (`docs/SAKKIZ-R3.md`); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
+| His eight items of 2026-10-20 (AI reading, customs, models, odnarodka, VED rota, new deal, kontragent links, one-line tarkib) — verified diagnosis, round plan, the numbered questions | `docs/SAKKIZ-BAND.md` — his answers in §11 (2026-10-21, unnamed = ⭐); **round 1 SHIPPED** (DECISIONS #1455-#1462) and reviewed against a regression corpus (#1463-#1468); **round 2 SHIPPED** (`docs/SAKKIZ-R2.md`, #1503-#1511); 4.5 c / 6.8 b answered; **round 3 SHIPPED** (`docs/SAKKIZ-R3.md`, #1571-#1580); R4, R5 (`docs/SAKKIZ-R5.md` handoff) and R8 are the OTHER session's — R4+R8 shipped as its Uch band |
+| Round 3 of the eight items — the «Hisoblatish» collection that survives a deploy, the reading as a job, one table / echo / undo, «➕ Shu so‘rovga qo‘shish», the law's count after the AI answer, the VED's doors refusing a screen a seller's addition overtook | `docs/SAKKIZ-R3.md` — agreed 2026-10-27 (his 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b, then «14 a, qolgani seni taklifing»), **round 3 SHIPPED** (DECISIONS #1571-#1580, migration 0139, ledger 140); §0 binding, §2 the exact Uzbek words, §6.2.2 the lead's ruling L1, §20 as built + his six new questions 1.21-1.26 |
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
+| Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
 | **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED on the branch |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
+| A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
+| «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
 
 ## State — 2026-08-23
 
@@ -3043,6 +3047,50 @@ lists travel as FILES). Main's Uch band (0136) was merged in before the push —
 rota pick is taken LAST in `openCalcRequest`'s tx, after the lead row lock (the order
 `recalcFromSealed` uses). Known: 142 corpus cases on the ratchet, one common (c2353).
 
+**Round — Sakkiz band, round 3 (2026-11-03; DECISIONS #1571-#1581, numbered past main's #1570; migration 0139
+`calc_intake_durable` — renamed from 0137 and then 0138 on two merges, the TWENTY-SEVENTH collision — ledger must
+reach 140; spec `docs/SAKKIZ-R3.md`, §20 = as built + his six new questions).** Item 1B + 2.8 b, his 1.8 c 1.9 a
+1.10 c 1.11 c 2.8 b and «14 a, qolgani seni taklifing». The «Hisoblatish» collection is a ROW
+(`telegram_calc_intakes`) written behind memory (`calc-store.ts`, debounced per chat 1 s / 5 s), and ruling L1:
+ONE grammy API transformer (`flushBeforeConfirm`) flushes every dirty chat before each `getUpdates`, because grammy
+confirms a batch with the next one — bounded 2 s, never blocking the poll; a failed write stays dirty, the stop
+confirms only through the oldest unwritten update and SEALS the store, `takenUpTo` applies a redelivery once, the
+hydrate runs before polling and a job waits in `loadIntake` (`IntakesNotReady`). It WAITS 24 h but HOLDS the chat
+30 min (`HOLD_MS`): parked, it takes no text, file or contact, the doors ask `holdingIntake` and
+`intake-holds-wire` classifies every `activeIntake(`; one 2 h reminder (silent at night), one end path
+`expireIntake`, and `otherCollectorLive` is the one predicate beside a parked collection (a task or zametka draft,
+a task's or the AI sotuvchi's one-text wait). «Bo‘ldi» enqueues `calc.intake-read` (4 workers, 300 s): store THEN
+send, never the model twice, billed when the model answers on `ai_calc_passes.intake_note_id`. ONE table edited in
+place, `parseTableAnswer` (`line-address.ts`: number, name, «jami»; the row's `seq`), one echo per answer with
+«↩️ Shu javobni bekor qilish»; a table answer is never material; the per-line loop and ⏭ are gone. «➕ Shu
+so‘rovga qo‘shish» (`ca:`/`cg:`/`cf:`, a reply to the AI answer, the offer on a forward or file within 7 days) →
+an ADD collection → `calc.amend-save` → ONE writer `amendRequest` (wms/calc/amend.ts) with four outcomes in
+`calc_amendments`: open (`handsoff_rev = rev`, no ✅) writes through `saveTable` and re-queues the pass,
+started/closed → the job's thread as text, waiting → stored and written at the pass's settle, noted → the card and
+the VED; never a price, rate, zone, certificate or existing code; a returned request's ➕ = a seeded NEW
+collection. 2.8 b: `lawAsksOf` over `lineNeeds` (every pinned unit, 1.14 a), the ❓ block by seq; `handsoff_rev`
+moves inside every machine save (`advanceHandsOffInTx`; `handsoff-writers` allows two writers); a pass owed is a
+TICKET (`ai_pass_rev/_at/_job` — busy = its pg-boss job alive, a 60 s send window); the re-run he started goes past
+his mute via `direct`. The VED's four doors and (lmp-1) the desktop `saveTable` take `sawRev` and refuse
+`amended_since` on an APPLIED addition newer than the screen; «Готово» locks the row first (READ COMMITTED,
+measured: the bare UPDATE closed, lock-then-UPDATE refused), the fold presses with `foldRev`, the page
+`min(row.rev, workspace.rev)`. Built as kernel K + P1-P6 in worktrees (each reviewed twice: 120 findings, 101
+fixed), cherry-picked P1 → P2 → P3 → P5 → P4 → P6 (30 seams in the merge ledger, none visible to a package); the
+weekly limit stopped the merge after P5 on 10-28 and it resumed IN PLACE on 11-03, merged main 901c280, then a
+four-lens review: 30 verified, 28 fixed — the headline (dur-1) an add door opened by a reply marking the reply
+taken before its answer, so a restart lost it in silence. Ratchet unchanged (142 known). Then the FIXES were reviewed before production (#1581: three lenses and
+§17.6's drills, 34 confirmed, 27 fixed in 408a7d7, 7 rejected in writing): the blocker was PF-4's own name search,
+O(n²) on the one process (4.5-17 s a render at 500-1000 rows → `NAME_ROWS_TRIED`), its twin in `addReading`
+(DRILL-1, 12-16 s → ms), the add door's resume ignoring its own refusal (FR-1), and a seeded table that never drew
+the stale brutto COMP-4 computed (FR-4 — its test read `tableContext()`, not the table). An independent check then
+found one fix that regressed (CHK-1, W-9's digits taught «Paket 100 dona qora 30 dona», refused «repeated»): a
+number with its unit word leaves the run, and `parseTableAnswer` is the ARBITER of every taught name example —
+reading with the caller's fold, once per render (`readTable(…, nameOf)`, `FOLDED_ROWS`; its own fold per candidate
+was PERF-1, 0.4-1.2 s a render). The
+drills measured the worst collection at 0.72 MiB / UPSERT 28 ms max (beyond every cap 2.58 MiB / 98 ms) — inside
+the 2 s confirm and the stop's 1 s flush; the process drills on a running stack were NOT run. Gates:
+at 14355e4 unit 9295 + integration 3559 tests green, build 0; at 947987b the whole CI order, vitest 12851 tests and Playwright 488 passed, 1 skipped. OWED to him: 1.21-1.26 (spec §20.4, CHANGELOG 2026-11-03).
+
 **Round — uch band (2026-10-27; DECISIONS #1469-#1478, numbered past PR #127's #1455-#1468; migration
 0136 `lead_client_many` — ledger must reach 137; spec `docs/UCH-BAND.md`).** His three items after the 136
 deploy, answers «3b / 4 a / 5 a / 6 a / 7 b» (Q1-Q2 ⭐). Judged by five lenses before code (83 objections, 0
@@ -3235,38 +3283,110 @@ card's window on the rule's birth, the week walk dropping strangers with no tray
 as his own, refusals invisible on /suhbatlar/ai, the supervisor's serial start, a dead notification row reused
 for a card) is owed as the next round; his number should be switched to «Ish raqami».
 
-**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening; DECISIONS #1571-#1581; migration 0139 `chat_rule_bound_via`, ledger must reach 140; numbered past main's agent-feed #1545-#1570, the TWENTY-SEVENTH collision).** His
+**Round — narx jadvali + partiya raqami (2026-11-09; DECISIONS #1582-#1592; NO migration, ledger 140; spec
+`docs/NARX-VA-RAQAM.md`).** His two reports, answered «1a 2a 3a 4a 5a 6a 7a 8a». (1) A client with 10-15 deals on one
+truck: when `DealCandidates.ambiguous`, the «Narx» tab draws `PricingTable` (one row per own deal + «Bitimsiz», one date,
+one currency, one Saqlash; blanks write nothing, 3a). ONE write body shared with `addTransaction`'s truck branch:
+`prepareTruckCharges` (pool) + `writeTruckCharges` (owns its tx: lockOwnersTx → `lockTruckForPriceTx` → cargoAboard(tx) →
+`truckDealParts` again → `pricesSeen` + `cardSeen` re-read → N inserts → one FX residue → audit `dealVia`/`parts`). The
+pre-fill is pure (`prefillFor(facts, currency)`, quote sight only — the VED gets no money), the deal's quote × the truck's
+EXACT share on the upsale's basis (`expectedPartFor`, no whole-quote fallback, rounded UP to the cent); the 5 % check, the
+deal block and the totals use the SAME basis (`expectedHereFor`). «Already priced here» = ONE `pricedHereReading(candidates,
+prices, zeroed)` (byDeal / none = audit `dealVia:'none'` / whole), and a compensation-ZEROED truck charge stands
+(`batchZeroedCharges`, the clause in `finance/standing-price-sql.ts`, kept out of `pricesSeen`); the correction doors carry
+`dealVia:'none'`. **TRAP (#1585): `FOR SHARE OF b` over a JOIN loses the row** — after a wait EvalPlanQual re-fetches `b`
+and re-uses the OLD joined row, the join fails and 0 rows come back; lock the row ALONE, then read the joined facts.
+(2) `cancelBatch` → after its commit → `releaseNumberAfterCancel` walks the counter down (rename.ts stays `batches.code`'s one
+writer; counter FOR UPDATE → name locks → row → CAS; audit `after {code, released:true, number}` and NEVER a `reason`, or the
+former-name predicate burns the number); kept reasons `NUMBER_KEPT`, shown on the cancelled card (`batch-number-state`) and
+answered by the bot; the holder of N (#1592): the wearer — unless a cancelled never-departed wearer not born with it, which yields to the live-or-departed minter — else the ROAD carrier, else the newest minter, else the newest rename-away row; «at the agent» is asked of the NUMBER (any truck that ever wore the string, `everTickedSql`) by the walk, the card, the dry run AND the mint (`numberEverAtAgent` in `nextBatchCode`). `scripts/batch-raqam.ts`
+through `migrate`: dry run, then `--apply` (7a). `changeDestBeforeDeparture` (reroute.ts, ONE `writeDestTx` with the road
+reroute, its own audit key `destBeforeDeparture`) on the Mashina tab; the quick batch asks in-page, every e2e through
+`tests/e2e/quick-batch.ts` `createQuickBatch`. Stated: a plate-named cancelled truck keeps the plate as its NAME (C3).
+
+**Round — Horgos and Yallama hold the truck (2026-11-08; DECISIONS #1593-#1598 — renumbered from #1582-#1587 on the merge, the TWENTY-EIGHTH collision: «narx jadvali» took #1582-#1592 first; migration 0140
+`truck_queue_alerts` — ledger must reach 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding).** His «horgosdan
+jo‘nagan mashinalar … joyi aniq emas» (a departure-only HOR truck's spent walk had `zoneOfRoute` of a
+five-zone road), then what he meant: answers 1a 2a 3a 4a 5a, code HOR. A **held queue** = a stationary leg
+with a typed-queue `post` (`isHeldQueue`; Horgos + Yallama, the Kashgar road untouched): `placeTruck` walks to
+the first one at or after the anchor's leg and STOPS until a pin or a fix past the post. The wait is the
+panel's (`givenWait`, shifted from the typing, never `withLead`-stretched), no date past it, `overdue` a day
+after (`QUEUE_LATE_HOURS`). The walk never dates an entry across a held queue; the phone that saw the arrival
+does (`queueSinceFor`, devices.ts, `HELD_QUEUE_RADIUS_DEG` 0.15°). `TruckPlace/TruckRow/TruckMarker.queue`
+carry it to the words (5a, «kiritilgan» only when typed), the map label («⏳2», `truck-label.ts`) and the
+cabinet (`arriveBy` '9999' once over). `alertLateQueues` (queue-alert.ts, office hours): ONE message per sweep
+to `plans.manage`, claim per (truck, post) re-armed only by a wait begun after the warning; `TruckQueueLate`
+in `alerts`. Judged by five lenses before code (two blockers), then reviewed as built twice (#1596-#1598): on that
+road a pin is never pressed off — a re-press of «Horgosda turibdi» re-stamps it (the restart), «Qozog‘istonda» /
+«O‘zbekistonda» only when the truck reads BEHIND the pin (`placedBehindPin`); the listing names the press per
+queue; a premature pin's Horgos entry is the departure's walk. DEPLOY: every unpressed HOR truck already past
+Horgos snaps back «late» — the logists get one list at 08:00 and press.
+
+**Round — Ikki eshik (2026-11-09; DECISIONS #1599-#1609 — renumbered from #1593-#1603 on the merge, the TWENTY-NINTH collision: #137 took #1593-#1598 and 0140 first; migration 0141
+`intake_door` — ledger must reach 142; spec `docs/IKKI-ESHIK.md`).** His report the day after R3 reached
+production («har bir fayl uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak.
+oddiy hsoblatishdan … ved hodimiga tushsin ai bergan komentariya bilan birga»), answered «sen aytgandek
+bolsin» (1a-6a). Both bot doors were ONE collector; now the door is a fact of the request
+(`calc_requests.intake_door`, NOT on the drizzle table — read only through `calc/intake-door.ts`, fenced;
+REQUIRED on `CalcRequestInput`; card/thread/agent pass null; **NULL = today's behaviour on every reader**,
+only 'plain' silences, only 'ai' passes a mute). Shared: no question per file (`parseGoods` classifies by
+COLUMNS — `shape`/`weightKind`/`grossKg`, `PER_PACKAGE_COUNT`, `composedHeader` for merged sub-headers;
+`file-goods.ts` compares row by row through a bounded memo — the O(n²) first cut was 7-22 s on the one app
+process; decisions in `IntakeState.fileNotes`/`fileTotals`; `migrateIntakeState` resolves rows open at
+deploy; retired callbacks stay parsed); units once at `invoiceFacts`; ONE «Qabul qilindi» prompt, a pure
+function of durable state, kept last through `kept-last.ts` (the ONE «always the last message» rule — the
+prompt, a burst's offer, the pause line); a file's own message only for a refusal (`refusalOf`). Plain:
+a summary with no asks (ℹ️ «↳ kg yo‘q — VED xodimi so‘raydi»), typed text judged per segment
+(`plainVerdict`; a row's figure never becomes the shipment's weight), the pass SILENT (`sayOnce` silent
+mode, muted «oddiy eshik» claim rows) and a MONEY-FREE «🤖 AI izohi (VED uchun)» on the lenta. AI: the
+reading codes the rows (`codeRows`: row → memory → book → model, one function with the INSERT;
+`known_codes` by index; `AI_CODE_NOTE` «(AI taklifi)»), ONE table with no echo message (the result is its
+last block, ↩️ on its keyboard, 👍 only when all written), «Tasdiqlash» → the pass answers and asks
+NOTHING (`noAsk` tails), past the mute (`directPass`). «AI available» = `aiCalcStanding`/`aiCalcAvailable`
+(ai-cost.ts), never restated. Bursts: a durable `telegram_chat_waits` kind 'burst' (≤ 20 parts, 2 min),
+ONE offer kept last acting on the whole burst; beside a parked collection the pause line is its one
+message and `c:resume_take` takes its parts through the per-part fence. The bot's stop gives kept-last
+draws their own 1.5 s (`STOP_DRAWS_MS`) before the durable flushes. Built as kernel K + K2 and four
+packages in two pairs, each reviewed by two lenses (73 findings); the merged tree reviewed as built by
+five lenses + a critic (27 confirmed, 6 blockers, all fixed), then the fixes reviewed (#1608). The corpus
+ratchet is 104 known (38 left it). DEPLOY: ledger 142 (#137's 0140 rides with it if not yet on the server), rebuild tg-listen, `/api/version` today; the first real «🧮» and «🤖» after the deploy are
+the proof (no Telegram here).
+
+**Round — «✅ Yuborish chiqmadi» (2026-10-29 evening, merged 2026-11-10; DECISIONS #1610-#1620; migration 0142 `chat_rule_bound_via` (minted as 0139), ledger must reach 143; renumbered from #1571-#1581 and 0139 on the merge, the THIRTIETH collision — main's Sakkiz R3, narx jadvali, Horgos and Ikki eshik took #1571-#1609 and 0139-0141 first).** His
 «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», answers «A» (soften only the refusals an
 ordinary opener meets, keep every dangerous one) and «1 a» (a hidden number on a work number is a customer). Four
 packages in worktrees on one base, each reviewed by two lenses and fixed, cherry-picked, then the merged delta
-reviewed again. POLICY (#1571): list markers are dropped from figures (in-order runs of ≥2, one style, never a
+reviewed again. POLICY (#1610): list markers are dropped from figures (in-order runs of ≥2, one style, never a
 currency item, never after a price/unit word) and the prompt asks for «•»; `questions` is a WARNING; word numerals
 block beside their unit only; G1 keeps its own definite-duration list (G2 still reads «bir necha kunda»); an asking
 «?» is no dispatch promise; `normalizeDigits` folds ʼ ` ´ ′ ʹ; the prompt's own figures are company-rule sources WITH
 unit and road (a figure naming no road is the truck's); a kb address number vouches for a plain figure only;
 «hisoblash bepul» and «оплата … перед получением» are narrow exemptions. Probe ANY change there with
-`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1572): «✏️ O‘zgartirish», the remedy line, reasons in
+`tests/unit/agent-policy-first-reply.test.ts` both ways. CARD (#1611): «✏️ O‘zgartirish», the remedy line, reasons in
 words, `cardDrawsSend` the one ✅ rule (bot AND page), ✅ on an editing draft without own text sends the machine
 text, `redraftNewest`, a dead ✏️ wait falls through, the inline ✅ under his own text, `fitCard` stages,
 `memory_missing`, ✋ (his Telegram reply, its own time) vs 🙋 (`HUMAN_TAKEOVER_HOURS`), the late-card note; the bot's
-copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1573): `workModeSwitch`
+copies of a draft's words are recorded on its row and blanked by the purge. LISTENER (#1612): `workModeSwitch`
 (30 s, shared read, fresh read for a line about to be stored), the start line names the mode, the web tray's
 holder press queues the pull, `[agent] inbound` carries origin/lag, the gap/retry passes skip a waiting job, lookup
-deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1574): `no_phone` on a work account → `open_lead` through
-ONE door `phonelessLeadForChat` (the rule row is the fence; the listener's own binding is marked by 0139's
+deadline = gramjs flood threshold + 15 s. HIDDEN NUMBER (#1613): `no_phone` on a work account → `open_lead` through
+ONE door `phonelessLeadForChat` (the rule row is the fence; the listener's own binding is marked by 0142's
 `bound_via = 'work_account'` — SQL-only, read through `to_jsonb(row)` (`boundViaSql`), because round 113's website
 rule has the same shape with no `decided_by` either — and YIELDS to a person, the book and a closed lead, never to
 the switch: the switch governs NEW strangers only, and a chat the work number bound stays on its open lead by its
-RULE — never by its rows, a visible number it kept by the number is the tray's question again (#1576, #1577);
+RULE — never by its rows, a visible number it kept by the number is the tray's question again (#1615, #1616);
 «🚫 Shaxsiy» on a chat no person answered also deletes its lines when all are a lead's, `storedOnLeadsOnly`;
 a closed lead's binding retires on an INBOUND line only, `settlePassedChat`); `isTelegramOfficialPeer` fences Telegram's own accounts, `officialPeerSql`
 is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleague becomes a lead; a hidden-number stranger's lines written while the
-listener was down are not fetched. LAST CHECK (#1580-#1581): two corpora measured both ways (62 ordinary first
+listener was down are not fetched. LAST CHECK (#1619-#1620): two corpora measured both ways (62 ordinary first
 replies, 303 dangerous) — keep them green on ANY policy change; G10's same-text fuse only WARNS on a short reply
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
-phrasings are in #1580. Deploy MUST rebuild tg-listen.
+phrasings are in #1619. Deploy MUST rebuild tg-listen.
 
-**Latest migration: 0139** (`chat_rule_bound_via`, `when` …118; ledger must reach **140**). Before
+**Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
+it: 0141 (`intake_door`, `when` …120). Before
+it: 0140 (`truck_queue_alerts`, `when` …119). Before
+it: 0139 (`calc_intake_durable`, `when` …118). Before
 it: 0138 (`ai_sotuvchi`, `when` …117). Before
 it: 0137 (`plan_road`, `when` …116). Before
 it: 0136 (`lead_client_many`, `when` …115). Before
@@ -3410,7 +3530,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **140** since 0139 (139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **143** since 0142 (142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

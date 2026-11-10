@@ -19,6 +19,7 @@ import {
 import { finishCalcRequest, openCalcRequest, takeCalcRequest } from '@/modules/wms/calc/service';
 import { recordOffer } from '@/modules/wms/calc/workspace';
 import { payableOffersSql } from '@/modules/wms/calc/upsale';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The upsale's denominator, fed by the seller's own LINES (docs/SAKKIZ-R2.md
@@ -102,6 +103,7 @@ describe('the upsale scales on the cube the lines state', () => {
     // the m³ box left empty — through the REAL door.
     const opened = await openCalcRequest(
       {
+        intakeDoor: null,
         entityType: 'deal',
         entityId: deal!.id,
         section: 'rastamojka',
@@ -124,7 +126,7 @@ describe('the upsale scales on the cube the lines state', () => {
     await finishCalcRequest(
       opened.id,
       { amountText: '1000', currency: 'USD', note: 'gotovo', internalNote: 'ichki: gotovo' },
-      ctx(),
+      ctx(), await sawRev(opened.id),
     );
     const offer = await recordOffer(
       { requestId: opened.id },

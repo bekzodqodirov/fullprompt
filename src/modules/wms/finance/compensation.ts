@@ -10,6 +10,7 @@ import { lockOwnersTx, reconcileFxResidueTx } from './fx-residue';
 import { rateFor } from '../costing/service';
 import { RIDE_CAUSES, rideMovementSql } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
+import { chosenNoneSql } from './standing-price-sql';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 
@@ -149,9 +150,20 @@ export interface LostCargoCharge {
  * never an internal leg, which is never billed) or typed on the prixod's
  * deal with no truck. Not a charge routed through a firm or half of a
  * three-cornered settlement (the void+copy claim refuses those). At most 20
- * per prixod, newest first. On the caller's handle: the form's list on the
- * pool, the door's re-check on its own transaction under the locks.
+ * per prixod — the prixod's OWN deal's part first, then a deal-less price,
+ * then the rest, each newest first with the id last: a truck priced from the
+ * table carries up to forty parts written in one transaction, which share
+ * `created_at`, so «newest first» alone cut the lost carton's own deal's part
+ * off the list by chance, and lowering another deal's part moves the
+ * discount onto that deal's invoice (judges F4, P1-correction-doors). On the
+ * caller's handle: the form's list on the pool, the door's re-check on its
+ * own transaction under the locks.
  */
+/** 0 = the prixod's own deal's part, 1 = a deal-less price, 2 = another deal's. */
+const ownPartFirstSql = sql.raw(
+  `(CASE WHEN r.deal_id IS NOT NULL AND ct.deal_id = r.deal_id THEN 0 WHEN ct.deal_id IS NULL THEN 1 ELSE 2 END)`,
+);
+
 export async function lostCargoChargesOn(
   handle: Exec,
   clientId: string,
@@ -178,7 +190,10 @@ export async function lostCargoChargesOn(
     cand AS (
       SELECT r.id AS receipt_id, ct.id, ct.batch_id, ct.deal_id, ct.amount, ct.currency, ct.amount_usd,
              ct.rate_to_usd, ct.tx_date, ct.created_at,
-             row_number() OVER (PARTITION BY r.id ORDER BY ct.tx_date DESC, ct.created_at DESC) AS n
+             ${ownPartFirstSql} AS own_rank,
+             row_number() OVER (
+               PARTITION BY r.id ORDER BY ${ownPartFirstSql}, ct.tx_date DESC, ct.created_at DESC, ct.id
+             ) AS n
         FROM r
         JOIN client_transactions ct
           ON ct.client_id = ${clientId}::uuid AND ct.type = 'charge' AND ct.voided_at IS NULL
@@ -195,7 +210,7 @@ export async function lostCargoChargesOn(
       LEFT JOIN warehouses cd ON cd.id = cb.dest_warehouse_id
       LEFT JOIN deals d ON d.id = c.deal_id
      WHERE c.n <= 20 AND (c.batch_id IS NULL OR NOT ${internalLegSql('co', 'cd')})
-     ORDER BY c.receipt_id, c.tx_date DESC, c.created_at DESC`)) as unknown as {
+     ORDER BY c.receipt_id, c.own_rank, c.tx_date DESC, c.created_at DESC, c.id`)) as unknown as {
     receipt_id: string;
     id: string;
     amount: string;
@@ -304,7 +319,8 @@ export async function addCompensation(
            SET voided_at = now(), voided_by = ${actorId}::uuid, void_reason = ${reason}
          WHERE id = ${change.chargeId}::uuid AND voided_at IS NULL AND type = 'charge' AND partner_id IS NULL
            AND NOT EXISTS (SELECT 1 FROM partner_transactions pt WHERE pt.client_tx_id = ${change.chargeId}::uuid)
-         RETURNING id, client_id, batch_id, deal_id, tx_date::text AS tx_date, currency, rate_to_usd, created_at::text AS created_at`)) as unknown as {
+         RETURNING id, client_id, batch_id, deal_id, tx_date::text AS tx_date, currency, rate_to_usd, created_at::text AS created_at,
+                   ${chosenNoneSql(sql`client_transactions.id`)} AS chosen_none`)) as unknown as {
         id: string;
         client_id: string;
         batch_id: string | null;
@@ -313,6 +329,7 @@ export async function addCompensation(
         currency: string;
         rate_to_usd: string;
         created_at: string;
+        chosen_none: boolean;
       }[];
       const [old] = [...claimed];
       if (!old) throw new CompensationError('charge_taken');
@@ -360,6 +377,11 @@ export async function addCompensation(
             currency: old.currency,
             repricedFrom: old.id,
             ...(old.batch_id ? { batchId: old.batch_id } : {}),
+            // A chosen «bitimsiz» part lowered is still that part (Q8 «c»):
+            // the copy keeps the original's deal (none) and its word, or the
+            // «already priced here» reading takes it for a whole-cargo price
+            // and every blank deal on the truck goes quiet (review A2).
+            ...(old.chosen_none && old.batch_id && !old.deal_id ? { dealVia: 'none' } : {}),
           },
         });
       }

@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest';
 import { blockerText, tariffReplyText } from '@/modules/wms/calc/prefill-reply';
 import type { SealBlocker } from '@/modules/wms/calc/workspace';
 import type { AiVedFreight } from '@/modules/wms/calc/ai-reply';
-import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { ROAD_STALE_LINE } from '@/modules/wms/calc/ai-reply';
+import {
+  MACHINE_REPLY_HEADS,
+  RERUN_WORD,
+  TARIFF_PRICED_HEAD,
+  TARIFF_REPLY_HEAD,
+  VED_ESTIMATE_MARK,
+} from '@/modules/wms/calc/reply-heads';
 
 /**
  * What the AI VED hodimi says back into the staff chat.
@@ -37,7 +44,18 @@ const priced = (over: Partial<Extract<AiVedFreight, { ok: true }>> = {}): AiVedF
   small: false,
   ...over,
 });
-const tariff = { clientLabel: 'GS777', cardLabel: 'B-000067', link: 'https://gsrwms.uz/bitimlar/x', audience: 'chat' as const };
+// `pass` is REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): these are
+// the landing's replies; the re-run's heading has its own case below.
+const tariff = {
+  clientLabel: 'GS777',
+  cardLabel: 'B-000067',
+  link: 'https://gsrwms.uz/bitimlar/x',
+  pass: 'landing' as const,
+  audience: 'chat' as const,
+  // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
+  // The doors' own words have their case at the end of this file.
+  noAsk: false,
+};
 
 describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () => {
   it('the figure, the route as read, the band — and the caveat right under the figure', () => {
@@ -65,14 +83,54 @@ describe('a yolkira job answered from the tariff table (his 2.5 b, §2.4)', () =
       ...tariff,
       freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): the CHAT's seller
+    // tail points at «➕» under this very message; the lenta keeps R2's.
     expect(t).toBe(
       [
         `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · GS777 · B-000067`,
-        'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+        'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
         'Karta: https://gsrwms.uz/bitimlar/x',
       ].join('\n'),
     );
     expect(t).not.toContain('$0');
+    const lenta = tariffReplyText({
+      ...tariff,
+      link: null,
+      audience: 'lenta',
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    expect(lenta).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(lenta).not.toContain('➕');
+  });
+
+  it('a re-run after an addition says «qayta hisob» AFTER the title and its estimate word (§2.5)', () => {
+    // The chip's anchors stay the heading's first characters (feed.ts, PF-9):
+    // a priced re-run still starts with TARIFF_PRICED_HEAD.
+    const pricedRerun = tariffReplyText({ ...tariff, pass: 'amend', freight: priced() });
+    expect(pricedRerun.split('\n')[0]).toBe(`${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy · ${RERUN_WORD} · GS777 · B-000067`);
+    expect(pricedRerun.startsWith(TARIFF_PRICED_HEAD)).toBe(true);
+    const refusedRerun = tariffReplyText({
+      ...tariff,
+      pass: 'amend',
+      freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' },
+    });
+    expect(refusedRerun.split('\n')[0]).toBe(`${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · ${RERUN_WORD} · GS777 · B-000067`);
+    expect(refusedRerun.startsWith(MACHINE_REPLY_HEADS.tariff)).toBe(true);
+    expect(refusedRerun.startsWith(TARIFF_PRICED_HEAD)).toBe(false);
+  });
+
+  it('a stale total after an addition prices no road — the words, never a dollar figure (law-money-1)', () => {
+    for (const audience of ['chat', 'lenta'] as const) {
+      const t = tariffReplyText({
+        ...tariff,
+        pass: 'amend',
+        audience,
+        freight: { ok: false, refusal: 'x', tail: 'ved', stale: true },
+      });
+      expect(t).toContain(ROAD_STALE_LINE);
+      expect(t).toContain('🚚 Yo‘lkira: qo‘shimchadan keyin umumiy hajm/og‘irlik yangilanmagan — yo‘lkirani VED hisoblaydi.');
+      expect(t).not.toMatch(/\$\d/);
+    }
   });
 
   it('it never speaks of customs, the AI or a budget — this pass asked no model', () => {
@@ -208,5 +266,44 @@ describe('the fee’s blocker names whose job it is', () => {
     expect(blockerText({ kind: 'fee', reason: 'fee_bhm_bad' })).toBe(
       'bojxona yig‘imi: BHM sozlamasi noto‘g‘ri — admin tuzatadi',
     );
+  });
+});
+
+/**
+ * The plain door's yo‘lkira answer (docs/IKKI-ESHIK.md §2.4): it still goes to
+ * the chat — his 2.5 b, no model — and asks the seller nothing (§3.5). A cube
+ * or a brutto the tariff needs reads «— VED xodimi sizdan so‘raydi»; the card's
+ * copy names it for the VED under «⚠️ VED uchun:». Brutto is no longer asked
+ * on that door, so this answer will mostly say it is missing — stated (§7).
+ */
+describe('a bot-door yo‘lkira answer asks nothing (§2.4, §3.5)', () => {
+  const door = { ...tariff, noAsk: true };
+  const cube = { ok: false as const, refusal: 'umumiy hajm (m³) yo‘q', tail: 'seller' as const };
+
+  it('the chat: «Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi sizdan so‘raydi», and no «➕» ask', () => {
+    const t = tariffReplyText({ ...door, freight: cube });
+    expect(t).toBe(
+      [
+        `${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · GS777 · B-000067`,
+        'Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi sizdan so‘raydi',
+        'Karta: https://gsrwms.uz/bitimlar/x',
+      ].join('\n'),
+    );
+    expect(t).not.toContain('mijozdan so‘rab');
+    expect(t).not.toContain('VED uchun');
+  });
+
+  it('the card’s copy names the gap for the VED under the heading, and its tail is his', () => {
+    const lenta = tariffReplyText({ ...door, link: null, audience: 'lenta', freight: cube }).split('\n');
+    expect(lenta[1]).toBe('⚠️ VED uchun: umumiy hajm (m³) yo‘q.');
+    expect(lenta[2]).toBe('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi so‘raydi');
+  });
+
+  it('a priced road is the same answer as before — the figure, the caveat, nothing asked', () => {
+    expect(tariffReplyText({ ...door, freight: priced() })).toBe(tariffReplyText({ ...tariff, freight: priced() }));
+    // …and a VED-side refusal keeps its own tail, with no «VED uchun» line.
+    const band = tariffReplyText({ ...door, link: null, audience: 'lenta', freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' } });
+    expect(band).toContain('Yo‘lkira: ⚠️ bu zichlikka tarif yo‘q — VED xodimi hisoblaydi');
+    expect(band).not.toContain('VED uchun');
   });
 });

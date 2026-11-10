@@ -523,6 +523,9 @@ async function landCalc(
     // customer's answer, which the AI no longer asks for.
     hasCertificate: true,
     freightZone: freightZoneOf(action),
+    // No bot door (docs/IKKI-ESHIK.md §0.1): the agent's job keeps today's
+    // behaviour — its estimate still announced to the owner (his Q5 ⭐ c).
+    intakeDoor: null,
   }).catch((err: unknown) => {
     if (err instanceof CalcError) return { refused: err.code } as const;
     throw err;
@@ -576,6 +579,9 @@ async function requeueLanded(
         items: landingItems(action.facts),
         noteId,
         source: 'bot',
+        // The landing's own door, null (docs/IKKI-ESHIK.md §0.1): the re-queue
+        // opens the request `landIntake` would have — today's behaviour.
+        intakeDoor: null,
         hasMaterials: false,
         hasCertificate: true,
         freightZone: freightZoneOf(action),

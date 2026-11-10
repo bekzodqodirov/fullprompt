@@ -4,12 +4,15 @@ import {
   MAX_REPLY_LINES,
   TELEGRAM_LIMIT,
   pickLeftOf,
+  LAW_ASKS_NAMED,
+  ROAD_STALE_LINE,
   type AiVedEstimate,
   type AiVedFreight,
   type AiVedLine,
   type AiVedReplyInput,
 } from '@/modules/wms/calc/ai-reply';
-import { VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { AI_REPLY_HEAD, MACHINE_REPLY_HEADS, RERUN_WORD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import type { LawAsk } from '@/modules/wms/calc/law-asks';
 
 /**
  * What the seller reads in Telegram — the whole of the round's promise, and
@@ -22,6 +25,7 @@ import { VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
 const line = (over: Partial<AiVedLine> = {}): AiVedLine => ({
   label: 'Monitor 24"',
   code: '8528520000',
+  aiCode: false,
   measureText: '100 dona × $20/dona',
   bazaSource: 'memory',
   dutyText: '10%',
@@ -66,7 +70,15 @@ const base: AiVedReplyInput = {
   aiConfigured: true,
   estimate: null,
   pickLeft: null,
+  // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
+  // nothing asked — the 2.8 b block and the re-run heading have their own
+  // cases at the end of this file.
+  asks: null,
+  pass: 'landing',
   audience: 'chat',
+  // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
+  // The two doors' own words have their cases at the end of this file.
+  noAsk: false,
 };
 
 /** An estimated group's line — 📊 beside a figure from the medians. */
@@ -369,7 +381,8 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
   it('every reason Taxminiy is absent reaches the seller in words, each naming whose job it is', () => {
     const reasons = [
       'kodsiz qator bor (VED kod qo‘yadi)',
-      '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      // The CHAT's words since round 3 (estimate.ts's `refused_measure.chat`).
+      '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
       'vaqt yetmadi, statistika o‘qilmadi',
       '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
       'bojxona yig‘imi: so‘m kursi yo‘q — buxgalter kiritadi yoki yig‘im qo‘lda yoziladi',
@@ -461,10 +474,28 @@ describe('two customs totals (his 2.2 b, docs/SAKKIZ-R2.md §2.2)', () => {
       ],
       estimate: twoTotals({ exactRows: 0, exactUsd: null, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: 'x' }),
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): in the CHAT the
+    // seller is pointed at «➕» under the message; the lenta keeps R2's words.
     expect(text).toContain(
-      '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, kartadagi lentaga yozing',
+      '   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
     expect(text).toContain('   ⚠️ Sumka: baza yo‘q — Sumka — VED xodimi qo‘yadi');
+    const lenta = aiVedReplyText({
+      ...estimated,
+      link: null,
+      audience: 'lenta',
+      lines: [
+        line({
+          label: 'Kurtka',
+          customsUsd: null,
+          refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+          refusalTail: 'seller',
+        }),
+      ],
+      estimate: twoTotals({ exactRows: 0, exactUsd: null, taxminiyUsd: null, taxminiyFee: null, taxminiyBlock: 'x' }),
+    });
+    expect(lenta).toContain('— boj kamida $3/dona — mijozdan so‘rab, kartadagi lentaga yozing');
+    expect(lenta).not.toContain('«➕');
   });
 
   it('a row priced on an OLD baza says so in the line’s head — exact, refused alike (review law-money-R2-2)', () => {
@@ -559,7 +590,17 @@ describe('the road: the guess said, who fixes a refusal, and the JAMI that knows
       ...base,
       freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     });
-    expect(seller).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
+    // Re-anchored for round 3 (§2.5): the chat's seller tail is «➕»'s.
+    expect(seller).toContain(
+      'Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    const sellerLenta = aiVedReplyText({
+      ...base,
+      link: null,
+      audience: 'lenta',
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    });
+    expect(sellerLenta).toContain('Yo‘lkira: ⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing');
     const ved = aiVedReplyText({ ...base, freight: { ok: false, refusal: 'bu zichlikka tarif yo‘q', tail: 'ved' } });
     expect(ved).toContain('Yo‘lkira: ⚠️ bu zichlikka tarif yo‘q — VED xodimi hisoblaydi');
   });
@@ -709,8 +750,9 @@ describe('R2 late pass — the reply says what it is', () => {
       },
     });
     expect(text).toContain(
+      // The chat's seller tail since round 3 (§2.5).
       'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
-        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
     );
   });
 
@@ -721,5 +763,208 @@ describe('R2 late pass — the reply says what it is', () => {
     });
     expect(text).not.toContain('300 dona (og‘irlik');
     expect(text).toContain('300 dona × $2/dona · og‘irlik bruttodan');
+  });
+});
+
+/**
+ * His 2.8 b (docs/SAKKIZ-R3.md §2.5): the figures the law pins, asked in the
+ * AI answer — the words typed from the spec, so a change here changes the
+ * spec first. The rows are numbered by `seq`, the number the add table and
+ * the VED's screen print.
+ */
+describe('the 2.8 b block and the re-run heading (round 3)', () => {
+  const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
+  const asks: LawAsk[] = [
+    ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
+    ask(5, 'Kurtka', [{ unit: 'dona', why: 'duty', present: false, rate: 2 }]),
+  ];
+
+  it('the chat carries the block exactly as §2.5 prints it, after the lines and before the totals', () => {
+    const text = aiVedReplyText({ ...base, asks });
+    const block = [
+      '❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak — qonun shuni so‘raydi:',
+      '· 2-qator «Krossovka»: juft soni — boj kamida $3/juft',
+      '· 5-qator «Kurtka»: soni (dona) — boj kamida $2/dona',
+      '✍️ Shu xabarga reply qilib yozing: «2: 40 juft; 5: 300 dona» — yoki «➕ Shu so‘rovga qo‘shish» ni bosing.',
+    ].join('\n');
+    expect(text).toContain(block);
+    expect(text.indexOf('1. Monitor 24"')).toBeLessThan(text.indexOf('❓ Hisob'));
+    expect(text.indexOf('❓ Hisob')).toBeLessThan(text.indexOf('Rastamojka jami'));
+    // Not on the lenta: the VED's copy carries one line instead.
+    expect(aiVedReplyText({ ...base, link: null, audience: 'lenta', asks })).not.toContain('❓ Hisob');
+  });
+
+  it('the lenta carries ONE line under its heading: which rows the seller was asked', () => {
+    const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', asks }).split('\n');
+    expect(lenta[1]).toBe('❓ Sotuvchidan so‘raldi: 2, 5-qator o‘lchovi (qonun so‘raydi).');
+    expect(aiVedReplyText({ ...base, asks })).not.toContain('Sotuvchidan so‘raldi');
+  });
+
+  it('nothing asked — no block at all, in either rendering', () => {
+    for (const a of [null, []]) {
+      expect(aiVedReplyText({ ...base, asks: a })).not.toContain('❓');
+      expect(aiVedReplyText({ ...base, link: null, audience: 'lenta', asks: a })).not.toContain('❓');
+    }
+  });
+
+  it('at most eight rows are named, the rest counted; several figures on one row in one line', () => {
+    const many = Array.from({ length: 11 }, (_, k) => ask(k + 1, `Tovar ${k + 1}`, [{ unit: 'dona', why: 'duty', present: false, rate: 1 }]));
+    many[0] = ask(1, 'Kafel', [
+      { unit: 'm2', why: 'duty', present: false, rate: 0.5 },
+      { unit: 'kg', why: 'excise', present: false, rate: 0.1 },
+    ]);
+    const text = aiVedReplyText({ ...base, asks: many });
+    expect(text.split('\n').filter((l) => /^· \d+-qator/.test(l))).toHaveLength(LAW_ASKS_NAMED);
+    expect(text).toContain('· … yana 3 ta qator — «➕» jadvalida');
+    expect(text).toContain('· 1-qator «Kafel»: maydoni (m²) — boj kamida $0.5/m²; sof og‘irligi (kg) — aksiz $0.1/kg');
+    // The example takes each row's first pinned unit.
+    expect(text).toContain('«1: 120 m²; 2: 300 dona»');
+  });
+
+  it('the lenta’s one line is capped like the block: 900 asked rows keep the card’s copy whole (review p5-adv-5)', () => {
+    const many = Array.from({ length: 900 }, (_, k) => ask(k + 1, `Tufli ${k + 1}`, [{ unit: 'juft', why: 'duty', present: false, rate: 1 }]));
+    const lenta = aiVedReplyText({ ...base, link: null, audience: 'lenta', asks: many });
+    expect(lenta.split('\n')[1]).toBe('❓ Sotuvchidan so‘raldi: 1, 2, 3, 4, 5, 6, 7, 8, …-qator o‘lchovi (qonun so‘raydi).');
+    // The groups and the totals are still on the card's copy.
+    expect(lenta).toContain('Rastamojka jami');
+  });
+
+  it('a re-run says «qayta hisob» after the title phrase — the head still the chip’s anchor', () => {
+    const rerun = aiVedReplyText({ ...base, pass: 'amend' }).split('\n')[0]!;
+    expect(rerun).toBe(`${AI_REPLY_HEAD} · taxminiy rastamojka · ${RERUN_WORD} · GS323 · B-000067`);
+    expect(rerun.startsWith(MACHINE_REPLY_HEADS.ai)).toBe(true);
+    const podklyuch = aiVedReplyText({
+      ...base,
+      pass: 'amend',
+      freight: road({ listUsd: 1920, routeLabel: 'Xitoy → O‘zbekiston', bandText: '180 kg/m³ · $160/m³ × 12 m³' }),
+    }).split('\n')[0];
+    expect(podklyuch).toBe(`${AI_REPLY_HEAD} · taxminiy podklyuch (rastamojka + yo‘lkira) · ${RERUN_WORD} · GS323 · B-000067`);
+    expect(aiVedReplyText(base).split('\n')[0]).not.toContain(RERUN_WORD);
+  });
+
+  it('a stale total after an addition: the road line is §2.5’s words, no figure and no JAMI sum', () => {
+    for (const audience of ['chat', 'lenta'] as const) {
+      const text = aiVedReplyText({
+        ...base,
+        pass: 'amend',
+        audience,
+        freight: { ok: false, refusal: 'x', tail: 'ved', stale: true },
+      });
+      expect(text).toContain(ROAD_STALE_LINE);
+      expect(text).not.toContain('Yo‘lkira: ≈');
+      expect(text).not.toContain('JAMI (rastamojka + yo‘lkira)');
+    }
+  });
+});
+
+/**
+ * The two bot doors (docs/IKKI-ESHIK.md §3.5, his 4a and 5a, 2026-11-08): the
+ * answer after «Tasdiqlash» ASKS NOTHING — «Tasdiqlash» was the last question,
+ * and what is still missing is the VED's to get. `noAsk` is the one switch:
+ * no ❓ block, a seller's fact reads «— VED xodimi sizdan so‘raydi», the VED's
+ * own gaps keep their words, the JAMI that cannot be made is the VED's, and
+ * the lenta names the same gaps under «⚠️ VED uchun:». The words are the
+ * spec's, typed from it. A request from before the doors (NULL, `noAsk`
+ * false) keeps every word above this block — the cases above are its pins.
+ */
+describe('the two doors ask nothing after «Tasdiqlash» (§3.5)', () => {
+  const ask = (seq: number, name: string, needs: LawAsk['needs']): LawAsk => ({ itemId: `i${seq}`, seq, name, needs });
+  const asks: LawAsk[] = [
+    ask(2, 'Krossovka', [{ unit: 'juft', why: 'duty', present: false, rate: 3 }]),
+    ask(5, 'Kurtka', [{ unit: 'dona', why: 'duty', present: false, rate: 2 }]),
+  ];
+  const door: AiVedReplyInput = { ...base, noAsk: true };
+  const sellerLine = line({
+    customsUsd: null,
+    refusal: 'Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona',
+    refusalTail: 'seller',
+  });
+  const vedLine = line({ label: 'Sumka', customsUsd: null, refusal: 'baza yo‘q', refusalTail: 'ved' });
+  const ASK_WORDS = ['❓', 'mijozdan so‘rab', '«➕ Shu so‘rovga qo‘shish» bilan yuboring', 'kartadagi lentaga yozing', 'reply qilib yozing', 'to‘ldiring'];
+
+  it('the ❓ block is gone — the rows the law wants are not asked of the seller (his 5a; the 2.8 b ask superseded)', () => {
+    const chat = aiVedReplyText({ ...door, asks });
+    expect(chat).not.toContain('❓');
+    expect(chat).not.toContain('Hisob to‘liq bo‘lishi uchun');
+    // …while a request from before the doors still asks it, word for word.
+    expect(aiVedReplyText({ ...base, asks })).toContain('❓ Hisob to‘liq bo‘lishi uchun o‘lchov kerak');
+  });
+
+  it('a seller’s fact on a customs line: «— VED xodimi sizdan so‘raydi»; the VED’s own gap keeps «— VED xodimi qo‘yadi»', () => {
+    const chat = aiVedReplyText({ ...door, lines: [sellerLine, vedLine], totalUsd: null });
+    expect(chat).toContain('   ⚠️ Kurtka: 1-qator «Kurtka»: soni (dona) kiritilmagan — boj kamida $3/dona — VED xodimi sizdan so‘raydi');
+    expect(chat).toContain('   ⚠️ baza yo‘q — VED xodimi qo‘yadi');
+    for (const w of ASK_WORDS) expect(chat, w).not.toContain(w);
+    // The lenta's reader is the VED: «so‘raydi», nobody's chat.
+    const lenta = aiVedReplyText({ ...door, link: null, audience: 'lenta', lines: [sellerLine], totalUsd: null });
+    expect(lenta).toContain('kamida $3/dona — VED xodimi so‘raydi');
+    expect(lenta).not.toContain('sizdan');
+  });
+
+  it('the road’s seller facts — brutto, cube, both, the city — say the VED asks; the VED’s own refusals are his', () => {
+    for (const refusal of [
+      'umumiy brutto og‘irlik (kg) yo‘q',
+      'umumiy hajm (m³) yo‘q',
+      'umumiy hajm (m³) va brutto og‘irlik (kg) yo‘q',
+      'yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan',
+    ]) {
+      const chat = aiVedReplyText({ ...door, freight: { ok: false, refusal, tail: 'seller' } });
+      expect(chat).toContain(`Yo‘lkira: ⚠️ ${refusal} — VED xodimi sizdan so‘raydi`);
+      for (const w of ASK_WORDS) expect(chat, w).not.toContain(w);
+    }
+    const zone = aiVedReplyText({
+      ...door,
+      freight: {
+        ok: false,
+        refusal: 'yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi',
+        tail: 'ved',
+        also: { refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+      },
+    });
+    expect(zone).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — «Foshan»dan zona aniqlanmadi — VED xodimi hisoblaydi\n' +
+        '⚠️ umumiy brutto og‘irlik (kg) yo‘q — VED xodimi sizdan so‘raydi',
+    );
+  });
+
+  it('a podklyuch JAMI that cannot be made is the VED’s: «JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.»', () => {
+    const refused = { ok: false as const, refusal: 'umumiy hajm (m³) yo‘q', tail: 'seller' as const };
+    expect(aiVedReplyText({ ...door, freight: refused })).toContain('JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.');
+    // NULL keeps today's «…to‘ldiring».
+    expect(aiVedReplyText({ ...base, freight: refused })).toContain(
+      'JAMI: hozircha hisoblab bo‘lmadi — yuqoridagi ⚠️ ni to‘ldiring.',
+    );
+  });
+
+  it('the figure still goes out — the AI door’s answer is the estimate he pressed for, and its caveat', () => {
+    const chat = aiVedReplyText(door);
+    expect(chat).toContain('Rastamojka jami: ≈ $661.76');
+    expect(chat).toContain('⚠️ Rasmiy emas — VED xodimi tasdiqlaydi.');
+  });
+
+  it('the lenta names the same gaps under «⚠️ VED uchun:» — never «Sotuvchidan so‘raldi»', () => {
+    const lenta = aiVedReplyText({
+      ...door,
+      link: null,
+      audience: 'lenta',
+      asks,
+      freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
+    }).split('\n');
+    expect(lenta[1]).toBe('⚠️ VED uchun: 2-qator «Krossovka»: juft soni; 5-qator «Kurtka»: soni (dona); umumiy brutto og‘irlik (kg) yo‘q.');
+    expect(lenta.join('\n')).not.toContain('Sotuvchidan so‘raldi');
+    // No gaps, no line; and the chat never carries it.
+    expect(aiVedReplyText({ ...door, link: null, audience: 'lenta' })).not.toContain('VED uchun:');
+    expect(aiVedReplyText({ ...door, asks })).not.toContain('⚠️ VED uchun');
+  });
+
+  it('a code the model proposed while reading wears «(AI taklifi)» in the chat and on the lenta, as the table prints it (§3.1)', () => {
+    const ai = line({ aiCode: true });
+    for (const audience of ['chat', 'lenta'] as const) {
+      const text = aiVedReplyText({ ...door, audience, lines: [ai] });
+      expect(text).toContain('1. Monitor 24" · 8528520000 (AI taklifi) · 100 dona × $20/dona 🧠');
+    }
+    // Not on a code the file or a memory stated — and the NULL door marks it too.
+    expect(aiVedReplyText(door)).not.toContain('(AI taklifi)');
+    expect(aiVedReplyText({ ...base, lines: [ai] })).toContain('8528520000 (AI taklifi)');
   });
 });

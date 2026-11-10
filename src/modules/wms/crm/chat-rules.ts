@@ -74,7 +74,7 @@ export function officialPeerSql(peerId: AnyColumn | SQL): SQL {
  * The rules the import and the listener consult, keyed by peer — with the
  * two facts `decideIncoming` needs about a lead binding the listener made by
  * itself (chat-lead `phonelessLeadForChat`): that nobody decided it
- * (`machine` — the 0139 mark, `isMachineBinding`; round 113's website rule
+ * (`machine` — the 0142 mark, `isMachineBinding`; round 113's website rule
  * has the same shape and is a door's answer), and whether its lead is still
  * open (`leadOpen`).
  */

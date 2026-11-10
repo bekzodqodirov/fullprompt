@@ -306,7 +306,7 @@ export function decideIncoming(
    * Messages is not a customer under any decision anybody could write down.
    *
    * A binding the LISTENER made by itself (`machine` — a work number's
-   * hidden-number lead, his «1 a», marked by 0139) is nobody's answer, so it
+   * hidden-number lead, his «1 a», marked by 0142) is nobody's answer, so it
    * stands only while it is still the best fact about the chat (the
    * 2026-10-29 review):
    *  - while its lead is OPEN: a lost lead writing again is a new enquiry

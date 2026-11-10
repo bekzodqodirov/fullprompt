@@ -878,7 +878,10 @@
       "tariffZone": "Tarif ustuni",
       "tariffFrom": "Tarif sanasi",
       "tariffBands": "Tarif qatorlari",
-      "freightMode": "Yuk turi (LTL/FTL)"
+      "freightMode": "Yuk turi (LTL/FTL)",
+      "released": "Raqami qaytarildi",
+      "number": "Raqam",
+      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)"
     }
   },
   "profile": {
@@ -1249,7 +1252,8 @@
     "roadPart": "{n} yo‘ldan",
     "roadAwaited": "{n} kutilmoqda",
     "roadCame": "{n} keldi",
-    "roadMissed": "{n} kelmadi"
+    "roadMissed": "{n} kelmadi",
+    "truckNow": "Mashina hozir: {dest} — reja {planned} uchun tasdiqlangan"
   },
   "costing": {
     "fxTitle": "Valyuta kurslari",
@@ -1522,6 +1526,7 @@
     "pricing": "Partiya moliyasi (narxlar)",
     "whereIsTruck": "Mashina qayerda?",
     "cpBorder": "Chegarada turibdi",
+    "cpBorderHorgos": "Horgosda turibdi",
     "cpKg": "Qirg‘izistonda",
     "cpUz": "O‘zbekistonda",
     "openMap": "Xaritada ko‘rish",
@@ -1686,7 +1691,54 @@
       "roadOwed": "+{n} yo‘ldan"
     },
     "finishSummaryRoad": "{n} yo‘ldan kelmadi",
-    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})"
+    "roadOwedLine": "Yo‘ldan kutilmoqda: {lot} · {n} karobka ({trucks})",
+    "number": {
+      "stateReturned": "♻️ {number} raqami qaytarildi — keyingi mashinaga beriladi",
+      "stateReturnedTaken": "♻️ {number} raqami qaytarilgan edi, lekin keyin {name} mashinasi uni yo‘lda oldi — endi boshqa mashinaga berilmaydi",
+      "stateReturnedAgent": "♻️ {number} raqami qaytarilgan edi, lekin keyin shu raqam bilan hujjatlar agentga yuborildi — endi boshqa mashinaga berilmaydi",
+      "kept": {
+        "newer": "Raqam qaytmadi: {name} allaqachon ochilgan",
+        "agent": "Raqam qaytmadi: hujjatlari agentga yuborilgan",
+        "left": "Raqam qaytmadi: mashina yo‘lga chiqqan",
+        "renamed_left": "Raqam qaytmadi: {number} {name} nomi bilan jo‘nagan",
+        "unworn": "Raqam qaytmadi: {number} raqami hech kimga berilmagan",
+        "no_counter": "Raqam qaytmadi: bu prefiksning hisoblagichi yo‘q",
+        "prefix": "Raqam qaytmadi: ombor prefiksi o‘zgargan",
+        "pending": "Raqam hali qaytarilmagan — undan oldin yangi mashina ochilmasa, keyingi bekor qilishda yoki batch-raqam --apply bilan qaytadi",
+        "busy": "Raqam hozir qaytmadi: tizim band — undan oldin yangi mashina ochilmasa, keyingi bekor qilishda yoki batch-raqam --apply bilan qaytadi",
+        "error": "Raqam qaytmadi: xatolik — keyingi bekor qilishda qaytishi mumkin"
+      }
+    },
+    "destChange": {
+      "title": "Qabul skladini o‘zgartirish",
+      "hint": "Mashina hali jo‘namagan: o‘sha mashina, o‘sha raqam — faqat qabul skladi o‘zgaradi. Yo‘lga chiqqandan keyin «Yo‘nalishni o‘zgartirish» bilan o‘zgaradi.",
+      "target": "Yangi qabul skladi",
+      "targetPick": "— skladni tanlang —",
+      "submit": "Qabul skladini o‘zgartirish",
+      "done": "✅ Qabul skladi o‘zgartirildi: endi {to}",
+      "noTargets": "Boshqa faol sklad yo‘q",
+      "errors": {
+        "forbidden": "Qabul skladini jo‘nash skladining menejeri yoki logist o‘zgartira oladi",
+        "batch_not_found": "Mashina topilmadi",
+        "batch_cancelled": "Mashina bekor qilingan — qabul skladini o‘zgartirib bo‘lmaydi",
+        "not_before_departure": "Mashina jo‘nagan — yo‘nalishni «Yo‘nalishni o‘zgartirish» bilan o‘zgartiring",
+        "already_unloaded": "Mashina manziliga yetib kelgan — qabul skladini endi o‘zgartirib bo‘lmaydi",
+        "dest_changed": "Qabul skladini kimdir hozirgina o‘zgartirdi — yangi holat ko‘rsatildi, qayta tekshiring",
+        "bad_target": "Skladni ro‘yxatdan tanlang",
+        "same_destination": "Mashina allaqachon shu skladga boradi",
+        "destination_is_origin": "Mashina chiqadigan skladni qabul skladi qilib bo‘lmaydi",
+        "target_inactive": "Bu sklad o‘chirilgan",
+        "dest_money_country": "Mashinaga xarajat yoki narx yozilgan: qabul skladini faqat shu davlat ichida o‘zgartirish mumkin. Boshqa davlatga — avval pulni bekor qiling.",
+        "dest_agent_sent": "Hujjatlar agentga yuborilgan — avval «agentga yuborildi» belgisini oling",
+        "busy_retry": "Mashina hozir band (yuklash davom etmoqda) — birozdan keyin qayta bosing",
+        "validation": "Ma’lumot noto‘g‘ri — sahifani yangilang",
+        "offline": "Server javob bermadi — internetni tekshirib, qayta bosing",
+        "unauthenticated": "Sessiya tugagan — qayta kiring"
+      }
+    },
+    "quickConfirm": "{from} → {to}: yangi partiya ochilsinmi?",
+    "quickConfirmYes": "Ha, ochish",
+    "quickConfirmNo": "Bekor"
   },
   "loading": {
     "title": "Pogruzka",
@@ -1970,6 +2022,7 @@
     "voidNeedsAccountant": "Buni buxgalter yoki admin bekor qiladi.",
     "clientNotAboard": "Bu mijozning yuki bu mashinada yo‘q — narx yuk ketgan mashinaga qo‘yiladi",
     "batchCancelledRefused": "Bu partiya bekor qilingan — unga narx yozilmaydi.",
+    "batchNotFoundRefused": "Mashina topilmadi — sahifani yangilang.",
     "txTruck": "Qaysi reys uchun",
     "txTruckUnpriced": "narx yo‘q",
     "txCardOnlyHint": "Reys ham, bitim ham tanlanmasa, bu narx hech qaysi yukni yopmaydi — yuk topshirishda ruxsat so‘raladi",
@@ -2103,13 +2156,9 @@
     "truckDealLineNoShare": "Narx {code} bitimiga yoziladi. Boshqa bitim yukining narxini alohida qo‘ying",
     "truckDealLineNone": "Narx hech qaysi bitimga yozilmaydi",
     "truckDealDeferred": "{code} bitimida to‘lov kechiktirilgan: muddat tugaguncha bu narx yuk topshirishda qarz deb to‘xtatilmaydi",
-    "truckDealAsk": "Bu narx faqat {code} bitimining ulushi uchunmi (mijozning bu mashinadagi yukining {pct} %)? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
-    "truckDealAskNoShare": "Bu narx faqat {code} bitimining ulushi uchunmi? Butun narx bitta bitimga yozilsa, o‘sha bitimning foydasi oshib, boshqa bitimniki nol bo‘lib ko‘rinadi.",
-    "truckDealAskNone": "Narx hech qaysi bitimga yozilmaydi — bitimlarning foydasi va upsale’i bu narxni ko‘rmaydi.",
     "pricedHereAsk": "Bu mijozga bu mashinada allaqachon narx bor: {list}. Bu narx qo‘shimcha hisob bo‘ladi.",
     "pricedHereTitle": "Bu mashinadagi narxlar",
     "pricedHereNoDeal": "bitimsiz",
-    "pricedHereMissing": "bu mashinada narx yo‘q",
     "pricedHereCardPrice": "bitimning o‘z narxi bor (mashinasiz)",
     "pricedHereGone": "bu bitimning yuki mashinada qolmagan",
     "truckDealChanged": "Bu mashinadagi yuk bitimlari o‘zgardi — sahifa yangilandi, narxni qaytadan tekshirib saqlang",
@@ -2117,7 +2166,35 @@
     "truckDealRequired": "Bu mijozning yuki bu mashinada bir nechta bitimga tegishli — narx qaysi bitimga yozilishini tanlang",
     "truckDealInvalid": "Bu tanlov bu mashina uchun to‘g‘ri emas — sahifani yangilab, qaytadan tanlang",
     "truckDealMismatch": "Bu bitim boshqa mijozniki — narx unga yozilmaydi",
-    "pricedHereWhole": "bitimsiz narx bu mijozning shu mashinadagi butun yukini qoplaydi — bitimga yozish uchun uni bekor qilib, bitim bo‘yicha qayta kiriting"
+    "truckTableTitle": "Narx har bitimga alohida — har bitim yukining narxini o‘z qatoriga yozing, bo‘sh qator yozilmaydi",
+    "truckTableSave": "Saqlash",
+    "truckTableConfirm": "Ha, saqlash",
+    "truckTableTotal": "Jami: {n} ta bitim · {amount}",
+    "truckTableTotalNone": "Jami: {n, plural, =0 {bitimsiz qism} other {# ta bitim + bitimsiz qism}} · {amount}",
+    "truckTableStandsHere": "bu mashinada: {usd}",
+    "truckTableStandsZeroed": "narx kompensatsiya bilan olib tashlangan",
+    "truckTableStandsWhole": "butun yukka narx bor",
+    "truckTableStandsElsewhere": "{codes} da narx bor",
+    "truckTableAskExtra": "{code}: bu mashinada allaqachon narx bor ({usd}) — bu qo‘shimcha hisob bo‘ladi",
+    "truckTableAskNoneExtra": "Bitimsiz: bu mashinada bitimsiz narx bor ({usd}) — bu qo‘shimcha hisob bo‘ladi",
+    "truckTableAskWhole": "{code}: mijozning bu mashinadagi butun yukiga narx bor ({list}) — bu qo‘shimcha hisob bo‘ladi",
+    "truckTableAskCard": "{code}: bitim kartasida o‘z narxi bor — bu qo‘shimcha hisob bo‘ladi",
+    "truckTableAskZeroed": "{code}: narx kompensatsiya bilan olib tashlangan — yana qo‘yasizmi?",
+    "truckTableAskElsewhere": "{code}: {codes} mashinasida ham narx bor",
+    "truckTableAskAbove": "{code}: bitimdagi narxdan {pct}% qimmat (bitim bo‘yicha ≈ {usd})",
+    "truckTableAskBelow": "{code}: bitimdagi narxdan {pct}% arzon (bitim bo‘yicha ≈ {usd})",
+    "truckTableRowUnreadable": "{code}: summani o‘qib bo‘lmadi — «1200», «1 200» yoki «1200,50» deb yozing",
+    "truckPrefillOffElsewhere": "boshqa mashinadagi narx bu yukni qoplaydi — narxni ko‘chiring; to‘ldirilmadi",
+    "truckPrefillFollows": "yukining narxi oldingi mashinada (davomi) — to‘ldirilmadi",
+    "truckPrefillNoQuote": "bitimda dollar narxi yo‘q — to‘ldirilmadi",
+    "truckPrefillDiscount": "bitimda chegirma bor — to‘ldirilmadi",
+    "truckPrefillUnscaled": "bitim narxida kub yoki kg yo‘q — bu mashinadagi ulushi hisoblanmadi; to‘ldirilmadi",
+    "truckPrefillCurrency": "narx faqat dollarda to‘ldiriladi",
+    "truckPartsEmpty": "Hech bir qatorga narx yozilmagan",
+    "truckPartDuplicate": "Bir bitim ikki marta yuborildi — sahifani yangilab, qaytadan saqlang",
+    "truckPricesChanged": "Bu mashinadagi narxlar o‘zgardi — sahifa yangilandi, qatorlarni tekshirib qaytadan saqlang",
+    "truckCardPricesChanged": "Bitim kartasidagi narx o‘zgardi — sahifa yangilandi, qatorni tekshirib qaytadan saqlang",
+    "pricedHereMissingList": "Narx yo‘q: {codes}"
   },
   "map": {
     "title": "Xarita",
@@ -2163,7 +2240,16 @@
     "unplaced": "Joyi aniq emas — xaritada chizilmadi:",
     "atGate": "Manzilda, tushirilmagan",
     "atGateDays": "{n, plural, =0 {bugun keldi} other {# kundan beri turibdi}}",
-    "atGateStuck": "tushirishni tekshiring"
+    "atGateStuck": "tushirishni tekshiring",
+    "queuePost": {
+      "khorgos": "Horgos",
+      "yallama": "Yallama"
+    },
+    "queueDay": "{post} navbatida: {n}-kun ({given} kundan)",
+    "queueOver": "{post} navbatida {n}-kun — kiritilgan {given} kundan oshdi",
+    "queueOverUsual": "{post} navbatida {n}-kun — odatdagi {given} kundan oshdi",
+    "queueLate": "{post} navbatida {n}-kun — kiritilgan {given} kundan oshdi, haydovchi bilan bog‘laning",
+    "queueLateUsual": "{post} navbatida {n}-kun — odatdagi {given} kundan oshdi, haydovchi bilan bog‘laning"
   },
   "accounting": {
     "title": "Boshqaruv hisobi",
@@ -3026,6 +3112,7 @@
     "queue": {
       "title": "Chegara navbatlari",
       "meaning": "Hozir navbatga kelgan mashina qancha kutadi. Navbatda turganlar ham shu paytdan boshlab hisoblanadi; chegaradan o‘tganlar o‘zgarmaydi.",
+      "hold": "Tugma bosilmaguncha mashina navbatda turadi: «Qozog‘istonda» Horgosdan, «O‘zbekistonda» Yallamadan o‘tkazadi (haydovchi telefoni chegaradan o‘tganini ko‘rsatsa, o‘zi o‘tadi). Kiritilgan eng ko‘p kundan 1 kun oshsa, logistlarga Telegramda bir marta xabar boradi; «🛃 Horgosda turibdi» ni qayta bossangiz yoki kunni o‘zgartirsangiz, yangi muddat uchun yana bir marta (o‘sha raqamni qayta saqlash hisobni boshlamaydi).",
       "post": {
         "khorgos": "Horgos (Xitoy→Qozog‘iston)",
         "yallama": "Yallama (Qozog‘iston→O‘zbekiston)"
@@ -3665,6 +3752,7 @@
       "stale_baza": "Guruh bazalari o'zgargan — sahifani yangilab qayta kiriting",
       "group_gone": "Bu kodning guruhi qolmadi — sahifani yangilang",
       "conflict": "Boshqa kishi hozirgina saqladi — ekran yangilandi, qayta bosing",
+      "amended_since": "Sotuvchi qo‘shimcha yubordi — sahifani yangilang, o‘zgarish «Savol-javob» da yozilgan.",
       "save_failed": "Saqlash o'tmadi — aloqani tekshirib, qayta urinib ko'ring",
       "ambiguous_number": "Vergulli son noaniq — qaysi biri ekanini tanlang",
       "stale_build": "Ilova yangilandi — sahifani yangilang. Yozganlaringiz saqlanib qoladi.",

@@ -100,6 +100,23 @@ export async function trucksOnRoad(
 }
 
 /**
+ * Every truck ON THE ROAD in the company, placed and classified exactly as
+ * the trucks card places each of its rows — the same report rows, the same
+ * newest fix, the same `truckRow` — for a sweep that must not disagree with
+ * the card about which truck is late (`queue-alert.ts`). Three statements,
+ * whatever the fleet; arrived trucks are left out, since a truck at its gate
+ * is in no queue.
+ */
+export async function roadRowsNow(now: Date = new Date()): Promise<TruckRow[]> {
+  const today = tashkentDay(now);
+  const [all, waits] = await Promise.all([inTransitBatches(undefined), loadBorderHours()]);
+  const inputs = all.filter((r) => r.status === 'in_transit');
+  if (inputs.length === 0) return [];
+  const [positions, yards] = await readEvidence(inputs);
+  return inputs.map((r) => truckRow(withFix(r, positions, yards), now, today, waits));
+}
+
+/**
  * A truck on the road is placed by its positions; one ARRIVED keeps only
  * since when the phone had it in the yard before the first unload scan
  * (`until`), so that scan does not restart its «stuck» clock (the fifth

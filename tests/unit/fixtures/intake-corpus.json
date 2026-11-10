@@ -20757,7 +20757,7 @@
       {
        "name": "Chair",
        "quantity": 10,
-       "unit": "50",
+       "unit": null,
        "amount": 450,
        "weightKg": null
       }
@@ -20772,7 +20772,7 @@
    "alsoFrom": [
     "S-r1 m1"
    ],
-   "pick": "binding R3-S8 (amount 450, weightKg null) + the latest round's quantity 10 / unit \"50\", which R3-S8 does not contradict"
+   "pick": "binding R3-S8 (amount 450, weightKg null) + quantity 10; re-anchored by docs/IKKI-ESHIK.md review PF-SPEC-1: «Unit price» is a money header and never the UNIT column, so the line has no unit word (it read «50», the price)"
   },
   {
    "id": "c1238",
@@ -22716,14 +22716,14 @@
       {
        "name": "Ladies jacket",
        "quantity": 300,
-       "unit": "5",
+       "unit": null,
        "weightKg": 150,
        "amount": 1500
       },
       {
        "name": "Mens trousers",
        "quantity": 200,
-       "unit": "4",
+       "unit": null,
        "weightKg": 80,
        "amount": 800
       }
@@ -22734,7 +22734,8 @@
    "said": "{\"goods\":[{\"description\":\"Ladies jacket\",\"quantity\":300,\"unit\":\"5\",\"weightKg\":150,\"amount\":1500},{\"description\":\"Mens trousers\",\"quantity\":200,\"unit\":\"4\",\"weightKg\":80,\"amount\":800}]}",
    "why": "bare gross/net «total» is money only beside a discount",
    "source": "S-r1 ND4 / S-r2 ND3",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "re-anchored by docs/IKKI-ESHIK.md review PF-SPEC-1: «Unit price» is a money header and never the UNIT column — the lines carry no unit word (they read «5» / «4», the prices)"
   },
   {
    "id": "c1751",
@@ -28994,6 +28995,565 @@
    "weight": "regression",
    "realistic": "same three-line head with the per-client waybill",
    "severity": "rare"
+  },
+  {
+   "id": "c2451",
+   "input": [
+    [
+     "品名",
+     "箱数",
+     "每箱数量",
+     "总数量",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "裤子",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton «每箱数量» was the line count: 30 / 25",
+   "why": "a count header naming one package is nobody's count (PER_PACKAGE_COUNT): the line count is «总数量», 300 / 100 — the packing list is then «o‘sha tovarlar» beside its invoice, never a second order",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2452",
+   "input": [
+    [
+     "Наименование",
+     "Мест",
+     "Кол-во в коробке",
+     "Кол-во, шт",
+     "Вес нетто",
+     "Вес брутто",
+     "Объем м3"
+    ],
+    [
+     "Куртка женская",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "Брюки",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Брюки",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во в коробке» was the line count: 30 / 25",
+   "why": "the Russian per-carton count is passed over; «Кол-во, шт» is the line count",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2453",
+   "input": [
+    [
+     "品名",
+     "箱数",
+     "每箱件数",
+     "总件数",
+     "净重",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     10,
+     30,
+     300,
+     150,
+     165,
+     1.2
+    ],
+    [
+     "裤子",
+     4,
+     25,
+     100,
+     40,
+     46,
+     0.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«每箱件数» was the line count",
+   "why": "every «每…» count header is one package's",
+   "source": "as-built A (Ikki eshik) FILES-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2454",
+   "input": [
+    [
+     "品名",
+     "数量(PCS)",
+     null,
+     "毛重(KG)",
+     null
+    ],
+    [
+     null,
+     "每箱",
+     "合计",
+     "单箱",
+     "合计"
+    ],
+    [
+     "女士夹克",
+     30,
+     300,
+     15,
+     150
+    ],
+    [
+     "裤子",
+     25,
+     100,
+     10,
+     40
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "裤子",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton count and weight (30 / 15)",
+   "why": "a two-row header is read as one: «数量(PCS)» over «每箱 | 合计» and «毛重(KG)» over «单箱 | 合计» compose parent + child, so the totals are the line's (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2455",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "N.W. (KG)",
+     null,
+     "G.W. (KG)",
+     null
+    ],
+    [
+     null,
+     null,
+     "EACH",
+     "TOTAL",
+     "EACH",
+     "TOTAL"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     14,
+     140,
+     15,
+     150
+    ],
+    [
+     "Trousers",
+     100,
+     9,
+     36,
+     10,
+     40
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 140
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 36
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton netto 14 / 9 was the line weight (and was written onto an invoice's rows)",
+   "why": "«N.W.» and «G.W.» each over «EACH | TOTAL»: the line's netto is the TOTAL column (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2465",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, м2",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "в 1 коробке",
+     "всего",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "м2"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "м2"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "120 with no unit — the m² count landed as 120 pieces",
+   "why": "a composed header keeps its parent's unit: «Кол-во, м2 всего» reads м2 (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2466",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni (juft)",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "har biri",
+     "jami",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "juft"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "juft"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the per-carton 12 / 10 with no unit",
+   "why": "«har biri» is one package's count, and «Soni (juft) jami» the line's in pairs (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2467",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, кг",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "1 места",
+     "всего",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": null,
+       "weightKg": 120
+      },
+      {
+       "name": "Item 2",
+       "quantity": null,
+       "weightKg": 50
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a kilo column read as a count of 120 pieces",
+   "why": "«Кол-во, кг 1 места» is one place's, «Кол-во, кг всего» the line's WEIGHT (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2468",
+   "input": [
+    [
+     "Description",
+     "QTY (PAIRS)",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "PER CTN",
+     "TOTAL",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "pairs"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "pairs"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "120 with no unit — pairs landed as pieces",
+   "why": "«QTY (PAIRS) TOTAL» reads pairs (FR-REGR-2)",
+   "source": "fix review (Ikki eshik) FR-REGR-2",
+   "weight": "regression"
+  },
+  {
+   "id": "c2469",
+   "input": [
+    [
+     "Description",
+     "QTY IN CTNS",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     10,
+     100,
+     1
+    ],
+    [
+     "Shim",
+     4,
+     50,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 10,
+       "unit": "ctns"
+      },
+      {
+       "name": "Shim",
+       "quantity": 4,
+       "unit": "ctns"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no carton count at all — the VED lost the row's «sotuvchi: 10 ctns»",
+   "why": "a PLURAL package after «in» counts the cartons: the carton column, as before FILES-1 (FR-REGR-6)",
+   "source": "fix review (Ikki eshik) FR-REGR-6",
+   "weight": "regression"
+  },
+  {
+   "id": "c2470",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во/мест",
+     "Вес брутто",
+     "Объем"
+    ],
+    [
+     "Куртка",
+     10,
+     100,
+     1
+    ],
+    [
+     "Брюки",
+     4,
+     50,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 10,
+       "unit": "мест"
+      },
+      {
+       "name": "Брюки",
+       "quantity": 4,
+       "unit": "мест"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no carton count at all",
+   "why": "«/мест» (plural) is the carton column; only «/место» is one place's (FR-REGR-6)",
+   "source": "fix review (Ikki eshik) FR-REGR-6",
+   "weight": "regression"
   }
  ],
  "parseGoodsLineCases": [
@@ -32982,10 +33542,10 @@
     "first": "material",
     "second": "material",
     "secondSayIncludes": [
-     "kod yoki telefon"
+     "**kodi** (GS777) yoki **telefon raqami**"
     ]
    },
-   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone)",
+   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone) — re-anchored 2026-11-09 on the question itself, CLIENT_QUESTION: the repeat's own «Mijozni bitta qatorda yozing: kod yoki telefon» asked the customer a second time in the same message (docs/IKKI-ESHIK.md §1.5, review PC-SPEC-11)",
    "why": "C3 side effect reviewer 1 accepted («I did not list this as a defect»).",
    "source": "r3 collector rv1 C3 note",
    "weight": "pinned"
@@ -33001,10 +33561,10 @@
     "first": "material",
     "second": "material",
     "secondSayIncludes": [
-     "kod yoki telefon"
+     "**kodi** (GS777) yoki **telefon raqami**"
     ]
    },
-   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone)",
+   "said": "1st and 2nd {kind:'material'} (goods evidence — a unit word — so it cannot be insisted on; the question still offers code or phone) — re-anchored 2026-11-09 on the question itself, CLIENT_QUESTION: the repeat's own «Mijozni bitta qatorda yozing: kod yoki telefon» asked the customer a second time in the same message (docs/IKKI-ESHIK.md §1.5, review PC-SPEC-11)",
    "why": "C3 side effect reviewer 1 accepted («I did not list this as a defect»).",
    "source": "r3 collector rv1 C3 note",
    "weight": "pinned"
@@ -43272,17 +43832,17 @@
        "name": "Kurtka",
        "quantity": 300,
        "weightKg": 120
-      },
-      {
-       "name": "Shim",
-       "quantity": 200
       }
      ],
-     "count": 3
-    }
+     "count": 2
+    },
+    "sameAsInvoice": [
+     "Kurtka",
+     "Shim"
+    ]
    },
    "said": "{\"goods\":[{\"name\":\"Ladies jacket\",\"quantity\":300,\"weightKg\":150},{\"name\":\"Kurtka\",\"quantity\":300,\"weightKg\":120},{\"name\":\"Shim\",\"quantity\":200}]}",
-   "why": "invoice present, model null in «add» mode: append the typed lines the Excel lacks (typed «Shim 200 dona» must not vanish)",
+   "why": "invoice present, model null in «add» mode: the typed «Shim 200 dona» the Excel lacks must not vanish — re-anchored on his 1a (docs/IKKI-ESHIK.md §1.2.2, as-built review FILES-3): the bot sets «add» by itself, and with no reading nothing was model-read, so the Excel answers and the typed line is NAMED («Rasmda/yozuvda Excel’da yo‘q tovar»), never added as a second product",
    "source": "integ S-a",
    "weight": "defect"
   },
@@ -57326,6 +57886,648 @@
    "why": "Base: textCut false. New: textCut true — `receiveSheetText` then tells the seller «⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi 3 qator)» about a file nothing was left out of. The SheetRows doc says «an empty tail is no loss».",
    "source": "r4-probe sheets",
    "weight": "regression"
+  },
+  {
+   "id": "c2456",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ],
+       [
+        "TOTAL",
+        400,
+        14,
+        null,
+        190,
+        1.6
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the line weights were one carton's (15 / 10) and the brutto their Σ, 25 kg",
+   "why": "«G.W. (KG)» merged over «PER CTN | TOTAL»: the covered cell takes its master's text across the split (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2457",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "A1:A2",
+       "B1:B2",
+       "C1:C2",
+       "D1:E1",
+       "F1:F2"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the same, with the labels merged down over both rows",
+   "why": "a label merged DOWN repeats into the sub-header row as covered and is not the split's word (CRITIC-1)",
+   "source": "as-built A (Ikki eshik) CRITIC-1",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2458",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "PER CTN",
+        "TTL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the line weights were one carton's (15 / 10) and the brutto their Σ, 25 kg — «TTL» was no sub-header word",
+   "why": "«G.W. (KG)» merged over «PER CTN | TTL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2459",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "SINGLE",
+        "TOTAL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one carton's 15 / 10 — «SINGLE» was no sub-header word",
+   "why": "«G.W. (KG)» merged over «SINGLE | TOTAL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2460",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "G.W. (KG)",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "CTN",
+        "TTL",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one carton's 15 / 10",
+   "why": "«G.W. (KG)» merged over «CTN | TTL»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2461",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "в 1 месте",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one place's 15 / 10 — «месте» was no listed form",
+   "why": "«Вес брутто, кг» merged over «в 1 месте | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2462",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "за 1 место",
+        "итого",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one place's 15 / 10 — «за» was no sub-header word",
+   "why": "«Вес брутто, кг» merged over «за 1 место | итого»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2463",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "1 кор.",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one box's 15 / 10",
+   "why": "«Вес брутто, кг» merged over «1 кор. | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
+  },
+  {
+   "id": "c2464",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "CTNS",
+        "Вес брутто, кг",
+        null,
+        "CBM"
+       ],
+       [
+        null,
+        null,
+        null,
+        "1 коробки",
+        "всего",
+        null
+       ],
+       [
+        "Ladies jacket",
+        300,
+        10,
+        15,
+        150,
+        1.2
+       ],
+       [
+        "Trousers",
+        100,
+        4,
+        10,
+        40,
+        0.4
+       ]
+      ],
+      "merges": [
+       "D1:E1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "weightKg": 150
+      },
+      {
+       "name": "Trousers",
+       "quantity": 100,
+       "weightKg": 40
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "one box's 15 / 10",
+   "why": "«Вес брутто, кг» merged over «1 коробки | всего»: the sub-header row is read by TTL/SINGLE and the Russian package stems, so the header composes and the lines are the total column (FR-SELL-2)",
+   "source": "fix review (Ikki eshik) FR-SELL-2",
+   "weight": "blocker"
   }
  ],
  "isArticleNumberCases": [
@@ -58887,7 +60089,8 @@
    "said": "patch.stage stays 'client' and reask = 'client' (the customer question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «client» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_add» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0001",
@@ -58916,7 +60119,8 @@
    "said": "patch.stage stays 'client' and reask = 'client' (the customer question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «client» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_replace» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0002",
@@ -58945,7 +60149,8 @@
    "said": "patch.stage stays 'section' and reask = 'section' (the «Yuk qayerdan chiqadi?» zone question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «section» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_add» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0003",
@@ -58974,7 +60179,8 @@
    "said": "patch.stage stays 'section' and reask = 'section' (the «Yuk qayerdan chiqadi?» zone question is asked again); never stage 'material'",
    "why": "All votes: the press dropped the open question, so a code typed next was filed as material and the job landed as «Hisoblatish (nomsiz)» with no freight zone.",
    "source": "r1 c00 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «section» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_replace» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0004",
@@ -59003,7 +60209,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «material» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_add» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0005",
@@ -59032,7 +60239,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «review» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_add» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0006",
@@ -59061,7 +60269,8 @@
    "said": "patch.stage 'material', reask null",
    "why": "Vote 1: from review/question moving to material is still correct (the new lines must be read again).",
    "source": "r1 c00 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a collection hydrated at the «review» stage holding the old second-Excel question (pendingInvoice) is resolved by migrateIntakeState — the waiting file's rows compared and added («📄 «B.xlsx» — 1 ta yangi tovar qo‘shildi.» in fileNotes), pendingInvoice null, the stage kept — and the old «inv_add» button answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.» and changes nothing."
   },
   {
    "id": "c0007",
@@ -59079,7 +60288,8 @@
    "said": "«GS777» becomes clientHintRaw (stage was still 'client'); landing resolves GS777's deal, never a nameless lead",
    "why": "Votes 0/1 probe: GS777 went into material and clientHintRaw stayed \"\".",
    "source": "r1 c00 collector — vote 1 probe x.ts",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a second Excel at the «client» stage asks nothing (no keyboard), its rows are added, the stage stays «client», and the typed GS777 is still taken as the customer, never as material."
   },
   {
    "id": "c0008",
@@ -59122,7 +60332,8 @@
    "said": "after C: pendingInvoice.goods = B+C (4 lines), label «B.xlsx, C.xlsx», the reply names both waiting files; after ➕: invoiceGoods = A+B+C (6 lines)",
    "why": "All votes: C replaced B without a word and B's lines never reached facts.goods (his 1.13 c, one file further).",
    "source": "r1 c01 collector — vote 1 probe",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: three factories' Excels: each further file's new rows are ADDED and counted («📄 «B.xlsx» — 3 ta yangi tovar qo‘shildi.», «… «C.xlsx» — 1 ta …»), nothing is asked, and the lines are receipt-time notes (fileNotes)."
   },
   {
    "id": "c0009",
@@ -59165,7 +60376,8 @@
    "said": "invoiceGoods = B+C (4 lines) — 🔁 replaces A with every waiting file",
    "why": "Votes 0/1: 🔁 puts all the waiting files in place of the first.",
    "source": "r1 c01 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: there is no «o‘rniga» any more: a later file replaces no row, and an old «inv_replace» press answers «eskirgan» with every file's rows still held."
   },
   {
    "id": "c0010",
@@ -59180,7 +60392,8 @@
    "said": "the second press answers «Bu tugma eskirgan» (pendingInvoice is null) and changes nothing",
    "why": "Any on-screen keyboard acts on the same, named set; once applied, the rest are stale.",
    "source": "r1 c01 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: every press of an old «inv_add» keyboard answers «eskirgan» and changes nothing, twice running."
   },
   {
    "id": "c0011",
@@ -59272,7 +60485,8 @@
    "said": "aiGoods 'ask' and the «boshqa zavodning tovarlarimi?» keyboard; «Bo'ldi» waits for the answer — the bot never promises «AI o‘qiydi» about lines it then drops",
    "why": "All votes: the add/replace question was asked only when the second file was itself a mapped sheet.",
    "source": "r1 c04 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a PDF or a header-less sheet beside an Excel takes the add path (aiGoods «add») with no question and no keyboard, and «Bo‘ldi» starts the reading at once."
   },
   {
    "id": "c0017",
@@ -59291,7 +60505,8 @@
    "said": "the same question is asked in the reverse order (aiGoods 'ask', keyboard shown)",
    "why": "Votes 0/1/2: B first, then the mapped A, asked nothing.",
    "source": "r1 c04 collector",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: an Excel after a PDF is the goods list and the PDF takes the add path — no question, no keyboard."
   },
   {
    "id": "c0018",
@@ -59383,7 +60598,8 @@
    "said": "invoiceGoods = [RIGHT shoes, RIGHT shoes B]; invoiceTexts = RIGHT's packing list only — the model never sees «9999 KGS / 77»",
    "why": "All votes: the job's kg/m³ could come from the file the seller was just told was replaced.",
    "source": "r1 c07 collector — vote 1 probe",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: two workbooks of different goods: both lists are kept («2 ta yangi tovar qo‘shildi»), both workbooks' other sheets reach the model's totals-only heading, and an old «inv_replace» answers «eskirgan»."
   },
   {
    "id": "c0023",
@@ -59399,7 +60615,8 @@
    "said": "invoiceTexts = A's and B's other sheets (both kept)",
    "why": "Votes 0/1/2: ➕ keeps both workbooks' totals sheets.",
    "source": "r1 c07 collector — control",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: two workbooks' totals sheets are both kept, in order, with no press."
   },
   {
    "id": "c0064",
@@ -60098,7 +61315,8 @@
    "said": "stage stays 'client'; goods become [Kurtka, Shim]; the last reply is CLIENT_QUESTION; a following «GS777» goes through clientAnswer as the customer (clientHintRaw 'GS777'), never into the material",
    "why": "#0: the ➕/🔁 answer used to force stage 'material', so the customer typed next was filed as goods.",
    "source": "r1-fix collector #0 (fixer summary; reviewers 0+1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a second Excel at the «client» stage: no question, its rows added, the stage stays «client», and GS777 is the customer."
   },
   {
    "id": "c0769",
@@ -60121,7 +61339,8 @@
    "said": "stage stays 'section', route still null, and the zone keyboard (c:zone_cn, c:zone_kashgar via pricedZonesNow) is sent again; «Bo'ldi» stays refused until a zone is picked",
    "why": "#0 reviewer 0: on the aipk door the open question is the zone.",
    "source": "r1-fix collector #0 reviewer 0",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: on the podklyuch door the zone question stays open across two files (stage «section», no route); an old «inv_replace» answers «eskirgan»; «Bo‘ldi» still asks where the cargo leaves from."
   },
   {
    "id": "c0770",
@@ -60138,7 +61357,8 @@
    "said": "re-asks the open question exactly as invoiceChoice does (CLIENT_QUESTION / the zone keyboard); the stage is not forced to 'material'",
    "why": "#0 reviewer 0: «otherFilesChoice re-asks the open question the same way».",
    "source": "r1-fix collector #0 reviewer 0",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: an open «boshqa zavodmi?» (aiGoods «ask») hydrated at deploy becomes the add path; its old «other_add» button answers «eskirgan», the stage kept."
   },
   {
    "id": "c0771",
@@ -60158,7 +61378,8 @@
    "said": "C folds into the waiting pendingInvoice; the reply names «B.xlsx», «C.xlsx» — jami 3 ta tovar; one ➕ (the keyboard under B) lands A1, A2, B1, C1, C2 and invoiceTexts holds all three files' other-sheet texts; the second keyboard (under C) answers «Bu tugma eskirgan»; B is never overwritten",
    "why": "#1: a further goods file used to REPLACE the waiting one.",
    "source": "r1-fix collector #1 (fixer summary; reviewer 0 probe p1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: three workbooks: every file's rows added and counted, every workbook's other sheets kept in order; an old «inv_add» answers «eskirgan»."
   },
   {
    "id": "c0772",
@@ -60179,7 +61400,8 @@
    "said": "the first file (A) is replaced by B+C together, and the reply text says so",
    "why": "#1 reviewer 1: «🔁 O'rniga» on the folded set replaces the first file with B+C together.",
    "source": "r1-fix collector #1 reviewer 1",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: three files and an old «inv_replace» press: no row replaced, and no note says «o‘rniga olindi»."
   },
   {
    "id": "c0773",
@@ -60233,7 +61455,8 @@
    "said": "aiGoods 'ask': the bot asks «boshqa zavodning tovarlarimi?» with two buttons c:other_add / c:other_same, and «Bo'ldi» (and reread) is refused while the answer is 'ask'",
    "why": "#4: a PDF or a header-less sheet beside an Excel list used to have its goods dropped silently.",
    "source": "r1-fix collector #4 (fixer summary; reviewers 0+1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a PDF after an Excel: aiGoods «add», the receipt line «📄 «B.pdf» — AI o‘qiydi.» with no keyboard, and «Bo‘ldi» starts the reading with no other-files ask."
   },
   {
    "id": "c0776",
@@ -60252,7 +61475,8 @@
    "said": "asks «boshqa zavodning tovarlarimi?» too (the reverse order); after c:other_add the model prompt carries the knownGoods block (at most 100 names) — knownGoods is passed only on 'add'",
    "why": "#4: Excel after a PDF or sheet asks as well; knownGoods (capped at 100) reaches the model only on add.",
    "source": "r1-fix collector #4 (fixer summary; reviewer 0 probe p3.mts)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: the model is shown the Excel's list (knownGoods) with no press on the add path — and not on a hydrated «context», the seller's own old answer."
   },
   {
    "id": "c0782",
@@ -60325,7 +61549,8 @@
    "said": "invoiceGoods = [Right1]; the text sent to the model is «X-headerless\\n\\n[Packing list]\\nTOTAL G.W. 1500» — the 9999 sheet is gone and the separate file's text is kept",
    "why": "#7: sheetTexts holds only header-less files; a replaced workbook's other sheets leave with it (invoiceTexts).",
    "source": "r1-fix collector #7 (fixer summary; reviewer 0 probe p1)",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: two workbooks of different goods: both lists and both totals sheets kept, in order, after a header-less CSV; an old «inv_replace» answers «eskirgan»."
   },
   {
    "id": "c0789",
@@ -60460,7 +61685,8 @@
    "said": "aiGoods stays null (no «boshqa zavodning tovarlarimi?» question): the workbook's other sheets go to invoiceTexts and the ask condition reads only sheetTexts",
    "why": "#7 reviewer 1: «the ask condition reads only sheetTexts, as intended».",
    "source": "r1-fix collector #7 reviewer 1",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: a lone Excel with a packing-list sheet: aiGoods stays null, the file answer carries no keyboard field at all, and the other sheet joins invoiceTexts."
   },
   {
    "id": "c0803",
@@ -60544,7 +61770,8 @@
    "said": "the «Packing list» sheet is NOT in the «Таблица Excel» goods block; it stands under «Другие листы книги… Товары отсюда НЕ перечисляй в goods»; all 150 Excel names are shown (no 100-char cut)",
    "why": "C2/C6 (fixed): a mapped workbook's other sheets are a separate context input.",
    "source": "r3 collector rv0 C2 + r3 collector rv1 C2",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: the add path taken without a press: the prompt shows the Excel's names under «НЕ повторяй» and the workbook's packing sheet under the totals-only heading, never in the goods block."
   },
   {
    "id": "c1337",
@@ -60556,7 +61783,8 @@
    "said": "234 names shown (within 6 000 characters) followed by «…и ещё 166 строк этой таблицы»",
    "why": "C2: the Excel names to the model are capped by characters, the rest counted.",
    "source": "r3 collector rv0 C2",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: the add path taken without a press: the known-goods block shows the 234 names that fit KNOWN_GOODS_CHARS and counts the other 166."
   },
   {
    "id": "c1338",
@@ -61115,7 +62343,206 @@
    "said": "the «⚠️ N ta qator Excel’dagi bilan bir xil…» sentence is printed as its own line, not counted against the model's three «🤖 AI» notes (the model's third step is still shown)",
    "why": "R3-C1 note placement",
    "source": "C-r1 ND nit",
+   "weight": "defect",
+   "pick": "Re-anchored on his 1a (docs/IKKI-ESHIK.md §1.1-§1.2, 2026-11-08; per-case words by review PF-SPEC-9). The drive pins: the add path's reading: the «Excel’dagi bilan bir xil — bir marta olindi» line has no ⚠️ (§1.2.4), the model's new lines are counted («🤖 AI o‘qigan fayllardan 1 ta yangi tovar qo‘shildi (2 tasi Excel’da bor edi).»), and the model's steps are kept."
+  },
+  {
+   "id": "c2449",
+   "call": "readIntakeFile ×2 (two factories' invoices)",
+   "input": {
+    "files": {
+     "A.xlsx": [
+      "Kurtka 300 dona 150 kg",
+      "Shim 100 dona"
+     ],
+     "B.xlsx": [
+      "Kurtka 200 dona 90 kg",
+      "Shim 100 dona",
+      "Sumka 50 dona"
+     ]
+    }
+   },
+   "said": "both factories' «Kurtka» rows are kept and named («ikkalasi olindi (bir xil bo‘lsa, VED bittasini o‘chiradi)»); B's «Shim 100» is A's row read again and taken once; nothing is asked",
+   "why": "INT-4: a same-named row whose figures disagree is another factory's line — an added row is one press to delete on the VED's screen, a dropped one is silent",
+   "source": "docs/IKKI-ESHIK.md §1.2.2 (his 1a), INT-4",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2450",
+   "call": "readIntakeFile ×2 (packing list first, then the invoice)",
+   "input": {
+    "files": {
+     "P.xlsx": "Description | Qty (pcs) | CTN | N.W.(kg) | G.W.(kg) | CBM — Kurtka 300/10/150/165/1.2, Shim 100/4/40/46/0.4",
+     "I.xlsx": "Description | Qty | Unit price | Amount — Kurtka 300, Shim 100"
+    }
+   },
+   "said": "the invoice takes the goods role; the packing list's rows become its totals (brutto 211 kg = Σ G.W., 1.6 m³) and the invoice rows' netto (150, 40 kg); the note names only what was read",
+   "why": "M1 a: file order never decides which counts land; brutto only from the gross column (M2)",
+   "source": "docs/IKKI-ESHIK.md §1.2.2 (his 1a), M1 a",
+   "weight": "pinned"
+  }
+ ],
+ "sameGoodsLineCases": [
+  {
+   "id": "c2440",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row, not a new one",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
    "weight": "defect"
+  },
+  {
+   "id": "c2441",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)"
+    }
+   },
+   "expected": true,
+   "said": "the stored row — a reading with no figure does not disagree with one",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2442",
+   "input": {
+    "kept": {
+     "name": "Kurtka",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Kurtka (qora)",
+     "quantity": 200
+    }
+   },
+   "expected": false,
+   "said": "a NEW line (another factory's «Kurtka (qora)» is not the stored «Kurtka»)",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c2443",
+   "input": {
+    "kept": {
+     "name": "女士夹克",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская 女士夹克",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — the Han half names it",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2444",
+   "input": {
+    "kept": {
+     "name": "女士夹克 Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — one half of a bilingual stored name",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2445",
+   "input": {
+    "kept": {
+     "name": "Куртка женская 女士夹克",
+     "quantity": 300
+    },
+    "read": {
+     "name": "女士夹克",
+     "quantity": 300
+    }
+   },
+   "expected": true,
+   "said": "the stored row — the Han half alone",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2446",
+   "input": {
+    "kept": {
+     "name": "Kurtka",
+     "quantity": 300
+    },
+    "read": {
+     "name": "kurtka",
+     "quantity": 200
+    }
+   },
+   "expected": true,
+   "said": "the stored row (the same whole name) — the figure that differs is a conflict, asked",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2447",
+   "input": {
+    "kept": {
+     "name": "Ladies jacket",
+     "quantity": 300
+    },
+    "read": {
+     "name": "Куртка женская (Ladies jacket)",
+     "quantity": 200
+    }
+   },
+   "expected": false,
+   "said": "not the stored row — a wide name match counts only when the figures agree (R3-C1)",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2448",
+   "input": {
+    "kept": {
+     "name": "Sumka",
+     "quantity": 10
+    },
+    "read": {
+     "name": "Krossovka",
+     "quantity": 10
+    }
+   },
+   "expected": false,
+   "said": "a NEW line — the same figure does not make another product the same",
+   "why": "The add branch keeps a stored row as that row: new material restating it is a top-up of the row (a conflict when its figure differs), never a second line priced twice; a different product of the same generic name is a NEW line (R3-C1, two factories).",
+   "source": "r3 P4 add door — re-check p4-10 (docs/SAKKIZ-R3.md §9.4)",
+   "weight": "pinned"
   }
  ]
 }

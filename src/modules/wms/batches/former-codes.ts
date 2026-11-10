@@ -113,6 +113,345 @@ export async function batchByFormerCode(
   return row ? { batchId: row.batch_id, formerCode: row.former_code } : null;
 }
 
+/**
+ * The truck that HOLDS a minted number — the cancel's give-back asks it of
+ * every number it walks (docs/NARX-VA-RAQAM.md §3.2.1). Here because it reads
+ * `before->>'code'`, and this file is that read's one home (fenced).
+ *
+ * The truck WEARING the string now, first (but for the one wearer that
+ * yields, below); and when nobody wears it, among the trucks with a batch
+ * audit row renaming AWAY from it (before and after both carry a code and
+ * they differ — any stage, with or without a reason, the give-back's own
+ * row included): the truck that CARRIED it on the road (a rename away from
+ * it with a `reason`, the newest such row), else the truck that MINTED it —
+ * the newest one BORN with it (`bornNameSql`, `firstNameOf`'s rule).
+ *
+ * The road truck first (review RVF3-2): a number given back and then worn on
+ * the road by another truck under a hand rename is burned for good (the
+ * former-name predicate), and the truck to name for it is the one that took
+ * it out — the one `batchByFormerCode` answers ⌘K and the bot with, not the
+ * cancelled minter that never left («P-002 (bekor) nomi bilan jo‘nagan» was
+ * what the dry run read to him). A road rename happens only on a departed
+ * truck, so this only ever names the truck behind a stop the `roadFormer`
+ * belt already makes; it never changes whether a number comes back. Every
+ * case before departure still goes to the minter.
+ *
+ * The rename-away half is why a truck renamed to its plate before it left
+ * and then cancelled is still found: his 4a says its number comes back, and
+ * «nobody wears it» alone would have stopped the walk there for ever. The
+ * MINTER and not merely the newest renamer (review C2): a forming truck may
+ * be renamed by hand to a colleague's just-vacated mint string and away
+ * again, and the newest row would make IT the holder — cancel it and the
+ * live plate-named minter's number is released and minted a second time
+ * (the unique index never sees it, the plate is what the minter wears). The
+ * NEWEST minter, so a number released and handed out again belongs to the
+ * truck that took it last. Only when no truck carried it on the road and
+ * none was born with it (rows from before the create audit, a hand-moved
+ * counter) does the newest rename-away row answer.
+ *
+ * The same harm one branch over (review M6): a forming truck renamed by hand
+ * to that vacated string and cancelled WEARING it would give the live
+ * minter's number back. So a wearer the verdict would release — cancelled,
+ * never departed — that was not born with the string yields to the newest
+ * truck born with it that is still counted under it: live, or a journey
+ * (departed), and wearing no name another truck was born with. That last
+ * clause is review C1's swap: a minter that took a colleague's number by
+ * hand is THAT truck now, and the string it left is the cancelled wearer's
+ * to give back. `wears` is false then, so the verdict stops exactly as it
+ * does for the minter found below: 'newer', or 'renamed_left' for one that
+ * left.
+ *
+ * Plain statements and no lock: the release reads it first, takes its locks
+ * only when the answer is «releasable», and then reads it again. `wears`
+ * false is the rename-away case. `atAgent` is the 7a rule on the NUMBER, not
+ * on the holder alone (review RVF3-1): the holder's tick standing now or ever
+ * pressed (an untick does not un-send papers, §3.2.3) — and, for a holder
+ * the verdict would otherwise release (cancelled, never departed), a tick on
+ * ANY truck that ever wore this exact string: the one wearing it now, and
+ * every truck with a rename row from it or to it. The minter rule (C2) made
+ * the minter the holder of a string a colleague wore by hand while ticked and
+ * then left; the agent holds THAT truck's papers under the number, and a
+ * holder-only tick released it and minted it a second time. Conservative on
+ * purpose — the tick row names no code, so a truck ticked under another name
+ * that later passed through this one keeps it too: a gap, never a duplicate
+ * at the agent. The mint asks the same predicate of every candidate
+ * (`numberEverAtAgent`, review M5). Outside that one case the field is the
+ * holder's own tick; the verdict reads it only there (`numberVerdict`), so
+ * the wider scan is paid on a cancel, a cancelled card and the dry run's
+ * cancelled numbers — never per live truck. `roadFormer` is the former-name
+ * predicate over the number itself: a name that reached the road is never
+ * given out again. `born`: the holder was born with the string.
+ *
+ * The rename-away half has no partial index of its own (0121's covers road
+ * renames only) and rides `audit_entity_idx`'s leading column over the batch
+ * rows — a few thousand on the live server, read on a cancel, a cancelled
+ * truck's card and the dry run, never on a list. No migration for it. The
+ * born-name question is then asked only of the handful of trucks that
+ * renamed away from this one string, one `audit_entity_idx` probe each
+ * (`entity_type`, `entity_id`) — never a scan per number.
+ */
+export interface NumberHolder {
+  id: string;
+  code: string;
+  status: string;
+  originWarehouseId: string;
+  departed: boolean;
+  atAgent: boolean;
+  wears: boolean;
+  /**
+   * Born with the string — the truck the mint built it for (`firstNameOf`'s
+   * rule). A number re-minted to the next truck is the promise kept, whatever
+   * that truck is called later (the card's `taken`, review M3).
+   */
+  born: boolean;
+  roadFormer: boolean;
+}
+
+/**
+ * The trucks with a batch audit row renaming AWAY from this string — each
+ * with its newest such row, its newest ROAD one (a `reason`), its birth, and
+ * whether it was BORN with the string — for both holder questions below.
+ * MATERIALIZED so the born-name probe runs once per candidate, not once per
+ * sort key.
+ */
+function awayFromSql(code: string): SQL {
+  return sql`WITH away AS (
+        SELECT a.entity_id AS id, b.created_at, max(a.id) AS last_away,
+               max(a.id) FILTER (WHERE (a.after->>'reason') IS NOT NULL) AS last_road
+          FROM audit_log a JOIN batches b ON b.id = a.entity_id
+         WHERE a.entity_type = 'batch' AND a.action = 'update'
+           AND upper(a.before->>'code') = upper(${code}::text)
+           AND (a.after->>'code') IS NOT NULL
+           AND upper(a.after->>'code') <> upper(${code}::text)
+         GROUP BY a.entity_id, b.created_at
+      ), judged AS MATERIALIZED (
+        SELECT away.*, coalesce(upper(${bornNameSql(sql`away.id`)}) = upper(${code}::text), false) AS minted
+          FROM away
+      )`;
+}
+
+export async function numberHolderOf(handle: Db | Tx, code: string): Promise<NumberHolder | null> {
+  // `yields`: a wearer the verdict would give the number back from — cancelled,
+  // never departed — that was not BORN with the string (review M6).
+  const wearer = (await handle.execute(sql`
+    SELECT b.id,
+           (b.status = 'cancelled' AND b.departed_at IS NULL
+            AND coalesce(upper(${bornNameSql(sql`b.id`)}) <> upper(${code}::text), false)) AS yields
+      FROM batches b WHERE upper(b.code) = upper(${code}::text) LIMIT 1
+  `)) as unknown as { id: string; yields: boolean }[];
+  const worn = [...wearer][0] ?? null;
+  let id = worn?.id ?? null;
+  let wears = id !== null;
+  if (worn?.yields === true) {
+    // Such a wearer holds it only while no truck BORN with it is still
+    // counted under it — live, or a journey (departed): the newest one, by
+    // its birth. «Counted under it»: the minter wears no name another truck
+    // was born with — one that took a colleague's number by hand (review
+    // C1's swap) is THAT truck now, and the string it left is the cancelled
+    // wearer's to give back.
+    const minter = (await handle.execute(sql`
+      ${awayFromSql(code)}
+      SELECT j.id FROM judged j JOIN batches x ON x.id = j.id
+       WHERE j.minted AND (x.status <> 'cancelled' OR x.departed_at IS NOT NULL)
+         AND NOT EXISTS (
+           SELECT 1 FROM audit_log k JOIN batches t ON t.id = k.entity_id
+            WHERE k.entity_type = 'batch' AND k.action = 'update' AND t.id <> x.id
+              AND upper(k.before->>'code') = upper(x.code)
+              AND upper(${bornNameSql(sql`t.id`)}) = upper(x.code))
+       ORDER BY j.created_at DESC
+       LIMIT 1
+    `)) as unknown as { id: string }[];
+    const held = [...minter][0]?.id ?? null;
+    if (held) {
+      id = held;
+      wears = false;
+    }
+  }
+  if (!id) {
+    // The truck that carried it on the ROAD first (its newest road rename
+    // away from it — `batchByFormerCode`'s answer); then the newest MINTER
+    // (born with it), by the truck's own birth; then, with neither, the
+    // newest rename-away row.
+    const away = (await handle.execute(sql`
+      ${awayFromSql(code)}
+      SELECT id FROM judged
+       ORDER BY last_road DESC NULLS LAST, minted DESC, (CASE WHEN minted THEN created_at END) DESC NULLS LAST, last_away DESC
+       LIMIT 1
+    `)) as unknown as { id: string }[];
+    id = [...away][0]?.id ?? null;
+  }
+  if (!id) return null;
+  // The holder's own tick always; every truck that ever wore the string only
+  // where the verdict would otherwise give the number back (the CASE is what
+  // keeps the wider scan off a live or departed holder — Postgres evaluates
+  // a CASE branch's subquery only when its condition holds).
+  const rows = (await handle.execute(sql`
+    SELECT b.id, b.code, b.status, b.origin_warehouse_id,
+           (b.departed_at IS NOT NULL) AS departed,
+           (b.sent_to_agent_at IS NOT NULL OR EXISTS (
+              SELECT 1 FROM audit_log t
+               WHERE t.entity_type = 'batch' AND t.entity_id = b.id AND (t.after->>'sentToAgent') = 'true'
+           ) OR CASE WHEN b.status = 'cancelled' AND b.departed_at IS NULL THEN ${everTickedSql(code)} ELSE false END) AS at_agent,
+           (upper(coalesce(${bornNameSql(sql`b.id`)}, b.code)) = upper(${code}::text)) AS born,
+           EXISTS (SELECT 1 FROM audit_log a WHERE ${PRED_A} AND ${KEY_A} = upper(${code}::text)) AS road_former
+      FROM batches b WHERE b.id = ${id}::uuid
+  `)) as unknown as {
+    id: string;
+    code: string;
+    status: string;
+    origin_warehouse_id: string;
+    departed: boolean;
+    at_agent: boolean;
+    born: boolean;
+    road_former: boolean;
+  }[];
+  const row = [...rows][0];
+  if (!row) return null;
+  return {
+    id: row.id,
+    code: row.code,
+    status: row.status,
+    originWarehouseId: row.origin_warehouse_id,
+    departed: row.departed === true,
+    atAgent: row.at_agent === true,
+    wears,
+    born: row.born === true,
+    roadFormer: row.road_former === true,
+  };
+}
+
+/**
+ * A truck's oldest rename's «from» — the name it was born with, when it was
+ * ever renamed (NULL otherwise). ONE fragment for `firstNameOf` and the
+ * holder's «who minted it» (`numberHolderOf`), so the two can never disagree
+ * about which truck a number was minted for. `entity` is the truck's id
+ * expression in the caller's query; one `audit_entity_idx` probe.
+ */
+function bornNameSql(entity: SQL): SQL {
+  return sql`(SELECT f.before->>'code' FROM audit_log f
+      WHERE f.entity_type = 'batch' AND f.entity_id = ${entity} AND f.action = 'update'
+        AND (f.before->>'code') IS NOT NULL
+      ORDER BY f.id ASC LIMIT 1)`;
+}
+
+/**
+ * Every truck that ever WORE this exact string — the one wearing it now
+ * (upper-cased, as `codeEverWorn` compares), and every truck with a rename
+ * row FROM it or TO it, at any stage, the give-back's own row included (only
+ * rename.ts puts a `code` in `before`, fenced; `after.code` alone is also the
+ * load-removed row's carton code, so a row must carry both). The 7a agent
+ * rule on the number asks a tick of each (`everTickedSql` — the holder and
+ * the mint, reviews RVF3-1 and M5). A row orphaned by a test that deleted
+ * its truck drops out at the caller's join to `batches`. An id list for
+ * `IN (…)`: the code index for the wearer, one pass over the batch audit rows
+ * for the rest.
+ */
+function everWoreSql(code: string): SQL {
+  return sql`SELECT o.id FROM batches o WHERE upper(o.code) = upper(${code}::text)
+     UNION
+     SELECT r.entity_id FROM audit_log r
+      WHERE r.entity_type = 'batch' AND r.action = 'update'
+        AND (r.before->>'code') IS NOT NULL AND (r.after->>'code') IS NOT NULL
+        AND (upper(r.before->>'code') = upper(${code}::text) OR upper(r.after->>'code') = upper(${code}::text))`;
+}
+
+/**
+ * Were papers ever sent to the agent under this exact string? A tick —
+ * standing (`sent_to_agent_at`) or ever pressed (an audit row
+ * `after.sentToAgent = 'true'`: an untick does not un-send papers, §3.2.3) —
+ * on ANY truck that ever wore it (`everWoreSql`). His 7a on the NUMBER, one
+ * predicate for both doors that could hand it out again: the holder asks it
+ * for a holder the verdict would otherwise give the number back from
+ * (`numberHolderOf`, review RVF3-1), and the mint asks it of every candidate
+ * (`numberEverAtAgent` in `nextBatchCode`, review M5) — so the walk never
+ * gives back what the mint would pass over for papers, and the mint never
+ * hands out a number the walk keeps for them. Conservative the same way: the
+ * tick row names no code, so a truck ticked under another name that once
+ * passed through this one keeps it too — a gap, never a duplicate at the
+ * agent.
+ */
+function everTickedSql(code: string): SQL {
+  return sql`EXISTS (
+              SELECT 1 FROM batches w
+               WHERE w.id IN (${everWoreSql(code)})
+                 AND (w.sent_to_agent_at IS NOT NULL OR EXISTS (
+                       SELECT 1 FROM audit_log t2
+                        WHERE t2.entity_type = 'batch' AND t2.entity_id = w.id
+                          AND (t2.after->>'sentToAgent') = 'true')))`;
+}
+
+/**
+ * The mint's half of the 7a rule on the number (review M5): a string the
+ * agent holds papers under is never handed to another truck, though «ever
+ * worn» frees it — a forming truck may take a given-back number by hand, be
+ * ticked under it, and move away before departure. `nextBatchCode` asks it
+ * of each candidate under the candidate's own lock, after `codeEverWorn`.
+ * One pass over the batch audit rows (`audit_entity_idx`'s leading column),
+ * paid only for a candidate «ever worn» lets through — measured ~2 ms at
+ * 5,000 batch rows among 300,000 others, ~8 ms at 22,000.
+ */
+export async function numberEverAtAgent(handle: Db | Tx, code: string): Promise<boolean> {
+  const rows = (await handle.execute(sql`SELECT ${everTickedSql(code)} AS at_agent`)) as unknown as {
+    at_agent: boolean;
+  }[];
+  return [...rows][0]?.at_agent === true;
+}
+
+/**
+ * The name a truck was BORN with — its oldest rename's «from», else the name
+ * it wears. The minted number of a truck renamed before it left (the plate
+ * case) is only here; the cancelled truck's card falls back to it when no
+ * number in its history is its own any more (§3.2.4).
+ */
+export async function firstNameOf(handle: Db | Tx, batchId: string): Promise<string | null> {
+  const rows = (await handle.execute(sql`
+    SELECT coalesce(${bornNameSql(sql`b.id`)}, b.code) AS first
+      FROM batches b WHERE b.id = ${batchId}::uuid
+  `)) as unknown as { first: string | null }[];
+  return [...rows][0]?.first ?? null;
+}
+
+/**
+ * Every name a truck renamed AWAY from, oldest first and once each — the
+ * minted strings it may still HOLD by the holder rule after wearing another
+ * (a plate, or a colleague's vacated number: review C1). The cancelled
+ * truck's card asks the holder of each; nothing here decides.
+ */
+export async function namesWornBy(handle: Db | Tx, batchId: string): Promise<string[]> {
+  const rows = (await handle.execute(sql`
+    SELECT a.before->>'code' AS name, min(a.id) AS first_at
+      FROM audit_log a
+     WHERE a.entity_type = 'batch' AND a.entity_id = ${batchId}::uuid AND a.action = 'update'
+       AND (a.before->>'code') IS NOT NULL
+     GROUP BY a.before->>'code'
+     ORDER BY first_at ASC
+  `)) as unknown as { name: string }[];
+  return [...rows].map((row) => row.name);
+}
+
+/**
+ * «YW-010 (bekor)», «YW-010 (bekor 2)» — the name the give-back puts on a
+ * cancelled truck, matched from the number people know (§3.2.5). The bot's
+ * exact lookup finds nothing for a released number until it is minted again,
+ * and this is its fallback. Upper-cased both sides, the needle escaped with
+ * `!` (a prefix is free text: `_` and `%` are its own characters here).
+ */
+export function releasedNameSql(code: string): SQL {
+  const needle = code.toUpperCase().replace(/[!%_]/g, (ch) => `!${ch}`);
+  return sql`upper("batches"."code") LIKE ${`${needle} (BEKOR%`} ESCAPE '!'`;
+}
+
+/** The newest cancelled truck that gave this number back, for the bot. */
+export async function batchByReleasedName(code: string): Promise<{ batchId: string } | null> {
+  const rows = (await db.execute(sql`
+    SELECT "batches"."id" AS batch_id FROM batches
+     WHERE "batches"."status" = 'cancelled' AND ${releasedNameSql(code)}
+     ORDER BY "batches"."created_at" DESC LIMIT 1
+  `)) as unknown as { batch_id: string }[];
+  const row = [...rows][0];
+  return row ? { batchId: row.batch_id } : null;
+}
+
 export interface FormerCodeRow {
   from: string;
   to: string;

@@ -36,7 +36,8 @@ import { bandKeyOf } from '@/modules/wms/calc/estimate';
 import { readCodeMedians } from '@/modules/wms/customs/import-median';
 import { readImportStats } from '@/modules/wms/customs/import-stats';
 import { underCeiling } from '@/modules/wms/finance/price-history';
-import { TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { AI_NOTE_HEAD, TARIFF_REPLY_HEAD, VED_ESTIMATE_MARK } from '@/modules/wms/calc/reply-heads';
+import { sawRev } from '../fixtures/calc-saw-rev';
 
 /**
  * The 📊 estimate end to end (docs/SAKKIZ-R2.md §6.9): his 2.1 b (the median
@@ -165,7 +166,7 @@ async function open(
   extra: Partial<Parameters<typeof openCalcRequest>[0]> = {},
 ): Promise<string> {
   const r = await openCalcRequest(
-    { entityType: 'deal', entityId: dealId, section, fromCity: 'Yiwu', toCity: 'Toshkent', items, source: 'card', ...extra },
+    { intakeDoor: null, entityType: 'deal', entityId: dealId, section, fromCity: 'Yiwu', toCity: 'Toshkent', items, source: 'card', ...extra },
     ctx(),
   );
   madeRequests.push(r.id);
@@ -180,6 +181,7 @@ async function open(
 async function sealMemory(): Promise<void> {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: memoryDealId,
       section: 'rastamojka',
@@ -193,8 +195,8 @@ async function sealMemory(): Promise<void> {
   madeRequests.push(r.id);
   await typeBaza(r.id, MEMORY_NAME, 4);
   await setFreightZone(r.id, 'cn', ctx());
-  await confirmAllGroups(r.id, ctx());
-  await sealCalc(r.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null }, ctx());
+  await confirmAllGroups(r.id, ctx(), await sawRev(r.id));
+  await sealCalc(r.id, { discountUsd: 0, discountReason: null, bandOverrideMin: null, bandOverrideReason: null, sawRev: await sawRev(r.id) }, ctx());
 }
 
 /** A person types a baza on the row named so — the exact half of a reply. */
@@ -532,9 +534,13 @@ describe('(10) «(og‘irlik bruttodan)» wherever the measure is printed (⭐ o
     const refusal = out.text.split('\n').find((l) => l.startsWith('   ⚠️ '));
     expect(refusal, 'the refused line').toBeDefined();
     // One fact, one fixer: the count is the customer's (§0.1(7)), on the line
-    // as in the Taxminiy sentence below it.
-    expect(refusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
+    // as in the Taxminiy sentence below it. Re-anchored for round 3
+    // (docs/SAKKIZ-R3.md §2.5): `out.text` is the CHAT, whose seller tail
+    // points at «➕» under the message; the lenta keeps R2's words.
+    expect(refusal!.endsWith('— mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring')).toBe(true);
     expect(refusal).not.toContain('VED xodimi');
+    const lentaRefusal = out.lentaText.split('\n').find((l) => l.startsWith('   ⚠️ '));
+    expect(lentaRefusal!.endsWith('— mijozdan so‘rab, kartadagi lentaga yozing')).toBe(true);
   });
 });
 
@@ -597,5 +603,58 @@ describe('(12) a typed fee override: the Taxminiy carries ITS figure, never a BH
     // 92.80 (exact) + 41.28 (the median's) + the typed $50 = 184.08.
     expect(out.text).toContain('  Taxminiy ≈ $184.08 (yig‘im ≈ $50.00 bilan)\n');
     expect(out.text).not.toContain('BHM');
+  });
+});
+
+/**
+ * The two bot doors (docs/IKKI-ESHIK.md §2.4, §3.5). His 3a: «🧮»'s estimate
+ * does not reach the seller, and the card's lenta — which the seller reads —
+ * carries no money either: no 📊, no «Aniq», no «Taxminiy». The VED reads the
+ * exact figure on his screen and the 📊 in its 📥 dialog. His 2.5 b: a plain
+ * yo‘lkira still answers from the tariff in the chat, asking nothing. «🤖»
+ * keeps the two totals — the answer he pressed for.
+ */
+describe('(14) the doors: the estimate is the AI door’s answer, and the plain door’s VED note has none', () => {
+  it('«🧮»: no 📊 figure, no Aniq/Taxminiy, the row left baza-less — and named so for the VED', async () => {
+    const id = await open(
+      'rastamojka',
+      [{ name: `Idish eshik ${SUFFIX}`, tnvedCode: CODE_B, weightKg: 50 }],
+      { intakeDoor: 'plain' },
+    );
+    const out = await aiPrefill(id, { actorId: null }, { configured: false, replyTo: actorId });
+    expect(out.text).toBe(out.lentaText);
+    expect(out.text.startsWith(AI_NOTE_HEAD)).toBe(true);
+    expect(out.taxminiyUsd).toBeNull();
+    for (const money of ['📊', 'Aniq', 'Taxminiy', 'taxminiy', '≈', 'jami', 'JAMI', VED_ESTIMATE_MARK]) {
+      expect(out.text, money).not.toContain(money);
+    }
+    expect(out.text).toContain(`${CODE_B} · 📄 so‘rovning o‘zida yozilgan`);
+    expect(out.text).toContain('baza: 1 ta bazasiz — VED to‘ldiradi');
+    const [row] = await db
+      .select({ bazaUsd: calcRequestItems.bazaUsd })
+      .from(calcRequestItems)
+      .where(eq(calcRequestItems.requestId, id));
+    expect(row!.bazaUsd).toBeNull();
+  });
+
+  it('«🤖»: the two totals stand — Aniq and the 📊 Taxminiy — and nothing is asked', async () => {
+    const id = await open('rastamojka', [{ name: `Idish ai ${SUFFIX}`, tnvedCode: CODE_B, weightKg: 50 }], { intakeDoor: 'ai' });
+    const out = await aiPrefill(id, { actorId: null }, { configured: false, replyTo: actorId });
+    // 50 kg × $2.40 = 120; duty 20 % = 24; VAT 12 % of 144 = 17.28 → 41.28; + 1 BHM 32.96 = 74.24.
+    expect(out.text).toContain('  Taxminiy ≈ $74.24 (yig‘im 1 BHM ≈ $32.96 bilan)');
+    expect(out.text).not.toContain('❓');
+    expect(out.lentaText.split('\n')[1]!.startsWith(VED_ESTIMATE_MARK)).toBe(true);
+  });
+
+  it('«🧮» yo‘lkira: the tariff still answers in the chat (his 2.5 b); a missing cube is the VED’s to ask', async () => {
+    const priced = await open('yolkira', [{ name: `Yuk eshik ${SUFFIX}` }], { freightZone: 'cn', weightKg: 500, volumeM3: 10, intakeDoor: 'plain' });
+    const out = await aiPrefill(priced, { actorId: null }, { configured: true });
+    expect(out.text.startsWith(`${TARIFF_REPLY_HEAD} (tarif bo‘yicha) · taxminiy`)).toBe(true);
+    expect(out.text).toContain('Yo‘lkira: ≈ $1100.00');
+    const noCube = await open('yolkira', [{ name: `Yuk kubsiz ${SUFFIX}` }], { freightZone: 'cn', weightKg: 500, intakeDoor: 'plain' });
+    const refused = await aiPrefill(noCube, { actorId: null }, { configured: true });
+    expect(refused.text).toContain('Yo‘lkira: ⚠️ umumiy hajm (m³) yo‘q — VED xodimi sizdan so‘raydi');
+    expect(refused.text).not.toContain('mijozdan so‘rab');
+    expect(refused.lentaText).toContain('⚠️ VED uchun: umumiy hajm (m³) yo‘q.');
   });
 });

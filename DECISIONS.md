@@ -6387,9 +6387,802 @@ reply since the CRM's Telegram bridge shipped; the door that exists is the selle
 qilinmasin», which the feed already carries. Adding a block as suppression is a change to what the feed means
 (its `kind` set is the agent's contract), so it is asked of the owner, not built (CHANGELOG, AGENT-FEED.md §5).
 
-## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29; migration 0139 `chat_rule_bound_via` since #1576, ledger 140; numbered past main's #1545-#1570, the TWENTY-SEVENTH collision)
+## Sakkiz band, round 3 — the collection survives a deploy, the questions are one table, and «➕ Shu so‘rovga qo‘shish» (2026-11-03; numbered past main's #1570; migration 0139 `calc_intake_durable`, renamed from 0137 and then 0138 on two merges — the TWENTY-SEVENTH collision — ledger 140; spec `docs/SAKKIZ-R3.md`, §20 is the round as built; his answers 1.8 c 1.9 a 1.10 c 1.11 c 2.8 b in `docs/SAKKIZ-BAND.md` §11, and «14 a, qolgani seni taklifing» to the spec's seven questions)
 
-1571. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
+**#1571 — The collection is a ROW behind memory, and every change reaches it before
+Telegram can drop its update (the lead's ruling L1).** His 1.8 c: an unfinished
+«Hisoblatish» waits 24 hours, and a deploy must not lose it. Memory stays the reader (the
+0130 waits idiom — every read on the ladder synchronous) and `telegram_calc_intakes` is
+written behind it, debounced per chat: 1 s of quiet, at most 5 s
+(`INTAKE_WRITE_QUIET_MS` / `INTAKE_WRITE_MAX_MS`). The first draft scheduled a chain step
+per change; probed at the poller's real cadence (an awaited Telegram call after every
+update) the step runs DURING the await, so 20 messages made 20 full-state UPSERTs. The
+debounce alone was not enough: grammy confirms a batch with the `getUpdates` that follows
+it (read in grammy's own `bot.js`, K-review spec-2), so a change left to the timer belonged
+to an update Telegram had already dropped. L1: ONE grammy API transformer
+(`flushBeforeConfirm`) awaits `flushIntakeWrites()` before every `getUpdates`, bounded by
+`INTAKE_CONFIRM_FLUSH_MS` (2 s); a false or timed-out flush is logged once and the poll
+goes ahead, because blocking it would stop the cabinet and the whole staff side for a
+database blip. The K-fix draft — «end every collector message with a flush» — was REFUSED:
+one UPSERT per message beside every reply, holding only on the paths that remember to call
+it; the transformer covers every writer of the batch with one write. A failed write keeps
+the chat DIRTY and is retried (the waits idiom's «log once and forget» would have lost the
+change with its update confirmed); each dirty chat remembers the update it came from, so
+the stop confirms only through the update before the oldest unwritten one and then SEALS
+the store — a late effect in the old process never overwrites what the new one hydrated.
+A redelivered message is applied once (`takenUpTo`, written in the same patch as its
+effect; a file's attachment id is `uuidv5(noteId:messageId)` — K's review found an album
+part minting a random one). The bot hydrates every row before its first `getUpdates`
+(`Promise.allSettled`, a `.catch` each, retried in the background); a job reads through
+`loadIntake`, which waits for the hydrate and throws `IntakesNotReady` so pg-boss
+redelivers. Pinned by `calc-store-durable` and the durable blocks of `bot-redelivery`; the
+transformer's red proof calls `prev` before the flush and finds the old row. P1's own review
+reproduced, with a held row lock, a per-chat flush that answered true before its chat's
+newest change was in the row — fixed and red-proven.
+
+**#1572 — It WAITS 24 hours but HOLDS the chat for 30 minutes.** The judge's blocker
+regression-1: a collection that owned the chat for a day would have refused every lookup,
+note, task and the assistant for a day. After `HOLD_MS` (30 min, the old TTL) without his
+action it is PARKED and takes no free text, file or contact; the four refusing doors ask
+`holdingIntake`, and `intake-holds-wire` classifies every `activeIntake(` call as a
+«presence» or a «holds» question — a list only the merged tree could fill (P2's nine sites,
+P3's three, P4's ten). It resumes on «▶️ Davom etamiz», on its own buttons or on a reply to
+its table or echo; a table-shaped text sent while it is parked gets one pause line, never a
+silent add. One reminder after 2 h idle (`REMIND_AFTER_MS`), silent in the bot's one night
+(22:00-08:00, his 1.17 ⭐ — a second night window would disagree with every other silent
+message, #513), outside the notification mutes because it is his own open work, its claim
+released on any failure but 403/400. At 24 h ONE end path (`expireIntake`) deletes first
+and then says «⌛ … o‘chirildi» once (1.18 ⭐; an empty collection ends without a word);
+nothing is ended for 2 minutes after boot. Q5 a: a backlog message dated after a hydrated
+collection opened, while it was holding, is that collection's, and none reaches the AI. A
+landing cut between the note and the request is finished on the SAME card by the sweep or
+the next «Tasdiqlash» (Uch band's `cardOfNote` / `rootRequestOfNote`), at most
+`RESUME_TRIES` (3) times. The merge met main's AI sotuvchi (0138), whose three one-text
+waits a parked collection must not override (REG-2, COMP-5): `otherCollectorLive(chatId)`
+is the ONE predicate that a parked collection's presses, «▶️ Davom etamiz» and its rule-3
+replies ask — a task draft, a zametka capture, a task's or the agent's wait — answered in
+words, nothing written. Red: `activeIntake` put back into the agent ladder's `busy` refuses
+✏️ beside a parked collection (REG-1).
+
+**#1573 — The reading is a JOB.** «Bo‘ldi» enqueues `calc.intake-read` (4 workers, 300 s
+expiry, 2 retries) and returns; before, the reading ran inside the bot process and a
+deploy left the seller on «⏳» for ever. The job runs under ONE wall clock that ends before
+pg-boss's expiry (the hydrate wait and the 30 s file budget inside one SUM pin), reads the
+model-sized copy each photo got AT ARRIVAL (the job resizes nothing), calls the model,
+settles against the live collection, STORES its reply and only then sends it: a retry,
+pg-boss's expiry race or a Telegram 429 re-sends the stored reply and never pays the model
+twice; a 429 past the brief retry enqueues a delivery-only follow-up at `retry_after + 1`;
+the last attempt says «Tahlil qilib bo‘lmadi» once, and never over a stored reply. Every
+answered reading is billed the moment the model answers, on the collection's note
+(`ai_calc_passes.intake_note_id`) — an abandoned paid reading counts against the day — and
+the landing only attaches those rows to its request. A deploy mid-call costs one call spent
+at Anthropic and not counted (durability-20, said to him). P2's review: a stored but
+undelivered reply keeps the reading's token until it is out, or P1's sweep released a
+reading that had succeeded (adv-2); a STOPPING process never calls the model and holds the
+attempt open until pg-boss's expiry hands it to the next process (adv-3). The merged review
+added that a press minted before this boot with no job id is dead, not live (dur-3). 42 red
+proofs in the package.
+
+**#1574 — One table, one echo per answer, one undo (his 1.10 c, 1.11 c).** After the
+reading the bot sends ONE table: every line ✅ or ⚠️ with what it still owes under it, the
+brutto, cube and route rows, and how to answer. It is EDITED in place as answers arrive
+(latest wins, hash-skipped, «message is not modified» is success); over 4096 characters the
+✅ rows collapse first, identical reasons group, and only then are ⚠️ rows cut. One pure
+address parser (`line-address.ts` `parseTableAnswer`): «3:», «3-qator», «строка 3», a name
+in either script, «jami»; a row's number is its `seq`, the number the VED's screen and the
+2.8 b ask print; a short answer with a unit («40 juft») goes to the one open row it fits;
+what it cannot place is ASKED in words, never guessed. A table answer is never material:
+the line-table scout reproduced «3: 50 dona\n5: 20 kg», typed after the old summary,
+becoming a 20 kg shipment on the next «Bo‘ldi». A number whose words name ANOTHER row is
+`name_mismatch` (regression-3 — «1. Kurtka 300 dona» never overwrites row 1), and in the
+material stage only «N:» and «N-qator» address a row. Every answer message gets ONE echo —
+what it wrote or refused, what is still missing, the confirm — with «↩️ Shu javobni bekor
+qilish», which undoes that message alone and never a row a later answer changed (it names
+it). «✖️ Bekor qilish» asks once when there is something to lose. The one-line loop, its
+three-round cap and the per-line «⏭» are retired. The table's name example is a word the
+ANSWER PARSER reads as that row alone (PF-4, `nameWordFor`), so the table never teaches an
+answer it would refuse. A red proof stayed GREEN first: ten names owing one figure grouped
+into one reason and fitted even with the 40-character cap removed; fifteen 227-character
+names, each owing a different figure, made it red.
+
+**#1575 — The add door: one writer, four outcomes, and a job for the save (his 1.9 a).**
+«➕ Shu so‘rovga qo‘shish» stands under the landing's ✅ and under every machine message
+about a request that is not closed; a reply to the AI answer opens the same door
+(`calc_add`, and the ladder STOPS there — no Door B, no armed task, no assistant,
+regression-2); a forward or a plain file gets the offer while he has an own open request
+from the last 7 days. The door opens an ADD collection on the stored request. «✅ Qo‘shish»
+freezes it, flushes, and enqueues `calc.amend-save` (120 s, 3 retries; no singleton key —
+pg-boss 10.4.2 dedupes nothing on a standard queue — so an in-process fence per note and a
+`loadIntake` fence instead). ONE writer, `amendRequest` (wms/calc/amend.ts), reads on the
+pool and runs one short transaction per branch: **open** (nobody but the machine and this
+seller moved the request: `handsoff_rev = rev`, no group ✅) — the change goes into the rows
+through `saveTable` under a compare-and-set and the pass is queued again after the commit;
+**started / closed** — nothing written, the change goes to the job's thread in words, and
+the echo already said «📝 VED ga yuboriladi» (product-fit-18); **waiting** — a pass is
+running, so the addition is STORED and the pass's settle writes it
+(`requeueWaitingAmendments`), keeping the promise «AI tugatgach yoziladi»; **noted** — a
+file or text that changes no row goes onto the card and to the VED, with no re-pass. The
+row, the card note and the thread message commit together (durability-5), so a redelivered
+job redoes only what is missing. The door never writes a price, rate, zone, certificate or
+an existing code (1.16 ⭐), nor totals read from new material (a top-up's packing list may
+be the whole truck's); Σ m³ follows by arithmetic, a typed total becomes «yangilansinmi?»,
+and the re-run does not price the road on it. A file stating a different figure for a
+stored row asks his own 1.13 c buttons — qo‘shilsin / o‘rniga / VED hal qilsin — and is
+never written on its own (product-fit-17); «differs» is measured at the column's own scale,
+not P4's first 0.5 % tolerance. A returned request opens a NEW seeded collection (1.19 ⭐),
+landed by Uch band's rule. An unreachable queue makes `amendStanding` throw and every caller
+fail closed in words: read as «busy» it would have told the seller about a pass nobody knew
+existed.
+
+**#1576 — 2.8 b: the law's count is asked after the AI answer, and the machine says when it
+was the last to touch the request.** His 1.14 a: every unit the code's law pins and the row
+does not state — dona, juft, and kg / m² / litr when a floor or excise is in that unit —
+through `lawAsksOf` over the VED's own `lineNeeds`, with no unit filter; the «❓» block
+names rows by `seq` (at most `LAW_ASKS_NAMED`, 8), sits in the reply's never-cut part and is
+asked once per answer. «VED boshlagan» (1.15 ⭐) is read off the revision clock:
+`handsoff_rev` moves WITH `rev` inside every machine save and every seller addition
+(`advanceHandsOffInTx`), never in the settle, so a pass killed half-way leaves no false
+«started» (durability-6); `handsoff-writers` (TypeScript's parser over all of src) allows
+exactly two writers. A request landed before the deploy has no stamp and reads as started.
+A pass owed is a TICKET on the request row (`ai_pass_rev` / `_at` / `_job`): «busy» is «that
+pg-boss job is alive», never a time window, and only that job's settle clears it. P5's
+review found that the rule «a job pg-boss does not know is dead» made a pass queued a second
+earlier read dead and sent the seller a false «VED allaqachon ishlayapti» (adv-4): a ticket
+is live for `TICKET_SEND_WINDOW_S` (60 s) before a missing job clears it. His 1.20 ⭐: the
+re-run HE started reaches him past his mute — still through the drain, one `pending` row
+with `direct: true`, never a second sender. The lenta's «❓ Sotuvchidan so‘raldi» is written
+only when the seller's copy reaches somebody (p5-adv-2: it claimed an ask nobody received);
+what to say instead is asked of him. Uch band's retried landing returned before the queue,
+so its ✅ promised a VED answer no pass was owed for; it now queues through the ticket
+(`atRev: 0`). Measured, not assumed: on a fully coded, grouped request the grouping claim's
+own revision clause is the only refusal (S4b went red where the spec expected green).
+
+**#1577 — The VED never answers over a screen a seller's addition changed (P6, §0.1(10)).**
+«Готово», a group's ✅ (desktop and phone), «✅ Hammasini» and «Muhrlash» take the revision
+their screen was drawn at (`sawRev`, a required number) and refuse `amended_since` when an
+APPLIED addition is newer — keyed on `calc_amendments`, so the VED's own saves, a
+colleague's and the machine's never trip it (his 2b stands), and a waiting or to_ved one
+trips nothing (asked of him). «Готово» locks the row before it closes: measured on a pair of
+throwaway tables, in READ COMMITTED a bare UPDATE whose NOT EXISTS waits on the add door's
+row lock re-checks the ROW once the writer commits but keeps the statement's snapshot for
+the subquery — it closed (1 row) where lock-then-UPDATE refused (0 rows), and the
+integration race case is red without the lock. The fold presses with the revision it was
+OPENED at (`foldRev`: any refresh advances the prop while the typed amount survives), and
+the page hands it `min(row.rev, workspace.rev)` (the header is printed from the row read
+first) — both can only refuse more. A `sawRev` outside 0…2147483647 is `validation` (a NaN
+is never exceeded, a huge number is a 22P02 white page). The merged review carried it to the
+desktop table's save (lmp-1): the grid posts its `revAtPress`, `saveTable` refuses
+`amended_since` under the lock, and the typed cells survive the reload; the per-cell form is
+asked of him. 158 presses in 28 integration files were re-anchored, each a compile error
+until it named its revision; opened in a browser as the VED at 1280×900 (ru) and 360×800
+(uz), document width equal to the viewport.
+
+**#1578 — Migration 0139 `calc_intake_durable`, renamed twice: the twenty-seventh
+collision.** Additive, nothing backfilled: `telegram_calc_intakes` (one row per chat, the
+note id unique as the collection's identity; no index on `expires_at`, because every write
+changes it and an index would rule out HOT updates on a table of one row per staff chat),
+`calc_amendments` (outcome `waiting | applied | to_ved | noted`, `rev` exactly when applied,
+three indexes), `calc_requests.handsoff_rev` plus the ticket's three columns with their pair
+CHECK, and `ai_calc_passes.intake_note_id` with the anchor CHECK widened. `gsr_ai_reader` is
+granted nothing on the new tables. Code ahead of the migration is the memory-only store
+(`intakeTableReady` caches only TRUE). K wrote it as 0137 (`when` …117); main's 0137
+`plan_road` (…116) made it 0138 on the first merge; main's 0138 `ai_sotuvchi` had taken
+…117 as well, so on the second merge it is 0139 at …118, and the ledger must reach 140 —
+`migration-journal.test.ts` refuses a wrong order or a hole either way.
+
+**#1579 — The merged round reviewed, and what only the merged tree showed.** First the six
+packages' 101 handoff items were classified against the merged code: 44 already done, 33
+spec text (§20 records the round as built), 12 code (built — two of them comments only — with
+4 red proofs), 8 owned by the review, 4 decisions asked of him. Then four lenses (durability, regression,
+product, law-money-perf) and a completeness pass over `origin/main...HEAD` at e086975: 30
+verified (27 confirmed, 3 partial), 28 fixed, 2 rejected in writing (PF-13 needs a route
+refusal §2 does not word and a change in a corpus file — its own round; lmp-4 is main's:
+the card chat's 🧮 reading has no budget gate and no bill). 35 red proofs by string edit,
+restored by sha256. The headline is a silent loss in the add door's own openings (dur-1):
+`deliverNextStep`'s stage patch marked the reply TAKEN before its answer was applied, so a
+flush and a restart dropped the redelivered answer in silence — and a pin in
+`calc-amend-bot` asserted exactly that early mark (f553fa8); only the answer's own write
+takes it now. Also: a second reply to the ➕ answer was asked «Qaysi qatorga?» (PF-1); an
+addition decided while it waited was never told (dur-4); a replied file's parts are now each
+fenced in the patch that adds them (dur-2). `calc-r3-review-bot` drives the table-answer
+path through the bot the server runs, unmocked (COMP-1).
+
+**#1580 — PROCESS.** (1) **Kernel, then packages.** K moved the collector's halves out of
+`staff-handlers.ts` in three commits, behaviour unchanged but for three stated presses; two
+lenses reviewed it (13 confirmed, all fixed); main's 0137 was merged in and ruling L1 was
+written, and every package branched from that commit. (2) **Six packages in worktrees, two
+at a time** (4 CPUs, #1339), each built, reviewed by two lenses (spec and adversary: 120
+findings, 101 fixed, 19 rejected with reasons) and fixed — 262 red proofs. (3) **What no
+package could see.** The cherry-picks (P1 → P2 → P3 → P5 → P4 → P6) recorded 30 seams in the
+merge ledger, none visible inside a package: two homes of `INTAKE_HYDRATE_WAIT_MS` (the copy
+controlled nothing), two re-enqueues of the save job and two renderers of the add table's
+keyboard (#513 each — one home kept), a static import cycle `calc-amend` ↔
+`calc-intake-sweep` that existed only merged (now a dynamic import), fence lists only the
+merged tree could fill, and tests written against K's no-wait stub that P1's hydrate wait
+timed out (marked hydrated; no assertion changed). The CI-order run after the main merge
+then found three units red that no package could have (agent-fences,
+agent-estimate-announce, intake-holds-wire — the AI sotuvchi's seams, #1572). (4) **The
+weekly usage limit stopped the merge** on 2026-10-28, after the P5 pick (330c2ce) and before
+P4's. It resumed on 2026-11-03 IN PLACE — from the merge ledger and the branch as it stood,
+never `checkout -B` (#1339) — picked P4 and P6, merged main 901c280 (the AI sotuvchi, the
+tg-listen hotfix, the agent feed, Q8 «c»), which moved the migration a second time, and only
+then ran the merged review. (5) **A red-proof runner can lie.** P1's first runner fed `-t` a
+test name with parentheses, which vitest reads as a regex, matched no test and printed
+GREEN; those results were thrown away, and the runner now refuses a proof in which no test
+ran — P3's also refuses an empty replacement and one whose new text already occurs (#815).
+(6) **Measured, and not.** §17.6's numbers were measured at d6fd6e6 in this container (4 CPUs;
+fixrev's drills.json): the spec's worst collection is 0.72 MiB of JSON (74 KB stored), its
+UPSERT 21 ms median / 28 ms max and the confirm's delay 21 ms; beyond every cap that exists
+(two added invoices, a 1000-row add, 200 conflicts) 2.58 MiB, 98 ms max; five such chats dirty
+at once 94-116 ms — all far inside the 2 s confirm bound and the stop's worst 1 s flush window.
+A real 20-message forward writes once per batch (twice at 300 ms a message: the 5 s ceiling);
+a 50-row hydrate 90-395 ms; the root-duplicate re-read an index scan, 0.03-0.05 ms;
+`amendRequest` 152 ms on 30 rows, 387 ms on 300. The process drills on a running stack
+(`docker kill`, SIGTERM, stalled storage) were NOT run — this container runs no compose stack;
+their behaviour is pinned by the integration files. Playwright on the merged tree in CI's
+order: 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent) at d6fd6e6 and again at
+947987b (#1581).
+
+**#1581 — The fixes reviewed before production, and the one fix that regressed.** His «3 ni
+ozini merge qil va productionga chiqaz» made the fixes of #1579 the last code before his
+server, and every earlier round in this file found regressions in its own fixes (#1114,
+#1267, #1281). So three lenses (regression, durability, what the people see) drove
+e086975..f553fa8 through the real handler chain, beside §17.6's drills: 34 confirmed (1
+blocker, 15 defects, 18 nits), 27 fixed in 408a7d7 with 33 red proofs, 7 rejected in
+writing. The blocker was the round's own PF-4 fix: `answerHow` asked `nameWordFor` of every
+⚠️ row and each call folded every row per candidate — O(n²) synchronous CPU on the ONE app
+process, 4.5 s a render at 500 rows, 17 s at 1000, 38 s for `deliverNextStep` (FR-3); now at
+most `NAME_ROWS_TRIED` rows are asked and the first answer stops (500 rows: 8 s → 46 ms). The
+drills found its twin in the reading (DRILL-1: `addReading` re-keyed both names per
+stored × read pair, 11.7-16.5 s at 1000 × 500 → 73 ms). The add door's resume ignored its own
+refusal (FR-1: «Avval … javobni yozing» said, and the figure written anyway); the zone press
+and «↩️» of a parked collection ask the same predicate now (FR-2, W-15). A seeded table never
+DREW the stale brutto that COMP-4 computed (FR-4/W-1 — its test checked
+`tableContext().stale`, not the table it was named after; `TableInput.totalsStale` sits
+outside `amend`). A file replying to the ➕ answer was marked taken before its caption (FR-5,
+fdur-1 — dur-1's fix one door over); the opening message is 'take' (fdur-2), a redelivered
+«🗑 Ha» takes its file (fdur-3), the album hint survives the early return (fdur-4). The save
+net handed a FRESH save's untold row back as a waited one (fdur-5/fdur-6/W-3 — it now skips a
+row its collection still holds). Then an independent checker re-ran every verifier's
+reproduction against 408a7d7 (unit 9287 and integration 3559 green) and found ONE fix that
+regressed (CHK-1): W-9 kept the digits inside a name run for «iPhone 15 Pro», and a name
+holding «N <unit>» — «Paket 100 dona qora» — then taught «Paket 100 dona qora 30 dona», which
+the parser refuses «repeated», and «Paypoq 10 juft qora 30 dona» wrote 10 juft as a measure
+beside the 30. The lead's fix: a number with its unit word is left out of the run («Paket
+qora 30 dona»), and `parseTableAnswer` itself is the ARBITER — the example is read back as the
+✍️ line draws it (`exampleFigure`, now exported from intake.ts) and taught only when it lands
+on its row with that figure alone. A rule restated beside the parser is how W-9's fix taught
+what the parser refuses; red proofs: the pair-skip stripped → 1 red, both guards stripped →
+5. The lead's fix was then verified by three more lenses with refuters. Correctness: 84,910
+drawn examples over 123,000 generated tables plus a 48,542-example grid, 0 failures, where
+408a7d7 failed 3,080 of the same tables. Coverage: no common loss against 408a7d7 or f553fa8.
+Performance found that the read-back had re-created FR-3 one layer down (PERF-1): the parser
+folded every row name again per candidate, 0.4-1.2 s a render on 1000 long customs
+descriptions. So the parser takes the caller's fold (`readTable(…, nameOf)`, `parseTableAnswer`
+is its default-fold door) and a table's names are folded once per render (`FOLDED_ROWS`, a
+WeakMap keyed by the rows array that `answerHow` hands every call). Re-measured, the new code
+matches 408a7d7 in every shape (1000 rows: 120-145 ms a render). `FIGURE_IN_NAME` takes
+«1.5 litr» and «1 200 dona» whole, so no stray «1» is left in a name; `name-word-fold.test.ts`
+pins the shared fold as source shape (no timing threshold). Three more red proofs. Rejected, in writing: FR-8 (§20's stated pause rule), W-4/W-14 (words only — the owner's
+1.26 now names both doors and the button a 30-minute-old chat does not show), W-6/W-10 (a new
+sentence §2 does not fix), W-7 (a harness artefact), W-13 (main's AI sotuvchi strings, pinned
+verbatim). Stated, not fixed: a text reply to the ➕ answer of a collection being READ past
+30 minutes is answered «⏳ Tahlil davom etmoqda» and not added (CHK-N1); the net's NOT EXISTS
+is as true as the durable row, which production flushes within 5 s while the net reads rows
+five minutes old (CHK-N2). Final tree (14355e4), each gate on its own on a fresh database: typecheck 0, lint 0, unit 537 files / 9295 tests and integration 285 files / 3559 tests with 0 failed, build 0 (the bundle's foreign hosts the known ones); at 947987b the whole CI order ran, vitest 821 files / 12851 tests with 0 failed, build 0 and Playwright 488 passed, 1 skipped (m9zr-upsale.desktop:50, data-dependent), and GitHub's CI on 947987b was green; the final head is CI's run.
+
+## Mashina narxi har bitimga bir jadvalda + bekor qilingan partiya raqami (2026-11-09; numbered past main's #1581; NO migration, ledger 140; spec `docs/NARX-VA-RAQAM.md`, §3 binding, §4 the round as built; his «1a 2a 3a 4a 5a 6a 7a 8a» to the spec's eight questions)
+
+**#1582 — A client with fifteen deals on one truck is priced in ONE table and ONE press.**
+His «1 mashinada 1 clientda 10 15 ta prixoda va har birida bitim bolsa narx berishda faqat 1
+dona bitim tanlaydigan bolib qolgan». Q8 «c» (#1512) made every press choose ONE deal, so
+fifteen deals were fifteen presses, each stopped by a confirmation and followed by a full
+redraw — and from the second press on the confirmation said «Bu narx qo'shimcha hisob
+bo'ladi» about the correct next deal's part, which is no extra bill at all (m9zzzg pinned
+that false line as intended). When `DealCandidates.ambiguous`, the client's card on the
+«Narx» tab draws `PricingTable`: one shared date and currency, one row per own deal (as the
+select labelled it) plus «Bitimsiz» when some cargo has no deal, one «🧾 Saqlash». Blank rows
+write nothing (his 3a) and a press with none filled is `deal_parts_empty` in the browser AND
+before the schema. The write is ONE body shared with `addTransaction`'s truck branch (#513):
+`prepareTruckCharges` (pool: date, route, cargo, the pure `truckDealParts`, ONE `rateFor`,
+per-part dollars) and `writeTruckCharges`, which OWNS its transaction (#714) — `lockOwnersTx`
+→ `lockTruckForPriceTx` → `cargoAboard(…, tx)` → the decision again, part by part
+(`deals_changed`) → the drawn prices re-read (`prices_changed`) → N inserts → ONE
+`reconcileFxResidueTx` → an audit row per charge with `dealVia` and `parts: N`. All or
+nothing: a refused part writes no part. The non-ambiguous client keeps `PricingForm`, now
+without its question branch, and the ledger door keeps one deal per save (stated).
+
+**#1583 — The pre-fill is the deal's SOLD price for this truck's cargo, and only for the
+quote sight.** His 1a/2a. `prefillFor(facts, currency)` is pure and answers `{usd}` or `{none:
+why}`: a value only for `dealPriceSight` (the VED gets the facts with every money field
+null — law 4), USD, a figure SCALED by a measure (`expectedPartFor` has no whole-quote
+fallback — a bill is never the whole quote by default), no discount, no price of the deal
+anywhere (this truck, another truck, its card), no davomi carton, not a continuation, no
+`offElsewhere` price and no `whole` price standing. The value is the quote × the truck's
+EXACT share (Σ stored lot figure × onBatch / boxCount, unrounded), on the upsale's own basis
+(kg for a per-kg version, else m³, else kg), ROUNDED UP to the cent — measured: rounded to
+three places the share read 205.67 against a due 205.73 and a pre-filled single-truck deal
+answered `no_invoice` (red proof). Only an untouched row is filled; a save clears only what
+it wrote; leaving USD clears an untouched pre-fill.
+
+**#1584 — «Already priced here» has ONE reading, and a price the lost-cargo door lowered to
+zero still stands.** `pricedHereReading(candidates, prices, zeroed)` is shared by the table,
+«Bu mashinadagi narxlar» and `unpricedDealsOf`: a deal's own live prices; the «bitimsiz» part
+= deal-less prices whose create audit says `dealVia: 'none'`; `whole` = every other deal-less
+price and every price on a deal no longer aboard (while one stands, no pre-fill and every
+filled row asks). A row asks «qo'shimcha hisob» ONLY when its own deal is priced here — the
+false line's fix. The review found two ways the reading went quiet: a compensation-ZEROED
+truck charge read as «no price» (pre-filled in full, «Narx yo'q» loud, no ask — the next
+press billed it again), while `u_charge` and `cardPriced` had always counted it; now
+`batchZeroedCharges` reads it with their own clause, now one home in
+`finance/standing-price-sql.ts`, kept OUT of `pricesSeen` (or every later press reads
+`prices_changed`), and the row asks «narx kompensatsiya bilan olib tashlangan — yana
+qo'yasizmi?». And a chosen «bitimsiz» part lost its `dealVia` through the compensation
+re-post and through «Ko'chirish», so every blank deal turned muted `whole` — the binding 3a
+answer broken by a correction door; both copies carry `dealVia: 'none'` now, and only while
+the copy stays deal-less on the same truck. A chosen «bitimsiz» price on a truck that now
+carries only deals reads `whole` with the ⚠ «gone» mark.
+
+**#1585 — A row lock with a join is not a lock on the join.** `lockTruckForPriceTx` was
+`SELECT b.status, o.country, d.country … JOIN warehouses … FOR SHARE OF b`. Under READ
+COMMITTED, after waiting on a truck whose destination was being changed, postgres's
+EvalPlanQual re-fetches the NEW `b` row and re-uses the OLD, unlocked `d` row; the join qual
+`d.id = b.dest_warehouse_id` fails, ZERO rows come back, and every price or «Ko'chirish»
+pressed during a destination fix or a road reroute answered `batch_not_found` («Xatolik»),
+and a change to China answered with the wrong word. Measured with a bare two-table probe
+before the fix. The truck row is locked ALONE, then the two countries are read by id in a
+second statement; a held-row race test (holder `FOR NO KEY UPDATE` + the destination UPDATE,
+the press waits and resumes) pins both outcomes, same country → written, China →
+`internal_batch`, for the table and for `moveCharge` — which took no truck lock at all
+before this round.
+
+**#1586 — Two people on one deal: the drawn card prices are compared too.** `pricesSeen`
+re-reads this truck's live charges only, while the row's «bitim kartasida narx bor» and the
+pre-fill's `pricedCard` exclusion are render-time facts about the deal's OTHER prices. A card
+price written from the client ledger between the render and the press was a silent second
+bill (reproduced). The table posts `cardSeen` — the posted deals card-priced as drawn, by
+`cardPriced`'s own predicate — and `writeTruckCharges` re-reads it under `lockOwnersTx` and
+refuses `prices_changed` on any difference. Re-checking `cardPriced` alone was refused: it
+would refuse a row the person had already confirmed against the drawn line. And the 5 %
+check, the deal block's «bu mashinada ≈» and the totals used `expectedPriceFor` (m³ first)
+while the pre-fill used the per-kg basis — the system called its own pre-filled figure 14 %
+wrong and its hint billed $150 over the per-kg sale; one `expectedHereFor` feeds all four.
+
+**#1587 — A cancelled truck that never left gives its number back.** His «yw10 keyin u
+bekor qilinsa yw10 qolyabti … biz esa 10 11 qilib mashina sonini hsoblaymiz», answers 4a 5a.
+After `cancelBatch` COMMITS (never inside it: it holds the loading lock a rename waits on,
+#714) `releaseNumberAfterCancel` walks the prefix's counter down: number N is releasable when
+its holder is cancelled, `departed_at IS NULL`, never at the agent (no standing tick AND no
+audit row that ever ticked — an untick does not un-send papers) and N is no road former name.
+One short transaction per number in the mint's own order (counter row FOR UPDATE →
+`lockBatchCode` old and new → truck row → re-check → rename to «YW-010 (bekor)» / «(bekor 2)»
++ counter CAS `value = N` → one audit row `after {code, released: true, number}`), `lock_timeout
+3s`, a timeout `busy` and never a failed cancel. The audit row carries NO `reason`: the
+former-name predicate counts a road rename by `after.reason`, and a release written with one
+would burn the number for ever (audit_log is immutable; red proof — five tests). The holder
+of N is matched case-insensitively (`codeEverWorn` is upper-cased, so a hand-typed «yw-010»
+already blocks the mint), while the truck's OWN number is decided by building the exact
+string the mint builds (`numberOfCode`), never by a parse. A gap in the middle stays (5a)
+and the cancel SAYS so: «Raqam qaytmadi: YW-011 allaqachon ochilgan»; the card of a
+cancelled truck keeps the answer (`batch-number-state`), and the bot answers a released
+number «bekor qilingan, raqami qaytarildi» until it is minted again.
+
+**#1588 — Who holds a number is decided by the truck born with it.** The review found two
+readers disagreeing with the writer. The card and the cancel's answer read «my number» as
+the truck's FIRST name, so a truck born -001, renamed and then holding a vacated -002 printed
+the wrong number; the release row now records `number` and the readers read it back
+(`releasedNumbersOf`, `numberState.numbers: string[]` — one truck can hold two). And
+`numberHolderOf` picked the newest rename-away row before the newest truck BORN with the
+number, so a second -002 could be minted while a live truck still answered to it (S1,
+reproduced); the born-name rule is now one SQL fragment shared with `firstNameOf`,
+`MATERIALIZED` because EXPLAIN showed the lookup running once per sort key.
+
+**#1589 — Old cancelled trucks: a dry run read to him first (7a).**
+`scripts/batch-raqam.ts` through `migrate` (#1228) iterates every `batch_seq` counter (old
+prefixes too), names every warehouse using the prefix today, labels every gap, and says which
+numbers `--apply` would return and WHERE the walk stops, in Uzbek (`number-stop-words.ts`,
+one sentence per reason — a raw code reached the first draft's output). `--apply` calls the
+same `releaseTrailingCodes`; only TRAILING never-departed, never-agent numbers come back.
+Stated: a cascade may rename another warehouse's cancelled truck when they share a prefix.
+
+**#1590 — A wrong destination is fixed in place before departure, and the quick batch asks
+first (6a).** The commonest reason for a cancel was a mis-picked destination, and nothing
+could change it before departure. `changeDestBeforeDeparture` (reroute.ts, beside
+`rerouteBatch`; both write through ONE private `writeDestTx`, fenced by counting UPDATE
+sites): `lockTruckLoading` first (count-kernel-wire), the row FOR NO KEY UPDATE, money counted
+under it, the target FOR SHARE, a CAS on the destination as drawn. Refused in words: a truck
+on the road (`not_before_departure`), cancelled (`batch_cancelled`), already unloaded
+(`already_unloaded` — the review found all three answered «jo'nagan»), live money AND the
+destination's COUNTRY would change (`dest_money_country` — a price may not move onto an
+internal leg), papers at the agent, a stale panel (`dest_changed`; the form refreshes on any
+of the four stale answers). Audited under its OWN key `destBeforeDeparture` — never the
+reroute's, whose «told» readers would take it for a «keladi». The quick batch's «＋
+Yaratish» only ASKS («Yiwu → Toshkent: yangi partiya ochilsinmi?» in-page, no
+`window.confirm`); every e2e that creates one goes through `createQuickBatch(page, …)`. Stated
+limit (review C3): a truck renamed to its PLATE and then cancelled keeps the plate as its name,
+so the reopened truck cannot take that name — the plate belongs in «Mashina», and a wrong
+destination is fixed in place now.
+
+**#1591 — The fixes reviewed: the table's fixes reached the single form, the open alert and the
+right words.** Three lenses over the two fix commits, two refuters each: all seven candidates
+confirmed (two the same defect). A1 had been fixed on the TABLE only: a one-deal client's
+`PricingForm` was handed live prices, so a price typed over a compensation-zeroed one went in
+with nothing asked — the same fact asked or did not ask depending on which shape a re-filed
+prixod gave the client. The form now gets `zeroedHere` and asks with the table's own sentence
+(`singleFormAsks`); and since one price covers all of a single-form client's cargo (R3a), any
+live price empties that list (`zeroedAskedOf`). A4's digest could be beaten by a redraw UNDER
+an open alert: `askKey` held no card fact while the hidden `cardSeen` followed the new drawing,
+so «Ha, saqlash» posted a digest that matched the server and the «bitim kartasida narx bor»
+question was never shown — the double bill A4 existed to stop. `cardSeen` is computed ONCE per
+render and is part of the identity (`askKeyOf`). Its refusal had borrowed `prices_changed`,
+whose words say THIS TRUCK's prices changed; it is `card_prices_changed` now, naming the deal,
+and one `pageWentStale` refreshes on all three stale codes. And A1's own words were too wide:
+a zeroed WHOLE price told every row «ITS price was removed», and a row priced again kept the
+line beside its live price; `ownZeroedFor` says it of a row's own part only while nothing live
+stands, a zeroed whole price reads in the whole-cargo list and never hides a row's own live
+price from the ask (`standingAsksOf`, found by the checker of the first fix). The pre-fill gate
+stayed A1's throughout.
+
+**#1592 — The holder of a number, and the agent rule asked of the NUMBER (also by the mint).**
+C2's minter-first holder reopened his 7a: `atAgent` was asked of the holder alone, so a colleague
+that wore the vacated string while its papers went to the agent and then renamed away no longer
+protected it — the cancel and `--apply` gave it back and the next truck was minted under the
+agent's number (RVF3-1, reproduced). «At the agent» is now a property of the number: any truck
+that ever wore the exact string, now or by a rename row from or to it, with a standing tick or
+an audit row that ever ticked it (`everTickedSql`). The checker then found the MINT still handed
+such a number out once it had been given back; `nextBatchCode` asks the same predicate
+(`numberEverAtAgent`) beside `codeEverWorn` under the same per-candidate lock — measured ~2 ms
+per candidate at 5,000 batch audit rows, ~8 ms at 22,000. The holder order as built: the
+wearer, unless a cancelled, never-departed wearer not born with the string — it yields to the
+newest live-or-departed truck born with it (else a second -002 was minted while the minter
+lived under its plate, M6; the annulled minter's half pinned by its own test); else the truck
+that carried it on the ROAD (the dry run named a cancelled truck that never left, RVF3-2); else
+the newest truck born with it; else the newest rename-away row. The card of a returned number
+reads the verdict live — `returned_taken` (burned on the road by a truck not born with it) and
+`returned_agent` — and a number re-minted normally and road-renamed later is the promise kept,
+so «born» keeps a number out of `taken` only, never out of `agent` (the lead's fix of the second
+check). A minter whose own cancel freed its number through the wearer's release row answered
+«xatolik» (its counter already below, no release row of its own); the number's own verdict
+decides there now, and a releasable truck still WEARING the string stays «xatolik»; a third
+check found that answer followed the COUNTER and flipped to «allaqachon ochilgan» as soon as the
+mint handed the number out again, so it is anchored on the durable fact — a release row naming
+the number written after this truck's cancel (`cameBackAfterCancel`). Red proofs
+for every fix by string edit; three of the lead's last four went red, the fourth was added for
+the worn-string guard. Stated: a given-back number another truck WEARS (before departure or on the
+road) without having renamed away from it is still promised on the cancelled card, though the mint
+walks past a worn name; the swap-then-move-away gap (C2's rule).
+
+## Horgos and Yallama hold the truck until the logist's press (2026-11-08; numbered #1593-#1598, renumbered from #1582-#1587 on the merge — the TWENTY-EIGHTH collision: main's «narx jadvali + partiya raqami» took #1582-#1592 first; migration 0140 `truck_queue_alerts`, ledger 141; spec `docs/XORGOS-NAVBAT.md`, §5 binding; his «1a 2a 3a 4a 5a, kod HOR»)
+
+**#1593 — Horgos and Yallama HOLD the truck (the owner's 1a 2a 3a 4a 5a, 2026-11-08;
+docs/XORGOS-NAVBAT.md).** His first report of the day was «horgosdan jo‘nagan mashinalar
+lokatsiyasi joyi aniq emas»: a HOR truck with nothing but its departure walked the schedule out
+of both queues at their midpoints and, past 186 h (Tashkent) or 204 h (Andijan), had a spent walk
+whose place is `zoneOfRoute` of a five-zone road — null, no point. His second message said what
+he had meant all along: the truck waits in the queue until the logist presses «Qozog‘istonda»,
+drives on, waits again at Yallama until «O‘zbekistonda». So a **held queue** is a stationary leg
+carrying a typed-queue `post` (`isHeldQueue`) — Horgos and Yallama on the HOR roads; the Kashgar
+road's Irkeshtam wait has no post and walks on exactly as before (fenced). `placeTruck` walks
+from the newest evidence at the usual pace to the first held queue at or after the anchor's leg
+(`heldQueueAt`) and STOPS; only newer evidence on a later leg — a pin, or a fix projected beyond
+the post (his 4a) — moves it past. The held place is the post's zone, segKey and progress; the
+wait is the one the /trucks panel shows (`givenWait`: typed, or his default), counted from the
+entry or from the typing when he typed it while the truck already queued — SHIFTED, never
+stretched by `withLead` (the judge: the stretched pair printed «2–4 kun» beside a typed «0,5–1»);
+what is left is that window less the time gone, then every later leg at the wait it gives NOW;
+past the window `remainingHours` is null (no date anywhere, `placeDated`); a day past it
+(`QUEUE_LATE_HOURS`, his 2a) `overdue` is true and the card's kind is `overdue`. Every reader goes
+through `placeTruck` (board, dashboard, truck card, «Yuklar», map, bot, cabinet), so one change
+moved them all; `TruckPlace.queue` / `TruckRow.queue` / `TruckMarker.queue` carry it to the words
+(5a, «Horgos navbatida: 2-kun (2–3 kundan)», «kiritilgan» only for a typed number, «odatdagi» for
+his default) and to the map label («HR-001 ⏳2», both renderers, `truck-label.ts`). The cabinet
+ranks a held-over truck with the late ones (`arriveBy` '9999'), or a lot split over two trucks
+showed the other truck's date for the cartons stuck at the border. `scheduleEstimate` (no
+production reader) stays the raw walk and says so.
+
+**#1594 — The entry: the walk never dates across a held queue, and the phone that SAW the
+arrival outranks it.** The design judge's blocker: `fixAnchor` dated a phone first seen at
+Yallama from the departure by walking Horgos at its typical 72 h — and with the hold's removal of
+the «disproved entry → count from the fix» reset, that read 96 h into a queue it had just reached
+and spent the once-only warning. Now the walk dates an entry only when no held queue lies between
+the prior anchor and the queue; otherwise the entry is the phone's own history, else the fix.
+`queueSinceFor` (devices.ts) is `gateSinceFor`'s query one post at a time — the first fix within
+`HELD_QUEUE_RADIUS_DEG` (0.15°, ~12-16 km: a held queue is kilometres of lorries, and a phone in
+its tail read as «driving to the post» restarted the clock on every report) after a fix OUTSIDE,
+i.e. an arrival the phone saw; a phone switched on in the queue says nothing and the walk stays
+the better word. The reset is kept for the Kashgar road and skipped for a held queue: there a
+fix that still sees the truck at the post disproves nothing, and resetting would restart the
+clock on every report so a phoning truck could never be late. A «Chegarada» press is «count the
+queue from the press»: `underNewerPin` lets the pin's anchor stand in a held queue. A fresh fix
+is drawn where the phone is, held or not (round 100 9a).
+
+**#1595 — The warning: once per (truck, post, wait), ONE message per sweep (his 3a; migration
+0140 `truck_queue_alerts`, ledger 141).** `alertLateQueues` reads the dashboard's own rows
+(`roadRowsNow`), keeps `queue.late`, and in ONE transaction claims each truck
+(`INSERT … ON CONFLICT DO UPDATE … WHERE alerted_at < EXCLUDED.entered_at RETURNING`) and queues
+ONE message listing the trucks it won to every `plans.manage` holder (read on the pool before
+the transaction, #714) — `TruckSilent`'s audience: the logists, plus the owner and admins who
+hold every grant (stated). Time never re-arms a claim; a wait that BEGAN after the warning (a
+«Chegarada» press after the call) does — otherwise the one warning would be spent on a wait the
+press replaced (the alert judge). One message per sweep and not per truck: on deploy morning
+every HOR truck nobody ever pressed past Horgos turns late at once (the judges' deploy-day
+finding), and the logists get one list, capped at `LATE_QUEUE_LINES` with «… va yana N ta».
+The text names the buttons with their flags («🇰🇿 Qozog‘istonda», «🇺🇿 O‘zbekistonda»), so a
+logist on the Russian screen finds them, and from Horgos names both, because pressing
+«Qozog‘istonda» for a truck already in Uzbekistan holds it at Yallama and warns again a week
+later. Office hours only (`*/30 3-14 * * *` UTC = 08:00-19:30 Tashkent). One migration behind it
+says so once and sends nothing (`isServerBehind`). `TruckQueueLate` is in the `alerts` mute group
+beside TruckSilent, a newcomer never in FOUNDERS — so an old «alerts» tick mutes it too, stated.
+
+**#1596 — On the Horgos road a pin is never pressed off, its border pin is named «Horgosda
+turibdi», and the warning counts from the wait it was counted from (the intent judge, before the
+merge; the refusal it first shipped with was replaced by a re-stamp in #1597).** Three ways the round's own buttons could undo it. (1) **The toggle.** «Chegarada» and
+every other pin has always cleared on a second press. Off the Horgos road that only loses a pin;
+on it the pin is what moved the truck past a queue, so a logist tapping «Qozog‘istonda» again to
+«confirm» sent a truck in Kazakhstan back into the Horgos queue — late, with a warning to every
+logist. On a road that holds (`roadHolds`) `setTrackingCheckpoint` never clears the standing pin
+(#1597: it re-stamps it); a pin off the road (written before #531) still clears, so nothing is
+stuck for ever; moving it is pressing another place. (2) **The
+word.** A truck standing at Yallama is «chegarada» too, and pressing «Chegarada» for it puts it
+back at Horgos. `pinLabel(key, held)` names the border pin «🛃 Horgosda turibdi» on a road that
+holds — on the Mashina tab, the board's ⋯ and the card's road line — and the Yallama warning says
+not to press it. (3) **The re-arm.** With the toggle gone, the logist's way to restart the count
+is the number he types on /trucks (the panel's own sentence: a truck already queueing counts from
+the typing). The claim stored the ENTRY, which typing never moves, so a wait typed after the
+warning ran out in silence. `QueueHold.countedFrom` (entry, or the typing if later; `dueBy` = it
+plus the longest wait) is what the claim stores now — a wait counted from after the warning is a
+new wait. The cabinet's ranking key is a function (`placeArriveBy`) so it could be tested. 11 red
+proofs by string edit, one of which (the press over an older phone in the queue) first stayed
+green and was re-anchored on a phone seen one hour before the press.
+
+**#1597 — The round reviewed as built (four lenses, a skeptic each): five confirmed, all fixed.**
+(1) **A re-press of the standing pin RE-STAMPS it** on a road that holds — «it is here now», what
+every press means — instead of #1596's `pin_kept` refusal. The refusal left two dead ends: a pin a
+newer phone fix had overruled (the truck back at Horgos by the phone) could not be pressed again,
+while the warning told the logist to press exactly it; and a pinned truck had no way to restart
+its Horgos count after the call. Now «Horgosda turibdi» again counts the queue from the press and
+re-arms the warning. (2) **The listing message names the press per QUEUE** — it told Yallama trucks
+«Horgosdan o‘tgan bo‘lsa «🇰🇿 Qozog‘istonda»», which every Yallama truck satisfies and which drags
+it back into Kazakhstan. (3) **A pin ahead of the queue the phone still sees the truck in** (a
+premature «Qozog‘istonda») dated the Horgos entry from the NEWEST fix — the queueSince history is
+empty by construction for a HOR truck, its yard being inside the post's 0.15° — so the clock
+restarted on every report and the truck was never late; the departure's walk dates it now when
+nothing held lies before the queue. (4) **The held branch dropped `slowestArrivalMs`**: it priced the
+queue on the walk's route, whose wait typed mid-queue is STRETCHED (`withLead`) where the panel
+shifts it, so one phone report moved the far end of the date by up to a day and the date then
+vanished at `dueBy`, before the end it promised. (5) **Saving the same number again on /trucks is a
+confirmation** (the panel's rule since 2026-09-29: the age moves, the clock does not), and the
+round's own sentences had promised it restarts the count — the panel, the CHANGELOG and §5 now say
+what does: «Horgosda turibdi» again, or a changed number. STATED, not fixed: a mistaken pin on that
+road cannot be taken off, only replaced by the true place, and if the true place is the Horgos
+queue its count starts from that press.
+
+**#1598 — The fixes reviewed (three lenses, a skeptic each): #1597's re-stamp was too wide.** A
+«confirm» tap of «Qozog‘istonda» on a truck the walk already had late at Yallama re-stamped the
+Kazakh leg: the dot jumped back ~1000 km to the Horgos exit with a fresh date, the Yallama count
+restarted at day 1 and the once-only warning re-armed — 1a, 2a, 3a and 5a broken by the round's own
+safety button, and for a driver with no phone for good. Same for a confirm tap of «O‘zbekistonda»
+on a truck late on the Uzbek leg (§4's «nothing changes after O‘zbekistonda»). Now only «Horgosda
+turibdi» re-stamps (the designed restart); «Qozog‘istonda» / «O‘zbekistonda» re-stamp only when the
+truck reads BEHIND that pin's leg (`placedBehindPin` — a newer phone fix overruled the pin, the case
+#1597 was for) and otherwise change nothing and audit nothing. The placement is read on the pool
+BEFORE the transaction (`trucksOnRoadRows`, #714) and the pin it was read under is compared under
+the lock (`checkpoint_changed`). 4 red proofs.
+
+**#1599 — Ikki eshik: the door is a fact of the request.** His 2026-11-08 report («har bir fayl
+uchun sorayabti … AI rastamojkada … tasdiqni bosganda ai hsoblab berishi kerak. oddiy hsoblatishdan
+… shunday turishicha ved hodimiga tushsin ai bergan komentariya bilan birga») and his «sen aytgandek
+bolsin» to six questions (1a-6a, every ⭐) are the spec: `docs/IKKI-ESHIK.md`, judged by five lenses
+before code (55 objections absorbed, v2). The diagnosis: both bot doors were ONE collector —
+`IntakeState.ai` was read only by the certificate control — so «🧮 Hisoblatish» and «🤖 AI
+rastamojka» both asked per file, refused «Bo‘ldi» per open question, drew the asking table, echoed
+every answer and sent the AI answer with a second ask; none of those asks was his choice for a
+door. **Migration 0140 `intake_door`**: `calc_requests.intake_door text NULL CHECK IN
+('plain','ai')`, and `telegram_chat_waits` gains the `'burst'` kind. `CalcRequestInput.intakeDoor`
+is REQUIRED, so every caller failed to compile until it named its door: the bot's collector passes
+'plain' / 'ai' through `landIntake`; the card form, the thread door and the AI sotuvchi (both
+`landIntake` and `requeueLanded`) pass null; `recalcFromSealed` copies it. **NULL is legacy and
+means TODAY's behaviour on every reader** — every request in production is NULL — and only 'plain'
+silences, only 'ai' passes a mute. The column is deliberately NOT on the drizzle table: one raw
+stamp in the INSERT's transaction (`stampIntakeDoorInTx`), one reader module (`intake-door.ts`,
+`to_jsonb(row)->>'intake_door'`), a derived fence (`intake-door-wire.test.ts`) failing any other
+file that names it, and a per-process probe so code ahead of the migration lands with the column
+left out (#472). Readers take the door from the ROW, never a job payload (a job queued before 0140
+carries none): `prefillStanding` reads it, `direct` = an `amend:` pass or door 'ai',
+`storedRequestFacts`/`AmendBase` carry it for the ➕ and seeded doors.
+
+**#1600 — No question per file (his 1a).** The second-Excel question, the other-files question,
+«Bo‘ldi»'s two refusals and the add door's per-row conflict buttons are gone on both doors. The bot
+decides, and names what it did: `parseGoods` classifies a mapped sheet by its COLUMNS (`shape`
+invoice/packing, `weightKind`, `grossKg`, `volumeM3`), never by its line names; the first goods file
+is the list; a packing-shaped further file gives the brutto (only from a gross column), the cube and
+netto gap fills on rows with no weight, and never adds a row; an invoice-shaped further file is
+compared row by row (`sameRowAgain`: names meet, every shared same-unit figure agrees — a carton count
+never against pieces, gross never against netto) and only new goods are added; a same-named row with
+other figures is added and named; a model-read PDF beside an Excel takes `aiGoods 'add'`. The
+decisions ride `IntakeState.fileNotes` (receipt-time, same patch as the file, ahead of notes and steps
+on the card note) and `fileTotals` (rank typed > table answer > fileTotals > model; a packing figure
+doubts an answer only when the file came after it). A conflict is the statement «↳ faylda 200 dona,
+so‘rovda 300 — VED hal qiladi» and its choice is 'ved' at the save. `migrateIntakeState` resolves a
+collection open at deploy (a waiting `pendingInvoice`, `aiGoods 'ask'`, an unanswered conflict) in
+`hydrateIntakes`, so nothing is pending after the restart; every retired callback stays PARSED (#939)
+and answers «Bu tugma eskirgan — fayllar o‘zi solishtirildi.». Units are read ONCE at
+`invoiceFacts` (`normalizeRowUnit`: «пар» is juft, m²/litr the measure pair, «мест»/CTN a note). Two
+corpus cases joined (INT-4 two factories, M1 a packing list first) and 38 known cases left the
+ratchet (142 → 104). Reviewed by two lenses: 27 findings (2 blockers — a «Unit price» column claimed
+as the unit column, which moved every count of the commonest invoice into a note), 24 fixed, 3
+rejected in writing.
+
+**#1601 — The reading codes the rows (his 5a).** ONE coding function (`codeRows`, `row-coding.ts`),
+extracted from `openCalcRequest`'s block and used by the reading AND the INSERT (#513), in the order
+row's own code → sealed memory → exact-key book → model, returning each code's source; the collection
+carries it per row (`CalcGoodsFact.tnvedSource`). On the AI door the reading shows the invoice rows
+to the model and asks `known_codes` by INDEX, each re-checked against the row it claims (the
+`pickImportRows` idiom); a model code fills only a row with none, at most `KNOWN_CODES_MAX` (40) are
+asked, an answer cut at `max_tokens` while codes were asked is read once more without them (both
+billed). The step runs on the pool before `tableContext` (the laws of the new codes must be read)
+within `INTAKE_CODING_BUDGET_MS`, catches its own errors and falls back to the codes it has. A
+still-model code lands with the item note `AI_CODE_NOTE` «TNVED: AI taklifi (o‘qishda) — tekshiring»
+(`code-source.ts`, one string for the writer and both readers) and prints «(AI taklifi)»; such a row
+is ℹ️, never ✅ and never a question. «AI available» has ONE body (`aiCalcStanding` in `ai-cost.ts`,
+an unreadable ledger reads as budget left): the table's «↳ kod yo‘q — AI hisoblashda topadi
+(topolmasa VED qo‘yadi)» and the landing pass ask it, and the pass keeps its two words («sozlanmagan»
+/ «limit tugadi») from its two halves (review PF-SPEC-4: the two rules disagreed on exactly the
+unreadable ledger). Stated: on the plain door a model-read line's code ranks below memory and book
+(the owner's 2026-09-05 memory-first order); the real-API token cost of a 200-row reading is not
+measured here — after the deploy, the «[calc intake] model tokens» log line is the check.
+
+**#1602 — The landing pass by door (his 2a, 3a, 4a).** On 'plain' every message the pass would send
+— the reply, each stand-down, the failure, the 'closed' sentence — goes through `sayOnce`'s new
+SILENT mode: the claim row is written `muted` with error «oddiy eshik», the drain never sends it and
+`telegramProblemSql` does not count it; `spoke` stays the gate for the ONE lenta note. That note is
+MONEY-FREE: «🤖 AI izohi (VED uchun)» — groups first (law, rate source, bazas, refusals in words),
+then the codes and where each came from (asked of the workspace's `ai_proposed` / recode mark, the
+seal's E1 rule), each list with its own cap and count (`fitNote`; a 30-row, 3-group request used to
+print no group line). A failed plain pass leaves «🤖 AI hisoblay olmadi — VED qo‘lda hisoblaydi».
+On 'ai' the pass replies with the figure and asks NOTHING: the ❓ block and the seller ask (2.8 b,
+1.14 a) are gone, and ONE `noAsk` flag on the renderer addresses every tail — «— VED xodimi sizdan
+so‘raydi» for a seller fact, «— VED xodimi qo‘yadi / hisoblaydi» for the VED's own gap, «JAMI:
+hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.» — while the lenta lists the gaps under «⚠️ VED
+uchun: …». The AI door's answer passes the «✅ Mening vazifalarim» mute as ONE claim row through the
+drain (`directPass`) — the second half of his 1.20 a reversed, stated in §7. A plain yo‘lkira keeps
+the tariff answer in the chat (his 2.5 b) with `noAsk` tails. NULL keeps today's words byte for byte.
+Two lenses: 9 findings, 7 fixed, 2 handed to the chat package.
+
+**#1603 — One prompt kept last, the plain summary, answers placed per segment (his 1a, 2a).**
+`kept-last.ts` (kernel K2) is the ONE «always the last message» rule for the three messages that must
+stay below what the seller sent — the collection's «Qabul qilindi» prompt, a burst's offer, a parked
+collection's pause line: edit while still last («not modified» is success; a 429 leaves the copy
+standing rather than sending a second), else send below and delete the old copy, kept among the
+collection's own messages when it cannot be deleted so its buttons still answer; `keepLastSoon`
+coalesces per key so an album moves it once. The prompt is a PURE function of durable state (the
+counts, one line per model-read file with its current fit, `fileNotes`, the 4096 cut), drawn off the
+handler; a file gets a message of its own only for a REFUSAL (`refusalOf`, the one rule every door
+asks). The customer and the zone are each ONE counting question kept last. On the plain door the
+reading is followed by a SUMMARY — head «🧮 Hisoblatish · 🛃 Rastamojka», ℹ️ gaps «↳ kg yo‘q — VED
+xodimi so‘raydi», no asks, no certificate, the two closings and last line of §2.1, buttons «✅
+Tasdiqlash» / «➕ Yana ma’lumot» / «✖️ Bekor qilish». A typed text after it is judged PER SEGMENT
+(`plainVerdict`): anything placed is written quietly with a 👍 and no echo; a line refusal is kept
+for the VED and never asked; a courtesy word is nothing; goods with no row go to material on their
+own lines; a lone figure placed nowhere is the VED's words, never material — the reviewers' blocker
+was that «3: 150 kg\nrahmat», judged whole, became material and the re-read made 150 kg the brutto
+over the packing list's 3500 (R3 §0.1(3) reopened). The ✅ texts follow the door at both senders
+(the press and `resumeLanding`): plain «🧮 VED navbatiga tushdi — VED xodimi hisoblab, javobni shu
+yerga yuboradi.», AI «🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi.
+Rasmiy narxni VED xodimi beradi.» only when the reply was queued, NULL today's. The refusals that
+point at an «AI javobi» and the add door's outcome line follow the door; the plain ➕ is a plain
+summary too. `IntakeState.readMark` (what the reading read) keeps «➕» with nothing sent from
+re-reading or dropping the summary's buttons.
+
+**#1604 — The AI door's table answers without an echo (his 4a).** An answer edits the table and
+sends no message of its own: the echo record stays in `echoes[]` with no message id, the table's LAST
+block shows «✍️ Oxirgi javob: 3-qator «Сумка женская» — 50 juft» and the state under it, ONE «↩️
+Oxirgi javobni bekor qilish» sits on the table keyboard naming the newest un-undone tag (redrawn with
+each edit, idempotent), 👍 only when every segment was written, otherwise ONE short reply carrying
+only the refused or asked parts. Head «🤖 AI rastamojka · 🛃 Rastamojka»; complete «✅ Ma’lumot to‘liq —
+«✅ Tasdiqlash» ni bosing, AI hisoblaydi.»; the certificate control stays. A model-proposed code prints
+«(AI taklifi)» from `tnvedSource`; a typed code is 'row' (restored on undo). The add collection on an
+AI request asks the same way. P-chat's two lenses: 23 findings (1 blocker), 21 fixed, 2 rejected.
+
+**#1605 — One question per burst (his 6a).** Files and forwards with no collection, draft or capture
+open, each within 2 minutes of the previous, are ONE burst: a durable `telegram_chat_waits` row of
+kind 'burst' (one per chat, ≤ 20 parts, expiring 2 minutes after the last), ended at ONE point (a
+middleware beside `collectorScope`: any other update, or opening a collection/draft/capture). ONE
+offer, kept last: «➕ Bu faylni so‘rovga qo‘shamizmi?», «➕ 3 ta faylni so‘rovga qo‘shamizmi?», or with a
+forward «📌 5 ta xabar (3 tasi fayl) — topshiriq qilamizmi yoki so‘rovga qo‘shamizmi?» with Door B's
+buttons and the ➕ rows in one message; its buttons act on the WHOLE burst read by the pressed id, and
+a press whose wait is gone takes what it replies to and SAYS so. A full burst stands and says the
+rest («⚠ Bir martada ko‘pi bilan 20 ta xabar olinadi — …»); 📌 takes every part (the first 10 as
+sources); a burst is taken once into each kind. Beside a PARKED collection the pause line is the
+burst's one message, and its own ▶️ `c:resume_take` takes only the parts its line spoke for, through
+`takeReplied`'s per-part fence, after the REG-2 refusal; the other ▶️ keep `c:resume`, which takes
+nothing (1.8 c holds: the press is his consent). The landing clears the add-offer cache. Two lenses:
+14 findings (1 blocker — the 21st part silently dropped the first 20), all fixed.
+
+**#1606 — The merge's seams.** Four packages built in pairs in worktrees on two kernels and merged by
+cherry-pick (pair 2's P-burst as one squashed diff, its commits' messages kept). The lead's calls:
+`refusalOf` is the one «is a file's say a refusal» rule (P-burst's twin retired); the take path's new
+prompt goes through P-chat's coalesced `drawPromptSoon` with the take's line as its lead — P-burst's
+«null the prompt, draw, retire the old copy» read the id before the coalesced draw ran and would have
+left two live prompts — and at the customer / zone question the same draw re-asks it once with the
+line on top (`zoneQuestionText` takes a lead). The whole integration suite on the merged tree found
+what neither package could: P-burst's restart tests held the «Qabul qilindi» send, which in the merged
+tree sits inside a kept-last draw, so the held send never settled and every later `settle()` hung
+(17 failures). Two production consequences fixed: the bot's stop gives the draws their OWN share
+(`STOP_DRAWS_MS` 1.5 s via `settleWithin`) and flushes the durable stores whatever they did — a
+draw whose Telegram call hangs (grammy's timeout is minutes) had eaten the flush's share (red-proven:
+4004 ms against 3000); and a process that dies drops its owed draws (`__forgetKeptLast` in
+`__forgetIntakeMemory`; a run's cleanup deletes only its own entry).
+
+**#1607 — The merged tree reviewed as built: 27 confirmed, 6 blockers, all fixed.** Five lenses
+(doors, files, what the seller sees, bursts and seams, durability), each in its own worktree and
+database, every finding re-tried by an independent refuter, then a completeness critic: 32 candidates,
+27 confirmed, 5 refuted. The blockers: (1) FILES-1 — the reader took a PER-CARTON count column
+(«每箱数量», «Кол-во в коробке») as the line's count, so the commonest Chinese/Russian packing list
+failed «same goods», doubled the rows and lost its brutto and cube (`PER_PACKAGE_COUNT` skipped by the
+quantity loop); (2) CRITIC-1 — a merged «G.W. | PER CTN | TOTAL» header read only the per-carton
+column, so a 190 kg file landed brutto 25 above the model's correct figure (`composedHeader` composes
+parent + child per column; a gross/m³ Σ the sheet's own TOTAL row contradicts is refused); (3)
+DURABILITY-1 — the row-by-row comparison was O(held × read) with both names re-keyed per pair,
+7-22 s of synchronous CPU on the ONE app process at 1000 × 500 (a bounded per-name memo and index
+maps: 11-39 ms, proven equal by a 6000-case differential); (4) CHAT-1 — the add collection's conflict
+was computed and dropped by the settle, so the «VED hal qiladi» line never appeared; (5) CHAT-2 —
+on the AI door after «➕», «3: 150 kg\nrahmat» or «Sumka 80 kg» became material and the re-read made
+the row's figure the shipment's brutto (the AI door's collecting stage now judges per segment through
+ONE placing predicate, `materialSegments` / `placedInMaterial`); (6) CRITIC-2 — the same for a typed
+goods line beside a packing list. Also: DOORS-1 (a NULL add collection got the new model coding —
+`codeKnown` keys on the door, not the legacy flag), DOORS-2/3 (the ✅ promised an AI figure with no key
+/ spent budget; the press and the resume spoke different doors), FILES-2/3/4/6, CHAT-3..8, BURST-2..8,
+DURABILITY-2/3. 13 + 14 fixes by two fixers, each red-proven.
+
+**#1608 — The fixes reviewed before production, and the residue the check found.** Every earlier
+round found regressions in its own fixes (#1114, #1267, #1281, #1581), so the 27 fixes of #1607 were
+reviewed by three lenses with refuters, each against DIFFERENTIALS of the code before them (11cf9bc)
+and after (ead0e7c): 17 candidates, 10 confirmed, 7 refuted (all three performance findings refuted:
+the fold stays linear when every row shares one count or one name, 150-230 ms at 1000 × 500 where the
+old scan took 2.8-121 s, and the spec now states that envelope). The confirmed ten were all the same
+lesson — a fix that closes one complaint reopens the one beside it: CHAT-3's «a lone typed goods line
+is its own figure» had made «Kurtka va shim jami 3600 kg», «Hamma yuk 3500 kg», «Jami: 3500 kg / 15 kub»
+lose to the file or to nothing (`shipmentLine` restores 11cf9bc's answer for a line that speaks of the
+whole shipment); `composedHeader` put the split word last and dropped the parent's unit, so «Кол-во,
+м2» / «QTY (PAIRS)» over «TOTAL» read pieces (§1.7 forbids «120 dona» for «пар»); the TOTAL-row belt
+refused correct sums («1,650» read as 1.65, a one-decimal CBM total, sections each closed by their own
+TOTAL); the typed codes were one set over the whole message (`typedCodeOwners`: a code belongs to the
+line it was typed on); the sub-header vocabulary missed «TTL», «single», «в 1 месте», «1 кор.»; the
+add door's card note carried no file notes. 18 red proofs, 13 corpus cases (c2458-c2470). Then an
+independent checker re-ran all 37 confirmed reproductions against the fixed head (37 fixed, 0 still
+reproduce, 0 regressed), the reader differential over 4000 generated sheets (every change an
+improvement; the only ok → null are pallet-inclusive TOTAL rows the belt refuses by design), the fold
+differential (0 differences over 440,000 calls) and both whole suites on a fresh database (unit 9764,
+integration 3715, 0 failed). It found one more defect, fixed by the lead (f62dee9): two typed lines
+with the SAME count and no weights let a copied code pass as the seller's by count alone
+(`CodeOwner.countShared`; red-proven, the translation control stays green). Stated, not fixed: a real
+product named by a package or totals word («Qop 50 dona 20 kg», «Umumiy maqsadli kabel») typed ALONE
+beside a packing list is read as the shipment's total again — the price of `shipmentLine`,
+19 of 944 corpus goods names; a typed new good the model leaves out is neither added nor named
+(predates the round). Three spec questions refuted as against the spec and left for him: a by-name
+answer on the AI door after «➕», a row answer typed before the reading, a field-labelled line beside
+a just-typed good.
+
+**#1609 — PROCESS.** (1) **Kernels before packages, and a kernel mid-round.** K (the door column) let
+pair 1 build; K2 (`kept-last.ts`) was written by the lead between the pairs because two parallel
+packages each needed «always the last message» and would otherwise have restated it twice (#513).
+(2) **Reserve the shared names.** `code-source.ts` was handed to both pair-1 packages byte-identical,
+so the merge's only conflict was a comment. (3) **Two packages' tests are not one tree's tests.**
+Each package's integration run was green; the merged tree's whole run found 17 failures, all from
+the two packages' mechanisms meeting (a held send inside a coalesced draw). A merge is verified by
+the WHOLE suite on the merged tree, never by the union of the packages' green runs. (4) **Number past open PRs — and renumber anyway.** #137 and #138 were open with DECISIONS from
+#1582, so this round numbered from #1593; #138 merged first (#1582-#1592), then #137 merged renumbered to
+#1593-#1598 with the migration 0140 this round had also minted (same `when`). So this round is
+#1599-#1609 and migration 0141 (`when` …120, ledger 142) — the twenty-ninth collision. Numbering past
+an open PR does not survive that PR renumbering itself on its own merge; only the merge order decides,
+so the second to merge reads main's tail and the journal again. (5) **Red proofs that stay green.** The stop's first test
+asserted the durable row after the stop, and the store's own 1 s debounce wrote it anyway inside the
+unbounded 4 s; it was re-anchored on what only the bound changes (the stop's time).
+
+## «✅ Yuborish chiqmadi» — the policy that refused a greeting, the card that did not say what to do, a hidden number on a work account (2026-10-29, merged with main 2026-11-10; migration 0142 `chat_rule_bound_via` since #1615 — renamed from 0139, ledger 143; numbered #1610-#1620, renumbered from #1571-#1581 on the merge — the THIRTIETH collision: main's Sakkiz band round 3, «narx jadvali», Horgos and «Ikki eshik» took #1571-#1609 and 0139-0141 first, and 0139 had this round's `when` …118, so it moved to …121)
+
+1610. **An ordinary first reply could not get a ✅, and the policy's own prompt was why.** His report, the same
 evening as #1544: a customer wrote «Assalomu alaykum», the card came with «✏️ O‘zim yozaman · ❌ · 🙋» and no ✅,
 and he answered in Telegram himself. The card draws ✅ only while `payload.blocked !== true` — the policy refused the
 draft. A read-only investigation (four tracers, each verified by a skeptic) found the refusals an ordinary opener
@@ -6419,7 +7212,7 @@ hand-over-first and no taking-back next statement. 136 cases in `tests/unit/agen
 plus the review's, end-to-end first replies in uz Latin / ru / uz Cyrillic / en with `ok === true`, and the
 dangerous neighbours on the same memory blocked with their codes; ~40 red proofs by string edit.
 
-1572. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
+1611. **A card without ✅ must say what to do, and his own reply must not read as 🙋.** The blocked card's header
 said «⛔ ✅ yo‘q — tuzatish kerak:» and its reasons printed codes («word_numeral», «latin→cyrillic», «1 $»);
 nothing said that ✏️ is the way out or where to type, and «✏️ O‘zim yozaman» beside «🙋 O‘zim javob beraman» on
 the page read as «answer him yourself». Now: «⛔ Bu matn shunday yuborilmaydi (✅ yo‘q). Sabab:», the reasons in
@@ -6439,7 +7232,7 @@ after the anchor that is not the AI's own send, plus the real pause the run appl
 `HUMAN_TAKEOVER_HOURS`, for the write, the card and the toast). A draft written > 3 min after its anchor says
 «⏱ Mijoz N daqiqadan beri javob kutyapti» and why when the job's origin knows (pull / sweep / edit).
 
-1573. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
+1612. **Why a card can come 23 minutes late.** The live path drafts 12-90 s after the last line, so a late card
 was waiting upstream; the most likely road was a stranger card answered by hand. Four things fixed. The work-account
 switch is read by its own 30-second shared clock (`workModeSwitch` — concurrent lines share one read; a line about
 to be STORED on the switch's say-so reads it afresh), because the stale-book branch was its only reader and every
@@ -6451,7 +7244,7 @@ a waiting job (created/retry — not active, or a killed process's job would hol
 live lookups (#1544) got a deadline ABOVE gramjs's own 60 s flood sleep (`lookupDeadlineMs` = threshold + 15 s):
 the first cut's 30 s would have passed over a line Telegram was only making us wait for.
 
-1574. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
+1613. **A hidden number on a work number is a customer (his «1 a», 2026-10-29).** Asked «Telegramda raqamini
 yashirgan odam yangi raqamingizga yozsa — ⭐ a) avtomatik lid va AI darhol javob», he answered «1 a». #1544's
 `unknownChatAction` comment argued «a lead nobody can ring is a row with a name in it»; on a number bought only for
 customers the Telegram chat IS the contact. On a work account `no_phone` → `open_lead`; a personal account is
@@ -6463,30 +7256,30 @@ empty or an id (display name → @username → «Telegram (raqam yashirin)», wi
 stripped). The machine binding YIELDS: to a person's answer on the tray, to the client book once the phone shows
 (the binding is retired, audited `book_match`), to a client the chat's rows already belong to, to a closed lead
 (a lost lead's next enquiry opens a new one, as a visible number's does), and to the switch turned back to
-«Shaxsiy raqam» (REVERSED by #1576: the switch governs new strangers only). The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
+«Shaxsiy raqam» (REVERSED by #1615: the switch governs new strangers only). The identity fence is untouched: «Lid: <name>», no cargo or balance facts. Telegram's own
 accounts are fenced beyond 777000 (`isTelegramOfficialPeer`: 489000, «Replies», the `support` flag, early
 round-thousand ids). Backfill still stops at a new stranger; catch-up never sees a stranger it never stored.
 STATED: a colleague or a contact writing with a hidden number becomes a lead too (nothing can see the phone); a
 hidden-number stranger's lines written while the listener was down are not fetched.
 
-1575. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
+1614. **Reviewed as merged** — the four packages were built in separate worktrees on one base, each reviewed by
 two lenses (regression, safety) with the findings fixed and red-proven before the cherry-pick, then the merged
 delta was reviewed again for what no single package could see (the interactions, customer safety on the merged
 policy, the owner's live day walked through the real functions).
 
-1576. **The listener's own binding is a MARK, not a shape — and the switch governs new strangers only.** The
-review of the merged branch (two skeptics per finding, re-verified against HEAD) found the blocker in #1574 itself:
+1615. **The listener's own binding is a MARK, not a shape — and the switch governs new strangers only.** The
+review of the merged branch (two skeptics per finding, re-verified against HEAD) found the blocker in #1613 itself:
 «machine» was read off the rule's shape — include, a lead, no client, no `decided_by` — and round 113's website door
 (`landSiteTag`) has written exactly that shape since it shipped, with no actor. Production holds such rows, so a
 website visitor's later lines would have stopped being stored on a personal number, the book's claim would have
 DELETED the site rule, `nobodyDecided` called it nobody's. No column of the row and no lead fact can tell the two
-apart (the machine door reuses any open lead of the chat, a website lead included), so migration **0139** adds
+apart (the machine door reuses any open lead of the chat, a website lead included), so migration **0142** (minted as 0139) adds
 `tg_chat_rules.bound_via` (`'work_account'` or NULL, CHECK) — positive for the work-number door, NULL on every
 existing row. SQL-only this release (0127's reason, #472: the table is read whole-row by the tray, the bot's
 stranger buttons and the minting door, and drizzle names every declared column), written by ONE raw statement in
 `phonelessLeadForChat`'s transaction (set by the machine, cleared by a person's press over it), read through
 `to_jsonb(row)` (`boundViaSql` — NULL, never 42703, one migration behind: walked on a copy with the column dropped);
-the writer asks `boundViaReady()` first and mints nothing while 0139 is absent, because an unmarked machine binding
+the writer asks `boundViaReady()` first and mints nothing while 0142 is absent, because an unmarked machine binding
 would read as a door's answer for good. `isMachineBinding` = the mark AND the shape (a person's write always carries
 `decided_by`); `nobodyDecided`, `rulesFor`, `retireMachineBinding` and the bot's stranger buttons all ask it.
 Fenced by `tests/unit/chat-rule-bound-via.test.ts` (not declared, named by chat-lead alone, written once).
@@ -6495,7 +7288,7 @@ The switch (his «1 a» was about NEW strangers): a chat the work number bound s
 «Shaxsiy raqam» — `decideIncoming` no longer asks the switch for it and `switchDecides` drops it; the first cut
 passed its lines over, and the binding's row kept every question (the tray's, the «📵» card's) from ever being
 asked. The visible-number twin — a chat kept on an open lead by its own rows, which the phone path writes no rule
-for — stays there too (`keptLeadOfChat`, on the live line and the catch-up; REVERSED by #1577: rows never decide,
+for — stays there too (`keptLeadOfChat`, on the live line and the catch-up; REVERSED by #1616: rows never decide,
 that chat is the tray's question again). Chosen over «re-ask»: a hidden number
 cannot be asked on most accounts at all (the tray refuses `chat_no_phone`; only the agent owner gets a card), so a
 re-ask would have been the same hole on every other account. A binding whose lead CLOSED is retired on a personal
@@ -6514,14 +7307,14 @@ flag is on no stored row), and a stale card's buttons answer in words instead of
 string edit, plus one that stayed green by design: the ↩ pre-check stripped alone (the lock's re-check holds; both
 stripped is red). The flipped-back hidden chat has two roads too — its binding (`decideIncoming`) and its rows
 (`keptLeadOfChat`): stripping the first is red in the unit test and green in the integration through the second,
-both stripped is red. (Since #1577 the rows road is gone and the binding is the one road.)
+both stripped is red. (Since #1616 the rows road is gone and the binding is the one road.)
 
-1577. **Rows never keep a line the switch passed over; the manager's own line retires nothing; «🚫 Shaxsiy» takes
-the listener's leftovers.** An adversarial verifier re-ran the reviewers' probes against #1576 (all seven findings
+1616. **Rows never keep a line the switch passed over; the manager's own line retires nothing; «🚫 Shaxsiy» takes
+the listener's leftovers.** An adversarial verifier re-ran the reviewers' probes against #1615 (all seven findings
 held) and then probed what the fix newly let through — seven more, each reproduced, re-verified here against the
 code:
 
-- **The rows road was a door with no way out (defect).** #1576 made a VISIBLE chat a work number had kept by its
+- **The rows road was a door with no way out (defect).** #1615 made a VISIBLE chat a work number had kept by its
   number (the phone path writes no rule) go on being stored on a personal number by its ROWS (`keptLeadOfChat`).
   At 0b3f32d that line was a tray question, which a person could answer or refuse; on HEAD it was stored with no
   rule at all — no tray row, no «hech qachon» (a lead's thread is read-only, `excludeChatForClient` is a client's),
@@ -6535,7 +7328,7 @@ code:
   retire whose lead a person then reopened, a scan's pending row beside work-era rows. Gone with the road: such a
   line is passed over, the question stands, and the card's «🆕 Yangi lid» files the chat on the lead its lines are
   on (`phonelessLeadForChat`'s `onRows` — no second lead).
-- **«🚫 Shaxsiy» left what the listener kept (defect, and F's second half).** #1576 purged on «Shaxsiy» only over
+- **«🚫 Shaxsiy» left what the listener kept (defect, and F's second half).** #1615 purged on «Shaxsiy» only over
   the listener's own binding. A question standing while a work number kept the chat by its number (a card from the
   personal-number days, the number shown on the work number) and a lapse-retired binding's lines were both kept on
   the listener's say-so, and «saqlanmaydi» answered while they stayed. Now «Shaxsiy» on ANY chat no person answered
@@ -6559,7 +7352,7 @@ code:
 - REFUSED, with reasons: the live «📵» card when the number is shown on a work number (F's first half) — the rule
   is still `pending`, so every press on that card is a first answer that works (🆕 → the same lead by its rows, 👤,
   🚫 now with the purge above), and the web tray closes no bot card by design either (review I1); the deploy-morning
-  window with 0139 absent (G) — the verifier's own «acceptable as stated»: tg-listen does not wait for `migrate`, the
+  window with 0142 absent (G) — the verifier's own «acceptable as stated»: tg-listen does not wait for `migrate`, the
   window is the migration's seconds, and a test of it would have to drop a column from a database other test files
   share.
 
@@ -6567,8 +7360,8 @@ code:
 and the catch-up fences), the direction guard (behaviour and fence), the official ↩, the three purge guards, the
 own-chat re-read (fence and parity), the `held` words and their gated call site.
 
-1578. **The policy, reviewed a third time: key each door on the thing itself, not on the words around it.** The
-merged-delta review (#1575) found the first softening's leaks — a spelled price with no unit right beside it
+1617. **The policy, reviewed a third time: key each door on the thing itself, not on the words around it.** The
+merged-delta review (#1614) found the first softening's leaks — a spelled price with no unit right beside it
 («3 kub yukingiz uchun besh yuz atrofida»), the pay-first exemption taken back a statement later, «hisoblash bepul,
 qolgani ham», «Shuncha kunda yetkazib beramiz» after an asking question, a hedged vague travel time, the company-rule
 minimum vouching for «your 100 kg arrived» — and the first fix tuned word lists, which its own verifier broke again
@@ -6586,8 +7379,8 @@ ending) is the company, not a colleague. STATED: «O'n yillik tajribamiz bor» l
 «price» beside no unit passes (no real price here is that small). Probed on four trees over the verifier's 265-case
 corpus; every case pinned in `tests/unit/agent-policy-first-reply.test.ts`.
 
-1579. **The ✅ sends the words he pressed, and a press promises only the card that is coming.** The own-text race
-(#1575 finding 16): ✅ pressed while his new text was being placed could queue the OLD text while the card showed
+1618. **The ✅ sends the words he pressed, and a press promises only the card that is coming.** The own-text race
+(#1614 finding 16): ✅ pressed while his new text was being placed could queue the OLD text while the card showed
 the new one. The approval transaction now locks the draft row and compares status, `final_body` and the card digest
 over the digest's own inputs before the outbox insert; a stale press answers «Karta o'zgargan» in words.
 `redraftNewest` counts a waiting edit job (created, retry, or active within the interrupted-run window) as the card
@@ -6596,7 +7389,7 @@ as origin `redraft`; a job that waits for typing keeps its attempt and its asker
 down as a duplicate of its own draft — a card that never came, before this round too). Words are true to the case:
 «Mijoz xabarini tahrirladi …», «… javob allaqachon tasdiqlangan», and the pull cause names both doors.
 
-1580. **The last independent check, and where the policy stops.** A check of the merged tree (#1575) wrote 293
+1619. **The last independent check, and where the policy stops.** A check of the merged tree (#1614) wrote 293
 ordinary first replies and 303 dangerous ones and ran both through the real `checkAgentReply`: 274 ordinary passed,
 and four of this round's own softenings had reopened doors a4e1b1c had shut — the pay-first exemption with a part
 payment or «the rest later» beside it, «几»/«چند» before a tag question, a vague arrival time with no verb («Bir
@@ -6626,7 +7419,7 @@ month-end settlement, «ishonchga», «pay whenever»), discounts said softly (�
 shapes with no price word («Куб у нас по 800»), spelled numbers with case endings («yuzdan»), a per-kg rate quoted
 per cube, an arrival claim with no figure for a lead with no cargo, «Truck freight takes 15–25 days» unhedged.
 
-1581. **A press promises only the card that is coming.** The same check found three more on the card: ❌ on a ✏️
+1620. **A press promises only the card that is coming.** The same check found three more on the card: ❌ on a ✏️
 draft whose ANCHOR the customer had edited re-asked nothing (the edited question got no card from anyone); ✅/❌
 said «yangi qoralama tayyorlanadi» and queued a run for a chat already at a run cap (no card ever came — the press
 now reads the same counts `reserve()` uses and says «bu javob ketmaydi» instead); and «javob allaqachon

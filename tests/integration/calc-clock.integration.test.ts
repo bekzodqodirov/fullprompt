@@ -17,6 +17,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
 import { confirmAllGroups, confirmGroup, saveTable, sealCalc } from '@/modules/wms/calc/workspace';
+import { sawRev, sawRevOfGroup } from '../fixtures/calc-saw-rev';
 
 /**
  * The revision clock, end to end (VED 2.0 phase 3 — the shipped-audit's
@@ -101,6 +102,7 @@ afterAll(async () => {
 async function sealableRequest(): Promise<string> {
   const opened = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -134,7 +136,7 @@ async function sealableRequest(): Promise<string> {
     },
     ctx(),
   );
-  await confirmAllGroups(opened.id, ctx());
+  await confirmAllGroups(opened.id, ctx(), await sawRev(opened.id));
   return opened.id;
 }
 
@@ -181,7 +183,7 @@ describe('the seal-clock CAS', () => {
     await holder`SELECT id FROM calc_requests WHERE id = ${id}::uuid FOR UPDATE`;
 
     // …so the seal computes on the pool, then its tx queues on the lock.
-    const sealing = sealCalc(id, SEAL_INPUT, ctx()).then(
+    const sealing = sealCalc(id, { ...SEAL_INPUT, sawRev: await sawRev(id) }, ctx()).then(
       (r) => ({ ok: true as const, r }),
       (e) => ({ ok: false as const, e }),
     );
@@ -208,7 +210,7 @@ describe('the seal-clock CAS', () => {
     // $2,000 value; 11 % duty $220; VAT 12 % of $2,220 = $266.40 → customs
     // $486.40 + 1 BHM fee at the demo book's rate — the version's own figure
     // proves which snapshot was sealed.
-    const sealed = await sealCalc(id, SEAL_INPUT, ctx());
+    const sealed = await sealCalc(id, { ...SEAL_INPUT, sawRev: await sawRev(id) }, ctx());
     expect(sealed.versionNo).toBe(1);
     const [version] = await db.select().from(calcVersions).where(eq(calcVersions.requestId, id));
     expect(Number(version!.customsUsd)).toBeGreaterThan(486);
@@ -225,7 +227,7 @@ describe('the seal-clock CAS', () => {
 
     await holder`BEGIN`;
     await holder`SELECT id FROM calc_requests WHERE id = ${id}::uuid FOR UPDATE`;
-    const confirming = confirmGroup(group!.id, ctx()).then(
+    const confirming = confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id)).then(
       () => ({ ok: true as const }),
       (e) => ({ ok: false as const, e }),
     );

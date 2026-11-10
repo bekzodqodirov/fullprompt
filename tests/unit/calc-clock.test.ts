@@ -103,6 +103,9 @@ const EXEMPT: Record<string, string> = {
   // Review PHONE-2: saveTable's compare-and-set, exported so a unit test
   // calls the rule itself. Reads its two arguments, writes nothing.
   movedUnder: 'pure',
+  // docs/SAKKIZ-R3.md K15: setCargoFacts' validation, lifted so saveTable's
+  // `cargo` patch shares it. Reads its argument, writes nothing.
+  cargoPatchOf: 'pure',
 };
 
 describe('every workspace mutator moves the revision clock', () => {

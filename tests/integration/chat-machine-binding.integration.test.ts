@@ -65,7 +65,7 @@ import { decideIncoming } from '@/modules/wms/crm/telegram-live';
  *
  *  - 0 (the blocker): round 113's website rule has the SAME shape — include,
  *    a lead, no client, no `decided_by` — so «machine» had to become a mark
- *    of its own (0139 `bound_via`), written by the work-number door alone;
+ *    of its own (0142 `bound_via`), written by the work-number door alone;
  *  - 2/19: the switch decides about NEW strangers only — a chat the work
  *    number bound stays on its open lead after «Shaxsiy raqam», by its RULE,
  *    and a closed lead's chat is asked about afresh instead of falling into
@@ -165,7 +165,7 @@ async function ruleOf(peer: bigint) {
   return r;
 }
 
-/** The SQL-only 0139 mark, read bare — this file is allowed to (the fence names it). */
+/** The SQL-only 0142 mark, read bare — this file is allowed to (the fence names it). */
 async function markOf(peer: bigint): Promise<string | null | undefined> {
   const rows = await db.execute<{ bound_via: string | null }>(sql`
     SELECT bound_via FROM tg_chat_rules WHERE manager_user_id = ${managerId}::uuid AND peer_id = ${peer.toString()}::bigint`);

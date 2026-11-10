@@ -32,12 +32,29 @@ import {
 import type { GoodsRow } from '../deals/goods-import';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
+import type { TableRow, TableTarget } from './line-address';
 import type { BazaBasis, MeasureUnit } from './pricing';
-import { codeWrittenAsCode, parseGoodsLine, routeAmount, unitOf } from './units';
+import { codeWrittenAsCode, normalizeRowUnit, parseGoodsLine, routeAmount, unitOf } from './units';
+import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
+import { SELLER_TAIL_NO_ASK } from './tail-words';
+import { AI_CODE_MARK } from './code-source';
+import { clipText } from '../../platform/telegram/format';
+
+/** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
+export { fitTelegram };
 
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
 export const CALC_SECTIONS: CalcSection[] = ['yolkira', 'rastamojka', 'podklyuch'];
+
+/**
+ * Which of the bot's two doors a job came in through (0141, docs/IKKI-ESHIK.md
+ * §0): «🧮 Hisoblatish» is 'plain', «🤖 AI rastamojka» is 'ai'. A fact of the
+ * REQUEST, read from its row (`intake-door.ts`). Where a door is named as
+ * `IntakeDoor | null`, NULL is legacy — every request before 0141, the card
+ * form, the thread door, the AI sotuvchi — and means TODAY's behaviour.
+ */
+export type IntakeDoor = 'plain' | 'ai';
 
 export const SECTION_LABEL: Record<CalcSection, string> = {
   yolkira: '🚚 Yo‘lkira',
@@ -257,6 +274,14 @@ export interface CalcGoodsFact {
   /** An invoice line's money, carried for the VED; nothing prices it. */
   amount?: number | null;
   tnvedCode?: string | null;
+  /**
+   * Where `tnvedCode` came from (docs/IKKI-ESHIK.md §3.1): the row's own
+   * (Excel, typed), the sealed memory, the exact-key book, or the model's
+   * proposal — the one coding function says, so the table and the INSERT can
+   * word a model's code as «AI taklifi». Absent = not said (every line read
+   * before that function, and every stored row).
+   */
+  tnvedSource?: 'row' | 'memory' | 'book' | 'model';
   note?: string | null;
   /** A chosen baza basis (stored rows): the VED's choice pins its unit too. */
   bazaBasis?: BazaBasis | null;
@@ -267,6 +292,11 @@ export interface CalcGoodsFact {
    * line's code up in `laws`; null = the line has no known law.
    */
   law?: NeedLaw | null;
+  /** A STORED row's own id and number (docs/SAKKIZ-R3.md K14) — what the add
+   * door writes by, and the number the VED's screen prints. Absent on a line
+   * that was only read, never stored. */
+  itemId?: string | null;
+  seq?: number;
 }
 
 /** One line as the rest of the system should read it. */
@@ -282,6 +312,8 @@ export interface CalcItemFact {
   unit: string | null;
   amount: number | null;
   tnvedCode: string | null;
+  /** Where the code came from (§3.1), carried to the INSERT; absent = not said. */
+  tnvedSource?: CalcGoodsFact['tnvedSource'];
   note: string | null;
   bazaBasis: BazaBasis | null;
   law: NeedLaw | null | undefined;
@@ -376,6 +408,7 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
       unit: g.unit?.trim() || null,
       amount: typedFigure(g.amount),
       tnvedCode: g.tnvedCode?.trim() || null,
+      ...(g.tnvedSource && g.tnvedCode?.trim() ? { tnvedSource: g.tnvedSource } : {}),
       note:
         [g.note?.trim() || null, fromTotal ? (facts.weightNetto ? LONE_NETTO_NOTE : LONE_WEIGHT_NOTE) : null]
           .filter(Boolean)
@@ -404,28 +437,55 @@ export function landingItems(facts: CalcFacts) {
     measureQty: g.measureQty,
     amount: g.amount,
     tnvedCode: g.tnvedCode,
+    // …and where the code came from, so the INSERT marks a model's proposal
+    // (`AI_CODE_NOTE`, docs/IKKI-ESHIK.md §3.1) — the reading coded the row by
+    // the very function the INSERT asks.
+    ...(g.tnvedSource ? { tnvedSource: g.tnvedSource } : {}),
     note: g.note,
   }));
 }
 
 /**
  * An attached invoice's rows as goods facts (P1.6) — everything the file
- * states, so the landing can route it: the unit word (the door sends «м2» /
- * «пар» to the measure pair), the volume and the money, the supplier's own
- * code and what the reader could not use. ONE mapping for the bot's invoice
- * reader and its test; nothing is decided here that the door decides.
+ * states: the volume and the money, the supplier's own code and what the
+ * reader could not use — and its numbers already in the columns their unit
+ * word names (docs/IKKI-ESHIK.md §1.7, M10): the landing's own rule
+ * (`normalizeRowUnit`, which `doorRow` applies), applied ONCE here, so the
+ * table, the summary, the completeness verdict, the file comparison and the
+ * card all read the row the landing will store. «120 пар» was 120 PIECES to
+ * every reader before the door and 120 juft after it — a table that said
+ * «120 dona» with ⚠️ juft. «пар» is juft, m²/litr go to the measure pair,
+ * «мест»/CTN/коробок are cartons: a note, never a count. The seller's words
+ * go on the note, as the door writes them; the door then finds nothing left
+ * to move. ONE mapping for the bot's invoice reader and its test.
  */
 export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
-  return rows.map((g) => ({
-    name: g.description,
-    quantity: g.quantity,
-    unit: g.unit,
-    weightKg: g.weightKg,
-    volumeM3: g.volumeM3,
-    amount: g.amount,
-    tnvedCode: g.tnvedCode,
-    note: g.note,
-  }));
+  return rows.map((g) => {
+    const routed = normalizeRowUnit({
+      quantity: g.quantity,
+      unit: g.unit,
+      weightKg: g.weightKg,
+      volumeM3: g.volumeM3,
+      measureUnit: null,
+      measureQty: null,
+    });
+    const row = {
+      name: g.description,
+      quantity: g.quantity,
+      unit: g.unit,
+      weightKg: g.weightKg,
+      volumeM3: g.volumeM3,
+      amount: g.amount,
+      tnvedCode: g.tnvedCode,
+      note: g.note,
+    };
+    if (!routed.moved) return row;
+    return {
+      ...row,
+      ...routed.patch,
+      note: [g.note, routed.note].filter(Boolean).join(' · ') || null,
+    };
+  });
 }
 
 /**
@@ -612,11 +672,19 @@ export function lineFiguresText(g: CalcItemFact): string {
  * (`needWhatUz`/`needWhyUz`, judge UX5), never restated here.
  */
 export function lineNeedText(line: LineNeed): string {
-  const what =
-    line.pinned.length > 0
-      ? line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')
-      : `${needWhatUz('dona')} yoki ${needWhatUz('kg')}`;
-  return `${line.index + 1}-qator «${line.name}»: ${what}`;
+  return `${line.index + 1}-qator «${line.name}»: ${lineNeedWhat(line)}`;
+}
+
+/**
+ * What a line still owes, without its address — the table's ↳ prints exactly
+ * this (docs/SAKKIZ-R3.md §2.1, product-fit-19 c): a row stating nothing reads
+ * «soni (dona) yoki sof og‘irligi (kg)», never a bare «og‘irligi» that reads
+ * like the table's brutto.
+ */
+export function lineNeedWhat(line: LineNeed): string {
+  return line.pinned.length > 0
+    ? line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ')
+    : `${needWhatUz('dona')} yoki ${needWhatUz('kg')}`;
 }
 
 /**
@@ -668,55 +736,640 @@ export function ambiguousTotalText(a: TotalDoubt): string {
 const LINE_FIELDS: readonly CalcField[] = ['itemMeasure', 'lineNeed'];
 
 /**
- * The message the staff member reads before pressing confirm — the facts as
- * the system understood them, and, in red, what a quote still needs.
- *
- * Deliberately shows what is THERE as well as what is missing: a checklist
- * of absences alone gives no way to catch the commonest error, which is not
- * a missing number but a misread one. Every still-missing LINE is named by
- * its number and its name (P1.3) — «tovarning soni yoki og‘irligi» named
- * none of the ten lines it was about.
+ * A stored row the new material restates with another figure (P4's
+ * `IntakeState.conflicts`, law-money-5) — the table's shape for it, so this
+ * pure file never names the bot's state. `choice` null = unanswered.
  */
-export function intakeSummaryText(input: {
+export interface TableConflict {
+  itemId: string;
+  seq: number;
+  field: 'quantity' | 'weightKg' | 'volumeM3' | 'measureQty';
+  unit: string;
+  stored: number | null;
+  read: number;
+  choice: 'add' | 'rep' | 'ved' | null;
+}
+
+/** An add collection's part of the table (§2.4) — null on a new request. */
+export interface TableAmend {
+  cardLabel: string;
+  storedCount: number;
+  totalsStale: readonly ('weightKg' | 'volumeM3')[];
+  conflicts: readonly TableConflict[];
+  askedSeqs: readonly number[] | null;
+  /** The VED has started on the job (`standingAtOpen`): the confirm is «📨 VED ga yuborish». */
+  started?: boolean;
+}
+
+/** What the table is drawn from — everything a row, a total and the closing need. */
+export interface TableInput {
   section: CalcSection;
   facts: CalcFacts;
   laws: ReadonlyMap<string, NeedLaw>;
   clientLabel: string | null;
   fileCount: number;
-  /** Totals the typed material states two ways, or against the answer — asked, never guessed. */
-  ambiguous?: TotalDoubt[];
-}): string {
-  const missing = missingFields(input.section, input.facts, input.laws);
-  const fields = missing.filter((f) => !LINE_FIELDS.includes(f));
-  const lines = lineNeeds(input.section, input.facts, input.laws);
-  const goods = itemFacts(input.facts);
-  const goodsLines = goods
-    .slice(0, 15)
-    .map((g) => {
-      const figures = lineFiguresText(g);
-      return `· ${g.name}${figures ? ` — ${figures}` : ''}${g.tnvedCode ? ` · ${g.tnvedCode}` : ''}`;
-    })
-    .join('\n');
-  const ambiguous = input.ambiguous ?? [];
+  /** R2's doubts (`IntakeState.ambiguousTotals`, CONC-2) — asked, never guessed (re-check p3-7). */
+  ambiguous: readonly TotalDoubt[];
+  amend: TableAmend | null;
+  /** Notes + AI words + certificate, already rendered — fixed, never cut. */
+  tail: string;
+  /**
+   * Totals the collection's lines left behind (calc-dialog `staleTotalsOf`):
+   * an add collection's (`amendTotalsStale`, also on `amend`) and a SEEDED
+   * one's brutto under a line added beyond the returned rows (review COMP-4).
+   * Out of `amend` because a seeded collection has none (fix review FR-4: the
+   * stale brutto was computed and never drawn).
+   */
+  totalsStale?: readonly ('weightKg' | 'volumeM3')[];
+  /**
+   * The words of a row's name the ANSWER PARSER reads as naming that row alone
+   * among `rows` — line-address.ts `nameWordFor`, handed in by the caller
+   * because line-address cannot be imported here (it imports intake-manual,
+   * which imports this file). The ✍️ line teaches only such a name (review
+   * PF-4): «Kurtka 30 dona» over two kurtka rows was refused «name_many» by
+   * the parser it taught.
+   */
+  nameWord: (rows: readonly TableRow[], row: TableRow) => string | null;
+  /**
+   * The plain door's SUMMARY instead of the asking table (docs/IKKI-ESHIK.md
+   * §2.1, his 2a): a gap is ℹ️ and the VED's to ask — no «✍️» asks, no
+   * doubts asked, no example — and the closing says the job lands as it is.
+   * Absent = the table (the AI door, and a request from before the doors).
+   */
+  plain?: boolean;
+  /** The totals two packing lists disagreed on (`fileTotals.clash`) — the plain summary names them the VED's. */
+  clash?: readonly ('weightKg' | 'volumeM3')[];
+  /**
+   * One line after everything, never cut (§1.4): «⬇️ Yangi ma’lumot
+   * qo‘shildi …» on a table material arrived below. Absent = none.
+   */
+  marker?: string | null;
+  /**
+   * The AI door's TABLE (docs/IKKI-ESHIK.md §3.1-§3.4, his 4a/5a): the door
+   * in its head, a code the model proposed marked as its proposal, a row with
+   * no code told who finds it, the closing promising the AI's figure, and —
+   * as the LAST block, right above the buttons — what the last answer did,
+   * since the answer sends no message of its own. Absent = today's table (a
+   * request from before the doors, §0.2). Ignored under `plain`.
+   */
+  ai?: TableAi | null;
+}
 
-  return (
-    `${SECTION_LABEL[input.section]}\n` +
-    `Mijoz: ${input.clientLabel ?? '— (yangi)'}\n` +
-    (input.section === 'rastamojka'
-      ? ''
-      : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
-    `${weightLabel(input.section, input.facts)}: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
-    (goods.length
-      ? `Tovarlar (${goods.length}):\n${goodsLines}${goods.length > 15 ? '\n…' : ''}\n`
-      : 'Tovarlar: —\n') +
-    (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
-    (ambiguous.length ? `\n${ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`).join('\n')}\n` : '') +
-    (missing.length
-      ? (fields.length ? `\n⚠️ Yetishmayapti: ${fields.map((f) => FIELD_LABEL[f]).join(', ')}\n` : '\n') +
-        (lines.length ? `⚠️ Qatorlarda yetishmayapti:\n${linesBlock(lines)}\n` : '') +
-        'Yetishmaganini yozib yuboring yoki shundayligicha tasdiqlang.'
-      : '\n✅ Ma’lumot to‘liq. Tasdiqlaysizmi?')
+/** The AI door's part of the table — what the dialogue reads for it (§3.1, §3.4). */
+export interface TableAi {
+  /**
+   * `aiCalcAvailable()` — a key AND budget today — read ONCE per draw: the
+   * only thing that makes «AI hisoblashda topadi» a promise (review PF-SPEC-4).
+   */
+  available: boolean;
+  /**
+   * The last answer's result, or what the last «↩️» took back (§3.4) —
+   * rendered by the dialogue from the echo records, never cut.
+   */
+  last: readonly string[];
+}
+
+/**
+ * A row with no code yet on the AI door's table (§3.1, P13) — never ✅ and
+ * never a question: the code is not the seller's part. With the AI
+ * available the landing pass looks for one; without it, the VED sets it.
+ */
+export const CODE_GAP_AI = 'kod yo‘q — AI hisoblashda topadi (topolmasa VED qo‘yadi)';
+export const CODE_GAP_VED = 'kod yo‘q — VED xodimi qo‘yadi';
+
+/**
+ * The plain door's tail on a gap (§2.1): the VED asks the seller — the
+ * landing pass's own lenta words for a seller's fact (`SELLER_TAIL_NO_ASK`),
+ * never restated.
+ */
+const PLAIN_GAP_TAIL = SELLER_TAIL_NO_ASK.lenta;
+
+/** «kg yo‘q — VED xodimi so‘raydi» — what a plain summary row lacks, by its units alone. */
+function plainNeedWhat(line: LineNeed): string {
+  const units = line.pinned.length > 0 ? [...new Set(line.pinned.map((n) => needShortUz(n.unit)))].join(' va ') : 'dona yoki kg';
+  return `${units} yo‘q ${PLAIN_GAP_TAIL}`;
+}
+
+/** The plain summary's last line (§2.1): what a typed figure does here, and that more material is welcome. */
+export const PLAIN_SUMMARY_LAST =
+  'Qator raqami bilan yozsangiz («3: 150 kg», «jami 3500 kg») — shu yerda yangilanadi. Yana ma’lumot bo‘lsa — yuboring.';
+
+/**
+ * Every row's number, the ONE numbering (§1's table, product-fit-4,
+ * regression-8): the table, the echo, the undo, the offers and the address
+ * parser all read `TableRow.no`. A stored row's `seq` (gaps after a VED
+ * deletion stay gaps — the numbers the VED's screen and the 2.8 b ask print),
+ * a new request's position, or `max(seq) + k` for a line an add collection
+ * adds. `needs` are the units the line still owes (`lineNeeds`).
+ */
+export function tableRowsOf(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): TableRow[] {
+  const goods = input.facts.goods ?? [];
+  const needs = lineNeeds(input.section, input.facts, input.laws);
+  const seqs = goods.flatMap((g) => (typeof g.seq === 'number' ? [g.seq] : []));
+  const top = seqs.length > 0 ? Math.max(...seqs) : 0;
+  let added = 0;
+  return goods.map((g, index) => {
+    const seq = typeof g.seq === 'number' ? g.seq : null;
+    const no = seq ?? (seqs.length > 0 ? top + ++added : index + 1);
+    return { no, index, seq, name: g.name, needs: needs.find((l) => l.index === index)?.units ?? [] };
+  });
+}
+
+/**
+ * Which totals rows are ⚠️ — `missingFields` minus `LINE_FIELDS`, the ONE home
+ * on every section (regression-22). R2's `totalsQuestion` said «rastamojka
+ * never asks» while MR-9's `REQUIRED_FIELDS.rastamojka` asks brutto and m³, so
+ * the rule had two homes that disagreed; the table reads this one.
+ */
+function totalsMissing(input: Pick<TableInput, 'section' | 'facts' | 'laws'>): CalcField[] {
+  return missingFields(input.section, input.facts, input.laws).filter((f) => !LINE_FIELDS.includes(f));
+}
+
+/**
+ * No conflict is an open question any more (his 1a, docs/IKKI-ESHIK.md §1.1):
+ * the stored figure stands and the file's is the VED's. What the table still
+ * SAYS under a row is every conflict the VED decides — unanswered, or left
+ * to him — as a statement, never a ⚠️.
+ */
+const vedConflicts = (amend: TableAmend | null) =>
+  (amend?.conflicts ?? []).filter((c) => c.choice === null || c.choice === 'ved');
+
+/** The stale totals, wherever the caller put them (`TableInput.totalsStale`, `TableAmend.totalsStale`). */
+const staleTotalsIn = (input: Pick<TableInput, 'amend' | 'totalsStale'>) =>
+  new Set([...(input.totalsStale ?? []), ...(input.amend?.totalsStale ?? [])]);
+
+/**
+ * Every ⚠️ target of the table, in its order: the lines (a need, or an
+ * unanswered conflict), the totals, the route. What an unaddressed answer may
+ * mean (`TableRef.open`), and what the echo's «Yana {k} ta» counts.
+ */
+export function tableOpenOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend' | 'totalsStale'>): TableTarget[] {
+  const lines: TableTarget[] = tableRowsOf(input)
+    .filter((r) => r.needs.length > 0)
+    .map((r) => ({ line: r.no }));
+  const missing = totalsMissing(input);
+  const stale = staleTotalsIn(input);
+  const totals: TableTarget[] = (['weightKg', 'volumeM3'] as const)
+    .filter((f) => missing.includes(f) || stale.has(f))
+    .map((f) => ({ totals: f }));
+  const route: TableTarget[] = missing.includes('fromCity') || missing.includes('toCity') ? [{ route: true }] : [];
+  return [...lines, ...totals, ...route];
+}
+
+/**
+ * «3-qator», «umumiy brutto», «umumiy hajm», «yo‘nalish» — a target as the
+ * seller reads it: in the AI table's state line, an offer's button and the
+ * echo of a request from before the doors (one home, #513).
+ */
+export function targetWord(t: TableTarget): string {
+  if ('line' in t) return `${t.line}-qator`;
+  if ('totals' in t) return t.totals === 'weightKg' ? 'umumiy brutto' : 'umumiy hajm';
+  return 'yo‘nalish';
+}
+
+/** «3-qator, umumiy brutto va yana 2 ta» — the first six targets named, the rest counted. */
+export function openTargetsText(open: readonly TableTarget[]): string {
+  const names = open.map(targetWord);
+  return names.slice(0, 6).join(', ') + (names.length > 6 ? ` va yana ${names.length - 6} ta` : '');
+}
+
+/** «1, 3, 5–9, 12» — numbers as ranges, in order. */
+export function numberRanges(nos: readonly number[]): string {
+  const sorted = [...new Set(nos)].sort((a, b) => a - b);
+  const out: string[] = [];
+  for (let i = 0; i < sorted.length; ) {
+    let j = i;
+    while (j + 1 < sorted.length && sorted[j + 1] === sorted[j]! + 1) j += 1;
+    out.push(j > i ? `${sorted[i]}–${sorted[j]}` : String(sorted[i]));
+    i = j + 1;
+  }
+  return out.join(', ');
+}
+
+/** How many ⚠️ rows `answerHow` asks for a name of its own — the example needs one, not the best. */
+export const NAME_ROWS_TRIED = 3;
+
+/** A figure for the table's examples, per unit — «2: 40 juft», «Shapka 30 dona» (§2.1 literally). */
+const EXAMPLE_VALUE: Record<NeedUnit, number> = {
+  dona: 30, '1000_dona': 3000, kg: 150, m3: 2, m2: 120, juft: 40, litr: 50, sm3: 1500,
+};
+export const exampleFigure = (unit: NeedUnit) =>
+  unit === '1000_dona' ? figureLabel(EXAMPLE_VALUE[unit], 'dona') : figureLabel(EXAMPLE_VALUE[unit], unit);
+
+/** The field a conflict names, in the seller's word, for «so‘rovda og‘irlik yo‘q». */
+const CONFLICT_FIELD_WORD: Record<TableConflict['field'], string> = {
+  quantity: 'son',
+  weightKg: 'og‘irlik',
+  volumeM3: 'hajm',
+  measureQty: 'o‘lchov',
+};
+
+/**
+ * «faylda 200 dona, so‘rovda 300 — VED hal qiladi» (docs/IKKI-ESHIK.md §1.1):
+ * a statement, never the R3 question «qo‘shilsinmi, o‘rniga yoki VED hal
+ * qilsinmi?» — the stored figure stands and the file's goes to the VED.
+ */
+export function conflictText(c: Pick<TableConflict, 'field' | 'unit' | 'stored' | 'read'>): string {
+  const unit = needShortUz(c.unit as NeedUnit) ?? c.unit;
+  if (c.stored === null) {
+    return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${CONFLICT_FIELD_WORD[c.field]} yo‘q — VED hal qiladi`;
+  }
+  return `faylda ${fmt(c.read)} ${unit}, so‘rovda ${fmt(c.stored)} — VED hal qiladi`;
+}
+
+/** One goods row of the table: its line, and the ↳ under it when it is ⚠️ — ONE entry, a cut never separates them. */
+interface TableEntry {
+  no: number;
+  warn: boolean;
+  line: string;
+  /** The needs' ↳ text (groupable), and the conflicts' own ↳ lines. */
+  need: string | null;
+  /** The AI door's «kod yo‘q — …» (§3.1, groupable) — a row with it is ℹ️, never ✅. */
+  code: string | null;
+  /**
+   * The AI door's code is the MODEL's proposal (§3.1, P13): the row is ℹ️,
+   * never ✅ on its own, and never folded into «to‘liq» — its «(AI taklifi)»
+   * would go with it (review PC-ADV-2). Never a question either.
+   */
+  proposed: boolean;
+  conflicts: string[];
+}
+
+const entryText = (e: TableEntry, need: boolean, code = true) =>
+  [
+    e.line,
+    ...(need && e.need ? [`   ↳ ${e.need}`] : []),
+    ...(code && e.code ? [`   ↳ ${e.code}`] : []),
+    ...e.conflicts.map((c) => `   ↳ ${c}`),
+  ].join('\n');
+
+/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, and (AI door) a code nobody has to check. */
+const entryOk = (e: TableEntry) => !e.warn && !e.code && !e.proposed;
+
+/** A table with no goods row: what to send, on every door that asks. */
+const NO_GOODS_CLOSING = '⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.';
+
+/** The AI door's complete closing (§3.2), verbatim — «complete» being the SELLER's part. */
+export const AI_TABLE_COMPLETE = '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, AI hisoblaydi.';
+
+/**
+ * What a complete AI table promises the press does (§3.2, §3.7): the AI's
+ * figure only while the AI will run today — otherwise the plain door's true
+ * words, the job going to the VED; an addition the VED has started on goes
+ * to him and nothing re-runs.
+ */
+function aiCompleteLine(amend: TableAmend | null, available: boolean): string {
+  if (amend?.started) return '✅ Ma’lumot to‘liq — «📨 VED ga yuborish» ni bosing.';
+  if (amend) return available ? '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing, AI qayta hisoblaydi.' : '✅ Ma’lumot to‘liq — «✅ Qo‘shish» ni bosing.';
+  return available ? AI_TABLE_COMPLETE : '✅ Ma’lumot to‘liq — «✅ Tasdiqlash» ni bosing, so‘rov VED ga tushadi.';
+}
+
+/**
+ * The table the seller reads after a reading and after every answer (his
+ * 1.10 c, docs/SAKKIZ-R3.md §2.1) — it replaces the summary. Every line ✅ or
+ * ⚠️ with WHY under it, the totals rows, and how to answer, so a seller fills
+ * any line in one message instead of being walked through a question per row.
+ *
+ * Over Telegram's 4096 (§2.1): every ⚠️ row is always shown; ✅ rows while the
+ * text fits, the rest collapsed into one numbered line; then ⚠️ rows sharing
+ * one ↳ grouped under the last of them; only then are ⚠️ rows cut, by
+ * `fitTelegram`'s own «… va yana N ta qator», with the closing saying what to
+ * send instead. `maxLines: Infinity`: R2's 25-line cap is the AI answer's
+ * rule, and on the table it would cut row 26 of a short table that fits
+ * (product-fit-10). Pure.
+ */
+export function intakeTableText(input: TableInput): string {
+  const rows = tableRowsOf(input);
+  const items = itemFacts(input.facts);
+  const needs = lineNeeds(input.section, input.facts, input.laws);
+  const freightOnly = !REQUIRED_FIELDS[input.section].includes('itemMeasure');
+  const goods = input.facts.goods ?? [];
+  const conflicts = vedConflicts(input.amend);
+  const client = input.clientLabel ?? 'mijoz hali yozilmagan';
+  const plain = input.plain === true;
+  const ai = !plain && input.ai ? input.ai : null;
+  // The plain door's gap mark (§2.1): the VED asks, so the row is told, never warned.
+  const gapMark = plain ? 'ℹ️' : '⚠️';
+  // A row with no code on the AI door (§3.1): who finds it, by whether the AI
+  // will run today — read once per draw by the dialogue.
+  const codeGap = ai ? (ai.available ? CODE_GAP_AI : CODE_GAP_VED) : null;
+
+  // The two doors look different on the screen where the seller decides what
+  // ✅ does (§2.1, §3.2): «🧮 Hisoblatish · 🛃 Rastamojka», «🤖 AI rastamojka · 🛃 Rastamojka».
+  const doorHead = plain ? '🧮 Hisoblatish · ' : ai ? '🤖 AI rastamojka · ' : '';
+  const head = input.amend
+    ? [`➕ Qo‘shimcha · ${input.amend.cardLabel} · ${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`]
+    : [`${doorHead}${SECTION_LABEL[input.section]}`, `Mijoz: ${client}`];
+  if (input.fileCount) head.push(`Fayllar: ${input.fileCount}`);
+  head.push('', input.amend ? `So‘rovdagi qatorlar (${input.amend.storedCount}):` : `Tovarlar (${rows.length}):`);
+
+  const entries: TableEntry[] = rows.map((r) => {
+    const item = items[r.index]!;
+    const need = needs.find((l) => l.index === r.index);
+    const itemId = goods[r.index]?.itemId ?? null;
+    const own = itemId === null ? [] : conflicts.filter((c) => c.itemId === itemId);
+    // A conflict is said under its row and asks nothing (§1.1): no ⚠️ for it.
+    const warn = !freightOnly && need !== undefined;
+    // No code on the AI door (§3.1): told, never asked, never ✅ — the code is
+    // not the seller's part, so it never makes the table incomplete either.
+    const code = codeGap !== null && !freightOnly && !item.tnvedCode?.trim() ? codeGap : null;
+    // The model's code is its PROPOSAL (§3.1, P13): marked as such, so a code
+    // nobody checked never reads like one the file stated — and the row is
+    // ℹ️ like a row with none, never ✅ on the proposal alone.
+    const proposed = Boolean(ai) && Boolean(item.tnvedCode?.trim()) && item.tnvedSource === 'model';
+    const mark = freightOnly ? '·' : warn ? gapMark : code || proposed ? 'ℹ️' : '✅';
+    const fresh = input.amend && r.seq === null ? '🆕 ' : '';
+    const figures = lineFiguresText(item);
+    return {
+      no: r.no,
+      warn,
+      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed ? ` ${AI_CODE_MARK}` : ''}` : ''}`,
+      need: !freightOnly && need ? (plain ? plainNeedWhat(need) : lineNeedWhat(need)) : null,
+      code,
+      proposed,
+      conflicts: own.map(conflictText),
+    };
+  });
+
+  const missing = totalsMissing(input);
+  const doubted = new Set(input.ambiguous.map((a) => a.field));
+  const stale = staleTotalsIn(input);
+  // «yangi tovar qo‘shildi» only when a line WAS added (fix review W-2): a
+  // stored row's corrected weight that was copied from the brutto (lmp-2), or
+  // a stored row's corrected m³ under a typed total, leaves the total stale
+  // with nothing added — and the table said a new item came. A seeded
+  // collection's total is stale only by an added line.
+  const staleWhy = !input.amend || rows.some((r) => r.seq === null) ? 'yangi tovar qo‘shildi, yangilansinmi?' : 'yangilansinmi?';
+  const clashed = new Set(input.clash ?? []);
+  const totalsRows: string[] = [];
+  let totalsWarn = false;
+  const field = (f: 'weightKg' | 'volumeM3', ok: string, staleWords: string) => {
+    const gap = doubted.has(f) || missing.includes(f) || stale.has(f);
+    totalsWarn ||= gap;
+    if (plain && gap) {
+      // Said, never asked (§2.1): a doubt, two files that disagree, a figure
+      // nobody gave or a line added under it — the VED's to ask.
+      const why = doubted.has(f)
+        ? 'ikki xil yozilgan'
+        : missing.includes(f)
+          ? clashed.has(f)
+            ? 'fayllarda ikki xil'
+            : 'yo‘q'
+          : !input.amend || rows.some((r) => r.seq === null)
+            ? 'yangi tovar qo‘shildi'
+            : 'o‘zgardi';
+      return `ℹ️ ${FIELD_LABEL[f]} ${why} ${PLAIN_GAP_TAIL}`;
+    }
+    if (doubted.has(f)) return `⚠️ ${FIELD_LABEL[f]} — ikki xil yozilgan (pastda)`;
+    if (missing.includes(f)) return `⚠️ ${FIELD_LABEL[f]} — yozilmagan`;
+    if (stale.has(f)) return staleWords;
+    return ok;
+  };
+  totalsRows.push(
+    field(
+      'weightKg',
+      `✅ ${weightLabel(input.section, input.facts)}: ${fmt(Number(input.facts.weightKg))} kg`,
+      `⚠️ umumiy brutto og‘irligi (kg) — ${staleWhy} «jami … kg»`,
+    ),
+    field(
+      'volumeM3',
+      `✅ Hajm: ${volumeText(input.facts)}`,
+      `⚠️ umumiy hajmi (kub) — ${staleWhy} «jami … kub»`,
+    ),
   );
+  if (input.section !== 'rastamojka') {
+    const ends = (['fromCity', 'toCity'] as const).filter((f) => missing.includes(f));
+    if (ends.length === 0) {
+      totalsRows.push(`✅ Yo‘nalish: ${input.facts.fromCity?.trim()} → ${input.facts.toCity?.trim()}`);
+    } else {
+      totalsWarn = true;
+      for (const end of ends) {
+        totalsRows.push(plain ? `ℹ️ ${FIELD_LABEL[end]} yozilmagan ${PLAIN_GAP_TAIL}` : `⚠️ ${FIELD_LABEL[end]} — yozilmagan`);
+      }
+    }
+  }
+  // A doubt is a QUESTION («1.2 mi yoki 1200 mi?»): the plain summary asks
+  // none — its total row already says it is the VED's (§2.1).
+  const doubts = plain ? [] : input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
+
+  const warnRows = entries.filter((e) => e.warn);
+  // Complete = the SELLER's part (§3.2): a row with no code is not his to fill.
+  const complete = warnRows.length === 0 && !totalsWarn;
+  const confirm = input.amend ? (input.amend.started ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
+  const vedLine = `Bilmagan qatoringizni VED to‘ldiradi — ${confirm} ni hozir ham bosishingiz mumkin.`;
+  const shortage =
+    warnRows.length > 0 && totalsWarn
+      ? `⚠️ ${warnRows.length} ta qatorda va umumiyda ma’lumot yetishmayapti.`
+      : warnRows.length > 0
+        ? `⚠️ ${warnRows.length} ta qatorda ma’lumot yetishmayapti.`
+        : '⚠️ Umumiyda ma’lumot yetishmayapti.';
+  const closing: string[] = [];
+  if (plain) {
+    // His 2a: the job lands as it is, and the VED asks for what is missing —
+    // so the closing promises nothing to fill, and the last line says what a
+    // typed figure still does here (§2.2's quiet write). Collecting again
+    // (the marker) the summary's ✅ is gone and refused: its closing would
+    // point at it, so the marker alone points at «Bo‘ldi» (review PC-ADV-6,
+    // the AI table's adv-18).
+    if (!input.marker) {
+      closing.push(
+        rows.length > 0 && warnRows.length === 0 && !totalsWarn
+          ? `✅ Ma’lumot to‘liq — ${confirm} ni bosing, so‘rov VED ga tushadi.`
+          : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
+        PLAIN_SUMMARY_LAST,
+      );
+    }
+  } else if (ai) {
+    // The AI door's closing is the table's LAST block (§3.2, §3.4), under
+    // what the last answer did. Collecting again (the marker) it points at no
+    // press the save guard refuses (review adv-18): the marker points at
+    // «Bo‘ldi», and only what is still open is said.
+    const collecting = Boolean(input.marker);
+    if (rows.length === 0) {
+      if (!collecting) closing.push(NO_GOODS_CLOSING, vedLine);
+    } else if (complete) {
+      if (!collecting) closing.push(aiCompleteLine(input.amend, ai.available));
+    } else {
+      // After an answer the state names what is still open (§3.4): «⚠️ Yana 1 ta: 5-qator.»
+      const open = tableOpenOf(input);
+      closing.push(ai.last.length > 0 && open.length > 0 ? `⚠️ Yana ${open.length} ta: ${openTargetsText(open)}.` : shortage);
+      if (!collecting) closing.push(...answerHow(input, rows, missing, stale), vedLine);
+    }
+  } else if (rows.length === 0) {
+    closing.push(NO_GOODS_CLOSING, vedLine);
+  } else if (complete) {
+    closing.push('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
+  } else {
+    closing.push(shortage, ...answerHow(input, rows, missing, stale), vedLine);
+  }
+
+  const marker = input.marker ? ['', input.marker] : [];
+  // The plain summary's closing is its LAST block (§2.1), after the bot's and
+  // the model's notes; so is the AI table's (§3.4), after the certificate and
+  // under what the last answer did. The table from before the doors keeps its
+  // closing above them, as it was.
+  const notes = input.tail ? input.tail.split('\n') : [];
+  const last = ai ? [...ai.last, ...closing] : closing;
+  const tail = plain || ai ? [...notes, ...(last.length > 0 ? ['', ...last] : []), ...marker] : [...notes, ...marker];
+  const fixed = (cut: boolean) => [
+    '',
+    'Umumiy:',
+    ...totalsRows,
+    ...doubts,
+    ...(plain || ai ? [] : ['', ...closing]),
+    ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
+  ];
+  const goodsLines =
+    rows.length === 0 ? [plain ? `ℹ️ ${FIELD_LABEL.goods} yozilmagan ${PLAIN_GAP_TAIL}` : `⚠️ ${FIELD_LABEL.goods} — yozilmagan`] : null;
+  const length = (lines: string[], cut = false) => [...head, ...lines, ...fixed(cut), ...tail].join('\n').length;
+  const fits = (lines: string[]) => length(lines) <= TELEGRAM_LIMIT;
+  const draw = (lines: string[], cut = false) =>
+    fitTelegram(head, lines, fixed(cut), tail, { maxLines: Number.POSITIVE_INFINITY });
+
+  if (goodsLines) return draw(goodsLines);
+  const all = entries.map((e) => entryText(e, true));
+  if (fits(all)) return draw(all);
+
+  // ✅ rows while they fit, the rest one line: «✅ yana 4 ta qator to‘liq: 1, 3, 5–7».
+  // Only a row owing nothing folds there (`entryOk`): an AI-door row with no
+  // code is never ✅ (§3.1), so it is never counted «to‘liq».
+  const withOk = (list: TableEntry[], needText: (e: TableEntry) => string): string[] | null => {
+    const ok = list.filter(entryOk);
+    for (let k = ok.length - 1; k >= 0; k -= 1) {
+      const shown = new Set(ok.slice(0, k).map((e) => e.no));
+      const gone = ok.slice(k).map((e) => e.no);
+      const lines = [
+        ...list.filter((e) => !entryOk(e) || shown.has(e.no)).map(needText),
+        `✅ yana ${gone.length} ta qator to‘liq: ${numberRanges(gone)}`,
+      ];
+      if (fits(lines)) return lines;
+    }
+    return null;
+  };
+  const collapsed = withOk(entries, (e) => entryText(e, true));
+  if (collapsed) return draw(collapsed);
+
+  // ⚠️ rows sharing one ↳ lose their own and get one grouped line under the
+  // last of them — a 60-line clothing invoice priced only in kg repeats one
+  // reason sixty times (product-fit-10). The AI door's «kod yo‘q» is one
+  // reason too, grouped the same way.
+  const byNeed = new Map<string, number[]>();
+  for (const e of warnRows) if (e.need) byNeed.set(e.need, [...(byNeed.get(e.need) ?? []), e.no]);
+  const grouped = new Set([...byNeed].filter(([, nos]) => nos.length > 1).map(([need]) => need));
+  const codeNos = entries.filter((e) => e.code).map((e) => e.no);
+  const codeGrouped = codeNos.length > 1;
+  const needGroupedOf = (e: TableEntry) => e.warn && e.need !== null && grouped.has(e.need);
+  const groupedText = (e: TableEntry) => {
+    const needOwn = !needGroupedOf(e);
+    const codeOwn = !(codeGrouped && e.code);
+    if (needOwn && codeOwn) return entryText(e, true);
+    const nos = needOwn ? [] : byNeed.get(e.need!)!;
+    return [
+      entryText(e, needOwn, codeOwn),
+      ...(!needOwn && nos[nos.length - 1] === e.no ? [`   ↳ ${numberRanges(nos)}: ${e.need}`] : []),
+      ...(!codeOwn && codeNos[codeNos.length - 1] === e.no ? [`   ↳ ${numberRanges(codeNos)}: ${codeGap ?? ''}`] : []),
+    ].join('\n');
+  };
+  const groupedAll = entries.map(groupedText);
+  if (fits(groupedAll)) return draw(groupedAll);
+  const regrouped = withOk(entries, groupedText);
+  if (regrouped) return draw(regrouped);
+  const okNos = entries.filter(entryOk).map((e) => e.no);
+  const okLine = okNos.length > 0 ? [`✅ yana ${okNos.length} ta qator to‘liq: ${numberRanges(okNos)}`] : [];
+  const warnOnly = [...entries.filter((e) => !entryOk(e)).map(groupedText), ...okLine];
+  if (fits(warnOnly)) return draw(warnOnly);
+  // Only then are ⚠️ rows shortened — by `fitTelegram`'s own count line —
+  // and the closing says what to send instead. A grouped reason leaves its
+  // rows for the lines after the cut (review PF-5): hung under the LAST row of
+  // its group, it was the first thing the cut took, and a 60-row clothing
+  // table said what every row lacked nowhere.
+  // The ✅ rows' one line stays out of the cut too (fix review W-12): one
+  // entry of the cut list standing for all of them, it went first, and the
+  // count line called it one row — «… va yana 10 ta qator» with 19 hidden.
+  // Now the count is the ⚠️ rows the cut took, and nothing else is hidden.
+  const reasons = [
+    ...[...grouped].map((need) => `   ↳ ${numberRanges(byNeed.get(need)!)}: ${need}`),
+    ...(codeGrouped ? [`   ↳ ${numberRanges(codeNos)}: ${codeGap ?? ''}`] : []),
+  ];
+  const bare = (e: TableEntry) => entryText(e, !needGroupedOf(e), !(codeGrouped && e.code));
+  const cutRows = entries.filter((e) => !entryOk(e)).map(bare);
+  return fitTelegram(head, cutRows, [...okLine, ...reasons, ...fixed(true)], tail, { maxLines: Number.POSITIVE_INFINITY });
+}
+
+/**
+ * How to answer, built from THIS table (§2.1): the first ⚠️ line's number and
+ * its first unit, a ⚠️ line's first name word (the next one, when there is
+ * one, so the two examples show two rows), and the total the table still
+ * owes. An add collection says it in its own words (§2.4).
+ */
+function answerHow(
+  input: TableInput,
+  rows: readonly TableRow[],
+  missing: readonly CalcField[],
+  stale: ReadonlySet<'weightKg' | 'volumeM3'>,
+): string[] {
+  const needing = rows.filter((r) => r.needs.length > 0);
+  const first = needing[0];
+  const numbered = first ? `${first.no}: ${exampleFigure(first.needs[0]!)}` : null;
+  if (input.amend) {
+    const asked = (input.amend.askedSeqs ?? [])
+      .map((seq) => rows.find((r) => r.seq === seq))
+      .filter((r): r is TableRow => r !== undefined && r.needs.length > 0);
+    if (asked.length > 0) {
+      // At most LINES_NAMED named, the rest counted (review PF-6): the closing
+      // is never cut, so a 250-row ask pushed the instruction itself past
+      // Telegram's 4096.
+      const named =
+        asked
+          .slice(0, LINES_NAMED)
+          .map((r) => `${r.no}-qator ${needWhatUz(r.needs[0]!)}`)
+          .join(', ') + (asked.length > LINES_NAMED ? ` va yana ${asked.length - LINES_NAMED} ta` : '');
+      return [`✍️ So‘ralgan: ${named}. Yozing: «${asked[0]!.no}: ${exampleFigure(asked[0]!.needs[0]!)}».`];
+    }
+    // The example is the first thing still OPEN (review adv-20): a ⚠️ row,
+    // else the total the table owes — «jami 3500 kg» under a ✅ brutto taught
+    // a figure nobody asked for. A conflict is no longer one (§1.1).
+    const totalExample =
+      missing.includes('weightKg') || stale.has('weightKg')
+        ? 'jami 3500 kg'
+        : missing.includes('volumeM3') || stale.has('volumeM3')
+          ? 'jami 12 kub'
+          : null;
+    const example = numbered ?? totalExample ?? 'Yiwu → Toshkent';
+    return [`✍️ Yetishmaganini yozing: «${example}». Yangi tovar yoki fayl — «➕ Yana ma’lumot».`];
+  }
+  // A name the parser reads as THAT row alone (`nameWord`, review PF-4) — the
+  // next ⚠️ row's when it has one, so the two examples show two rows; else
+  // another's; none (two rows of one name) → the numbered example only. It
+  // starts with a letter: «100% paxta futbolka» gave «100 30 dona», which
+  // reads as row 100 (review adv-20). At most NAME_ROWS_TRIED rows are asked,
+  // and the first that answers ends the search (fix review FR-3): every ⚠️
+  // row asked, each over every row, was 8 s of the one process on a 500-row
+  // table where no row has a name of its own.
+  let named: { row: TableRow; word: string } | null = null;
+  for (const r of [...needing.slice(1, NAME_ROWS_TRIED), ...needing.slice(0, 1)]) {
+    const word = input.nameWord(rows, r);
+    if (word !== null) {
+      named = { row: r, word };
+      break;
+    }
+  }
+  const examples = [
+    ...(numbered ? [numbered] : []),
+    ...(named ? [`${named.word} ${exampleFigure(named.row.needs[0]!)}`] : []),
+    ...(missing.includes('weightKg') || stale.has('weightKg')
+      ? ['jami 3500 kg']
+      : missing.includes('volumeM3') || stale.has('volumeM3')
+        ? ['jami 12 kub']
+        : []),
+  ];
+  if (examples.length === 0) examples.push('Yiwu → Toshkent');
+  const quoted = examples.map((e) => `«${e}»`);
+  const list = quoted.length > 1 ? `${quoted.slice(0, -1).join(', ')} yoki ${quoted.at(-1)}` : quoted[0];
+  return [
+    `✍️ Bir xabarda istalgan qatorni to‘ldiring: ${list}.`,
+    'Bir nechta bo‘lsa — har birini alohida satrga yozing (yoki «;» bilan).',
+  ];
 }
 
 /**
@@ -801,34 +1454,6 @@ export function intakeNoteText(input: {
 }
 
 /**
- * Which line the bot should ask about next, and what to ask (sub-round C).
- *
- * The rule is `lineNeeds`, one row at a time: a row the LAW asks a figure of
- * that it does not state, or a row stating no figure at all. Everything else
- * about the shipment can be left to the VED — never «are you sure», never a
- * form.
- *
- * Freight-only sections ask NOTHING: a truck is priced on the totals, and
- * `lineNeeds` reads `REQUIRED_FIELDS` to say so (#513).
- *
- * `skip` holds the lines already dealt with this collection — answered, or
- * passed with «⏭» — so a re-analysis after «➕ Yana ma'lumot» never asks
- * the same line twice (P1.3). Returns the INDEX into `facts.goods` so the
- * answer is written back onto exactly the row that was asked about — a name
- * is not an address, two lines of a packing list are routinely called the
- * same thing.
- */
-export function nextLineToAsk(
-  section: CalcSection,
-  facts: CalcFacts,
-  laws: ReadonlyMap<string, NeedLaw>,
-  opts: { skip?: readonly number[] } = {},
-): LineNeed | null {
-  const skip = new Set(opts.skip ?? []);
-  return lineNeeds(section, facts, laws).find((l) => !skip.has(l.index)) ?? null;
-}
-
-/**
  * What a BARE «50» means on this line — the one unit the law pins, when it
  * pins exactly one (P1.3). Anything else is asked with buttons: a bare
  * number is never silently a weight (the audit's finding: «a bare number
@@ -882,25 +1507,6 @@ export function numberText(value: number): string {
  */
 export function anyMeasureLine(index: number, name: string): LineNeed {
   return { index, name, pinned: [], anyMeasure: true, units: ['dona', 'kg'] };
-}
-
-/**
- * The question, in the seller's own language — ONE unit only when the law
- * pins it (judge UX5); a baza-only line is asked for a count OR a weight,
- * because either prices it.
- */
-export function lineQuestionText(line: LineNeed): string {
-  const head = `❓ ${line.index + 1}-qator «${line.name}»`;
-  if (line.pinned.length > 0) {
-    const asked = line.pinned.map((n) => `${needWhatUz(n.unit)} — ${needWhyUz(n)}`).join('; ');
-    const example = line.pinned.map((n) => `«${figureLabel(n.unit === 'kg' ? 150 : 300, n.unit)}»`).join(', ');
-    return `${head}: ${asked}.\nMasalan: ${example}.`;
-  }
-  return (
-    `${head} — nechta dona yoki necha kg (sof og‘irlik)?\n` +
-    'Masalan: «50 dona», «300 kg» yoki ikkalasi «300 dona 150 kg». ' +
-    'm², juft yoki litr ham bo‘ladi: «120 m²», «40 juft».'
-  );
 }
 
 /**

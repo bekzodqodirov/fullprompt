@@ -74,6 +74,13 @@ export interface BatchLot {
   kg: number;
   m3: number;
   /**
+   * The WHOLE lot's stored weight and volume, unrounded — what a bill is
+   * computed from (`exactSharesOf`): `kg`/`m3` above are rounded for the
+   * screen, and the upsale's invoice check sums the stored figure.
+   */
+  lotKg: number;
+  lotM3: number;
+  /**
    * Of `onBatch`: written off as lost, on this leg or at its destination
    * before the carton rode anywhere else — a loss on a LATER truck is that
    * truck's (U35).
@@ -189,6 +196,8 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       lotBoxCount: row.lotBoxCount,
       kg: Math.round(Number(row.lotWeightKg) * share * 10) / 10,
       m3: Math.round(Number(row.lotVolumeM3) * share * 1000) / 1000,
+      lotKg: Number(row.lotWeightKg),
+      lotM3: Number(row.lotVolumeM3),
       lostCount,
       missingCount,
       leftBehindCount: Number(row.leftBehindCount),

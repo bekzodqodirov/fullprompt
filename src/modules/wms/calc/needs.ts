@@ -73,6 +73,18 @@ export function needLawOf(g: {
   };
 }
 
+/**
+ * Each grouped row's law, by its `seq` — a grouped line answers to its
+ * GROUP's law (judge S9), the one ⚙ may have typed and the one the row's cell
+ * border reads. One home for the VED page and the bot's stored-request read
+ * (`storedRequestFacts`), so the chip and the ask cannot read two laws.
+ */
+export function groupLawsOf(
+  groups: readonly (Parameters<typeof needLawOf>[0] & { items: readonly { seq: number }[] })[],
+): Map<number, NeedLaw> {
+  return new Map(groups.flatMap((g) => g.items.map((i) => [i.seq, needLawOf(g)] as const)));
+}
+
 export type NeedItem = Pick<
   PricedItem,
   'quantity' | 'weightKg' | 'volumeM3' | 'measureUnit' | 'measureQty'

@@ -31,6 +31,11 @@ import {
   saveTable,
 } from '@/modules/wms/calc/workspace';
 import { aiPrefill, prefillStanding, prefillTicket } from '@/modules/wms/calc/prefill';
+import { sawRevOfGroup } from '../fixtures/calc-saw-rev';
+import { AI_CODE_NOTE } from '@/modules/wms/calc/code-source';
+import { CODE_SOURCE_WORDS } from '@/modules/wms/calc/ai-note';
+import { AI_NOTE_HEAD, AI_REPLY_HEAD } from '@/modules/wms/calc/reply-heads';
+import type { IntakeDoor } from '@/modules/wms/calc/intake';
 
 /**
  * The AI VED hodimi, end to end, with the MODEL INJECTED.
@@ -53,6 +58,9 @@ let batchId = '';
 const madeRequests: string[] = [];
 const madeKeys: string[] = [];
 const ctx = () => ({ actorId });
+/** The request's hands-off stamp (0139) — moved only by the machine's chained saves. */
+const handsOffOf = async (id: string) =>
+  (await db.select({ h: calcRequests.handsoffRev }).from(calcRequests).where(eq(calcRequests.id, id)))[0]?.h ?? null;
 
 beforeAll(async () => {
   const [actor] = await db
@@ -128,6 +136,7 @@ async function open(
 ) {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       entityType: 'deal',
       entityId: dealId,
       section: 'rastamojka',
@@ -151,6 +160,7 @@ async function openSection(
 ) {
   const r = await openCalcRequest(
     {
+      intakeDoor: null,
       ...extra,
       entityType: 'deal',
       entityId: dealId,
@@ -302,7 +312,13 @@ describe('the machine carries a job as far as it honestly can', () => {
       pick: async () => ({ answers: [], usage: null }),
       configured: true,
     });
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5): `out.text` is the
+    // CHAT, whose seller tail points at «➕» under the message; the card's
+    // copy keeps R2's words.
     expect(out.text).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+    );
+    expect(out.lentaText).toContain(
       'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — mijozdan so‘rab, kartadagi lentaga yozing',
     );
     expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi');
@@ -456,7 +472,7 @@ describe('the machine carries a job as far as it honestly can', () => {
     // Through the real door: a hand-written confirm invents a `confirm_via`
     // the 0089 CHECK refuses, and a fixture that cannot reach the state is
     // evidence about the fixture (#166).
-    await confirmGroup(group!.id, ctx());
+    await confirmGroup(group!.id, ctx(), 'single', await sawRevOfGroup(group!.id));
     expect(await prefillStanding(fresh, await prefillTicket(fresh))).toBe('confirmed');
   });
 
@@ -491,6 +507,9 @@ describe('the machine carries a job as far as it honestly can', () => {
     );
     expect(proposed, 'the grouping must not run over a person’s save').toBe(0);
     expect(await prefillTicket(id), 'and the machine wrote nothing after it').toBe(afterPerson);
+    // Round 3 (docs/SAKKIZ-R3.md §10.3): the hands-off stamp stays where the
+    // landing left it — behind the person's revision, i.e. «started».
+    expect(await handsOffOf(id)).toBe(checked);
     // Re-anchored (R2 late pass, review CONC-5): the pass used to answer
     // anyway — the reply rendered from the VED's half-typed state under the
     // AI's heading — while a save one moment EARLIER got the worker's
@@ -756,8 +775,11 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
     const afterPerson = await prefillTicket(id);
     expect(afterPerson, 'the premise: the person’s save moved the clock').not.toBe(stale);
 
-    await expect(proposeGroups(id, ctx(), { expectRev: stale })).rejects.toMatchObject({ code: 'conflict' });
+    const stampBefore = await handsOffOf(id);
+    await expect(proposeGroups(id, ctx(), { expectRev: stale, handsOff: true })).rejects.toMatchObject({ code: 'conflict' });
     expect(await prefillTicket(id)).toBe(afterPerson);
+    // Round 3 (§10.3): a refused claim moves no hands-off stamp either.
+    expect(await handsOffOf(id)).toBe(stampBefore);
     const [req] = await db.select().from(calcRequests).where(eq(calcRequests.id, id));
     expect(req!.aiProposalStartedAt, 'a refused claim holds nothing').toBeNull();
 
@@ -806,6 +828,10 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
   it('the pass: a person saving inside the grouping’s tail stops the sweep and the pick (review P1-R2)', async () => {
     const row = await importRow();
     const id = await openLate([{ name: row.name, weightKg: 100 }]);
+    // Re-anchored for round 3 (§10.2.3): the pass no longer starts a chain
+    // from a fresh read of its own — it starts at the ticket the worker
+    // checked, so this case hands it the one the worker would.
+    const ticket = (await prefillTicket(id))!;
     let picks = 0;
     let afterPerson: number | null = null;
     const out = await aiPrefill(id, ctx(), {
@@ -841,7 +867,7 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
         picks += 1;
         return { answers: null, usage: null };
       },
-    });
+    }, { expectRev: ticket });
     expect(afterPerson, 'the premise: the person saved inside the tail').not.toBeNull();
     expect(out.overtaken).toBe('step 1');
     expect(picks).toBe(0);
@@ -851,6 +877,8 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
   it('a grouping that FAILS after a person saved keeps the chain’s revision — the sweep is refused, never adopted (review P1-R7)', async () => {
     const row = await importRow();
     const id = await openLate([{ name: row.name, tnvedCode: row.tnvedCode, weightKg: 100 }]);
+    // Re-anchored for round 3 (§10.2.3): the worker's ticket, not a fresh read.
+    const ticket = (await prefillTicket(id))!;
     let picks = 0;
     let afterPerson: number | null = null;
     const out = await aiPrefill(id, ctx(), {
@@ -865,7 +893,7 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
         picks += 1;
         return { answers: null, usage: null };
       },
-    });
+    }, { expectRev: ticket });
     expect(afterPerson).not.toBeNull();
     expect(out.overtaken).toBe('step 2');
     // Nothing the machine wrote before the person: the stand-down sentence (CONC-5).
@@ -922,5 +950,193 @@ describe('the pass stands down when a person or a close says so (R2 late pass)',
     } finally {
       await db.update(calcRequests).set({ aiProposalStartedAt: null }).where(eq(calcRequests.id, id));
     }
+  });
+});
+
+/**
+ * The two bot doors through the REAL pass (docs/IKKI-ESHIK.md §2.4, §3.5),
+ * the door read off the row by `aiPrefill` itself — what the worker then
+ * sends nowhere on the plain door (calc-pass-settle pins who hears it).
+ */
+describe('the pass by the door the request came in through', () => {
+  // Its own requester: one person holds at most MAX_OPEN_PER_REQUESTER open jobs.
+  let doorActor = '';
+  beforeAll(async () => {
+    const [u] = await db
+      .insert(users)
+      .values({ phone: `+99891${String(Date.now()).slice(-7)}`, fullName: `Prefill door ${SUFFIX}`, passwordHash: 'x' })
+      .returning();
+    doorActor = u!.id;
+  });
+  afterAll(async () => {
+    await db.update(users).set({ active: false }).where(eq(users.id, doorActor));
+  });
+  async function openDoor(
+    door: IntakeDoor,
+    section: 'rastamojka' | 'podklyuch',
+    items: { name: string; tnvedCode?: string | null; weightKg?: number | null; note?: string | null }[],
+    extra: { freightZone?: string | null; fromCity?: string | null } = {},
+  ) {
+    const r = await openCalcRequest(
+      {
+        intakeDoor: door,
+        entityType: 'deal',
+        entityId: dealId,
+        section,
+        fromCity: extra.fromCity === undefined ? 'Yiwu' : extra.fromCity,
+        toCity: 'Toshkent',
+        weightKg: 500,
+        volumeM3: 10,
+        freightZone: extra.freightZone ?? null,
+        items,
+        source: 'card',
+      },
+      { actorId: doorActor },
+    );
+    madeRequests.push(r.id);
+    return r.id;
+  }
+  const MONEY = ['≈', 'Rastamojka jami', 'Taxminiy', 'Aniq', 'JAMI', 'Rasmiy emas', 'Yo‘lkira: ≈'];
+
+  it('«🧮»: the note is for the VED — codes and where from, the law, the bazas — and carries NO money (his 3a)', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'podklyuch', [{ name: row.name, weightKg: 100 }], { freightZone: 'cn' });
+    const out = await aiPrefill(id, ctx(), {
+      propose: proposeAs(row.tnvedCode),
+      pick: async () => ({ answers: [], usage: null }),
+      configured: true,
+    });
+    // The pass still did its work — the workspace is half done for the VED.
+    const ws = await loadWorkspace(id);
+    expect(ws!.groups[0]!.tnvedCode).toBe(row.tnvedCode);
+    expect(out.customsUsd).not.toBeNull();
+    // ONE rendering, for the claim and the card alike.
+    expect(out.text).toBe(out.lentaText);
+    expect(out.lentaUnasked).toBeUndefined();
+    expect(out.text.split('\n')[0]).toBe(`${AI_NOTE_HEAD} · PF${SUFFIX} · PF-${SUFFIX}`);
+    expect(out.text.startsWith(AI_REPLY_HEAD)).toBe(false);
+    expect(out.text).toContain(`· 1-qator «${row.name.replace(/\s+/g, ' ').trim().slice(0, 59)}`);
+    // The model coded it in this pass (no code landed, the memory had none).
+    expect(out.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    expect(out.text).toContain('stavka 📖 lug‘atdan');
+    expect(out.text).toContain('baza: 1 ta 📥 bojxona faylidan (taxmin)');
+    for (const money of MONEY) expect(out.text, money).not.toContain(money);
+    expect(out.text).not.toMatch(/\$\d+\.\d{2}\b/);
+  });
+
+  it('«🧮» with no city: the road’s gap is the VED’s to get, named first — no figure, nothing asked', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'podklyuch', [{ name: row.name, weightKg: 100 }], { fromCity: null });
+    const out = await aiPrefill(id, ctx(), { propose: proposeAs(row.tnvedCode), pick: async () => ({ answers: [], usage: null }), configured: true });
+    expect(out.text.split('\n')[1]).toBe('⚠️ VED uchun: yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan.');
+    for (const ask of ['mijozdan so‘rab', '«➕', 'to‘ldiring', ...MONEY]) expect(out.text, ask).not.toContain(ask);
+  });
+
+  it('a code the model proposed while READING wears «(AI taklifi)»: the plain note and the AI answer alike (§3.1)', async () => {
+    const row = await importRow();
+    for (const door of ['plain', 'ai'] as const) {
+      const id = await openDoor(door, 'rastamojka', [
+        { name: `${row.name} ${door}`, tnvedCode: row.tnvedCode, weightKg: 100, note: AI_CODE_NOTE },
+      ]);
+      const out = await aiPrefill(id, ctx(), { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true });
+      expect(out.text, door).toContain(`${row.tnvedCode} (AI taklifi)`);
+      if (door === 'plain') expect(out.text).toContain(CODE_SOURCE_WORDS.reading);
+      else expect(out.lentaText).toContain(`${row.tnvedCode} (AI taklifi)`);
+    }
+    // A code the request landed with and nobody's model proposed wears nothing.
+    const id = await openDoor('ai', 'rastamojka', [{ name: `${row.name} typed`, tnvedCode: row.tnvedCode, weightKg: 100 }]);
+    const out = await aiPrefill(id, ctx(), { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true });
+    expect(out.text).not.toContain('(AI taklifi)');
+  });
+
+  it('an addition’s re-run names the landing pass’s model code the model’s — never the file’s (review PP-SPEC-2 / ADV-1)', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'rastamojka', [{ name: `${row.name} rerun ${SUFFIX}`, weightKg: 100 }]);
+    const landing = await aiPrefill(id, ctx(), {
+      propose: proposeAs(row.tnvedCode),
+      pick: async () => ({ answers: [], usage: null }),
+      configured: true,
+    });
+    expect(landing.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    // The re-run starts from the codes the landing pass's model left; the
+    // workspace still says whose they are (`ai_proposed`).
+    expect((await loadWorkspace(id))!.groups[0]!.aiProposed).toBe(true);
+    const rerun = await aiPrefill(
+      id,
+      ctx(),
+      { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true },
+      { pass: `amend:${randomUUID()}` },
+    );
+    expect(rerun.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    expect(rerun.text).not.toContain(CODE_SOURCE_WORDS.row);
+  });
+
+  it('a code a PERSON typed while the pass ran is not the model’s — overtaken, it is the code alone (review ADV-1)', async () => {
+    const row = await importRow();
+    const id = await openDoor('plain', 'rastamojka', [
+      { name: `${row.name} mashina ${SUFFIX}`, weightKg: 100 },
+      { name: `Odam yozgan ${SUFFIX}`, weightKg: 50 },
+    ]);
+    const ticket = (await prefillTicket(id))!;
+    const out = await aiPrefill(
+      id,
+      ctx(),
+      {
+        configured: true,
+        // The model codes row 1 only; then a person codes row 2 — after the
+        // machine wrote, so the pass is overtaken at the sweep and still speaks.
+        propose: async (requestId, c, o = {}) => {
+          const items = await db
+            .select({ id: calcRequestItems.id, seq: calcRequestItems.seq })
+            .from(calcRequestItems)
+            .where(eq(calcRequestItems.requestId, requestId))
+            .orderBy(calcRequestItems.seq);
+          const applied = await applyProposal(
+            requestId,
+            [{ label: 'AI guruh', tnvedCode: row.tnvedCode, itemSeqs: [items[0]!.seq], aiProposed: true, confidence: 'high', aiDutyPct: null, note: null }],
+            c,
+            o,
+          );
+          const priced = await priceProposedGroups(requestId, c, o.expectRev === undefined ? {} : { expectRev: applied.rev });
+          await saveTable(requestId, { items: [{ id: items[1]!.id, seq: items[1]!.seq, tnvedCode: '9503007000' }], adds: [] }, ctx());
+          return { groups: 1, batches: 1, failed: 0, ...priced };
+        },
+        pick: async () => ({ answers: [], usage: null }),
+      },
+      { expectRev: ticket },
+    );
+    expect(out.overtaken).toBe('step 2');
+    expect(out.text).toContain(`${row.tnvedCode} · ${CODE_SOURCE_WORDS.model}`);
+    expect(out.text).toMatch(new RegExp(`· 2-qator «Odam yozgan ${SUFFIX}» — 9503007000$`, 'm'));
+  });
+
+  it('the file’s own code is named so on the landing pass only — on a re-run it is the code alone', async () => {
+    // A code no memory explains: the exact-key book knows no such name, and
+    // no seal carries this code.
+    const name = `Sinov tovari ${SUFFIX}`;
+    const id = await openDoor('plain', 'rastamojka', [{ name, tnvedCode: '9503007000', weightKg: 100 }]);
+    const noModel = { propose: idle, pick: async () => ({ answers: [], usage: null }), configured: true };
+    const landing = await aiPrefill(id, ctx(), noModel);
+    expect(landing.text).toContain(`· 1-qator «${name}» — 9503007000 · ${CODE_SOURCE_WORDS.row}`);
+    // Between the passes a VED could have typed it — the re-run cannot tell,
+    // so it names no source rather than a wrong one.
+    const rerun = await aiPrefill(id, ctx(), noModel, { pass: `amend:${randomUUID()}` });
+    expect(rerun.text).toMatch(new RegExp(`· 1-qator «${name}» — 9503007000$`, 'm'));
+  });
+
+  it('«🤖»: the figure goes out and nothing is asked — a seller’s gap reads «VED xodimi sizdan so‘raydi» (his 5a)', async () => {
+    const row = await importRow();
+    const id = await openDoor('ai', 'podklyuch', [{ name: row.name, weightKg: 100 }], { fromCity: null });
+    const out = await aiPrefill(id, ctx(), { propose: proposeAs(row.tnvedCode), pick: async () => ({ answers: [], usage: null }), configured: true });
+    expect(out.text).toContain('Rastamojka jami');
+    expect(out.text).toContain(
+      'Yo‘lkira: ⚠️ yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan — VED xodimi sizdan so‘raydi',
+    );
+    expect(out.text).toContain('JAMI: hozircha hisoblab bo‘lmadi — VED xodimi hisoblaydi.');
+    for (const ask of ['❓', 'mijozdan so‘rab', 'to‘ldiring', 'reply qilib']) expect(out.text, ask).not.toContain(ask);
+    // The card's copy keeps the money (2a, the AI door) and names the gap for the VED.
+    expect(out.lentaText).toContain('⚠️ VED uchun: yo‘nalish (zona) tanlanmagan — qaysi shahardan ekani yozilmagan.');
+    expect(out.lentaText).toContain('Rastamojka jami');
+    expect(out.lentaUnasked).toBeUndefined();
   });
 });

@@ -123,6 +123,221 @@ export function truckDealDecision(
 }
 
 /**
+ * One row of the «Narx» tab's table (the owner, 2026-11-08, his 1a: «1
+ * mashinada 1 clientda 10 15 ta prixoda va har birida bitim bolsa narx
+ * berishda faqat 1 dona bitim tanlaydigan bolib qolgan»): a deal's own part,
+ * or the «bitimsiz» part, with its typed amount. `derive` is no part — the
+ * table is drawn only where somebody has to choose.
+ */
+export type TruckDealPart = { choice: TruckDealChoice; amount: number };
+
+export type TruckDealPartsRefusal = TruckDealRefusal | 'deal_parts_empty' | 'deal_part_duplicate';
+
+/** The part a refusal is about, as the table posts it: the deal's id, or 'none'. */
+export const partKeyOf = (choice: TruckDealChoice): string =>
+  choice.kind === 'deal' ? choice.dealId : choice.kind;
+
+/**
+ * One press of the table, decided — beside `truckDealDecision` and built from
+ * it, so a part is admitted by exactly the branches a single price is (#513).
+ * Asked by the price door on the pool and again inside its transaction.
+ *
+ * The order is the refusals' priority: a page drawn under another question
+ * first (Q8's rule — nothing else it says can be trusted), then a table posted
+ * for a client nobody has to ask (a stale or forged post: the table is drawn
+ * only for an ambiguous client), then the shape of the press, then each part.
+ * `at` names the part a refusal is about, so the screen can mark its row.
+ */
+export function truckDealParts(
+  candidates: DealCandidates,
+  parts: TruckDealPart[],
+  seen: string,
+):
+  | { ok: true; parts: { dealId: string | null; via: 'chosen' | 'none'; amount: number }[] }
+  | { ok: false; code: TruckDealPartsRefusal; at?: string } {
+  if (seen !== candidates.key) return { ok: false, code: 'deals_changed' };
+  if (!candidates.ambiguous) return { ok: false, code: 'deal_choice_invalid' };
+  if (parts.length === 0) return { ok: false, code: 'deal_parts_empty' };
+  const keys = new Set<string>();
+  const out: { dealId: string | null; via: 'chosen' | 'none'; amount: number }[] = [];
+  for (const part of parts) {
+    const at = partKeyOf(part.choice);
+    if (keys.has(at)) return { ok: false, code: 'deal_part_duplicate', at };
+    keys.add(at);
+    // On an ambiguous truck `derive` would answer «choose» — but a table
+    // row always names its deal, so a derived part is a malformed post.
+    if (part.choice.kind === 'derive') return { ok: false, code: 'deal_choice_invalid', at };
+    const decided = truckDealDecision(candidates, part.choice, seen);
+    if (!decided.ok) return { ok: false, code: decided.code, at };
+    // `derived` is unreachable here (no derive part); narrowed for the type.
+    out.push({ dealId: decided.dealId, via: decided.via === 'none' ? 'none' : 'chosen', amount: part.amount });
+  }
+  return { ok: true, parts: out };
+}
+
+/**
+ * A set of ids as one comparable string — what a form posts of what it was
+ * drawn with and what the write body re-reads under its locks. Sorted in JS on
+ * both sides, never by a column order two drivers might disagree about.
+ */
+export const seenOf = (ids: Iterable<string>): string => [...ids].sort().join(',');
+
+/**
+ * A price of the client on this truck, as the «already priced here» reading
+ * needs it — a live one, or (in the reading's `zeroed` list) one the
+ * lost-cargo door lowered to zero. `chosenNone` — its create audit says the
+ * person CHOSE «bitimsiz» (`dealVia: 'none'`); every other deal-less price was
+ * written before the deals were known or before Q8, and is the whole cargo's.
+ */
+export interface TruckPriceHere {
+  id: string;
+  dealId: string | null;
+  usd: number;
+  chosenNone: boolean;
+}
+
+/**
+ * What already stands for a client on a truck, by what it covers.
+ *
+ * - `byDeal` — each offered deal's own prices here;
+ * - `none` — the chosen «bitimsiz» part (`chosenNone`), while some of the
+ *   client's cargo here still has no deal;
+ * - `whole` — every OTHER price here: a deal-less price nobody chose (pre-Q8,
+ *   or before the deals were known — on a truck with deal-less cargo too: the
+ *   audit tells it from a chosen part), a price on a deal that is no longer
+ *   among the candidates, and a chosen «bitimsiz» part on a truck that now
+ *   carries only his deals (its deal-less cargo was filed onto one, review
+ *   F1). Truck coverage ignores the deal (unpriced.ts), so each of them
+ *   already covers every carton of the client aboard: while one stands
+ *   nothing is pre-filled and every filled row asks, naming it. A chosen part
+ *   left as «bitimsiz» there would hide in a row the table no longer draws —
+ *   every deal pre-filled, nothing asked, the filed cargo billed twice.
+ */
+export interface PricedHereParts {
+  byDeal: Map<string, TruckPriceHere[]>;
+  none: TruckPriceHere[];
+  whole: TruckPriceHere[];
+}
+
+/**
+ * What already stands for a client on a truck — the ONE reading behind «Bu
+ * mashinadagi narxlar» (`unpricedDealsOf`) and every row of the price table
+ * (its pre-fill and its ask), so the two cannot disagree about which price
+ * covers what (#513; judge P1-UX-4). The live prices, and beside them the
+ * prices the lost-cargo door lowered to ZERO here (`zeroed`, the same
+ * three-way reading): such a price is still one someone set and covers like
+ * the price it was (unpriced.ts `u_charge`), so its deal is not «narx yo'q»,
+ * is never pre-filled, and a row typed for it asks — or the next press bills
+ * again exactly what the compensation took back (review A1). Kept apart
+ * because it is in no live set (`pricesSeen`) and has no live amount.
+ */
+export interface PricedHereReading extends PricedHereParts {
+  zeroed: PricedHereParts;
+}
+
+function partsOf(candidates: DealCandidates, prices: TruckPriceHere[]): PricedHereParts {
+  const byDeal = new Map<string, TruckPriceHere[]>();
+  const none: TruckPriceHere[] = [];
+  const whole: TruckPriceHere[] = [];
+  for (const price of prices) {
+    if (price.dealId !== null && candidates.deals.includes(price.dealId)) {
+      byDeal.set(price.dealId, [...(byDeal.get(price.dealId) ?? []), price]);
+    } else if (price.dealId === null && price.chosenNone && candidates.none) {
+      none.push(price);
+    } else {
+      whole.push(price);
+    }
+  }
+  return { byDeal, none, whole };
+}
+
+/**
+ * `zeroed` is REQUIRED: an optional one fails open — a caller that forgot it
+ * would read a given-back part as «narx yo'q» and pre-fill it (review A1).
+ */
+export function pricedHereReading(
+  candidates: DealCandidates,
+  prices: TruckPriceHere[],
+  zeroed: TruckPriceHere[],
+): PricedHereReading {
+  return { ...partsOf(candidates, prices), zeroed: partsOf(candidates, zeroed) };
+}
+
+/**
+ * Whether a zeroed price stands for a table row — the deal's own, the chosen
+ * «bitimsiz» part's (`key` 'none'), or the whole cargo's (every row). The
+ * PRE-FILL's gate (review A1): while any of them stands the row is never
+ * typed for the person. What the row SAYS is narrower (`ownZeroedFor`).
+ */
+export function zeroedFor(reading: PricedHereReading, key: string): boolean {
+  if (reading.zeroed.whole.length > 0) return true;
+  return key === 'none' ? reading.zeroed.none.length > 0 : reading.zeroed.byDeal.has(key);
+}
+
+/**
+ * Whether a table row says — and asks — «narx kompensatsiya bilan olib
+ * tashlangan»: only of the row's OWN part (the deal's, or the chosen
+ * «bitimsiz» part's), and only while that part has no live price here. A
+ * zeroed WHOLE-cargo price is not this row's price: it is said and asked
+ * through the whole-cargo words (`wholeStandingOf`), like a live one — every
+ * row used to read «your price was removed» about a price none of them had,
+ * and a part priced again after the compensation went on reading «removed»
+ * beside the price standing for it (review A1-zeroed-words). The pre-fill
+ * stays on `zeroedFor`, so no row is typed while any of them stands.
+ */
+export function ownZeroedFor(reading: PricedHereReading, key: string): boolean {
+  return key === 'none'
+    ? reading.zeroed.none.length > 0 && reading.none.length === 0
+    : reading.zeroed.byDeal.has(key) && !reading.byDeal.has(key);
+}
+
+/**
+ * Every whole-cargo price standing here, live first, then the ones the
+ * lost-cargo door lowered to zero — the list the table's «butun yukka narx
+ * bor» line and its whole-cargo ask name. A zeroed one covers every carton
+ * of the client aboard like the price it was (`unpricedDealsOf` reads it as
+ * 'whole'), so it is said there, «$0.00 → … · kompensatsiya», never as each
+ * row's own (review A1-zeroed-words).
+ */
+export function wholeStandingOf(reading: PricedHereReading): { price: TruckPriceHere; zeroed: boolean }[] {
+  return [
+    ...reading.whole.map((price) => ({ price, zeroed: false })),
+    ...reading.zeroed.whole.map((price) => ({ price, zeroed: true })),
+  ];
+}
+
+/**
+ * The zeroed prices the single «Narx» form names in its ask: every one of
+ * them while no live price of the client's stands here, and none once one
+ * does. The single form is the client nobody has to ask which deal (R3a):
+ * ONE price covers all his cargo here, whatever deal it was written on — and
+ * that deal is DERIVED at each press, so a price set again after the
+ * compensation lands where the cargo rides now, not where the zeroed one
+ * stood (deal-less, then A once its prixod was filed onto A; or the reverse).
+ * Any live price therefore re-covers the cargo the zeroed one covered; it is
+ * named by the form's `pricedHere` ask, never «removed — set it again?»
+ * beside it (the table's own rule, `ownZeroedFor`). Matching on the deal id
+ * missed exactly that move (review RVF2-M2). Whether the form asks is
+ * unchanged: a zeroed price dropped here always has a live one beside it.
+ */
+export function zeroedAskedOf<T extends TruckPriceHere>(zeroed: T[], live: TruckPriceHere[]): T[] {
+  return live.length > 0 ? [] : zeroed;
+}
+
+/**
+ * The first deal whose card reads otherwise than the table was drawn with —
+ * `seen` the drawn digest (`seenOf`), `now` the posted deals card-priced at
+ * the press. The door refuses on it by its own code and names it, so its row
+ * is outlined and the sentence says the DEAL CARD changed, never «the prices
+ * on this truck» (review A4-words: nothing on the truck had moved).
+ */
+export function cardMovedOf(seen: string, now: string[]): string | undefined {
+  const drawn = new Set(seen.split(',').filter(Boolean));
+  const read = new Set(now);
+  return [...new Set([...drawn, ...read])].sort().find((dealId) => drawn.has(dealId) !== read.has(dealId));
+}
+
+/**
  * The choice a deal select shows: the person's own, while it was made under
  * the question drawn now and is still one of its options; else nothing.
  *
@@ -141,32 +356,37 @@ export function shownDealChoice(
 
 /**
  * «Bu mashinadagi narxlar»: each of an asked client's deals that has no price
- * of its own on this truck, and what to say about it.
+ * of its own on this truck — live, or lowered to zero by the lost-cargo door
+ * (`zeroed`, review A1) — and what to say about it.
  *
- * - `card` — the deal carries a live price of its own off any truck; the
+ * - `card` — the deal carries a price of its own off any truck; the
  *   unpriced rule's deal clause covers its cartons here, so «narx yo'q» would
  *   invite a second bill for the same job.
- * - `whole` — a price with NO deal is already on the truck while none of the
- *   client's cargo here is deal-less (`!none`). It is not a chosen «bitimsiz»
- *   part (none is offered on such a truck): it is a whole-cargo price, written
- *   before the deals were known or before Q8, and it covers every carton of
- *   the client aboard. Said so, muted — bold «narx yo'q» under it invited two
- *   more bills (review).
+ * - `whole` — a whole-cargo price stands (`pricedHereReading`), live or
+ *   zeroed: a deal-less price nobody chose as «bitimsiz» — written before the
+ *   deals were known or before Q8, on a truck with or without deal-less cargo
+ *   — a price on a deal whose cargo left, or a chosen «bitimsiz» part whose
+ *   deal-less cargo is gone. It covers every carton of the client aboard. Said
+ *   so, muted — bold «narx yo'q» under it invited two more bills (review).
  * - `missing` — nothing covers this deal's part on the truck yet; loud only
  *   once the client has some price here (before that, «Narx: —» says it).
  */
 export function unpricedDealsOf(
   candidates: DealCandidates,
-  prices: { dealId: string | null }[],
+  prices: TruckPriceHere[],
+  zeroed: TruckPriceHere[],
   cardPriced: (dealId: string) => boolean,
 ): { dealId: string; why: 'card' | 'whole' | 'missing'; loud: boolean }[] {
   if (!candidates.ambiguous) return [];
-  const whole = !candidates.none && prices.some((price) => price.dealId === null);
+  const reading = pricedHereReading(candidates, prices, zeroed);
+  // A deal whose own part the lost-cargo door lowered to zero is priced here
+  // (review A1); a zeroed whole-cargo price covers every deal like a live one.
+  const whole = reading.whole.length > 0 || reading.zeroed.whole.length > 0;
   return candidates.deals
-    .filter((dealId) => !prices.some((price) => price.dealId === dealId))
+    .filter((dealId) => !reading.byDeal.has(dealId) && !reading.zeroed.byDeal.has(dealId))
     .map((dealId) => {
       if (cardPriced(dealId)) return { dealId, why: 'card' as const, loud: false };
       if (whole) return { dealId, why: 'whole' as const, loud: false };
-      return { dealId, why: 'missing' as const, loud: prices.length > 0 };
+      return { dealId, why: 'missing' as const, loud: prices.length + zeroed.length > 0 };
     });
 }

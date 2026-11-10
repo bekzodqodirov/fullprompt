@@ -19,6 +19,15 @@ export interface StaffTelegramInput {
    * send worker attach the «Bajarildi» button (round 35 staff bot).
    */
   extra?: Record<string, unknown>;
+  /**
+   * Deliver to a recipient who muted the type — the answer to a re-run the
+   * seller himself started (docs/SAKKIZ-R3.md, his ⭐ of Question 7). The row
+   * is still the drain's, queued `pending` and marked `direct: true`, so it
+   * is sent with the drain's pauses and its `payload.tg` written like any
+   * other; a person who cannot log in still gets no row. Set only by
+   * `sayOnce`'s `direct`.
+   */
+  ignoreMute?: boolean;
 }
 
 /**
@@ -48,12 +57,14 @@ export async function queueStaffTelegram(dbOrTx: Db | Tx, input: StaffTelegramIn
     // A colleague NOW (`canLogIn`, 0120): a leaver, or a person who never
     // signs in, gets no queued row at all.
     if (!person.live) continue;
-    const muted = isTelegramMuted(person.muted, input.type);
+    const mutedByUser = isTelegramMuted(person.muted, input.type);
+    const direct = mutedByUser && input.ignoreMute === true;
+    const muted = mutedByUser && !direct;
     await dbOrTx.insert(notifications).values({
       userId: person.id,
       channel: 'telegram',
       type: input.type,
-      payload: { ...(input.extra ?? {}), text: input.text },
+      payload: { ...(input.extra ?? {}), text: input.text, ...(direct ? { direct: true } : {}) },
       status: muted ? 'muted' : 'pending',
       error: muted ? 'muted by user' : null,
     });

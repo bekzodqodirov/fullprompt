@@ -480,6 +480,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
       {
         label: 'Monitor 24"',
         code: '8528520000',
+        aiCode: false,
         measureText: '100 dona × $20/dona',
         bazaSource: 'memory',
         dutyText: '10%',
@@ -504,7 +505,13 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     aiConfigured: true,
     estimate: null,
     pickLeft: null,
+    // REQUIRED since round 3 (docs/SAKKIZ-R3.md §10.2.6): the landing's pass,
+    // nothing asked — the chip's subject is the heading, which neither moves.
+    asks: null,
+    pass: 'landing',
     audience: 'lenta',
+    // A request from before the doors (docs/IKKI-ESHIK.md §0.2): today's words.
+    noAsk: false,
   };
   const aiText = aiVedReplyText(aiInput);
   // The same job with no baza on its row: the 📊 median stands in, the
@@ -516,6 +523,7 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
       {
         label: 'Kurtka',
         code: '6201400000',
+        aiCode: false,
         measureText: null,
         bazaSource: null,
         dutyText: '10%',
@@ -565,7 +573,9 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     freight: road(false),
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
+    noAsk: false, // a request from before the doors (docs/IKKI-ESHIK.md §0.2)
   });
   // §2.6: the VED line sits on line 2, directly under the heading.
   const estimateText = [
@@ -580,14 +590,18 @@ describe('a machine’s calculation answer wears its mark (his 2.4 c)', () => {
     cardLabel: 'B-000067',
     freight: { ok: false, refusal: 'umumiy brutto og‘irlik (kg) yo‘q', tail: 'seller' },
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
+    noAsk: false, // a request from before the doors (docs/IKKI-ESHIK.md §0.2)
   });
   const tariffEstimateText = tariffReplyText({
     clientLabel: 'GS777',
     cardLabel: null,
     freight: road(true),
     link: null,
+    pass: 'landing', // REQUIRED since round 3 (§10.2.6) — the landing's reply
     audience: 'lenta',
+    noAsk: false, // a request from before the doors (docs/IKKI-ESHIK.md §0.2)
   });
 
   const machine = async (note: string) =>

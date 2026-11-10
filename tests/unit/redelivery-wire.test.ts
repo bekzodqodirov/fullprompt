@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { PRESS_REPEAT } from '@/modules/platform/telegram/staff-bot';
+import { CALC_STEP_REPEAT, PRESS_REPEAT } from '@/modules/platform/telegram/staff-bot';
+import { intakeTakes, startIntake, endIntake } from '@/modules/platform/telegram/calc-store';
+import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { bodyOf, read, srcFiles } from '../fixtures/source-shape';
+import { collectorCode } from '../fixtures/calc-collector-source';
 
 /**
  * Q5 a's wiring, as SOURCE SHAPE — the rules a grammy shell cannot exercise
@@ -16,6 +19,12 @@ const HANDLERS = read(`${T}/staff-handlers.ts`);
 const TASKS = read(`${T}/task-handlers.ts`);
 const CABINET = read(`${T}/client-cabinet.ts`);
 const STAFF_BOT = read(`${T}/staff-bot.ts`);
+/**
+ * The calc collector's files, comments stripped — staff-handlers.ts first, so
+ * every slice that starts in the dispatcher reads exactly as before. K moved
+ * the collector's halves out of it (docs/SAKKIZ-R3.md K16, the subject moved).
+ */
+const COLLECTOR = collectorCode();
 const AGENT = read(`${T}/agent-bot.ts`);
 
 const found = (text: string, needle: string, what = needle) => {
@@ -162,21 +171,47 @@ describe('(5) the lifecycle guard is the first registration of any kind', () => 
 
 describe('(6) the start', () => {
   const start = bodyOf(BOT, 'export function startTelegramBot(');
-  it('boot, retry, handlers, shutdown, durable waits, hydration — in that order', () => {
+  // Re-anchored (docs/SAKKIZ-R3.md §6.2.10, P1): TWO tables restore now — the
+  // waits and the «Hisoblatish» collections — and neither may start polling
+  // early, so the hydrate is one `Promise.allSettled` over both.
+  it('boot, retry, handlers, shutdown, durable waits and intakes, hydration — in that order', () => {
     const order = [
       'markBoot();',
       'bot.api.config.use(briefRetry);',
       'registerBotHandlers(bot);',
       'installBotShutdown(',
       'setDurableWaits(true);',
-      'void hydrateWaits()',
+      'setDurableIntakes(true);',
+      'bot.api.config.use(flushBeforeConfirm());',
+      'void Promise.allSettled([',
     ].map((needle) => found(start, needle));
     for (let i = 1; i < order.length; i += 1) expect(order[i - 1]!, `step ${i}`).toBeLessThan(order[i]!);
   });
 
-  it('the first getUpdates waits for the restored waits', () => {
-    const hydrate = start.slice(found(start, 'void hydrateWaits()'));
-    expect(hydrate.slice(0, hydrate.indexOf(';'))).toMatch(/\.finally\(\(\) => startPolling\(/);
+  it('the first getUpdates waits for BOTH restores, each with its own catch, and marks the store hydrated', () => {
+    // Read to the statement's END — the `.finally` body now holds a `;`.
+    const at = found(start, 'void Promise.allSettled([');
+    const open = start.indexOf('(', at + 'void Promise.allSettled'.length);
+    const members = argsOf(callAt(start, open).replace(/^\s*\[|\]\s*$/g, ''));
+    // The collections' restore is retried before it is let go (the P1
+    // review's ADV-7) — still one member, still its own catch.
+    expect(members.map((m) => /^(?:hydrateWaits\(\)|hydrateWithRetry\(hydrateIntakes\))\s*\.catch\(/.test(m))).toEqual([true, true]);
+    const tail = start.slice(open + callAt(start, open).length + 2);
+    const fin = found(tail, '.finally(');
+    const body = callAt(tail, tail.indexOf('(', fin));
+    // Between them, the bursts a dead process owed are drawn — fenced, never a
+    // throw into the boot (as-built review BURST-8): nothing awaited, so the
+    // first getUpdates still waits on the two restores alone.
+    expect(body.replace(/\s+/g, ' ')).toMatch(
+      /^\(\) => \{ markIntakesHydrated\(\); try \{ drawOwedBursts\(bot\.api\); \} catch \(err\) \{ logger\.warn\(.*?\); \} startPolling\(/,
+    );
+  });
+
+  it('the stop flushes both stores and seals the collections as it names the oldest unwritten update', () => {
+    found(start, 'stopTelegramBot(botStopDeps(bot))');
+    const deps = bodyOf(BOT, 'export function botStopDeps(');
+    expect(deps.replace(/\s+/g, ' ')).toContain('Promise.allSettled([flushWaitWrites(), flushIntakeWrites()])');
+    expect(deps.replace(/\s+/g, ' ')).toMatch(/unwritten: \(\) => \{ const n = oldestUnwrittenUpdate\(\); sealIntakeWrites\(\); return n; \}/);
   });
 
   it('nothing restarts the poll after the signal: before .start(, in the retry timer, first in .catch(', () => {
@@ -202,28 +237,53 @@ describe('(7) the join decline is said BEFORE the decline, inside Telegram’s f
 });
 
 describe('(8) no collector this process opened takes a backlog message', () => {
-  const text = HANDLERS.slice(found(HANDLERS, "bot.on('message:text'"), HANDLERS.indexOf('type StaffTailCtx'));
+  const text = COLLECTOR.slice(found(COLLECTOR, "bot.on('message:text'"), COLLECTOR.indexOf('type StaffTailCtx'));
+  // Re-anchored (docs/SAKKIZ-R3.md K3, the subject moved): the calc
+  // collector's own three `!late` checks became ONE verdict, `intakeTakes`,
+  // asked by the text, file and voice doors; the rule itself is proven on the
+  // verdict below. The zametka and the draft keep their `late`.
   it('the text ladder declares `late` before the first collector and every collector asks it', () => {
     expect(found(text, 'const late = isBacklog(ctx.message.date);')).toBeLessThan(found(text, 'activeIntake('));
-    found(text, 'if (intake && !escapesIntake(ctx.message.text) && !late) {');
+    found(text, "intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass'");
+    expect(found(text, "if (takes === 'seen') return;")).toBeLessThan(found(text, "if (intake && takes === 'take') {"));
     found(text, 'if (capture && !late) {');
     found(text, 'if (draft && !late) {');
   });
   it('the photo/document and voice handlers carry it', () => {
-    const photos = HANDLERS.slice(found(HANDLERS, "bot.on(['message:photo', 'message:document']"));
+    const photos = COLLECTOR.slice(found(COLLECTOR, "bot.on(['message:photo', 'message:document']"));
     expect(photos.slice(0, 600)).toContain('const late = isBacklog(ctx.message.date);');
-    expect(photos.slice(0, 900)).toContain('if (!state || late) {');
+    expect(photos.slice(0, 900)).toContain("const takes = state ? intakeTakes(state, intakeMessageOf(ctx)) : 'pass';");
+    expect(photos.slice(0, 900)).toContain("if (!state || takes === 'pass') {");
     expect(photos.slice(0, 1400)).toContain('if (!capture || late) {');
-    const voice = HANDLERS.slice(found(HANDLERS, "['message:voice', 'message:audio'"));
+    const voice = COLLECTOR.slice(found(COLLECTOR, "['message:voice', 'message:audio'"));
     // A live collection answers a voice note in words (his 1.12 a) and a live
     // zametka capture keeps it — both only when it is NOT from the backlog.
-    expect(voice.slice(0, 900)).toContain('if (!late && activeIntake(chatId)) {');
+    expect(voice.slice(0, 900)).toContain("const takes = intake ? intakeTakes(intake, intakeMessageOf(ctx)) : 'pass';");
+    expect(voice.slice(0, 900)).toContain("if (takes === 'take') {");
     expect(voice.slice(0, 1500)).toContain('if (!late && activeCapture(chatId)) return next();');
   });
+  it('the verdict: a collection opened after boot never takes a message written before it', () => {
+    const boot = new Date();
+    markBoot(boot);
+    const chat = BigInt(-7_300_000_001);
+    try {
+      const state = startIntake(chat, 'rastamojka', { staffId: 'staff-test' });
+      const bootSec = Math.floor(boot.getTime() / 1000);
+      expect(intakeTakes(state, { date: bootSec - 60, messageId: 10, replyTo: null })).toBe('pass');
+      expect(intakeTakes(state, { date: bootSec + 1, messageId: 11, replyTo: null })).toBe('take');
+    } finally {
+      endIntake(chat);
+      __resetLifecycle();
+    }
+  });
   it('a backlog forward is the sentence before any «📌» offer — in the ladder and in draftMedia', () => {
+    // The offer is the burst's now (docs/IKKI-ESHIK.md §4.1): `burstDoor`
+    // first, Door B's single offer for what the burst would not take.
     const doorB = text.slice(found(text, 'if (ctx.message.forward_origin) {'));
+    expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'burstDoor('));
     expect(found(doorB, 'if (late) {\n          await tellBacklogOnce(')).toBeLessThan(found(doorB, 'offerForwardTask('));
     const media = bodyOf(TASKS, 'export async function draftMedia(');
+    expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'burstDoor('));
     expect(found(media, 'if (late) {\n      await tellBacklogOnce(')).toBeLessThan(found(media, 'offerForwardTask('));
   });
 });
@@ -271,7 +331,7 @@ describe('(10) every press kind whose repeat is «keyed» carries its key', () =
     const keyed = Object.entries(PRESS_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k);
     expect(keyed.length, 're-anchor: no keyed press').toBeGreaterThan(0);
     for (const kind of keyed) {
-      const branches = [HANDLERS, TASKS].flatMap((text) =>
+      const branches = [COLLECTOR, TASKS].flatMap((text) =>
         [...text.matchAll(new RegExp(`kind === '${kind}'\\) \\{`, 'g'))].map((m) => {
           const rest = text.slice(m.index! + 1);
           const end = rest.indexOf("kind === '");
@@ -281,6 +341,22 @@ describe('(10) every press kind whose repeat is «keyed» carries its key', () =
       expect(branches.length, `re-anchor: no branch for ${kind}`).toBeGreaterThan(0);
       expect(branches.some((b) => b.includes('pressKey(ctx, ')), `${kind} carries no pressKey`).toBe(true);
     }
+  });
+  // One kind carries presses of every class, so the calc kind is classed per
+  // STEP (`CALC_STEP_REPEAT`, docs/SAKKIZ-R3.md K12) — and its keyed steps
+  // carry their key the same way, read off the table.
+  it('every calc step classed «keyed» is claimed in the calc branch, and the claim is spent before a restart wipes', () => {
+    const keyed = Object.entries(CALC_STEP_REPEAT).filter(([, v]) => v === 'keyed').map(([k]) => k);
+    expect(keyed.length, 're-anchor: no keyed calc step').toBeGreaterThan(0);
+    const rest = COLLECTOR.slice(found(COLLECTOR, "kind === 'calc') {") + 1);
+    const branch = rest.slice(0, rest.indexOf("kind === '"));
+    found(branch, "CALC_STEP_REPEAT[parsed.step] === 'keyed' ? await pressKey(ctx, ");
+    found(branch, 'handleCalcCallback(ctx as unknown as CalcPressCtx, chatId, parsed.step, restartKey)');
+    const handler = bodyOf(COLLECTOR, 'export async function handleCalcCallback(');
+    expect(found(handler, 'claimOnce(db, restartKey)')).toBeLessThan(found(handler, 'startIntake('));
+    // The handler spends the key on the restart path alone, so a step classed
+    // keyed must be a restart twin, or its key is minted and never spent.
+    for (const step of keyed) expect(step.startsWith('go_'), step).toBe(true);
   });
 });
 

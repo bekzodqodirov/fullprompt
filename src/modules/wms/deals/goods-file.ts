@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs';
-import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type GoodsRow } from './goods-import';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type GoodsRow, type SheetShape } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -259,7 +259,26 @@ export type GoodsFileRead =
    * double the order. The other sheets go to the model as `text` (their
    * gross weights and volumes are the shipment's totals).
    */
-  | { kind: 'goods'; goods: GoodsRow[]; sheet: string; sheets: number; text: string; textCut: boolean; cellsCut: boolean }
+  | ({
+      kind: 'goods';
+      goods: GoodsRow[];
+      sheet: string;
+      sheets: number;
+      text: string;
+      textCut: boolean;
+      cellsCut: boolean;
+      /**
+       * The goods sheet's OWN rows as text, the way `text` writes the others
+       * — only for a packing-shaped sheet (docs/IKKI-ESHIK.md §1.2.2): when it
+       * gives the shipment's totals beside an invoice, its whole text goes to
+       * the model under the totals-only heading («TOTAL G.W.» is a row of it).
+       * With the reader's own two words (review PF-ADV-14): `cut` = rows are
+       * missing — a «TOTAL G.W.» row at the bottom may be among them — and
+       * `cellsCut` = some cells shortened; the model is told either. Null for
+       * an invoice.
+       */
+      ownText: { text: string; cut: boolean; cellsCut: boolean } | null;
+    } & SheetShape)
   /**
    * A table with no header the reader knows — handed to the model as text.
    *
@@ -404,17 +423,35 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   const nonEmpty = sheets.filter((sheet) => sheet.rows.some((row) => row.some((cell) => cell !== null && String(cell).trim() !== '')));
   const shown = nonEmpty.filter((sheet) => !sheet.hidden);
   const filled = shown.length > 0 ? shown : nonEmpty;
-  let best: { sheet: SheetRows; goods: GoodsRow[] } | null = null;
+  let best: { sheet: SheetRows; parsed: ReturnType<typeof parseGoods> } | null = null;
   for (const sheet of filled) {
     const parsed = parseGoods(sheet.rows, sheet.covered ?? null);
-    if (parsed.headerRow !== null && parsed.goods.length > (best?.goods.length ?? 0)) {
-      best = { sheet, goods: parsed.goods };
+    if (parsed.headerRow !== null && parsed.goods.length > (best?.parsed.goods.length ?? 0)) {
+      best = { sheet, parsed };
     }
   }
   const others = sheetsAsText(filled.filter((sheet) => sheet !== best?.sheet));
+  const ownSheetText = (sheet: SheetRows) => {
+    const own = sheetsAsText([sheet]);
+    return { text: own.text, cut: own.rowsCut, cellsCut: own.cellsCut };
+  };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    return { kind: 'goods', goods: best.goods, sheet: best.sheet.name, sheets: filled.length, text: others.text, ...cut };
+    const { goods, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    return {
+      kind: 'goods',
+      goods,
+      sheet: best.sheet.name,
+      sheets: filled.length,
+      text: others.text,
+      ...cut,
+      shape,
+      weightKind,
+      grossKg,
+      grossColumn,
+      volumeM3,
+      ownText: shape === 'packing' ? ownSheetText(best.sheet) : null,
+    };
   }
   if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, ...cut };
   return { kind: 'refused', reason: 'empty' };

@@ -3,7 +3,7 @@ import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * The listener's own lead binding and its 0139 mark (`tg_chat_rules.bound_via`),
+ * The listener's own lead binding and its 0142 mark (`tg_chat_rules.bound_via`),
  * source-shape — comments stripped first (#725: a fence must not match the
  * sentence explaining it). The behaviour is proven against a real database in
  * chat-machine-binding.integration; what only the source can show is WHERE:
@@ -78,7 +78,7 @@ function between(text: string, start: string, end: string): string {
 
 const CHAT_LEAD = 'src/modules/wms/crm/chat-lead.ts';
 
-describe('the 0139 mark has one home', () => {
+describe('the 0142 mark has one home', () => {
   it('is not declared on the drizzle table — every whole-row read of the rules would 42703 one migration behind', () => {
     const schema = src('src/modules/platform/db/schema/wms.ts');
     expect(schema).not.toMatch(/['"]bound_via['"]/);

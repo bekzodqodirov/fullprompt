@@ -55,17 +55,24 @@ describe('one «bears the price» rule for the gate and the tannarx', () => {
 describe('the screens ask the rule, not a copy of it', () => {
   const pricing = read('src/app/(protected)/batches/[id]/pricing/page.tsx');
   const form = read('src/app/(protected)/batches/[id]/pricing/pricing-form.tsx');
+  const table = read('src/app/(protected)/batches/[id]/pricing/pricing-table.tsx');
   const money = read('src/app/(protected)/dashboard/sections/money.tsx');
   const profit = read('src/app/(protected)/accounting/profit/page.tsx');
 
   it('a price for a client whose cargo follows an earlier truck asks first (4a), and the confirm cannot post twice', () => {
-    expect(pricing).toMatch(/secondBill=\{/);
-    // Widened by his Q8 «c» (2026-10-27): the same ONE confirmation also asks
-    // on a two-deal truck and before any further price for a client already
-    // priced here — `secondBill` still stops the press on its own.
-    expect(form).toContain('if (!secondBill && !deviates && !choiceAsks && pricedHere.length === 0) return;');
-    const confirm = form.slice(form.indexOf('data-testid="pricing-deviation-confirm"') - 200, form.indexOf('data-testid="pricing-deviation-confirm"'));
-    expect(confirm).toContain('disabled={pending}');
+    expect(pricing).toContain('secondBill: follows ? { n: follows.n, codes: follows.codes } : null,');
+    // Widened by his Q8 «c» (2026-10-27) and moved by the price table
+    // (2026-11-08): the single form also asks before any further price for a
+    // client already priced here, the table per row — and in BOTH bodies
+    // `secondBill` still stops the press on its own (the form's rule is the
+    // pure `singleFormAsks` since review RVF1-1 — a zeroed price asks too —
+    // and its own test proves `secondBill` alone answers yes).
+    expect(form).toContain('if (!singleFormAsks({ secondBill: secondBill !== null, deviates, pricedHere, zeroedHere })) return;');
+    expect(table).toContain('if (!secondBill && asks.length === 0) return;');
+    for (const body of [form, table]) {
+      const confirm = body.slice(body.indexOf('data-testid="pricing-deviation-confirm"') - 200, body.indexOf('data-testid="pricing-deviation-confirm"'));
+      expect(confirm).toContain('disabled={pending}');
+    }
   });
 
   it('a $0 tannarx that IS the rule does not say «no costs entered»', () => {

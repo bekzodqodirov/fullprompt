@@ -177,7 +177,9 @@ export function PhoneBlocks({
                   className="btn-secondary !min-h-11"
                   disabled={busy}
                   data-testid="calc-phone-confirm"
-                  onClick={() => act(() => confirmGroupAction(id, group.id, 'phone'))}
+                  // The revision the screen was drawn at (P6): the desktop's
+                  // refusal, on the phone's ✅ too.
+                  onClick={() => act(() => confirmGroupAction(id, group.id, 'phone', workspace.rev))}
                 >
                   {t('confirm')}
                 </button>

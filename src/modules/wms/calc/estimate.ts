@@ -14,6 +14,7 @@ import {
   type PricedItem,
 } from './pricing';
 import type { Workspace } from './workspace';
+import { CUSTOMS_TAIL_WORDS, tailWords, type ReplyAudience } from './tail-words';
 
 /**
  * The 📊 shadow estimate — his 2.1 b and 2.2 b (docs/SAKKIZ-R2.md §6.5).
@@ -270,13 +271,31 @@ export interface CustomsEstimate {
   taxminiyBlock: 'ungrouped' | 'refused_measure' | 'budget' | 'refused' | FeeRefusal | null;
 }
 
+/** What `refused_measure` says is missing — its tail is the reader's (below). */
+const REFUSED_MEASURE = '⚠️ qatorda soni yoki og‘irligi yo‘q';
+
+/**
+ * `refused_measure` as its reader is told it: the seller's fact, so the tail
+ * is the customs line's own (`tailWords`) — on a bot-door request the VED
+ * asks the seller (docs/IKKI-ESHIK.md §3.5), otherwise the seller is sent to
+ * the customer, exactly as before (§0.2).
+ */
+export function refusedMeasureWords(audience: ReplyAudience, noAsk: boolean): string {
+  return `${REFUSED_MEASURE} ${tailWords(CUSTOMS_TAIL_WORDS, 'seller', audience, noAsk)}`;
+}
+
 /** The sentence after «Taxminiy: hisoblab bo‘lmadi — » (§2.2), naming whose job it is. */
 export const TAXMINIY_BLOCK_WORDS: Record<
-  Exclude<CustomsEstimate['taxminiyBlock'], FeeRefusal | null>,
+  Exclude<CustomsEstimate['taxminiyBlock'], FeeRefusal | null | 'refused_measure'>,
   string
-> = {
+> & {
+  /** The seller's to fix — in each reader's words (docs/SAKKIZ-R3.md §2.5):
+   * the chat points at «➕» under the message, the lenta at the card. */
+  refused_measure: Record<'chat' | 'lenta', string>;
+} = {
   ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
-  refused_measure: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+  // A request from before the doors — today's words, from the one tail rule.
+  refused_measure: { chat: refusedMeasureWords('chat', false), lenta: refusedMeasureWords('lenta', false) },
   budget: 'vaqt yetmadi, statistika o‘qilmadi',
   refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
 };

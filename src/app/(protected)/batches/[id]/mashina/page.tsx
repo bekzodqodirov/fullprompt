@@ -6,16 +6,17 @@ import { inScope } from '@/modules/platform/rbac/scope';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { loadBatchHead } from '@/modules/wms/batches/card-head';
 import { mayReadBatches } from '@/modules/wms/batches/read-door';
-import { departureDestination, rerouteHistory, rerouteTargets } from '@/modules/wms/batches/reroute';
-import { mayRerouteTruck } from '@/modules/wms/batches/reroute-rules';
+import { departureDestination, destChangeTargets, rerouteHistory, rerouteTargets } from '@/modules/wms/batches/reroute';
+import { mayChangeDestBeforeDeparture, mayRerouteTruck } from '@/modules/wms/batches/reroute-rules';
 import { devicesForBatch } from '@/modules/wms/tracking/devices';
-import { checkpointsFor } from '@/modules/wms/tracking/eta';
-import { CHECKPOINT_KEYS, CHECKPOINT_LABEL, type CheckpointKey } from '@/modules/wms/tracking/map-data';
+import { checkpointsFor, roadHolds } from '@/modules/wms/tracking/eta';
+import { CHECKPOINT_KEYS, pinLabel, type CheckpointKey } from '@/modules/wms/tracking/map-data';
 import { Panel } from '@/components/panel';
 import { createDriverDeviceAction, revokeDriverDeviceAction } from '../../batch-actions-server';
 import { BatchCard, batchTabMetadata } from '../batch-card';
 import { VehicleForm } from '../vehicle-form';
 import { CheckpointButtons } from './checkpoint-buttons';
+import { DestChangeForm } from './dest-change-form';
 import { RerouteForm } from './reroute-form';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
@@ -58,6 +59,8 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   // carries is offered too when its road does not, so a pin written before
   // the rule can still be pressed off.
   const pinOptions: CheckpointKey[] = checkpointsFor(head.originCode, head.destCode, head.destCountry);
+  // The Horgos road names its first queue (`pinLabel`, docs/XORGOS-NAVBAT.md).
+  const held = roadHolds(head.originCode, head.destCode);
   if (checkpointKey && !pinOptions.includes(checkpointKey)) pinOptions.push(checkpointKey);
 
   // «Yo'nalishni o'zgartirish» (the reroute round): the history for every
@@ -68,6 +71,11 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
   const rerouteOptions = mayReroute ? await rerouteTargets(batch, head, actor) : { options: [], hiddenByScope: 0 };
   const plannedCode =
     reroutes.length > 0 ? ((await departureDestination(id))?.code ?? reroutes[0]!.fromCode) : null;
+  // Before departure the same truck takes another receiving warehouse (his
+  // 6a): the cancel's door at the origin, while forming or loading — the
+  // road has its own form above.
+  const mayChangeDest = mayChangeDestBeforeDeparture(actor, batch);
+  const destTargets = mayChangeDest ? await destChangeTargets(batch) : [];
 
   return (
     <BatchCard head={head} actor={actor} active="mashina">
@@ -167,7 +175,7 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
         {batch.status === 'in_transit' && canVehicle && pinOptions.length > 0 && (
           <Panel
             title={`📍 ${t('whereIsTruck')}`}
-            badge={checkpointKey ? t(CHECKPOINT_LABEL[checkpointKey].label) : undefined}
+            badge={checkpointKey ? t(pinLabel(checkpointKey, held).label) : undefined}
             testId="batch-where-panel"
             open
           >
@@ -176,7 +184,7 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
               current={checkpointKey}
               options={pinOptions.map((key) => ({
                 key,
-                label: `${CHECKPOINT_LABEL[key].icon} ${t(CHECKPOINT_LABEL[key].label)}`,
+                label: `${pinLabel(key, held).icon} ${t(pinLabel(key, held).label)}`,
               }))}
             />
           </Panel>
@@ -224,6 +232,12 @@ export default async function BatchTruckTabPage({ params }: { params: Promise<{ 
                 hiddenByScope={rerouteOptions.hiddenByScope}
               />
             )}
+          </Panel>
+        )}
+
+        {mayChangeDest && (
+          <Panel title={`🧭 ${t('destChange.title')}`} badge={head.destCode} testId="batch-dest-change-panel">
+            <DestChangeForm batchId={batch.id} fromId={batch.destWarehouseId} fromCode={head.destCode} targets={destTargets} />
           </Panel>
         )}
 

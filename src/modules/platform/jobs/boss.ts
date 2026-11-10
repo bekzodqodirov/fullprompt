@@ -77,6 +77,8 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
   ['deals', async (b) => (await import('../../wms/deals/jobs')).registerDealWorkers(b)],
   ['unanswered', async (b) => (await import('../../wms/crm/unanswered-jobs')).registerUnansweredWorker(b)],
   ['silent-trucks', async (b) => (await import('../../wms/tracking/silent-jobs')).registerSilentTrucksWorker(b)],
+  // A truck held past its typed border queue (docs/XORGOS-NAVBAT.md §3).
+  ['late-queues', async (b) => (await import('../../wms/tracking/silent-jobs')).registerLateQueueWorker(b)],
   ['partner-terms', async (b) => (await import('../../wms/partners/terms-jobs')).registerPartnerTermsWorker(b)],
   ['owner-summary', async (b) => (await import('../../wms/reports/owner-summary-jobs')).registerOwnerSummaryWorker(b)],
   ['broadcast', async (b) => (await import('../broadcast/jobs')).registerBroadcastWorker(b)],
@@ -91,6 +93,12 @@ export const WORKER_REGISTRATIONS: [string, (boss: PgBoss) => Promise<void>][] =
     'calc-prefill',
     async (b) => (await import('../../wms/calc/jobs')).registerCalcPrefillWorker(b),
   ],
+  // The «Hisoblatish» collection's three jobs (docs/SAKKIZ-R3.md K15): the
+  // reading, the collection's clock, and the add door's save — registered in
+  // K so P1, P2 and P4 never touch this list.
+  ['calc-intake-read', async (b) => (await import('../telegram/calc-read')).registerCalcIntakeReadWorker(b)],
+  ['calc-intake-sweep', async (b) => (await import('../telegram/calc-intake-sweep')).registerCalcIntakeSweep(b)],
+  ['calc-amend-save', async (b) => (await import('../telegram/calc-amend')).registerCalcAmendSaveWorker(b)],
   [
     'customs-import',
     async (b) => (await import('../../wms/customs/jobs')).registerCustomsImportWorker(b),
@@ -197,18 +205,30 @@ export interface EnqueueOptions {
   /** Retries after the first attempt. */
   retryLimit?: number;
   /**
+   * The job's own id, minted by the caller (docs/SAKKIZ-R3.md K15): a row
+   * that names its job can later ask whether that job is still alive
+   * (`jobState`) — «busy» is then a fact about a job, never a time window.
+   */
+  id?: string;
+  /**
    * Seconds before the job may be claimed — the AI sotuvchi's debounce
-   * (docs/AI-SOTUVCHI.md §17.3): a customer's burst of three lines is one
-   * question, so the worker looks after twelve quiet seconds.
+   * (docs/AI-SOTUVCHI.md §17.3: a customer's burst of three lines is one
+   * question, so the worker looks after twelve quiet seconds), and a
+   * delivery that waits out Telegram's `retry_after` instead of spending a
+   * retry inside it (docs/SAKKIZ-R3.md K15).
    */
   startAfter?: number;
 }
 
+/** A job's state as pg-boss keeps it; null = no such job (never sent, or pruned). */
+export type JobState = 'created' | 'retry' | 'active' | 'completed' | 'failed' | 'expired' | 'cancelled';
+
+/** The id `enqueue` was given or minted — what a caller that names its job keeps. */
 export async function enqueue<T extends object>(
   name: string,
   data: T,
   options: EnqueueOptions = {},
-): Promise<void> {
+): Promise<string | null> {
   const boss = await ensureListening();
   globalForBoss.bossQueues ??= new Set();
   if (!globalForBoss.bossQueues.has(name)) {
@@ -218,5 +238,16 @@ export async function enqueue<T extends object>(
     await boss.createQueue(name);
     globalForBoss.bossQueues.add(name);
   }
-  await boss.send(name, data, { retryLimit: 5, retryBackoff: true, ...options });
+  return boss.send(name, data, { retryLimit: 5, retryBackoff: true, ...options });
+}
+
+/**
+ * Where a named job stands — the archive included, so a job that finished
+ * days ago reads `completed` rather than «no such job». Read-only: it starts
+ * no worker (`ensureListening`, like a sender).
+ */
+export async function jobState(queue: string, id: string): Promise<JobState | null> {
+  const boss = await ensureListening();
+  const job = await boss.getJobById(queue, id, { includeArchive: true });
+  return job ? (job.state as JobState) : null;
 }

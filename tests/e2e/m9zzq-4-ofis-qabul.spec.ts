@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createQuickBatch } from './quick-batch';
 import sharp from 'sharp';
 
 /**
@@ -116,11 +117,7 @@ test('t1: the logist enters a prixod from the office, naming who received it and
 test('t4: on the loading screen a retail barcode is refused as foreign and loads nothing', async ({ page }) => {
   expect(receiptUrl, 't1 made the prixod').not.toBe('');
   await login(page);
-  await page.goto('/batches');
-  await page.locator('select[name="originId"]').selectOption({ label: 'YW' });
-  await page.locator('select[name="destId"]').selectOption({ label: 'TAS1' });
-  await page.getByTestId('create-quick-batch').click();
-  await expect(page).toHaveURL(/\/batches\/[0-9a-f-]{36}$/);
+  await createQuickBatch(page, { origin: 'YW', dest: 'TAS1' });
   const batchUrl = page.url();
 
   try {

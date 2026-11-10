@@ -5,7 +5,9 @@ round 1 BUILT (DECISIONS #1455-#1462, CHANGELOG 2026-10-21) and reviewed against
 regression corpus (#1463-#1468, CHANGELOG 2026-10-27); round 2 SHIPPED
 (`docs/SAKKIZ-R2.md`, #1503-#1511, his «a a / b a / c a / d a» to its four questions);
 R4 and R8 shipped by the other session as its Uch band (`docs/UCH-BAND.md`, 0136);
-round 3 designed (`docs/SAKKIZ-R3.md`); R5 handed to the other session; R6, R7, R9, R10 open;
+**round 3 SHIPPED** (`docs/SAKKIZ-R3.md` — §20 as built; DECISIONS #1571-#1580; migration 0139
+`calc_intake_durable`, ledger 140; CHANGELOG 2026-11-03); R5 handed to the other session; R6, R7,
+R9, R10 open;
 4.5 and 6.8 asked back and ANSWERED the same day («2 c / 3 b», §11).**
 Below, the diagnosis as written before any code. His message
 (verbatim, abridged): AI rastamojka in the bot cannot read goods from files,
@@ -314,7 +316,8 @@ the lot name, yellow only when dona is written.
   instant answer, zone guess, Σm³ + ask kg, `calc_bazas` in the fill order,
   heading search, batch choice if R0 shows shadowing, richer grouping input).
 - **R3** Durable collection (24 h) + intake analysis on pg-boss + «➕ Shu so'rovga
-  qo'shish» + the law-unit follow-up question. Migration.
+  qo'shish» + the law-unit follow-up question. Migration. **SHIPPED 2026-11-03**
+  (`docs/SAKKIZ-R3.md` §20, DECISIONS #1571-#1580, migration 0139, ledger 140).
 - **R4** New deal per request (item 6) — after R3.
 - **R5** Models, effort, streaming, dollar metering, settings-screen model pick.
   Migration.
@@ -330,8 +333,9 @@ by ANOTHER session.** R5's handoff is `docs/SAKKIZ-R5.md` + `docs/SAKKIZ-R5-MAP.
 (start gate: R2 and R3 merged). This session builds R2, R3, R6, R7, R9 and R10 (R10
 after R4 lands). R3's spec is `docs/SAKKIZ-R3.md` (its §14 names the seam R4 touches
 in `intake-land.ts`). Status: **R2 SHIPPED** (`docs/SAKKIZ-R2.md` §17 is the late pass
-over the findings its build lost in transit; DECISIONS #1503-#1511); R3 designed and
-judged (its migration must be renumbered past main's 0136); **R4 and R8 SHIPPED by the
+over the findings its build lost in transit; DECISIONS #1503-#1511); **R3 SHIPPED**
+(`docs/SAKKIZ-R3.md`, §20 as built; DECISIONS #1571-#1580; its migration renumbered twice, to
+0139 after main's 0137 `plan_road` and 0138 `ai_sotuvchi` — ledger 140); **R4 and R8 SHIPPED by the
 other session as «Uch band»** (`docs/UCH-BAND.md`, DECISIONS #1469-#1478, migration
 0136), merged into this branch before R2's push.
 
@@ -443,6 +447,9 @@ Taken as ⭐ (named here so a later round does not re-ask): 1.1 c, 1.2 b, 1.4 b
 - **Round 3's seven questions** 1.14-1.20 (top of `docs/SAKKIZ-R3.md`): «14 a, qolgani
   seni taklifing» — **1.14 a** (after the AI answer the bot asks EVERY unit the law
   pins: dona, juft, and kg / m² / litr when the law needs them), 1.15-1.20 the ⭐.
+- **Round 3's six new questions** 1.21-1.26 (`docs/SAKKIZ-R3.md` §20.4, CHANGELOG
+  2026-11-03), asked when round 3 shipped, each built as its ⭐; record his answers here when
+  they arrive.
 - **Round 5's ten questions** 3.9-3.18 (`docs/SAKKIZ-R5.md` §19.1) were sent the same
   day; record his answers here when they arrive.
 

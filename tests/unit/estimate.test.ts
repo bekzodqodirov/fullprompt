@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MISS_WORDS,
   TAXMINIY_BLOCK_WORDS,
+  refusedMeasureWords,
   UNIT_BASIS,
   bandKeyOf,
   declarationCounts,
@@ -369,9 +370,15 @@ describe('the small rules', () => {
     // Pinned at the source (#166): the reply's own test hands the renderer
     // its sentences, so a word changed HERE would leave every other test
     // green while the seller read something nobody agreed.
+    // Re-anchored for round 3 (docs/SAKKIZ-R3.md §2.5, §10.1): the seller's
+    // tail is keyed by its reader — the chat points at «➕» under the
+    // message, the lenta keeps R2's words; the other three are unchanged.
     expect(TAXMINIY_BLOCK_WORDS).toEqual({
       ungrouped: 'kodsiz qator bor (VED kod qo‘yadi)',
-      refused_measure: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      refused_measure: {
+        chat: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, «➕ Shu so‘rovga qo‘shish» bilan yuboring',
+        lenta: '⚠️ qatorda soni yoki og‘irligi yo‘q — mijozdan so‘rab, kartadagi lentaga yozing',
+      },
       budget: 'vaqt yetmadi, statistika o‘qilmadi',
       refused: '⚠️ bazasi yo‘q qatorlarni VED to‘ldiradi',
     });
@@ -467,5 +474,23 @@ describe('R2 late pass — a miss says what the file has', () => {
     expect(out.taxminiyBlock).toBe('budget');
     // An EMPTY map — what the pass used to hand in — blamed the bazas.
     expect(estimateCustoms({ groups: [exact, open], ungroupedCount: 0, ...FEE, medians: new Map() }).taxminiyBlock).toBe('refused');
+  });
+});
+
+/**
+ * `refused_measure` is the seller's fact, so its tail is the one tail rule's
+ * (`tailWords`, docs/IKKI-ESHIK.md §3.5): on a bot-door request the VED asks
+ * the seller, and a request from before the doors keeps today's words — which
+ * ARE `TAXMINIY_BLOCK_WORDS.refused_measure`, the spec's own above.
+ */
+describe('refused_measure by door (§3.5)', () => {
+  it('a door request: «— VED xodimi sizdan so‘raydi» in the chat, «— VED xodimi so‘raydi» on the lenta', () => {
+    expect(refusedMeasureWords('chat', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi sizdan so‘raydi');
+    expect(refusedMeasureWords('lenta', true)).toBe('⚠️ qatorda soni yoki og‘irligi yo‘q — VED xodimi so‘raydi');
+  });
+
+  it('a request from before the doors: exactly today’s words', () => {
+    expect(refusedMeasureWords('chat', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.chat);
+    expect(refusedMeasureWords('lenta', false)).toBe(TAXMINIY_BLOCK_WORDS.refused_measure.lenta);
   });
 });

@@ -47,8 +47,15 @@ export const MAX_PICK_ROWS = 40;
  */
 export const PICK_HEADING_MS = 5000;
 
-/** `saveTable`'s options for a revision the caller carries — none for null. */
-const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { expectRev });
+/**
+ * `saveTable`'s options for a revision the caller carries — none for null.
+ * `handsOff` beside it (docs/SAKKIZ-R3.md §10.2.3): these are the MACHINE's
+ * saves, so each one moves the hands-off stamp along with the clock, in its
+ * own transaction — a pass killed after this save leaves the stamp here, and
+ * the request still reads «nobody but the machine» (durability-6). No chain,
+ * no stamp: a save that compares nothing proves nothing about who was here.
+ */
+const casOf = (expectRev: number | null) => (expectRev === null ? undefined : { expectRev, handsOff: true });
 
 /**
  * A machine save refused because a PERSON saved in between (K14). Nothing was
@@ -78,7 +85,14 @@ export async function applyMemory(
   requestId: string,
   ctx: AuditContext,
   expectRev: number | null,
-): Promise<{ coded: number; filled: number; dictionaryFilled: number; rev: number | null }> {
+): Promise<{
+  coded: number;
+  /** The rows it coded — the plain door's note says these came from the memory (docs/IKKI-ESHIK.md §2.4). */
+  codedIds: string[];
+  filled: number;
+  dictionaryFilled: number;
+  rev: number | null;
+}> {
   const rows = await db
     .select({
       id: calcRequestItems.id,
@@ -91,13 +105,13 @@ export async function applyMemory(
   const uncoded = rows.filter((r) => !(r.tnvedCode ?? '').trim());
   // A fully coded request still gets its save — that is what fills the bazas
   // and mints the groups — but there is nothing to look up.
-  if (uncoded.length === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
+  if (uncoded.length === 0) return { coded: 0, codedIds: [], filled: 0, dictionaryFilled: 0, rev: expectRev };
 
   const hits = await sealedMemoryFor(
     uncoded.map((r) => r.name),
     { excludeRequestId: requestId },
   );
-  if (hits.size === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
+  if (hits.size === 0) return { coded: 0, codedIds: [], filled: 0, dictionaryFilled: 0, rev: expectRev };
 
   // Named apart from the pick's `edits` on purpose: these carry a CODE and
   // nothing else, and `ai-advisory.test.ts` anchors its «the prefill writes
@@ -108,7 +122,7 @@ export async function applyMemory(
     if (!hit?.tnvedCode) continue;
     codeEdits.push({ id: r.id, seq: r.seq, tnvedCode: hit.tnvedCode });
   }
-  if (codeEdits.length === 0) return { coded: 0, filled: 0, dictionaryFilled: 0, rev: expectRev };
+  if (codeEdits.length === 0) return { coded: 0, codedIds: [], filled: 0, dictionaryFilled: 0, rev: expectRev };
 
   // A `conflict` here is NOT swallowed (review P2-CAS-1). The pass's glue
   // reads it as «a person saved meanwhile» and writes nothing more; answered
@@ -120,6 +134,7 @@ export async function applyMemory(
   const out = await saveTable(requestId, { items: codeEdits, adds: [] }, ctx, casOf(expectRev));
   return {
     coded: codeEdits.length,
+    codedIds: codeEdits.map((e) => e.id),
     filled: out.memoryFilled.length,
     dictionaryFilled: out.dictionaryFilled.length,
     rev: out.rev,
