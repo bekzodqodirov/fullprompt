@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import ExcelJS from 'exceljs';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -17,6 +17,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  * it as the lot's identity (the price history's needle) still get it.
  * The searches find the composed lot by its SECOND line («мышь», which no
  * stored name says) and by a label pasted off a row («Клавиатура +2»).
+ * And the rows that already branch on the lot check's probe (#472) carry
+ * the label behind it: with the tarkib's tables «not there» they print the
+ * lot's own name, and the plan editor's lists name none of those tables.
  *
  * Written straight to the tables, like lot-name.integration: its own two
  * warehouses, client, two trucks and two prixod lots, every name carrying the
@@ -42,6 +45,9 @@ vi.mock('@/modules/platform/rbac/authorize', async (original) => {
       (override.actor ?? (await real.authorize(...args))) as Actor,
   };
 });
+/** A server whose migration has not landed (#472) — the last test alone turns it off. */
+const ready = vi.hoisted(() => ({ on: true }));
+vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({ lotChecksReady: async () => ready.on }));
 
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
@@ -155,6 +161,22 @@ async function mintBox(
     .returning({ id: boxes.id });
   box[key] = row!.id;
 }
+
+/** The Ostatka download's product cells for this client, through the route the screen's button runs. */
+const ostatkaProducts = () =>
+  asPerson(async () => {
+    const res = await stockXlsx(new Request(`http://local/api/reports/stock?q=${CODE}`));
+    expect(res.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ExcelJS.Buffer);
+    const sheet = wb.worksheets[0]!;
+    const header = sheet.getRow(1).values as unknown[];
+    const column = header.indexOf(reportLabels('uz').product);
+    expect(column).toBeGreaterThan(0);
+    const cells: string[] = [];
+    for (let r = 2; r <= sheet.rowCount; r += 1) cells.push(String(sheet.getRow(r).getCell(column).value ?? ''));
+    return cells.filter(Boolean).sort();
+  });
 
 /** The one row of a reader's answer that is this lot's. */
 const of = <T extends object>(rows: readonly T[], key: keyof T, lotId: string): T => {
@@ -330,21 +352,8 @@ describe('the lists print the tarkib’s name; a lot with no tarkib keeps its ow
   });
 
   it('the Ostatka XLSX, through the route the download really runs', async () => {
-    const product = await asPerson(async () => {
-      const res = await stockXlsx(new Request(`http://local/api/reports/stock?q=${CODE}`));
-      expect(res.status).toBe(200);
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(Buffer.from(await res.arrayBuffer()) as unknown as ExcelJS.Buffer);
-      const sheet = wb.worksheets[0]!;
-      const header = sheet.getRow(1).values as unknown[];
-      const column = header.indexOf(reportLabels('uz').product);
-      expect(column).toBeGreaterThan(0);
-      const cells: string[] = [];
-      for (let r = 2; r <= sheet.rowCount; r += 1) cells.push(String(sheet.getRow(r).getCell(column).value ?? ''));
-      return cells.filter(Boolean).sort();
-    });
     // Plain text, the whole name: no clip in a sheet's cell.
-    expect(product).toEqual([`${ZH_K} (${LABEL})`, `${ZH_P} (${OWN_P})`].sort());
+    expect(await ostatkaProducts()).toEqual([`${ZH_K} (${LABEL})`, `${ZH_P} (${OWN_P})`].sort());
   });
 
   it('the handover screen’s boxes and the crate builder’s (their two routes)', async () => {
@@ -446,5 +455,39 @@ describe('the searches find a composed lot by ANY line of its tarkib, and by a l
     expect(await chats(SECOND.toLowerCase())).toEqual([CHAT]);
     expect(await chats(LABEL)).toContain(CHAT);
     expect(await chats(`нет такого ${RUN}`)).toEqual([]);
+  });
+});
+
+describe('a server whose migration has not landed (#472)', () => {
+  it('the rows that already branch on the probe print the lot’s own name; the plan editor’s lists name no tarkib table', async () => {
+    // The stock table's rows, its XLSX and the plan editor's two lists ask
+    // `lotChecksReady` — which asks for the tarkib's tables too — and run
+    // their old shape on «no». The label rides the same branch: on a real
+    // server without those tables the subquery would be a 42P01 on the two
+    // screens the warehouse lives on.
+    ready.on = false;
+    const sent: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      sent.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    try {
+      const shelf = await plannableStock(wh.origin);
+      const road = await roadStock(wh.dest);
+      const planning = [...sent];
+      expect(of(shelf.lots, 'lotId', lot.K).productNameRu).toBe(OWN_K);
+      expect(of(road.lots, 'lotId', lot.K).productNameRu).toBe(OWN_K);
+      expect(planning.length).toBeGreaterThan(0);
+      expect(planning.filter((q) => /lot_composition/.test(q))).toEqual([]);
+      // The Ostatka's ROWS follow the probe too. Its search box does not —
+      // typed text asks the tarkib's lines whatever the probe says (the
+      // table has been on every server since 0122) — so only the cells are
+      // read here, the download being asked through that box.
+      expect(await ostatkaProducts()).toEqual([`${ZH_K} (${OWN_K})`, `${ZH_P} (${OWN_P})`].sort());
+    } finally {
+      spy.mockRestore();
+      ready.on = true;
+    }
   });
 });

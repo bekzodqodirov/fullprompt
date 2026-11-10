@@ -85,8 +85,10 @@ export async function GET(request: Request) {
       lot: receiptLots,
       // The screen's own Russian name for the row — a standing tarkib's
       // «first +N», else the lot's stored word (lot-name.ts): the file is the
-      // screen here too.
-      shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+      // screen here too, and behind the screen's own probe (#472).
+      shownNameRu: checksOn
+        ? sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`
+        : receiptLots.productNameRu,
       receivedAt: receipts.receivedAt,
       marking: receipts.unclaimedMarking,
       whCode: warehouses.code,

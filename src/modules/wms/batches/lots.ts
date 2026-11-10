@@ -44,9 +44,9 @@ export interface BatchLot {
   letter: string | null;
   productNameZh: string;
   /**
-   * The lot's OWN stored Russian name — the price history's trigram needle
-   * and the similar-lots prompt read it (price-history.ts), so it is never a
-   * label. A screen draws `shownNameRu ?? productNameRu`.
+   * The lot's OWN stored Russian name: the price history's trigram needle
+   * reads it off this row (`price-history.ts`), so it is never a label. A
+   * screen draws `shownNameRu ?? productNameRu`.
    */
   productNameRu: string | null;
   /**

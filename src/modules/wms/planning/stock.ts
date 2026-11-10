@@ -56,8 +56,12 @@ export async function plannableStock(warehouseId: string) {
       productNameZh: receiptLots.productNameZh,
       // As SHOWN (the owner's items 3-4, 2026-11-10): a standing tarkib's
       // «first +N», else the lot's own word — `receipts/lot-name.ts`. The
-      // planner reads a name here and nothing keys on it.
-      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+      // planner reads a name here and nothing keys on it. Behind the probe
+      // this statement already branches on (#472): a server without the
+      // tarkib's tables is sent no statement that names one.
+      productNameRu: checksOn
+        ? sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`
+        : receiptLots.productNameRu,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,
@@ -210,8 +214,11 @@ export async function roadStock(warehouseId: string) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      // The shelf list's own row shape — the shown name too (lot-name.ts).
-      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+      // The shelf list's own row shape — the shown name too (lot-name.ts),
+      // behind the same probe.
+      productNameRu: checksOn
+        ? sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`
+        : receiptLots.productNameRu,
       boxCount: receiptLots.boxCount,
       totalWeightKg: receiptLots.totalWeightKg,
       totalVolumeM3: receiptLots.totalVolumeM3,

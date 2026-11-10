@@ -276,8 +276,12 @@ export default async function StockPage({
       lot: receiptLots,
       // The Russian name as SHOWN — a standing tarkib's «first +N», else the
       // lot's own (items 3-4). `lot.productNameRu` beside it stays the stored
-      // word; the cell and the sort key read this one.
-      shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+      // word; the cell and the sort key read this one. Behind the probe this
+      // statement already branches on: a server whose migration has not
+      // landed (#472) is sent no statement naming the tarkib's tables.
+      shownNameRu: checksOn
+        ? sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`
+        : receiptLots.productNameRu,
       receiptId: receipts.id,
       receivedAt: receipts.receivedAt,
       marking: receipts.unclaimedMarking,
