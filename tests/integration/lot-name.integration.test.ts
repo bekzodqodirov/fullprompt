@@ -3,6 +3,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { db } from '@/modules/platform/db/client';
 import { clients, lotCompositionLines, lotCompositions, receiptLots, users } from '@/modules/platform/db/schema';
 import { tarkibLabel } from '@/modules/wms/receipts/composition-math';
+import { compositionsFor } from '@/modules/wms/receipts/lot-composition';
 import { lotGoodsShownSql, lotRuShownFor, lotRuShownSql, tarkibLineMatchSql } from '@/modules/wms/receipts/lot-name';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 
@@ -164,6 +165,14 @@ describe('the shown Russian name — SQL and its pure twin', () => {
     await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.one));
     expect(await shown(lot.one)).toEqual({ ru: 'клавиатура', goods: 'клавиатура', stored: 'клавиатура' });
     await compose(lot.one, [{ seq: 1, name: 'Мышь' }]);
+  });
+});
+
+describe('a tarkib with no document (0142) is still a tarkib to its reader', () => {
+  it('compositionsFor returns it, `attachment` null — an inner join on the file dropped it from the card', async () => {
+    const view = (await compositionsFor([lot.three])).get(lot.three);
+    expect(view?.lines.map((l) => l.name)).toEqual(['Клавиатура', 'Мышь', 'Наушники']);
+    expect(view?.attachment).toBeNull();
   });
 });
 
