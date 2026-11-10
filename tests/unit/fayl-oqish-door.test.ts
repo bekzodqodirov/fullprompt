@@ -739,6 +739,33 @@ describe('the ➕ add collection’s own reading (§1.6)', () => {
     expect(await addReadingUnread(pdf.state)).toBe('1 ta PDF');
   });
 
+  it('its save ends the restart question standing over it, its buttons stripped (§2.4, door-spec-amend-save-keeps-restart-question)', async () => {
+    const { chatId } = collection(
+      {
+        stage: 'review',
+        aiUsed: true,
+        facts: { ...FULL, goods: [line('Kurtka', { itemId: 'i-1', seq: 1, quantity: 300, tnvedCode: '6201400000' })] },
+        restartAsked: { messageId: 4_401, at: Date.now() },
+      },
+      base,
+    );
+    const strips: number[] = [];
+    process.env.TELEGRAM_BOT_TOKEN ??= 'fayl-oqish-door';
+    __setTelegramTransport(async (url, init) => {
+      if (url.endsWith('/editMessageReplyMarkup')) strips.push(Number((JSON.parse(String(init.body ?? '{}')) as { message_id?: number }).message_id));
+      return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+    });
+    try {
+      await handleCalcCallback(fakeCtx(), chatId, 'save');
+      const live = activeIntake(chatId)!;
+      expect(live.saving).not.toBeNull();
+      expect(live.restartAsked ?? null).toBeNull();
+      await vi.waitFor(() => expect(strips).toContain(4_401));
+    } finally {
+      __setTelegramTransport(null);
+    }
+  });
+
   it('its save carries the phrase, the diff keeps it, and the words never say «AI qayta hisoblayapti»', () => {
     const { state } = collection({ facts: { goods: [line('Shim', { quantity: 5 })] } }, base);
     const sub = amendSubmissionOf(state, '1 ta PDF');

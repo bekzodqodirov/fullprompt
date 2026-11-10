@@ -1805,6 +1805,10 @@ export async function handleCalcCallback(
     return;
   }
   if (state.amend) {
+    // The restart question over an addition is over too (§2.4): its «🔄 Ha»
+    // left live after the save would wipe whatever collection stands when it
+    // is pressed — `c:go_*` asks nothing (door-spec-amend-save-keeps-restart-question).
+    clearRestartAsked(chatId, state);
     await saveAmendment(ctx, chatId, state);
     return;
   }
