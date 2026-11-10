@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { readFileSync } from 'node:fs';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -871,13 +871,14 @@ describe('lot tarkibi — the papers', () => {
     expect(draft.footer[draft.at.pieces] ?? '').toBe('');
   });
 
-  it('9. the agent file: a fully planned lot (loose + crated) prints its contents once, a partial plan says ≈', async () => {
-    await save('G', [line('Клавиатура', '5', '60', '0.3', '50'), line('Мышь', '5', '40', '0.2', '100')], { docKey: 'DOC2' });
+  it('9. the agent file: ONE ROW PER GOOD — a fully planned lot (loose + crated) is two exact rows, a partial plan says ≈ (his item 2, 2026-11-10)', async () => {
+    await save('G', [line('Клавиатура', '5', '60', '0.3', '50'), line('Мышь', '5', '40', '0.2', '100', '8471606000')], { docKey: 'DOC2' });
     const [crate] = await db
       .insert(crates)
       .values({ code: `CR-LTG${SFX}`, warehouseId: wh.CN1, clientId, kind: 'yashik', createdBy: vedId })
       .returning({ id: crates.id });
     crateIds.push(crate!.id);
+    type SheetRow = { code: string; product: string; pieces: unknown; boxes: unknown; kg: unknown; m3: unknown; note: string | null; filled: boolean };
     const plan = async (rows: { lotKey: LotKey; crateId: string | null; n: number; kg: string; m3: string }[]) => {
       const [p] = await db
         .insert(loadPlans)
@@ -894,42 +895,70 @@ describe('lot tarkibi — the papers', () => {
       const buf = await buildAgentXlsx(p!.id, 1);
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-      const cells: { value: string; note: string | null }[] = [];
-      wb.worksheets[0]!.eachRow((row) => {
+      const out: SheetRow[] = [];
+      wb.worksheets[0]!.eachRow((row, n) => {
+        // Rows 1-2 are the title and the header; a block heading has no product.
         const cell = row.getCell(2);
-        if (cell.value) cells.push({ value: String(cell.value), note: cell.note ? JSON.stringify(cell.note) : null });
+        if (n <= 2 || !cell.value) return;
+        out.push({
+          code: String(row.getCell(1).value),
+          product: String(cell.value),
+          pieces: row.getCell(3).value,
+          boxes: row.getCell(4).value,
+          kg: row.getCell(5).value,
+          m3: row.getCell(6).value,
+          note: cell.note ? JSON.stringify(cell.note) : null,
+          // A styled cell with no fill reads back as pattern «none»: only a SOLID fill is the estimate's.
+          filled: cell.fill?.type === 'pattern' && cell.fill.pattern === 'solid',
+        });
       });
-      return cells;
+      return out;
     };
     const full = await plan([
       { lotKey: 'G', crateId: null, n: 5, kg: '50.000', m3: '0.2500' },
       { lotKey: 'G', crateId: crate!.id, n: 5, kg: '50.000', m3: '0.2500' },
+      { lotKey: 'B', crateId: null, n: 3, kg: '30.000', m3: '0.0300' },
     ]);
-    const fullPlanId = planIds.at(-1)!;
-    // The owner's 2a: the lot's OWN Chinese name stays in front, the contents
-    // follow on the next line; the lot's other (crated) row is the bare name.
-    // The sheet keeps the plan lines' order (uuidv7 ids, the loose line first).
-    const gRows = full.filter((c) => c.value.startsWith(NAME_G));
-    expect(gRows).toHaveLength(2);
-    expect(gRows[0]!.value.startsWith(`${NAME_G}\nСостав лота (весь план) / Lot contents (whole plan): `)).toBe(true);
-    expect(gRows[1]!.value).toBe(NAME_G);
-    const gLines = await db
-      .select({ crateId: loadPlanLines.crateId })
-      .from(loadPlanLines)
-      .innerJoin(loadPlanVersions, eq(loadPlanLines.versionId, loadPlanVersions.id))
-      .where(and(eq(loadPlanVersions.planId, fullPlanId), eq(loadPlanLines.lotId, lot.G)))
-      .orderBy(asc(loadPlanLines.id));
-    expect(gLines.map((l) => l.crateId)).toEqual([null, crate!.id]);
-    const withContents = full.filter((c) => c.value.includes('Lot contents'));
-    expect(withContents).toHaveLength(1);
-    expect(withContents[0]!.value).toContain('Клавиатура — 5 кор. · 60.0 кг · 0.300 м³ · 50 шт');
-    expect(withContents[0]!.value).toContain('Мышь — 5 кор. · 40.0 кг · 0.200 м³ · 100 шт');
-    expect(withContents[0]!.value).not.toContain('≈');
-    expect(withContents[0]!.note).toBeNull();
+    const label = `LT${SFX}-`;
+    // Lot G's TWO plan rows (loose + crated) are ONE group of two line rows:
+    // each good with its own cartons, kilos, cube and pieces — exact, the
+    // whole lot is planned. Lot G is typed in Chinese only and neither line
+    // is its own name, so the first row carries the sticker's name on a
+    // second line; the mouse's code rides in brackets.
+    const g = full.filter((r) => r.product.startsWith('Клавиатура') || r.product.startsWith('Мышь'));
+    expect(g.map((r) => [r.product, r.pieces, r.boxes, r.kg, r.m3])).toEqual([
+      [`Клавиатура\nНа коробке / On the carton: ${NAME_G}`, 50, 5, 60, 0.3],
+      ['Мышь [8471606000]', 100, 5, 40, 0.2],
+    ]);
+    expect(g.every((r) => r.code.startsWith(label))).toBe(true);
+    expect(g.every((r) => r.note === null && !r.filled)).toBe(true);
+    // Nothing of the old shape is left: no row under the lot's own name, no «Состав лота».
+    expect(full.filter((r) => r.product.startsWith(NAME_G))).toHaveLength(0);
+    expect(full.some((r) => r.product.includes('Состав лота') || r.product.includes('Lot contents'))).toBe(false);
+    // The uncomposed neighbour (lot B — test 2b cleared its tarkib) is the row it always was.
+    expect(full.filter((r) => r.product === `其他${SFX}`).map((r) => [r.pieces, r.boxes, r.kg, r.m3])).toEqual([['', 3, 30, 0.03]]);
+    // …and the line rows add up to the plan's own figures for the lot.
+    expect(g.reduce((s, r) => s + Number(r.kg), 0)).toBe(100);
+    expect(g.reduce((s, r) => s + Number(r.boxes), 0)).toBe(10);
+
+    // A partial plan — 4 of lot F's 10 (test 4 left it 5 + 5 cartons, 50 +
+    // 50 kg; one carton already crossed on truck ONE, so the plan holds
+    // positions 1..5): a share — every line row is filled and noted, and the
+    // note speaks of the BLOCK, not of a truck.
     const partial = await plan([{ lotKey: 'F', crateId: null, n: 4, kg: '40.000', m3: '0.2000' }]);
-    const fCell = partial.find((c) => c.value.includes('Lot contents'))!;
-    expect(fCell.value).toContain('≈');
-    expect(fCell.note).toContain('Estimate');
+    expect(partial.map((r) => [r.product.split('\n')[0], r.boxes, r.kg])).toEqual([
+      ['Клавиатура', 2, 20],
+      ['Мышь', 2, 20],
+    ]);
+    expect(partial.every((r) => r.filled && r.note?.includes('Estimate') && r.note.includes('lot share in this block'))).toBe(true);
+
+    // «aralash»: every carton holds the mix — the lot's cartons on the first
+    // row, «same cartons» after, the pieces per good (lot H, from test 2).
+    const mixed = await plan([{ lotKey: 'H', crateId: null, n: 10, kg: '100.000', m3: '0.5000' }]);
+    expect(mixed.map((r) => [r.product.split('\n')[0], r.pieces, r.boxes, r.kg])).toEqual([
+      ['Мышь', 10, 10, 60],
+      ['Клавиатура', 5, DOC.sameCartons, 40],
+    ]);
   });
 
   it('9b. every photograph sits under «Фото» in BOTH photo files — the «шт» column moved the anchor once (his 7b)', async () => {
@@ -964,7 +993,11 @@ describe('lot tarkibi — the papers', () => {
       expect(photoAt).toBeGreaterThan(0);
       const piecesAt = (sheet.getRow(2).values as unknown[]).indexOf(DOC.pieces);
       expect(piecesAt).toBe((sheet.getRow(2).values as unknown[]).indexOf(DOC.boxes) - 1);
-      return { photoCol: photoAt - 1, cols: sheet.getImages().map((i) => i.range.tl.nativeCol) };
+      return {
+        photoCol: photoAt - 1,
+        cols: sheet.getImages().map((i) => i.range.tl.nativeCol),
+        rows: sheet.getImages().map((i) => i.range.tl.nativeRow),
+      };
     };
     const packing = await anchors(await buildPackingPhotosXlsx(truck.CROSS!));
     expect(packing.cols.length).toBeGreaterThan(0);
@@ -985,6 +1018,11 @@ describe('lot tarkibi — the papers', () => {
     const agent = await anchors(await buildAgentXlsx(p!.id, 1));
     expect(agent.cols.length).toBeGreaterThan(0);
     expect(agent.cols.every((c) => c === agent.photoCol)).toBe(true);
+    // Lot G is two goods and ONE photograph: the picture is drawn once, beside
+    // the group's first good (sheet row 4 — title, header, block heading), and
+    // not again on the second good's row (his item 2: a row per good, not a
+    // photograph per row — the cartons are the same cartons).
+    expect(agent.rows).toEqual([3]);
   });
 });
 

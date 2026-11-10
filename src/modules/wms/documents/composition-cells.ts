@@ -60,15 +60,23 @@ export function packingPiecesCell(line: PaperLine): number | '' {
 }
 
 /**
- * The agent file's «Кол-во, шт» cell (his 7b, 2026-10-27). The agent file is
- * one row per PLAN line with the lot's photographs, so a tarkib is written
- * inside the product cell rather than as rows of its own: a ONE-good lot's
- * pieces go in the column, and a lot of several goods leaves it BLANK — its
- * pieces are per good, already in the contents text beside it, and pieces of
- * different goods do not add (the packing lists' own rule).
+ * The agent file's product cell of a tarkib LINE row (the owner's item 2,
+ * 2026-11-10 — «yuklamada har bir tarkib alohida qatorlarga bo'linib
+ * chiqsin»; docs/TARKIB-TUZATISH.md §4): the packing lists' own product cell
+ * (one rule for «the line's name, with the lot's Chinese name beside the line
+ * that IS the lot's good»), then the line's TNVED code in brackets when one
+ * is stated — the code is language-neutral for a sheet read Chinese-first,
+ * and is what the export declaration keys on.
+ *
+ * `onCarton`: the lot's Chinese name on a SECOND text line, for the first
+ * row of a lot none of whose printed lines is the lot's own good. The agent
+ * reads Chinese and finds the cartons by the name on their sticker; before
+ * the rows were split that name always opened the cell, and a lot typed in
+ * Chinese with Russian tarkib lines would otherwise show no Chinese at all.
  */
-export function agentPiecesCell(lines: readonly PaperLine[]): number | '' {
-  return lines.length === 1 ? packingPiecesCell(lines[0]!) : '';
+export function agentProductCell(line: PaperLine, lot: { zh: string; ru: string | null }, onCarton: string | null): string {
+  const cell = `${packingProductCell(line, lot)}${line.tnvedCode ? ` [${line.tnvedCode}]` : ''}`;
+  return onCarton ? `${cell}\n${DOC.onCarton}: ${onCarton}` : cell;
 }
 
 /**
@@ -86,31 +94,6 @@ export function packingBoxesCell(
   return first ? lotCartons : DOC.sameCartons;
 }
 
-const fmt1 = (n: number) => n.toFixed(1);
-const fmt3 = (n: number) => n.toFixed(3);
-
-/**
- * The agent file's suffix under the lot's Chinese name: every line of the
- * lot's WHOLE planned contents, its TNVED code in brackets when one is set —
- * the sheet is read Chinese-first and the line names are Russian, while a
- * code is language-neutral and is what the export declaration keys on. «≈»
- * before each figure when the view is an estimate.
- */
-export function agentContentsText(lines: readonly PaperLine[], estimate: boolean): string {
-  const approx = estimate ? '≈' : '';
-  const entries = lines.map((l) => {
-    const head = `${l.name}${l.tnvedCode ? ` [${l.tnvedCode}]` : ''}`;
-    const figures = [
-      l.cartons !== null ? `${approx}${l.cartons} кор.` : null,
-      `${approx}${fmt1(l.kg)} кг`,
-      l.m3 !== null ? `${approx}${fmt3(l.m3)} м³` : null,
-      l.pieces !== null && l.pieces >= 1 ? `${approx}${l.pieces} шт` : null,
-    ].filter((f): f is string => f !== null);
-    return `${head} — ${figures.join(' · ')}`;
-  });
-  return `${DOC.contents}: ${entries.join('; ')}`;
-}
-
 const REASON_TEXT: Record<Exclude<PaperReason, 'share'>, string> = {
   stale: 'лот изменён после ввода состава / lot changed after the contents were stated',
   invalid: 'состав без числа коробок у части строк / contents with carton counts on some lines only',
@@ -118,13 +101,24 @@ const REASON_TEXT: Record<Exclude<PaperReason, 'share'>, string> = {
   clamped: 'коробка учтена на двух машинах / a carton counted on two trucks',
 };
 
-/** The cell note of an estimated row: one clause per reason, RU/EN. */
-export function estimateNote(view: Pick<PaperView, 'reasons'>, n: number, boxCount: number): string {
-  const clauses = view.reasons.map((r) =>
-    r === 'share'
-      ? `доля лота на этой машине (${n} из ${boxCount} кор.) / lot share on this truck`
-      : REASON_TEXT[r],
-  );
+/**
+ * The cell note of an estimated row: one clause per reason, RU/EN. `where`
+ * names what the share is a share OF: a truck's papers print the lot's share
+ * on that truck; the agent file prints a plan in BLOCKS (here, on the road,
+ * not come), and a fully planned lot split between two blocks is a share of
+ * the block — «on this truck» would be untrue of it.
+ */
+export function estimateNote(
+  view: Pick<PaperView, 'reasons'>,
+  n: number,
+  boxCount: number,
+  where: 'truck' | 'block' = 'truck',
+): string {
+  const share =
+    where === 'block'
+      ? `доля лота в этом блоке (${n} из ${boxCount} кор.) / lot share in this block`
+      : `доля лота на этой машине (${n} из ${boxCount} кор.) / lot share on this truck`;
+  const clauses = view.reasons.map((r) => (r === 'share' ? share : REASON_TEXT[r]));
   return `Расчётно / Estimate: ${clauses.join('; ')}`;
 }
 

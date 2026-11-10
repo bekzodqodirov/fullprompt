@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  agentContentsText,
-  agentPiecesCell,
+  agentProductCell,
   estimateNote,
   invoiceRowCells,
   packingBoxesCell,
@@ -115,12 +114,6 @@ describe('the packing lists', () => {
     expect(packingPiecesCell(pl({ pieces: 0 }))).toBe('');
   });
 
-  it('the agent file’s «шт» cell: ONE good’s pieces, BLANK for several (they do not add, the text lists each) — his 7b', () => {
-    expect(agentPiecesCell([pl({ pieces: 500 })])).toBe(500);
-    expect(agentPiecesCell([pl({ pieces: null })])).toBe('');
-    expect(agentPiecesCell([pl({ pieces: 500 }), pl({ pieces: 1000 })])).toBe('');
-  });
-
   it('«alohida» prints the line’s cartons; «aralash» the lot’s on the first line and «same cartons» after', () => {
     expect(packingBoxesCell(pl({ cartons: 17 }), 'separate', true, 33)).toBe(17);
     expect(packingBoxesCell(pl({ cartons: null }), 'mixed', true, 33)).toBe(33);
@@ -128,24 +121,23 @@ describe('the packing lists', () => {
   });
 });
 
-describe('agentContentsText', () => {
-  it('U1: the whole lot, the code in brackets, no ≈', () => {
+describe('the agent file — one row per tarkib line (his item 2, 2026-11-10)', () => {
+  const lot = { zh: '键盘', ru: 'клавиатура' };
+
+  it('the packing lists’ product cell, then the line’s TNVED in brackets when one is stated', () => {
     const view = paperLines(SEP, LOT, { before: 0, cartons: 100, kg: 1000, m3: 2.5 });
-    expect(agentContentsText(view.lines, view.estimate)).toBe(
-      'Состав лота (весь план) / Lot contents (whole plan): ' +
-        'Клавиатура [8471607000] — 50 кор. · 600.0 кг · 1.500 м³ · 500 шт; ' +
-        'Мышь — 50 кор. · 400.0 кг · 1.000 м³ · 1000 шт',
-    );
+    expect(view.lines.map((l) => agentProductCell(l, lot, null))).toEqual(['Клавиатура (键盘) [8471607000]', 'Мышь']);
   });
 
-  it('U2: a plan of 40 says ≈ before every figure', () => {
-    const view = paperLines(SEP, LOT, { before: 0, cartons: 40, kg: 400, m3: 1 });
-    expect(view.estimate).toBe(true);
-    expect(agentContentsText(view.lines, view.estimate)).toBe(
-      'Состав лота (весь план) / Lot contents (whole plan): ' +
-        'Клавиатура [8471607000] — ≈20 кор. · ≈240.0 кг · ≈0.600 м³ · ≈200 шт; ' +
-        'Мышь — ≈20 кор. · ≈160.0 кг · ≈0.400 м³ · ≈400 шт',
-    );
+  it('the Chinese name the sticker carries rides on a second line of the row it is handed to — and only there', () => {
+    const mouse = pl({ name: 'Мышь', tnvedCode: '8471606000' });
+    expect(agentProductCell(mouse, lot, '键盘')).toBe('Мышь [8471606000]\nНа коробке / On the carton: 键盘');
+    expect(agentProductCell(mouse, lot, null)).toBe('Мышь [8471606000]');
+    expect(DOC.onCarton).toBe('На коробке / On the carton');
+  });
+
+  it('the old «Состав лота …» text and its label are gone — a composed lot is rows now, never a cell', () => {
+    expect(Object.keys(DOC)).not.toContain('contents');
   });
 });
 
@@ -159,5 +151,13 @@ describe('estimateNote', () => {
     expect(estimateNote({ reasons: ['clamped'] }, 100, 100)).toContain('коробка учтена на двух машинах');
     expect(estimateNote({ reasons: ['invalid'] }, 100, 100)).toContain('contents with carton counts on some lines only');
     expect(estimateNote({ reasons: ['share', 'pallet'] }, 40, 100).split('; ')).toHaveLength(2);
+  });
+
+  it('a share of a BLOCK says so — the agent file’s part of a fully planned lot is not «on this truck»', () => {
+    expect(estimateNote({ reasons: ['share'] }, 30, 100, 'block')).toBe(
+      'Расчётно / Estimate: доля лота в этом блоке (30 из 100 кор.) / lot share in this block',
+    );
+    // The default stays the truck's sentence: every other paper prints a truck.
+    expect(estimateNote({ reasons: ['share'] }, 30, 100)).toContain('на этой машине');
   });
 });
