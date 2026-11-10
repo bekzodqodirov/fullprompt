@@ -97,8 +97,6 @@ let receiptId = '';
 const wh = { origin: '', dest: '' };
 const truck = { loading: '', road: '' };
 const lot = { K: '', P: '' };
-/** K1-K2 and P1-P2 stand on the shelf, K3-K4 and P3 are being loaded, K5-K6 are on the road. */
-const box: Record<string, string> = {};
 
 const person = () => ({
   id: actorId,
@@ -148,18 +146,14 @@ async function mintBox(
   seq: number,
   at: { status: string; warehouseId: string | null; batchId: string | null },
 ) {
-  const [row] = await db
-    .insert(boxes)
-    .values({
-      lotId,
-      shortCode: `P2A${RUN}${key}`,
-      seqInLot: seq,
-      status: at.status,
-      currentWarehouseId: at.warehouseId,
-      currentBatchId: at.batchId,
-    })
-    .returning({ id: boxes.id });
-  box[key] = row!.id;
+  await db.insert(boxes).values({
+    lotId,
+    shortCode: `P2A${RUN}${key}`,
+    seqInLot: seq,
+    status: at.status,
+    currentWarehouseId: at.warehouseId,
+    currentBatchId: at.batchId,
+  });
 }
 
 /** The Ostatka download's product cells for this client, through the route the screen's button runs. */
@@ -233,6 +227,8 @@ beforeAll(async () => {
   truck.loading = loading!.id;
   truck.road = road!.id;
 
+  // K1-K2 and P1-P2 stand on the shelf, K3-K4 and P3 are being loaded, K5-K6
+  // are on the road.
   lot.K = await mintLot(1, 'A', ZH_K, OWN_K, 6);
   lot.P = await mintLot(2, 'B', ZH_P, OWN_P, 3);
   const shelf = { status: 'in_stock', warehouseId: wh.origin, batchId: null };
