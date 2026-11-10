@@ -115,6 +115,26 @@ describe('a further sheet, by its shape (§4.2)', () => {
     expect(answer.say).toContain(`📄 «CI-PL.xlsx», «PACKING» varag‘i ${SAME_SENTENCE}`);
   });
 
+  it('R1 after the same goods held in ANOTHER order: no netto by place — each would take another row’s', async () => {
+    const chatId = collection();
+    const reversed = [...B.GOODS].reverse();
+    await forward(chatId, await B.sheetsBook([['Inv', ['Description', 'Quantity'], reversed.map((g) => [g.en, B.pcs(g)])]]), 'first.xlsx');
+    await forward(chatId, await r1Book({ net: true }), 'CI-PL.xlsx');
+    const s = activeIntake(chatId)!;
+    expect(s.invoiceGoods?.map((g) => g.name)).toEqual(reversed.map((g) => g.en));
+    expect((s.invoiceGoods ?? []).map((g) => g.weightKg ?? null)).toEqual(reversed.map(() => null));
+    expect(s.fileTotals ?? null).toBeNull();
+  });
+
+  it('R1 after the same goods held in the SAME order: the held rows are the sheet’s, place for place — R1 stands', async () => {
+    const chatId = collection();
+    await forward(chatId, await B.sheetsBook([['Inv', ['Description', 'Quantity'], B.GOODS.map((g) => [g.en, B.pcs(g)])]]), 'first.xlsx');
+    await forward(chatId, await r1Book({ net: true }), 'CI-PL.xlsx');
+    const s = activeIntake(chatId)!;
+    expect((s.invoiceGoods ?? []).map((g) => g.weightKg)).toEqual(B.GOODS.map((g) => B.r2(g.nw * g.ctns)));
+    expect([s.fileTotals?.weightKg, s.fileTotals?.volumeM3]).toEqual([1592, 13.58]);
+  });
+
   it('a bilingual CI + PL of the same goods (`packingOfHeld`): the totals and every netto, as two files give them (xlsxN-11)', async () => {
     const chatId = collection();
     const body = await B.bookOf((wb) => {
@@ -320,7 +340,7 @@ describe('the words (§4.4)', () => {
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('PI');
       ws.addRows(cells);
-      ws.addImage(wb.addImage({ buffer: png, extension: 'png' }), { tl: { col: 0, row: 3 }, ext: { width: 600, height: 400 } });
+      ws.addImage(wb.addImage({ buffer: png as unknown as ExcelJS.Buffer, extension: 'png' }), { tl: { col: 0, row: 3 }, ext: { width: 600, height: 400 } });
       return Buffer.from(await wb.xlsx.writeBuffer());
     };
     const only = await picture([]);

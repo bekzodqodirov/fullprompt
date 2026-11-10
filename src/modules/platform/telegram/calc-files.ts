@@ -17,6 +17,7 @@ import {
 import {
   fillsWords,
   foldInvoice,
+  goodsNameKey,
   notedTotalsNote,
   packingFills,
   packingNote,
@@ -332,16 +333,14 @@ export function receiveGoodsSheet(
     /**
      * A FURTHER mapped sheet of the workbook whose goods sheet came first
      * (docs/FAYL-OQISH.md §4.2): judged by its shape against everything held,
-     * never as a second file — `sheet` its name, the goods sheet's name and
-     * rows as read, and `fresh` = the goods sheet's rows are the whole held
-     * list (the workbook is the collection's first goods file).
+     * never as a second file — `sheet` its name, and the goods sheet's name,
+     * rows as read and shape.
      */
     further?: {
       sheet: string;
       goodsSheet: string;
       goodsRows: NonNullable<IntakeState['invoiceGoods']>;
       goodsShape: 'invoice' | 'packing';
-      fresh: boolean;
     };
   },
 ): FileAnswer {
@@ -569,14 +568,15 @@ function receiveFurtherSheet(
   const topUp = state.amend !== null || state.seed !== null;
   if (m.shape === 'packing') {
     const ofHeld = packingOfHeld(held, kinds, goods, m.weightKind);
-    // R1 only while the goods sheet's rows ARE the held list, in order: with
-    // a file before the workbook, or a sheet folded in before this one, the
-    // packing list's place and its Σ are no longer the list's.
+    // R1 only while the held list IS the goods sheet's rows, place for place:
+    // with other goods held (a file before the workbook, a sheet folded in
+    // before this one) the packing list's Σ is not the list's, and the same
+    // goods held in another order would take each other's netto.
     const inLine =
       !ofHeld &&
-      further.fresh &&
       further.goodsShape === 'invoice' &&
       held.length === further.goodsRows.length &&
+      held.every((h, i) => goodsNameKey(h.name) === goodsNameKey(further.goodsRows[i]!.name)) &&
       samePositions(further.goodsRows, goods);
     if (ofHeld || inLine) {
       const fill = ofHeld ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
@@ -762,7 +762,7 @@ export async function readIntakeFile(
       shape: shapeOf(m),
       ownText: m.ownText,
       ...capOf(m.goods),
-      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, fresh: held.length === 0 },
+      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape },
     })),
   ];
   let live = state;
