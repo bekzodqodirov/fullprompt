@@ -256,8 +256,11 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
     .where(and(eq(agentConversations.managerUserId, ctx.managerUserId), eq(agentConversations.peerId, ctx.peerId)));
 
   // A person's own message in this chat — his phone, a colleague in the CRM — within the pause. Asked of the
-  // chat itself and not of a window (#1622): thirty photos after his reply pushed it out of the window, and the AI
-  // drafted while he was mid-conversation. Live rows only, as the window reads them; the AI's own sends are not his.
+  // chat itself and not of a window (#1623): thirty photos after his reply pushed it out of the window, and the AI
+  // drafted while he was mid-conversation. Live rows only, as the window reads them; the AI's own sends are not his,
+  // and neither is the account's robot — a Telegram Business greeting or away message (`auto_sent`, #1568's «the
+  // account's robot is not a person»): reached over the whole pause now, it would stand the AI down exactly while he
+  // is away (#1627).
   const pauseMs = config.humanPauseMin * 60_000;
   const humanSince = new Date(now.getTime() - pauseMs);
   const [lastHuman] = await db
@@ -271,7 +274,8 @@ async function eligibilityFacts(ctx: AgentContext, config: AgentConfig, now: Dat
         eq(tgMessages.direction, 'out'),
         gt(tgMessages.sentAt, humanSince),
         isNull(tgMessageFlags.deletedAt),
-        sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = ${tgMessages}.manager_user_id AND o.tg_message_id = ${tgMessages}.tg_message_id)`,
+        sql`coalesce(${tgMessageFlags.autoSent}, false) = false`,
+        sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.manager_user_id = ${tgMessages}.manager_user_id AND o.peer_id = ${tgMessages}.peer_id AND o.tg_message_id = ${tgMessages}.tg_message_id)`,
       ),
     )
     .orderBy(desc(tgMessages.sentAt))

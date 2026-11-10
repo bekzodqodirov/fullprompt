@@ -21,6 +21,10 @@ Tinglovchi (tg-listen) o'zgarmadi, lekin uni ham qayta qursangiz zarari yo'q.
 - **Siz chatda yozgan bo'lsangiz, AI 2 soat jim turadi — endi har doim.** Oldin mijoz sizning javobingizdan keyin
   30 tadan ko'p xabar (masalan bir dasta rasm) yuborsa, tizim sizning javobingizni ko'rmay qolardi va AI siz bilan
   bir vaqtda qoralama yozardi. Endi bunday bo'lmaydi.
+- **Telegram Business avto-javobi endi «siz yozdingiz» deb hisoblanmaydi.** Akkauntingizdagi avtomatik salom yoki
+  «hozir bandman» xabari oldin AIni 2 soatga to'xtatib qo'yardi — aynan siz yo'q paytingizda. Endi to'xtatmaydi.
+- **Hisoblatishga ketgan iqtiboslar sanasi bilan boradi.** AI eski xabarni ham iqtibos qilishi mumkin (masalan
+  tovar 40 xabar oldin tasvirlangan bo'lsa). VED xodimi qaysi gap qachon yozilganini ko'radi: «10.11.2026: …».
 - **Xarajat deyarli o'smaydi.** Suhbat bir run ichida bir marta to'lanadi, keyingi bosqichlarda arzon o'qiladi.
   Taxminan kuniga $5-7 (150 ta run hisobida), oldin $5-6 edi. Kunlik token chegarasi (3 000 000) o'zgarmaydi.
 - **«80 % ishonch» endi o'lchanadi.** AI har qoralamada «siz buni o'zgartirmay yuborish ehtimoli» degan bahoni aniq

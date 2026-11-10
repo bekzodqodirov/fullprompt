@@ -16,6 +16,7 @@ import {
   tgAccountGuard,
   tgAccounts,
   tgChatRules,
+  tgMessageFlags,
   tgMessages,
   userRoles,
   users,
@@ -584,6 +585,20 @@ describe('a long chat: the model reads it, the rules count the recent part (#162
     const a = await at('in', 'Shularni hisoblab bering', 5_000);
     const out = await handleInbound(job(a), { callModel: scripted([compose('x')]) });
     expect(out).toEqual({ outcome: 'refused', reason: 'human_active' });
+  });
+
+  it('the account’s robot is not his: a Business greeting an hour back, then thirty-five photos, still drafts (#1627)', async () => {
+    await at('in', 'Salom', 70 * 60_000);
+    const greeting = await at('out', 'Assalomu alaykum! Hozir band emasman, tez orada javob beraman.', 60 * 60_000);
+    const [row] = await db
+      .select({ id: tgMessages.id })
+      .from(tgMessages)
+      .where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, greeting)));
+    await db.insert(tgMessageFlags).values({ messageId: row!.id, autoSent: true });
+    for (let i = 0; i < 35; i++) await at('in', `Rasm ${i + 1}`, (39 - i) * 60_000);
+    const a = await at('in', 'Shularni hisoblab bering', 5_000);
+    const out = await handleInbound(job(a), { callModel: scripted([compose('Tekshirib aytaman.', { category: 'qualification' })]) });
+    expect(out).toMatchObject({ outcome: 'draft' });
   });
 
   it('an AI send in the window is not his: the pause does not hold for it', async () => {

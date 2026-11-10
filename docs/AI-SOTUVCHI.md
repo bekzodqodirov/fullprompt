@@ -1121,7 +1121,7 @@ Three asks:
 3. **A sales manager, later a fully autonomous one.** This section is that record (§18.4-§18.6). Designed by a
    map → three designs (risk-first, measurement-first, owner-first) → a judge, before any code (DECISIONS #1626).
 
-### 18.1 Two windows (DECISIONS #1622-#1624) — built
+### 18.1 Two windows (DECISIONS #1622-#1624, reviewed #1627) — built
 
 - **Why raising 30 alone does nothing safe.**
   - Raising `contextMessages` alone mostly changes nothing: the 8 000-character total already stops a chat of real
@@ -1144,13 +1144,18 @@ Three asks:
   - Pinned by a differential against the old loop copied verbatim, and by an integration chat whose old part asks rail,
     names Kashgar, states 500 kg and picks the flight.
 - **What the model sees.**
-  - The older part comes under «Oldingi suhbat (faqat tushunish uchun — bu qismdagi son, narx, o'lcham va manzil
-    eskirgan …)», then «Suhbat (eski → yangi)».
-  - Rule 1 says figures come from the «Suhbat» part only.
+  - The older part comes under «Oldingi suhbat (faqat tushunish uchun — bu qism oldingi yuk haqida bo'lishi mumkin:
+    undagi son, narx, o'lcham, manzil, yo'l turi, bo'lim va tovar hozirgi so'rov emas …)», then «Suhbat (eski →
+    yangi)».
+  - Rule 1 says figures come from «Suhbat» only, and scopes every «so'ralsa» of rules 8-12 to it. No code guard reads
+    the older part, so only the words can keep an old flight, rail or podklyuch from steering the model (#1627).
   - A line from another year carries its year.
-  - A chat that fits in 30 messages reads exactly as before.
+  - A document's name is cut at 80 characters.
+  - Otherwise a chat that fits in 30 messages reads exactly as before.
+  - A calc_submit may cite an older line (goods described long ago), and the VED's note dates every cited line.
 - **The human pause is asked of the chat itself** (#1623):
-  - It is the newest live out row within the pause that is not an AI send.
+  - It is the newest live out row within the pause that is neither an AI send nor the account's Business robot
+    (`auto_sent`, #1627).
   - Before, it was «his last out message in the window», so thirty photos after his reply pushed the reply out and
     the AI drafted while he was mid-conversation.
 - **The chat is a cache breakpoint** (#1624). Every tool round of a run re-sends it. Now rounds 2-6 read it at a tenth

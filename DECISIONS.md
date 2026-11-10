@@ -7545,3 +7545,52 @@ characters per token. Red-proven by dropping the mapping.
     itself, so auto-send is his explicit decision, with the risks stated (§18.6).
 - The roadmap — draft → wide memory and measuring → answers by itself → a sales manager's acts (each rehearsed, then
   its own measured cell) → an AI seat owning leads on an official channel — and what stays his forever are §18.4-§18.5.
+
+1627. **Reviewed as built** (five lenses — the windows, the model's view, the pause, the cache, the corpora both ways —
+each finding put to two refuters). **The rules' window is the old one:** an integration proof imported the base tree's
+unmodified `chatMessages` beside the new one and compared 12 real chat shapes (30/31/100/101 rows, ties on `sent_at`,
+deleted rows, media with no body, clipped bodies) — identical. **The #1619 corpora both ways:** the 62-reply ordinary
+corpus 62/62 on base and head, the 303-case dangerous corpus 77/303 pass on both with 0 diffs (matching the recorded
+30-October run), the last verifier's sets v7-v10 0 diffs; agent unit 1994 and agent integration 390 green. **The
+cache:** two breakpoints (≤ 4), rounds 1 and 2 byte-identical up to the marked block, the staff assistant's request
+unchanged.
+
+Three defects survived and are fixed:
+- **The older part steered the model through words no guard reads.** The heading and rule 1 named only figures,
+  prices, sizes and addresses. So an old «avia bilan» (rule 9 withholds the China address), an old «poyezd»
+  (rule 10 asks him the rail question) or an old «podklyuch» or goods name (rule 11, calc_checklist) could still
+  drive the model toward the last shipment. The code's guards were blind to it, because they read only the recent
+  part.
+  - The heading now says the older part may be the previous shipment: its road, section and goods are not the
+    current request.
+  - Rule 1 scopes every «so'ralsa / jo'natmoqchi bo'lsa» of the rules below to «Suhbat».
+  - The tools' refusals say «"Suhbat" qismidagi xabarida yo'q (oldingi suhbatdagi son eskirgan)».
+  - The heading no longer calls the part «eskirgan». The cut is by count, so a long burst's own first lines can sit
+    there; «ask again» is right for both.
+  - Unverifiable without a real model; pinned as words.
+- **A calc_submit could cite an old shipment's line, and the VED read it undated beside today's.**
+  - Citations stay over history: the legitimate case is goods described forty messages back.
+  - `landCalc` now prefixes every cited line with its Tashkent date («10.11.2026: …»).
+  - Rule 11 says calc_submit cites only THIS shipment's messages.
+  - Red-proven.
+- **The account's robot paused the AI.** A Telegram Business greeting or away message (`tg_message_flags.auto_sent`)
+  counted as his reply. This was pre-existing inside the window. The new chat-wide query reached it over the whole
+  pause, so a greeting an hour back followed by an album of photos stood the AI down exactly while he was away.
+  - The pause skips `auto_sent` rows (#1568's «the account's robot is not a person»).
+  - Red-proven.
+
+Nits taken:
+- The pause's NOT EXISTS names `peer_id`, the outbox index's own three columns.
+- A document's name is cut at 80 characters in the prompt: no budget counts it, and a hundred lines may carry one
+  each.
+- A recent line from another year prints its year too. That is deliberate, and the only way a chat that fits 30
+  messages reads differently.
+
+STATED, not changed:
+- The other readers of «his own message» still count the robot: the ✅'s `chatMoved`, `retireOnHumanReply`, the sweep
+  and the outbox's `human_replied`. So do `lastOut` and the burst: a greeting right after the anchor leaves the burst
+  empty. This is #1544's owed round.
+- An AI send whose outbox row lost its Telegram id (an `unknown` recovered as sent) reads as his once catch-up stores
+  it. Pre-existing.
+- A run that throws records none of its tokens, so `daily_token_cap` never counts a failed run. Pre-existing; the
+  breakpoint makes such a run's later rounds cheaper, not dearer.

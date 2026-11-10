@@ -176,6 +176,24 @@ describe('what the model is told (#1622)', () => {
   });
 });
 
+describe('the older part steers nothing (review #1627)', () => {
+  it('the heading names the road, the section and the goods as not the current request, and never calls the part stale', () => {
+    // No code guard reads the older part: an old «avia bilan» or «podklyuch» could only steer the MODEL.
+    for (const word of ["yo'l turi", "bo'lim", 'tovar', 'hozirgi so\'rov emas', 'qayta so\'ra']) expect(OLDER_CHAT_HEADING).toContain(word);
+    // The cut is by count: a long burst's own first lines can sit here, so «stale» would be false.
+    expect(OLDER_CHAT_HEADING).not.toContain('eskirgan');
+  });
+
+  it('a hundred document names cannot outgrow the budget: each is cut at 80 characters in the prompt', () => {
+    const long = `${'n'.repeat(300)}.pdf`;
+    const docs = Array.from({ length: 40 }, (_, i) => ({ ...msg(i + 1, '', 'in'), media: 'document' as const, fileName: long }));
+    const w = chatWindows([...docs].reverse());
+    const text = chatBlock(ctxOf(w.history, w.recent));
+    expect(text).toContain(`[fayl: ${'n'.repeat(80)}…]`);
+    expect(text).not.toContain('n'.repeat(81));
+  });
+});
+
 describe('citations reach what the model read (#1622)', () => {
   it('a calc_submit may cite a line from the older part; its figures still come from the checklist', () => {
     const all = Array.from({ length: 45 }, (_, i) => msg(i + 1, i === 0 ? "Kiyim-kechak, 3 xil model" : `x${i}`, i % 2 ? 'out' : 'in'));
