@@ -139,6 +139,17 @@ describe('the door: the page draws what the service allows (#531)', () => {
     expect(page).toContain('canWrite={mayCheck}');
   });
 
+  it('while a tarkib is written the «boshqa tovar» hint sends BOTH roles to the 🧩, never to the ✏️ rename', () => {
+    // The card prints the tarkib's name and the ✅ records it (2026-11-10):
+    // a rename in the ✏️ form changes neither, so a `receipts.edit` holder
+    // who followed the old hint ticked the very name the client had denied.
+    // The confirm button is drawn beside a written tarkib only when it is
+    // stale (`face.documentStale`) — a standing one is ✅ by itself.
+    const panel = read('src/app/(protected)/receipts/[id]/lot-check-panel.tsx');
+    expect(panel).toContain("{canRename && !face.documentStale ? t('otherAnswers') : t('otherAnswersAskLogist')}");
+    expect(panel).not.toContain("{canRename ? t('otherAnswers')");
+  });
+
   it('the snapshot is written from the LOCKED row, never from the post', () => {
     const writer = read(WRITER);
     const insert = writer.slice(writer.indexOf('INSERT INTO lot_checks'), writer.indexOf('ON CONFLICT (lot_id)'));

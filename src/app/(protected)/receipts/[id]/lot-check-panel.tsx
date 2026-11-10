@@ -231,9 +231,14 @@ export function LotCheckPanel({
               {/* Where the two other answers go — the ✏️ form is drawn for
                   `receipts.edit` alone, so the VED writes a one-line 🧩 for
                   the papers and asks the logist to rename the lot itself
-                  (his 2026-10-27: a tarkib may be ONE line). */}
+                  (his 2026-10-27: a tarkib may be ONE line). While a tarkib
+                  is WRITTEN the ✏️ is no cure for anybody: the card prints
+                  the tarkib's name and the ✅ records it (2026-11-10), so a
+                  rename there changes neither — the person who followed the
+                  hint would tick «Мышь» the client had just denied. Both
+                  roles are sent to the 🧩 then (the review of the built round). */}
               <p className="text-xs text-ink-500" data-testid="lot-check-other">
-                {canRename ? t('otherAnswers') : t('otherAnswersAskLogist')}
+                {canRename && !face.documentStale ? t('otherAnswers') : t('otherAnswersAskLogist')}
               </p>
             </>
           )}
