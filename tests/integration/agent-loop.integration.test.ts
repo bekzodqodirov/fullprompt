@@ -41,6 +41,7 @@ import { chatIdentity, type AgentContext } from '@/modules/wms/agent/context';
 import { writeNotice } from '@/modules/wms/agent/drafts';
 import { strangerCards } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat, PURGED_CARD_TEXT } from '@/modules/wms/agent/purge';
+import { webDrafts } from '@/modules/wms/agent/web-page';
 import { decideChat, openLeadForChat } from '@/modules/wms/crm/chat-rules';
 import { phoneFingerprint } from '@/modules/wms/crm/peer-index';
 
@@ -712,6 +713,22 @@ describe('a general fact refuses every name the chat is known by (review I3)', (
     // A forged token is no yes either.
     expect((await agentPress(ownerId, 'g', id, '00000000')).reply).toContain('BARCHA');
     expect(await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`)).toHaveLength(0);
+  });
+
+  it('the PAGE draws the arm’s token, so its «📌 Ha, barcha mijozlar uchun» saves (2026-11-10)', async () => {
+    const id = await leadAnswered('Yakshanba ombor dam oladi, dushanbadan ishlaydi.');
+    const remembered = async () => (await webDrafts({ id: ownerId })).remember.find((w) => w.id === id);
+    // Before the 📌 the page draws no yes at all.
+    expect((await remembered())?.kbArmToken).toBeNull();
+    // The page's first 📌 is the bot's first press: it only asks …
+    expect((await agentPress(ownerId, 'g', id, undefined)).reply).toContain('BARCHA');
+    // … and the page now draws the yes WITH the question's token.
+    const token = (await remembered())?.kbArmToken;
+    expect(token).toMatch(/^[0-9a-f]{8}$/);
+    await agentPress(ownerId, 'g', id, token!);
+    const saved = await db.select().from(kbFacts).where(sql`${kbFacts.sourceRef}->>'draftId' = ${id}`);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]!.scope).toBe('general');
   });
 });
 

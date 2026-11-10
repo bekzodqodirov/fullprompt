@@ -2776,7 +2776,7 @@
     "replyPhotoTooBig": "Photo is larger than 10 MB.",
     "replyEmpty": "Empty message.",
     "chatStopTaking": "Stop taking this chat",
-    "chatStopTakingHint": "Stop storing this conversation. Existing messages stay.",
+    "chatStopTakingHint": "Stop storing this conversation; its stored messages and photos are deleted too.",
     "feedTitle": "Timeline",
     "feedEmpty": "Nothing has happened yet.",
     "feedClientWrote": "The client wrote",

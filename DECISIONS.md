@@ -7427,3 +7427,21 @@ tasdiqlangan» was read off the draft's status alone, so a reply he approved and
 answer the customer — now only an outbox row that is live or sent counts as answered. A press that loses the status
 check answers «not live», never «o‘zingiz javob bering».
 
+1621. **Found while writing his usage guide (2026-11-10).** His «nima ishlar qilindi va qanday ishlatish yo'riqnoma
+tuz»: six readers took the AI sotuvchi apart surface by surface for the guide and a critic spot-checked them, every
+fact quoted from the code. Three things the guide would have had to call broken were fixed instead. (1) **The page's
+«📌 Umumiy qoida» could never save**: `agentRememberAction` passed no token and `kbPress` saves a general fact only
+on the arm's token, which the bot's «📌 Ha, hammaga» carries in its callback — so both page presses only asked again,
+in a sentence naming a button the page does not draw. The page now draws the arm's token (`WebDraft.kbArmToken`, null
+until armed, so a page drawn before the 📌 can never be the yes) and its arming sentence names its own button; red-proven
+(projection nulled → the new test red). (2) **«Bu chatni olmang» promised «Eski xabarlar qoladi»** while
+`excludeAndPurgeChat` deletes the stored messages and photos — the hint says so now, in all four bundles. (3) **The
+restriction alarm named «Tekshirdim»**; the button reads «Tekshirdim, qayta yoqish» and sits behind the red «⛔
+To‘xtatilgan» line — the test reads the label out of the bundle, red-proven. Also: `m8-crm.desktop`'s reload raced the
+move action (the database held the move, the page did not — red twice in a QUIET run, so not the shared-CPU flake
+recorded before); it waits for the action's answer now, green three times. STATED in the guide, not changed: a
+visible-number colleague who is not in the client book becomes a lead on a work number and the AI drafts for him (the
+colleague check reads card and rule phones, never the lead's — his open question); the website truck table copied
+into `site-estimate.ts` stops on 2026-12-31 and the AI quotes no yo'lkira after it until the code is renewed; the
+14-day ramp counts his STORED sends on that number; nothing ends a 🙋 early or un-mutes a chat; /suhbatlar/ai does not
+refresh by itself.

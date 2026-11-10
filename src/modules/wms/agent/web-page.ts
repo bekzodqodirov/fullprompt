@@ -58,6 +58,13 @@ export interface WebDraft {
   kbAsk: boolean;
   kbArmed: boolean;
   /**
+   * The arm's token while the general-fact question stands (`kbPress`): the
+   * page's «📌 Ha, barcha mijozlar uchun» is the yes ON that question, as the
+   * bot's «📌 Ha, hammaga» carries it in its callback. Null while not armed —
+   * so a page drawn before the 📌 can never be the yes.
+   */
+  kbArmToken: string | null;
+  /**
    * Approved replies of this draft's chat still waiting to leave — what its 🙋
    * would take back with it (ident fix F10): the page asks before the press,
    * because a card the press retires is gone from the page with the note.
@@ -91,7 +98,7 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
 }
 
 function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
-  const kb = ((d.policy ?? {}) as { kb?: string }).kb;
+  const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
   const card = renderDraftCardFull(d, o, [], { surface: 'web' });
   return {
@@ -111,6 +118,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
     kbArmed: kb === 'general_armed',
+    kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
   };
 }

@@ -2776,7 +2776,7 @@
     "replyPhotoTooBig": "Rasm 10 MB dan katta.",
     "replyEmpty": "Bo‘sh xabar.",
     "chatStopTaking": "Bu chatni olmang",
-    "chatStopTakingHint": "Bu yozishma boshqa saqlanmaydi. Eski xabarlar qoladi.",
+    "chatStopTakingHint": "Bu yozishma boshqa saqlanmaydi, saqlangan xabarlar va rasmlari ham o‘chiriladi.",
     "feedTitle": "Lenta",
     "feedEmpty": "Hozircha hech nima bo‘lmagan.",
     "feedClientWrote": "Mijoz yozdi",

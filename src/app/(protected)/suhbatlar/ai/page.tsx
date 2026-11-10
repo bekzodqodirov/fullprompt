@@ -265,7 +265,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
                     {d.cardText}
                   </pre>
                   {d.managerUserId === actor.id ? (
-                    <RememberButtons draftId={d.id} armed={d.kbArmed} />
+                    <RememberButtons draftId={d.id} armToken={d.kbArmToken} />
                   ) : (
                     <p className="text-xs text-ink-500">{t('notHolder', { name: d.holderName })}</p>
                   )}

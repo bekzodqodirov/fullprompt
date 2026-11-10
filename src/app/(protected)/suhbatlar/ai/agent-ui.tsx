@@ -178,7 +178,7 @@ export function DraftActions({
 }
 
 /** «Bilimga yozaymi?» after he answered the question himself — the bot's 📌 / 👤 / ✖, one press each. */
-export function RememberButtons({ draftId, armed }: { draftId: string; armed: boolean }) {
+export function RememberButtons({ draftId, armToken }: { draftId: string; armToken: string | null }) {
   const t = useTranslations('agentAi');
   const { pending, error, note, run } = useAction();
   return (
@@ -189,9 +189,9 @@ export function RememberButtons({ draftId, armed }: { draftId: string; armed: bo
           className="btn-secondary"
           disabled={pending}
           data-testid="agent-remember-general"
-          onClick={() => run(() => agentRememberAction(draftId, 'g'))}
+          onClick={() => run(() => agentRememberAction(draftId, 'g', armToken ?? undefined))}
         >
-          📌 {armed ? t('rememberGeneralConfirm') : t('rememberGeneral')}
+          📌 {armToken ? t('rememberGeneralConfirm') : t('rememberGeneral')}
         </button>
         <button
           type="button"

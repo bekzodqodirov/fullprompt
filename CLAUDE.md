@@ -3381,7 +3381,7 @@ is its twin for the tray and the «📵» sweep. STATED: a hidden-number colleag
 listener was down are not fetched. LAST CHECK (#1619-#1620): two corpora measured both ways (62 ordinary first
 replies, 303 dangerous) — keep them green on ANY policy change; G10's same-text fuse only WARNS on a short reply
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
-phrasings are in #1619. Deploy MUST rebuild tg-listen.
+phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
 
 **Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
 it: 0141 (`intake_door`, `when` …120). Before

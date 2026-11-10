@@ -2776,7 +2776,7 @@
     "replyPhotoTooBig": "照片超过 10 MB。",
     "replyEmpty": "消息为空。",
     "chatStopTaking": "不再收录此聊天",
-    "chatStopTakingHint": "不再保存此会话。旧消息保留。",
+    "chatStopTakingHint": "不再保存此会话；已保存的消息和照片也会删除。",
     "feedTitle": "动态",
     "feedEmpty": "暂无任何记录。",
     "feedClientWrote": "客户来信",

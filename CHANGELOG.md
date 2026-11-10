@@ -94,6 +94,14 @@ va **«1 a»**. Bitta migratsiya (**0142**; avval 0139 edi, boshqa sessiyaning u
   limit tugagan chatda «yangi qoralama tayyorlanadi» deb aldamaydi; siz bekor qilgan javob «allaqachon tasdiqlangan»
   deb hisoblanmaydi.
 
+### Yo'riqnoma yozilayotganda topilib tuzatilganlar (10-noyabr)
+- Saytdagi «Suhbatlar → AI sotuvchi → Savollar» bo'limida «📌 Umumiy qoida» endi haqiqatan saqlaydi. Avval ikkinchi
+  bosish ham faqat qayta so'rardi. Botdagi «📌 Ha, hammaga» doim ishlagan.
+- Chatning «⋯» menyusidagi «Bu chatni olmang» endi to'g'risini aytadi: saqlangan xabarlar va rasmlar ham o'chadi.
+  Avval «eski xabarlar qoladi» deb yozilgan edi.
+- Telegram akkauntni cheklaganda keladigan xabar tugmaning haqiqiy nomini aytadi: «Tekshirdim, qayta yoqish»
+  («Suhbatlar»dagi qizil «⛔ To‘xtatilgan» qatorini ochganda chiqadi).
+
 ### Bilib qo'ying
 - «O'n yillik tajriba», «ikki yuz», «ming» kabi so'z bilan yozilgan katta son javobda bo'lsa, ✅ chiqmaydi. Raqam
   bilan yozilgani kabi u ham manba so'raydi. «Ming rahmat» va «ikki xil yo'l» o'tadi.

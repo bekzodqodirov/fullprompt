@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { Api, helpers } from 'telegram';
 import { describe, expect, it } from 'vitest';
 import { agentOffAlarmText, pausedAlarmText, sessionDeadOthersText } from '@/modules/wms/crm/account-alarm';
 import { isTelegramServiceNotice, TELEGRAM_SERVICE_PEER, telegramNoticeKind } from '@/modules/wms/agent/listener-hooks';
 import { wasAutoSent } from '@/modules/wms/crm/message-flags';
+
+const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { crm: Record<string, string> };
 
 /**
  * The words the listener's alarms carry, and how it tells a customer's own
@@ -39,7 +42,8 @@ describe('the alarms', () => {
     expect(text).toContain('Siroj');
     expect(text).toContain('PEER_FLOOD');
     expect(text).toContain('«Suhbatlar»');
-    expect(text).toContain('«Tekshirdim»');
+    // The button's OWN words, read from the bundle the page draws it with.
+    expect(text).toContain(`«${uz.crm.pauseClear}»`);
     expect(text).toContain('AI sotuvchi ham o‘chirildi');
     expect(pausedAlarmText({ managerName: 'Siroj', pause: 'frozen', code: 'FROZEN_', agentOff: false })).not.toContain('AI');
   });
