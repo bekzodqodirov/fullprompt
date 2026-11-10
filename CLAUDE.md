@@ -3383,6 +3383,16 @@ replies, 303 dangerous) — keep them green on ANY policy change; G10's same-tex
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
 phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
 
+**Hotfix — haydovchi ilovasi «HTTP 400» (2026-11-10; DECISIONS #1622; NO migration, ledger 143).** His «faqat
+boshida joylashuvini jonatyabti keyin uzilib qolyabti». The app's queue is sent OLDEST FIRST and deleted only on a
+2xx, so a batch the server refused for ONE fix (a GPS speed spike over 400 km/h, a cell guess over 100 km) jammed the
+trip's tracking for good. `/api/track/positions` now says 400 only about a body that is not a batch (logged
+`[track] 400 …`); every fix is read by `readPosition` (tracking/devices.ts): no place or time → dropped alone; a bad
+speed → cleared; a bad accuracy → the COARSEST (`POSITION_BOUNDS.accuracyM`), **never null — a null accuracy reads as
+a GOOD fix everywhere** (`COARSE_FIX_M`'s `IS NULL OR`). Answer `{accepted, dropped}`, always 2xx; nothing readable
+leaves `last_seen_at` alone. No APK needed — jammed queues flush on the next cycle. The `[track] device …` log line
+names the cause on his server. Owed to an app release: accuracy ≥ 9 999 m is sent as «none».
+
 **Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
 it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before

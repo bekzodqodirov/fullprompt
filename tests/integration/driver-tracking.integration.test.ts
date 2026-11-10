@@ -14,6 +14,7 @@ import {
   revokeDriverDevice,
 } from '@/modules/wms/tracking/devices';
 import { silentTrucks, silentTruckText } from '@/modules/wms/tracking/silent';
+import { POST as postPositions } from '@/app/api/track/positions/route';
 
 /**
  * Driver tracking (owner's flow): the warehouse worker pairs the driver's
@@ -108,9 +109,9 @@ describe('position ingest', () => {
       { lat: 30.0, lon: 118.5, accuracyM: 12, speedKmh: 78.5, recordedAt: new Date().toISOString() },
     ];
 
-    expect(await ingestPositions(token, { positions })).toEqual({ accepted: 2 });
+    expect(await ingestPositions(token, { positions })).toEqual({ accepted: 2, dropped: 0 });
     // The phone re-sends its queue after a reconnect — no duplicates.
-    expect(await ingestPositions(token, { positions })).toEqual({ accepted: 0 });
+    expect(await ingestPositions(token, { positions })).toEqual({ accepted: 0, dropped: 0 });
 
     const seen = await db.query.driverDevices.findFirst({ where: eq(driverDevices.id, device.id) });
     expect(seen?.lastSeenAt).not.toBeNull();
@@ -165,6 +166,110 @@ describe('position ingest', () => {
         positions: [{ lat: 40, lon: 70, recordedAt: new Date().toISOString() }],
       }),
     ).rejects.toMatchObject({ code: 'trip_finished' });
+  });
+});
+
+/**
+ * The owner's report of 2026-11-10: «faqat boshida joylashuvini jonatyabti
+ * keyin uzilib qolyabti — HTTP 400». The app deletes a batch only on a 2xx
+ * and re-sends its queue OLDEST FIRST, so one fix the server refused stopped
+ * every fix behind it for the rest of the trip. These drive the real route
+ * with the exact body the Android client builds (`Api.kt`: seconds + Z,
+ * accuracy/speed only when positive).
+ */
+describe('one bad fix never jams the queue', () => {
+  const post = (token: string, body: unknown) =>
+    postPositions(
+      new Request('http://localhost/api/track/positions', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: typeof body === 'string' ? body : JSON.stringify(body),
+      }),
+    );
+  const appTime = (msAgo: number) => new Date(Date.now() - msAgo).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  async function pairedPhone() {
+    const trip = await newBatch();
+    const device = await createDriverDevice({ batchId: trip }, ctx());
+    const { token } = await pairDevice(device.pairCode!);
+    return { trip, device, token };
+  }
+
+  it('a glitched speed is answered 200, the point lands without its speed, and the next batch lands too', async () => {
+    const { trip, token } = await pairedPhone();
+    const head = { lat: 39.47, lon: 75.99, recordedAt: appTime(120_000), accuracyM: 9, speedKmh: 512.3 };
+    const second = { lat: 39.5, lon: 75.9, recordedAt: appTime(60_000), accuracyM: 8, speedKmh: 64.8 };
+
+    const res = await post(token, { positions: [head, second] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accepted: 2, dropped: 0 });
+
+    const stored = await db
+      .select()
+      .from(driverPositions)
+      .where(eq(driverPositions.batchId, trip))
+      .orderBy(driverPositions.recordedAt);
+    expect(stored.map((p) => p.speedKmh)).toEqual([null, '64.80']);
+    expect(stored.map((p) => p.lat)).toEqual(['39.470000', '39.500000']);
+
+    // The queue moved on: the next cycle is an ordinary batch, not the same refusal.
+    const next = await post(token, { positions: [{ lat: 39.6, lon: 75.8, recordedAt: appTime(0) }] });
+    expect(next.status).toBe(200);
+    expect(await next.json()).toEqual({ accepted: 1, dropped: 0 });
+  });
+
+  it('a fix with no readable place is dropped alone; its neighbours land', async () => {
+    const { trip, token } = await pairedPhone();
+    const res = await post(token, {
+      positions: [
+        { lat: 0, lon: 999, recordedAt: appTime(90_000) },
+        { lat: 39.47, lon: 75.99, recordedAt: appTime(60_000) },
+        { lat: 39.5, lon: 75.9, recordedAt: 'not a time' },
+      ],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accepted: 1, dropped: 2 });
+    const stored = await db.select().from(driverPositions).where(eq(driverPositions.batchId, trip));
+    expect(stored).toHaveLength(1);
+  });
+
+  it('a batch of nothing readable is still a 2xx, and does not tell the silence alarm the phone is fine', async () => {
+    const { device, token } = await pairedPhone();
+    const res = await post(token, { positions: [{ lat: 'x', lon: 1, recordedAt: appTime(0) }] });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accepted: 0, dropped: 1 });
+    const seen = await db.query.driverDevices.findFirst({ where: eq(driverDevices.id, device.id) });
+    expect(seen?.lastSeenAt).toBeNull();
+  });
+
+  it('a fix whose accuracy cannot be believed lands COARSE and never places the truck', async () => {
+    const { trip, token } = await pairedPhone();
+    const res = await post(token, {
+      positions: [
+        { lat: 39.47, lon: 75.99, recordedAt: appTime(120_000), accuracyM: 12 },
+        // A cell-tower guess the old schema refused outright (> 100 km):
+        // newer, so it would win the map if it were stored as «no accuracy».
+        { lat: 43.8, lon: 87.6, recordedAt: appTime(60_000), accuracyM: 4_800_000 },
+      ],
+    });
+    expect(await res.json()).toEqual({ accepted: 2, dropped: 0 });
+    const latest = await latestPositions([{ id: trip, originCode: 'TRKO', destCode: 'TRKD' }]);
+    expect(latest.get(trip)?.lat).toBe(39.47);
+  });
+
+  it('an offset time is the same instant, not a refusal', async () => {
+    const { trip, token } = await pairedPhone();
+    const res = await post(token, { positions: [{ lat: 41.3, lon: 69.2, recordedAt: '2026-11-10T13:00:00+05:00' }] });
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(driverPositions).where(eq(driverPositions.batchId, trip));
+    expect(row!.recordedAt.toISOString()).toBe('2026-11-10T08:00:00.000Z');
+  });
+
+  it('400 is kept for a body that is not a batch at all', async () => {
+    const { token } = await pairedPhone();
+    expect((await post(token, '{not json')).status).toBe(400);
+    expect((await post(token, { positions: [] })).status).toBe(400);
+    expect((await post(token, { fixes: [] })).status).toBe(400);
   });
 });
 

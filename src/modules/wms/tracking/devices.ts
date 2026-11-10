@@ -128,25 +128,119 @@ export async function pairDevice(pairCode: string, platform: 'android' | 'other'
   };
 }
 
-export const positionSchema = z.object({
-  lat: z.number().min(-90).max(90),
-  lon: z.number().min(-180).max(180),
-  accuracyM: z.number().min(0).max(100_000).optional(),
-  speedKmh: z.number().min(0).max(400).optional(),
-  recordedAt: z.string().datetime(),
-});
+/**
+ * The ENVELOPE only. A fix is judged one at a time (`readPosition`), never
+ * with the batch: the phone sends its queue OLDEST FIRST and deletes a batch
+ * only after a 2xx, so a batch refused for one unreadable fix is re-sent with
+ * that same fix at its head every cycle — one bad point (a GPS chip reporting
+ * a speed no truck reaches) stopped the whole trip's tracking for good, and
+ * the only trace on the driver's screen was «HTTP 400» (the owner's report of
+ * 2026-11-10: «faqat boshida joylashuvini jonatyabti keyin uzilib qolyabti»).
+ * The 400 stays only for a body that is not a batch at all.
+ */
 export const positionBatchSchema = z.object({
-  positions: z.array(positionSchema).min(1).max(500),
+  positions: z.array(z.unknown()).min(1).max(500),
 });
+
+/** Why a fix is dropped whole: without a place or a time it is no fix. */
+export type PositionDrop = 'not_a_fix' | 'bad_coords' | 'bad_time';
+
+export interface ReadPosition {
+  lat: number;
+  lon: number;
+  accuracyM: number | null;
+  speedKmh: number | null;
+  recordedAt: Date;
+}
+
+/**
+ * Plausible bounds of the two OPTIONAL measurements; outside them the
+ * measurement is trimmed, never the fix (`readPosition`).
+ */
+export const POSITION_BOUNDS = { accuracyM: 100_000, speedKmh: 400 } as const;
+
+/** Which optional measurement a fix had trimmed, said in the `[track]` log line. */
+export type PositionTrim = 'accuracyM' | 'speedKmh';
+
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const LATEST_FIX_MS = Date.UTC(9999, 11, 31);
+
+/**
+ * One fix, read the way the batch is not: a fix with a place and a time is
+ * KEPT even when an optional measurement is nonsense, and that measurement is
+ * trimmed (`trimmed` names it), because where the truck was is the whole
+ * reason the phone exists. The two trims are NOT alike:
+ *  - a speed no truck reaches is CLEARED — nothing reads the speed;
+ *  - an accuracy that cannot be read or believed becomes the COARSEST one
+ *    (`POSITION_BOUNDS.accuracyM`), never null — every reader takes a null
+ *    accuracy as a GOOD fix (`COARSE_FIX_M`'s `IS NULL OR`), so clearing it
+ *    would promote a cell-tower guess 150 km wide into a placed truck. Coarse,
+ *    it stays in the history and places nothing.
+ * A fix with no readable place or time is dropped (`why`), and only that
+ * fix. The time is anything `Date` reads — the app sends `…Z`, but an offset
+ * or epoch milliseconds is the same instant, not a reason to lose it.
+ */
+export function readPosition(
+  raw: unknown,
+): { ok: true; position: ReadPosition; trimmed: PositionTrim[] } | { ok: false; why: PositionDrop } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, why: 'not_a_fix' };
+  const fix = raw as Record<string, unknown>;
+  const { lat, lon } = fix;
+  if (!finite(lat) || !finite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    return { ok: false, why: 'bad_coords' };
+  }
+  const at = fix.recordedAt;
+  const ms = typeof at === 'string' ? Date.parse(at) : finite(at) ? at : Number.NaN;
+  // A time postgres cannot bind would turn the whole batch into a 500 and jam
+  // the queue all over again — past year 9999 it refuses it (measured:
+  // «time zone displacement out of range»), past ±8.64e15 ms there is no
+  // Date at all; and before 1970 is no phone's clock either.
+  if (!Number.isFinite(ms) || ms < 0 || ms > LATEST_FIX_MS) return { ok: false, why: 'bad_time' };
+
+  const trimmed: PositionTrim[] = [];
+  const plausible = (key: PositionTrim): number | null | 'bad' => {
+    const value = fix[key];
+    if (value === undefined || value === null) return null;
+    if (finite(value) && value >= 0 && value <= POSITION_BOUNDS[key]) return value;
+    trimmed.push(key);
+    return 'bad';
+  };
+  const accuracy = plausible('accuracyM');
+  const speed = plausible('speedKmh');
+  return {
+    ok: true,
+    position: {
+      lat,
+      lon,
+      accuracyM: accuracy === 'bad' ? POSITION_BOUNDS.accuracyM : accuracy === null ? null : Math.round(accuracy),
+      speedKmh: speed === 'bad' ? null : speed,
+      recordedAt: new Date(ms),
+    },
+    trimmed,
+  };
+}
+
+/** A fix the batch dropped or trimmed, said once per request in the log — the only place the cause can be read. */
+function sampleOf(raw: unknown): string {
+  try {
+    return JSON.stringify(raw).slice(0, 300);
+  } catch {
+    return String(raw).slice(0, 300);
+  }
+}
 
 /**
  * Ingest a batch of fixes from one paired phone (the app queues them offline
- * and flushes on reconnect). Duplicates from a re-flush are ignored.
+ * and flushes on reconnect). Duplicates from a re-flush are ignored
+ * (0018's `driver_positions_device_time_unique`). Every fix is read on its
+ * own (`readPosition`): the readable ones land, the unreadable ones are
+ * dropped and COUNTED, and the answer is 2xx either way — so the phone
+ * deletes the batch and its queue moves on instead of jamming on one point.
  */
 export async function ingestPositions(
   token: string,
   input: z.infer<typeof positionBatchSchema>,
-): Promise<{ accepted: number }> {
+): Promise<{ accepted: number; dropped: number }> {
   const device = await db.query.driverDevices.findFirst({
     where: eq(driverDevices.tokenHash, hashToken(token)),
   });
@@ -163,14 +257,46 @@ export async function ingestPositions(
     throw new TrackingError('trip_finished');
   }
 
-  const rows = input.positions.map((p) => ({
+  const kept: ReadPosition[] = [];
+  const drops: Partial<Record<PositionDrop, number>> = {};
+  const trims: Partial<Record<PositionTrim, number>> = {};
+  let sample: unknown = undefined;
+  for (const raw of input.positions) {
+    const read = readPosition(raw);
+    if (!read.ok) {
+      drops[read.why] = (drops[read.why] ?? 0) + 1;
+      sample ??= raw;
+      continue;
+    }
+    for (const key of read.trimmed) trims[key] = (trims[key] ?? 0) + 1;
+    if (read.trimmed.length) sample ??= raw;
+    kept.push(read.position);
+  }
+  const dropped = input.positions.length - kept.length;
+  if (sample !== undefined) {
+    console.warn(
+      '[track] device',
+      device.id,
+      'batch',
+      batch.code,
+      JSON.stringify({ received: input.positions.length, dropped: drops, trimmed: trims }),
+      'sample:',
+      sampleOf(sample),
+    );
+  }
+  // Nothing readable: no position to store and nothing to tell the silence
+  // alarm — a phone that sends only unreadable points still leaves the logist
+  // without a truck, so its last_seen_at stays where it was.
+  if (!kept.length) return { accepted: 0, dropped };
+
+  const rows = kept.map((p) => ({
     batchId: device.batchId,
     deviceId: device.id,
     lat: String(p.lat),
     lon: String(p.lon),
-    accuracyM: p.accuracyM !== undefined ? Math.round(p.accuracyM) : null,
-    speedKmh: p.speedKmh !== undefined ? String(p.speedKmh) : null,
-    recordedAt: new Date(p.recordedAt),
+    accuracyM: p.accuracyM,
+    speedKmh: p.speedKmh === null ? null : String(p.speedKmh),
+    recordedAt: p.recordedAt,
     source: 'device' as const,
   }));
   const inserted = await db.insert(driverPositions).values(rows).onConflictDoNothing().returning({
@@ -182,7 +308,7 @@ export async function ingestPositions(
     // reported again later (round 55's silent-truck alarm).
     .set({ lastSeenAt: new Date(), silentNotifiedAt: null })
     .where(eq(driverDevices.id, device.id));
-  return { accepted: inserted.length };
+  return { accepted: inserted.length, dropped };
 }
 
 /** Logist's manual pin for phones that cannot stream (iPhone / HarmonyOS). */
