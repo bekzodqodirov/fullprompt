@@ -9,11 +9,13 @@ import { cleanup, cleanupEarlier, database, memoryRows, mint, newRun, type Minte
  * truck's Bojxona tab and in the customs invoice, frozen by the «hujjat
  * yuborildi» tick, and refused to the warehouse.
  *
- * What only a browser can show: the document comes first and is uploaded
- * from the editor, the live remainder counts per measure, the sticky bar is
- * on screen while a cell has focus, a refused save keeps every typed value
- * (#171), and on the Bojxona tab typing the mouse's code leaves the
- * keyboard's line EMPTY (the judge's blocker R1: a `lotId` key wrote both).
+ * What only a browser can show: the live remainder counts per measure, the
+ * sticky bar is on screen while a cell has focus, a refused save keeps every
+ * typed value (#171), the tarkib saves with NO document (optional since
+ * 2026-11-10 — docs/TARKIB-TUZATISH.md §2) and one can be uploaded from the
+ * editor afterwards, the card's lot header then reads «Клавиатура +1» (§3),
+ * and on the Bojxona tab typing the mouse's code leaves the keyboard's line
+ * EMPTY (the judge's blocker R1: a `lotId` key wrote both).
  * The rules underneath are proven in
  * tests/integration/lot-composition.integration.test.ts.
  *
@@ -90,7 +92,7 @@ test('mint: the owner’s case, 100 cartons of «键盘» on a truck on the road
   }
 });
 
-test('the VED composes on the phone: the document first, the remainder per measure, a refusal that keeps every value', async ({ page }) => {
+test('the VED composes on the phone: no document demanded, the remainder per measure, a refusal that keeps every value', async ({ page }) => {
   // A failed test restarts the worker and resets this module (round 62).
   expect(minted).not.toBeNull();
   await login(page, VED);
@@ -104,16 +106,8 @@ test('the VED composes on the phone: the document first, the remainder per measu
   await panel.getByTestId('lot-tarkib-open').click();
   await expect(page.getByTestId('tarkib-editor')).toBeVisible();
 
-  // The client's packing list, uploaded from the editor onto THIS prixod.
-  await page.getByTestId('tarkib-upload').setInputFiles({
-    name: 'packing.pdf',
-    mimeType: 'application/pdf',
-    buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
-  });
-  const chip = page.getByTestId('tarkib-doc').filter({ hasText: 'packing.pdf' });
-  await expect(chip).toHaveAttribute('aria-pressed', 'true');
-  documentId = (await chip.getAttribute('data-id'))!;
-  expect(documentId).toMatch(/^[0-9a-f-]{36}$/);
+  // Before any tarkib the card calls the lot by its own name alone.
+  await expect(lotCard.getByTestId('lot-name')).toHaveText(run.lotName);
 
   // ONE row to begin with (his 2026-10-27: a tarkib may be one good) — no
   // alohida/aralash to choose and no carton cell until there is a second
@@ -132,6 +126,9 @@ test('the VED composes on the phone: the document first, the remainder per measu
   await line(page, 1).getByTestId('tarkib-name').fill('Мышь');
   await line(page, 1).getByTestId('tarkib-pieces').fill('1000');
   await line(page, 1).getByTestId('tarkib-cartons').fill('50');
+  // What the lists will call the lot from now on (items 3-4), said BEFORE the
+  // save: the first good and how many more.
+  await expect(page.getByTestId('tarkib-shown-name')).toContainText('Клавиатура +1');
   // «Jami dona» is the TOTAL — the per-carton figure says so out loud.
   await expect(line(page, 0).getByTestId('tarkib-per-carton')).toContainText('= 10 ');
 
@@ -145,6 +142,13 @@ test('the VED composes on the phone: the document first, the remainder per measu
   const remainder = page.getByTestId('tarkib-remainder');
   await expect(remainder).toContainText('+100.000');
   await expect(remainder).toContainText('m³ ✓');
+
+  // Refused — the kilos do not add up — and every typed value stays (#171).
+  await page.getByTestId('tarkib-save').click();
+  await expect(page.getByTestId('tarkib-error')).toBeVisible();
+  await expect(line(page, 1).getByTestId('tarkib-name')).toHaveValue('Мышь');
+  await expect(line(page, 0).getByTestId('tarkib-kg')).toHaveValue('600');
+  await expect(line(page, 1).getByTestId('tarkib-kg')).toHaveValue('500.000');
 
   // «=» balances ONE field of one row: kg, and the m³ stays as it was.
   await line(page, 1).getByTestId('tarkib-fill-kg').click();
@@ -172,22 +176,37 @@ test('the VED composes on the phone: the document first, the remainder per measu
   }
   await page.screenshot({ path: `${SHOTS}/lot-receipt-editor-360.png`, fullPage: true });
 
-  // Refused without a document — and every typed value stays (#171).
-  await chip.click();
-  await expect(chip).toHaveAttribute('aria-pressed', 'false');
-  await page.getByTestId('tarkib-save').click();
-  await expect(page.getByTestId('tarkib-error')).toBeVisible();
-  await expect(line(page, 1).getByTestId('tarkib-name')).toHaveValue('Мышь');
-  await expect(line(page, 0).getByTestId('tarkib-kg')).toHaveValue('600');
-
-  // Re-selected, it saves; the editor closes and the face lists both goods.
-  await chip.click();
+  // NO document is asked for (the owner, 2026-11-10: «tarkib qo'shganda
+  // tasdiq so'rash rasm file»): no chip chosen, and it saves. The editor
+  // closes, the face lists both goods and cites no file.
+  await expect(page.getByTestId('tarkib-doc')).toHaveCount(0);
   await page.getByTestId('tarkib-save').click();
   await expect(page.getByTestId('tarkib-saved')).toBeVisible();
   await expect(page.getByTestId('tarkib-editor')).toHaveCount(0);
   await expect(page.getByTestId('lot-tarkib')).toContainText('Клавиатура · Мышь');
+  await expect(page.getByTestId('lot-tarkib').locator('a[href^="/api/attachments/"]')).toHaveCount(0);
   await page.reload();
   await expect(page.getByTestId('lot-tarkib')).toContainText('Клавиатура · Мышь');
+  // …and the card's lot header reads the tarkib's name where the Russian
+  // name stands (items 3-4): the first good and how many more.
+  await expect(lotCard.getByTestId('lot-name')).toHaveText(`${run.lotName} (Клавиатура +1)`);
+
+  // The client's packing list can still be filed — uploaded from the editor
+  // onto THIS prixod, chosen by itself, and cited by the next save.
+  await panel.getByTestId('lot-tarkib-open').click();
+  await expect(page.getByTestId('tarkib-editor')).toBeVisible();
+  await page.getByTestId('tarkib-upload').setInputFiles({
+    name: 'packing.pdf',
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%%EOF\n'),
+  });
+  const chip = page.getByTestId('tarkib-doc').filter({ hasText: 'packing.pdf' });
+  await expect(chip).toHaveAttribute('aria-pressed', 'true');
+  documentId = (await chip.getAttribute('data-id'))!;
+  expect(documentId).toMatch(/^[0-9a-f-]{36}$/);
+  await page.getByTestId('tarkib-save').click();
+  await expect(page.getByTestId('tarkib-saved')).toBeVisible();
+  await expect(page.getByTestId('lot-tarkib').locator(`a[href="/api/attachments/${documentId}"]`)).toHaveCount(1);
 });
 
 test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyboard', async ({ page }) => {
@@ -263,6 +282,9 @@ test('not a warehouse door: the operator reads, the logist writes and is warned 
   await expect(page.getByTestId('lot-tarkib-open')).toBeVisible();
   await page.locator(`#lot-${minted!.lotId}`).getByRole('button', { name: /✏️/ }).first().click();
   await expect(page.getByTestId('lot-edit-tarkib-warning')).toBeVisible();
+  // The form's Russian box is the warehouse's own word; the line under it
+  // says which name the lists print instead.
+  await expect(page.getByTestId('lot-edit-shown-name')).toContainText('Клавиатура +1');
 });
 
 test('a 768 tablet and a 1280 desktop: the editor fits, the screenshots are taken', async ({ page, browser }) => {
