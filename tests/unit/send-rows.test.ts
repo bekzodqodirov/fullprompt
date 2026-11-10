@@ -204,6 +204,16 @@ describe('the VED paste never asks, and lands every column (P1.6, TT-16)', () =>
     expect(items.map((i) => i.name)).toEqual(['Куртка женская', 'Брюки мужские']);
   });
 
+  it('a pasted «1.234,56» and «12,5» keep the reading they have always had (FAYL-OQISH §5.9, critic-paste-5.9)', () => {
+    // A rule that sent every string through the kernel's `readNumberCell`
+    // read «1.234,56» as `bad` and the VED's own paste lost the weight.
+    const items = pasteItems('Наименование\tКол-во\tВес нетто, кг\nКабель\t100\t1.234,56\nКружка\t50\t12,5');
+    expect(items).toMatchObject([
+      { name: 'Кабель', quantity: 100, weightKg: 1234.56, note: null },
+      { name: 'Кружка', quantity: 50, weightKg: 12.5, note: null },
+    ]);
+  });
+
   it('nothing pasted is nothing posted', () => {
     expect(pasteItems('')).toEqual([]);
     expect(pasteItems('\n  \n')).toEqual([]);

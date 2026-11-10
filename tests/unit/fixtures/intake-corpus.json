@@ -38403,6 +38403,1686 @@
    "source": "fayl-oqish P-reader-A fix round",
    "weight": "defect",
    "note": "shape DS-total-only"
+  },
+  {
+   "id": "c3001",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Объём, м3"
+    ],
+    [
+     "Куртка красная",
+     100,
+     50,
+     0.4
+    ],
+    [
+     "Куртка чёрная",
+     200,
+     100,
+     0.8
+    ],
+    [
+     "Куртка синяя",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка красная",
+       "quantity": 100
+      },
+      {
+       "name": "Куртка чёрная",
+       "quantity": 200
+      },
+      {
+       "name": "Куртка синяя",
+       "quantity": 300,
+       "weightKg": 150,
+       "volumeM3": 1.2,
+       "note": null
+      }
+     ],
+     "count": 3
+    },
+    "volumeM3": 2.4
+   },
+   "said": "one good in three colours, 100/200/300 with proportional kg and m³: all three are goods and the cube is 2.4 — the third equals the first two added up and is a colour, not a total",
+   "why": "reader-5.4c-silent-arith: a label-free Σ-equality rule dropped «Куртка синяя» and the cube went 2.4 → 1.2 (probe13)",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3002",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во"
+    ],
+    [
+     "Стол",
+     5
+    ],
+    [
+     "Стул",
+     10
+    ],
+    [
+     "Шкаф",
+     15
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Стол",
+       "quantity": 5
+      },
+      {
+       "name": "Стул",
+       "quantity": 10
+      },
+      {
+       "name": "Шкаф",
+       "quantity": 15,
+       "note": null
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a qty-only order «Стол 5, Стул 10, Шкаф 15»: all three are goods",
+   "why": "reader-5.4c-silent-arith: the label-free rule lost «Шкаф»",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3003",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "Socks black",
+     100,
+     50
+    ],
+    [
+     "Socks white",
+     100,
+     50
+    ],
+    [
+     "Socks grey",
+     200,
+     100
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Socks black"
+      },
+      {
+       "name": "Socks white"
+      },
+      {
+       "name": "Socks grey",
+       "quantity": 200,
+       "amount": 100,
+       "note": null
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a same-price invoice 100/100/200: all three are goods",
+   "why": "reader-5.4c-silent-arith: the label-free rule lost «Socks grey»",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3004",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Umumiy maqsadli lak",
+     100,
+     50,
+     0.5
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Umumiy maqsadli lak",
+       "quantity": 100
+      },
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 200,
+    "volumeM3": 1.7
+   },
+   "said": "«Umumiy maqsadli lak» (general-purpose varnish) is a good: «umumiy» inside a name is no total row",
+   "why": "xlsx1-05 verifier: an includes-rule «umumiy» would drop a real customs name",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3005",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Sumka ayollar",
+     100,
+     50,
+     0.5
+    ],
+    [
+     "Ayollar sumkasi",
+     50,
+     25,
+     0.2
+    ],
+    [
+     "Сумка женская",
+     30,
+     10,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sumka ayollar"
+      },
+      {
+       "name": "Ayollar sumkasi"
+      },
+      {
+       "name": "Сумка женская"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 85,
+    "volumeM3": 0.8
+   },
+   "said": "bags are goods: «sum» counts as a total only as a whole word",
+   "why": "xlsx1-05 verifier: a bare «sum» key would eat «Sumka»",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3006",
+   "input": [
+    [
+     "Наименование"
+    ],
+    [
+     "Umumiy maqsadli lak"
+    ],
+    [
+     "Sumka ayollar"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Umumiy maqsadli lak"
+      },
+      {
+       "name": "Sumka ayollar"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a names-only list: figure-less «Umumiy maqsadli lak» and «Sumka ayollar» stay goods",
+   "why": "reader-5.4ab-vocab: (b) scoped to the CORE words, never umumiy/sum, or a names list loses these",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3007",
+   "input": [
+    [
+     "Umumiy maqsadli lak"
+    ],
+    [
+     "Sumka ayollar"
+    ],
+    [
+     "Ayollar kurtkasi"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Umumiy maqsadli lak"
+      },
+      {
+       "name": "Sumka ayollar"
+      },
+      {
+       "name": "Ayollar kurtkasi"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a headerless list: the same names stay goods",
+   "why": "reader-5.4ab-vocab: push serves the headerless branch too",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3008",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Jami",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Jami"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Jami» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3009",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Jami:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Jami:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Jami:» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3010",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Итого",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Итого"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Итого» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3011",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Grand Total",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Grand Total"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Grand Total» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3012",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Всего:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Всего:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Всего:» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3013",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "TOTAL:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«TOTAL:» closing the list is a total row: one good, Σ 150 kg / 1.2 m³",
+   "why": "xlsx1-05 verifier probe (zz-repro-skx05-totals): dropped correctly today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3014",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "SAY TOTAL: US DOLLARS ONE THOUSAND FIVE HUNDRED ONLY",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "the «SAY TOTAL: US DOLLARS …» footer under the TOTAL row is no good",
+   "why": "xlsx1-04 verifier: today dropped by the includes rule alone; (b) must keep it so",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3015",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "共计",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "the Chinese subtotal «共计» is no good (SUBTOTAL_HAN kept as it is)",
+   "why": "xlsx1-04 betterFix: keep SUBTOTAL_HAN",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3016",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "WOMEN",
+     null,
+     null,
+     null
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "MEN",
+     null,
+     null,
+     null
+    ],
+    [
+     "Men jacket",
+     200,
+     120,
+     1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "WOMEN"
+      },
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "MEN"
+      },
+      {
+       "name": "Men jacket",
+       "quantity": 200
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "V7: figure-less section headings BETWEEN goods are untouched — a stop at the first figure-less row would lose «Men jacket»",
+   "why": "xlsx1-06 verifier V7 (zz-repro-skep06-footers)",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3017",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Made in China",
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "V1: a footer in the «No.» column never lands; Σ kept",
+   "why": "xlsx1-06 verifier V1",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3018",
+   "input": [
+    [
+     "Description",
+     "HS Code",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     "6202930000",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Men pants",
+     "6203423100",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men pants",
+       "tnvedCode": "6203423100"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a last row carrying only its TNVED code is a good, not a footer",
+   "why": "reader-5.5-footer: «states something» includes a TNVED code",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3019",
+   "input": [
+    [
+     "Наименование",
+     "Примечание"
+    ],
+    [
+     "Куртка женская",
+     "чёрная"
+    ],
+    [
+     "Брюки мужские",
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a names-only list (no figure column states anything): no row is trimmed",
+   "why": "xlsx1-06 betterFix: never trim when no row carries a figure",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3020",
+   "input": {
+    "csv": "№;Наименование;Кол-во;Вес брутто, кг;Объём, м3\r\n1;Кабель USB;1500;1,250;1,125\r\n2;Кружка;480;168,5;0,9"
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель USB",
+       "quantity": 1500,
+       "weightKg": 1.25,
+       "volumeM3": 1.125,
+       "note": null
+      },
+      {
+       "name": "Кружка",
+       "weightKg": 168.5,
+       "volumeM3": 0.9
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 2.025
+   },
+   "said": "a Russian «;» CSV with a decimal comma: «1,250» kg beside «168,5» is 1.25, «1,125» m³ beside «0,9» is 1.125 — no «aniq emas»",
+   "why": "reader-5.9-decimal-comma: readNumberCell on every string nulled both (probe6); xlsxN-07 verifier case 5",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3021",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Сумма"
+    ],
+    [
+     "Кабель",
+     100,
+     "1.234,56",
+     "2.350,00"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "weightKg": 1234.56,
+       "amount": 2350,
+       "note": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«1.234,56» kg and «2.350,00» stay 1234.56 and 2350 (parseNumber)",
+   "why": "critic-paste-5.9: readNumberCell has no dot-grouping rule",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3022",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Сумма"
+    ],
+    [
+     "Куртка",
+     10,
+     500
+    ],
+    [
+     "Скидка",
+     1,
+     "-50"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Скидка",
+       "amount": -50,
+       "note": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «-50» discount line keeps its -50",
+   "why": "reader-5.9-decimal-comma: finite() refused the minus",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3023",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Кабель",
+     100,
+     "12,5"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "weightKg": 12.5,
+       "note": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«12,5» is 12.5",
+   "why": "FAYL-OQISH §5.9 pin",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3024",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Объём, м3"
+    ],
+    [
+     "Кабель",
+     100,
+     "0,125"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "volumeM3": 0.125,
+       "note": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«0,125» is 0.125",
+   "why": "xlsxN-07 verifier case 6",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3025",
+   "input": [
+    [
+     "Description",
+     "PCS/CTN",
+     "CTNS",
+     "TOTAL PCS",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     20,
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«PCS/CTN | CTNS | TOTAL PCS»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3026",
+   "input": [
+    [
+     "Description",
+     "QTY/CTN",
+     "CTNS",
+     "TOTAL QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     20,
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«QTY/CTN | CTNS | TOTAL QTY»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3027",
+   "input": [
+    [
+     "Description",
+     "QTY (CTNS)",
+     "QTY (PCS)",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«QTY (CTNS) | QTY (PCS)»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3028",
+   "input": [
+    [
+     "品名",
+     "每箱数量",
+     "箱数",
+     "总数量",
+     "净重"
+    ],
+    [
+     "女士夹克",
+     20,
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«每箱数量 | 箱数 | 总数量»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3029",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во мест",
+     "Кол-во, шт",
+     "Вес нетто, кг"
+    ],
+    [
+     "Куртка",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во мест | Кол-во, шт»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3030",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во коробок",
+     "Кол-во",
+     "Вес нетто, кг"
+    ],
+    [
+     "Куртка",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во коробок | Кол-во»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3031",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTN QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     15,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«QTY | CTN QTY»: the line counts 300 pieces, unit none",
+   "why": "xlsxN-08 verifier (zz-repro-skep08-ctnqty): 300 today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3032",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, м2",
+     "Кол-во, шт",
+     "Вес, кг"
+    ],
+    [
+     "Плитка",
+     120,
+     300,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "м2"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во, м2 | Кол-во, шт»: the measure column first keeps its m² (a measure unit names what it counts, as a piece unit does)",
+   "why": "reader-5.10 ranking: chosen — a named measure unit ranks with a piece unit, leftmost wins, as today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned",
+   "note": "chosen answer, written down"
+  },
+  {
+   "id": "c3033",
+   "input": [
+    [
+     "Наименование",
+     "Цена, шт",
+     "Кол-во",
+     "Сумма"
+    ],
+    [
+     "Куртка",
+     4.5,
+     300,
+     1350
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null,
+       "amount": 1350
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Цена, шт» before «Кол-во»: the count is 300, never the price 4.5",
+   "why": "reader-5.11-sht: the whole-word rule made it 4.5 (probe9)",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3034",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, шт",
+     "Вес 1 шт, кг",
+     "Вес нетто, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     0.45,
+     135
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "weightKg": 135
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Вес 1 шт, кг» before «Вес нетто, кг»: the line weight is 135, never one piece's 0.45",
+   "why": "reader-5.11-sht: the whole-word rule made it 0.45",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3035",
+   "input": [
+    [
+     "Наименование",
+     "Штрих-код",
+     "Кол-во"
+    ],
+    [
+     "Куртка",
+     "4601234567890",
+     300
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Штрих-код» is no count column",
+   "why": "xlsxN-09 verifier: the last unit word excludes it",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3036",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Vazni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Soni | Vazni» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3037",
+   "input": [
+    [
+     "Nomi",
+     "Miqdori",
+     "Vazni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Miqdori» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3038",
+   "input": [
+    [
+     "Nomi",
+     "Necha dona",
+     "Vazni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Necha dona» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3039",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Og‘irligi (kg)"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Og‘irligi (kg)» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3040",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Umumiy vazni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Umumiy vazni» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3041",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Necha kub"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Necha kub» maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3042",
+   "input": [
+    [
+     "Nomi",
+     "Necha so‘m",
+     "Soni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     1500,
+     300
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Necha so‘m» before «Soni»: no count maps as today",
+   "why": "unmapped-uz-header-words verifier: these map today",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3043",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "G.W.",
+     "Объём"
+    ],
+    [
+     "Куртка",
+     300,
+     157.5,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 157.5
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 157.5
+   },
+   "said": "«G.W.» alone is the row weight (gross)",
+   "why": "xlsxN-12: «G.W.» and «Вес брутто» do",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3044",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес брутто",
+     "Объём"
+    ],
+    [
+     "Куртка",
+     300,
+     157.5,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 157.5
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 157.5
+   },
+   "said": "«Вес брутто» alone is the row weight (gross)",
+   "why": "xlsxN-12: «G.W.» and «Вес брутто» do",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3045",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "毛重",
+     "体积"
+    ],
+    [
+     "女士夹克",
+     300,
+     157.5,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "weightKg": 157.5
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 157.5
+   },
+   "said": "«毛重» alone is the row weight (gross)",
+   "why": "xlsxN-12",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -72533,6 +74213,164 @@
    "source": "fayl-oqish P-reader-A fix round",
    "weight": "defect",
    "note": "shape SC-unit, one xlsx sheet"
+  },
+  {
+   "id": "c3046",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "Ladies jacket",
+        300,
+        150,
+        1.2
+       ],
+       [
+        "Men jacket",
+        200,
+        120,
+        1
+       ],
+       [
+        "Kids jacket blue",
+        100,
+        60,
+        0.5
+       ],
+       [
+        "Kids jacket red",
+        null,
+        null,
+        null
+       ]
+      ],
+      "merges": [
+       "B4:B5",
+       "C4:C5",
+       "D4:D5"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men jacket"
+      },
+      {
+       "name": "Kids jacket blue"
+      },
+      {
+       "name": "Kids jacket red"
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "the last good of a pair packed in one carton (qty, kg, m³ merged down from the line above) is a good, never a footer; the carton counted once",
+   "why": "reader-5.5-footer: a covered merge-down position states its master's figure",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned",
+   "note": "Σ asserted in the change commit, where `dropped` and the Σ are checked together"
+  },
+  {
+   "id": "c3047",
+   "input": {
+    "kind": "csv",
+    "text": "№;Наименование;Кол-во;Вес брутто, кг;Объём, м3\r\n1;Кабель USB;1500;1,250;1,125\r\n2;Кружка;480;168,5;0,9"
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель USB",
+       "quantity": 1500,
+       "weightKg": 1.25,
+       "volumeM3": 1.125,
+       "note": null
+      },
+      {
+       "name": "Кружка"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the Russian «;» CSV through the bot's reader: 1.25 kg, 1.125 m³",
+   "why": "xlsxN-07 verifier case 5 (zz-repro-sk07-shapes)",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3048",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "PL",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W.(KG)",
+        "CBM",
+        "Amount (USD)"
+       ],
+       [
+        "USB cable 1m",
+        1500,
+        1050,
+        0.15,
+        1950
+       ],
+       [
+        "Mug",
+        480,
+        168,
+        0.9,
+        432
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "USB cable 1m",
+       "quantity": 1500,
+       "weightKg": 1050,
+       "amount": 1950,
+       "note": null
+      },
+      {
+       "name": "Mug"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": ".xlsx NUMERIC cells are untouched: 1500 / 1050 / 1950",
+   "why": "xlsxN-07 verifier case 1",
+   "source": "fayl-oqish P-reader-B neighbours",
+   "weight": "pinned"
   }
  ],
  "isArticleNumberCases": [
