@@ -13,6 +13,17 @@ import { lotCompositionLines } from '@/modules/platform/db/schema';
  * a scan, a plan, the stock table, the cabinet or a push that printed
  * «Мышь» about a carton would be printing a guess.
  *
+ * REVERSED FOR THE NAME, 2026-11-10 (docs/TARKIB-TUZATISH.md §3, the owner's
+ * items 3-4): the Russian name every screen SHOWS now follows the tarkib —
+ * «Мышь», or «Клавиатура +2». It is still not a guess about a carton: the
+ * label says what the LOT holds, and the cartons, the letter, the sticker,
+ * the Chinese name and the stored Russian name do not move. So the rule this
+ * fence holds is narrower and sharper than before: display readers import
+ * ONE module, `receipts/lot-name.ts` (in MUST below), and nothing else may
+ * name the composition tables or import the composition modules — a stock
+ * row, a plan or a push that read the LINES itself could print pieces,
+ * cartons or a TNVED code of a carton nobody can tell apart.
+ *
  * Two lists, because «EXACTLY the taught list» failed on day one (the judge's
  * R2: the labels, the audit fields and the uploader name none of the tokens)
  * and a builder would have loosened it to a subset check that also passes
@@ -40,6 +51,8 @@ const MODULES = ['src/modules/wms/receipts/lot-composition.ts', 'src/modules/wms
 const MUST = [
   'src/modules/platform/db/schema/wms.ts',
   ...MODULES,
+  // The shown name (items 3-4): the one module display readers import.
+  'src/modules/wms/receipts/lot-name.ts',
   'src/modules/wms/documents/composition-cells.ts',
   'src/modules/wms/documents/ved-xlsx.ts',
   'src/modules/wms/documents/packing-photos-xlsx.ts',
@@ -69,7 +82,11 @@ const ALLOWED = new Set([
   'src/modules/wms/receipts/lot-check-ready.ts',
 ]);
 
-/** The readers deliberately NOT taught — redundant with ALLOWED, but a failure here names the rule. */
+/**
+ * The readers that may not name the tables or the modules — redundant with
+ * ALLOWED, but a failure here names the rule. They show the tarkib's NAME
+ * through `lot-name.ts` and learn nothing else about the contents.
+ */
 const DENY = [
   'src/modules/wms/labels/sheet.ts',
   'src/modules/wms/scanning/',

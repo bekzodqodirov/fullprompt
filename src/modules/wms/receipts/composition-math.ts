@@ -276,6 +276,26 @@ export function linesVouchForLot(lines: readonly { name: string }[], lot: { zh: 
   return lines.length === 1 && lineIsLotGood(lines[0]!.name, lot);
 }
 
+/**
+ * The Russian name a lot is SHOWN under while a tarkib stands (the owner's
+ * items 3-4, 2026-11-10; docs/TARKIB-TUZATISH.md §3): one line → its name;
+ * several → the FIRST line's name and how many more there are («Клавиатура
+ * +2» for three goods — the house's own «first +N», `deals/cargo-label.ts`).
+ * `null` below `MIN_STORED_LINES` — no tarkib, so the lot's own name shows.
+ *
+ * The first line is the lowest `seq` (the writer numbers kept rows 1..n).
+ * ONE plain space before the «+»: the PDF font has no NBSP glyph (#788).
+ * A DISPLAY rule and nothing else — the stored `product_name_ru` stays the
+ * warehouse's own word, which the customs papers, the TNVED memory and the
+ * sticker go on reading. The SQL twin is `lotRuShownSql` (lot-name.ts),
+ * pinned against this by `lot-name.integration.test.ts`.
+ */
+export function tarkibLabel(lines: readonly { seq: number; name: string }[]): string | null {
+  if (lines.length < MIN_STORED_LINES) return null;
+  const first = lines.reduce((a, b) => (b.seq < a.seq ? b : a));
+  return lines.length === 1 ? first.name : `${first.name} +${lines.length - 1}`;
+}
+
 /** A TNVED code as typed («8471 60 7000») → its digits, or the refusal. */
 function tnvedOf(raw: string): { ok: true; code: string | null } | { ok: false } {
   const s = String(raw ?? '').replace(/[\s  .-]/g, '');

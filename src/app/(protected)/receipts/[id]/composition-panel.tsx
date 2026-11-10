@@ -74,7 +74,8 @@ export interface PanelComposition {
   rev: number;
   seenBoxCount: number;
   lines: PanelLine[];
-  attachment: { id: string; fileName: string };
+  /** The client's document, when one is cited (optional since 0142). */
+  attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   /** The Tashkent day of the save (`tashkentDay`), never an ISO instant's UTC date. */
   savedDay: string;
@@ -257,16 +258,21 @@ export function CompositionPanel({
             ))}
           </ul>
           <p className="mt-1 text-xs text-ink-500">
-            📎{' '}
-            <a
-              href={`/api/attachments/${composition.attachment.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-brand-700 underline"
-            >
-              {composition.attachment.fileName}
-            </a>{' '}
-            · {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedDay })}
+            {composition.attachment && (
+              <>
+                📎{' '}
+                <a
+                  href={`/api/attachments/${composition.attachment.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-700 underline"
+                >
+                  {composition.attachment.fileName}
+                </a>{' '}
+                ·{' '}
+              </>
+            )}
+            {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedDay })}
           </p>
         </details>
       )}
@@ -399,7 +405,7 @@ function CompositionEditor({
         m3: l.m3,
         tnved: l.tnvedCode ?? '',
       })),
-      doc: composition.attachment.id,
+      doc: composition.attachment?.id ?? null,
     };
   };
 
@@ -640,7 +646,7 @@ function CompositionEditor({
               >
                 ↗
               </a>
-              {d.removable && d.id !== composition?.attachment.id && (
+              {d.removable && d.id !== composition?.attachment?.id && (
                 <button
                   type="button"
                   aria-label="✕"

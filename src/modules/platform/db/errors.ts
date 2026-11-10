@@ -62,6 +62,25 @@ export function violatedUnique(err: unknown): string | null {
   return pg?.constraint_name ?? pg?.cause?.constraint_name ?? null;
 }
 
+/**
+ * The NOT NULL a statement broke (23502), by table and column — or null.
+ * `violatedCheck`'s twin for a release that DROPS a NOT NULL: one migration
+ * behind, the app writes the NULL the old column still refuses, and that is
+ * «the server is behind», not a fault — but only for the one column the
+ * release relaxed, never a blanket 23502 (a NULL in any other column is a
+ * bug the error page must show). The driver names both; drizzle may wrap it.
+ */
+export function violatedNotNull(err: unknown): { table: string | null; column: string | null } | null {
+  type PgError = { code?: string; table_name?: string; column_name?: string };
+  const pg = err as (PgError & { cause?: PgError }) | null;
+  const code = pg?.code ?? pg?.cause?.code;
+  if (code !== '23502') return null;
+  return {
+    table: pg?.table_name ?? pg?.cause?.table_name ?? null,
+    column: pg?.column_name ?? pg?.cause?.column_name ?? null,
+  };
+}
+
 const BUSY = new Set(['40P01', '40001', '55P03']);
 /**
  * A deadlock, a serialisation failure or a lock timeout: «boshqa o'zgarish

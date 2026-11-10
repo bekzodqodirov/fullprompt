@@ -266,10 +266,12 @@ export const lotCompositions = pgTable(
     lotId: uuid('lot_id')
       .primaryKey()
       .references(() => receiptLots.id, { onDelete: 'cascade' }),
-    /** The client's document on THIS prixod (NO ACTION: a cited file is `in_use`). */
-    attachmentId: uuid('attachment_id')
-      .notNull()
-      .references(() => attachments.id),
+    /**
+     * The client's document on THIS prixod — OPTIONAL since 0142 (the owner,
+     * 2026-11-10; docs/TARKIB-TUZATISH.md §2). NO ACTION: a file a composition
+     * does cite is `in_use`.
+     */
+    attachmentId: uuid('attachment_id').references(() => attachments.id),
     /** The lot's box_count the composition was stated against (stale check). */
     seenBoxCount: integer('seen_box_count').notNull(),
     /** A TOKEN drawn from `lot_composition_rev_seq` on every write, never a counter (ABA). */

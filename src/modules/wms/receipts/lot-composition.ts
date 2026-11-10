@@ -194,8 +194,8 @@ function compositionSummary(lot: { id: string; letter: string | null }, view: Co
     lotId: lot.id,
     letter: lot.letter,
     lines: view.lines.map(summaryLine),
-    document: view.attachment.fileName,
-    attachmentId: view.attachment.id,
+    document: view.attachment?.fileName ?? null,
+    attachmentId: view.attachment?.id ?? null,
   };
 }
 
@@ -457,7 +457,8 @@ export interface CompositionView {
   lotId: string;
   rev: number;
   seenBoxCount: number;
-  attachment: { id: string; fileName: string };
+  /** The client's document, when one is cited — optional since 0142. */
+  attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   savedAt: Date;
   lines: (StoredLine & { id: string })[];
@@ -591,8 +592,13 @@ export async function oneGoodPrefillFor(
 }
 
 /**
- * ONE statement: headers ⋈ attachments ⋈ users ⋈ LATERAL json_agg(lines
- * ORDER BY seq) — two statements could tear (a clear between them gave a
+ * ONE statement: headers ⟕ attachments ⋈ users ⋈ LATERAL json_agg(lines
+ * ORDER BY seq) — the document LEFT-joined since 0142 made it optional: an
+ * inner join would drop a document-less composition from the receipt card
+ * (which could then neither edit nor clear it) and from the plan-stage agent
+ * file, while the invoice went on printing its lines (#600's rule: a column
+ * made nullable is a change to every reader that joins on it). Two
+ * statements could tear (a clear between them gave a
  * header with no lines, which `compositionMode([])` reads as «mixed» and the
  * invoice prints as NO row: the lot vanishes from a customs paper). A view
  * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
@@ -608,8 +614,8 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
     lot_id: string;
     rev: string | number;
     seen_box_count: number;
-    attachment_id: string;
-    file_name: string;
+    attachment_id: string | null;
+    file_name: string | null;
     saved_by_name: string | null;
     saved_at: string;
     lines: unknown;
@@ -619,7 +625,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
       SELECT lc.lot_id, lc.rev, lc.seen_box_count, lc.attachment_id, a.file_name,
              u.full_name AS saved_by_name, lc.saved_at::text AS saved_at, ln.lines
         FROM lot_compositions lc
-        JOIN attachments a ON a.id = lc.attachment_id
+        LEFT JOIN attachments a ON a.id = lc.attachment_id
         LEFT JOIN users u ON u.id = lc.saved_by
         LEFT JOIN LATERAL (${LINES_JSON} WHERE g.lot_id = lc.lot_id) ln ON true
        WHERE lc.lot_id IN (${uuidList(ids)})
@@ -641,7 +647,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
       lotId: row.lot_id,
       rev: Number(row.rev),
       seenBoxCount: Number(row.seen_box_count),
-      attachment: { id: row.attachment_id, fileName: row.file_name },
+      attachment: row.attachment_id ? { id: row.attachment_id, fileName: row.file_name ?? '' } : null,
       savedBy: row.saved_by_name,
       savedAt: new Date(row.saved_at),
       lines: lines.map((l) => ({ ...l, id: l.id ?? '' })),

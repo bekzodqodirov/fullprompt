@@ -545,7 +545,7 @@ describe('lot tarkibi — the writer', () => {
       [2, 'Мышь', 50, 1000, '400.000', '1.0000'],
     ]);
     expect(view.rev).toBe(rev);
-    expect(view.attachment.id).toBe(doc.DOC);
+    expect(view.attachment?.id).toBe(doc.DOC);
     const [audit] = await db
       .select()
       .from(auditLog)
@@ -628,7 +628,7 @@ describe('lot tarkibi — the writer', () => {
     expect((await r(OWNER_CASE(), { docKey: 'PHOTO_EARLY' })).code).toBe('document_is_photo');
     // A photo uploaded AFTER the confirmation is somebody's document.
     await save('H', [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')], { docKey: 'PHOTO_LATE' });
-    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment.id).toBe(doc.PHOTO_LATE);
+    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
   });
 
   it('3. the door: the warehouse, a VED scoped elsewhere and a lot that does not exist all say «forbidden»', async () => {
@@ -738,7 +738,7 @@ describe('lot tarkibi — concurrency, deterministic', () => {
       await held`ROLLBACK`;
       await expect(saving).resolves.toMatchObject({ rev: expect.any(Number) });
     });
-    expect((await compositionsFor([lot.A])).get(lot.A)!.attachment.id).toBe(doc.DOC_C);
+    expect((await compositionsFor([lot.A])).get(lot.A)!.attachment?.id).toBe(doc.DOC_C);
   });
 });
 

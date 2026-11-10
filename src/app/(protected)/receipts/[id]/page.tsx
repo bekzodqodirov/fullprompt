@@ -198,7 +198,9 @@ export default async function ReceiptDetailPage({
   // «Bitta tovar» — read only for the writer: the receipt card is opened by
   // warehouse staff too, and the prefill carries the memory's code.
   const oneGood = mayCompose && receipt.status === 'confirmed' ? await oneGoodPrefillFor(receipt, lots) : new Map();
-  const citedDocs = new Set([...compositions.values()].map((c) => c.attachment.id));
+  const citedDocs = new Set(
+    [...compositions.values()].map((c) => c.attachment?.id).filter((id): id is string => id !== undefined),
+  );
   const paperDocs = receiptFileRows
     .filter((f) => isPaperDocument(f, receipt))
     .map((f) => ({ id: f.id, fileName: f.fileName, removable: f.uploadedBy === actor.id && !citedDocs.has(f.id) }));
