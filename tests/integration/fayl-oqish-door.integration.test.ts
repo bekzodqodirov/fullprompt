@@ -227,6 +227,19 @@ describe('«👤 VED hisoblasin» lands for the VED alone (§1.3 a)', () => {
     expect(silentPass(await requestIntakeDoor(landed.id), true)).toBe(true);
   });
 
+  it('the landing finished AGAIN (a press after a crash) obeys the same zero-goods rule: `retried()` queues no pass either', async () => {
+    const { chat, staffId, noteId } = await collected({ fileCount: 1, pdfs: [PDF], aiUsed: true, facts: { weightKg: 300, volumeM3: 2 }, landAs: 'ved' });
+    const first = await landCollectedIntake(chat, staffId, 'Fayl eshik');
+    expect(first?.queued).toBe(true);
+    // The crash: the collection survived its landing, and the next press finishes it.
+    const again = await landCollectedIntake(chat, staffId, 'Fayl eshik');
+    expect(again?.outcome).toBe('retried');
+    const landed = await landedOn(noteId);
+    expect(landed.door).toBe('plain');
+    expect(passesFor(landed.id)).toEqual([]);
+    endIntake(chat);
+  });
+
   it('a podklyuch of no goods keeps its pass — the road is priced from the totals', async () => {
     const { chat, noteId } = await collected(
       { fileCount: 1, pdfs: [PDF], aiUsed: true, route: { zone: 'cn', fromCity: 'Yiwu', toCity: 'Toshkent' }, facts: { weightKg: 300, volumeM3: 2, fromCity: 'Yiwu', toCity: 'Toshkent' } },

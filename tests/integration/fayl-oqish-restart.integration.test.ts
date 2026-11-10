@@ -17,7 +17,19 @@ vi.mock('@/modules/platform/jobs/boss', async (original) => ({
 }));
 
 import { db, pgClient } from '@/modules/platform/db/client';
-import { roles, telegramLinks, userRoles, users } from '@/modules/platform/db/schema';
+import {
+  calcRequestItems,
+  calcRequests,
+  crmActivities,
+  leads,
+  leadStages,
+  notifications,
+  roles,
+  telegramLinks,
+  userRoles,
+  users,
+} from '@/modules/platform/db/schema';
+import { openCalcRequest } from '@/modules/wms/calc/service';
 import { __forgetIntakeMemory, activeIntake, endIntake, markIntakesHydrated, setDurableIntakes, updateIntake } from '@/modules/platform/telegram/calc-store';
 import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { __resetPresses } from '@/modules/platform/telegram/press';
@@ -30,6 +42,9 @@ let h: BotHarness;
 let staffId = '';
 let chat = 0;
 const QUESTION = 'Sizda tugallanmagan yig‘ish bor. Boshqatdan boshlaymizmi? Yuborilgan hamma narsa o‘chadi.';
+const madeRequests: string[] = [];
+const madeLeads: string[] = [];
+let answerSeq = 60_000;
 
 /** The id of the newest message the bot sent this chat with these words. */
 function sentId(text: string, from: ReturnType<BotHarness['mark']>): number {
@@ -85,7 +100,15 @@ beforeEach(() => {
 afterAll(async () => {
   endIntake(BigInt(chat));
   h.restore();
-  await db.execute(sql`DELETE FROM telegram_once WHERE chat_id = ${String(chat)}::bigint`).catch(() => {});
+  await db.delete(notifications).where(eq(notifications.userId, staffId));
+  if (madeRequests.length) {
+    await db.delete(calcRequestItems).where(inArray(calcRequestItems.requestId, madeRequests));
+    await db.delete(calcRequests).where(inArray(calcRequests.id, madeRequests));
+  }
+  if (madeLeads.length) {
+    await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeLeads));
+    await db.delete(leads).where(inArray(leads.id, madeLeads));
+  }
   await db.update(telegramLinks).set({ status: 'revoked' }).where(inArray(telegramLinks.userId, [staffId]));
   // An audited fixture is deactivated, never deleted (audit_log FK).
   await db.update(users).set({ active: false }).where(eq(users.id, staffId));
@@ -150,5 +173,55 @@ describe('the restart question holds the material (§2.4)', () => {
     expect(after.material).toEqual(['Kurtka 300 dona', 'Shim 10 dona']);
     expect(after.restartAsked ?? null).toBeNull();
     expect(h.textsTo(chat, m)).not.toContain(RESTART_HOLD);
+  });
+});
+
+/** An «🤖» request of this seller, returned by the VED, with its ➕-bearing answer in the chat. */
+async function returnedAi(items: { name: string; quantity: number }[]): Promise<{ requestId: string; answerId: number }> {
+  const stage = (await db.query.leadStages.findFirst({ where: eq(leadStages.kind, 'open') }))!;
+  const [lead] = await db
+    .insert(leads)
+    .values({ name: `Qaytgan ${STAMP}-${madeLeads.length}`, stageId: stage.id, ownerId: staffId, createdBy: staffId })
+    .returning();
+  madeLeads.push(lead!.id);
+  const r = await openCalcRequest(
+    { intakeDoor: 'ai', entityType: 'lead', entityId: lead!.id, section: 'rastamojka', weightKg: 300, volumeM3: 2, items, source: 'bot' },
+    { actorId: staffId },
+  );
+  madeRequests.push(r.id);
+  await db
+    .update(calcRequests)
+    .set({ completedAt: new Date(), completedVia: 'returned', returnReason: 'fayl o‘qilmagan' })
+    .where(eq(calcRequests.id, r.id));
+  const answerId = (answerSeq += 1);
+  await db.insert(notifications).values({
+    userId: staffId,
+    channel: 'telegram',
+    type: 'CalcPrefilled',
+    status: 'sent',
+    sentAt: new Date(),
+    payload: { text: 'x', add: true, requestId: r.id, tg: { chatId: String(chat), messageId: answerId } },
+  });
+  return { requestId: r.id, answerId };
+}
+
+describe('the returned door’s opening line names the press its table will draw (§1.2, critic-door-predicate)', () => {
+  it('an «🤖» request that came back with no goods: «to‘ldiring yoki «👤 VED hisoblasin»», never «✅ Tasdiqlash»', async () => {
+    const { requestId, answerId } = await returnedAi([]);
+    const m = h.mark();
+    await h.handle(tg.callback(chat, answerId, `ca:${requestId}`));
+    await h.settle();
+    const opening = h.textsTo(chat, m).find((t) => t.startsWith('📨 VED bu so‘rovni qaytargan'));
+    expect(opening).toBe('📨 VED bu so‘rovni qaytargan: «fayl o‘qilmagan». Yetishmaganini qo‘shing — to‘ldiring yoki «👤 VED hisoblasin».');
+    expect(activeIntake(BigInt(chat))!.seededFrom).toBe(requestId);
+  });
+
+  it('one that came back with its goods keeps today’s line', async () => {
+    const { requestId, answerId } = await returnedAi([{ name: 'Kurtka', quantity: 300 }]);
+    const m = h.mark();
+    await h.handle(tg.callback(chat, answerId, `ca:${requestId}`));
+    await h.settle();
+    const opening = h.textsTo(chat, m).find((t) => t.startsWith('📨 VED bu so‘rovni qaytargan'));
+    expect(opening).toBe('📨 VED bu so‘rovni qaytargan: «fayl o‘qilmagan». Yetishmaganini qo‘shing — «✅ Tasdiqlash» yangi so‘rov bo‘lib VED ga boradi.');
   });
 });
