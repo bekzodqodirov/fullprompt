@@ -480,9 +480,10 @@ docker compose --profile https up -d --build
 ```
 
 **0143 dan (tarkib tuzatishlari) PASTGA qaytishdan oldin — o‘qing.** Eski kod har bir
-tarkibda hujjat bor deb hisoblaydi. Hujjatsiz saqlangan tarkib bo‘lsa, eski kodda shu prixod
-kartasi va tarkib oynasi xato berishi mumkin. Qaytishdan oldin sanang; soni nol bo‘lmasa —
-avval shu tarkiblarga hujjat biriktiring yoki menga yuboring:
+tarkibda hujjat bor deb hisoblaydi. Hujjatsiz saqlangan tarkib eski kodda prixod kartasida
+**ko‘rinmay qoladi** (uni tahrirlab ham, o‘chirib ham bo‘lmaydi) va rejadagi «Agent uchun
+Excel»ga tushmaydi — invoysda esa qatorlari chiqaveradi. Qaytishdan oldin sanang; soni nol
+bo‘lmasa — avval shu tarkiblarga hujjat biriktiring yoki menga yuboring:
 
 ```bash
 docker compose exec -T postgres psql -U gsr -d gsr -tAc \
