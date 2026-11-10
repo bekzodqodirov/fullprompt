@@ -8,6 +8,7 @@ import {
   codeCollectedGoods,
   mergeTotalsAnswer,
   placeByName,
+  readingFileMoves,
   sameRouteAnswer,
   sameTotalsAnswer,
   unansweredAmbiguity,
@@ -350,6 +351,9 @@ export function settleAnalysis(
     aiInputCut: analysed.aiInputCut ?? false,
     filesMissing: analysed.filesMissing ?? 0,
     unreadPdfs: analysed.unreadPdfs ?? [],
+    // …and a refused PDF the reading moved from the PDFs to read to the named
+    // refusals, as the reading's diff (`readingFileMoves`).
+    ...readingFileMoves(live, snapshot, analysed),
     // The reading's bill is no longer carried here: the job writes it to the
     // ledger the moment the model answered (§7.2.10), so the collection's
     // own count would bill it twice.

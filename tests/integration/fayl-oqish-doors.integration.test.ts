@@ -33,7 +33,21 @@ vi.mock('@/modules/platform/telegram/calc-files', async (original) => {
 });
 
 import { db, pgClient } from '@/modules/platform/db/client';
-import { calcRequestItems, calcRequests, clients, crmActivities, deals, dealStages, roles, telegramLinks, userRoles, users } from '@/modules/platform/db/schema';
+import {
+  attachments,
+  calcRequestItems,
+  calcRequests,
+  clients,
+  crmActivities,
+  deals,
+  dealStages,
+  notifications,
+  roles,
+  telegramLinks,
+  userRoles,
+  users,
+} from '@/modules/platform/db/schema';
+import { getStorage } from '@/modules/platform/files/storage';
 import { __resetAddOffers } from '@/modules/platform/telegram/calc-amend';
 import { saveIntakeFile, TOO_BIG_SAY } from '@/modules/platform/telegram/calc-files';
 import { activeIntake, endIntake, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
@@ -52,6 +66,8 @@ let clientId = '';
 let stageId = '';
 const madeDeals: string[] = [];
 const madeRequests: string[] = [];
+/** Collections whose files the REAL save stored — their attachments go in `afterAll`. */
+const storedNotes: string[] = [];
 
 beforeAll(async () => {
   const [u] = await db
@@ -97,6 +113,12 @@ afterAll(async () => {
     await db.delete(calcRequests).where(inArray(calcRequests.id, madeRequests));
   }
   if (madeDeals.length) await db.delete(crmActivities).where(inArray(crmActivities.entityId, madeDeals));
+  if (storedNotes.length) {
+    const rows = await db.select({ key: attachments.storageKey }).from(attachments).where(inArray(attachments.entityId, storedNotes));
+    for (const row of rows) await getStorage().delete(row.key).catch(() => {});
+    await db.delete(attachments).where(inArray(attachments.entityId, storedNotes));
+  }
+  await db.delete(notifications).where(eq(notifications.userId, sellerId));
   await db.update(clients).set({ active: false }).where(eq(clients.id, clientId));
   await db.update(telegramLinks).set({ status: 'revoked' }).where(eq(telegramLinks.userId, sellerId));
   // DEACTIVATED, not deleted: audit_log points at them (round 107's rule).
@@ -133,6 +155,92 @@ describe('the collector’s file door (staff-handlers)', () => {
   });
 });
 
+describe('a file the save refused — a re-send heals it, or none will (review model-break-caption-kept-then-retyped, model-break-unknown-type-unnamed)', () => {
+  it('a FAILED download takes nothing: the same message re-sent brings the file and its caption — read once', async () => {
+    startIntake(BigInt(chat), 'rastamojka', { ai: true, staffId: sellerId });
+    updateIntake(BigInt(chat), { stage: 'material' });
+    storedNotes.push(activeIntake(BigInt(chat))!.noteId);
+    const caption = `Kurtka 300 dona 150 kg ${STAMP}`;
+    vi.mocked(saveIntakeFile).mockResolvedValueOnce({ refused: 'download_failed' });
+    const m = h.mark();
+    await h.handle(tg.document(chat, `ci-a-${STAMP}`, { fileName: 'CI.pdf', mime: 'application/pdf', caption }));
+    await h.settle();
+    expect(sends(h.since(m).api).map((c) => String(c.payload.text))[0]).toBe('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+    expect(activeIntake(BigInt(chat))!.material).toEqual([]);
+    expect(activeIntake(BigInt(chat))!.refusedFiles).toEqual([]);
+    // He does what he was told: the same file and caption again, and it saves.
+    h.serveFile(`ci-b-${STAMP}`, Buffer.from('%PDF-1.4 kurtka'));
+    await h.handle(tg.document(chat, `ci-b-${STAMP}`, { fileName: 'CI.pdf', mime: 'application/pdf', caption }));
+    await h.settle();
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.material).toEqual([caption]);
+    expect(live.fileCount).toBe(1);
+    expect(live.pdfs.map((p) => p.name)).toEqual(['CI.pdf']);
+  });
+
+  it('a type storage keeps no attachment of: said in words, never «qayta yuboring»; the caption read, the file named, never counted', async () => {
+    startIntake(BigInt(chat), 'rastamojka', { ai: true, staffId: sellerId });
+    updateIntake(BigInt(chat), { stage: 'material' });
+    storedNotes.push(activeIntake(BigInt(chat))!.noteId);
+    h.serveFile(`dwg-${STAMP}`, Buffer.from([0x41, 0x43, 0x31, 0x30, 0, 0, 0xff, 0xfe, 1, 2]));
+    const m = h.mark();
+    await h.handle(tg.document(chat, `dwg-${STAMP}`, { fileName: 'chizma.dwg', mime: 'application/octet-stream', caption: 'Shim 20 dona' }));
+    await h.settle();
+    const said = sends(h.since(m).api).map((c) => String(c.payload.text));
+    expect(said[0]).toBe('📎 «chizma.dwg» kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.');
+    expect(said.join('\n')).not.toContain('Faylni saqlab bo‘lmadi');
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.refusedFiles).toEqual([{ name: 'chizma.dwg', why: 'noma’lum fayl turi' }]);
+    expect(live.material).toEqual(['Shim 20 dona']);
+    expect(live.fileCount).toBe(0);
+  });
+});
+
+describe('the add door’s media reply (calc-amend openAmendFromMedia)', () => {
+  /** A landed request of this seller's, and the AI answer that carries ➕ (its message id). */
+  async function answered(): Promise<number> {
+    const [deal] = await db
+      .insert(deals)
+      .values({ code: `FO-${STAMP}-${madeDeals.length}`, clientId, stageId, title: 'Fayl', createdBy: sellerId })
+      .returning();
+    madeDeals.push(deal!.id);
+    const r = await openCalcRequest(
+      { intakeDoor: null, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: 'Sumka', quantity: 10 }], source: 'card' },
+      { actorId: sellerId },
+    );
+    madeRequests.push(r.id);
+    const answerId = 880_000 + madeRequests.length;
+    await db.insert(notifications).values({
+      userId: sellerId,
+      channel: 'telegram',
+      type: 'CalcPrefilled',
+      status: 'sent',
+      payload: { add: true, requestId: r.id, tg: { chatId: String(chat), messageId: answerId } },
+    });
+    return answerId;
+  }
+
+  it('a failed download takes nothing — the caption waits for the re-send; past 20 MB the caption is read and the file named', async () => {
+    const caption = `Shim 20 dona ${STAMP}`;
+    vi.mocked(saveIntakeFile).mockResolvedValueOnce({ refused: 'download_failed' });
+    const m = h.mark();
+    await h.handle(tg.photo(chat, { caption, replyTo: await answered() }));
+    await h.settle();
+    expect(sends(h.since(m).api).map((c) => String(c.payload.text))).toContain('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+    expect(activeIntake(BigInt(chat))!.material).toEqual([]);
+    endIntake(BigInt(chat));
+    vi.mocked(saveIntakeFile).mockResolvedValueOnce({ refused: 'too_big' });
+    const m2 = h.mark();
+    await h.handle(tg.photo(chat, { caption, replyTo: await answered() }));
+    await h.settle();
+    expect(sends(h.since(m2).api).map((c) => String(c.payload.text))).toContain(TOO_BIG_SAY);
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.material).toEqual([caption]);
+    expect(live.refusedFiles).toEqual([{ name: 'rasm', why: '20 MB dan katta' }]);
+    expect(live.fileCount).toBe(0);
+  });
+});
+
 describe('the burst take’s door (calc-amend takeParts)', () => {
   it('a part past 20 MB is TAKEN with its text and named — never «qayta bosing», never a file', async () => {
     const code = `FO-${STAMP}-${madeDeals.length}`;
@@ -165,5 +273,29 @@ describe('the burst take’s door (calc-amend takeParts)', () => {
     expect(live.refusedFiles).toEqual([{ name: 'rasm', why: '20 MB dan katta' }]);
     expect(live.material).toEqual([`Shim 20 dona ${STAMP}`]);
     expect(live.repliedTaken.sort()).toEqual(parts.map((p) => msgOf(p).message_id).sort());
+  });
+
+  it('a part’s own size is read before Telegram is asked — the take refuses a 25 MB part with no getFile (review model-break-burst-size-unused)', async () => {
+    const code = `FO-${STAMP}-${madeDeals.length}`;
+    const [deal] = await db.insert(deals).values({ code, clientId, stageId, title: 'Fayl', createdBy: sellerId }).returning();
+    madeDeals.push(deal!.id);
+    const r = await openCalcRequest(
+      { intakeDoor: null, entityType: 'deal', entityId: deal!.id, section: 'rastamojka', items: [{ name: 'Sumka', quantity: 10 }], source: 'card' },
+      { actorId: sellerId },
+    );
+    madeRequests.push(r.id);
+    const part = bigDocument('CI-burst.pdf', `Kurtka 5 dona ${STAMP}`);
+    const m0 = h.mark();
+    await h.handle(part);
+    await h.settle();
+    const offer = sends(h.since(m0).api).at(-1)!;
+    const m = h.mark();
+    await h.handle(tg.callback(chat, offer.messageId!, `cf:${r.id}`, { message: { text: offer.payload.text, reply_to_message: msgOf(part) } }));
+    await h.settle();
+    expect(h.since(m).sent.some((c) => c.method === 'getFile'), 'Telegram is asked nothing').toBe(false);
+    expect(sends(h.since(m).api).map((c) => String(c.payload.text))).toContain(TOO_BIG_SAY);
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.refusedFiles).toEqual([{ name: 'CI-burst.pdf', why: '20 MB dan katta' }]);
+    expect(live.material).toEqual([`Kurtka 5 dona ${STAMP}`]);
   });
 });

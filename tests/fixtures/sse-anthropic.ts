@@ -20,8 +20,11 @@ import type { AddressInfo } from 'node:net';
  *  - variants, each after `afterChars` characters of the text were sent:
  *    `errorType` — a mid-stream `event: error` of that type;
  *    `drop` — the socket is destroyed mid-body;
- *    `abortAfterMs` — the stand-in goes SILENT after this long and never ends
- *    the response: only the caller's leash ends the attempt.
+ *    `abortAfterMs` — the stand-in writes deltas only until this long after
+ *    `message_start`, then goes SILENT and never ends the response: only the
+ *    caller's leash ends the attempt.
+ *  - with none of them, a slow `paceMs` over a long `text` keeps the deltas
+ *    COMING past a caller's leash — the case the leash exists for.
  *
  * An unscripted request is a 400. `close()` destroys every open connection, so
  * a silent response never holds the suite.
@@ -33,7 +36,7 @@ export interface SseReply {
   thinking?: string;
   chunk?: number;
   paceMs?: number;
-  stop?: 'end_turn' | 'max_tokens' | 'refusal';
+  stop?: 'end_turn' | 'max_tokens' | 'refusal' | 'model_context_window_exceeded';
   usage?: { input_tokens: number; output_tokens: number; thinking_tokens?: number };
   /** Send no `message_delta` (the usage never arrives) — with a variant below. */
   noDelta?: boolean;
@@ -134,6 +137,8 @@ export async function startSseStandIn(): Promise<SseStandIn> {
         const pace = reply.paceMs ?? 0;
         let at = 0;
         for (const piece of pieces) {
+          // Silent from `abortAfterMs` on: what is due later is never written.
+          if (reply.abortAfterMs !== undefined && at >= reply.abortAfterMs) break;
           later(at, piece);
           at += pace;
         }

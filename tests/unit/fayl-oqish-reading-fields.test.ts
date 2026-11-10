@@ -97,7 +97,11 @@ describe('a stored file that did not load (§2.5, pdfimg-3)', () => {
 });
 
 describe('PDFs the API refused (§3.4)', () => {
-  it('named by the outcome, kept across re-reads that no longer send them, and only while the PDF is in the collection', async () => {
+  // Re-anchored (review model-break-refused-pdf-blocks-forever): a refused
+  // PDF stayed in `unreadPdfs` for the collection's life, so once refused no
+  // reading could ever be whole — not after the password-free copy its
+  // warning asks for, not after the Excel the table's remedy asks for.
+  it('named by the outcome and blocking ITS table; the next reading names it like an arrival refusal — and the reading can be whole', async () => {
     const pdfs = [
       { attachmentId: 'p-bad', name: 'bad.pdf', bytes: 10 },
       { attachmentId: 'p-ok', name: 'ok.pdf', bytes: 10 },
@@ -105,15 +109,43 @@ describe('PDFs the API refused (§3.4)', () => {
     model.analyze.mockResolvedValueOnce(read({ unreadPdfs: ['p-bad'] }));
     const first = await analyzeCollected(collection({ pdfs }));
     expect(first.unreadPdfs).toEqual(['p-bad']);
-    // The next reading does not send it (loadIntakeFiles skips it), so its
-    // outcome names nothing — the refusal still stands.
+    expect(aiReadingWhole(first, 1).blocking).toEqual(['pdf_refused']);
+    // The next reading does not send it (loadIntakeFiles skips it): it leaves
+    // the PDFs to read and is named, the reason a noun phrase.
     model.analyze.mockResolvedValueOnce(read());
     const again = await analyzeCollected({ ...first, analysing: null });
-    expect(again.unreadPdfs).toEqual(['p-bad']);
-    expect(aiReadingWhole(again, 1).blocking).toEqual(['pdf_refused']);
+    expect(again.unreadPdfs).toEqual([]);
+    expect(again.pdfs.map((p) => p.attachmentId)).toEqual(['p-ok']);
+    expect(again.refusedFiles).toEqual([{ name: 'bad.pdf', why: 'AI qabul qilmadi' }]);
+    expect(aiReadingWhole(again, 1)).toEqual({ whole: true, blocking: [], named: [{ name: 'bad.pdf', why: 'AI qabul qilmadi' }] });
     // An id the collection does not hold is never written.
     model.analyze.mockResolvedValueOnce(read({ unreadPdfs: ['p-gone'] }));
     expect((await analyzeCollected(collection({ pdfs }))).unreadPdfs).toEqual([]);
+  });
+
+  it('the settle moves it on the LIVE collection too — and keeps what arrived while the reading ran', async () => {
+    const pdfs = [{ attachmentId: 'p-bad', name: 'bad.pdf', bytes: 10 }];
+    const snapshot = collection({ pdfs, unreadPdfs: ['p-bad'] });
+    model.analyze.mockResolvedValueOnce(read());
+    const analysed = await analyzeCollected(snapshot);
+    const token = 't-pdf';
+    // While it ran: the password-free copy, and a DOCX refused at arrival.
+    const live = {
+      ...snapshot,
+      analysing: token,
+      fileCount: snapshot.fileCount + 2,
+      pdfs: [...pdfs, { attachmentId: 'p-copy', name: 'bad-ochiq.pdf', bytes: 10 }],
+      refusedFiles: [{ name: 'a.docx', why: 'Word fayl' }],
+    };
+    const settled = settleAnalysis(live, { ...snapshot, analysing: token }, analysed, token);
+    expect(settled.kind).toBe('arrived');
+    const state = settled.kind === 'gone' ? null : settled.state;
+    expect(state?.pdfs.map((p) => p.attachmentId)).toEqual(['p-copy']);
+    expect(state?.refusedFiles).toEqual([
+      { name: 'a.docx', why: 'Word fayl' },
+      { name: 'bad.pdf', why: 'AI qabul qilmadi' },
+    ]);
+    expect(state?.unreadPdfs).toEqual([]);
   });
 
   it('each PDF reaches the model WITH its attachment, so a refusal can name it', async () => {

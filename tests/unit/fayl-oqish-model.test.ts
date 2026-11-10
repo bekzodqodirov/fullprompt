@@ -1,8 +1,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { goodJson, readingJson, startSseStandIn, type SseStandIn } from '../fixtures/sse-anthropic';
-import { aiFailureOf, analyzeIntake, salvageCut } from '@/modules/wms/calc/intake-ai';
-import { pdfMayBeEncrypted, readIntakeFile, receivePdf, TOO_BIG_SAY } from '@/modules/platform/telegram/calc-files';
+import { aiFailureOf, analyzeIntake, readIntakeResponse, salvageCut } from '@/modules/wms/calc/intake-ai';
+import {
+  pdfMayBeEncrypted,
+  permanentRefusal,
+  readIntakeFile,
+  receivePdf,
+  TOO_BIG_SAY,
+} from '@/modules/platform/telegram/calc-files';
 import { analyzeCollected, endIntake, MAX_INTAKE_IMAGES, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 
 /**
@@ -162,6 +168,38 @@ describe('the lone Excel on the AI door is coded by the model (§3.7, known-3)',
     expect(prompt).not.toContain('читай таблицу выше');
   });
 
+  it('beside a workbook’s OTHER sheets the closing keeps the totals asked — never «codes only» (review model-break-closing-context-sheets)', async () => {
+    // A mapped workbook's other sheets carry the brutto and the cube, and
+    // only the model reads them there: «Других материалов нет … только
+    // known_codes» denied they were shown and dropped both.
+    api.script.push({ text: readingJson({}) });
+    await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      contextSheets: [{ text: '[Packing list]\nItem | CTNS | G.W.\nKurtka | 30 | 1200\nTOTAL | 30 | 1200', cut: false, cellsCut: false }],
+      knownGoods: ['Kurtka'],
+      codeKnown: true,
+      salvage: true,
+    });
+    const prompt = promptOf(0);
+    expect(prompt).toContain('только для итогов (общий вес/объём)');
+    expect(prompt).toContain('Текста нет: goods оставь пустым (товары уже взяты); общий вес и объём возьми из листов выше; коды — в known_codes.');
+    expect(prompt).not.toContain('Других материалов нет');
+    // A header-only neighbour shows nothing, so it keeps nothing asked.
+    api.script.push({ text: readingJson({}) });
+    await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      contextSheets: [{ text: '[Cover]', cut: false, cellsCut: false }],
+      knownGoods: ['Kurtka'],
+      codeKnown: true,
+      salvage: true,
+    });
+    expect(promptOf(1)).toContain('Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.');
+  });
+
   it('the goods sheet’s own rows are never something to read by themselves: every row coded → no call', async () => {
     const out = await analyzeIntake({
       section: 'rastamojka',
@@ -211,11 +249,24 @@ describe('a request the API refused WITH a PDF is read again without it (§3.4, 
     expect(out.answered).toHaveLength(1);
   });
 
-  it('a PDF alone, refused: nothing else to read, so no second call — the refusal stands and names it', async () => {
-    api.script.push({ status: 400 });
+  // Re-anchored (review model-spec-pdf-only-named-unconfirmed): a lone PDF
+  // was named on ANY refusal, with no second call — a retired model's 404 or a
+  // parameter the model refused named the commonest invoice «AI bu faylni
+  // qabul qilmadi», and every later reading skipped it for good.
+  it('a PDF alone, refused: asked once more WITHOUT it — answered, so the PDF was what it refused: named, the answer billed, no reading', async () => {
+    api.script.push({ status: 400 }, { text: readingJson({}), usage: { input_tokens: 3, output_tokens: 2 } });
     const out = await analyzeIntake({ section: 'rastamojka', text: '', fileCount: 1, pdf: pdf('a2'), salvage: true });
-    expect(api.bodies).toHaveLength(1);
-    expect(out).toEqual({ ok: false, failure: 'rejected', unreadPdfs: ['a2'] });
+    expect(api.bodies).toHaveLength(2);
+    expect(blocksOf(1)).not.toContain('document');
+    expect(out).toMatchObject({ ok: false, failure: 'rejected', unreadPdfs: ['a2'] });
+    expect(out.answered).toEqual([expect.objectContaining({ inputTokens: 3, outputTokens: 2 })]);
+  });
+
+  it('a PDF alone, refused the same way without it (a retired model’s 404): the REQUEST was refused, and no PDF is named', async () => {
+    api.script.push({ status: 404 }, { status: 404 });
+    const out = await analyzeIntake({ section: 'rastamojka', text: '', fileCount: 1, pdf: pdf('a4'), salvage: true });
+    expect(api.bodies).toHaveLength(2);
+    expect(out).toEqual({ ok: false, failure: 'rejected' });
   });
 
   it('refused WITHOUT the PDF as well: the PDF was not the cause, and is not named', async () => {
@@ -223,6 +274,22 @@ describe('a request the API refused WITH a PDF is read again without it (§3.4, 
     const out = await analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 1, pdf: pdf('a3'), salvage: true });
     expect(api.bodies).toHaveLength(2);
     expect(out).toEqual({ ok: false, failure: 'rejected' });
+  });
+});
+
+describe('a reading the CONTEXT WINDOW stopped is a size cut (review model-break-window-exceeded)', () => {
+  const two = readingJson({ goods: [goodJson('Kurtka', { quantity: 3 }), goodJson('Shim', { quantity: 2 })] });
+  const cut = `${two.slice(0, two.indexOf(']'))},{"name":"Sumka","quantity":4`;
+
+  it('read as `truncated` — never «unreadable» — and the goods it completed are kept', async () => {
+    expect(readIntakeResponse({ stop_reason: 'model_context_window_exceeded', content: [{ type: 'text', text: cut }] })).toMatchObject({
+      ok: false,
+      failure: 'truncated',
+    });
+    api.script.push({ text: cut, stop: 'model_context_window_exceeded' });
+    const out = await analyzeIntake({ section: 'rastamojka', text: 'Kurtka 3 dona', fileCount: 0, salvage: true });
+    expect(out).toMatchObject({ ok: true, cut: { goods: 2, why: 'size' } });
+    expect(api.bodies).toHaveLength(1);
   });
 });
 
@@ -278,11 +345,11 @@ describe('what is refused at arrival is named (§1.1, §3.4)', () => {
     const s = state();
     const saved = (body: Buffer) => ({ isPhoto: false, body, attachmentId: '00000000-0000-4000-8000-000000000001' });
     const docx = await readIntakeFile(saved(Buffer.from('PK\u0003\u0004')), 'shartnoma.docx', null, s);
-    expect(docx.patch.refusedFiles).toEqual([{ name: 'shartnoma.docx', why: 'Word fayl o‘qilmaydi' }]);
+    expect(docx.patch.refusedFiles).toEqual([{ name: 'shartnoma.docx', why: 'Word fayl' }]);
     const video = await readIntakeFile(saved(Buffer.from('\u0000\u0000\u0000\u0018ftypmp42')), 'v.mp4', null, s);
-    expect(video.patch.refusedFiles).toEqual([{ name: 'v.mp4', why: 'video o‘qilmaydi' }]);
+    expect(video.patch.refusedFiles).toEqual([{ name: 'v.mp4', why: 'video' }]);
     const zip = await readIntakeFile(saved(Buffer.from('PK\u0003\u0004')), 'a.zip', null, s);
-    expect(zip.patch.refusedFiles).toEqual([{ name: 'a.zip', why: 'arxiv o‘qilmaydi' }]);
+    expect(zip.patch.refusedFiles).toEqual([{ name: 'a.zip', why: 'arxiv' }]);
     const full = { ...s, images: Array.from({ length: MAX_INTAKE_IMAGES }, (_, i) => ({ attachmentId: `i${i}`, mediaType: 'image/jpeg' as const })) };
     const photo = await readIntakeFile({ ...saved(Buffer.from([0xff, 0xd8, 0xff, 0])), isPhoto: true }, '', null, full);
     expect(photo.say).toBeNull();
@@ -306,6 +373,67 @@ describe('what is refused at arrival is named (§1.1, §3.4)', () => {
 
   it('the 20 MB words are the spec’s', () => {
     expect(TOO_BIG_SAY).toBe('Fayl 20 MB dan katta — Telegram uni botga bermaydi. Kichikroq qilib (yoki Excel) yuboring.');
+  });
+
+  it('a PDF the API refused counts against neither cap — the password-free copy its warning asked for is taken (review model-break-pdf-caps-count-refused)', () => {
+    const s = state();
+    const MB7 = 7 * 1024 * 1024;
+    const heavy = { ...s, pdfs: [{ attachmentId: 'enc', name: 'enc.pdf', bytes: MB7 }], unreadPdfs: ['enc'] };
+    const copy = receivePdf(heavy, { attachmentId: 'ok', name: 'CI-ochiq.pdf', bytes: MB7 }, '«CI-ochiq.pdf»');
+    expect(copy.say).toBe('📄 «CI-ochiq.pdf» — AI o‘qiydi.');
+    expect(copy.patch.pdfs?.map((p) => p.attachmentId)).toEqual(['enc', 'ok']);
+    expect(copy.patch.refusedFiles).toBeUndefined();
+    const three = { ...s, pdfs: [1, 2, 3].map((i) => ({ attachmentId: `p${i}`, name: `p${i}.pdf`, bytes: 1 })), unreadPdfs: ['p3'] };
+    const fourth = receivePdf(three, { attachmentId: 'p4', name: 'p4.pdf', bytes: 1 }, '«p4.pdf»');
+    expect(fourth.say).toBe('📄 «p4.pdf» — AI o‘qiydi.');
+  });
+
+  it('the photos past the twelve are ONE entry, counted — never one «rasm» each (review model-break-photo-cap-names)', async () => {
+    const s = state();
+    const photo = { isPhoto: true, body: Buffer.from([0xff, 0xd8, 0xff, 0]), attachmentId: '00000000-0000-4000-8000-000000000002' };
+    let live = {
+      ...s,
+      images: Array.from({ length: MAX_INTAKE_IMAGES }, (_, i) => ({ attachmentId: `i${i}`, mediaType: 'image/jpeg' as const })),
+      refusedFiles: [{ name: 'a.docx', why: 'Word fayl' }],
+    };
+    for (let i = 0; i < 3; i += 1) live = { ...live, ...(await readIntakeFile(photo, '', null, live)).patch };
+    expect(live.refusedFiles).toEqual([
+      { name: 'a.docx', why: 'Word fayl' },
+      { name: '3 ta rasm', why: '12 tadan ortiq rasm' },
+    ]);
+    expect(live.imagesSkipped).toBe(3);
+  });
+
+  it('every reason reads inside «X o‘qilmadi (…)» and «X — …»: a noun phrase, never «not read» again (review model-spec-refused-why-doubles-verb)', async () => {
+    const s = state();
+    const saved = (body: Buffer) => ({ isPhoto: false, body, attachmentId: '00000000-0000-4000-8000-000000000003' });
+    const heic = await readIntakeFile(saved(Buffer.concat([Buffer.from('\u0000\u0000\u0000\u0018ftypheic'), Buffer.alloc(32)])), 'a.heic', null, s);
+    // A drawing's binary header: neither a picture, a PDF nor a sheet.
+    const unknown = await readIntakeFile(saved(Buffer.from([0x41, 0x43, 0x31, 0x30, 0, 0, 0xff, 0xfe, 1, 2])), 'chizma.dwg', 'application/octet-stream', s);
+    const whys = [
+      ...(heic.patch.refusedFiles ?? []),
+      ...(unknown.patch.refusedFiles ?? []),
+      ...(await readIntakeFile(saved(Buffer.from('PK\u0003\u0004')), 'b.docx', null, s)).patch.refusedFiles!,
+      permanentRefusal(s, 'too_big', { name: 'big.pdf', isPhoto: false })!.patch.refusedFiles![0]!,
+      permanentRefusal(s, 'unsupported', { name: 'c.dwg', isPhoto: false })!.patch.refusedFiles![0]!,
+    ].map((f) => f.why);
+    expect(heic.patch.refusedFiles).toEqual([{ name: 'a.heic', why: 'HEIC rasm' }]);
+    expect(unknown.patch.refusedFiles).toEqual([{ name: 'chizma.dwg', why: 'noma’lum fayl turi' }]);
+    for (const why of whys) expect(why, why).not.toMatch(/o‘qil|o‘qib/u);
+  });
+
+  it('what a door says of a file no re-send stores — and that a failed download is none of them (review model-break-unknown-type-unnamed)', () => {
+    const s = state();
+    expect(permanentRefusal(s, 'unsupported', { name: 'chizma.dwg', isPhoto: false })).toEqual({
+      patch: { refusedFiles: [{ name: 'chizma.dwg', why: 'noma’lum fayl turi' }] },
+      say: '📎 «chizma.dwg» kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.',
+    });
+    expect(permanentRefusal(s, 'too_big', { name: '', isPhoto: true })).toEqual({
+      patch: { refusedFiles: [{ name: 'rasm', why: '20 MB dan katta' }] },
+      say: TOO_BIG_SAY,
+    });
+    // Re-sent, the same message brings the file AND its caption: nothing is taken now.
+    expect(permanentRefusal(s, 'download_failed', { name: 'a.pdf', isPhoto: false })).toBeNull();
   });
 });
 

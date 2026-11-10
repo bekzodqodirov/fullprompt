@@ -40,12 +40,10 @@ import {
 import {
   fileOf,
   isFileRefusal,
+  permanentRefusal,
   readIntakeFile,
   refusalOf,
-  refusedFilePatch,
   saveIntakeFile,
-  TOO_BIG_SAY,
-  TOO_BIG_WHY,
   type BotFile,
   type BotFileRefusal,
 } from './calc-files';
@@ -829,8 +827,19 @@ const UNREAD_WORDS: Record<NonNullable<TakePart['unread']>, string> = {
 function takePartOfBurst(p: BurstPart): TakePart {
   return {
     messageId: p.messageId,
+    // …with the size Telegram said it weighs: a part past 20 MB is refused
+    // before Telegram is asked, as at the other doors (docs/FAYL-OQISH.md
+    // §3.4, review model-break-burst-size-unused).
     file: isFilePart(p)
-      ? { fileId: p.fileId!, isPhoto: p.kind === 'photo', fileName: p.name ?? undefined, mime: p.mime ?? undefined, messageId: p.messageId }
+      ? {
+          fileId: p.fileId!,
+          isPhoto: p.kind === 'photo',
+          fileName: p.name ?? undefined,
+          mime: p.mime ?? undefined,
+          messageId: p.messageId,
+          // A burst stored before parts carried a size has none.
+          ...(typeof p.size === 'number' ? { size: p.size } : {}),
+        }
       : null,
     name: p.name ?? '',
     mime: p.mime,
@@ -918,23 +927,28 @@ async function takeParts(
         logger.warn({ err }, '[calc-amend] replied file save failed');
         return { refused: 'download_failed' };
       });
-      // A file past Telegram's 20 MB is never handed over, so no press will
-      // save it (docs/FAYL-OQISH.md §3.4): it is said, named on the table
-      // (`refusedFiles`), and the part is TAKEN with its text — a caption's
+      // A file no press will store — past Telegram's 20 MB, a type storage
+      // refuses (docs/FAYL-OQISH.md §3.4) — is said, named on the table
+      // (`refusedFiles`), and the part is TAKEN with its text: a caption's
       // typed goods are not lost with the file. Never counted as a file.
-      if (isFileRefusal(saved) && saved.refused === 'too_big') {
+      const permanent = isFileRefusal(saved)
+        ? permanentRefusal(live, saved.refused, { name: part.name, isPhoto: part.file.isPhoto })
+        : null;
+      if (permanent) {
         const patch: Partial<IntakeState> = {
-          ...refusedFilePatch(live, part.name || (part.file.isPhoto ? 'rasm' : 'fayl'), TOO_BIG_WHY),
+          ...permanent.patch,
           ...(text ? unread : {}),
           ...withText,
           repliedTaken: mark(live.repliedTaken, part.messageId),
         };
         live = updateIntake(chatId, patch) ?? { ...live, ...patch };
         if (text) texts += 1;
-        noteOwnMessage(chatId, (await sp.reply(TOO_BIG_SAY)).message_id);
+        noteOwnMessage(chatId, (await sp.reply(permanent.say)).message_id);
         continue;
       }
-      // Not marked: the same press again saves it — the file and its text.
+      // Not marked, its text not taken: the same press again saves it — the
+      // file and its text together. Taken now, the text was read twice on
+      // that press (`permanentRefusal`, the rule of all three doors).
       if (isFileRefusal(saved)) {
         saveFailed = true;
         continue;
@@ -1199,17 +1213,18 @@ export async function openAmendFromMedia(
         return { refused: 'download_failed' };
       });
       if (isFileRefusal(saved)) {
-        // The caption is read on every refusal (docs/FAYL-OQISH.md §3.4) —
-        // goods typed under the file were lost with it — and a file past
-        // Telegram's 20 MB is said so and named on the table.
-        const tooBig = saved.refused === 'too_big';
-        const patch: Partial<IntakeState> = {
-          ...(tooBig ? refusedFilePatch(live, message.document?.file_name || (message.photo ? 'rasm' : 'fayl'), TOO_BIG_WHY) : {}),
-          ...(caption ? { ...unread, ...withCaption } : {}),
-        };
-        if (Object.keys(patch).length > 0) live = updateIntake(chatId, patch) ?? live;
-        await sp.reply(tooBig ? TOO_BIG_SAY : 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
-        if (caption) await awaitReading(chatId, sp, live);
+        // A file no re-send will store (past Telegram's 20 MB, a type storage
+        // refuses) is said so, named on the table, and its caption is read
+        // (docs/FAYL-OQISH.md §3.4) — goods typed under it were lost with the
+        // file. A failed download takes nothing: the same message re-sent
+        // brings both (`permanentRefusal`).
+        const permanent = permanentRefusal(live, saved.refused, {
+          name: message.document?.file_name ?? '',
+          isPhoto: Boolean(message.photo),
+        });
+        if (permanent) live = updateIntake(chatId, { ...permanent.patch, ...(caption ? { ...unread, ...withCaption } : {}) }) ?? live;
+        await sp.reply(permanent?.say ?? 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');
+        if (permanent && caption) await awaitReading(chatId, sp, live);
         return;
       }
       const read = await readIntakeFile(saved, message.document?.file_name ?? '', message.document?.mime_type ?? null, live);

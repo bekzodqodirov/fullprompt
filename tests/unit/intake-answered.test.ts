@@ -107,8 +107,9 @@ describe('a reading the STREAM ended early keeps what it completed, and is bille
   /** The text up to the second good's closing brace — and the third good begun. */
   const throughSecond = `${two.slice(0, two.indexOf(']'))},{"name":"Sumka","quantity":4`;
 
-  it('the caller’s clock aborts a stream that drips past it — within the leash plus a second, the goods it completed kept', async () => {
-    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 0, usage: { input_tokens: 777, output_tokens: 1 } });
+  it('the caller’s clock aborts a stream gone silent — within the leash plus a second, the goods it completed kept', async () => {
+    // Every delta is written in ~0.1 s, then nothing: no final message, ever.
+    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 500, usage: { input_tokens: 777, output_tokens: 1 } });
     const started = Date.now();
     const out = await read(1_500);
     const took = Date.now() - started;
@@ -125,7 +126,7 @@ describe('a reading the STREAM ended early keeps what it completed, and is bille
   it('the thread door’s leash too — and a cut is NOT kept when the caller said so (§3.6): today’s «timeout», «truncated»', async () => {
     // Two goods completed, then silence: kept for the bot, not for the
     // thread door, whose preview has no word for a partial list.
-    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 0 });
+    script.push({ text: throughSecond, chunk: 40, paceMs: 10, abortAfterMs: 500 });
     const started = Date.now();
     const out = await analyzeIntake({ section: 'yolkira', text: 'x', fileCount: 0, timeoutMs: 2_000, salvage: false });
     expect(Date.now() - started).toBeLessThan(2_000 + 1_000);
@@ -133,6 +134,23 @@ describe('a reading the STREAM ended early keeps what it completed, and is bille
     script.push({ stop: 'max_tokens', text: throughSecond });
     const size = await analyzeIntake({ section: 'yolkira', text: 'x', fileCount: 0, timeoutMs: 2_000, salvage: false });
     expect(size).toMatchObject({ ok: false, failure: 'truncated' });
+  });
+
+  it('the caller’s clock aborts a stream STILL DRIPPING past it — the body has no deadline of its own (judge model-leash-unbounded)', async () => {
+    // Forty goods at twenty characters every 50 ms: ~13 s of answer, still
+    // arriving when the 1 s leash fires. Only the goods whole by then are kept.
+    const forty = Array.from({ length: 40 }, (_, i) => goodJson(`Tovar ${i + 1}`, { quantity: i + 1 }));
+    const long = readingJson({ goods: forty });
+    script.push({ text: long, chunk: 20, paceMs: 50 });
+    const started = Date.now();
+    const out = await read(1_000);
+    expect(Date.now() - started).toBeLessThan(1_000 + 1_000);
+    expect(out).toMatchObject({ ok: true, cut: { why: 'clock' } });
+    const names = out.ok ? (out.facts.goods ?? []).map((g) => g.name) : [];
+    expect(names.length).toBeGreaterThanOrEqual(1);
+    expect(names.length).toBeLessThan(40);
+    expect(names).toEqual(forty.slice(0, names.length).map((g) => g.name));
+    expect(out.ok && out.cut?.goods).toBe(names.length);
   });
 
   it('a mid-stream `event: error` overload with goods completed is a «dropped» cut, never «rejected»', async () => {

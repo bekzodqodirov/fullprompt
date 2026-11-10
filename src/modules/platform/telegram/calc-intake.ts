@@ -1393,6 +1393,34 @@ export function filesMissingNote(missing: number, retry = false): string | null 
     : `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
 }
 
+/**
+ * A refused PDF's reason once its table named it (`analyzeCollected`) — a
+ * noun phrase, as every `refusedFiles` reason is.
+ */
+export const PDF_REFUSED_WHY = 'AI qabul qilmadi';
+
+/**
+ * The reading's own moves of the collection's files, onto the LIVE
+ * collection (`settleAnalysis`): a refused PDF the reading named like an
+ * arrival refusal (`analyzeCollected`) leaves `pdfs` and joins
+ * `refusedFiles` there too — `...live` kept both as they were, and the PDF
+ * went on blocking. Applied as the reading's DIFF against what it read
+ * (`snapshot`): a PDF or a refusal that arrived while it ran is the live
+ * collection's and stays.
+ */
+export function readingFileMoves(
+  live: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+  snapshot: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+  analysed: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+): Pick<IntakeState, 'pdfs' | 'refusedFiles'> {
+  const read = new Set(snapshot.pdfs.map((p) => p.attachmentId));
+  const kept = new Set(analysed.pdfs.map((p) => p.attachmentId));
+  return {
+    pdfs: live.pdfs.filter((p) => !read.has(p.attachmentId) || kept.has(p.attachmentId)),
+    refusedFiles: [...(live.refusedFiles ?? []), ...(analysed.refusedFiles ?? []).slice((snapshot.refusedFiles ?? []).length)],
+  };
+}
+
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
 export const MAX_INTAKE_IMAGES = 12;
 
@@ -1586,7 +1614,18 @@ export async function analyzeCollected(
   const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const sheetFit = fitSheetRows([...state.sheetTexts, ...state.invoiceTexts].map((t) => t.text.trim()), SHEET_TEXT_BUDGET);
   const stillPdfs = new Set(state.pdfs.map((p) => p.attachmentId));
-  const unread: Pick<IntakeState, 'aiCut' | 'aiInputCut' | 'filesMissing' | 'unreadPdfs'> = {
+  // A PDF the API refused, which the table before this reading NAMED (the
+  // `unreadPdfs` it starts with), is named from now on like a file refused at
+  // arrival (review model-break-refused-pdf-blocks-forever): out of the PDFs
+  // to read, into `refusedFiles`. It is never sent again (`loadIntakeFiles`),
+  // so it never reads — kept blocking, nothing the seller sent could ever
+  // reach «✅ Tasdiqlash»: not the password-free copy its warning asks for,
+  // not the Excel or the typed lines the table's remedy asks for. It blocks
+  // the table of the reading that met the refusal (§1.1 d), and is named on
+  // every one after.
+  const named = new Set(state.unreadPdfs ?? []);
+  const demoted = state.pdfs.filter((p) => named.has(p.attachmentId));
+  const unread: Pick<IntakeState, 'aiCut' | 'aiInputCut' | 'filesMissing' | 'unreadPdfs' | 'pdfs' | 'refusedFiles'> = {
     aiCut: outcome.ok && outcome.cut ? outcome.cut : null,
     // A goods sheet the model was not shown whole — the reader stopped
     // before its end, or the shared budget kept fewer rows than it has
@@ -1595,9 +1634,10 @@ export async function analyzeCollected(
       (t, i) => t.text.trim() !== '' && (t.cut || (sheetFit.kept[i] ?? 0) < (sheetFit.total[i] ?? 0)),
     ),
     filesMissing: files.missing,
-    // Refused once, skipped by every later reading (`loadIntakeFiles`) and
-    // so still unread: the earlier ones stand beside this reading's own.
-    unreadPdfs: [...new Set([...(state.unreadPdfs ?? []), ...(outcome.unreadPdfs ?? [])])].filter((id) => stillPdfs.has(id)),
+    // This reading's own refusals — the named ones above were not sent.
+    unreadPdfs: [...new Set(outcome.unreadPdfs ?? [])].filter((id) => stillPdfs.has(id) && !named.has(id)),
+    pdfs: state.pdfs.filter((p) => !named.has(p.attachmentId)),
+    refusedFiles: [...(state.refusedFiles ?? []), ...demoted.map((p) => ({ name: p.name, why: PDF_REFUSED_WHY }))],
   };
 
   // Typed facts win over read ones: the person is looking at the material.

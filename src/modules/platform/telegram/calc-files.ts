@@ -61,7 +61,9 @@ const MAX_PDF_BYTES = 10 * 1024 * 1024;
  * names it again — «X o‘qilmadi (sabab) — undagi tovarlar hisobga kirmaydi» —
  * because its goods are not in the figure. Named, never blocking: there is no
  * door to take a file back out of a collection. `why` is the reason the
- * seller was told, in the same words.
+ * seller was told, as a NOUN phrase: it is read inside «X o‘qilmadi (…)» and
+ * «X — …», and a «Word fayl o‘qilmaydi» there said «not read» twice (review
+ * model-spec-refused-why-doubles-verb).
  */
 export function refusedFilePatch(
   state: Pick<IntakeState, 'refusedFiles'>,
@@ -71,9 +73,56 @@ export function refusedFilePatch(
   return { refusedFiles: [...(state.refusedFiles ?? []), { name, why }] };
 }
 
+/**
+ * The photographs past the twelve, as ONE entry counted in place (review
+ * model-break-photo-cap-names): a Telegram photo has no name, so thirty
+ * photos wrote eighteen identical «rasm» entries, and the table named each.
+ * The first keeps its own name; from the second on, «N ta rasm».
+ */
+function photoCapPatch(state: Pick<IntakeState, 'refusedFiles'>, fileName: string): Pick<IntakeState, 'refusedFiles'> {
+  const why = `${MAX_INTAKE_IMAGES} tadan ortiq rasm`;
+  const list = state.refusedFiles ?? [];
+  const at = list.findIndex((f) => f.why === why);
+  if (at < 0) return refusedFilePatch(state, fileName || 'rasm', why);
+  const counted = /^(\d+) ta rasm$/u.exec(list[at]!.name);
+  const n = (counted ? Number(counted[1]) : 1) + 1;
+  return { refusedFiles: list.map((f, i) => (i === at ? { name: `${n} ta rasm`, why } : f)) };
+}
+
 /** Telegram hands a bot no file past 20 MB (docs/FAYL-OQISH.md §3.4, pdfimg-5): said, never «saqlab bo‘lmadi». */
 export const TOO_BIG_SAY = 'Fayl 20 MB dan katta — Telegram uni botga bermaydi. Kichikroq qilib (yoki Excel) yuboring.';
 export const TOO_BIG_WHY = '20 MB dan katta';
+/** A type storage keeps no attachment of — `readIntakeFile`'s «not read» refusal's reason too. */
+export const UNKNOWN_TYPE_WHY = 'noma’lum fayl turi';
+
+/**
+ * What a collection's door does with a file it could not STORE (docs/
+ * FAYL-OQISH.md §3.4) — one rule for the file door and the add door's two
+ * media doors. A refusal no re-send can heal — past Telegram's 20 MB, a type
+ * storage will not keep — is said in its own words and named on the table
+ * (`refusedFiles`), and the door reads the caption: no later copy of the
+ * message brings the file, so its typed goods would be lost with it. Null for
+ * a `download_failed`: then the door TAKES NOTHING — the same message sent
+ * again brings the file and its caption together, and a caption read now was
+ * read twice when the seller did what he was told, two rows of one good,
+ * priced twice (review model-break-caption-kept-then-retyped). The burst
+ * take has always left such a part whole for the re-press.
+ */
+export function permanentRefusal(
+  state: Pick<IntakeState, 'refusedFiles'>,
+  refused: BotFileRefusal['refused'],
+  file: { name: string; isPhoto: boolean },
+): { patch: Pick<IntakeState, 'refusedFiles'>; say: string } | null {
+  const name = file.name || (file.isPhoto ? 'rasm' : 'fayl');
+  if (refused === 'too_big') return { patch: refusedFilePatch(state, name, TOO_BIG_WHY), say: TOO_BIG_SAY };
+  if (refused === 'unsupported') {
+    return {
+      patch: refusedFilePatch(state, name, UNKNOWN_TYPE_WHY),
+      say: `📎 ${file.name ? `«${file.name}»` : 'Fayl'} kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.`,
+    };
+  }
+  return null;
+}
 
 /**
  * Does the PDF say it is ENCRYPTED (docs/FAYL-OQISH.md §3.4, judge
@@ -233,15 +282,21 @@ export function receivePdf(
       say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.`,
     };
   }
+  // Only the PDFs a reading will SEND count against the caps: one the API
+  // refused is never sent again (`unreadPdfs`, `loadIntakeFiles`), and
+  // counted it refused the very password-free copy its warning asked for
+  // (review model-break-pdf-caps-count-refused).
+  const refused = new Set(state.unreadPdfs ?? []);
+  const live = state.pdfs.filter((p) => !refused.has(p.attachmentId));
   // Two caps, two sentences (pdfimg-8): the third of three 5 MB PDFs was
   // told «3 tadan ortiq PDF» — it was the third, and the bytes stopped it.
-  if (state.pdfs.length >= MAX_INTAKE_PDFS) {
+  if (live.length >= MAX_INTAKE_PDFS) {
     return {
       patch: refusedFilePatch(state, pdf.name, `${MAX_INTAKE_PDFS} tadan ortiq PDF`),
       say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
     };
   }
-  const bytes = state.pdfs.reduce((n, p) => n + p.bytes, 0);
+  const bytes = live.reduce((n, p) => n + p.bytes, 0);
   if (bytes + pdf.bytes > MAX_INTAKE_PDF_BYTES) {
     const mb = Math.round(MAX_INTAKE_PDF_BYTES / (1024 * 1024));
     return {
@@ -725,13 +780,7 @@ export async function readIntakeFile(
     // Counted, never silent: the prompt says how many will not be read — and
     // the table names them after the reading (pdfimg-12, `refusedFiles`).
     if (state.images.length >= MAX_INTAKE_IMAGES) {
-      return {
-        patch: {
-          imagesSkipped: state.imagesSkipped + 1,
-          ...refusedFilePatch(state, fileName || 'rasm', `${MAX_INTAKE_IMAGES} tadan ortiq rasm`),
-        },
-        say: null,
-      };
+      return { patch: { imagesSkipped: state.imagesSkipped + 1, ...photoCapPatch(state, fileName) }, say: null };
     }
     const reduced = await reduceForModel(saved.body).catch(() => null);
     // The reduction this needs anyway is KEPT, beside the original, for the
@@ -743,7 +792,7 @@ export async function readIntakeFile(
       return {
         patch: {
           imagesSkipped: state.imagesSkipped + 1,
-          ...refusedFilePatch(state, fileName || 'rasm', kind === 'isomedia' ? 'HEIC rasm o‘qib bo‘lmaydi' : 'rasmni o‘qib bo‘lmadi'),
+          ...refusedFilePatch(state, fileName || 'rasm', kind === 'isomedia' ? 'HEIC rasm' : 'rasm ochilmadi'),
         },
         say:
           kind === 'isomedia'
@@ -774,16 +823,16 @@ export async function readIntakeFile(
   const named = fileName || 'fayl';
   if (kind === 'docx') {
     return {
-      patch: refusedFilePatch(state, named, 'Word fayl o‘qilmaydi'),
+      patch: refusedFilePatch(state, named, 'Word fayl'),
       say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.`,
     };
   }
   if (kind === 'video') {
-    return { patch: refusedFilePatch(state, named, 'video o‘qilmaydi'), say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+    return { patch: refusedFilePatch(state, named, 'video'), say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
   }
   if (kind === 'archive') {
     return {
-      patch: refusedFilePatch(state, named, 'arxiv o‘qilmaydi'),
+      patch: refusedFilePatch(state, named, 'arxiv'),
       say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.`,
     };
   }
@@ -795,7 +844,7 @@ export async function readIntakeFile(
   });
   if (!sheet) {
     return {
-      patch: refusedFilePatch(state, named, 'bu turdagi fayl o‘qilmaydi'),
+      patch: refusedFilePatch(state, named, UNKNOWN_TYPE_WHY),
       say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.`,
     };
   }
@@ -1001,9 +1050,12 @@ export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: strin
  * Why a file the bot was sent is not stored (docs/FAYL-OQISH.md §3.4) — a
  * typed refusal, never a bare null: `too_big` is past what Telegram hands a
  * bot (20 MB) and is SAID so, never «Faylni saqlab bo‘lmadi», which invites
- * the same file again; `download_failed` is everything else.
+ * the same file again; `unsupported` is a type storage keeps no attachment of
+ * (a drawing, a macro workbook — review model-break-unknown-type-unnamed: it
+ * threw, read as a failed download, and was asked for again); `download_failed`
+ * is everything else, which a re-send may heal.
  */
-export type BotFileRefusal = { refused: 'too_big' | 'download_failed' };
+export type BotFileRefusal = { refused: 'too_big' | 'unsupported' | 'download_failed' };
 
 /** Is this a refusal rather than a stored file? */
 export const isFileRefusal = (saved: SavedBotFile | BotFileRefusal): saved is BotFileRefusal => 'refused' in saved;
@@ -1054,23 +1106,31 @@ export async function saveBotFile(
   if (body.length === 0) return { refused: 'download_failed' };
 
   const isPhoto = file.isPhoto;
-  const { saveAttachment } = await import('../files/service');
+  const { saveAttachment, FileValidationError } = await import('../files/service');
   const { generateThumbnails } = await import('../jobs/thumbnails');
-  const { id } = await saveAttachment(
-    {
-      entityType: target.entityType,
-      entityId: target.entityId,
-      fileName: isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`),
-      contentType: isPhoto ? 'image/jpeg' : (file.mime ?? 'application/octet-stream'),
-      body,
-      uploadedBy: target.uploadedBy,
-    },
-    {
-      thumbnails: 'skip',
-      ...(target.id !== undefined ? { id: target.id } : {}),
-      ...(target.keyName !== undefined ? { keyName: target.keyName } : {}),
-    },
-  );
+  let id: string;
+  try {
+    ({ id } = await saveAttachment(
+      {
+        entityType: target.entityType,
+        entityId: target.entityId,
+        fileName: isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`),
+        contentType: isPhoto ? 'image/jpeg' : (file.mime ?? 'application/octet-stream'),
+        body,
+        uploadedBy: target.uploadedBy,
+      },
+      {
+        thumbnails: 'skip',
+        ...(target.id !== undefined ? { id: target.id } : {}),
+        ...(target.keyName !== undefined ? { keyName: target.keyName } : {}),
+      },
+    ));
+  } catch (err) {
+    // A type storage will not keep — no re-send stores it, so it is a refusal
+    // with its own words, never the «saqlab bo‘lmadi» a blip gets.
+    if (err instanceof FileValidationError && err.code === 'unsupported_type') return { refused: 'unsupported' };
+    throw err;
+  }
   await generateThumbnails(id).catch(() => {});
   return { isPhoto, body, attachmentId: id };
 }

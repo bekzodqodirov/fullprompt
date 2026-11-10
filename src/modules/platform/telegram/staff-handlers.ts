@@ -79,13 +79,11 @@ import {
 } from './calc-store';
 import {
   isFileRefusal,
+  permanentRefusal,
   readIntakeFile,
   refusalOf,
-  refusedFilePatch,
   saveBotFile,
   saveIntakeFile,
-  TOO_BIG_SAY,
-  TOO_BIG_WHY,
   type BotFileRefusal,
 } from './calc-files';
 import {
@@ -781,22 +779,21 @@ export function registerStaffBot(bot: Bot): void {
     const waiting = state.stage === 'client' || state.stage === 'section';
     if (isFileRefusal(saved)) {
       // A save failure is a refusal of its own (§1.4), and the ONE prompt is
-      // drawn below it, kept last — it stood above the failed file. Its
-      // CAPTION is read all the same (docs/FAYL-OQISH.md §3.4): goods typed
-      // under a 25 MB invoice were lost with the file. A file past Telegram's
-      // limit is said so, and named on the table (`refusedFiles`) — it never
-      // counts as received.
-      const tooBig = saved.refused === 'too_big';
-      const patch: Partial<IntakeState> = {
-        ...(tooBig ? refusedFilePatch(state, fileName || (ctx.message.photo ? 'rasm' : 'fayl'), TOO_BIG_WHY) : {}),
-        ...(caption ? { material: [...state.material, caption], stage: waiting ? state.stage : 'material' } : {}),
-      };
-      if (Object.keys(patch).length > 0) updateIntake(chatId, patch);
-      noteOwnMessage(
-        chatId,
-        (await ctx.reply(tooBig ? TOO_BIG_SAY : 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id,
-      );
-      if (caption && !waiting) editTableSoon(ctx, chatId);
+      // drawn below it, kept last — it stood above the failed file. A file no
+      // re-send will store (past Telegram's 20 MB, a type storage refuses) is
+      // said in its own words and named on the table, never counted as
+      // received — and its CAPTION is read (docs/FAYL-OQISH.md §3.4): goods
+      // typed under it were lost with the file. A failed download takes
+      // nothing: the same message re-sent brings both (`permanentRefusal`).
+      const permanent = permanentRefusal(state, saved.refused, { name: fileName, isPhoto: Boolean(ctx.message.photo) });
+      if (permanent) {
+        updateIntake(chatId, {
+          ...permanent.patch,
+          ...(caption ? { material: [...state.material, caption], stage: waiting ? state.stage : 'material' } : {}),
+        });
+      }
+      noteOwnMessage(chatId, (await ctx.reply(permanent?.say ?? 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id);
+      if (permanent && caption && !waiting) editTableSoon(ctx, chatId);
       drawPromptSoon(ctx, chatId);
       return;
     }

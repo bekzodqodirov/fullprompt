@@ -998,9 +998,18 @@ export async function analyzeIntake(input: {
   // What every answered attempt cost — a cut answer retried is two (2.9 c).
   let answered: AnsweredUsage[] = [];
   let failure: AiReadFailure = 'network';
-  // PDFs the API refused (§3.4): read once more without them, and named.
+  // PDFs the API refused (§3.4): read once more without them, and named —
+  // only once a request WITHOUT them reached the model (`suspect` until
+  // then). A refusal of the REQUEST — a retired model id's 404, a parameter
+  // the model will not take — refuses that request too, and names no PDF:
+  // named, a PDF is skipped by every later reading for good (review
+  // model-spec-pdf-only-named-unconfirmed).
   let unreadPdfs: string[] = [];
+  let suspect: string[] = [];
   let pdfsDropped = false;
+  // The PDF-less request asked only to tell the two refusals apart: nothing
+  // else was there to read, so its answer is no reading.
+  let probeOnly = false;
   const withUnread = <T extends AiIntakeOutcome>(out: T): T =>
     unreadPdfs.length > 0 ? { ...out, unreadPdfs } : out;
   const withBill = <T extends AiIntakeRead>(out: T): T & { answered?: AnsweredUsage[] } =>
@@ -1013,7 +1022,8 @@ export async function analyzeIntake(input: {
     asked: shown.length,
   });
   // The attempts that count against `INTAKE_ATTEMPTS`; the PDF-less re-read
-  // after a refusal is not one of them (a 400 is instant and never billed).
+  // after a refusal is not one of them (the refusal before it was instant and
+  // never billed).
   let counted = 0;
   while (counted < INTAKE_ATTEMPTS) {
     const attempt = counted;
@@ -1028,7 +1038,8 @@ export async function analyzeIntake(input: {
       images,
       pdfs,
       sheets,
-      [...contextSheets, ...coding],
+      contextSheets,
+      coding,
       known,
       requestNames,
       numbered ? ask : null,
@@ -1043,17 +1054,19 @@ export async function analyzeIntake(input: {
       // them (docs/FAYL-OQISH.md §3.4, pdfimg-9 a+b): one bad PDF used to sink
       // the photos' and the text's reading with it, and every re-read after.
       // The PDFs are named unread (`unreadPdfs`) and later readings skip them.
+      // A lone PDF too: with nothing else to read, the PDF-less request is a
+      // few hundred tokens that say whether the PDF or the request was
+      // refused — the commonest PDF case, one invoice, was named on a 404.
       if (failure === 'rejected' && pdfs.length > 0 && !pdfsDropped) {
         pdfsDropped = true;
-        unreadPdfs = pdfs.flatMap((p) => (p.attachmentId ? [p.attachmentId] : []));
+        suspect = pdfs.flatMap((p) => (p.attachmentId ? [p.attachmentId] : []));
         pdfs = [];
-        if (!otherMaterial() && !codesAsked) break;
+        probeOnly = !otherMaterial() && !codesAsked;
         counted -= 1;
         continue;
       }
-      // Refused WITHOUT them as well: the PDFs were not the cause, and are
-      // not named for it.
-      if (failure === 'rejected' && pdfsDropped) unreadPdfs = [];
+      // Refused WITHOUT them as well (or never reached): the PDFs are not
+      // known to be the cause, and are not named for it.
       if (!retryAfterPause(failure, attempt, Date.now() - started, leash)) break;
       await new Promise((resolve) => setTimeout(resolve, INTAKE_RETRY_PAUSE_MS));
       continue;
@@ -1068,6 +1081,8 @@ export async function analyzeIntake(input: {
       at: Date.now(),
     };
     answered = [...answered, bill];
+    // A request without the PDFs reached the model: they were what it refused.
+    if (pdfsDropped) unreadPdfs = suspect;
     // Spec §3: «no new cap in v1, but log token use» — read off the RAW
     // `message_delta` (docs/FAYL-OQISH.md §3.5): the thinking share is what
     // the effort change moves, and the SDK's final message drops it.
@@ -1078,17 +1093,20 @@ export async function analyzeIntake(input: {
         thinking: run.usage.thinking,
         stop: run.kind === 'answered' ? run.stop : run.why === 'clock' ? 'aborted' : 'dropped',
         ms: run.ms,
-        cut: run.kind === 'cut' || run.stop === 'max_tokens',
+        cut: run.kind === 'cut' || SIZE_STOPS.has(run.stop ?? ''),
         ...(run.kind === 'cut' ? { textChars: run.text.length, estimated: run.usage.estimated } : {}),
         ...counts(),
       },
       '[calc intake] model tokens',
     );
+    // The probe answered: the PDF was refused and nothing else was there —
+    // the reading is the refusal, named and billed.
+    if (probeOnly) return withUnread({ ok: false, failure: 'rejected', answered });
     if (run.kind === 'answered') {
       const read = readIntakeResponse(run.message, shown);
       if (read.ok) return withUnread(withBill(read));
       if (read.failure === 'truncated') {
-        // Cut at the size (`max_tokens`): what it completed is the reading.
+        // Cut at a size (`SIZE_STOPS`): what it completed is the reading.
         const kept = input.salvage ? keptOf(textOf(run.message), 'size') : null;
         if (kept) return withUnread(withBill(kept));
         // An answer cut at the cap WHILE the codes were asked, with no good
@@ -1124,6 +1142,12 @@ export interface IntakePdf {
   name: string;
   attachmentId?: string;
 }
+
+/**
+ * The stops that cut an answer at a SIZE (`max_tokens`, or the context window
+ * filled): what it completed is kept as a size cut (§3.3), never retried.
+ */
+const SIZE_STOPS: ReadonlySet<string> = new Set<Anthropic.StopReason>(['max_tokens', 'model_context_window_exceeded']);
 
 /** The answer's text block — what the schema's JSON is written in. */
 const textOf = (message: { content: { type: string; text?: string }[] }): string =>
@@ -1166,8 +1190,11 @@ export function readIntakeResponse(
   };
   if (response.stop_reason === 'refusal') return { ok: false, failure: 'refused', usage };
   // Cut short: the JSON is half an object, and parsing it would throw and be
-  // reported as «the AI could not be reached» (the 4096 trap).
-  if (response.stop_reason === 'max_tokens') return { ok: false, failure: 'truncated', usage };
+  // reported as «the AI could not be reached» (the 4096 trap) — at the
+  // answer's cap, or where the context window ran out (review
+  // model-break-window-exceeded: read as «unreadable», the goods it
+  // completed were lost on exactly the heaviest PDF-and-photo collections).
+  if (SIZE_STOPS.has(response.stop_reason ?? '')) return { ok: false, failure: 'truncated', usage };
   const raw = textOf(response);
   let parsed: z.infer<typeof factsSchema>;
   try {
@@ -1287,7 +1314,8 @@ const NETTO_ONLY: Record<CalcSection, string> = {
  * sheet is «the table to read»: the totals-only sheets (a workbook's other
  * sheets, a packing list's own rows beside its codes) say «НЕ перечисляй»
  * under their own heading, and a closing that sent the model to read them
- * would undo it.
+ * would undo it. Beside a workbook's other sheets the codes-only closing
+ * keeps the totals asked: they are what those sheets are shown for.
  */
 function intakeContent(
   section: CalcSection,
@@ -1297,13 +1325,22 @@ function intakeContent(
   pdfs: { data: Buffer; name: string }[],
   sheets: readonly IntakeSheetText[],
   contextSheets: readonly IntakeSheetText[],
+  /** The goods sheet's own rows beside its asked codes — under the totals heading, for the coding only. */
+  coding: readonly IntakeSheetText[],
   known: readonly string[],
   request: readonly string[] = [],
   /** The codes asked (numbered), and of which rows — null = none asked. */
   ask: ((index: number) => boolean) | null = null,
 ): Anthropic.ContentBlockParam[] {
   const { requestText, knownBudget } = knownBudgetAfter(request);
-  const sheetsText = sheetsPromptText(sheets, contextSheets, SHEET_TEXT_BUDGET);
+  const sheetsText = sheetsPromptText(sheets, [...contextSheets, ...coding], SHEET_TEXT_BUDGET);
+  // A workbook's OTHER sheets carry the shipment's totals, and only the
+  // model reads them there (`fromModel` — `loneFileTotals` reads the goods
+  // file, never its neighbours): a closing «no other material, codes only»
+  // beside them told the model to drop the brutto and the cube they state
+  // (review model-break-closing-context-sheets). The coding text is not one
+  // of them: that file's own totals outrank the model's (`loneFileTotals`).
+  const totalsShown = contextSheets.some((t) => sheetRowCount(t.text.trim()) > 0);
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0
@@ -1311,7 +1348,9 @@ function intakeContent(
       : sheets.some((t) => t.text.trim() !== '')
         ? 'Текста нет — читай таблицу выше.'
         : ask
-          ? 'Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.'
+          ? totalsShown
+            ? 'Текста нет: goods оставь пустым (товары уже взяты); общий вес и объём возьми из листов выше; коды — в known_codes.'
+            : 'Других материалов нет: goods оставь пустым, дай только known_codes для строк списка.'
           : 'Текста нет.';
   return [
     // Images FIRST: the model reads them as context for the text that
