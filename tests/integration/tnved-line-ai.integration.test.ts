@@ -15,10 +15,14 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
  * the other half of the round: the line's own name, the photograph only when
  * every carton of the lot is that one good.
  *
- * The fixture is this file's own: two warehouses, one departed truck, a
- * prixod of three lots — S (a one-line tarkib of the lot's own good), M (two
- * goods, neither the lot's name), P (no tarkib) — and a fourth lot with a
- * tarkib that does NOT ride the truck. Cleanup is the final test (#57).
+ * The fixture is this file's own: a departed truck CN → UZ, and a prixod
+ * received at a THIRD warehouse (RCV — an internal leg brought it to the
+ * truck) with three lots: S (a one-line tarkib of the lot's own good), M (two
+ * goods, neither the lot's name), P (no tarkib) — plus a fourth lot with a
+ * tarkib that does NOT ride the truck. RCV is what lets the card door be
+ * proven alone: a person standing there may read the prixod (the
+ * composition's door lets them through) and may not open the truck.
+ * Cleanup is the final test (#57).
  */
 
 const override = vi.hoisted(() => ({ actor: null as null | Record<string, unknown> }));
@@ -85,7 +89,7 @@ const NOWHERE = '00000000-0000-4000-8000-00000a1a1a00';
 const ZH = { S: `键盘${SFX}`, M: `杂货${SFX}`, P: `灯${SFX}`, OFF: `别的${SFX}` };
 
 let author = '';
-const wh = { CN: '', UZ: '', OTHER: '' };
+const wh = { CN: '', UZ: '', RCV: '' };
 let truck = '';
 let receiptId = '';
 let offReceiptId = '';
@@ -195,7 +199,7 @@ async function mintPhoto(key: keyof typeof lot) {
 
 beforeAll(async () => {
   author = (await db.query.users.findFirst({ where: eq(users.phone, '+998900000004') }))!.id;
-  for (const key of ['CN', 'UZ', 'OTHER'] as const) {
+  for (const key of ['CN', 'UZ', 'RCV'] as const) {
     const [w] = await db
       .insert(warehouses)
       .values({
@@ -232,8 +236,8 @@ beforeAll(async () => {
     await db
       .insert(receipts)
       .values([
-        { number: `AI-${SFX}-1`, warehouseId: wh.CN, clientId, status: 'confirmed', createdBy: author, confirmedAt: new Date(), confirmedBy: author },
-        { number: `AI-${SFX}-2`, warehouseId: wh.CN, clientId, status: 'confirmed', createdBy: author, confirmedAt: new Date(), confirmedBy: author },
+        { number: `AI-${SFX}-1`, warehouseId: wh.RCV, clientId, status: 'confirmed', createdBy: author, confirmedAt: new Date(), confirmedBy: author },
+        { number: `AI-${SFX}-2`, warehouseId: wh.RCV, clientId, status: 'confirmed', createdBy: author, confirmedAt: new Date(), confirmedBy: author },
       ])
       .returning({ id: receipts.id })
   ).map((r) => r.id) as [string, string];
@@ -337,9 +341,14 @@ describe('the 🤖 on a tarkib line — every door before any spend', () => {
   });
 
   it('the truck’s card door: a scoped holder standing at neither end, and a truck that is not there', async () => {
-    override.actor = ved({ warehouseScoped: true, warehouseIds: [wh.OTHER] });
+    // Standing where the prixod was RECEIVED: the composition's own door
+    // would let this person through, so only the truck's door refuses here.
+    override.actor = ved({ warehouseScoped: true, warehouseIds: [wh.RCV] });
     expect(await press('M', lineId.M1)).toEqual({ ok: false, error: 'forbidden' });
     expect(model.asked).toEqual([]);
+    // …and the same person at one END of the trip is answered.
+    override.actor = ved({ warehouseScoped: true, warehouseIds: [wh.RCV, wh.UZ] });
+    expect(await press('M', lineId.M1)).toMatchObject({ ok: true });
     override.actor = ved();
     expect(await press('M', lineId.M1, NOWHERE)).toEqual({ ok: false, error: 'forbidden' });
     expect(model.asked).toEqual([]);
