@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
 import { driveReading, readingsEnqueued, resetReadingDrive } from '../fixtures/calc-read-drive';
+import { bodyOf, read } from '../fixtures/source-shape';
 
 /**
  * docs/FAYL-OQISH.md §1-§2 (P-door), his 2026-11-10 «fillarni oldin korib
@@ -25,6 +26,21 @@ vi.mock('@/modules/wms/calc/ai-cost', () => ({
 vi.mock('@/modules/platform/jobs/boss', async (importOriginal) =>
   (await import('../fixtures/calc-read-drive')).bossForReading(await importOriginal()),
 );
+// The save branch's failed landing (door-spec-drawers-call-sites-unpinned):
+// a staff member to land for, and a landing that throws — only while a test
+// asks for it; otherwise the real ones.
+const landing = vi.hoisted(() => ({ fail: false }));
+vi.mock('@/modules/platform/telegram/staff-bot', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/modules/platform/telegram/staff-bot')>();
+  return {
+    ...real,
+    staffForChat: async (chatId: bigint) => (landing.fail ? { id: 'staff-test', fullName: 'Sotuvchi' } : real.staffForChat(chatId)),
+    landCollectedIntake: async (...args: Parameters<typeof real.landCollectedIntake>) => {
+      if (landing.fail) throw new Error('database blip');
+      return real.landCollectedIntake(...args);
+    },
+  };
+});
 
 import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import {
@@ -327,6 +343,65 @@ describe('every word that names the confirm asks the same wholeness (door-closin
     await pressCertificate(ctx, chatId, false);
     const reply = ctx.replies.at(-1)!;
     expect(data(reply)).toEqual(['c:cert_y', 'c:more', 'c:to_ved', 'c:cancel']);
+  });
+
+  it('an answer on a not-whole AI table: no echo with a confirm — the table it edits carries «c:to_ved», never «c:save»', async () => {
+    // The AI door commits every answer quietly (docs/IKKI-ESHIK.md §3.4): a
+    // 👍 and the table's own block, so what names the confirm after an answer
+    // is the TABLE's keyboard and closing, redrawn — never an echo's.
+    const goods = [
+      line('Kurtka', { quantity: 300, tnvedCode: '6201400000' }),
+      line('Sumka', { tnvedCode: '4202920000' }),
+      line('Shim', { tnvedCode: '6203420000' }),
+    ];
+    const { chatId } = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'not_configured', facts: { ...FULL, goods } });
+    const ctx = fakeCtx();
+    const edits: Sent[] = [];
+    ctx.api.editMessageText = (async (_chat: string, id: number, text: string, extra?: Record<string, unknown>) => {
+      edits.push({ id, text, extra });
+      return true;
+    }) as typeof ctx.api.editMessageText;
+    await deliverNextStep(ctx, chatId, activeIntake(chatId)!);
+    const table = ctx.replies.at(-1)!;
+    for (const [n, answer] of [[701, '2: 20 dona'], [702, '3: 10 dona']] as const) {
+      await routeCollectorText(ctx, chatId, activeIntake(chatId)!, answer, { date: 0, messageId: n, forwarded: false, replyTo: null });
+      await tableEditsSettled();
+    }
+    // Nothing but the table was ever sent: no echo, so no echo's «✅».
+    expect(ctx.replies).toEqual([table]);
+    const now = edits.filter((e) => e.id === table.id).at(-1)!;
+    expect(now.text).toContain('2. Sumka — 20 dona');
+    expect(data(now)).toContain('c:to_ved');
+    expect(data(now)).not.toContain('c:save');
+    expect(now.text).toContain(NOT_WHOLE_PRESS);
+    expect(now.text).not.toContain('«✅ Tasdiqlash»');
+  });
+
+  it('the echo’s confirm and its «what is still open» name the press through `landingPress` alone (a fence: no literal of its own)', () => {
+    const dialog = read('src/modules/platform/telegram/calc-dialog.ts');
+    const rows = bodyOf(dialog, 'function confirmRows(');
+    expect(rows).toContain('const press = landingPress(state);');
+    expect(rows).toContain('callback_data: `c:${press.step}`');
+    expect(rows).not.toMatch(/Tasdiqlash|c:save/u);
+    const missing = bodyOf(dialog, 'function missingLines(');
+    expect(missing).not.toMatch(/Tasdiqlash|c:save/u);
+    expect(missing.match(/confirmName\(state\)/gu)?.length).toBe(2);
+    expect(dialog).toContain('const confirmName = (state: IntakeState) => landingPress(state).name;');
+  });
+
+  it('the save branch’s failed landing names «👤» — pressed «👤», or «✅» over a reading that is not whole', async () => {
+    landing.fail = true;
+    try {
+      for (const step of ['to_ved', 'save'] as const) {
+        const { chatId } = notWhole();
+        updateIntake(chatId, { clientHintRaw: 'GS777' });
+        const ctx = fakeCtx();
+        await handleCalcCallback(ctx, chatId, step);
+        expect(ctx.replies.at(-1)!.text, step).toBe(`Saqlab bo‘lmadi — ${NOT_WHOLE_PRESS} ni qayta bosing.`);
+      }
+    } finally {
+      landing.fail = false;
+    }
   });
 
   it('the failed landing’s retry names the press that was made', () => {
