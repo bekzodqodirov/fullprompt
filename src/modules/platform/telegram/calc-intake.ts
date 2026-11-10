@@ -11,6 +11,7 @@ import {
   goodsNameKeys,
   LINE_FIGURES,
   figureOf,
+  namesContradict,
   namesMeet,
   packingTotals,
   sameFigures,
@@ -57,7 +58,21 @@ export type IntakeStage = 'section' | 'client' | 'material' | 'review';
  * that squeezes it out of the model's shared budget can name it (round-4
  * integration S-d). The model is never shown the label.
  */
-export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & { label?: string };
+export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & {
+  label?: string;
+  /**
+   * A workbook's sheets with NO header the reader mapped (docs/FAYL-OQISH.md
+   * §4.1) — beside the Excel rows, material the model reads that may hold
+   * goods of its own, so a line the model finds there is named, never dropped
+   * in silence (§4.6). Absent: a mapped sheet's own text — a packing list of
+   * the same goods, or a sheet read for the totals — or a text stored before.
+   */
+  unmapped?: true;
+  /** What the reader saw on a header-less file, for its words (§4.4, `sheetTextLine`). */
+  why?: 'header' | 'no_rows';
+  /** The workbook carries pictures nothing reads (§4.4). */
+  pictures?: true;
+};
 
 /** An inline keyboard as Telegram takes it — what a stored reply carries. */
 export type InlineKeyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
@@ -1092,7 +1107,7 @@ type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>
 
 
 /** A line the Excel kept out of the job, and why — see `PickedGoods.sameAsInvoice`. */
-export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' };
+export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' | 'file' };
 
 /** What `pickGoods` lands, and the lines it left out because an Excel answered for them. */
 export interface PickedGoods {
@@ -1106,7 +1121,11 @@ export interface PickedGoods {
    *  - `typed` — a line the seller TYPED, which the model read too, that the
    *    Excel does not carry, while nobody was asked whether another file is
    *    another factory's (round-4 integration S-a: an Excel and a typed «Shim
-   *    200 dona», no PDF — the line was dropped and nobody was asked).
+   *    200 dona», no PDF — the line was dropped and nobody was asked);
+   *  - `file` — a line the model read off material beside the Excel that can
+   *    hold other goods (a workbook's header-less sheet, the typed text) and
+   *    the Excel does not carry (docs/FAYL-OQISH.md §4.6, xlsxN-02 J2): with
+   *    `aiGoods` null it was dropped with no word at all.
    */
   sameAsInvoice: LeftOutLine[];
 }
@@ -1171,6 +1190,16 @@ export function pickGoods(input: {
    * — a product the seller photographed vanished in silence). Absent = none.
    */
   modelSawImages?: boolean;
+  /**
+   * The model read material beside the Excel that can hold OTHER goods
+   * (docs/FAYL-OQISH.md §4.6, narrowed by sheets-08): a workbook's sheet with
+   * no header mapped, or typed text. Only then is a model line the Excel does
+   * not carry named on the null path — a lone Excel's model can only restate
+   * the Excel's own rows, and a translation of each («Куртка женская» 300
+   * beside «Ladies jacket» 300) read as «AI found another good». Absent =
+   * none.
+   */
+  otherMaterial?: boolean;
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
@@ -1207,6 +1236,23 @@ export function pickGoods(input: {
           if (typedNames.some((t) => namesMeet(t, names))) continue;
           named.add(names.whole);
           sameAsInvoice.push({ ...g, why: 'typed' });
+        }
+      } else if (input.otherMaterial && input.model.length !== input.invoice.length) {
+        // …and a model line read off a header-less sheet or the typed text,
+        // which the Excel does not carry, is named the same way (§4.6) —
+        // unless it is a row of the Excel restated: by an equal count under
+        // names that do not contradict, met by exactly one row (a
+        // translation), or by place in a list as long as the Excel's.
+        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
+        for (const g of input.model) {
+          const names = goodsNameKeys(g.name);
+          if (!names.whole || named.has(names.whole) || carried(g, names)) continue;
+          if (invoice.filter((inv) => sameFigures(inv.row, g)).length === 1) continue;
+          const q = figureOf(g, 'quantity');
+          if (q !== null && invoice.filter((inv) => figureOf(inv.row, 'quantity') === q && !namesContradict(inv.row.name, g.name)).length === 1) continue;
+          if (typedNames.some((t) => namesMeet(t, names))) continue;
+          named.add(names.whole);
+          sameAsInvoice.push({ ...g, why: 'file' });
         }
       }
       return { goods: input.invoice, sameAsInvoice };
@@ -1262,7 +1308,7 @@ function namedLines(lines: readonly { name: string }[]): string {
  * (`typedLeftOutNote`).
  */
 export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: LeftOutLine['why'] })[]): string | null {
-  const same = lines.filter((g) => g.why !== 'typed');
+  const same = lines.filter((g) => g.why !== 'typed' && g.why !== 'file');
   if (same.length === 0) return null;
   // No ⚠️ (docs/IKKI-ESHIK.md §1.2.4): taking the same goods once is the
   // designed outcome now, not a doubt the seller is asked about.
@@ -1294,6 +1340,19 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
   // Named, never added (docs/IKKI-ESHIK.md §1.2.2, M3): beside an Excel the
   // photos and the typed text keep today's rule — the Excel answers.
   return `Rasmda/yozuvda Excel’da yo‘q tovar: ${namedLines(typed)} — VED tekshiradi`;
+}
+
+/**
+ * The seller's word for the model's lines read off material beside the Excel
+ * that the Excel does not carry (docs/FAYL-OQISH.md §4.6) — named, never
+ * added: the model read a header-less sheet or the typed text, and nothing
+ * says the line is not the Excel's own under a word it does not share. Null =
+ * none.
+ */
+export function fileLeftOutNote(lines: readonly LeftOutLine[]): string | null {
+  const found = lines.filter((g) => g.why === 'file');
+  if (found.length === 0) return null;
+  return `AI fayldan yana ${namedLines(found)} ni topdi — ro‘yxatga qo‘shilmadi, VED ko‘radi`;
 }
 
 /**
@@ -1505,6 +1564,7 @@ export async function analyzeCollected(
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
     modelSawImages: files.images.length > 0,
+    otherMaterial: text.trim() !== '' || state.invoiceTexts.some((t) => t.unmapped),
   });
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
@@ -1524,6 +1584,7 @@ export async function analyzeCollected(
     modelAdded,
     sameAsInvoiceNote(picked.sameAsInvoice),
     typedLeftOutNote(picked.sameAsInvoice),
+    fileLeftOutNote(picked.sameAsInvoice),
     filesMissingNote(files.missing),
   ].filter((n): n is string => n !== null);
   // The model's codes for the Excel's rows, each by the index it was shown

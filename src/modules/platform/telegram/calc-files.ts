@@ -22,9 +22,13 @@ import {
   packingNote,
   packingOfHeld,
   packingTotals,
+  positionalFills,
+  provenOther,
   rowKindsOf,
   sameFileAgain,
   sameFileNote,
+  samePositions,
+  sameWorkbookAgain,
   totalsClashNote,
   withFileTotals,
   type GoodsFileMeta,
@@ -65,7 +69,15 @@ export const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string
   encrypted: (label) => `📄 ${label} — parol bilan himoyalangan, o‘qilmaydi. Parolsiz yuboring.`,
   broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
   empty: (label) => `📄 ${label} — jadval bo‘sh.`,
+  pictures: (label) => `📄 ${label} — jadval bo‘sh. ${PICTURES_LINE}`,
 };
+
+/**
+ * A workbook whose goods are in a picture (docs/FAYL-OQISH.md §4.4,
+ * unmapped-embedded-picture-dropped): nothing reads a picture inside an
+ * Excel, and «jadval bo‘sh» or «AI o‘qiydi» alone sent nobody to the cure.
+ */
+export const PICTURES_LINE = 'Excel ichidagi rasm o‘qilmaydi — rasmni alohida (rasm yoki PDF qilib) yuboring.';
 
 /**
  * What a file is worth to the collection, and what the seller is told — pure.
@@ -100,7 +112,12 @@ export function refusalOf(answer: FileAnswer): string | null {
  * reader stopped before its end. One home for the receipt's words and the
  * prompt's (§1.4), which redraws them as later files squeeze the budget.
  */
-export function sheetTextLine(label: string, fit: { kept: number; total: number }, readerCut: boolean): string {
+export function sheetTextLine(
+  label: string,
+  fit: { kept: number; total: number },
+  readerCut: boolean,
+  saw: Pick<SheetText, 'why' | 'pictures'> = {},
+): string {
   const cut =
     fit.kept === 0
       ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
@@ -109,7 +126,17 @@ export function sheetTextLine(label: string, fit: { kept: number; total: number 
         : fit.kept < fit.total
           ? `\n⚠️ Jadval katta: AI faqat birinchi ${fit.kept} / ${fit.total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
           : '';
-  return `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.${cut}`;
+  // What the reader saw says the first words (docs/FAYL-OQISH.md §4.4): a
+  // header it FOUND, with no goods row under it, is not «sarlavhasini topa
+  // olmadim»; a text with no row pairing a name with a figure promises no
+  // goods the model could find.
+  const head =
+    saw.why === 'header'
+      ? 'jadvaldan tovar qatorlarini o‘zim ajrata olmadim, AI o‘qiydi.'
+      : saw.why === 'no_rows'
+        ? 'jadvalda tovar qatori ko‘rinmadi.'
+        : 'jadval sarlavhasini topa olmadim, AI o‘qiydi.';
+  return `📄 ${label} — ${head}${saw.pictures ? ` ${PICTURES_LINE}` : ''}${cut}`;
 }
 
 /**
@@ -174,7 +201,7 @@ export function promptFileLines(state: Pick<IntakeState, 'pdfs' | 'sheetTexts' |
   const fitted = all.length > 0 ? fit(all.map((s) => s.text.trim())) : { kept: [], total: [] };
   const pdfs = state.pdfs.map((p) => `📄 «${p.name}» — AI o‘qiydi.`);
   const sheets = state.sheetTexts.map((s, i) =>
-    sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut),
+    sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut, s),
   );
   // A workbook's other sheets, by its file: squeezed only when the fit took
   // rows the reader itself kept — its own cut is a receipt note already.
@@ -238,7 +265,7 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
   });
   return {
     patch: { sheetTexts, ...beside(state) },
-    say: sheetTextLine(label, { kept, total }, sheet.cut) + squeezed.join(''),
+    say: sheetTextLine(label, { kept, total }, sheet.cut, sheet) + squeezed.join(''),
   };
 }
 
@@ -288,11 +315,39 @@ export function receiveGoodsSheet(
     shape?: Partial<Pick<GoodsFileMeta, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>>;
     /** A packing list's own rows as text, with the reader's cuts (`GoodsFileRead.ownText`). */
     ownText?: { text: string; cut: boolean; cellsCut: boolean } | null;
+    /**
+     * `text` is the workbook's sheets with NO header mapped (docs/FAYL-OQISH.md
+     * §4.1) — model-read material that may hold goods of its own, which the
+     * reading names rather than drops (§4.6). Absent = a caller that hands
+     * the other sheets over as one text, as before.
+     */
+    unmapped?: boolean;
+    /**
+     * The workbook was judged «not sent before» as a WHOLE (`sameWorkbookAgain`,
+     * §4.1): its goods sheet is not asked alone, or a workbook whose goods
+     * sheet came before and whose «Zavod B» is new would read «bu fayl avval
+     * yuborilgan».
+     */
+    wholeJudged?: boolean;
+    /**
+     * A FURTHER mapped sheet of the workbook whose goods sheet came first
+     * (docs/FAYL-OQISH.md §4.2): judged by its shape against everything held,
+     * never as a second file — `sheet` its name, the goods sheet's name and
+     * rows as read, and `fresh` = the goods sheet's rows are the whole held
+     * list (the workbook is the collection's first goods file).
+     */
+    further?: {
+      sheet: string;
+      goodsSheet: string;
+      goodsRows: NonNullable<IntakeState['invoiceGoods']>;
+      goodsShape: 'invoice' | 'packing';
+      fresh: boolean;
+    };
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
   const texts: SheetText[] = sheet.text
-    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
+    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label, ...(sheet.unmapped ? { unmapped: true as const } : {}) }]
     : [];
   // Where the material stood: a totals answer given before this file is
   // older than what it gave (`totalsDoubts`, §1.2.5) — kept ON the file, so a
@@ -353,14 +408,22 @@ export function receiveGoodsSheet(
     };
   };
 
+  if (sheet.further && held.length > 0) return receiveFurtherSheet(state, sheet, sheet.further, meta, cutLines, { answer, totalsOf, ownText });
+  // The rows the request already stores (an add or seeded collection).
+  const kept = state.amend?.items ?? state.seed ?? [];
   if (held.length === 0) {
-    if (topUp && packing) {
+    if (topUp && packing && kept.length > 0) {
       // A top-up's packing list is a NOTED file (§1.2.3): its totals go on the
       // note for the VED and its rows change no row — kept as goods, every one
       // a stored row does not `sameLine` landed as a 🆕 line, the request's
       // own goods priced twice (review PF-SPEC-2, law-money-5). Its text rides
       // with the model's totals-only sheets; it is no goods list, so an
-      // invoice after it is the goods list and takes nothing from it.
+      // invoice after it is the goods list and takes nothing from it. Only
+      // while the request HAS rows for it to be the totals of
+      // (docs/FAYL-OQISH.md §4.5, known-2): a returned request with none, or a
+      // ➕ on an empty one, priced nothing twice by taking it — and noting it
+      // withheld the only goods list there was, under a heading telling the
+      // model its goods were «already taken».
       return answer(
         { invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts] },
         [notedTotalsNote(label, packingTotals(meta, goods)), ...cutLines],
@@ -378,7 +441,7 @@ export function receiveGoodsSheet(
     );
   }
   // The same file again: nothing of it is new, and it is said (PF-ADV-6).
-  if (sameFileAgain(held, goods, sheet.text, state.invoiceTexts)) {
+  if (!sheet.wholeJudged && sameFileAgain(held, goods, sheet.text, state.invoiceTexts)) {
     return answer({}, [sameFileNote(label)]);
   }
   const kinds = rowKindsOf(files, held.length);
@@ -446,6 +509,103 @@ export function receiveGoodsSheet(
     // it said the same twice, and spent the ONE prompt's 4096 twice per file
     // (§1.2.4; as-built review CHAT-6).
     fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : [readLine, ...cutLines],
+  );
+}
+
+/** A sheet's name as the seller's words carry it — capped, it is anybody's text. */
+const sheetName = (name: string) => `«${name.length > 60 ? `${name.slice(0, 59)}…` : name}»`;
+
+/**
+ * A FURTHER mapped sheet of a workbook, by its SHAPE (docs/FAYL-OQISH.md §4.2,
+ * his 2a ⭐: «boshqa varaqdagi tovarlar BOSHQA ekani aniq ko‘rinsa, ular
+ * qo‘shiladi; packing list varag‘i bo‘lsa, undan og‘irlik va kub olinadi;
+ * aniqlab bo‘lmasa, hozirgidek qoladi va bot buni aytadi»). Before, every
+ * other sheet became text the model was told not to list — another factory's
+ * goods on «Zavod B» vanished with no word, and the same goods' packing list
+ * gave its totals only if the model read them. Against EVERYTHING held (the
+ * sheets before it, and the files before the workbook):
+ *  - a PACKING-shaped sheet of the held goods — `packingOfHeld`, as a second
+ *    file is judged; or, inside this one workbook, a packing list line for
+ *    line with an invoice goods sheet in another script (`samePositions`,
+ *    R1) — gives the totals and the netto gaps (by position for R1), as a
+ *    second file does; in a top-up its totals go on the note, never the
+ *    request (R3 interp 2);
+ *  - a sheet PROVEN to hold other goods (`provenOther`, against the stored
+ *    rows too in a top-up) is folded in as new goods and named; its text goes
+ *    nowhere — left under the model's «for totals» heading, its Σ came back
+ *    as the shipment's (sheets-07);
+ *  - anything else keeps TODAY's reading: its text goes to the model for the
+ *    totals (the «НЕ перечисляй» heading stands — the round-2 C2/C6 doubling
+ *    is what lifting it brings back), and the seller is told so, once, with
+ *    the cure. The role swap of an invoice after a packing goods sheet is NOT
+ *    done here (§8): a one-line «AS PER PACKING LIST» invoice would take the
+ *    goods role from twelve mapped rows.
+ * Never a second file's rules unjudged: `foldInvoice` alone doubled an
+ * invoice and its own translation sheet (unmapped-other-sheets R1). Pure.
+ */
+function receiveFurtherSheet(
+  state: IntakeState,
+  sheet: Parameters<typeof receiveGoodsSheet>[1],
+  further: NonNullable<Parameters<typeof receiveGoodsSheet>[1]['further']>,
+  meta: GoodsFileMeta,
+  cutLines: string[],
+  tools: {
+    answer: (patch: Partial<IntakeState>, lines: string[]) => FileAnswer;
+    totalsOf: (
+      m: GoodsFileMeta,
+      rows: NonNullable<IntakeState['invoiceGoods']>,
+      rowsFrom: string,
+      filled: number,
+    ) => { patch: Partial<IntakeState>; lines: string[] };
+    ownText: (m: GoodsFileMeta) => SheetText[];
+  },
+): FileAnswer {
+  const { goods, label } = sheet;
+  const held = state.invoiceGoods ?? [];
+  const files = state.goodsFiles ?? [];
+  const kinds = rowKindsOf(files, held.length);
+  const sheetLabel = `${label}, ${sheetName(further.sheet)} varag‘i`;
+  const m: GoodsFileMeta = { ...meta, label: sheetLabel };
+  const topUp = state.amend !== null || state.seed !== null;
+  if (m.shape === 'packing') {
+    const ofHeld = packingOfHeld(held, kinds, goods, m.weightKind);
+    // R1 only while the goods sheet's rows ARE the held list, in order: with
+    // a file before the workbook, or a sheet folded in before this one, the
+    // packing list's place and its Σ are no longer the list's.
+    const inLine =
+      !ofHeld &&
+      further.fresh &&
+      further.goodsShape === 'invoice' &&
+      held.length === further.goodsRows.length &&
+      samePositions(further.goodsRows, goods);
+    if (ofHeld || inLine) {
+      const fill = ofHeld ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
+      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled);
+      return tools.answer(
+        { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText(m)], ...totals.patch },
+        totals.lines,
+      );
+    }
+  }
+  const kept = topUp ? (state.amend?.items ?? state.seed ?? []) : [];
+  if (provenOther([...kept, ...held], goods)) {
+    const fold = foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ');
+    return tools.answer(
+      { invoiceGoods: fold.goods, goodsFiles: [...files, { ...m, rows: fold.added, text: null }] },
+      fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines,
+    );
+  }
+  // Today's reading, said (§4.2): the sheet's text for the totals.
+  const own = sheet.ownText;
+  const cut = own?.text && own.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
+  return tools.answer(
+    {
+      invoiceTexts: [
+        ...state.invoiceTexts,
+        ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label: sheetLabel }] : []),
+      ],
+    },
+    [`📄 ${sheetLabel} — o‘sha tovarlar deb olindi (faqat jami uchun o‘qildi); boshqa tovar bo‘lsa, alohida fayl qilib yuboring.`, ...cut],
   );
 }
 
@@ -536,7 +696,9 @@ export async function readIntakeFile(
   // — the model is told, the seller nothing.
   if (sheet.kind === 'text') {
     const { fitSheetRows } = await import('../../wms/calc/intake-ai');
-    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }, (texts) =>
+    // …and what the reader saw, for the words (docs/FAYL-OQISH.md §4.4).
+    const saw = { ...(sheet.why ? { why: sheet.why } : {}), ...(sheet.pictures > 0 ? { pictures: true as const } : {}) };
+    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, ...saw }, (texts) =>
       fitSheetRows(texts, SHEET_TEXT_BUDGET),
     );
   }
@@ -544,28 +706,76 @@ export async function readIntakeFile(
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
   const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
-  const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
-  return receiveGoodsSheet(state, {
-    goods: invoiceFacts(sheet.goods),
+  // The reader stops at its ceiling and says nothing; reaching it is the one
+  // sign the file may hold more (round-4 integration S-b).
+  const capOf = (rows: readonly unknown[]) => (rows.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {});
+  // What a sheet IS, by its columns (§1.2.1).
+  const shapeOf = (m: Pick<typeof sheet, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>) => ({
+    shape: m.shape,
+    weightKind: m.weightKind,
+    grossKg: m.grossKg,
+    grossColumn: m.grossColumn,
+    volumeM3: m.volumeM3,
+  });
+  const goods = invoiceFacts(sheet.goods);
+  // The arrival line names the goods sheet, and claims for the OTHER sheets
+  // only what is done with them (docs/FAYL-OQISH.md §4.4): the unmapped ones
+  // are read for the totals; a mapped one says its own line below.
+  const where =
+    sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan${sheet.text ? '; boshqa varaqlar faqat jami uchun o‘qiladi' : ''})` : '';
+  const first = {
+    goods,
     label,
     text: sheet.text,
     textCut: sheet.textCut,
     cellsCut: sheet.cellsCut,
     where,
-    // What the sheet IS, by its columns (§1.2.1) — and a packing list's own
-    // rows, for the model's totals-only sheets.
-    shape: {
-      shape: sheet.shape,
-      weightKind: sheet.weightKind,
-      grossKg: sheet.grossKg,
-      grossColumn: sheet.grossColumn,
-      volumeM3: sheet.volumeM3,
-    },
+    shape: shapeOf(sheet),
+    // …and a packing list's own rows, for the model's totals-only sheets.
     ownText: sheet.ownText,
-    // The reader stops at its ceiling and says nothing; reaching it is the
-    // one sign the file may hold more (round-4 integration S-b).
-    ...(sheet.goods.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {}),
-  });
+    ...(sheet.text ? { unmapped: true } : {}),
+    ...capOf(sheet.goods),
+  };
+  if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);
+  // Every mapped sheet is judged, one after another, each against the state
+  // the one before left (docs/FAYL-OQISH.md §4.1, sheets-06): here and not
+  // in a door, so the fresh collection, the burst take and both ➕ media
+  // doors share one rule. One file: one receipt mark, one patch, one say.
+  const more = sheet.moreSheets.map((m) => ({ ...m, facts: invoiceFacts(m.goods) }));
+  const held = state.invoiceGoods ?? [];
+  if (
+    held.length > 0 &&
+    sameWorkbookAgain(held, goods, more.map((m) => ({ goods: m.facts, text: m.ownText.text })), sheet.text, state.invoiceTexts)
+  ) {
+    const again = sameFileNote(label);
+    return { patch: { fileNotes: [...(state.fileNotes ?? []), again] }, say: again };
+  }
+  const steps: Parameters<typeof receiveGoodsSheet>[1][] = [
+    { ...first, wholeJudged: true },
+    ...more.map((m) => ({
+      goods: m.facts,
+      label,
+      text: '',
+      textCut: false,
+      cellsCut: false,
+      where: '',
+      shape: shapeOf(m),
+      ownText: m.ownText,
+      ...capOf(m.goods),
+      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, fresh: held.length === 0 },
+    })),
+  ];
+  let live = state;
+  let patch: Partial<IntakeState> = {};
+  for (const step of steps) {
+    const answer = receiveGoodsSheet(live, step);
+    patch = { ...patch, ...answer.patch };
+    live = { ...live, ...answer.patch };
+  }
+  // The lines this file said, each once (two sheets read short say one cut).
+  const before = state.fileNotes ?? [];
+  const lines = [...new Set((live.fileNotes ?? []).slice(before.length))];
+  return { patch: { ...patch, fileNotes: [...before, ...lines] }, say: lines.join('\n') || null };
 }
 
 /**

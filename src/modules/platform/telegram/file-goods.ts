@@ -200,7 +200,7 @@ const wordsOfKey = remembered(nameWords);
  * stalls' phone cases had one line dropped as the other's (round-6 final
  * probe, collector, 10 common cases).
  */
-function otherName(a: string, b: string): boolean {
+export function otherName(a: string, b: string): boolean {
   const tiersA = tiersOfKey(a);
   const tiersB = tiersOfKey(b);
   if ([...tiersA].some((t) => !tiersB.has(t)) || [...tiersB].some((t) => !tiersA.has(t))) return true;
@@ -586,15 +586,20 @@ function fillGaps(held: GoodsList[number], dup: GoodsList[number]): GoodsList[nu
   return out;
 }
 
-/** The same row stated again, word for word: the same whole name, code, unit, figures, money and note. */
-function identicalRow(held: GoodsList[number], read: GoodsList[number]): boolean {
+/**
+ * The same row stated again, word for word: the same whole name, code, unit,
+ * figures, money and note. `filled` — a held row may carry a weight its own
+ * line lacked: a packing list beside it wrote the netto in (`packingFills`),
+ * and the row read again is the line as it was sent.
+ */
+function identicalRow(held: GoodsList[number], read: GoodsList[number], filled = false): boolean {
   const whole = keyOf(held.name);
   if (!whole || whole !== keyOf(read.name)) return false;
   const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
   return (
     same(held.quantity, read.quantity) &&
     same(held.unit, read.unit) &&
-    same(held.weightKg, read.weightKg) &&
+    ((filled && read.weightKg == null) || same(held.weightKg, read.weightKg)) &&
     same(held.volumeM3, read.volumeM3) &&
     same(held.measureUnit, read.measureUnit) &&
     same(held.measureQty, read.measureQty) &&
@@ -674,6 +679,47 @@ export function sameFileNote(label: string): string {
   return `📄 ${label} — bu fayl avval yuborilgan: qatorlari bir marta olindi.`;
 }
 
+/**
+ * Is a WORKBOOK with several mapped sheets the same file again
+ * (docs/FAYL-OQISH.md §4.1, sheets-06)? Judged as a whole, before any of its
+ * sheets is: its goods sheet's rows are held, word for word (a netto a
+ * packing sheet wrote into a held row is not a difference — `identicalRow`'s
+ * `filled`); its unmapped sheets' text is held; and every further mapped
+ * sheet is held one way or the other — its text (a packing list of the same
+ * goods and a sheet read for the totals go to the model's sheets) or its rows
+ * (another factory's, folded in). Judged sheet by sheet instead, a re-sent
+ * CI+PL workbook pushed the packing list's text in twice and said «o‘sha
+ * tovarlar» again. One held row answers one read row across every sheet.
+ * Pure.
+ */
+export function sameWorkbookAgain(
+  held: GoodsList,
+  goods: GoodsList,
+  further: readonly { goods: GoodsList; text: string }[],
+  text: string,
+  heldTexts: readonly { text: string }[],
+): boolean {
+  if (goods.length === 0) return false;
+  const isHeld = (t: string) => t.trim() !== '' && heldTexts.some((h) => h.text.trim() === t.trim());
+  if (text.trim() !== '' && !isHeld(text)) return false;
+  const claimed = new Set<number>();
+  const byWhole = new Map<string, number[]>();
+  held.forEach((h, i) => {
+    const whole = keyOf(h.name);
+    if (whole) byWhole.set(whole, [...(byWhole.get(whole) ?? []), i]);
+  });
+  const take = (rows: GoodsList) => {
+    const at = rows.map((r) => {
+      const i = (byWhole.get(keyOf(r.name)) ?? []).find((j) => !claimed.has(j) && identicalRow(held[j]!, r, true));
+      if (i !== undefined) claimed.add(i);
+      return i;
+    });
+    return at.every((i) => i !== undefined);
+  };
+  if (!take(goods)) return false;
+  return further.every((f) => isHeld(f.text) || (f.goods.length > 0 && take(f.goods)));
+}
+
 /** What a further invoice-shaped Excel did to the held list. */
 export interface FoldedInvoice {
   goods: GoodsList;
@@ -701,6 +747,8 @@ export function foldInvoice(
   read: GoodsList,
   readKind: WeightKind,
   label: string,
+  /** Between the label and the head's count: « — » for a file; a sheet's label ends «… varag‘idan», which reads on with a space. */
+  join = ' — ',
 ): FoldedInvoice {
   const out = held.map((g) => ({ ...g }));
   const claimed = new Set<number>();
@@ -752,11 +800,11 @@ export function foldInvoice(
   const head =
     again === 0
       ? added.length > 0
-        ? `📄 ${label} — ${added.length} ta yangi tovar qo‘shildi.`
+        ? `📄 ${label}${join}${added.length} ta yangi tovar qo‘shildi.`
         : null
       : added.length > 0
-        ? `📄 ${label} — ${again} tasi ro‘yxatda bor edi, ${added.length} ta yangi tovar qo‘shildi.`
-        : `📄 ${label} — ${again} tasi ro‘yxatda bor edi, yangi tovar qo‘shilmadi.`;
+        ? `📄 ${label}${join}${again} tasi ro‘yxatda bor edi, ${added.length} ta yangi tovar qo‘shildi.`
+        : `📄 ${label}${join}${again} tasi ro‘yxatda bor edi, yangi tovar qo‘shilmadi.`;
   return {
     goods: [...out, ...added],
     added: added.length,
@@ -846,6 +894,94 @@ export function packingOfHeld(
     met += 1;
   }
   return met * 2 > packing.length;
+}
+
+/** The letter scripts a key writes — han, cyrillic, latin (numbers and other scripts are none of them). */
+function scriptsOf(key: string): Set<string> {
+  const out = new Set<string>();
+  for (const bucket of wordsOfKey(key).keys()) if (bucket === 'han' || bucket === 'cyrillic' || bucket === 'latin') out.add(bucket);
+  return out;
+}
+const scriptsOfKey = remembered(scriptsOf);
+const shareScript = (a: ReadonlySet<string>, b: ReadonlySet<string>) => [...a].some((x) => b.has(x));
+
+/** The pieces a list counts, when EVERY row states a count; null otherwise. */
+function piecesOf(rows: GoodsList): number | null {
+  return rows.every((g) => figureOf(g, 'quantity') !== null) ? rows.reduce((n, g) => n + g.quantity!, 0) : null;
+}
+
+/**
+ * Is a further sheet of a workbook PROVEN to hold OTHER goods than the held
+ * list (docs/FAYL-OQISH.md §4.2, sheets-01)? Positive evidence of
+ * disjointness, never the absence of a meeting — all three:
+ *  - both lists state a piece count on EVERY row, and the Σ pieces differ (so
+ *    the whole-list test of a packing list of the same goods ran and failed —
+ *    a packing list counts cartons, which never reach `quantity`);
+ *  - every row shares a letter script with every held row it is held against
+ *    (a Chinese row beside an English one can be its translation);
+ *  - every row is ANOTHER NAME than every held row (`otherName`: each has a
+ *    word the other lacks). «Куртка женская» is not another name than
+ *    «Куртка женская зимняя на синтепоне» — the customs name of the same
+ *    jacket — and «no `namesMeet`» said it was (the judge's t3: one
+ *    workbook's invoice and its short-named packing list folded to six rows).
+ * Anything short of that is not proven, and the workbook keeps today's
+ * reading. Pure.
+ */
+export function provenOther(held: GoodsList, read: GoodsList): boolean {
+  if (held.length === 0 || read.length === 0) return false;
+  const ours = piecesOf(held);
+  const theirs = piecesOf(read);
+  if (ours === null || theirs === null || ours === theirs) return false;
+  const heldKeys = held.map((g) => keyOf(g.name));
+  if (heldKeys.some((k) => !k)) return false;
+  return read.every((g) => {
+    const key = keyOf(g.name);
+    if (!key) return false;
+    const scripts = scriptsOfKey(key);
+    return heldKeys.every((k) => shareScript(scripts, scriptsOfKey(k)) && otherName(key, k));
+  });
+}
+
+/**
+ * The commonest workbook the name rules cannot see (docs/FAYL-OQISH.md §4.2,
+ * sheets-05 a, R1): an English invoice and the factory's Chinese-only packing
+ * list of the same goods, which counts cartons and states no piece — no name
+ * meets, no figure is shared, so `packingOfHeld` cannot say it, and the
+ * packing list's brutto and cube reached the shipment only through the model.
+ * INSIDE ONE WORKBOOK only, a packing-shaped sheet with exactly the goods
+ * sheet's row count, in no script the goods sheet writes, is the same goods
+ * line for line. The exposure is stated: a workbook of two factories' lists
+ * of equal length in two scripts loses factory B to it. Pure; the shapes are
+ * the caller's.
+ */
+export function samePositions(goodsSheet: GoodsList, packing: GoodsList): boolean {
+  if (goodsSheet.length === 0 || goodsSheet.length !== packing.length) return false;
+  const scripts = (rows: GoodsList) => {
+    const out = new Set<string>();
+    for (const g of rows) for (const s of scriptsOfKey(keyOf(g.name))) out.add(s);
+    return out;
+  };
+  const ours = scripts(goodsSheet);
+  const theirs = scripts(packing);
+  return ours.size > 0 && theirs.size > 0 && !shareScript(ours, theirs);
+}
+
+/**
+ * `packingFills` by POSITION, for the workbook `samePositions` lines up: the
+ * row at the same place takes the packing line's NET weight when it states
+ * none — never a gross weight, never over a figure the row states, never
+ * across two counts that disagree. Pure.
+ */
+export function positionalFills(held: GoodsList, packing: GoodsList, packingKind: WeightKind): { goods: GoodsList; filled: number } {
+  if (packingKind !== 'net') return { goods: held, filled: 0 };
+  let filled = 0;
+  const goods = held.map((h, i) => {
+    const p = packing[i];
+    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || countsDisagree(h, p)) return h;
+    filled += 1;
+    return { ...h, weightKg: p.weightKg! };
+  });
+  return { goods, filled };
 }
 
 /**
