@@ -26,6 +26,7 @@ import {
   updateIntake,
 } from './calc-store';
 import {
+  clearRestartAsked,
   clientQuestionText,
   deliverNextStep,
   drawPromptSoon,
@@ -1084,6 +1085,12 @@ export async function pressResumeTake(ctx: CalcPressCtx, chatId: bigint): Promis
     await sp.reply('Bu tugma eskirgan.');
     return;
   }
+  // «▶️ Davom etamiz» is the seller's «continue» — the restart question's «▶️
+  // Yo‘q» in another hat (docs/FAYL-OQISH.md §2.4, door-break-1): a pause line
+  // drawn before the question still takes, and the question it outlived
+  // would then refuse the very next message he sends to the collection he
+  // chose. Cleared, its buttons stripped, before anything is taken.
+  clearRestartAsked(chatId, state);
   // Filed by another collection (this one's own take is the per-part
   // fence's): said, and the press still does what its words promise — the
   // collection goes on (review PB-ADV-4: no press of «▶️» is a dead button).

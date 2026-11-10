@@ -30,7 +30,16 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { openCalcRequest } from '@/modules/wms/calc/service';
-import { __forgetIntakeMemory, activeIntake, endIntake, markIntakesHydrated, setDurableIntakes, updateIntake } from '@/modules/platform/telegram/calc-store';
+import {
+  __forgetIntakeMemory,
+  activeIntake,
+  endIntake,
+  HOLD_MS,
+  holdingIntake,
+  markIntakesHydrated,
+  setDurableIntakes,
+  updateIntake,
+} from '@/modules/platform/telegram/calc-store';
 import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { __resetPresses } from '@/modules/platform/telegram/press';
 import { __resetBacklog } from '@/modules/platform/telegram/backlog';
@@ -173,6 +182,91 @@ describe('the restart question holds the material (§2.4)', () => {
     expect(after.material).toEqual(['Kurtka 300 dona', 'Shim 10 dona']);
     expect(after.restartAsked ?? null).toBeNull();
     expect(h.textsTo(chat, m)).not.toContain(RESTART_HOLD);
+  });
+});
+
+/** The collection goes quiet past `HOLD_MS`: it no longer HOLDS the chat — the commonest case behind the question. */
+function park(): void {
+  updateIntake(BigInt(chat), { touchedAt: Date.now() - HOLD_MS - 60_000 }, { quiet: true });
+  expect(holdingIntake(BigInt(chat))).toBeNull();
+}
+
+/** The sends after `m` that carry a «▶️ Davom etamiz» which TAKES (the burst's pause line). */
+function takingLines(m: ReturnType<BotHarness['mark']>) {
+  return h
+    .since(m)
+    .api.filter(
+      (c) =>
+        c.method === 'sendMessage' &&
+        JSON.stringify((c.payload as { reply_markup?: unknown }).reply_markup ?? null).includes('c:resume_take'),
+    );
+}
+
+describe('the question over a PARKED collection holds the material too (§2.4, door-break-1)', () => {
+  it('a file and a forward beside a parked collection under the question: RESTART_HOLD, no pause line, nothing filed', async () => {
+    await h.handle(tg.callback(chat, 1, 'c:ai'));
+    await h.settle();
+    await h.handle(tg.text(chat, 'GS777'));
+    await h.handle(tg.text(chat, 'Kurtka 300 dona'));
+    await h.settle();
+    park();
+    const q = h.mark();
+    await h.handle(tg.callback(chat, 2, 'c:ai'));
+    await h.settle();
+    const question = sentId(QUESTION, q);
+    // The question's patch is quiet: the collection goes on parking under it.
+    expect(holdingIntake(BigInt(chat))).toBeNull();
+    expect(activeIntake(BigInt(chat))!.restartAsked?.messageId).toBe(question);
+
+    const m = h.mark();
+    await h.handle(tg.document(chat, `parked-pdf-${STAMP}`, { fileName: 'invoice.pdf', mime: 'application/pdf' }));
+    await h.settle();
+    await h.handle(tg.forward(chat, 'Sumka 20 dona'));
+    await h.settle();
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.fileCount).toBe(0);
+    expect(live.material).toEqual(['Kurtka 300 dona']);
+    expect(h.since(m).sent.filter((s) => s.method === 'getFile')).toEqual([]);
+    expect(takingLines(m)).toEqual([]);
+    expect(h.textsTo(chat, m)).toContain(RESTART_HOLD);
+    expect(h.textsTo(chat, m).every((t) => t === RESTART_HOLD)).toBe(true);
+  });
+
+  it('«▶️ Davom etamiz» on a pause line drawn BEFORE the question answers it «continue»: taken, the question cleared and stripped, the next text taken', async () => {
+    await h.handle(tg.callback(chat, 1, 'c:ai'));
+    await h.settle();
+    await h.handle(tg.text(chat, 'GS777'));
+    await h.handle(tg.text(chat, 'Kurtka 300 dona'));
+    await h.settle();
+    park();
+    h.serveFile(`parked-early-${STAMP}`, Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n'));
+    const b = h.mark();
+    await h.handle(tg.document(chat, `parked-early-${STAMP}`, { fileName: 'invoice.pdf', mime: 'application/pdf' }));
+    await h.settle();
+    const [line] = takingLines(b);
+    expect(line, 'the burst drew its pause line').toBeTruthy();
+    const q = h.mark();
+    await h.handle(tg.callback(chat, 2, 'c:ai'));
+    await h.settle();
+    const question = sentId(QUESTION, q);
+
+    const m = h.mark();
+    await h.handle(
+      tg.callback(chat, line!.messageId!, 'c:resume_take', {
+        text: String(line!.payload.text),
+        message: { reply_to_message: (line!.payload as { reply_parameters?: unknown }).reply_parameters ?? undefined },
+      }),
+    );
+    await h.settle();
+    const live = activeIntake(BigInt(chat))!;
+    expect(live.fileCount).toBe(1);
+    expect(live.restartAsked ?? null).toBeNull();
+    expect(h.since(m).sent.some((s) => s.method === 'editMessageReplyMarkup' && Number(s.body.message_id) === question)).toBe(true);
+    const t = h.mark();
+    await h.handle(tg.text(chat, 'Shim 10 dona'));
+    await h.settle();
+    expect(h.textsTo(chat, t)).not.toContain(RESTART_HOLD);
+    expect(activeIntake(BigInt(chat))!.material).toContain('Shim 10 dona');
   });
 });
 

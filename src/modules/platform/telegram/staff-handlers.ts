@@ -738,6 +738,13 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
+        // The restart question over a PARKED collection holds too (docs/FAYL-
+        // OQISH.md §2.4, door-break-1) — the usual case behind it, since the
+        // question is a quiet patch and a quiet collection goes on parking
+        // under it. Here, below every other collector (a draft or a zametka
+        // still takes its part), the burst would draw the pause line, and its
+        // «▶️ Davom etamiz» files the part into the collection «🔄 Ha» wipes.
+        if (state && (await refuseWhileRestartAsked(ctx, chatId, state, ctx.message.message_id))) return;
         // A plain file with nothing to take it joins the chat's burst
         // (docs/IKKI-ESHIK.md §4.1, his 6a): files sent in a row get ONE
         // message, kept last — the add door's offer when the sender has a
@@ -1121,6 +1128,10 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
+        // Beside a PARKED collection the question stands over, the burst's
+        // pause line would file the forward into it (§2.4, door-break-1):
+        // refused in words, as the file door refuses a file.
+        if (intake && (await refuseWhileRestartAsked(ctx, chatId, intake, ctx.message.message_id))) return;
         // Into the chat's burst (docs/IKKI-ESHIK.md §4.1): forwards in a row
         // are ONE «📌 N ta xabar …» offer, kept last. Door B's single offer
         // answers whatever the burst would not take.
