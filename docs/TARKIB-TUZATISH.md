@@ -1,7 +1,7 @@
 # Tarkib tuzatishlari — six fixes to the lot composition (2026-11-10)
 
-Status: **DRAFT v0 — the lead's design before the maps and the judge.** Sections marked
-«TBD» are filled from the readers' maps; everything here is open to the judge.
+Status: **v1 — the design after the readers' maps, before the judge.** The kernel (§1, §3.2)
+is written and red-proven; everything else is open to the judge.
 
 ## 0. His words and the reading
 
@@ -124,19 +124,21 @@ grouped select and inside `string_agg`.
 ### 3.2 One home — `src/modules/wms/receipts/lot-name.ts`
 
 - `tarkibLabel(lines)` (pure, `composition-math.ts`): one line → its name; n ≥ 2 → the name
-  of `seq = 1` + `' +' + (n − 1)` with ONE plain space (the PDF font has no NBSP); `null`
-  below `MIN_STORED_LINES`. Applies while the lines exist, stale or not, and reads the LIVE
-  composition (screens are live; only papers are frozen).
-- `lotRuShownSql(lot)`: `coalesce((SELECT CASE WHEN count(*) = 1 THEN min(g.name) ELSE
-  min(g.name) FILTER (WHERE g.seq = 1) || ' +' || (count(*) - 1) END FROM
-  lot_composition_lines g WHERE g.lot_id = <lot>.id HAVING count(*) >= 1),
-  <lot>.product_name_ru)` — `lot` is a TABLE reference, never a column (#128).
-- `lotGoodsShownSql(lot)` for the `ru || zh` readers; `lotNameMatchSql(lot, like)` for the
-  search predicates (the lot's own names OR any line's name, so «мышь» finds a lot whose
-  second line is mice); `lotRuShownFor(lotIds, exec = db)` for whole-row readers.
+  of the LOWEST `seq` + `' +' + (n − 1)` with ONE plain space (the PDF font has no NBSP);
+  `null` below `MIN_STORED_LINES`. Applies while the lines exist, stale or not, and reads the
+  LIVE composition (screens are live; only papers are frozen).
+- `lotRuShownSql(lot)`: `coalesce((SELECT CASE WHEN count(*) = 1 THEN min(name) ELSE
+  (array_agg(name ORDER BY seq))[1] || ' +' || (count(*) - 1) END FROM lot_composition_lines
+  WHERE lot_id = <lot>.id HAVING count(*) >= 1), <lot>.product_name_ru)` — `lot` is a TABLE
+  reference, never a column (#128); the lines' alias is `tarkib_line`.
+- `lotGoodsShownSql(lot)` for the `ru || zh` readers; `tarkibLineMatchSql(lot, like)` — the
+  extra arm a search predicate ORs into its own zh/ru arms, so «мышь» finds a lot whose
+  second line is mice (an uncorrelated `ARRAY(SELECT lot_id …)`, so the trigram indexes of
+  the name arms stay usable); `lotRuShownFor(lotIds, exec = db)` for whole-row readers.
 - The pure twin and the SQL are pinned against each other
-  (`tests/integration/lot-name.integration.test.ts`: 0 / 1 / 2 / 20 lines, a header with no
-  lines, a stale lot, a cleared tarkib — and the stored `product_name_ru` never moves).
+  (`tests/integration/lot-name.integration.test.ts`: 0 / 1 / 3 / 20 lines, a header with no
+  lines, lines that do not start at 1, a cleared tarkib, a grouped select — and the stored
+  `product_name_ru` never moves). Four red proofs run.
 
 ### 3.3 Who shows the label, who keeps the own name
 
@@ -186,63 +188,105 @@ the recorded reversal of 8.6.
 
 ## 4. Item 2 — the agent Excel: one row per tarkib line
 
-Today (`documents/agent-xlsx.ts`): rows are the plan's lines (a line with a road part is up
-to three rows in three blocks: here under its arrival, «В пути», «Не пришло»); a composed
-lot's whole planned contents are written ONCE, as text under the Chinese name in the product
-cell of the lot's first row («Состав лота (весь план) / Lot contents (whole plan): …») —
-his «prixod 1 qator bo'lib, tarkibi nomlarni ichida turibdi».
+«Yuklama» is in no UI string («Yuklash» is the TRUCKS section's name; the plan is «Yuklash
+rejasi»). The reading rests on his description of today, and exactly one surface matches it:
+the plan's «Agent uchun Excel» (`plans/[id]/page.tsx` → `/api/plans/[id]/xlsx` →
+`buildAgentXlsx`). Its rows are the plan's lines (a line with a road part is up to three rows
+in three blocks: here under its arrival, «В пути», «Не пришло»), and a composed lot's whole
+planned contents are written ONCE, as text under the Chinese name in the product cell of the
+lot's first row («Состав лота (весь план): …») — his «prixod 1 qator bo'lib, tarkibi nomlarni
+ichida turibdi». Every other paper already prints a row per line (the invoice, the draft
+packing list, «Packing (rasmlar)»); every screen prints one row per lot and no tarkib at all.
+LOT-TARKIBI's own opening paragraph promised «the agent file prints a composed lot as one row
+per line» while its §4 built the text suffix: he found the gap. Asked back with named options.
 
 Built:
 
-- Inside ONE block, every row of a composed lot (its plan lines there — loose and crated —
-  are adjacent: the block sorts by the code-letter label) collapses into one group of LINE
-  rows, the draft packing list's own rule (deviation D5 of LOT-TARKIBI).
-- The group's figures: `paperLines(comp, lotTotals, { segments, cartons, kg, m3 })` with
-  cartons / kg / m³ = the lot's rows in THAT block summed (`round1` / `round3`, as today), and
-  `segments` = the consecutive sub-run of the plan's own positions that block holds — blocks
-  taken in the sheet's order (arrival blocks, then «В пути», then «Не пришло»). New pure
-  `sliceSegments(runs, offset, count)` in `composition-math.ts`. So the blocks' cartons and
-  pieces of a line add up to the whole plan's (the cumulative rule tiles), and each block's
-  kg / m³ add up to that block's own figure. A lot wholly in one block with every carton
-  planned is exact; a share is «≈», as on every paper.
-- One row per printed line: «Код» the lot's label on EVERY line row · «Товар» the line's name
-  (+ the lot's Chinese name where the line is the lot's own good — `packingProductCell`, the
-  packing lists' rule) with the line's TNVED in brackets when stated («Мышь [8471606000]» — the
-  code is language-neutral for the Chinese reader, as before) · «Кол-во, шт»
-  `packingPiecesCell` · «Коробок» `packingBoxesCell` («alohida»: the line's cartons;
-  «aralash»: the lot's cartons on the first line, «(в тех же коробках)» on the others) · kg ·
-  m³ · kg/m³ of the line · the lot's arrival cells on every line row.
-- Photographs on the group's FIRST line row only (row height 60); the other line rows 20.
-- Estimate: the product cell's fill + note on every line row of an estimated group.
-- Block headings, the title line and both their totals are computed from the plan's lines as
-  today and do not move. An uncomposed lot's row is exactly today's.
+- **Group by LOT ID inside one block, never by adjacency or by label.** Lot labels are not
+  unique (letters come from a per-warehouse counter shared by every client and cycle every 702
+  lots — measured on gsr_ci: 605 claimed lots, 27 labels carried by two or more), so «the rows
+  of one label are adjacent» is not a rule. A `Set<lotId>` per block.
+- **The figures — `paperLinesByPart`** (new pure export of `composition-math.ts`):
+  `(comp, lot, { segments, parts: { cartons, kg, m3 }[] }, opts) → (PaperView | null)[]`. It
+  fits the plan's positions ONCE over Σ cartons (`fitSegments`), slices the fitted runs
+  consecutively for the parts — here, then «В пути», then «Не пришло» — calls the existing
+  core per part and ORs the whole fit's `clamped` into every part. A part of 0 cartons is
+  null. Two traps this closes, both reproduced on the real `paperLines`: passing each block
+  `segments: []` on a plan that does not cross restarts every block at position 0 (cartons
+  [34,33] [15,15] [2,1] → 51/49, the old Papers-2 defect, against the right [1,2] in the last
+  block); and pre-sliced runs lose `fitSegments`' `clamped` reason.
+- **Decimals**: `{ kgDecimals: 3, m3Decimals: 4 }` — the precision the uncomposed rows of THIS
+  sheet print (`planned_kg` as stored), so a block's cells add up to its heading
+  (`round1` «as today» made 33.3 + 33.3 + 33.3 under a heading of 100.0).
+- **One row per printed line**: «Код» the lot's label on every line row · «Товар»
+  `agentProductCell(line, lot, first)` = the packing lists' product cell (the line's name, the
+  lot's Chinese name beside the line that IS the lot's own good) + the line's TNVED in brackets
+  when stated («Мышь [8471606000]»); the Chinese name never vanishes from the one sheet read
+  Chinese-first — when no line is the lot's own good, the lot's FIRST line row carries a second
+  text line «На коробке / On the carton: 键盘» · «Кол-во, шт» `packingPiecesCell` · «Коробок»
+  `packingBoxesCell` («alohida»: the line's cartons; «aralash»: the part's cartons on the first
+  line, «(в тех же коробках)» after) · kg · m³ · the line's kg/m³ · the lot's arrival cells.
+- **Photographs** once per block, on the group's first line row (height 60); the other line
+  rows `max(20, 15 × text lines)`. (Today they repeat on every plan row of a lot.)
+- **Estimate**: fill + note on every line row of an estimated group; a part that is a share
+  of a fully planned lot says «доля лота в этом блоке / lot share in this block», not «на
+  этой машине».
+- Block headings, the title line and both their totals come from the plan's rows as today.
+  An uncomposed lot's row is exactly today's. Columns, `PHOTO_START_COL` 9 and the frozen
+  panes do not move, so no test that reads a column index moves.
 - `agentContentsText`, `agentPiecesCell` and `DOC.contents` are deleted with their tests.
-- The plan view and the plan editor on screen do not print lines (he said «yuklamada»); they
+- Stated to him: a plan file downloaded again after a tarkib is written has more ROWS, with
+  no new plan version; a truck whose papers are sent keeps its frozen copy.
+- The plan view and the plan editor on screen stay one row per lot (he said «yuklamada») and
   show the label of §3.
 
 ## 5. Item 5 — 🤖 for tarkib lines
 
-Today: «🤖 AI taklif (N)» counts and walks PRODUCT rows only; a line row draws no 🤖
-(LOT-TARKIBI §5: «its photo is the lot's carton»). On a truck of composed lots the button
-either is not drawn or fills nothing — his «tarkibga bo'lingan bo'lsa TNVED qo'ya olmayapti».
+Today: the per-row 🤖 is drawn for product rows only (`{!line && …}`); «🤖 AI taklif (N)»
+counts and walks product rows only and is not drawn when that count is 0, while the card's
+«TNVED kodsiz · N» counts lines too. So a truck of composed lots has no AI at all — and
+nothing says why (`tnved.lineNoAi` is in the four bundles and referenced nowhere): he meets a
+missing button. Sharpest case: a ONE-line tarkib of the lot's own good («Bitta tovar», made
+only to state pieces) turns a row that had 🤖 and a photo into one with neither.
 
 Built:
 
-- New action `suggestTnvedForLineAction(batchId, lotId, lineId)` (`tnved/actions.ts`): the
-  tab's own door (`vedActor`, uuid shapes, the card door, the lot is a member of the truck)
-  AND `mayWriteComposition`; the line is read from `paperCompositionsFor(batchId, [lotId])`
-  — a frozen truck answers `frozen`, a line that is gone `composition_changed`.
-- What the model reads: the LINE's name as the goods name; the lot's Chinese name only where
-  the line is the lot's own good (`lineIsLotGood`); the lot's first photograph ONLY when the
-  tarkib has exactly one line (then every carton of the lot is that good) — for a lot of
-  several goods the photo shows one of them and would steer the model to it. `suggestTnved`
-  gains an optional `context` line («в одной партии коробок также: …») so the model knows
-  the carton is mixed.
-- Editor: 🤖 on every non-frozen line row; «🤖 AI taklif (N)» counts empty non-frozen line
-  rows too and walks rows in order; the reasoning line shows under a line row as under a
-  product row. A suggested code is state until «Saqlash», which posts it through
-  `saveLineCodesAction` — stored on the line, never in the memory (unchanged; fence rule 3).
-- `tnved.lineNoAi` leaves the four bundles; `tnved.suggestAll` keeps its `{n}`.
+- **What the model reads — `lineQuestion`** (pure, `tnved/service.ts`): for a line that is the
+  lot's own good (`lineIsLotGood`) the product row's own question (the lot's Chinese name with
+  the Russian); otherwise the line's name alone — never the lot's Chinese name as the goods
+  name. `wantsPhoto` = the tarkib has ONE line (every carton is that good); for a lot of
+  several goods the photo shows one of them and would steer the model to it. `context`: the
+  line's own figures («500 шт · 60 кг · 0.8 м³»), the sibling names («в той же партии коробок
+  также: …», capped) and, for another good, «на складе партия принята как …». `suggestTnved`
+  gains `context`; its text moves into a pure exported `tnvedQuestionText` a unit test reads;
+  the system prompt gains one rule: «Контекст» is a hint, classify only «Товар».
+- **The call is hardened**: `max_tokens` 2048 → 16000 with a `stop_reason === 'max_tokens'`
+  branch (the analyst model's thinking counts inside it — `intake-ai.ts` recorded the cut at
+  4096: no text, `JSON.parse` throws, the person reads «AI javob bermadi»), a `logger.warn` in
+  the catch that swallowed every failure, a `logger.info` of the tokens per call.
+- **Action** `suggestTnvedForLineAction(batchId, lotId, lineId)` — by line ID (after a receipt
+  save a seq can name another good). Every step before any spend: `vedActor` +
+  `mayWriteComposition` → uuid shapes → the card door → a carton of the lot is a member of the
+  truck → `paperCompositionsFor`: none / the line gone → `composition_changed`, frozen →
+  `frozen` → `compositionDoor(…, requireConfirmed)` (the save's own door — the model is never
+  paid for a code that cannot be saved) → `lineQuestion`, the photo only when wanted →
+  `suggestTnved`. It writes nothing.
+- **Editor**: 🤖 on a line row when `!line.frozen && line.lineId`; `missing` counts those rows
+  too; the reasoning line shows under a line (and says «AI faqat nomga qarab taklif qildi»
+  when no photo was sent). The bulk walk: (a) fills every empty line that has a 💡 hint with no
+  model call; (b) asks the rest in drawn order, reading the LIVE code through a ref before
+  each ask and before applying, so a code typed meanwhile is never overwritten; (c) keeps one
+  answer per line NAME and copies it to same-named empty lines — the invoice merges them only
+  when their codes are equal (§6); (d) stops on `forbidden`, `frozen`, `composition_changed`,
+  `ai_not_configured` and after two consecutive `ai_failed`; (e) shows «done / n» and a stop
+  button. `saveAll` posts only CHANGED product rows (today one row a colleague composed
+  meanwhile refuses the whole save `not_on_truck`, and the reload drops every unsaved answer).
+- A suggested line code is state until «Saqlash», which posts it through `saveLineCodesAction`
+  — on the line, never in the memory (unchanged, fence rule 3). A saved line code is already
+  the 💡 for that name on later lots (`tnvedHintsFor`), so nothing more is remembered.
+- No ledger row, no daily limit — the lot-level 🤖 has neither today (asked; ⭐ none).
+- `tnved.lineNoAi` leaves the four bundles; new `tnved.aiNameOnly`, `aiSameName`,
+  `suggestProgress`, `suggestStop`.
 
 ## 6. Item 6 — the invoice draft
 
@@ -273,10 +317,13 @@ list (`invoiceMergeGroups(source)`) and the sheet come from the same source rows
 - Columns: A «№» · **B «Маркировка / Marking»** (new) · C name · D code · E unit · F quantity ·
   G places · H netto · I brutto · J price · K amount (`=J*F`). Totals row and header merges
   move one column right.
-- B = the labels of the lots behind the row, «, »-joined in row order, each once
-  (`client code or marking` + `-` + letter).
+- B = the labels of the lots behind the row (`client code or marking` + `-` + letter),
+  «, »-joined in row order. Everything is keyed by LOT ID, never by label: labels are not
+  unique (two lots of different warehouses or letter cycles can both be «GS777-A»), so a
+  label string is printed once per row but stands for every lot that carries it.
 - A lot that stands behind MORE THAN ONE final row is written red + bold in every row it is
-  in (rich text runs, so a merged row can hold a red and a black label).
+  in — the label is red when ANY lot behind that string in that row is such a lot (rich text
+  runs, so a merged row can hold a red and a black label).
 
 ### 6.4 The dialog — «ask, then give the invoice»
 
