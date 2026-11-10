@@ -19,6 +19,7 @@ import { intakeNoteText, landingItems, type CalcFacts, type CalcSection, type In
 import { bookLawsFor } from './book-laws';
 import { attachIntakePasses } from './ai-cost';
 import { queueCalcPrefill } from './prefill-queue';
+import { sectionParts } from './pricing';
 import { dealTitleFor } from './deal-title';
 import { CalcError, calcOpenRefusal, leadTakesJobs, rootOfNoteSql } from './service';
 
@@ -423,6 +424,22 @@ async function calcStageMove(
 }
 
 /**
+ * Does a landed request with `itemCount` goods owe the machine's pass
+ * (docs/FAYL-OQISH.md §1.3 c, door-zero-pass)? Not when there is nothing the
+ * pass can price: a section with a customs half and NO freight half
+ * (rastamojka) and no goods — its pass could only answer «hozircha hisoblab
+ * bo‘lmadi». A yolkira keeps its tariff answer on every door (his 2.5 b: it
+ * needs the route and the totals, never a goods line), and a podklyuch keeps
+ * its pass — the road is priced from the totals, and the customs half says
+ * «so‘rovda tovar yo‘q». ONE rule, obeyed by both of `landIntake`'s queue
+ * calls — the AI sotuvchi's landing passes through it too. Pure.
+ */
+export function landingOwesPass(section: CalcSection, itemCount: number): boolean {
+  const parts = sectionParts(section);
+  return !(itemCount === 0 && parts.customs && !parts.freight);
+}
+
+/**
  * Land a confirmed intake: find or open the card, write the note with the
  * AI's working, and return where it went so the bot can link to it.
  *
@@ -463,6 +480,12 @@ export async function landIntake(input: {
    * `openCalcRequest`'s is: an absent door would read «legacy» in silence.
    */
   intakeDoor: IntakeDoor | null;
+  /**
+   * The AI door's job landed for the VED alone (docs/FAYL-OQISH.md §1.3 a):
+   * the card's note says it, and why — the request itself is written with the
+   * «🧮» door. Absent on every other landing.
+   */
+  doorNote?: string | null;
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -476,8 +499,11 @@ export async function landIntake(input: {
     collectedBy: input.collectedByName,
     fileCount: input.fileCount,
     material: input.material,
+    doorNote: input.doorNote ?? null,
   });
   const items = landingItems(input.facts);
+  // Nothing the pass could price (§1.3 c): asked once, for both queue calls.
+  const owesPass = landingOwesPass(input.section, items.length);
 
   // A coded client: a NEW card per request (his 2026-10-27), written with its
   // note in one commit, and found again through that note on a retry.
@@ -554,12 +580,14 @@ export async function landIntake(input: {
     await attachIntakePasses(input.noteId, requestId).catch((err: unknown) =>
       logger.warn({ err, requestId }, '[calc-intake] readings not attached'),
     );
-    const replyQueued = await queueCalcPrefill({
-      requestId,
-      staffId: input.collectedBy,
-      section: input.section,
-      atRev: 0,
-    });
+    const replyQueued = owesPass
+      ? await queueCalcPrefill({
+          requestId,
+          staffId: input.collectedBy,
+          section: input.section,
+          atRev: 0,
+        })
+      : false;
     try {
       await moveToCalcStage(landedTarget, input.collectedBy);
     } catch (err) {
@@ -626,11 +654,13 @@ export async function landIntake(input: {
     // this landing would silently get no pass at all — the same asymmetry
     // that left the card form and the thread door unserved until this round.
     // Off the poller and out of this process, through pg-boss.
-    replyQueued = await queueCalcPrefill({
-      requestId: opened.id,
-      staffId: input.collectedBy,
-      section: input.section,
-    });
+    replyQueued = owesPass
+      ? await queueCalcPrefill({
+          requestId: opened.id,
+          staffId: input.collectedBy,
+          section: input.section,
+        })
+      : false;
   } catch (err) {
     logger.error({ err, kind: target.kind, id: target.id }, '[calc-intake] queue open failed');
     queueError = err instanceof CalcError ? err.code : 'server_behind';

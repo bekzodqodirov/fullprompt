@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { AI_ZONE_ROUTES, type ZoneStep } from './staff-bot';
+import { TO_VED_LABEL } from './reading-whole';
 
 /**
  * The collector's shared keyboards and the one question every stage re-asks,
@@ -45,12 +46,36 @@ export function aiConfirmKeyboard(hasCertificate: boolean) {
   return {
     inline_keyboard: [
       [{ text: '✅ Tasdiqlash', callback_data: 'c:save' }],
-      [
-        hasCertificate
-          ? { text: '📄 Sertifikat: bor', callback_data: 'c:cert_n' }
-          : { text: '📄 Sertifikat: yo‘q', callback_data: 'c:cert_y' },
-      ],
+      [certificateButton(hasCertificate)],
       [{ text: '➕ Yana ma’lumot', callback_data: 'c:more' }],
+      [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
+    ],
+  };
+}
+
+/** The certificate toggle — its label the answer now, its value the other one (K11's durability-2). One home for both AI keyboards. */
+export function certificateButton(hasCertificate: boolean) {
+  return hasCertificate
+    ? { text: '📄 Sertifikat: bor', callback_data: 'c:cert_n' }
+    : { text: '📄 Sertifikat: yo‘q', callback_data: 'c:cert_y' };
+}
+
+/**
+ * The AI door's keyboard when the reading is NOT whole (docs/FAYL-OQISH.md
+ * §1.2, his ⭐ a): no «✅ Tasdiqlash» — it promises «the AI read what you sent
+ * and will compute», and here it has not. In its place «👤 VED hisoblasin»,
+ * which lands the job for the VED alone and promises no AI figure; never
+ * «📨 VED ga yuborish», which is the add door's «✅ Qo‘shish» (door-amend-
+ * scope). The certificate stays — the answer goes on the request for the VED
+ * — and «🔄 AI qayta o‘qisin» rides on top only where a retry can help
+ * (`reviewKeyboard`, the dialogue's choice).
+ */
+export function notWholeKeyboard(hasCertificate: boolean) {
+  return {
+    inline_keyboard: [
+      [certificateButton(hasCertificate)],
+      [{ text: '➕ Yana ma’lumot', callback_data: 'c:more' }],
+      [{ text: TO_VED_LABEL, callback_data: 'c:to_ved' }],
       [{ text: '✖️ Bekor qilish', callback_data: 'c:cancel' }],
     ],
   };

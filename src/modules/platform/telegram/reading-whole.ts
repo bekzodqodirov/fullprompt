@@ -45,6 +45,14 @@ export interface ReadingWholeness {
   named: { name: string; why: string }[];
 }
 
+/**
+ * The press that lands a not-whole AI collection for the VED alone (§1.2) —
+ * never «📨 VED ga yuborish», which is the add door's «✅ Qo‘shish»
+ * (door-amend-scope). One home for the keyboard, the dialogue's words and the
+ * table's (wms reads it from here: this file imports nothing at run time).
+ */
+export const TO_VED_LABEL = '👤 VED hisoblasin';
+
 /** The fields the predicate reads — a type, so a caller cannot hand it a stale projection. */
 export type WholenessInput = Pick<
   IntakeState,

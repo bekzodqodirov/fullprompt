@@ -10,7 +10,8 @@ import { db } from '../db/client';
 import { isServerBehind } from '../db/errors';
 import { enqueue, jobState } from '../jobs/boss';
 import { logger } from '../logger';
-import type { InlineKeyboard, IntakeState } from './calc-intake';
+import { collectionDoor, type InlineKeyboard, type IntakeState } from './calc-intake';
+import { aiReadingWhole } from './reading-whole';
 import {
   activeIntake,
   endIntake,
@@ -29,6 +30,8 @@ import {
   deliverNextStep,
   drawPromptSoon,
   editTableSoon,
+  inputCutOfState,
+  landingPress,
   pauseKeyboard,
   routeCollectorText,
   showIntakePrompt,
@@ -135,6 +138,11 @@ export const SAVE_WORDS = {
   queueRefused: '\n⚠️ Qayta hisoblash navbatga tushmadi — narxni VED beradi.',
 } as const;
 
+/** An addition written WITHOUT a re-pass, its reading not whole (docs/FAYL-OQISH.md §1.6). */
+export function unreadRepassLine(what: string): string {
+  return `\n⚠️ ${what.charAt(0).toUpperCase()}${what.slice(1)} o‘qilmadi — AI qayta hisoblamaydi, narxni VED beradi.`;
+}
+
 /**
  * Every refusal `saveTable` can throw, in the seller's words (law-money-4) —
  * a missing sentence is a compile error, never a code on a phone. Some never
@@ -178,6 +186,21 @@ export const AMEND_SAVE_RETRIES = 3;
 /** How far back a request may be offered to a forward or a file (product-fit-16). */
 export const ADD_OFFER_DAYS = 7;
 
+/**
+ * What an AI-door addition's OWN reading did not read (docs/FAYL-OQISH.md
+ * §1.6) — the phrase its table said — or null when it read everything. The
+ * save then writes what WAS read and re-runs nothing: «✅ Qo‘shish … AI qayta
+ * hisoblaydi» over a PDF nobody read is the figure his ⭐ a rejected. A plain
+ * or legacy addition keeps its own re-pass (silent, or today's).
+ */
+export async function addReadingUnread(state: IntakeState): Promise<string | null> {
+  if (!state.amend || collectionDoor(state) !== 'ai') return null;
+  const whole = aiReadingWhole(state, (state.facts.goods ?? []).length);
+  if (whole.whole) return null;
+  const { unreadWhat } = await import('../../wms/calc/intake');
+  return unreadWhat(state, whole, await inputCutOfState(state)) ?? 'fayl';
+}
+
 /** The ✅ landing reply's inline markup, or null = today's persistent-keyboard re-send. */
 export function landedReplyMarkup(target: { queued?: boolean; requestId?: string | null }): InlineKeyboard | null {
   if (!target.queued || !target.requestId) return null;
@@ -195,7 +218,7 @@ export function landedReplyMarkup(target: { queued?: boolean; requestId?: string
  *    one reaches the VED as words (`doubtedTotals`);
  *  - the unresolved conflicts, the seller's words and the file count.
  */
-export function amendSubmissionOf(state: IntakeState): AmendSubmission {
+export function amendSubmissionOf(state: IntakeState, unread: string | null = null): AmendSubmission {
   const items = state.amend?.items ?? [];
   const seqOf = new Map(items.map((i) => [i.itemId, i]));
   const answers = new Map<string, AmendRowAnswer>();
@@ -267,6 +290,8 @@ export function amendSubmissionOf(state: IntakeState): AmendSubmission {
     // The receipt-time notes — a noted packing list's totals among them —
     // reach the VED, as a seeded landing's do (fix review FR-SELL-6).
     ...((state.fileNotes ?? []).length > 0 ? { fileNotes: [...state.fileNotes] } : {}),
+    // The add reading was not whole (docs/FAYL-OQISH.md §1.6): written, no re-pass.
+    ...(unread ? { unread } : {}),
   };
 }
 
@@ -635,7 +660,12 @@ async function openSeeded(
     chatId,
     (
       await sp.reply(
-        `📨 VED bu so‘rovni qaytargan: «${stored.returnReason ?? '—'}». Yetishmaganini qo‘shing — «✅ Tasdiqlash» yangi so‘rov bo‘lib VED ga boradi.`,
+        // The press the table will draw (docs/FAYL-OQISH.md §1.2): a returned
+        // request whose rows are not a whole reading — none came back — has no
+        // «✅ Tasdiqlash» to promise.
+        landingPress(state).step === 'to_ved'
+          ? `📨 VED bu so‘rovni qaytargan: «${stored.returnReason ?? '—'}». Yetishmaganini qo‘shing — to‘ldiring yoki «👤 VED hisoblasin».`
+          : `📨 VED bu so‘rovni qaytargan: «${stored.returnReason ?? '—'}». Yetishmaganini qo‘shing — «✅ Tasdiqlash» yangi so‘rov bo‘lib VED ga boradi.`,
       )
     ).message_id,
   );
@@ -1396,7 +1426,7 @@ export async function saveAmendment(ctx: CollectorReply, chatId: bigint, state: 
   const jobId = randomUUID();
   updateIntake(chatId, { saving: { token, at: Date.now(), jobId } });
   await flushIntakeWrites(chatId);
-  const job = saveJobOf(chatId, state, state.amend, token);
+  const job = saveJobOf(chatId, state, state.amend, token, await addReadingUnread(state));
   try {
     await enqueueSave(job, jobId);
   } catch (err) {
@@ -1410,13 +1440,13 @@ export async function saveAmendment(ctx: CollectorReply, chatId: bigint, state: 
 }
 
 /** A frozen collection's job, as the press builds it and the hydrate rebuilds it. */
-function saveJobOf(chatId: bigint, state: IntakeState, amend: AmendBase, token: string): AmendSaveJob {
+function saveJobOf(chatId: bigint, state: IntakeState, amend: AmendBase, token: string, unread: string | null): AmendSaveJob {
   return {
     chatId: chatId.toString(),
     staffId: state.staffId,
     requestId: amend.requestId,
     noteId: state.noteId,
-    submission: amendSubmissionOf(state),
+    submission: amendSubmissionOf(state, unread),
     amendmentId: null,
     savingToken: token,
   };
@@ -1451,7 +1481,7 @@ export async function requeueAmendSave(
   const jobId = randomUUID();
   const token = state.saving?.token ?? randomUUID();
   const job: AmendSaveJob = {
-    ...saveJobOf(chatId, state, state.amend, token),
+    ...saveJobOf(chatId, state, state.amend, token, stored ? null : await addReadingUnread(state)),
     ...(stored ? { submission: stored.submission as AmendSubmission | null } : {}),
   };
   updateIntake(chatId, { saving: { token, at: state.saving?.at ?? Date.now(), jobId } }, { quiet: true });
@@ -1580,6 +1610,9 @@ const withLines = (head: string, lines: readonly string[]) => (lines.length ? `$
  * request from before the doors (NULL, §0.2) keep the promise.
  */
 async function repassLine(change: AmendChange, queued: boolean, door: 'plain' | 'ai' | null, aiAvailable: boolean): Promise<string> {
+  // Its own reading was not whole (§1.6): nothing was queued on purpose, and
+  // the words say why — never «qayta hisoblayapti», never «navbatga tushmadi».
+  if (change.unread) return unreadRepassLine(change.unread);
   if (!queued) return SAVE_WORDS.queueRefused;
   const { sectionParts } = await import('../../wms/calc/pricing');
   if (!sectionParts(change.section).customs) return SAVE_WORDS.tariffLine;

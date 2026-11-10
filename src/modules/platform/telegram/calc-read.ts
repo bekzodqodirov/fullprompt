@@ -26,6 +26,7 @@ import {
 } from './calc-store';
 import { loadIntakeFiles } from './calc-files';
 import {
+  clearRestartAsked,
   deliverNextStep,
   drawPromptSoon,
   intakeNextStep,
@@ -35,6 +36,7 @@ import {
   type EditApi,
 } from './calc-dialog';
 import { doneKeyboard } from './calc-keyboards';
+import { modelOnlyMaterial } from './reading-whole';
 import { bootedAtSec, isStopping } from './lifecycle';
 import { editText, sendText, sendTextBriefRetry, type SendResult } from './send';
 
@@ -119,6 +121,42 @@ const READING = {
   delivered: '✅ O‘qildi — natija pastda ⬇️',
 } as const;
 
+/**
+ * What «⏳ AI o‘qiyapti…» becomes once the reply is out (docs/FAYL-OQISH.md
+ * §2.3) — by what the reading DID, decided at the settle and stored on the
+ * reply (critic-notice-kind), never by the stage at delivery: the seller may
+ * type between the two, and the sweep's late send has no reading to ask.
+ * «✅ O‘qildi» used to stand over a table that said the AI read nothing.
+ */
+export const READING_NOTICE: Record<NonNullable<NonNullable<IntakeState['pendingReply']>['notice']>, string> = {
+  read: READING.delivered,
+  cut: '⚠️ AI oxirigacha o‘qimadi — natija pastda ⬇️',
+  failed: '⚠️ AI o‘qiy olmadi — sababi pastda ⬇️',
+  no_model: '📊 Fayl o‘qildi — natija pastda ⬇️',
+  arrived: '⬇️ Yangi xabarlar keldi — pastda',
+};
+
+/** The failures that are no failed CALL: the model was not needed, not there, or not paid for today. */
+const NO_CALL: ReadonlySet<string> = new Set(['nothing_to_read', 'not_configured', 'budget']);
+
+/**
+ * The notice's kind for a settled reading — pure, so the five words are a
+ * test. A cut is said as a cut; a model that answered, as read; material only
+ * the model reads, a stored file that did not load, or a call that failed, as
+ * failed («sababi pastda» — the table says which); a reading that never
+ * needed the model, as the file read («Fayl o‘qildi») — or, with no file,
+ * plainly read.
+ */
+export function noticeKindOf(
+  state: Pick<IntakeState, 'aiUsed' | 'aiFailure' | 'aiCut' | 'filesMissing' | 'fileCount' | 'images' | 'pdfs' | 'sheetTexts' | 'unreadPdfs' | 'goodsFiles'>,
+): 'read' | 'cut' | 'failed' | 'no_model' {
+  if (state.aiCut) return 'cut';
+  if (state.aiUsed) return 'read';
+  if ((state.filesMissing ?? 0) > 0 || modelOnlyMaterial(state)) return 'failed';
+  if (state.aiFailure !== null && !NO_CALL.has(state.aiFailure)) return 'failed';
+  return state.fileCount > 0 ? 'no_model' : 'read';
+}
+
 const ARRIVED_LEAD = 'Tahlil paytida yana ';
 const arrivedWords = (n: number) =>
   `${ARRIVED_LEAD}${n} ta xabar/fayl keldi — ular hali o‘qilmagan.\n` +
@@ -194,11 +232,27 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
       await deliverNextStep(ctx, chatId, back);
       return;
     }
+    // Every file sent was refused at arrival (docs/FAYL-OQISH.md §2.3): the
+    // seller sent something, and «hech narsa yuborilmadi» said he had not.
+    // Each is named with its own reason, and no reading starts.
+    const refused = state.refusedFiles ?? [];
+    if (refused.length > 0) {
+      const named = refused.map((f) => `${f.name} — ${f.why.trim().replace(/[.\s]+$/u, '')}`).join('; ');
+      await ctx.reply(`Yuborilgan fayllarning birortasi ham o‘qiladigan emas: ${named}.`);
+      return;
+    }
     await ctx.reply('Hali hech narsa yuborilmadi.');
     return;
   }
+  // A reading is a press too: the restart question it stood under is over (§2.4).
+  clearRestartAsked(chatId, state);
   const token = randomUUID();
   const jobId = randomUUID();
+  // «🔄» after a CLOCK cut is offered once per material mark (§1.2,
+  // model-reread-and-codes): a re-read of the same material is that once; new
+  // material earns it again.
+  const fresh = !nothingNewToRead(state);
+  const cutRetry = fresh ? { aiCutRetried: false } : state.aiCut && state.aiCut.why !== 'size' ? { aiCutRetried: true } : {};
   // A seller's press (it slides the clock). A reply an earlier reading stored
   // and never got out is dropped: this reading answers for the same material
   // and more, and the stale one must not land after it. No job id yet — and
@@ -209,6 +263,7 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     analysingJob: null,
     readingSaidDead: false,
     pendingReply: null,
+    ...cutRetry,
   });
   // The notice must not decide whether the reading runs (round-1 review, c3):
   // a refused notice — a 429 past the brief retry, a blip to api.telegram.org —
@@ -544,6 +599,8 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
     let patch: Partial<IntakeState>;
     let text: string;
     let keyboard: InlineKeyboard | null;
+    // What the notice above says once the reply is out (§2.3), decided HERE.
+    const notice = outcome.kind === 'arrived' ? 'arrived' : noticeKindOf(outcome.state);
     if (outcome.kind === 'arrived') {
       // The reading settles the prompt (§1.4) here too: these words carry
       // their own «Bo‘ldi», and the next material draws a new prompt below.
@@ -557,12 +614,13 @@ async function readOnce(data: IntakeReadJob): Promise<void> {
         stale: tc.stale,
         nameWord: tc.nameWord,
         aiAvailable: tc.aiAvailable,
+        sheetFit: tc.sheetFit,
       });
       patch = { ...outcome.state, ...step.patch };
       text = step.text;
       keyboard = step.keyboard;
     }
-    pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null, noticeMessageId: data.noticeMessageId };
+    pendingReply = { token: data.token, text, keyboard, at: Date.now(), jobId: null, noticeMessageId: data.noticeMessageId, notice };
     // The token is HELD until the reply is out (review adv-2): every door that
     // asks «is a reading running?» — «Tasdiqlash», ⏭, the certificate, a line
     // answer, the table's edit — asks `analysing`, and a reading stored but
@@ -623,8 +681,11 @@ async function deliver(
   if (sent.ok) {
     settleDelivered(chatId, reply, sent.messageId);
     if (data.noticeMessageId !== null) {
-      // HTML-only (send.ts), and the sentence holds no markup character.
-      void editText({ chatId, messageId: data.noticeMessageId, html: READING.delivered }).catch(() => {});
+      // HTML-only (send.ts), and no sentence holds a markup character. By the
+      // kind STORED with the reply (§2.3) — the live reading's, a retry's and
+      // the sweep's late send alike; a reply stored before the round has
+      // none and keeps «✅ O‘qildi».
+      void editText({ chatId, messageId: data.noticeMessageId, html: READING_NOTICE[reply.notice ?? 'read'] }).catch(() => {});
     }
     return;
   }

@@ -310,6 +310,12 @@ export interface AmendChange {
   applied?: AppliedWrite;
   /** The re-pass reached the queue (set after the commit, read by the redo). */
   repassQueued?: boolean;
+  /**
+   * The addition's own reading did not read this (`AmendSubmission.unread`,
+   * docs/FAYL-OQISH.md §1.6): written, and NO re-pass — neither at the save
+   * nor by a redo of the same note. The seller's words say it.
+   */
+  unread?: string;
 }
 
 /** `saveTable`'s own account of the measures, and the seq each added line got. */
@@ -498,6 +504,7 @@ export function amendDiff(fresh: AmendBase, sub: AmendSubmission, noteId: string
     totalsStale: stale,
     card: fresh.cardLabel,
     section: fresh.section,
+    ...(sub.unread ? { unread: sub.unread } : {}),
   };
 }
 
@@ -1191,13 +1198,17 @@ export async function amendRequest(input: {
   const appliedNow = applied as AppliedWrite | null;
   if (!done) throw new Error('saveTable returned without its in-transaction hook');
   const stamped: AmendChange = { ...change, applied: appliedNow ?? undefined };
-  const queued = await queueCalcPrefill({
-    requestId: input.requestId,
-    staffId: input.staffId,
-    section: stored.base.section,
-    pass: `amend:${done.amendmentId}`,
-    atRev: rev,
-  });
+  // An addition its own reading did not read in full re-runs nothing (§1.6):
+  // the rows it did read are written for the VED, and no AI figure follows.
+  const queued = change.unread
+    ? false
+    : await queueCalcPrefill({
+        requestId: input.requestId,
+        staffId: input.staffId,
+        section: stored.base.section,
+        pass: `amend:${done.amendmentId}`,
+        atRev: rev,
+      });
   if (queued) await markRepassQueued(done.amendmentId);
   await announceWritten(done, input.requestId, input.staffId);
   return {
@@ -1233,7 +1244,7 @@ export async function stampTold(amendmentId: string): Promise<void> {
  */
 export async function redoAmendment(row: CalcAmendmentRow, staffId: string): Promise<CalcAmendmentRow> {
   const change = row.change as AmendChange;
-  if (row.outcome === 'applied' && row.rev !== null && !change.repassQueued) {
+  if (row.outcome === 'applied' && row.rev !== null && !change.repassQueued && !change.unread) {
     const ticket = await ticketStanding(row.requestId);
     // Bounded like sayOnce's claim (review lmp-3): the re-pass answer is
     // addressed to the seller who queued it and is never older than its

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client';
-import { telegramLinks, users } from '../db/schema';
+import { calcRequests, telegramLinks, users } from '../db/schema';
 import { writeAudit } from '../audit/service';
 import { actorGrants, userPermissions } from '../rbac/authorize';
 import {
@@ -49,6 +49,7 @@ import { getSetting, SETTING_DEFAULTS } from '../settings/service';
 import { canLogInSql, staffPhonesMatch } from '../users/login';
 import { THREAD_PING_TYPES, threadOfPayload } from '../notifications/thread-ref';
 import { isBacklog } from './lifecycle';
+import { aiReadingWhole } from './reading-whole';
 import type { OnceKey } from './once';
 import { armWait, dropWait, nowSec, readWait, WAIT_REACH_S, waitVerdict } from './waits';
 
@@ -1497,8 +1498,8 @@ export async function clientCodePrefix(): Promise<string> {
 async function landedWordsOf(
   requestId: string | null | undefined,
   replyQueued: boolean | undefined,
-): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean }> {
-  if (!requestId) return { door: null, aiAvailable: false };
+): Promise<{ door: 'plain' | 'ai' | null; aiAvailable: boolean; items: number | null }> {
+  if (!requestId) return { door: null, aiAvailable: false, items: null };
   let door: 'plain' | 'ai' | null = null;
   try {
     const { requestIntakeDoor } = await import('../../wms/calc/intake-door');
@@ -1506,13 +1507,23 @@ async function landedWordsOf(
   } catch (err) {
     logger.warn({ err, requestId }, '[calc-intake] the landed request’s door not read — today’s words');
   }
-  if (door !== 'ai' || replyQueued !== true) return { door, aiAvailable: false };
+  // The row's item count too (docs/FAYL-OQISH.md §1.3 b, zero-03): an «🤖»
+  // request with no goods is never promised the AI's figure, and the count is
+  // the ROW's — a retried landing's request was opened by an earlier press.
+  let items: number | null = null;
+  try {
+    const [row] = await db.select({ items: calcRequests.itemCount }).from(calcRequests).where(eq(calcRequests.id, requestId)).limit(1);
+    items = row ? row.items : null;
+  } catch (err) {
+    logger.warn({ err, requestId }, '[calc-intake] the landed request’s item count not read');
+  }
+  if (door !== 'ai' || replyQueued !== true) return { door, aiAvailable: false, items };
   try {
     const { aiCalcAvailable } = await import('../../wms/calc/ai-cost');
-    return { door, aiAvailable: await aiCalcAvailable() };
+    return { door, aiAvailable: await aiCalcAvailable(), items };
   } catch (err) {
     logger.warn({ err }, '[calc-intake] AI availability unreadable — the ✅ promises no AI figure');
-    return { door, aiAvailable: false };
+    return { door, aiAvailable: false, items };
   }
 }
 
@@ -1545,15 +1556,41 @@ export async function landCollectedIntake(
   door: 'plain' | 'ai' | null;
   /** On an «🤖» request whose answer was queued: whether the pass has a model today. */
   aiAvailable: boolean;
+  /** The landed request's item count, as its row reads. */
+  items?: number | null;
+  /** The AI door's job landed for the VED alone, and the row says so (docs/FAYL-OQISH.md §1.3 b). */
+  ved?: { reason: string } | null;
 } | null> {
   const { activeIntake, collectionDoor, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
   const state = activeIntake(chatId);
   if (!state) return null;
-  const { parseClientHint } = await import('../../wms/calc/intake');
+  const intake = await import('../../wms/calc/intake');
   const { landIntake, resolveIntakeClient } = await import('../../wms/calc/intake-land');
 
-  const hint = parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
+  const hint = intake.parseClientHint(state.clientHintRaw, { prefix: await clientCodePrefix() });
   const client = hint ? await resolveIntakeClient(hint) : null;
+  // The ONE home that decides how the job lands (docs/FAYL-OQISH.md §1.3 a,
+  // door-aipass-home) — for the press and for the sweep's resume alike, from
+  // the durable state: on the AI door's first or seeded collection, the press
+  // that chose the VED (`landAs`), or a reading that is not whole (a row from
+  // before the round carries no choice), lands with the «🧮» door. Its pass
+  // then prepares the card for the VED and is silent toward the seller — the
+  // existing machinery, no migration — and a later «➕» re-passes silently
+  // too, so the AI figure the ⭐ rejected cannot come back through the add door
+  // (door-ved-then-add).
+  const door = collectionDoor(state);
+  const rows = (state.facts.goods ?? []).length;
+  const whole = aiReadingWhole(state, rows);
+  const toVed = door === 'ai' && !state.amend && (state.landAs === 'ved' || !whole.whole);
+  const vedOf = async () => {
+    const { inputCutOfState } = await import('./calc-dialog');
+    const inputCut = await inputCutOfState(state);
+    return {
+      reason: intake.vedLandingReason(state, whole, inputCut),
+      note: intake.vedLandingNote(state, whole, inputCut, rows),
+    };
+  };
+  const ved = toVed ? await vedOf() : null;
   const landed = await landIntake({
     // Which of the two doors collected it (docs/IKKI-ESHIK.md §0.1) — a
     // seeded collection its source's, NULL included (§0.3) — written on the
@@ -1565,7 +1602,10 @@ export async function landCollectedIntake(
     // A legacy source (every request before 0141, the card form's, the
     // thread's, the agent's) gives NULL: never «🤖» by the collection's flag,
     // which for a legacy source is only `openSeeded`'s «a customs section».
-    intakeDoor: collectionDoor(state),
+    intakeDoor: toVed ? 'plain' : door,
+    // The record stays honest (§1.3 a): the card says the AI door collected
+    // it and why the AI did not compute.
+    doorNote: ved?.note ?? null,
     noteId: state.noteId,
     section: state.section,
     // A code the seller typed lands as his own, never as the model's
@@ -1608,7 +1648,10 @@ export async function landCollectedIntake(
   // and the sweep's resumed landing — come through here.
   const { forgetAddOffers } = await import('./calc-amend');
   forgetAddOffers(chatId);
-  return { ...landed, ...(await landedWordsOf(landed.queued ? landed.requestId : null, landed.replyQueued)) };
+  const words = await landedWordsOf(landed.queued ? landed.requestId : null, landed.replyQueued);
+  // The VED words only where the ROW says the «🧮» door: a request an earlier
+  // press opened with another door is what the pass will follow.
+  return { ...landed, ...words, ved: ved && words.door === 'plain' ? { reason: ved.reason } : null };
 }
 
 /**
