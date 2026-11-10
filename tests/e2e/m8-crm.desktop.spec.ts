@@ -47,10 +47,18 @@ test('a card is dragged from one column to the next', async ({ page }) => {
   await page.mouse.down();
   await page.mouse.move(from.x + from.width / 2 + 20, from.y + 20, { steps: 5 });
   await page.mouse.move(to.x + to.width / 2, to.y + 60, { steps: 10 });
+  // The move is a server action the board fires on the drop. The reload must
+  // come AFTER it answers: a reload racing it renders the board before the
+  // move commits (the database then holds the move and the page does not —
+  // measured 2026-11-10, both of this file's tests red in a quiet run).
+  const moved = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && Boolean(r.request().headers()['next-action']),
+  );
   await page.mouse.up();
 
   // It lands in the new column and stays there after a reload.
   await expect(target.getByText(`Drag mijoz ${runId}`)).toBeVisible();
+  await moved;
   await page.reload();
   await expect(
     page.getByTestId('funnel-desktop').getByTestId('column-open').nth(1).getByText(`Drag mijoz ${runId}`),

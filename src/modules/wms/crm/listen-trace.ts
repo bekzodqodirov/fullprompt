@@ -55,12 +55,51 @@ function isUserPeer(peerId: unknown): boolean {
   return (peerId as { className?: unknown } | null | undefined)?.className === 'PeerUser';
 }
 
-async function quietly<T>(work: (() => Promise<T>) | undefined): Promise<T | undefined> {
+/** The retry after a flood sleep, and the round trip around it. */
+const LOOKUP_MARGIN_S = 15;
+
+/**
+ * How long one lookup may take before it is given up on. gramjs `invoke` has
+ * no timeout, and every lookup here runs INSIDE the sender's queue: a
+ * GetUsers that HANGS would hold that person's every later line behind it for
+ * the life of the process.
+ *
+ * But a FLOOD_WAIT up to the client's `floodSleepThreshold` is not a hang:
+ * `invoke` sleeps it out itself and then answers (`client/users.js`,
+ * `e.seconds <= client.floodSleepThreshold`), and the listener keeps that
+ * sleep on purpose (ban-2's deviation). A deadline inside it turned a line
+ * that would have been stored a minute late into one never stored at all —
+ * an unresolved line is passed over, and catch-up runs only at start, from
+ * the newest stored id (the review of this fix: a 45 s flood on a known
+ * client's GetUsers). So the bound sits a margin PAST the sleep: one flood
+ * sleep and its retry finish; only a request that answers nothing for
+ * longer is given up. Two floods back to back on one lookup are the one
+ * case still passed over — named «aniqlab bermadi» in the log of the
+ * account the AI speaks from.
+ */
+export function lookupDeadlineMs(floodSleepThresholdS: number): number {
+  return (floodSleepThresholdS + LOOKUP_MARGIN_S) * 1000;
+}
+
+/** gramjs's own default threshold, 60 s — what the listener runs with. */
+export const LOOKUP_DEADLINE_MS = lookupDeadlineMs(60);
+
+/** A lookup that answers — or answers nothing, by throwing or by running past `deadlineMs`. */
+async function quietly<T>(work: (() => Promise<T>) | undefined, deadlineMs?: number): Promise<T | undefined> {
   if (!work) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await work();
+    if (deadlineMs === undefined) return await work();
+    // `race` subscribes to the lookup too, so one that fails after the
+    // deadline is a settled promise nobody reads, never an unhandled rejection.
+    const deadline = new Promise<undefined>((resolve) => {
+      timer = setTimeout(() => resolve(undefined), deadlineMs);
+    });
+    return await Promise.race([work(), deadline]);
   } catch {
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -79,10 +118,12 @@ function cached(msg: ChatSource): boolean {
  * an event handler.
  *
  * At most: the message's own lookup, one SHARED warm-up (paced by its owner,
- * `sharedWarmer`), one more lookup, one GetUsers by the bare peer. And a peer
- * the cache already knew whose lookup still failed is a network failure, not
- * a miss — it is answered unresolved at once, so a flood is not knocked on
- * three more times per line.
+ * `sharedWarmer`), one more lookup, one GetUsers by the bare peer — each of
+ * them given up at its own deadline, so a person's queue is held for a
+ * bounded time and never for the life of the process. And a peer the cache
+ * already knew whose lookup still failed is a network failure, not a miss —
+ * it is answered unresolved at once, so a flood is not knocked on three more
+ * times per line.
  */
 export async function chatOfMessage(
   msg: ChatSource,
@@ -90,9 +131,20 @@ export async function chatOfMessage(
     /** Fill the entity cache with the newest dialogs — one call shared by every line waiting on it. */
     warm?: () => Promise<unknown>;
     getEntity?: (peer: unknown) => Promise<unknown>;
+    /**
+     * How long each lookup that may ask Telegram is waited for — past the
+     * client's flood sleep (`lookupDeadlineMs`); the warm-up keeps its own
+     * (`sharedWarmer`). Past it the lookup answered nothing: the line is
+     * unresolved and the sender's next line is not held.
+     */
+    deadlineMs?: number;
   } = {},
 ): Promise<ResolvedChat> {
-  const direct = await quietly(msg.getChat?.bind(msg));
+  const deadlineMs = lookups.deadlineMs ?? LOOKUP_DEADLINE_MS;
+  // For a peer the cache knows only by its input peer — every known client
+  // after the first warm-up — `getChat()` is a GetUsers too: the same hang,
+  // and the same flood sleep, so the same deadline.
+  const direct = await quietly(msg.getChat?.bind(msg), deadlineMs);
   if (direct) return { chat: direct, unresolved: false, via: 'direct' };
   // Only a bare USER needs more. A group's or a channel's message carries its
   // chat in the update, and a group is never a client chat anyway.
@@ -102,14 +154,14 @@ export async function chatOfMessage(
   await quietly(lookups.warm);
   if (cached(msg)) {
     // `getChat()` now finds the input peer in the cache and asks for the user.
-    const walked = await quietly(msg.getChat?.bind(msg));
+    const walked = await quietly(msg.getChat?.bind(msg), deadlineMs);
     if (walked) return { chat: walked, unresolved: false, via: 'dialogs' };
     return { chat: undefined, unresolved: true, via: null };
   }
   // Not among the newest dialogs either: a bare id still resolves for a
   // contact (gramjs `getInputEntity`, GetUsers with access hash 0).
   const getEntity = lookups.getEntity;
-  const asked = getEntity ? await quietly(() => getEntity(msg.peerId)) : undefined;
+  const asked = getEntity ? await quietly(() => getEntity(msg.peerId), deadlineMs) : undefined;
   if (asked) return { chat: asked, unresolved: false, via: 'entity' };
   return { chat: undefined, unresolved: true, via: null };
 }
@@ -184,9 +236,15 @@ export function lastFour(value: bigint | string | null | undefined): string {
   return digits.slice(-4).padStart(4, '•');
 }
 
-/** Why the live path did not keep an inbound line — the verdict's own reason, plus the one the handler adds. */
+/**
+ * Why the live path did not keep an inbound line — the verdict's own reason,
+ * plus the two the handler adds: `unresolved` (Telegram named nobody) and
+ * `held` (a work number's hidden-number line whose chat a person's ↩ put back
+ * in question on the tray — the door does not bind it over his answer).
+ */
 export type PassReason =
   | 'unresolved'
+  | 'held'
   | 'not_private'
   | 'is_bot'
   | 'no_phone'
@@ -211,6 +269,8 @@ export function passedLine(input: { reason: PassReason | string; phone: string |
       return '  · o‘tkazildi: Telegram yozgan odamni aniqlab bermadi — AI ko‘rmadi';
     case 'no_phone':
       return '  · o‘tkazildi: yozgan odamning raqami yashirin — uni shu Telegram kontaktlariga raqami bilan saqlang';
+    case 'held':
+      return '  · o‘tkazildi: bu chat «Qaysi chatlar»da javobingizni kutyapti (↩) — o‘sha yerda «Lid ochish» yoki «hech qachon»';
     case 'not_a_client':
       return `  · o‘tkazildi: ${input.phone ? `…${lastFour(input.phone)}` : 'bu'} raqami mijozlar ro‘yxatida yo‘q — «Qaysi chatlar»da so‘raladi`;
     case 'excluded':

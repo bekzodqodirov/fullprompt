@@ -274,8 +274,9 @@ describe('the send path’s review fixes, as wired', () => {
     expect(seen.indexOf('agentHere()')).toBeLessThan(seen.indexOf('noteStranger('));
     expect(seen).not.toMatch(/msg\.|message:|body:/);
     const handle = body('const handleMessage = async', 'const rethinkOnEdit = async');
-    expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask')");
-    expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone')");
+    // `reopened`: the listener's own binding just retired (chat-lead `settlePassedChat`) — never the line's text.
+    expect(handle).toContain("strangerSeen(peer, msg.out === true, 'ask', reopened)");
+    expect(handle).toContain("if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone', reopened)");
     // The live line, a pull and the site sweep all carry the user's flags; nothing else reads them.
     // The live line resolves its chat through `chatOfMessage` first (2026-10-29: a short update's bare peer).
     expect(source.match(/listenPeer\(await msg\.getChat\?\.\(\)\)/g)).toHaveLength(2);

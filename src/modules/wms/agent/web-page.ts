@@ -16,8 +16,8 @@ import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { MAX_OPEN_PER_REQUESTER, openRequests } from '../calc/service';
 import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
-import { cardDigest, digestBody } from './card';
-import { renderDraftCard } from './card-io';
+import { cardDigest, cardDrawsSend, digestBody } from './card';
+import { renderDraftCardFull } from './card-io';
 import { agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
@@ -41,7 +41,10 @@ export interface WebDraft {
   status: string;
   kind: string;
   needsOwner: boolean;
+  /** No ✅: the policy blocked it, or the card cannot show the whole reply (card-io `renderDraftCardFull`). */
   blocked: boolean;
+  /** He wrote his own words for it — an `editing` draft WITHOUT them still sends the machine's on ✅ (decide). */
+  ownText: boolean;
   /** The text a ✏️ box opens with — his own, or the machine's. */
   body: string;
   /** `decideDraft`'s digest of what this card shows. */
@@ -54,6 +57,13 @@ export interface WebDraft {
   /** The «remember this answer» question is open (spec §7.1.4) — and armed for a general fact. */
   kbAsk: boolean;
   kbArmed: boolean;
+  /**
+   * The arm's token while the general-fact question stands (`kbPress`): the
+   * page's «📌 Ha, barcha mijozlar uchun» is the yes ON that question, as the
+   * bot's «📌 Ha, hammaga» carries it in its callback. Null while not armed —
+   * so a page drawn before the 📌 can never be the yes.
+   */
+  kbArmToken: string | null;
   /**
    * Approved replies of this draft's chat still waiting to leave — what its 🙋
    * would take back with it (ident fix F10): the page asks before the press,
@@ -70,6 +80,17 @@ export function webDigest(d: Pick<DraftRow, 'finalBody' | 'proposedBody' | 'acti
   return cardDigest(digestBody(d), (d.actions ?? []) as ComposedAction[]);
 }
 
+/**
+ * Does the page draw ✅ for this draft — the bot's own rule (card
+ * `cardDrawsSend`, which the bot's keyboard is drawn by too): not blocked
+ * (the policy, or a card too long to show), and live — `editing` included
+ * while he has written nothing for it, because ✅ then sends the machine's
+ * words exactly as the bot's does (decide `decideDraft`, C7).
+ */
+export function pageDrawsSend(d: Pick<WebDraft, 'blocked' | 'status' | 'ownText'>): boolean {
+  return cardDrawsSend(d);
+}
+
 function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   if (d.clientId) return `/suhbatlar/${d.clientId}`;
   if (d.leadId) return `/crm/leads/${d.leadId}#tg-thread`;
@@ -77,7 +98,9 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
 }
 
 function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
-  const kb = ((d.policy ?? {}) as { kb?: string }).kb;
+  const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
+  // The page lists live and approved drafts only, so no line here names his own reply's pause.
+  const card = renderDraftCardFull(d, o, [], { surface: 'web' });
   return {
     id: d.id,
     managerUserId: d.managerUserId,
@@ -85,15 +108,17 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     status: d.status,
     kind: d.kind,
     needsOwner: d.needsOwner,
-    blocked: d.blocked,
+    blocked: d.blocked || card.tooLong,
+    ownText: d.finalBody !== null,
     body: digestBody(d),
     digest: webDigest(d),
-    cardText: renderDraftCard(d, o),
+    cardText: card.text,
     chatHref: chatHrefOf(d),
     createdAt: d.createdAt,
     outbox: o ? { id: o.id, status: o.status, nextStepAt: o.nextStepAt, readDone: o.readDone, step: o.step } : null,
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
     kbArmed: kb === 'general_armed',
+    kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
   };
 }

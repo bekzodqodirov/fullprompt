@@ -222,7 +222,7 @@ describe('what a tag in a message may do', () => {
   it('lands a stranger: the tray question, a hidden number, a work account lead', () => {
     const ask: LiveVerdict = { store: false, ask: true, peerId: 1n, phone: '998901112233', title: 'A' };
     const hidden: LiveVerdict = { store: false, reason: 'no_phone' };
-    const work: LiveVerdict = { store: true, openLead: true, peer: { phone: '1', title: 'A' }, row: messageRow };
+    const work: LiveVerdict = { store: true, openLead: true, peer: { peerId: 1n, phone: '1', title: 'A' }, row: messageRow };
     for (const verdict of [ask, hidden, work]) {
       expect(siteTagAction(verdict, row(tag))).toEqual({ kind: 'land', tag: 'GSR-7F3K2' });
     }
@@ -254,7 +254,7 @@ describe('the stale-book refresh', () => {
   it('is keyed on the verdicts a stranger actually gets', () => {
     const messageRow = { peerId: 1n } as MessageRow;
     expect(suspectsStaleBook({ store: false, ask: true, peerId: 1n, phone: '1', title: 'A' })).toBe(true);
-    expect(suspectsStaleBook({ store: true, openLead: true, peer: { phone: '1', title: 'A' }, row: messageRow })).toBe(true);
+    expect(suspectsStaleBook({ store: true, openLead: true, peer: { peerId: 1n, phone: '1', title: 'A' }, row: messageRow })).toBe(true);
     expect(suspectsStaleBook({ store: false, reason: 'no_phone' })).toBe(false);
     expect(suspectsStaleBook({ store: true, clientId: 'c', clientCode: 'GS1', row: messageRow })).toBe(false);
   });

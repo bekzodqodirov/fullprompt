@@ -11,6 +11,7 @@ import {
   openCalcsFor,
   ownerAccountState,
   ownerCandidates,
+  pageDrawsSend,
   tariffMismatchSeen,
   userName,
   webDrafts,
@@ -106,7 +107,7 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         body={d.body}
         holder={d.managerUserId === viewerId}
         holderName={d.holderName}
-        canSend={!d.blocked && d.status === 'pending'}
+        canSend={pageDrawsSend(d)}
         waitingInChat={d.waitingInChat}
       />
     </article>
@@ -264,7 +265,7 @@ export default async function AgentPage({ searchParams }: { searchParams: Promis
                     {d.cardText}
                   </pre>
                   {d.managerUserId === actor.id ? (
-                    <RememberButtons draftId={d.id} armed={d.kbArmed} />
+                    <RememberButtons draftId={d.id} armToken={d.kbArmToken} />
                   ) : (
                     <p className="text-xs text-ink-500">{t('notHolder', { name: d.holderName })}</p>
                   )}

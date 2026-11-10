@@ -264,6 +264,32 @@ describe('a run drafts a reply and posts its card', () => {
     expect((sameRow!.payload as { draftId: string }).draftId).toBe(second!.id);
   });
 
+  it('a card written 23 minutes after the customer’s line says so, first, with the job’s own cause (C11)', async () => {
+    const a = await inbound('Yukim qayerda?', 23 * 60_000);
+    const out = await handleInbound({ ...job(a), origin: 'pull' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });
+    expect(out).toMatchObject({ outcome: 'draft' });
+    const d = await liveDraft();
+    // A pull follows an answer given at either door — the bot's card or the web tray — and names neither one's buttons.
+    const late = '⏱ Mijoz 23 daqiqadan beri javob kutyapti (chat lid yoki mijoz deb belgilangandan keyin yozildi)';
+    expect((d!.policy as { notes: string[] }).notes[0]).toBe(late);
+    expect(((await cardOf(d!.id))!.payload as { text: string }).text).toContain(`ℹ️ ${late}`);
+  });
+
+  it('the wait is counted from the customer’s FIRST unanswered line, not the anchor (C11, the run’s own argument)', async () => {
+    await inbound('Assalomu alaykum, yuk bor', 30 * 60_000);
+    const a = await inbound('Yiwudan Toshkentga 5 kub, narxi qancha?', 5 * 60_000);
+    await handleInbound({ ...job(a), origin: 'sweep' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });
+    const d = await liveDraft();
+    expect((d!.policy as { notes: string[] }).notes[0]).toBe('⏱ Mijoz 30 daqiqadan beri javob kutyapti (AI qayta tekshirganda yozildi)');
+  });
+
+  it('…and a card on time carries no such line', async () => {
+    const a = await inbound('Yukim qayerda?');
+    await handleInbound({ ...job(a), origin: 'pull' }, { callModel: scripted([compose('Tekshirib aytaman.')]) });
+    const d = await liveDraft();
+    expect(((await cardOf(d!.id))!.payload as { text: string }).text).not.toContain('⏱');
+  });
+
   it('a promise blocks ✅ — the card draws no send button', async () => {
     const a = await inbound('Chegirma bormi?');
     const out = await handleInbound(job(a), { callModel: scripted([compose('Albatta, sizga chegirma qilamiz.')]) });

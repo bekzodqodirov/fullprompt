@@ -1,5 +1,114 @@
 # CHANGELOG
 
+## 2026-11-10 (29-oktabr kechqurun yozilgan) — «✅ Yuborish» oddiy javobda ham chiqadi; raqami yashirin mijoz ham lid bo'ladi
+
+Sizning so'zingiz: «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», javobingiz **«A»**
+va **«1 a»**. Bitta migratsiya (**0142**; avval 0139 edi, boshqa sessiyaning uch raundi 0139-0141 ni oldin oldi). Deploydan keyin baza hisobi **143** bo'lishi kerak — agar serveringizga 0139-0141 (Sakkiz band R3, Horgos navbati, Ikki eshik) hali tushmagan bo'lsa, ular ham shu deployda tushadi va son baribir 143. Yangilangani shu son,
+`/api/version` va tinglovchining birinchi qatori bilan tekshiriladi. Tinglovchi (tg-listen) albatta qayta quriladi.
+
+### Nima tuzatildi — AI javobi
+- **Oddiy salomlashuv va savol javoblari endi to'xtatilmaydi.** Quyidagilar sababsiz to'xtatilayotgan edi:
+  - AI «1. Tovar nomi 2. Necha kub» deb so'rasa, tizim ro'yxat raqamlarini pul deb o'qirdi;
+  - javobda ikkita savol bo'lsa;
+  - «Ming rahmat» yoki «uch narsa kerak» kabi so'z bilan yozilgan son bo'lsa;
+  - «necha kunda», «bir necha daqiqada» kabi gap bo'lsa;
+  - mijozga «yuk necha kunda kerak?» deb so'ralsa, bu bizning va'damiz deb o'qilardi.
+
+  Endi bular o'tadi. AI ham raqamlangan ro'yxat o'rniga «•» belgisi bilan yozadi. Ikkita savol bo'lsa kartada
+  faqat ⚠️ ogohlantirish chiqadi, ✅ joyida qoladi.
+- **Xavfli narsalar avvalgidek to'xtatiladi:** manbasiz narx, «N kunda yetkazamiz» va'dasi, chegirma, kafolat,
+  qarzga berish, bepul xizmat, boshqa mijozning kodi, begona telefon, tizim kodi. Har bir yumshatish yonida shu
+  eshik yopiq qolganini alohida tekshiruvchi buzishga urinib sinadi.
+- Yo'l-yo'lakay ikkita teskari teshik ham yopildi. Ilgari «taxminan 29 kunda yetib keladi» Guanchjou manzilidagi
+  «29» uy raqami tufayli o'tib ketardi. «muammo boʼlmaydi» kafolati esa boshqacha apostrof bilan yozilsa
+  sezilmasdi. Endi ikkalasi ham to'xtatiladi.
+
+### Nima tuzatildi — karta
+- Tugma nomi endi **«✏️ O'zgartirish»**. Bosganingizda bot to'g'ri matnni **shu botga** yozishni aytadi, mijoz
+  chatiga emas. Keyin AI matnini alohida xabar qilib yuboradi, uni nusxalab tuzatsangiz bo'ladi.
+- ✅ chiqmasa, kartada sababi oddiy so'z bilan va nima qilish kerakligi yoziladi.
+- Botga matningizni yozganingizdan keyin, o'sha javobning tagida **«✅ Yuborish»** tugmasi chiqadi. ✅ bilan
+  birga yana nima bajarilishi ham shu yerda yoziladi.
+- Mijozga Telegramda o'zingiz yozsangiz, kartada **«Siz mijozga Telegramda o'zingiz yozdingiz (soat) — AI javobi
+  bekor qilindi»** deb yoziladi. 🙋 bossangiz, boshqacha yoziladi: «AI bu chatga 24 soat yozmaydi».
+- ✏️ ni adashib bossangiz, ✅ baribir AI matnini yuboradi, agar u to'xtatilmagan bo'lsa.
+- Karta kech kelsa, unda **«⏱ Mijoz N daqiqadan beri javob kutyapti»** deb va iloji bo'lsa sababi bilan yoziladi.
+
+### Nima tuzatildi — tinglovchi
+- **«Ish raqami» yoqilganini tinglovchi 30 soniya ichida sezadi.** Ilgari ba'zan hech sezmay qolardi. Ishga
+  tushganda birinchi qatorda raqam turi ham yoziladi: «ish raqami» yoki «shaxsiy raqam».
+- «Qaysi chatlar»da notanish odamga **«Yangi lid»**ni o'zingiz bossangiz, AI uning birinchi xabarlariga ham javob
+  tayyorlaydi.
+- **Raqamini yashirgan odam ish raqamingizga yozsa, tizim avtomatik lid ochadi** (sizning «1 a»). Lid nomi uning
+  Telegramdagi ismi bo'ladi, ismi bo'lmasa «Telegram (raqam yashirin)». Bitta odamga bitta lid ochiladi. Raqami
+  keyin ko'rinib, mijozlar ro'yxatidagi mijoz bo'lib chiqsa, chat o'sha mijozga o'tadi. Raqam yashirin ekan, AI unga
+  yuki va balansi haqida gapirmaydi. «Shaxsiy raqam»da yangi notanish odam uchun hammasi avvalgidek qoladi.
+
+### Tekshiruvdan keyin tuzatilganlar
+- **Saytdan kelgan mijozning keyingi xabarlari yo'qolmaydi.** Birinchi tuzatish sayt orqali ochilgan lidning
+  chatini «tizim o'zi ochgan lid» deb o'qib qo'yardi: shaxsiy raqamda bunday mijozning keyingi xabarlari
+  saqlanmay qolardi. Endi tizim o'zi ochgan lidda alohida belgi bor, sayt lidlari esa avvalgidek ishlaydi.
+- **«Shaxsiy raqam»ga qaytarsangiz, ochilgan lidlar yo'qolmaydi.** Tugma faqat YANGI notanish odamga ta'sir qiladi.
+  Raqami yashirin odam ish raqamiga yozib lid o'zi ochilgan bo'lsa, uning xabarlari o'sha ochiq lidga tushaveradi
+  (keyin raqami ko'rinsa ham). Raqami ko'rinib turgan odam esa shaxsiy raqamda avvalgidek «Qaysi chatlar»da
+  so'raladi: «Lid ochish» bossangiz, chat o'sha raqamdagi eski lidga tushadi — ikkinchi lid ochilmaydi. Javob
+  berilmaguncha uning xabarlari saqlanmaydi (shaxsiy raqamning qoidasi). Lid yutilgan yoki yo'qotilgan bo'lsa, odam
+  o'zi yana yozganda u yangi notanish hisoblanadi: «Qaysi chatlar»da so'raladi va AI egasiga yangi «📵» karta keladi
+  (siz birinchi yozsangiz — hali emas).
+- **«📵» karta ish raqamida o'zi yopiladi.** Odam avval shaxsiy raqamga yozib karta kelgan bo'lsa, keyin raqam «Ish
+  raqami» bo'lib lid o'zi ochilsa, karta «lid o'zi ochildi» deb yopiladi. Shunday chatda tugmalar baribir ishlaydi:
+  «🚫 Shaxsiy» chatni o'chiradi va lidga saqlangan xabarlarni ham o'chiradi; «👤 Mijoz — kod» chatni mijozga
+  o'tkazadi; «🆕 Yangi lid» lidni sizniki qilib yozadi.
+- **«🚫 Shaxsiy» bosilsa, tizim o'zi saqlagan xabarlar ham o'chadi.** Hali hech kim javob bermagan chatda tizim
+  xabarlarni o'zi lidga saqlagan bo'lsa (masalan, odam raqamini ko'rsatib ish raqamiga yozgan), «🚫 Shaxsiy»
+  ularni ham o'chiradi. Mijozga tegishli xabarlar hech qachon shu tugma bilan o'chmaydi; siz o'zingiz ↩ qilgan
+  chatning xabarlari ham o'chmaydi.
+- **«Qaysi chatlar»dagi ↩ endi ustidan yozilmaydi.** Ish raqamida tizim ochgan lidni ↩ bilan qaytarsangiz, keyingi
+  xabar uni qayta lidga bog'lamaydi — chat sizning javobingizni kutadi (shu orada xabarlari saqlanmaydi). Ish
+  raqamida raqami yashirin odam uchun «Lid ochish» tugmasi endi shu sahifada ham bor. Raqami ko'rinib turgan odamga
+  ↩ ta'sir qilmaydi: ish raqamida u avvalgidek raqami bo'yicha lidga tushaveradi.
+- **Telegramning o'z akkauntlari** (kodlar keladigan «Verification Codes» va boshqalar) «Qaysi chatlar»da
+  ko'rsatilmaydi va ular haqida «📵» karta kelmaydi. Eski karta qolgan bo'lsa, tugmasi «Telegram xizmati — mijoz
+  emas» deb javob beradi.
+
+- **So'z bilan yozilgan narx va yashirin va'dalar yana to'xtatiladi.** Birinchi yumshatish ba'zi xavfli javoblarni ham
+  o'tkazib yuborardi, masalan:
+  - «3 kub yukingizga besh yuz atrofida bo'ladi»;
+  - «Shuncha kunda yetkazib beramiz»;
+  - «Hisoblash bepul, qolgani ham»;
+  - «yuk kelganda to'laysiz… lekin shoshilmasangiz ham bo'ladi».
+
+  Endi bular to'xtatiladi. Oddiy salomlashuv va kub/kg so'rash esa baribir o'tadi.
+- **Siz ✅ bosgan matnning o'zi ketadi.** Botga matn yozayotganingizda ✅ ni bossangiz, ilgari kartada bir matn
+  ko'rinib, mijozga boshqasi ketishi mumkin edi. Endi karta o'zgargan bo'lsa, ✅ «Karta o'zgargan» deb rad etadi.
+- Mijoz xabarini tahrirlasa, kartada «mijoz yana yozdi» emas, **«Mijoz xabarini tahrirladi»** deb yoziladi.
+- «GSR Logistics» so'zi endi «hodim ismi» deb ogohlantirish chiqarmaydi.
+
+- **Oxirgi tekshiruvdan keyin.** Raqam bilan yozilgan son, masalan «Xitoyda 3 ta qabul ombori bor: Ivu, Guanchjou
+  va Xorgos», endi javobning o'zidagi ro'yxat bilan tasdiqlanadi va ✅ chiqadi. Ham «bu taxmin» oxirida turgan
+  muddat, ham «15 дан 25 кунгача» o'tadi.
+- **Bir xil salom ko'p mijozga ketsa ham ✅ qoladi.** Kartada faqat «bir xil matn yana N ta chatga ketgan» degan
+  ogohlantirish chiqadi. Bu faqat narx, telefon yoki havola bo'lmagan qisqa matnga tegishli. Uzun yoki raqamli matn
+  avvalgidek to'xtatiladi, chunki bu Telegram ban xavfiga qarshi qoida.
+- Kartadagi tugmalar ham to'g'rilandi: ❌ bosilganda mijoz tahrirlagan savolga yangi qoralama yoziladi; kunlik
+  limit tugagan chatda «yangi qoralama tayyorlanadi» deb aldamaydi; siz bekor qilgan javob «allaqachon tasdiqlangan»
+  deb hisoblanmaydi.
+
+### Yo'riqnoma yozilayotganda topilib tuzatilganlar (10-noyabr)
+- Saytdagi «Suhbatlar → AI sotuvchi → Savollar» bo'limida «📌 Umumiy qoida» endi haqiqatan saqlaydi. Avval ikkinchi
+  bosish ham faqat qayta so'rardi. Botdagi «📌 Ha, hammaga» doim ishlagan.
+- Chatning «⋯» menyusidagi «Bu chatni olmang» endi to'g'risini aytadi: saqlangan xabarlar va rasmlar ham o'chadi.
+  Avval «eski xabarlar qoladi» deb yozilgan edi.
+- Telegram akkauntni cheklaganda keladigan xabar tugmaning haqiqiy nomini aytadi: «Tekshirdim, qayta yoqish»
+  («Suhbatlar»dagi qizil «⛔ To‘xtatilgan» qatorini ochganda chiqadi).
+
+### Bilib qo'ying
+- «O'n yillik tajriba», «ikki yuz», «ming» kabi so'z bilan yozilgan katta son javobda bo'lsa, ✅ chiqmaydi. Raqam
+  bilan yozilgani kabi u ham manba so'raydi. «Ming rahmat» va «ikki xil yo'l» o'tadi.
+- Raqamini yashirgan hodim ish raqamingizga yozsa, u ham lid bo'lib ochiladi: tizim uning raqamini ko'ra olmaydi.
+- Tinglovchi to'xtab turgan paytda raqami yashirin odam yozgan bo'lsa, o'sha xabarlar keyin olinmaydi. Lid u yana
+  yozganda ochiladi.
+
 ## 2026-11-09 — Ikki eshik: «🧮 Hisoblatish» va «🤖 AI rastamojka» endi ikki xil ishlaydi
 
 8-noyabrdagi xabaringiz va oltita savolga «sen aytgandek bolsin» javobingiz (1a-6a, hammasi ⭐) bo'yicha. **Yangi migratsiya bor (0141).** Deploydan keyin **migratsiyalar soni 142** bo'lishi kerak, `curl -s https://gsrwms.uz/api/version` esa bugungi vaqtni ko'rsatishi kerak. **tg-listen qayta yig'iladi.** Bu deploy Horgos navbati raundining 0140 migratsiyasini ham olib keladi (agar u hali serverda bo'lmasa) — hisob baribir **142**.

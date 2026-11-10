@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import { pgClient } from '../src/modules/platform/db/client';
 import { getSetting } from '../src/modules/platform/settings/service';
-import { recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
+import { chatRuleFor, recordCandidates, rulesFor } from '../src/modules/wms/crm/chat-rules';
 import {
   claimNext,
   clientHasWritten,
@@ -51,6 +51,9 @@ import {
   decideIncoming,
   newBook,
   shouldRefreshOnMiss,
+  switchDecides,
+  workModeSwitch,
+  workModeWord,
   HEARTBEAT_MS,
   type BookState,
   type LiveVerdict,
@@ -64,7 +67,7 @@ import {
   type DialogPeer,
   type RawMessage,
 } from '../src/modules/wms/crm/telegram-import';
-import { chatOfMessage, lastFour, passedLine, sharedWarmer, userIdOf } from '../src/modules/wms/crm/listen-trace';
+import { chatOfMessage, lastFour, lookupDeadlineMs, passedLine, sharedWarmer, userIdOf } from '../src/modules/wms/crm/listen-trace';
 import {
   confirmSiteTagOnCard,
   landSiteTag,
@@ -76,7 +79,7 @@ import {
   siteTagAction,
   suspectsStaleBook,
 } from '../src/modules/wms/crm/site-assign-rules';
-import { isWorkAccount, leadForChat } from '../src/modules/wms/crm/chat-lead';
+import { isWorkAccount, ownerOfVerdict, settlePassedChat } from '../src/modules/wms/crm/chat-lead';
 import { indexPeers, lastIndexedAt, type PeerSeen } from '../src/modules/wms/crm/peer-index';
 import { saveAttachment } from '../src/modules/platform/files/service';
 import { generateThumbnails } from '../src/modules/platform/jobs/thumbnails';
@@ -218,7 +221,12 @@ const CATCHUP_WARM_DIALOGS = 100;
 const WARM_GAP_MS = 10_000;
 /** After a failed warm-up (a thrown FLOOD_WAIT is over 60 s by gramjs's own threshold). */
 const WARM_FAIL_GAP_MS = 120_000;
-/** A warm-up given up on: gramjs `invoke` has no timeout of its own. */
+/**
+ * A warm-up given up on: gramjs `invoke` has no timeout of its own. A live
+ * line's own lookups have theirs, past gramjs's flood sleep
+ * (`lookupDeadlineMs`) — a warm-up that times out falls through to the next
+ * lookup, a lookup that times out passes the line over.
+ */
 const WARM_DEADLINE_MS = 30_000;
 
 /**
@@ -399,9 +407,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
   let passed = 0;
   // Strangers put on the tray for the manager to answer about (round 79).
   let asked = 0;
-  let workAccount = await isWorkAccount(account.managerUserId);
+  /**
+   * «Ish raqami» on its own half-minute clock, never the book's (2026-10-29):
+   * the stranger path asks it before it decides a stranger's line, so a
+   * switch flipped on the screen is the next stranger's answer within thirty
+   * seconds however often strangers write — and every stranger writing at
+   * that moment, not only the first (`workModeSwitch`). Says so in the log
+   * when it moved. A failed read keeps the last answer: the switch is a
+   * setting, and a database blink must not turn a work number personal.
+   */
+  const workMode = workModeSwitch({
+    initial: await isWorkAccount(account.managerUserId),
+    now: Date.now(),
+    read: () => isWorkAccount(account.managerUserId),
+    log: (line) => console.log(line),
+    warn: (err) => console.error('«ish raqami» o‘qilmadi:', err instanceof Error ? err.message : err),
+  });
   console.log(
-    `tinglayapman: ${account.managerName} · ${tgPhone} · ${book.clients.length} mijoz · ${rules.size} qoida`,
+    `tinglayapman: ${account.managerName} · ${tgPhone} · ${workModeWord(workMode.work)} · ${book.clients.length} mijoz · ${rules.size} qoida`,
   );
 
   /**
@@ -596,7 +619,11 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       // (the review of this fix: a site tag and its photo, decided backwards).
       await serialised(bareUser.toString(), async () => {
         try {
-          const resolved = await chatOfMessage(msg, { warm: warmDialogs, getEntity: (p) => client.getEntity(p as never) });
+          const resolved = await chatOfMessage(msg, {
+            warm: warmDialogs,
+            getEntity: (p) => client.getEntity(p as never),
+            deadlineMs: lookupDeadlineMs(client.floodSleepThreshold),
+          });
           if (!resolved.unresolved) return await decide(listenPeer(resolved.chat));
           // Telegram's own account is known by its id alone (K33): a notice
           // that cannot be resolved must still switch the agent off.
@@ -684,7 +711,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
    * account, and this one with the agent off, does exactly what it did. Never
    * a word of the message. A failure is a missed card, never a lost message.
    */
-  const strangerSeen = async (peer: ListenPeer, out: boolean, verdict: 'ask' | 'no_phone') => {
+  const strangerSeen = async (peer: ListenPeer, out: boolean, verdict: 'ask' | 'no_phone', reopened = false) => {
     if (out || !peer.user) return;
     try {
       if (!(await agentHere())) return;
@@ -694,6 +721,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
         title: peerTitle(peer),
         verdict,
         user: peer.user,
+        reopened,
       });
     } catch (err) {
       console.error('notanish belgisi yozilmadi:', err instanceof Error ? err.message : err);
@@ -710,13 +738,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (bookIsStale(book, now)) {
         book = newBook(await clientBook(), now);
         rules = await rulesFor(account.managerUserId);
-        // Re-read on the same tick as the book: the manager may have flipped
-        // «ish raqami» on the screen while the listener was running, and a
-        // switch that needs a restart is a switch nobody trusts.
-        workAccount = await isWorkAccount(account.managerUserId);
+        // Re-read on the same tick as the book as well: the manager may have
+        // flipped «ish raqami» on the screen while the listener was running,
+        // and a switch that needs a restart is a switch nobody trusts.
+        await workMode.refresh(now, true);
       }
 
-      let verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+      const decidedWith = workMode.work;
+      let verdict = decideIncoming(peer, msg, book.clients, rules, decidedWith);
+      // A stranger's line is the one the switch decides (a lead, or a tray
+      // question — and since his «1 a» a hidden number too, a lead or passed
+      // over) — so it asks the switch's own clock first. The miss refresh
+      // below resets the BOOK's, and on a busy number that alone kept the
+      // switch from ever being read again. Decided again whenever the switch
+      // now differs from the value THIS line was decided with — read afresh
+      // when the line would be STORED on its say-so (`movedFrom`'s force).
+      if (switchDecides(verdict) && (await workMode.movedFrom(decidedWith, now, verdict.store))) {
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
+      }
       // A number we do not know MIGHT be a client added since the book was
       // read. Ask once, rate-limited, before concluding they are a stranger.
       // Keyed on the verdicts a stranger actually gets since round 79 — the
@@ -724,11 +763,30 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
       if (suspectsStaleBook(verdict) && shouldRefreshOnMiss(book, now)) {
         book = { ...newBook(await clientBook(), now), missRefreshedAt: now };
         rules = await rulesFor(account.managerUserId);
-        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
       }
       // A website visitor's tag may turn this stranger into a lead's chat.
       if (await applySiteTag(peer, msg, verdict)) {
-        verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+        verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
+      }
+      // The switch decides about NEW strangers only (the 2026-10-29 review): a
+      // chat whose own binding's lead has closed is a new stranger again —
+      // asked, not left in a hole — once the customer writes, never on the
+      // manager's own line (`settlePassedChat`). What is NOT new stands by
+      // its rule, which `decideIncoming` has already read.
+      let reopened = false;
+      if (!verdict.store && ('ask' in verdict || verdict.reason === 'no_phone')) {
+        const settled = await settlePassedChat(
+          account.managerUserId,
+          peer.id,
+          rules.get(peer.id),
+          msg.out === true ? 'out' : 'in',
+          { actorId: account.managerUserId, ip: null, userAgent: null },
+        );
+        if (settled.reopened) {
+          reopened = true;
+          rules = await rulesFor(account.managerUserId);
+        }
       }
 
       if (!verdict.store) {
@@ -748,47 +806,59 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
             { peerId: verdict.peerId, title: verdict.title, phone: verdict.phone },
           ]);
           asked += 1;
-          await strangerSeen(peer, msg.out === true, 'ask');
+          await strangerSeen(peer, msg.out === true, 'ask', reopened);
           return null;
         }
         // A hidden number on the agent owner's account gets the «📵» card's
         // rule; everywhere else it stays what it was —
-        if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone');
+        if (verdict.reason === 'no_phone') await strangerSeen(peer, msg.out === true, 'no_phone', reopened);
         // counted, never named. This is the manager's private life.
         passed += 1;
         return null;
       }
 
-      // A stranger on a WORK number opens a lead, and the conversation is
-      // kept on it until the lead becomes a client (0064).
-      let ownerClientId: string | null = null;
-      let ownerLeadId: string | null = null;
-      let label = '';
-      if ('openLead' in verdict) {
-        ownerLeadId = await leadForChat(account.managerUserId, verdict.peer, {
-          actorId: account.managerUserId,
-          ip: null,
-          userAgent: null,
-        });
-        label = 'LID';
-      } else if ('leadId' in verdict) {
-        // Somebody answered «Lid ochish» on the tray (0065). The lead is
-        // already there — nothing to mint, nothing to name.
-        ownerLeadId = verdict.leadId;
-        label = 'LID';
-      } else {
-        ownerClientId = verdict.clientId;
-        label = verdict.clientCode;
+      // A stranger on a WORK number opens a lead — a hidden number too, by
+      // the chat (his «1 a», 2026-10-29) — and the conversation is kept on it
+      // until the lead becomes a client (0064).
+      const owner = await ownerOfVerdict(verdict, account.managerUserId, {
+        actorId: account.managerUserId,
+        ip: null,
+        userAgent: null,
+      });
+      if (!owner) {
+        // A hidden number's chat a person answered on the tray — a ↩ that
+        // put it back in question, «hech qachon», a client's — or another
+        // door bound: nothing is minted over it, and THIS chat's fresh rule
+        // decides its next line. Only its entry is read again: on a chat a
+        // ↩ holds every line comes here, and the account's whole book of
+        // rules was re-read each time for the same answer (the second
+        // 2026-10-29 review).
+        const fresh = await chatRuleFor(account.managerUserId, peer.id);
+        if (fresh) rules.set(peer.id, fresh);
+        else rules.delete(peer.id);
+        // In words on the AI's account, as every passed line is: a chat a
+        // question holds, or one marked «never» — a chat just bound decides
+        // its next line and needs none.
+        const why = fresh?.decision === 'pending' ? 'held' : fresh?.decision === 'exclude' ? 'excluded' : null;
+        if (why && origin === 'live' && msg.out !== true && (await agentHere().catch(() => false))) {
+          const line = passedLine({ reason: why, phone: null });
+          if (line) console.log(line);
+        }
+        passed += 1;
+        return null;
       }
+      // The chat's rule was written (a hidden number bound to its lead) or
+      // taken back (the book claimed the chat): the next line is decided on it.
+      if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);
       const written = await storeIncoming({
-        clientId: ownerClientId,
-        leadId: ownerLeadId,
+        clientId: owner.clientId,
+        leadId: owner.leadId,
         managerUserId: account.managerUserId,
         row: verdict.row,
       });
       if (written) {
         stored += 1;
-        console.log(`  ${label} ← ${verdict.row.direction}`);
+        console.log(`  ${owner.label} ← ${verdict.row.direction}`);
         // The photograph or the voice note itself — only for a NEW row, so a
         // reconnect replay never re-downloads. An outgoing echo whose photo
         // WE uploaded is skipped too: the bytes are already in storage,
@@ -1904,25 +1974,24 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // The same decision the live path makes, including the work-account
           // widening — a message that arrived during an outage is the same
           // message it would have been a minute earlier.
-          const verdict = decideIncoming(peer, msg, book.clients, rules, workAccount);
+          const verdict = decideIncoming(peer, msg, book.clients, rules, workMode.work);
           if (!verdict.store) continue;
-          // The same three owners the live path resolves, in the same order.
-          let catchUpClientId: string | null = null;
-          let catchUpLeadId: string | null = null;
-          if ('openLead' in verdict) {
-            catchUpLeadId = await leadForChat(account.managerUserId, verdict.peer, {
-              actorId: account.managerUserId,
-              ip: null,
-              userAgent: null,
-            });
-          } else if ('leadId' in verdict) {
-            catchUpLeadId = verdict.leadId;
-          } else {
-            catchUpClientId = verdict.clientId;
-          }
+          // The same owners the live path resolves, through the same door —
+          // and so the same mints: catch-up walks only chats that already have
+          // stored rows, so it never opens a lead for a chat it has never
+          // seen, but a stored chat whose lead is closed (a lost lead writing
+          // again, round 79) or whose rule a ↩ took back gets the lead the
+          // live line would have given it.
+          const owner = await ownerOfVerdict(verdict, account.managerUserId, {
+            actorId: account.managerUserId,
+            ip: null,
+            userAgent: null,
+          });
+          if (!owner) continue;
+          if (owner.rulesMoved) rules = await rulesFor(account.managerUserId);
           const written = await storeIncoming({
-            clientId: catchUpClientId,
-            leadId: catchUpLeadId,
+            clientId: owner.clientId,
+            leadId: owner.leadId,
             managerUserId: account.managerUserId,
             row: verdict.row,
           });
@@ -2055,7 +2124,7 @@ async function listenAccount(tgPhone: string): Promise<(why: string) => Promise<
           // Newest first; the first message past the cutoff ends the chat.
           if (!withinWindow(msg.date, cutoff)) break;
           const step = backfillStep(
-            decideIncoming(peer, msg, book.clients, rules, workAccount),
+            decideIncoming(peer, msg, book.clients, rules, workMode.work),
           );
           if (step.kind === 'stop') break; // the whole chat is not ours
           if (step.kind === 'skip') continue; // a client's service row

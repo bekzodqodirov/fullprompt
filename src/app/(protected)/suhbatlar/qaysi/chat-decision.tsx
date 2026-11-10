@@ -51,6 +51,8 @@ export function ChatDecision({
     clientName: string | null;
     leadId: string | null;
     leadName: string | null;
+    /** «Ish raqami»: the lead door opens for a hidden number too (`openLeadForChat`). */
+    workAccount: boolean;
   };
   clients: ClientOption[];
   /**
@@ -222,11 +224,15 @@ export function ChatDecision({
               >
                 {labels.add}
               </button>
-              {/* Only where there IS a number: `leadForChat` refuses without
-                  one, and a button that can only fail is worse than no
-                  button. Same rule the listener's `no_phone` refusal keeps —
-                  a lead nobody can ring is a row with a name in it. */}
-              {row.phone && (
+              {/* Only where this door (`openLeadForChat`) can say yes — a
+                  button that can only fail is worse than no button: a
+                  number, or a WORK number's hidden one (his «1 a»). There a
+                  hidden stranger opens its lead by itself, so it reaches
+                  this list only through a person's ↩, which the work number
+                  no longer re-binds over (the 2026-10-29 review) — and the
+                  tray must then be able to say «lid». A personal number's
+                  hidden stranger is asked about on the AI's «📵» card. */}
+              {(row.phone || row.workAccount) && (
                 <form action={openLead}>
                   <input type="hidden" name="id" value={row.id} />
                   <button

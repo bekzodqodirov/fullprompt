@@ -46,8 +46,10 @@ export function pausedAlarmText(input: {
     `⚠️ Telegram ${input.managerName} akkauntini chekladi: ${PAUSE_WORDS[input.pause]} (${input.code}).\n` +
     `Bu akkauntdan xabar yuborish to‘xtatildi — CRM javoblari ham` +
     (input.agentOff ? ', AI sotuvchi ham o‘chirildi.\n' : '.\n') +
-    `Telegram ilovasida akkaunt holatini tekshiring, so‘ng saytda «Suhbatlar» bo‘limida ` +
-    `«Tekshirdim» tugmasini bosing.`
+    // The button's own words (`crm.pauseClear`), and where it is: the red
+    // «⛔ To‘xtatilgan» line on «Suhbatlar» opens to it.
+    `Telegram ilovasida akkaunt holatini tekshiring, so‘ng saytda «Suhbatlar» bo‘limida qizil ` +
+    `«⛔ To‘xtatilgan» qatorini oching va «Tekshirdim, qayta yoqish» tugmasini bosing.`
   );
 }
 
