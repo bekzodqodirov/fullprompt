@@ -42,6 +42,7 @@ import { issuedFacts, receivedFacts } from '@/modules/wms/notices/client-summary
 import { PUSH_NAME_CHARS, lotLines } from '@/modules/wms/notices/client-text';
 import { receiptFacts } from '@/modules/wms/pickups/double-received';
 import { clientHistory, landedCostByLot, stockAging } from '@/modules/wms/reports/queries';
+import { buildClientHistoryXlsx, buildLandedCostXlsx, buildStockAgingXlsx } from '@/modules/wms/reports/xlsx';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 
 /**
@@ -63,11 +64,18 @@ import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
  */
 
 const RUN = String(Date.now()).slice(-6);
+/**
+ * ONE instant for the landings and for the list's «today»: read twice, a run
+ * that crosses Tashkent's midnight between the fixture and the assertion
+ * counts a day more (R5 — a test's clock must be the app's).
+ */
+const NOW = Date.now();
+const DAY = 86_400_000;
 const THREE = ['Клавиатура', 'Мышь', 'Наушники'];
 const LABEL = 'Клавиатура +2';
 const ZH = `键盘${RUN}`;
 const PLAIN_RU = `Шнур ${RUN}`;
-/** A tarkib's names are invoice wording — long by nature. Two words, 96 characters, one space. */
+/** A tarkib's names are invoice wording — long by nature. 102 characters, one space. */
 const LONG_FIRST = `Клавиатура ${'проводная-мембранная-'.repeat(4)}игровая`;
 const LONG_LABEL = `${LONG_FIRST} +2`;
 
@@ -154,6 +162,22 @@ async function land(boxIds: string[], at: Date): Promise<void> {
   );
 }
 
+/** Every string cell of a built workbook, sheet by sheet — what a person opening the file reads. */
+async function cellsOf(file: Buffer): Promise<string[][]> {
+  const book = new ExcelJS.Workbook();
+  // exceljs' own typing wants a Node `Buffer` of the pre-generic kind.
+  await book.xlsx.load(file as unknown as ArrayBuffer);
+  return book.worksheets.map((sheet) => {
+    const cells: string[] = [];
+    sheet.eachRow((row) =>
+      row.eachCell((cell) => {
+        if (typeof cell.value === 'string') cells.push(cell.value);
+      }),
+    );
+    return cells;
+  });
+}
+
 const storedRu = async (lotId: string) =>
   (await db.select({ ru: receiptLots.productNameRu }).from(receiptLots).where(eq(receiptLots.id, lotId)))[0]!.ru;
 
@@ -211,9 +235,8 @@ beforeAll(async () => {
   await compose(lot.lost.lotId, THREE);
 
   // The composed lot landed first, so it is the one that has waited longest.
-  const now = Date.now();
-  await land(lot.three.boxIds, new Date(now - 9 * 86_400_000));
-  await land(lot.plain.boxIds, new Date(now - 2 * 86_400_000));
+  await land(lot.three.boxIds, new Date(NOW - 9 * DAY));
+  await land(lot.plain.boxIds, new Date(NOW - 2 * DAY));
 
   // The truck the collected cartons rode, and the handover that took them.
   await db.insert(batches).values({
@@ -222,7 +245,7 @@ beforeAll(async () => {
     originWarehouseId: whCn.id,
     destWarehouseId: whUz.id,
     status: 'closed',
-    departedAt: new Date(now - 20 * 86_400_000),
+    departedAt: new Date(NOW - 20 * DAY),
     createdBy: actorId,
   });
   await db.insert(boxMovements).values(
@@ -236,7 +259,7 @@ beforeAll(async () => {
       refType: 'batch',
       refId: batchId,
       actorId,
-      createdAt: new Date(now - 20 * 86_400_000),
+      createdAt: new Date(NOW - 20 * DAY),
     })),
   );
   const [h] = await db
@@ -327,14 +350,6 @@ afterAll(async () => {
     await db.delete(deals).where(eq(deals.clientId, clientId));
     await db.delete(clients).where(eq(clients.id, clientId));
   }
-});
-
-describe('the stored name is the lot’s own word — no reader below moves it', () => {
-  it('a three-line tarkib, read through every list of this file, leaves `product_name_ru` as the warehouse typed it', async () => {
-    expect(await storedRu(lot.three.lotId)).toBe('клавиатура');
-    expect(await storedRu(lot.plain.lotId)).toBe(PLAIN_RU);
-    expect(await storedRu(lot.swapped.lotId)).toBeNull();
-  });
 });
 
 describe('a deal’s cargo — ONE count, over goods kinds', () => {
@@ -435,7 +450,7 @@ describe('the office’s lists', () => {
 
   it('the uncollected list: the longest-waiting lot’s first good and ONE count of the rest', async () => {
     const list = await uncollectedCargo(db, {
-      asOf: new Date(),
+      asOf: new Date(NOW),
       minDays: 0,
       ownerId: undefined,
       warehouseIds: undefined,
@@ -450,7 +465,7 @@ describe('the office’s lists', () => {
     await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.three.lotId));
     try {
       const list = await uncollectedCargo(db, {
-        asOf: new Date(),
+        asOf: new Date(NOW),
         minDays: 0,
         ownerId: undefined,
         warehouseIds: undefined,
@@ -462,15 +477,21 @@ describe('the office’s lists', () => {
     }
   });
 
+  it('the three reports’ XLSX print what their screens print', async () => {
+    const named = (sheets: string[][]) => sheets.flat().filter((cell) => cell.startsWith(ZH));
+    expect(named(await cellsOf(await buildLandedCostXlsx(clientId)))).toEqual([`${ZH} (${LABEL})`]);
+    expect(named(await cellsOf(await buildClientHistoryXlsx(clientId)))).toEqual(
+      // `three`, `handed` and `lost` carry this Chinese name and the same tarkib.
+      [`${ZH} (${LABEL})`, `${ZH} (${LABEL})`, `${ZH} (${LABEL})`],
+    );
+    expect(named(await cellsOf(await buildStockAgingXlsx([whUz.id])))).toEqual([`${ZH} (${LABEL})`]);
+  });
+
   it('the manifest prints the live label beside the Chinese name, on both sheets', async () => {
-    const book = new ExcelJS.Workbook();
-    // exceljs' own typing wants a Node `Buffer` of the pre-generic kind.
-    await book.xlsx.load((await buildManifestXlsx(batchId))! as unknown as ArrayBuffer);
-    const products = (sheet: ExcelJS.Worksheet, column: number) =>
-      sheet.getColumn(column).values.filter((v) => typeof v === 'string' && v.startsWith(ZH));
-    const [summary, detail] = book.worksheets;
-    expect(products(summary!, 2)).toEqual([`${ZH} (${LABEL})`]);
-    expect(products(detail!, 4)).toEqual([`${ZH} (${LABEL})`, `${ZH} (${LABEL})`]);
+    const [summary, detail] = await cellsOf((await buildManifestXlsx(batchId))!);
+    const products = (cells: string[]) => cells.filter((cell) => cell.startsWith(ZH));
+    expect(products(summary!)).toEqual([`${ZH} (${LABEL})`]);
+    expect(products(detail!)).toEqual([`${ZH} (${LABEL})`, `${ZH} (${LABEL})`]);
   });
 });
 
@@ -564,5 +585,15 @@ describe('what the customer reads', () => {
     expect(actRowText(head, '键盘', null, fits)).toBe(`${head}   键盘`);
     // A long name with NO count is cut at its end, as any name always was.
     expect(actRowText(head, '键盘', LONG_FIRST, fits).endsWith('…)')).toBe(true);
+  });
+});
+
+// LAST on purpose: every reader above has run by now.
+describe('the stored name is the lot’s own word — no reader above moved it', () => {
+  it('a three-line tarkib, read through every list of this file, leaves `product_name_ru` as the warehouse typed it', async () => {
+    expect(await storedRu(lot.three.lotId)).toBe('клавиатура');
+    expect(await storedRu(lot.plain.lotId)).toBe(PLAIN_RU);
+    expect(await storedRu(lot.swapped.lotId)).toBeNull();
+    expect(await storedRu(lot.long.lotId)).toBe('клавиатура');
   });
 });

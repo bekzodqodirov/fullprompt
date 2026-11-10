@@ -231,7 +231,10 @@ export async function buildClientHistoryXlsx(clientId: string, locale?: string):
   const { clientHistory } = await import('./queries');
   const rows = await clientHistory(clientId);
   const workbook = new ExcelJS.Workbook();
-  const sheet = sheetSetup(workbook, 'History', `${L.tClientHistory} · ${tashkentDay()}`);
+  // Never «History»: Excel reserves that sheet name and exceljs throws on it
+  // (`addWorksheet`), so the report's ⬇️ answered 500 — found by the first
+  // test that built this file (lot-name-office.integration).
+  const sheet = sheetSetup(workbook, 'Client history', `${L.tClientHistory} · ${tashkentDay()}`);
   const head = sheet.addRow([L.lot, L.product, L.receivedAt, L.warehouse, L.batches, L.boxesShort, L.inStock, L.inTransit, L.ready, L.issued, L.lostVoid]);
   head.font = { bold: true };
   sheet.columns = [
