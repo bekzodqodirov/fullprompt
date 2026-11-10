@@ -810,3 +810,72 @@ export function paperLines(
   const list = order.filter((r) => reasons.has(r));
   return { lines: out, estimate: list.length > 0, reasons: list };
 }
+
+/** The first `count` positions of `runs` after skipping `offset` of them. */
+function sliceRuns(runs: readonly Segment[], offset: number, count: number): Segment[] {
+  const out: Segment[] = [];
+  let skip = Math.max(0, Math.trunc(offset));
+  let left = Math.max(0, Math.trunc(count));
+  for (const [s, e] of runs) {
+    if (left <= 0) break;
+    const length = e - s;
+    if (skip >= length) {
+      skip -= length;
+      continue;
+    }
+    const from = s + skip;
+    const step = Math.min(e - from, left);
+    out.push([from, from + step]);
+    left -= step;
+    skip = 0;
+  }
+  return out;
+}
+
+/**
+ * ONE document that prints a composed lot in several consecutive PARTS — the
+ * agent file's blocks: what stands here, what is still on the road, what did
+ * not come (docs/TARKIB-TUZATISH.md §4). Each part gets its own lines, and
+ * together they are the document's: the document's positions are fitted
+ * ONCE over Σ cartons and then cut consecutively, part after part, so a
+ * line's cartons and pieces over the parts add up to exactly what the whole
+ * document would print (the cumulative rule tiles), while each part's kg and
+ * m³ add up to that part's own figure.
+ *
+ * Two traps this closes, both reproduced on `paperLines` before it was
+ * written. (1) Calling `paperLines` per part with no positions restarts
+ * every part at position 0: a 100-carton 50/50 lot planned 67 here + 30 on
+ * the road + 3 not come printed [34,33] [15,15] [2,1] — 51/49, the very
+ * defect the cumulative rule exists against — where the tiling prints
+ * [34,33] [15,15] [1,2]. (2) Positions past the lot's end are a carton
+ * counted on two trucks (`clamped`); cut into parts first, the cut runs fit
+ * and the flag is lost — it is decided on the WHOLE fit and carried into
+ * every part.
+ *
+ * A part of no cartons is `null` (nothing to print). `parts` in the order
+ * the document prints them.
+ */
+export function paperLinesByPart(
+  comp: { seenBoxCount: number; lines: readonly StoredLine[] },
+  lot: LotTotals,
+  whole: {
+    segments?: readonly Segment[];
+    before?: number;
+    parts: readonly { cartons: number; kg: number; m3?: number }[];
+  },
+  opts: { kgDecimals?: number; m3Decimals?: number } = {},
+): (PaperView | null)[] {
+  const counts = whole.parts.map((part) => Math.max(0, Math.trunc(part.cartons)));
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  const fit = fitSegments(whole.segments ?? [], total, lot.boxCount, whole.before ?? 0);
+  let offset = 0;
+  return whole.parts.map((part, i) => {
+    const n = counts[i]!;
+    if (n === 0) return null;
+    const segments = sliceRuns(fit.segs, offset, n);
+    offset += n;
+    const view = paperLines(comp, lot, { segments, cartons: n, kg: part.kg, m3: part.m3 }, opts);
+    if (!fit.clamped || view.reasons.includes('clamped')) return view;
+    return { lines: view.lines, estimate: true, reasons: [...view.reasons, 'clamped'] };
+  });
+}
