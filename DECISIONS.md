@@ -7594,3 +7594,12 @@ STATED, not changed:
   it. Pre-existing.
 - A run that throws records none of its tokens, so `daily_token_cap` never counts a failed run. Pre-existing; the
   breakpoint makes such a run's later rounds cheaper, not dearer.
+
+1628. **The round's own ritual found a flaky locator, not a defect.** On a fresh `gsr_ci` in CI's order, the round
+gave tsc 0, eslint 0, migrate 0, seed 0, ledger 143, vitest 866 files / 14 633 tests and build 0. Playwright gave 489
+passed, 1 skipped and 1 failed: `m0-smoke`'s «admin creates warehouse + client». Its `getByRole('alert')` met TWO
+elements, the form's refusal and Next's own route announcer (`#__next-route-announcer__`, an empty role=alert on
+`<body>` that mounts after hydration). Strict mode refuses that, so the result depends on whether the announcer
+mounted first: green in CI on the same commit, green on a re-run. Both of the spec's alert checks now look inside
+`<main>`, where every form's refusal renders. It passed 9 of 9 (`--repeat-each 3`). No other spec uses the bare
+locator.
