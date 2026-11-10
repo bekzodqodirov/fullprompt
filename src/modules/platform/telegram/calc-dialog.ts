@@ -443,9 +443,23 @@ export function aiDoorFirst(state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | '
   return collectionDoor(state) === 'ai' && !state.amend;
 }
 
-/** The reading's wholeness over the LIVE state — the table's rows are the facts' goods, one to one (`tableRowsOf`). */
+/**
+ * The reading's wholeness over the LIVE state — the table's rows are the
+ * facts' goods, one to one (`tableRowsOf`).
+ *
+ * An ADDITION (§1.6) is judged by what its own collection read, never by the
+ * request it adds to (door-break-5): a table with no goods row is a fact of
+ * the STORED request — a pre-deploy «🤖» landing of zero goods, reachable
+ * through ➕ for a week — and an addition of the missing brutto alone, read
+ * whole, was told «Tovar o‘qilmadi» and saved with no re-pass, so the
+ * podklyuch's road priced from exactly those totals was never re-priced.
+ * ONE home, asked by the add table's closing and by its save.
+ */
 export function readingOf(state: IntakeState): ReadingWholeness {
-  return aiReadingWhole(state, (state.facts.goods ?? []).length);
+  const whole = aiReadingWhole(state, (state.facts.goods ?? []).length);
+  if (!state.amend) return whole;
+  const blocking = whole.blocking.filter((r) => r !== 'no_goods');
+  return { ...whole, blocking, whole: blocking.length === 0 };
 }
 
 /**

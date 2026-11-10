@@ -11,7 +11,6 @@ import { isServerBehind } from '../db/errors';
 import { enqueue, jobState } from '../jobs/boss';
 import { logger } from '../logger';
 import { collectionDoor, type InlineKeyboard, type IntakeState } from './calc-intake';
-import { aiReadingWhole } from './reading-whole';
 import {
   activeIntake,
   endIntake,
@@ -34,6 +33,7 @@ import {
   inputCutOfState,
   landingPress,
   pauseKeyboard,
+  readingOf,
   routeCollectorText,
   showIntakePrompt,
   type CalcPressCtx,
@@ -196,7 +196,8 @@ export const ADD_OFFER_DAYS = 7;
  */
 export async function addReadingUnread(state: IntakeState): Promise<string | null> {
   if (!state.amend || collectionDoor(state) !== 'ai') return null;
-  const whole = aiReadingWhole(state, (state.facts.goods ?? []).length);
+  // The table's own judgement (`readingOf`): the addition's reading, never the stored request's goods.
+  const whole = readingOf(state);
   if (whole.whole) return null;
   const { unreadWhat } = await import('../../wms/calc/intake');
   return unreadWhat(state, whole, await inputCutOfState(state)) ?? 'fayl';

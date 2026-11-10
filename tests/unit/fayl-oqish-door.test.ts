@@ -43,7 +43,7 @@ import { deliverStoredReply, noticeKindOf, READING_NOTICE, runIntakeRead, settle
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { markIntakesHydrated } from '@/modules/platform/telegram/calc-store';
 import { CALC_STEP_REPEAT, parseCallback } from '@/modules/platform/telegram/staff-bot';
-import { amendSubmissionOf, unreadRepassLine } from '@/modules/platform/telegram/calc-amend';
+import { addReadingUnread, amendSubmissionOf, unreadRepassLine } from '@/modules/platform/telegram/calc-amend';
 import {
   AI_NO_GOODS,
   AI_TABLE_COMPLETE,
@@ -631,6 +631,19 @@ describe('the ➕ add collection’s own reading (§1.6)', () => {
     expect(data(table)).not.toContain('c:to_ved');
     expect(table.text).toContain('⚠️ 1 ta PDF o‘qilmadi — «✅ Qo‘shish» faqat o‘qilganini qo‘shadi, AI qayta hisoblamaydi.');
     expect(table.text).not.toContain('AI qayta hisoblaydi.');
+  });
+
+  it('is judged by what ITS reading read — a stored request with no goods is no unread of the addition (door-break-5)', async () => {
+    const empty = { ...base, items: [] } as unknown as AmendBase;
+    // The missing brutto alone, read in full, added to a pre-deploy «🤖» request of zero goods.
+    const { chatId, state } = collection({ material: ['jami 3500 kg'], aiUsed: true, facts: { weightKg: 3500, goods: [] } }, empty);
+    expect(await addReadingUnread(state)).toBeNull();
+    const table = await drawn(chatId);
+    expect(table.text).not.toContain('o‘qilmadi — «✅ Qo‘shish» faqat o‘qilganini qo‘shadi');
+    expect(data(table)).toContain('c:save');
+    // Its OWN unread still is one: the PDF it was sent and did not read.
+    const pdf = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'timeout', facts: { goods: [] } }, empty);
+    expect(await addReadingUnread(pdf.state)).toBe('1 ta PDF');
   });
 
   it('its save carries the phrase, the diff keeps it, and the words never say «AI qayta hisoblayapti»', () => {
