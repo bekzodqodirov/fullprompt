@@ -1,6 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { isServerBehind } from '../../platform/db/errors';
+import { productKeySql } from '../tnved/service';
 import { MIN_STORED_LINES } from './composition-math';
 
 /**
@@ -33,14 +34,29 @@ import { MIN_STORED_LINES } from './composition-math';
  * a name no caller's query uses.
  */
 
-/** «first +N» over one lot's lines — NULL when the lot has none. */
-function labelSql(lot: SQL): SQL {
-  return sql`(SELECT CASE WHEN count(*) = 1 THEN min(tarkib_line.name)
+/** «first +N» as an aggregate over one lot's lines (alias `tarkib_line`) — stated once. */
+const LABEL_AGG = sql`CASE WHEN count(*) = 1 THEN min(tarkib_line.name)
                           ELSE (array_agg(tarkib_line.name ORDER BY tarkib_line.seq))[1] || ' +' || (count(*) - 1)
-                     END
+                     END`;
+
+/**
+ * Which groups of lines HAVE a label: at least one line, and not the ONE line
+ * that only repeats the lot's Chinese name (`tarkibLabel`'s second rule — a
+ * «Bitta tovar» tarkib on a lot typed in Chinese would print «键盘 (键盘)»).
+ * `zh` = the lot's `product_name_zh`, by the memory's own key (`productKey`,
+ * which is `nameKey` character for character).
+ */
+function labelHavingSql(zh: SQL): SQL {
+  return sql`count(*) >= ${MIN_STORED_LINES}
+         AND NOT (count(*) = 1 AND ${productKeySql(sql`min(tarkib_line.name)`)} = ${productKeySql(zh)})`;
+}
+
+/** «first +N» over one lot's lines — NULL when the lot has no label. */
+function labelSql(lot: SQL): SQL {
+  return sql`(SELECT ${LABEL_AGG}
                 FROM lot_composition_lines tarkib_line
                WHERE tarkib_line.lot_id = ${lot}.id
-              HAVING count(*) >= ${MIN_STORED_LINES})`;
+              HAVING ${labelHavingSql(sql`${lot}.product_name_zh`)})`;
 }
 
 /**
@@ -92,17 +108,15 @@ export async function lotRuShownFor(lotIds: readonly string[], exec: Db | Tx = d
   let rows: { lot_id: string; label: string | null }[];
   try {
     rows = (await exec.execute(sql`
-      SELECT tarkib_line.lot_id,
-             CASE WHEN count(*) = 1 THEN min(tarkib_line.name)
-                  ELSE (array_agg(tarkib_line.name ORDER BY tarkib_line.seq))[1] || ' +' || (count(*) - 1)
-             END AS label
+      SELECT tarkib_line.lot_id, ${LABEL_AGG} AS label
         FROM lot_composition_lines tarkib_line
+        JOIN receipt_lots tarkib_lot ON tarkib_lot.id = tarkib_line.lot_id
        WHERE tarkib_line.lot_id IN (${sql.join(
          ids.map((id) => sql`${id}::uuid`),
          sql`, `,
        )})
-       GROUP BY tarkib_line.lot_id
-      HAVING count(*) >= ${MIN_STORED_LINES}
+       GROUP BY tarkib_line.lot_id, tarkib_lot.product_name_zh
+      HAVING ${labelHavingSql(sql`tarkib_lot.product_name_zh`)}
     `)) as unknown as typeof rows;
   } catch (err) {
     if (isServerBehind(err) && exec === db) return out;

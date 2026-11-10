@@ -1,8 +1,9 @@
 # Tarkib tuzatishlari — six fixes to the lot composition (2026-11-10)
 
-Status: **v2 — the design after six readers' maps, before the judge.** The kernel (§1, §3.2)
-and package 1 (§2, §3.5, the receipt card) are WRITTEN on the branch and red-proven; they are
-judged as built, everything else as a design.
+Status: **v3 — eight readers' maps and the papers judge absorbed (§9, BINDING where it and
+§1-§8 disagree).** WRITTEN on the branch and red-proven: the kernel (§1, §3.2, §9.1), package 1
+(§2, §3.5, the receipt card) and package 3 (§4, the agent Excel). The other four judge lenses
+never ran (the usage limit); the merged tree is reviewed as built instead.
 
 ## 0. His words and the reading
 
@@ -453,3 +454,107 @@ through a script; `tests/integration/lot-composition.integration.test.ts` — P3
 `tests/e2e/m9zzx-lot-tarkibi.spec.ts` — P5 edits the `invoice()` helper's column numbers only;
 `tests/unit/lot-composition-fence.test.ts` — the lead registers new modules at the merge.
 The derived `lot-name-fence.test.ts` (§3.4) is written by the lead on the merged tree.
+
+**Who builds what (v3):** K, P1, P3 — the lead, WRITTEN. P5 (invoice) and P4 (🤖) — the lead.
+P2a and P2b — builders in worktrees, on the base commit the lead names; §9.1-§9.2 bind them.
+
+## 9. v3 — what the last two maps and the papers judge changed (BINDING)
+
+### 9.1 Kernel additions (WRITTEN)
+
+- **No «键盘 (键盘)».** «Bitta tovar» pre-fills its line with the lot's Russian name ELSE the
+  Chinese one, and most lots are typed in Chinese only (561 of 640 on gsr_ci) — so the commonest
+  one-line tarkib would have made every `zh (ru)` cell print the Chinese name twice. A ONE-line
+  tarkib whose name is the lot's Chinese name (by `productKey`, which is `nameKey` character for
+  character) gives NO label: `tarkibLabel(lines, lotZh)` (the second argument REQUIRED) and the
+  same clause in `lot-name.ts`'s HAVING; with no label the lot's own Russian name shows.
+  Two or more lines are always a label, even when the first repeats the Chinese name.
+- **«+N» is the half that must survive.** Everything that shortens a string cuts its END, and
+  the count is the end: the stock, plan, truck-card and issue cells are CSS `truncate`, the
+  customer pushes clip at 80 and the photo buttons at 40. `platform/text/label-count.ts`
+  (pure; platform, wms and the browser import it): `splitLabelCount`, `clipKeepingCount(text,
+  max)` (code points, «Клавиатура проводн… +2»), `withoutLabelCount(needle)`;
+  `components/lot-goods-name.tsx`: `LotGoodsName({ zh, ru })` for a `zh (ru)` cell and
+  `LotNameText({ text })` for a one-name cell — the name truncates, the count sits in a
+  non-shrinking element. The count is found in the TEXT, so the helpers never need to know
+  whether a string came from a tarkib.
+
+### 9.2 Rules for the two «names» packages
+
+1. **Swap the SELECT expression through `receipts/lot-name.ts` only** — `lotRuShownSql(sql\`${receiptLots}\`)`
+   (or the query's own alias) for a `product_name_ru` a screen PRINTS, `lotGoodsShownSql` for a
+   `ru || zh` reader. A file outside the fence's ALLOWED list never names the composition
+   tables. Inside a transaction: `lotRuShownFor(ids, tx)` — never the pool (#714).
+2. **A row type that is BOTH display and identity gets a second field, never a swapped one.**
+   `BatchLot.productNameRu` (batches/lots.ts) is drawn on three screens AND is the price
+   history's trigram needle (price-history.ts, the `similar` route): add `shownNameRu` beside
+   it and draw `shownNameRu ?? productNameRu`. Before swapping any field in place, grep its
+   consumers for a write, a key, a prompt, a search needle or a paper.
+3. **Stored payloads keep the lot's own name.** The `BoxIssued` event's `lots` and the
+   re-emitted «prixod confirmed» payload are WRITTEN and kept (a label must never be stored as
+   if it were the lot's name; nobody prints the first, and no tarkib can exist at confirm
+   time). The customer's pushes re-read at SEND time — that read is where the label goes
+   (`receivedFacts`, `arrivedSummary`, `issuedFacts`). This withdraws §3.3's two «payload» items.
+4. **Platform code** (`platform/broadcast/service.ts`'s goods filter) reaches
+   `tarkibLineMatchSql` by DYNAMIC import only — platform never statically imports wms and may
+   not name the tables.
+5. **Searches** (/stock's box, ⌘K's lots, the count door, the broadcast): the needle goes
+   through `withoutLabelCount` first, and the predicate ORs `tarkibLineMatchSql` into its own
+   zh/ru arms — «мышь» finds the lot whose second line is mice, and a label pasted off a card
+   finds its lot.
+6. **Truncating cells and text clips**: every cell that prints a lot's name inside a
+   `truncate` uses `LotGoodsName` / `LotNameText`; every clip of a lot's name uses
+   `clipKeepingCount`. Measured at 360 px with a 60-character first name: «+2» is on screen.
+7. **PDF**: the handover act swaps in the SELECT, so `cjkSubsetFor` embeds the label's
+   characters («+», digits and the plain space are in the base set; the names are not).
+8. **No new probe.** `lot_composition_lines` has existed on every server since 0122; where a
+   statement already branches on a probe, either branch may carry the label.
+9. **Keeps the own name** (the fence's counted allowlist — do not touch): `labels/sheet.ts`
+   and the QR-siz print list, `ved-xlsx.ts`, `packing-photos-xlsx.ts`, `agent-xlsx.ts`,
+   `tnved/batch-lots.ts` and the tnved actions, `price-history.ts`, `similar-ai.ts` and its
+   route, `lot-composition.ts`, `receipts/edit.ts` and the ✏️ form, the lot check's own
+   snapshot (§9.3), the scan screens (Chinese only).
+10. **A test per package that seeds a tarkib and reads it through the swapped readers** — no
+    existing test does, so no swap can go red by itself: one new integration file per package
+    (three-line tarkib → «Клавиатура +2» through each reader's own exported function; the
+    stored name unmoved; a lot with no tarkib unchanged), each reader red-proven by swapping
+    its expression back.
+
+Stated to him, not built: the manifest and a re-printed handover act follow the LIVE tarkib
+(a sent truck's invoice does not); the AI assistant's SQL tier (the `gsr_ai_reader` role is
+denied the composition tables) still answers with the warehouse's name.
+
+### 9.3 The person's ✅ is for the name the card SHOWS (the lead, P1 follow-up)
+
+Found by the lot-check map on the branch as built: the «✅ To'g'ri — mijoz tasdiqladi» button
+sits under a header that prints the LABEL and snapshots the STORED name — «a person cannot
+confirm a name they did not see», broken; and a tick made as «Клавиатура», then a one-line
+tarkib «Мышь», then a re-weigh, read ✅ «Mijoz tasdiqladi» beside «键盘 (Мышь)». The check's
+Russian name is the SHOWN one everywhere: `lotTarkibJoinSql` carries the label, the name term
+compares `seen_name_ru` with `coalesce(label, product_name_ru)`, and `checkLot` reads the
+label under the lot lock (the save and the clear take the same lock first) for the
+`lot_changed` compare, the snapshot and the audit summary. The Chinese name term is untouched.
+
+### 9.4 The invoice — the papers judge's four (the lead, P5)
+
+- **PAPERS-1 — a merge never takes «шт» off the paper by itself.** The automatic key is
+  code + name + UNIT. «Клавиатура шт» and «Клавиатура кг» under one code are two positions,
+  hence a GROUP: listed in the dialog with the mixed-units warning and merged only on a signed
+  answer; a bare address prints them apart, exactly as today (his 3a of 2026-10-01 stands
+  unless he answers the dialog). A merged position prints each distinct name ONCE.
+  `groupSig` hashes name + unit pairs. Q9 is answered by the dialog itself.
+- **PAPERS-2 — a merge never crosses a customs choice.** Inside one truck some prixods are
+  cleared by the client's own firm or by another firm (`effectiveCustoms`, the Rastamojka
+  panel on the same tab). Fused into one position their places and kilos could no longer be
+  taken out of OUR invoice. Every source row carries its prixod's customs scope ('' = follows
+  the truck, `client`, or the firm's id); rows merge — automatically and by answer — only
+  inside one scope, and a group is a code within one scope.
+- **PAPERS-3 — what moves with the new column**: BOTH helpers of
+  `lot-composition.integration` (`invoiceRows`, `invoiceAmounts`, the `I*E` formula),
+  `m9zzx`'s `invoice()`, `pallet.integration` and `count-review.integration` (read by HEADER
+  where possible); the fence's rule 4 is re-anchored on `invoiceSourceRows`; the kg/brutto
+  readers move to their own cells even though the two carry the same number today.
+  Reversals to record: #1263's 2a (the agent file's one row with the contents under it).
+- **PAPERS-4 — a merged position's estimate note names its lots**: verbatim only when the
+  position holds ONE lot; otherwise every note is `label: note`, joined «; ».
+

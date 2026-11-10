@@ -196,9 +196,10 @@ export default async function ReceiptDetailPage({
   const lotTrucks = await lotTrucksFor(db, lotIds);
   const mayCompose = mayWriteComposition(actor.permissions);
   // What every list calls a composed lot (docs/TARKIB-TUZATISH.md §3).
+  const zhOf = new Map(lots.map((l) => [l.id, l.productNameZh]));
   const shownRu = new Map(
     [...compositions].flatMap(([lotId, c]) => {
-      const label = tarkibLabel(c.lines);
+      const label = tarkibLabel(c.lines, zhOf.get(lotId) ?? '');
       return label === null ? [] : [[lotId, label] as const];
     }),
   );
@@ -692,6 +693,7 @@ export default async function ReceiptDetailPage({
               lot={{
                 id: lot.id,
                 label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
+                nameZh: lot.productNameZh,
                 boxCount: lot.boxCount,
                 kg: lot.totalWeightKg,
                 m3: lot.totalVolumeM3,

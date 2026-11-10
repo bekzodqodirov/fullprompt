@@ -23,14 +23,17 @@ const RUN = String(Date.now()).slice(-6);
 let actorId = '';
 let clientId = '';
 const receiptIds: string[] = [];
-const lot = { none: '', one: '', three: '', twenty: '', torn: '', gap: '', noRu: '' };
+const lot = { none: '', one: '', three: '', twenty: '', torn: '', gap: '', noRu: '', sameZh: '', sameZhNoRu: '', zhFirst: '' };
+/** Every lot of this file carries this Chinese name. */
+const ZH = `键盘 Hub${RUN}`;
+const pure = (lines: readonly { seq: number; name: string }[]) => tarkibLabel(lines, ZH);
 
 async function mint(ru: string | null): Promise<string> {
   const made = await receiveStamped({ clientId, actorId, sellerId: null, m3: 1, kg: 10, boxes: 2 });
   receiptIds.push(made.receiptId);
   await db
     .update(receiptLots)
-    .set({ productNameZh: `键盘${RUN}`, productNameRu: ru })
+    .set({ productNameZh: ZH, productNameRu: ru })
     .where(eq(receiptLots.id, made.lotId));
   return made.lotId;
 }
@@ -85,6 +88,17 @@ beforeAll(async () => {
     { seq: 2, name: 'Первая' },
   ]);
   await compose(lot.noRu, THREE);
+  lot.sameZh = await mint('клавиатура');
+  lot.sameZhNoRu = await mint(null);
+  lot.zhFirst = await mint(null);
+  // «Bitta tovar» on a lot typed in Chinese: the line is the Chinese name
+  // (spaced and cased as a person might retype it).
+  await compose(lot.sameZh, [{ seq: 1, name: `  ${ZH.toUpperCase().replace(' ', '   ')} ` }]);
+  await compose(lot.sameZhNoRu, [{ seq: 1, name: ZH }]);
+  await compose(lot.zhFirst, [
+    { seq: 1, name: ZH },
+    { seq: 2, name: 'Мышь' },
+  ]);
 });
 
 afterAll(async () => {
@@ -100,36 +114,54 @@ describe('the shown Russian name — SQL and its pure twin', () => {
 
   it('one line: its name stands where the Russian name is shown (item 3) — the stored name does not move', async () => {
     expect(await shown(lot.one)).toEqual({ ru: 'Мышь', goods: 'Мышь', stored: 'клавиатура' });
-    expect(tarkibLabel([{ seq: 1, name: 'Мышь' }])).toBe('Мышь');
+    expect(pure([{ seq: 1, name: 'Мышь' }])).toBe('Мышь');
   });
 
   it('several lines: «first +N» (item 4), equal to the pure rule at 3 and at 20 lines', async () => {
     expect((await shown(lot.three)).ru).toBe('Клавиатура +2');
-    expect((await shown(lot.three)).ru).toBe(tarkibLabel(THREE));
+    expect((await shown(lot.three)).ru).toBe(pure(THREE));
     expect((await shown(lot.twenty)).ru).toBe('Товар 1 +19');
-    expect((await shown(lot.twenty)).ru).toBe(tarkibLabel(TWENTY));
+    expect((await shown(lot.twenty)).ru).toBe(pure(TWENTY));
     expect((await shown(lot.three)).stored).toBe('клавиатура');
   });
 
   it('a header with NO lines is no tarkib: the own name shows (the readers’ torn-header guard)', async () => {
     expect(await shown(lot.torn)).toEqual({ ru: 'клавиатура', goods: 'клавиатура', stored: 'клавиатура' });
-    expect(tarkibLabel([])).toBeNull();
+    expect(pure([])).toBeNull();
   });
 
   it('lines that do not start at 1: the LOWEST seq is the first, in SQL as in the pure rule', async () => {
-    const pure = tarkibLabel([
+    const label = pure([
       { seq: 4, name: 'Вторая' },
       { seq: 2, name: 'Первая' },
     ]);
-    expect(pure).toBe('Первая +1');
-    expect((await shown(lot.gap)).ru).toBe(pure);
+    expect(label).toBe('Первая +1');
+    expect((await shown(lot.gap)).ru).toBe(label);
+  });
+
+  it('a ONE-line tarkib that only repeats the lot’s Chinese name is no label — never «键盘 (键盘)» — in SQL as in the pure rule', async () => {
+    // With a Russian name of its own the lot goes on showing it; with none, none.
+    expect(await shown(lot.sameZh)).toEqual({ ru: 'клавиатура', goods: 'клавиатура', stored: 'клавиатура' });
+    expect(await shown(lot.sameZhNoRu)).toEqual({ ru: null, goods: ZH, stored: null });
+    expect(pure([{ seq: 1, name: `  ${ZH.toUpperCase().replace(' ', '   ')} ` }])).toBeNull();
+    // Two lines are a label even when the first repeats the Chinese name.
+    expect((await shown(lot.zhFirst)).ru).toBe(`${ZH} +1`);
+    expect(
+      pure([
+        { seq: 1, name: ZH },
+        { seq: 2, name: 'Мышь' },
+      ]),
+    ).toBe(`${ZH} +1`);
+    // The whole-row reader agrees: no entry for the two, one for the third.
+    const map = await lotRuShownFor([lot.sameZh, lot.sameZhNoRu, lot.zhFirst]);
+    expect([...map]).toEqual([[lot.zhFirst, `${ZH} +1`]]);
   });
 
   it('a lot with no Russian name of its own shows the label; the `ru || zh` reader prints it before the Chinese', async () => {
     expect(await shown(lot.noRu)).toEqual({ ru: 'Клавиатура +2', goods: 'Клавиатура +2', stored: null });
     // …and with neither a tarkib nor a Russian name, the Chinese one.
     await db.update(receiptLots).set({ productNameRu: '  ' }).where(eq(receiptLots.id, lot.none));
-    expect((await shown(lot.none)).goods).toBe(`键盘${RUN}`);
+    expect((await shown(lot.none)).goods).toBe(ZH);
     await db.update(receiptLots).set({ productNameRu: 'клавиатура' }).where(eq(receiptLots.id, lot.none));
   });
 

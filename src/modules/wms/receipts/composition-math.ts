@@ -285,11 +285,19 @@ export function lineIsLotGood(lineName: string, lot: { zh: string; ru: string | 
  * warehouse's own word, which the customs papers, the TNVED memory and the
  * sticker go on reading. The SQL twin is `lotRuShownSql` (lot-name.ts),
  * pinned against this by `lot-name.integration.test.ts`.
+ *
+ * `lotZh` (REQUIRED — an optional one would be forgotten at the one caller
+ * that matters): a ONE-line tarkib named exactly as the lot's CHINESE name
+ * gives no label. «Bitta tovar» pre-fills the line with the Russian name
+ * ELSE the Chinese one, and most lots are typed in Chinese only — so the
+ * commonest one-line tarkib would otherwise make every list print
+ * «键盘 (键盘)». With no label the lot's own Russian name shows, as before.
  */
-export function tarkibLabel(lines: readonly { seq: number; name: string }[]): string | null {
+export function tarkibLabel(lines: readonly { seq: number; name: string }[], lotZh: string): string | null {
   if (lines.length < MIN_STORED_LINES) return null;
   const first = lines.reduce((a, b) => (b.seq < a.seq ? b : a));
-  return lines.length === 1 ? first.name : `${first.name} +${lines.length - 1}`;
+  if (lines.length === 1) return nameKey(first.name) === nameKey(lotZh) ? null : first.name;
+  return `${first.name} +${lines.length - 1}`;
 }
 
 /** A TNVED code as typed («8471 60 7000») → its digits, or the refusal. */

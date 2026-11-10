@@ -205,7 +205,7 @@ export function CompositionPanel({
   canClearOnly = false,
   oneGood = null,
 }: {
-  lot: { id: string; label: string; boxCount: number; kg: string; m3: string };
+  lot: { id: string; label: string; nameZh: string; boxCount: number; kg: string; m3: string };
   receiptId: string;
   composition: PanelComposition | null;
   stale: boolean;
@@ -353,6 +353,7 @@ export function CompositionPanel({
         <CompositionEditor
           key={composition?.rev ?? 0}
           lotId={lot.id}
+          lotZh={lot.nameZh}
           receiptId={receiptId}
           totals={totals}
           composition={composition}
@@ -371,6 +372,7 @@ export function CompositionPanel({
 
 function CompositionEditor({
   lotId,
+  lotZh,
   receiptId,
   totals,
   composition,
@@ -380,6 +382,8 @@ function CompositionEditor({
   onCancel,
 }: {
   lotId: string;
+  /** The lot's Chinese name: a ONE-line tarkib that only repeats it changes no list. */
+  lotZh: string;
   receiptId: string;
   totals: LotTotals;
   composition: PanelComposition | null;
@@ -484,6 +488,7 @@ function CompositionEditor({
   // The pure twin of `lotRuShownSql`: rows a person has named, in screen order.
   const shownName = tarkibLabel(
     posted.map((l, i) => ({ seq: i + 1, name: l.name.trim() })).filter((l) => l.name !== ''),
+    lotZh,
   );
   const remainder = remainderOf(posted, totals);
   const prefill = shownMode === 'separate' ? prefillByCartons(posted, totals) : null;
