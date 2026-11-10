@@ -125,9 +125,9 @@ interface LockedLot {
  */
 async function lockLot(tx: Tx, lotId: string): Promise<LockedLot> {
   const rows = (await tx.execute(sql`
-    SELECT id, receipt_id, letter, product_name_zh AS name_zh, NULLIF(product_name_ru, '') AS name_ru, box_count
+    SELECT id, receipt_id, letter, product_name_zh AS name_zh, box_count
       FROM receipt_lots WHERE id = ${lotId}::uuid FOR NO KEY UPDATE
-  `)) as unknown as LockedLot[];
+  `)) as unknown as Omit<LockedLot, 'name_ru'>[];
   const lot = rows[0];
   if (!lot) throw new LotCheckError('forbidden');
   const [named] = (await tx.execute(sql`

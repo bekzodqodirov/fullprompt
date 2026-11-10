@@ -74,7 +74,6 @@ const STORED: Record<string, [number, number, string]> = {
   'src/modules/wms/finance/similar-ai.ts': [0, 2, 'the similarity and the names the model picks from'],
   'src/modules/wms/labels/qrless.ts': [1, 0, 'the sticker — what the warehouse wrote on the carton'],
   'src/modules/wms/issue/service.ts': [2, 0, 'the STORED «berildi» payload — a label is never stored as a name'],
-  'src/modules/wms/receipts/lot-check.ts': [0, 1, 'the tick’s lock statement; the snapshot itself reads lotRuShownSql'],
   'src/modules/wms/tnved/service.ts': [0, 1, 'tnved_assignments.product_name_ru — the memory’s own column'],
 };
 
