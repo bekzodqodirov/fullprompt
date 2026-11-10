@@ -9,6 +9,7 @@ import { requireActor } from '@/modules/platform/rbac/authorize';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import {
+  lineQuestion,
   productKey,
   saveTnved,
   suggestTnved,
@@ -20,6 +21,7 @@ import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 import {
   CompositionError,
+  compositionDoor,
   mayWriteComposition,
   paperCompositionsFor,
   setLineCodes,
@@ -29,6 +31,42 @@ async function vedActor() {
   const actor = await requireActor();
   if (!actor.permissions.has('ved.docs') && !actor.permissions.has('plans.manage')) return null;
   return actor;
+}
+
+type ModelPhoto = { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' };
+
+/**
+ * The first photograph of a lot, smaller variant preferred — enough for the
+ * model. Read only AFTER every door has answered: the bytes are the lot's,
+ * and a refused press must not have touched them.
+ */
+async function firstLotPhoto(lotId: string): Promise<ModelPhoto | null> {
+  const [att] = await db
+    .select()
+    .from(attachments)
+    .where(
+      and(
+        eq(attachments.entityType, 'receipt_lot'),
+        eq(attachments.entityId, lotId),
+        eq(attachments.kind, 'photo'),
+      ),
+    )
+    .orderBy(asc(attachments.createdAt))
+    .limit(1);
+  if (!att) return null;
+  try {
+    const key = att.thumb800Key ?? att.storageKey;
+    const data = await getStorage().get(key);
+    const mediaType = key.endsWith('.webp')
+      ? ('image/webp' as const)
+      : att.contentType === 'image/png'
+        ? ('image/png' as const)
+        : ('image/jpeg' as const);
+    return { data, mediaType };
+  } catch {
+    /* photo unavailable — classify from the name alone */
+    return null;
+  }
 }
 
 /**
@@ -64,36 +102,7 @@ export async function suggestTnvedForLotAction(
     .limit(1);
   if (!aboard) return { ok: false, error: 'forbidden' };
 
-  // First photo of the lot, smaller variant preferred — enough for the AI.
-  const photoRow = await db
-    .select()
-    .from(attachments)
-    .where(
-      and(
-        eq(attachments.entityType, 'receipt_lot'),
-        eq(attachments.entityId, lotId),
-        eq(attachments.kind, 'photo'),
-      ),
-    )
-    .orderBy(asc(attachments.createdAt))
-    .limit(1);
-  let photo: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null = null;
-  const att = photoRow[0];
-  if (att) {
-    try {
-      const key = att.thumb800Key ?? att.storageKey;
-      const data = await getStorage().get(key);
-      const mediaType = key.endsWith('.webp')
-        ? ('image/webp' as const)
-        : att.contentType === 'image/png'
-          ? ('image/png' as const)
-          : ('image/jpeg' as const);
-      photo = { data, mediaType };
-    } catch {
-      /* photo unavailable — classify from the name alone */
-    }
-  }
-
+  const photo = await firstLotPhoto(lotId);
   try {
     const suggestion = await suggestTnved({
       nameZh: lot.productNameZh,
@@ -101,6 +110,87 @@ export async function suggestTnvedForLotAction(
       photo,
     });
     return { ok: true, suggestion };
+  } catch (err) {
+    if (err instanceof TnvedError) return { ok: false, error: err.code };
+    throw err;
+  }
+}
+
+/**
+ * The model's guess for one LINE of a lot tarkibi on THIS truck (the owner's
+ * item 5, 2026-11-10 — «tarkibga bo'lingan bo'lsa tenved qo'ya olmayapti»;
+ * docs/TARKIB-TUZATISH.md §5). It reverses the lot tarkibi round's «a line
+ * has no 🤖»: that rule was about the PHOTOGRAPH (a keyboard carton steering
+ * the mouse's code), and `lineQuestion` answers it by sending the photo only
+ * when every carton of the lot is that one good.
+ *
+ * By line ID, never by seq: a save on the prixod card replaces every line,
+ * so a seq may name another good by the time the press arrives.
+ *
+ * Every door BEFORE any spend — the model is never paid for a code that
+ * could not be saved: the tab's audience and the composition's writer, the
+ * truck's card door, a carton of the lot riding this truck, a live (not
+ * frozen) composition that still holds the line, then the save's own door
+ * (`compositionDoor` — the prixod readable and confirmed). It writes
+ * nothing: the code is the editor's state until «Saqlash», which posts it
+ * through `saveLineCodesAction` — onto the line, never into the memory.
+ *
+ * `photo` tells the editor whether the answer came from the name alone.
+ */
+export async function suggestTnvedForLineAction(
+  batchId: string,
+  lotId: string,
+  lineId: string,
+): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; photo?: boolean; error?: string }> {
+  const actor = await vedActor();
+  if (!actor || !mayWriteComposition(actor.permissions)) return { ok: false, error: 'forbidden' };
+  if (!isUuidShaped(batchId) || !isUuidShaped(lotId) || !isUuidShaped(lineId)) {
+    return { ok: false, error: 'forbidden' };
+  }
+  const batch = await db.query.batches.findFirst({
+    where: eq(batches.id, batchId),
+    columns: { originWarehouseId: true, destWarehouseId: true },
+  });
+  if (!batch || !mayOpenBatchCard(actor, batch)) return { ok: false, error: 'forbidden' };
+  const [aboard] = await db
+    .select({ id: boxes.id })
+    .from(boxes)
+    .where(and(eq(boxes.lotId, lotId), batchMemberFilter(batchId)))
+    .limit(1);
+  if (!aboard) return { ok: false, error: 'forbidden' };
+
+  const comp = (await paperCompositionsFor(batchId, [lotId])).get(lotId);
+  if (!comp) return { ok: false, error: 'composition_changed' };
+  // A ticked truck prints its frozen copy: a code suggested for it could
+  // never be saved (`saveLineCodesAction` answers the same word).
+  if (comp.frozen) return { ok: false, error: 'frozen' };
+  const line = comp.lines.find((l) => l.id === lineId);
+  if (!line) return { ok: false, error: 'composition_changed' };
+  let door: Awaited<ReturnType<typeof compositionDoor>>;
+  try {
+    door = await compositionDoor(actor, lotId, { requireConfirmed: true });
+  } catch (err) {
+    if (err instanceof CompositionError) return { ok: false, error: err.code };
+    throw err;
+  }
+
+  const question = lineQuestion({
+    lot: { zh: door.lot.productNameZh, ru: door.lot.productNameRu },
+    line,
+    siblings: comp.lines
+      .filter((l) => l.id !== lineId)
+      .sort((a, b) => a.seq - b.seq)
+      .map((l) => l.name),
+  });
+  const photo = question.wantsPhoto ? await firstLotPhoto(lotId) : null;
+  try {
+    const suggestion = await suggestTnved({
+      nameZh: question.nameZh,
+      nameRu: question.nameRu,
+      photo,
+      context: question.context,
+    });
+    return { ok: true, suggestion, photo: photo !== null };
   } catch (err) {
     if (err instanceof TnvedError) return { ok: false, error: err.code };
     throw err;

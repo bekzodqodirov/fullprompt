@@ -1924,7 +1924,6 @@
       "low": "置信度低 — 请核对"
     },
     "notOnTruck": "该货物不在此车上 — 请刷新页面",
-    "lineNoAi": "组成行不提供 AI 建议",
     "lineOnTruck": "本车：{cartons} 箱 · {approx}{kg} 公斤{pieces, select, none {} other { · {pieces} 件}}",
     "lineMixed": "本车，混装箱：{approx}{kg} 公斤{pieces, select, none {} other { · {pieces} 件}}",
     "lineSaved": "已保存 {n} 个组成编码 — 仅限此批次，不写入记忆",
@@ -1932,7 +1931,11 @@
     "lineHintMemory": "{code}（来自记忆）",
     "lineHintComposition": "{code}（来自以前的组成）",
     "reload": "刷新",
-    "saveLines": "保存"
+    "saveLines": "保存",
+    "aiNameOnly": "无照片，仅按名称",
+    "aiSameName": "同名另一行的答案",
+    "suggestProgress": "AI 查询中：{done} / {n}",
+    "suggestStop": "停止"
   },
   "finance": {
     "title": "财务",

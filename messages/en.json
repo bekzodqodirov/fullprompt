@@ -1924,7 +1924,6 @@
       "low": "low confidence — check it"
     },
     "notOnTruck": "This good is not on this truck — reload the page",
-    "lineNoAi": "No AI suggestion for a contents line",
     "lineOnTruck": "on this truck: {cartons} ctn · {approx}{kg} kg{pieces, select, none {} other { · {pieces} pcs}}",
     "lineMixed": "on this truck, in mixed cartons: {approx}{kg} kg{pieces, select, none {} other { · {pieces} pcs}}",
     "lineSaved": "{n} contents codes saved — for this lot only, not into memory",
@@ -1932,7 +1931,11 @@
     "lineHintMemory": "{code} (from memory)",
     "lineHintComposition": "{code} (from an earlier contents)",
     "reload": "Reload",
-    "saveLines": "Save"
+    "saveLines": "Save",
+    "aiNameOnly": "no photo, by the name alone",
+    "aiSameName": "the answer of another row with the same name",
+    "suggestProgress": "Asking AI: {done} / {n}",
+    "suggestStop": "Stop"
   },
   "finance": {
     "title": "Finance",

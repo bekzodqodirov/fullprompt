@@ -1924,7 +1924,6 @@
       "low": "низкая уверенность — проверьте"
     },
     "notOnTruck": "Этого товара нет в машине — обновите страницу",
-    "lineNoAi": "Для строки состава AI не предлагает",
     "lineOnTruck": "в этой машине: {cartons} кор · {approx}{kg} кг{pieces, select, none {} other { · {pieces} шт}}",
     "lineMixed": "в этой машине, в смешанных коробках: {approx}{kg} кг{pieces, select, none {} other { · {pieces} шт}}",
     "lineSaved": "Сохранено кодов состава: {n} — только для этого лота, в память не пишутся",
@@ -1932,7 +1931,11 @@
     "lineHintMemory": "{code} (из памяти)",
     "lineHintComposition": "{code} (из прошлого состава)",
     "reload": "Обновить",
-    "saveLines": "Сохранить"
+    "saveLines": "Сохранить",
+    "aiNameOnly": "без фото, только по названию",
+    "aiSameName": "ответ другой строки с тем же названием",
+    "suggestProgress": "AI спрашивает: {done} / {n}",
+    "suggestStop": "Остановить"
   },
   "finance": {
     "title": "Финансы",

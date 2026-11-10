@@ -1924,7 +1924,6 @@
       "low": "ishonch past — tekshiring"
     },
     "notOnTruck": "Bu tovar shu mashinada yo'q — sahifani yangilang",
-    "lineNoAi": "Tarkib qatoriga AI taklif bermaydi",
     "lineOnTruck": "shu mashinada: {cartons} kar · {approx}{kg} kg{pieces, select, none {} other { · {pieces} dona}}",
     "lineMixed": "shu mashinada, aralash karobkalarda: {approx}{kg} kg{pieces, select, none {} other { · {pieces} dona}}",
     "lineSaved": "{n} ta tarkib kodi saqlandi — faqat shu lot uchun, xotiraga yozilmaydi",
@@ -1932,7 +1931,11 @@
     "lineHintMemory": "{code} (xotiradan)",
     "lineHintComposition": "{code} (oldingi tarkibdan)",
     "reload": "Yangilash",
-    "saveLines": "Saqlash"
+    "saveLines": "Saqlash",
+    "aiNameOnly": "rasmsiz, faqat nomga qarab",
+    "aiSameName": "shu nomdagi boshqa qatorning javobi",
+    "suggestProgress": "AI so'rayapti: {done} / {n}",
+    "suggestStop": "To'xtatish"
   },
   "finance": {
     "title": "Moliya",

@@ -6,6 +6,7 @@ import { tnvedAssignments } from '../../platform/db/schema';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { aiConfigured, ANALYST_MODEL } from '../../platform/ai/model';
 import { logger } from '../../platform/logger';
+import { lineIsLotGood } from '../receipts/composition-math';
 
 /**
  * ТНВЭД assistant (Phase 1.5, owner's spec): the AI suggests a customs code
@@ -162,7 +163,116 @@ const SYSTEM = `Ты — эксперт по классификации това
 - Код должен быть ЗАЩИТИМЫМ на таможне: он обязан честно соответствовать товару. Среди честно подходящих кодов выбирай оптимальный по ставке пошлины.
 - Если по фото и названию возможны несколько принципиально разных классификаций, выбери наиболее вероятную и снизь confidence.
 - reasoning: 1-2 коротких предложения на русском — почему именно этот код.
-- name_ru: краткое русское торговое название товара.`;
+- name_ru: краткое русское торговое название товара.
+- «Контекст» (если есть) — только подсказка о материале, назначении и о том, что лежит рядом. Классифицируй ТОЛЬКО «Товар»; соседние товары из контекста не классифицируй и их код не выбирай.`;
+
+/** How many sibling names a tarkib line's question carries, and how long each may be. */
+const QUESTION_SIBLINGS = 6;
+const QUESTION_NAME_CAP = 80;
+
+const questionName = (name: string) => {
+  const flat = name.replace(/\s+/g, ' ').trim();
+  return flat.length > QUESTION_NAME_CAP ? `${flat.slice(0, QUESTION_NAME_CAP)}…` : flat;
+};
+
+/** «60.000» → «60», «0.8000» → «0.8» — a figure as a person writes it. */
+const questionNumber = (raw: string | number) => {
+  const n = Number(raw);
+  return Number.isFinite(n) ? String(Number(n.toFixed(4))) : '';
+};
+
+/**
+ * The text the model reads for ONE good — pure and exported, so the test
+ * reads the question itself. With no context it is the sentence the 🤖 has
+ * always sent («Товар: 键盘 (Клавиатура)»), character for character, so a
+ * product row's answer does not move.
+ *
+ * «Контекст» is words about the goods and never a second good to classify:
+ * the system prompt says so, and every context line is written as a
+ * statement, not as a name on a line of its own.
+ */
+export function tnvedQuestionText(input: {
+  nameZh: string;
+  nameRu: string | null;
+  context?: readonly string[];
+}): string {
+  const head = `Товар: ${input.nameZh}${input.nameRu ? ` (${input.nameRu})` : ''}`;
+  const context = (input.context ?? []).filter((line) => line.trim() !== '');
+  if (context.length === 0) return head;
+  return `${head}\nКонтекст (только подсказка):\n${context.map((line) => `- ${line}`).join('\n')}`;
+}
+
+/** What the 🤖 asks about one tarkib LINE (docs/TARKIB-TUZATISH.md §5). */
+export interface LineQuestion {
+  nameZh: string;
+  nameRu: string | null;
+  /** Send the lot's photograph? Only when every carton of the lot IS this good. */
+  wantsPhoto: boolean;
+  context: string[];
+}
+
+/**
+ * The question for a line of a lot tarkibi — pure, so the rule is a test's
+ * and not a prompt's.
+ *
+ *  · A line that IS the lot's own good (`lineIsLotGood` — «Bitta tovar»,
+ *    made to state the pieces) asks the product row's own question: the
+ *    lot's Chinese name with its Russian one. Composing such a lot must not
+ *    cost it the better question.
+ *  · Any other line asks about ITS name alone. The lot's Chinese name is
+ *    never the goods name there — «键盘» above a line reading «Мышь» is the
+ *    very mistake the tarkib was written to correct — and goes into the
+ *    context as what the warehouse received the cartons as.
+ *  · The photograph only when the tarkib has ONE line: every carton is then
+ *    that good. For a lot of several goods the photo shows one of them and
+ *    would steer every line's answer to it.
+ *  · The context: the line's own figures (pieces per kilo tell a mouse from
+ *    a mouse pad) and what else lies in the same cartons — capped, because
+ *    twenty names are a list to classify, not a hint.
+ */
+export function lineQuestion(input: {
+  lot: { zh: string; ru: string | null };
+  line: { name: string; pieces: number | null; cartons: number | null; kg: string; m3: string };
+  /** The OTHER lines' names, in the tarkib's order. */
+  siblings: readonly string[];
+}): LineQuestion {
+  const own = lineIsLotGood(input.line.name, input.lot);
+  const context: string[] = [];
+  const figures: string[] = [];
+  if (input.line.pieces !== null && input.line.pieces > 0) figures.push(`${input.line.pieces} шт`);
+  if (input.line.cartons !== null && input.line.cartons > 0) figures.push(`${input.line.cartons} кор.`);
+  const kg = questionNumber(input.line.kg);
+  if (kg && kg !== '0') figures.push(`${kg} кг`);
+  const m3 = questionNumber(input.line.m3);
+  if (m3 && m3 !== '0') figures.push(`${m3} м³`);
+  if (figures.length > 0) context.push(`Количество этого товара: ${figures.join(' · ')}`);
+  if (!own) {
+    const received = `${questionName(input.lot.zh)}${input.lot.ru ? ` (${questionName(input.lot.ru)})` : ''}`;
+    context.push(`На складе эти коробки были приняты под названием «${received}» — это название может быть неточным`);
+  }
+  if (input.siblings.length > 0) {
+    const shown = input.siblings.slice(0, QUESTION_SIBLINGS).map(questionName);
+    const more = input.siblings.length - shown.length;
+    context.push(
+      `В тех же коробках лежат и другие товары: ${shown.join('; ')}${more > 0 ? ` и ещё ${more}` : ''}`,
+    );
+  }
+  return {
+    nameZh: own ? input.lot.zh : input.line.name,
+    nameRu: own ? input.lot.ru : null,
+    wantsPhoto: input.siblings.length === 0,
+    context,
+  };
+}
+
+/**
+ * The answer's room. The analyst model THINKS inside `max_tokens`: at 2048 a
+ * hard good left the JSON no room — no text block, `JSON.parse('')` throws,
+ * and the person read «AI javob bermadi» about a model that had answered
+ * (`calc/intake-ai.ts` met the same cut at 4096 and names it). One good is a
+ * four-field answer, so the ceiling is for the thinking.
+ */
+const SUGGEST_MAX_TOKENS = 16000;
 
 /**
  * Ask the AI for a suggestion. NOT saved — the human confirms first.
@@ -172,6 +282,8 @@ export async function suggestTnved(input: {
   nameZh: string;
   nameRu: string | null;
   photo?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
+  /** Hint lines for a tarkib line's question (`lineQuestion`); absent on a product row. */
+  context?: readonly string[];
 }): Promise<TnvedSuggestion> {
   if (!aiConfigured()) throw new TnvedError('ai_not_configured');
   // The same deadline `proposeGoodsGrouping` twenty lines below already
@@ -191,15 +303,12 @@ export async function suggestTnved(input: {
       },
     });
   }
-  content.push({
-    type: 'text',
-    text: `Товар: ${input.nameZh}${input.nameRu ? ` (${input.nameRu})` : ''}`,
-  });
+  content.push({ type: 'text', text: tnvedQuestionText(input) });
 
   try {
     const response = await client.messages.create({
       model: ANALYST_MODEL,
-      max_tokens: 2048,
+      max_tokens: SUGGEST_MAX_TOKENS,
       system: SYSTEM,
       output_config: {
         format: {
@@ -219,13 +328,30 @@ export async function suggestTnved(input: {
       },
       messages: [{ role: 'user', content }],
     });
+    const spent = { in: response.usage?.input_tokens ?? 0, out: response.usage?.output_tokens ?? 0 };
+    // What one press costs, in the log: this button has no ledger row and no
+    // daily limit (asked of the owner), so the log is the only place it shows.
+    logger.info({ ...spent, stop: response.stop_reason, photo: Boolean(input.photo) }, '[tnved] suggestion');
     if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed');
+    // A cut-off answer is NAMED — half a JSON document is «unreadable» below
+    // too, but the cause belongs in the log in its own words.
+    if (response.stop_reason === 'max_tokens') {
+      logger.warn(spent, '[tnved] suggestion cut at max_tokens');
+      throw new TnvedError('ai_failed');
+    }
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = suggestionSchema.parse(JSON.parse(text));
-    if (!isValidTnved(parsed.tnved_code)) throw new TnvedError('ai_failed');
+    if (!isValidTnved(parsed.tnved_code)) {
+      logger.warn({ code: parsed.tnved_code }, '[tnved] suggestion carried no valid code');
+      throw new TnvedError('ai_failed');
+    }
     return parsed;
   } catch (err) {
     if (err instanceof TnvedError) throw err;
+    // Every failure used to leave here as «ai_failed» with nothing written
+    // down — a timeout, a 401 on a burned key and an unreadable answer were
+    // one sentence on the screen and no line in the log.
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, '[tnved] suggestion failed');
     throw new TnvedError('ai_failed');
   }
 }

@@ -220,18 +220,88 @@ describe('what the truck door cannot see — the other id in the same post', () 
     expect(card).toBeGreaterThan(permission);
     expect(member).toBeGreaterThan(card);
     expect(text).toContain('eq(boxes.lotId, lotId)');
-    for (const spend of ['from(attachments)', 'getStorage()', 'suggestTnved({']) {
+    for (const spend of ['firstLotPhoto(lotId)', 'suggestTnved({']) {
       expect(text.indexOf(spend), spend).toBeGreaterThan(member);
     }
+  });
+
+  it('TNVED: the photograph has ONE reader, and no action touches the bytes itself', () => {
+    // `firstLotPhoto` is a helper so the two 🤖 actions cannot drift apart —
+    // and so «after the doors» is one call's position in each of them.
+    const src = read(TNVED_ACTIONS);
+    const helper = src.slice(src.indexOf('async function firstLotPhoto('), src.indexOf('export async function suggestTnvedForLotAction('));
+    expect(helper).toContain('from(attachments)');
+    expect(helper).toContain('getStorage()');
+    for (const [name, text] of exportedActions(TNVED_ACTIONS)) {
+      expect(text, name).not.toMatch(/from\(attachments\)|getStorage\(\)/);
+    }
+  });
+
+  it('TNVED line: every door before the photo is read or the model is paid — the save’s own door included', () => {
+    // The owner's item 5 (2026-11-10): a tarkib line has its 🤖. By line ID,
+    // never by seq — a save on the prixod card replaces every line.
+    const text = exportedActions(TNVED_ACTIONS).get('suggestTnvedForLineAction')!;
+    expect(text).toMatch(
+      /^export async function suggestTnvedForLineAction\(\s*batchId: string,\s*lotId: string,\s*lineId: string,/,
+    );
+    const order = [
+      'await vedActor()',
+      'mayWriteComposition(actor.permissions)',
+      'isUuidShaped(lineId)',
+      'mayOpenBatchCard(actor, batch)',
+      'batchMemberFilter(batchId)',
+      'paperCompositionsFor(batchId, [lotId])',
+      "if (comp.frozen) return { ok: false, error: 'frozen' };",
+      'l.id === lineId',
+      'compositionDoor(actor, lotId, { requireConfirmed: true })',
+      'lineQuestion({',
+      'firstLotPhoto(lotId)',
+      'suggestTnved({',
+    ];
+    let at = -1;
+    for (const step of order) {
+      const next = text.indexOf(step);
+      expect(next, step).toBeGreaterThan(at);
+      at = next;
+    }
+    expect(text).toContain('eq(boxes.lotId, lotId)');
+    // The photograph only when the QUESTION wants it (one good in the lot) —
+    // a rule of `lineQuestion`, never one restated in the action.
+    expect(text).toContain('question.wantsPhoto ? await firstLotPhoto(lotId) : null');
+    // …and it writes nothing: the code is the editor's until «Saqlash».
+    expect(text).not.toMatch(/setLineCodes|saveTnved\(|\.insert\(|\.update\(|writeAudit/);
   });
 
   it('TNVED: the editor sends the truck with every 🤖, and the page hands it the truck', () => {
     const editor = read(TNVED_EDITOR);
     expect(editor).toContain('suggestTnvedForLotAction(batchId, row.lotId)');
+    // A line is asked about by its lot and its line ID, on the same truck.
+    expect(editor).toContain('suggestTnvedForLineAction(batchId, row.line.lotId, row.line.lineId!)');
     expect(editor).toMatch(/export function TnvedEditor\(\{ batchId, rows: initial \}: \{ batchId: string;/);
     // A refusal is not «AI did not answer — try later».
-    expect(editor).toContain("res.error === 'forbidden'");
-    expect(editor).toContain("tc('forbidden')");
+    expect(editor).toMatch(/case 'forbidden':\s*return tc\('forbidden'\);/);
     expect(read(TNVED_PAGE)).toMatch(/<TnvedEditor\s[^>]*\bbatchId=\{/);
+  });
+
+  it('TNVED: the bulk 🤖 cannot overwrite a typed code, stops at a shut door, and the save posts only what changed', () => {
+    const editor = read(TNVED_EDITOR);
+    // The walk's write checks emptiness INSIDE the updater — against the rows
+    // React holds at that moment, not the render the walk started in.
+    expect(editor).toMatch(/function fillEmpty\([^)]*\) \{\s*setRows\(\(prev\) => prev\.map\(\(r\) => \(rowKey\(r\) === key && !r\.code\.trim\(\) \?/);
+    const walk = editor.slice(editor.indexOf('async function suggestAllMissing()'), editor.indexOf('const changedProducts'));
+    expect(walk).not.toContain('setCode(');
+    expect(walk).toContain('rowsRef.current.find((r) => rowKey(r) === key)');
+    // Anything but the model's own failure ends the walk; two of those do too.
+    expect(walk).toContain("if (res.error !== 'ai_failed' || failed >= 2) break;");
+    expect(walk).toContain('if (stopWalk.current) break;');
+    // A row the 🤖 may be asked about: a product, or a LIVE line.
+    expect(editor).toContain('const askable = (row: TnvedRow) => !row.line || (!row.line.frozen && row.line.lineId !== null);');
+    expect(editor).toContain('const missing = rows.filter((r) => askable(r) && !r.code.trim()).length;');
+    // The save: the changed product rows, never every coded one — one row a
+    // colleague composed meanwhile used to refuse the whole save.
+    expect(editor).toMatch(/saveTnvedAction\(\s*batchId,\s*changedProducts\.map\(/);
+    expect(editor).not.toMatch(/\.filter\(\(r\) => !r\.line && r\.code\.trim\(\)\)\s*\.map/);
+    // The invoice button beside the editor reads how many codes are unsaved.
+    expect(editor).toContain('data-tnved-unsaved={changedProducts.length + changedLines.length}');
   });
 });

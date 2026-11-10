@@ -1,11 +1,17 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { nameKey } from '@/modules/wms/receipts/composition-math';
 import type { TnvedProductRow } from '@/modules/wms/tnved/batch-lots';
-import { saveLineCodesAction, saveTnvedAction, suggestTnvedForLotAction } from './actions';
+import {
+  saveLineCodesAction,
+  saveTnvedAction,
+  suggestTnvedForLineAction,
+  suggestTnvedForLotAction,
+} from './actions';
 
 export interface TnvedRow {
   lotId: string;
@@ -49,10 +55,19 @@ const lastSaved = new Map<string, string>();
  * refuses a lot that is not on it.
  *
  * Lot tarkibi: a composed lot shows one row per line on this truck. A line's
- * code is stored on the LINE (`saveLineCodesAction`), never in the memory —
- * it has no 🤖 and no «xotiradan»; the 💡 offers a code a person stated
- * before and never fills itself. On a truck whose papers went, the lines are
- * the frozen copy and read-only.
+ * code is stored on the LINE (`saveLineCodesAction`), never in the memory, so
+ * it has no «xotiradan»; the 💡 offers a code a person stated before. On a
+ * truck whose papers went, the lines are the frozen copy and read-only.
+ *
+ * A line HAS its 🤖 (the owner's item 5, 2026-11-10 — a truck of composed
+ * lots had no AI at all, and nothing on the screen said why). The server
+ * decides what the model reads (`lineQuestion`): the line's own name, the
+ * lot's photograph only when every carton of the lot is that one good. The
+ * answer is this screen's state until «Saqlash», like a product row's.
+ *
+ * The root carries `data-tnved-unsaved` = how many codes are typed and not
+ * saved: the invoice button beside it reads the count and says so before it
+ * hands over a paper made from the SAVED codes (`invoice-download.tsx`).
  */
 export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows: TnvedRow[] }) {
   const t = useTranslations('tnved');
@@ -60,8 +75,18 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
   const tc = useTranslations('common');
   const router = useRouter();
   const [rows, setRows] = useState(initial);
+  // The rows as they are NOW, for the walk below: it runs across many awaits
+  // and must judge each row by what the person has typed meanwhile, not by
+  // the render it started in.
+  const rowsRef = useRef(rows);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
   const [reasonings, setReasonings] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  /** «🤖 AI taklif (N)» in flight: how far it is, and the person's «stop». */
+  const [walk, setWalk] = useState<{ done: number; n: number } | null>(null);
+  const stopWalk = useRef(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(() => {
     const said = lastSaved.get(batchId) ?? null;
@@ -77,41 +102,148 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     setRows((prev) => prev.map((r) => (rowKey(r) === key ? { ...r, code, source } : r)));
   }
 
+  /**
+   * Fill a row only while it is still EMPTY — the walk's write. The check is
+   * inside the updater, so it is made against the rows as React holds them at
+   * that moment: a code the person typed while the model was thinking is
+   * theirs, and no answer arriving late can take its place.
+   */
+  function fillEmpty(key: string, code: string, source: 'manual' | 'ai') {
+    setRows((prev) => prev.map((r) => (rowKey(r) === key && !r.code.trim() ? { ...r, code, source } : r)));
+  }
+
+  /** A row the 🤖 may be asked about: a product, or a LIVE line of a tarkib. */
+  const askable = (row: TnvedRow) => !row.line || (!row.line.frozen && row.line.lineId !== null);
+
+  function ask(row: TnvedRow) {
+    return row.line
+      ? suggestTnvedForLineAction(batchId, row.line.lotId, row.line.lineId!)
+      : suggestTnvedForLotAction(batchId, row.lotId);
+  }
+
+  type Asked = Awaited<ReturnType<typeof ask>>;
+
+  /** The 🤖 line under a code: how sure, why — and, for a line, that no photo was read. */
+  function noteOf(row: TnvedRow, res: Asked): string {
+    const said = `${t(`confidence.${res.suggestion!.confidence}`)} · ${res.suggestion!.reasoning}`;
+    return row.line && 'photo' in res && res.photo === false ? `${said} · ${t('aiNameOnly')}` : said;
+  }
+
+  /**
+   * A refusal is not the model failing: «AI did not answer — try later» would
+   * send the person to press again at a door that stays shut.
+   */
+  function askError(code: string | undefined): string {
+    switch (code) {
+      case 'ai_not_configured':
+        return t('aiNotConfigured');
+      case 'forbidden':
+        return tc('forbidden');
+      case 'composition_changed':
+      case 'frozen':
+      case 'busy':
+      case 'server_behind':
+        return lineError(code);
+      case 'receipt_not_confirmed':
+        return tk('errors.receipt_not_confirmed');
+      default:
+        return t('aiFailed');
+    }
+  }
+
+  function refuse(code: string | undefined) {
+    setError(askError(code));
+    // The tarkib was re-saved on the prixod card: these rows name lines that
+    // are gone, and only a reload brings the new ones.
+    setStale(code === 'composition_changed');
+  }
+
   async function suggest(row: TnvedRow) {
     const key = rowKey(row);
     setBusy(key);
     setError(null);
+    setStale(false);
     try {
-      const res = await suggestTnvedForLotAction(batchId, row.lotId);
+      const res = await ask(row);
       if (res.ok && res.suggestion) {
         setCode(key, res.suggestion.tnved_code, 'ai');
-        setReasonings((prev) => ({
-          ...prev,
-          [key]: `${t(`confidence.${res.suggestion!.confidence}`)} · ${res.suggestion!.reasoning}`,
-        }));
+        setReasonings((prev) => ({ ...prev, [key]: noteOf(row, res) }));
       } else {
-        // A refusal is not the model failing: «AI did not answer — try later»
-        // would send the person to press again at a door that stays shut.
-        setError(
-          res.error === 'ai_not_configured'
-            ? t('aiNotConfigured')
-            : res.error === 'forbidden'
-              ? tc('forbidden')
-              : t('aiFailed'),
-        );
+        refuse(res.error);
       }
     } finally {
       setBusy(null);
     }
   }
 
+  /**
+   * «🤖 AI taklif (N)» — every empty code on the screen, one at a time
+   * (visible progress, no rate-limit burst), product rows and tarkib lines
+   * alike:
+   *
+   *  1. a line whose name a person coded before has its 💡 — that code is
+   *     free and a person's, so it is filled and the model is never asked;
+   *  2. the rest are asked in the order they are drawn. Each row is judged
+   *     LIVE before its ask — a code typed meanwhile is the person's — and
+   *     written through `fillEmpty`, which cannot overwrite one;
+   *  3. one answer per line NAME: «Мышь» on a second lot takes the first
+   *     «Мышь»'s answer. Two asks could come back with two codes for one
+   *     good, and the invoice merges same-named goods only when their codes
+   *     are equal;
+   *  4. it STOPS at a door that stays shut — no key, no permission, a ticked
+   *     truck, a tarkib re-saved under the screen — and after two model
+   *     failures in a row, instead of pressing a dead button N times.
+   */
   async function suggestAllMissing() {
-    for (const row of rows) {
-      // Product rows only: a line has no 🤖 (its photo is the lot's carton).
-      if (!row.line && !row.code.trim()) {
-        // Sequential on purpose — visible progress + no rate-limit bursts.
-        await suggest(row);
+    stopWalk.current = false;
+    setError(null);
+    setStale(false);
+    const empty = (row: TnvedRow) => askable(row) && !row.code.trim();
+    const hinted = new Set<string>();
+    for (const row of rowsRef.current) {
+      if (empty(row) && row.line?.hint) {
+        fillEmpty(rowKey(row), row.line.hint.code, 'manual');
+        hinted.add(rowKey(row));
       }
+    }
+    const queue = rowsRef.current.filter((row) => empty(row) && !hinted.has(rowKey(row)));
+    const byName = new Map<string, { code: string; note: string }>();
+    let failed = 0;
+    let done = 0;
+    setWalk({ done, n: queue.length });
+    try {
+      for (const target of queue) {
+        if (stopWalk.current) break;
+        const key = rowKey(target);
+        const live = rowsRef.current.find((r) => rowKey(r) === key);
+        if (live && empty(live)) {
+          const same = target.line ? byName.get(nameKey(target.nameZh)) : undefined;
+          if (same) {
+            fillEmpty(key, same.code, 'ai');
+            setReasonings((prev) => ({ ...prev, [key]: `${same.note} · ${t('aiSameName')}` }));
+          } else {
+            setBusy(key);
+            const res = await ask(target);
+            setBusy(null);
+            if (res.ok && res.suggestion) {
+              failed = 0;
+              const note = noteOf(target, res);
+              fillEmpty(key, res.suggestion.tnved_code, 'ai');
+              setReasonings((prev) => ({ ...prev, [key]: note }));
+              if (target.line) byName.set(nameKey(target.nameZh), { code: res.suggestion.tnved_code, note });
+            } else {
+              refuse(res.error);
+              failed += 1;
+              if (res.error !== 'ai_failed' || failed >= 2) break;
+            }
+          }
+        }
+        done += 1;
+        setWalk({ done, n: queue.length });
+      }
+    } finally {
+      setBusy(null);
+      setWalk(null);
     }
   }
 
@@ -145,17 +277,19 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     const said: string[] = [];
     try {
       if (changedProducts.length > 0) {
+        // The CHANGED rows only. Every coded row used to be posted, so one
+        // product a colleague composed meanwhile (its row is a tarkib's
+        // lines now) refused the whole save `not_on_truck` — and the reload
+        // that cures it drops every answer typed or suggested and not saved.
         const res = await saveTnvedAction(
           batchId,
-          rows
-            .filter((r) => !r.line && r.code.trim())
-            .map((r) => ({
-              nameZh: r.nameZh,
-              nameRu: r.nameRu,
-              code: r.code,
-              source: r.source ?? 'manual',
-              aiReasoning: reasonings[rowKey(r)] ?? null,
-            })),
+          changedProducts.map((r) => ({
+            nameZh: r.nameZh,
+            nameRu: r.nameRu,
+            code: r.code,
+            source: r.source ?? 'manual',
+            aiReasoning: reasonings[rowKey(r)] ?? null,
+          })),
         );
         if (!res.ok) {
           setError(
@@ -207,25 +341,43 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     }
   }
 
-  const missing = rows.filter((r) => !r.line && !r.code.trim()).length;
+  // What the 🤖 can still fill — tarkib lines included, so the button's
+  // number is the header's «TNVED kodsiz · N» less the rows a ticked truck
+  // keeps read-only.
+  const missing = rows.filter((r) => askable(r) && !r.code.trim()).length;
+  const working = busy !== null || walk !== null;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" data-tnved-unsaved={changedProducts.length + changedLines.length}>
       <div className="flex flex-wrap gap-2">
-        {missing > 0 && (
+        {walk ? (
           <button
             type="button"
-            className="btn-secondary min-w-0 flex-1 px-3 disabled:opacity-50"
-            disabled={busy !== null || saving}
-            onClick={() => void suggestAllMissing()}
+            className="btn-secondary min-w-0 flex-1 px-3"
+            data-testid="tnved-ai-stop"
+            onClick={() => {
+              stopWalk.current = true;
+            }}
           >
-            🤖 {t('suggestAll', { n: missing })}
+            ⏳ {t('suggestProgress', { done: walk.done, n: walk.n })} · {t('suggestStop')}
           </button>
+        ) : (
+          missing > 0 && (
+            <button
+              type="button"
+              className="btn-secondary min-w-0 flex-1 px-3 disabled:opacity-50"
+              disabled={working || saving}
+              data-testid="tnved-ai-all"
+              onClick={() => void suggestAllMissing()}
+            >
+              🤖 {t('suggestAll', { n: missing })}
+            </button>
+          )
         )}
         <button
           type="button"
           className="btn-primary min-w-0 flex-1 px-3 disabled:opacity-50"
-          disabled={saving || busy !== null}
+          disabled={saving || working}
           onClick={() => void saveAll()}
           data-testid="tnved-save"
         >
@@ -334,11 +486,12 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                   readOnly={line?.frozen === true}
                   onChange={(e) => setCode(key, e.target.value.replace(/\D/g, ''), 'manual')}
                 />
-                {!line && (
+                {askable(row) && (
                   <button
                     type="button"
                     className="btn-secondary whitespace-nowrap px-3 disabled:opacity-50"
-                    disabled={busy !== null || saving}
+                    disabled={working || saving}
+                    data-testid={line ? 'tnved-tarkib-ai' : 'tnved-ai'}
                     onClick={() => void suggest(row)}
                   >
                     {busy === key ? '⏳' : '🤖'}
@@ -359,8 +512,10 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                     : t('lineHintComposition', { code: line.hint.code })}
                 </button>
               )}
-              {!line && row.source === 'ai' && reasonings[key] && (
-                <p className="rounded-lg bg-brand-50 p-2 text-xs text-brand-800">🤖 {reasonings[key]}</p>
+              {row.source === 'ai' && reasonings[key] && (
+                <p className="rounded-lg bg-brand-50 p-2 text-xs text-brand-800" data-testid="tnved-ai-note">
+                  🤖 {reasonings[key]}
+                </p>
               )}
               {!line && row.source === 'manual' && initialCode(key) === row.code && row.code && (
                 <p className="text-xs text-ink-500">💾 {t('fromMemory')}</p>
