@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -8,6 +8,9 @@ import {
   boxMovements,
   boxes,
   clients,
+  costAllocations,
+  costEntries,
+  costTypes,
   dealStages,
   deals,
   handovers,
@@ -38,7 +41,7 @@ import { arrivedSummary } from '@/modules/wms/notices/arrival';
 import { issuedFacts, receivedFacts } from '@/modules/wms/notices/client-summary';
 import { PUSH_NAME_CHARS, lotLines } from '@/modules/wms/notices/client-text';
 import { receiptFacts } from '@/modules/wms/pickups/double-received';
-import { clientHistory, stockAging } from '@/modules/wms/reports/queries';
+import { clientHistory, landedCostByLot, stockAging } from '@/modules/wms/reports/queries';
 import { receiveStamped, removeStamped } from '../fixtures/stamped-cargo';
 
 /**
@@ -78,6 +81,7 @@ let whCn = { id: '', code: '' };
 let dealMixed = '';
 let dealOne = '';
 let handoverId = '';
+let costEntryId = '';
 const batchId = uuidv4();
 const batchCode = `LN${RUN}-T`;
 
@@ -271,11 +275,39 @@ beforeAll(async () => {
       scannedAt: new Date(),
     })),
   );
+
+  // A cost on the waiting cargo, so the landed-cost report has lots to list.
+  // Dated in a year no report window reaches.
+  const [type] = await db.select({ id: costTypes.id }).from(costTypes).where(eq(costTypes.active, true)).limit(1);
+  const [entry] = await db
+    .insert(costEntries)
+    .values({
+      scope: 'receipt',
+      receiptId: lot.three.receiptId,
+      costTypeId: type!.id,
+      amount: '50.00',
+      currency: 'USD',
+      amountUsd: '50.00',
+      fxRateUsed: '1',
+      costDate: '1583-03-03',
+      enteredBy: actorId,
+    })
+    .returning({ id: costEntries.id });
+  costEntryId = entry!.id;
+  await db
+    .insert(costAllocations)
+    .values(
+      [...lot.three.boxIds, ...lot.plain.boxIds].map((boxId) => ({ costEntryId, boxId, clientId, amountUsd: '10.0000' })),
+    );
 });
 
 afterAll(async () => {
   const lots = Object.values(lot).filter((l) => l.lotId);
   const boxIds = lots.flatMap((l) => l.boxIds);
+  if (costEntryId) {
+    await db.delete(costAllocations).where(eq(costAllocations.costEntryId, costEntryId));
+    await db.delete(costEntries).where(eq(costEntries.id, costEntryId));
+  }
   if (boxIds.length > 0) {
     await db.delete(scanEvents).where(inArray(scanEvents.boxId, boxIds));
     await db.delete(boxMovements).where(inArray(boxMovements.boxId, boxIds));
@@ -321,13 +353,20 @@ describe('a deal’s cargo — ONE count, over goods kinds', () => {
     expect({ goods: cargo.goods, goodsExtra: cargo.goodsExtra }).toEqual({ goods: 'Мышь', goodsExtra: 1 });
   });
 
-  it('a deal with no tarkib counts distinct names as it always did', async () => {
+  it('a deal with no tarkib reads exactly what the statement before this round read', async () => {
     await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.three.lotId));
     try {
       const cargo = (await dealCargoFor([dealMixed])).get(dealMixed)!;
-      // The lot's own «клавиатура» and the plain lot — lower case sorts as it always sorted.
-      expect(cargo.goodsExtra).toBe(1);
-      expect([PLAIN_RU, 'клавиатура']).toContain(cargo.goods);
+      // The oracle is the shipped expression, verbatim — whichever of the two
+      // names this database's collation sorts first.
+      const [before] = (await db.execute(sql`
+        SELECT (array_agg(DISTINCT coalesce(nullif(l.product_name_ru, ''), l.product_name_zh)))[1] AS first,
+               count(DISTINCT coalesce(nullif(l.product_name_ru, ''), l.product_name_zh))::int AS n
+          FROM receipts r JOIN receipt_lots l ON l.receipt_id = r.id
+         WHERE r.deal_id = ${dealMixed}::uuid AND r.voided_at IS NULL
+      `)) as unknown as { first: string; n: number }[];
+      expect(before!.n).toBe(2);
+      expect({ goods: cargo.goods, goodsExtra: cargo.goodsExtra }).toEqual({ goods: before!.first, goodsExtra: 1 });
     } finally {
       await compose(lot.three.lotId, THREE);
     }
@@ -351,7 +390,11 @@ describe('the office’s lists', () => {
     expect(goods.get(`rc-${lot.plain.receiptId}`)).toBe(PLAIN_RU);
   });
 
-  it('the reports: client history and stock aging (its page cell gets the two halves apart)', async () => {
+  it('the reports: landed cost by lot, client history and stock aging (its page cell gets the two halves apart)', async () => {
+    const landed = new Map((await landedCostByLot(clientId)).map((r) => [r.lotId, r]));
+    expect(landed.get(lot.three.lotId)).toMatchObject({ productNameZh: ZH, productNameRu: LABEL, boxCount: 3, totalUsd: 30 });
+    expect(landed.get(lot.plain.lotId)).toMatchObject({ productNameRu: PLAIN_RU, boxCount: 2 });
+
     const history = new Map((await clientHistory(clientId)).map((r) => [r.lotId, r]));
     expect(history.get(lot.three.lotId)).toMatchObject({ productNameZh: ZH, productNameRu: LABEL });
     expect(history.get(lot.plain.lotId)).toMatchObject({ productNameRu: PLAIN_RU });
