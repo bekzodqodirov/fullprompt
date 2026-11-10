@@ -925,20 +925,30 @@ function piecesOf(rows: GoodsList): number | null {
  *    jacket — and «no `namesMeet`» said it was (the judge's t3: one
  *    workbook's invoice and its short-named packing list folded to six rows).
  * Anything short of that is not proven, and the workbook keeps today's
- * reading. Pure.
+ * reading. `stored` — a top-up's rows already on the request — only fence the
+ * NAMES: every row must be another name than each of them too («Krossovka
+ * sport» beside a stored «Krossovka» may be that row, and the landing would
+ * price it twice). They count into no Σ and are asked no count: a request's
+ * own goods are not the workbook's goods sheet, and counted in, a stored
+ * «Ladies jacket» 300 made an invoice and its Specification of the same 920
+ * pieces «other» and folded the goods twice, while a stored row with a weight
+ * and no count kept a real «Zavod B» out (review sheets-break-topup-sum-kept).
+ * `otherName` asks a script both names write, so a stored row in another
+ * script — what a line may translate — proves nothing either. Pure.
  */
-export function provenOther(held: GoodsList, read: GoodsList): boolean {
+export function provenOther(held: GoodsList, read: GoodsList, stored: readonly GoodsList[number][] = []): boolean {
   if (held.length === 0 || read.length === 0) return false;
   const ours = piecesOf(held);
   const theirs = piecesOf(read);
   if (ours === null || theirs === null || ours === theirs) return false;
   const heldKeys = held.map((g) => keyOf(g.name));
-  if (heldKeys.some((k) => !k)) return false;
+  const storedKeys = stored.map((g) => keyOf(g.name));
+  if (heldKeys.some((k) => !k) || storedKeys.some((k) => !k)) return false;
   return read.every((g) => {
     const key = keyOf(g.name);
     if (!key) return false;
     const scripts = scriptsOfKey(key);
-    return heldKeys.every((k) => shareScript(scripts, scriptsOfKey(k)) && otherName(key, k));
+    return heldKeys.every((k) => shareScript(scripts, scriptsOfKey(k)) && otherName(key, k)) && storedKeys.every((k) => otherName(key, k));
   });
 }
 

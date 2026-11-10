@@ -1237,23 +1237,43 @@ export function pickGoods(input: {
           named.add(names.whole);
           sameAsInvoice.push({ ...g, why: 'typed' });
         }
-      } else if (input.otherMaterial && input.model.length !== input.invoice.length) {
+      } else if (input.otherMaterial) {
         // …and a model line read off a header-less sheet or the typed text,
         // which the Excel does not carry, is named the same way (§4.6) —
-        // unless it is a row of the Excel restated: by an equal count under
-        // names that do not contradict, met by exactly one row (a
-        // translation), or by place in a list as long as the Excel's.
-        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
-        for (const g of input.model) {
-          const names = goodsNameKeys(g.name);
-          if (!names.whole || named.has(names.whole) || carried(g, names)) continue;
-          if (invoice.filter((inv) => sameFigures(inv.row, g)).length === 1) continue;
+        // unless it is a row of the Excel restated: its count and weight, or
+        // an equal count under names that do not contradict (a translation).
+        // ONE row answers ONE line (review sheets-break-file-naming-length):
+        // the rows the model repeated by name first, then — in a list as long
+        // as the Excel's — the line at a place against the row at that place,
+        // then any row not yet answered. «Exactly one row with that count»
+        // named every translation of an invoice whose 300 came three times,
+        // and «a list as long as the Excel's» passed every line of one —
+        // another factory's two goods beside a two-row invoice went unsaid.
+        const lines = input.model.map((g) => ({ g, names: goodsNameKeys(g.name) }));
+        const claimed = new Set<number>();
+        const claim = (at: number) => (at >= 0 && !claimed.has(at) ? (claimed.add(at), true) : false);
+        const restates = (row: GoodsList[number], g: GoodsList[number]) => {
           const q = figureOf(g, 'quantity');
-          if (q !== null && invoice.filter((inv) => figureOf(inv.row, 'quantity') === q && !namesContradict(inv.row.name, g.name)).length === 1) continue;
-          if (typedNames.some((t) => namesMeet(t, names))) continue;
+          return sameFigures(row, g) || (q !== null && figureOf(row, 'quantity') === q && !namesContradict(row.name, g.name));
+        };
+        const done = lines.map(({ g, names }) => {
+          if (!names.whole || named.has(names.whole) || !carried(g, names)) return false;
+          claim(invoice.findIndex((inv, k) => !claimed.has(k) && sameLine(inv.row, inv.names, g, names)));
+          return true;
+        });
+        if (lines.length === invoice.length) {
+          lines.forEach(({ g }, i) => {
+            if (!done[i] && !claimed.has(i) && restates(invoice[i]!.row, g)) done[i] = claim(i);
+          });
+        }
+        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
+        lines.forEach(({ g, names }, i) => {
+          if (done[i] || !names.whole || named.has(names.whole)) return;
+          if (claim(invoice.findIndex((inv, k) => !claimed.has(k) && restates(inv.row, g)))) return;
+          if (typedNames.some((t) => namesMeet(t, names))) return;
           named.add(names.whole);
           sameAsInvoice.push({ ...g, why: 'file' });
-        }
+        });
       }
       return { goods: input.invoice, sameAsInvoice };
     }

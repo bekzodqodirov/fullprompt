@@ -20,10 +20,43 @@ import { PICTURES_LINE, promptFileLines, readIntakeFile, receiveSheetText, sheet
 import { readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { otherName, positionalFills, provenOther, samePositions, sameWorkbookAgain } from '@/modules/platform/telegram/file-goods';
 import type { CalcFacts } from '@/modules/wms/calc/intake';
+import type { AmendBase } from '@/modules/wms/calc/amend-types';
 import * as B from '../fixtures/fayl-books';
 
 type Goods = NonNullable<CalcFacts['goods']>;
 const line = (name: string, extra: Partial<Goods[number]> = {}): Goods[number] => ({ name, ...extra });
+
+/** A ➕ collection's base: the request and the rows it already stores. */
+function amendOf(items: Goods): AmendBase {
+  return {
+    requestId: '00000000-0000-4000-8000-00000000fb01',
+    cardLabel: 'B-000777',
+    entityType: 'deal',
+    entityId: '00000000-0000-4000-8000-00000000fb02',
+    leadOpen: null,
+    section: 'rastamojka',
+    door: 'ai',
+    clientLabel: null,
+    openedRev: 1,
+    items: items.map((g, i) => ({
+      itemId: `00000000-0000-4000-8000-0000000fc0${i}`,
+      seq: i + 1,
+      name: g.name,
+      quantity: g.quantity ?? null,
+      weightKg: g.weightKg ?? null,
+      volumeM3: null,
+      measureUnit: null,
+      measureQty: null,
+      tnvedCode: null,
+      law: null,
+      confirmed: false,
+    })),
+    weightKg: null,
+    volumeM3: null,
+    fromCity: null,
+    toCity: null,
+  };
+}
 
 let seq = 0;
 const chats: bigint[] = [];
@@ -211,8 +244,9 @@ describe('a further sheet, by its shape (§4.2)', () => {
       ['Kiyimlar', ['Наименование', 'Кол-во', 'Вес'], [['Куртка женская', 300, 150], ['Брюки мужские', 200, 100], ['Кофта детская', 100, 40]]],
       ['Poyabzal', ['Наименование', 'Кол-во', 'Вес'], [['Кроссовки', 120, 60], ['Тапочки', 80, 20]]],
     ]);
-    await forward(chatId, body, 'tovarlar.xlsx');
+    const answer = await forward(chatId, body, 'tovarlar.xlsx');
     expect(rows(chatId)).toEqual(['Куртка женская', 'Брюки мужские', 'Кофта детская', 'Кроссовки', 'Тапочки']);
+    expect(answer.say).toContain('📄 «tovarlar.xlsx», «Poyabzal» varag‘idan 2 ta yangi tovar qo‘shildi.');
   });
 
   it('an RU CI + its short-named RU packing list: today’s 3 rows, and the sentence (sheets-01)', async () => {
@@ -247,6 +281,67 @@ describe('a further sheet, by its shape (§4.2)', () => {
     ]);
     await forward(chatId, body, 'invoice.xlsx');
     expect(rows(chatId)).toEqual(['Ladies jacket', 'Men trousers']);
+  });
+
+  // The sheet is judged against the WORKBOOK's goods; the request's stored rows
+  // only fence the names (review sheets-break-topup-sum-kept): counted into the
+  // Σ, a stored row made a restatement «proven other» and folded it twice.
+  const topUps = (stored: Goods): Partial<IntakeState>[] => [
+    { seed: stored, seedDoor: 'ai', seededFrom: '00000000-0000-4000-8000-00000000fa04', facts: { fromCity: null, toCity: null, weightKg: null, volumeM3: null, goods: stored } },
+    { amend: amendOf(stored) },
+  ];
+
+  it('in a top-up, an invoice and its Specification of the same pieces (Σ equal): 2 rows, the stored row counts into no Σ', async () => {
+    const body = await B.sheetsBook([
+      ['Invoice', ['Description', 'Qty', 'Amount'], [['Sneakers men', 120, 1020], ['Baseball cap', 800, 640]]],
+      ['Specification', ['Description', 'Qty', 'Amount'], [['Sport shoes', 120, 1020], ['Hat', 800, 640]]],
+    ]);
+    for (const patch of [{}, ...topUps([line('Ladies jacket', { quantity: 300 })])]) {
+      const chatId = collection(patch);
+      const answer = await forward(chatId, body, 'inv.xlsx');
+      expect(rows(chatId)).toEqual(['Sneakers men', 'Baseball cap']);
+      expect(answer.say).toContain(`📄 «inv.xlsx», «Specification» varag‘i ${SAME_SENTENCE}`);
+    }
+  });
+
+  it('in a top-up, K10 is folded whatever the stored rows state: a kg-only stored row is no reason to keep «Zavod B» out', async () => {
+    for (const patch of topUps([line('Куртка детская', { weightKg: 120 })])) {
+      const chatId = collection(patch);
+      const answer = await forward(chatId, await k10Book(), 'GS777_invoice.xlsx');
+      expect(rows(chatId)).toHaveLength(5);
+      expect(answer.say).toContain('«Zavod B» varag‘idan 2 ta yangi tovar qo‘shildi');
+    }
+  });
+
+  it('in a top-up, a stored row in another script is a name nothing proves «Zavod B» is not — today’s reading, said', async () => {
+    // «Ladies jacket» may be what a Cyrillic line translates (`otherName` calls
+    // two names other only in a script both write — the same rule as the held
+    // rows'); the landing could not tell either, and would price it twice.
+    for (const patch of topUps([line('Ladies jacket', { quantity: 50 })])) {
+      const chatId = collection(patch);
+      const answer = await forward(chatId, await k10Book(), 'GS777_invoice.xlsx');
+      expect(rows(chatId)).toHaveLength(3);
+      expect(answer.say).toContain(`📄 «GS777_invoice.xlsx», «Zavod B» varag‘i ${SAME_SENTENCE}`);
+    }
+  });
+
+  it('in a top-up, a CI + PL workbook of the same goods: its totals go on the note, never the request (§4.2)', async () => {
+    const bilingual = await B.bookOf((wb) => {
+      B.invoiceSheet(wb.addWorksheet('INVOICE'), B.GOODS);
+      B.packingSheet(wb.addWorksheet('PACKING LIST'), B.GOODS);
+    });
+    for (const [book, sheet] of [
+      [bilingual, 'PACKING LIST'],
+      [await r1Book({ net: true }), 'PACKING'],
+    ] as const) {
+      for (const patch of topUps([line('Sumka', { quantity: 10 })])) {
+        const chatId = collection(patch);
+        const answer = await forward(chatId, book, 'CI-PL.xlsx');
+        expect(rows(chatId)).toHaveLength(12);
+        expect(answer.say).toContain(`📄 «CI-PL.xlsx», «${sheet}» varag‘i — packing list jami: brutto 1592 kg, 13.58 m³ — so‘rovga yozilmadi, VED fayldan ko‘radi.`);
+        expect(activeIntake(chatId)!.fileTotals ?? null).toBeNull();
+      }
+    }
   });
 
   it('the summary-invoice workbook, in both sheet orders: today’s rows — the packing list’s three (sheets-03)', async () => {
@@ -302,6 +397,28 @@ describe('a top-up’s packing list is the goods list while the request has no r
     expect(answer.say).not.toContain('so‘rovga yozilmadi');
   });
 
+  // A returned request (seed) and a ➕ on one (amend), both with nothing stored.
+  const emptyTopUps = (): Partial<IntakeState>[] => [
+    { seed: [], seedDoor: 'ai', seededFrom: '00000000-0000-4000-8000-00000000fa03' },
+    { amend: amendOf([]) },
+  ];
+
+  it('…and an invoice after that packing list takes the goods role, as on a fresh collection: never doubled (review sheets-break-empty-topup-swap)', async () => {
+    const pl = await B.sheetsBook([
+      ['PL', ['Description', 'Ctns', 'Qty', 'G.W.', 'CBM'], [['女士夹克', 15, 300, 165, 1.8], ['男士夹克', 12, 240, 134.4, 1.56], ['儿童裤子', 8, 400, 104, 0.72]]],
+    ]);
+    const ci = await B.sheetsBook([['CI', ['Description', 'Qty', 'Amount'], [['Ladies jacket', 300, 1950], ['Mens jacket', 240, 1728], ['Kids pants', 400, 840]]]]);
+    for (const patch of emptyTopUps()) {
+      const chatId = collection(patch);
+      await forward(chatId, pl, 'PL.xlsx');
+      const answer = await forward(chatId, ci, 'CI.xlsx');
+      expect(rows(chatId)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
+      // A top-up writes no totals from its material (R3 interp 2): the packing list's go on the note.
+      expect(answer.say).toContain('📄 «PL.xlsx» — packing list jami: brutto 403.4 kg, 4.08 m³ — so‘rovga yozilmadi, VED fayldan ko‘radi.');
+      expect(activeIntake(chatId)!.fileTotals ?? null).toBeNull();
+    }
+  });
+
   it('a returned request WITH rows: still the noted file (FILES-2’s fence stands)', async () => {
     const stored = [line('Куртка женская', { quantity: 300 })];
     const chatId = collection({ seed: stored, seedDoor: 'ai', seededFrom: '00000000-0000-4000-8000-00000000fa02', facts: { fromCity: null, toCity: null, weightKg: null, volumeM3: null, goods: stored } });
@@ -346,6 +463,41 @@ describe('the words (§4.4)', () => {
     const chatId = collection();
     const answer = await forward(chatId, body, 'PI.xlsx');
     expect(answer.say).toBe('📄 «PI.xlsx» — jadvalda tovar qatori ko‘rinmadi.');
+    // …and a factory office's letterhead over nothing: the company, the
+    // address and phone, the title, the labels and their values.
+    const letterhead = await B.bookOf((wb) =>
+      wb.addWorksheet('CI').addRows([
+        ['YIWU XINGHUA IMPORT & EXPORT CO., LTD 义乌兴华进出口有限公司'],
+        ['ADD: NO. 188 CHOUZHOU NORTH ROAD, YIWU, ZHEJIANG, CHINA  TEL: +86-579-85551234'],
+        ['商业发票 COMMERCIAL INVOICE'],
+        ['TO: GSR LOGISTICS, TASHKENT, UZBEKISTAN', null, null, 'INVOICE NO.:', 'XH20261028'],
+        ['Date:', '2026-10-28'],
+        ['SAY US DOLLARS 26850.4 ONLY'],
+      ]),
+    );
+    expect(await readGoodsFile(letterhead, null)).toMatchObject({ kind: 'text', why: 'no_rows' });
+  });
+
+  // «No goods row» is said only of a sheet every line of which is a cover's —
+  // a title, the company, a contact label, a total (review
+  // sheets-spec-no-rows-too-wide): «no row pairs a name with a figure» also
+  // took a names-only list, one-cell lines and figures in a unit the reader
+  // does not know, whose goods the model then read off that very text.
+  it('a header-less list with no figure cell beside its names keeps today’s words: the model reads goods there', async () => {
+    const lists: (string | number)[][][] = [
+      [['Кастрюля'], ['Сковорода'], ['Чайник']],
+      [['Ayollar kurtkasi 300 dona 150 kg'], ['Erkaklar shimi 200 dona 100 kg']],
+      [['Ladies jacket', 'black'], ['Mens trousers', 'grey']],
+      [['Ткань полиэстер 150см', '12 рулонов'], ['Подкладочная ткань', '30 рулонов'], ['Нитки швейные', '5 мешков']],
+      [['Tovar: Ayollar kurtkasi'], ['Soni: 300 dona'], ['Og‘irligi: 150 kg']],
+    ];
+    for (const cells of lists) {
+      const body = await B.bookOf((wb) => wb.addWorksheet('S').addRows(cells));
+      const read = await readGoodsFile(body, null);
+      expect(read?.kind, JSON.stringify(cells)).toBe('text');
+      expect(read as { why?: string }, JSON.stringify(cells)).not.toHaveProperty('why');
+      expect((await forward(collection(), body, 'S.xlsx')).say).toBe('📄 «S.xlsx» — jadval sarlavhasini topa olmadim, AI o‘qiydi.');
+    }
   });
 
   it('a header-less goods table keeps today’s words', async () => {
@@ -399,6 +551,18 @@ describe('cuts keep an emoji whole (§3.8, apireq-1)', () => {
     expect(read.cellsCut).toBe(true);
     expect(JSON.stringify(read.text)).not.toMatch(/\\ud[89ab][0-9a-f]{2}(?!\\ud[c-f])/i);
   });
+
+  it('…and the 1,200-unit window itself cuts whole: a padded cell whose window ends between the halves', async () => {
+    // The spaces collapse, so the 300-unit cut never reaches the emoji: only
+    // the window can split it (review sheets-spec-window-cut-unpinned).
+    const padded = `a${' '.repeat(1197)}b😀 tail`;
+    const body = await B.bookOf((wb) => wb.addWorksheet('S').addRows([[padded, 1]]));
+    const read = await readGoodsFile(body, null);
+    if (read?.kind !== 'text') throw new Error(`text expected, got ${read?.kind}`);
+    expect(read.text).not.toMatch(lone);
+    expect(read.text).not.toContain('\uFFFD');
+    expect(read.text).toBe('[S]\na b | 1');
+  });
 });
 
 describe('a model line is never dropped in silence (§4.6, xlsxN-02 J2, narrowed by sheets-08)', () => {
@@ -424,9 +588,44 @@ describe('a model line is never dropped in silence (§4.6, xlsxN-02 J2, narrowed
     expect(pick([line('Power bank', { quantity: 500 })], false).sameAsInvoice).toEqual([]);
   });
 
-  it('a line meeting exactly one row by an equal count, or a list as long as the Excel’s, is a restatement', () => {
+  it('a line meeting a row by an equal count under names that do not contradict is a restatement', () => {
     expect(pick([line('Женская куртка', { quantity: 300 })], true).sameAsInvoice).toEqual([]);
-    expect(pick([line('A', { quantity: 1 }), line('B', { quantity: 2 }), line('C', { quantity: 3 })], true).sameAsInvoice).toEqual([]);
+  });
+
+  // «By position in an equal-length list» is the line AT a place meeting the
+  // row at that place — never a blanket pass for any list of that length
+  // (review sheets-break-file-naming-length): K10's «Zavod B» on a sheet the
+  // reader cannot map, two lines beside a two-row invoice, vanished unsaid.
+  it('a list as long as the Excel’s is judged place by place: another factory’s goods are named', () => {
+    const two = [line('Куртка женская', { quantity: 300 }), line('Брюки мужские', { quantity: 200 })];
+    const model = [line('Кроссовки мужские', { quantity: 120 }), line('Кепка бейсболка', { quantity: 800 })];
+    const picked = pickGoods({ invoice: two, aiGoods: null, model, typed: [], typedLabelled: [], otherMaterial: true });
+    expect(picked.sameAsInvoice.map((g) => g.name)).toEqual(['Кроссовки мужские', 'Кепка бейсболка']);
+    // …the same one cut to one line was named already: the length is no evidence.
+    expect(pickGoods({ invoice: two, aiGoods: null, model: model.slice(0, 1), typed: [], typedLabelled: [], otherMaterial: true }).sameAsInvoice.map((g) => g.name)).toEqual([
+      'Кроссовки мужские',
+    ]);
+  });
+
+  it('one row answers ONE line: an invoice’s three 300s answer three translated lines, and no fourth', () => {
+    const twelve = B.GOODS.map((g) => line(g.en, { quantity: B.pcs(g) }));
+    // «Ladies jacket», «Ladies handbag PU» and «Sports shoes» are all 300.
+    const restated = [line('Куртка женская', { quantity: 300 }), line('Сумка женская', { quantity: 300 })];
+    expect(pickGoods({ invoice: twelve, aiGoods: null, model: restated, typed: [], typedLabelled: [], otherMaterial: true }).sameAsInvoice).toEqual([]);
+    const four = [...restated, line('Кроссовки', { quantity: 300 }), line('Чайник', { quantity: 300 })];
+    expect(pickGoods({ invoice: twelve, aiGoods: null, model: four, typed: [], typedLabelled: [], otherMaterial: true }).sameAsInvoice.map((g) => g.name)).toEqual(['Чайник']);
+    // A row the model repeated by NAME answers that line: a 300 of another good is new.
+    const one = [line('Ladies jacket', { quantity: 300 })];
+    expect(pickGoods({ invoice: one, aiGoods: null, model: [line('Ladies jacket', { quantity: 300 }), line('Power bank', { quantity: 300 })], typed: [], typedLabelled: [], otherMaterial: true }).sameAsInvoice.map((g) => g.name)).toEqual(['Power bank']);
+  });
+
+  it('in an equal-length list, the line at a place answers the row at that place before any other', () => {
+    // «Куртка женская» 300 restates «Ladies jacket» 300 at its own place; the
+    // kettle ahead of it, with the same 300, took that row first and the
+    // jacket's translation was named instead of the kettle.
+    const inv = [line('Mens trousers', { quantity: 200 }), line('Ladies jacket', { quantity: 300 })];
+    const model = [line('Чайник', { quantity: 300 }), line('Куртка женская', { quantity: 300 })];
+    expect(pickGoods({ invoice: inv, aiGoods: null, model, typed: [], typedLabelled: [], otherMaterial: true }).sameAsInvoice.map((g) => g.name)).toEqual(['Чайник']);
   });
 
   it('photos keep their own branch and words', () => {

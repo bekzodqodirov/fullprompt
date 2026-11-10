@@ -546,34 +546,52 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
     };
   }
   if (others.text) {
-    // No goods row came out of a sheet whose header WAS found, or no row of
-    // the text pairs a name with a figure (docs/FAYL-OQISH.md §4.4).
+    // No goods row came out of a sheet whose header WAS found, or every line
+    // of the text is a cover's (docs/FAYL-OQISH.md §4.4).
     const why = parsed.some((p) => p.parsed.headerRow !== null)
       ? ('header' as const)
-      : unmapped.some((p) => p.sheet.rows.some(goodsLikeRow))
-        ? undefined
-        : ('no_rows' as const);
+      : unmapped.every((p) => p.sheet.rows.every(coverRow))
+        ? ('no_rows' as const)
+        : undefined;
     return { kind: 'text', text: others.text, sheets: filled.length, ...cut, ...(why ? { why } : {}), pictures };
   }
   return { kind: 'refused', reason: pictures > 0 ? 'pictures' : 'empty' };
 }
 
-/**
- * A row that looks like a goods line to a reader who knows no header: a cell
- * of words beside a cell that reads as a figure («Kurtka | 300», «Soni: |
- * 300»). A cover's «TOTAL: 25 CTNS, 480 KG» is one cell of words, and a
- * letterhead's «Tel: | +86 579 …» holds no figure the reader takes.
+/*
+ * What a cover or a letterhead is made of, and nothing a goods line is: a
+ * document's title, the sender's company, a contact or document label, a
+ * total. Positive and narrow ON PURPOSE (review sheets-spec-no-rows-too-wide):
+ * a sheet whose every line is one of these says «jadvalda tovar qatori
+ * ko‘rinmadi», and anything it does not know keeps «AI o‘qiydi» — «no row
+ * pairs a name with a figure» also took a names-only list, «Kurtka 300 dona»
+ * in one cell and «12 рулонов», goods the model then read off that very text.
+ * «Tovar:», «Soni:» are a goods card's labels, not a cover's.
  */
-function goodsLikeRow(row: Cell[]): boolean {
-  let words = false;
-  let figure = false;
-  for (const cell of row) {
-    if (cell === null) continue;
-    if (readsAsFigure(cell)) figure = true;
-    else if (/\p{L}/u.test(String(cell))) words = true;
-    if (words && figure) return true;
-  }
-  return false;
+const COVER_TITLE =
+  /(?<!\p{L})(?:commercial|proforma|invoice|packing\s*list|contract|specification|инвойс|сч[её]т(?:-фактура)?|спецификаци\p{L}*|контракт|упаковочн\p{L}*\s+лист|hisob-faktura|faktura|shartnoma)(?!\p{L})|商业发票|形式发票|发票|装箱单|合同/giu;
+/** What a title carries beside its words: its number and its date. */
+const TITLE_FILLER = /(?<!\p{L})(?:no|nr|date|от|dated)(?!\p{L})/giu;
+const COVER_COMPANY = /(?<!\p{L})(?:co\.?,?\s*(?:ltd|limited)|ltd|llc|ооо|оао|зао|ип|mchj)(?!\p{L})|有限公司|进出口/iu;
+const COVER_LABEL =
+  /^(?:no|nr|№|to|from|attn|add|address|tel|telephone|phone|mob|fax|e-?mail|date|invoice\s*no|contract\s*no|po\s*no|shipping\s*mark|buyer|seller|shipper|consignee|notify|port|payment|terms|дата|адрес|тел|телефон|кому|от|покупатель|продавец|грузополучатель|отправитель|manzil|sana|oluvchi|jo‘natuvchi|地址|电话|日期|收货人|发货人|买方|卖方|唛头)\.?\s*[:：#№]/iu;
+const COVER_TOTAL = /^(?:(?:grand\s+)?total|say|итого|всего|jami|合计|总计|共计)(?!\p{L})/iu;
+/** A cell that is a document's title and nothing else but its number or date («PROFORMA INVOICE», «装箱单 PACKING LIST»). */
+const coverTitle = (text: string) => {
+  const rest = text.replace(COVER_TITLE, ' ');
+  return rest !== text && !/\p{L}/u.test(rest.replace(TITLE_FILLER, ' '));
+};
+
+/**
+ * One line of a cover: led by a contact label or a total (what follows is its
+ * value — «Date: | 2026-10-28», «TOTAL G.W. | 1592 KGS»), or every cell of it
+ * a title, the company or a label. An empty line is no evidence either way.
+ */
+function coverRow(row: Cell[]): boolean {
+  const cells = row.filter((cell) => cell !== null && String(cell).trim() !== '').map((cell) => String(cell).trim());
+  if (cells.length === 0) return true;
+  if (COVER_LABEL.test(cells[0]!) || COVER_TOTAL.test(cells[0]!)) return true;
+  return cells.every((text) => coverTitle(text) || COVER_COMPANY.test(text) || COVER_LABEL.test(text));
 }
 
 function looksTextual(body: Buffer, contentType: string | null): boolean {

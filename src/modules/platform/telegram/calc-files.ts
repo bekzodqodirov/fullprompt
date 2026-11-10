@@ -473,7 +473,12 @@ export function receiveGoodsSheet(
   const first = files.length === 1 ? files[0]! : null;
   if (
     !packing &&
-    !topUp &&
+    // …and on a top-up whose packing list WAS the goods list (§4.5: nothing
+    // stored for it to be the totals of) — barred there too, the invoice after
+    // it was folded in as new goods and the order read twice (review
+    // sheets-break-empty-topup-swap). `totalsOf` keeps a top-up's totals on
+    // the note.
+    !(topUp && kept.length > 0) &&
     first &&
     first.shape === 'packing' &&
     first.rows === held.length &&
@@ -530,8 +535,8 @@ const sheetName = (name: string) => `«${name.length > 60 ? `${clipUnits(name, 5
  *    R1) — gives the totals and the netto gaps (by position for R1), as a
  *    second file does; in a top-up its totals go on the note, never the
  *    request (R3 interp 2);
- *  - a sheet PROVEN to hold other goods (`provenOther`, against the stored
- *    rows too in a top-up) is folded in as new goods and named; its text goes
+ *  - a sheet PROVEN to hold other goods (`provenOther`; in a top-up the
+ *    stored rows fence its names) is folded in as new goods and named; its text goes
  *    nowhere — left under the model's «for totals» heading, its Σ came back
  *    as the shipment's (sheets-07);
  *  - anything else keeps TODAY's reading: its text goes to the model for the
@@ -591,8 +596,9 @@ function receiveFurtherSheet(
       );
     }
   }
+  // The stored rows of a top-up fence the names only (`provenOther`'s `stored`).
   const kept = topUp ? (state.amend?.items ?? state.seed ?? []) : [];
-  if (provenOther([...kept, ...held], goods)) {
+  if (provenOther(held, goods, kept)) {
     const fold = foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ');
     return tools.answer(
       { invoiceGoods: fold.goods, goodsFiles: [...files, { ...m, rows: fold.added, text: null }] },
