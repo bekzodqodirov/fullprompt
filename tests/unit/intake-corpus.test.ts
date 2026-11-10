@@ -2259,6 +2259,31 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const read = await analyzeCollected(s);
     expect([read.facts.weightKg, read.facts.volumeM3]).toEqual([211, 1.6]);
   },
+  c2904: async () => {
+    // sheets-08's collector pin (docs/FAYL-OQISH.md §4.6): a lone Excel whose model answer is
+    // count-only translations of every row names nothing — typed text beside it, or a header-less
+    // cover sheet in the workbook, is model-read material that can carry other goods, and still
+    // every translated line meets one row by its count.
+    const invoice: Cell[][] = [['Description', 'Qty'], ['Ladies jacket', 300], ['Mens jacket', 240], ['Kids pants', 400]];
+    const cover: Cell[][] = [['YIWU XINGHUA IMPORT & EXPORT CO., LTD'], ['PROFORMA INVOICE'], ['To: GSR LOGISTICS']];
+    const translated = [line('Куртка женская', { quantity: 300 }), line('Куртка мужская', { quantity: 240 }), line('Брюки детские', { quantity: 400 })];
+    for (const [material, book] of [
+      [['GS777'], xlsx({ name: 'Invoice', rows: invoice })],
+      [[], xlsx({ name: 'Cover', rows: cover }, { name: 'Invoice', rows: invoice })],
+    ] as const) {
+      const { chatId } = collection({ stage: 'material', material: [...material] });
+      await forward(chatId, book, 'inv.xlsx');
+      const s = activeIntake(chatId)!;
+      expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
+      model.analyze.mockResolvedValueOnce(reads(translated));
+      const calls = model.analyze.mock.calls.length;
+      const read = await analyzeCollected(s);
+      // The model read (the case is about its answer, not about not asking it).
+      expect(model.analyze.mock.calls.length).toBe(calls + 1);
+      expect(read.notes).toEqual([]);
+      expect(read.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
+    }
+  },
 };
 
 /** Forty one-cell sheets — the fixture's own BIFF builders (c0428). */

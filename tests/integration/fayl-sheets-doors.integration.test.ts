@@ -248,6 +248,8 @@ describe('the fresh AI door (§4.7)', () => {
     const after = activeIntake(BigInt(chat))!;
     expect(after.facts.goods?.map((g) => g.name)).toEqual(names(chat));
     expect(after.notes.join(' ')).not.toContain('Excel’da yo‘q');
+    // …nor named as a line the model found beside the Excel (§4.6's words): the fold carries it.
+    expect(after.notes.join(' ')).not.toContain('AI fayldan yana');
     expect(said.join('\n')).toContain('Кепка бейсболка');
   }, 60_000);
 

@@ -509,9 +509,17 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
     const { goods, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
-    // The further mapped sheets' texts share ONE budget, in workbook order:
-    // per file the reader still holds what it always held at most — a sheet
-    // the budget did not reach says so in its own `cut`.
+    // The further mapped sheets' texts share ONE budget among themselves, in
+    // workbook order; a sheet the budget did not reach says so in its own
+    // `cut`. The bound is stated, not the old one (review
+    // sheets-break-budget-comment): beside the unmapped sheets' own budget
+    // and a packing goods sheet's `ownText`, a workbook stores up to three
+    // budgets of text in the collection, where every non-goods sheet once
+    // shared one. Not the unmapped sheets' budget ON PURPOSE: behind a long
+    // cover sheet a further sheet would come with no text at all, and a sheet
+    // with no text is held by nothing when the workbook is sent again
+    // (`sameWorkbookAgain` cannot tell it from a new «Zavod B»). What reaches
+    // the model is bounded apart (`fitSheetRows`).
     let room = SHEET_TEXT_BUDGET;
     const moreSheets: MappedSheet[] = mapped
       .filter((p) => p !== best)

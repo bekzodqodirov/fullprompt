@@ -52544,6 +52544,180 @@
    "weight": "regression",
    "realistic": "The Chinese name carries a numeral (四件套, 三件套, 三层, 三合一, 六件套) the model renders as a digit in Russian («4 предмета», «3-слойная», «3 в 1»), while the Excel’s English half states a size or pack the model’s line omits — needs the model to re-read the line from a Chinese-only source (a packing-list photo/PDF) rather than the Excel cell. The model line has the shape its SYSTEM prompt teaches — Russian with the bare Chinese original in brackets — beside a Chinese+English Excel cell without brackets (the c2138-c2169 shape).",
    "severity": "rare"
+  },
+  {
+   "id": "c2901",
+   "input": {
+    "invoice": [
+     {
+      "name": "Ladies jacket",
+      "quantity": 300
+     },
+     {
+      "name": "Mens jacket",
+      "quantity": 240
+     },
+     {
+      "name": "Kids pants",
+      "quantity": 400
+     }
+    ],
+    "aiGoods": null,
+    "model": [
+     {
+      "name": "Куртка женская",
+      "quantity": 300
+     },
+     {
+      "name": "Куртка мужская",
+      "quantity": 240
+     },
+     {
+      "name": "Брюки детские",
+      "quantity": 400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": [],
+    "otherMaterial": false
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300
+      },
+      {
+       "name": "Mens jacket",
+       "quantity": 240
+      },
+      {
+       "name": "Kids pants",
+       "quantity": 400
+      }
+     ],
+     "count": 3
+    },
+    "sameAsInvoice": []
+   },
+   "said": "a lone Excel whose model answer is count-only translations of every row: the Excel's 3 rows, nothing named",
+   "why": "sheets-08: a lone Excel's model can only restate the Excel's own rows",
+   "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2902",
+   "input": {
+    "invoice": [
+     {
+      "name": "Ladies jacket",
+      "quantity": 300
+     },
+     {
+      "name": "Mens jacket",
+      "quantity": 240
+     },
+     {
+      "name": "Kids pants",
+      "quantity": 400
+     }
+    ],
+    "aiGoods": null,
+    "model": [
+     {
+      "name": "Куртка женская",
+      "quantity": 300
+     },
+     {
+      "name": "Куртка мужская",
+      "quantity": 240
+     },
+     {
+      "name": "Брюки детские",
+      "quantity": 400
+     }
+    ],
+    "typed": [],
+    "typedLabelled": [],
+    "otherMaterial": true
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300
+      },
+      {
+       "name": "Mens jacket",
+       "quantity": 240
+      },
+      {
+       "name": "Kids pants",
+       "quantity": 400
+      }
+     ],
+     "count": 3
+    },
+    "sameAsInvoice": []
+   },
+   "said": "…and beside model-read material that can carry other goods (a header-less sheet, typed text): still nothing named — each translated line meets one row by its count",
+   "why": "sheets-08's count veto; one row answers one line (review sheets-break-file-naming-length)",
+   "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2903",
+   "input": {
+    "invoice": [
+     {
+      "name": "Куртка женская",
+      "quantity": 300
+     },
+     {
+      "name": "Брюки мужские",
+      "quantity": 200
+     }
+    ],
+    "aiGoods": null,
+    "model": [
+     {
+      "name": "Кроссовки мужские",
+      "quantity": 120
+     },
+     {
+      "name": "Кепка бейсболка",
+      "quantity": 800
+     }
+    ],
+    "typed": [],
+    "typedLabelled": [],
+    "otherMaterial": true
+   },
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300
+      },
+      {
+       "name": "Брюки мужские",
+       "quantity": 200
+      }
+     ],
+     "count": 2
+    },
+    "sameAsInvoice": [
+     "Кроссовки мужские",
+     "Кепка бейсболка"
+    ]
+   },
+   "said": "K10 whose «Zavod B» the reader cannot map: the model lists factory B's goods — both NAMED, never dropped, though the list is as long as the invoice",
+   "why": "xlsxN-02 J2; an equal length is judged place by place (review sheets-break-file-naming-length)",
+   "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
+   "weight": "pinned"
   }
  ],
  "readGoodsFileCases": [
@@ -62379,6 +62553,20 @@
    "said": "the invoice takes the goods role; the packing list's rows become its totals (brutto 211 kg = Σ G.W., 1.6 m³) and the invoice rows' netto (150, 40 kg); the note names only what was read",
    "why": "M1 a: file order never decides which counts land; brutto only from the gross column (M2)",
    "source": "docs/IKKI-ESHIK.md §1.2.2 (his 1a), M1 a",
+   "weight": "pinned"
+  },
+  {
+   "id": "c2904",
+   "call": "readIntakeFile + analyzeCollected (a lone single-sheet Excel, then with a cover sheet)",
+   "input": {
+    "files": {
+     "inv.xlsx": "Description | Qty — Ladies jacket 300, Mens jacket 240, Kids pants 400 (and a variant with a header-less cover sheet)"
+    },
+    "model": "count-only Russian translations of every row"
+   },
+   "said": "notes [] and 3 rows: the model restating every row translated is no other good",
+   "why": "sheets-08's collector pin",
+   "source": "docs/FAYL-OQISH.md §4.6 (sheets-08's corpus pins; review sheets-spec-corpus-pins-missing)",
    "weight": "pinned"
   }
  ],

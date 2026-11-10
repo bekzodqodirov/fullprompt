@@ -443,6 +443,19 @@ describe('the words (§4.4)', () => {
     expect(activeIntake(chatId)!.invoiceTexts.map((t) => t.unmapped)).toEqual([true]);
   });
 
+  it('…and beside a further mapped sheet, it names the sheets it is true of: never «the other sheets» above one folded in', async () => {
+    const body = await B.bookOf((wb) => {
+      B.plainSheet(wb.addWorksheet('Zavod A'), B.INVOICE_HEAD, B.invoiceRows([B.A_KURTKA, B.A_SHIM, B.A_SUMKA]));
+      B.plainSheet(wb.addWorksheet('Zavod B'), B.INVOICE_HEAD, B.invoiceRows(K10_B));
+      wb.addWorksheet('Note').addRows([['Shipping mark: GS777'], ['TOTAL G.W.', '1592 KGS']]);
+    });
+    const answer = await forward(collection(), body, 'X.xlsx');
+    expect(answer.say).toBe(
+      '📄 «X.xlsx» — 3 ta tovar o‘qildi («Zavod A» varag‘idan; tovar qatori olinmagan varaqlar faqat jami uchun o‘qiladi).\n' +
+        '📄 «X.xlsx», «Zavod B» varag‘idan 2 ta yangi tovar qo‘shildi.',
+    );
+  });
+
   it('a header FOUND with no goods row under it is not «sarlavhasini topa olmadim» (xlsx1-04)', async () => {
     const chatId = collection();
     // The lone drill is taken for a total row by its name: the header was found, no row came out.
