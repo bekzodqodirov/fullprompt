@@ -354,35 +354,43 @@ describe('the loading ends without the road part (4a)', () => {
     // The same plan with a TARKIB on the lot (docs/TARKIB-TUZATISH.md §4): a
     // row per good in each block, the two blocks cut out of the plan's
     // positions ONCE — so a good's cartons over «came on the first truck» and
-    // «did not come» are the typed three and two, and each block's rows add
-    // up to that block's own heading. Priced per block from position 0, the
-    // blocks would print 1+1 and 2+1 by luck here and 51/49 on a real lot.
+    // «did not come» are the typed 3 + 1 + 1, and each block's rows add up to
+    // that block's own heading. Three goods on purpose: with two, every split
+    // of a lot this small comes out right even when each block is priced from
+    // position 0 (measured) — with these three that prints «А» four times and
+    // «В» never.
     await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 5, savedBy: actorId });
     await db.insert(lotCompositionLines).values([
       { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 3, weightKg: '30', volumeM3: '0.18' },
-      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 2, weightKg: '20', volumeM3: '0.12' },
+      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 1, weightKg: '10', volumeM3: '0.06' },
     ]);
     const composed = new ExcelJS.Workbook();
     await composed.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
     const goods: string[][] = [];
     composed.worksheets[0]!.eachRow((row) => goods.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
-    const under = (heading: number) => [goods[heading + 1]!, goods[heading + 2]!].map((r) => [r[1], r[3], r[4], r[5]]);
+    // A block's goods: the rows under its heading, up to the next heading
+    // (a heading has no product cell).
+    const under = (heading: number) => {
+      const out: (string | undefined)[][] = [];
+      for (let at = heading + 1; at < goods.length && (goods[at]![1] ?? '') !== ''; at += 1) {
+        const r = goods[at]!;
+        out.push([r[1], r[3], r[4], r[5]]);
+      }
+      return out;
+    };
     const cameAt = goods.findIndex((r) => r[0]!.includes(first.code));
     const notCameAt = goods.findIndex((r) => r[0]!.startsWith('Не пришло / Did not come'));
-    // The lot's own (Chinese) name rides the first row of each block: neither
-    // good is the name on the cartons, and the agent reads Chinese.
-    expect(under(cameAt)).toEqual([
-      ['Товар А\nНа коробке / On the carton: 路上的货', '1', '10', '0.06'],
-      ['Товар Б', '1', '10', '0.06'],
-    ]);
+    // The lot's own (Chinese) name rides the first row of each block: no good
+    // is the name on the cartons, and the agent reads Chinese.
+    expect(under(cameAt)).toEqual([['Товар А\nНа коробке / On the carton: 路上的货', '2', '20', '0.12']]);
     expect(goods[cameAt]![0]).toContain('2 Коробок / Boxes · 20.0 кг · 0.120 м³');
     expect(under(notCameAt)).toEqual([
-      ['Товар А\nНа коробке / On the carton: 路上的货', '2', '20', '0.12'],
+      ['Товар А\nНа коробке / On the carton: 路上的货', '1', '10', '0.06'],
       ['Товар Б', '1', '10', '0.06'],
+      ['Товар В', '1', '10', '0.06'],
     ]);
     expect(goods[notCameAt]![0]).toContain('3 Коробок / Boxes · 30.0 кг · 0.180 м³');
-    // Two blocks of two rows and nothing else of the lot — never a third row.
-    expect(goods.filter((r) => /^Товар [АБ]/.test(r[1] ?? ''))).toHaveLength(4);
     await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.lotId));
 
     // After the finish the count door still asks for the two — never the five,
@@ -542,28 +550,35 @@ describe('the readers say the road part', () => {
     expect(cells[landed + 1]![3]).toBe('4');
 
     // With a tarkib (docs/TARKIB-TUZATISH.md §4): the landed four and the
-    // road's two are cut out of ONE run of six positions — 3+1 here, 1+1 on
-    // the road, the typed four and two in all.
+    // road's two are cut out of ONE run of six positions — 2+1+1 here, 0+1+1
+    // on the road, the typed 2 + 2 + 2 in all. Priced from position 0 each,
+    // the road would print «А» and «Б» and the sheet three «А» and one «В».
     await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 6, savedBy: actorId });
     await db.insert(lotCompositionLines).values([
-      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 4, weightKg: '40', volumeM3: '0.24' },
+      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 2, weightKg: '20', volumeM3: '0.12' },
       { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 2, weightKg: '20', volumeM3: '0.12' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 2, weightKg: '20', volumeM3: '0.12' },
     ]);
     const composed = new ExcelJS.Workbook();
     await composed.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
     const goods: string[][] = [];
     composed.worksheets[0]!.eachRow((row) => goods.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
-    const under = (heading: number) => [goods[heading + 1]!, goods[heading + 2]!];
+    const under = (heading: number) => {
+      const out: string[][] = [];
+      for (let at = heading + 1; at < goods.length && (goods[at]![1] ?? '') !== ''; at += 1) out.push(goods[at]!);
+      return out;
+    };
     const figures = (rows: string[][]) => rows.map((r) => [r[1]!.split('\n')[0], r[3], r[4]]);
     const hereAt = goods.findIndex((r) => r[0]!.includes(first.code) && r[0]!.startsWith('Партия прихода'));
     const roadAt = goods.findIndex((r) => r[0]!.startsWith('В пути / On the road'));
     expect(figures(under(hereAt))).toEqual([
-      ['Товар А', '3', '30'],
+      ['Товар А', '2', '20'],
       ['Товар Б', '1', '10'],
+      ['Товар В', '1', '10'],
     ]);
     expect(figures(under(roadAt))).toEqual([
-      ['Товар А', '1', '10'],
       ['Товар Б', '1', '10'],
+      ['Товар В', '1', '10'],
     ]);
     // Every good's row names its own truck: the one that brought it, or the
     // one it is still on.

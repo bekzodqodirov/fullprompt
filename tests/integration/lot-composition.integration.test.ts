@@ -945,10 +945,14 @@ describe('lot tarkibi — the papers', () => {
     // 50 kg; one carton already crossed on truck ONE, so the plan holds
     // positions 1..5): a share — every line row is filled and noted, and the
     // note speaks of the BLOCK, not of a truck.
-    const partial = await plan([{ lotKey: 'F', crateId: null, n: 4, kg: '40.000', m3: '0.2000' }]);
-    expect(partial.map((r) => [r.product.split('\n')[0], r.boxes, r.kg])).toEqual([
-      ['Клавиатура', 2, 20],
-      ['Мышь', 2, 20],
+    // The plan's own figures carry three decimals of kg and four of m³ (what
+    // an uncomposed row prints from `planned_kg`): the goods' rows split THAT
+    // figure, to the gram — at the invoice's one decimal they would add up to
+    // 40.1 kg beside a plan row of 40.125.
+    const partial = await plan([{ lotKey: 'F', crateId: null, n: 4, kg: '40.125', m3: '0.2001' }]);
+    expect(partial.map((r) => [r.product.split('\n')[0], r.boxes, r.kg, r.m3])).toEqual([
+      ['Клавиатура', 2, 20.063, 0.1001],
+      ['Мышь', 2, 20.062, 0.1],
     ]);
     expect(partial.every((r) => r.filled && r.note?.includes('Estimate') && r.note.includes('lot share in this block'))).toBe(true);
 
