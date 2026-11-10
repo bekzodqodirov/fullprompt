@@ -112,7 +112,6 @@ export async function clientCargoRows(clientIds: string[]): Promise<ClientCargoR
       receiptLots.id,
       receiptLots.letter,
       receiptLots.productNameZh,
-      receiptLots.productNameRu,
       receiptLots.boxCount,
       receiptLots.totalWeightKg,
       receiptLots.totalVolumeM3,

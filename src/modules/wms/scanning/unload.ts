@@ -1044,8 +1044,11 @@ export interface MissingLotLine {
   n: number;
 }
 
-/** The finish's missing cartons grouped by lot — one read, inside its transaction. */
-async function missingLotLines(
+/**
+ * The finish's missing cartons grouped by lot — one read, inside its
+ * transaction. Exported so a test can ask it what the finish prints (#166).
+ */
+export async function missingLotLines(
   tx: Tx,
   missing: { lotId: string }[],
 ): Promise<MissingLotLine[]> {
