@@ -815,6 +815,60 @@ describe('a press', () => {
     for (const key of ['K', 'T', 'S'] as const) expect((await stateOf(key)).state, key).toBe('checked');
   }, 20_000);
 
+  it('the same ❌ pressed while the tick that lifts it is IN FLIGHT waits behind that tick and then sees it: «already» is decided under the lock', async () => {
+    // The as-built review (L1-2, its second half). «Already» was decided from reads made BEFORE the lots'
+    // answer locks: a ❌ pressed while a colleague's lifting tick was in flight was compared with a row
+    // that still stood, answered «already», and the tick then committed over it — the lot ✅ by a
+    // colleague who had been overruled a second time, and nobody told.
+    await clearQueued();
+    expect((await press('no')).outcome).toBe('recorded');
+    expect((await stateOf('K')).client).toMatchObject({ verdict: 'no', vetoes: true });
+    await clearQueued();
+    const holder = await pgClient.reserve();
+    let pressed: ReturnType<typeof press> | null = null;
+    try {
+      await holder`BEGIN`;
+      await holder`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lot.K}`}, 0))`;
+      // The other chat's copy of the message: the same tag, the same facts, the same ❌ as the row that stands.
+      pressed = press('no', CHAT_A2);
+      let waiting = 0;
+      for (let i = 0; i < 60 && waiting === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        const [row] = (await db.execute(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND datname = current_database()
+        `)) as unknown as { n: number }[];
+        waiting = Number(row?.n ?? 0);
+      }
+      // The premise: the press did not answer from what it had read — it is waiting for the tick.
+      expect(waiting).toBeGreaterThan(0);
+      await holder`
+        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at)
+        VALUES (${lot.K}, ${`键盘${RUN}`}, ${`Клавиатура ${RUN}`}, 3, ${client.A}, ${staffId}, clock_timestamp())
+      `;
+      await holder`COMMIT`;
+    } catch (err) {
+      await holder`ROLLBACK`.catch(() => undefined);
+      throw err;
+    } finally {
+      holder.release();
+    }
+    try {
+      expect((await pressed!).outcome).toBe('recorded');
+      const k = await stateOf('K');
+      expect(k.person).toMatchObject({ holds: true });
+      expect(k.client).toMatchObject({ verdict: 'no', vetoes: true });
+      expect(k.state).toBe('none');
+      expect((await queued()).length).toBeGreaterThan(0);
+    } finally {
+      // Back to the fixture: no tick on K, the client's ✅ on all three.
+      await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.K));
+      await clearQueued();
+      expect((await press('yes')).outcome).toBe('recorded');
+      await clearQueued();
+    }
+    for (const key of ['K', 'T', 'S'] as const) expect((await stateOf(key)).state, key).toBe('checked');
+  }, 20_000);
+
   it('a server whose migration has not landed draws nothing and asks nothing (#472)', async () => {
     ready.on = false;
     expect(await lotCheckViewsFor([lot.K])).toEqual(new Map());
