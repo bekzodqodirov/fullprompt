@@ -16,6 +16,7 @@ import type {
   CountPanelMode,
   CountPanelRow,
 } from '@/modules/wms/scanning/count-load';
+import { LotNameText } from '@/components/lot-goods-name';
 
 /**
  * «🔢 Sanab yuklash» on the batch card (0112, the owner's Q1-Q7) — the one
@@ -265,7 +266,8 @@ function CountRow({ batchId, quick, row }: { batchId: string; quick: boolean; ro
           {row.label}
           {row.sub && <span className="block font-sans text-2xs font-normal text-ink-500">{row.sub}</span>}
         </span>
-        <span className="min-w-0 flex-1 truncate text-ink-700">{row.product}</span>
+        {/* A tarkib's «+N» is the half of the name that must stay (LotNameText). */}
+        <LotNameText className="min-w-0 flex-1 text-ink-700" text={row.product} />
         <span className="font-semibold tabular-nums" data-testid="count-load-aboard">
           {row.aboard}/{of}
         </span>
@@ -507,7 +509,7 @@ function LotPicker({
             onClick={() => onPick(lot)}
           >
             <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
-            <span className="min-w-0 flex-1 truncate text-ink-700">{lot.product}</span>
+            <LotNameText className="min-w-0 flex-1 text-ink-700" text={lot.product} />
             {lot.qrless && <span className="whitespace-nowrap text-xs text-warn">{t('pickQrless')}</span>}
             <span className="whitespace-nowrap text-xs text-ink-500">{t('pickSpare', { n: lot.spare })}</span>
           </button>

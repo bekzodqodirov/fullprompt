@@ -478,6 +478,20 @@ describe('the notifications a count press sends', () => {
     );
     expect(missing).toContain('GS777-A · kurtka: 2');
     expect(missing).not.toContain('+2');
+    // A lot with a tarkib is named by its label, which carries a count of
+    // its own. Quoted — «+2: +3» read as two figures of one sum.
+    const labelled = renderTelegramText(
+      'BoxScannedOnLoad',
+      { batchCode: 'YW-7', batchId: 'b', lot: { label: 'GS777-A', product: 'Клавиатура +2', n: 3 } },
+      'uz',
+    );
+    expect(labelled).toContain('GS777-A · «Клавиатура +2»: +3');
+    const labelledMissing = renderTelegramText(
+      'MissingInTransit',
+      { batchCode: 'YW-7', batchId: 'b', lots: [{ label: 'GS777-A', product: 'Клавиатура +2', n: 2 }] },
+      'uz',
+    );
+    expect(labelledMissing).toContain('GS777-A · «Клавиатура +2»: 2');
     const old = renderTelegramText('MissingInTransit', { batchCode: 'YW-7', batchId: 'b', shortCodes: ['GS1-00001'] }, 'uz');
     expect(old).toContain('GS1-00001');
   });

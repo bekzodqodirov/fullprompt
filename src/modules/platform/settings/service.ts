@@ -122,6 +122,31 @@ export const SETTING_DEFAULTS = {
    */
   price_history_ai_daily_limit: 50,
   /**
+   * How many times a day the Bojxona tab's 🤖 may ask the model — the whole
+   * company's presses together (0144, docs/TARKIB-TAKLIFLAR.md §2). One press
+   * of «🤖 AI taklif (N)» is up to N calls, and before this the button had no
+   * ledger row and no ceiling at all. Its own count, never
+   * `ai_calc_daily_limit`'s. **0 switches the button off** — a cap on a bill
+   * must not read «no cap» (the calc limit's 0 does, and is not copied).
+   */
+  tnved_ai_daily_limit: 300,
+  /**
+   * How many times a day «🤖 Fayldan to'ldirish» may ask the model to read a
+   * client's document into a tarkib (0144, §3) — the whole company's
+   * readings together. EVERY reading is one: a PDF, a photograph and a
+   * spreadsheet alike (the spreadsheet goes to the model as text; the design
+   * judge struck the «Excel is read with no model» path, which had three
+   * answers to «does it count»). 0 switches the reading off.
+   */
+  tarkib_ai_daily_limit: 50,
+  /**
+   * The ✅ / ❌ row under the customer's «yukingiz qabul qilindi» push (0144,
+   * §4 — his 5b). A switch because it is the one thing in that round that
+   * writes to CUSTOMERS by itself: off, the push goes out exactly as before,
+   * and «Mijozdan so'rash» on the prixod card still asks on a person's press.
+   */
+  client_confirm_on_receipt: true,
+  /**
    * Write the AI-VED's estimate onto the card's lenta as well as into the
    * seller's chat (his answer 2a). A switch because it is the only thing on
    * this path that writes where OTHER people read.
@@ -328,7 +353,18 @@ export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boo
   unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
   lead_assign_origins: originsSettingValid,
   agent_no_contact_reasons: reasonListValid,
+  // The two pressed-AI ceilings (0144): 0 is «switched off for the whole
+  // company», so the door must not let a typo BECOME 0 — an empty box is
+  // `Number('') === 0`, «1 000» stored nothing and said nothing, «-5» and
+  // «3.7» were stored as typed while the cap enforced something else.
+  tnved_ai_daily_limit: wholeNumberSettingValid,
+  tarkib_ai_daily_limit: wholeNumberSettingValid,
 };
+
+/** A whole number, typed as digits and nothing else — «0» is allowed and means off. */
+export function wholeNumberSettingValid(raw: string): boolean {
+  return /^\d{1,6}$/.test(raw);
+}
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });

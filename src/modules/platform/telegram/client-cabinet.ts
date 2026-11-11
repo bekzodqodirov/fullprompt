@@ -30,9 +30,10 @@ import {
 } from './client-labels';
 import { chatLocaleFor, setChatLocale } from './cabinet-locale';
 import { h } from './format';
-import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
+import { cabinetInlineKeyboard, clientPushKeyboard, setCabinetMenuButton } from './menu-button';
+import { isConfirmButton, parseConfirmCallback } from './confirm-callback';
 import { adVisitFor, clearAdVisit } from './ad-intake';
-import { editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
+import { editMarkup, editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
 import { canLogInSql } from '../users/login';
 import { settleWithin } from './lifecycle';
@@ -207,6 +208,13 @@ export function dispatch(what: string, chatId: ChatId, work: () => Promise<unkno
 export async function __dispatchSettled(): Promise<void> {
   while (chains.size > 0) await Promise.all([...chains.values()]);
 }
+
+/**
+ * What a press on the client's ✅ / ❌ came to (0144): the verdict when it was
+ * recorded, else why not — `wms/receipts/client-confirm.ts`'s outcomes plus
+ * the one of our own making.
+ */
+type ConfirmOutcome = 'yes' | 'no' | 'already' | 'stale' | 'unknown' | 'busy' | 'failed';
 
 /** The keyboard this chat is owed — re-derived, never named (round 100, 13A). */
 async function replyKeyboard(chatId: number, locale: string | null) {
@@ -533,6 +541,41 @@ async function reachableStaff(userIds: string[]): Promise<Set<string>> {
   return new Set(rows.filter((r) => !isTelegramMuted(r.muted, 'ClientBotMessage')).map((r) => r.id));
 }
 
+/**
+ * How long a ❌ speaks for the words that follow it.
+ *
+ * After «Xato bor» the bot says «nima noto'g'ri ekanini shu yerga yozing» —
+ * and the next thing the customer types is about THAT prixod. One person
+ * holds several codes in one chat (444 / 555 / 777) and the codes may have
+ * different sellers, so the relay's own rule — the chat's first code with a
+ * reachable manager — sent the explanation to somebody who was never told
+ * about the ❌, with no prixod on it (the as-built review, L2-3). Remembered
+ * in memory, per chat, on the processing clock: a restart forgets it and the
+ * relay is then exactly what it was — never worse.
+ */
+export const DISPUTE_CONTEXT_MS = 30 * 60_000;
+const lastDispute = new Map<string, { clientId: string; receiptId: string; at: number }>();
+
+function rememberDispute(chatKey: string, about: { clientId: string; receiptId: string }, now = Date.now()): void {
+  if (lastDispute.size > 5_000) {
+    for (const [key, row] of lastDispute) if (now - row.at >= DISPUTE_CONTEXT_MS) lastDispute.delete(key);
+  }
+  lastDispute.set(chatKey, { ...about, at: now });
+}
+
+function disputeOf(chatKey: string, now = Date.now()): { clientId: string; receiptId: string } | null {
+  const row = lastDispute.get(chatKey);
+  if (!row) return null;
+  if (now - row.at < DISPUTE_CONTEXT_MS) return row;
+  lastDispute.delete(chatKey);
+  return null;
+}
+
+/** Tests: forget every remembered ❌. */
+export function __resetDisputes(): void {
+  lastDispute.clear();
+}
+
 function takeForwardSlot(chatKey: string, now: number): boolean {
   const recent = (forwardLog.get(chatKey) ?? []).filter((t) => now - t < FORWARD_WINDOW_MS);
   if (recent.length >= FORWARD_MAX_PER_WINDOW) {
@@ -585,10 +628,16 @@ export async function forwardClientMessage(input: {
   // no linked Telegram (or who muted these) — so a customer is never told «your
   // manager has it» about a message nobody will read.
   const reach = await reachableStaff(linked.flatMap((c) => (c.salesManagerId ? [c.salesManagerId] : [])));
-  const owner =
-    linked.find((c) => c.salesManagerId && managers.has(c.id) && reach.has(c.salesManagerId)) ?? null;
-  const managerName = owner ? managers.get(owner.id)!.name : null;
   const chatKey = String(input.chatId);
+  const reachable = (c: (typeof linked)[number]): boolean =>
+    Boolean(c.salesManagerId && managers.has(c.id) && reach.has(c.salesManagerId));
+  // The prixod this chat has just said ❌ about, while the chat still holds
+  // its client: that client's seller is who these words are for. Unreachable
+  // (or no dispute) → the rule above, unchanged.
+  const about = disputeOf(chatKey);
+  const disputed = about ? (linked.find((c) => c.id === about.clientId) ?? null) : null;
+  const owner = (disputed && reachable(disputed) ? disputed : null) ?? linked.find(reachable) ?? null;
+  const managerName = owner ? managers.get(owner.id)!.name : null;
   const known = input.albumId ? albumVerdict.get(chatKey) : undefined;
   const admitted =
     known && known.album === input.albumId
@@ -611,8 +660,10 @@ export async function forwardClientMessage(input: {
     : officeReach.size
       ? office.filter((id) => officeReach.has(id))
       : office;
-  const first = owner ?? linked[0]!;
-  const card = cardLink('client', first.id);
+  // The disputed code leads the copy whoever receives it, and the link is the
+  // prixod's own card — where a ❌ is looked at and fixed.
+  const first = disputed ?? owner ?? linked[0]!;
+  const card = about && disputed ? cardLink('receipt', about.receiptId) : cardLink('client', first.id);
   const { forwardStaffText, FORWARD_QUOTE_CHARS } = await botText();
   // A file is forwarded, and so is a text too long to quote whole (CONV-7): the
   // staff copy would otherwise end at «…» with the rest of the question
@@ -1129,6 +1180,108 @@ export function registerClientCabinet(bot: Bot): void {
     const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
     dispatch('manager', chatId, () => sendManagers(chatId, linked, chatLocale(linked)));
+  });
+
+  /**
+   * `yt:` — the client's own ✅ / ❌ under a push (0144,
+   * docs/TARKIB-TAKLIFLAR.md §4.4).
+   *
+   * DECIDE, then answer: the toast is the outcome's — «rahmat», «eskirgan»,
+   * «allaqachon» — which `mg`'s answer-first shape cannot give (the house's
+   * other ✅/❌, the staff link, is built the same way). Every path answers
+   * exactly ONCE: a throw is logged and answered in words. What the press
+   * leaves behind — the pressed message without its ✅/❌ row, and the ❌'s
+   * one sentence — goes off the poller through `dispatch`.
+   *
+   * A ❌ gets no toast: its sentence is a MESSAGE (the invitation to say what
+   * is wrong must stay on the screen), and a late press repeats a toast as a
+   * message of its own — the two would say it twice.
+   *
+   * Registered on the PREFIX: a push stays in the chat for ever, so the
+   * buttons of any later grammar's past must still be answered («eskirgan»)
+   * and never left to spin.
+   */
+  bot.callbackQuery(/^yt:/, async (ctx) => {
+    const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
+    const press = parseConfirmCallback(ctx.callbackQuery.data);
+    let locale: string | null = null;
+    let outcome: ConfirmOutcome = 'stale';
+    /** Whose prixod the press was about — known only when it is this chat's. */
+    let about: { clientId: string; receiptId: string } | null = null;
+    try {
+      locale = chatLocale(await clientsForChat(BigInt(chatId)));
+      if (press) {
+        const { answerClientAsk } = await import('../../wms/receipts/client-confirm');
+        const answer = await answerClientAsk({ chatId: BigInt(chatId), ...press });
+        outcome = answer.outcome === 'recorded' ? answer.verdict : answer.outcome;
+        if (answer.outcome === 'recorded') about = { clientId: answer.facts.clientId, receiptId: answer.facts.receiptId };
+        else if (answer.outcome === 'stale') about = { clientId: answer.clientId, receiptId: press.receiptId };
+      }
+    } catch (err) {
+      logger.error({ err, chatId: String(chatId) }, '[cabinet] confirm press failed');
+      outcome = 'failed';
+    }
+    const t = clientLabels(locale);
+    const toastOf: Record<ConfirmOutcome, string | undefined> = {
+      yes: t.confirmThanks,
+      no: undefined,
+      already: t.confirmAlready,
+      // One neutral word for «the facts moved», «not this chat's» and «no
+      // such prixod»: a hand-made button learns nothing from the difference.
+      stale: t.confirmStale,
+      unknown: t.confirmStale,
+      busy: t.confirmFailed,
+      failed: t.confirmFailed,
+    };
+    // «Busy» and «failed» wrote nothing and ASK to be pressed again: the row
+    // stays — and a press that arrived late must not be remembered as
+    // handled, or the repeat it asked for is the one press nobody runs.
+    const settled = outcome !== 'busy' && outcome !== 'failed';
+    await answerPress(ctx, toastOf[outcome], { again: !settled });
+
+    // A ❌ is somebody trying to say something is wrong — also when the
+    // message they pressed it on is out of date (the design judge: «eskirgan»
+    // alone told nobody and took the buttons away).
+    const disputing = press?.verdict === 'no' && (outcome === 'no' || outcome === 'stale');
+    if (!settled) return;
+    // What they write next is about THIS prixod (`forwardClientMessage`).
+    if (disputing && about) rememberDispute(String(chatId), about);
+    const pressed = ctx.callbackQuery.message;
+    dispatch('confirm', chatId, async () => {
+      if (disputing) {
+        // FIRST, and through the house's ordered send (a brief 429 waited
+        // out, a refusal logged): a ❌ has no toast, so this sentence is the
+        // customer's only sign that the press did anything. Behind the
+        // keyboard edit, as a bare send, one 429 in the burst after a deploy
+        // left them with the buttons gone and nothing said.
+        //
+        // In a chat that is ALSO a staff chat the relay refuses (their words
+        // are the staff bot's business), so «write here» would be a promise
+        // nobody keeps: the short form — and only when something WAS recorded.
+        const staff = await staffForChat(BigInt(chatId));
+        if (!(staff && outcome !== 'no')) {
+          await sendInOrder(chatId, [{ html: h(staff ? t.confirmNoted : t.confirmTellUs) }], 'confirm-tell');
+        }
+      }
+      if (!pressed) return;
+      const echoed = (pressed as { reply_markup?: { inline_keyboard?: unknown[][] } }).reply_markup?.inline_keyboard;
+      // The pressed message keeps its Mini App and manager rows; only the
+      // ✅/❌ row goes — it has been answered, or it is about data that moved.
+      // A message too old for Telegram to echo its keyboard has nothing to
+      // filter, and with no edit the row stayed under it for ever — ❌, ✅, ❌
+      // flipped on one message, every ❌ alarming the seller and the logists.
+      // Its two standing rows are rebuilt instead (the lot's deep link is the
+      // one thing lost).
+      const kept = Array.isArray(echoed)
+        ? echoed.map((row) => (Array.isArray(row) ? row.filter((button) => !isConfirmButton(button)) : [])).filter((row) => row.length > 0)
+        : (clientPushKeyboard(process.env.APP_URL, locale, { contact: true })?.inline_keyboard ?? []);
+      const edit = await editMarkup({
+        chatId,
+        messageId: pressed.message_id,
+        replyMarkup: kept.length > 0 ? { inline_keyboard: kept } : undefined,
+      });
+      if (!edit.ok) logger.warn({ chatId: String(chatId), detail: edit.description }, '[cabinet] confirm row not removed');
+    });
   });
 
   /*

@@ -42,10 +42,16 @@ describe('the agent’s cards at night (K28, his first-set 6 ⭐a)', () => {
 
   it('every night-silent agent type is one of the agent’s own cards — nothing else learned a quiet night', () => {
     const agentTypes = new Set<string>(UNMUTABLE_TYPES);
+    // The quiet nights that are NOT the agent's, each added by its own round on purpose: the advert lead
+    // (0113), and a client's own ✅ / ❌ under their cargo (0144 — customers press it whenever the push
+    // reaches them, and nothing about a lot can be corrected at midnight). A type that is neither on this
+    // list nor one of the agent's cards learned a quiet night by accident.
+    const others = new Set(['InboundLeadArrived', 'ClientLotDisputed', 'ClientLotConfirmed']);
     for (const type of NIGHT_SILENT_TYPES) {
-      if (type === 'InboundLeadArrived') continue;
+      if (others.has(type)) continue;
       expect(agentTypes.has(type), type).toBe(true);
     }
+    for (const type of others) expect(NIGHT_SILENT_TYPES.has(type), type).toBe(true);
   });
 });
 

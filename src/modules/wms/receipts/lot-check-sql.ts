@@ -2,7 +2,8 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { PgSelect } from 'drizzle-orm/pg-core';
 import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
-import { productKeySql } from '../tnved/service';
+import { lotClientConfirmsReady } from './lot-check-ready';
+import { lotRuShownSql } from './lot-name';
 
 export {
   LOT_CHECK_STATES,
@@ -28,24 +29,41 @@ export {
  *    new client make it read «stale» by COMPARISON — and a take-back to the
  *    vouched count reads checked again by itself, which a clear-on-write
  *    could never do. kg/m³ are deliberately not compared: a re-weigh is the
- *    warehouse's correction, not «what is it»;
- *  · the DOCUMENT's (his 3a) — a lot tarkibi that still stands: the same
+ *    warehouse's correction, not «what is it». The Russian name compared is
+ *    the one the screens SHOW (`lotRuShownSql` — the tarkib's label while one
+ *    is written, standing or not): a person confirms what the card printed,
+ *    so a tarkib written, changed or cleared after the tick makes it «stale»,
+ *    and a tick pressed under a stale tarkib is for the label it was pressed
+ *    under (docs/TARKIB-TUZATISH.md §9.3);
+ *  · the TARKIB's (his 3a) — a lot tarkibi that still stands: the same
  *    three terms `isStale` (composition-math.ts) compares, restated here in
- *    SQL and pinned against it by `lot-check.integration.test.ts` — and it
- *    VOUCHES only when it says something about the lot's identity a person
- *    would: two or more lines, or ONE line whose name is the lot's own
- *    (his 8.6, 2026-10-21; a one-line tarkib became possible on 2026-10-27).
- *    A single line naming ANOTHER good says the lot's name is wrong, and the
- *    warehouse screens keep that name (LOT-TARKIBI §9) — a ✅ beside it would
- *    vouch for the name the document contradicts. Only the composition's
- *    STATE leaves this module — never a line — so the stock and plan screens
- *    still learn nothing about the contents.
+ *    SQL and pinned against it by `lot-check.integration.test.ts`. ANY
+ *    standing tarkib vouches (2026-11-10, docs/TARKIB-TUZATISH.md §3.5 — the
+ *    recorded reversal of his 8.6): a one-line tarkib naming another good
+ *    used to leave ❓, because the warehouse screens went on printing the
+ *    lot's own name and a ✅ beside it would have vouched for the name the
+ *    tarkib contradicts. The screens print the tarkib's name now
+ *    (`receipts/lot-name.ts`), so what the ✅ stands beside IS what a person
+ *    stated. With or without a document: 0143 made the file optional, and
+ *    this sentence never read it. Only the composition's STATE leaves this
+ *    module — never a line.
  *
- * Every reader LEFT JOINs `lot_checks` and `lotTarkibJoinSql()` on the lot
- * and asks `lotCheckStateSql`. A JOIN and never a correlated subquery in a
- * WHERE: the design review measured that shape at 3.3 s on an 18k-carton
- * copy against 41 ms for the join. Both joins are at most one row per lot,
- * so neither can fan a count out.
+ *  · the CLIENT's own (0144, docs/TARKIB-TAKLIFLAR.md §4 — his 5b) — a
+ *    `lot_client_confirms` row: the ✅ or ❌ the client pressed in Telegram,
+ *    with what the message SHOWED them. A ✅ is the same kind of snapshot,
+ *    compared the same way, plus the tarkib's goods as printed
+ *    (`goods_key`): while it matches the lot reads «checked» and nobody has
+ *    to telephone. A ❌ is a VETO, and it stands against exactly what it
+ *    rejected: a tarkib does not vouch for the goods the client rejected,
+ *    and a colleague's tick does not vouch unless it was pressed AFTER the
+ *    ❌ (`lotCheckStateSql` spells the four ways it ends). No fourth state:
+ *    a disputed lot belongs on the ❓ worklist.
+ *
+ * Every reader LEFT JOINs `lot_checks`, `lotTarkibJoinSql()` and the
+ * client's row on the lot and asks `lotCheckStateSql`. A JOIN and never a
+ * correlated subquery in a WHERE: the design review measured that shape at
+ * 3.3 s on an 18k-carton copy against 41 ms for the join. Every join is at
+ * most one row per lot, so none can fan a count out.
  *
  * `lot`, `receipt`, `check` are table REFERENCES, never columns (#128): pass
  * `sql\`${receiptLots}\`` for a joined table or `sql\`l\`` for an alias
@@ -59,11 +77,19 @@ export const LOT_TARKIB = sql.raw('lot_tarkib');
  * The lot tarkibi's totals, one row per composed lot, as a join source:
  * `.leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql\`${receiptLots}\`))`. The table is
  * small (compositions are rare) and grouped once per statement.
+ *
+ * `goods_key` is the goods AS A QUESTION PRINTS THEM — every line's name and
+ * pieces, in order — and it is what the client's answer is compared with
+ * (0144). Deliberately not the composition's `rev`: that token moves on
+ * every save AND on every TNVED code typed on the Bojxona tab, so a client's
+ * ✅ would read «eskirgan» after routine coding and a ❌ would be lifted by
+ * it — the design judge's blocker. kg, m³, cartons and codes are not in it:
+ * the client is not shown them.
  */
 export function lotTarkibJoinSql(): SQL {
   return sql`(
     SELECT c.lot_id, c.seen_box_count, sum(l.weight_kg) AS kg, sum(l.volume_m3) AS m3,
-           count(*)::int AS n, min(l.name) AS one_name
+           md5(string_agg(l.name || chr(31) || coalesce(l.pieces::text, ''), chr(30) ORDER BY l.seq)) AS goods_key
       FROM lot_compositions c
       JOIN lot_composition_lines l ON l.lot_id = c.lot_id
      GROUP BY c.lot_id, c.seen_box_count
@@ -72,6 +98,17 @@ export function lotTarkibJoinSql(): SQL {
 
 export function lotTarkibOnSql(lot: SQL): SQL {
   return sql`${LOT_TARKIB}.lot_id = ${lot}.id`;
+}
+
+/** The client's own answer's alias (0144) — at most one row per lot. */
+export const LOT_CLIENT = sql.raw('lot_client');
+
+export function lotClientJoinSql(): SQL {
+  return sql`lot_client_confirms AS ${LOT_CLIENT}`;
+}
+
+export function lotClientOnSql(lot: SQL): SQL {
+  return sql`${LOT_CLIENT}.lot_id = ${lot}.id`;
 }
 
 export interface LotCheckRefs {
@@ -89,48 +126,103 @@ export function tarkibStandsSql(lot: SQL): SQL {
 }
 
 /**
- * The composition says who the lot is (his 8.6): two or more lines, or ONE
- * line named as the lot itself — Chinese or Russian, by the TNVED memory's
- * key (`productKeySql`: every whitespace run collapsed, trimmed, lowered —
- * one rule for «the same name», #513). A one-line tarkib naming ANOTHER good
- * fixes the papers and vouches for nothing on the warehouse screens, which
- * still print the lot's own name.
- */
-export function tarkibVouchesSql(lot: SQL): SQL {
-  return sql`(${LOT_TARKIB}.n >= 2
-    OR ${productKeySql(sql`${LOT_TARKIB}.one_name`)} IN (${productKeySql(sql`${lot}.product_name_zh`)}, ${productKeySql(sql`coalesce(${lot}.product_name_ru, '')`)}))`;
-}
-
-/**
  * The person's snapshot, term by term — the card names WHICH one moved, and
  * the state below is their conjunction, so the two cannot disagree.
  * `NULLIF(…, '')` on the lot's Russian name: the column stores an absent name
- * as NULL, and a row written before that rule must not read «renamed».
+ * as NULL, and a row written before that rule must not read «renamed». The
+ * SHOWN Russian name, never the stored one alone: with the stored name here a
+ * tick made as «Клавиатура», then a one-line tarkib «Мышь» and a re-weigh,
+ * read ✅ «mijoz tasdiqladi» beside «键盘 (Мышь)».
  */
 export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; client: SQL } {
   const { lot, receipt, check } = refs;
   return {
     name: sql`(${check}.seen_name_zh = ${lot}.product_name_zh
-      AND ${check}.seen_name_ru IS NOT DISTINCT FROM NULLIF(${lot}.product_name_ru, ''))`,
+      AND ${check}.seen_name_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`,
     count: sql`(${check}.seen_box_count = ${lot}.box_count)`,
     client: sql`(${check}.seen_client_id IS NOT DISTINCT FROM ${receipt}.client_id)`,
   };
 }
 
 /**
- * The state, in this order: a standing composition answers first (the
- * client's own document, his 3a — it holds on unclaimed cargo too); cargo
- * with no client has nobody to ask and its own list (/unclaimed); then the
- * person's snapshot; anything that WAS confirmed and no longer matches is
- * «stale» («o'zgardi — qayta so'rang»).
+ * The client's answer is about what the lists still show (0144): the five
+ * things the question printed — the carton count, the owner, the tarkib's
+ * goods (`goods_key`; NULL on both sides = no tarkib then, none now) and
+ * both name spellings. A rename, a count correction, a new owner, a tarkib
+ * written, changed or cleared afterwards — and a ✅ is about data that no
+ * longer exists. The SHOWN Russian name, as on the person's tick, and LAST:
+ * it is the one term that costs a subquery, and the sentence runs once per
+ * carton on the lists (the design judge measured 4.5 → 48 ms with it first).
+ */
+export function clientHoldsSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
+  const { lot, receipt } = refs;
+  return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
+    AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
+    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id
+    AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key
+    AND ${LOT_CLIENT}.shown_zh = ${lot}.product_name_zh
+    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`;
+}
+
+/**
+ * A ❌ of the prixod's CURRENT owner is on the lot (0144). Two-valued on
+ * purpose — it is negated below, and `NOT NULL` would make a lot with no
+ * answer at all fall out of its ✅. A previous owner's ❌ is nobody's: the
+ * prixod was corrected to another client, who has said nothing.
+ */
+export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
+  return sql`(${LOT_CLIENT}.verdict IS NOT DISTINCT FROM 'no'
+    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${refs.receipt}.client_id)`;
+}
+
+/**
+ * The state. A ❌ stands against exactly what it rejected, whatever else has
+ * moved since (0144, the design judge — a veto tied to the whole snapshot
+ * was too weak AND too strong: a typo fixed in the Chinese name lifted it
+ * and the untouched tarkib the client had rejected read ✅ again, while a
+ * colleague who phoned the client and ticked could not lift it at all):
+ *
+ *  1. a standing composition vouches (the client's own document, his 3a — on
+ *     unclaimed cargo too) UNLESS this owner's ❌ was given on the very goods
+ *     it still lists;
+ *  2. cargo with no client has nobody to ask and its own list (/unclaimed);
+ *  3. the person's snapshot vouches UNLESS this owner's ❌ is not older than
+ *     the tick — a colleague who ticks AFTER the ❌ has heard the client;
+ *  4. the client's own ✅, while it is about what the lists still show;
+ *  5. a ❌ nothing vouches past reads ❓ — «none», never «o'zgardi»: the lot
+ *     is not something that WAS confirmed;
+ *  6. anything that was confirmed and no longer matches is «stale».
+ *
+ * So a ❌ ends four ways and no fifth: the rejected goods are changed, a
+ * colleague ticks after it, the client answers again, or «E'tirozni yopish».
+ * kg and m³ are in no arm — a complaint about a weight is closed by a person.
+ *
+ * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
+ * this is the two-source sentence that shipped with 0123, word for word.
  */
 export function lotCheckStateSql(refs: LotCheckRefs): SQL {
   const terms = checkTermsSql(refs);
+  const ticked = sql`(${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client})`;
+  if (!lotClientConfirmsReady()) {
+    return sql`(CASE
+      WHEN ${tarkibStandsSql(refs.lot)} THEN 'checked'
+      WHEN ${refs.receipt}.client_id IS NULL THEN 'unclaimed'
+      WHEN ${ticked} THEN 'checked'
+      WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL THEN 'stale'
+      ELSE 'none'
+    END)`;
+  }
+  const dispute = clientDisputeSql(refs);
   return sql`(CASE
-    WHEN ${tarkibStandsSql(refs.lot)} AND ${tarkibVouchesSql(refs.lot)} THEN 'checked'
+    WHEN ${tarkibStandsSql(refs.lot)}
+      AND NOT (${dispute} AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key) THEN 'checked'
     WHEN ${refs.receipt}.client_id IS NULL THEN 'unclaimed'
-    WHEN ${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client} THEN 'checked'
-    WHEN ${refs.check}.lot_id IS NOT NULL OR (${LOT_TARKIB}.lot_id IS NOT NULL AND ${tarkibVouchesSql(refs.lot)}) THEN 'stale'
+    WHEN ${ticked}
+      AND NOT (${dispute} AND ${refs.check}.checked_at <= ${LOT_CLIENT}.answered_at) THEN 'checked'
+    WHEN ${LOT_CLIENT}.verdict = 'yes' AND ${clientHoldsSql(refs)} THEN 'checked'
+    WHEN ${dispute} THEN 'none'
+    WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL
+      OR ${LOT_CLIENT}.verdict = 'yes' THEN 'stale'
     ELSE 'none'
   END)`;
 }
@@ -184,15 +276,20 @@ export function checkFilterSql(tek: CheckFilter, state: SQL, askable: SQL): SQL 
 }
 
 /**
- * The two joins every list reader makes, on a `$dynamic()` query — or none
- * when `on` is false (`lotChecksReady()` said the tables are not there yet,
- * #472): the reader then runs its pre-0123 shape and draws no chip.
+ * The joins every list reader makes, on a `$dynamic()` query — or none when
+ * `on` is false (`lotChecksReady()` said the tables are not there yet, #472):
+ * the reader then runs its pre-0123 shape and draws no chip. The client's
+ * answers are the third join only where their table exists (0144) — the
+ * sentence asks the same question and never names an alias that was not
+ * joined.
  */
 export function withLotCheckJoins<T extends PgSelect>(qb: T, on: boolean): T {
   if (!on) return qb;
-  return qb
+  const two = qb
     .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`)) as unknown as T;
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`));
+  if (!lotClientConfirmsReady()) return two as unknown as T;
+  return two.leftJoin(lotClientJoinSql(), lotClientOnSql(sql`${receiptLots}`)) as unknown as T;
 }
 
 /** The state where the joins were made, NULL where they were not (no chip, never ❓). */

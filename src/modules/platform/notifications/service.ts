@@ -22,6 +22,7 @@ import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
 import { groupDigits, h, visibleLength } from '../telegram/format';
+import { splitLabelCount } from '../text/label-count';
 import {
   botCall,
   editText,
@@ -813,12 +814,20 @@ const CODES_SHOWN = 30;
  * kurtka: +3» for cartons beyond the plan, «… : 3» for cartons missing.
  * Anything else — every event that predates the field — is null,
  * and the caller prints its codes line as it always did (#688).
+ *
+ * A lot with a tarkib is named by its label, which ends in a count of its
+ * own («Клавиатура +2» — the first good and two more, 2026-11-10). Bare, the
+ * line read «… · Клавиатура +2: +3»: two counts side by side, and the first
+ * one looks like part of the sum. Such a name is QUOTED, so «+2» stays
+ * inside the name and the figure after the colon is the only count of
+ * cartons on the line. A name with no count prints exactly as it always did.
  */
 function countLotLine(lot: unknown, extra = true): string | null {
   if (!lot || typeof lot !== 'object') return null;
   const { label, product, n } = lot as { label?: unknown; product?: unknown; n?: unknown };
   if (typeof label !== 'string' || typeof n !== 'number') return null;
-  const goods = typeof product === 'string' && product.trim() ? ` · ${product.trim()}` : '';
+  const name = typeof product === 'string' ? product.trim() : '';
+  const goods = name ? ` · ${splitLabelCount(name).count === null ? name : `«${name}»`}` : '';
   return `${label}${goods}: ${extra && n > 0 ? '+' : ''}${n}`;
 }
 

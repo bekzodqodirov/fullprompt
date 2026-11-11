@@ -172,6 +172,8 @@ pnpm build && pnpm e2e  # 44 e2e
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
+| The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
+| The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
 
 ## State — 2026-08-23
@@ -3438,7 +3440,131 @@ ratchet unchanged. OWED to him: §6 Q1-Q3 (⭐ built), the `[calc intake]` log l
 typed-KGS/CBM manual reader (IC-NEW-2), the deal card's headerless import (SHEETS-4), and the cross-file mixtures §8
 records as his call.
 
-**Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
+**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1642-#1662 — renumbered from #1622-#1642 on four merges, the
+THIRTY-SECOND to THIRTY-FIFTH collisions: main's AI sotuvchi «100 ta xabar» round took #1622-#1627
+first, then its `m0-smoke` locator fix (PR #144) took #1628 while the merged tree was being verified, then the driver
+app's «HTTP 400» hotfix (PR #142) took #1629 the day after the push, then the other session's «Fayl o'qish» (PR #141)
+took #1630-#1641 while the three suggestions were being built; migration 0143
+`tarkib_document_optional`, `when` …122 — ledger must reach 144; minted as 0142 and renumbered on the first merge, the
+THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9
+and every «As built» block binding).** His
+six items after six weeks of the lot tarkibi, built with every ⭐ (ten questions sent with the result — the CHANGELOG
+entry lists them). (1) The client's document is OPTIONAL (0143 drops NOT NULL on `lot_compositions.attachment_id`; a
+cited file is checked as before; the reader LEFT JOINs; `violatedNotNull` names the one-migration-behind refusal).
+(3-4) **The Russian name a lot is SHOWN under is DERIVED from its tarkib and has ONE home, `receipts/lot-name.ts`** — one
+good → its name, several → «first +N» (`tarkibLabel` pure ↔ `lotRuShownSql` / `lotGoodsShownSql` / `lotGoodsKindsSql` /
+`tarkibLineMatchSql` / `lotRuShownFor`); never written: the stored `product_name_ru` stays IDENTITY (sticker, customs
+papers, TNVED memory, price history, the ✏️ form). A one-line tarkib named as the lot's CHINESE name gives no label.
+«+N» survives every cut (`platform/text/label-count.ts`, `components/lot-goods-name.tsx`). ~45 readers swapped
+(warehouse + search = P2a, office + customer = P2b, built in worktrees); a row that is both display and identity gets
+a SECOND field (`BatchLot.shownNameRu`, `goodsKinds`); stored payloads keep the own name; searches OR the tarkib arm
+and strip a pasted «+N»; lists that already print «first +N» over several lots unnest goods KINDS. **Fence
+`tests/unit/lot-name-fence.test.ts`**: every direct read of the stored column is on a counted list with its reason and
+every file naming the property is classified shown/own/writer/both — a new list reading the stored name is red the day
+it is written. Any STANDING tarkib makes the lot ✅ (reverses 8.6) and the person's ✅ is for the name the card SHOWS
+(`lot-check-sql.ts` compares `lotRuShownSql`; inside the tick's tx the name is read with the pure builder — a pooled
+reader there turns `tx-pool` red). (2) The plan's «Agent uchun Excel» prints ONE ROW PER GOOD per block
+(`planContents` + `paperLinesByPart`: ONE fit sliced over here / «В пути» / «Не пришло», plan decimals kg 3 / m³ 4,
+grouped by lot id, photo once, every row wrapped and as tall as its text — `wrappedLines`; an approved plan whose
+truck holds none of the lot keeps the plan's own positions). (5) A tarkib line has its 🤖
+(`suggestTnvedForLineAction`, by line ID; `lineQuestion` pure: the line's own name, the photo only when the lot holds
+ONE good; every door before any spend; `max_tokens` 16000 + a named cut + logs). **The Bojxona editor re-seeds by
+MERGE, never by remount** (`tnved/editor-state.ts` pure: `reseedRows`, `walkStep`, `sameNameCode`; the page's `key` is
+gone): unsaved codes survive a save, the 🔄 and a colleague's change; «Saqlash» posts only changed codes and one
+refused name/lot does not stop the rest (`gone` / `refused`); the walk fills 💡 hints first, never overwrites a typed
+code (`fillEmpty`), leaves a stale lot alone, ends with the editor. (6) **The invoice draft is built from POSITIONS**
+(`documents/invoice-rows.ts`, pure): auto-merge = same scope + code + name + unit; one code under different names is
+ASKED in a dialog (`invoice-download.tsx` — a BUTTON, the file through the signed link; the list is read at the press
+and AGAIN at «Invoysni olish», and nothing is followed when it cannot be read, because a failed download REPLACES the
+screen); the answer travels in the address (`?merge=<code>.<sig>,…`, pairs whenever they fit; `sig` hashes the names
+shown, so a stale answer names nothing); never across a customs scope, never «шт» off the paper by itself. New column
+«Маркировка» after «№» (client code / marking + lot letter), RED where one lot's tarkib stands on several positions.
+**Every reader of the invoice sheet reads by HEADER** (`tests/fixtures/invoice-sheet.ts`). Found on the way: the
+client-history XLSX answered 500 for every client since it shipped (exceljs refuses a sheet named «History»); the
+document guard 404s a malformed id. Reviewed as built (#1660-#1661: ten findings, none refuted, all fixed and
+red-proven — the skeptics died on the usage limit, so each was reproduced by a failing test first). LOOKED AT at 360
+and 1280 with a 60-character first good (#1659): on a phone the stock and truck tables scroll sideways (fixed
+min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1662): a red proof that turns
+a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
+`scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
+findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144) before the
+second merge; **on the MERGED tree (main's #143 inside): 880 files / 14,817 unit/integration + 491 e2e**, same order,
+fresh gsr_ci, ledger 144 — a container restart cut the run between vitest and the build, and the build + Playwright
+were resumed on the database the vitest run had left (postgres recovered it), which is CI's order. Main's #144 (one
+e2e locator, #1628) was merged after that run: typecheck, lint and the changed spec ×3 re-run green — the delta is one
+spec this round never touched. Pushed to `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked),
+deploy not done.
+
+**Round — Tarkib takliflari (2026-11-11; DECISIONS #1663-#1682 — minted from #1651 and moved by twelve, the
+THIRTY-FIFTH collision: the other session's «Fayl o'qish» (PR #141) took #1630-#1641 while this was being built;
+migration 0144 `tarkib_takliflar`, `when` …123 — ledger must reach 145; spec `docs/TARKIB-TAKLIFLAR.md`, **§7 binding**,
+§8 the deploy, §10 stated-not-built).** His «Hammasi yulduzcha javob va taklifingni qoshamiz»: the ten ⭐ of the tarkib
+round stand (#1663 — eight were already pinned, two only now) and «taklifingni» was read as ALL THREE suggestions, said
+to him first. Designed, judged by five lenses BEFORE code (54 objections from four, two blockers; the fifth died on the
+usage limit), built as a kernel + T2 + T3 by the lead and T1 in a worktree, reviewed as built.
+**T3 — the pressed-AI ledger** (`calc/ai-press.ts`): a press is COUNTED before it spends (`reservePress`: the advisory
+lock as its own statement, then the counting INSERT) and BILLED after (`settlePress`); limits `tnved_ai_daily_limit`
+300 / `tarkib_ai_daily_limit` 50, whole digits only, **0 = off** (a cap on a bill fails closed — never the calc limit's
+«0 = no cap»); refusals `ai_off | ai_limit | server_behind | failed`; **a timeout of ours is counted** (`failed`),
+`no_answer` = nothing can have been generated; **the dollars are frozen on the row at settle** (`cost_usd`, the constant
+the call was MADE with — never `response.model`), summed at read, an unpriced row counted and never summed as $0;
+`pressToday(kind, sight)` — the count for everyone behind the door, the dollars only through `companyMoneySight`, on
+the Bojxona tab AND under both limit boxes on /admin/settings. Every column 0144 adds to an OLD table is SQL-only
+(`ai_calc_passes.lot_id/batch_id/outcome/cost_usd`, `client_notices.asked_by`). `tests/unit/ai-press.test.ts` fences
+the LAST migration that re-makes `ai_calc_passes`' kind/anchor CHECKs: it must carry every pressed kind (the other
+session's R5 would have re-made them without).
+**T2 — the client's own ✅/❌** (`receipts/client-confirm.ts`, the ONE writer of `lot_client_confirms`): the customer's
+«yukingiz qabul qilindi» push carries «✅ To'g'ri / ❌ Xato bor» (the THIRD keyboard row, `yt:<1|0>:<receipt>:<tag8>`)
+when `clientAskOffer` says so — switch on (`client_confirm_on_receipt`, ships ON), ≤ 12 lots, NO lot with a tarkib
+written, some lot askable and not ✅, and the lines the push PRINTS are the lines the tag vouches for; «📨 Mijozdan
+so'rash» on the prixod card queues one `lot_ask` notice (re-proved for its OWNER at send time) that lists every lot's
+goods. **The answer is compared with what was SHOWN — `goods_key` (md5 of the tarkib's names+pieces, one SQL
+expression in `lotTarkibJoinSql`), never the tarkib's `rev`** (a write token that moves on every TNVED code). **The
+sentence** (`lotCheckStateSql`): a standing tarkib vouches unless this owner's ❌ was given on the goods it still lists;
+a holding tick vouches unless this owner's ❌ is not older than it; the client's ✅ while it matches; a ❌ nothing
+vouches past is «none»; four ways out (the goods changed · a colleague ticks AFTER it · the client answers again ·
+«E'tirozni yopish») — 72 combinations pinned against literal states. A tick and an answer on one lot are ORDERED
+(`lockLotAnswersTx`; the answer's clock is `clock_timestamp()`; the tick posts `seenClientAt`; a re-tick past a ❌
+writes). **The probe gives TWO answers** (`lotChecksReady()` = 0122/0123, `lotClientConfirmsReady()` = 0144) — one flag
+would have switched off the chips, the worklist and the tick on a half-applied deploy. The handler (`/^yt:/`, on the
+prefix): decide, then answer ONCE; ❌ has no toast (its sentence is a message); a stale ❌ is still told where to
+write; a staff chat is never told «shu yerga yozing»; «busy» keeps the buttons; an answer is taken only while some lot
+is askable. The card: a vetoing ❌ leads in red and every ✅ under it is history; the dismissal takes the answer the
+card DREW. kg/m³ are printed on the push and are NOT part of the answer (the question names its subject).
+**T1 — «🤖 Fayldan to'ldirish»** (`receipts/tarkib-read.ts` the service, `tarkib-read-ai.ts` the call, `tarkib-file.ts`
+the ONE adapter over the spreadsheet readers' low-level exports — `goods-file.ts` / `xls.ts` imported, never edited —
+`tarkib-proposal.ts` pure and client-safe, `POST /api/tarkib/read`): ONE reader, the model, for every file kind (a
+spreadsheet goes as TEXT), and **it is never a writer** — the answer is a proposal, ticked rows go into the editor's
+DRAFT, the editor's «Saqlash» is still the only writer of a tarkib; an unread figure is an EMPTY cell. Every door
+before any spend, in order: the save's own door → a paper of the lot's prixod → kind and size from the attachment's
+ROW → a key → `ai_off` → cooling (10 min per document after a reading that ran out of time or room) → the bytes
+(10 s) → the file → `reservePress` → the model → `settlePress`. **The call is the house's DOCUMENT shape**
+(`docs/FAYL-OQISH.md` §0.3): streamed, 32 000 tokens, effort medium, `maxRetries: 0`, one 150 s deadline, and «our
+timeout» is `deadline.aborted` and nothing else. The browser waits 190 s (longer than the server's WHOLE budget),
+keeps the PROPOSAL by its document for 30 min (never the count or the dollars), holds the person's ticks in the
+dialog, and asks once per document per tab. Ten digits on the paper are the PAPER's code (`paper_code`) and are never
+applied to the lot's own good (`appliedCode`); a reading that reached forty rows says so (`rows_full`) and is not
+judged against the paper's total; the totals check compares the paper's exact figures, never the rounded cells.
+**Any change to that call keeps `tests/unit/tarkib-read-ai-wire.test.ts` green** — the real SDK against a local
+streaming stand-in, the only T1 test in which the SDK itself runs.
+**Reviewed as built twice** — five lenses over T2/T3 (34 findings, #1678-#1679) and two over T1 (28, #1680), each
+finding reproduced red before its fix: 31 + 41 red proofs by string edit in a SECOND worktree (the harness restores
+from the text it read, never from git) and one in the browser. The headline of each: the tick read a remembered
+«is 0144 there» that only another screen warmed (a writer asks the probe itself); T1's model call was the shape
+production had already proven empty. PROCESS (#1681): a path with `[id]` is a glob to eslint — lint the project; a
+finished agent's worktree under `.claude/worktrees` makes `eslint .` run out of memory; typecheck before every build;
+**a test that writes a SEEDED row reorders the table for every unordered read after it** (#1682 — the relay test
+un-muted two seeded people, the automation file's `limit 2` then drew the VED as a client's owner): mint, or read by key.
+DEPLOY: ledger 145; **the customers' ✅/❌ buttons start within minutes of the deploy and their switch exists only
+after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); `ANTHROPIC_API_KEY` must be on the
+server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐
+questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
+498 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 2ee5b70, ledger 145; opened as PR #145 together with
+the tarkib tuzatishlari round (0143) it sits on.
+
+**Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
+it: 0143 (`tarkib_document_optional`, `when` …122). Before
+it: 0142 (`chat_rule_bound_via`, `when` …121). Before
 it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before
 it: 0139 (`calc_intake_durable`, `when` …118). Before
@@ -3585,7 +3711,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **143** since 0142 (142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **145** since 0144 (144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

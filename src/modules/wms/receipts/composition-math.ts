@@ -260,20 +260,44 @@ export function nameKey(name: string): string {
 
 /**
  * Does this line name the lot's OWN good — Chinese or Russian, by `nameKey`
- * (the TNVED memory's `productKey`, character for character)? The pure twin
- * of the equality inside `tarkibVouchesSql` (lot-check-sql.ts), pinned
- * against it by lot-check.integration.test.ts (#1267): the editor's hint, the
- * packing lists' Chinese name and the ✅ cannot disagree about it.
+ * (the TNVED memory's `productKey`, character for character)? Asked by the
+ * papers (the lot's Chinese name is printed only beside the line that IS the
+ * lot's good), by the one-line code guard and by the 🤖's question — always
+ * against the lot's STORED names, which a tarkib never rewrites
+ * (`receipts/lot-name.ts`). The ✅ no longer asks it: since 2026-11-10 any
+ * standing tarkib vouches (docs/TARKIB-TUZATISH.md §3.5).
  */
 export function lineIsLotGood(lineName: string, lot: { zh: string; ru: string | null }): boolean {
   const key = nameKey(lineName);
   return key !== '' && (key === nameKey(lot.zh) || key === nameKey(lot.ru ?? ''));
 }
 
-/** A tarkib vouches for its lot's ✅ «hujjat bo'yicha»: several lines always, ONE line only when it names the lot's own good (8.6). */
-export function linesVouchForLot(lines: readonly { name: string }[], lot: { zh: string; ru: string | null }): boolean {
-  if (lines.length >= 2) return true;
-  return lines.length === 1 && lineIsLotGood(lines[0]!.name, lot);
+/**
+ * The Russian name a lot is SHOWN under while a tarkib stands (the owner's
+ * items 3-4, 2026-11-10; docs/TARKIB-TUZATISH.md §3): one line → its name;
+ * several → the FIRST line's name and how many more there are («Клавиатура
+ * +2» for three goods — the house's own «first +N», `deals/cargo-label.ts`).
+ * `null` below `MIN_STORED_LINES` — no tarkib, so the lot's own name shows.
+ *
+ * The first line is the lowest `seq` (the writer numbers kept rows 1..n).
+ * ONE plain space before the «+»: the PDF font has no NBSP glyph (#788).
+ * A DISPLAY rule and nothing else — the stored `product_name_ru` stays the
+ * warehouse's own word, which the customs papers, the TNVED memory and the
+ * sticker go on reading. The SQL twin is `lotRuShownSql` (lot-name.ts),
+ * pinned against this by `lot-name.integration.test.ts`.
+ *
+ * `lotZh` (REQUIRED — an optional one would be forgotten at the one caller
+ * that matters): a ONE-line tarkib named exactly as the lot's CHINESE name
+ * gives no label. «Bitta tovar» pre-fills the line with the Russian name
+ * ELSE the Chinese one, and most lots are typed in Chinese only — so the
+ * commonest one-line tarkib would otherwise make every list print
+ * «键盘 (键盘)». With no label the lot's own Russian name shows, as before.
+ */
+export function tarkibLabel(lines: readonly { seq: number; name: string }[], lotZh: string): string | null {
+  if (lines.length < MIN_STORED_LINES) return null;
+  const first = lines.reduce((a, b) => (b.seq < a.seq ? b : a));
+  if (lines.length === 1) return nameKey(first.name) === nameKey(lotZh) ? null : first.name;
+  return `${first.name} +${lines.length - 1}`;
 }
 
 /** A TNVED code as typed («8471 60 7000») → its digits, or the refusal. */
@@ -793,4 +817,73 @@ export function paperLines(
   const order: PaperReason[] = ['share', 'stale', 'invalid', 'pallet', 'clamped'];
   const list = order.filter((r) => reasons.has(r));
   return { lines: out, estimate: list.length > 0, reasons: list };
+}
+
+/** The first `count` positions of `runs` after skipping `offset` of them. */
+function sliceRuns(runs: readonly Segment[], offset: number, count: number): Segment[] {
+  const out: Segment[] = [];
+  let skip = Math.max(0, Math.trunc(offset));
+  let left = Math.max(0, Math.trunc(count));
+  for (const [s, e] of runs) {
+    if (left <= 0) break;
+    const length = e - s;
+    if (skip >= length) {
+      skip -= length;
+      continue;
+    }
+    const from = s + skip;
+    const step = Math.min(e - from, left);
+    out.push([from, from + step]);
+    left -= step;
+    skip = 0;
+  }
+  return out;
+}
+
+/**
+ * ONE document that prints a composed lot in several consecutive PARTS — the
+ * agent file's blocks: what stands here, what is still on the road, what did
+ * not come (docs/TARKIB-TUZATISH.md §4). Each part gets its own lines, and
+ * together they are the document's: the document's positions are fitted
+ * ONCE over Σ cartons and then cut consecutively, part after part, so a
+ * line's cartons and pieces over the parts add up to exactly what the whole
+ * document would print (the cumulative rule tiles), while each part's kg and
+ * m³ add up to that part's own figure.
+ *
+ * Two traps this closes, both reproduced on `paperLines` before it was
+ * written. (1) Calling `paperLines` per part with no positions restarts
+ * every part at position 0: a 100-carton 50/50 lot planned 67 here + 30 on
+ * the road + 3 not come printed [34,33] [15,15] [2,1] — 51/49, the very
+ * defect the cumulative rule exists against — where the tiling prints
+ * [34,33] [15,15] [1,2]. (2) Positions past the lot's end are a carton
+ * counted on two trucks (`clamped`); cut into parts first, the cut runs fit
+ * and the flag is lost — it is decided on the WHOLE fit and carried into
+ * every part.
+ *
+ * A part of no cartons is `null` (nothing to print). `parts` in the order
+ * the document prints them.
+ */
+export function paperLinesByPart(
+  comp: { seenBoxCount: number; lines: readonly StoredLine[] },
+  lot: LotTotals,
+  whole: {
+    segments?: readonly Segment[];
+    before?: number;
+    parts: readonly { cartons: number; kg: number; m3?: number }[];
+  },
+  opts: { kgDecimals?: number; m3Decimals?: number } = {},
+): (PaperView | null)[] {
+  const counts = whole.parts.map((part) => Math.max(0, Math.trunc(part.cartons)));
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  const fit = fitSegments(whole.segments ?? [], total, lot.boxCount, whole.before ?? 0);
+  let offset = 0;
+  return whole.parts.map((part, i) => {
+    const n = counts[i]!;
+    if (n === 0) return null;
+    const segments = sliceRuns(fit.segs, offset, n);
+    offset += n;
+    const view = paperLines(comp, lot, { segments, cartons: n, kg: part.kg, m3: part.m3 }, opts);
+    if (!fit.clamped || view.reasons.includes('clamped')) return view;
+    return { lines: view.lines, estimate: true, reasons: [...view.reasons, 'clamped'] };
+  });
 }

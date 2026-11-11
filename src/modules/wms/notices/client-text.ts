@@ -1,4 +1,5 @@
-import { b, clipText, code, groupDigits, h, roundKg, roundM3, stepBar, sumRounded } from '@/modules/platform/telegram/format';
+import { b, code, groupDigits, h, roundKg, roundM3, stepBar, sumRounded } from '@/modules/platform/telegram/format';
+import { clipKeepingCount } from '@/modules/platform/text/label-count';
 import {
   boxWord,
   clientLabels,
@@ -104,8 +105,13 @@ export function boxesText(n: number, locale?: string | null): string {
   return `${groupDigits(n)} ${boxWord(n, locale)}`;
 }
 
+/**
+ * The start of a name — and, on a tarkib's label, its count: «Клавиатура
+ * проводн… +2». A cut at the end took the «+2» first, the one half of the
+ * label the owner asked to see (item 4, 2026-11-10).
+ */
 function clip(text: string, max = PUSH_NAME_CHARS): string {
-  return clipText(text.replace(/\s+/g, ' ').trim(), max);
+  return clipKeepingCount(text.replace(/\s+/g, ' ').trim(), max);
 }
 
 /** `<b>GS777</b> · Yiwu · 27.09.2026` — whose, where, when. */
@@ -234,7 +240,7 @@ export interface ReceivedSummary {
  * ago and only now given its owner (unclaimed cargo) → «added to your
  * cabinet», the bar where the cargo really is, and that rung's own sentence.
  */
-export function receivedText(summary: ReceivedSummary, locale?: string | null): string {
+export function receivedText(summary: ReceivedSummary, locale?: string | null, opts: { ask?: boolean } = {}): string {
   const t = clientLabels(locale);
   const step = milestoneOf(summary.stage);
   const fresh = summary.fresh ?? step === 0;
@@ -247,6 +253,10 @@ export function receivedText(summary: ReceivedSummary, locale?: string | null): 
       !fresh ? restOfRung(summary.stage, step, t) : step === 0 ? h(t.pushNextReceived) : '',
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
+    // The client's own ✅ / ❌ (0144): the question is the LAST line, right
+    // above its buttons, and it names what is being confirmed — the lines
+    // above print kilos and cubic metres too, which are not.
+    opts.ask ? [h(t.confirmAskLine)] : null,
   );
 }
 

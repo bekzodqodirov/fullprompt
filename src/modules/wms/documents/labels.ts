@@ -51,8 +51,6 @@ export const DOC = {
   barcode: 'Штрих-код / Barcode',
   boxes: 'Коробок / Boxes',
   code: 'Код / Code',
-  /** Lot tarkibi: the agent file's suffix — the lot's whole PLANNED contents, not this row's. */
-  contents: 'Состав лота (весь план) / Lot contents (whole plan)',
   crate: 'Ящик / Crate',
   date: 'Дата прихода / Received',
   density: 'кг/м³ · kg/m³',
@@ -64,6 +62,18 @@ export const DOC = {
   m3: 'м³ / m³',
   netWeight: 'Вес нетто (кг) / Net weight (kg)',
   offPlan: 'Вне плана / Off-plan',
+  /**
+   * The agent file, a lot whose tarkib lines are all goods other than the
+   * name on its cartons: the Chinese name the sticker carries, on a second
+   * line of the lot's first row — the agent finds the cartons by it.
+   */
+  onCarton: 'На коробке / On the carton',
+  /**
+   * The invoice's column after «№» (the owner, 2026-11-10 — «shu TNVED kod
+   * qaysi karobkalar, ya'ni qaysi klientni qaysi prixodiligini yozib ket»):
+   * the stickers behind a position, client code + lot letter.
+   */
+  lotMarks: 'Маркировка / Marks',
   packaging: 'Упаковка / Packaging',
   /**
    * Lot tarkibi: a line of a composed lot whose share of the places rounds

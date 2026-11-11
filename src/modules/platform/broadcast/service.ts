@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/client';
 import { attachments, broadcastRecipients, broadcasts } from '../db/schema';
 import { writeAudit, type AuditContext } from '../audit/service';
+import { withoutLabelCount } from '../text/label-count';
 
 /**
  * The office's message to its clients, sent through the bot (the owner's
@@ -79,13 +80,23 @@ export async function audienceChats(audience: Audience): Promise<AudienceChat[]>
   }
   if (audience.managerId) where.push(sql`c.sales_manager_id = ${audience.managerId}::uuid`);
   if (audience.query) {
-    const like = `%${audience.query.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    const needle = (text: string) => `%${text.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+    const like = needle(audience.query);
+    // The GOODS arm also asks the lines of a standing lot tarkibi (the
+    // owner's items 3-4, 2026-11-10): the lists print «Клавиатура +2» for
+    // such a lot, «мышь» is its second good and no stored name says it — and
+    // a label copied off a card is searched without its count. The fragment
+    // is wms's (`receipts/lot-name.ts`), reached by DYNAMIC import: platform
+    // never statically imports wms and never names its tables.
+    const { tarkibLineMatchSql } = await import('../../wms/receipts/lot-name');
+    const goods = needle(withoutLabelCount(audience.query));
     where.push(sql`(
       c.client_code ILIKE ${like} OR c.name ILIKE ${like} OR coalesce(c.sector, '') ILIKE ${like}
       OR EXISTS (SELECT 1 FROM unnest(c.cargo_kinds) k WHERE k ILIKE ${like})
       OR EXISTS (SELECT 1 FROM receipts r JOIN receipt_lots l ON l.receipt_id = r.id
                   WHERE r.client_id = c.id AND r.status <> 'voided'
-                    AND (l.product_name_ru ILIKE ${like} OR l.product_name_zh ILIKE ${like}))
+                    AND (l.product_name_ru ILIKE ${goods} OR l.product_name_zh ILIKE ${goods}
+                         OR ${tarkibLineMatchSql(sql`l`, goods)}))
     )`);
   }
   const rows = await db.execute<{ chat_id: string; client_id: string; client_code: string; name: string }>(sql`

@@ -13,6 +13,17 @@ import { lotCompositionLines } from '@/modules/platform/db/schema';
  * a scan, a plan, the stock table, the cabinet or a push that printed
  * «Мышь» about a carton would be printing a guess.
  *
+ * REVERSED FOR THE NAME, 2026-11-10 (docs/TARKIB-TUZATISH.md §3, the owner's
+ * items 3-4): the Russian name every screen SHOWS now follows the tarkib —
+ * «Мышь», or «Клавиатура +2». It is still not a guess about a carton: the
+ * label says what the LOT holds, and the cartons, the letter, the sticker,
+ * the Chinese name and the stored Russian name do not move. So the rule this
+ * fence holds is narrower and sharper than before: display readers import
+ * ONE module, `receipts/lot-name.ts` (in MUST below), and nothing else may
+ * name the composition tables or import the composition modules — a stock
+ * row, a plan or a push that read the LINES itself could print pieces,
+ * cartons or a TNVED code of a carton nobody can tell apart.
+ *
  * Two lists, because «EXACTLY the taught list» failed on day one (the judge's
  * R2: the labels, the audit fields and the uploader name none of the tokens)
  * and a builder would have loosened it to a subset check that also passes
@@ -40,6 +51,10 @@ const MODULES = ['src/modules/wms/receipts/lot-composition.ts', 'src/modules/wms
 const MUST = [
   'src/modules/platform/db/schema/wms.ts',
   ...MODULES,
+  // The shown name (items 3-4): the one module display readers import.
+  'src/modules/wms/receipts/lot-name.ts',
+  // The invoice's rows as data (item 6): it merges by the composition's own name key.
+  'src/modules/wms/documents/invoice-rows.ts',
   'src/modules/wms/documents/composition-cells.ts',
   'src/modules/wms/documents/ved-xlsx.ts',
   'src/modules/wms/documents/packing-photos-xlsx.ts',
@@ -58,6 +73,10 @@ const ALLOWED = new Set([
   ...MUST,
   'src/app/(protected)/receipts/[id]/lot-edit-form.tsx',
   'src/app/(protected)/batches/[id]/tnved/tnved-editor.tsx',
+  // The editor's own pure half (its row, the row's key, the re-seed and the
+  // walk's decisions — 2026-11-10): the same audience as the editor, and it
+  // asks only `nameKey`, to tell two tarkib lines of one name apart.
+  'src/app/(protected)/batches/[id]/tnved/editor-state.ts',
   // «Yuk ma'lumoti tekshirildi» (0123, the owner's 3a): a lot tarkibi that
   // still STANDS counts as ✅ «hujjat bo'yicha». The sentence reads only the
   // composition's totals (whether it stands — `isStale`'s three terms), never
@@ -67,9 +86,33 @@ const ALLOWED = new Set([
   // …and its readiness probe asks only whether the tables EXIST (#472), so a
   // server without 0122/0123 runs the lists in their old shape.
   'src/modules/wms/receipts/lot-check-ready.ts',
+  // The client's own ✅/❌ in Telegram (0144, docs/TARKIB-TAKLIFLAR.md §4 — the
+  // owner's «tarkibni mijozning o'zi tasdiqlasin»): the ONE customer message
+  // that prints a tarkib's goods — names and pieces, never cartons, kg or a
+  // code — because that question IS the tarkib. The recorded exception to
+  // «a push learns nothing of the contents»: nothing under `wms/notices/` or
+  // `wms/client-cabinet/` names a composition token for it — the send half
+  // takes the lines from `clientAskFacts`' answer.
+  'src/modules/wms/receipts/client-confirm.ts',
+  // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3 — the owner's
+  // «tarkibni mijozning fayli yoki rasmidan AI o'qib to'ldirsin»): it fills
+  // the tarkib EDITOR's draft and stops — the composition tables are neither
+  // read nor written by it; «Saqlash» stays the one writer. The pure half
+  // turns what the model transcribed into the editor's own cells with the
+  // editor's own parsers (`composition-math` — scales, `toUnits`, `nameKey`)…
+  'src/modules/wms/receipts/tarkib-proposal.ts',
+  // …the reading asks the SAVE's own door before it spends anything
+  // (`compositionDoor`, `isPaperDocument`), and names no table…
+  'src/modules/wms/receipts/tarkib-read.ts',
+  // …and the dialog applies the ticked rows with the same arithmetic.
+  'src/app/(protected)/receipts/[id]/tarkib-read-dialog.tsx',
 ]);
 
-/** The readers deliberately NOT taught — redundant with ALLOWED, but a failure here names the rule. */
+/**
+ * The readers that may not name the tables or the modules — redundant with
+ * ALLOWED, but a failure here names the rule. They show the tarkib's NAME
+ * through `lot-name.ts` and learn nothing else about the contents.
+ */
 const DENY = [
   'src/modules/wms/labels/sheet.ts',
   'src/modules/wms/scanning/',
@@ -126,7 +169,9 @@ describe('the rules the shape can hold', () => {
 
   it('4. the invoice prints a composed lot through paperLines, never the memory’s code; places come from the parts', () => {
     const src = read('src/modules/wms/documents/ved-xlsx.ts');
-    const invoice = fn(src, 'buildInvoiceXlsx');
+    // The walk over the lots lives in `invoiceSourceRows` since the sheet is
+    // written from positions (2026-11-10) — the rule moved with it.
+    const invoice = fn(src, 'invoiceSourceRows');
     const from = invoice.indexOf('if (comp) {');
     const to = invoice.indexOf('continue;', from);
     expect(from).toBeGreaterThan(-1);
@@ -136,6 +181,13 @@ describe('the rules the shape can hold', () => {
     expect(branch).not.toContain('tnvedFor(');
     expect(branch).not.toContain('tnved.get(');
     expect(fn(src, 'invoicePlaces')).toContain('invoicePlaceParts(');
+    // …and the sheet is written from that ONE list through the row model:
+    // the builder itself walks no lot and reads no memory.
+    const sheet = fn(src, 'buildInvoiceXlsx');
+    expect(sheet).toContain('invoiceSourceRows(');
+    expect(sheet).toContain('invoiceModel(');
+    expect(sheet).not.toContain('tnvedFor(');
+    expect(sheet).not.toContain('paperLines(');
   });
 
   it('5. the price history counts kinds in their own CTE, never inside `load` (#432)', () => {
@@ -235,8 +287,9 @@ describe('the owner’s answers of 2026-10-01 (1a 2a 3a) and the 1a reversal of 
         lotCheck: { otherAnswersAskLogist: string };
       };
       expect(bundle.tarkib.errors.lines_count, locale).not.toMatch(who);
-      // «Other goods»: the VED writes a one-line 🧩 for the papers; the logist
-      // still renames for the warehouse screens (the lot keeps its body).
+      // «Other goods»: the VED writes a one-line 🧩 — the papers AND the lists
+      // print that name since 2026-11-10 (docs/TARKIB-TUZATISH.md §3); what is
+      // still the logist's is the name on the sticker and the Chinese name.
       expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(/🧩/);
       expect(bundle.lotCheck.otherAnswersAskLogist, locale).toMatch(who);
     }

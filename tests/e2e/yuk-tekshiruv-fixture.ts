@@ -33,6 +33,11 @@ export function newRun(): Run {
   return { marker: `YT${digits}`, lotName: `键盘YT${digits}` };
 }
 
+/** The Telegram chat this spec links to its client — its own, per run. */
+export function chatOf(run: Run): string {
+  return `79${run.marker.slice(2)}00`;
+}
+
 export async function mint(sql: postgres.Sql, run: Run): Promise<Minted> {
   return sql.begin(async (tx) => {
     const [owner] = await tx<{ id: string }[]>`SELECT id FROM users WHERE phone = '+998900000001'`;
@@ -76,7 +81,12 @@ export async function cleanup(sql: postgres.Sql, run: Run): Promise<number> {
       await tx<{ id: string }[]>`
         SELECT l.id FROM receipt_lots l JOIN receipts r ON r.id = l.receipt_id WHERE r.source_note = ${run.marker}`
     ).map((r) => r.id);
+    // The client's side (0144): the question a person queued, the chat the
+    // spec linked, and the answers it wrote — before the rows they point at.
+    await tx`DELETE FROM client_notices WHERE ref_type = 'receipt' AND ref_id IN (SELECT id FROM receipts WHERE source_note = ${run.marker})`;
+    await tx`DELETE FROM client_telegram_links WHERE client_id IN (SELECT id FROM clients WHERE client_code = ${run.marker})`;
     if (lotIds.length > 0) {
+      await tx`DELETE FROM lot_client_confirms WHERE lot_id IN ${tx(lotIds)}`;
       await tx`DELETE FROM lot_checks WHERE lot_id IN ${tx(lotIds)}`;
       await tx`DELETE FROM box_movements WHERE box_id IN (SELECT id FROM boxes WHERE lot_id IN ${tx(lotIds)})`;
       await tx`DELETE FROM boxes WHERE lot_id IN ${tx(lotIds)}`;
@@ -89,6 +99,8 @@ export async function cleanup(sql: postgres.Sql, run: Run): Promise<number> {
     SELECT (SELECT count(*)::int FROM receipts WHERE source_note = ${run.marker})
          + (SELECT count(*)::int FROM clients WHERE client_code = ${run.marker})
          + (SELECT count(*)::int FROM boxes WHERE short_code LIKE ${`${run.marker}-%`})
-         + (SELECT count(*)::int FROM lot_checks WHERE seen_name_zh = ${run.lotName}) AS n`;
+         + (SELECT count(*)::int FROM lot_checks WHERE seen_name_zh = ${run.lotName})
+         + (SELECT count(*)::int FROM lot_client_confirms WHERE shown_zh = ${run.lotName})
+         + (SELECT count(*)::int FROM client_telegram_links WHERE telegram_chat_id = ${chatOf(run)}) AS n`;
   return left!.n;
 }

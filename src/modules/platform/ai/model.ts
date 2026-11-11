@@ -91,6 +91,51 @@ export const ANALYST_MODEL = 'claude-opus-5';
 export const STAFF_MODEL = 'claude-sonnet-5';
 
 /**
+ * What a model call costs, in dollars per MILLION tokens — the provider's
+ * LIST prices for the two models above, read from its API reference
+ * (2026-11-03). Keyed by the constants, so a model change moves its price
+ * with it or — when the new model has no entry — the screens print calls and
+ * no dollars: `approxMicroUsd` answers null rather than guess.
+ *
+ * An APPROXIMATION and printed as one («≈»): list prices of ANSWERED calls
+ * only. Not in it: an attempt the SDK retried, a call that timed out after
+ * the provider had already worked on it, and any discount on the account.
+ * None of the pressed calls billed with it sends a cache breakpoint, so the
+ * two token counts are a call's whole bill.
+ */
+export const MODEL_USD_PER_MTOK: Readonly<Record<string, { input: number; output: number }>> = {
+  [ANALYST_MODEL]: { input: 5, output: 25 },
+  [STAFF_MODEL]: { input: 2, output: 10 },
+};
+
+export interface ModelTokens {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/**
+ * Token counts → millionths of a dollar. Dollars per million tokens IS
+ * micro-dollars per token, so the sum stays in integers until it is shown.
+ * Null as soon as a row that spent tokens names a model with no price.
+ */
+export function approxMicroUsd(rows: readonly ModelTokens[]): number | null {
+  let micro = 0;
+  for (const row of rows) {
+    if (row.inputTokens === 0 && row.outputTokens === 0) continue;
+    const price = MODEL_USD_PER_MTOK[row.model];
+    if (!price) return null;
+    micro += row.inputTokens * price.input + row.outputTokens * price.output;
+  }
+  return Math.round(micro);
+}
+
+/** Micro-dollars as dollars to the cent — what a screen prints after «≈ $». */
+export function microUsdToUsd(micro: number): number {
+  return Math.round(micro / 10_000) / 100;
+}
+
+/**
  * One model call's ceiling. The SDK's own default is ~10 minutes, which is
  * far too long for a question a person is waiting on — and round 97's lesson
  * is that an un-deadlined network call is the failure that looks like a hang

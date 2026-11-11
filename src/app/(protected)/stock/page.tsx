@@ -48,7 +48,9 @@ import {
   type LotCheckState,
 } from '@/modules/wms/receipts/lot-check-sql';
 import { lotChecksReady } from '@/modules/wms/receipts/lot-check-ready';
+import { lotRuShownFor, lotRuShownSql } from '@/modules/wms/receipts/lot-name';
 import { LotCheckChip } from '@/components/lot-check-chip';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 /** Owner's request: order the stock table by any column, filters kept. */
 const SORTABLE = STOCK_COLUMNS.map((column) => column.key);
@@ -124,6 +126,9 @@ export default async function StockPage({
       .where(boxScope ? and(eq(boxes.lotId, params.lot), boxScope) : eq(boxes.lotId, params.lot))
       .orderBy(asc(boxes.seqInLot));
     const lot = await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, params.lot) });
+    // The Russian name the lists show (the owner's items 3-4, 2026-11-10): a
+    // standing tarkib's «first +N», else the lot's own word.
+    const lotRu = lot ? ((await lotRuShownFor([lot.id])).get(lot.id) ?? lot.productNameRu) : null;
     // Which of these cartons carry no sticker of ours (0112) — the same sentence
     // the stocktake and the phones ask, one query for the whole lot.
     const qrlessIds = new Set(
@@ -145,7 +150,7 @@ export default async function StockPage({
     return (
       <div className="space-y-3">
         <h1 className="text-xl font-bold">
-          {lot?.letter} — {lot?.productNameZh} {lot?.productNameRu && `(${lot.productNameRu})`}
+          {lot?.letter} — {lot?.productNameZh} {lotRu && `(${lotRu})`}
         </h1>
         {palletDoors.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -189,6 +194,8 @@ export default async function StockPage({
     const lotRows = await db
       .select({
         lot: receiptLots,
+        // What the lists print where the Russian name goes (lot-name.ts).
+        shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
         receiptNumber: receipts.number,
         whCode: warehouses.code,
         inStock: sql<number>`count(*)`,
@@ -206,7 +213,7 @@ export default async function StockPage({
           <span className="font-mono text-brand-700">{client?.clientCode}</span> — {client?.name}
         </h1>
         <div className="space-y-1">
-          {lotRows.map(({ lot, receiptNumber, whCode, inStock }) => (
+          {lotRows.map(({ lot, shownNameRu, receiptNumber, whCode, inStock }) => (
             <Link
               // Same reason as the table below: grouped by lot AND warehouse.
               key={`${lot.id}-${whCode}`}
@@ -216,7 +223,7 @@ export default async function StockPage({
               <div className="flex items-baseline gap-2">
                 <span className="font-mono text-lg font-extrabold text-brand-700">{lot.letter}</span>
                 <span>
-                  {lot.productNameZh} {lot.productNameRu && `(${lot.productNameRu})`}
+                  {lot.productNameZh} {shownNameRu && `(${shownNameRu})`}
                 </span>
                 <span className="ml-auto text-sm font-semibold">
                   {inStock} {t('boxes')}
@@ -267,6 +274,14 @@ export default async function StockPage({
   const linesQuery = db
     .select({
       lot: receiptLots,
+      // The Russian name as SHOWN — a standing tarkib's «first +N», else the
+      // lot's own (items 3-4). `lot.productNameRu` beside it stays the stored
+      // word; the cell and the sort key read this one. Behind the probe this
+      // statement already branches on: a server whose migration has not
+      // landed (#472) is sent no statement naming the tarkib's tables.
+      shownNameRu: checksOn
+        ? sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`
+        : receiptLots.productNameRu,
       receiptId: receipts.id,
       receivedAt: receipts.receivedAt,
       marking: receipts.unclaimedMarking,
@@ -391,7 +406,7 @@ export default async function StockPage({
       // The printed code first (round 98); the export names the client in its
       // own column, so the code cell is the box's marking where there is one.
       code: `${codeIdentity(line.marking, line.clientCode).main}-${line.lot.letter}`,
-      product: `${line.lot.productNameZh} ${line.lot.productNameRu ?? ''}`.trim(),
+      product: `${line.lot.productNameZh} ${line.shownNameRu ?? ''}`.trim(),
       boxes: boxCount,
       perBoxKg,
       stockKg: perBoxKg * boxCount,
@@ -737,11 +752,9 @@ export default async function StockPage({
                         )}
                       </>
                     ) : column.key === 'product' ? (
-                      <Link href={`/receipts/${row.line.receiptId}`} className="block truncate">
-                        {row.line.lot.productNameZh}
-                        {row.line.lot.productNameRu && (
-                          <span className="text-ink-500"> ({row.line.lot.productNameRu})</span>
-                        )}
+                      // The name gives way and the «+N» never does (LotGoodsName).
+                      <Link href={`/receipts/${row.line.receiptId}`} className="block">
+                        <LotGoodsName zh={row.line.lot.productNameZh} ru={row.line.shownNameRu} />
                       </Link>
                     ) : column.key === 'boxes' ? (
                       row.boxes

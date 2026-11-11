@@ -3,6 +3,7 @@ import { db } from '../../platform/db/client';
 import { FEED_KINDS } from '../finance/ledger-kinds';
 import { kindList } from '../finance/ledger-sql';
 import { debtReleaseReasonSql, wentOutOnDebtSql } from '../debt/releases';
+import { lotGoodsShownSql } from '../receipts/lot-name';
 import {
   AI_REPLY_HEAD,
   TARIFF_PRICED_HEAD,
@@ -274,7 +275,8 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       -- receipt_lots instead of a subquery per figure, because this branch
       -- already runs inside a six-way union. Meta only: the union is
       -- POSITIONAL past the first branch, so a new top-level column would
-      -- have to be added to all six at the same ordinal.
+      -- have to be added to all six at the same ordinal. Each lot goes by the
+      -- name the screens show it under — its tarkib's while one stands.
       SELECT
         'rc-' || r.id::text, 'cargo', r.confirmed_at, u.full_name, r.source_note,
         jsonb_build_object(
@@ -305,7 +307,7 @@ export async function clientFeed(clientId: string | null, opts: FeedOptions): Pr
       LEFT JOIN LATERAL (
         SELECT
           coalesce(sum(l.box_count), 0)                        AS boxes,
-          string_agg(DISTINCT coalesce(nullif(l.product_name_ru, ''), l.product_name_zh), ', ') AS goods,
+          string_agg(DISTINCT ${lotGoodsShownSql(sql.raw('l'))}, ', ') AS goods,
           coalesce(sum(l.total_weight_kg), 0)                  AS kg,
           coalesce(sum(l.total_volume_m3), 0)                  AS m3
         FROM receipt_lots l WHERE l.receipt_id = r.id

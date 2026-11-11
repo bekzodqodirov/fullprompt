@@ -6,6 +6,7 @@ import { batches, boxes, receiptLots, receipts, warehouses } from '../../platfor
 import { CLIENT_ACTIVE_STATUSES } from '../boxes/active';
 import { declaredMissingSql } from '../boxes/road-loss';
 import { stageBatchOf, type StageBatch } from '../client-cabinet/stages';
+import { lotRuShownSql } from '../receipts/lot-name';
 
 /**
  * «Mijozning yuki hozir qayerda» — the one read behind the client card's
@@ -42,6 +43,12 @@ export interface ClientCargoRow {
   lotId: string;
   letter: string | null;
   productZh: string;
+  /**
+   * The Russian name as the screens SHOW it (the owner's items 3-4,
+   * 2026-11-10): a standing lot tarkibi's name, «first +N» for several goods,
+   * else the lot's own — `receipts/lot-name.ts`. The tab and the bot print
+   * it; nothing keys on it.
+   */
   productRu: string | null;
   lotBoxes: number;
   lotKg: string | null;
@@ -75,7 +82,7 @@ export async function clientCargoRows(clientIds: string[]): Promise<ClientCargoR
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productZh: receiptLots.productNameZh,
-      productRu: receiptLots.productNameRu,
+      productRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       lotBoxes: receiptLots.boxCount,
       lotKg: receiptLots.totalWeightKg,
       lotM3: receiptLots.totalVolumeM3,
@@ -105,7 +112,6 @@ export async function clientCargoRows(clientIds: string[]): Promise<ClientCargoR
       receiptLots.id,
       receiptLots.letter,
       receiptLots.productNameZh,
-      receiptLots.productNameRu,
       receiptLots.boxCount,
       receiptLots.totalWeightKg,
       receiptLots.totalVolumeM3,

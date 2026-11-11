@@ -28,8 +28,14 @@ vi.mock('next/cache', async (original) => ({
   revalidatePath: () => {},
 }));
 /** A server whose migration has not landed (#472) — test 18 alone turns it off. */
-const ready = vi.hoisted(() => ({ on: true }));
-vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({ lotChecksReady: async () => ready.on }));
+const ready = vi.hoisted(() => ({ on: true, client: true }));
+vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
+  lotChecksReady: async () => ready.on,
+  // 0144's second answer (the client's own ✅/❌ table): `ready.client = false`
+  // is a deploy whose 0144 did not land while 0122/0123 are live.
+  lotClientConfirmsReady: () => ready.on && ready.client,
+  clientConfirmsReady: async () => ready.on && ready.client,
+}));
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();
   return {
@@ -56,6 +62,7 @@ import { GET as stockXlsx } from '@/app/api/reports/stock/route';
 import { checkLotAction, uncheckLotAction } from '@/app/(protected)/receipts/[id]/lot-check-actions';
 import { isStale } from '@/modules/wms/receipts/composition-math';
 import { clearComposition, compositionsFor, saveComposition } from '@/modules/wms/receipts/lot-composition';
+import { lotRuShownFor } from '@/modules/wms/receipts/lot-name';
 import { checkLot, LotCheckError, lotCheckViewsFor, uncheckLot as uncheckRaw, type LotCheckActor } from '@/modules/wms/receipts/lot-check';
 import { groupHistory } from '@/modules/platform/audit/history';
 import {
@@ -161,11 +168,15 @@ async function mintLot(key: LotKey, receipt: keyof typeof rc, seq: number, name:
   );
 }
 
-/** What the prixod card showed, read off the lot as it stands. */
+/**
+ * What the prixod card showed, read off the lot as it stands — the Russian
+ * name is the one the header PRINTS (the tarkib's label while one is written).
+ */
 async function seenOf(key: LotKey) {
   const row = (await db.query.receiptLots.findFirst({ where: eq(receiptLots.id, lot[key]) }))!;
   const r = (await db.query.receipts.findFirst({ where: eq(receipts.id, row.receiptId) }))!;
-  return { nameZh: row.productNameZh, nameRu: row.productNameRu ?? '', boxCount: row.boxCount, clientId: r.clientId ?? '' };
+  const shown = (await lotRuShownFor([row.id])).get(row.id);
+  return { nameZh: row.productNameZh, nameRu: shown ?? row.productNameRu ?? '', boxCount: row.boxCount, clientId: r.clientId ?? '' };
 }
 
 /** The person's check as a panel would draw it now — the token a press posts back. */
@@ -408,6 +419,14 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
     await clearComposition({ lotId: lot.T, seenRev: rev }, logist(), ctx(logistId));
     expect((await stateOf('T')).state).toBe('none');
+    // With NO document (optional since 0143): the tarkib still vouches — the
+    // sentence reads the lines and the totals, never the file.
+    await saveComposition({ ...composition(), attachmentId: null }, logist(), ctx(logistId));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, person: null });
+    const bare = (await compositionsFor([lot.T])).get(lot.T)!;
+    expect(bare.attachment).toBeNull();
+    await clearComposition({ lotId: lot.T, seenRev: bare.rev }, logist(), ctx(logistId));
+    expect((await stateOf('T')).state).toBe('none');
     await saveComposition(composition(), logist(), ctx(logistId));
   });
 
@@ -441,7 +460,7 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
       .where(eq(receiptLots.id, lot.T));
   });
 
-  it('12b. a ONE-line tarkib vouches only for a lot of that name (his 8.6, 2026-10-27); another good leaves ❓ and names the rename', async () => {
+  it('12b. ANY standing tarkib vouches — the recorded reversal of his 8.6 (2026-11-10): a one-line tarkib naming another good reads ✅, because the lists print ITS name now', async () => {
     const one = (name: string) => ({ name, pieces: '', cartons: '10', kg: '1000', m3: '2.5', tnved: '' });
     const replace = async (lines: ReturnType<typeof composition>['lines']) => {
       const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
@@ -450,46 +469,163 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
     // The lot's own name, spaced and cased otherwise — an ideographic space
     // too, the one a Chinese name is typed with: the paper says what the lot says.
     await replace([one(`\u3000混合${SFX.toLowerCase()}  `)]);
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false, documentOtherName: false });
-    // Another good: the papers are right, the warehouse screens are not.
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false });
+    // Another good. Until 2026-11-10 this left ❓ («the logist's rename is
+    // what is left»): the warehouse screens printed the lot's own name and a
+    // ✅ beside it would have vouched for the name the tarkib contradicts.
+    // The screens print the tarkib's name now — so the ✅ stands beside what
+    // a person stated, and the STORED name still has not moved.
     await replace([one('Клавиатура')]);
-    expect(await stateOf('T')).toMatchObject({ state: 'none', byDocument: false, documentStale: false, documentOtherName: true });
-    // …and the lot outgrowing it is not «stale»: it never vouched.
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentStale: false });
+    expect((await lotRuShownFor([lot.T])).get(lot.T)).toBe('Клавиатура');
+    const [stored] = await db
+      .select({ ru: receiptLots.productNameRu })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lot.T));
+    expect(stored!.ru).toBeNull();
+    // …and the lot outgrowing it IS «the tarkib moved» now: it vouched.
     await db.update(receiptLots).set({ boxCount: 11 }).where(eq(receiptLots.id, lot.T));
-    expect(await stateOf('T')).toMatchObject({ state: 'none', documentStale: false });
+    expect(await stateOf('T')).toMatchObject({ state: 'stale', byDocument: false, documentStale: true });
     await db.update(receiptLots).set({ boxCount: 10 }).where(eq(receiptLots.id, lot.T));
-    // The logist's rename is the cure — the Russian name now IS the line's.
-    await db.update(receiptLots).set({ productNameRu: 'клавиатура' }).where(eq(receiptLots.id, lot.T));
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
-    await db.update(receiptLots).set({ productNameRu: null }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true });
     // Two lines vouch whatever they are called, as they always did.
     await replace(composition().lines);
-    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, documentOtherName: false });
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true });
+  });
+
+  it('12c. a tick is for the name the card SHOWS: pressed under a stale tarkib it records the label, and the tarkib going away makes it «stale» (2026-11-10)', async () => {
+    // The lot outgrows its two-line tarkib: ⚠, and the card — which prints
+    // «混合 (Клавиатура +1)» while the lines exist — offers the button.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.T));
+    expect(await stateOf('T')).toMatchObject({ state: 'stale', documentStale: true, person: null });
+    const shown = await seenOf('T');
+    expect(shown.nameRu).toBe('Клавиатура +1');
+    // A press that posts the lot's STORED name (none) is a press against a
+    // name the card did not print: «a person cannot confirm a name they did not see».
+    expect(await refusal(press('T', logist(), { seen: { ...shown, nameRu: '' } }))).toBe('lot_changed');
+    expect((await press('T', logist())).changed).toBe(true);
+    const [row] = (await db.execute(
+      sql`SELECT seen_name_ru FROM lot_checks WHERE lot_id = ${lot.T}::uuid`,
+    )) as unknown as { seen_name_ru: string | null }[];
+    expect(row!.seen_name_ru).toBe('Клавиатура +1');
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
+    // The History says what was confirmed — the label, not the stored name.
+    expect(JSON.stringify((await checkAudits('R2')).at(-1)!.after)).toContain('(Клавиатура +1)');
+    // The tarkib is cleared: the lists print the lot's own name again, which
+    // is NOT what the person confirmed.
+    const rev = (await compositionsFor([lot.T])).get(lot.T)!.rev;
+    await clearComposition({ lotId: lot.T, seenRev: rev }, logist(), ctx(logistId));
+    const after = await stateOf('T');
+    expect(after.state).toBe('stale');
+    expect(after.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false } });
+    // Back to how the next tests expect lot T: no person row, the tarkib standing.
+    await uncheckLot({ lotId: lot.T }, logist(), ctx(logistId));
+    await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.T));
+    await saveComposition(composition(), logist(), ctx(logistId));
+    expect(await stateOf('T')).toMatchObject({ state: 'checked', byDocument: true, person: null });
+  });
+
+  it('12d. ticked under its own name, then a one-line tarkib of ANOTHER good, then a re-weigh: «stale» naming the name — never ✅ beside a name nobody confirmed', async () => {
+    // Lot K carries the logist's tick for its own name (tests 1-8; test 2
+    // left that name «Мышь»).
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
+    await saveComposition(
+      {
+        lotId: lot.K,
+        seenRev: 0,
+        seenBoxCount: 100,
+        seenKg: '1000.000',
+        seenM3: '2.5000',
+        attachmentId: null,
+        lines: [{ name: 'Наушники', pieces: '', cartons: '100', kg: '1000', m3: '2.5', tnved: '' }],
+      },
+      logist(),
+      ctx(logistId),
+    );
+    // While the tarkib stands it answers first.
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: true });
+    // A re-weigh — which a person's tick alone survives (test 5) — and the
+    // tarkib no longer stands. The lists print «键盘 (Наушники)»; the tick
+    // was for the lot's own name. With the STORED name compared this read ✅.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.500' }).where(eq(receiptLots.id, lot.K));
+    expect((await lotRuShownFor([lot.K])).get(lot.K)).toBe('Наушники');
+    const view = await stateOf('K');
+    expect(view.state).toBe('stale');
+    expect(view.person).toMatchObject({ holds: false, moved: { name: true, count: false, client: false } });
+    // No writer clears anything: with the tarkib gone the lot shows the name
+    // the person confirmed, and the tick stands again by itself.
+    await db.update(receiptLots).set({ totalWeightKg: '1000.000' }).where(eq(receiptLots.id, lot.K));
+    const rev = (await compositionsFor([lot.K])).get(lot.K)!.rev;
+    await clearComposition({ lotId: lot.K, seenRev: rev }, logist(), ctx(logistId));
+    expect(await stateOf('K')).toMatchObject({ state: 'checked', byDocument: false, person: { holds: true } });
   });
 });
 
 describe('the worklist (his 4a: only cargo standing in China)', () => {
   it('13. cargo in Uzbekistan is never counted; the home count equals a direct count of the same rule', async () => {
     await uncheckLot({ lotId: lot.N }, logist(), ctx(logistId));
+    /*
+     * The rule restated by hand, over the whole database — with the client's
+     * own answers in it since 0144 (the design judge: an oracle that knew two
+     * sources would disagree with the count the day any file left a client's
+     * row on a Chinese shelf, green or red by the order the files happen to
+     * run in). ✅ = a standing tarkib the owner has not rejected the goods of,
+     * or a tick the owner has not said ❌ after, or the owner's own ✅ that
+     * still matches.
+     */
+    const directCount = async (): Promise<number> => {
+      const [direct] = (await db.execute(sql`
+        SELECT count(DISTINCT r.id)::int AS n
+          FROM boxes b
+          JOIN receipt_lots l ON l.id = b.lot_id
+          JOIN receipts r ON r.id = l.receipt_id
+          JOIN warehouses w ON w.id = b.current_warehouse_id
+          LEFT JOIN lot_checks lc ON lc.lot_id = l.id
+          LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
+          LEFT JOIN lot_client_confirms cc ON cc.lot_id = l.id
+         WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
+           AND w.country = 'CN'
+           AND r.client_id IS NOT NULL
+           AND NOT ((lot_tarkib.lot_id IS NOT NULL AND lot_tarkib.seen_box_count = l.box_count
+                     AND lot_tarkib.kg = l.total_weight_kg AND lot_tarkib.m3 = l.total_volume_m3)
+                    AND NOT (coalesce(cc.verdict = 'no' AND cc.shown_client_id = r.client_id, false)
+                             AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key))
+           AND NOT ((lc.lot_id IS NOT NULL AND lc.seen_name_zh = l.product_name_zh
+                     AND lc.seen_name_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
+                     AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id)
+                    AND NOT coalesce(cc.verdict = 'no' AND cc.shown_client_id = r.client_id AND lc.checked_at <= cc.answered_at, false))
+           AND NOT coalesce(cc.verdict = 'yes' AND cc.shown_zh = l.product_name_zh
+                            AND cc.shown_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
+                            AND cc.shown_count = l.box_count AND cc.shown_client_id = r.client_id
+                            AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key, false)
+      `)) as unknown as { n: number }[];
+      return Number(direct!.n);
+    };
     const counted = await uncheckedPrixodCount(logist());
-    const [direct] = (await db.execute(sql`
-      SELECT count(DISTINCT r.id)::int AS n
-        FROM boxes b
-        JOIN receipt_lots l ON l.id = b.lot_id
-        JOIN receipts r ON r.id = l.receipt_id
-        JOIN warehouses w ON w.id = b.current_warehouse_id
-        LEFT JOIN lot_checks lc ON lc.lot_id = l.id
-        LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
-       WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
-         AND w.country = 'CN'
-         AND r.client_id IS NOT NULL
-         AND NOT (lot_tarkib.lot_id IS NOT NULL AND lot_tarkib.seen_box_count = l.box_count
-                  AND lot_tarkib.kg = l.total_weight_kg AND lot_tarkib.m3 = l.total_volume_m3)
-         AND NOT (lc.lot_id IS NOT NULL AND lc.seen_name_zh = l.product_name_zh
-                  AND lc.seen_name_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
-                  AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id)
-    `)) as unknown as { n: number }[];
-    expect(counted).toBe(Number(direct!.n));
+    expect(counted).toBe(await directCount());
+    // The client's side of the same count: the owner's ❌ after a colleague's
+    // tick puts the prixod on the list, and their ✅ on an unasked lot takes it off.
+    const [k] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.K));
+    const [kReceipt] = await db.select().from(receipts).where(eq(receipts.id, k!.receiptId));
+    const kState = async () => (await lotCheckViewsFor([lot.K])).get(lot.K)!.state;
+    const answer = (verdict: 'yes' | 'no') =>
+      db.execute(sql`
+        INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, chat_id, answered_at)
+        VALUES (${lot.K}::uuid, ${verdict}, ${k!.productNameZh}, ${k!.productNameRu}, ${k!.boxCount}, ${kReceipt!.clientId}::uuid, 1, clock_timestamp())
+        ON CONFLICT (lot_id) DO UPDATE SET verdict = EXCLUDED.verdict, answered_at = EXCLUDED.answered_at
+      `);
+    const before = await kState();
+    try {
+      await answer('no');
+      expect(await kState()).toBe('none');
+      expect(await uncheckedPrixodCount(logist())).toBe(await directCount());
+      await answer('yes');
+      expect(await kState()).toBe('checked');
+      expect(await uncheckedPrixodCount(logist())).toBe(await directCount());
+    } finally {
+      await db.execute(sql`DELETE FROM lot_client_confirms WHERE lot_id = ${lot.K}::uuid`);
+    }
+    expect(await kState()).toBe(before);
     // A scoped reader at the Uzbek warehouse has nothing on the list.
     expect(await uncheckedPrixodCount({ ...logist(), warehouseScoped: true, warehouseIds: [wh.UZ] })).toBe(0);
   });
@@ -617,18 +753,23 @@ describe('the History says which lot (the review\'s shared key)', () => {
   it('21. two lots ticked in one call read as two changes, each with its own letter, the note kept', async () => {
     await uncheckLot({ lotId: lot.C1 }, logist(), ctx(logistId));
     await uncheckLot({ lotId: lot.C2 }, logist(), ctx(logistId));
-    const since = new Date(Date.now() - 1000);
+    // The two ticks, and nothing before them: the window opens at the LAST
+    // row written so far. It used to be «the last second by the wall clock»,
+    // which held only while this file ran in under a second — the window
+    // then also took test 15's ticks of the same lots, and without them the
+    // un-ticks above net the ticks below to «nothing changed» (found on a
+    // loaded machine, 2026-11-11: the file took five seconds and this was red).
+    const [mark] = await db
+      .select({ id: sql<string>`coalesce(max(${auditLog.id}), 0)::text` })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2)));
     await press('C1', logist());
     await press('C2', logist(), { note: 'mijoz: ikkalasi ham' });
     const rows = await db
       .select({ id: auditLog.id, actorId: auditLog.actorId, action: auditLog.action, before: auditLog.before, after: auditLog.after, createdAt: auditLog.createdAt })
       .from(auditLog)
       .where(
-        and(
-          eq(auditLog.entityType, 'receipt'),
-          eq(auditLog.entityId, rc.R2),
-          sql`${auditLog.createdAt} >= ${since.toISOString()}::timestamptz`,
-        ),
+        and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2), sql`${auditLog.id} > ${mark!.id}::bigint`),
       )
       .orderBy(desc(auditLog.createdAt));
     const groups = groupHistory(
@@ -670,10 +811,35 @@ describe('a server whose migration has not landed (#472)', () => {
       expect(await uncheckedPrixodCount(logist())).toBeNull();
       expect((await lotCheckViewsFor([lot.K])).size).toBe(0);
       expect(sent.length).toBeGreaterThan(0);
-      expect(sent.filter((q) => /lot_checks|lot_composition/.test(q))).toEqual([]);
+      expect(sent.filter((q) => /lot_checks|lot_composition|lot_client_confirms/.test(q))).toEqual([]);
     } finally {
       spy.mockRestore();
       ready.on = true;
+    }
+  });
+
+  it('23. 0144 alone not landed: every reader runs the sentence that shipped with 0123 — chips drawn, and no statement names the client’s table', async () => {
+    ready.client = false;
+    const sent: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      sent.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    try {
+      const plan = await plannableStock(wh.CN);
+      // The chips are there — the feature that has been live since 0123 is not switched off by a table it never needed.
+      expect(plan.askable).toBe(true);
+      expect(plan.lots.find((l) => l.lotId === lot.K)?.check ?? null).not.toBeNull();
+      expect(await uncheckedPrixodCount(logist())).not.toBeNull();
+      const view = (await lotCheckViewsFor([lot.K])).get(lot.K);
+      expect(view).toBeDefined();
+      expect(view!.client).toBeNull();
+      expect(sent.filter((q) => /lot_checks/.test(q)).length).toBeGreaterThan(0);
+      expect(sent.filter((q) => /lot_client_confirms|lot_client\b/.test(q))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      ready.client = true;
     }
   });
 });

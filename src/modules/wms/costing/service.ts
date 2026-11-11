@@ -43,6 +43,7 @@ import {
   truckCarriesSql,
 } from '../batches/riders';
 import { bearsPriceSql, internalLegSql } from '../batches/internal';
+import { lotRuShownSql } from '../receipts/lot-name';
 import type { CostSight } from './cost-sight';
 import { CostError } from './errors';
 import { customsCostTypeIds } from './customs-ids';
@@ -852,7 +853,9 @@ export async function voidCostEntryInTx(
  * unchanged); the raw lot fields are what the freight basis reads its exact
  * carton from. The label columns come through LEFT JOINs only: an inner join
  * on `clients` would drop every unclaimed carton from every basis's base
- * (`truck-riders.integration.test.ts` turns red on it).
+ * (`truck-riders.integration.test.ts` turns red on it). `productNameRu` is the
+ * name the screens SHOW the lot under (its tarkib's while one stands): it is
+ * drawn on the split's rows and held lines and read by nothing else.
  */
 export async function boxMeasures(boxIds: string[], handle: Db | Tx = db): Promise<BoxMeasure[]> {
   if (boxIds.length === 0) return [];
@@ -867,7 +870,7 @@ export async function boxMeasures(boxIds: string[], handle: Db | Tx = db): Promi
       lotId: receiptLots.id,
       lotLetter: receiptLots.letter,
       lotSeq: receiptLots.seq,
-      productNameRu: receiptLots.productNameRu,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       productNameZh: receiptLots.productNameZh,
       dimsMode: receiptLots.dimsMode,
       boxLengthCm: receiptLots.boxLengthCm,

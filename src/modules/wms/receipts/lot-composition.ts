@@ -55,7 +55,6 @@ export type CompositionRefusalCode =
   | 'cartons_sum'
   | 'kg_sum'
   | 'm3_sum'
-  | 'document_required'
   | 'document_not_on_receipt'
   | 'document_is_photo'
   | 'lot_changed'
@@ -194,8 +193,8 @@ function compositionSummary(lot: { id: string; letter: string | null }, view: Co
     lotId: lot.id,
     letter: lot.letter,
     lines: view.lines.map(summaryLine),
-    document: view.attachment.fileName,
-    attachmentId: view.attachment.id,
+    document: view.attachment?.fileName ?? null,
+    attachmentId: view.attachment?.id ?? null,
   };
 }
 
@@ -252,11 +251,17 @@ async function lockCompositionHeader(
 
 /**
  * Save (or replace) a lot's composition. On the pool: the shape, the door,
- * the parse, the document's presence. In ONE transaction, in this lock order
- * — lot (NO KEY UPDATE) → prixod (SHARE NOWAIT) → document (KEY SHARE) →
- * header (UPDATE) — the compare-and-sets and the sums against the LOCKED
- * totals, then the write and the audit. No composition write locks a truck
- * row, so the count door's «lot, then truck» meets nothing here.
+ * the parse. In ONE transaction, in this lock order — lot (NO KEY UPDATE) →
+ * prixod (SHARE NOWAIT) → document (KEY SHARE, when one is cited) → header
+ * (UPDATE) — the compare-and-sets and the sums against the LOCKED totals,
+ * then the write and the audit. No composition write locks a truck row, so
+ * the count door's «lot, then truck» meets nothing here.
+ *
+ * The client's document is OPTIONAL (0143; the owner, 2026-11-10 — «tarkib
+ * qo'shganda tasdiq so'rash rasm file»: the VED often has only what the
+ * client said). A document that IS cited is held to the same two rules as
+ * before — a file of THIS prixod, and a paper rather than a receive-time
+ * carton photo — and stays `in_use` while cited.
  */
 export async function saveComposition(
   input: unknown,
@@ -267,7 +272,6 @@ export async function saveComposition(
   const { receipt } = await compositionDoor(actor, parsedInput.lotId, { requireConfirmed: true });
   const parsed = parseDraft(parsedInput.lines as DraftLine[]);
   if (!parsed.ok) throw refusalError(parsed.refusal);
-  if (!parsedInput.attachmentId) throw new CompositionError('document_required');
   const attachmentId = parsedInput.attachmentId;
   // ON THE POOL, before the transaction (#714).
   await refuseVanishingCode(parsedInput.lotId, parsed.lines);
@@ -291,26 +295,29 @@ export async function saveComposition(
         FROM receipts WHERE id = ${lot.receipt_id}::uuid
     `)) as unknown as { status: string; confirmed_at: string | null; created_at: string }[];
     if (!current || current.status !== 'confirmed') throw new CompositionError('receipt_not_confirmed');
-    // 7. The document, FOR KEY SHARE: a concurrent deleteAttachment waits for
-    //    this commit and then answers `in_use` — a plain SELECT let it slip
-    //    between this check and the FK insert (an unmapped 23503).
-    const [doc] = (await tx.execute(sql`
-      SELECT entity_type, entity_id, kind, created_at::text AS created_at, file_name
-        FROM attachments WHERE id = ${attachmentId}::uuid FOR KEY SHARE
-    `)) as unknown as { entity_type: string; entity_id: string; kind: string; created_at: string; file_name: string }[];
-    if (!doc || doc.entity_type !== 'receipt' || doc.entity_id !== lot.receipt_id) {
-      throw new CompositionError('document_not_on_receipt');
-    }
-    if (
-      !isPaperDocument(
-        { kind: doc.kind, createdAt: new Date(doc.created_at) },
-        {
-          confirmedAt: current.confirmed_at ? new Date(current.confirmed_at) : null,
-          createdAt: new Date(current.created_at),
-        },
-      )
-    ) {
-      throw new CompositionError('document_is_photo');
+    // 7. The document, when one is cited — FOR KEY SHARE: a concurrent
+    //    deleteAttachment waits for this commit and then answers `in_use` — a
+    //    plain SELECT let it slip between this check and the FK insert (an
+    //    unmapped 23503). None cited: nothing to lock, nothing to check.
+    if (attachmentId !== null) {
+      const [doc] = (await tx.execute(sql`
+        SELECT entity_type, entity_id, kind, created_at::text AS created_at, file_name
+          FROM attachments WHERE id = ${attachmentId}::uuid FOR KEY SHARE
+      `)) as unknown as { entity_type: string; entity_id: string; kind: string; created_at: string; file_name: string }[];
+      if (!doc || doc.entity_type !== 'receipt' || doc.entity_id !== lot.receipt_id) {
+        throw new CompositionError('document_not_on_receipt');
+      }
+      if (
+        !isPaperDocument(
+          { kind: doc.kind, createdAt: new Date(doc.created_at) },
+          {
+            confirmedAt: current.confirmed_at ? new Date(current.confirmed_at) : null,
+            createdAt: new Date(current.created_at),
+          },
+        )
+      ) {
+        throw new CompositionError('document_is_photo');
+      }
     }
     // 8. The header: the revision the editor was drawn from.
     const header = await lockCompositionHeader(tx, lot.id, parsedInput.seenRev, actor.id);
@@ -457,7 +464,8 @@ export interface CompositionView {
   lotId: string;
   rev: number;
   seenBoxCount: number;
-  attachment: { id: string; fileName: string };
+  /** The client's document, when one is cited — optional since 0143. */
+  attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   savedAt: Date;
   lines: (StoredLine & { id: string })[];
@@ -591,8 +599,13 @@ export async function oneGoodPrefillFor(
 }
 
 /**
- * ONE statement: headers ⋈ attachments ⋈ users ⋈ LATERAL json_agg(lines
- * ORDER BY seq) — two statements could tear (a clear between them gave a
+ * ONE statement: headers ⟕ attachments ⋈ users ⋈ LATERAL json_agg(lines
+ * ORDER BY seq) — the document LEFT-joined since 0143 made it optional: an
+ * inner join would drop a document-less composition from the receipt card
+ * (which could then neither edit nor clear it) and from the plan-stage agent
+ * file, while the invoice went on printing its lines (#600's rule: a column
+ * made nullable is a change to every reader that joins on it). Two
+ * statements could tear (a clear between them gave a
  * header with no lines, which `compositionMode([])` reads as «mixed» and the
  * invoice prints as NO row: the lot vanishes from a customs paper). A view
  * with no lines (fewer than `MIN_STORED_LINES`) is treated as no composition and logged. `exec`
@@ -608,8 +621,8 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
     lot_id: string;
     rev: string | number;
     seen_box_count: number;
-    attachment_id: string;
-    file_name: string;
+    attachment_id: string | null;
+    file_name: string | null;
     saved_by_name: string | null;
     saved_at: string;
     lines: unknown;
@@ -619,7 +632,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
       SELECT lc.lot_id, lc.rev, lc.seen_box_count, lc.attachment_id, a.file_name,
              u.full_name AS saved_by_name, lc.saved_at::text AS saved_at, ln.lines
         FROM lot_compositions lc
-        JOIN attachments a ON a.id = lc.attachment_id
+        LEFT JOIN attachments a ON a.id = lc.attachment_id
         LEFT JOIN users u ON u.id = lc.saved_by
         LEFT JOIN LATERAL (${LINES_JSON} WHERE g.lot_id = lc.lot_id) ln ON true
        WHERE lc.lot_id IN (${uuidList(ids)})
@@ -641,7 +654,7 @@ export async function compositionsFor(lotIds: string[], exec: Db | Tx = db): Pro
       lotId: row.lot_id,
       rev: Number(row.rev),
       seenBoxCount: Number(row.seen_box_count),
-      attachment: { id: row.attachment_id, fileName: row.file_name },
+      attachment: row.attachment_id ? { id: row.attachment_id, fileName: row.file_name ?? '' } : null,
       savedBy: row.saved_by_name,
       savedAt: new Date(row.saved_at),
       lines: lines.map((l) => ({ ...l, id: l.id ?? '' })),

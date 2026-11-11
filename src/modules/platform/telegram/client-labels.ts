@@ -444,6 +444,70 @@ const DICT = {
   },
   pushMoreLots: { uz: '… yana {n} ta tovar', ru: '… ещё {n} поз.', en: '… {n} more items' },
   // --- P-A extra (only P-A adds keys here) ---
+  // The client's own ✅ / ❌ about their cargo (0144, docs/TARKIB-TAKLIFLAR.md
+  // §4). The QUESTION names what is being confirmed: the push prints kilos
+  // and cubic metres too, and those are the warehouse's measurement — a
+  // customer who pays by them must not read ✅ as agreeing to the weight.
+  confirmAskTitle: {
+    uz: '📋 Yuk ma’lumotini tasdiqlang',
+    ru: '📋 Подтвердите данные о грузе',
+    en: '📋 Please confirm your cargo details',
+  },
+  // The same WORDS as the lines above it: the lots are counted in «коробок»
+  // (`boxOne/Few/Many`), so the question may not call them «мест»; and the
+  // English one names the NAME, as the other two do (the as-built review).
+  confirmAskLine: {
+    uz: '❓ Tovar nomi va quti soni to‘g‘rimi?',
+    ru: '❓ Название товара и количество коробок указаны верно?',
+    en: '❓ Are the goods’ names and the box count correct?',
+  },
+  // …and the question a person sends from the card for a prixod with a
+  // tarkib lists every good WITH its pieces — the answer is compared with
+  // names AND pieces (`goods_key`), so the question must ask about both: a
+  // client who checks only what is asked would confirm wrong piece counts.
+  confirmAskLineGoods: {
+    uz: '❓ Tovarlar, ularning donasi va quti soni to‘g‘rimi?',
+    ru: '❓ Товары, их количество (шт) и число коробок указаны верно?',
+    en: '❓ Are the goods, their piece counts and the box count correct?',
+  },
+  confirmYes: { uz: '✅ To‘g‘ri', ru: '✅ Верно', en: '✅ Correct' },
+  confirmNo: { uz: '❌ Xato bor', ru: '❌ Есть ошибка', en: '❌ Something is wrong' },
+  confirmThanks: {
+    uz: 'Rahmat! Tovar nomi va quti soni tasdiqlandi ✅',
+    ru: 'Спасибо! Название товара и количество коробок подтверждены ✅',
+    en: 'Thank you! Goods names and box count confirmed ✅',
+  },
+  // After ❌: the relay carries whatever they write or photograph next.
+  confirmTellUs: {
+    uz: 'Tushunarli. Nima noto‘g‘ri ekanini shu yerga yozing yoki rasm yuboring — menejeringizga yetkazamiz.',
+    ru: 'Понятно. Напишите сюда, что именно неверно, или пришлите фото — мы передадим вашему менеджеру.',
+    en: 'Understood. Write here what is wrong, or send a photo — we will pass it to your manager.',
+  },
+  // …and in a chat that is ALSO a staff chat the relay does not run, so the
+  // invitation would be a promise nobody keeps.
+  confirmNoted: {
+    uz: 'Tushunarli — mas’ul xodimlarga xabar berildi.',
+    ru: 'Понятно — ответственным сотрудникам сообщили.',
+    en: 'Understood — the responsible staff have been told.',
+  },
+  // ONE neutral sentence for every reason a button no longer counts — the
+  // data was corrected, the cargo has left China, the prixod is not this
+  // chat's: it must be true of all of them and tell a hand-made button nothing.
+  confirmStale: {
+    uz: 'Bu xabar eskirgan — tugmalari endi amal qilmaydi.',
+    ru: 'Это сообщение устарело — его кнопки больше не действуют.',
+    en: 'This message is out of date — its buttons no longer apply.',
+  },
+  confirmAlready: {
+    uz: 'Javobingiz allaqachon qabul qilingan.',
+    ru: 'Ваш ответ уже принят.',
+    en: 'Your answer has already been recorded.',
+  },
+  confirmFailed: {
+    uz: 'Javobni hozir qabul qila olmadik — birozdan keyin yana bosing.',
+    ru: 'Сейчас не удалось принять ответ — нажмите ещё раз чуть позже.',
+    en: 'We could not record your answer just now — please press again in a moment.',
+  },
 
   // --- the history of handed-over cargo (owner, 2026-09-24: «alohida
   // topshirilgan yuklar ko'rinib tursin … qaysi partiyada kelgan, ichki

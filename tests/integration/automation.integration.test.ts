@@ -48,9 +48,15 @@ const madeLeadStages: string[] = [];
 const ctx = (actorId: string) => ({ actorId, ip: null, userAgent: null });
 
 beforeAll(async () => {
-  const staff = await db.select().from(users).where(eq(users.active, true)).limit(2);
-  authorId = staff[0]!.id;
-  assigneeId = (staff[1] ?? staff[0])!.id;
+  // Named by their seeded phones — the two this file has always got on a fresh database — never «the
+  // first two active rows». An unordered LIMIT answers in the table's physical order, and any file that
+  // UPDATES a seeded person moves that row to the end: the assignee below owns this file's client, and
+  // the VED drawn in their place is an owner no form can render (client-owner.integration, #1682).
+  const [author, assignee] = await Promise.all(
+    ['+998900000001', '+998900000002'].map((phone) => db.query.users.findFirst({ where: eq(users.phone, phone) })),
+  );
+  authorId = author!.id;
+  assigneeId = assignee!.id;
   const [c] = await db
     .insert(clients)
     .values({

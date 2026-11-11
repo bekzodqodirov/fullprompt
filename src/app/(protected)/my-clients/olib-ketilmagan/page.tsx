@@ -263,7 +263,8 @@ function WaitCard({
     { key: 'm3', node: `${groupDigits(row.m3)} m³` },
   ];
   if (row.goods) {
-    parts.push({ key: 'goods', node: row.moreLots > 0 ? `${row.goods} ${t('moreLots', { n: row.moreLots })}` : row.goods });
+    // ONE count: the row's further goods, a tarkib's lines among them (`moreKinds`).
+    parts.push({ key: 'goods', node: row.moreKinds > 0 ? `${row.goods} ${t('moreLots', { n: row.moreKinds })}` : row.goods });
   }
   parts.push({ key: 'seller', node: row.sellerName ?? t('noSeller') });
   if (row.leftover) parts.push({ key: 'leftover', node: t('leftover'), tone: 'font-semibold text-warn' });

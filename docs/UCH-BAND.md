@@ -1,5 +1,9 @@
 # Uch band — his three items of 2026-10-27
 
+> **Changed on 2026-11-10 (`docs/TARKIB-TUZATISH.md`).** Item 3's one-line tarkib: a one-line tarkib now names the
+> lot on every list (unless it repeats the lot's Chinese name), vouches for the ✅ whatever it names, and its line
+> has its own 🤖 on the Bojxona tab.
+
 Status: **BUILT (§8).** Scouted (5 readers + 5 refuters, workflow `wf_b69e331d-290`), questions
 sent the same day (Q1-Q7 below, answered «3b / 4 a / 5 a / 6 a / 7 b»), design judged before code
 (§6), absorbed (§7). His message, verbatim:

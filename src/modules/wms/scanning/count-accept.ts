@@ -37,6 +37,7 @@ import { doorOpens, type CountDoor } from './count-door';
 import { planRoadReady, type RoadOn } from '../planning/road';
 import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 import { formerDestinationsFor } from '../batches/reroute';
+import { lotRuShownSql } from '../receipts/lot-name';
 
 /*
  * «Sanab qabul» — the office's count at unloading (0112, the owner's Q1-Q7).
@@ -182,6 +183,7 @@ export interface LotLedger {
   label: string;
   sub: string | null;
   product: string;
+  /** As SHOWN: a standing tarkib's «first +N», else the lot's own (`receipts/lot-name.ts`). */
   productRu: string | null;
   clientId: string | null;
   /** Rode this truck (manifest). */
@@ -278,7 +280,7 @@ async function readLedger(
            coalesce(dep.n, 0) AS departed, coalesce(arr.n, 0) AS arrived,
            coalesce(phone.n, 0) AS phone, coalesce(aw.n, 0) AS awaiting,
            coalesce(spare.n, 0) AS spare,
-           rl.letter, rl.product_name_zh AS product_zh, rl.product_name_ru AS product_ru,
+           rl.letter, rl.product_name_zh AS product_zh, ${lotRuShownSql(sql`rl`)} AS product_ru,
            c.client_code, r.unclaimed_marking AS marking, r.client_id
       FROM lots l
       JOIN receipt_lots rl ON rl.id = l.lot_id

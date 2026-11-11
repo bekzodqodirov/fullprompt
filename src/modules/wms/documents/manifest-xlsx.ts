@@ -12,6 +12,7 @@ import {
   scanEvents,
   warehouses,
 } from '../../platform/db/schema';
+import { lotRuShownFor } from '../receipts/lot-name';
 import { batchMemberFilter } from '../scanning/unload';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 
@@ -63,6 +64,10 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
     ? await db.select({ id: crates.id, code: crates.code }).from(crates).where(inArray(crates.id, eventCrateIds))
     : [];
   const crateCodeById = new Map(eventCrates.map((c) => [c.id, c.code]));
+  // The Russian name as the screens show it — a lot's tarkib while one stands.
+  // LIVE, unlike the invoice: a truck's customs papers freeze at the «hujjat
+  // yuborildi» tick and the manifest never did (stated to the owner).
+  const shownRu = await lotRuShownFor(rows.map((row) => row.lot.id));
 
   const workbook = new ExcelJS.Workbook();
   const summary = workbook.addWorksheet(DOC.sheetSummary);
@@ -98,7 +103,8 @@ export async function buildManifestXlsx(batchId: string): Promise<Buffer | null>
   for (const { box, lot, clientCode, marking, crateCode } of rows) {
     n += 1;
     const code = `${clientCode ?? marking ?? '?'}-${lot.letter ?? ''}`;
-    const product = `${lot.productNameZh}${lot.productNameRu ? ` (${lot.productNameRu})` : ''}`;
+    const ru = shownRu.get(lot.id) ?? lot.productNameRu;
+    const product = `${lot.productNameZh}${ru ? ` (${ru})` : ''}`;
     const event = eventByBox.get(box.id);
     detail.addRow({
       n,

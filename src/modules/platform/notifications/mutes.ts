@@ -186,6 +186,11 @@ export const MUTE_GROUPS = {
     // while the client still remembers saying it. A newcomer: never in
     // FOUNDERS, so nobody's stored list is un-muted by it.
     'PaymentPromiseBroken',
+    // The CLIENT pressed ❌ under their cargo in Telegram (0144,
+    // wms/receipts/client-confirm.ts) — the owner of the goods says the name
+    // or the count is wrong, and the lot stands ❓ until somebody corrects it.
+    // An alarm beside `ClientBotMessage`. A newcomer: never in FOUNDERS.
+    'ClientLotDisputed',
   ],
   operations: [
     // A client's birthday (0109): a reminder to congratulate, not an alarm.
@@ -208,6 +213,11 @@ export const MUTE_GROUPS = {
     // newcomer, so never in FOUNDERS: whoever muted «ish jarayoni» before
     // stays muted.
     'BatchRerouted',
+    // The client pressed ✅ on a question a colleague SENT them («Mijozdan
+    // so'rash», 0144) — the answer to that person's own press, which is why
+    // their copy goes past this mute (`ignoreMute`); news, not an alarm.
+    // A newcomer: never in FOUNDERS.
+    'ClientLotConfirmed',
     // A colleague showed you one message a client sent (2026-08-11) — a
     // person deciding you need to see something, not an alarm. It STAYS here
     // when the note and the mention left for `chat` (E8 a): a shown customer

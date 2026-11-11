@@ -1,20 +1,10 @@
 import Link from 'next/link';
-import { asc, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import {
-  batches,
-  clients,
-  crates,
-  loadPlanLines,
-  loadPlans,
-  loadPlanVersions,
-  receiptLots,
-  receipts,
-  warehouses,
-} from '@/modules/platform/db/schema';
+import { batches, loadPlans, loadPlanVersions, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
 import { CancelPlan } from './cancel-plan';
@@ -25,6 +15,8 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { planRoadReady, roadOfVersion } from '@/modules/wms/planning/road';
+import { planLinesView } from '@/modules/wms/planning/plan-lines';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -68,23 +60,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
     .orderBy(desc(loadPlanVersions.versionNo));
   const current = versions[0];
 
-  const lines = current
-    ? await db
-        .select({
-          line: loadPlanLines,
-          lot: receiptLots,
-          clientCode: clients.clientCode,
-          marking: receipts.unclaimedMarking,
-          crateCode: crates.code,
-        })
-        .from(loadPlanLines)
-        .innerJoin(receiptLots, eq(loadPlanLines.lotId, receiptLots.id))
-        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-        .leftJoin(clients, eq(receipts.clientId, clients.id))
-        .leftJoin(crates, eq(loadPlanLines.crateId, crates.id))
-        .where(eq(loadPlanLines.versionId, current.id))
-        .orderBy(asc(loadPlanLines.id))
-    : [];
+  // One row per plan line — a lot, never a good (planning/plan-lines.ts; his
+  // answer of 2026-11-11: only the agent's FILE prints a row per good).
+  const lines = current ? await planLinesView(current.id) : [];
   // «Qaysi partiyada kelgan» — the agent sheet's rule from its one home, so
   // the logist reviewing on screen reads the same answer the XLSX groups by.
   const arrivals = await arrivalsForLots(
@@ -152,7 +130,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
 
       <div className="card space-y-1">
         <h2 className="text-lg font-bold">{t('lines')}</h2>
-        {lines.map(({ line, lot, clientCode, marking, crateCode }) => {
+        {lines.map(({ line, lot, shownNameRu, clientCode, marking, crateCode }) => {
           const id = codeIdentity(marking, clientCode);
           return (
           <div key={line.id} className="flex items-baseline gap-2 border-b border-line py-1.5 text-sm last:border-0">
@@ -175,10 +153,7 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
                 🧰 {crateCode}
               </span>
             )}
-            <span className="min-w-0 flex-1 truncate">
-              {lot.productNameZh}
-              {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
-            </span>
+            <LotGoodsName className="min-w-0 flex-1" zh={lot.productNameZh} ru={shownNameRu} />
             <span className="font-semibold">
               {line.plannedBoxCount}/{lot.boxCount} 📦
               {roadByLine.has(line.id) && (

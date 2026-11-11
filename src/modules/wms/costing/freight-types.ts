@@ -18,7 +18,11 @@ export interface BoxMeasure {
   lotId: string;
   lotLetter: string | null;
   lotSeq: number;
-  /** The lot's goods (his 2b: a lot row must say WHICH goods — yostiq or kafel). */
+  /**
+   * The lot's goods (his 2b: a lot row must say WHICH goods — yostiq or kafel)
+   * — the Russian name as SHOWN: the lot's tarkib while one stands («Клавиатура
+   * +2»), else its own. Display only; never a key.
+   */
   productNameRu: string | null;
   productNameZh: string;
   dimsMode: string;
@@ -82,7 +86,7 @@ export interface LotIdentity {
   clientLabel: string;
   /** `GS777-A` — the marking or code with the lot letter. */
   label: string;
-  /** The lot's goods name (ru, else zh). */
+  /** The lot's goods name as the screens show it (the tarkib's or the lot's ru, else zh). */
   goods: string;
 }
 

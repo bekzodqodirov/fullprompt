@@ -20,7 +20,16 @@ export interface LotEditValues {
 }
 
 /** Inline lot editor on the receipt detail (spec 4.4 — audited edits). */
-export function LotEditForm({ lot, hasComposition = false }: { lot: LotEditValues; hasComposition?: boolean }) {
+export function LotEditForm({
+  lot,
+  hasComposition = false,
+  shownName = null,
+}: {
+  lot: LotEditValues;
+  hasComposition?: boolean;
+  /** The tarkib's name the lists show in place of the Russian name below, when a tarkib stands. */
+  shownName?: string | null;
+}) {
   const t = useTranslations('receipts');
   const tc = useTranslations('common');
   const tk = useTranslations('tarkib');
@@ -79,6 +88,16 @@ export function LotEditForm({ lot, hasComposition = false }: { lot: LotEditValue
         defaultValue={lot.productNameRu}
         aria-label="ru"
       />
+      {/* The lists print the tarkib's name while one stands; THIS box stays
+          the warehouse's own word (the customs papers of a sent truck, the
+          sticker and the TNVED memory read it) and stays editable — said
+          here, or the name on the list and the name in the form look like
+          two answers to one question. */}
+      {shownName && (
+        <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-edit-shown-name">
+          🧩 {tk('lotFormShown', { name: shownName })}
+        </p>
+      )}
       <div className="flex items-center gap-1.5">
         <input
           name="boxCount"

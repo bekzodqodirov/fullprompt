@@ -2,9 +2,10 @@ import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import ExcelJS from 'exceljs';
 import { readFileSync } from 'node:fs';
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { readInvoiceSheet } from '../fixtures/invoice-sheet';
 
 /**
  * Lot tarkibi against a real database (docs/LOT-TARKIBI.md §11.2): the owner's
@@ -324,48 +325,29 @@ async function refusal(press: Promise<unknown>): Promise<CompositionError> {
   throw new Error('the press went through');
 }
 
-/** The invoice's table rows: № … amount, plus the product cell's note. */
+/** The invoice's table rows, read by HEADER (tests/fixtures/invoice-sheet.ts): № … amount, plus the product cell's note. */
 async function invoiceRows(batchKey: string) {
-  const buf = await buildInvoiceXlsx(truck[batchKey]!);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-  const sheet = wb.worksheets[0]!;
-  const out: { product: string; code: string; unit: string; quantity: number; places: unknown; kg: number; note: string | null }[] = [];
-  for (let r = 21; r < 400; r += 1) {
-    const row = sheet.getRow(r);
-    if (typeof row.getCell(1).value !== 'number') break;
-    const note = row.getCell(2).note;
-    out.push({
-      product: String(row.getCell(2).value),
-      code: String(row.getCell(3).value ?? ''),
-      unit: String(row.getCell(4).value),
-      quantity: Number(row.getCell(5).value),
-      places: row.getCell(6).value,
-      kg: Number(row.getCell(8).value),
-      note: note ? (typeof note === 'string' ? note : JSON.stringify(note)) : null,
-    });
-  }
-  return out;
+  const { rows } = await readInvoiceSheet(await buildInvoiceXlsx(truck[batchKey]!));
+  return rows.map((r) => ({
+    product: r.product,
+    code: r.code,
+    unit: r.unit,
+    quantity: r.quantity,
+    places: r.places,
+    kg: r.brutto,
+    note: r.note,
+  }));
 }
 
 /**
- * Every invoice row's amount cell (J) as the sheet stores it: the price the
- * VED types (I) times the row's quantity (E), live — so a composed line's
- * «шт» or «кг» is what the amount multiplies, never a figure written in.
+ * Every invoice row's amount cell as the sheet stores it: the price the VED
+ * types times the row's quantity, live — so a composed line's «шт» or «кг»
+ * is what the amount multiplies, never a figure written in. `expected` is
+ * built from the columns the sheet's own header names.
  */
 async function invoiceAmounts(batchKey: string) {
-  const buf = await buildInvoiceXlsx(truck[batchKey]!);
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-  const sheet = wb.worksheets[0]!;
-  const out: { row: number; formula: string | null }[] = [];
-  for (let r = 21; r < 400; r += 1) {
-    const row = sheet.getRow(r);
-    if (typeof row.getCell(1).value !== 'number') break;
-    const value = row.getCell(10).value;
-    out.push({ row: r, formula: value && typeof value === 'object' && 'formula' in value ? String(value.formula) : null });
-  }
-  return out;
+  const { rows, letters } = await readInvoiceSheet(await buildInvoiceXlsx(truck[batchKey]!));
+  return rows.map((r) => ({ row: r.row, formula: r.amount, expected: `${letters.price}${r.row}*${letters.quantity}${r.row}` }));
 }
 
 const sum1 = (values: number[]) => Math.round(values.reduce((s, v) => s + v, 0) * 10) / 10;
@@ -545,7 +527,7 @@ describe('lot tarkibi — the writer', () => {
       [2, 'Мышь', 50, 1000, '400.000', '1.0000'],
     ]);
     expect(view.rev).toBe(rev);
-    expect(view.attachment.id).toBe(doc.DOC);
+    expect(view.attachment?.id).toBe(doc.DOC);
     const [audit] = await db
       .select()
       .from(auditLog)
@@ -623,12 +605,47 @@ describe('lot tarkibi — the writer', () => {
       code: 'm3_sum',
       sums: { sum: '2.5001', lot: '2.5000' },
     });
-    expect((await r(OWNER_CASE(), { docKey: null })).code).toBe('document_required');
+    // No document is no refusal any more (0143 — test 2c); one that IS cited
+    // is still held to the prixod and to being a paper.
     expect((await r(OWNER_CASE(), { docKey: 'DOC2' })).code).toBe('document_not_on_receipt');
     expect((await r(OWNER_CASE(), { docKey: 'PHOTO_EARLY' })).code).toBe('document_is_photo');
     // A photo uploaded AFTER the confirmation is somebody's document.
     await save('H', [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')], { docKey: 'PHOTO_LATE' });
-    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment.id).toBe(doc.PHOTO_LATE);
+    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
+  });
+
+  it('2c. the document is OPTIONAL (0143, the owner 2026-11-10): none is a save, the card reads it back, a cited file is let go', async () => {
+    const lines = () => [line('Мышь', '', '60', '0.3', '10'), line('Клавиатура', '', '40', '0.2', '5')];
+    const holder = { id: vedId, permissions: new Set(['receipts.edit']) };
+    // H cites a document of its own prixod: in use while cited.
+    await mintDoc('DOC_H', 'R2', 'file');
+    await save('H', lines(), { docKey: 'DOC_H' });
+    await expect(deleteAttachment(doc.DOC_H!, holder)).rejects.toMatchObject({ code: 'in_use' });
+    // Saved again with NONE — it answered `document_required`.
+    await save('H', lines(), { docKey: null });
+    const view = (await compositionsFor([lot.H])).get(lot.H)!;
+    expect(view.attachment).toBeNull();
+    expect(view.lines.map((l) => l.name)).toEqual(['Мышь', 'Клавиатура']);
+    // The prixod's history says a tarkib with no document, not a missing key.
+    const [audit] = await db
+      .select()
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2)))
+      .orderBy(sql`${auditLog.createdAt} DESC`)
+      .limit(1);
+    expect((audit!.after as { lotComposition: { document: unknown; attachmentId: unknown; lines: string[] } }).lotComposition).toMatchObject({
+      document: null,
+      attachmentId: null,
+      lines: [expect.stringContaining('Мышь'), expect.stringContaining('Клавиатура')],
+    });
+    // The papers read it like any tarkib — they never joined the file.
+    expect((await paperCompositionsFor(truck.CROSS!, [lot.H])).has(lot.H)).toBe(true);
+    // …and the file it let go can be deleted now.
+    await expect(deleteAttachment(doc.DOC_H!, holder)).resolves.toBeUndefined();
+    delete doc.DOC_H;
+    // Back to the document test 2 left on H.
+    await save('H', lines(), { docKey: 'PHOTO_LATE' });
+    expect((await compositionsFor([lot.H])).get(lot.H)!.attachment?.id).toBe(doc.PHOTO_LATE);
   });
 
   it('3. the door: the warehouse, a VED scoped elsewhere and a lot that does not exist all say «forbidden»', async () => {
@@ -738,7 +755,7 @@ describe('lot tarkibi — concurrency, deterministic', () => {
       await held`ROLLBACK`;
       await expect(saving).resolves.toMatchObject({ rev: expect.any(Number) });
     });
-    expect((await compositionsFor([lot.A])).get(lot.A)!.attachment.id).toBe(doc.DOC_C);
+    expect((await compositionsFor([lot.A])).get(lot.A)!.attachment?.id).toBe(doc.DOC_C);
   });
 });
 
@@ -805,7 +822,7 @@ describe('lot tarkibi — the papers', () => {
     for (const key of ['CROSS', 'CROSS2', 'NOC', 'PAL', 'ONE']) {
       const amounts = await invoiceAmounts(key);
       expect(amounts.length, key).toBeGreaterThan(0);
-      expect(amounts.map((a) => a.formula), key).toEqual(amounts.map((a) => `I${a.row}*E${a.row}`));
+      expect(amounts.map((a) => a.formula), key).toEqual(amounts.map((a) => a.expected));
     }
   });
 
@@ -836,13 +853,27 @@ describe('lot tarkibi — the papers', () => {
     expect(draft.footer[draft.at.pieces] ?? '').toBe('');
   });
 
-  it('9. the agent file: a fully planned lot (loose + crated) prints its contents once, a partial plan says ≈', async () => {
-    await save('G', [line('Клавиатура', '5', '60', '0.3', '50'), line('Мышь', '5', '40', '0.2', '100')], { docKey: 'DOC2' });
+  it('9. the agent file: ONE ROW PER GOOD — a fully planned lot (loose + crated) is two exact rows, a partial plan says ≈ (his item 2, 2026-11-10)', async () => {
+    await save('G', [line('Клавиатура', '5', '60', '0.3', '50'), line('Мышь', '5', '40', '0.2', '100', '8471606000')], { docKey: 'DOC2' });
     const [crate] = await db
       .insert(crates)
       .values({ code: `CR-LTG${SFX}`, warehouseId: wh.CN1, clientId, kind: 'yashik', createdBy: vedId })
       .returning({ id: crates.id });
     crateIds.push(crate!.id);
+    type SheetRow = {
+      code: string;
+      product: string;
+      pieces: unknown;
+      boxes: unknown;
+      kg: unknown;
+      m3: unknown;
+      note: string | null;
+      filled: boolean;
+      /** The product cell wraps; the carton cell wraps; the row's height in points. */
+      wrap: boolean;
+      boxesWrap: boolean;
+      height: number;
+    };
     const plan = async (rows: { lotKey: LotKey; crateId: string | null; n: number; kg: string; m3: string }[]) => {
       const [p] = await db
         .insert(loadPlans)
@@ -859,42 +890,89 @@ describe('lot tarkibi — the papers', () => {
       const buf = await buildAgentXlsx(p!.id, 1);
       const wb = new ExcelJS.Workbook();
       await wb.xlsx.load(buf! as unknown as ExcelJS.Buffer);
-      const cells: { value: string; note: string | null }[] = [];
-      wb.worksheets[0]!.eachRow((row) => {
+      const out: SheetRow[] = [];
+      wb.worksheets[0]!.eachRow((row, n) => {
+        // Rows 1-2 are the title and the header; a block heading has no product.
         const cell = row.getCell(2);
-        if (cell.value) cells.push({ value: String(cell.value), note: cell.note ? JSON.stringify(cell.note) : null });
+        if (n <= 2 || !cell.value) return;
+        out.push({
+          code: String(row.getCell(1).value),
+          product: String(cell.value),
+          pieces: row.getCell(3).value,
+          boxes: row.getCell(4).value,
+          kg: row.getCell(5).value,
+          m3: row.getCell(6).value,
+          note: cell.note ? JSON.stringify(cell.note) : null,
+          // A styled cell with no fill reads back as pattern «none»: only a SOLID fill is the estimate's.
+          filled: cell.fill?.type === 'pattern' && cell.fill.pattern === 'solid',
+          wrap: cell.alignment?.wrapText === true,
+          boxesWrap: row.getCell(4).alignment?.wrapText === true,
+          height: row.height,
+        });
       });
-      return cells;
+      return out;
     };
     const full = await plan([
       { lotKey: 'G', crateId: null, n: 5, kg: '50.000', m3: '0.2500' },
       { lotKey: 'G', crateId: crate!.id, n: 5, kg: '50.000', m3: '0.2500' },
+      { lotKey: 'B', crateId: null, n: 3, kg: '30.000', m3: '0.0300' },
     ]);
-    const fullPlanId = planIds.at(-1)!;
-    // The owner's 2a: the lot's OWN Chinese name stays in front, the contents
-    // follow on the next line; the lot's other (crated) row is the bare name.
-    // The sheet keeps the plan lines' order (uuidv7 ids, the loose line first).
-    const gRows = full.filter((c) => c.value.startsWith(NAME_G));
-    expect(gRows).toHaveLength(2);
-    expect(gRows[0]!.value.startsWith(`${NAME_G}\nСостав лота (весь план) / Lot contents (whole plan): `)).toBe(true);
-    expect(gRows[1]!.value).toBe(NAME_G);
-    const gLines = await db
-      .select({ crateId: loadPlanLines.crateId })
-      .from(loadPlanLines)
-      .innerJoin(loadPlanVersions, eq(loadPlanLines.versionId, loadPlanVersions.id))
-      .where(and(eq(loadPlanVersions.planId, fullPlanId), eq(loadPlanLines.lotId, lot.G)))
-      .orderBy(asc(loadPlanLines.id));
-    expect(gLines.map((l) => l.crateId)).toEqual([null, crate!.id]);
-    const withContents = full.filter((c) => c.value.includes('Lot contents'));
-    expect(withContents).toHaveLength(1);
-    expect(withContents[0]!.value).toContain('Клавиатура — 5 кор. · 60.0 кг · 0.300 м³ · 50 шт');
-    expect(withContents[0]!.value).toContain('Мышь — 5 кор. · 40.0 кг · 0.200 м³ · 100 шт');
-    expect(withContents[0]!.value).not.toContain('≈');
-    expect(withContents[0]!.note).toBeNull();
-    const partial = await plan([{ lotKey: 'F', crateId: null, n: 4, kg: '40.000', m3: '0.2000' }]);
-    const fCell = partial.find((c) => c.value.includes('Lot contents'))!;
-    expect(fCell.value).toContain('≈');
-    expect(fCell.note).toContain('Estimate');
+    const label = `LT${SFX}-`;
+    // Lot G's TWO plan rows (loose + crated) are ONE group of two line rows:
+    // each good with its own cartons, kilos, cube and pieces — exact, the
+    // whole lot is planned. Lot G is typed in Chinese only and neither line
+    // is its own name, so the first row carries the sticker's name on a
+    // second line; the mouse's code rides in brackets.
+    const g = full.filter((r) => r.product.startsWith('Клавиатура') || r.product.startsWith('Мышь'));
+    expect(g.map((r) => [r.product, r.pieces, r.boxes, r.kg, r.m3])).toEqual([
+      [`Клавиатура\nНа коробке / On the carton: ${NAME_G}`, 50, 5, 60, 0.3],
+      ['Мышь [8471606000]', 100, 5, 40, 0.2],
+    ]);
+    expect(g.every((r) => r.code.startsWith(label))).toBe(true);
+    expect(g.every((r) => r.note === null && !r.filled)).toBe(true);
+    // EVERY good's cell wraps — the code in brackets is the cell's END, and
+    // an unwrapped 40-wide cell cut «[8471606000]» to what looked like a
+    // valid eight-digit code (the review of the built round). The first row
+    // is a photograph tall; the others as tall as their text.
+    expect(g.map((r) => [r.wrap, r.height])).toEqual([
+      [true, 60],
+      [true, 20],
+    ]);
+    // Nothing of the old shape is left: no row under the lot's own name, no «Состав лота».
+    expect(full.filter((r) => r.product.startsWith(NAME_G))).toHaveLength(0);
+    expect(full.some((r) => r.product.includes('Состав лота') || r.product.includes('Lot contents'))).toBe(false);
+    // The uncomposed neighbour (lot B — test 2b cleared its tarkib) is the row it always was.
+    expect(full.filter((r) => r.product === `其他${SFX}`).map((r) => [r.pieces, r.boxes, r.kg, r.m3])).toEqual([['', 3, 30, 0.03]]);
+    // …and the line rows add up to the plan's own figures for the lot.
+    expect(g.reduce((s, r) => s + Number(r.kg), 0)).toBe(100);
+    expect(g.reduce((s, r) => s + Number(r.boxes), 0)).toBe(10);
+
+    // A partial plan — 4 of lot F's 10 (test 4 left it 5 + 5 cartons, 50 +
+    // 50 kg; one carton already crossed on truck ONE, so the plan holds
+    // positions 1..5): a share — every line row is filled and noted, and the
+    // note speaks of the BLOCK, not of a truck.
+    // The plan's own figures carry three decimals of kg and four of m³ (what
+    // an uncomposed row prints from `planned_kg`): the goods' rows split THAT
+    // figure, to the gram — at the invoice's one decimal they would add up to
+    // 40.1 kg beside a plan row of 40.125.
+    const partial = await plan([{ lotKey: 'F', crateId: null, n: 4, kg: '40.125', m3: '0.2001' }]);
+    expect(partial.map((r) => [r.product.split('\n')[0], r.boxes, r.kg, r.m3])).toEqual([
+      ['Клавиатура', 2, 20.063, 0.1001],
+      ['Мышь', 2, 20.062, 0.1],
+    ]);
+    expect(partial.every((r) => r.filled && r.note?.includes('Estimate') && r.note.includes('lot share in this block'))).toBe(true);
+
+    // «aralash»: every carton holds the mix — the lot's cartons on the first
+    // row, «same cartons» after, the pieces per good (lot H, from test 2).
+    const mixed = await plan([{ lotKey: 'H', crateId: null, n: 10, kg: '100.000', m3: '0.5000' }]);
+    expect(mixed.map((r) => [r.product.split('\n')[0], r.pieces, r.boxes, r.kg])).toEqual([
+      ['Мышь', 10, 10, 60],
+      ['Клавиатура', 5, DOC.sameCartons, 40],
+    ]);
+    // «same cartons» is a sentence in a 10-wide column: it wraps, and its
+    // row is tall enough to show both halves — it read «(в тех же ко».
+    expect([mixed[1]!.boxesWrap, mixed[1]!.height >= 60]).toEqual([true, true]);
+    expect(mixed[0]!.boxesWrap).toBe(false);
   });
 
   it('9b. every photograph sits under «Фото» in BOTH photo files — the «шт» column moved the anchor once (his 7b)', async () => {
@@ -929,7 +1007,11 @@ describe('lot tarkibi — the papers', () => {
       expect(photoAt).toBeGreaterThan(0);
       const piecesAt = (sheet.getRow(2).values as unknown[]).indexOf(DOC.pieces);
       expect(piecesAt).toBe((sheet.getRow(2).values as unknown[]).indexOf(DOC.boxes) - 1);
-      return { photoCol: photoAt - 1, cols: sheet.getImages().map((i) => i.range.tl.nativeCol) };
+      return {
+        photoCol: photoAt - 1,
+        cols: sheet.getImages().map((i) => i.range.tl.nativeCol),
+        rows: sheet.getImages().map((i) => i.range.tl.nativeRow),
+      };
     };
     const packing = await anchors(await buildPackingPhotosXlsx(truck.CROSS!));
     expect(packing.cols.length).toBeGreaterThan(0);
@@ -950,6 +1032,11 @@ describe('lot tarkibi — the papers', () => {
     const agent = await anchors(await buildAgentXlsx(p!.id, 1));
     expect(agent.cols.length).toBeGreaterThan(0);
     expect(agent.cols.every((c) => c === agent.photoCol)).toBe(true);
+    // Lot G is two goods and ONE photograph: the picture is drawn once, beside
+    // the group's first good (sheet row 4 — title, header, block heading), and
+    // not again on the second good's row (his item 2: a row per good, not a
+    // photograph per row — the cartons are the same cartons).
+    expect(agent.rows).toEqual([3]);
   });
 });
 

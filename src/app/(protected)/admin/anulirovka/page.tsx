@@ -12,6 +12,7 @@ import {
 } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { mayAnnul } from '@/modules/wms/receipts/annul';
+import { lotGoodsShownSql } from '@/modules/wms/receipts/lot-name';
 import { signedUsdSql } from '@/modules/wms/finance/service';
 import { BulkAnnulForm, type BulkRow } from './bulk-form';
 
@@ -61,7 +62,8 @@ export default async function AnnulRegistryPage({
           boxCount: sql<number>`coalesce(sum(${receiptLots.boxCount}), 0)`,
           volumeM3: sql<string>`coalesce(sum(${receiptLots.totalVolumeM3}), 0)`,
           weightKg: sql<string>`coalesce(sum(${receiptLots.totalWeightKg}), 0)`,
-          goods: sql<string>`coalesce(string_agg(coalesce(${receiptLots.productNameRu}, ${receiptLots.productNameZh}), ', '), '')`,
+          // Each lot by the name the screens show it under (its tarkib's while one stands).
+          goods: sql<string>`coalesce(string_agg(${lotGoodsShownSql(sql`${receiptLots}`)}, ', '), '')`,
         })
         .from(receipts)
         .leftJoin(receiptLots, eq(receiptLots.receiptId, receipts.id))

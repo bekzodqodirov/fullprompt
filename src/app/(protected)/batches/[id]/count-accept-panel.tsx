@@ -10,6 +10,7 @@ import {
   type CountAcceptActionResult,
 } from '../batch-actions-server';
 import type { CountAcceptRefusal, CountPanelLot } from '@/modules/wms/scanning/count-accept';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 /**
  * «Sanab qabul» (0112) — the office's count at unloading, on the batch card.
@@ -280,10 +281,8 @@ function LotRow({
       <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
         <span className="font-mono font-extrabold text-brand-700">{lot.label}</span>
         {lot.sub && <span className="text-2xs text-ink-500">{lot.sub}</span>}
-        <span className="min-w-0 flex-1 truncate text-sm text-ink-700">
-          {lot.product}
-          {lot.productRu && <span className="text-ink-500"> ({lot.productRu})</span>}
-        </span>
+        {/* A tarkib's «+N» is the half of the name that must stay (LotGoodsName). */}
+        <LotGoodsName className="min-w-0 flex-1 text-sm text-ink-700" zh={lot.product} ru={lot.productRu} />
         {lot.mode === 'counted' && <span className="chip-brand">{t('modeCounted')}</span>}
         {lot.mode === 'qrless' && <span className="chip-warn">{t('modeQrless')}</span>}
       </div>

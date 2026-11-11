@@ -10,6 +10,7 @@ import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { CrateRows } from '@/components/crate-rows';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { LightboxImg } from '@/components/lightbox-img';
+import { LotGoodsName } from '@/components/lot-goods-name';
 import { QrlessChip } from '@/components/qrless-chip';
 import { TasksPanel } from '@/components/tasks-panel';
 import { CargoThread } from '@/components/cargo-thread';
@@ -175,11 +176,11 @@ export default async function BatchDetailPage({ params }: { params: Promise<{ id
                         )}
                       </td>
                       <td className="max-w-56 p-2">
-                        <Link href={`/receipts/${lot.receiptId}`} className="block truncate">
-                          {lot.productNameZh}
-                          {lot.productNameRu && (
-                            <span className="text-ink-500"> ({lot.productNameRu})</span>
-                          )}
+                        {/* The name the lists show — a tarkib's «first +N»
+                            while one stands — and the count never truncates
+                            away (LotGoodsName). */}
+                        <Link href={`/receipts/${lot.receiptId}`} className="block">
+                          <LotGoodsName zh={lot.productNameZh} ru={lot.shownNameRu ?? lot.productNameRu} />
                         </Link>
                       </td>
                       <td className="p-2 text-right font-semibold">
