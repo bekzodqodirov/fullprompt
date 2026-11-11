@@ -2231,8 +2231,13 @@ function rowText(row: readonly Cell[], d: number, covered: Covered | null): stri
   return clipUnits(cells.join(' | '), 300);
 }
 
-/** What `parseGoods` read out of a sheet. */
-export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped: DroppedRow[] } & SheetShape;
+/**
+ * What `parseGoods` read out of a sheet. `stoppedShort`: the reader stopped at
+ * its ceiling (`MAX_GOODS_ROWS`) with goods rows left unread — the one truth
+ * behind a capped file (as-built review REGRESSION-6): a list of exactly 500
+ * read whole is no cut, and its caller had guessed one from the row count.
+ */
+export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped: DroppedRow[]; stoppedShort: boolean } & SheetShape;
 
 /** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
 export interface SheetHints {
@@ -2264,7 +2269,7 @@ export interface SheetHints {
  */
 export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints: SheetHints = {}): ParsedGoods {
   const card = cardGood(rows, covered);
-  if (card) return { ...card, dropped: [] };
+  if (card) return { ...card, dropped: [], stoppedShort: false };
   const header = findHeader(rows, covered);
   const detected = header.found;
   const goods: GoodsRow[] = [];
@@ -2537,6 +2542,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       goods: kept,
       headerRow,
       dropped: said(),
+      stoppedShort,
       shape: (columns.cartons || columns.gross !== null) && !money ? 'packing' : 'invoice',
       weightKind: columns.weightKind,
       grossKg: round(grossKg, 3),
@@ -2548,8 +2554,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
   // A one-column list refused a header: its heading and its title are no
   // products either (R3-S4).
   const start = header.refused === null ? 0 : header.refused + 1;
+  let stoppedAt: number | null = null;
   for (let d = start; d < rows.length; d++) {
-    if (goods.length >= MAX_GOODS_ROWS) break;
+    if (goods.length >= MAX_GOODS_ROWS) {
+      stoppedAt = d;
+      break;
+    }
     const row = rows[d]!;
     const first = row.find((cell) => typeof cell === 'string' && cell.trim().length > 0);
     push(
@@ -2568,5 +2578,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       { figures: row.some((cell, c) => cell !== first && !covered?.has(d, c) && figureCell(cell)) },
     );
   }
-  return { goods, headerRow: null, dropped: said(), shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
+  // Stopped with a named row still below: a list cut short, as the header branch says it.
+  const stoppedShort =
+    stoppedAt !== null && rows.slice(stoppedAt).some((row) => row.some((cell) => typeof cell === 'string' && cell.trim().length > 0));
+  return { goods, headerRow: null, dropped: said(), stoppedShort, shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
 }

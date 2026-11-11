@@ -471,6 +471,12 @@ export function receiveGoodsSheet(
       goodsSheet: string;
       goodsRows: NonNullable<IntakeState['invoiceGoods']>;
       goodsShape: 'invoice' | 'packing';
+      /**
+       * The most goods one request holds (`MAX_CALC_ITEMS`, the queue's own
+       * limit): a fold past it is not made (as-built review REGRESSION-1).
+       * Absent = no bound (a caller from before).
+       */
+      itemCap?: number;
     };
     /**
      * The rows the reader did NOT take as goods (docs/FAYL-OQISH.md §5.5):
@@ -481,6 +487,9 @@ export function receiveGoodsSheet(
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
+  // A further sheet's own words name the SHEET (as-built review SHEETS-1): its
+  // dropped rows are that sheet's, never the goods sheet's.
+  const ownLabel = sheet.further ? `${label}, ${sheetName(sheet.further.sheet)} varag‘i` : label;
   const texts: SheetText[] = sheet.text
     ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label, ...(sheet.unmapped ? { unmapped: true as const } : {}) }]
     : [];
@@ -497,7 +506,7 @@ export function receiveGoodsSheet(
   const droppedRows = sheet.dropped?.rows ?? [];
   if (droppedRows.length > 0 && collectionDoor(state) === 'ai') {
     texts.push({
-      text: [`[Под таблицей ${label}: строки, не взятые как товары]`, ...droppedRows].join('\n'),
+      text: [`[Под таблицей ${sheet.further ? `${label}, лист ${sheetName(sheet.further.sheet)}` : label}: строки, не взятые как товары]`, ...droppedRows].join('\n'),
       cut: false,
       cellsCut: false,
       label,
@@ -526,7 +535,7 @@ export function receiveGoodsSheet(
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
   const cutLines = [
-    ...(sheet.dropped?.line ? [`📄 ${label} — ${sheet.dropped.line}.`] : []),
+    ...(sheet.dropped?.line ? [`📄 ${ownLabel} — ${sheet.dropped.line}.`] : []),
     ...(sheet.capped
       ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
       : []),
@@ -565,7 +574,7 @@ export function receiveGoodsSheet(
     };
   };
 
-  if (sheet.further && held.length > 0) return receiveFurtherSheet(state, sheet, sheet.further, meta, cutLines, { answer, totalsOf, ownText });
+  if (sheet.further && held.length > 0) return receiveFurtherSheet(state, sheet, sheet.further, meta, cutLines, texts, { answer, totalsOf, ownText });
   // The rows the request already stores (an add or seeded collection).
   const kept = state.amend?.items ?? state.seed ?? [];
   if (held.length === 0) {
@@ -710,7 +719,10 @@ function receiveFurtherSheet(
   sheet: Parameters<typeof receiveGoodsSheet>[1],
   further: NonNullable<Parameters<typeof receiveGoodsSheet>[1]['further']>,
   meta: GoodsFileMeta,
+  /** The sheet's receipt words (its dropped rows, its cap) — said on EVERY branch (SHEETS-1). */
   cutLines: string[],
+  /** …and its dropped rows as the AI door's context (`receiveGoodsSheet`'s `texts`). */
+  texts: SheetText[],
   tools: {
     answer: (patch: Partial<IntakeState>, lines: string[]) => FileAnswer;
     totalsOf: (
@@ -748,17 +760,33 @@ function receiveFurtherSheet(
       // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
       // name is the text's first line for the model.
       return tools.answer(
+        // Its own text (the model's) holds its every row; the receipt says
+        // what was not taken as a row of the held goods (SHEETS-1).
         { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText({ ...m, label })], ...totals.patch },
-        totals.lines,
+        [...totals.lines, ...cutLines],
       );
     }
   }
   // The stored rows of a top-up fence the names only (`provenOther`'s `stored`).
   const kept = topUp ? (state.amend?.items ?? state.seed ?? []) : [];
-  if (provenOther(held, goods, kept)) {
-    const fold = foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ');
+  const fold = provenOther(held, goods, kept)
+    ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ')
+    : null;
+  // Another factory's goods past the queue's limit are not folded (as-built
+  // review REGRESSION-1): one file was bounded at 500 rows and the queue
+  // refuses a job over a thousand, and three sheets of 400 folded into a table
+  // that invited «✅ Tasdiqlash» — whose press then ENDED the collection, every
+  // file lost. The sheet keeps today's reading, and the seller is told.
+  const overCap = fold !== null && further.itemCap !== undefined && fold.goods.length > further.itemCap;
+  if (fold && !overCap) {
     return tools.answer(
-      { invoiceGoods: fold.goods, goodsFiles: [...files, { ...m, rows: fold.added, text: null }] },
+      {
+        invoiceGoods: fold.goods,
+        goodsFiles: [...files, { ...m, rows: fold.added, text: null }],
+        // A folded sheet's text goes nowhere (§4.2), so its dropped rows go to
+        // the model here, on the AI door (SHEETS-1).
+        ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
+      },
       fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines,
     );
   }
@@ -766,6 +794,12 @@ function receiveFurtherSheet(
   // the reader cut it (the further sheets share one budget), that is said too.
   const own = sheet.ownText;
   const cut = own?.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
+  if (overCap) {
+    return tools.answer(
+      { invoiceTexts: [...state.invoiceTexts, ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : [])] },
+      [`📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; bu varaqni alohida so‘rov qilib yuboring.`, ...cut],
+    );
+  }
   return tools.answer(
     {
       invoiceTexts: [
@@ -773,6 +807,8 @@ function receiveFurtherSheet(
         ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : []),
       ],
     },
+    // No row of this sheet is taken as a good here, and its whole text goes to
+    // the model: there is no «not taken» to name.
     [`📄 ${sheetLabel} — o‘sha tovarlar deb olindi (faqat jami uchun o‘qildi); boshqa tovar bo‘lsa, alohida fayl qilib yuboring.`, ...cut],
   );
 }
@@ -901,9 +937,11 @@ export async function readIntakeFile(
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
   const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
-  // The reader stops at its ceiling and says nothing; reaching it is the one
-  // sign the file may hold more (round-4 integration S-b).
-  const capOf = (rows: readonly unknown[]) => (rows.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {});
+  const { MAX_CALC_ITEMS } = await import('../../wms/calc/service');
+  // The reader stops at its ceiling and says so (`stoppedShort`, as-built
+  // review REGRESSION-6): a list of exactly 500 read whole is no cut — counted
+  // by its length, it lost «✅» on the AI door, where a cap blocks (§1.1 g).
+  const capOf = (stoppedShort: boolean) => (stoppedShort ? { capped: MAX_GOODS_ROWS } : {});
   // What a sheet IS, by its columns (§1.2.1).
   const shapeOf = (m: Pick<typeof sheet, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>) => ({
     shape: m.shape,
@@ -937,7 +975,7 @@ export async function readIntakeFile(
       line: droppedRowsLine(sheet.dropped),
       rows: sheet.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
     },
-    ...capOf(sheet.goods),
+    ...capOf(sheet.stoppedShort),
   };
   if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);
   // Every mapped sheet is judged, one after another, each against the state
@@ -964,8 +1002,12 @@ export async function readIntakeFile(
       where: '',
       shape: shapeOf(m),
       ownText: m.ownText,
-      ...capOf(m.goods),
-      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape },
+      dropped: {
+        line: droppedRowsLine(m.dropped),
+        rows: m.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
+      },
+      ...capOf(m.stoppedShort),
+      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, itemCap: MAX_CALC_ITEMS },
     })),
   ];
   let live = state;

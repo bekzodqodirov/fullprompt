@@ -281,6 +281,14 @@ export interface MappedSheet extends SheetShape {
   sheet: string;
   goods: GoodsRow[];
   ownText: { text: string; cut: boolean; cellsCut: boolean };
+  /**
+   * What the reader did not take as goods on THIS sheet (§5.5, as-built review
+   * SHEETS-1): a further sheet's figure-less last lines were trimmed and
+   * reached no reader on any surface — «Zavod B»'s «Шарф», said nowhere.
+   */
+  dropped: DroppedRow[];
+  /** The reader stopped at its ceiling with rows left unread (`ParsedGoods.stoppedShort`). */
+  stoppedShort: boolean;
 }
 
 /** What the bot learns from a spreadsheet the seller forwarded. */
@@ -317,6 +325,8 @@ export type GoodsFileRead =
        * receipt (`droppedRowsLine`).
        */
       dropped: DroppedRow[];
+      /** The goods sheet was cut at the reader's ceiling with rows left unread (`ParsedGoods.stoppedShort`). */
+      stoppedShort: boolean;
       /**
        * The goods sheet's OWN rows as text, the way `text` writes the others
        * — only for a packing-shaped sheet (docs/IKKI-ESHIK.md §1.2.2): when it
@@ -559,7 +569,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    const { goods, dropped, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    const { goods, dropped, stoppedShort, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
     // The further mapped sheets' texts share ONE budget among themselves, in
     // workbook order; a sheet the budget did not reach says so in its own
     // `cut`. The bound is stated, not the old one (review
@@ -586,12 +596,15 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
           grossColumn: p.parsed.grossColumn,
           volumeM3: p.parsed.volumeM3,
           ownText,
+          dropped: p.parsed.dropped,
+          stoppedShort: p.parsed.stoppedShort,
         };
       });
     return {
       kind: 'goods',
       goods,
       dropped,
+      stoppedShort,
       sheet: best.sheet.name,
       sheets: filled.length,
       text: others.text,

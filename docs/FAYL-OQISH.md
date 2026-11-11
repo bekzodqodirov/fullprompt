@@ -129,7 +129,9 @@ hisoblab bo‘lmadi».
 - **(f) `input_cut`**: `state.aiInputCut`. The model was not shown all of an accepted sheet text: the
   reader's `cut`, or `fitSheetRows` kept < total (door-whole-input-cuts).
 - **(g) `capped`**: a `goodsFiles[]` entry is `capped`, so a mapped Excel past `MAX_GOODS_ROWS` kept its
-  first 500 rows.
+  first 500 rows. As built after the as-built review (A), REGRESSION-6: `capped` is the reader's own word
+  (`ParsedGoods.stoppedShort`, carried per sheet by `readGoodsFile`), never the row count — a list of exactly
+  500 read whole is not capped and keeps «✅».
 
 **Named, not blocking**: files REFUSED AT ARRIVAL, `state.refusedFiles` (critic-refused-unread). The seller
 was already told at arrival that each one would not be read:
@@ -544,6 +546,17 @@ or packing data of the same goods.
 
   → folded as new goods (`foldInvoice`) and named: ««Zavod B» varag‘idan 4 ta yangi tovar qo‘shildi». Its
   text goes nowhere (sheets-07 (2)).
+  - As built after the as-built review (A), REGRESSION-1: a fold that would take the held list past the
+    queue's own limit (`MAX_CALC_ITEMS`, 1000) is not made — three sheets of 400 had folded into a table that
+    invited «✅ Tasdiqlash» and whose press ended the collection with every file lost. The sheet keeps today's
+    reading and the seller is told «📄 «X», «Zavod 3» varag‘i qo‘shilmadi — bitta so‘rovda 1000 tadan ortiq
+    tovar bo‘lmaydi; bu varaqni alohida so‘rov qilib yuboring.».
+  - As built after the as-built review (A), SHEETS-1: every further sheet carries its own dropped rows
+    (`MappedSheet.dropped`, §5.5). On a fold and on a packing-of-held sheet they are said on receipt under the
+    SHEET's label («📄 «X», «Zavod B» varag‘i — ostidagi 2 ta qator tovar deb olinmadi: …») and kept in
+    `fileNotes`; on a fold the AI door hands them to the model too (a folded sheet's text goes nowhere else).
+    A sheet kept on today's reading says nothing of them: none of its rows is taken and its whole text goes to
+    the model.
 - **Anything else** (an invoice-shaped sheet of the same goods, or any sheet that is not proven either way) →
   TODAY's behaviour. Its text goes to the model under today's totals heading («НЕ перечисляй»; the C2/C6 fence
   is untouched, so c0782 and c1336 stand). The seller is told, once per sheet: ««{X}» varag‘i — o‘sha tovarlar
