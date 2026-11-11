@@ -1335,6 +1335,28 @@ describe('the measures in the answer (0145)', () => {
     expect(await measuresW()).toEqual(['40.00', '0.350']);
   });
 
+  it('a re-weigh after a FULL ✅ is not papered over by an old message’s ✅: the narrower answer is not written, and the lot still reads «o‘zgardi»', async () => {
+    // Held: the full ✅ of the test above (40.00 kg, 0.350 m³). A message sent
+    // BEFORE 0145 is still in the customer's chat with live buttons (only the
+    // pressed message ever loses its row) and its tag knows no weight.
+    const old = (await factsW()).basicTag;
+    try {
+      await weigh('44.000', '0.3500');
+      expect((await stateOf('W')).state).toBe('stale');
+      // Written, it would either keep 40.00 under a fresh «answered now» — a
+      // card saying the data moved AFTER a press that came after the move —
+      // or erase the figures and turn the lot ✅ again, hiding the re-weigh.
+      expect(await pressW('yes', old)).toEqual({ outcome: 'already', verdict: 'yes' });
+      expect(await measuresW()).toEqual(['40.00', '0.350']);
+      const view = await stateOf('W');
+      expect(view.state).toBe('stale');
+      expect(view.client).toMatchObject({ verdict: 'yes', holds: false, measures: true, measuresMoved: true });
+    } finally {
+      await weigh('40.000', '0.3500');
+    }
+    expect((await stateOf('W')).state).toBe('checked');
+  });
+
   it('a BASIC answer that REPLACES a full one does not keep its kilos: ✅ (full), then ❌ on the old message', async () => {
     const f = await factsW();
     const answer = await pressW('no', f.basicTag);

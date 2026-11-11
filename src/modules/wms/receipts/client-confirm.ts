@@ -875,12 +875,12 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
 export async function clientAskCardFor(
   receiptId: string,
   clientId: string | null,
-): Promise<{ hasChat: boolean; status: ClientAskStatus | null } | null> {
+): Promise<{ hasChat: boolean; status: ClientAskStatus | null; full: boolean } | null> {
   if (!clientId) return null;
   try {
     if (!(await clientConfirmsReady())) return null;
-    const [chats, status] = await Promise.all([linkedChats(clientId), clientAskStatusFor(receiptId)]);
-    return { hasChat: chats.length > 0, status };
+    const [chats, status, full] = await Promise.all([linkedChats(clientId), clientAskStatusFor(receiptId), clientMeasuresReady()]);
+    return { hasChat: chats.length > 0, status, full };
   } catch (err) {
     logger.warn({ err, receiptId }, '[client-confirm] the card could not read the last question');
     return null;

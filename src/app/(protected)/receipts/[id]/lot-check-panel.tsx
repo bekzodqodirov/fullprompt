@@ -58,6 +58,10 @@ export interface LotCheckFace {
     /** The prixod's CURRENT owner's answer — a previous owner's is drawn nowhere. */
     ofOwner: boolean;
     askedBy: string | null;
+    /** The answer covered the kilos and the cubic metres too (0145). */
+    measures: boolean;
+    /** …and it is THEY that moved since, while everything else still holds. */
+    measuresMoved: boolean;
   } | null;
 }
 
@@ -223,8 +227,14 @@ export function LotCheckPanel({
   if (client?.verdict === 'yes' && client.holds) {
     lines.push(
       <p key="client-yes" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-client-yes">
-        ✅ {t('clientYes')} · {client.day}
-        <span className="block text-xs font-normal text-ink-500">{asked}</span>
+        {/* What the answer COVERED (0145): a «full» one vouches for the kilos
+            and the cubic metres too; an older one — or a press on a button
+            sent before the fold — for the name and the count alone. */}
+        ✅ {t(client.measures ? 'clientYesFull' : 'clientYes')} · {client.day}
+        <span className="block text-xs font-normal text-ink-500">
+          {asked}
+          {!client.measures && ` · ${t('clientYesBasicNote')}`}
+        </span>
       </p>,
     );
   }
@@ -232,11 +242,11 @@ export function LotCheckPanel({
     lines.push(
       asking ? (
         <p key="client-stale" className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-check-face-client-stale">
-          ⚠️ {t('clientStale', { day: client.day })}
+          ⚠️ {t(client.measuresMoved ? 'clientStaleMeasures' : 'clientStale', { day: client.day })}
         </p>
       ) : (
         <p key="client-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-client-old">
-          {t('clientYesOld', { day: client.day })}
+          {t(client.measuresMoved ? 'clientYesOldMeasures' : 'clientYesOld', { day: client.day })}
         </p>
       ),
     );

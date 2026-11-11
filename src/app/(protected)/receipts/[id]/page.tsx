@@ -251,6 +251,9 @@ export default async function ReceiptDetailPage({
     ? {
         canAsk: askCard.hasChat && anyAskable,
         noChat: !askCard.hasChat && anyAskable,
+        // What a question sent NOW would ask (0145): the kilos and cubic
+        // metres too, once the columns that remember them exist.
+        full: askCard.full,
         status: askCard.status
           ? {
               state: askCard.status.status,
@@ -693,6 +696,8 @@ export default async function ReceiptDetailPage({
                           holds: view.client.holds,
                           vetoes: view.client.vetoes,
                           ofOwner: view.client.ofOwner,
+                          measures: view.client.measures,
+                          measuresMoved: view.client.measuresMoved,
                           askedBy: view.client.askedBy,
                         }
                       : null,

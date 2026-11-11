@@ -6016,7 +6016,12 @@
       "busy": "入库单正忙 — 请稍后再点",
       "server_behind": "服务器尚未更新 — 请告知管理员",
       "other": "未完成 — 请重试"
-    }
+    },
+    "clientYesFull": "客户已在 Telegram 中确认——品名、箱数、重量和体积",
+    "clientYesBasicNote": "仅品名和箱数（未询问重量和体积）",
+    "clientStaleMeasures": "客户确认（{day}）之后重量或体积发生了变化——请重新询问",
+    "clientYesOldMeasures": "客户曾确认（{day}）——之后重量或体积已变化",
+    "askHintFull": "将向客户发送此入库单的所有批次（含明细、重量和体积）以及「✅ 正确 / ❌ 有误」按钮。客户确认品名、箱数、重量和体积。"
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "为什么赊账放行？（例如：明天付款）",

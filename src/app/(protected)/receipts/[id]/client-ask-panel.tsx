@@ -19,6 +19,8 @@ import { askClientAction, dismissDisputesAction } from './client-ask-actions';
 export interface ClientAskFace {
   /** A linked chat AND a lot still worth asking about (cargo in China). */
   canAsk: boolean;
+  /** A question sent now asks the kilos and the cubic metres too (0145). */
+  full: boolean;
   /** The client has no Telegram linked — said in words instead of a button. */
   noChat: boolean;
   status: {
@@ -105,7 +107,7 @@ export function ClientAskPanel({
       {/* What WILL be sent — said only beside the button that sends it. */}
       {face.canAsk && (
         <p className="text-xs text-ink-500" data-testid="client-ask-hint">
-          {t('askHint')}
+          {t(face.full ? 'askHintFull' : 'askHint')}
         </p>
       )}
 

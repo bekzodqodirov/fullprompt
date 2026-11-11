@@ -6016,7 +6016,12 @@
       "busy": "The receipt is busy right now — press again in a moment",
       "server_behind": "The server is not updated yet — tell the administrator",
       "other": "Not done — try again"
-    }
+    },
+    "clientYesFull": "The client confirmed in Telegram — name, box count, weight and volume",
+    "clientYesBasicNote": "name and box count only (weight and volume were not asked)",
+    "clientStaleMeasures": "The weight or the volume changed after the client confirmed ({day}) — ask again",
+    "clientYesOldMeasures": "The client had confirmed ({day}) — the weight or the volume changed afterwards",
+    "askHintFull": "The client receives every lot of this receipt (with its contents, weight and volume) and the «✅ Correct / ❌ Something is wrong» buttons. They confirm the name, the box count, the weight and the volume."
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Why on debt? (e.g. pays tomorrow)",

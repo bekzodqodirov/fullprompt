@@ -6016,7 +6016,12 @@
       "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
       "server_behind": "Server hali yangilanmagan — administratorga ayting",
       "other": "Bajarilmadi — qayta urinib ko'ring"
-    }
+    },
+    "clientYesFull": "Mijozning o'zi Telegramda tasdiqladi — nomi, quti soni, og'irligi va hajmi",
+    "clientYesBasicNote": "faqat nomi va quti soni (og'irlik va hajm so'ralmagan)",
+    "clientStaleMeasures": "Mijoz tasdiqlaganidan ({day}) keyin og'irlik yoki hajm o'zgardi — qayta so'rang",
+    "clientYesOldMeasures": "Avval mijozning o'zi tasdiqlagan ({day}) — keyin og'irlik yoki hajm o'zgargan",
+    "askHintFull": "Mijozga shu prixoddagi barcha lotlar (tarkibi, og'irligi va hajmi bilan) va «✅ To'g'ri / ❌ Xato bor» tugmalari yuboriladi. Mijoz tovar nomi, quti soni, og'irligi va hajmini tasdiqlaydi."
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Nega qarzga berilyapti? (masalan: ertaga to‘laydi)",

@@ -318,6 +318,53 @@ describe('one writer, one probe, and columns that stay SQL-only', () => {
     expect(state.indexOf('if (!lotClientConfirmsReady())')).toBeLessThan(state.indexOf('clientDisputeSql(refs)'));
   });
 
+  it('0145: the probe gives a THIRD answer — the measure columns — and remembers it only when all three are yes', () => {
+    const ready = read('src/modules/wms/receipts/lot-check-ready.ts');
+    // The columns, asked of the catalogue (a table that exists says nothing
+    // about a column added to it later).
+    expect(ready).toContain("AND attname IN ('shown_kg', 'shown_m3') AND NOT attisdropped) AS measures");
+    // The early return reads ALL THREE flags: with the first two alone, a
+    // process that had seen 0144 and not 0145 never asked again, and the
+    // repaired migration switched nothing on until a restart.
+    expect(ready).toContain('if (ready && clientReady && measuresReady) return true;');
+    expect(ready).not.toContain('if (ready && clientReady) return true;');
+  });
+
+  it('0145: the measure columns are named in four files and nowhere else, and the remembered third answer is read only by the sentence and the card', () => {
+    // SQL-only columns (a drizzle column would be named in every whole-row
+    // read of the table, one migration behind): each file that names them
+    // either asked the third answer first or IS the probe / the migration.
+    const namers = srcFiles()
+      .filter(({ text }) => /shown_kg|shown_m3/.test(text))
+      .map(({ path }) => path)
+      .sort();
+    expect(namers).toEqual([
+      'src/modules/wms/receipts/client-confirm.ts',
+      'src/modules/wms/receipts/lot-check-ready.ts',
+      'src/modules/wms/receipts/lot-check-sql.ts',
+      'src/modules/wms/receipts/lot-check.ts',
+    ]);
+    const syncReaders = srcFiles()
+      .filter(({ path }) => path !== 'src/modules/wms/receipts/lot-check-ready.ts')
+      .filter(({ text }) => text.includes('lotClientMeasuresReady('))
+      .map(({ path }) => path)
+      .sort();
+    // The sentence's builders (their callers await the probe) and the card's
+    // view (which awaits it itself). The WRITER never reads the remembered
+    // flag: it asks `clientMeasuresReady()`, the probe, on its own path.
+    expect(syncReaders).toEqual(['src/modules/wms/receipts/lot-check-sql.ts', 'src/modules/wms/receipts/lot-check.ts']);
+    const writer = read('src/modules/wms/receipts/client-confirm.ts');
+    expect(writer).not.toContain('lotClientMeasuresReady(');
+    expect(writer).toContain('await clientMeasuresReady()');
+    // …and the card's read sits in a function that awaited the probe.
+    const card = read('src/modules/wms/receipts/lot-check.ts');
+    for (const hit of card.matchAll(/lotClientMeasuresReady\(\)/g)) {
+      const before = card.slice(0, hit.index);
+      const opened = Math.max(before.lastIndexOf('\nexport async function '), before.lastIndexOf('\nasync function '));
+      expect(before.slice(opened)).toContain('await lotChecksReady()');
+    }
+  });
+
   it('the REMEMBERED answer is read only where the probe was asked on the same path — a writer never trusts what another screen warmed (L1-1)', () => {
     // A server action lives in a module instance of its own: after a restart
     // nothing in it has probed, so a writer reading the flag alone read «no
