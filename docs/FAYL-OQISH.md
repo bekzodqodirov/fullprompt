@@ -1,5 +1,9 @@
 # Fayl o‘qish — the AI door reads every file before «Tasdiqlash», and a file's goods are not lost (2026-11-10)
 
+**Status: SHIPPED** (2026-11-11, DECISIONS #1630-#1641, no migration). The «As built» bullets — after the as-built
+review (A) and (B), after the review of the fixes, after the independent check — override the sentences they sit
+under. §6's three questions are built as ⭐, his answer awaited.
+
 His report of 2026-11-10, the day after «Ikki eshik» (ledger 142), verbatim:
 
 > «nega ai rastamojkaga malumotlar bergandan kegin ham tovar nomi topilmadi deyabti. 1 dona fileda
