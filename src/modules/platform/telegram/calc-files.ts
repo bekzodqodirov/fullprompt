@@ -170,6 +170,9 @@ const SHEET_REFUSAL_WHY: Record<SheetRefusalReason, string | null> = {
   encrypted: 'parol bilan himoyalangan',
   broken: 'Excel fayl buzilgan',
   empty: null,
+  // A workbook whose only content is pictures (§4.4): the goods it shows were
+  // never read, so the table names it as a file the AI did not see.
+  pictures: 'Excel ichidagi rasm o‘qilmaydi',
 };
 
 /**
