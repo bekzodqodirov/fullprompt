@@ -530,9 +530,38 @@ describe('the browser’s half', () => {
     expect(isProposalWarning({ code: 'text_cut' })).toBe(true);
     expect(isProposalWarning({ code: 'rows_cut', params: { shown: 40, total: 47 } })).toBe(true);
     expect(isProposalWarning({ code: 'totals_differ', params: { field: 'kg', sum: '1', total: '2' } })).toBe(true);
+    // A reading that reached the forty-row ceiling says so after «Qo'llash» too (B1) — and only in its own shape.
+    expect(isProposalWarning({ code: 'rows_full', params: { shown: 40 } })).toBe(true);
+    expect(isProposalWarning({ code: 'rows_full' })).toBe(false);
     for (const bad of [null, 'text_cut', {}, { code: 'rows_cut' }, { code: 'rows_cut', params: { shown: '40', total: 47 } }, { code: 'totals_differ', params: { field: 'usd', sum: '1', total: '2' } }, { code: 'tomorrow' }]) {
       expect(isProposalWarning(bad), JSON.stringify(bad)).toBe(false);
     }
     expect(read(PANEL)).toContain('warnings: saved.filled.warnings.filter(isProposalWarning),');
+  });
+
+  it('the notice over applied rows says what the cells cannot: the weights are NET, and «aralash» posts no carton counts (B8, B9)', () => {
+    const panel = read(PANEL);
+    // The kind travels from the reading into the notice and survives the draft.
+    expect(panel).toContain('weightKind: read.proposal.weightKind,');
+    expect(panel).toContain("weightKind: saved.filled.weightKind === 'gross' || saved.filled.weightKind === 'net' ? saved.filled.weightKind : null,");
+    expect(panel).toMatch(/\{filled\.weightKind === 'net' && <p[^>]*>\{t\('read\.weightNet'\)\}<\/p>\}/);
+    // «Aralash» hides the carton cells and posts none: applied counts are said, never lost without a word.
+    expect(panel).toMatch(
+      /\{mode === 'mixed' && !single && lines\.some\(\(l\) => l\.cartons\.trim\(\) !== ''\) && \(\s*<p[^>]*data-testid="tarkib-filled-cartons">\s*\{t\('read\.filledCartonsHidden'\)\}/,
+    );
+    for (const locale of LOCALES) {
+      expect(typeof lookup(bundles[locale].tarkib, 'read.weightNet'), locale).toBe('string');
+      expect(typeof lookup(bundles[locale].tarkib, 'read.filledCartonsHidden'), locale).toBe('string');
+    }
+  });
+
+  it('the paper’s code is shown as the PAPER’s — and for the lot’s own good it is named, not applied (B4)', () => {
+    const dialog = read(DIALOG);
+    // The row prints the code it will be APPLIED with — none for the lot's own good…
+    expect(dialog).toContain('const code = appliedCode(row, lot);');
+    // …whose paper code is named on its own line instead…
+    expect(dialog).toMatch(/\{name\.own && row\.tnved !== '' && \(\s*<span[^>]*data-testid="tarkib-read-own-code">\s*\{t\('read\.ownCode', \{ code: row\.tnved \}\)\}/);
+    // …and «whose code this is» is not said about a code that is not carried.
+    expect(dialog).toContain(".filter((n) => !(n.code === 'paper_code' && name.own))");
   });
 });
