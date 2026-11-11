@@ -888,7 +888,7 @@ export async function readIntakeFile(
   // only what is done with them (docs/FAYL-OQISH.md §4.4): the unmapped ones
   // are read for the totals; a mapped one says its own line below — and where
   // there is one, «the other sheets» would be false of a sheet folded in as
-  // goods two lines down (review sheets-break-arrival-line-fold), so the
+  // goods two lines down (the P-sheets review's arrival-fold finding), so the
   // clause names the sheets it is true of: those no goods row was taken from.
   const others = sheet.moreSheets.length > 0 ? 'tovar qatori olinmagan varaqlar' : 'boshqa varaqlar';
   const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan${sheet.text ? `; ${others} faqat jami uchun o‘qiladi` : ''})` : '';
