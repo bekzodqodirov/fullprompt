@@ -86,6 +86,14 @@ const ALLOWED = new Set([
   // …and its readiness probe asks only whether the tables EXIST (#472), so a
   // server without 0122/0123 runs the lists in their old shape.
   'src/modules/wms/receipts/lot-check-ready.ts',
+  // The client's own ✅/❌ in Telegram (0144, docs/TARKIB-TAKLIFLAR.md §4 — the
+  // owner's «tarkibni mijozning o'zi tasdiqlasin»): the ONE customer message
+  // that prints a tarkib's goods — names and pieces, never cartons, kg or a
+  // code — because that question IS the tarkib. The recorded exception to
+  // «a push learns nothing of the contents»: nothing under `wms/notices/` or
+  // `wms/client-cabinet/` names a composition token for it — the send half
+  // takes the lines from `clientAskFacts`' answer.
+  'src/modules/wms/receipts/client-confirm.ts',
 ]);
 
 /**

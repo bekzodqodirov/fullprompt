@@ -47,11 +47,22 @@ export {
  *    this sentence never read it. Only the composition's STATE leaves this
  *    module — never a line.
  *
- * Every reader LEFT JOINs `lot_checks` and `lotTarkibJoinSql()` on the lot
- * and asks `lotCheckStateSql`. A JOIN and never a correlated subquery in a
- * WHERE: the design review measured that shape at 3.3 s on an 18k-carton
- * copy against 41 ms for the join. Both joins are at most one row per lot,
- * so neither can fan a count out.
+ *  · the CLIENT's own (0144, docs/TARKIB-TAKLIFLAR.md §4 — his 5b) — a
+ *    `lot_client_confirms` row: the ✅ or ❌ the client pressed in Telegram,
+ *    with what the message SHOWED them. The same kind of snapshot, compared
+ *    the same way, plus the tarkib's goods as printed (`goods_key`). A ✅
+ *    that still matches reads «checked» — nobody has to telephone. A ❌ that
+ *    still matches is a VETO: the lot reads ❓ whatever a colleague ticked
+ *    and whatever tarkib stands, until the data is corrected (it stops
+ *    matching), the client answers again, or a person closes the dispute
+ *    (`client-confirm.ts` deletes the row). No fourth state: a disputed lot
+ *    belongs on the ❓ worklist.
+ *
+ * Every reader LEFT JOINs `lot_checks`, `lotTarkibJoinSql()` and the
+ * client's row on the lot and asks `lotCheckStateSql`. A JOIN and never a
+ * correlated subquery in a WHERE: the design review measured that shape at
+ * 3.3 s on an 18k-carton copy against 41 ms for the join. Every join is at
+ * most one row per lot, so none can fan a count out.
  *
  * `lot`, `receipt`, `check` are table REFERENCES, never columns (#128): pass
  * `sql\`${receiptLots}\`` for a joined table or `sql\`l\`` for an alias
@@ -65,10 +76,19 @@ export const LOT_TARKIB = sql.raw('lot_tarkib');
  * The lot tarkibi's totals, one row per composed lot, as a join source:
  * `.leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql\`${receiptLots}\`))`. The table is
  * small (compositions are rare) and grouped once per statement.
+ *
+ * `goods_key` is the goods AS A QUESTION PRINTS THEM — every line's name and
+ * pieces, in order — and it is what the client's answer is compared with
+ * (0144). Deliberately not the composition's `rev`: that token moves on
+ * every save AND on every TNVED code typed on the Bojxona tab, so a client's
+ * ✅ would read «eskirgan» after routine coding and a ❌ would be lifted by
+ * it — the design judge's blocker. kg, m³, cartons and codes are not in it:
+ * the client is not shown them.
  */
 export function lotTarkibJoinSql(): SQL {
   return sql`(
-    SELECT c.lot_id, c.seen_box_count, sum(l.weight_kg) AS kg, sum(l.volume_m3) AS m3
+    SELECT c.lot_id, c.seen_box_count, sum(l.weight_kg) AS kg, sum(l.volume_m3) AS m3,
+           md5(string_agg(l.name || chr(31) || coalesce(l.pieces::text, ''), chr(30) ORDER BY l.seq)) AS goods_key
       FROM lot_compositions c
       JOIN lot_composition_lines l ON l.lot_id = c.lot_id
      GROUP BY c.lot_id, c.seen_box_count
@@ -77,6 +97,17 @@ export function lotTarkibJoinSql(): SQL {
 
 export function lotTarkibOnSql(lot: SQL): SQL {
   return sql`${LOT_TARKIB}.lot_id = ${lot}.id`;
+}
+
+/** The client's own answer's alias (0144) — at most one row per lot. */
+export const LOT_CLIENT = sql.raw('lot_client');
+
+export function lotClientJoinSql(): SQL {
+  return sql`lot_client_confirms AS ${LOT_CLIENT}`;
+}
+
+export function lotClientOnSql(lot: SQL): SQL {
+  return sql`${LOT_CLIENT}.lot_id = ${lot}.id`;
 }
 
 export interface LotCheckRefs {
@@ -113,19 +144,45 @@ export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; clie
 }
 
 /**
- * The state, in this order: a standing composition answers first (the
- * client's own document, his 3a — it holds on unclaimed cargo too); cargo
- * with no client has nobody to ask and its own list (/unclaimed); then the
- * person's snapshot; anything that WAS confirmed and no longer matches is
- * «stale» («o'zgardi — qayta so'rang»).
+ * The client's answer is about what the lists still show (0144): the five
+ * things the question printed — both name spellings, the carton count, the
+ * owner, and the tarkib's goods (`goods_key`; NULL on both sides = no tarkib
+ * then, none now). A rename, a count correction, a new owner, a tarkib
+ * written, changed or cleared afterwards — and the answer is about data that
+ * no longer exists. The SHOWN Russian name, as on the person's tick.
+ */
+export function clientHoldsSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
+  const { lot, receipt } = refs;
+  return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
+    AND ${LOT_CLIENT}.shown_zh = ${lot}.product_name_zh
+    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, '')
+    AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
+    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id
+    AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key)`;
+}
+
+/**
+ * The state, in this order: the client's standing ❌ is a VETO and answers
+ * first (0144 — nothing a colleague ticked and no tarkib outranks the owner
+ * of the cargo saying «this is wrong»; the lot reads ❓ and stands on the
+ * worklist); then a standing composition (the client's own document, his 3a
+ * — it holds on unclaimed cargo too); cargo with no client has nobody to ask
+ * and its own list (/unclaimed); then the person's snapshot; then the
+ * client's standing ✅; anything that WAS confirmed and no longer matches is
+ * «stale» («o'zgardi — qayta so'rang»). A ❌ that no longer matches says
+ * nothing at all — the data it was about is gone.
  */
 export function lotCheckStateSql(refs: LotCheckRefs): SQL {
   const terms = checkTermsSql(refs);
+  const client = clientHoldsSql(refs);
   return sql`(CASE
+    WHEN ${client} AND ${LOT_CLIENT}.verdict = 'no' THEN 'none'
     WHEN ${tarkibStandsSql(refs.lot)} THEN 'checked'
     WHEN ${refs.receipt}.client_id IS NULL THEN 'unclaimed'
     WHEN ${refs.check}.lot_id IS NOT NULL AND ${terms.name} AND ${terms.count} AND ${terms.client} THEN 'checked'
-    WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL THEN 'stale'
+    WHEN ${client} AND ${LOT_CLIENT}.verdict = 'yes' THEN 'checked'
+    WHEN ${refs.check}.lot_id IS NOT NULL OR ${LOT_TARKIB}.lot_id IS NOT NULL
+      OR (${LOT_CLIENT}.lot_id IS NOT NULL AND ${LOT_CLIENT}.verdict = 'yes') THEN 'stale'
     ELSE 'none'
   END)`;
 }
@@ -179,7 +236,7 @@ export function checkFilterSql(tek: CheckFilter, state: SQL, askable: SQL): SQL 
 }
 
 /**
- * The two joins every list reader makes, on a `$dynamic()` query — or none
+ * The three joins every list reader makes, on a `$dynamic()` query — or none
  * when `on` is false (`lotChecksReady()` said the tables are not there yet,
  * #472): the reader then runs its pre-0123 shape and draws no chip.
  */
@@ -187,7 +244,8 @@ export function withLotCheckJoins<T extends PgSelect>(qb: T, on: boolean): T {
   if (!on) return qb;
   return qb
     .leftJoin(lotChecks, eq(lotChecks.lotId, receiptLots.id))
-    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`)) as unknown as T;
+    .leftJoin(lotTarkibJoinSql(), lotTarkibOnSql(sql`${receiptLots}`))
+    .leftJoin(lotClientJoinSql(), lotClientOnSql(sql`${receiptLots}`)) as unknown as T;
 }
 
 /** The state where the joins were made, NULL where they were not (no chip, never ❓). */

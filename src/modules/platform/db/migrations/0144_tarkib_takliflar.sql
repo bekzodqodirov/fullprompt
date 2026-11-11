@@ -12,6 +12,9 @@
 -- — so no writer of those facts ever clears it, exactly as `lot_checks` (0123) works. Not a
 -- `lot_checks` row: that table is «a colleague vouched» and both facts can stand together.
 -- `shown_client_id`, `asked_by`: remembered values, deliberately no foreign key.
+-- `shown_goods_key`: a digest of the tarkib's goods AS PRINTED (names and pieces, in order);
+-- NULL = no tarkib was written. Deliberately NOT the tarkib's `rev`: that token moves on every
+-- save and on every TNVED code typed on the Bojxona tab, none of which the client was shown.
 CREATE TABLE "lot_client_confirms" (
   "lot_id" uuid PRIMARY KEY REFERENCES "receipt_lots"("id") ON DELETE CASCADE,
   "verdict" text NOT NULL,
@@ -19,7 +22,7 @@ CREATE TABLE "lot_client_confirms" (
   "shown_ru" text,
   "shown_count" integer NOT NULL,
   "shown_client_id" uuid NOT NULL,
-  "shown_tarkib_rev" bigint,
+  "shown_goods_key" text,
   "chat_id" bigint NOT NULL,
   "asked_by" uuid,
   "answered_at" timestamptz NOT NULL DEFAULT now(),

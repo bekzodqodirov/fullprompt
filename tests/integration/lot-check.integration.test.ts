@@ -704,18 +704,23 @@ describe('the History says which lot (the review\'s shared key)', () => {
   it('21. two lots ticked in one call read as two changes, each with its own letter, the note kept', async () => {
     await uncheckLot({ lotId: lot.C1 }, logist(), ctx(logistId));
     await uncheckLot({ lotId: lot.C2 }, logist(), ctx(logistId));
-    const since = new Date(Date.now() - 1000);
+    // The two ticks, and nothing before them: the window opens at the LAST
+    // row written so far. It used to be «the last second by the wall clock»,
+    // which held only while this file ran in under a second — the window
+    // then also took test 15's ticks of the same lots, and without them the
+    // un-ticks above net the ticks below to «nothing changed» (found on a
+    // loaded machine, 2026-11-11: the file took five seconds and this was red).
+    const [mark] = await db
+      .select({ id: sql<string>`coalesce(max(${auditLog.id}), 0)::text` })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2)));
     await press('C1', logist());
     await press('C2', logist(), { note: 'mijoz: ikkalasi ham' });
     const rows = await db
       .select({ id: auditLog.id, actorId: auditLog.actorId, action: auditLog.action, before: auditLog.before, after: auditLog.after, createdAt: auditLog.createdAt })
       .from(auditLog)
       .where(
-        and(
-          eq(auditLog.entityType, 'receipt'),
-          eq(auditLog.entityId, rc.R2),
-          sql`${auditLog.createdAt} >= ${since.toISOString()}::timestamptz`,
-        ),
+        and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, rc.R2), sql`${auditLog.id} > ${mark!.id}::bigint`),
       )
       .orderBy(desc(auditLog.createdAt));
     const groups = groupHistory(

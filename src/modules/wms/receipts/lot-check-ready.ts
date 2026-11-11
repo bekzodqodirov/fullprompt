@@ -12,6 +12,10 @@ import { db } from '../../platform/db/client';
  * a check never blocks a plan). A reader asks this first and, on «no», runs
  * its pre-0123 shape: no joins, no chip, the `tek` filter ignored.
  *
+ * Since 0144 the readers also join the client's own answers
+ * (`lot_client_confirms`), so that table is part of «there»: on a server
+ * whose 0144 has not landed the chips are simply not drawn until it does.
+ *
  * A probe and not a catch: one catalog lookup (~0.1 ms), and the answer is
  * remembered once it is «yes» — tables do not disappear under a running
  * process. «No» is asked again every time, so the screens come back the
@@ -24,7 +28,8 @@ export async function lotChecksReady(): Promise<boolean> {
   const rows = (await db.execute(sql`
     SELECT to_regclass('public.lot_checks') IS NOT NULL
        AND to_regclass('public.lot_compositions') IS NOT NULL
-       AND to_regclass('public.lot_composition_lines') IS NOT NULL AS ok
+       AND to_regclass('public.lot_composition_lines') IS NOT NULL
+       AND to_regclass('public.lot_client_confirms') IS NOT NULL AS ok
   `)) as unknown as { ok: boolean }[];
   ready = rows[0]?.ok === true;
   return ready;

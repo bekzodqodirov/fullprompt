@@ -430,8 +430,13 @@ export const lotClientConfirms = pgTable(
     shownCount: integer('shown_count').notNull(),
     /** A remembered value compared with `receipts.client_id` — deliberately no FK. */
     shownClientId: uuid('shown_client_id').notNull(),
-    /** The tarkib's rev token the question was drawn from; NULL = none was written. */
-    shownTarkibRev: bigint('shown_tarkib_rev', { mode: 'number' }),
+    /**
+     * A digest of the tarkib's goods as the question PRINTED them (names and
+     * pieces, in order — `lot-check-sql.ts`); NULL = none was written. Not the
+     * tarkib's `rev`: that moves on every TNVED code typed, which nobody showed
+     * the client.
+     */
+    shownGoodsKey: text('shown_goods_key'),
     /** The Telegram chat that pressed. */
     chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
     /** Who pressed «Mijozdan so'rash»; NULL = the receipt's own push asked. No FK: a remembered value. */

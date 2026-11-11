@@ -8,6 +8,7 @@ import { mayOpenBatchVed } from '../batches/card-door';
 import { lockReceiptShareNoWait } from './grow-lot';
 import {
   checkTermsSql,
+  clientHoldsSql,
   lotAskableSql,
   lotCheckStateSql,
   lotTarkibJoinSql,
@@ -336,6 +337,20 @@ export interface LotCheckView {
     holds: boolean;
     moved: { name: boolean; count: boolean; client: boolean };
   } | null;
+  /**
+   * The client's own answer in Telegram (0144, `client-confirm.ts`), when
+   * there is one. `holds` = it is about what the lists still show (the same
+   * comparison the sentence makes): a ✅ that holds vouches for the lot, a ❌
+   * that holds is the veto the card must show; one that does not hold is
+   * about data that has since moved.
+   */
+  client: {
+    verdict: 'yes' | 'no';
+    at: Date;
+    holds: boolean;
+    /** Who pressed «Mijozdan so'rash»; null = the receipt's own push asked. */
+    askedBy: string | null;
+  } | null;
 }
 
 /**
@@ -360,12 +375,16 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
            ${terms.name} AS name_ok,
            ${terms.count} AS count_ok,
            ${terms.client} AS client_ok,
-           lc.note, lc.checked_at::text AS checked_at, u.full_name AS checked_by
+           lc.note, lc.checked_at::text AS checked_at, u.full_name AS checked_by,
+           lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
+           ${clientHoldsSql(refs)} AS client_holds, ua.full_name AS client_asked_by
       FROM receipt_lots l
       JOIN receipts r ON r.id = l.receipt_id
       LEFT JOIN lot_checks lc ON lc.lot_id = l.id
       LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
+      LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
       LEFT JOIN users u ON u.id = lc.checked_by
+      LEFT JOIN users ua ON ua.id = lot_client.asked_by
      WHERE l.id IN (${sql.join(
        ids.map((id) => sql`${id}::uuid`),
        sql`, `,
@@ -383,6 +402,10 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     note: string | null;
     checked_at: string | null;
     checked_by: string | null;
+    client_verdict: 'yes' | 'no' | null;
+    client_at: string | Date | null;
+    client_holds: boolean | null;
+    client_asked_by: string | null;
   }[];
   return new Map(
     rows.map((row) => {
@@ -405,6 +428,14 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
                 note: row.note,
                 holds: !moved.name && !moved.count && !moved.client,
                 moved,
+              }
+            : null,
+          client: row.client_verdict
+            ? {
+                verdict: row.client_verdict,
+                at: new Date(row.client_at!),
+                holds: row.client_holds === true,
+                askedBy: row.client_asked_by,
               }
             : null,
         },
