@@ -115,6 +115,12 @@ interface ColumnMap {
    */
   amountIsPrice: boolean;
   /**
+   * The count headers the ranking passed over that count in ANOTHER unit —
+   * «Кол-во, м2», «Кол-во, пар» beside the chosen «Кол-во, шт» (§5.10): the
+   * row's figure there is said on its note for the VED, never dropped.
+   */
+  alsoCounts: { index: number; header: string }[];
+  /**
    * A gross-weight column, located and never claimed (docs/IKKI-ESHIK.md
    * §1.2.1): the line weights come from the net column when there is one, and
    * the gross Σ is still the shipment's brutto.
@@ -509,6 +515,13 @@ const GLUED_UNITS = new Set(['kg', 'kgs', 'ctn', 'ctns', 'pc', 'pcs', 'cbm', 'm3
  * break-c-window-wider). «Grand total …», «Sub total …» open with a prefix.
  */
 const LEAD_TOTAL = new Set(['итого', 'всего', 'jami', 'жами', 'подытог', 'subtotal']);
+/**
+ * …and the words a subtotal may END with (Excel's «X Итог», «X Total»):
+ * never «umumiy» / «умумий» / «sum» — those say total only as a whole label
+ * (§5.4 (a), reader-5.4ab-vocab), and «Dim sum», «… umumiy» are names
+ * (review break-c-window-wider).
+ */
+const LAST_TOTAL = new Set(['total', 'totals', 'ttl', 'subtotal', 'итого', 'итог', 'всего', 'подытог', 'jami', 'жами']);
 const LEAD_TOTAL_HAN = /^(?:合计|总计|合計|總計|小计|小計|共计|共計)/u;
 const TOTAL_HAN = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/u;
 const TOTAL_HINT = /total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/i;
@@ -557,7 +570,10 @@ function totalLabel(text: string): TotalLabel | null {
       total = true;
       core ||= CORE_TOTAL.has(word);
     } else if (/\d/.test(word)) {
-      if (!GLUED_UNITS.has(word.replace(/^\d+/, ''))) only = false;
+      // …or a qualifier word glued to its number («15мест», «15CARTONS»),
+      // never a single letter: the «W» of «10W» is a model number's.
+      const glued = word.replace(/^\d+/, '');
+      if (!GLUED_UNITS.has(glued) && !(glued.length > 1 && TOTAL_QUALIFIERS.has(glued))) only = false;
     } else if (INCOTERMS.has(word)) {
       place = true;
     } else if (!place && !TOTAL_PREFIX.has(word) && !TOTAL_QUALIFIERS.has(word)) only = false;
@@ -568,7 +584,7 @@ function totalLabel(text: string): TotalLabel | null {
   return {
     only,
     core,
-    last: TOTAL_WORDS.has(tail) || TOTAL_HAN_LAST.test(tail),
+    last: LAST_TOTAL.has(tail) || TOTAL_HAN_LAST.test(tail),
     lead: LEAD_TOTAL.has(first) || LEAD_TOTAL_HAN.test(first) || (TOTAL_PREFIX.has(first) && TOTAL_WORDS.has(second)),
   };
 }
@@ -1479,6 +1495,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   let weightFromQty: number | null = null;
   let volumeFromQty: number | null = null;
   let cartonCol: { index: number; word: string } | null = null;
+  let alsoCounts: { index: number; header: string }[] = [];
   // The line's count is CHOSEN among the count headers, never the first
   // one standing (§5.10, xlsxN-08): «QTY/CTN | CTN QTY | TOTAL QTY» took «CTN
   // QTY» — 15 «dona» for 300 jackets — and «TOTAL QTY» was passed over.
@@ -1513,27 +1530,32 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     }
     taken.add(i);
   }
-  // The ranking (§5.10): a header that names a package never beats one that
-  // names none — «Кол-во мест, шт», «Karobka soni, ta», «TOTAL CTN QTY»
-  // carry a unit word or a total word, and ranked by those first the cartons
-  // became the line's count, 15 «dona» for 300 jackets, beside a plain «Кол-во»
-  // (review break-qty-rank). Among the rest a TOTAL first — «TOTAL QTY»,
-  // «总数量» — then a header that names what it counts by its unit, then the
-  // leftmost. So «QTY/CTN | CTN QTY | TOTAL QTY» is TOTAL QTY, «件数 | 数量» is
-  // 数量, and a lone «件数» or «总件数» is still the pieces. A header naming
-  // money or a measure ranks below every other: the count by its unit would
-  // otherwise put «Price/pcs» and «Weight/pcs» above «Qty» (both are quantity
-  // keys by their «pcs»), where the first-found rule had them only when they
-  // stood first. A named measure («Кол-во, м2», «Кол-во, пар») ranks with a
-  // piece unit — the leftmost of the two stays the line's count, as it always
-  // was: m² is what a tile is priced by and the pair a shoe's duty unit.
-  const rank = (c: (typeof counts)[number]) => [
-    MONEY_HEADER.test(c.text) || matchKey(c.text, WEIGHT_KEYS) || matchKey(c.text, VOLUME_KEYS) ? 1 : 0,
-    namesPackage(c.text) ? 1 : 0,
-    COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text) ? 0 : 1,
-    c.unit !== null ? 0 : 1,
-    c.i,
-  ];
+  // The ranking (§5.10, xlsxN-08's betterFix): (a) a TOTAL — «TOTAL QTY»,
+  // «总数量»; (b) a PIECE unit word — «Кол-во, шт», «QTY (PCS)»; (c) no
+  // package word; (d) the leftmost. So «QTY/CTN | CTN QTY | TOTAL QTY» is
+  // TOTAL QTY, «件数 | 数量» is 数量, and a lone «件数» or «总件数» is still the
+  // pieces. A header that names a package counts PACKAGES, and its total word
+  // or its «шт» is theirs: «Кол-во мест, шт», «Karobka soni, ta», «Всего
+  // мест», «TOTAL CTN QTY» ranked by (a) or (b) became the line's count, 15
+  // «dona» for 300 jackets, beside a plain «Кол-во» (review break-qty-rank) —
+  // so (a) and (b) are asked of a header naming no package only. A header
+  // naming money or a measure ranks below every other (kept beside the
+  // betterFix, recorded): the count by its unit would otherwise put
+  // «Price/pcs» and «Weight/pcs» above «Qty» (both are quantity keys by their
+  // «pcs»). A count in ANOTHER unit — «Кол-во, м2», «Кол-во, пар» — is no
+  // piece unit: beside «Кол-во, шт» the pieces are the line's count (review
+  // spec-510-unit-rank), and the measure it passed over is said on the line's
+  // note (`alsoCounts`), never lost.
+  const rank = (c: (typeof counts)[number]) => {
+    const packages = namesPackage(c.text);
+    return [
+      MONEY_HEADER.test(c.text) || matchKey(c.text, WEIGHT_KEYS) || matchKey(c.text, VOLUME_KEYS) ? 1 : 0,
+      !packages && (COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text)) ? 0 : 1,
+      !packages && c.unit === 'dona' ? 0 : 1,
+      packages ? 1 : 0,
+      c.i,
+    ];
+  };
   const byRank = [...counts].sort((a, b) => {
     const [x, y] = [rank(a), rank(b)];
     const k = x.findIndex((v, j) => v !== y[j]);
@@ -1554,6 +1576,13 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     // word is the packing list's carton column, said as one («ctn»).
     const packages = byRank.slice(1).find((c) => c.unit === null && LATIN_PACKAGE.test(c.text));
     if (packages) cartonCol ??= { index: packages.i, word: 'ctn' };
+    // …and one passed over that counts in ANOTHER unit («Кол-во, м2» beside
+    // «Кол-во, шт») is the line's measure: said on its note, never lost.
+    alsoCounts = byRank
+      .slice(1)
+      .filter((c) => c.unit !== null && c.unit !== 'dona' && !namesPackage(c.text) && !MONEY_HEADER.test(c.text))
+      .filter((c) => !matchKey(c.text, WEIGHT_KEYS) && !matchKey(c.text, VOLUME_KEYS))
+      .map((c) => ({ index: c.i, header: clipUnits(c.text, 30) }));
   }
   if (quantity === null && cartonCol) {
     // Only cartons: their number goes where a carton count goes — through
@@ -1710,6 +1739,9 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     weight,
     amount,
     amountIsPrice,
+    // A claim made after the count may have taken one (a unit column); then
+    // it is that column's, said there.
+    alsoCounts: alsoCounts.filter((c) => !taken.has(c.index)),
     gross,
     // A carton column is any header that counts packages — «Кол-во
     // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
@@ -2352,6 +2384,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       const unread = figures
         .filter(([, cell, value]) => value === null && /\d/.test(cellText(cell)))
         .map(([what, cell]) => `${what} «${cellText(cell).slice(0, 40)}» — aniq emas`);
+      // The measure the count's ranking passed over (`alsoCounts`): its
+      // header and the figure as the file wrote it.
+      const also = columns.alsoCounts.flatMap(({ index, header: named }) => {
+        const text = cellText(once(index));
+        return /\d/.test(text) ? [`«${named}»: ${clipUnits(text, 40)}`] : [];
+      });
       const hasFigures = figureIn(row, r);
       // A merge's covered figure is stated too (§5.5's own rule, `statesIn`):
       // «Colgate Total toothpaste» packed with the line above it is a good,
@@ -2367,7 +2405,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           volumeM3: rowVolume,
           amount,
           tnvedCode: code && 'code' in code ? code.code : null,
-          note: [codeNote, ...unread].filter(Boolean).join(' · ') || null,
+          note: [codeNote, ...unread, ...also].filter(Boolean).join(' · ') || null,
         },
         r,
         { figures: hasFigures || coveredFigure, sum },

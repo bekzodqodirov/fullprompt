@@ -7,6 +7,7 @@ import { PHOTO_READ_MS, readWithin } from '../files/read-within';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import {
+  collectionDoor,
   intakeFileKind,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
@@ -471,12 +472,37 @@ export function receiveGoodsSheet(
       goodsRows: NonNullable<IntakeState['invoiceGoods']>;
       goodsShape: 'invoice' | 'packing';
     };
+    /**
+     * The rows the reader did NOT take as goods (docs/FAYL-OQISH.md §5.5):
+     * the receipt's words for them (`droppedRowsLine`, null = nothing worth
+     * saying) and the text of each row it names.
+     */
+    dropped?: { line: string | null; rows: readonly string[] };
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
   const texts: SheetText[] = sheet.text
     ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label, ...(sheet.unmapped ? { unmapped: true as const } : {}) }]
     : [];
+  // A row not taken as goods is SAID and SHOWN, never lost in silence
+  // (§5.5, review reader-b-break-dropped-has-no-reader): a figure-less last
+  // line under the list may be a real good — «Шапка», «Шарф» after the rows
+  // that carry figures — and the reader cannot tell it from «Made in China».
+  // The seller reads it on the receipt (a receipt-time note: the prompt and
+  // the card's note carry it, so the VED does too) and types it back if it
+  // is a good; on the AI door the model reads the same rows beside the list,
+  // under the totals-only heading. The plain door asks no model of a lone
+  // Excel, and a footer must not start one there; a label-only «TOTAL» is no
+  // news to the seller or the model (`droppedRowsLine`) and starts none.
+  const droppedRows = sheet.dropped?.rows ?? [];
+  if (droppedRows.length > 0 && collectionDoor(state) === 'ai') {
+    texts.push({
+      text: [`[Под таблицей ${label}: строки, не взятые как товары]`, ...droppedRows].join('\n'),
+      cut: false,
+      cellsCut: false,
+      label,
+    });
+  }
   // Where the material stood: a totals answer given before this file is
   // older than what it gave (`totalsDoubts`, §1.2.5) — kept ON the file, so a
   // packing list that came first hands its own mark over (PF-ADV-9).
@@ -498,6 +524,7 @@ export function receiveGoodsSheet(
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
   const cutLines = [
+    ...(sheet.dropped?.line ? [`📄 ${label} — ${sheet.dropped.line}.`] : []),
     ...(sheet.capped
       ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
       : []),
@@ -840,7 +867,7 @@ export async function readIntakeFile(
     };
   }
 
-  const { readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const { droppedRowsLine, readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
     logger.warn({ err }, '[calc-intake] spreadsheet unreadable');
     return { kind: 'refused', reason: 'broken' } as const;
@@ -903,6 +930,11 @@ export async function readIntakeFile(
     // …and a packing list's own rows, for the model's totals-only sheets.
     ownText: sheet.ownText,
     ...(sheet.text ? { unmapped: true } : {}),
+    // …and what it did not take as goods, said and shown (§5.5).
+    dropped: {
+      line: droppedRowsLine(sheet.dropped),
+      rows: sheet.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
+    },
     ...capOf(sheet.goods),
   };
   if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);

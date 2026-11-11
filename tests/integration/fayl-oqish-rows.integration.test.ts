@@ -149,6 +149,37 @@ describe('a file’s goods through the AI door (FAYL-OQISH §5.4, §5.5)', () =>
     expect(names(state)).toEqual(['Ladies jacket']);
     expect(file).toMatchObject({ grossKg: 150, volumeM3: 1.2, rows: 1 });
     expect(said).toContain('1 ta tovar o‘qildi');
+    // …and the footer is SAID, never dropped in silence (§5.5).
+    expect(said).toContain('📄 «footer.xlsx» — ostidagi 1 ta qator tovar deb olinmadi: «Made in China».');
+  });
+
+  it('a names list with figures on its first rows only: the figure-less tail is said on the receipt, kept on the card note, and read by the model (review reader-b-break-dropped-has-no-reader)', async () => {
+    const body = await xlsxOf([
+      ['Наименование', 'Кол-во', 'Вес, кг'],
+      ['Куртка', 100, 50],
+      ['Брюки', 200, 80],
+      ['Шапка', null, null],
+      ['Шарф', null, null],
+      ['Перчатки', null, null],
+    ]);
+    const { state, said } = await forward(body, 'names.xlsx', XLSX);
+    expect(names(state)).toEqual(['Куртка', 'Брюки']);
+    const line = '📄 «names.xlsx» — ostidagi 3 ta qator tovar deb olinmadi: «Шапка», «Шарф», «Перчатки».';
+    // The seller reads it now…
+    expect(said).toContain(line);
+    // …the card's note carries it for the VED (a receipt-time note)…
+    expect(state.fileNotes).toContain(line);
+    // …and the model reads the rows beside the list on the AI door.
+    const context = state.invoiceTexts.map((t) => t.text).join('\n');
+    for (const name of ['Шапка', 'Шарф', 'Перчатки']) expect(context).toContain(name);
+  });
+
+  it('a closing label-only «TOTAL» is no news: nothing said of it, and nothing handed to the model for it', async () => {
+    const body = await xlsxOf([H, ['Ladies jacket', 300, 150, 1.2], ['TOTAL', 300, 150, 1.2]]);
+    const { state, said } = await forward(body, 'total.xlsx', XLSX);
+    expect(names(state)).toEqual(['Ladies jacket']);
+    expect(said).not.toContain('tovar deb olinmadi');
+    expect(state.invoiceTexts).toEqual([]);
   });
 });
 

@@ -669,6 +669,19 @@ untouched.
 - on the AI door, the dropped text goes to the model as context and is printed on receipt («ostidagi N ta
   qator tovar deb olinmadi: …»).
 
+As built (P-reader-B fix round): every dropped row carries its `name`, and reaches a reader on each surface
+or the trim does not apply there.
+- The bot (both doors): `readIntakeFile` hands `droppedRowsLine` and the named rows' text to
+  `receiveGoodsSheet`; the line is said on receipt and kept in `fileNotes` (the prompt, the card's note). Only
+  on the AI door do the rows join `invoiceTexts` (the model's context); the plain door asks no model of a lone
+  Excel and a footer does not start one. A label-only «TOTAL» is said to nobody and handed to no model.
+- The deal card's import shows every non-label-only dropped row under the draft, each with «＋».
+- The VED paste keeps the tail (`SheetHints.keepTail`): every pasted line lands.
+- (c) drops a row only in a subtotal's shape: the last word a subtotal word (never umumiy/умумий/sum); or
+  the first word Итого/Всего/Jami/Жами/Подытог/Subtotal (1C's «Итого по разделу …»), a leading 合计/小计…,
+  or «Grand/Sub/Общий» + a total word — never the Latin «TOTAL …» alone (a brand); or an empty name. A blank figure adds
+  nothing to the window; an unread one poisons its kind only; a figure-less heading is no line of the Σ.
+
 5.9 **Figures as text** (reader-5.9-decimal-comma, critic-paste-5.9; xlsxN-07 betterFix verbatim). The comma
 is settled once per figure column (quantity, weight, gross, volume, amount), from that column's own string
 cells.
@@ -713,6 +726,14 @@ Corpus cases, plus send-rows' paste cases:
 - **A lone candidate** becomes `cartonCol` only through a Latin or Cyrillic package word, never through 件数
   or 总件数.
 - Every case asserts `quantity` AND `unit`.
+
+As built (P-reader-B fix round): the four keys in the betterFix's order, with two additions recorded here.
+- (a) and (b) are asked of a header that names no package only: a package header's total word or «шт» is
+  its packages' («Кол-во | Кол-во мест, шт», «QTY (PCS) | TOTAL CTN QTY», «总件数 | 数量» → the pieces;
+  review break-qty-rank). The package words for (c) add «karobka», «quti», «joy soni» and «упаков».
+- A header naming money, a weight or a volume ranks below every count (c3102 «Price/pcs | Qty» → 300).
+- (b) is a PIECE unit: «Кол-во, м2 | Кол-во, шт» → 300 шт (c3032 re-anchored), and the passed-over count in
+  another unit is said on the line's note («Кол-во, м2»: 120), never lost.
 
 5.11 **Шт** (reader-5.11-sht, the verifier's code). In the quantity loop a header is a candidate when either
 holds:

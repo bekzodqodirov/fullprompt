@@ -1,4 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { endIntake, startIntake } from '@/modules/platform/telegram/calc-intake';
+import { receiveGoodsSheet } from '@/modules/platform/telegram/calc-files';
 import { droppedRowsLine, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { detectColumns, parseGoods, totalRowOf, type Cell, type DroppedRow } from '@/modules/wms/deals/goods-import';
 import { read } from '../fixtures/source-shape';
@@ -11,7 +13,7 @@ import { buildFile } from './fixtures/intake-corpus';
  * readers), the receipt's words for `dropped`, the channels `dropped` and
  * the CSV's comma travel through (the bot's reader, the deal import's JSON),
  * and the VED paste. The readings themselves are pinned in
- * tests/unit/fixtures/intake-corpus.json, c3001-c3118.
+ * tests/unit/fixtures/intake-corpus.json, c3001-c3151.
  */
 
 describe('§5.4 totalRowOf — the ONE «is this row arithmetic» (#513)', () => {
@@ -53,7 +55,7 @@ describe('§5.4 totalRowOf — the ONE «is this row arithmetic» (#513)', () =>
   });
 
   it('a label: an Incoterm names its place; digits glued to letters are a model number, a unit glued to its number a qualifier', () => {
-    for (const name of ['TOTAL FOB NINGBO', 'TOTAL CIF TASHKENT', 'TOTAL 15CTNS', 'TOTAL 300KG', 'Итого по товарам', 'Jami summasi']) {
+    for (const name of ['TOTAL FOB NINGBO', 'TOTAL CIF TASHKENT', 'TOTAL 15CTNS', 'TOTAL 300KG', 'Итого 15мест', 'TOTAL 15CARTONS', 'Итого по товарам', 'Jami summasi']) {
       expect(totalRowOf({ name, figures: true }), name).toBe('total');
     }
     expect(totalRowOf({ name: 'TOTAL 10W-40', figures: true })).toBeNull();
@@ -131,6 +133,41 @@ describe('`dropped` reaches every caller of the reader', () => {
     expect(route).toMatch(/const \{ goods, dropped \} = parseGoods\(/);
     expect(route).toMatch(/NextResponse\.json\(\{ error: 'no_goods', dropped \}/);
     expect(route).toMatch(/NextResponse\.json\(\{ goods, groups, aiError, dropped \}\)/);
+  });
+});
+
+describe('§5.5 the bot’s collector says the dropped rows and shows them to the model on the AI door only', () => {
+  const chats: bigint[] = [];
+  afterEach(() => {
+    for (const id of chats.splice(0)) endIntake(id);
+  });
+  const sheetOf = () => ({
+    goods: [{ name: 'Куртка', quantity: 100, weightKg: 50 }],
+    label: '«names.xlsx»',
+    text: '',
+    textCut: false,
+    cellsCut: false,
+    where: '',
+    dropped: { line: 'ostidagi 1 ta qator tovar deb olinmadi: «Шапка»', rows: ['Шапка'] },
+  });
+  const collection = (ai: boolean) => {
+    const chatId = BigInt(-9_400_000_000) - BigInt(chats.length + 1);
+    chats.push(chatId);
+    return startIntake(chatId, 'rastamojka', { ai, staffId: 'staff-test' });
+  };
+
+  it('both doors SAY it on the receipt, and keep it as a receipt-time note (the prompt and the card’s note)', () => {
+    for (const ai of [false, true]) {
+      const answer = receiveGoodsSheet(collection(ai), sheetOf());
+      expect(answer.say).toContain('📄 «names.xlsx» — ostidagi 1 ta qator tovar deb olinmadi: «Шапка».');
+      expect(answer.patch.fileNotes).toContain('📄 «names.xlsx» — ostidagi 1 ta qator tovar deb olinmadi: «Шапка».');
+    }
+  });
+
+  it('the AI door hands the rows to the model as context; the plain door asks no model of a lone Excel, so nothing is added there', () => {
+    const ai = receiveGoodsSheet(collection(true), sheetOf()).patch.invoiceTexts ?? [];
+    expect(ai.map((t) => t.text).join('\n')).toContain('Шапка');
+    expect(receiveGoodsSheet(collection(false), sheetOf()).patch.invoiceTexts).toEqual([]);
   });
 });
 

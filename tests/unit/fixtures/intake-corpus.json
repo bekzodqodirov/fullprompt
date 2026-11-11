@@ -39658,18 +39658,19 @@
      "rows": [
       {
        "name": "Плитка",
-       "quantity": 120,
-       "unit": "м2"
+       "quantity": 300,
+       "unit": null,
+       "note": "«Кол-во, м2»: 120"
       }
      ],
      "count": 1
     }
    },
-   "said": "«Кол-во, м2 | Кол-во, шт»: the measure column first keeps its m² (a measure unit names what it counts, as a piece unit does)",
-   "why": "reader-5.10 ranking: chosen — a named measure unit ranks with a piece unit, leftmost wins, as today",
+   "said": "«Кол-во, м2 | Кол-во, шт»: the PIECE column is the line's count (§5.10 (b) is a piece unit word); the m² it passed over is said on the line's note, never lost",
+   "why": "reader-5.10 ranking (xlsxN-08 betterFix (b) = a piece unit; review spec-510-unit-rank flipped the chosen answer)",
    "source": "fayl-oqish P-reader-B neighbours",
    "weight": "pinned",
-   "note": "chosen answer, written down"
+   "note": "re-anchored: the lead's ruling, §5.10 (b) is a PIECE unit word"
   },
   {
    "id": "c3033",
@@ -41614,7 +41615,7 @@
      }
     ]
    },
-   "said": "a list with figures on its first lines only: the figure-less tail is not taken as goods — and every one of its names is in `dropped`: the deal import shows each with «＋», the paste keeps them as lines, and the bot's collector owes them to the model and the receipt (FAYL-OQISH §5.5)",
+   "said": "a list with figures on its first lines only: the figure-less tail is not taken as goods — and every one of its names is in `dropped`: the bot says them on receipt and (AI door) hands them to the model, the deal import shows each with «＋», the paste keeps them as lines (FAYL-OQISH §5.5)",
    "why": "reader-5.5-footer: «a partial-figure names list, shown»",
    "source": "fayl-oqish P-reader-B",
    "weight": "defect"
@@ -43161,6 +43162,141 @@
    "weight": "defect"
   },
   {
+   "id": "c3146",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, пар",
+     "Кол-во, шт",
+     "Вес, кг"
+    ],
+    [
+     "Туфли женские",
+     100,
+     200,
+     80
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Туфли женские",
+       "quantity": 200,
+       "unit": null,
+       "note": "«Кол-во, пар»: 100"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во, пар | Кол-во, шт»: the pieces are the count, the pairs said on the note",
+   "why": "review spec-510-unit-rank: (b) is a piece unit word",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3147",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, шт",
+     "Кол-во, м2",
+     "Вес, кг"
+    ],
+    [
+     "Плитка",
+     300,
+     120,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 300,
+       "unit": null,
+       "note": "«Кол-во, м2»: 120"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во, шт | Кол-во, м2»: the pieces first stay the count, the m² on the note",
+   "why": "review spec-510-unit-rank: the passed-over measure is said wherever it stands",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3148",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во, м2",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Плитка",
+     120,
+     300,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "м2",
+       "note": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во, м2 | Кол-во»: neither names a piece unit — the leftmost, as today",
+   "why": "review spec-510-unit-rank: (d) leftmost when (a)-(c) do not decide",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3149",
+   "input": [
+    [
+     "品名",
+     "总件数",
+     "数量",
+     "净重"
+    ],
+    [
+     "女士夹克",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "unit": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«总件数 | 数量»: 件数 names the packages, so its leading 总 is theirs — 数量 is the count (a lone «总件数» stays the pieces, c2453)",
+   "why": "review break-qty-rank: a package-named header's total word counts packages",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
    "id": "c3129",
    "input": [
     [
@@ -43621,6 +43757,48 @@
    "weight": "defect"
   },
   {
+   "id": "c3150",
+   "input": [
+    [
+     "Description",
+     "Qty"
+    ],
+    [
+     "Har gow",
+     10
+    ],
+    [
+     "Siu mai",
+     10
+    ],
+    [
+     "Dim sum",
+     20
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Har gow"
+      },
+      {
+       "name": "Siu mai"
+      },
+      {
+       "name": "Dim sum"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "«Dim sum» whose 20 is 10 + 10: a food, kept — «sum» says total only as a whole label, never as a subtotal’s last word",
+   "why": "review break-c-window-wider: umumiy/умумий/sum count only under (a)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
    "id": "c3138",
    "input": [
     [
@@ -43926,6 +44104,63 @@
    "why": "review break-named-total-window-nan («only an unread figure poisons its kind»)",
    "source": "fayl-oqish P-reader-B fix",
    "weight": "defect"
+  },
+  {
+   "id": "c3151",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Сумма"
+    ],
+    [
+     "Куртка",
+     100,
+     1000
+    ],
+    [
+     "Брюки",
+     200,
+     2000
+    ],
+    [
+     "Упаковка",
+     null,
+     50
+    ],
+    [
+     "Итого по разделу Одежда",
+     300,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      },
+      {
+       "name": "Упаковка"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": [
+     {
+      "text": "Итого по разделу Одежда | 300",
+      "name": "Итого по разделу Одежда",
+      "why": "subtotal"
+     }
+    ]
+   },
+   "said": "1C’s «Итого по разделу …» stating its count only, over a line with no count (a service): the blank adds nothing, as Excel’s SUM — 100 + 200 is the subtotal’s 300, never a fourth good",
+   "why": "review break-named-total-window-nan: a BLANK figure adds 0; only an unread one poisons its kind",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
   },
   {
    "id": "c3145",

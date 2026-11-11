@@ -257,6 +257,8 @@ describe('rows missing vs cells shortened (R3-C2, the sheets package’s two fla
       cellsCut: true,
       // The reader's shape since docs/FAYL-OQISH.md §4.1: no other sheet mapped.
       moreSheets: [],
+      // The reader always says what it did not take as goods (FAYL-OQISH §5.5); nothing, here.
+      dropped: [],
     };
     const goods = await readIntakeFile({ isPhoto: false, body: Buffer.from('x'), attachmentId: 'a-file' }, 'A.xlsx', null, collection().state);
     expect(goods.say).not.toContain('⚠️');
