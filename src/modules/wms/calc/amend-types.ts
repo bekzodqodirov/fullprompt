@@ -100,4 +100,11 @@ export interface AmendSubmission {
    * before the round).
    */
   unread?: string | null;
+  /**
+   * The files the add collection refused at arrival (`IntakeState.refusedFiles`,
+   * as-built review WORDS-2): their goods are in no figure, and the VED reads
+   * which in the thread and on the card. Absent = none (and every row from
+   * before).
+   */
+  refusedFiles?: { name: string; why: string }[];
 }

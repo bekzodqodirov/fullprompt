@@ -42,7 +42,7 @@ vi.mock('@/modules/platform/telegram/staff-bot', async (importOriginal) => {
   };
 });
 
-import { activeIntake, endIntake, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
+import { activeIntake, endIntake, filesMissingNote, startIntake, updateIntake, type IntakeState } from '@/modules/platform/telegram/calc-intake';
 import {
   AI_QUEUED,
   deliverNextStep,
@@ -61,12 +61,18 @@ import { markIntakesHydrated } from '@/modules/platform/telegram/calc-store';
 import { CALC_STEP_REPEAT, parseCallback } from '@/modules/platform/telegram/staff-bot';
 import { addReadingUnread, amendSubmissionOf, unreadRepassLine } from '@/modules/platform/telegram/calc-amend';
 import {
+  AI_FILES_REFUSED,
+  AI_GOODS_ROW_UNREAD,
   AI_NO_GOODS,
   AI_TABLE_COMPLETE,
+  cutNoteText,
   intakeNoteText,
   readInsteadWords,
+  refusedFileLines,
   vedLandingNote,
+  vedLandingReason,
 } from '@/modules/wms/calc/intake';
+import { fitTelegram, TELEGRAM_LIMIT } from '@/modules/wms/calc/fit-telegram';
 import { landingOwesPass } from '@/modules/wms/calc/intake-land';
 import { aiReadingWhole } from '@/modules/platform/telegram/reading-whole';
 import { aiVedReplyText, NO_GOODS_CUSTOMS } from '@/modules/wms/calc/ai-reply';
@@ -300,7 +306,7 @@ describe('a whole AI table keeps today’s words (§1.2, critic-pins)', () => {
     });
     const table = await drawn(chatId);
     expect(data(table)).toContain('c:save');
-    expect(table.text).toContain('shartnoma.docx o‘qilmadi (Word fayl o‘qilmaydi) — undagi tovarlar hisobga kirmaydi.');
+    expect(table.text).toContain('«shartnoma.docx» o‘qilmadi (Word fayl o‘qilmaydi) — undagi tovarlar hisobga kirmaydi.');
     expect(table.text.split('\n').at(-1)).toBe(AI_TABLE_COMPLETE);
   });
 
@@ -773,5 +779,181 @@ describe('the ➕ add collection’s own reading (§1.6)', () => {
     expect(amendDiff(base, sub, '00000000-0000-4000-8000-0000000000aa').unread).toBe('1 ta PDF');
     expect(amendSubmissionOf(state).unread).toBeUndefined();
     expect(unreadRepassLine('1 ta PDF')).toBe('\n⚠️ 1 ta PDF o‘qilmadi — AI qayta hisoblamaydi, narxni VED beradi.');
+  });
+});
+
+describe('the as-built review’s words on the AI table (as-built review A)', () => {
+  const VED_FILES = '«👤 VED hisoblasin» — VED xodimi fayllarni o‘zi ko‘rib hisoblaydi (AI hisoblamaydi).';
+  const capped = (label: string) => ({
+    label,
+    shape: 'invoice' as const,
+    weightKind: null,
+    grossKg: null,
+    grossColumn: false,
+    volumeM3: null,
+    rows: 500,
+    text: null,
+    capped: true as const,
+  });
+
+  it('OWNER-6: a label the reader stored quoted is quoted once — a file, a further sheet, an unread sheet', async () => {
+    const file = collection({ fileCount: 1, invoiceGoods: TWO, goodsFiles: [capped('«long.xlsx»')], aiUsed: true, facts: { ...FULL, goods: TWO } });
+    const table = await drawn(file.chatId);
+    expect(table.text).toContain('⚠️ «long.xlsx» jadvalining birinchi 500 qatori o‘qildi.');
+    expect(table.text).not.toContain('««');
+    const whole = aiReadingWhole(file.state, 2);
+    expect(vedLandingReason(file.state, whole, { label: '«long.xlsx»', kept: 500, total: null })).toBe('«long.xlsx» jadvali to‘liq o‘qilmadi');
+    const sheet = collection({ fileCount: 1, invoiceGoods: TWO, goodsFiles: [capped('«two.xlsx», «Zavod B» varag‘i')], aiUsed: true, facts: { ...FULL, goods: TWO } });
+    expect((await drawn(sheet.chatId)).text).toContain('⚠️ «two.xlsx», «Zavod B» varag‘ining birinchi 500 qatori o‘qildi.');
+    const free = collection({
+      fileCount: 2,
+      invoiceGoods: TWO,
+      sheetTexts: [{ text: 'Kurtka | 3\nShim | 2', cut: false, cellsCut: false, label: '«free.xlsx»' }],
+      aiUsed: false,
+      aiFailure: 'timeout',
+      facts: { ...FULL, goods: TWO },
+    });
+    const freeText = (await drawn(free.chatId)).text;
+    expect(freeText).toContain('⚠️ 2 ta tovar Excel’dan olindi; «free.xlsx» varag‘i o‘qilmadi.');
+    expect(freeText).not.toContain('««');
+  });
+
+  it('OWNER-8: under a capped table the remedy never sends the seller round ➕ — «👤», or «✖️» and the file again in parts', async () => {
+    const { chatId } = collection({ fileCount: 1, invoiceGoods: TWO, goodsFiles: [capped('«long.xlsx»')], aiUsed: true, facts: { ...FULL, goods: TWO } });
+    const table = await drawn(chatId);
+    noConfirm(table);
+    expect(table.text).not.toContain('«➕ Yana ma’lumot» bilan yuboring');
+    expect(table.text).toContain(
+      `«👤 VED hisoblasin» ni bosing — VED xodimi fayllarni o‘zi ko‘rib hisoblaydi (AI hisoblamaydi). Yoki «✖️ Bekor qilish» ni bosib, jadvalni kichikroq bo‘laklarga bo‘lib qaytadan yuboring.`,
+    );
+  });
+
+  it('OWNER-8: a size cut does not repeat its own advice as a ➕ road; no file at all promises no files to the VED', async () => {
+    const size = collection({ fileCount: 1, pdfs: [PDF], aiUsed: true, aiCut: { goods: 2, why: 'size' }, facts: { ...FULL, goods: TWO } });
+    const sizeText = (await drawn(size.chatId)).text;
+    expect(sizeText).not.toContain('«➕ Yana ma’lumot» bilan yuboring');
+    expect(sizeText).toContain('Yoki «✖️ Bekor qilish» ni bosib, kamroq sahifa yoki Excel qilib qaytadan yuboring.');
+    const none = collection({ material: ['salom'], aiUsed: true, facts: FULL });
+    const noneText = (await drawn(none.chatId)).text;
+    expect(noneText).toContain('Tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring. Yoki «👤 VED hisoblasin» — VED xodimi o‘zi hisoblaydi (AI hisoblamaydi).');
+    expect(noneText).not.toContain('fayllarni o‘zi ko‘rib');
+  });
+
+  it('WORDS-3: on a budget day the remedy is the same after ➕ brought the goods as an Excel — and it no longer says ➕ heals it now', async () => {
+    const day = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'budget', facts: FULL });
+    const first = (await drawn(day.chatId)).text;
+    const later = `«👤 VED hisoblasin» ni bosing — VED xodimi fayllarni o‘zi ko‘rib hisoblaydi (AI hisoblamaydi). Yoki ertaga «➕ Yana ma’lumot» bilan biror narsa yuboring — AI hammasini qayta o‘qiydi.`;
+    expect(first).toContain(later);
+    expect(first).not.toContain('Faylni Excel qilib');
+    updateIntake(day.chatId, { fileCount: 2, invoiceGoods: TWO, facts: { ...FULL, goods: TWO } });
+    const after = await drawn(day.chatId);
+    noConfirm(after);
+    expect(after.text).toContain('⚠️ 2 ta tovar Excel’dan olindi; 1 ta PDF o‘qilmadi.');
+    expect(after.text).toContain(later);
+    // A refusal of the material itself: only «👤», or «✖️» and the goods without that file.
+    const refused = collection({ fileCount: 1, images: [PHOTO], aiUsed: false, aiFailure: 'refused', facts: FULL });
+    expect((await drawn(refused.chatId)).text).toContain('Yoki «✖️ Bekor qilish» ni bosib, o‘qilmagan faylsiz (Excel qilib yoki yozib) qaytadan yuboring.');
+    // A retryable failure keeps today's words (control).
+    const timeout = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'timeout', facts: FULL });
+    expect((await drawn(timeout.chatId)).text).toContain(`«🔄 AI qayta o‘qisin» ni bosing, yoki faylni Excel qilib / tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring. Yoki ${VED_FILES}`);
+  });
+
+  it('OWNER-5: files refused at arrival are the same fact, counted or not — «Yuborilgan fayl o‘qilmadi», never «AI … topa olmadi» or «yozilmagan»', async () => {
+    // A DOCX the file door counted, and a 25 MB PDF it did not.
+    for (const fileCount of [1, 0]) {
+      const name = fileCount ? 'inv.docx' : 'CI-big.pdf';
+      const { chatId, state } = collection({ fileCount, refusedFiles: [{ name, why: fileCount ? 'Word fayl' : '20 MB dan katta' }], material: ['salom'], aiUsed: true, facts: FULL });
+      const table = await drawn(chatId);
+      noConfirm(table);
+      expect(table.text, name).toContain(`Tovarlar (0):\n${AI_GOODS_ROW_UNREAD}`);
+      expect(table.text, name).toContain(`\n${AI_FILES_REFUSED}\n«${name}» o‘qilmadi`);
+      expect(table.text, name).not.toContain('AI yuborilgan fayllardan tovar topa olmadi');
+      expect(table.text, name).not.toContain(AI_NO_GOODS);
+      // The DOCX is on the card for the VED to open; the 25 MB file never reached it.
+      expect(table.text.includes('fayllarni o‘zi ko‘rib'), name).toBe(fileCount > 0);
+      expect(vedLandingReason(state, aiReadingWhole(state, 0), null), name).toBe('yuborilgan fayl o‘qilmadi');
+    }
+  });
+
+  it('OWNER-7: «🔄» is named once when the reading’s own note names it', async () => {
+    const { chatId } = collection({
+      fileCount: 2,
+      invoiceGoods: TWO,
+      pdfs: [PDF],
+      aiUsed: true,
+      filesMissing: 1,
+      notes: [filesMissingNote(1, true)!],
+      facts: { ...FULL, goods: TWO },
+    });
+    const table = await drawn(chatId);
+    expect(data(table)[0]).toBe('c:reread');
+    expect(table.text.split('«🔄 AI qayta o‘qisin»').length - 1).toBe(1);
+    expect(table.text).toContain(`Faylni Excel qilib / tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring. Yoki ${VED_FILES}`);
+  });
+
+  it('OWNER-12: a lone PDF the API refused is said once — by its name, never also by the tail’s generic refusal', async () => {
+    const { chatId } = collection({ fileCount: 1, pdfs: [PDF], unreadPdfs: ['pdf-1'], aiUsed: false, aiFailure: 'rejected', facts: FULL });
+    const table = await drawn(chatId);
+    noConfirm(table);
+    expect(table.text).toContain('📄 «invoice.pdf» — AI bu faylni qabul qilmadi');
+    expect(table.text).not.toContain('AI so‘rovni qabul qilmadi');
+    expect(table.text).toContain('Hech narsa o‘qilmadi.');
+    // A rejection with no PDF to name keeps the tail's words (control).
+    const bare = collection({ fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'rejected', facts: FULL });
+    expect((await drawn(bare.chatId)).text).toContain('AI so‘rovni qabul qilmadi');
+  });
+
+  it('REGRESSION-4: sixty files refused at arrival leave the goods rows and the remedy on the table — the first five by name, the rest counted', async () => {
+    const goods = Array.from({ length: 40 }, (_, i) => line(`Tovar ${i + 1}`, { quantity: 10 + i, tnvedCode: '6201400000' }));
+    const refusedFiles = Array.from({ length: 60 }, (_, i) => ({ name: `IMG_20261110_${1000 + i}.HEIC`, why: 'HEIC rasm' }));
+    const { chatId } = collection({ fileCount: 61, invoiceGoods: goods, pdfs: [PDF], aiUsed: false, aiFailure: 'timeout', refusedFiles, facts: { ...FULL, goods } });
+    const table = await drawn(chatId);
+    expect(table.text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(table.text).toContain('1. Tovar 1');
+    expect(table.text).toContain('Yana 55 ta fayl o‘qilmadi (HEIC rasm) — ulardagi tovarlar hisobga kirmaydi.');
+    expect(table.text.split('\n').at(-1)).toContain(VED_FILES);
+    expect(table.text).not.toContain('(qisqartirildi)');
+  });
+
+  it('WORDS-11: a counted entry is plural, a file is quoted', () => {
+    expect(refusedFileLines([{ name: '3 ta rasm', why: '12 tadan ortiq rasm' }, { name: 'spec.docx', why: 'Word fayl' }])).toEqual([
+      '3 ta rasm o‘qilmadi (12 tadan ortiq rasm) — ulardagi tovarlar hisobga kirmaydi.',
+      '«spec.docx» o‘qilmadi (Word fayl) — undagi tovarlar hisobga kirmaydi.',
+    ]);
+  });
+
+  it('REGRESSION-4: the last resort of the fit ends on a line, and never inside an emoji', () => {
+    const many = Array.from({ length: 300 }, (_, i) => `Qator ${i} — undagi tovarlar hisobga kirmaydi.`);
+    const text = fitTelegram(['Bosh'], [], many, []);
+    expect(text.length).toBeLessThanOrEqual(TELEGRAM_LIMIT);
+    expect(text.split('\n').at(-2)).toMatch(/kirmaydi\.$/u);
+    const emoji = fitTelegram([`${'a'.repeat(TELEGRAM_LIMIT - 21)}🔄${'b'.repeat(50)}`], [], [], []);
+    expect(emoji).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/u);
+  });
+
+  it('OWNER-3: the plain door’s summary says a cut reading — the keyboard stays his 2a’s', async () => {
+    const seven = Array.from({ length: 7 }, (_, i) => line(`Tovar ${i + 1}`, { quantity: 10 }));
+    const { chatId } = collection({ ai: false, fileCount: 1, aiUsed: true, aiCut: { goods: 7, why: 'clock' }, facts: { ...FULL, goods: seven } });
+    const table = await drawn(chatId);
+    expect(data(table)).toContain('c:save');
+    expect(table.text).toContain('⚠️ AI faylni oxirigacha o‘qib ulgurmadi — 7 ta tovar o‘qildi, qolgani o‘qilmadi.');
+    // No cut, no line (control).
+    const whole = collection({ ai: false, fileCount: 1, aiUsed: true, facts: { ...FULL, goods: seven } });
+    expect((await drawn(whole.chatId)).text).not.toContain('oxirigacha');
+  });
+
+  it('WORDS-2: the card names the files refused at arrival, and its doorNote can carry a cut', () => {
+    const note = intakeNoteText({
+      section: 'rastamojka',
+      facts: { ...FULL, goods: TWO },
+      laws: new Map(),
+      steps: [],
+      collectedBy: 'Sotuvchi',
+      fileCount: 1,
+      doorNote: cutNoteText({ goods: 7, why: 'clock' }),
+      refusedFiles: [{ name: 'CI-big.pdf', why: '20 MB dan katta' }, { name: '3 ta rasm', why: '12 tadan ortiq rasm' }],
+    });
+    expect(note).toContain('⚠️ AI faylni oxirigacha o‘qimadi — 7 ta tovar o‘qildi, qolgani o‘qilmadi: ro‘yxat to‘liq emas, faylni ko‘ring.');
+    expect(note).toContain('⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): «CI-big.pdf» — 20 MB dan katta; 3 ta rasm — 12 tadan ortiq rasm');
   });
 });

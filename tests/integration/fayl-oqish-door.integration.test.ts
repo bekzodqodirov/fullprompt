@@ -413,6 +413,7 @@ describe('an AI-door addition whose own reading is not whole re-runs nothing (§
       pdfs: [PDF],
       aiUsed: false,
       aiFailure: 'not_configured',
+      refusedFiles: [{ name: 'spec.docx', why: 'Word fayl' }],
       facts: { goods: [...stored!.base.items.map((i) => ({ name: i.name, itemId: i.itemId, seq: i.seq, quantity: i.quantity })), { name: 'Shim', quantity: 50 }] },
     })!;
     const { addReadingUnread } = await import('@/modules/platform/telegram/calc-amend');
@@ -431,5 +432,46 @@ describe('an AI-door addition whose own reading is not whole re-runs nothing (§
     const words = await amendWords(out as Parameters<typeof amendWords>[0], false, 'ai', true);
     expect(words).toContain(unreadRepassLine('1 ta PDF'));
     expect(words).not.toContain('AI qayta hisoblayapti');
+    // The VED's thread says the same (as-built review WORDS-1): nothing
+    // re-runs, and which file of the addition went unread.
+    const thread = (await db.execute(sql`
+      SELECT note FROM crm_activities WHERE calc_request_id = ${landed.id}::uuid AND note LIKE '➕%' ORDER BY created_at DESC LIMIT 1`)) as unknown as {
+      note: string;
+    }[];
+    expect(thread[0]?.note).toContain('➕ Sotuvchi qo‘shimcha yubordi — so‘rovga yozildi; AI qayta hisoblamaydi (1 ta PDF o‘qilmadi) — narxni siz berasiz:');
+    expect(thread[0]?.note).not.toContain('AI qayta hisoblaydi:');
+    // …and the file the addition refused at arrival (WORDS-2).
+    expect(thread[0]?.note).toContain('· ⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): «spec.docx» — Word fayl');
+  });
+});
+
+describe('the card says what the seller was told (as-built review A)', () => {
+  it('OWNER-3: a plain-door reading the AI cut lands as it is, and the card says the list is not whole', async () => {
+    const seven = Array.from({ length: 7 }, (_, i) => ({ name: `Tovar ${i + 1}`, quantity: 10 }));
+    const { chat, noteId } = await collected({ ai: false, fileCount: 1, aiUsed: true, aiCut: { goods: 7, why: 'clock' }, facts: { weightKg: 300, volumeM3: 2, goods: seven } });
+    const { ctx } = press();
+    await handleCalcCallback(ctx, chat, 'save');
+    const landed = await landedOn(noteId);
+    expect(landed).toMatchObject({ door: 'plain', items: 7 });
+    expect(await noteText(noteId)).toContain(
+      '⚠️ AI faylni oxirigacha o‘qimadi — 7 ta tovar o‘qildi, qolgani o‘qilmadi: ro‘yxat to‘liq emas, faylni ko‘ring.',
+    );
+  });
+
+  it('WORDS-2: the files the bot refused at arrival are named on the card — on the AI door’s VED landing and its whole one', async () => {
+    const refusedFiles = [{ name: 'CI-big.pdf', why: '20 MB dan katta' }];
+    const whole = await collected({ fileCount: 1, invoiceGoods: KURTKA, aiUsed: true, refusedFiles, facts: { weightKg: 300, volumeM3: 2, goods: KURTKA } });
+    const ved = await collected({ fileCount: 0, material: ['salom, shu invoys'], aiUsed: true, refusedFiles, facts: { weightKg: 300, volumeM3: 2 } });
+    const ticks: string[] = [];
+    for (const [c, step] of [[whole, 'save'], [ved, 'to_ved']] as const) {
+      const { ctx, replies } = press();
+      await handleCalcCallback(ctx, c.chat, step);
+      ticks.push(replies.find((t) => t.startsWith('✅')) ?? replies.join(' | '));
+      await landedOn(c.noteId);
+      expect(await noteText(c.noteId), step).toContain('⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): «CI-big.pdf» — 20 MB dan katta');
+    }
+    expect(await noteText(ved.noteId)).toContain('AI hisoblamadi: yuborilgan fayl o‘qilmadi.');
+    // The file past 20 MB was never stored: the VED is promised no file to look at.
+    expect(ticks[1]).toContain('🧮 VED navbatiga tushdi — AI hisoblamadi: yuborilgan fayl o‘qilmadi. VED xodimi javobni shu yerga yuboradi.');
   });
 });

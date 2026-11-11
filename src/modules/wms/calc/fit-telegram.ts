@@ -8,6 +8,8 @@
 export const TELEGRAM_LIMIT = 4096;
 /** Past this many lines the list collapses — with a count, never in silence. */
 export const MAX_REPLY_LINES = 25;
+/** How far back the last resort looks for a line's end before it slices inside one. */
+const LINE_SLACK = 600;
 
 /**
  * Within Telegram's cap WITHOUT losing the end (§2.9).
@@ -35,5 +37,14 @@ export function fitTelegram(
     if (text.length <= TELEGRAM_LIMIT) return text;
   }
   const text = [...head, ...fixed, ...tail].join('\n');
-  return text.length <= TELEGRAM_LIMIT ? text : `${text.slice(0, TELEGRAM_LIMIT - 20)}\n… (qisqartirildi)`;
+  if (text.length <= TELEGRAM_LIMIT) return text;
+  // The last resort ends on a line where one ends near the cap (as-built
+  // review REGRESSION-4): cut mid-word it read «hisobga kir». One head line
+  // longer than the cap is still sliced, never past a surrogate pair's first
+  // half — a lone half and Telegram refuses the whole message.
+  let cut = text.slice(0, TELEGRAM_LIMIT - 20);
+  const line = cut.lastIndexOf('\n');
+  if (line > cut.length - LINE_SLACK) cut = cut.slice(0, line);
+  else if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut}\n… (qisqartirildi)`;
 }

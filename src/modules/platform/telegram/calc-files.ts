@@ -501,6 +501,8 @@ export function receiveGoodsSheet(
       cut: false,
       cellsCut: false,
       label,
+      // Context for a reading, never the reason for one (as-built review MODEL-8).
+      dropped: true,
     });
   }
   // Where the material stood: a totals answer given before this file is

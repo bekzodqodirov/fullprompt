@@ -294,6 +294,8 @@ export function amendSubmissionOf(state: IntakeState, unread: string | null = nu
     ...((state.fileNotes ?? []).length > 0 ? { fileNotes: [...state.fileNotes] } : {}),
     // The add reading was not whole (docs/FAYL-OQISH.md §1.6): written, no re-pass.
     ...(unread ? { unread } : {}),
+    // …and the files it refused at arrival reach the VED (as-built review WORDS-2).
+    ...((state.refusedFiles ?? []).length > 0 ? { refusedFiles: [...(state.refusedFiles ?? [])] } : {}),
   };
 }
 

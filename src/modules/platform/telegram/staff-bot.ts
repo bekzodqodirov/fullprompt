@@ -1559,7 +1559,7 @@ export async function landCollectedIntake(
   /** The landed request's item count, as its row reads. */
   items?: number | null;
   /** The AI door's job landed for the VED alone, and the row says so (docs/FAYL-OQISH.md §1.3 b). */
-  ved?: { reason: string } | null;
+  ved?: { reason: string; filesOnCard?: boolean } | null;
 } | null> {
   const { activeIntake, collectionDoor, intakeClientLabel, typedCodesOwn } = await import('./calc-intake');
   const state = activeIntake(chatId);
@@ -1604,8 +1604,11 @@ export async function landCollectedIntake(
     // which for a legacy source is only `openSeeded`'s «a customs section».
     intakeDoor: toVed ? 'plain' : door,
     // The record stays honest (§1.3 a): the card says the AI door collected
-    // it and why the AI did not compute.
-    doorNote: ved?.note ?? null,
+    // it and why the AI did not compute — and a cut reading that lands as it
+    // is (the plain door's) says the list is not whole (as-built review OWNER-3).
+    doorNote: ved?.note ?? (state.aiCut ? intake.cutNoteText(state.aiCut) : null),
+    // The files the bot refused at arrival, named for the VED (WORDS-2).
+    refusedFiles: state.refusedFiles ?? [],
     noteId: state.noteId,
     section: state.section,
     // A code the seller typed lands as his own, never as the model's
@@ -1651,7 +1654,10 @@ export async function landCollectedIntake(
   const words = await landedWordsOf(landed.queued ? landed.requestId : null, landed.replyQueued);
   // The VED words only where the ROW says the «🧮» door: a request an earlier
   // press opened with another door is what the pass will follow.
-  return { ...landed, ...words, ved: ved && words.door === 'plain' ? { reason: ved.reason } : null };
+  // «VED xodimi fayllarni ko‘rib» only where a file reached the card — a file
+  // past 20 MB is never stored (as-built review WORDS-2); `fileCount` counts
+  // exactly the stored ones.
+  return { ...landed, ...words, ved: ved && words.door === 'plain' ? { reason: ved.reason, filesOnCard: state.fileCount > 0 } : null };
 }
 
 /**

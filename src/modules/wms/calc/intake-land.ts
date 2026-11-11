@@ -486,6 +486,13 @@ export async function landIntake(input: {
    * «🧮» door. Absent on every other landing.
    */
   doorNote?: string | null;
+  /**
+   * The files the bot refused at arrival (`IntakeState.refusedFiles`,
+   * docs/FAYL-OQISH.md §1.1): their goods are not in the figure, and the
+   * card's note names them for the VED (as-built review WORDS-2). Absent on
+   * every door that has none.
+   */
+  refusedFiles?: readonly { name: string; why: string }[];
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is
@@ -500,6 +507,7 @@ export async function landIntake(input: {
     fileCount: input.fileCount,
     material: input.material,
     doorNote: input.doorNote ?? null,
+    refusedFiles: input.refusedFiles ?? [],
   });
   const items = landingItems(input.facts);
   // Nothing the pass could price (§1.3 c): asked once, for both queue calls.

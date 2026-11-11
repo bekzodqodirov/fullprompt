@@ -376,6 +376,14 @@ export interface IntakeSheetText {
   text: string;
   cut: boolean;
   cellsCut: boolean;
+  /**
+   * The rows under a list the reader did not take as goods (docs/FAYL-OQISH.md
+   * §5.5 — a footer, a signature line, «Made in China»): context for a reading
+   * that happens anyway, never a reason for one (as-built review MODEL-8). An
+   * all-coded Excel with a «Buyer signature» row under it made one paid call
+   * told to list nothing. Absent = an ordinary sheet text.
+   */
+  dropped?: true;
 }
 
 /**
@@ -620,14 +628,16 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
  * kept when their value closed BEFORE the goods array opened (the schema's
  * order puts them first); `steps` only when its whole array closed; the
  * codes never (they come last — a cut drops them, and the landing pass codes
- * the rows).
+ * the rows). `goodsClosed`: the goods array's own «]» was reached — every good
+ * the answer meant to list is in `goods`, none of them or all of them.
  */
 export function salvageCut(text: string): {
   totals: Partial<Pick<z.infer<typeof factsSchema>, keyof typeof TOTALS>>;
   goods: z.infer<typeof goodSchema>[];
   steps: string[];
+  goodsClosed: boolean;
 } {
-  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [] };
+  const out: ReturnType<typeof salvageCut> = { totals: {}, goods: [], steps: [], goodsClosed: false };
   let i = skipWs(text, 0);
   if (text[i] !== '{') return out;
   i += 1;
@@ -649,6 +659,7 @@ export function salvageCut(text: string): {
       for (;;) {
         i = skipWs(text, i);
         if (text[i] === ']') {
+          out.goodsClosed = true;
           i += 1;
           break;
         }
@@ -959,7 +970,7 @@ export async function analyzeIntake(input: {
   let pdfs = [input.pdf ?? null, ...(input.morePdfs ?? [])].filter((p): p is IntakePdf => p !== null);
   const sheets = input.sheets ?? [];
   const contextSheets = input.contextSheets ?? [];
-  const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');
+  const hasSheets = [...sheets, ...contextSheets].some((s) => !s.dropped && s.text.trim() !== '');
   // Each shown name keeps its index into the caller's list, so a code the
   // model gives by NUMBER lands on the row that number was shown for. Built
   // ABOVE the guard (docs/FAYL-OQISH.md §3.7, known-3): a row whose code is
@@ -1154,20 +1165,28 @@ const textOf = (message: { content: { type: string; text?: string }[] }): string
   message.content.find((b) => b.type === 'text')?.text ?? '';
 
 /**
- * A cut answer as a reading — null when it completed no good (then it stays
- * the failure it was, and a drop or an overload may be read again). Its codes
- * are dropped (`known_codes` is the schema's last property, and a cut
- * finishes no list it began): the landing pass codes the rows.
+ * A cut answer as a reading — null when it completed no good inside an open
+ * goods array (then it stays the failure it was, and a drop or an overload
+ * may be read again). Its codes are dropped (`known_codes` is the schema's
+ * last property, and a cut finishes no list it began): the landing pass
+ * codes the rows.
+ *
+ * A cut AFTER the goods array closed read every good it meant to (as-built
+ * review MODEL-2): on the AI door the commonest answer is goods [] beside an
+ * Excel — every good the Excel's — and the longest tail is `known_codes`, so
+ * the likeliest cut there lost the totals and the «no new goods» verdict as a
+ * failure, or called a finished list unfinished and drew no «✅». Such a cut
+ * is an ordinary reading with no `cut`; only the codes are lost (logged).
  */
-function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut: AiReadingCut } & AiIntakeResult) | null {
+function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut?: AiReadingCut } & AiIntakeResult) | null {
   const cut = salvageCut(text);
+  const read = { facts: factsOf({ ...cut.totals, goods: cut.goods }), steps: cut.steps.slice(0, 20) };
+  if (cut.goodsClosed) {
+    logger.warn({ why, goods: cut.goods.length }, '[calc intake] answer cut after its goods — the codes are lost, the reading kept whole');
+    return { ok: true, ...read };
+  }
   if (cut.goods.length === 0) return null;
-  return {
-    ok: true,
-    cut: { goods: cut.goods.length, why },
-    facts: factsOf({ ...cut.totals, goods: cut.goods }),
-    steps: cut.steps.slice(0, 20),
-  };
+  return { ok: true, cut: { goods: cut.goods.length, why }, ...read };
 }
 
 /**

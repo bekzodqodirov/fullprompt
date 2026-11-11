@@ -151,6 +151,15 @@ Neither of these makes a reading unwhole: typed text alone, or mapped Excel rows
 model. A model failure on an Excel-only collection costs the codes, not the goods, and the landing pass codes
 the rows (today).
 
+As built after the as-built review (A):
+- The named line quotes the file like every other file line on the table, and a counted entry is plural
+  (WORDS-11): «{«X.docx»} o‘qilmadi ({sabab}) — undagi tovarlar hisobga kirmaydi.», «3 ta rasm o‘qilmadi (12
+  tadan ortiq rasm) — ulardagi tovarlar hisobga kirmaydi.».
+- The tier is bounded (REGRESSION-4): the first `REFUSED_NAMED_MAX` (5) by name, the rest one line per reason,
+  «Yana {N} ta fayl o‘qilmadi ({sabab}) — ulardagi tovarlar hisobga kirmaydi.». Sixty HEIC files forwarded as
+  files had left no goods row and cut the remedy off. `fitTelegram`'s last resort ends on a line within 600
+  characters of the cap and never inside a surrogate pair.
+
 1.2 **Not whole → no «✅ Tasdiqlash»** (§6 Q1 ⭐ a, built as ⭐). On a first or seeded AI-door collection the
 keyboard is:
 - `[🔄 AI qayta o‘qisin]` only when a retry can help:
@@ -191,6 +200,31 @@ Then the remedy line, which names only the presses that are drawn:
 With files accepted and zero rows, the goods row above prints «⚠️ tovar — fayldan o‘qilmadi», not
 «⚠️ tovar nomi — yozilmagan» (critic-said-twice). With no file, the old words stay.
 
+As built after the as-built review (A):
+- «Files accepted» is what was TAKEN (`filesAccepted`: a PDF, a photo, a sheet text, an Excel's rows, a stored
+  file that did not load), never `fileCount`, which counts a DOCX the arrival refused and leaves out a 20 MB
+  file (OWNER-5). Zero rows with every file refused at arrival is its own first line, «⚠️ Yuborilgan fayl
+  o‘qilmadi — sababi pastda.» (the named lines follow it); the goods row is «⚠️ tovar — fayldan o‘qilmadi»
+  whenever a file was sent, taken or refused; the VED reason is «yuborilgan fayl o‘qilmadi».
+- A label is quoted once (OWNER-6): the readers store it quoted, so «⚠️ «X» jadvalining …» prints the stored
+  label as it is; a further sheet's label already ends «varag‘i» and reads «⚠️ «X», «Zavod B» varag‘ining
+  birinchi 500 qatori o‘qildi.».
+- The remedy line names only roads that lead somewhere (OWNER-8, WORDS-3): no door takes a file back out of a
+  collection, so «➕» is offered only for a block new material heals (no rows, a retryable failure, a file not
+  handed back, a refused PDF). The sentence above stands for those. Otherwise:
+  - the model will not answer today (budget, no key, a dead key): ««👤 VED hisoblasin» ni bosing — VED xodimi
+    fayllarni o‘zi ko‘rib hisoblaydi (AI hisoblamaydi). Yoki ertaga / AI ulangach «➕ Yana ma’lumot» bilan
+    biror narsa yuboring — AI hammasini qayta o‘qiydi.»;
+  - a capped or input-cut table, a cut, a size stop, a refusal of the material: ««👤 VED hisoblasin» ni bosing
+    — … Yoki «✖️ Bekor qilish» ni bosib, {jadvalni kichikroq bo‘laklarga bo‘lib / kamroq sahifa yoki Excel
+    qilib / faylni kichikroq (yoki Excel) qilib / o‘qilmagan faylsiz (Excel qilib yoki yozib)} qaytadan
+    yuboring.», with the «🔄» lead before it while a clock cut's one retry stands;
+  - no file at all: «Tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring.»; the VED clause says «fayllarni o‘zi
+    ko‘rib» only where a file reached the card (taken, or stored and refused), else «VED xodimi o‘zi
+    hisoblaydi (AI hisoblamaydi)».
+- The remedy drops its «🔄» lead whenever a stored file did not load (OWNER-7): the tail's failure line or the
+  reading's note already names the press.
+
 **Every word and button that names the confirm** goes through ONE function of the live state's wholeness
 (door-closing-drawers):
 - the closing's complete branch (`aiCompleteLine`);
@@ -225,6 +259,10 @@ When the reading is not whole, every one of these names and draws `to_ved`.
 - **(b) The seller's ✅** after a 'ved' landing reads: «🧮 VED navbatiga tushdi — AI hisoblamadi: {sabab}.
   VED xodimi fayllarni ko‘rib, javobni shu yerga yuboradi.» It is never `AI_QUEUED`. `queuedLine` and
   `landedWordsOf` take the landed door AND the item count.
+- As built after the as-built review (A), WORDS-2: every bot landing's lenta note names the files refused at
+  arrival under its head, «⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): «X» — {sabab}; …» (bounded like
+  the table); an addition's thread message and lenta note do too. The ✅'s «fayllarni ko‘rib,» is said only
+  when a file reached the card (`fileCount > 0`): of a file past 20 MB the VED has no copy.
 - **(c) A landed request with zero items** skips the pass ONLY for a section with a customs half and no
   freight half (rastamojka): `landingItems(facts).length === 0 && sectionParts(section).customs &&
   !sectionParts(section).freight` (door-zero-pass).
@@ -235,6 +273,12 @@ When the reading is not whole, every one of these names and draws `to_ved`.
 
 1.4 **The plain door is unchanged in its keyboard and landing** (his 2a). Its words are fixed by §2.3, and its
 READING changes with §4 and §5, because `readIntakeFile` serves both doors.
+
+As built after the as-built review (A), OWNER-3: the bot keeps a cut answer's goods on BOTH doors (§3.6), so the
+plain summary of a cut reading says it above its closing, «⚠️ AI faylni oxirigacha o‘qib ulgurmadi — {N} ta
+tovar o‘qildi, qolgani o‘qilmadi.» (a size cut: «⚠️ Material juda katta — …»), and the landed note says «⚠️ AI
+faylni oxirigacha o‘qimadi — {N} ta tovar o‘qildi, qolgani o‘qilmadi: ro‘yxat to‘liq emas, faylni ko‘ring.» —
+seven of twelve goods had read as the whole invoice to the VED. Keyboard and landing unchanged.
 
 1.5 **Pinned by:**
 - a unit test over `intakeTableText` + `tableWords` + every function §1.2 lists, for these states: zero rows
@@ -260,6 +304,10 @@ READING changes with §4 and §5, because `readIntakeFile` serves both doors.
 - Its save writes the addition WITHOUT the `amend:` re-pass, and its words never say «AI qayta
   hisoblayapti».
 - A whole add reading keeps today's behaviour.
+- As built after the as-built review (A), WORDS-1: the VED's thread head says the same (`appliedHead`):
+  «➕ Sotuvchi qo‘shimcha yubordi — so‘rovga yozildi; AI qayta hisoblamaydi ({what} o‘qilmadi) — narxni siz
+  berasiz:», and for a stored waiting addition «➕ Kutib turgan qo‘shimcha so‘rovga yozildi; AI qayta
+  hisoblamaydi ({what} o‘qilmadi) — narxni siz berasiz.» — it had promised «AI qayta hisoblaydi».
 
 ---
 
@@ -278,6 +326,10 @@ the zero-item rule, §1.6), plus everything below.
 - Excel only: «Faqat Excel'dan o‘qildi.»
 - Typed only: «Faqat yozilganidan o‘qildi.»
 - Neither: «Hech narsa o‘qilmadi.»
+
+As built after the as-built review (A), OWNER-12: on the AI door's first or seeded table a `rejected` failure
+whose PDFs the closing names («📄 «X.pdf» — AI bu faylni qabul qilmadi») leaves the tail's generic «AI so‘rovni
+qabul qilmadi …» sentence out (`failureSaidBelow`); the «what WAS read» line stays.
 
 2.3 **The reading notice** (xlsx1-10, zero-05, apireq-3, pdfimg-7, critic-notice-kind). At settle,
 `pendingReply.notice: 'read' | 'cut' | 'failed' | 'no_model' | 'arrived'` is stored. `deliver()`, the late
@@ -381,6 +433,11 @@ model-cut-unbilled):
   A cut outcome carries `answered` like any other.
 - **Codes.** `known_codes` stays the last property. A cut drops the codes, and the landing pass codes the rows
   (stated).
+- As built after the as-built review (A), MODEL-2: «≥ 1 good» is judged INSIDE the goods array. A cut after the
+  array's own «]» (`salvageCut().goodsClosed`) read every good it meant to — goods [] beside an Excel included,
+  the AI door's commonest answer, whose longest tail is `known_codes` — so it is an ordinary reading with its
+  totals and steps and NO `cut` (logged; only the codes are lost). Before, it was a 'timeout' failure that lost
+  the totals, or a blocking cut over a finished list.
 
 3.4 **What the API refuses, named.**
 - **An encrypted PDF** (model-encrypt-sniff). In `readIntakeFile`'s pdf branch, look for `/Encrypt <n> <g> R`
@@ -428,6 +485,9 @@ model-cut-unbilled):
 - A packing-shaped goods sheet's own text (`goodsFiles[0].text`) is passed to the model under the TOTALS
   heading («только для итогов … НЕ перечисляй»), and only when `codeKnown`. It is read in `analyzeCollected`
   and never stored in `invoiceTexts`.
+- As built after the as-built review (A), MODEL-8: the rows a reader dropped under a list (§5.5), handed to the
+  model on the AI door, are marked `dropped` and never count as something to read: an all-coded Excel with a
+  «Buyer signature» row under it makes no call. Beside a reading that happens anyway they are still shown.
 - Pins: `intake-images.test.ts:51` is re-anchored. Three tests:
   - an AI-door lone Excel makes ONE call;
   - an all-coded Excel makes none;
@@ -814,6 +874,11 @@ After the deploy, the same line shows `thinking` and `ms`.
   so it is his call.
 - **`cartons × per-carton`** as a figure: GoodsRow carries no carton field (sheets-05 (c)).
 - **The deal-card import** stays first-sheet-only (`workbookRows`, sheets-09).
+- **A refused header on the deal-card import** (as-built review SHEETS-4, a nit, not built): «ITEM | MERCHANDISE
+  | QTY» over numbered rows is refused by the serial guard (§5.3) and the headerless pass lands «ITEM» as a line
+  with no figures. On the bot the sheet goes to the model as text; the deal card has no model reader. The draft
+  is reviewed before anything is written; the narrow fix (start the headerless pass after a header-shaped
+  serial refusal, a «sarlavha topilmadi» line on the import screen in four locales) is owed as its own round.
 - **«🔄» after a clock cut** re-reads the WHOLE material, once. It does not continue from the last good read.
 - **Deliberate decisions, unchanged:**
   - another factory's same-named product dropped as «Excel'dagi bilan bir xil» (known-4);

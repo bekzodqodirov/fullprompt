@@ -8,7 +8,16 @@ import { THREAD_TEXT_MAX } from '../../platform/notifications/thread-ref';
 import type { AmendBase, AmendBaseItem, AmendSubmission } from './amend-types';
 import { doorRow } from './door-row';
 import { codedNote } from './row-coding';
-import { figureLabel, MATERIAL_NOTE_CAP, REQUIRED_FIELDS, SECTION_LABEL, weightFromTotalNote, type CalcGoodsFact, type CalcSection } from './intake';
+import {
+  figureLabel,
+  MATERIAL_NOTE_CAP,
+  refusedFilesNote,
+  REQUIRED_FIELDS,
+  SECTION_LABEL,
+  weightFromTotalNote,
+  type CalcGoodsFact,
+  type CalcSection,
+} from './intake';
 import { linesVolumeM3, roundM3, volumeIsLinesSum } from './line-totals';
 import { needShortUz, type NeedUnit } from './needs';
 import { prefillStanding } from './prefill';
@@ -691,6 +700,20 @@ export const AMEND_THREAD_HEAD = {
 } as const;
 
 /**
+ * The applied head (as-built review WORDS-1): an addition its own reading did
+ * not read in full is written and re-runs NOTHING (§1.6) — the seller hears
+ * «AI qayta hisoblamaydi, narxni VED beradi», and the VED was told «AI qayta
+ * hisoblaydi» and waited for a figure that never came, with no word that a
+ * file of the addition went unread.
+ */
+export function appliedHead(waited: boolean, unread: string | null | undefined): string {
+  if (!unread) return waited ? AMEND_THREAD_HEAD.waitedApplied : AMEND_THREAD_HEAD.applied;
+  return waited
+    ? `➕ Kutib turgan qo‘shimcha so‘rovga yozildi; AI qayta hisoblamaydi (${unread} o‘qilmadi) — narxni siz berasiz.`
+    : `➕ Sotuvchi qo‘shimcha yubordi — so‘rovga yozildi; AI qayta hisoblamaydi (${unread} o‘qilmadi) — narxni siz berasiz:`;
+}
+
+/**
  * The card's lenta note — only when the add collection carried material or
  * files (the files are pre-bound to it). Law 11: the seller's words verbatim,
  * cut where every collection's note is cut. Pure.
@@ -723,7 +746,11 @@ export function amendNoteText(input: {
  * card nor the thread saying it. Pure.
  */
 function fileNoteLines(submission: AmendSubmission): string[] {
-  return (submission.fileNotes ?? []).map((n) => n.trim()).filter(Boolean).map((n) => `· ${n}`);
+  const notes = (submission.fileNotes ?? []).map((n) => n.trim()).filter(Boolean).map((n) => `· ${n}`);
+  // The files the addition refused at arrival (as-built review WORDS-2): the
+  // seller was told; the VED pricing from the thread is told here.
+  const refused = submission.refusedFiles ?? [];
+  return refused.length > 0 ? [...notes, `· ${refusedFilesNote(refused)}`] : notes;
 }
 
 export type CalcAmendmentRow = typeof calcAmendments.$inferSelect;
@@ -917,7 +944,11 @@ async function noteAndThreadTx(
           collectedBy: input.staffName,
           fileCount: input.submission.fileCount,
           material: input.submission.material,
-          ...(input.submission.fileNotes ? { fileNotes: input.submission.fileNotes } : {}),
+          // The receipt-time notes, and the files refused at arrival (WORDS-2).
+          fileNotes: [
+            ...(input.submission.fileNotes ?? []),
+            ...((input.submission.refusedFiles ?? []).length > 0 ? [refusedFilesNote(input.submission.refusedFiles ?? [])] : []),
+          ],
         }),
       },
       { actorId: input.staffId, ip: null, userAgent: 'telegram-bot' },
@@ -1161,7 +1192,7 @@ export async function amendRequest(input: {
             change: stamped,
             submission: sub,
             writeNote: !waited,
-            body: amendThreadBody(waited ? AMEND_THREAD_HEAD.waitedApplied : AMEND_THREAD_HEAD.applied, lines),
+            body: amendThreadBody(appliedHead(waited, stamped.unread), lines),
             threadId: threadIdOf(id, 'applied'),
           });
           written = { amendmentId: id, ...thread };

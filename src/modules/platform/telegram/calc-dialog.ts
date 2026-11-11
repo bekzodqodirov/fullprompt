@@ -409,7 +409,7 @@ function tableTail(state: IntakeState, intake: Intake): string {
     // What WAS read, by what was actually read (docs/FAYL-OQISH.md §2.2): the
     // Excel and the typed text, either, or neither — «Faqat yozilganidan» was
     // said when nothing was typed at all.
-    (failure ? `\n\n⚠️ ${failureWords(state, failure, intake)}${readInstead(state, intake)}` : aiStepsText(state.steps)) +
+    (failure ? failureBlock(state, failure, intake) : aiStepsText(state.steps)) +
     // A table that points down has no certificate button (§1.4): the line
     // states the answer and points at no press (review PC-SPEC-9).
     (state.ai && !state.amend
@@ -426,6 +426,19 @@ function tableTail(state: IntakeState, intake: Intake): string {
 function failureWords(state: IntakeState, failure: import('../../wms/calc/intake').AiReadFailure, intake: Intake): string {
   if (failure === 'files_missing' && intake.tailNamesRetry(state)) return intake.filesMissingRetryLine(state.filesMissing ?? 0);
   return intake.AI_READ_FAILURE[failure].text;
+}
+
+/**
+ * The tail's failure block: the sentence and what WAS read instead — the
+ * sentence left out where the AI door's closing names the same refusal by its
+ * file (`failureSaidBelow`, as-built review OWNER-12).
+ */
+function failureBlock(state: IntakeState, failure: import('../../wms/calc/intake').AiReadFailure, intake: Intake): string {
+  if (aiDoorFirst(state) && intake.failureSaidBelow(state, failure)) {
+    const instead = readInstead(state, intake);
+    return instead ? `\n${instead}` : '';
+  }
+  return `\n\n⚠️ ${failureWords(state, failure, intake)}${readInstead(state, intake)}`;
 }
 
 /** The tail's «what WAS read» line under a failure, or nothing when the table's own rows already say it (§2.2). */
@@ -564,6 +577,9 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     plain: plainCollection(state),
     clash: state.fileTotals?.clash ?? [],
     marker: tableSuperseded(state) ? TABLE_SUPERSEDED : null,
+    // A cut reading on the plain door is said on its summary (as-built review
+    // OWNER-3); the AI door says it through `reading`.
+    cut: state.aiCut ?? null,
     ai:
       collectionDoor(state) === 'ai'
         ? {
@@ -2883,7 +2899,8 @@ export type LandedTarget = Parameters<typeof landedWords>[0] & {
    * what the pass will do: silent toward the seller. `reason`: why the AI did
    * not compute, in the seller's words.
    */
-  ved?: { reason: string } | null;
+  /** `filesOnCard` false: nothing the seller sent was stored — a file past 20 MB — so the VED has no file to look at (as-built review WORDS-2). */
+  ved?: { reason: string; filesOnCard?: boolean } | null;
   /** The landed request's item count as its row reads (`landedWordsOf`) — null when unread. */
   items?: number | null;
 };
@@ -2907,8 +2924,8 @@ export const AI_QUEUED =
  * §1.3 b): never `AI_QUEUED` — the AI does not compute, and the seller is told
  * why in the same sentence.
  */
-export function vedQueuedText(reason: string): string {
-  return `🧮 VED navbatiga tushdi — AI hisoblamadi: ${reason}. VED xodimi fayllarni ko‘rib, javobni shu yerga yuboradi.`;
+export function vedQueuedText(reason: string, filesOnCard = true): string {
+  return `🧮 VED navbatiga tushdi — AI hisoblamadi: ${reason}. VED xodimi ${filesOnCard ? 'fayllarni ko‘rib, ' : ''}javobni shu yerga yuboradi.`;
 }
 
 /** The ✅'s queue line before the doors (a NULL door keeps it, §0.2). */
@@ -2951,7 +2968,7 @@ export function landingReplyText(
 function queuedLine(target: LandedTarget, opts: { tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean }): string {
   if (opts.tariffFollows) return TARIFF_FOLLOWS;
   // The press chose the VED, and the row says the «🧮» door (§1.3 b).
-  if (target.ved && opts.door === 'plain') return vedQueuedText(target.ved.reason);
+  if (target.ved && opts.door === 'plain') return vedQueuedText(target.ved.reason, target.ved.filesOnCard !== false);
   if (opts.door === 'plain') return PLAIN_QUEUED;
   // An «🤖» request with no goods on it: the pass has nothing to price, and
   // the seller is never promised a figure that cannot come (zero-03).

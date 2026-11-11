@@ -75,7 +75,7 @@ describe('salvageCut — only what the stream COMPLETED (§3.3, judge model-salv
     expect(salvageCut(full).goods).toHaveLength(2);
     expect(salvageCut(full).steps).toEqual(['o‘qildi']);
     // The codes never come out of a cut answer.
-    expect(Object.keys(salvageCut(full))).toEqual(['totals', 'goods', 'steps']);
+    expect(Object.keys(salvageCut(full))).toEqual(['totals', 'goods', 'steps', 'goodsClosed']);
   });
 
   it('a good missing a key — the stream cut inside it and a model closed it short — is not a good', () => {
@@ -445,5 +445,87 @@ describe('the thread door keeps no cut (§3.6, judge model-thread-door-cut)', ()
       .replace(/^\s*\/\/.*$/gm, '');
     const call = code.slice(code.indexOf('await analyzeIntake({'), code.indexOf('});', code.indexOf('await analyzeIntake({')));
     expect(call).toContain('salvage: false');
+  });
+});
+
+describe('a cut AFTER the goods array closed is a whole reading (as-built review MODEL-2)', () => {
+  // The AI door's commonest answer: every good the Excel's (goods []), the
+  // totals the photo carries, the steps — and the longest tail, the codes.
+  const codes = Array.from({ length: 40 }, (_, i) => ({ n: i + 1, tnved_code: '6201930000' }));
+  const empty = readingJson({ weight_kg: 1592, volume_m3: 13.58, goods: [], steps: ['o‘qildi'], known_codes: codes });
+  const two = readingJson({
+    weight_kg: 900,
+    goods: [goodJson('Kurtka', { quantity: 300 }), goodJson('Shim', { quantity: 200 })],
+    steps: ['o‘qildi'],
+    known_codes: codes,
+  });
+  /** Cut inside `known_codes`, after its tenth entry. */
+  const inCodes = (text: string) => text.slice(0, text.indexOf('"known_codes":[') + 200);
+  const known = Array.from({ length: 40 }, (_, i) => `Tovar ${i + 1}`);
+
+  it('salvageCut says the goods array closed — none of them or all of them', () => {
+    expect(salvageCut(inCodes(empty))).toMatchObject({ goodsClosed: true, goods: [], totals: { weight_kg: 1592, volume_m3: 13.58 } });
+    expect(salvageCut(inCodes(two))).toMatchObject({ goodsClosed: true });
+    expect(salvageCut(two.slice(0, two.indexOf('"Shim"'))).goodsClosed).toBe(false);
+  });
+
+  for (const how of ['clock', 'size'] as const) {
+    it(`a ${how} cut inside the codes after goods []: the totals and «no new goods» kept, no cut — never a failure`, async () => {
+      api.script.push(
+        how === 'clock'
+          ? { text: inCodes(empty), chunk: 400, paceMs: 5, abortAfterMs: 300 }
+          : { text: inCodes(empty), stop: 'max_tokens' },
+      );
+      const out = await analyzeIntake({ section: 'rastamojka', text: '', fileCount: 2, knownGoods: known, codeKnown: true, images: [], salvage: true, timeoutMs: 1_500 });
+      expect(out.ok, JSON.stringify(out)).toBe(true);
+      expect(out.ok && out.cut).toBeUndefined();
+      expect(out.ok && out.facts).toMatchObject({ weightKg: 1592, volumeM3: 13.58, goods: [] });
+      // One call: a whole reading is not read again without the codes.
+      expect(api.bodies).toHaveLength(1);
+    });
+
+    it(`a ${how} cut inside the codes after two goods: both kept and NOT reported as a cut`, async () => {
+      api.script.push(
+        how === 'clock'
+          ? { text: inCodes(two), chunk: 400, paceMs: 5, abortAfterMs: 300 }
+          : { text: inCodes(two), stop: 'max_tokens' },
+      );
+      const out = await analyzeIntake({ section: 'rastamojka', text: 'invoys', fileCount: 1, salvage: true, timeoutMs: 1_500 });
+      expect(out).toMatchObject({ ok: true, facts: { weightKg: 900 } });
+      expect(out.ok && out.cut).toBeUndefined();
+      expect(out.ok && out.facts.goods?.map((g) => g.name)).toEqual(['Kurtka', 'Shim']);
+    });
+  }
+
+  it('a cut INSIDE the goods array is still the cut it was (control)', async () => {
+    api.script.push({ text: two.slice(0, two.indexOf('"Shim"') - 1), stop: 'max_tokens' });
+    const out = await analyzeIntake({ section: 'rastamojka', text: 'invoys', fileCount: 1, salvage: true, timeoutMs: 1_500 });
+    expect(out).toMatchObject({ ok: true, cut: { goods: 1, why: 'size' } });
+  });
+});
+
+describe('the rows a reader dropped are context, never a reason to call (as-built review MODEL-8)', () => {
+  const footer = { text: '[Под таблицей «inv.xlsx»: строки, не взятые как товары]\nBuyer signature: ____', cut: false, cellsCut: false, dropped: true as const };
+
+  it('an all-coded Excel with a footer under it makes no call', async () => {
+    const out = await analyzeIntake({
+      section: 'rastamojka',
+      text: '',
+      fileCount: 1,
+      knownGoods: ['Kurtka', 'Shim'],
+      codeKnown: true,
+      knownCoded: [true, true],
+      contextSheets: [footer],
+      salvage: true,
+    });
+    expect(out).toEqual({ ok: false, failure: 'nothing_to_read' });
+    expect(api.bodies).toHaveLength(0);
+  });
+
+  it('beside a reading that happens anyway the footer is still shown (control)', async () => {
+    api.script.push({ text: readingJson({}) });
+    await analyzeIntake({ section: 'rastamojka', text: '', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, contextSheets: [footer], salvage: true });
+    expect(api.bodies).toHaveLength(1);
+    expect(promptOf(0)).toContain('Buyer signature');
   });
 });
