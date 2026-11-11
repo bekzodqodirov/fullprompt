@@ -196,9 +196,14 @@ describe('the collection: press, send, «Bo‘ldi»', () => {
 
     // The same Telegram message delivered again (a kill after the row
     // landed): nothing is stored twice and nothing is counted twice.
+    m = h.mark();
     await h.handle(tg.again(invoice));
     await h.settle();
     expect(await filesOn(receipt.id)).toHaveLength(2);
+    // …and nothing is SAID about it: without the look-up the fixed id is a
+    // primary-key violation, which reads as a failed download — «Faylni
+    // saqlab bo‘lmadi — qaytadan yuboring» under a file that is on the prixod.
+    expect(saidSince(m).join('\n')).not.toContain('saqlab bo‘lmadi');
 
     m = h.mark();
     await h.handle(tg.callback(sellerChat, ack.messageId!, `pf:ok:${receipt.id}`, { text: 'ack' }));

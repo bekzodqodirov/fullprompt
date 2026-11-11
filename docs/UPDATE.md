@@ -369,6 +369,50 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Prixod xabari (2026-11-11, 0145) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0145** — deploydan keyin son **146** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
+ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (model va tokenlar) va botning
+«kutish» jadvalidagi ruxsat etilgan turlar ro‘yxatiga bitta yangi tur. Mavjud ma’lumot o‘zgarmaydi.
+
+**Deploydan OLDIN biling (uchta narsa birdan o‘zgaradi):**
+- Mijozga boradigan «Yukingiz qabul qilindi» xabaridagi savol endi **og‘irlik va hajmni ham** so‘raydi
+  («Tovar nomi, quti soni, og‘irligi (kg) va hajmi (m³) to‘g‘rimi?»). Deploydan 10 daqiqa oldin qabul
+  qilingan prixodlar xabari ham shu yangi savol bilan ketadi.
+- Sotuvchiga endi **bitta** xabar boradi («📥 Prixod keldi — …») — avvalgi ikkitasi o‘rniga. Deploy paytida
+  navbatda turgan eski xabarlar eski ko‘rinishda (ikkita bo‘lib) boradi — bu to‘g‘ri, bir martalik.
+- Kechki 20:00 xulosasida yangi qator: «🤖 AI (oxirgi 24 soat): ≈ $… · N murojaat».
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+   (Bot `app` ichida ishlaydi va u bilan birga yangilanadi. Bu raundda **tg-listen** o‘zgarmagan — lekin
+   buyruq uni ham qayta quradi, zarari yo‘q.)
+3. Sonni o‘qing — **146**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 145 bo‘lib qolsa ham tizim ishlaydi — faqat savol eski ko‘rinishda, og‘irliksiz boradi; migratsiya
+   o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Sinov (bitta prixodda, 10 daqiqa):
+   - Sotuvchisi bor (va o‘sha sotuvchining Telegrami botga ulangan) mijozga Xitoy skladida prixod qiling.
+     Bir daqiqa ichida sotuvchining Telegramiga **bitta** xabar keladi: «📥 Prixod keldi — …», mijoz, lotlar
+     (nomi, quti, kg, m³), bitim holati va ostida ikki tugma: **«📎 Fayl qo‘shish»** va **«🔗 Bitim
+     biriktirish»** (bitimi bor prixodda ikkinchi tugma «↗️ Ochish» bo‘ladi).
+   - «🔗 Bitim biriktirish» → prixod kartasi «Bitim» bo‘limida ochiladi (birinchi marta brauzer login so‘rasa
+     — kiring va tugmani yana bosing). Mijozning bitimi bo‘lmasa — «+ Yangi bitim ochish»: bitim ochiladi va
+     shu prixod unga o‘zi biriktiriladi.
+   - «📎 Fayl qo‘shish» → bot «Fayllarni shu yerga yuboring» deydi → 1-2 ta fayl yoki rasm yuboring (forward
+     ham bo‘ladi) → «📎 …: 2 ta fayl biriktirildi» → «✅ Bo‘ldi». Prixod kartasidagi «Fayllar»da shu fayllar
+     turadi; tarixda «Fayl qo‘shildi … · Telegram» yozuvi bor. Xato fayl ketgan bo‘lsa — «↩️ Bekor qilish».
+   - 10 daqiqadan keyin mijozga boradigan xabarda yangi savol (og‘irlik va hajm bilan) va «✅ / ❌» turadi;
+     «✅» bosilgach prixod kartasida «✅ Mijozning o‘zi Telegramda tasdiqladi — nomi, quti soni, og‘irligi va
+     hajmi» chiqadi. Shu lotning og‘irligini ✏️ bilan o‘zgartirsangiz — «o‘zgardi — qayta so‘rang» bo‘ladi.
+   - Ertasi 20:00 dagi xulosada «🤖 AI (oxirgi 24 soat): …» qatori (AI umuman ishlatilmagan kunda qator
+     chiqmaydi).
+6. Sotuvchisi yo‘q mijozning bitimsiz prixodi haqidagi ogohlantirish, avvalgidek, adminlarga boradi — endi
+   «📥 Prixod keldi» ko‘rinishida va ikki tugma bilan. Sotuvchisi bor, lekin Telegrami botga **ulanmagan**
+   bo‘lsa ham adminlarga boradi (avval bunday holda hech kim eshitmasdi).
+
 ## Tarkib takliflari (2026-11-11, 0144) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0144** — deploydan keyin son **145** bo‘ladi (repo’dagi fayllar soni:

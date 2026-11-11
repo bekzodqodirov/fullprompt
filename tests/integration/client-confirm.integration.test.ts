@@ -1357,6 +1357,27 @@ describe('the measures in the answer (0145)', () => {
     expect((await stateOf('W')).state).toBe('checked');
   });
 
+  it('…nor is the FULL ✅ downgraded by an old message once the NAME moved back to what that message printed', async () => {
+    // Held: the full ✅ (the name as it stands now). The name is corrected —
+    // the row no longer holds — and an older message that printed exactly
+    // this new name is still in the chat: its ✅ matches the facts as they
+    // stand, and `same()` cannot call it «already» (the row was shown another
+    // name). Written, it would replace an answer about the weight with one
+    // that never asked it, and call the lot ✅.
+    const [before] = await db.select({ ru: receiptLots.productNameRu }).from(receiptLots).where(eq(receiptLots.id, lot.W));
+    try {
+      await db.update(receiptLots).set({ productNameRu: `${before!.ru ?? 'Tovar'} (yangi)` }).where(eq(receiptLots.id, lot.W));
+      expect((await stateOf('W')).state).toBe('stale');
+      const old = (await factsW()).basicTag;
+      expect(await pressW('yes', old)).toEqual({ outcome: 'already', verdict: 'yes' });
+      expect(await measuresW()).toEqual(['40.00', '0.350']);
+      expect((await stateOf('W')).state).toBe('stale');
+    } finally {
+      await db.update(receiptLots).set({ productNameRu: before!.ru }).where(eq(receiptLots.id, lot.W));
+    }
+    expect((await stateOf('W')).state).toBe('checked');
+  });
+
   it('a BASIC answer that REPLACES a full one does not keep its kilos: ✅ (full), then ❌ on the old message', async () => {
     const f = await factsW();
     const answer = await pressW('no', f.basicTag);
