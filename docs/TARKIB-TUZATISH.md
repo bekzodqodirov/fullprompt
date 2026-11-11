@@ -503,8 +503,9 @@ Sent with the round's report, in Uzbek, numbered:
    nomlar vergul bilan · b) oynada bittasini tanlayman · c) o'zim yozaman.
 8. (band 6) Javob eslab qolinsinmi: ⭐ a) shu telefon/kompyuter oxirgi javobni belgilab
    turadi, oyna har safar chiqadi · b) mashina bo'yicha bir marta so'ralib, hamma uchun saqlansin.
-9. (band 6) Bir pozitsiyaga qo'shilganlarning birida «dona», birida faqat «kg» bo'lsa:
-   ⭐ a) kg bilan chiqadi, donasi izohda qoladi · b) bunday qatorlar qo'shilmasin.
+9. (band 6) Biri «dona», biri «kg» bilan yozilgan qatorlar (as built, PAPERS-1: never merged
+   by itself): ⭐ a) oynada so'raladi; «Qo'shish» desa kg bilan chiqadi, donasi izohda qoladi ·
+   b) bunday qatorlar umuman qo'shilmasin.
 10. (band 5) Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi (rasmda
     qaysi tovar ekani noma'lum): ⭐ a) shunday · b) rasm ham yuborilsin.
 
