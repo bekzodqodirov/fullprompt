@@ -56,7 +56,11 @@ describe('every door reaches the request', () => {
     const bot = read('src/modules/platform/telegram/staff-bot.ts');
     // The collection's ONE door (`collectionDoor`) — a seeded one's `seedDoor`
     // (as-built review DOORS-3), never a second read of the source.
-    expect(bodyOf(bot, 'export async function landCollectedIntake(')).toContain('intakeDoor: collectionDoor(state)');
+    // Re-anchored (docs/FAYL-OQISH.md §1.3 a): the door is still that one
+    // home's, and an AI-door job landed for the VED alone is written «🧮».
+    const landing = bodyOf(bot, 'export async function landCollectedIntake(');
+    expect(landing).toContain('const door = collectionDoor(state);');
+    expect(landing).toContain("intakeDoor: toVed ? 'plain' : door,");
     const land = read('src/modules/wms/calc/intake-land.ts');
     expect(bodyOf(land, 'export async function landIntake(')).toContain('intakeDoor: input.intakeDoor');
     // The agent on BOTH its paths: `landIntake` and the re-queue's own open.
@@ -104,5 +108,22 @@ describe('the pass reads the door from the ROW', () => {
   it('the hydrate brings an older row forward through one function', () => {
     const store = readFileSync('src/modules/platform/telegram/calc-store.ts', 'utf8');
     expect(store).toContain('const state = { ...migrateIntakeState(row.state), expires:');
+  });
+});
+
+describe('the zero-item rule guards every landing door’s pass (docs/FAYL-OQISH.md §1.3 c, door-break-4)', () => {
+  // The landing doors that queue the machine's pass for a request they just
+  // opened: `landIntake` (the bot, and the AI sotuvchi through it) and the
+  // AI sotuvchi's re-queue (K26). Every `queueCalcPrefill(` in them is decided
+  // by `landingOwesPass` — derived, so a third call joins the fence on its own.
+  const DOORS = ['src/modules/wms/calc/intake-land.ts', 'src/modules/wms/agent/decide.ts'];
+  it.each(DOORS)('%s', (path) => {
+    const text = read(path);
+    const calls = [...text.matchAll(/queueCalcPrefill\(\{/g)].map((m) => m.index!);
+    expect(calls.length, 'the door queues a pass').toBeGreaterThan(0);
+    for (const at of calls) {
+      const before = text.slice(Math.max(0, at - 400), at);
+      expect(/landingOwesPass\(|\bowesPass\b/.test(before), `${path}: the queue call at ${at} asks landingOwesPass`).toBe(true);
+    }
   });
 });

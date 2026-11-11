@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -77,7 +77,11 @@ async function makeLot(boxCount: number) {
     },
     ctx(),
   );
-  const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId));
+  // In carton order: `sendTruck` scans the first `plan` codes by POSITION and
+  // the plan reserves the lowest seq_in_lot, so an unordered read (any order
+  // postgres likes — #524) scanned a carton the plan never reserved and the
+  // departure refused «finish_loading_first» on CI.
+  const rows = await db.select().from(boxes).where(eq(boxes.lotId, lotId)).orderBy(asc(boxes.seqInLot));
   return { lotId, shortCodes: rows.map((b) => b.shortCode) };
 }
 

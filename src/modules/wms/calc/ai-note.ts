@@ -2,6 +2,7 @@ import {
   AI_CODE_MARK,
   fitTelegram,
   MAX_REPLY_LINES,
+  NO_GOODS_CUSTOMS,
   TELEGRAM_LIMIT,
   lawParts,
   pickLeftLine,
@@ -159,6 +160,9 @@ export function aiNoteText(input: AiNoteInput): string {
   if (gaps) head.push(gaps);
 
   const fixed: string[] = [];
+  // No goods on the request (docs/FAYL-OQISH.md §1.3 c, zero-03): said to the
+  // VED in words — a note of no groups and no rows said nothing at all.
+  if (input.groups.length === 0 && input.rows.length === 0 && input.ungrouped.length === 0) fixed.push(NO_GOODS_CUSTOMS);
   if (input.ungrouped.length > 0) {
     const names = input.ungrouped.slice(0, 5).map(shortName).join(', ');
     const more = input.ungrouped.length > 5 ? ` … (+${input.ungrouped.length - 5})` : '';

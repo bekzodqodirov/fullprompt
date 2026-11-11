@@ -65,6 +65,7 @@ import { mayCollect, type IntakeState } from './calc-intake';
 import {
   activeIntake,
   endIntake,
+  flushIntakeWrites,
   holdingIntake,
   intakeHolds,
   intakeIsEmpty,
@@ -77,11 +78,24 @@ import {
   updateIntake,
   type IntakeMessage,
 } from './calc-store';
-import { readIntakeFile, refusalOf, saveBotFile, saveIntakeFile } from './calc-files';
 import {
+  isFileRefusal,
+  permanentRefusal,
+  readIntakeFile,
+  refusalOf,
+  saveBotFile,
+  saveIntakeFile,
+  type BotFileRefusal,
+} from './calc-files';
+import {
+  aiDoorFirst,
+  clearRestartAsked,
   drawPromptSoon,
   editTableSoon,
+  landingRetryWords,
   NOT_FOUND_HINT,
+  readingOf,
+  refuseWhileRestartAsked,
   orphanAnswerSentence,
   landingReplyText,
   pressCancel,
@@ -725,6 +739,13 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
+        // The restart question over a PARKED collection holds too (docs/FAYL-
+        // OQISH.md §2.4, door-break-1) — the usual case behind it, since the
+        // question is a quiet patch and a quiet collection goes on parking
+        // under it. Here, below every other collector (a draft or a zametka
+        // still takes its part), the burst would draw the pause line, and its
+        // «▶️ Davom etamiz» files the part into the collection «🔄 Ha» wipes.
+        if (state && (await refuseWhileRestartAsked(ctx, chatId, state, ctx.message.message_id))) return;
         // A plain file with nothing to take it joins the chat's burst
         // (docs/IKKI-ESHIK.md §4.1, his 6a): files sent in a row get ONE
         // message, kept last — the add door's offer when the sender has a
@@ -740,6 +761,11 @@ export function registerStaffBot(bot: Bot): void {
       await capturePart(ctx, chatId, capture, owner.id);
       return;
     }
+    // FIRST, before anything reads or stores the file: while the restart
+    // question stands the file is refused in words and filed nowhere
+    // (docs/FAYL-OQISH.md §2.4) — «🔄 Ha» would have wiped it with the old
+    // collection, and «▶️ Yo‘q» read it under yesterday's customer.
+    if (await refuseWhileRestartAsked(ctx, chatId, state, ctx.message.message_id)) return;
     // An add collection frozen while its save runs (P4) takes nothing more —
     // the text ladder's own guard, for a file (§9.6): filed after the press,
     // it would join a collection the job ends without reading it.
@@ -758,25 +784,42 @@ export function registerStaffBot(bot: Bot): void {
     }
     const staff = await staffForChat(chatId);
     if (!staff) return next();
-    const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown) => {
+    const saved = await saveIntakeFile(ctx, state.noteId, staff.id).catch((err: unknown): BotFileRefusal => {
       logger.warn({ err }, 'intake file save failed');
-      return null;
+      return { refused: 'download_failed' };
     });
-    if (!saved) {
-      // A save failure is a refusal of its own (§1.4), and the ONE prompt is
-      // drawn below it, kept last — it stood above the failed file.
-      noteOwnMessage(chatId, (await ctx.reply('Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id);
-      drawPromptSoon(ctx, chatId);
-      return;
-    }
     const caption = ctx.message.caption?.trim();
     const fileName = ctx.message.document?.file_name ?? '';
-    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
     // A file sent BEFORE the customer is named — or before the podklyuch
     // door's «qayerdan?» — is material like any other (his 1.7 b). It used to
     // be refused before the client was named, and in the zone stage it
     // skipped both questions. The question stays open.
     const waiting = state.stage === 'client' || state.stage === 'section';
+    if (isFileRefusal(saved)) {
+      // A save failure is a refusal of its own (§1.4), and the ONE prompt is
+      // drawn below it, kept last — it stood above the failed file. A file no
+      // re-send will store (past Telegram's 20 MB, a type storage refuses) is
+      // said in its own words and named on the table, never counted as
+      // received — and its CAPTION is read (docs/FAYL-OQISH.md §3.4): goods
+      // typed under it were lost with the file. A failed download takes
+      // nothing: the same message re-sent brings both (`permanentRefusal`).
+      const permanent = permanentRefusal(state, saved.refused, {
+        name: fileName,
+        isPhoto: Boolean(ctx.message.photo),
+        mime: ctx.message.document?.mime_type ?? null,
+      });
+      if (permanent) {
+        updateIntake(chatId, {
+          ...permanent.patch,
+          ...(caption ? { material: [...state.material, caption], stage: waiting ? state.stage : 'material' } : {}),
+        });
+      }
+      noteOwnMessage(chatId, (await ctx.reply(permanent?.say ?? 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.')).message_id);
+      if (permanent && caption && !waiting) editTableSoon(ctx, chatId);
+      drawPromptSoon(ctx, chatId);
+      return;
+    }
+    const read = await readIntakeFile(saved, fileName, ctx.message.document?.mime_type ?? null, state);
     updateIntake(chatId, {
       ...read.patch,
       stage: waiting ? state.stage : 'material',
@@ -869,6 +912,9 @@ export function registerStaffBot(bot: Bot): void {
     const takes = intake && !escapesIntake(ctx.message.text) ? intakeTakes(intake, incoming) : 'pass';
     if (takes === 'seen') return;
     if (intake && takes === 'take') {
+      // The restart question stands (docs/FAYL-OQISH.md §2.4): a typed or
+      // forwarded text is refused in words and filed nowhere, as a file is.
+      if (await refuseWhileRestartAsked(ctx, chatId, intake, ctx.message.message_id)) return;
       // An add collection frozen while its save runs (P4) takes nothing more.
       if (intake.saving) {
         await ctx.reply('⏳ Qo‘shimcha yozilmoqda — natija kelgach yozing.');
@@ -1087,6 +1133,10 @@ export function registerStaffBot(bot: Bot): void {
           await tellBacklogOnce(ctx, chatId);
           return;
         }
+        // Beside a PARKED collection the question stands over, the burst's
+        // pause line would file the forward into it (§2.4, door-break-1):
+        // refused in words, as the file door refuses a file.
+        if (intake && (await refuseWhileRestartAsked(ctx, chatId, intake, ctx.message.message_id))) return;
         // Into the chat's burst (docs/IKKI-ESHIK.md §4.1): forwards in a row
         // are ONE «📌 N ta xabar …» offer, kept last. Door B's single offer
         // answers whatever the burst would not take.
@@ -1504,6 +1554,8 @@ export async function handleCalcCallback(
       await ctx.reply('Bu tugma eskirgan.');
       return;
     }
+    // A restart question over this collection is over too (§2.4).
+    if (live) clearRestartAsked(chatId, live);
     await pressCancel(ctx, chatId, live, step === 'cancel_y');
     return;
   }
@@ -1512,6 +1564,10 @@ export async function handleCalcCallback(
   // stands (it was `more`, which threw a reviewed collection back to
   // material, product-fit-8).
   if (step === 'resume') {
+    // «▶️ Yo‘q, davom etaman» answers the restart question (docs/FAYL-OQISH.md
+    // §2.4): it stops holding the material, and its buttons go. Under the
+    // cancel question or the reminder there is none to clear.
+    clearRestartAsked(chatId);
     await pressResume(ctx, chatId);
     return;
   }
@@ -1574,10 +1630,16 @@ export async function handleCalcCallback(
     // empty one was asked for a day). A frozen add collection always asks.
     const live = activeIntake(chatId);
     if (!step.startsWith('go_') && live && (live.saving || !intakeIsEmpty(live))) {
-      await ctx.reply(
+      const asked = await ctx.reply(
         'Sizda tugallanmagan yig‘ish bor. Boshqatdan boshlaymizmi? Yuborilgan hamma narsa o‘chadi.',
         { reply_markup: restartKeyboard(opening) },
       );
+      // The question STANDS (docs/FAYL-OQISH.md §2.4): until it is answered,
+      // the doors refuse material in words rather than file it into the
+      // collection «🔄 Ha» would wipe. Quiet — the question is no work on
+      // this collection, so its clock does not slide.
+      const id = (asked as { message_id?: unknown } | null)?.message_id;
+      updateIntake(chatId, { restartAsked: { messageId: typeof id === 'number' ? id : null, at: Date.now() } }, { quiet: true });
       return;
     }
     // One «🔄 Ha» restarts once: its claim already held means this press
@@ -1587,6 +1649,9 @@ export async function handleCalcCallback(
       await pressResume(ctx, chatId);
       return;
     }
+    // «🔄 Ha»: the question the old collection stood under is answered, and
+    // its buttons go with it (§2.4).
+    if (live?.restartAsked) clearRestartAsked(chatId, live);
     if (opening === 'aipk') {
       // The road needs its zone before anything else: it is the one answer
       // on this door that no material can be trusted to carry.
@@ -1712,6 +1777,14 @@ export async function handleCalcCallback(
     return;
   }
 
+  // «👤 VED hisoblasin» (docs/FAYL-OQISH.md §1.2) is the AI door's first or
+  // seeded collection's alone: under any other collection it was never drawn,
+  // and an old message's press lands nothing.
+  if (step === 'to_ved' && !aiDoorFirst(state)) {
+    await ctx.reply('Bu tugma eskirgan.');
+    return;
+  }
+
   // save — only what the seller was SHOWN. An old «Tasdiqlash» pressed
   // after «➕ Yana ma'lumot», or while the analysis runs, used to land facts
   // that never included the newest material.
@@ -1736,6 +1809,10 @@ export async function handleCalcCallback(
     return;
   }
   if (state.amend) {
+    // The restart question over an addition is over too (§2.4): its «🔄 Ha»
+    // left live after the save would wipe whatever collection stands when it
+    // is pressed — `c:go_*` asks nothing (door-spec-amend-save-keeps-restart-question).
+    clearRestartAsked(chatId, state);
     await saveAmendment(ctx, chatId, state);
     return;
   }
@@ -1747,6 +1824,24 @@ export async function handleCalcCallback(
     await ctx.reply('Ulanmagan.');
     return;
   }
+  // What the press chose, written durably BEFORE the landing (docs/FAYL-OQISH.md
+  // §1.3 a, door-aipass-home) — the sweep resumes a cut-off landing from this
+  // state, with no press to ask. «👤» is the VED's; a «✅» over a reading that
+  // is not whole is too: an old table drawn before the deploy, a redelivered
+  // press. Only the AI door's first or seeded collection has the choice.
+  if (aiDoorFirst(state)) {
+    const landAs = step === 'to_ved' || !readingOf(state).whole ? 'ved' : 'ai';
+    state = updateIntake(chatId, { landAs }) ?? { ...state, landAs };
+    // In the ROW before the note can commit, not a debounce later
+    // (door-spec-landas-not-durable): a process killed within the quiet
+    // second after the note left the sweep a state with no choice, and it
+    // re-derived the landing from the reading — a «👤» pressed on a table a
+    // «🔄» had made whole landed as the AI door. As `saveAmendment` flushes
+    // its `saving` mark.
+    await flushIntakeWrites(chatId);
+  }
+  // The restart question over it is over: it is being saved (§2.4).
+  clearRestartAsked(chatId, state);
   // A coded client's card is refused BEFORE it is minted when the queue
   // would refuse the job (`calcOpenRefusal`): the code travels back so the
   // person reads WHY, and nothing was written.
@@ -1771,8 +1866,9 @@ export async function handleCalcCallback(
       return;
     }
     // The card and its note are one commit and a retry finds them through the
-    // note, so pressing again finishes the SAME card (judge conc-1).
-    await ctx.reply('Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.');
+    // note, so pressing again finishes the SAME card (judge conc-1) — the
+    // press that was made, by name (door-closing-drawers).
+    await ctx.reply(landingRetryWords(activeIntake(chatId) ?? state));
     return;
   }
   endIntake(chatId);
@@ -2191,7 +2287,8 @@ async function capturePart(
     logger.warn({ err }, 'note capture file save failed');
     return null;
   });
-  if (!saved) {
+  // The zametka door keeps its own words for every refusal (docs/FAYL-OQISH.md §3.4).
+  if (!saved || isFileRefusal(saved)) {
     await ctx.reply('Faylni saqlab bo‘lmadi. Qaytadan yuboring.');
     return;
   }

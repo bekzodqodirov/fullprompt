@@ -204,6 +204,13 @@ export async function threadCalcAnalyze(
     text,
     fileCount: material.fileCount,
     timeoutMs: 20_000,
+    // A cut is NOT kept here (docs/FAYL-OQISH.md §3.6, judge
+    // model-thread-door-cut): the preview has no word for «N were read, the
+    // rest were not», and at a 20 s leash a cut is the commonest end of a
+    // long selection — kept, a partial goods list would land as the job's
+    // goods under no warning. It stays today's «timeout» / «truncated»: the
+    // manual parser answers, and the advice says what to press.
+    salvage: false,
   });
   const ai = outcome.ok ? outcome : null;
   // Typed goods lines are read from the messages THEMSELVES: the material's

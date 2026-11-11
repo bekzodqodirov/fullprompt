@@ -50,6 +50,9 @@ const PRESENCE: Record<string, string> = {
   'calc-dialog.ts:drawTable': 'the in-place edit of the collection’s own table',
   'calc-dialog.ts:drawPrompt': 'the kept-last draw of the collection’s own question or prompt (docs/IKKI-ESHIK.md §1.4)',
   'calc-dialog.ts:pressUndo': 'a press — «↩️» on its own echo’s collection',
+  // docs/FAYL-OQISH.md §2.4: the restart question is cleared on the collection
+  // it stood on, a parked one included — by note id, never a newer one.
+  'calc-dialog.ts:clearRestartAsked': 'the restart question cleared on the collection it stood on (§2.4)',
   // The add door (P4, §9.2, §9.6): a parked collection is still one the door
   // would wipe or resume, and the save job reads only its own note's.
   'calc-amend.ts:openDoor': 'the «another collection» check — a parked one is asked about too (restart / resume)',

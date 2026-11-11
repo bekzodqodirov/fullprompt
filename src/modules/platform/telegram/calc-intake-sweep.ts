@@ -22,6 +22,7 @@ import {
   deliverNextStep,
   drawPromptSoon,
   landingReplyText,
+  landingRetryWords,
   QUEUE_REFUSAL,
   queueRefusal,
   type CalcPressCtx,
@@ -474,8 +475,9 @@ async function resumeLanding(
       }
     } else if (sweepMemory.silenced.has(k)) {
       // A «Tasdiqlash» this resume kept silent is owed an answer: the press
-      // path's own words for a landing that failed.
-      await sayOrRetry({ chatId, text: 'Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.' });
+      // path's own words for a landing that failed — the press that was made,
+      // «👤 VED hisoblasin» included (docs/FAYL-OQISH.md §1.2).
+      await sayOrRetry({ chatId, text: landingRetryWords(peekIntake(chatId) ?? state) });
     }
   } finally {
     sweepMemory.resuming.delete(k);
