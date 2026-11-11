@@ -753,6 +753,14 @@ function partOfHeldNote(label: string, filled: number): string {
   return `📄 ${label} — ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk uchun olinmadi.${fills}`;
 }
 
+/**
+ * Did the standing totals TAKE a figure (the independent check's IC-NEW-3)?
+ * Two packing lists that disagreed leave a clash with both figures null —
+ * the seller was already told «ikkalasi ham olinmadi», so «undan olingan …
+ * endi butun yukniki emas» would name figures that were never taken.
+ */
+const tookFigures = (t: NonNullable<IntakeState['fileTotals']>): boolean => t.weightKg !== null || t.volumeM3 !== null;
+
 /** Totals a packing list gave before another factory's goods were folded in — no longer the shipment's (SHEETS-3). */
 function staleTotalsNote(label: string): string {
   return `📄 ${label} — undan olingan umumiy brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.`;
@@ -860,7 +868,7 @@ function receiveFurtherSheet(
           ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
           ...(stale ? { fileTotals: null } : {}),
         },
-        [partOfHeldNote(m.label, fill.filled), ...cutLines, ...(stale ? [staleTotalsNote(stale.label)] : [])],
+        [partOfHeldNote(m.label, fill.filled), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
       );
     }
     // R1 only while the held list IS the goods sheet's rows, place for place:
@@ -925,7 +933,7 @@ function receiveFurtherSheet(
       },
       [
         ...(fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines),
-        ...(stale ? [staleTotalsNote(stale.label)] : []),
+        ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : []),
       ],
     );
   }

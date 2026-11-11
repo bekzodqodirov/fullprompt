@@ -1298,6 +1298,27 @@ function refusedRest(files: readonly { name: string; why: string }[]): [string, 
   return [...rest];
 }
 
+type RefusedEntry = { name: string; why: string; resent?: boolean };
+/**
+ * A refused copy a same-named file was taken after (`resent`) is not «goods
+ * not counted»: the name is all the bot knows, and the later copy may hold
+ * them. So the resent entries are kept apart from the real refusals — counted
+ * apart past the first few, and outside the note's «tovarlari hisobga
+ * kirmagan» heading — and two identical earlier copies are said once (the
+ * independent check's IC-NEW-4).
+ */
+function splitResent(files: readonly RefusedEntry[]): { refused: RefusedEntry[]; resent: RefusedEntry[] } {
+  const seen = new Set<string>();
+  const resent = files.filter((f) => {
+    if (!f.resent) return false;
+    const key = `${f.name}\u0000${f.why}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { refused: files.filter((f) => !f.resent), resent };
+}
+
 /**
  * The files refused AT ARRIVAL, named on the table with their own reasons
  * (docs/FAYL-OQISH.md §1.1): never blocking — the seller was told then, and
@@ -1315,15 +1336,22 @@ export function refusedFileLines(named: readonly { name: string; why: string; re
         ? // A counted entry («3 ta rasm», the photo cap's) is plural: «ulardagi».
           `${f.name} o‘qilmadi (${reasonClause(f.why)}) — ulardagi tovarlar hisobga kirmaydi.`
         : `${refusedName(f.name)} o‘qilmadi (${reasonClause(f.why)}) — undagi tovarlar hisobga kirmaydi.`;
-  if (named.length <= REFUSED_NAMED_MAX) return named.map(line);
+  const { refused, resent } = splitResent(named);
+  const all = [...refused, ...resent];
+  if (all.length <= REFUSED_NAMED_MAX) return all.map(line);
   // Bounded (as-built review REGRESSION-4): an album of HEIC photos forwarded
   // as files is one entry each, and sixty of them, in the closing the table's
   // fit holds fixed, left no goods row and cut the remedy away. The first few
   // by name, the rest counted per reason — the reasons are a short list.
+  const shown = all.slice(0, REFUSED_NAMED_MAX);
+  const rest = all.slice(REFUSED_NAMED_MAX);
   return [
-    ...named.slice(0, REFUSED_NAMED_MAX).map(line),
-    ...refusedRest(named.slice(REFUSED_NAMED_MAX)).map(
+    ...shown.map(line),
+    ...refusedRest(rest.filter((f) => !f.resent)).map(
       ([why, n]) => `Yana ${n} ta fayl o‘qilmadi (${why}) — ulardagi tovarlar hisobga kirmaydi.`,
+    ),
+    ...refusedRest(rest.filter((f) => f.resent)).map(
+      ([why, n]) => `Yana ${n} ta avvalgi nusxa o‘qilmadi (${why}) — keyin shu nomli fayllar olindi.`,
     ),
   ];
 }
@@ -1967,11 +1995,17 @@ export function intakeNoteText(input: {
  * as the table counts them (`refusedRest`).
  */
 export function refusedFilesNote(files: readonly { name: string; why: string; resent?: boolean }[]): string {
-  const shown = files
-    .slice(0, REFUSED_NAMED_MAX)
-    .map((f) => `${refusedName(f.name)}${f.resent ? ' (avvalgi nusxa; keyin shu nomli fayl olindi)' : ''} — ${reasonClause(f.why)}`);
-  const rest = refusedRest(files.slice(REFUSED_NAMED_MAX)).map(([why, n]) => `yana ${n} ta (${why})`);
-  return `⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): ${shown.join('; ')}${rest.length > 0 ? `; ${rest.join(', ')}` : ''}`;
+  const { refused, resent } = splitResent(files);
+  const listed = (list: readonly RefusedEntry[]) => {
+    const shown = list.slice(0, REFUSED_NAMED_MAX).map((f) => `${refusedName(f.name)} — ${reasonClause(f.why)}`);
+    const rest = refusedRest(list.slice(REFUSED_NAMED_MAX)).map(([why, n]) => `yana ${n} ta (${why})`);
+    return `${shown.join('; ')}${rest.length > 0 ? `; ${rest.join(', ')}` : ''}`;
+  };
+  const parts = [
+    ...(refused.length > 0 ? [`⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): ${listed(refused)}`] : []),
+    ...(resent.length > 0 ? [`⚠️ Avvalgi nusxalar o‘qilmadi (keyin shu nomli fayl olindi): ${listed(resent)}`] : []),
+  ];
+  return parts.join('\n');
 }
 
 /**

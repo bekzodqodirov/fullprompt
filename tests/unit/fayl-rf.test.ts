@@ -151,6 +151,45 @@ describe('beside a fold no factory’s totals are the shipment’s (RF-TOTALS-1)
   });
 });
 
+describe('totals the bot never took are not called «taken» when a later fold drops them (IC-NEW-3)', () => {
+  // A third factory, named apart from A's and B's goods.
+  const Cf: B.Row[] = [{ name: 'Ayollar sumkasi charm', pcs: 60, nw: 30, gw: 33, cbm: 0.6, price: 9 }];
+  const ciC: Sheet = ['CI C', CI_HEAD, ci(Cf)];
+  const plC: Sheet = ['PL C', PL_HEAD, pl(Cf)];
+
+  it('[CI A, PL A], file CI B, file PL B (the two lists disagree), then [CI C, PL C]: no «undan olingan … endi» sentence', async () => {
+    const chatId = collection('podklyuch');
+    await forward(chatId, await B.sheetsBook([ciA, plA]), 'A.xlsx');
+    await forward(chatId, await B.sheetsBook([ciB]), 'CIB.xlsx');
+    await forward(chatId, await B.sheetsBook([plB]), 'PLB.xlsx');
+    const clash = activeIntake(chatId)!.fileTotals;
+    // The precondition, measured: the bot already said it took neither figure.
+    expect(clash?.weightKg ?? null).toBeNull();
+    expect(clash?.volumeM3 ?? null).toBeNull();
+    const last = await forward(chatId, await B.sheetsBook([ciC, plC]), 'C.xlsx');
+    expect(last.say ?? '').not.toContain(STALE);
+  });
+});
+
+describe('an earlier copy a same-named file was taken after is never counted as goods not counted (IC-NEW-4)', () => {
+  const words = Array.from({ length: 5 }, (_, i) => ({ name: `d${i}.docx`, why: 'Word fayl' }));
+  const copy = { name: 'CI.pdf', why: 'PDF 10 MB dan katta', resent: true as const };
+
+  it('five Word files and two identical earlier copies: the copy is said once, apart, past the named five', () => {
+    const table = refusedFileLines([...words, copy, copy]);
+    expect(table).toContain('Yana 1 ta avvalgi nusxa o‘qilmadi (PDF 10 MB dan katta) — keyin shu nomli fayllar olindi.');
+    expect(table.join('\n')).not.toMatch(/Yana \d+ ta fayl o‘qilmadi \(PDF 10 MB dan katta\)/u);
+  });
+
+  it('the card note keeps the copy outside «tovarlari hisobga kirmagan»', () => {
+    const note = refusedFilesNote([...words, copy]);
+    const [refused, resent] = note.split('\n');
+    expect(refused).toMatch(/^⚠️ O‘qilmagan fayllar \(tovarlari hisobga kirmagan\): «d0\.docx» — Word fayl/u);
+    expect(refused).not.toContain('CI.pdf');
+    expect(resent).toBe('⚠️ Avvalgi nusxalar o‘qilmadi (keyin shu nomli fayl olindi): «CI.pdf» — PDF 10 MB dan katta');
+  });
+});
+
 describe('a sheet past the queue’s limit gives the model nothing, and its receipt says one thing (RF-TOTALS-3, RF-WORDS-5, RF-REGRESSION-2)', () => {
   const WORDS = ['Alfa', 'Bravo', 'Charli', 'Delta', 'Exo'];
   const factory = (z: number, n: number): (string | number | null)[][] =>
@@ -401,6 +440,22 @@ describe('a typed line the cut answer wrote in Russian is listed once (RF-REGRES
     expect(pick([line('Брюки мужские', 50)], [line('Erkaklar shimi', 50)])).toEqual(['Брюки мужские', 'Erkaklar shimi']);
   });
 
+  it('a Russian name with one Latin brand or size word shares no script with an Uzbek-Latin line (IC-NEW-1)', () => {
+    // The independent check's cases: a DIFFERENT good of an equal count, never the typed line renamed.
+    const cases: [string, string, number][] = [
+      ['Кепка бейсболка Nike', 'Krossovka Nike', 120],
+      ['Куртка женская XL', 'Shim XL', 50],
+      ['Колонка Bluetooth', 'Naushnik Bluetooth', 30],
+      ['Сумка женская PU', 'Kurtka PU', 40],
+      ['Кабель USB 1м', 'USB fleshka', 200],
+    ];
+    for (const [read, typed, q] of cases) {
+      expect(pick([line(read, q)], [line(typed, q), line('Sumka', 40)]), `${read} / ${typed}`).toEqual([read, typed, 'Sumka']);
+    }
+    // …while a name of the same scripts that is the typed one is still met by its count alone.
+    expect(pick([line('Krossovka sport Nike', 120)], [line('Krossovka Nike', 120)])).toEqual(['Krossovka sport Nike']);
+  });
+
   it('two typed lines the figures cannot tell apart are kept both — never one dropped at a guess', () => {
     expect(pick([line('Брюки мужские', 50, 2)], [line('Erkaklar shimi', 50, 2), line('Ayollar shimi', 50, 2)])).toEqual([
       'Брюки мужские',
@@ -464,7 +519,7 @@ describe('a refusal is never deleted on a name (RF-FILES-1)', () => {
       '«装箱单.xlsx» (avvalgi nusxa) o‘qilmadi (ichida faqat rasm, jadval yo‘q) — keyin shu nomli fayl olindi.',
     ]);
     expect(refusedFilesNote(named)).toBe(
-      '⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): «装箱单.xlsx» (avvalgi nusxa; keyin shu nomli fayl olindi) — ichida faqat rasm, jadval yo‘q',
+      '⚠️ Avvalgi nusxalar o‘qilmadi (keyin shu nomli fayl olindi): «装箱单.xlsx» — ichida faqat rasm, jadval yo‘q',
     );
   });
 });

@@ -1365,8 +1365,8 @@ export function pickGoods(input: {
  * checked) read again under another name (`pickGoods`, review of the fixes
  * RF-REGRESSION-1)? Every figure both state agrees, each by its own rule
  * (`LINE_FIGURES`); and either a second figure besides the count agrees, under
- * names that do not contradict, or the two names share a script and are not
- * two names there (`otherName`). Pure.
+ * names that do not contradict, or the two names are written in the same
+ * scripts and are not two names there (`otherName`). Pure.
  */
 function typedLineRestated(model: GoodsList[number], typed: GoodsList[number]): boolean {
   let shared = 0;
@@ -1379,8 +1379,16 @@ function typedLineRestated(model: GoodsList[number], typed: GoodsList[number]): 
   }
   if (namesContradict(model.name, typed.name)) return false;
   if (shared >= 2) return true;
+  // A count alone only between names written in the SAME scripts: «some
+  // script in common» let a Russian name with one Latin brand or size word
+  // («Кепка бейсболка Nike», «Куртка женская XL») share the Latin of an
+  // Uzbek-Latin typed line, `otherName` then compared the Latin words alone
+  // ({nike} inside {krossovka, nike}) and a DIFFERENT good of an equal count
+  // left the list in silence (the independent check's IC-NEW-1).
   const ofTyped = NAME_SCRIPTS.filter((re) => re.test(typed.name));
-  return ofTyped.some((re) => re.test(model.name)) && !otherName(goodsNameKey(model.name), goodsNameKey(typed.name));
+  const ofModel = NAME_SCRIPTS.filter((re) => re.test(model.name));
+  const sameScripts = ofTyped.length > 0 && ofTyped.length === ofModel.length && ofTyped.every((re) => ofModel.includes(re));
+  return sameScripts && !otherName(goodsNameKey(model.name), goodsNameKey(typed.name));
 }
 
 /** The scripts a goods name is written in, for «do two names share one» (`typedLineRestated`). */

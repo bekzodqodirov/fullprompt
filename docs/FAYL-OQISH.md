@@ -39,8 +39,9 @@ are `goods/judge-objections.md` in the scratchpad, and every builder reads the o
 What production hit is not proven, because this container has no API key. His `[calc intake]` log lines will
 say which route it was (§7). Every route below is fixed regardless.
 
-Numbering: DECISIONS from **#1628**, because main's AI sotuvchi took #1610-#1621 and its «kontekst 100» round
-#1622-#1627 (merged at 374983e; the line said #1622 until the as-built review, REGRESSION-7). **No migration**: every new
+Numbering: DECISIONS from **#1630**, because main's AI sotuvchi took #1610-#1621, its «kontekst 100» round
+#1622-#1627, the m0-smoke locator #1628 and the driver app's unreadable fix #1629 (merged at 374983e and 4794e34;
+the line said #1622 until the as-built review, REGRESSION-7). **No migration**: every new
 field lives in the collection's jsonb state, so the ledger stays at **143**.
 
 ---
@@ -530,7 +531,9 @@ model-cut-unbilled):
   мужские» as a rule (its prompt asks for Russian names), so the trousers landed twice with their m³. A typed line
   is also REACHED by a model line that states its count and a second figure, every figure both state agreeing,
   under names that do not contradict (the «nomi boshqacha, raqamlari bir xil» rule) — or by a count alone only
-  between two names of one script that are not two names (`otherName`); and only where exactly ONE typed line
+  between two names written in the SAME scripts that are not two names (`otherName`) — never «a script in
+  common»: a Russian «Кепка бейсболка Nike» shared the Latin of an Uzbek «Krossovka Nike» through its brand
+  word, and a different good of an equal count left the list (the independent check's IC-NEW-1); and only where exactly ONE typed line
   meets it. Across scripts a count alone says nothing («Tovar 5» 50 beside «Erkaklar shimi 50 dona» are two
   goods), and two typed lines the figures cannot tell apart are both kept: a line shown twice is still better
   than a good lost in silence. That is the trade that remains.
@@ -633,6 +636,12 @@ model-cut-unbilled):
     список. В списке товары нескольких фабрик, а эти листы — только часть отгрузки: их итоги (вес/объём) НЕ
     общие — общий вес и объём отсюда не бери.» and the codes-only closing.
   A whole packing list standing in `fileTotals` (the shipment's) still outranks the model, as before.
+- As built after the independent check of those fixes, IC-NEW-2, stated and not changed: the gate also drops
+  the model's reading of totals the SELLER typed or forwarded as text («TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92
+  CBM») — the manual reader (`parseManualFacts`) reads no KGS / CBM / G.W. / MEAS phrasing, so the model was the
+  only reader of a forwarder's totals line, and beside a fold its figure cannot be told from a factory's Σ. The
+  direction is safe: nothing is priced on a wrong figure, the brutto is asked and the seller answers one he has
+  just sent. Teaching the manual reader the export words is a reader change under the corpus rule, owed.
 - Pins: `intake-images.test.ts:51` is re-anchored. Three tests:
   - an AI-door lone Excel makes ONE call;
   - an all-coded Excel makes none;
@@ -734,7 +743,9 @@ or packing data of the same goods.
     the first sheet to meet PL A's Σ, and taking none itself it left factory A's brutto and cube as the
     shipment's under a ✅. Totals written before a folded goods file arrived (`totalsBeforeFold`, by the receipt
     marks; one workbook's sheets share a mark and a fold among them already drops what stood before it) are
-    dropped and said with the same «… endi butun yukniki emas …» sentence. The workbook-and-file mixtures that
+    dropped and said with the same «… endi butun yukniki emas …» sentence — said only over totals that TOOK a
+    figure: a clash two packing lists left (both figures null, «ikkalasi ham olinmadi» already said) is dropped
+    in silence (IC-NEW-3). The workbook-and-file mixtures that
     never reach a further sheet (a workbook [CI A, PL A] then a FILE CI B) stay §8's three-FILES case.
   - As built after the as-built review (B), SHEETS-6 (4): every sheet line is said with its file's label first («📄 «file», «Zavod B»
     varag‘idan …») — the house style of every file line, since a seller forwards workbooks whose sheets share
@@ -1205,7 +1216,10 @@ New `IntakeState` fields, all optional in the type, defaulted in the initial sta
 - `unreadPdfs?: string[]` — analyzeCollected, from the outcome;
 - `refusedFiles?: { name: string; why: string; resent?: boolean }[]` — every refusal site at arrival; as built
   (B), also the READING (the API-refused PDF it names, §1.1 d); after the review of the fixes an accepted
-  same-named file MARKS its entries `resent` and never removes them (RF-FILES-1, RF-WORDS-4);
+  same-named file MARKS its entries `resent` and never removes them (RF-FILES-1, RF-WORDS-4); a resent copy is
+  counted APART past the named five and sits outside the note's «tovarlari hisobga kirmagan» heading (a «⚠️
+  Avvalgi nusxalar o‘qilmadi (keyin shu nomli fayl olindi): …» line of its own), two identical copies said once
+  (`splitResent`, IC-NEW-4);
 - `restartAsked?: { messageId: number | null; at: number } | null` — the restart question;
 - `landAs?: 'ai' | 'ved' | null` — c:save / c:to_ved.
 
