@@ -252,6 +252,20 @@ describe('the proposal as a whole', () => {
     expect(p.rows.map((r) => r.kg)).toEqual(['600.000', '420.000']);
     // Adding up: nothing to say.
     expect(build(rows, { totals: { cartons: 100, gross_kg: 1020, volume_m3: 2.5 } }).warnings).toEqual([]);
+    // PER MEASURE — the cartons and the cube each have a line of their own (the kilo case above cannot
+    // see either: with the cartons' comparison removed every test in this file stayed green).
+    expect(build(rows, { totals: { cartons: 120, gross_kg: 1020, volume_m3: 2.5 } }).warnings).toEqual([
+      { code: 'totals_differ', params: { field: 'cartons', sum: '100', total: '120' } },
+    ]);
+    expect(build(rows, { totals: { cartons: 100, gross_kg: 1020, volume_m3: 3 } }).warnings).toEqual([
+      { code: 'totals_differ', params: { field: 'm3', sum: '2.5000', total: '3.0000' } },
+    ]);
+    // All three at once, in the order the dialog prints them.
+    expect(build(rows, { totals: { cartons: 120, gross_kg: 1240, volume_m3: 3 } }).warnings.map((w) => w.code === 'totals_differ' && w.params.field)).toEqual([
+      'cartons',
+      'kg',
+      'm3',
+    ]);
   });
 
   it('…and it stays silent where it cannot know: a cut list, a measure some row lacks, net rows against a gross total', () => {

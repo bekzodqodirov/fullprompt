@@ -297,13 +297,17 @@ describe('what a question shows, and its tag', () => {
   });
 
   it('a prixod that is gone, voided, unconfirmed or ownerless asks nothing', async () => {
-    expect(await clientAskFacts(randomUUID())).toEqual({ skip: 'receipt_gone' });
-    expect(await clientAskFacts('not-an-id')).toEqual({ skip: 'receipt_gone' });
+    // Each skip says WHOSE the prixod is, when it is anybody's: a press must know the owner before it
+    // says «this is out of date» to a chat (L2-6).
+    expect(await clientAskFacts(randomUUID())).toEqual({ skip: 'receipt_gone', clientId: null });
+    expect(await clientAskFacts('not-an-id')).toEqual({ skip: 'receipt_gone', clientId: null });
     const set = (v: Partial<typeof receipts.$inferInsert>) => db.update(receipts).set(v).where(eq(receipts.id, receipt.main));
     await set({ status: 'draft' });
-    expect(await clientAskFacts(receipt.main)).toEqual({ skip: 'not_confirmed' });
+    expect(await clientAskFacts(receipt.main)).toEqual({ skip: 'not_confirmed', clientId: client.A });
+    await set({ status: 'voided' });
+    expect(await clientAskFacts(receipt.main)).toEqual({ skip: 'voided', clientId: client.A });
     await set({ status: 'confirmed', clientId: null });
-    expect(await clientAskFacts(receipt.main)).toEqual({ skip: 'no_client' });
+    expect(await clientAskFacts(receipt.main)).toEqual({ skip: 'no_client', clientId: null });
     await set({ clientId: client.A });
   });
 });
@@ -450,11 +454,11 @@ describe('a press', () => {
   it('a tag from before the data moved is «stale»; so is a voided prixod; nothing is written', async () => {
     const before = await rowsOfAnswers();
     const tag = (await facts()).tag;
-    expect(await press('no', CHAT_A, 'deadbeef')).toEqual({ outcome: 'stale' });
+    expect(await press('no', CHAT_A, 'deadbeef')).toEqual({ outcome: 'stale', clientId: client.A });
     await db.update(receipts).set({ status: 'voided' }).where(eq(receipts.id, receipt.main));
     try {
       // The very tag the message carried: the prixod is void, so there is nothing left to answer about.
-      expect(await press('no', CHAT_A, tag)).toEqual({ outcome: 'stale' });
+      expect(await press('no', CHAT_A, tag)).toEqual({ outcome: 'stale', clientId: client.A });
     } finally {
       await db.update(receipts).set({ status: 'confirmed' }).where(eq(receipts.id, receipt.main));
     }
@@ -470,6 +474,20 @@ describe('a press', () => {
     await db.update(receipts).set({ clientId: client.B }).where(eq(receipts.id, receipt.main));
     expect(await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.main, verdict: 'no', tag })).toEqual({ outcome: 'unknown' });
     await db.update(receipts).set({ clientId: client.A }).where(eq(receipts.id, receipt.main));
+    // …and WHATEVER became of that prixod: voided, back to a draft or left with no owner, a stranger's
+    // chat hears the same word as for one that is not there. «Stale» is said to the OWNER alone — it
+    // told any linked chat which uuids are voided or unclaimed prixods, and a stale ❌ is invited to
+    // write to a manager about cargo that is not theirs (the as-built review, L2-6).
+    for (const patch of [{ status: 'voided' }, { status: 'draft' }, { clientId: null }] as const) {
+      await db.update(receipts).set(patch).where(eq(receipts.id, receipt.main));
+      try {
+        expect(await answerClientAsk({ chatId: CHAT_B, receiptId: receipt.main, verdict: 'no', tag }), JSON.stringify(patch)).toEqual({
+          outcome: 'unknown',
+        });
+      } finally {
+        await db.update(receipts).set({ status: 'confirmed', clientId: client.A }).where(eq(receipts.id, receipt.main));
+      }
+    }
     expect((await rowsOfAnswers()).every((row) => row.verdict === 'yes')).toBe(true);
   });
 
@@ -580,6 +598,49 @@ describe('a press', () => {
     expect((await stateOf('S')).state).toBe('none');
   });
 
+  it('…and a ❌ pressed AGAIN after that tick is a NEW answer, never «already»: it vetoes again, the people are told, the History says so', async () => {
+    // The as-built review (L1-2). The push goes to every linked chat with its own buttons: chat 1 says ❌,
+    // the logist phones and ticks, chat 2 presses ❌ on ITS copy — the same tag, the same facts, the same
+    // verdict as the row that stands. «Already» swallowed it: the lot stayed ✅ by the tick, nobody was
+    // told, and the customer's toast said it was recorded.
+    const [row] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.K));
+    const seen = { nameZh: row!.productNameZh, nameRu: row!.productNameRu ?? '', boxCount: row!.boxCount, clientId: client.A };
+    const k = await stateOf('K');
+    expect(k.client).toMatchObject({ verdict: 'no', vetoes: true });
+    expect(await checkLot({ lotId: lot.K, seen, seenCheckedAt: null, seenClientAt: k.client!.token }, logist(), ctx())).toEqual({ changed: true });
+    try {
+    expect((await stateOf('K')).state).toBe('checked');
+    await clearQueued();
+
+    const again = await press('no', CHAT_A2);
+    expect(again.outcome).toBe('recorded');
+    const after = await stateOf('K');
+    expect(after.state).toBe('none');
+    expect(after.client).toMatchObject({ verdict: 'no', vetoes: true });
+    // The tick is still there — and is once more the OLDER of the two.
+    expect(after.person).toMatchObject({ holds: true });
+    const told = await queued();
+    expect(told.length).toBeGreaterThan(0);
+    expect(told.every((t) => t.type === 'ClientLotDisputed')).toBe(true);
+    const [audit] = await db
+      .select({ actorId: auditLog.actorId, before: auditLog.before, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, receipt.main)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect(audit!.actorId).toBeNull();
+    // No word of the answer changed — the row still says that it was given again.
+    expect(String((audit!.after as Record<string, unknown>)['clientConfirm:A'])).toMatch(/^❌ Telegram · .* · qayta$/);
+    // NOW the ❌ is in force again, so the very same press is the double tap.
+    expect(await press('no', CHAT_A2)).toEqual({ outcome: 'already', verdict: 'no' });
+    expect(await queued()).toHaveLength(told.length);
+    } finally {
+      // Back to the fixture, whatever happened above: K without a tick.
+      await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.K));
+      await clearQueued();
+    }
+  });
+
   it('way out 3 — a person closes the dispute, and only the one the card DREW: the History says who and why', async () => {
     const tokenOf = async (key: keyof typeof lot) => (await stateOf(key)).client!.token;
     const close = (seen: { lotId: string; token: string }[], actor = logist(), note?: string, receiptId = receipt.main) =>
@@ -617,6 +678,25 @@ describe('a press', () => {
     expect(audit!.after).toEqual({ 'clientConfirm:C': 'e’tiroz yopildi: mijoz adashib bosgan' });
     // A second press has nothing left to close.
     await expect(close([{ lotId: lot.S, token: s }])).rejects.toMatchObject({ code: 'check_changed' });
+
+    // A ❌ of a PREVIOUS owner (the prixod was corrected to this client since): the card never draws it
+    // and the sentence treats it as nobody's — so no post may close it either. Were the prixod corrected
+    // BACK, that client's still-valid ❌ would be gone, closed by somebody who was never shown it (L1-5).
+    const foreign = (await db.execute(sql`
+      INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, shown_goods_key, chat_id)
+      VALUES (${lot.M}::uuid, 'no', ${MATRIX_ZH}, ${MATRIX_RU}, 2, ${client.B}::uuid, NULL, ${CHAT_B})
+      ON CONFLICT (lot_id) DO UPDATE SET verdict = 'no', shown_client_id = EXCLUDED.shown_client_id, answered_at = now()
+      RETURNING answered_at::text AS token
+    `)) as unknown as { token: string }[];
+    try {
+      await expect(close([{ lotId: lot.M, token: foreign[0]!.token }], logist(), undefined, receipt.matrix)).rejects.toMatchObject({
+        code: 'check_changed',
+      });
+      const kept = await db.select().from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.M));
+      expect(kept).toHaveLength(1);
+    } finally {
+      await db.delete(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.M));
+    }
 
     // The prixod's other disputed lots in ONE press, one History row.
     expect(await close([{ lotId: lot.K, token: await tokenOf('K') }, { lotId: lot.T, token: await tokenOf('T') }])).toEqual({ lots: 2 });
@@ -661,7 +741,7 @@ describe('a press', () => {
     const f = await clientAskFacts(receipt.uz);
     if ('skip' in f) throw new Error(f.skip);
     for (const verdict of ['yes', 'no'] as const) {
-      expect(await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.uz, verdict, tag: f.tag })).toEqual({ outcome: 'stale' });
+      expect(await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.uz, verdict, tag: f.tag })).toEqual({ outcome: 'stale', clientId: client.A });
     }
     expect(await db.select().from(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.U))).toEqual([]);
     expect(await queued()).toEqual([]);
@@ -853,6 +933,18 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
     expect(rows.every((row, i) => row.answeredAt > before[i]!.answeredAt || row.answeredAt.getTime() >= Date.now() - 60_000)).toBe(true);
     const told = await queued();
     expect(told.map((row) => [row.userId, row.type])).toEqual([[staffId, 'ClientLotConfirmed']]);
+    // The History: no word of the answer changed, and the entry still has a line under it for every
+    // lot — a row whose before and after are both empty draws «Tizim · o'zgartirdi» over nothing (#502).
+    const [reAnswer] = await db
+      .select({ actorId: auditLog.actorId, after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, receipt.main)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect(reAnswer!.actorId).toBeNull();
+    const lines = reAnswer!.after as Record<string, unknown>;
+    expect(Object.keys(lines).sort()).toEqual(['clientConfirm:A', 'clientConfirm:B', 'clientConfirm:C']);
+    for (const value of Object.values(lines)) expect(String(value)).toMatch(/^✅ Telegram · .* · qayta$/);
     // Now it IS the answer to the last question: a second tap is «already».
     expect(await press('yes')).toEqual({ outcome: 'already', verdict: 'yes' });
     expect(await queued()).toHaveLength(1);

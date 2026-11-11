@@ -101,6 +101,17 @@ export interface ClientAskFacts {
 
 export type ClientAskSkip = 'receipt_gone' | 'voided' | 'not_confirmed' | 'no_client' | 'no_lots';
 
+/**
+ * A prixod there is nothing to ask about — with WHOSE it is, when it is
+ * anybody's. A press needs the owner before it says anything at all: «this
+ * is out of date» is a fact about the prixod, and it is said to its owner
+ * alone (`answerClientAsk`).
+ */
+export interface ClientAskSkipped {
+  skip: ClientAskSkip;
+  clientId: string | null;
+}
+
 /** Eight hex digits of what a question prints. Pure — the send and the press both call it. */
 export function askTag(
   clientId: string,
@@ -114,8 +125,8 @@ export function askTag(
  * What a question about this prixod says NOW — the receipt, its owner, every
  * lot by letter, and the tag of exactly that. Pooled.
  */
-export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts | { skip: ClientAskSkip }> {
-  if (!isUuidShaped(receiptId)) return { skip: 'receipt_gone' };
+export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts | ClientAskSkipped> {
+  if (!isUuidShaped(receiptId)) return { skip: 'receipt_gone', clientId: null };
   const [receipt] = await db
     .select({
       id: receipts.id,
@@ -132,10 +143,10 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     .innerJoin(warehouses, eq(receipts.warehouseId, warehouses.id))
     .leftJoin(clients, eq(receipts.clientId, clients.id))
     .where(eq(receipts.id, receiptId));
-  if (!receipt) return { skip: 'receipt_gone' };
-  if (receipt.voidedAt || receipt.status === 'voided') return { skip: 'voided' };
-  if (receipt.status !== 'confirmed') return { skip: 'not_confirmed' };
-  if (!receipt.clientId || !receipt.clientCode) return { skip: 'no_client' };
+  if (!receipt) return { skip: 'receipt_gone', clientId: null };
+  if (receipt.voidedAt || receipt.status === 'voided') return { skip: 'voided', clientId: receipt.clientId };
+  if (receipt.status !== 'confirmed') return { skip: 'not_confirmed', clientId: receipt.clientId };
+  if (!receipt.clientId || !receipt.clientCode) return { skip: 'no_client', clientId: null };
 
   // ONE statement for the names, the counts, the goods and their digest: the
   // tag vouches for exactly what the message prints, and two reads would let
@@ -158,7 +169,7 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     goods_key: string | null;
     goods: { name: string; pieces: number | null }[] | string | null;
   }[];
-  if (rows.length === 0) return { skip: 'no_lots' };
+  if (rows.length === 0) return { skip: 'no_lots', clientId: receipt.clientId };
 
   const lots: ClientAskLot[] = rows.map((row) => {
     const goods = typeof row.goods === 'string' ? (JSON.parse(row.goods) as { name: string; pieces: number | null }[]) : (row.goods ?? []);
@@ -240,8 +251,12 @@ export type ClientVerdict = 'yes' | 'no';
 export type ClientAnswer =
   /** Not this chat's to answer, or nothing there any more — one neutral word for all of it. */
   | { outcome: 'unknown' }
-  /** The facts moved since the message: the buttons are about data that no longer exists. */
-  | { outcome: 'stale' }
+  /**
+   * The facts moved since the message: the buttons are about data that no
+   * longer exists. Said to the prixod's OWNER alone, so it names them — what
+   * the customer writes next is about that client's cargo.
+   */
+  | { outcome: 'stale'; clientId: string }
   /** Every lot already holds this very answer about these very facts. */
   | { outcome: 'already'; verdict: ClientVerdict }
   /** A lot of this prixod is being edited this very second — nothing written, the buttons stay. */
@@ -313,11 +328,16 @@ export async function answerClientAsk(input: {
   // No button was ever drawn by a server whose 0144 has not landed (#472).
   if (!(await clientConfirmsReady())) return { outcome: 'unknown' };
   const facts = await clientAskFacts(input.receiptId);
-  if ('skip' in facts) return { outcome: facts.skip === 'receipt_gone' ? 'unknown' : 'stale' };
-  // Somebody else's prixod — or one that WAS this chat's and was corrected to
-  // another client: the same word as a prixod that does not exist.
-  if (!linked.some((client) => client.id === facts.clientId)) return { outcome: 'unknown' };
-  if (facts.tag !== input.tag) return { outcome: 'stale' };
+  // WHOSE prixod, before anything is said about it. Somebody else's — or one
+  // that WAS this chat's and was corrected to another client, or to nobody —
+  // answers the same word as a prixod that does not exist, whatever became of
+  // it. «Stale» said first told any linked chat which uuids are voided, draft
+  // or unclaimed prixods, and invited a stranger's ❌ to write to a manager
+  // about cargo that is not theirs (the as-built review, L2-6).
+  const ownerId = facts.clientId;
+  if (ownerId === null || !linked.some((client) => client.id === ownerId)) return { outcome: 'unknown' };
+  if ('skip' in facts) return { outcome: 'stale', clientId: ownerId };
+  if (facts.tag !== input.tag) return { outcome: 'stale', clientId: ownerId };
 
   const lotIds = facts.lots.map((lot) => lot.lotId);
   // His 4a, and the question's own door: an answer is taken while some lot
@@ -327,40 +347,13 @@ export async function answerClientAsk(input: {
   // take the ✅ off /stock, stand on no list (the worklist is China's) and
   // alarm the seller and every logist about papers already made.
   const views = await lotCheckViewsFor(lotIds);
-  if (!lotIds.some((id) => views.get(id)?.askable === true)) return { outcome: 'stale' };
-  const held = await db
-    .select()
-    .from(lotClientConfirms)
-    .where(sql`${lotClientConfirms.lotId} IN (${sql.join(
-      lotIds.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    )})`);
-  const heldBy = new Map(held.map((row) => [row.lotId, row]));
-  const same = (lot: ClientAskLot): boolean => {
-    const row = heldBy.get(lot.lotId);
-    return (
-      row !== undefined &&
-      row.verdict === input.verdict &&
-      row.shownZh === lot.zh &&
-      (row.shownRu ?? null) === lot.ru &&
-      row.shownCount === lot.count &&
-      row.shownClientId === facts.clientId &&
-      (row.shownGoodsKey ?? null) === lot.goodsKey
-    );
-  };
+  if (!lotIds.some((id) => views.get(id)?.askable === true)) return { outcome: 'stale', clientId: ownerId };
   // Read on the pool BEFORE the transaction (tx-pool): the last question a
   // person sent, and who is told.
   const ask = await lastAsk(facts.clientId, facts.receiptId);
   const askedBy = ask?.askedBy ?? null;
-  // «Already» = every lot holds this very answer about these very facts AND
-  // it was given after the last question went out. The same ❌ pressed again
-  // on a NEW question is that question's answer: the person who re-asked
-  // must hear it, and the card's date must move (the design judge).
-  const answersTheLastAsk = (lot: ClientAskLot): boolean => {
-    const row = heldBy.get(lot.lotId);
-    return row !== undefined && (ask?.sentAt === null || ask?.sentAt === undefined || row.answeredAt > ask.sentAt);
-  };
-  if (facts.lots.every((lot) => same(lot) && answersTheLastAsk(lot))) return { outcome: 'already', verdict: input.verdict };
+  // Bound as text (#156): a Date in a raw fragment is refused by the driver.
+  const askedAt = ask?.sentAt ? ask.sentAt.toISOString() : null;
 
   const [owner] = await db.select({ seller: clients.salesManagerId }).from(clients).where(eq(clients.id, facts.clientId));
   // ❌ → the client's seller and the logists (the people who can correct the
@@ -372,25 +365,91 @@ export async function answerClientAsk(input: {
           (id) => id !== askedBy,
         )
       : [];
+  const mark = (verdict: string) => (verdict === 'yes' ? '✅' : '❌');
 
-  const before: Record<string, unknown> = {};
-  const after: Record<string, unknown> = {};
-  for (const lot of facts.lots) {
-    if (same(lot)) continue;
-    const key = clientConfirmAuditKey(lot.letter);
-    const prev = heldBy.get(lot.lotId);
-    before[key] = prev ? `${prev.verdict === 'yes' ? '✅' : '❌'} ${shownLine({ zh: prev.shownZh, ru: prev.shownRu, count: prev.shownCount })}` : null;
-    after[key] = `${input.verdict === 'yes' ? '✅' : '❌'} Telegram · ${shownLine(lot)}`;
-  }
-
+  let written: boolean;
   try {
-   await db.transaction(async (tx) => {
+   written = await db.transaction(async (tx) => {
     // Bounded: the customer is answered «hozir band» and keeps the buttons,
     // never a wait on the bot's one poller.
     await tx.execute(sql`SET LOCAL lock_timeout = '3s'`);
     // Ordered against a colleague's tick on each lot, in one order for every
     // answer (`lockLotAnswersTx`).
     for (const id of [...lotIds].sort()) await lockLotAnswersTx(tx, id);
+
+    // What stands on these lots — read UNDER the locks, with the two things
+    // only the database can compare exactly (microseconds): was it given
+    // after the last question went out, and has a colleague ticked since.
+    // Read before the locks, a ❌ pressed while a lifting tick was in flight
+    // — or while «E'tirozni yopish» was deleting the row — was judged against
+    // a row that no longer stood (the as-built review, L1-2).
+    const held = (await tx.execute(sql`
+      SELECT cc.lot_id, cc.verdict, cc.shown_zh, cc.shown_ru, cc.shown_count, cc.shown_client_id, cc.shown_goods_key,
+             (${askedAt}::timestamptz IS NULL OR cc.answered_at > ${askedAt}::timestamptz) AS after_ask,
+             coalesce(k.checked_at > cc.answered_at, false) AS ticked_since
+        FROM lot_client_confirms cc
+        LEFT JOIN lot_checks k ON k.lot_id = cc.lot_id
+       WHERE cc.lot_id IN (${sql.join(
+         lotIds.map((id) => sql`${id}::uuid`),
+         sql`, `,
+       )})
+    `)) as unknown as {
+      lot_id: string;
+      verdict: ClientVerdict;
+      shown_zh: string;
+      shown_ru: string | null;
+      shown_count: number;
+      shown_client_id: string;
+      shown_goods_key: string | null;
+      after_ask: boolean;
+      ticked_since: boolean;
+    }[];
+    const heldBy = new Map(held.map((row) => [row.lot_id, row]));
+    /** The lot holds this very answer about these very facts. */
+    const same = (lot: ClientAskLot): boolean => {
+      const row = heldBy.get(lot.lotId);
+      return (
+        row !== undefined &&
+        row.verdict === input.verdict &&
+        row.shown_zh === lot.zh &&
+        (row.shown_ru ?? null) === lot.ru &&
+        Number(row.shown_count) === lot.count &&
+        row.shown_client_id === facts.clientId &&
+        (row.shown_goods_key ?? null) === lot.goodsKey
+      );
+    };
+    // «Already» = every lot holds this very answer about these very facts,
+    // it was given after the last question went out, AND — for a ❌ — no
+    // colleague has ticked the lot since.
+    //   · The same answer pressed again on a NEW question is that question's
+    //     answer: the person who re-asked must hear it, and the card's date
+    //     must move (the design judge).
+    //   · A tick newer than the ❌ has OUTRANKED it (`lotCheckStateSql`, arm
+    //     3). The push goes to every linked chat with its own buttons: chat 1
+    //     says ❌, the logist phones and ticks, chat 2 presses ❌ on its copy
+    //     — the same tag, the same facts. That is a new objection, not a
+    //     second tap: written, its clock makes it veto again, and the people
+    //     who can fix the lot are told. (Any tick since, holding or not: the
+    //     rule errs toward writing, never toward swallowing a customer's ❌.)
+    const settled = (lot: ClientAskLot): boolean => {
+      const row = heldBy.get(lot.lotId);
+      return row !== undefined && same(lot) && row.after_ask === true && !(input.verdict === 'no' && row.ticked_since === true);
+    };
+    if (facts.lots.every(settled)) return false;
+
+    const before: Record<string, unknown> = {};
+    const after: Record<string, unknown> = {};
+    for (const lot of facts.lots) {
+      const key = clientConfirmAuditKey(lot.letter);
+      const prev = heldBy.get(lot.lotId);
+      before[key] = prev ? `${mark(prev.verdict)} ${shownLine({ zh: prev.shown_zh, ru: prev.shown_ru, count: Number(prev.shown_count) })}` : null;
+      // Every lot of the message is written again, so every lot is a line —
+      // and the same answer about the same facts says that it was given
+      // AGAIN. Skipping those left the re-answer's row with nothing under it
+      // («Tizim · o'zgartirdi» over an empty box, #502).
+      after[key] = `${mark(input.verdict)} Telegram · ${shownLine(lot)}${same(lot) ? ' · qayta' : ''}`;
+    }
+
     await tx
       .insert(lotClientConfirms)
       .values(
@@ -434,11 +493,13 @@ export async function answerClientAsk(input: {
     // The asker pressed a button and is waiting for this very answer: it goes
     // past their own mute, as the re-run a seller started does.
     if (askedBy) await queueStaffTelegram(tx, { userIds: [askedBy], type, text, ignoreMute: true });
+    return true;
    });
   } catch (err) {
     if (isBusyError(err) || isBusyError((err as { cause?: unknown } | null)?.cause)) return { outcome: 'busy' };
     throw err;
   }
+  if (!written) return { outcome: 'already', verdict: input.verdict };
   await kickTelegramDrain().catch(() => {});
   return { outcome: 'recorded', verdict: input.verdict, facts };
 }
@@ -663,8 +724,11 @@ export async function dismissClientDisputes(
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
     const gone = (await tx.execute(sql`
       DELETE FROM lot_client_confirms cc
-       USING receipt_lots l
-       WHERE l.id = cc.lot_id AND l.receipt_id = ${input.receiptId}::uuid AND cc.verdict = 'no'
+       USING receipt_lots l, receipts r
+       WHERE l.id = cc.lot_id AND r.id = l.receipt_id AND l.receipt_id = ${input.receiptId}::uuid AND cc.verdict = 'no'
+         -- The ❌ the card draws is the OWNER's: a previous owner's is nobody's
+         -- to close (were the prixod corrected back, it would be gone unseen).
+         AND cc.shown_client_id = r.client_id
          AND (cc.lot_id, cc.answered_at::text) IN (${sql.join(
            seen.map((row) => sql`(${row.lotId}::uuid, ${row.token})`),
            sql`, `,

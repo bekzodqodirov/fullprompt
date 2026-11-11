@@ -16,7 +16,7 @@ import {
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
-import { lotChecksReady, lotClientConfirmsReady } from './lot-check-ready';
+import { clientConfirmsReady, lotChecksReady, lotClientConfirmsReady } from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -93,13 +93,25 @@ export async function lockLotAnswersTx(tx: Tx, lotId: string): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lotId}`}, 0))`);
 }
 
-/** The client's row on a lot, as the tick needs it: its token, and whether it outranks the standing tick. */
+/**
+ * The client's row on a lot, as the tick needs it: its token, and whether it
+ * outranks the standing tick.
+ *
+ * `clientSide` is the PROBE's answer, asked by the press itself on the pool
+ * before its transaction — never the remembered flag. A writer that reads
+ * what another screen remembered is right only while that screen has run in
+ * its own module instance, and a server action has an instance of its own:
+ * after every restart the tick read «no such table», posted `null` against
+ * the token the card had drawn, and refused `check_changed` for ever (the
+ * as-built review, L1-1; `tests/integration/lot-check-probe…`).
+ */
 async function clientAnswerFor(
   tx: Tx,
   lotId: string,
   clientId: string,
+  clientSide: boolean,
 ): Promise<{ token: string | null; outranksTick: boolean }> {
-  if (!lotClientConfirmsReady()) return { token: null, outranksTick: false };
+  if (!clientSide) return { token: null, outranksTick: false };
   await lockLotAnswersTx(tx, lotId);
   const rows = (await tx.execute(sql`
     SELECT cc.answered_at::text AS token,
@@ -230,6 +242,9 @@ export async function checkLot(
   if (receipt.status !== 'confirmed') throw new LotCheckError('receipt_not_confirmed');
   if (!receipt.clientId) throw new LotCheckError('no_client');
   const note = orNull(parsed.note);
+  // Asked HERE, on the pool (a pooled read inside the transaction is #714's
+  // freeze): is the client's answer table there at all (0144)?
+  const clientSide = await clientConfirmsReady();
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
@@ -261,7 +276,7 @@ export async function checkLot(
     // person is then NOT «already confirmed»: it must write, and its new
     // `checked_at` is what lifts the ❌. And the press must have SEEN the
     // answer it lifts.
-    const answer = await clientAnswerFor(tx, lot.id, current.client_id);
+    const answer = await clientAnswerFor(tx, lot.id, current.client_id, clientSide);
     if (holdsNow && prev.note === note && prev.checked_by === actor.id && !answer.outranksTick) return { changed: false };
     if ((prev?.checked_at ?? null) !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
     if (parsed.seenClientAt !== undefined && answer.token !== parsed.seenClientAt) throw new LotCheckError('check_changed');

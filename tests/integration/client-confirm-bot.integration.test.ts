@@ -539,4 +539,121 @@ describe('a press', () => {
     expect(no.texts).toEqual([clientLabels('uz').confirmTellUs]);
     await clearState();
   });
+
+  it('a LATE press that came back «busy» asks to be pressed again — and the next press on that very button RUNS', async () => {
+    // The as-built review (L2-1). A late press is remembered for a minute so that five taps into a bot
+    // that was not there are one request — but «busy» wrote nothing and its sentence ASKS for a repeat.
+    // The one outcome that asks for a second press was the one whose second press was swallowed.
+    const tag = await tagOf(receipt.plain);
+    const t = clientLabels('uz');
+    const holder = await pgClient.reserve();
+    try {
+      await holder`BEGIN`;
+      await holder`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lot.P1}`}, 0))`;
+      h.failNext('answerCallbackQuery', { error_code: 400, description: 'Bad Request: query is too old and response timeout expired or query ID is invalid' });
+      const busy = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4600);
+      // Too late to be a toast: the sentence is said in the chat.
+      expect(busy.texts).toEqual([t.confirmFailed]);
+      expect(busy.edits).toEqual([]);
+    } finally {
+      await holder`ROLLBACK`;
+      holder.release();
+    }
+    expect(await answersOf()).toEqual([]);
+    // The customer does as told: the same button on the same message, seconds later. The middleware's
+    // memory is the subject here, so it is NOT reset between the two.
+    const again = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4600);
+    expect(again.toast).toBe(t.confirmThanks);
+    const rows = await answersOf();
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.verdict === 'yes')).toBe(true);
+    await clearState();
+  }, 20_000);
+
+  it('the ❌’s one sentence goes FIRST and through the house’s ordered send: before the keyboard is touched, and a brief 429 is waited out', async () => {
+    // L2-2. A ❌ has no toast by design, so this sentence is the customer's ONLY sign that the press did
+    // anything. It was a bare send behind the keyboard edit: one 429 in the burst after a deploy and the
+    // customer saw the buttons vanish and nothing else — with nothing in the log.
+    const tag = await tagOf(receipt.plain);
+    const mark = h.mark();
+    h.failNext('sendMessage', { error_code: 429, description: 'Too Many Requests: retry after 1', parameters: { retry_after: 1 } });
+    const got = await press(CHAT_A, `yt:0:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4610);
+    const sent = h.since(mark).sent;
+    const says = sent.filter((call) => call.method === 'sendMessage' && Number(call.body.chat_id) === CHAT_A);
+    // The refused one and its retry.
+    expect(says).toHaveLength(2);
+    expect(got.texts.at(-1)).toBe(clientLabels('uz').confirmTellUs);
+    const firstSay = sent.findIndex((call) => call.method === 'sendMessage');
+    const edit = sent.findIndex((call) => call.method === 'editMessageReplyMarkup');
+    expect(firstSay).toBeGreaterThan(-1);
+    expect(edit).toBeGreaterThan(firstSay);
+    await clearState();
+  }, 20_000);
+
+  it('a message whose keyboard Telegram no longer echoes: the answer is recorded and the ✅ / ❌ row still goes — the two standing rows are rebuilt', async () => {
+    // L2-5. A push stays in the chat for ever and a press on an old message arrives with no
+    // `reply_markup`: with nothing to filter there was no edit at all, the row stayed under the message,
+    // and ❌ / ✅ / ❌ … could be flipped on it for ever, each ❌ alarming the seller and every logist.
+    const tag = await tagOf(receipt.plain);
+    const got = await press(CHAT_A, `yt:1:${receipt.plain}:${tag}`, undefined, 4700);
+    expect(got.toast).toBe(clientLabels('uz').confirmThanks);
+    expect(got.edits).toHaveLength(1);
+    const raw = got.edits[0]!.body.reply_markup;
+    const markup = (typeof raw === 'string' ? JSON.parse(raw) : raw) as { inline_keyboard: Record<string, unknown>[][] };
+    expect(markup.inline_keyboard).toHaveLength(2);
+    expect(markup.inline_keyboard[0]![0]).toHaveProperty('web_app');
+    expect(markup.inline_keyboard[1]![0]).toMatchObject({ callback_data: 'mg' });
+    expect(JSON.stringify(markup)).not.toContain('yt:');
+    await clearState();
+  });
+
+  it('what the customer writes after a ❌ goes to the seller of THAT prixod’s client — not to the manager of the chat’s first code — with the prixod’s link', async () => {
+    // L2-3. One person holds several codes in one chat (his 444 / 555 / 777) and since round 111 «the
+    // minter is the manager», so two codes of one person can have two sellers. The bot says «nima
+    // noto‘g‘ri ekanini shu yerga yozing»; the relay sent those words to the manager of the chat's FIRST
+    // code: seller SA got «❌ xato dedi» with no explanation, seller SB the explanation with no prixod.
+    const sellers = await db.select({ id: users.id }).from(users).where(and(eq(users.active, true), sql`${users.id} <> ${staffId}`)).limit(2);
+    expect(sellers).toHaveLength(2);
+    const [sa, sb] = [sellers[0]!.id, sellers[1]!.id];
+    const chats = [BigInt(CHAT_STAFF + 100), BigInt(CHAT_STAFF + 101)];
+    const before = await db.select({ id: clients.id, seller: clients.salesManagerId }).from(clients).where(inArray(clients.id, [client.A, client.B]));
+    const mutes = await db.select({ id: users.id, muted: users.mutedNotificationTypes }).from(users).where(inArray(users.id, [sa, sb]));
+    // The seeded people may hold a link of their own: theirs are parked for the test and put back.
+    const parked = await db.select().from(telegramLinks).where(inArray(telegramLinks.userId, [sa, sb]));
+    try {
+      await db.delete(telegramLinks).where(inArray(telegramLinks.userId, [sa, sb]));
+      await db.insert(telegramLinks).values([
+        { userId: sa, telegramChatId: chats[0]!, status: 'linked', linkedAt: new Date() },
+        { userId: sb, telegramChatId: chats[1]!, status: 'linked', linkedAt: new Date() },
+      ]);
+      await db.update(users).set({ mutedNotificationTypes: [] }).where(inArray(users.id, [sa, sb]));
+      await db.update(clients).set({ salesManagerId: sa }).where(eq(clients.id, client.A));
+      await db.update(clients).set({ salesManagerId: sb }).where(eq(clients.id, client.B));
+      // B is the chat's OLDER code — the one the relay used to choose.
+      await db.insert(clientTelegramLinks).values({ clientId: client.B, telegramChatId: BigInt(CHAT_A), status: 'linked', linkedAt: new Date('2020-01-01T00:00:00Z') });
+
+      const tag = await tagOf(receipt.plain);
+      await press(CHAT_A, `yt:0:${receipt.plain}:${tag}`, keyboard(receipt.plain, tag), 4800);
+      const said = `nomi xato ${RUN}`;
+      await h.handle(tg.text(CHAT_A, said));
+      await h.settle();
+      const relayed = await db
+        .select({ userId: notifications.userId, payload: notifications.payload })
+        .from(notifications)
+        .where(and(eq(notifications.type, 'ClientBotMessage'), like(sql`${notifications.payload}::text`, `%${said}%`)));
+      expect(relayed.map((row) => row.userId)).toEqual([sa]);
+      const text = String((relayed[0]!.payload as { text: string }).text);
+      // The disputed code leads, and the link is the prixod's — where the ❌ is fixed.
+      expect(text).toContain(`AB${RUN}, BB${RUN}`);
+      expect(text.split('\n').at(-1)).toBe(`${APP}/receipts/${receipt.plain}`);
+    } finally {
+      await db.delete(notifications).where(and(eq(notifications.type, 'ClientBotMessage'), like(sql`${notifications.payload}::text`, `%nomi xato ${RUN}%`)));
+      await db.delete(clientTelegramLinks).where(and(eq(clientTelegramLinks.clientId, client.B), eq(clientTelegramLinks.telegramChatId, BigInt(CHAT_A))));
+      for (const row of before) await db.update(clients).set({ salesManagerId: row.seller }).where(eq(clients.id, row.id));
+      for (const row of mutes) await db.update(users).set({ mutedNotificationTypes: row.muted }).where(eq(users.id, row.id));
+      await db.delete(telegramLinks).where(inArray(telegramLinks.telegramChatId, chats));
+      if (parked.length > 0) await db.insert(telegramLinks).values(parked);
+      await clearState();
+    }
+  });
 });

@@ -128,7 +128,9 @@ describe('the press handler', () => {
 
   it('answers exactly ONCE, after deciding — the toast is the outcome’s', () => {
     expect(body.match(/answerPress\(/g)).toHaveLength(1);
-    expect(body).toContain('await answerPress(ctx, toastOf[outcome]);');
+    // `again`: «busy» and «failed» ASK for a second press — a late one must not be remembered as handled (L2-1).
+    expect(body).toContain('await answerPress(ctx, toastOf[outcome], { again: !settled });');
+    expect(body.indexOf("const settled = outcome !== 'busy' && outcome !== 'failed';")).toBeLessThan(body.indexOf('answerPress('));
     expect(body.indexOf('answerClientAsk(')).toBeLessThan(body.indexOf('answerPress('));
     // Typed over every outcome: a seventh is a compile error, never a silent «undefined» toast.
     expect(body).toContain('const toastOf: Record<ConfirmOutcome, string | undefined> = {');
@@ -151,11 +153,31 @@ describe('the press handler', () => {
     // «Busy» and «failed» wrote nothing: the row stays so the press can be repeated.
     expect(body).toContain("const settled = outcome !== 'busy' && outcome !== 'failed';");
     expect(body.indexOf('if (!settled) return;')).toBeLessThan(body.indexOf("dispatch('confirm'"));
+    // A message Telegram no longer echoes the keyboard of still loses the row: its two standing rows are rebuilt (L2-5).
+    expect(body).toContain("clientPushKeyboard(process.env.APP_URL, locale, { contact: true })?.inline_keyboard ?? []");
+    expect(body).toContain('if (!pressed) return;');
+  });
+
+  it('the ❌’s sentence goes FIRST, through the ordered send — never a bare send behind the keyboard edit (L2-2)', () => {
+    const say = body.indexOf("await sendInOrder(chatId, [{ html: h(staff ? t.confirmNoted : t.confirmTellUs) }], 'confirm-tell');");
+    expect(say).toBeGreaterThan(-1);
+    expect(say).toBeLessThan(body.indexOf('editMarkup({'));
+    expect(body).not.toMatch(/await sendText\(/);
+  });
+
+  it('a ❌ is remembered for the words that follow it — the relay sends them to THAT prixod’s seller (L2-3)', () => {
+    expect(body).toContain('if (disputing && about) rememberDispute(String(chatId), about);');
+    expect(body).toContain("if (answer.outcome === 'recorded') about = { clientId: answer.facts.clientId, receiptId: answer.facts.receiptId };");
+    expect(body).toContain("else if (answer.outcome === 'stale') about = { clientId: answer.clientId, receiptId: press.receiptId };");
+    const relay = cabinet.slice(cabinet.indexOf('export async function forwardClientMessage('), cabinet.indexOf('export const ACK_QUIET_MS'));
+    expect(relay).toContain('const about = disputeOf(chatKey);');
+    expect(relay).toContain('const owner = (disputed && reachable(disputed) ? disputed : null) ?? linked.find(reachable) ?? null;');
+    expect(relay).toContain("const card = about && disputed ? cardLink('receipt', about.receiptId) : cardLink('client', first.id);");
   });
 
   it('in a chat that is also a staff chat the relay does not run — so it is never promised', () => {
     expect(body).toContain('await staffForChat(BigInt(chatId))');
-    expect(body).toContain("if (staff && outcome !== 'no') return;");
+    expect(body).toContain("if (!(staff && outcome !== 'no')) {");
     expect(body).toContain('h(staff ? t.confirmNoted : t.confirmTellUs)');
   });
 
@@ -193,6 +215,41 @@ describe('one writer, one probe, and columns that stay SQL-only', () => {
     const state = sentence.slice(sentence.indexOf('export function lotCheckStateSql('), sentence.indexOf('export function askableSql('));
     expect(state.indexOf('if (!lotClientConfirmsReady())')).toBeGreaterThan(-1);
     expect(state.indexOf('if (!lotClientConfirmsReady())')).toBeLessThan(state.indexOf('clientDisputeSql(refs)'));
+  });
+
+  it('the REMEMBERED answer is read only where the probe was asked on the same path — a writer never trusts what another screen warmed (L1-1)', () => {
+    // A server action lives in a module instance of its own: after a restart
+    // nothing in it has probed, so a writer reading the flag alone read «no
+    // such table» and refused the logist's ✅ on every answered lot until
+    // somebody pressed «Mijozdan so'rash». The fence is DERIVED: every file
+    // that reads the flag is on this list, and a new one is red the day it is written.
+    const readers = srcFiles()
+      .filter(({ path }) => path !== 'src/modules/wms/receipts/lot-check-ready.ts')
+      .filter(({ text }) => text.includes('lotClientConfirmsReady('))
+      .map(({ path }) => path)
+      .sort();
+    expect(readers).toEqual([
+      // The sentence's builders return SQL and cannot await — every reader of
+      // theirs awaits `lotChecksReady()` before it builds a statement.
+      'src/modules/wms/receipts/lot-check-sql.ts',
+      // The card's views: the probe is awaited in the same function, two lines above.
+      'src/modules/wms/receipts/lot-check.ts',
+    ]);
+    const tick = read('src/modules/wms/receipts/lot-check.ts');
+    const reads = [...tick.matchAll(/lotClientConfirmsReady\(\)/g)];
+    expect(reads).toHaveLength(1);
+    for (const hit of reads) {
+      const before = tick.slice(0, hit.index);
+      const opened = Math.max(before.lastIndexOf('\nexport async function '), before.lastIndexOf('\nasync function '));
+      expect(before.slice(opened)).toContain('await lotChecksReady()');
+    }
+    // The press asks the probe ITSELF, on the pool, before its transaction opens (#714).
+    const press = tick.slice(tick.indexOf('export async function checkLot('), tick.indexOf('async function lockCheckRow('));
+    const asked = press.indexOf('const clientSide = await clientConfirmsReady();');
+    expect(asked).toBeGreaterThan(-1);
+    expect(asked).toBeLessThan(press.indexOf('db.transaction('));
+    expect(press).toContain('await clientAnswerFor(tx, lot.id, current.client_id, clientSide)');
+    expect(tick).toContain('if (!clientSide) return { token: null, outranksTick: false };');
   });
 
   it('`client_notices.asked_by` is not on the drizzle table — the receipt’s own claim inserts through it inside confirmReceipt’s transaction', () => {
