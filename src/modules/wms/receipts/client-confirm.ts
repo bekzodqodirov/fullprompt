@@ -623,6 +623,11 @@ export function askFailureOf(status: string, reason: string | null): AskFailure 
   return /blocked by the user|user is deactivated|chat not found/i.test(reason ?? '') ? 'blocked' : 'telegram';
 }
 
+/** A waiting question is «stuck» once it has been due this long… */
+export const ASK_STUCK_MINUTES = 5;
+/** …and «held» when it is due this far ahead. */
+export const ASK_LATER_MINUTES = 2;
+
 /** The last question about a prixod, for its card: when it went, or why it has not. */
 export interface ClientAskStatus {
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
@@ -634,6 +639,14 @@ export interface ClientAskStatus {
    * wait by it — a question due long ago and still here cannot be sent at all.
    */
   dueAt: Date | null;
+  /**
+   * How that wait reads, judged by the DATABASE's clock (the one that wrote
+   * `send_after` — never the app's): `soon` = due now; `later` = due more
+   * than `ASK_LATER_MINUTES` ahead (Telegram asked us to hold it); `stuck` =
+   * due more than `ASK_STUCK_MINUTES` ago and still here — the sweep cannot
+   * send at all (no bot token, a refused one). Null once it has gone.
+   */
+  wait: 'soon' | 'later' | 'stuck' | null;
   /** The row's own `last_error` — for the log and the tests; the card reads `failure`. */
   reason: string | null;
   failure: AskFailure | null;
@@ -647,7 +660,11 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
   // question to report on, and the card must still draw.
   if (!(await clientConfirmsReady())) return null;
   const rows = (await db.execute(sql`
-    SELECT n.status, n.sent_at, n.send_after, n.last_error, u.full_name AS asked_by
+    SELECT n.status, n.sent_at, n.send_after, n.last_error, u.full_name AS asked_by,
+           CASE WHEN n.status NOT IN ('pending', 'sending') THEN NULL
+                WHEN n.send_after < now() - make_interval(mins => ${ASK_STUCK_MINUTES}) THEN 'stuck'
+                WHEN n.send_after > now() + make_interval(mins => ${ASK_LATER_MINUTES}) THEN 'later'
+                ELSE 'soon' END AS wait
       FROM client_notices n
       JOIN receipts r ON r.id = n.ref_id AND r.client_id = n.client_id
       LEFT JOIN users u ON u.id = n.asked_by
@@ -659,6 +676,7 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
     send_after: string | Date | null;
     last_error: string | null;
     asked_by: string | null;
+    wait: ClientAskStatus['wait'];
   }[];
   const row = rows[0];
   if (!row) return null;
@@ -667,6 +685,7 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
     status: row.status,
     deliveredAt: row.sent_at ? new Date(row.sent_at) : null,
     dueAt: waiting && row.send_after ? new Date(row.send_after) : null,
+    wait: waiting ? (row.wait ?? 'soon') : null,
     reason: row.last_error,
     failure: askFailureOf(row.status, row.last_error),
     askedBy: row.asked_by,

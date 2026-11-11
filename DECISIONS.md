@@ -8246,3 +8246,57 @@ time or of room — pressing again would spend another of the day's readings on 
 150 s lies over the SDK's own retry (150 s twice would outlive the browser's 165 s). STATED: two tabs on one
 document are two paid readings; cooling is per process and a deploy forgets it; the model's wire has never met
 the real API from this container — the first real press is watched in the log (`[tarkib-read]`).
+
+**#1678 — Reviewed as built: five lenses over T2 and T3, every finding reproduced red before it was fixed.**
+The sentence, the customer's Telegram, the card, the ledger, the owner's words — each reviewer read-only,
+each finding with a recipe the lead turned into a failing test FIRST (31 red proofs by string edit, run in a
+second worktree so neither the reviewers nor the lead's edits were disturbed). What they found was, again,
+mostly a rule enforced in one direction or remembered in one place:
+
+- **The tick trusted what another screen had warmed (L1-1).** `lotClientConfirmsReady()` is a remembered
+  answer; `checkLot` read it and never asked the probe. A server action is a module instance of its own, so
+  after every restart «✅ To'g'ri» on a lot the client had answered was refused `check_changed` — on every
+  press, until somebody pressed «Mijozdan so'rash». No test could see it: both integration files MOCK the
+  probe's module. The tick asks the probe itself, on the pool, before its transaction; a new file mocks
+  nothing of it (vitest's per-file module state IS the fresh process); a derived fence lists every reader of
+  the flag. RULE: a remembered «is the table there» belongs to the readers that asked it — a writer asks.
+- **«Already» swallowed the customer's second ❌ (L1-2).** The push goes to every linked chat with its own
+  buttons: chat 1 says ❌, the logist phones and ticks, chat 2 presses ❌ on its copy — same tag, same facts,
+  same verdict as the row that stands. Decided from reads made BEFORE the answer locks, it was «already»: the
+  lot stayed ✅ by the tick, nobody was told, the customer's toast said it was recorded. «Already» is decided
+  under the locks now, and never for a ❌ that a colleague has ticked over since — any tick, holding or not:
+  the rule errs toward writing, never toward swallowing a customer's objection.
+- **«Stale» was said before «whose» (L2-6)**, so any linked chat could tell which uuids are voided, draft or
+  unclaimed prixods, and a stranger's ❌ on one was invited to write to a manager. The owner is asked first;
+  a skip carries the prixod's owner.
+- **Three things a customer would have met in Telegram.** A late press that came back «busy» says «press
+  again» — and the late-press memory then swallowed exactly that repeat (L2-1, `again`). The ❌'s one sentence
+  was a bare send queued behind the keyboard edit: a ❌ has no toast, so one 429 in the burst after a deploy
+  left the buttons gone and nothing said (L2-2 — first, through the ordered send). And what the customer
+  writes after «nima noto'g'ri ekanini yozing» went to the manager of the chat's FIRST code (L2-3): one person
+  holds several codes in one chat and the codes can have different sellers — the ❌ is remembered per chat for
+  thirty minutes and the words follow it, with the prixod's link.
+- **A message Telegram no longer echoes the keyboard of kept its ✅/❌ row for ever (L2-5)** — ❌, ✅, ❌ flipped
+  on one message, every ❌ alarming the seller and every logist. The two standing rows are rebuilt.
+- **The card.** A PREVIOUS owner's ✅ reads «o'zgardi» on every list (the client is one of the facts a ✅ is
+  about, by design — as for a colleague's tick) and the card drew NOTHING for it: no line, no tick, no phones
+  (L3-1 — the sentence stays, the card says why). Times were the WAREHOUSE's zone on a card whose History is
+  the office's: 14:05 read 17:05 on a Chinese prixod, and a customer's evening press was dated tomorrow
+  (L3-2). «Navbatda — bir-ikki daqiqada» was read for hours on a server that cannot send (L3-4 — a wait is
+  worded by its age). The dispute's hint named a button the panel does not draw once the cargo has left China
+  (L3-5). The re-answer's audit row was empty (L1-3 = L2-4 = L3-3, three lenses, one line).
+- **The ledger.** The price was frozen through the SCREEN's rounding to the cent: a short answer stored as
+  0.000000 — not NULL, so not even «narxi noma'lum» (L4-1 — micro-dollars at six decimals). A count that was
+  not a number made the UPDATE itself throw, swallowed, and the press stayed `reserved` (L4-6 — counts cleaned
+  once, the column refuses NaN). The migration fence matched only QUOTED constraint names — 0119 re-made both
+  CHECKs unquoted — and read comments as SQL (L4-5); and the handoff to the other session was stale by two
+  statements: 0144 also owns `cost_usd` and its CHECK, which R5's draft adds again (L4-4 — a second fence, and
+  a dated note in that session's own document).
+
+STATED, not changed: `askFailed.client_changed` can never be drawn (the card reads the CURRENT owner's question;
+a question skipped because the owner changed belongs to the previous one) — the word stays in the bundles,
+harmless. The sentence's shown-name comparison is a correlated subquery per carton (L1-4: 9 → 27-46 ms on
+20 000 synthetic cartons) — linear and small; the cure (carry the label's ingredients out of the per-lot join)
+is recorded, not built. PROCESS: a source-shape test passed on a page that did not compile — a name imported
+twice is invisible to eslint and to vitest, and only `tsc` (or the build, twelve minutes later) says so:
+typecheck BEFORE the build, every time a file with imports is touched.

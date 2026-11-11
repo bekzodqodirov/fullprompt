@@ -26,7 +26,18 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
 - **«📨 Mijozdan so'rash»** — prixod kartasida yangi tugma. Bosilsa, mijozga shu prixodning hamma lotlari
   (tarkib yozilgan bo'lsa — har bir tovar va donasi bilan) va o'sha ikki tugma boradi. Tarkibni mijozga
   tasdiqlatishning yo'li shu. Kartada so'rov holati yoziladi: «navbatda», «yuborilgan: vaqt · kim» yoki
-  «yetib bormadi» — sababi bilan o'zbekcha (mijoz botni bloklagan, Telegrami ulanmagan va h.k.).
+  «yetib bormadi» — sababi bilan o'zbekcha (mijoz botni bloklagan, Telegrami ulanmagan va h.k.). So'rov besh
+  daqiqadan ortiq navbatda qolsa, karta «falon vaqtdan beri navbatda — bot hozir yubora olmayapti» deydi
+  («bir-ikki daqiqada» deb soatlab aldamaydi).
+- **Mijoz «❌» dan keyin yozgan izohi** aynan o'sha prixod mijozining sotuvchisiga boradi — bir Telegram
+  chatida bir nechta kod (444 / 555 / 777) bo'lsa ham — va xabarda prixodning havolasi turadi.
+- **Mijoz «❌» ni ikkinchi marta bossa** (masalan, xodim «✅» bosgandan keyin boshqa telefonidan) — bu yangi
+  e'tiroz: lot yana ❓ bo'ladi va xodimlarga yana xabar boradi. Bir xil javobni ikki marta bexos bosish esa
+  («allaqachon») hech narsani o'zgartirmaydi.
+- **Prixod boshqa mijozga o'tkazilgan bo'lsa**, avvalgi mijozning «✅» i endi hech kimniki emas: kartada
+  «avvalgi mijoz tasdiqlagan edi — hozirgi mijozdan so'rang» deb turadi va «✅ To'g'ri» tugmasi chiqadi.
+- Kartadagi vaqtlar (so'rov yuborilgan vaqt, tasdiq kuni) **ofis soatida (Toshkent)** chiqadi — pastdagi
+  «Tarix» bilan bir xil. (Xitoy skladidagi prixodda ilgari 3 soat oldinga ketib ko'rinar edi.)
 - **Kartada ko'rinishi.** Mijoz «❌» degan lotda qizil satr turadi, ostidagi eski ✅ lar kulrang «tarix» bo'lib
   qoladi — bahsli lotda yashil belgi ko'rinmaydi.
 - **Qachon tugma chiqmaydi:** yuk Xitoydan chiqib ketgan bo'lsa (hujjatlar tayyor bo'lgan — endi so'ralmaydi);
@@ -46,7 +57,17 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
 - Oynada belgilangan qatorlar yig'indisi lotning o'zi bilan yonma-yon turadi (farq bo'lsa sariq).
 - Bitta prixodda bir nechta lot bo'lsa, hech narsa oldindan belgilanmaydi — «faqat SHU lotdagi tovarlarni
   belgilang».
-- O'qilgan natija eslab qolinadi: oynani bexos yopsangiz, qayta o'qitish (va pul sarflash) shart emas.
+- O'qilgan natija 30 daqiqa eslab qolinadi: oynani bexos yopsangiz, qayta o'qitish (va pul sarflash) shart
+  emas; shu prixodning ikkinchi loti ham o'sha o'qishdan foydalanadi. «Qayta o'qish» bosilsa — avval so'raydi
+  (bu yangi xarajat).
+- Fayl turlari: Excel / CSV (15 MB gacha), PDF (10 MB gacha), rasm (15 MB gacha). Bir o'qishda 40 qatorgacha;
+  ortig'i bo'lsa oynada «ro'yxat kesildi» deb aytiladi.
+- Qog'ozning o'zida «Jami» yozilgan bo'lsa va qatorlar yig'indisi unga teng chiqmasa — oynada ogohlantirish
+  chiqadi (AI biror raqamni noto'g'ri o'qigan bo'lishi mumkin). AI hech narsani o'zi «tuzatmaydi».
+- Lotning o'z tovari (masalan lot «键盘», qog'ozda ham «键盘») tarjima qilinmaydi — lotning o'z nomi qoladi;
+  boshqa qatorlar AI bergan ruscha nom bilan yoziladi.
+- Hujjat juda katta bo'lib AI vaqtida o'qiy olmasa, o'sha hujjat 10 daqiqa qayta o'qilmaydi (limit bekorga
+  sarflanmasin) — kichikroq fayl yoki Excel bering.
 - Kunlik limit: `tarkib_ai_daily_limit` (50). Har bir o'qish bitta sanaladi.
 - Serverda `ANTHROPIC_API_KEY` bo'lishi kerak; bo'lmasa tugma «sozlanmagan» deydi.
 
@@ -62,6 +83,8 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
   quti 0 ga aylanib, tugmani butun kompaniya uchun o'chirib qo'yishi mumkin edi).
 - Javobsiz qolgan uzoq so'rov (bizning kutish vaqtimiz tugagan) ham limitga sanaladi — aks holda bitta og'ir
   tovar uchun cheksiz bosish mumkin edi.
+- Narx tiyinning ulushigacha saqlanadi: bitta kichik chaqiriq (yarim sentdan arzon) endi «$0» bo'lib
+  qolmaydi, yig'indi aniq chiqadi.
 
 ### Aytib qo'yishim kerak
 - Bularning hech biri haqiqiy Telegram va haqiqiy AI kaliti bilan sinalmagan (bu yerda ikkalasi ham yo'q).

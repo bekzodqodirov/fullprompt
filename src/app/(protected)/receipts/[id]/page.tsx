@@ -81,14 +81,6 @@ import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { LoadModeBlock } from './load-mode-block';
 import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
 
-/**
- * How a question that has not gone yet is worded (`ClientAskPanel`): due more
- * than two minutes AHEAD = Telegram asked us to hold it; due five minutes
- * ago and still waiting = the sweep cannot send at all.
- */
-const ASK_STUCK_MS = 5 * 60_000;
-const ASK_LATER_MS = 2 * 60_000;
-
 export default async function ReceiptDetailPage({
   params,
   searchParams,
@@ -243,12 +235,10 @@ export default async function ReceiptDetailPage({
     .filter((row) => row.answer?.verdict === 'no' && row.answer.ofOwner)
     .map((row) => ({ lotId: row.lotId, token: row.answer!.token }));
   const anyAskable = lots.some((lot) => lotChecks.get(lot.id)?.askable === true);
-  // A question still waiting, judged against NOW: due more than two minutes
-  // ahead = Telegram asked us to hold it; due five minutes ago and still here
-  // = the sweep cannot send (no bot token, a refused one).
+  // A question still waiting, as the service judged it on the database's own
+  // clock: held by Telegram, or due long ago and still here (`ClientAskStatus`).
   const askDue = askCard?.status?.dueAt ?? null;
-  const askLag = askDue ? Date.now() - askDue.getTime() : 0;
-  const askWait: 'soon' | 'later' | 'stuck' = askLag > ASK_STUCK_MS ? 'stuck' : askLag < -ASK_LATER_MS ? 'later' : 'soon';
+  const askWait = askCard?.status?.wait ?? 'soon';
   // The block is mounted wherever the client's side exists; `askShow` says
   // whether it has anything to draw (it keeps its own «✅ yopildi» otherwise).
   const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1);

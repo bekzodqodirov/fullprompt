@@ -952,6 +952,17 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
     // WHEN it is due travels with it: the card words a wait by how long it has lasted (L3-4).
     expect(waiting!.dueAt).toBeInstanceOf(Date);
     expect(Math.abs(waiting!.dueAt!.getTime() - new Date(row!.send_after).getTime())).toBeLessThan(1000);
+    // …and how the wait READS is judged on the database's own clock.
+    expect(waiting!.wait).toBe('soon');
+    const due = (v: ReturnType<typeof sql>) =>
+      db.execute(sql`UPDATE client_notices SET send_after = ${v} WHERE kind = ${NOTICE_LOT_ASK} AND ref_id = ${receipt.main}::uuid`);
+    await due(sql`now() - interval '30 minutes'`);
+    expect((await clientAskStatusFor(receipt.main))!.wait).toBe('stuck');
+    await due(sql`now() - interval '4 minutes'`);
+    expect((await clientAskStatusFor(receipt.main))!.wait).toBe('soon');
+    await due(sql`now() + interval '1 hour'`);
+    expect((await clientAskStatusFor(receipt.main))!.wait).toBe('later');
+    await due(sql`now()`);
     const [audit] = await db
       .select({ actorId: auditLog.actorId, after: auditLog.after })
       .from(auditLog)
@@ -969,7 +980,7 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
     await set(sql`status = 'sent', sent_at = now(), attempts = 1`);
     expect(await code(ask())).toBe('too_soon');
     // A question that has gone is not «due» any more.
-    expect(await clientAskStatusFor(receipt.main)).toMatchObject({ status: 'sent', dueAt: null });
+    expect(await clientAskStatusFor(receipt.main)).toMatchObject({ status: 'sent', dueAt: null, wait: null });
     await set(sql`sent_at = now() - interval '11 minutes'`);
     expect(await ask()).toEqual({ lots: 3 });
     expect(await noticeRow()).toMatchObject({ status: 'pending', attempts: 0, asked_by: staffId });
