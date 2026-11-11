@@ -24,7 +24,7 @@ import {
 } from '@/modules/wms/agent/auto-card';
 import { AUTO_REFUSAL_WORDS } from '@/modules/wms/agent/auto-gate';
 import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
-import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, type AutoCardState } from '@/modules/wms/agent/auto-send';
+import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, copyRang, countdownMayRide, type AutoCardState } from '@/modules/wms/agent/auto-send';
 import { autoArmedWords } from '@/modules/wms/agent/bot-door';
 import { cardExtra, POLICY_WORDS } from '@/modules/wms/agent/card';
 import { renderDraftCardFull, type DraftRow } from '@/modules/wms/agent/card-io';
@@ -344,5 +344,41 @@ describe('words — every code said, never printed', () => {
     expect(autoArmedWords({ holdSec: 120, perDay: 30 })).toContain('2 daqiqa');
     expect(autoArmedWords({ holdSec: 90, perDay: 30 })).toContain('90 soniya');
     expect(autoArmedWords({ holdSec: 120, perDay: 30 })).toContain('30 ta');
+  });
+});
+
+/**
+ * The second check of ea38306c: the staff drain sends an AI card SILENTLY in the quiet hour (22:00-07:59, decided at
+ * SEND time), so a copy that went at 07:59 never rang — and a countdown that rides it, or a card of its own sent
+ * then, holds his ⏸ window on a message his phone never announced.
+ */
+describe('a countdown rides only a copy that rang (auto-send `copyRang`, `countdownMayRide`)', () => {
+  const plan = (written: Date) => ({ dueAt: new Date(written.getTime() + 120_000), holdSec: 120 });
+  const sent = (at: string, payload: Record<string, unknown>) => ({ status: 'sent', sentAt: tk(at), payload });
+
+  it('the drain’s own record is the fact: a send it made silently never rang, whenever the row says it was sent', () => {
+    // A drain run that began at 07:59:59 sends the copy at 08:00 — silently, decided by the run's own clock.
+    expect(copyRang({ sentAt: tk('2026-11-12T08:00'), payload: { rang: false } })).toBe(false);
+    expect(copyRang({ sentAt: tk('2026-11-12T07:59'), payload: { rang: true } })).toBe(true);
+    // Never sent: nothing rang.
+    expect(copyRang({ sentAt: null, payload: { rang: true } })).toBe(false);
+  });
+
+  it('a copy sent before the drain recorded it: the drain’s night rule, asked of the moment it was sent', () => {
+    expect(copyRang({ sentAt: tk('2026-11-12T07:59'), payload: {} })).toBe(false);
+    expect(copyRang({ sentAt: tk('2026-11-11T22:00'), payload: {} })).toBe(false);
+    expect(copyRang({ sentAt: tk('2026-11-12T08:00'), payload: {} })).toBe(true);
+    expect(copyRang({ sentAt: tk('2026-11-11T21:59'), payload: null })).toBe(true);
+  });
+
+  it('a copy sent silently at 07:59 is never ridden by a countdown written at 08:00 — though it went within one hold', () => {
+    expect(countdownMayRide(sent('2026-11-12T07:59', { rang: false }), plan(tk('2026-11-12T08:00')))).toBe(false);
+    expect(countdownMayRide(sent('2026-11-12T07:59', {}), plan(tk('2026-11-12T08:00')))).toBe(false);
+    // One that rang within the hold is ridden, as before; one that rang longer ago is not.
+    expect(countdownMayRide(sent('2026-11-12T08:00', { rang: true }), plan(tk('2026-11-12T08:01')))).toBe(true);
+    expect(countdownMayRide(sent('2026-11-12T08:00', {}), plan(tk('2026-11-12T08:01')))).toBe(true);
+    expect(countdownMayRide(sent('2026-11-12T08:00', { rang: true }), plan(tk('2026-11-12T08:05')))).toBe(false);
+    // A copy not yet sent: its send is the drain's, after a daytime scheduling (the gate refuses a night one).
+    expect(countdownMayRide({ status: 'pending', sentAt: null, payload: {} }, plan(tk('2026-11-12T08:00')))).toBe(true);
   });
 });

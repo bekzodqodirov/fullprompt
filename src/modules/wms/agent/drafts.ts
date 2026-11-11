@@ -24,9 +24,9 @@ import type { ComposeReply } from './run';
  * edited in place, so his chat with the bot holds one card per customer, not
  * a scroll of stale ones (fit-9). An 'editing' draft is never superseded —
  * he is typing an answer to it. One exception: a reply that counts down to
- * «o'zi yuborish» never rides a copy that rang more than one hold ago (an edit
- * rings nothing) — it gets a card of its own, and the old copy is closed
- * (auto-send `countdownMayRide`).
+ * «o'zi yuborish» never rides a copy that rang more than one hold ago, or one
+ * the drain sent silently in the night (an edit rings nothing) — it gets a card
+ * of its own, and the old copy is closed (auto-send `countdownMayRide`).
  */
 
 export function customerLabel(ctx: AgentContext): string {
@@ -169,8 +169,9 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     });
     const old = live ? await cardRowFor(tx, live.id) : null;
     // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
-    // `countdownMayRide`): an edit rings nothing, so on an older copy it gets a card of its own — a push — and
-    // the old copy is closed after the commit, naming the draft it showed.
+    // `countdownMayRide`; a copy sent silently in the night never rang — the second check): an edit rings
+    // nothing, so on an older copy it gets a card of its own — a push — and the old copy is closed after the
+    // commit, naming the draft it showed.
     const ride = !old || auto?.state !== 'waiting' || !n.autoPlan || countdownMayRide(old, n.autoPlan);
     if (old && !ride) closeOld = true;
     if (old && ride) {

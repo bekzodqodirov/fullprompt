@@ -233,6 +233,18 @@ describe('the gate', () => {
     expect(at('2026-11-12T03:00:00Z')).toEqual([]); // 08:00
   });
 
+  it('…and at the moment its card is queued: a reply written in the night’s last hold would go at 08:00, but its card arrives silently — refused «night» (the second check)', () => {
+    const queued = (now: string, at: string) => {
+      const input = eligible();
+      input.now = new Date(now);
+      input.at = new Date(at);
+      return autoVerdict(input).reasons;
+    };
+    expect(queued('2026-11-12T02:58:40Z', '2026-11-12T03:00:40Z')).toEqual(['night']); // 07:58:40 → 08:00:40
+    expect(queued('2026-11-12T02:51:00Z', '2026-11-12T03:01:00Z')).toEqual(['night']); // a ten-minute hold
+    expect(queued('2026-11-12T03:00:00Z', '2026-11-12T03:02:00Z')).toEqual([]); // 08:00 — the card rings
+  });
+
   it('uz, uz_cyrl and ru go; the other languages the agent writes do not', () => {
     for (const language of ['uz', 'uz_cyrl', 'ru']) {
       const input = eligible();

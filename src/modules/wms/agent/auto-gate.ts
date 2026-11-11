@@ -168,6 +168,11 @@ export interface AutoGateInput {
   workAccount: boolean;
   /** When the reply would go: the due time at the scheduling, the press's own moment at the press. */
   at: Date;
+  /**
+   * The judging moment: at the scheduling, when the run writes the draft and its card is queued — the staff drain
+   * sends that card at once, silently in the quiet hour (notifications `sendsSilently`), so a reply written in the
+   * night's last hold is a night reply whatever its due time (the second check). At the press it is `at` itself.
+   */
   now: Date;
   /** Auto replies already in a row in this chat since his own decision or message. */
   streak: number;
@@ -225,7 +230,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (input.chat.muted) hit.add('chat_muted');
   if (!input.workAccount) hit.add('not_work_account');
   // The pump's own night (send-step `isTashkentNight`, AGENT_LIMITS' hours): the card waits for the morning (his Q4 ⭐).
-  if (isTashkentNight(input.at)) hit.add('night');
+  // Judged at the moment the reply would go AND at the moment its card is queued (the second check): a card queued
+  // in the night arrives without a sound, and a countdown on it would run his ⏸ window on a message nothing announced.
+  if (isTashkentNight(input.at) || isTashkentNight(input.now)) hit.add('night');
   if (input.streak >= AUTO_STREAK_MAX) hit.add('streak');
   if (input.pressedToday >= config.perDay) hit.add('daily_cap');
   if (input.budgetLeft !== null && input.budgetLeft <= 0) hit.add('budget_spent');

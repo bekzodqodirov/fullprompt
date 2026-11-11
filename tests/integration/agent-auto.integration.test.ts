@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
-import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import { and, eq, inArray, like, notInArray, sql } from 'drizzle-orm';
 import postgres from 'postgres';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
 import {
@@ -21,12 +21,14 @@ import {
   leads,
   notifications,
   roles,
+  telegramLinks,
   tgAccountGuard,
   tgAccounts,
   tgMessages,
   userRoles,
   users,
 } from '@/modules/platform/db/schema';
+import { __resetTelegramPause, sendPendingTelegram } from '@/modules/platform/notifications/service';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
@@ -2045,5 +2047,165 @@ describe('the final check — the chat he took, and the card that never rang', (
     expect(rows).toHaveLength(1);
     expect((rows[0]!.payload as { draftId: string }).draftId).toBe(c.id);
     expect(await draftStatus(a.id)).toBe('superseded');
+  });
+});
+
+/**
+ * The second check of ea38306c: the staff drain sends an AI card SILENTLY in the quiet hour (22:00-07:59, decided by
+ * its own clock at SEND time — notifications `sendsSilently`), while the gate judged the night only at the moment the
+ * reply would go. So a reply written in the last hold before 08:00 counted down on a card that never rang, and a reply
+ * written just after 08:00 rode an in-place edit of a copy that had gone silently at 07:59 — its ⏸ window ran on a
+ * message his phone never announced. The REAL drain sends here, on a recorder, under a fake clock. Each test was red on
+ * ea38306c before its fix.
+ */
+describe('the second check — a card that went silently in the night is no countdown', () => {
+  type Call = { method: string; body: Record<string, unknown> };
+  let calls: Call[] = [];
+  let duringSend: (() => Promise<void>) | null = null;
+  const parked = new Set<string>();
+  /** 07:00 Tashkent of T0's own day, and a wall-clock time on it. */
+  const morning = () => {
+    const d = new Date(T0);
+    d.setUTCHours(2, 0, 0, 0);
+    return d;
+  };
+  const at = (h: number, m: number, s = 0) => new Date(morning().getTime() + ((h - 7) * 3600 + m * 60 + s) * 1000);
+
+  /** The drain as the minute's job runs it — only this file's own cards claimable (staff-drain's parking, #713). */
+  async function drain(now: Date) {
+    const mine = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(and(eq(notifications.userId, ownerId), eq(notifications.type, 'AgentDraft')));
+    const others = await db
+      .update(notifications)
+      // The database's own clock, never the fake one: the drain's reclaim asks `now()` of postgres.
+      .set({ status: 'sending', claimedAt: sql`now()` })
+      .where(
+        and(
+          eq(notifications.channel, 'telegram'),
+          eq(notifications.status, 'pending'),
+          mine.length ? notInArray(notifications.id, mine.map((r) => r.id)) : undefined,
+        ),
+      )
+      .returning({ id: notifications.id });
+    for (const row of others) parked.add(row.id);
+    vi.setSystemTime(now);
+    await sendPendingTelegram(now);
+  }
+
+  const sends = () => calls.filter((c) => c.method === 'sendMessage');
+
+  beforeAll(async () => {
+    await db.insert(telegramLinks).values({ userId: ownerId, telegramChatId: BigInt(CARD_CHAT), status: 'linked', linkedAt: new Date() });
+  });
+
+  beforeEach(async () => {
+    calls = [];
+    duringSend = null;
+    __resetTelegramPause();
+    // Armed the day before: the layer was on all night.
+    await db.update(agentAutoConfig).set({ armedAt: new Date(morning().getTime() - 86_400_000) }).where(eq(agentAutoConfig.id, 1));
+    process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
+    let messageId = 7000;
+    __setTelegramTransport(async (url, init) => {
+      const method = url.slice(url.lastIndexOf('/') + 1);
+      calls.push({ method, body: JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown> });
+      if (method === 'sendMessage' && duringSend) {
+        const hook = duringSend;
+        duringSend = null;
+        await hook();
+      }
+      messageId += 1;
+      const result = method === 'sendMessage' ? { message_id: messageId, chat: { id: CARD_CHAT } } : true;
+      return new Response(JSON.stringify({ ok: true, result }), { status: 200 });
+    });
+    vi.useFakeTimers({ toFake: ['Date'] });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  afterAll(async () => {
+    vi.useRealTimers();
+    await clearChats();
+    await db.delete(telegramLinks).where(eq(telegramLinks.userId, ownerId));
+    if (parked.size) {
+      await db
+        .update(notifications)
+        .set({ status: 'pending', claimedAt: null })
+        .where(and(inArray(notifications.id, [...parked]), eq(notifications.status, 'sending')));
+    }
+  });
+
+  it('a reply written in the night’s last hold never counts down: its card goes silently, so it is refused «night» from its first second', async () => {
+    // A ten-minute hold: written 07:51, the reply would go at 08:01 — daytime — but its card goes now, in the night.
+    await db.update(agentAutoConfig).set({ holdSec: 600 }).where(eq(agentAutoConfig.id, 1));
+    vi.setSystemTime(at(7, 51));
+    const c = await drafted({ now: at(7, 51), shown: null });
+    expect(await verdictOf(c.id)).toMatchObject({ eligible: false, state: null, dueAt: null, reasons: ['night'] });
+    await drain(at(7, 51, 1));
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0]!.body.disable_notification).toBe(true);
+    expect(String(sends()[0]!.body.text)).not.toContain('o‘zi ketadi');
+    vi.setSystemTime(at(8, 1, 2));
+    expect(await pressDueAutos(at(8, 1, 2))).toBe(0);
+    expect(await outboxOf(c.id)).toBeNull();
+    expect(await draftStatus(c.id)).toBe('pending');
+  });
+
+  it('a countdown never rides a copy that went silently at 07:59: the reply gets its own card, which rings, and goes a hold after it', async () => {
+    // A: a price question (never the machine's), written 07:59 — its card goes at once, silently.
+    vi.setSystemTime(at(7, 59));
+    const a = await drafted({ now: at(7, 59), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    expect((await verdictOf(a.id))!.reasons).toContain('category');
+    await drain(at(7, 59, 1));
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0]!.body.disable_notification).toBe(true);
+    calls = [];
+    // C, written 08:00:30, counts down — within one hold of A's copy, which never rang.
+    vi.setSystemTime(at(8, 0, 30));
+    const c = await drafted({ now: at(8, 0, 30), shown: null });
+    expect(await verdictOf(c.id)).toMatchObject({ state: 'waiting' });
+    expect(await draftStatus(a.id)).toBe('superseded');
+    // No edit carried C's words onto the silent copy — C's card is a row of its own, and the drain's send of it rings.
+    expect(calls.filter((x) => x.method === 'editMessageText' && String(x.body.text).includes('Qanday yuk'))).toEqual([]);
+    await drain(at(8, 0, 31));
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0]!.body.disable_notification ?? false).toBe(false);
+    expect(String(sends()[0]!.body.text)).toContain('o‘zi ketadi');
+    // Pressed a hold after ITS card rang — not before.
+    vi.setSystemTime(at(8, 2, 30));
+    expect(await pressDueAutos(at(8, 2, 30))).toBe(0);
+    vi.setSystemTime(at(8, 2, 32));
+    expect(await pressDueAutos(at(8, 2, 32))).toBe(1);
+    expect(await outboxOf(c.id)).toMatchObject({ status: 'agent' });
+  });
+
+  it('the press asks whether the card rang: a copy a drain run begun at 07:59:59 sent silently after 08:00 — refused «night», nothing queued', async () => {
+    // A (a price question) is queued at 07:59:58; the drain run that claims it begins at 07:59:59 — its clock says the
+    // quiet hour — and while its send is in flight, at 08:00:02, C is written and counts down on that very copy.
+    vi.setSystemTime(at(7, 59, 58));
+    const a = await drafted({ now: at(7, 59, 58), shown: null, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    let c: Awaited<ReturnType<typeof drafted>> | null = null;
+    duringSend = async () => {
+      vi.setSystemTime(at(8, 0, 2));
+      c = await drafted({ now: at(8, 0, 2), shown: null });
+    };
+    await drain(at(7, 59, 59));
+    expect(sends()).toHaveLength(1);
+    expect(sends()[0]!.body.disable_notification).toBe(true);
+    expect(await draftStatus(a.id)).toBe('superseded');
+    expect(await verdictOf(c!.id)).toMatchObject({ state: 'waiting' });
+    // The copy names C now (the drain's after-send correction put C's words on it) — and its send rang nothing,
+    // though the row says it was sent after 08:00.
+    const p = await payloadOf(c!.id);
+    expect((p.shown as { draftId?: string }).draftId).toBe(c!.id);
+    vi.setSystemTime(at(8, 2, 5));
+    expect(await pressDueAutos(at(8, 2, 5))).toBe(0);
+    expect(await verdictOf(c!.id)).toMatchObject({ state: 'refused', reasons: ['night'] });
+    expect(await outboxOf(c!.id)).toBeNull();
+    expect(await draftStatus(c!.id)).toBe('pending');
   });
 });

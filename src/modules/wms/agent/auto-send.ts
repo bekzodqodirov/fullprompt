@@ -14,6 +14,7 @@ import {
   tgAccounts,
 } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
+import { sendsSilently } from '../../platform/notifications/night';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
@@ -436,17 +437,35 @@ export async function autoCardStatesFor(draftIds: readonly string[]): Promise<Ma
 }
 
 /**
+ * Did this copy of a card arrive with a sound (the second check)? The staff drain sends an AI card SILENTLY in the
+ * quiet hour, by its own run's clock, and records which on the copy (`rang`, notifications `shownStamp`); an edit
+ * rings nothing and never rewrites it. A copy sent before the drain recorded it is judged by the drain's own rule
+ * (`sendsSilently`) at the moment its row says it was sent; one never sent has not rung.
+ */
+export function copyRang(copy: { sentAt: Date | null; payload: unknown }): boolean {
+  if (copy.sentAt === null) return false;
+  const payload = typeof copy.payload === 'object' && copy.payload !== null ? (copy.payload as Record<string, unknown>) : {};
+  if (typeof payload.rang === 'boolean') return payload.rang;
+  return !sendsSilently('AgentDraft', payload, copy.sentAt);
+}
+
+/**
  * May a reply that counts down ride this copy of the chat's card — re-pointed at it and edited in place (the
  * final check)? Telegram rings for a message and never for an edit, and the hold is his time to read the card: a
  * copy that rang hours ago sits far up his bot chat, and an edit of it would start a countdown nothing told him of.
- * So only a copy not yet sent (its send rings — the drain's own) or one that rang within one hold before the reply
- * was written; anything else — an older copy, a send of no known time, one that never reached him — gives the reply
- * a card of its own (`createDraft`), and the old copy is closed. A reply that does not count down rides any copy,
- * as every card always has (one card per customer, fit-9).
+ * So only a copy not yet sent (its send is the drain's, after a scheduling the gate judged in the day — the second
+ * check) or one that RANG within one hold before the reply was written (`copyRang`: a copy the drain sent silently
+ * at 07:59 never rang); anything else — an older copy, a silent one, a send of no known time, one that never
+ * reached him — gives the reply a card of its own (`createDraft`), and the old copy is closed. A reply that does not
+ * count down rides any copy, as every card always has (one card per customer, fit-9). The press asks `copyRang` of
+ * the copy again (`pressOne`): a send already in flight when the reply was written is decided by the drain alone.
  */
-export function countdownMayRide(copy: { status: string; sentAt: Date | null }, plan: Pick<AutoPlan, 'dueAt' | 'holdSec'>): boolean {
+export function countdownMayRide(
+  copy: { status: string; sentAt: Date | null; payload: unknown },
+  plan: Pick<AutoPlan, 'dueAt' | 'holdSec'>,
+): boolean {
   if (copy.status === 'pending' || copy.status === 'sending') return true;
-  if (copy.status !== 'sent' || copy.sentAt === null || plan.dueAt === null) return false;
+  if (copy.status !== 'sent' || copy.sentAt === null || plan.dueAt === null || !copyRang(copy)) return false;
   const writtenAt = plan.dueAt.getTime() - plan.holdSec * 1000;
   return copy.sentAt.getTime() >= writtenAt - plan.holdSec * 1000;
 }
@@ -555,8 +574,16 @@ async function settleFromDraft(draftId: string, now: Date): Promise<void> {
  * shows the PREVIOUS draft: its `shown` names that one, and this answers null.
  */
 export async function cardShownAt(draftId: string, managerUserId: string): Promise<Date | null> {
+  return (await cardOnScreen(draftId, managerUserId))?.at ?? null;
+}
+
+/**
+ * `cardShownAt` and whether the copy showing it RANG (`copyRang`, the second check) — the press counts down only
+ * on a card that arrived with a sound. Null: the card is not on his screen yet.
+ */
+export async function cardOnScreen(draftId: string, managerUserId: string): Promise<{ at: Date; rang: boolean } | null> {
   const [row] = await db
-    .select({ at: sql<string | null>`${notifications.payload}->'shown'->>'at'` })
+    .select({ at: sql<string | null>`${notifications.payload}->'shown'->>'at'`, sentAt: notifications.sentAt, payload: notifications.payload })
     .from(notifications)
     .where(
       and(
@@ -571,7 +598,8 @@ export async function cardShownAt(draftId: string, managerUserId: string): Promi
     .orderBy(desc(notifications.createdAt))
     .limit(1);
   const at = row?.at ? new Date(row.at) : null;
-  return at && Number.isFinite(at.getTime()) ? at : null;
+  if (!row || !at || !Number.isFinite(at.getTime())) return null;
+  return { at, rang: copyRang(row) };
 }
 
 /**
@@ -637,6 +665,14 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     if (renderDraftCardFull(d, null).tooLong) verdict.reasons.push('too_long');
     verdict.eligible = verdict.reasons.length === 0;
   }
+  // The card on his screen — and whether it arrived with a sound (the second check). A copy the drain sent in the
+  // quiet hour rang nothing: a countdown on it would run his ⏸ window on a message nothing announced, and nothing
+  // rings it again in the morning. So it is a night card — his to decide — whatever the clock says now.
+  const card = await cardOnScreen(d.id, d.managerUserId);
+  if (verdict.eligible && card && !card.rang) {
+    verdict.reasons.push('night');
+    verdict.eligible = false;
+  }
   if (!verdict.eligible) {
     await db
       .update(agentAutoVerdicts)
@@ -647,7 +683,7 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
   }
   // The hold is his time to read the card: it runs from the card reaching his Telegram, never from the draft
   // being written — a paused bot queue, a re-pointed card whose edit did not land, would make it zero.
-  const shownAt = await cardShownAt(d.id, d.managerUserId);
+  const shownAt = card?.at ?? null;
   const holdSec = config?.holdSec ?? 120;
   if (!shownAt || shownAt.getTime() + holdSec * 1000 > now.getTime()) {
     await deferForCard(d, shownAt, holdSec, now);
