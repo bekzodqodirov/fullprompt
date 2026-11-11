@@ -3449,7 +3449,10 @@ and 1280 with a 60-character first good (#1645): on a phone the stock and truck 
 min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1648): a red proof that turns
 a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
 `scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
-findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144); pushed to
+findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144) before the
+second merge; **on the MERGED tree (main's #143 inside): 880 files / 14,817 unit/integration + 491 e2e**, same order,
+fresh gsr_ci, ledger 144 — a container restart cut the run between vitest and the build, and the build + Playwright
+were resumed on the database the vitest run had left (postgres recovered it), which is CI's order. Pushed to
 `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked), deploy not done.
 
 **Latest migration: 0143** (`tarkib_document_optional`, `when` …122; ledger must reach **144**). Before
