@@ -288,12 +288,12 @@ describe('«Bo‘ldi» over files all refused at arrival, through the REAL file 
     // The door counts the file it refused: the old `fileCount === 0` branch never saw this.
     expect(after.fileCount).toBe(1);
     expect(after.material).toEqual([]);
-    // What P-model writes at that refusal (docs/FAYL-OQISH.md §10), as it will write it.
-    updateIntake(BigInt(chat), { refusedFiles: [{ name: 'invoice.docx', why: 'Word fayl o‘qilmaydi.' }] }, { quiet: true });
+    // The door itself writes the refusal's reason (P-model, docs/FAYL-OQISH.md §10) — no hand patch.
+    expect(after.refusedFiles).toEqual([{ name: 'invoice.docx', why: 'Word fayl' }]);
     const m = h.mark();
     await h.handle(tg.callback(chat, after.promptMessageId ?? 3, 'c:done'));
     await h.settle();
-    expect(h.textsTo(chat, m)).toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: invoice.docx — Word fayl o‘qilmaydi.');
+    expect(h.textsTo(chat, m)).toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: invoice.docx — Word fayl.');
     expect(h.textsTo(chat, m).some((t) => t.startsWith('⏳ AI o‘qiyapti'))).toBe(false);
     expect(activeIntake(BigInt(chat))!.analysing).toBeNull();
   });
