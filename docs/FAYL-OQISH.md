@@ -39,7 +39,8 @@ are `goods/judge-objections.md` in the scratchpad, and every builder reads the o
 What production hit is not proven, because this container has no API key. His `[calc intake]` log lines will
 say which route it was (§7). Every route below is fixed regardless.
 
-Numbering: DECISIONS from **#1622**, because main's AI sotuvchi took #1610-#1621. **No migration**: every new
+Numbering: DECISIONS from **#1628**, because main's AI sotuvchi took #1610-#1621 and its «kontekst 100» round
+#1622-#1627 (merged at 374983e; the line said #1622 until the as-built review, REGRESSION-7). **No migration**: every new
 field lives in the collection's jsonb state, so the ledger stays at **143**.
 
 ---
@@ -125,6 +126,12 @@ hisoblab bo‘lmadi».
 
   The context sheets (`invoiceTexts`) are read for totals only and do not count.
 - **(d) `pdf_refused`**: `state.unreadPdfs` is non-empty. The API refused those documents (§3.4).
+  As built after the as-built review (B): a refused PDF blocks only the table of the reading that MET the refusal. The next reading takes
+  it out of `pdfs` and names it in `refusedFiles` with the reason «AI qabul qilmadi» (`PDF_REFUSED_WHY`),
+  named and not blocking — kept blocking, nothing the seller sent could ever reach ✅. A PDF is named at all
+  only once the PDF-less request reached the model; a PDF-less re-read refused too names none (the PDFs were
+  not the cause). Until it moves, the ONE prompt says of it «📄 «X.pdf» — AI bu faylni qabul qilmadi.», never
+  «AI o‘qiydi» (WORDS-5).
 - **(e) `files_missing`**: `state.filesMissing > 0`. A stored file did not load (§2.5).
 - **(f) `input_cut`**: `state.aiInputCut`. The model was not shown all of an accepted sheet text: the
   reader's `cut`, or `fitSheetRows` kept < total (door-whole-input-cuts).
@@ -161,6 +168,17 @@ As built after the as-built review (A):
   «Yana {N} ta fayl o‘qilmadi ({sabab}) — ulardagi tovarlar hisobga kirmaydi.». Sixty HEIC files forwarded as
   files had left no goods row and cut the remedy off. `fitTelegram`'s last resort ends on a line within 600
   characters of the cap and never inside a surrogate pair.
+
+As built after the as-built review (B), the named tier as built (MODEL-6 (9), SHEETS-6 (5)). Besides the list above it names: a HEIC or an
+unreadable photo («HEIC rasm», «rasm ochilmadi»); a broken, old-format or encrypted xlsx; a workbook whose only
+content is pictures («ichida faqat rasm, jadval yo‘q» — a noun phrase like every reason, OWNER-11); a picture
+DOCUMENT between storage's 15 MB photo ceiling and Telegram's 20 MB («15 MB dan katta rasm», MODEL-3); an HTML
+or XML table or an .xlsb («HTML jadval», «XML jadval», «Excel binary (.xlsb)», REGRESSION-5); the photo cap as
+ONE counted entry («N ta rasm»). The READING writes it too (the refused PDF, §1.1 d). It names no empty sheet
+(nothing was lost) and no `download_failed` (the re-send brings the file). A macro-enabled workbook (.xlsm) is
+no longer refused — storage keeps it as a download-only document and the reader reads it (OWNER-10). A file
+TAKEN later under the name of one refused before leaves the tier: the bot's own refusal asks for exactly that
+re-send (MODEL-5); never under a name the bot made up («rasm», «fayl», «N ta rasm»).
 
 1.2 **Not whole → no «✅ Tasdiqlash»** (§6 Q1 ⭐ a, built as ⭐). On a first or seeded AI-door collection the
 keyboard is:
@@ -227,6 +245,24 @@ As built after the as-built review (A):
 - The remedy drops its «🔄» lead whenever a stored file did not load (OWNER-7): the tail's failure line or the
   reading's note already names the press.
 
+As built after the as-built review (B):
+- «🔄» is drawn for a CLOCK OR DROPPED cut (`notWholeRetry`: every cut but a size cut — a dropped stream is the
+  network's, not the input's), once per material mark, and a dropped cut takes the clock cut's words (OWNER-9
+  a, MODEL-6 (1)).
+- The PRESS obeys «once per material mark», not only the table (WORDS-8): the older table keeps its «🔄» and an
+  older prompt its «Bo‘ldi». Nothing new sent, a cut reading, no retry left (a size cut, or a clock cut already
+  re-read, no stored file to load again) → nothing is enqueued, the bot answers «⚠️ AI bu materialni yana o‘qisa
+  ham shu yerda to‘xtaydi — «👤 VED hisoblasin» ni bosing, yoki «✖️ Bekor qilish» ni bosib, {faylni kichikroq
+  (yoki Excel) qilib / kamroq sahifa yoki Excel qilib} qaytadan yuboring.» and draws the table again. The AI
+  door's first or seeded collection only; elsewhere today's.
+- A re-read of the SAME material that reads LESS keeps the earlier reading (CRITIC-1): a cut with fewer goods,
+  or a failure with none, leaves the earlier cut's goods, totals and `aiCut`, with the note «⚠️ Qayta o‘qishda AI
+  avvalgidan kam o‘qidi — avvalgi o‘qishdagi {N} ta tovar qoldi.». A whole answer, or a cut that read as many,
+  replaces it; new material is a new reading. Both doors (the plain door's «Bo‘ldi» re-reads too).
+- The input-cut row has two more first lines (OWNER-9 e): «⚠️ «{X}» jadvalining birinchi {kept} qatori
+  o‘qildi.» when the reader's own stop or the 500-row ceiling counted no total, and «⚠️ Jadval AI ga to‘liq
+  ko‘rsatilmadi — bir qismi o‘qildi.» when `aiInputCut` names no sheet.
+
 **Every word and button that names the confirm** goes through ONE function of the live state's wholeness
 (door-closing-drawers):
 - the closing's complete branch (`aiCompleteLine`);
@@ -291,7 +327,8 @@ seven of twelve goods had read as the whole invoice to the VED. Keyboard and lan
 - a derived fence: every `callback_data` drawn parses (`to_ved` in `CALC_STEPS` and `PRESS_REPEAT`).
 - integration tests through `bot-harness`:
   - a zero-goods AI collection → 👤 → landed with `intake_door='plain'`, no AI_QUEUED words, the plain pass
-    queued silently;
+    queued silently — as built (B), on a zero-goods PODKLYUCH; a zero-item rastamojka queues none (§1.3 c,
+    which wins; the silent plain pass is also pinned on a not-whole rastamojka WITH rows);
   - a `c:save` on a not-whole collection → the same;
   - 📨 pressed, the landing cut after the note → the sweep's resume → still 'plain', no AI words;
   - 👤 → ➕ addition → no CalcPrefilled chat message (its queued re-pass run, its claim written muted) and never
@@ -344,6 +381,11 @@ send and the sweep edit «⏳ AI o‘qiyapti…» by it:
 
 A `pendingReply` stored before the deploy has no `notice` and keeps «✅ O‘qildi».
 
+As built after the as-built review (B), the rule the words follow (`noticeKindOf`, OWNER-9 i), first match wins: `cut` — a cut, an input cut or a
+capped file; `failed` — a stored file not loaded or a refused PDF; `read` — the model answered; `failed` —
+model-only material unread, or a failed call other than nothing_to_read / not_configured / budget; `no_model` —
+Excel rows or a goods file; otherwise `read` when something was typed, else `failed`.
+
 On «Bo‘ldi» with nothing accepted but `refusedFiles` present, the bot does not say «Hali hech narsa
 yuborilmadi». It says «Yuborilgan fayllarning birortasi ham o‘qiladigan emas: {X — sabab; …}.» and starts no
 reading.
@@ -354,8 +396,10 @@ verifier's simpler alternative:
 - `state.restartAsked: { messageId: number | null; at: number } | null` is set where the question is asked
   (staff-handlers.ts, c:ai/c:aipk/section on a live collection).
 - While it is set, the file door, the forward door and the text ladder answer, kept last, «⏸ Avval yuqoridagi
-  savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Faylni javobdan keyin qayta
-  yuboring.» They file NOTHING into the old collection.
+  savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Yuborganingizni javobdan keyin
+  qayta yuboring.» They file NOTHING into the old collection. As built after the as-built review (B), WORDS-10: the last sentence was
+  «Faylni javobdan keyin qayta yuboring.», which told a seller who had TYPED «3-qator 50 kg» to re-send a file he
+  never sent; one sentence for all three doors.
 - It is cleared on «🔄 Ha» (the new collection), on «▶️ Yo‘q» (`c:resume`, unchanged otherwise), and on
   cancel, read or save. The question's buttons are stripped when it clears.
 - It also clears after 30 minutes (`HOLD_MS`), so a forgotten question never jams the chat.
@@ -430,7 +474,8 @@ model-cut-unbilled):
   aborted or dropped:
   - `inputTokens` comes from `message_start`;
   - `outputTokens` comes from the last `message_delta` usage, or else ⌈text chars ÷ 3⌉, stated as an estimate
-    in the code.
+    in the code. As built after the as-built review (B), OWNER-9 f: ⌈(answer + thinking chars) ÷ 3⌉ — thinking is billed output, and
+    the estimate exists so the day's cap counts the attempt.
 
   A cut outcome carries `answered` like any other.
 - **Codes.** `known_codes` stays the last property. A cut drops the codes, and the landing pass codes the rows
@@ -440,6 +485,11 @@ model-cut-unbilled):
   the AI door's commonest answer, whose longest tail is `known_codes` — so it is an ordinary reading with its
   totals and steps and NO `cut` (logged; only the codes are lost). Before, it was a 'timeout' failure that lost
   the totals, or a blocking cut over a finished list.
+- As built after the as-built review (B), OWNER-2: beside no Excel, a CUT answer's goods are the model's completed ones FOLLOWED by every typed
+  line no model line names (its figures as typed). «The model answered, so its goods are the list» was written
+  for a whole answer: the caption «Erkaklar shimi 50 dona» beside an unmapped Excel, and the goods the remedy
+  asks to be typed, were dropped by every cut. The trade, stated: a typed good the model read under another name
+  is listed twice — on a table that draws no ✅ (a cut).
 
 3.4 **What the API refuses, named.**
 - **An encrypted PDF** (model-encrypt-sniff). In `readIntakeFile`'s pdf branch, look for `/Encrypt <n> <g> R`
@@ -465,6 +515,20 @@ model-cut-unbilled):
   jami 12 MB dan oshdi»). Every refusal there writes `refusedFiles`.
 - The photo cap writes `refusedFiles`, so pdfimg-12's skipped count is kept on the table. The model is told
   what it was SHOWN («показано N фото, M PDF»).
+- As built after the as-built review (B) (OWNER-9 c, MODEL-6 (3)(4)(11), MODEL-3, REGRESSION-5):
+  - `saveBotFile` (the one home of the crossing; `saveIntakeFile` and the zametka door call it) returns FOUR
+    typed refusals: `too_big` (past Telegram's 20 MB, checked before `getFile`), `too_large` (a picture past
+    storage's 15 MB photo ceiling: «🖼 «X» — rasm 15 MB dan katta, saqlanmadi. Kichikroq qilib (yoki PDF)
+    yuboring.»), `unsupported` and `download_failed`. The zametka door keeps its own words for all four.
+  - The caption is read on every refusal NO RE-SEND HEALS (`too_big`, `too_large`, `unsupported`). A
+    `download_failed` takes nothing at all three doors: the same message re-sent brings file and caption once.
+  - An HTML or XML table, or an .xlsb, is a type storage keeps no attachment of; told by its name, else its mime:
+    «📎 «X» kartada saqlanmadi: HTML jadval o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.» (XML jadval,
+    Excel binary (.xlsb) alike). Every other unsupported type keeps «… rasm, PDF va Excel/CSV yuboring.».
+  - pdfimg-8's caps count only the PDFs a reading will SEND (`pdfs` less `unreadPdfs`): counted, a refused PDF
+    refused the very password-free copy its warning asks for.
+  - The refused PDF's «later re-reads skip them … The reading is not whole» above is §1.1 d's as-built rule: it
+    blocks the table of the reading that met the refusal, and is named, not blocking, after.
 
 3.5 **The log line** (model-thinking-null). `[calc intake] model tokens` carries `in`, `out`, `thinking`,
 `stop`, `ms`, `cut`, and the material counts (images, pdfs, sheets, known).
@@ -490,6 +554,19 @@ model-cut-unbilled):
 - As built after the as-built review (A), MODEL-8: the rows a reader dropped under a list (§5.5), handed to the
   model on the AI door, are marked `dropped` and never count as something to read: an all-coded Excel with a
   «Buyer signature» row under it makes no call. Beside a reading that happens anyway they are still shown.
+- As built after the as-built review (B), OWNER-1 / MODEL-1 / SHEETS-2 / REGRESSION-3 (merge seam 1): the goods sheet's own text is passed
+  only while it is the collection's ONE goods file holding every row, uncapped (`loneGoodsFile`, the rule
+  `loneFileTotals` reads) — exactly where the file's own totals outrank the model's. After a fold (another
+  factory's sheet, or a second factory's file) `goodsFiles[0].text` is ONE factory's sheet with ONE factory's
+  TOTAL under a heading that asks for the shipment's totals, and nothing outranked the model's figure: factory
+  A's brutto and cube landed as the shipment's under a ✅, and on podklyuch the road was priced on them. Beside a
+  fold the model is shown no goods-sheet text, the brutto is asked and the cube is the rows' Σ (§4.3).
+- As built after the as-built review (B), the closing as built has six branches (MODEL-6 (7), OWNER-9 g): «Материалы: …» with typed text;
+  «Текста нет — читай фото и документы.» with photos or PDFs; «Текста нет — читай таблицу выше.» beside a GOODS
+  sheet text only; with codes asked, «Текста нет: goods оставь пустым (товары уже взяты); общий вес и объём
+  возьми из листов выше; коды — в known_codes.» when a context sheet with rows is shown, else «Других материалов
+  нет: goods оставь пустым, дай только known_codes для строк списка.»; and «Текста нет.» for a context-only
+  reading.
 - Pins: `intake-images.test.ts:51` is re-anchored. Three tests:
   - an AI-door lone Excel makes ONE call;
   - an all-coded Excel makes none;
@@ -528,6 +605,8 @@ or packing data of the same goods.
   - `fileNotes` and the say accumulate into ONE patch and one `say`.
   - `sameFileAgain` judges the workbook as a WHOLE. Once it is «already sent», the loop stops.
 - **The goods sheet** is the sheet with the most mapped rows, the first on a tie (today, sheets-03 (1)).
+- As built after the as-built review (B) (SHEETS-6 (6)): a `moreSheets` entry also carries `dropped` (§5.5's rows the reader did not take,
+  per sheet — SHEETS-1) and its `stoppedShort`.
 
 4.2 **Each further mapped sheet, by its SHAPE** (sheets-02):
 - **Packing-shaped, of the held goods.** «Of the held goods» means one of:
@@ -550,13 +629,38 @@ or packing data of the same goods.
     queue's own limit (`MAX_CALC_ITEMS`, 1000) is not made — three sheets of 400 had folded into a table that
     invited «✅ Tasdiqlash» and whose press ended the collection with every file lost. The sheet keeps today's
     reading and the seller is told «📄 «X», «Zavod 3» varag‘i qo‘shilmadi — bitta so‘rovda 1000 tadan ortiq
-    tovar bo‘lmaydi; bu varaqni alohida so‘rov qilib yuboring.».
+    tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.» (the conditional is (B)'s,
+    below).
+  - As built after the as-built review (B), REGRESSION-2: past that limit the sheet is not JUDGED either — a list that held + this sheet's rows
+    would pass is not asked `provenOther` (every row against every held row; ten sheets of 500 cost 4 s of
+    synchronous CPU on the one process the poller awaits, twenty sheets two minutes). A fold only keeps or adds
+    rows, so the answer cannot matter. Unjudged, the sheet may be the same goods again, so the cure is
+    conditional: «boshqa tovarlar bo‘lsa, …».
   - As built after the as-built review (A), SHEETS-1: every further sheet carries its own dropped rows
     (`MappedSheet.dropped`, §5.5). On a fold and on a packing-of-held sheet they are said on receipt under the
     SHEET's label («📄 «X», «Zavod B» varag‘i — ostidagi 2 ta qator tovar deb olinmadi: …») and kept in
     `fileNotes`; on a fold the AI door hands them to the model too (a folded sheet's text goes nowhere else).
     A sheet kept on today's reading says nothing of them: none of its rows is taken and its whole text goes to
     the model.
+  - As built after the as-built review (B), SHEETS-6 (1)(2): R1 also requires the held list to BE the goods sheet's rows, place for place (the
+    same name key at each index), so R1 never fires after a file or a folded sheet came first. In a top-up,
+    `provenOther` also holds the further sheet against the request's STORED rows (names only — the FILES-2
+    priced-twice fence), so a Cyrillic «Zavod B» beside Latin stored rows is not proven other.
+  - As built after the as-built review (B), SHEETS-3: once a fold has widened the held list (two goods files held), a packing-shaped sheet
+    gives the shipment's totals only when it answers for the WHOLE list (`packingCoversHeld`: the same Σ
+    pieces, or every held row met by a row of its own). Factory A's packing list beside factory B's folded goods
+    passed `packingOfHeld` (most of ITS rows meet held rows) and its Σ was written and announced as the
+    shipment's, factory B's cargo out of both. Now it fills netto and is said as a part: «📄 «X», «PL A» varag‘i —
+    ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk
+    uchun olinmadi.»; its text goes nowhere (under the totals heading its Σ came back through the model). With
+    one goods file held the loose rule a second file has always had stands. Totals a packing list gave BEFORE a
+    fold are dropped by the fold and said («CI A, PL A, CI B»): «📄 «X», «PL A» varag‘i — undan olingan umumiy
+    brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.». The
+    loss, stated: a packing list that happened to list factory B's goods too is dropped with it, and the seller
+    answers one figure. Workbook sheets only; three FILES are §8's.
+  - As built after the as-built review (B), SHEETS-6 (4): every sheet line is said with its file's label first («📄 «file», «Zavod B»
+    varag‘idan …») — the house style of every file line, since a seller forwards workbooks whose sheets share
+    names.
 - **Anything else** (an invoice-shaped sheet of the same goods, or any sheet that is not proven either way) →
   TODAY's behaviour. Its text goes to the model under today's totals heading («НЕ перечисляй»; the C2/C6 fence
   is untouched, so c0782 and c1336 stand). The seller is told, once per sheet: ««{X}» varag‘i — o‘sha tovarlar
@@ -566,6 +670,9 @@ or packing data of the same goods.
 
 4.3 **loneFileTotals and the ✅ total.** loneFileTotals is unchanged for a single goods sheet. When a further
 sheet was folded, `goodsFiles` has two entries and today's rule already refuses the lone total.
+As built after the as-built review (B) (OWNER-1, MODEL-1, SHEETS-2, REGRESSION-3): the same rule now gates what the MODEL is shown (§3.7) —
+beside a fold it was handed factory A's sheet under the totals heading and its figure landed. The Σ of the
+folded sheets' own gross and cube is NOT written as the shipment's (§8).
 
 4.4 **The words:**
 - The arrival line never claims «boshqa varaqlarni AI o‘qiydi» about a sheet it did not hand the model as
@@ -574,6 +681,12 @@ sheet was folded, `goodsFiles` has two entries and today's rule already refuses 
   betterFix). Neither does a cover or picture sheet with no goods rows (unmapped-misleading-receipts).
 - A workbook that yields no goods and carries embedded images says «Excel ichidagi rasm o‘qilmaydi — rasmni
   alohida (rasm yoki PDF qilib) yuboring.» (unmapped-embedded-picture-dropped).
+- As built after the as-built review (B) (SHEETS-6 (3)(4)(5)): with a further MAPPED sheet the arrival clause reads «tovar qatori olinmagan
+  varaqlar faqat jami uchun o‘qiladi» (the sheets no goods row was taken from), never «boshqa varaqlar» about a
+  sheet folded in two lines down. Two words the spec does not give are the builder's: «jadvaldan tovar
+  qatorlarini o‘zim ajrata olmadim, AI o‘qiydi.» (a header found, 0 rows) and «jadvalda tovar qatori
+  ko‘rinmadi.» (no row pairs a name with a figure). The picture-only workbook is also a named refusal
+  («ichida faqat rasm, jadval yo‘q», §1.1).
 
 4.5 **The top-up packing file** (known-2). A packing-shaped file is a NOTED file only while there are kept or
 held rows for it to be the totals of. With zero kept rows and zero held rows (a returned request with no rows,
@@ -643,6 +756,9 @@ The corpus rule (CLAUDE.md), sharpened by reader-corpus-blind, applies to EVERY 
   - «№ | Наим. | Кол-во»;
   - c1936 unchanged;
   - «Product | Description» in both shapes, with the chosen answer written down.
+- As built after the as-built review (B) (SHEETS-7): the article-number half of (c)'s serial guard applies only under a header that names the
+  goods with «item» alone (no first-tier name key); «a wordier column» is one that could hold goods (not a
+  party or an attribute column). Unscoped, «Item No. | Customer name» lost its header.
 
 5.6 **A label|value card** (reader-5.6-card).
 - **The primary rule is a REFUSAL inside findHeader.** A candidate is refused as a transposed header when
@@ -666,6 +782,11 @@ The corpus rule (CLAUDE.md), sharpened by reader-corpus-blind, applies to EVERY 
   - a unit-column card;
   - a column-C card;
   - «Весы напольные / Весы кухонные» → kept as a list.
+- As built after the as-built review (B) (SHEETS-7): a PLAIN weight label («Vazni», «Вес») is the card's line weight, as a plain weight
+  column is on a table; only a BRUTTO label goes to `grossKg`. «A netto label only» would drop the weight of the
+  commonest Uzbek card. (a)'s «a VALUE, not a key» means: exactly one other cell, naming no column, over a column
+  of mostly figures or codes («Товар | Цвет» stays a table). (b) and §5.8's label data count only ANOTHER
+  field's labels and cells ending «:».
 
 5.7 **A data row taken as the header** (unmapped-product-name-as-header betterFix, both parts):
 - (1) A multi-cell candidate any of whose NON-name cells reads as a figure is data.
@@ -781,6 +902,11 @@ and the deal import all carry.
 Unchanged by this rule: every other string keeps `parseNumber` («1.234,56», «1 234,56», negatives, «0,125»);
 numeric cells are untouched; the glued branch takes the same column decision.
 
+As built after the as-built review (B) (SHEETS-7): a column with no evidence of its own takes the SHEET's evidence (the HTML pin's «1,950»
+money column holds only ambiguous cells; the evidence is the «0.15» cube beside it). The glued branch («1,200KGS»)
+takes ONLY its own column's evidence — never the piece rule or the sheet's — or round 1's pinned c0076-c0081
+would flip. «A piece column with no quantityUnit» is judged per row (the row's unit cell empty or a piece unit).
+
 Corpus cases, plus send-rows' paste cases:
 - an en-US CSV «"1,500"» → 1500;
 - an HTML-.xls «1,500/1,950» → 1500/1950;
@@ -823,6 +949,8 @@ The PER_PACKAGE_COUNT skip stays after this test. Corpus cases, written BEFORE t
 - «Итого, шт» → a count, not money;
 - «Total pieces» → a count;
 - «Штрих-код» → not a count.
+- As built after the as-built review (B) (SHEETS-7): the candidate rule also excludes a UNIT column (UNIT_KEYS — «ед» reads as dona and broke
+  «Кол-во | Ед.») and a weight or volume header without its unit word («Вес 1 шт»).
 
 5.13 **Uzbek headers** (unmapped-uz-header-words, partial):
 - `matchKey` folds [ʻ‘’`ʼ] to «'»;
@@ -893,6 +1021,18 @@ After the deploy, the same line shows `thinking` and `ms`.
   is reviewed before anything is written; the narrow fix (start the headerless pass after a header-shaped
   serial refusal, a «sarlavha topilmadi» line on the import screen in four locales) is owed as its own round.
 - **«🔄» after a clock cut** re-reads the WHOLE material, once. It does not continue from the last good read.
+  As built after the as-built review (B): a re-read that reads LESS keeps the earlier reading (§1.2, CRITIC-1).
+- **An HTML or XML table, or an .xlsb, sent under its own mime** stays refused at storage (as-built review
+  REGRESSION-5): storing text/html would need the attachment-disposition fence re-checked first. It is now told
+  in its own words with the cure («Excel’da .xlsx qilib saqlab yuboring»), §3.4. An HTML table saved as «.xls»
+  arrives with Telegram's Excel mime and is stored and read as before. The .xlsm IS stored (OWNER-10).
+- **Three FILES — CI A, CI B (folded as other goods), PL A — or CI A, PL A, CI B** (as-built review SHEETS-3):
+  the cross-file packing rule is today's (PF-ADV-5's lineage) and PL A's Σ is still written as the shipment's.
+  The workbook path is fixed (§4.2); widening it to files changes the plain door's cross-file reading and is
+  his call.
+- **The Σ of folded sheets' own totals** (as-built review OWNER-1's optional half): when every goods file states
+  a gross column and a cube, their Σ could stand for the shipment's. Not written — §4.3 asks the brutto beside a
+  fold, and a deterministic total over two factories' lists is a new rule, not a fix.
 - **Deliberate decisions, unchanged:**
   - another factory's same-named product dropped as «Excel'dagi bilan bir xil» (known-4);
   - a second same-named added line (known-5);
@@ -975,17 +1115,23 @@ After the deploy, the same line shows `thinking` and `ms`.
 New `IntakeState` fields, all optional in the type, defaulted in the initial state and in
 `migrateIntakeState`. Each says its writer:
 - `aiCut?: { goods: number; why: 'clock' | 'size' | 'dropped' } | null` — analyzeCollected, every reading;
-- `aiCutRetried?: boolean` — set by the 🔄 press on a clock cut, cleared by new material;
+- `aiCutRetried?: boolean` — set by the 🔄 press on a clock cut, cleared by new material; as built (B), set by
+  the press of a re-read on a clock OR dropped cut, and read by `analyzeCollected` (a re-read that reads less
+  keeps the earlier reading, CRITIC-1) and by the press (no second re-read, WORDS-8);
 - `aiInputCut?: boolean` — analyzeCollected;
 - `filesMissing?: number` — analyzeCollected;
 - `unreadPdfs?: string[]` — analyzeCollected, from the outcome;
-- `refusedFiles?: { name: string; why: string }[]` — every refusal site at arrival;
+- `refusedFiles?: { name: string; why: string }[]` — every refusal site at arrival; as built (B), also the
+  READING (the API-refused PDF it names, §1.1 d), and an accepted re-send of the same name removes its entries
+  (MODEL-5);
 - `restartAsked?: { messageId: number | null; at: number } | null` — the restart question;
 - `landAs?: 'ai' | 'ved' | null` — c:save / c:to_ved.
 
 Also in K:
 - `pendingReply.notice?: 'read' | 'cut' | 'failed' | 'no_model' | 'arrived'`.
-- `settleAnalysis` copies `aiCut`, `aiInputCut`, `filesMissing` and `unreadPdfs` from the reading.
+- `settleAnalysis` copies `aiCut`, `aiInputCut`, `filesMissing` and `unreadPdfs` from the reading. As built (B,
+  MODEL-6 (10)): it also applies the reading's file moves (`readingFileMoves` — the refused PDF out of `pdfs`,
+  into `refusedFiles`) as a diff against what the reading read, so a file that arrived meanwhile stays.
 - `AiReadFailure` gains `'files_missing'`, with its `AI_READ_FAILURE` entry.
 - `AiIntakeRead`'s ok member gains `cut?: { goods: number; why: 'clock' | 'size' | 'dropped' }`.
 - `CALC_STEPS` gains `'to_ved'`, with its PRESS_REPEAT class (the same as `save`).
