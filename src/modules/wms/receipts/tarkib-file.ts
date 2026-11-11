@@ -43,11 +43,22 @@ export type FileRefusal =
 const MB = 1024 * 1024;
 
 /**
- * The largest file of each kind that is read at all. A PDF past 10 MB is
- * refused by the provider anyway; a photograph is the upload's own ceiling;
- * a spreadsheet is bounded twice — here, and by `XLSX_CELL_XML_MAX` below.
+ * The largest file of each kind that is read at all. The PDF's ceiling is
+ * OURS, not the provider's (which takes far more): a larger scan is a longer
+ * and dearer reading inside the same 150-second leash, and one that runs out
+ * of time spends one of the day's readings for nothing. A photograph is the
+ * upload's own ceiling; a spreadsheet is bounded twice — here, and by
+ * `XLSX_CELL_XML_MAX` below; a text file by `TEXT_SHEET_MAX`.
  */
 export const READ_CAPS: Readonly<Record<FileKind, number>> = { sheet: 15 * MB, pdf: 10 * MB, image: 15 * MB };
+
+/**
+ * The most TEXT (a .csv, a .txt, an HTML or XML table) that is decoded and
+ * split into lines: the split happens before any row bound of ours applies,
+ * on the one Node process every screen shares. Five thousand rows of a real
+ * CSV are under a megabyte; a packing list is a few hundred.
+ */
+export const TEXT_SHEET_MAX = 2 * MB;
 
 /** What the reduced photograph may weigh: the provider refuses an image past ~5 MB. */
 const IMAGE_OUT_MAX = 4_500_000;
@@ -56,12 +67,16 @@ const IMAGE_PX = 2000;
 
 const SHEET_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  // A macro-enabled workbook: storage accepts it and the reader opens it (the
+  // same zip of the same sheets) — refused here, the person who attached an
+  // Excel was told to attach an Excel.
+  'application/vnd.ms-excel.sheet.macroenabled.12',
   'application/vnd.ms-excel',
   'text/csv',
   'application/csv',
   'text/plain',
 ]);
-const SHEET_EXTENSIONS = new Set(['xlsx', 'xls', 'csv', 'txt']);
+const SHEET_EXTENSIONS = new Set(['xlsx', 'xlsm', 'xls', 'csv', 'txt']);
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif']);
 /** A type that says nothing — the extension answers instead (the upload's own fallback). */
 const GENERIC_TYPES = new Set(['', 'application/octet-stream', 'binary/octet-stream']);
@@ -295,7 +310,13 @@ export function xlsxCellBytes(body: Buffer): number | null {
   return sum;
 }
 
-const isZip = (body: Buffer): boolean => body.length > 3 && body[0] === 0x50 && body[1] === 0x4b;
+/**
+ * A workbook begins with a zip's LOCAL FILE HEADER, all four bytes of it.
+ * «PK» alone is also how a text packing list begins — «PKG NO.», «PKGS»,
+ * «PKL No» are ordinary first headers — and such a CSV was opened as a
+ * workbook, failed, and answered «the file is broken, save it again».
+ */
+const isZip = (body: Buffer): boolean => body.length > 3 && body.readUInt32LE(0) === 0x04034b50;
 /** A PDF's signature may follow a little leading junk — the first kilobyte is looked at. */
 const isPdf = (body: Buffer): boolean => body.subarray(0, 1024).includes('%PDF-');
 
@@ -312,23 +333,33 @@ function looksTextual(body: Buffer): boolean {
  * — «.xls» is all three in practice.
  */
 async function sheetsOf(body: Buffer): Promise<{ ok: true; sheets: SheetRows[] } | { ok: false; error: FileRefusal }> {
-  if (isZip(body)) {
-    const cells = xlsxCellBytes(body);
-    if (cells !== null && cells > XLSX_CELL_XML_MAX) return { ok: false, error: 'read_too_large' };
-    const sheets = await workbookSheets(body);
-    return sheets ? { ok: true, sheets } : { ok: false, error: 'read_broken' };
+  try {
+    if (isZip(body)) {
+      const cells = xlsxCellBytes(body);
+      if (cells !== null && cells > XLSX_CELL_XML_MAX) return { ok: false, error: 'read_too_large' };
+      const sheets = await workbookSheets(body);
+      return sheets ? { ok: true, sheets } : { ok: false, error: 'read_broken' };
+    }
+    if (isCompoundFile(body)) {
+      const xls = readXls(body);
+      if (xls.ok) return { ok: true, sheets: xls.sheets };
+      const error = xls.reason === 'old_format' ? 'read_old_format' : xls.reason === 'encrypted' ? 'read_encrypted' : 'read_broken';
+      return { ok: false, error };
+    }
+    // A PDF or a picture stored under a spreadsheet's type is not a table.
+    if (isPdf(body) || !looksTextual(body)) return { ok: false, error: 'read_unsupported' };
+    if (body.length > TEXT_SHEET_MAX) return { ok: false, error: 'read_too_large' };
+    const text = decodeText(body);
+    if (markupOf(text) !== null && text.length > MAX_MARKUP_CHARS) return { ok: false, error: 'read_broken' };
+    return { ok: true, sheets: spreadsheetMlSheets(text) ?? htmlTableSheets(text) ?? [{ name: 'CSV', rows: csvRows(text) }] };
+  } catch {
+    // The adapter's promise is a CODE for every file. The shared readers can
+    // throw on one ordinary cell — a number under a date format that is no
+    // date (a 13-digit barcode in a date column) is an Invalid Date, and
+    // `toISOString()` throws — and thrown through, the route answered
+    // «Bajarilmadi — qaytadan urinib ko'ring» about a file no retry can read.
+    return { ok: false, error: 'read_broken' };
   }
-  if (isCompoundFile(body)) {
-    const xls = readXls(body);
-    if (xls.ok) return { ok: true, sheets: xls.sheets };
-    const error = xls.reason === 'old_format' ? 'read_old_format' : xls.reason === 'encrypted' ? 'read_encrypted' : 'read_broken';
-    return { ok: false, error };
-  }
-  // A PDF or a picture stored under a spreadsheet's type is not a table.
-  if (isPdf(body) || !looksTextual(body)) return { ok: false, error: 'read_unsupported' };
-  const text = decodeText(body);
-  if (markupOf(text) !== null && text.length > MAX_MARKUP_CHARS) return { ok: false, error: 'read_broken' };
-  return { ok: true, sheets: spreadsheetMlSheets(text) ?? htmlTableSheets(text) ?? [{ name: 'CSV', rows: csvRows(text) }] };
 }
 
 /**
@@ -344,6 +375,10 @@ async function reducePhoto(body: Buffer): Promise<Buffer | null> {
     return await sharp(body)
       .rotate()
       .resize(IMAGE_PX, IMAGE_PX, { fit: 'inside', withoutEnlargement: true })
+      // JPEG has no alpha, and sharp's default for what was transparent is
+      // BLACK: a PNG exported from a PDF (a see-through page, dark text) was
+      // sent as a black rectangle — a counted, billed reading of nothing.
+      .flatten({ background: '#ffffff' })
       .jpeg({ quality: 85 })
       .toBuffer();
   } catch {

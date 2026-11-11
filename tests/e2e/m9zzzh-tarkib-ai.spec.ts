@@ -70,7 +70,18 @@ const line = (page: Page, i: number) => page.getByTestId('tarkib-line').nth(i);
  */
 const proposal = () => ({
   rows: [
-    { name: '无线键盘', nameRu: 'Клавиатура', pieces: '500', cartons: '50', kg: '600.000', m3: '1.5000', tnved: '8471607000', notes: [], unsure: null },
+    {
+      name: '无线键盘',
+      nameRu: 'Клавиатура',
+      pieces: '500',
+      cartons: '50',
+      kg: '600.000',
+      m3: '1.5000',
+      tnved: '8471607000',
+      // Ten digits printed on the paper: the cell carries them and says whose code it is.
+      notes: [{ code: 'paper_code', params: { value: '8471607000' } }],
+      unsure: null,
+    },
     {
       name: '鼠标',
       nameRu: 'Мышь',
@@ -83,12 +94,24 @@ const proposal = () => ({
       unsure: 'вес указан на две строки',
     },
     { name: 'Коврик для мыши', nameRu: null, pieces: '', cartons: '20', kg: '100.000', m3: '0.2500', tnved: '', notes: [], unsure: null },
-    { name: run.lotName, nameRu: 'Клавиатура игровая', pieces: '10', cartons: '', kg: '', m3: '', tnved: '', notes: [], unsure: null },
+    // The lot's OWN good, with the exporter's code beside it: named as the lot is, and the code NOT carried.
+    {
+      name: run.lotName,
+      nameRu: 'Клавиатура игровая',
+      pieces: '10',
+      cartons: '',
+      kg: '',
+      m3: '',
+      tnved: '8471607200',
+      notes: [{ code: 'paper_code', params: { value: '8471607200' } }],
+      unsure: null,
+    },
   ],
   weightKind: 'gross',
   fileTotals: { cartons: '100', kg: '1000.000', m3: '2.5000' },
   document: 'packing_list',
-  warnings: [],
+  // A warning line, so the dialog's and the notice's lists are drawn in a real browser at least once.
+  warnings: [{ code: 'doc_invoice' }],
   notes: null,
   lotsOnReceipt: 1,
 });
@@ -154,6 +177,12 @@ test('the VED fills the tarkib from the client’s file on the phone: ticks the 
   await expect(rows.nth(1)).toContainText('вес указан на две строки');
   await expect(rows.nth(3)).not.toContainText('Клавиатура игровая');
   await expect(dialog.getByTestId('tarkib-read-today')).toContainText('3 / 50');
+  // The paper's ten digits: carried for another good (with whose code it is), NOT for the lot's own —
+  // there the save's guard must still be able to name the code the TNVED memory holds.
+  await expect(rows.nth(0).getByTestId('tarkib-read-figures')).toContainText('8471607000');
+  await expect(rows.nth(3).getByTestId('tarkib-read-figures')).not.toContainText('8471607200');
+  await expect(rows.nth(3).getByTestId('tarkib-read-own-code')).toContainText('8471607200');
+  await expect(dialog.getByTestId('tarkib-read-warning')).toHaveCount(1);
 
   // One lot on the prixod and no more than twenty rows: everything is ticked
   // to begin with — and the fourth row states no cartons, kg or m³, which
@@ -219,8 +248,16 @@ test('the VED fills the tarkib from the client’s file on the phone: ticks the 
   // The editor's own remainder: kg, m³ and cartons all balanced, by the paper's figures alone.
   const remainder = page.getByTestId('tarkib-remainder');
   expect(((await remainder.textContent()) ?? '').split('✓').length - 1).toBe(3);
-  // Nothing has been written: the card's face shows no tarkib yet.
+  // Nothing has been written: the card's face shows no tarkib yet — and the TABLE holds none (a count
+  // of a client-rendered panel alone would not have seen a save still in flight).
   await expect(page.getByTestId('lot-tarkib').locator('details')).toHaveCount(0);
+  const unsaved = database();
+  try {
+    const [row] = await unsaved`SELECT count(*)::int AS n FROM lot_compositions WHERE lot_id = ${minted!.lotId}`;
+    expect(row!.n).toBe(0);
+  } finally {
+    await unsaved.end();
+  }
   expect((await widths(page)).scroll).toBeLessThanOrEqual(360);
   await page.screenshot({ path: `${SHOTS}/tarkib-read-applied-360.png`, fullPage: true });
 
@@ -233,8 +270,14 @@ test('the VED fills the tarkib from the client’s file on the phone: ticks the 
   await expect(dialog.getByTestId('tarkib-read-apply')).toHaveCount(0);
   await expect(dialog.getByTestId('tarkib-read-append')).toBeVisible();
   await expect(dialog.getByTestId('tarkib-read-replace')).toBeVisible();
+  // The person's TICKS came back with it: the row unticked before «Qo'llash» is still unticked. They
+  // used to be lost with the closed dialog, and the list came back ticked from scratch — a row the
+  // person had excluded, one press from being applied.
+  await expect(dialog.getByTestId('tarkib-read-count')).toHaveText('3 / 20');
+  await expect(dialog.getByTestId('tarkib-read-tick').nth(3)).not.toBeChecked();
+  // A kept reading shows no count of the day: that line is for a fresh answer, for the person it was sent to.
+  await expect(dialog.getByTestId('tarkib-read-today')).toHaveCount(0);
   // «Qo'shish» of rows already there is refused in words, naming them — nothing is doubled.
-  await dialog.getByTestId('tarkib-read-tick').nth(3).uncheck();
   await dialog.getByTestId('tarkib-read-append').click();
   await expect(dialog.getByTestId('tarkib-read-refusal')).toContainText('Клавиатура');
   await expect(dialog).toBeVisible();

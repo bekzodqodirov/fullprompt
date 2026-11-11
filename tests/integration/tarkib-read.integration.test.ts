@@ -40,11 +40,14 @@ vi.mock('@anthropic-ai/sdk', async (original) => {
   class Scripted extends real.default {
     constructor(opts?: ConstructorParameters<typeof real.default>[0]) {
       super({ ...opts, apiKey: 'test-key' });
+      // The reading is STREAMED: `messages.stream(…).finalMessage()`.
       (this as unknown as { messages: unknown }).messages = {
-        create: async (params: Record<string, unknown>, options: Record<string, unknown>) => {
-          model.calls.push({ params, options });
-          return model.next!();
-        },
+        stream: (params: Record<string, unknown>, options: Record<string, unknown>) => ({
+          finalMessage: async () => {
+            model.calls.push({ params, options });
+            return model.next!();
+          },
+        }),
       };
     }
   }
@@ -466,7 +469,8 @@ describe('a reading that reached the model — one bill line, and what it counts
     expect(model.calls).toHaveLength(1);
     const { params, options } = model.calls[0]!;
     expect(params.model).toBe(ANALYST_MODEL);
-    expect(params.max_tokens).toBe(16_000);
+    expect(params.max_tokens).toBe(32_000);
+    expect((params.output_config as { effort?: string }).effort).toBe('medium');
     const content = (params.messages as { content: { type: string; text?: string }[] }[])[0]!.content;
     expect(content.map((b) => b.type)).toEqual(['text']);
     expect(content[0]!.text).toContain(
@@ -478,7 +482,18 @@ describe('a reading that reached the model — one bill line, and what it counts
     // The proposal: the editor's own cells, the paper's names, the prixod's lot count.
     expect(answer.proposal).toEqual({
       rows: [
-        { name: 'Клавиатура', nameRu: null, pieces: '500', cartons: '50', kg: '600.000', m3: '1.5000', tnved: '8471607000', notes: [], unsure: null },
+        {
+          name: 'Клавиатура',
+          nameRu: null,
+          pieces: '500',
+          cartons: '50',
+          kg: '600.000',
+          m3: '1.5000',
+          tnved: '8471607000',
+          // Ten digits printed on the paper are the DOCUMENT's code — the cell says whose it is.
+          notes: [{ code: 'paper_code', params: { value: '8471607000' } }],
+          unsure: null,
+        },
         {
           name: '鼠标',
           nameRu: 'Мышь',
@@ -555,13 +570,39 @@ describe('a reading that reached the model — one bill line, and what it counts
     }
   });
 
-  it('OUR deadline ran out after the request was sent: «ai_timeout», counted, with no tokens', async () => {
+  it('a connection that never OPENED (the SDK calls it a «timeout») is not our deadline: «ai_failed», not counted, the document not cooled', async () => {
+    // The T1 review, A1: counted as our timeout, a dead network spent one of the day's readings, cooled
+    // the document for ten minutes and told the person «the paper may be too large».
     override.actor = ved();
     const before = await countedToday();
     model.next = () => {
       throw new Anthropic.APIConnectionTimeoutError();
     };
-    expect(await press(lot.A, file.pdfTimeout)).toMatchObject({ ok: false, error: 'ai_timeout' });
+    expect(await press(lot.A, file.pdfTimeout)).toMatchObject({ ok: false, error: 'ai_failed' });
+    expect((await billed(lot.A)).at(-1)).toMatchObject({ outcome: 'no_answer', input_tokens: 0, output_tokens: 0 });
+    expect(await countedToday()).toBe(before);
+    // Not cooled: the very next press reaches the model again.
+    model.next = () => {
+      throw new Anthropic.APIConnectionTimeoutError();
+    };
+    expect(await press(lot.A, file.pdfTimeout)).toMatchObject({ ok: false, error: 'ai_failed' });
+    expect(model.calls).toHaveLength(1);
+  });
+
+  it('OUR deadline ran out: «ai_timeout», counted, with no tokens — whatever the abort was thrown as', async () => {
+    override.actor = ved();
+    const before = await countedToday();
+    // The leash has run out: the reading's own signal is already aborted, and what is thrown is the bare
+    // abort of a body cut in mid-arrival (the provider had answered and billed).
+    const leash = vi.spyOn(AbortSignal, 'timeout').mockReturnValueOnce(AbortSignal.abort());
+    model.next = () => {
+      throw new DOMException('This operation was aborted', 'AbortError');
+    };
+    try {
+      expect(await press(lot.A, file.pdfTimeout)).toMatchObject({ ok: false, error: 'ai_timeout' });
+    } finally {
+      leash.mockRestore();
+    }
     expect((await billed(lot.A)).at(-1)).toMatchObject({ outcome: 'failed', input_tokens: 0, output_tokens: 0 });
     expect(await countedToday()).toBe(before + 1);
   });
@@ -628,6 +669,9 @@ describe('the day’s limit', () => {
       await setSetting('tarkib_ai_daily_limit', 0, author);
       expect(await press(lot.A, file.pdfLimit)).toMatchObject({ ok: false, error: 'ai_off' });
       expect(model.calls).toEqual([]);
+      // …BEFORE a byte is asked of storage: a row whose file is gone still answers «switched off»,
+      // not «the file could not be loaded» — a press that can never run loads nothing (A14).
+      expect(await press(lot.A, file.gone)).toMatchObject({ ok: false, error: 'ai_off' });
     } finally {
       await setSetting('tarkib_ai_daily_limit', limitBefore, author);
     }

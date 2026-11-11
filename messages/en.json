@@ -5825,7 +5825,7 @@
     "lotFormShown": "This lot has contents — the lists show the contents' name: {name}. The Russian name here is the warehouse's own; changing it leaves the contents' name in the lists",
     "read": {
       "button": "Fill from file",
-      "reading": "Reading… up to a minute",
+      "reading": "Reading… up to 2-3 minutes",
       "hint": "Choose a document (tap it) — AI reads its goods and proposes the rows",
       "title": "Goods read from the file",
       "check": "Read by AI — check every figure against the document. Nothing is saved: you press «Save» yourself",
@@ -5851,6 +5851,7 @@
       "cartonsMixed": "Some rows have no carton count — choose «mixed» in the contents or type the count yourself",
       "paperName": "in the document: {name}",
       "ownGood": "the lot's own good — its name is kept as the lot's",
+      "ownCode": "the document's code {code} was not carried — this is the lot's own good: its code stays the one the TNVED memory holds",
       "noFigures": "no figures",
       "apply": "Apply ({n})",
       "append": "Add ({n})",
@@ -5858,7 +5859,9 @@
       "again": "Read again",
       "againConfirm": "The file will be read again — that is one more of today's readings. Continue?",
       "close": "Close",
+      "backdrop": "Dialog backdrop",
       "filled": "Filled from the file — check every figure against the document",
+      "filledCartonsHidden": "The document gives carton counts, but the tarkib is in «Mixed cartons» mode — no carton counts are saved. Choose «Separate cartons» to keep them.",
       "refuse": {
         "none": "Tick at least one row",
         "too_many": "{n} ticked — the contents hold up to 20 goods",
@@ -5872,7 +5875,8 @@
         "dropped": "{field}: «{value}» cannot be written — the cell is left empty",
         "rounded": "{field}: the document says {value} — rounded",
         "gross_unused": "gross {value} kg — not written: not every row has one",
-        "seller_code": "the seller's code: {value} — not a TNVED code, the cell is empty"
+        "seller_code": "the seller's code: {value} — not a TNVED code, the cell is empty",
+        "paper_code": "TNVED {value} — taken from the document (the seller's code). Check it against Uzbekistan's TN VED"
       },
       "fields": {
         "pieces": "pieces",
@@ -5882,6 +5886,7 @@
       },
       "warnings": {
         "rows_cut": "The document lists {total} goods — only the first {shown} are shown",
+        "rows_full": "The reading stopped at {shown} rows — the document may list more goods. Compare the last rows with the document",
         "text_cut": "The table is large — only its start was read; the last rows and the «total» row may be missing",
         "cells_cut": "Very long cells were read shortened",
         "doc_invoice": "This looks like an invoice: carton counts and weights are more exact in the packing list",
@@ -5907,7 +5912,7 @@
         "ai_truncated": "The document is too large — the AI answer did not fit. Upload fewer pages, or give the Excel file",
         "ai_timeout": "AI did not answer in time — the document may be too large. Upload fewer pages, or give the Excel file",
         "ai_failed": "AI did not answer — try again shortly, or type the rows by hand",
-        "ai_rejected": "AI did not accept this file (damaged, or too many pages) — upload another one",
+        "ai_rejected": "AI did not accept the request — the file may be damaged or have too many pages. Try another file; if it repeats, tell the administrator",
         "read_deadline": "No answer came — check the connection and press again in a minute or two",
         "read_offline": "The server could not be reached — check the connection"
       }

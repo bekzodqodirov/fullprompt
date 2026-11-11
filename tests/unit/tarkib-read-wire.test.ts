@@ -10,7 +10,7 @@ import {
   storeRead,
   type StoredRead,
 } from '@/app/(protected)/receipts/[id]/tarkib-read-dialog';
-import { COOLING_MS, ReadCooling, TARKIB_READ_ERRORS } from '@/modules/wms/receipts/tarkib-read';
+import { COOLING_MS, FILE_READ_MS, ReadCooling, TARKIB_READ_ERRORS } from '@/modules/wms/receipts/tarkib-read';
 import { READ_LEASH_MS } from '@/modules/wms/receipts/tarkib-read-ai';
 import { isProposalWarning, type TarkibProposal } from '@/modules/wms/receipts/tarkib-proposal';
 
@@ -137,6 +137,7 @@ describe('every `tarkib.read` sentence formats, in every locale', () => {
     shown: 40,
     total: 47,
     sum: '1020.000',
+    code: '8471607200',
   };
   const flatten = (tree: Tree, prefix = ''): [string, string][] =>
     Object.entries(tree).flatMap(([key, value]) =>
@@ -345,10 +346,59 @@ describe('the browser’s half', () => {
     vi.unstubAllGlobals();
   });
 
-  it('the browser waits LONGER than the server’s leash — a paid answer must not arrive to nobody', () => {
+  it('the browser waits LONGER than the server’s WHOLE budget — a paid answer must not arrive to nobody', () => {
+    // The model's leash is not the server's budget: the file comes from storage first, and is prepared.
+    // At 165 s against 20 + 150 a reading that succeeded in that band was billed, delivered to nobody,
+    // and «press again» was a second bill (the T1 review, A8 = B10).
     expect(READ_LEASH_MS).toBe(150_000);
-    expect(READ_DEADLINE_MS).toBe(165_000);
-    expect(READ_DEADLINE_MS).toBeGreaterThan(READ_LEASH_MS);
+    expect(FILE_READ_MS).toBe(10_000);
+    expect(READ_DEADLINE_MS).toBe(190_000);
+    // Twenty seconds over storage + the model, for the workbook's parse or the photograph's reduction.
+    expect(READ_DEADLINE_MS).toBeGreaterThanOrEqual(FILE_READ_MS + READ_LEASH_MS + 20_000);
+  });
+
+  it('the day’s count and the DOLLARS are never kept with a reading — they are for the person the route sent them to (B3)', () => {
+    const storage = fakeStorage();
+    vi.stubGlobal('window', { sessionStorage: storage });
+    const t0 = 1_800_000_000_000;
+    storeRead({ ...stored(t0), today: { used: 3, limit: 50, usd: 0.42, usd30: 12.3, unpriced: 0 } });
+    const kept = storage.map.get('tarkib-read:att-1')!;
+    expect(kept).not.toContain('usd');
+    expect(kept).not.toContain('today');
+    // …and a kept reading shows no count: it would be half an hour old (yesterday's after midnight).
+    expect(cachedRead('att-1', t0 + 60_000)!.today).toBeNull();
+    // An entry an OLDER build wrote with the money in it does not hand it over either.
+    storage.map.set('tarkib-read:att-1', JSON.stringify({ v: 1, at: t0, fileName: 'p.xlsx', proposal, today: { used: 3, limit: 50, usd: 0.42, usd30: 12.3, unpriced: 0 } }));
+    expect(cachedRead('att-1', t0)!.today).toBeNull();
+  });
+
+  it('ONE reading per document at a time, for the whole tab: a second request waits for the first one’s answer (B6)', async () => {
+    vi.stubGlobal('window', { setTimeout, clearTimeout });
+    // Every held request, to be answered by hand: the in-flight record is the TAB's, so nothing may be
+    // left hanging for the next test.
+    const held: (() => void)[] = [];
+    vi.stubGlobal('fetch', async () => {
+      await new Promise<void>((resolve) => held.push(resolve));
+      return { status: 200, json: async () => ({ ok: true, proposal }) };
+    });
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+    // Lot A's editor is reading the file; lot B's editor on the same prixod presses on the same file.
+    const first = requestTarkibRead('lot-a', 'flight-1');
+    const second = requestTarkibRead('lot-b', 'flight-1');
+    // Another document is its own reading.
+    const other = requestTarkibRead('lot-a', 'flight-2');
+    await tick();
+    expect(held).toHaveLength(2);
+    for (const answer of held.splice(0)) answer();
+    const [a, b] = await Promise.all([first, second, other]);
+    expect(a).toEqual({ ok: true, proposal });
+    expect(b).toBe(a);
+    // Once it has answered, the next press is a new request.
+    const again = requestTarkibRead('lot-a', 'flight-1');
+    await tick();
+    expect(held).toHaveLength(1);
+    for (const answer of held.splice(0)) answer();
+    expect(await again).toEqual({ ok: true, proposal });
   });
 
   it('a reading is kept by its DOCUMENT for thirty minutes — and not a minute longer, nor across a change of shape', () => {
@@ -434,6 +484,13 @@ describe('the browser’s half', () => {
     expect(dialog).toContain('open={open && read !== null}');
     // The key is on the BODY — on the Overlay it would remount it open.
     expect(dialog).toMatch(/<ReadBody\s+key=\{read\.at\}/);
+    // The TICKS are held by the dialog, which stays mounted — the body unmounts on «Yopish» (B5).
+    expect(dialog).toContain('const [kept, setKept] = useState<{ at: number; ticked: ReadonlySet<number> } | null>(null);');
+    expect(dialog).toContain('onTick={(next) => setKept({ at: read.at, ticked: next })}');
+    const body = dialog.slice(dialog.indexOf('function ReadBody('));
+    expect(body).not.toContain('setTicked');
+    // The inert backdrop is not a second control named «Yopish».
+    expect(dialog).toContain("closeLabel={t('read.backdrop')}");
     expect(dialog).not.toMatch(/<Overlay\s+key=/);
     const panel = read(PANEL);
     expect(panel).toMatch(/<TarkibReadDialog\s+open=\{readOpen\}/);

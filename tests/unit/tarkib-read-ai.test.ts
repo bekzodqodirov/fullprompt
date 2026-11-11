@@ -21,7 +21,10 @@ vi.mock('@anthropic-ai/sdk', async (importOriginal) => {
   class Stand extends real.default {
     constructor(opts: ConstructorParameters<typeof real.default>[0]) {
       super({ ...opts, apiKey: 'test-key' });
-      (this as unknown as { messages: unknown }).messages = { create: sdk.create };
+      // The call is STREAMED: `messages.stream(…).finalMessage()` — the script answers what that resolves to.
+      (this as unknown as { messages: unknown }).messages = {
+        stream: (params: unknown, options: unknown) => ({ finalMessage: async () => sdk.create(params, options) }),
+      };
     }
   }
   return { ...real, default: Stand };
@@ -31,7 +34,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ANALYST_MODEL } from '@/modules/platform/ai/model';
 import { MERGED_MARK, type PreparedFile } from '@/modules/wms/receipts/tarkib-file';
 import { READ_MAX_ROWS } from '@/modules/wms/receipts/tarkib-proposal';
-import { READ_LEASH_MS, READ_SYSTEM, readContent, readTarkibDocument } from '@/modules/wms/receipts/tarkib-read-ai';
+import { READ_EFFORT, READ_LEASH_MS, READ_MAX_TOKENS, READ_SYSTEM, readContent, readTarkibDocument } from '@/modules/wms/receipts/tarkib-read-ai';
 
 const saved = process.env.ANTHROPIC_API_KEY;
 beforeEach(() => {
@@ -63,18 +66,23 @@ type Sent = {
   model: string;
   max_tokens: number;
   system: string;
-  output_config: { format: { type: string; schema: Record<string, unknown> } };
+  output_config: { effort?: string; format: { type: string; schema: Record<string, unknown> } };
   messages: { role: string; content: Record<string, unknown>[] }[];
 };
 const sent = (call = 0) => sdk.create.mock.calls[call]![0] as Sent;
 
 describe('what the model is sent', () => {
-  it('the house call: the analyst constant, room for its thinking, the system prompt, a strict schema — one user turn', async () => {
+  it('the house DOCUMENT call: the analyst constant, 32 000 tokens of room, effort «medium», the system prompt, a strict schema — one user turn', async () => {
     sdk.create.mockResolvedValueOnce(answered(body()));
     await read();
     const request = sent();
     expect(request.model).toBe(ANALYST_MODEL);
-    expect(request.max_tokens).toBe(16_000);
+    // The intake's own figures since docs/FAYL-OQISH.md §3 — the shape this file first copied (16 000,
+    // the provider's default effort, not streamed) is the one that came back empty on long papers.
+    expect(request.max_tokens).toBe(32_000);
+    expect(READ_MAX_TOKENS).toBe(32_000);
+    expect(request.output_config.effort).toBe('medium');
+    expect(READ_EFFORT).toBe('medium');
     expect(request.system).toBe(READ_SYSTEM);
     expect(request.messages).toHaveLength(1);
     expect(request.messages[0]!.role).toBe('user');
@@ -155,17 +163,34 @@ describe('how a reading ends', () => {
   it('a refusal, a cut-off and an unreadable answer were ANSWERED: their own codes, «failed», WITH the tokens', async () => {
     sdk.create.mockResolvedValueOnce(answered('', 'refusal'));
     expect(await read(pdf)).toEqual({ ok: false, code: 'ai_refused', outcome: 'failed', usage: USAGE });
-    sdk.create.mockResolvedValueOnce(answered('{"rows": [{"name": "键', 'max_tokens'));
-    expect(await read(pdf)).toEqual({ ok: false, code: 'ai_truncated', outcome: 'failed', usage: USAGE });
+    // Cut at a SIZE — the cap, or the context window filling: one word for both.
+    for (const stop of ['max_tokens', 'model_context_window_exceeded']) {
+      sdk.create.mockResolvedValueOnce(answered('{"rows": [{"name": "键', stop));
+      expect(await read(pdf), stop).toEqual({ ok: false, code: 'ai_truncated', outcome: 'failed', usage: USAGE });
+    }
     for (const text of ['not json at all', '{"rows": "none"}', body({ document: 'letter' }), body({ rows: [{ ...ROW, pieces: '500' }] }), '']) {
       sdk.create.mockResolvedValueOnce(answered(text));
       expect(await read(), text).toEqual({ ok: false, code: 'ai_failed', outcome: 'failed', usage: USAGE });
     }
   });
 
-  it('the SDK’s own timeout: the request was SENT — counted, with no tokens', async () => {
+  it('the SDK’s «timeout» BEFORE our deadline is a connection that never opened: not counted, not «the paper is too large»', async () => {
+    // The SDK names ANY fetch failure whose text says «timed out» a timeout — undici's «Connect Timeout
+    // Error», a DNS timeout. Counted as ours, a dead network spent the day's readings and cooled the
+    // document (the T1 review, A1). Only OUR deadline proves the provider had been working.
     sdk.create.mockRejectedValueOnce(new Anthropic.APIConnectionTimeoutError());
-    expect(await read(pdf)).toEqual({ ok: false, code: 'ai_timeout', outcome: 'failed' });
+    expect(await read(pdf)).toEqual({ ok: false, code: 'ai_failed', outcome: 'no_answer' });
+  });
+
+  it('…and whatever is thrown once OUR deadline has passed is our timeout — a bare abort while the body was arriving too', async () => {
+    sdk.create.mockImplementationOnce(
+      (_params: unknown, options: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          // Not the SDK's own class: the provider had answered and the abort cut the body.
+          options.signal.addEventListener('abort', () => reject(new DOMException('This operation was aborted', 'AbortError')));
+        }),
+    );
+    expect(await read(pdf, 40)).toEqual({ ok: false, code: 'ai_timeout', outcome: 'failed' });
   });
 
   it('OUR deadline ends the call where the leash ends — a hung provider is not waited on twice', async () => {
@@ -199,8 +224,23 @@ describe('how a reading ends', () => {
   it('a request the provider would not TAKE — too many pages, a file it cannot open — has its own word, and is not counted', async () => {
     const api = (status: number) => Anthropic.APIError.generate(status, { type: 'error', error: { type: 'x', message: 'x' } }, 'x', new Headers());
     for (const status of [400, 413, 422]) {
+      for (const file of [pdf, photo]) {
+        sdk.create.mockRejectedValueOnce(api(status));
+        expect(await read(file), `${status} ${file.kind}`).toEqual({ ok: false, code: 'ai_rejected', outcome: 'no_answer' });
+      }
+      // A spreadsheet goes as plain TEXT: it has no pages and cannot be a broken file. A 400 there is the
+      // request's shape or the account (a spend limit answers 400 too) — never «upload another file» (A7).
       sdk.create.mockRejectedValueOnce(api(status));
-      expect(await read(pdf), String(status)).toEqual({ ok: false, code: 'ai_rejected', outcome: 'no_answer' });
+      expect(await read(sheet), `${status} sheet`).toEqual({ ok: false, code: 'ai_failed', outcome: 'no_answer' });
     }
+  });
+
+  it('the request’s text is well-formed at the boundary: half an emoji in a long file name is not sent (a lone surrogate is a 400)', () => {
+    const long = `${'я'.repeat(119)}🙂.pdf`;
+    const [, ask] = readContent(pdf, long) as [unknown, { text: string }];
+    expect(ask.text.isWellFormed()).toBe(true);
+    expect(ask.text).toContain(`${'я'.repeat(119)}🙂`);
+    const lone = readContent({ ...sheet, text: 'Name | Qty\n键盘\ud83d | 500' }, 'a.xls')[0] as { text: string };
+    expect(lone.text.isWellFormed()).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ import {
   type LotTotals,
 } from '@/modules/wms/receipts/composition-math';
 import {
+  appliedCode,
   appliedName,
   applyProposal,
   cartonsMixed,
@@ -87,22 +88,33 @@ export function cachedRead(attachmentId: string, now: number = Date.now()): Stor
   try {
     const raw = window.sessionStorage.getItem(cacheKey(attachmentId));
     if (!raw) return null;
-    const kept = JSON.parse(raw) as { v?: number; at?: number; fileName?: string; proposal?: TarkibProposal; today?: ReadToday | null };
+    const kept = JSON.parse(raw) as { v?: number; at?: number; fileName?: string; proposal?: TarkibProposal };
     if (kept.v !== CACHE_VERSION || typeof kept.at !== 'number' || now - kept.at > CACHE_MS || !Array.isArray(kept.proposal?.rows)) {
       window.sessionStorage.removeItem(cacheKey(attachmentId));
       return null;
     }
-    return { attachmentId, fileName: String(kept.fileName ?? ''), at: kept.at, proposal: kept.proposal!, today: kept.today ?? null };
+    // `today` is never kept (see `storeRead`) — a kept reading shows no count.
+    return { attachmentId, fileName: String(kept.fileName ?? ''), at: kept.at, proposal: kept.proposal!, today: null };
   } catch {
     // A private window throws, an old entry does not parse: no cache, a fresh reading.
     return null;
   }
 }
 
+/**
+ * Keeps the PROPOSAL — never `today`. The day's count and, for a reader of
+ * the company's money, the ≈ dollars ride only on an answer that reached the
+ * ledger, for the person the route sent them to. Kept under a key that names
+ * the document and not the viewer, they were printed again for whoever
+ * pressed the button in that tab during the next half hour — after an account
+ * switch (which the owner does to test as another role) a VED read
+ * «≈ $… · 30 kun ≈ $…» with no request made — and the count was half an hour
+ * stale (yesterday's after midnight). The T1 review, B3 = A11.
+ */
 export function storeRead(read: StoredRead): void {
   try {
-    const { attachmentId, ...kept } = read;
-    window.sessionStorage.setItem(cacheKey(attachmentId), JSON.stringify({ v: CACHE_VERSION, ...kept }));
+    const { attachmentId, fileName, at, proposal } = read;
+    window.sessionStorage.setItem(cacheKey(attachmentId), JSON.stringify({ v: CACHE_VERSION, fileName, at, proposal }));
   } catch {
     /* storage refused — the reading simply is not kept */
   }
@@ -116,8 +128,24 @@ export function forgetRead(attachmentId: string): void {
   }
 }
 
-/** A little longer than the server's own leash (150 s) — never shorter, or a paid answer arrives to nobody. */
-export const READ_DEADLINE_MS = 165_000;
+/**
+ * Longer than the server's WHOLE budget for one press — the file from storage
+ * (10 s), its preparation, then the model's leash (150 s) — never shorter, or
+ * a paid answer arrives to nobody and «press again» is a second bill. At
+ * 165 s it was shorter than the 20 + 150 the server could take.
+ */
+export const READ_DEADLINE_MS = 190_000;
+
+/**
+ * Readings in flight, by DOCUMENT — for the whole tab, not for one editor.
+ * «A reading is running» was state of one editor instance: «Bekor qilish»
+ * during the minute and reopening, or lot B's editor reading the file lot A
+ * was still reading (the very case «the second lot ticks its rows from the
+ * reading the first one paid for» exists for), asked the route — and the
+ * day's limit — twice. A second request for a document already being read
+ * waits for the first one's answer.
+ */
+const inFlight = new Map<string, Promise<ReadAnswer>>();
 
 const isAnswer = (value: unknown): value is ReadAnswer => {
   if (typeof value !== 'object' || value === null) return false;
@@ -131,11 +159,15 @@ const isAnswer = (value: unknown): value is ReadAnswer => {
  * deadline and a proxy's error page each come back as a code the editor has
  * words for, so the button always re-enables with a sentence.
  */
-export async function requestTarkibRead(
-  lotId: string,
-  attachmentId: string,
-  deadlineMs: number = READ_DEADLINE_MS,
-): Promise<ReadAnswer> {
+export function requestTarkibRead(lotId: string, attachmentId: string, deadlineMs: number = READ_DEADLINE_MS): Promise<ReadAnswer> {
+  const running = inFlight.get(attachmentId);
+  if (running) return running;
+  const asked = askTarkibRead(lotId, attachmentId, deadlineMs).finally(() => inFlight.delete(attachmentId));
+  inFlight.set(attachmentId, asked);
+  return asked;
+}
+
+async function askTarkibRead(lotId: string, attachmentId: string, deadlineMs: number): Promise<ReadAnswer> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), deadlineMs);
   try {
@@ -187,12 +219,16 @@ export function useProposalWords(): { note: (n: ProposalNote) => string; warning
           return t('read.notes.gross_unused', { value: n.params.value });
         case 'seller_code':
           return t('read.notes.seller_code', { value: n.params.value });
+        case 'paper_code':
+          return t('read.notes.paper_code', { value: n.params.value });
       }
     },
     warning: (w) => {
       switch (w.code) {
         case 'rows_cut':
           return t('read.warnings.rows_cut', { shown: w.params.shown, total: w.params.total });
+        case 'rows_full':
+          return t('read.warnings.rows_full', { shown: w.params.shown });
         case 'text_cut':
           return t('read.warnings.text_cut');
         case 'cells_cut':
@@ -249,6 +285,20 @@ export function TarkibReadDialog({
   onClose: () => void;
 }) {
   const t = useTranslations('tarkib');
+  // The person's ticks, HERE — where the component stays mounted. The Overlay
+  // draws nothing while closed, so the body unmounts on «Yopish»; kept in the
+  // body, every tick was lost on the way to look at the document (the only
+  // link to it is in the editor under the dialog), and the list came back
+  // ticked from scratch — rows the person had excluded, one press from being
+  // applied. Tied to the READING (`at`): a new one starts from its own.
+  const [kept, setKept] = useState<{ at: number; ticked: ReadonlySet<number> } | null>(null);
+  const ticked = read
+    ? kept !== null && kept.at === read.at
+      ? kept.ticked
+      : tickedToBegin(read.proposal)
+        ? new Set(read.proposal.rows.map((_, i) => i))
+        : new Set<number>()
+    : new Set<number>();
   return (
     // Kept MOUNTED and toggled: an Overlay mounted already open closes itself
     // on the frame it appears (its close-on-navigation effect runs on mount).
@@ -260,7 +310,9 @@ export function TarkibReadDialog({
         if (reason === 'route') onClose();
         return false;
       }}
-      closeLabel={t('read.close')}
+      // The backdrop is INERT here (the two reasons above are refused), so it
+      // must not be a second control named «Yopish» in front of the real one.
+      closeLabel={t('read.backdrop')}
       testId="tarkib-read-dialog"
       className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-2xl bg-surface-raised shadow-xl md:inset-x-auto md:bottom-auto md:left-1/2 md:top-1/2 md:max-h-[85dvh] md:w-[44rem] md:-translate-x-1/2 md:-translate-y-1/2 md:rounded-2xl"
     >
@@ -271,6 +323,8 @@ export function TarkibReadDialog({
         <ReadBody
           key={read.at}
           read={read}
+          ticked={ticked}
+          onTick={(next) => setKept({ at: read.at, ticked: next })}
           lot={lot}
           totals={totals}
           existing={existing}
@@ -287,6 +341,8 @@ export function TarkibReadDialog({
 
 function ReadBody({
   read,
+  ticked,
+  onTick,
   lot,
   totals,
   existing,
@@ -297,6 +353,9 @@ function ReadBody({
   onClose,
 }: {
   read: StoredRead;
+  /** The ticked rows — held by the dialog, which outlives a close. */
+  ticked: ReadonlySet<number>;
+  onTick: (next: ReadonlySet<number>) => void;
   lot: ProposalLot;
   totals: LotTotals;
   existing: readonly DraftLine[];
@@ -310,9 +369,6 @@ function ReadBody({
   const words = useProposalWords();
   const { proposal } = read;
   const { rows } = proposal;
-  const [ticked, setTicked] = useState<ReadonlySet<number>>(() =>
-    tickedToBegin(proposal) ? new Set(rows.map((_, i) => i)) : new Set<number>(),
-  );
   const [refusal, setRefusal] = useState<ApplyRefusal | null>(null);
 
   const sums = tickedSums(rows, ticked);
@@ -322,7 +378,7 @@ function ReadBody({
   const [age] = useState(() => Math.floor((Date.now() - read.at) / 60_000));
 
   function pick(next: ReadonlySet<number>) {
-    setTicked(next);
+    onTick(next);
     setRefusal(null);
   }
   function toggle(i: number) {
@@ -372,10 +428,14 @@ function ReadBody({
     <>
       <div className="space-y-1 border-b border-line p-3">
         <p className="text-base font-bold">🤖 {t('read.title')}</p>
-        <p className="truncate text-xs text-ink-500">
-          📄 {read.fileName}
-          {age >= 2 && ` · ${t('read.cachedAt', { minutes: age })}`}
-        </p>
+        <p className="truncate text-xs text-ink-500">📄 {read.fileName}</p>
+        {/* On its OWN line: after a long file name inside `truncate` it was cut
+            off — and it is the only sign that the list is a kept reading. */}
+        {age >= 2 && (
+          <p className="text-xs text-ink-500" data-testid="tarkib-read-age">
+            {t('read.cachedAt', { minutes: age })}
+          </p>
+        )}
         <p className="text-xs font-semibold text-warn">{t('read.check')}</p>
         {read.today && <ReadTodayLine today={read.today} />}
       </div>
@@ -408,7 +468,7 @@ function ReadBody({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="btn-secondary !min-h-9 whitespace-normal px-2 text-xs"
+            className="btn-secondary !min-h-9 whitespace-normal !px-2 !text-xs"
             data-testid="tarkib-read-all"
             onClick={() => pick(new Set(rows.map((_, i) => i)))}
           >
@@ -416,7 +476,7 @@ function ReadBody({
           </button>
           <button
             type="button"
-            className="btn-secondary !min-h-9 whitespace-normal px-2 text-xs"
+            className="btn-secondary !min-h-9 whitespace-normal !px-2 !text-xs"
             data-testid="tarkib-read-none"
             onClick={() => pick(new Set<number>())}
           >
@@ -434,12 +494,14 @@ function ReadBody({
           {rows.map((row, i) => {
             const on = ticked.has(i);
             const name = appliedName(row, lot);
+            // The code the row will be APPLIED with — none for the lot's own good.
+            const code = appliedCode(row, lot);
             const figures = [
               row.pieces !== '' ? `${row.pieces} ${t('piecesShort')}` : null,
               row.cartons !== '' ? `${row.cartons} ${t('cartonsShort')}` : null,
               row.kg !== '' ? `${row.kg} kg` : null,
               row.m3 !== '' ? `${row.m3} m³` : null,
-              row.tnved !== '' ? row.tnved : null,
+              code !== '' ? code : null,
             ].filter((part): part is string => part !== null);
             return (
               <label
@@ -467,14 +529,22 @@ function ReadBody({
                     <span className="block break-words text-xs text-ink-500">{t('read.paperName', { name: row.name })}</span>
                   )}
                   {name.own && <span className="block text-xs text-ink-500">{t('read.ownGood')}</span>}
+                  {name.own && row.tnved !== '' && (
+                    <span className="block break-words text-xs text-ink-500" data-testid="tarkib-read-own-code">
+                      {t('read.ownCode', { code: row.tnved })}
+                    </span>
+                  )}
                   <span className="block break-words text-xs text-ink-700" data-testid="tarkib-read-figures">
                     {figures.length > 0 ? figures.join(' · ') : t('read.noFigures')}
                   </span>
-                  {row.notes.map((n, j) => (
-                    <span key={j} className="block break-words text-xs text-warn">
-                      ⚠ {words.note(n)}
-                    </span>
-                  ))}
+                  {row.notes
+                    // «Whose code this is» is said about a code that is carried; for the lot's own good it is not.
+                    .filter((n) => !(n.code === 'paper_code' && name.own))
+                    .map((n, j) => (
+                      <span key={j} className="block break-words text-xs text-warn">
+                        ⚠ {words.note(n)}
+                      </span>
+                    ))}
                   {row.unsure && <span className="block break-words text-xs text-warn">🤖 {row.unsure}</span>}
                 </span>
               </label>

@@ -344,3 +344,69 @@ describe('a workbook is weighed before it is opened', () => {
     expect(xlsxCellBytes(directory([{ name: 'xl/worksheets/sheet1.xml', size: 0xffffffff }]))).toBe(Number.POSITIVE_INFINITY);
   });
 });
+
+describe('what the T1 review found at the file’s door', () => {
+  const row = (contentType: string, fileName: string, sizeBytes = 1000) => ({ contentType, fileName, sizeBytes });
+
+  it('a macro-enabled workbook (.xlsm) is an Excel file — never «upload an Excel instead» (A4)', async () => {
+    const XLSM = 'application/vnd.ms-excel.sheet.macroEnabled.12';
+    expect(kindOfAttachment(row(XLSM, 'packing.xlsm'))).toEqual({ ok: true, kind: 'sheet' });
+    expect(kindOfAttachment(row('application/octet-stream', 'PACKING.XLSM'))).toEqual({ ok: true, kind: 'sheet' });
+    // …and it is read: the container is the same zip of the same sheets.
+    const body = await workbook((wb) => {
+      wb.addWorksheet('Packing').addRows([
+        ['Name', 'Qty'],
+        ['Мышь', 500],
+      ]);
+    });
+    const out = await prepareFile('sheet', body, { contentType: XLSM });
+    expect(out.ok && out.file.kind === 'sheet' && out.file.text).toContain('Мышь | 500');
+  });
+
+  it('a transparent PNG is flattened onto WHITE — dark text on a black page is a paid reading of nothing (A5)', async () => {
+    // What `convert file.pdf file.png` and «save as picture» write: an alpha channel, the page see-through.
+    const png = await sharp({ create: { width: 40, height: 40, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .png()
+      .toBuffer();
+    const out = await prepareFile('image', png, { contentType: 'image/png' });
+    expect(out.ok).toBe(true);
+    if (!out.ok || out.file.kind !== 'image') throw new Error('not an image');
+    const { data } = await sharp(out.file.data).raw().toBuffer({ resolveWithObject: true });
+    // Every pixel of the see-through page is white (JPEG noise aside), not black.
+    expect(Math.min(...data)).toBeGreaterThan(240);
+  });
+
+  it('a text packing list that BEGINS with «PK» — «PKG NO.», «PKGS» — is a table, not a broken workbook (A6)', async () => {
+    const csv = Buffer.from('PKG NO.,Description,Qty\n1-50,Keyboard,500\n', 'utf8');
+    const out = await prepareFile('sheet', csv, { contentType: 'text/csv' });
+    expect(out.ok && out.file.kind === 'sheet' && out.file.text).toContain('PKG NO. | Description | Qty');
+    // A real workbook still opens as one, and a zip that is no workbook is still «broken».
+    const zipOfNothing = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(40)]);
+    expect(await prepareFile('sheet', zipOfNothing, { contentType: XLSX })).toEqual({ ok: false, error: 'read_broken' });
+  });
+
+  it('a text file is weighed before it is split into a million lines (A9)', async () => {
+    const huge = Buffer.from('a,b\n'.repeat(600_000), 'utf8'); // 2.4 MB of two-cell rows
+    expect(huge.length).toBeGreaterThan(2 * MB);
+    expect(await prepareFile('sheet', huge, { contentType: 'text/csv' })).toEqual({ ok: false, error: 'read_too_large' });
+    // An ordinary CSV of a few thousand rows is far under it.
+    const usual = Buffer.from(`name,qty\n${'Клавиатура проводная,500\n'.repeat(5_000)}`, 'utf8');
+    expect((await prepareFile('sheet', usual, { contentType: 'text/csv' })).ok).toBe(true);
+  });
+
+  it('a cell the workbook reader THROWS on is a code, never an unanswerable «try again» (A10)', async () => {
+    // A number under a date format that is no date — a 13-digit barcode in a date column, «#####» in
+    // Excel: exceljs hands back an Invalid Date and the shared reader's `toISOString()` throws.
+    const body = await workbook((wb) => {
+      const ws = wb.addWorksheet('Packing');
+      ws.addRows([
+        ['Name', 'Barcode'],
+        ['Мышь', 4_607_004_891_694],
+      ]);
+      ws.getCell('B2').numFmt = 'dd.mm.yyyy';
+    });
+    const out = await prepareFile('sheet', body, { contentType: XLSX });
+    // Either it is read (the reader learned the cell) or it is «broken» in words — never a throw.
+    if (!out.ok) expect(out.error).toBe('read_broken');
+  });
+});

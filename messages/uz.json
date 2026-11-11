@@ -5825,7 +5825,7 @@
     "lotFormShown": "Lotda tarkib bor — ro'yxatlarda tarkib nomi ko'rinadi: {name}. Bu yerdagi ruscha nom skladchi yozgan nom, o'zgartirilsa ham ro'yxatlarda tarkib nomi qoladi",
     "read": {
       "button": "Fayldan to'ldirish",
-      "reading": "O'qilmoqda… bir daqiqagacha",
+      "reading": "O'qilmoqda… 2-3 daqiqagacha",
       "hint": "Hujjatni tanlang (bosib belgilang) — AI undagi tovarlarni o'qib, qatorlarni taklif qiladi",
       "title": "Fayldan o'qilgan tovarlar",
       "check": "AI o'qidi — har bir raqamni hujjat bilan solishtiring. Hech narsa saqlanmadi: «Saqlash»ni o'zingiz bosasiz",
@@ -5851,6 +5851,7 @@
       "cartonsMixed": "Ba'zi qatorlarda karobka soni yo'q — tarkibda «aralash»ni tanlang yoki sonini o'zingiz yozing",
       "paperName": "hujjatda: {name}",
       "ownGood": "lotning o'z tovari — nomi lotdagidek qoldirildi",
+      "ownCode": "hujjatdagi {code} kodi yozilmadi — bu lotning o'z tovari: kodi bazadagi (lot xotirasidagi) kod bo'lib qoladi",
       "noFigures": "raqamlar yo'q",
       "apply": "Qo'llash ({n})",
       "append": "Qo'shish ({n})",
@@ -5858,7 +5859,9 @@
       "again": "Qayta o'qish",
       "againConfirm": "Fayl qaytadan o'qiladi — bugungi limitdan yana bitta sarflanadi. Davom etasizmi?",
       "close": "Yopish",
+      "backdrop": "Oyna orqasi",
       "filled": "Fayldan to'ldirildi — har bir raqamni hujjat bilan solishtiring",
+      "filledCartonsHidden": "Hujjatda karobka sonlari bor, lekin tarkib «Aralash karobkalar» rejimida — karobka soni yozilmaydi. Yozish uchun «Alohida karobkalar»ni tanlang.",
       "refuse": {
         "none": "Kamida bitta qatorni belgilang",
         "too_many": "{n} ta belgilandi — tarkibga 20 tagacha tovar sig'adi",
@@ -5872,7 +5875,8 @@
         "dropped": "{field}: «{value}» yozib bo'lmaydi — katak bo'sh qoldirildi",
         "rounded": "{field}: hujjatda {value} — yaxlitlandi",
         "gross_unused": "brutto {value} kg — hamma qatorda bo'lmagani uchun yozilmadi",
-        "seller_code": "sotuvchi kodi: {value} — TNVED emas, katak bo'sh"
+        "seller_code": "sotuvchi kodi: {value} — TNVED emas, katak bo'sh",
+        "paper_code": "TNVED {value} — hujjatdan olingan (sotuvchi yozgan kod). O'zbekiston TN VED bo'yicha tekshiring"
       },
       "fields": {
         "pieces": "dona",
@@ -5882,6 +5886,7 @@
       },
       "warnings": {
         "rows_cut": "Hujjatda {total} ta tovar — faqat birinchi {shown} tasi ko'rsatildi",
+        "rows_full": "O'qish {shown} qatorda to'xtadi — hujjatda bundan ko'p tovar bo'lishi mumkin. Oxirgi qatorlarni hujjat bilan solishtiring",
         "text_cut": "Jadval katta — faqat boshi o'qildi; oxirgi qatorlar va «jami» qatori ko'rinmagan bo'lishi mumkin",
         "cells_cut": "Juda uzun kataklar qisqartirib o'qildi",
         "doc_invoice": "Bu invoysga o'xshaydi: karobka soni va vazn packing listda aniqroq bo'ladi",
@@ -5907,7 +5912,7 @@
         "ai_truncated": "Hujjat juda katta — AI javobi sig'madi. Kamroq sahifa yuklang yoki Excel faylini bering",
         "ai_timeout": "AI o'z vaqtida javob bermadi — hujjat juda katta bo'lishi mumkin. Kamroq sahifa yuklang yoki Excel faylini bering",
         "ai_failed": "AI javob bermadi — birozdan keyin qayta urinib ko'ring yoki qatorlarni qo'lda yozing",
-        "ai_rejected": "AI bu faylni qabul qilmadi (buzilgan yoki sahifasi juda ko'p) — boshqa fayl yuklang",
+        "ai_rejected": "AI so'rovni qabul qilmadi — fayl buzilgan yoki sahifasi juda ko'p bo'lishi mumkin. Boshqa fayl bilan urinib ko'ring; takrorlansa administratorga ayting",
         "read_deadline": "Javob kelmadi — internetni tekshirib, bir-ikki daqiqadan keyin qayta bosing",
         "read_offline": "Serverga ulanib bo'lmadi — internetni tekshiring"
       }

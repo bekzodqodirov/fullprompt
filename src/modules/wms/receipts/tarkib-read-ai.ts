@@ -13,29 +13,43 @@ import { READ_MAX_ROWS, type ReadAnswer } from './tarkib-proposal';
  * TRANSCRIBED. One reader for every kind of file, so «does a reading count»
  * has one answer.
  *
- * The house pattern (`tnved/service.ts suggestTnved`): a deadlined client,
- * structured output, `stop_reason` read before the text, the usage carried
- * beside the answer and on every failure AFTER an answer. Not the bot's
- * intake reader: that one prices a request, has no carton field and is
- * another round's to change.
+ * The house's DOCUMENT reading, as the bot's intake has made it since
+ * docs/FAYL-OQISH.md §3 (`calc/intake-ai.ts`): STREAMED, at effort `medium`,
+ * with room for 32 000 tokens, no SDK retry, one deadline. A forty-row
+ * transcription of a PDF or a photograph is that shape of call, and the
+ * shape this file first copied — `suggestTnved`'s: one good, four fields,
+ * not streamed, the provider's default effort, the thinking inside 16 000
+ * tokens — is the one that document says came back EMPTY on production: the
+ * thinking spent the leash the rows needed. Here each such ending also costs
+ * one of the day's readings and ten minutes of cooling (the T1 review, A3).
+ * Not shared code with the intake reader: that one prices a request, salvages
+ * a cut answer's goods and is another round's to change.
  *
  * It never throws: every way a reading can end is a CODE with its own usage
  * rule, because the caller has a reserved ledger row to settle either way —
  *
  *   ai_refused / ai_truncated / ai_failed  the model ANSWERED and the answer
  *        was no good → `failed`, with its tokens, counted;
- *   ai_timeout    OUR deadline ran out after the request was sent → `failed`
- *        with no tokens, counted: the provider had been working, and an
+ *   ai_timeout    OUR deadline ran out → `failed` with no tokens, counted:
+ *        only our own deadline proves the provider had been working, and an
  *        uncounted timeout can be pressed for ever;
  *   ai_failed (no usage) / ai_rejected    the call never ran — a refused key,
- *        a rate limit, a dead network, a request the provider would not take
- *        → `no_answer`, not counted: a dead key must not spend the day.
+ *        a rate limit, an overload, a connection that never opened, a
+ *        request the provider would not take → `no_answer`, not counted: a
+ *        dead key or a dead network must not spend the day.
  */
 
-/** How long one reading may take. The browser waits a little longer than this, never less. */
+/** How long one reading may take. The browser waits longer than the server's whole budget, never less. */
 export const READ_LEASH_MS = 150_000;
-/** The answer's room. The model THINKS inside `max_tokens`; forty rows of JSON are a few thousand. */
-const READ_MAX_TOKENS = 16_000;
+/**
+ * The answer's room. The model THINKS inside `max_tokens`; streamed, the
+ * clock and not this cap is what stops a long paper (`INTAKE_MAX_TOKENS`).
+ */
+export const READ_MAX_TOKENS = 32_000;
+/** How hard the model thinks before it writes: a transcription a person checks — `INTAKE_EFFORT`'s reason. */
+export const READ_EFFORT = 'medium' as const;
+/** The stops that cut an answer at a SIZE: the cap, or the context window filling. */
+const SIZE_STOPS: ReadonlySet<string> = new Set(['max_tokens', 'model_context_window_exceeded']);
 
 export type ReadFailure = 'ai_refused' | 'ai_truncated' | 'ai_failed' | 'ai_timeout' | 'ai_rejected';
 
@@ -141,7 +155,10 @@ const ASK = 'Перепиши таблицу товаров из этого до
 /** What the model is sent for one prepared file — exported for the test, which reads the request itself. */
 export function readContent(file: PreparedFile, fileName: string): Anthropic.ContentBlockParam[] {
   // The customer's own file name, flattened: «Packing list 0511.xlsx» says what the paper is.
-  const named = fileName.replace(/\s+/g, ' ').trim().slice(0, 120);
+  // Cut by CODE POINTS and made well-formed: a bare `.slice` leaves half an
+  // emoji, and a lone surrogate in a request is a 400 that would be worded as
+  // the FILE's fault (the house's own finding, `intake-ai.ts`).
+  const named = [...fileName.replace(/\s+/g, ' ').trim()].slice(0, 120).join('').toWellFormed();
   const ask = named ? `Файл: ${named}\n${ASK}` : ASK;
   if (file.kind === 'pdf') {
     return [
@@ -156,40 +173,50 @@ export function readContent(file: PreparedFile, fileName: string): Anthropic.Con
     ];
   }
   const cut = file.rowsCut ? '\n(Таблица показана не полностью — только начало.)' : '';
-  return [{ type: 'text', text: `Документ — таблица, текстом:\n${file.text}${cut}\n\n${ask}` }];
+  // `.toWellFormed()`: a cell of an .xls is raw UTF-16 and may hold a lone surrogate.
+  return [{ type: 'text', text: `Документ — таблица, текстом:\n${file.text}${cut}\n\n${ask}`.toWellFormed() }];
 }
 
 /**
  * Read one prepared file. `leashMs` is a parameter for the test alone — the
  * deadline is the rule it proves, and nobody waits 150 seconds to prove it.
  *
- * ONE deadline for the whole call, retry included. The client's own
- * `timeout` is per ATTEMPT and a timed-out attempt is retried, so a provider
- * that hangs would hold this reading for twice the leash — longer than the
- * browser waits, with the second attempt's answer delivered to nobody and
- * paid for. The signal ends the call where the leash ends; a quick failure
- * (a 529, a reset connection) still gets its one retry inside it.
+ * ONE deadline, and no retry but the person's own. The SDK's retry is not
+ * inside any leash: on a 429 or a 529 that carries `retry-after` it sleeps
+ * the WHOLE of it — uncapped, deaf to the signal — and only then notices the
+ * abort, so a request the provider refused in milliseconds came back as OUR
+ * timeout minutes later: counted against the day, cooled, and worded as «the
+ * document is too large» (the T1 review, A2; the intake's rule since PR #141).
+ * With `maxRetries: 0` a refusal is `no_answer` at once and the person
+ * presses again.
+ *
+ * STREAMED, for the reason every long call is: a non-streamed request holds
+ * one idle connection for the whole reading, and whatever sits between the
+ * server and the provider may drop it. `finalMessage()` is the same Message
+ * a non-streamed call returns.
  */
 export async function readTarkibDocument(
   file: PreparedFile,
   opts: { fileName: string; leashMs?: number },
 ): Promise<ReadResult> {
   const leashMs = opts.leashMs ?? READ_LEASH_MS;
-  const client = new Anthropic({ timeout: leashMs, maxRetries: 1 });
+  const client = new Anthropic({ timeout: leashMs, maxRetries: 0 });
   const deadline = AbortSignal.timeout(leashMs);
   const started = Date.now();
   let usage: ModelTokens | undefined;
   try {
-    const response = await client.messages.create(
-      {
-        model: ANALYST_MODEL,
-        max_tokens: READ_MAX_TOKENS,
-        system: READ_SYSTEM,
-        output_config: { format: { type: 'json_schema', schema: ANSWER_SCHEMA } },
-        messages: [{ role: 'user', content: readContent(file, opts.fileName) }],
-      },
-      { signal: deadline },
-    );
+    const response = await client.messages
+      .stream(
+        {
+          model: ANALYST_MODEL,
+          max_tokens: READ_MAX_TOKENS,
+          system: READ_SYSTEM,
+          output_config: { effort: READ_EFFORT, format: { type: 'json_schema', schema: ANSWER_SCHEMA } },
+          messages: [{ role: 'user', content: readContent(file, opts.fileName) }],
+        },
+        { signal: deadline },
+      )
+      .finalMessage();
     // Billed as the model the call was MADE with — the constant, never the id
     // the provider echoes: the ledger prices a row by it (`calc/ai-press.ts`).
     usage = {
@@ -204,9 +231,10 @@ export async function readTarkibDocument(
       return { ok: false, code: 'ai_refused', outcome: 'failed', usage };
     }
     // A cut-off answer is NAMED: half a JSON document is «unreadable» below
-    // too, but the cause — and the cure, fewer pages — are different.
-    if (response.stop_reason === 'max_tokens') {
-      logger.warn({ ...spent, ms: ms() }, '[tarkib-read] the answer was cut at max_tokens');
+    // too, but the cause — and the cure, fewer pages — are different. The
+    // context window filling is the same cut by another name.
+    if (response.stop_reason !== null && SIZE_STOPS.has(response.stop_reason)) {
+      logger.warn({ ...spent, ms: ms() }, '[tarkib-read] the answer was cut at its size');
       return { ok: false, code: 'ai_truncated', outcome: 'failed', usage };
     }
     const text = response.content.find((block) => block.type === 'text')?.text ?? '';
@@ -221,10 +249,15 @@ export async function readTarkibDocument(
     logger.info({ ...spent, rows: answer.rows.length, ms: ms() }, '[tarkib-read] reading');
     return { ok: true, answer, usage };
   } catch (err) {
-    // The SDK's own timeout, or our deadline ending a retry: either way the
-    // request had been SENT and the provider had been working on it.
-    const timedOut =
-      err instanceof Anthropic.APIConnectionTimeoutError || (err instanceof Anthropic.APIUserAbortError && deadline.aborted);
+    // OUR deadline is the only timeout that proves the provider was working.
+    // The SDK calls ANY fetch failure whose text says «timed out» a timeout —
+    // a connection that never opened (undici's «Connect Timeout Error»), a
+    // DNS timeout — and counted as ours, a dead network spent the day's
+    // readings and cooled the document with «the paper is too large». And
+    // the other way round: a deadline that lands while the answer's BODY is
+    // arriving throws a bare abort, which read «never answered» about a call
+    // the provider had billed (the T1 review, A1).
+    const timedOut = deadline.aborted;
     const status = err instanceof Anthropic.APIError ? err.status : undefined;
     logger.warn(
       { err: err instanceof Error ? err.message : String(err), status, timedOut, kind: file.kind, ms: Date.now() - started },
@@ -236,8 +269,14 @@ export async function readTarkibDocument(
     if (timedOut) return { ok: false, code: 'ai_timeout', outcome: 'failed' };
     // The provider would not take the request itself — too many pages, a
     // file it cannot open: pressing again changes nothing, so it has its own
-    // word. Nothing was generated either way.
-    if (status === 400 || status === 413 || status === 422) return { ok: false, code: 'ai_rejected', outcome: 'no_answer' };
+    // word. Only for a request that CARRIED a file: a spreadsheet goes as
+    // plain text, has no pages and cannot be a broken file — a 400 there is
+    // the request's shape or the account (a spend limit answers 400 too), and
+    // «upload another file» would be said about every file on that day.
+    // Nothing was generated either way.
+    if (file.kind !== 'sheet' && (status === 400 || status === 413 || status === 422)) {
+      return { ok: false, code: 'ai_rejected', outcome: 'no_answer' };
+    }
     return { ok: false, code: 'ai_failed', outcome: 'no_answer' };
   }
 }

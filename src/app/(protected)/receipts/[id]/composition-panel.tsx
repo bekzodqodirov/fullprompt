@@ -118,7 +118,17 @@ type Refusal = {
  * saved. Kept in the draft, so a phone that reloaded the page mid-check still
  * says the figures are a machine's reading.
  */
-type FilledFrom = { attachmentId: string; single: boolean; warnings: ProposalWarning[] };
+type FilledFrom = {
+  attachmentId: string;
+  single: boolean;
+  warnings: ProposalWarning[];
+  /**
+   * Which weight the kg cells hold — said in the dialog, and gone with it:
+   * after «Qo'llash» (and after the reload the draft exists for) nothing told
+   * the person that the kilos below are NET.
+   */
+  weightKind?: 'gross' | 'net' | null;
+};
 
 /**
  * A photographed packing list is read by the model afterwards: the warehouse
@@ -549,6 +559,7 @@ function CompositionEditor({
           single: saved.filled.single === true,
           // Only what this build can word — the draft may be an older build's.
           warnings: saved.filled.warnings.filter(isProposalWarning),
+          weightKind: saved.filled.weightKind === 'gross' || saved.filled.weightKind === 'net' ? saved.filled.weightKind : null,
         });
       }
     } catch {
@@ -719,6 +730,7 @@ function CompositionEditor({
       attachmentId: read.attachmentId,
       single: read.proposal.lotsOnReceipt <= 1,
       warnings: read.proposal.warnings,
+      weightKind: read.proposal.weightKind,
     });
   }
 
@@ -857,6 +869,15 @@ function CompositionEditor({
       {filled && (
         <div className="space-y-0.5 rounded-lg bg-warn/10 p-2 text-xs text-warn" data-testid="tarkib-filled">
           <p className="font-semibold">🤖 {t('read.filled')}</p>
+          {filled.weightKind === 'net' && <p className="break-words font-semibold">{t('read.weightNet')}</p>}
+          {/* The paper's carton counts were applied, and «aralash» posts none:
+              the cells are invisible in that mode, so say it rather than lose
+              them without a word. */}
+          {mode === 'mixed' && !single && lines.some((l) => l.cartons.trim() !== '') && (
+            <p className="break-words font-semibold" data-testid="tarkib-filled-cartons">
+              {t('read.filledCartonsHidden')}
+            </p>
+          )}
           {filled.warnings.map((w, i) => (
             <p key={i} className="break-words">
               ⚠ {proposalWords.warning(w)}

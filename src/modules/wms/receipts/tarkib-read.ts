@@ -6,7 +6,7 @@ import { isUuidShaped } from '../../platform/audit/fields';
 import { readWithin } from '../../platform/files/read-within';
 import { getStorage } from '../../platform/files/storage';
 import { logger } from '../../platform/logger';
-import { pressToday, reservePress, settlePress, type PressOutcome, type PressToday } from '../calc/ai-press';
+import { pressLimit, pressToday, reservePress, settlePress, type PressOutcome, type PressToday } from '../calc/ai-press';
 import { companyMoneySight } from '../finance/scope';
 import { CompositionError, compositionDoor, isPaperDocument, type CompositionActor } from './lot-composition';
 import { kindOfAttachment, prepareFile } from './tarkib-file';
@@ -34,7 +34,9 @@ import { readTarkibDocument, type ReadResult } from './tarkib-read-ai';
  *   2. the file is a paper of THIS lot's prixod (never a posted receipt id),
  *      and not a receive-time carton photo — the save's two document rules;
  *   3. its kind and size, from the ROW — a video is never loaded;
- *   4. a key on the server (`ai_not_configured` — and no ledger row);
+ *   4. a key on the server (`ai_not_configured` — and no ledger row), and
+ *      the feature not switched off (`ai_off`: reading one setting costs less
+ *      than fifteen megabytes from storage);
  *   5. the document is not cooling off after a reading that ran out of time
  *      or of room;
  *   6. the bytes, and the file made ready for the model — a workbook that is
@@ -95,8 +97,16 @@ export type TarkibReadAnswer =
       today?: PressToday;
     };
 
-/** How long storage may take to hand over the file before the reading is given up. */
-const FILE_READ_MS = 20_000;
+/**
+ * How long storage may take to hand over the file before the reading is given
+ * up. Part of the SERVER's whole budget for one press — this, the file's
+ * preparation, then the model's leash (`READ_LEASH_MS`) — which the browser
+ * must outwait (`READ_DEADLINE_MS`; `tarkib-read-wire.test.ts` holds the
+ * three numbers against each other): an answer that arrives after the
+ * browser gave up is a paid reading delivered to nobody, with «press again»
+ * on the screen.
+ */
+export const FILE_READ_MS = 10_000;
 
 /**
  * Ten minutes during which a document whose reading ran out of time
@@ -190,6 +200,10 @@ export async function readTarkibFile(
 
   // A keyless server says so before the ledger: nothing counted, nothing read.
   if (!aiConfigured()) return { ok: false, error: 'ai_not_configured' };
+  // Switched off in settings (limit 0): said HERE, before the bytes — the
+  // reservation below would say it too, but only after the file had been
+  // loaded and a workbook parsed for a press that could never run.
+  if ((await pressLimit('tarkib')) <= 0) return { ok: false, error: 'ai_off', today: await readingsToday(actor) };
   if (cooling.left(file.id) > 0) return { ok: false, error: 'cooling' };
 
   let body: Buffer;
@@ -201,6 +215,11 @@ export async function readTarkibFile(
   }
   const prepared = await prepareFile(kind.kind, body, file);
   if (!prepared.ok) return { ok: false, error: prepared.error };
+  // A fact of the PRIXOD, not of the reading — read before the press is
+  // reserved, so nothing of ours stands between the model's answer and the
+  // person: a packing list covers the shipment and a tarkib is one lot's, and
+  // with more than one lot the dialog ticks nothing to begin with.
+  const [lots] = await db.select({ n: count() }).from(receiptLots).where(eq(receiptLots.receiptId, door.lot.receiptId));
 
   // Counted BEFORE it spends: at the day's limit the model is never asked.
   const pass = await reservePress({ kind: 'tarkib', staffId: actor.id, lotId, batchId: null });
@@ -232,9 +251,6 @@ export async function readTarkibFile(
   if (built.rows.length === 0) {
     return { ok: false, error: 'read_no_goods', detail: built.notes ?? undefined, today: await readingsToday(actor) };
   }
-  // A packing list covers the shipment and a tarkib is one lot's: with more
-  // than one lot on the prixod the dialog ticks nothing to begin with.
-  const [lots] = await db.select({ n: count() }).from(receiptLots).where(eq(receiptLots.receiptId, door.lot.receiptId));
   return {
     ok: true,
     proposal: { ...built, lotsOnReceipt: Number(lots?.n ?? 1) },
