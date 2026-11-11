@@ -40249,6 +40249,7 @@
     "dropped": [
      {
       "text": "TOTAL | 350 | 270 | 1.8",
+      "name": "TOTAL",
       "why": "total"
      }
     ]
@@ -40368,6 +40369,7 @@
     "dropped": [
      {
       "text": "TOTAL 15 CTNS | 300 | 150 | 1.2",
+      "name": "TOTAL 15 CTNS",
       "why": "total"
      }
     ]
@@ -40413,6 +40415,7 @@
     "dropped": [
      {
       "text": "Итого по счету | 300 | 150 | 1.2",
+      "name": "Итого по счету",
       "why": "total"
      }
     ]
@@ -40461,6 +40464,7 @@
     "dropped": [
      {
       "text": "Umumiy | 300 | 150 | 1.2",
+      "name": "Umumiy",
       "why": "total"
      }
     ]
@@ -40509,6 +40513,7 @@
     "dropped": [
      {
       "text": "Umumiy: | 300 | 150 | 1.2",
+      "name": "Umumiy:",
       "why": "total"
      }
     ]
@@ -40557,6 +40562,7 @@
     "dropped": [
      {
       "text": "Итог | 300 | 150 | 1.2",
+      "name": "Итог",
       "why": "total"
      }
     ]
@@ -40605,6 +40611,7 @@
     "dropped": [
      {
       "text": "Итог: | 300 | 150 | 1.2",
+      "name": "Итог:",
       "why": "total"
      }
     ]
@@ -40653,6 +40660,7 @@
     "dropped": [
      {
       "text": "Общий итог | 300 | 150 | 1.2",
+      "name": "Общий итог",
       "why": "total"
      }
     ]
@@ -40701,6 +40709,7 @@
     "dropped": [
      {
       "text": "Жами | 300 | 150 | 1.2",
+      "name": "Жами",
       "why": "total"
      }
     ]
@@ -40749,6 +40758,7 @@
     "dropped": [
      {
       "text": "Жами: | 300 | 150 | 1.2",
+      "name": "Жами:",
       "why": "total"
      }
     ]
@@ -40797,6 +40807,7 @@
     "dropped": [
      {
       "text": "Умумий | 300 | 150 | 1.2",
+      "name": "Умумий",
       "why": "total"
      }
     ]
@@ -40845,6 +40856,7 @@
     "dropped": [
      {
       "text": "Sum | 300 | 150 | 1.2",
+      "name": "Sum",
       "why": "total"
      }
     ]
@@ -40921,14 +40933,17 @@
     "dropped": [
      {
       "text": "Куртка женская Итог | 300 | 150 | 1.2",
+      "name": "Куртка женская Итог",
       "why": "subtotal"
      },
      {
       "text": "Брюки Итог | 50 | 20 | 0.2",
+      "name": "Брюки Итог",
       "why": "subtotal"
      },
      {
       "text": "Общий итог | 350 | 170 | 1.4",
+      "name": "Общий итог",
       "why": "total"
      }
     ]
@@ -41174,6 +41189,7 @@
     "dropped": [
      {
       "text": "Made in China",
+      "name": "Made in China",
       "why": "footer"
      }
     ]
@@ -41219,6 +41235,7 @@
     "dropped": [
      {
       "text": "Shipping mark: N/M",
+      "name": "Shipping mark: N/M",
       "why": "footer"
      }
     ]
@@ -41264,6 +41281,7 @@
     "dropped": [
      {
       "text": "Signature:",
+      "name": "Signature:",
       "why": "footer"
      }
     ]
@@ -41309,6 +41327,7 @@
     "dropped": [
      {
       "text": "Remarks: 30 cartons",
+      "name": "Remarks: 30 cartons",
       "why": "footer"
      }
     ]
@@ -41354,6 +41373,7 @@
     "dropped": [
      {
       "text": "Продавец: ____",
+      "name": "Продавец: ____",
       "why": "footer"
      }
     ]
@@ -41423,6 +41443,7 @@
     "dropped": [
      {
       "text": "Remarks: 30 cartons",
+      "name": "Remarks: 30 cartons",
       "why": "footer"
      }
     ]
@@ -41467,6 +41488,7 @@
     "dropped": [
      {
       "text": "Men jacket",
+      "name": "Men jacket",
       "why": "footer"
      }
     ]
@@ -41522,10 +41544,12 @@
     "dropped": [
      {
       "text": "合计 | 300 | 10 | 150 | 1.2",
+      "name": "合计",
       "why": "total"
      },
      {
       "text": "制表人: 王",
+      "name": "制表人: 王",
       "why": "footer"
      }
     ]
@@ -41575,19 +41599,22 @@
     "dropped": [
      {
       "text": "Шарф",
+      "name": "Шарф",
       "why": "footer"
      },
      {
       "text": "Перчатки",
+      "name": "Перчатки",
       "why": "footer"
      },
      {
       "text": "Шапка",
+      "name": "Шапка",
       "why": "footer"
      }
     ]
    },
-   "said": "a list with figures on its first lines only: the figure-less tail is not taken as goods — and every one of its names is in `dropped`, shown to the model and the seller",
+   "said": "a list with figures on its first lines only: the figure-less tail is not taken as goods — and every one of its names is in `dropped`: the deal import shows each with «＋», the paste keeps them as lines, and the bot's collector owes them to the model and the receipt (FAYL-OQISH §5.5)",
    "why": "reader-5.5-footer: «a partial-figure names list, shown»",
    "source": "fayl-oqish P-reader-B",
    "weight": "defect"
@@ -41637,10 +41664,12 @@
     "dropped": [
      {
       "text": "TOTAL | 300 | 150 | 1.2",
+      "name": "TOTAL",
       "why": "total"
      },
      {
       "text": "Seller signature: | stamp",
+      "name": "Seller signature:",
       "why": "footer"
      }
     ]
@@ -42163,7 +42192,8 @@
       {
        "name": "Ladies jacket",
        "quantity": 300,
-       "amount": 1350
+       "amount": 1350,
+       "unit": null
       }
      ],
      "count": 1
@@ -42689,6 +42719,1264 @@
    "why": "xlsxN-12",
    "source": "fayl-oqish P-reader-B",
    "weight": "defect"
+  },
+  {
+   "id": "c3119",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Кол-во мест, шт",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во | Кол-во мест, шт»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3120",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Кол-во коробок, шт",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во | Кол-во коробок, шт»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3121",
+   "input": [
+    [
+     "Наименование",
+     "Soni",
+     "Karobka soni, ta",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Soni | Karobka soni, ta»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3122",
+   "input": [
+    [
+     "Наименование",
+     "Soni",
+     "Joy soni, dona",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Soni | Joy soni, dona»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3123",
+   "input": [
+    [
+     "Наименование",
+     "Qty",
+     "Cartons (pcs)",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Qty | Cartons (pcs)»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3124",
+   "input": [
+    [
+     "Наименование",
+     "Qty",
+     "No. of packages, pcs",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Qty | No. of packages, pcs»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3125",
+   "input": [
+    [
+     "Наименование",
+     "Количество",
+     "Упаковок, шт",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Количество | Упаковок, шт»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3126",
+   "input": [
+    [
+     "Наименование",
+     "Qty",
+     "Total Cartons Qty",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Qty | Total Cartons Qty»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3127",
+   "input": [
+    [
+     "Наименование",
+     "QTY (PCS)",
+     "TOTAL CTN QTY",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«QTY (PCS) | TOTAL CTN QTY»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3128",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Всего мест, шт",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     15,
+     150
+    ],
+    [
+     "Брюки",
+     200,
+     10,
+     90
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": 200,
+       "unit": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во | Всего мест, шт»: the plain count is the pieces — a header naming a package never beats one that names none, whatever unit or total word it carries",
+   "why": "review break-qty-rank (§5.10): the package rank before the total word and the unit",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3129",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     100,
+     20
+    ],
+    [
+     "Брюки",
+     200,
+     null
+    ],
+    [
+     "Итого по товарам",
+     300,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": [
+     {
+      "text": "Итого по товарам | 300 | 50",
+      "name": "Итого по товарам",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Итого по товарам» with one weight left blank: a total label, dropped — never a third good doubling the count",
+   "why": "review break-named-total-window-nan",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3130",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     100,
+     20
+    ],
+    [
+     "Брюки",
+     200,
+     null
+    ],
+    [
+     "Итого по разделу Одежда",
+     300,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": [
+     {
+      "text": "Итого по разделу Одежда | 300 | 50",
+      "name": "Итого по разделу Одежда",
+      "why": "subtotal"
+     }
+    ]
+   },
+   "said": "1C’s «Итого по разделу …» with one weight blank: a blank adds nothing to the Σ, as Excel’s SUM; the count agrees, so it is the subtotal",
+   "why": "review break-named-total-window-nan",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3131",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "Amount"
+    ],
+    [
+     "Jacket",
+     100,
+     20,
+     1000
+    ],
+    [
+     "Pants",
+     200,
+     null,
+     2000
+    ],
+    [
+     "TOTAL FOB NINGBO",
+     300,
+     50,
+     3000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": [
+     {
+      "text": "TOTAL FOB NINGBO | 300 | 50 | 3000",
+      "name": "TOTAL FOB NINGBO",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL FOB NINGBO»: an Incoterm names its place, and a total of nothing else is a total label, whatever the blank G.W. does to the Σ",
+   "why": "review break-named-total-window-nan",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3132",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Раздел 1: Одежда",
+     null,
+     null
+    ],
+    [
+     "Куртка",
+     100,
+     50
+    ],
+    [
+     "Брюки",
+     200,
+     80
+    ],
+    [
+     "Итого по разделу Одежда",
+     300,
+     130
+    ],
+    [
+     "Раздел 2: Обувь",
+     null,
+     null
+    ],
+    [
+     "Ботинки",
+     50,
+     40
+    ],
+    [
+     "Итого по разделу Обувь",
+     50,
+     40
+    ],
+    [
+     "Всего",
+     350,
+     170
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Раздел 1: Одежда"
+      },
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      },
+      {
+       "name": "Раздел 2: Обувь"
+      },
+      {
+       "name": "Ботинки"
+      }
+     ],
+     "count": 5
+    },
+    "dropped": [
+     {
+      "text": "Итого по разделу Одежда | 300 | 130",
+      "name": "Итого по разделу Одежда",
+      "why": "subtotal"
+     },
+     {
+      "text": "Итого по разделу Обувь | 50 | 40",
+      "name": "Итого по разделу Обувь",
+      "why": "subtotal"
+     },
+     {
+      "text": "Всего | 350 | 170",
+      "name": "Всего",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "a sectioned list: a figure-less section heading is no line of the Σ, so each «Итого по разделу …» is its section’s subtotal (the headings stay, V7)",
+   "why": "review break-named-total-window-nan",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3133",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Weight"
+    ],
+    [
+     "TOTAL 5W-30 engine oil 4L",
+     100,
+     400
+    ],
+    [
+     "TOTAL 10W-40",
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL 5W-30 engine oil 4L"
+      },
+      {
+       "name": "TOTAL 10W-40"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": []
+   },
+   "said": "«TOTAL 10W-40» is a TOTAL motor oil: «10W» is a model number, never the «W» of «G.W.»",
+   "why": "review break-label-only-qualifier-letters",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3134",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni"
+    ],
+    [
+     "Bo‘yoq",
+     5
+    ],
+    [
+     "Lak",
+     10
+    ],
+    [
+     "Umumiy maqsadli lak",
+     15
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Bo‘yoq"
+      },
+      {
+       "name": "Lak"
+      },
+      {
+       "name": "Umumiy maqsadli lak"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "«Umumiy maqsadli lak» whose 15 is 5 + 10: a varnish, kept — «umumiy» opens no subtotal",
+   "why": "review break-c-window-wider (§5.4 Kept list)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3135",
+   "input": [
+    [
+     "Description",
+     "Qty"
+    ],
+    [
+     "Дрель ударная",
+     5
+    ],
+    [
+     "Шуруповёрт",
+     10
+    ],
+    [
+     "TOTAL cordless drill TDLI20012",
+     15
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Дрель ударная"
+      },
+      {
+       "name": "Шуруповёрт"
+      },
+      {
+       "name": "TOTAL cordless drill TDLI20012"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "a TOTAL Tools drill whose 15 is 5 + 10: kept — the Latin «TOTAL» is a brand as often as a total, and only a subtotal’s shape lets the Σ drop a row",
+   "why": "review break-c-window-wider (§5.4 Kept list)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3136",
+   "input": [
+    [
+     "Description",
+     "Qty"
+    ],
+    [
+     "Engine oil 1L",
+     10
+    ],
+    [
+     "Engine oil 4L",
+     10
+    ],
+    [
+     "TOTAL QUARTZ 9000 5W-40",
+     20
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Engine oil 1L"
+      },
+      {
+       "name": "Engine oil 4L"
+      },
+      {
+       "name": "TOTAL QUARTZ 9000 5W-40"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "«TOTAL QUARTZ 9000 5W-40» whose 20 is 10 + 10: an oil, kept",
+   "why": "review break-c-window-wider (§5.4 Kept list)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3137",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Drill red",
+     100,
+     50,
+     0.4
+    ],
+    [
+     "Drill blue",
+     200,
+     100,
+     0.8
+    ],
+    [
+     "TOTAL cordless drill",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Drill red"
+      },
+      {
+       "name": "Drill blue"
+      },
+      {
+       "name": "TOTAL cordless drill"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 300,
+    "volumeM3": 2.4,
+    "dropped": []
+   },
+   "said": "one drill in three colours, proportional figures: the TOTAL drill is the third colour, kept, and the Σ counts it",
+   "why": "review break-c-window-wider (§5.4 Kept list)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3138",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     100,
+     20
+    ],
+    [
+     "Брюки",
+     200,
+     30
+    ],
+    [
+     "Итого по группе Одежда",
+     300,
+     50
+    ],
+    [
+     "Носки",
+     10,
+     1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка"
+      },
+      {
+       "name": "Брюки"
+      },
+      {
+       "name": "Носки"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": [
+     {
+      "text": "Итого по группе Одежда | 300 | 50",
+      "name": "Итого по группе Одежда",
+      "why": "subtotal"
+     }
+    ]
+   },
+   "said": "1C’s «Итого по группе …» opens as a subtotal does: dropped by the Σ, and the next good is a good",
+   "why": "review break-c-window-wider (the CORE-first subtotal)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3139",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     100,
+     20
+    ],
+    [
+     "Pants",
+     200,
+     30
+    ],
+    [
+     "Total jackets and pants",
+     300,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      },
+      {
+       "name": "Total jackets and pants"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "CHOSEN ANSWER, written down: a row OPENING with the Latin «Total» and naming goods is kept even when its figures are the Σ — the same shape as a TOTAL Tools «TOTAL cordless drill»; an English subtotal ends with its word («Jackets Total») or is a label («TOTAL», «TOTAL FOB …»)",
+   "why": "review break-c-window-wider: the trade, stated",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3140",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     1,
+     "Jacket",
+     100,
+     120
+    ],
+    [
+     2,
+     "Pants",
+     100,
+     80
+    ],
+    [
+     "TOTAL",
+     null,
+     200,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 200,
+    "dropped": [
+     {
+      "text": "TOTAL | 200 | 200",
+      "name": "",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL» in the «No.» column, the name empty: named in `dropped` like any total row",
+   "why": "review break-empty-name-total (§5.4: every dropped row is named)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3141",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     1,
+     "Jacket",
+     100,
+     120
+    ],
+    [
+     2,
+     "Pants",
+     100,
+     80
+    ],
+    [
+     null,
+     null,
+     200,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 200,
+    "dropped": [
+     {
+      "text": "200 | 200",
+      "name": "",
+      "why": "subtotal"
+     }
+    ]
+   },
+   "said": "a row of figures alone that are the Σ: a total, named in `dropped`",
+   "why": "review break-empty-name-total (§5.4: every dropped row is named)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3143",
+   "input": [
+    [
+     "Description",
+     "Qty"
+    ],
+    [
+     "Toothpaste",
+     null
+    ],
+    [
+     "Colgate Total",
+     100
+    ],
+    [
+     "Colgate Total",
+     100
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Toothpaste"
+      },
+      {
+       "name": "Colgate Total"
+      },
+      {
+       "name": "Colgate Total"
+      }
+     ],
+     "count": 3
+    },
+    "dropped": []
+   },
+   "said": "two «Colgate Total» lines with the same figures under a section heading: two lines — a figure-less heading is no line of the Σ, so the twin guard still sees ONE good above",
+   "why": "review break-named-total-window-nan (the heading leaves the window)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3144",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Кабель",
+     100,
+     "1,250"
+    ],
+    [
+     "Кружка",
+     200,
+     30
+    ],
+    [
+     "Итого по разделу Посуда",
+     300,
+     1280
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "quantity": 100,
+       "weightKg": null,
+       "note": "vazn «1,250» — aniq emas"
+      },
+      {
+       "name": "Кружка",
+       "quantity": 200,
+       "weightKg": 30
+      }
+     ],
+     "count": 2
+    },
+    "dropped": [
+     {
+      "text": "Итого по разделу Посуда | 300 | 1280",
+      "name": "Итого по разделу Посуда",
+      "why": "subtotal"
+     }
+    ]
+   },
+   "said": "an unread «1,250» kg poisons its own kind only: the count agrees, so «Итого по разделу Посуда» is the subtotal, never a third good",
+   "why": "review break-named-total-window-nan («only an unread figure poisons its kind»)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3145",
+   "input": [
+    [
+     "Description",
+     "QTY (PAIRS)",
+     null,
+     "G.W. (KG)"
+    ],
+    [
+     null,
+     "PER CTN",
+     "TOTAL",
+     null
+    ],
+    [
+     "Плитка",
+     12,
+     120,
+     300
+    ],
+    [
+     "Item 2",
+     10,
+     50,
+     200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Плитка",
+       "quantity": 120,
+       "unit": "pairs"
+      },
+      {
+       "name": "Item 2",
+       "quantity": 50,
+       "unit": "pairs"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": []
+   },
+   "said": "a two-row header’s «PER CTN | TOTAL» line has its total word and no figure: a header, never named in `dropped` as a total row",
+   "why": "review break-empty-name-total (said only with figures)",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -77074,6 +78362,7 @@
     "dropped": [
      {
       "text": "Beneficiary: YIWU HUAXIN CO LTD",
+      "name": "Beneficiary: YIWU HUAXIN CO LTD",
       "why": "footer"
      }
     ]
@@ -77140,10 +78429,12 @@
     "dropped": [
      {
       "text": "TOTAL | 300 | 150 | 1.2",
+      "name": "TOTAL",
       "why": "total"
      },
      {
       "text": "YIWU HUAXIN IMPORT & EXPORT CO., LTD",
+      "name": "YIWU HUAXIN IMPORT & EXPORT CO., LTD",
       "why": "footer"
      }
     ]
@@ -77269,6 +78560,72 @@
    "why": "reader-5.9-decimal-comma: a «,»-delimited CSV with quoted cells reads thousands",
    "source": "fayl-oqish P-reader-B",
    "weight": "defect"
+  },
+  {
+   "id": "c3142",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "Toothbrush",
+        100,
+        30,
+        0.2
+       ],
+       [
+        "Colgate Total toothpaste",
+        null,
+        null,
+        null
+       ],
+       [
+        "Soap",
+        50,
+        10,
+        0.1
+       ]
+      ],
+      "merges": [
+       "B2:B3",
+       "C2:C3",
+       "D2:D3"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Toothbrush"
+      },
+      {
+       "name": "Colgate Total toothpaste"
+      },
+      {
+       "name": "Soap"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 40,
+    "volumeM3": 0.3,
+    "dropped": []
+   },
+   "said": "«Colgate Total toothpaste» packed with the line above it (figures merged down): a covered figure is stated, so it is a good — never a figure-less «SAY TOTAL» footer",
+   "why": "review break-covered-total-name-footer",
+   "source": "fayl-oqish P-reader-B fix",
+   "weight": "nit"
   }
  ],
  "isArticleNumberCases": [

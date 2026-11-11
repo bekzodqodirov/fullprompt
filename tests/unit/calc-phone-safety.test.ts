@@ -398,8 +398,10 @@ describe('his 3b (2026-10-07): «1,125 — qaysi biri?» is asked by the goods c
     const paste = ROWS.slice(ROWS.indexOf('export function pasteItems('), ROWS.indexOf('export function codeLooksRight('));
     expect(paste.length).toBeGreaterThan(100);
     expect(paste).not.toMatch(/readNumberCell\(|readCell\(|ambiguous_number|setTableError\(|setAsked\(/);
-    // A TSV with a header is the importer's, as it read it…
-    expect(paste).toContain('parseGoods(cells)');
+    // A TSV with a header is the importer's, as it read it — its
+    // figure-less tail kept, because every pasted line lands (FAYL-OQISH
+    // §5.5, review break-paste-every-line-lands)…
+    expect(paste).toContain('parseGoods(cells, null, { keepTail: true })');
     // …and every line, either way, is the door's own row.
     expect(paste.split('doorRow(').length - 1).toBe(2);
   });

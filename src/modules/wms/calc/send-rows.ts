@@ -367,7 +367,9 @@ export function pasteItems(text: string): PasteItem[] {
   if (lines.some((l) => l.includes('\t'))) {
     const cells: Cell[][] = lines.map((l) => l.split('\t').map((c) => c.trim()));
     if (detectColumns(cells)) {
-      return parseGoods(cells).goods.map((g) =>
+      // Every pasted line lands (his B-round answer): a figure-less last
+      // line the file reader would take for a footer is a line he pasted.
+      return parseGoods(cells, null, { keepTail: true }).goods.map((g) =>
         doorRow({
           name: g.description,
           quantity: g.quantity,

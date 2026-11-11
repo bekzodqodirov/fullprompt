@@ -390,9 +390,9 @@ const DROPPED_NAMED = 3;
  * say is null.
  *
  * The phrase opens in lower case so the collector can set it after the
- * file's own line («📄 «pl.xlsx» — …»): all of them under the table reads
- * «ostidagi N ta qator tovar deb olinmadi: «…», «…»»; otherwise each says
- * why. Pure, for the collector (calc-files.ts) to print; the collector also
+ * file's own line («📄 «pl.xlsx» — …»): all of them footers under the table
+ * reads «ostidagi N ta qator tovar deb olinmadi: «…», «…»»; otherwise each
+ * says why. Pure, for the collector (calc-files.ts) to print; the collector also
  * hands the rows' text to the model as context.
  */
 export function droppedRowsLine(dropped: readonly DroppedRow[]): string | null {
@@ -404,7 +404,10 @@ export function droppedRowsLine(dropped: readonly DroppedRow[]): string | null {
     footer_total: 'izoh qatori',
     footer: 'jadval ostida',
   };
-  const below = said.every((row) => row.why === 'footer' || row.why === 'footer_total');
+  // «ostidagi» («under it») only when every row said IS under the table: a
+  // footer is by construction; a figure-less «Total station Leica» can stand
+  // mid-list and says why on its own (review break-ostidagi-midlist).
+  const below = said.every((row) => row.why === 'footer');
   const quoted = said.slice(0, DROPPED_NAMED).map((row) => {
     const text = clipUnits(row.text, 40);
     return `«${text}${text.length < row.text.length ? '…' : ''}»${below ? '' : ` (${why[row.why]})`}`;

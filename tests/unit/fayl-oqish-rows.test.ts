@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { droppedRowsLine, readGoodsFile, workbookRows } from '@/modules/wms/deals/goods-file';
 import { detectColumns, parseGoods, totalRowOf, type Cell, type DroppedRow } from '@/modules/wms/deals/goods-import';
 import { read } from '../fixtures/source-shape';
+import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { buildFile } from './fixtures/intake-corpus';
 
 /**
@@ -41,6 +42,24 @@ describe('§5.4 totalRowOf — the ONE «is this row arithmetic» (#513)', () =>
     expect(totalRowOf({ name: 'Итого к оплате с НДС', figures: true, sum: { rows: 3, twin: false } })).toBe('total');
   });
 
+  it('(c) by a subtotal’s SHAPE only — the total word last, or opening as 1C’s «Итого по …»; a total word elsewhere is a product’s, whatever the Σ', () => {
+    const sum = { rows: 2, twin: false };
+    expect(totalRowOf({ name: 'Итого по разделу Одежда', figures: true, sum })).toBe('subtotal');
+    expect(totalRowOf({ name: 'Итого по разделу Обувь', figures: true, sum: { rows: 1, twin: false } })).toBe('subtotal');
+    expect(totalRowOf({ name: 'Subtotal jackets', figures: true, sum })).toBe('subtotal');
+    for (const name of ['Umumiy maqsadli lak', 'TOTAL cordless drill TDLI20012', 'TOTAL QUARTZ 9000 5W-40', 'Sumka ayollar']) {
+      expect(totalRowOf({ name, figures: true, sum }), name).toBeNull();
+    }
+  });
+
+  it('a label: an Incoterm names its place; digits glued to letters are a model number, a unit glued to its number a qualifier', () => {
+    for (const name of ['TOTAL FOB NINGBO', 'TOTAL CIF TASHKENT', 'TOTAL 15CTNS', 'TOTAL 300KG', 'Итого по товарам', 'Jami summasi']) {
+      expect(totalRowOf({ name, figures: true }), name).toBe('total');
+    }
+    expect(totalRowOf({ name: 'TOTAL 10W-40', figures: true })).toBeNull();
+    expect(totalRowOf({ name: 'TOTAL key fob', figures: true })).toBeNull();
+  });
+
   it('(c) over ONE good only Excel’s subtotal shape counts — the total word last, and never the good’s own name', () => {
     expect(totalRowOf({ name: 'Брюки Итог', figures: true, sum: { rows: 1, twin: false } })).toBe('subtotal');
     expect(totalRowOf({ name: '女士夹克 汇总', figures: true, sum: { rows: 1, twin: false } })).toBe('subtotal');
@@ -50,21 +69,30 @@ describe('§5.4 totalRowOf — the ONE «is this row arithmetic» (#513)', () =>
 });
 
 describe('§5.5 the receipt’s words for what was not taken as goods (`droppedRowsLine`, the collector prints it)', () => {
-  const footer = (text: string): DroppedRow => ({ text, why: 'footer' });
+  const footer = (text: string): DroppedRow => ({ text, name: text, why: 'footer' });
   it('a footer under the goods: «ostidagi N ta qator tovar deb olinmadi: …»', () => {
     expect(droppedRowsLine([footer('Made in China'), footer('Remarks: 30 cartons')])).toBe(
       'ostidagi 2 ta qator tovar deb olinmadi: «Made in China», «Remarks: 30 cartons»',
     );
   });
 
+  it('«ostidagi» only when every row said is a footer: a figure-less «Total station Leica» may stand mid-list and says why', () => {
+    expect(droppedRowsLine([{ text: 'Total station Leica', name: 'Total station Leica', why: 'footer_total' }])).toBe(
+      '1 ta qator tovar deb olinmadi: «Total station Leica» (izoh qatori)',
+    );
+    expect(droppedRowsLine([{ text: 'SAY TOTAL: US DOLLARS ONE THOUSAND ONLY', name: 'SAY TOTAL: US DOLLARS ONE THOUSAND ONLY', why: 'footer_total' }, footer('Made in China')])).toBe(
+      '2 ta qator tovar deb olinmadi: «SAY TOTAL: US DOLLARS ONE THOUSAND ONLY» (izoh qatori), «Made in China» (jadval ostida)',
+    );
+  });
+
   it('a label-only total row is no news and says nothing; nothing to say is null', () => {
-    expect(droppedRowsLine([{ text: 'TOTAL | 300 | 150', why: 'total' }])).toBeNull();
+    expect(droppedRowsLine([{ text: 'TOTAL | 300 | 150', name: 'TOTAL', why: 'total' }])).toBeNull();
     expect(droppedRowsLine([])).toBeNull();
   });
 
   it('a subtotal says why, a long row is cut on a whole unit, and past three the rest is counted', () => {
     const line = droppedRowsLine([
-      { text: 'Куртка женская Итог | 300 | 150 | 1.2', why: 'subtotal' },
+      { text: 'Куртка женская Итог | 300 | 150 | 1.2', name: 'Куртка женская Итог', why: 'subtotal' },
       footer('YIWU HUAXIN IMPORT & EXPORT CO., LTD, No. 88 Futian Road'),
       footer('Signature:'),
       footer('Stamp'),
@@ -83,8 +111,8 @@ describe('`dropped` reaches every caller of the reader', () => {
     ['Made in China', null, null, null],
   ];
   const DROPPED = [
-    { text: 'TOTAL | 300 | 150 | 1.2', why: 'total' },
-    { text: 'Made in China', why: 'footer' },
+    { text: 'TOTAL | 300 | 150 | 1.2', name: 'TOTAL', why: 'total' },
+    { text: 'Made in China', name: 'Made in China', why: 'footer' },
   ];
 
   it('the bot’s reader: a goods read carries the rows it did not take', async () => {
@@ -103,6 +131,20 @@ describe('`dropped` reaches every caller of the reader', () => {
     expect(route).toMatch(/const \{ goods, dropped \} = parseGoods\(/);
     expect(route).toMatch(/NextResponse\.json\(\{ error: 'no_goods', dropped \}/);
     expect(route).toMatch(/NextResponse\.json\(\{ goods, groups, aiError, dropped \}\)/);
+  });
+});
+
+describe('§5.5 a door that cannot say `dropped` keeps the rows, or shows them', () => {
+  it('the VED paste lands every line it was given — a figure-less tail is his, never a footer (his B-round answer)', () => {
+    const items = pasteItems('Наименование\tКол-во\tВес\nКуртка\t100\t50\nБрюки\t200\t\nШапка\t\t\nШарф\t\t');
+    expect(items.map((i) => i.name)).toEqual(['Куртка', 'Брюки', 'Шапка', 'Шарф']);
+  });
+
+  it('the deal card’s import reads `dropped` and offers each row a «＋» that makes it a line (no label-only total)', () => {
+    const ui = read('src/app/(protected)/bitimlar/import-lines.tsx');
+    expect(ui).toMatch(/setDropped\(\(json\.dropped \?\? \[\]\)\.filter\(\(row\) => row\.why !== 'total'\)\)/);
+    expect(ui).toMatch(/data-testid="import-dropped-add"/);
+    expect(ui).toMatch(/description: row\.name,/);
   });
 });
 
