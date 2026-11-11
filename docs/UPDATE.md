@@ -369,6 +369,41 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
+## Tarkib takliflari (2026-11-11, 0144) — tekshiruv tartibi
+
+Bitta migratsiya bor: **0144** — deploydan keyin son **145** bo‘ladi (repo’dagi fayllar soni:
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). Agar serveringizda 0143 hali yo‘q bo‘lsa, ikkalasi
+birga o‘tadi — son baribir **145**. Migratsiya faqat qo‘shadi: bitta yangi jadval (mijozning Telegramdagi
+javobi) va AI hisobiga to‘rtta ustun; mavjud ma’lumot o‘zgarmaydi.
+
+**Deploydan OLDIN biling:** shu deploydan keyingi birinchi prixoddan boshlab, Telegrami ulangan har bir
+mijozga boradigan «Yukingiz qabul qilindi» xabarining tagida **«✅ To‘g‘ri / ❌ Xato bor»** tugmalari chiqadi
+(yuk Xitoyda bo‘lsa, lotga tarkib yozilmagan bo‘lsa, lotlar 12 tadan oshmasa). Buni xohlamasangiz:
+Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo‘q». Shunda xabar avvalgidek boradi, kartadagi
+«📨 Mijozdan so‘rash» esa ishlayveradi.
+
+1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
+2. `git pull`, keyin `docker compose build migrate`, so‘ng
+   `docker compose --profile https --profile telegram up -d --build`.
+   (Bu raundda **tg-listen** kodi o‘zgarmagan — uni alohida qayta qurish shart emas; bot `app` ichida ishlaydi va
+   u bilan birga yangilanadi.)
+3. Sonni o‘qing — **145**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+5. Ko‘zga ko‘rinadigan belgi: istalgan mashina → «Bojxona» bo‘limida «Bugun AI: N / 300 marta» satri turadi
+   (satr yo‘q bo‘lsa — migratsiya o‘tmagan). Xuddi shu satr Boshqaruv → Sozlamalar’da ikkala limit qutisi
+   ostida ham bor — u yerda taxminiy dollar ham ko‘rinadi.
+6. Sinov (bitta prixodda, 10 daqiqa):
+   - Telegrami ulangan mijozga yangi prixod qiling — 10 daqiqadan keyin mijozga boradigan xabar tagida
+     «✅ To‘g‘ri / ❌ Xato bor» chiqishi kerak; «✅» bosilsa — «Sklad qoldig‘i»da shu lot ✅ bo‘ladi;
+   - prixod kartasida «📨 Mijozdan so‘rash» → mijozga lotlar ro‘yxati (tarkibi bilan) boradi; kartada
+     «So‘rov yuborilgan: …» yoziladi; mijoz «❌» bossa — sotuvchi va logistlarga Telegram xabari keladi, kartada
+     qizil «❌ Mijoz … «xato bor» dedi» turadi va «E’tirozni yopish» tugmasi chiqadi;
+   - prixod kartasi → lot → «🧩 Tarkibi» → hujjatni tanlang → «🤖 Fayldan to‘ldirish» — AI o‘qigan qatorlar
+     oynada chiqadi, keraklilarini belgilab «Qo‘llash», so‘ng o‘zingiz «Saqlash» (AI o‘zi hech narsa saqlamaydi).
+     Buning uchun serverning `.env` faylida `ANTHROPIC_API_KEY` bo‘lishi kerak — bo‘lmasa «sozlanmagan» deydi.
+7. Limitlar: Boshqaruv → Sozlamalar → `tnved_ai_daily_limit` (300) va `tarkib_ai_daily_limit` (50) — butun
+   son yoziladi, **0 — o‘chirilgan** degani.
+
 ## Tarkib tuzatishlari (2026-11-10, 0143) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0143** — deploydan keyin son **144** bo‘ladi (repo’dagi fayllar soni:

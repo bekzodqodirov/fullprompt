@@ -166,3 +166,18 @@ closed above that, its summary carrying the count and «⚠ sig'magan · N» (wi
 «+» when the list is capped) — so the warning he asked to have on top is
 still on top while folded. One component, both screens (the truck card reads
 the same list).
+
+## 10. The client's own ✅ / ❌ in Telegram (his 5b) — BUILT 2026-11-11 (0144)
+
+Row 5 of §1 was owed as «a later round». It is `docs/TARKIB-TAKLIFLAR.md` §7.3 (binding there): the customer's
+«yukingiz qabul qilindi» push carries «✅ To'g'ri / ❌ Xato bor» while the cargo is in China, and «📨 Mijozdan
+so'rash» on the prixod card sends the question on a person's press, with every lot's goods listed.
+
+What it changes HERE: the sentence has a THIRD source (`lot_client_confirms`) beside the colleague's tick and
+the tarkib — the same kind of snapshot, compared the same way — and one thing the other two never had: the
+client's ❌ is a **veto**. A lot the client disputed reads ❓ whatever a colleague ticked before it and whatever
+tarkib lists the goods it rejected, until the goods are changed, a colleague ticks AFTER it, the client answers
+again, or a person closes the dispute. §3's states are unchanged (no fourth state — a disputed lot belongs on
+the ❓ worklist), §4's «askable» is unchanged, and on a server whose 0144 has not landed every reader runs the
+two-source sentence this document describes.
+

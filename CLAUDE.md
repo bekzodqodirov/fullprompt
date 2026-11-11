@@ -173,6 +173,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
 | The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
+| The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
 
 ## State — 2026-08-23
@@ -3494,7 +3495,8 @@ e2e locator, #1628) was merged after that run: typecheck, lint and the changed s
 spec this round never touched. Pushed to `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked),
 deploy not done.
 
-**Latest migration: 0143** (`tarkib_document_optional`, `when` …122; ledger must reach **144**). Before
+**Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
+it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
 it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before
@@ -3642,7 +3644,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **144** since 0143 (143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **145** since 0144 (144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

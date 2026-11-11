@@ -1,5 +1,90 @@
 # CHANGELOG
 
+## 2026-11-11 — Tarkib takliflari: tarkibni AI fayldan to'ldiradi, mijoz Telegramda o'zi tasdiqlaydi (✅/❌), Bojxonadagi 🤖 ga hisob va kunlik limit
+
+Sizning javobingiz: «Hammasi yulduzcha javob va taklifingni qoshamiz». Birinchi yarmi — o'nta savolning hammasi ⭐
+bo'yicha qoldi (tekshirdim: sakkiztasi allaqachon test bilan mahkamlangan edi, ikkitasini endi mahkamladim).
+Ikkinchi yarmini **uchala taklif ham** deb o'qidim va uchalasini qurdim. Agar faqat bittasini nazarda tutgan
+bo'lsangiz — ayting, ortiqchasini o'chirib qo'yish oson (pastda har birining o'chirgichi yozilgan).
+
+Bitta migratsiya (**0144**). Deploydan keyin baza hisobi **145** bo'lishi kerak; `/api/version` bugungi vaqtni
+ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Tarkib takliflari (2026-11-11, 0144)».
+
+**⚠️ Deploydan oldin biling:** deploydan keyingi birinchi prixoddan boshlab, Telegrami ulangan mijozlarga boradigan
+«Yukingiz qabul qilindi» xabarining tagida «✅ To'g'ri / ❌ Xato bor» tugmalari chiqadi. Xohlamasangiz:
+Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
+
+### 1. Mijoz yuk ma'lumotini Telegramda o'zi tasdiqlaydi
+- **Xabardagi tugmalar.** Yuk Xitoy skladiga qabul qilinganda mijozga boradigan xabarda endi savol turadi:
+  «Tovar nomi va quti soni to'g'rimi?» va ikki tugma — «✅ To'g'ri» / «❌ Xato bor». Mijoz «✅» bossa, lot
+  ro'yxatlarda (Sklad qoldig'i, reja, prixod kartasi) ✅ bo'ladi — logistning telefon qilishi shart emas.
+- **«❌ Xato bor» — to'xtatuvchi belgi.** Mijoz «❌» bossa: lot ❓ ro'yxatiga qaytadi (avval xodim ✅ qo'ygan
+  bo'lsa ham), mijozning sotuvchisi va logistlarga Telegram xabari keladi, mijozga esa «nima xato ekanini shu
+  yerga yozing» deyiladi (yozgani menejerga boradi). Bu belgi **o'z-o'zidan yo'qolmaydi**. U faqat to'rt yo'l
+  bilan yopiladi: (1) tarkibdagi tovarlar tuzatilsa; (2) xodim mijoz bilan gaplashib, kartada «✅ To'g'ri —
+  mijoz tasdiqladi» ni bossa; (3) mijozning o'zi qayta «✅» bossa; (4) kartada «E'tirozni yopish» bosilsa.
+- **«📨 Mijozdan so'rash»** — prixod kartasida yangi tugma. Bosilsa, mijozga shu prixodning hamma lotlari
+  (tarkib yozilgan bo'lsa — har bir tovar va donasi bilan) va o'sha ikki tugma boradi. Tarkibni mijozga
+  tasdiqlatishning yo'li shu. Kartada so'rov holati yoziladi: «navbatda», «yuborilgan: vaqt · kim» yoki
+  «yetib bormadi» — sababi bilan o'zbekcha (mijoz botni bloklagan, Telegrami ulanmagan va h.k.).
+- **Kartada ko'rinishi.** Mijoz «❌» degan lotda qizil satr turadi, ostidagi eski ✅ lar kulrang «tarix» bo'lib
+  qoladi — bahsli lotda yashil belgi ko'rinmaydi.
+- **Qachon tugma chiqmaydi:** yuk Xitoydan chiqib ketgan bo'lsa (hujjatlar tayyor bo'lgan — endi so'ralmaydi);
+  lotga tarkib yozilgan bo'lsa (xabarda «Sichqoncha +1» deb chiqadi, ro'yxatni ko'rsata olmaydi — buning uchun
+  «Mijozdan so'rash»); lot allaqachon ✅ bo'lsa; prixodda 12 tadan ko'p lot bo'lsa.
+- **Og'irlik va hajm javobga kirmaydi.** Mijoz faqat tovar nomi va quti sonini tasdiqlaydi — savolning o'zida
+  shunday yozilgan. Kg/kub haqidagi e'tirozni xodim hal qiladi.
+- Bitta xabarda bitta javob: prixodda bir nechta lot bo'lsa, «❌» hammasiga yoziladi (xodimga boradigan xabarda
+  bu aytiladi; «E'tirozlarni yopish (N lot)» bilan bir bosishda yopish mumkin).
+
+### 2. Tarkibni AI mijozning faylidan to'ldiradi
+- Prixod kartasi → lot → «🧩 Tarkibi» → mijozning hujjatini tanlang → **«🤖 Fayldan to'ldirish»**. AI faylni
+  (Excel, PDF yoki rasm) o'qib, topgan qatorlarini oynada ko'rsatadi: nomi, donasi, karobkasi, kg, kub.
+- **AI hech narsani o'zi saqlamaydi.** Siz keraklilarini belgilaysiz → «Qo'llash» → qatorlar tahrirlash
+  oynasiga tushadi → o'zingiz ko'rib «Saqlash» ni bosasiz. Eski tekshiruvlar (kg va kub lotnikiga teng bo'lishi)
+  o'z joyida. AI o'qiy olmagan raqam — **bo'sh katak**, hech qachon taxmin emas.
+- Oynada belgilangan qatorlar yig'indisi lotning o'zi bilan yonma-yon turadi (farq bo'lsa sariq).
+- Bitta prixodda bir nechta lot bo'lsa, hech narsa oldindan belgilanmaydi — «faqat SHU lotdagi tovarlarni
+  belgilang».
+- O'qilgan natija eslab qolinadi: oynani bexos yopsangiz, qayta o'qitish (va pul sarflash) shart emas.
+- Kunlik limit: `tarkib_ai_daily_limit` (50). Har bir o'qish bitta sanaladi.
+- Serverda `ANTHROPIC_API_KEY` bo'lishi kerak; bo'lmasa tugma «sozlanmagan» deydi.
+
+### 3. Bojxonadagi 🤖 — hisob va kunlik limit
+- Har bir 🤖 bosilishi endi yozib boriladi: kim, qaysi lot, qaysi mashina, qancha sarflandi.
+- **Kunlik limit**: `tnved_ai_daily_limit` (300 marta, butun kompaniya bo'yicha). Limit tugasa tugma «bugungi
+  limit tugadi» deydi. **0 — o'chirilgan** degani.
+- «Bojxona» bo'limida 🤖 yonida «Bugun AI: N / 300 marta» satri turadi. Taxminiy dollar (bugun va 30 kun)
+  faqat kompaniya pulini ko'radiganlarga chiqadi — VED va logist faqat sonini ko'radi.
+- Xuddi shu hisob **Boshqaruv → Sozlamalar** da ikkala limit qutisi ostida ham turadi — limitni
+  o'zgartiradigan odam xarajatni shu yerda ko'radi.
+- Limit qutisiga endi faqat butun son yoziladi: bo'sh qoldirish yoki «1 000» yozish rad etiladi (ilgari bo'sh
+  quti 0 ga aylanib, tugmani butun kompaniya uchun o'chirib qo'yishi mumkin edi).
+- Javobsiz qolgan uzoq so'rov (bizning kutish vaqtimiz tugagan) ham limitga sanaladi — aks holda bitta og'ir
+  tovar uchun cheksiz bosish mumkin edi.
+
+### Aytib qo'yishim kerak
+- Bularning hech biri haqiqiy Telegram va haqiqiy AI kaliti bilan sinalmagan (bu yerda ikkalasi ham yo'q).
+  Deploydan keyingi birinchi «✅/❌» bosilishi va birinchi «Fayldan to'ldirish» — haqiqiy sinov.
+- Mijoz hech qachon javob bermasa — eslatma yuborilmaydi. Ma'lumot o'zgarsa savol o'zi qayta yuborilmaydi.
+- Mini App'da bu haqda hech narsa ko'rinmaydi.
+
+### Savollar (javob bermasangiz ⭐ ishlaydi)
+1. «Yukingiz qabul qilindi» xabarida ✅/❌ tugmalari: ⭐ a) har bir mos prixodda o'zi chiqsin · b) o'chiq tursin,
+   faqat xodim «Mijozdan so'rash» ni bosganda so'ralsin.
+2. Mijozning «❌»i: ⭐ a) xodim qo'ygan ✅ dan ustun (lot ❓ ga qaytadi) · b) faqat xabar kelsin, ✅ o'zgarmasin.
+3. Mijoz «❌» bosganda kimga xabar borsin: ⭐ a) mijozning sotuvchisi + logistlar · b) faqat sotuvchi · c) VED ham.
+4. Mijoz tasdig'iga og'irlik/hajm ham kirsinmi: ⭐ a) yo'q, faqat nom va quti soni · b) ha (unda qayta
+   tortilganda ✅ «o'zgardi» bo'ladi).
+5. Bir necha lotli prixodda «❌» bosilsa: ⭐ a) hamma lotga yozilsin · b) «qaysi lot?» deb yana so'rasin.
+6. «Fayldan to'ldirish»da nom xitoycha bo'lsa: ⭐ a) AI ruscha nomini ham beradi va shu yoziladi (xitoychasi
+   oynada ko'rinib turadi) · b) qog'ozdagi nom o'zgarishsiz yozilsin.
+7. Limitlar: ⭐ a) Bojxona 🤖 300, fayl o'qish 50 (kuniga, butun kompaniya) · b) boshqa son — ayting.
+8. AI xarajati kechki 20:00 xulosaga ham qo'shilsinmi: ⭐ a) yo'q, Sozlamalar va Bojxona bo'limida ko'rinadi ·
+   b) ha.
+
+Batafsil: `docs/TARKIB-TAKLIFLAR.md` §7 (qurilgani), qarorlar DECISIONS #1664 dan.
+
 ## 2026-11-11 — «🤖 AI rastamojka»: fayl o'qilmaguncha «Tasdiqlash» chiqmaydi; fayldagi tovarlar yo'qolmaydi
 
 Sizning so'zingiz: «nega ai rastamojkaga malumotlar bergandan kegin ham tovar nomi topilmadi deyabti. 1 dona fileda
