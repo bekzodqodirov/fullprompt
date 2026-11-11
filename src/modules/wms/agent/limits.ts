@@ -89,7 +89,17 @@ export const AGENT_LIMITS = {
   /** G10: a link in at most one AI message per chat per 7 days, and this many per day overall. */
   urlPerChatDays: 7,
   urlPerDay: 10,
-  /** Context (money-11). */
+  /**
+   * Context (money-11): TWO windows over one read of the chat (his «30 ta emas 100 tagacha», 2026-11-10).
+   * The MODEL reads the newest `historyMessages` under `historyTotalChars`, the older part as background.
+   * Every RULE — the measures the tools take, the figures a reply may repeat, the road, rail and avia
+   * guards, the checklist, the burst, the card — keeps counting the newest `contextMessages` under
+   * `contextTotalChars`: the window the policy corpora were measured on (#1619). An old shipment's kilos
+   * or an old «poyezd» is something the model understands, never a source and never a rule's input
+   * (#1622). The recent window is always the history's tail — the same objects.
+   */
+  historyMessages: 100,
+  historyTotalChars: 24_000,
   contextMessages: 30,
   contextMessageChars: 1_000,
   contextTotalChars: 8_000,

@@ -479,8 +479,14 @@ async function landCalc(
         .orderBy(tgMessages.sentAt)
     : [];
   const files = cited.filter((m) => m.hasMedia).length;
+  // Each cited line carries its Tashkent date (#1627): the model reads a hundred messages and may cite one from an
+  // earlier shipment beside today's — the VED must see which is which, the job's own figures being the checklist's.
+  const dated = (m: { body: string | null; sentAt: Date }) => {
+    const [y, mo, d] = tashkentDay(m.sentAt).split('-');
+    return `${d}.${mo}.${y}: ${m.body ?? ''}`;
+  };
   const material = [
-    ...cited.map((m) => m.body ?? '').filter((b) => b.trim() !== ''),
+    ...cited.filter((m) => (m.body ?? '').trim() !== '').map(dated),
     ...(files > 0 ? [`(Chatda ${files} ta fayl/rasm bor — Telegram suhbatida.)`] : []),
   ];
   const [me] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, actor.id));

@@ -390,6 +390,7 @@ function ctxOf(messages: ChatMessage[], measures: MeasureCandidate[]): AgentCont
     managerUserId: '00000000-0000-4000-8000-000000000099',
     peerId: 1n,
     messages,
+    history: messages,
     anchor: messages.at(-1) ?? null,
     burst: messages.slice(lastOut + 1).filter((m) => m.direction === 'in'),
     lastOut: lastOut >= 0 ? messages[lastOut]! : null,

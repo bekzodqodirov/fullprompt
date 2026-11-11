@@ -401,6 +401,10 @@ describe('an agent calculation lands like a seller’s — every action, the com
     const [note] = await db.select({ note: crmActivities.note }).from(crmActivities).where(eq(crmActivities.id, noteIdFor(d!.id)));
     expect(note!.note).toContain("Kelib chiqish sertifikati: kompaniya o'zi oladi");
     expect(note!.note).not.toContain('Xitoydagi omborimizdan');
+    // The cited line carries its Tashkent date (#1627) — an old shipment's words read as old to the VED.
+    const [cited] = await db.select({ sentAt: tgMessages.sentAt }).from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, a)));
+    const [y, mo, dd] = tashkentDay(cited!.sentAt).split('-');
+    expect(note!.note).toContain(`${dd}.${mo}.${y}: Qashqardan Toshkentga podklyuch kerak`);
 
     // Every action ran, and only then is it 'done' (A10).
     const [after] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, d!.id));
