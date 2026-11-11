@@ -160,16 +160,24 @@ export async function askAssistant(
   ];
 
   const startedAt = Date.now();
+  // What the question cost, summed over its rounds (0145): the evening
+  // summary's «🤖 AI» line could count this ledger and price none of it.
+  const model = isAnalyst(input.actor) ? ANALYST_MODEL : STAFF_MODEL;
+  const spent: QuestionUsage = { model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
   try {
     let lastText: string | null = null;
     for (let round = 0; round < MAX_ROUNDS; round++) {
       const response = await callModel({
-        model: isAnalyst(input.actor) ? ANALYST_MODEL : STAFF_MODEL,
+        model,
         system: systemPrompt(input.actor, input.surface),
         messages,
         tools: tools.map(({ name, description, input_schema }) => ({ name, description, input_schema })),
         maxTokens: 2048,
       });
+      spent.inputTokens += response.usage?.inputTokens ?? 0;
+      spent.outputTokens += response.usage?.outputTokens ?? 0;
+      spent.cacheReadTokens += response.usage?.cacheReadTokens ?? 0;
+      spent.cacheWriteTokens += response.usage?.cacheWriteTokens ?? 0;
 
       const text = response.content
         .filter((block): block is Extract<ModelBlock, { type: 'text' }> => block.type === 'text')
@@ -183,7 +191,7 @@ export async function askAssistant(
       );
       if (toolUses.length === 0 || response.stopReason !== 'tool_use') {
         const answer = text || lastText || '';
-        await finishQuestion(questionId, answer, answer.length > 0, toolLog);
+        await finishQuestion(questionId, answer, answer.length > 0, toolLog, spent);
         return answer ? { status: 'ok', answer } : { status: 'error' };
       }
 
@@ -222,13 +230,22 @@ export async function askAssistant(
     }
 
     // Round or clock budget spent with the model still asking for tools.
-    await finishQuestion(questionId, lastText, false, toolLog);
+    await finishQuestion(questionId, lastText, false, toolLog, spent);
     return { status: 'gave_up', answer: lastText };
   } catch (err) {
     logger.warn({ err, questionId }, '[ai] assistant failed');
-    await finishQuestion(questionId, null, false, toolLog).catch(() => {});
+    // The rounds that DID answer before the failure were billed all the same.
+    await finishQuestion(questionId, null, false, toolLog, spent).catch(() => {});
     return { status: 'error' };
   }
+}
+
+interface QuestionUsage {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
 }
 
 async function finishQuestion(
@@ -236,10 +253,24 @@ async function finishQuestion(
   answer: string | null,
   ok: boolean,
   toolLog: ToolLogEntry[],
+  spent: QuestionUsage,
 ): Promise<void> {
   await db.execute(sql`
     UPDATE ai_questions
     SET answer = ${answer}, ok = ${ok}, tool_log = ${JSON.stringify(toolLog)}::jsonb
     WHERE id = ${id}
   `);
+  // The usage is 0145's columns and is written APART, and caught: on a server
+  // one migration behind the statement is refused (42703), and the answer
+  // above must already be the person's — a bill that cannot be written is
+  // not a question that failed. Only when the model reported any.
+  if (spent.inputTokens + spent.outputTokens + spent.cacheReadTokens + spent.cacheWriteTokens === 0) return;
+  await db
+    .execute(sql`
+      UPDATE ai_questions
+      SET model = ${spent.model}, input_tokens = ${spent.inputTokens}, output_tokens = ${spent.outputTokens},
+          cache_read_tokens = ${spent.cacheReadTokens}, cache_write_tokens = ${spent.cacheWriteTokens}
+      WHERE id = ${id}
+    `)
+    .catch((err: unknown) => logger.warn({ err, questionId: id }, '[ai] question usage not recorded'));
 }

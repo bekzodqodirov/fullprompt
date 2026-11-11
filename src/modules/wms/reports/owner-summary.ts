@@ -16,6 +16,7 @@ import { intakeByDay } from './business';
 import { loadLeadFlow, scopeKeyOf, unkey } from './dashboard';
 import { attentionLive, dashboardWindows, pnlParts, rankAttention } from './dashboard-math';
 import { truckMoves } from './overview';
+import { aiSpend, aiSpendWindow } from './ai-spend';
 import { ownerSummarySight, type OwnerSummaryActor } from './owner-summary-door';
 import {
   ownerSummaryText,
@@ -140,7 +141,8 @@ export async function composeOwnerSummary(
   const { upsaleLiabilityForNet } = await import('../calc/upsale-service');
   const balanceP = companyBalanceParts();
   const trucksP = trucksOnRoad(ids, { limit: 0, now });
-  const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, weeklyReads] = await Promise.all([
+  const aiWindow = aiSpendWindow({ weekly, from: period.from, to: period.to, now });
+  const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, ai, weeklyReads] = await Promise.all([
     profitAndLoss(period.from, period.to),
     cashFlow(period.from, period.to),
     clientMoneyInPeriod(period.from, period.to),
@@ -150,6 +152,10 @@ export async function composeOwnerSummary(
     balanceP,
     seesOutcome ? loadLeadFlow(period.from, period.to) : null,
     readAttentionSources(gates, scopeKey, now, actor, { balance: balanceP, trucks: trucksP }),
+    // The machine's own bill (his «8 ha»): never a throw — a ledger that
+    // cannot be read is named on the line, and one that cannot be asked at
+    // all leaves the line out rather than the message.
+    aiSpend(aiWindow.from, aiWindow.to).catch(() => null),
     weekly
       ? Promise.all([
           recurringDue(today),
@@ -231,6 +237,7 @@ export async function composeOwnerSummary(
       ? { fresh: leads.fresh, won: leads.won, wonUsd: leads.wonUsd, wonOther: leads.wonOther }
       : null,
     attention: { total: ranked.visibleCount, top: ranked.visible },
+    ai: ai ? { usd: ai.total.usd, calls: ai.total.calls, unpriced: ai.total.unpriced, unread: ai.unread } : null,
     weeklyBlock,
     link: `${process.env.APP_URL ?? ''}/dashboard?davr=${key}`,
   };

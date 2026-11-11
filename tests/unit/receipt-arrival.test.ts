@@ -202,7 +202,8 @@ describe('the two buttons', () => {
     for (const type of ['ReceiptConfirmed', 'UnquotedCargo', 'UnlinkedCargo']) {
       const rows = buttonsFor(type, { dealState: 'none', receiptId: ID.toUpperCase() });
       expect(rows).toEqual([[{ text: '📎 Fayl qo‘shish', callback_data: `pf:${ID}` }]]);
-      expect(parseCallback(rows![0]![0]!.callback_data!)).toEqual({ kind: 'receipt_files', receiptId: ID });
+      const drawn = rows![0]![0] as { callback_data: string };
+      expect(parseCallback(drawn.callback_data)).toEqual({ kind: 'receipt_files', receiptId: ID });
     }
     // The claim door's row too: its seller needs the papers as much.
     expect(buttonsFor('ReceiptConfirmed', { dealState: 'attachable', via: 'assign', receiptId: ID })).not.toBeNull();

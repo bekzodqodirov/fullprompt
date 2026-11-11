@@ -49,6 +49,7 @@ function facts(over: Partial<SummaryFacts> = {}): SummaryFacts {
     trucks: { departed: 1, arrived: 0, onRoad: 7 },
     leads: { fresh: 4, won: 1, wonUsd: 500, wonOther: 0 },
     attention: { total: 0, top: [] },
+    ai: null,
     weeklyBlock: null,
     link: LINK,
     ...over,

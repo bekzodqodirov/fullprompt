@@ -318,6 +318,12 @@ export interface SummaryFacts {
   leads: { fresh: number; won: number; wonUsd: number; wonOther: number } | null;
   /** The ranked attention rows, top first — already the owner's own list. */
   attention: { total: number; top: readonly AttentionFact[] };
+  /**
+   * What the machine cost (0145, his «8 ha») — the last 24 hours on the
+   * daily message, the closed week on Monday's (`aiSpendWindow`). Null when
+   * the bill could not be asked at all; the line is then left out.
+   */
+  ai: SummaryAi | null;
   /** Monday only. */
   weeklyBlock: {
     payments: PaymentsDue;
@@ -332,6 +338,41 @@ export interface SummaryFacts {
   } | null;
   /** The dashboard over exactly this window (#513) — the drain lifts it into «↗️ Ochish». */
   link: string;
+}
+
+export interface SummaryAi {
+  /** ≈ dollars of the requests that could be priced. */
+  usd: number;
+  /** Requests that reached the model. */
+  calls: number;
+  /** …of which no dollar figure could be made. */
+  unpriced: number;
+  /** Ledgers that could not be read: 'calc' | 'agent' | 'assistant'. */
+  unread: readonly string[];
+}
+
+const AI_LEDGER_NAME: Record<string, string> = {
+  calc: 'hisob-kitob AI',
+  agent: 'sotuvchi AI',
+  assistant: 'yordamchi AI',
+};
+
+/**
+ * «🤖 AI (oxirgi 24 soat): ≈ $4.20 · 132 murojaat» — or null when there is
+ * nothing to say (no request, every ledger read). Never a $0 for an unknown
+ * (the message's own rule): a window where nothing could be priced prints
+ * the count and says the price is not known, with no dollar figure at all.
+ */
+export function aiLine(ai: SummaryAi | null, weekly: boolean): string | null {
+  if (!ai) return null;
+  const unread = ai.unread.length > 0 ? ` · ⚠ o‘qilmadi: ${ai.unread.map((l) => AI_LEDGER_NAME[l] ?? l).join(', ')}` : '';
+  if (ai.calls === 0 && !unread) return null;
+  const head = `🤖 AI (${weekly ? 'hafta' : 'oxirgi 24 soat'}):`;
+  if (ai.calls === 0) return `${head}${unread.replace(/^ · /, ' ')}`;
+  const count = `${groupDigits(ai.calls)} murojaat`;
+  if (ai.unpriced >= ai.calls) return `${head} ${count} — narxi noma’lum${unread}`;
+  const unpriced = ai.unpriced > 0 ? ` (${groupDigits(ai.unpriced)} tasining narxi noma’lum)` : '';
+  return `${head} ≈ ${usd(ai.usd)} · ${count}${unpriced}${unread}`;
 }
 
 /**
@@ -430,6 +471,8 @@ export function ownerSummaryText(f: SummaryFacts, opts: { quietLine?: boolean } 
     const other = f.leads.wonOther > 0 ? ` (+${f.leads.wonOther} boshqa valyutada)` : '';
     lines.push(`👥 Yangi lid: ${f.leads.fresh} · Yutildi: ${f.leads.won} · ${usd(f.leads.wonUsd)}${other}`);
   }
+  const ai = aiLine(f.ai, f.weekly);
+  if (ai) lines.push(ai);
 
   if (f.attention.total > 0) {
     lines.push('');
