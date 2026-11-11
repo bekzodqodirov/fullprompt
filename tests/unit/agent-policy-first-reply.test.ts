@@ -40,6 +40,7 @@ function ctxOf(lines: readonly string[], customerScript: ScriptName): AgentConte
     managerUserId: 'u',
     peerId: 1n,
     messages,
+    history: messages,
     anchor: messages.at(-1)!,
     burst: messages,
     lastOut: null,

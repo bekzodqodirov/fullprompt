@@ -123,6 +123,62 @@ ishlaydi.
    donasi izohda qoladi · b) bunday qatorlar umuman qo'shilmasin.
 10. Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi: ⭐ a) shunday · b) rasm ham yuborilsin.
 
+## 2026-11-10 (kechqurun) — AI 100 tagacha xabarni o'qiydi; «80 % ishonch» endi o'lchanadi; avtonom sotuv menejerining yo'li yozildi
+
+Sizning so'zingiz: «kopi bn 30 ta emas 100 tagacha oshirish kerak. va ozi yozsin hammaga agarda 80foiz shu javob
+bolishiga togri kelishiga ishonchi bolsa javobni yozish huquqini ber va sotuv manageri bolsin … shuni arxetekturangga
+yozib ol». Migratsiya yo'q — bazadagi hisob **143** bo'lib qoladi. Bu safar faqat ilova qayta quriladi.
+Tinglovchi (tg-listen) o'zgarmadi, lekin uni ham qayta qursangiz zarari yo'q.
+
+### Qilindi
+- **AI suhbatdan 100 tagacha xabarni o'qiydi** (oldin amalda 15-30 ta edi, chunki uzun javoblar 8 000 belgi
+  chegarasini tez to'ldirardi). Endi chegara 24 000 belgi.
+- **Qoidalar esa faqat oxirgi 30 ta xabarga qaraydi, avvalgidek.** Eski xabarlar AIga faqat tushunish uchun
+  ko'rsatiladi. Shuning uchun 2 hafta oldingi gap yangi javobni buzmaydi:
+  - eski «poyezd bilan qancha?» savoli mashina narxini to'xtatmaydi;
+  - eski «Qashqardan» degan gap narxni rad ettirmaydi;
+  - eski «500 kg» yangi yukning og'irligi bo'lib qolmaydi;
+  - eski «avia bilan» deyilgani manzil berishni bloklamaydi.
+
+  AI eski qismdagi son va narxni javobga ko'chirsa, javob avvalgidek to'xtatiladi.
+- **Siz chatda yozgan bo'lsangiz, AI 2 soat jim turadi — endi har doim.** Oldin mijoz sizning javobingizdan keyin
+  30 tadan ko'p xabar (masalan bir dasta rasm) yuborsa, tizim sizning javobingizni ko'rmay qolardi va AI siz bilan
+  bir vaqtda qoralama yozardi. Endi bunday bo'lmaydi.
+- **Telegram Business avto-javobi endi «siz yozdingiz» deb hisoblanmaydi.** Akkauntingizdagi avtomatik salom yoki
+  «hozir bandman» xabari oldin AIni 2 soatga to'xtatib qo'yardi — aynan siz yo'q paytingizda. Endi to'xtatmaydi.
+- **Hisoblatishga ketgan iqtiboslar sanasi bilan boradi.** AI eski xabarni ham iqtibos qilishi mumkin (masalan
+  tovar 40 xabar oldin tasvirlangan bo'lsa). VED xodimi qaysi gap qachon yozilganini ko'radi: «10.11.2026: …».
+- **Xarajat deyarli o'smaydi.** Suhbat bir run ichida bir marta to'lanadi, keyingi bosqichlarda arzon o'qiladi.
+  Taxminan kuniga $5-7 (150 ta run hisobida), oldin $5-6 edi. Kunlik token chegarasi (3 000 000) o'zgarmaydi.
+- **«80 % ishonch» endi o'lchanadi.** AI har qoralamada «siz buni o'zgartirmay yuborish ehtimoli» degan bahoni aniq
+  ma'noda beradi. Bu bahoning o'zi yetmaydi, chunki AI o'ziga ortiqcha ishonadi. Haqiqiy o'lchov — sizning
+  tugmalaringiz: har bir tur (salomlashish, «yukim qayerda», ko'p beriladigan savol, aniqlashtirish savoli) bo'yicha
+  AI yozganini nechta holatda o'zgartirmay yuborganingiz hisoblanadi. «80 %» deganda 50 tadan kamida 45 tasi
+  (100 tadan 87, 200 tadan 170) tushuniladi. Hisobot serverda bitta buyruq bilan chiqadi (pastda).
+- **Arxitekturaga yozildi:** AIning «avtonom sotuv menejeri»gacha bo'lgan yo'li, har bosqichga o'tish uchun nima
+  isbotlanishi kerakligi, va doim sizda qoladigan qarorlar. Doim sizda qoladi:
+  - hisoblatish narxi, chegirma, qarz, kafolat;
+  - shikoyat;
+  - GS kod ochish;
+  - lidni yutish yoki yo'qotish;
+  - avia manzili va temir yo'l narxi;
+  - AIga yangi ish berish va uni o'chirish.
+
+### Hali qilinmadi — sizning javobingizni kutyapti
+- **AI o'zi yuborishi** hali yoqilmagan. Loyihasi tayyor, lekin uni yoqishdan oldin ikki narsa kerak:
+  1. sizning 6 ta javobingiz (savollar chatda);
+  2. kamida 2 hafta o'lchov — qaysi turdagi javoblar haqiqatan 80 % to'g'ri chiqishini sizning tugmalaringiz
+     ko'rsatishi kerak.
+
+  Birinchi kundan hech bir tur isbotlanmagan bo'ladi.
+
+### Deploydan keyin (ixtiyoriy) — hozirgi holatni ko'rish
+```
+docker compose run --rm migrate pnpm exec tsx scripts/agent-calibration.ts
+```
+Bu hech narsa yozmaydi, faqat jadval chiqaradi. Natijasini menga yuborsangiz, qaysi tur avtomatga yaqinligini
+aytaman. 10-noyabrdan oldingi qoralamalarda AI bahosi aniq ma'noda emas edi, shuning uchun ular faqat ma'lumot uchun.
+
 ## 2026-11-10 (29-oktabr kechqurun yozilgan) — «✅ Yuborish» oddiy javobda ham chiqadi; raqami yashirin mijoz ham lid bo'ladi
 
 Sizning so'zingiz: «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», javobingiz **«A»**

@@ -69,6 +69,7 @@ function ctxWith(body: string): AgentContext {
     managerUserId: 'u',
     peerId: 1n,
     messages: [m],
+    history: [m],
     anchor: m,
     burst: [m],
     lastOut: null,

@@ -204,7 +204,7 @@ export async function writeDraft(input: {
     ownerQuestion: compose.ownerQuestion || null,
     actions: input.actions,
     citedMessageIds: compose.citedMessageRefs
-      .map((r) => ctx.messages.find((m) => m.ref === r)?.id)
+      .map((r) => ctx.history.find((m) => m.ref === r)?.id)
       .filter((x): x is string => typeof x === 'string'),
     offerId: null,
   });
