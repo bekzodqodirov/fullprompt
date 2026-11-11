@@ -309,6 +309,8 @@ Built:
   — on the line, never in the memory (unchanged, fence rule 3). A saved line code is already
   the 💡 for that name on later lots (`tnvedHintsFor`), so nothing more is remembered.
 - No ledger row, no daily limit — the lot-level 🤖 has neither today (asked; ⭐ none).
+  **Superseded 2026-11-11** (his «taklifingni qo'shamiz»): both 🤖 are counted before they spend,
+  billed after, and capped per day — `docs/TARKIB-TAKLIFLAR.md` §2.
 - `tnved.lineNoAi` leaves the four bundles; new `tnved.aiNameOnly`, `aiSameName`,
   `suggestProgress`, `suggestStop`.
 
@@ -536,7 +538,7 @@ Bojxona 🤖's bill and daily limit). They are their own round: `docs/TARKIB-TAK
 Stated, not asked (each a one-line «aytib qo'yay»): the sticker keeps the warehouse's name;
 the scan screens print the Chinese name only; a plan's agent file gains rows when a tarkib is
 written; a sent truck's invoice still follows later TNVED/name changes of lots with no tarkib;
-the AI button has no daily limit, as before.
+the AI button has no daily limit, as before (it has one since 2026-11-11 — `docs/TARKIB-TAKLIFLAR.md` §2).
 
 ## 8. Packages
 

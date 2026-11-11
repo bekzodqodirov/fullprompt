@@ -46,7 +46,8 @@ const rowsOf = async (lotId: string) =>
 /** Today's count, by the module's own word. */
 const used = async (kind: PressKind) => (await pressToday(kind, null)).used;
 
-const limitKey = (kind: PressKind) => (kind === 'tnved' ? 'tnved_ai_daily_limit' : 'tarkib_ai_daily_limit') as const;
+const limitKey = (kind: PressKind): 'tnved_ai_daily_limit' | 'tarkib_ai_daily_limit' =>
+  kind === 'tnved' ? 'tnved_ai_daily_limit' : 'tarkib_ai_daily_limit';
 const setLimit = (kind: PressKind, n: number) => setSetting(limitKey(kind), n, staffId);
 
 beforeAll(async () => {
