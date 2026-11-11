@@ -7809,3 +7809,273 @@ reversing the order. The whole `tests/unit` now runs before every push. (3) A pa
 package's DEFECT as its premise (the lone «TOTAL cordless drill» as a header with no goods): when two packages meet,
 a red pin is first asked whether its premise is still true. (4) Every review of a round's fixes again found the
 fixes' own regressions — three review layers, each smaller, before the merge.
+
+## O'zi yuborish — the AI sotuvchi sends an ordinary reply by itself two minutes after its card reaches him (2026-11-11; migration 0143 `agent_auto`, ledger 144; spec `docs/AI-SOTUVCHI.md` §18.3 as built)
+
+1642. **His answer removed the proof, and that is stated, not hidden.** §18.7 asked six questions. His answer was «sen
+aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan tasdiq kop kutib qolmasin»: ⭐ for
+questions 2-6, and no 50-sample proof for question 1.
+- **Two things went with the proof.**
+  - The category cell: §18.2's Wilson bound over ≥ 50 of his presses is no longer a gate.
+  - The 1-in-5 holdback. It existed only to keep that bound honest, so with no bound it would only have cost him every
+    fifth card.
+- **The measurement stays a record.** The page's numbers, `scripts/agent-calibration.ts` and the confidence stored as
+  given are all still there.
+- **What the layer rests on instead:**
+  - a deterministic gate (#1644);
+  - a hold he can see and stop (#1646, #1647);
+  - three step-downs (#1650).
+- **The cost, told to him in Uzbek:** nothing measures how often a machine reply is right. Only his ⏸, ❌ and 👎, a
+  block, or a «botmisiz?» see a wrong one, and only after it went or after it waited its two minutes.
+
+1643. **A machine press of the same ✅, and stricter than his.**
+- **The press.** The minute sweep's step 7 (`pressDueAutos`) presses through
+  `decideDraft(holder, id, 'send', {digest, auto: true}, {actorId: null})`. The send is the existing pump's. There is
+  no second send path, so every check a human ✅ meets is met again: policy re-run, identity, chat moved, window, night,
+  caps, ramp, CRM switch, listener.
+- **Refused by `{auto}` where his ✅ would pass:**
+  - status 'editing';
+  - a `final_body`;
+  - another decision;
+  - a kind other than reply;
+  - no digest;
+  - and, after the fresh policy re-run, ANY warning (`auto_warning`, nothing written — the card stays an ordinary card
+    he can press).
+- **The record.**
+  - The approval's audit row says `via: 'auto'`, and `decided_by` stays the holder (0138's CHECK and the action replay
+    read it).
+  - The audit marker, not `decided_by`, tells a machine press from his. That is also how a dead sweep's claimed row is
+    settled on reclaim: approved with the marker → pressed; approved without it → stopped / owner_send.
+- **A layer over shadow, never a mode.** `agent_config.mode` stays 'shadow', because `toConfig` maps any other value to
+  'off' and a tg-listen that was not rebuilt would cancel every approved reply.
+
+1644. **The gate is pure and says every reason in words.**
+- **The function.** `auto-gate.ts` `autoVerdict` collects ALL refusals in a stable order. There are 28 codes, each
+  with Uzbek words in ONE map `AUTO_REFUSAL_WORDS`, which the card, the page and `/agent` print — a raw code never
+  reaches him.
+- **The facts.** `autoFactsFor` (auto-send.ts) reads them at scheduling and again, fresh, at the press.
+  - Money is by TOOL: a run that called `own_balance`, `yolkira_estimate` or `avia_estimate`, answered or not, is a
+    money reply whatever the model labelled it.
+  - A «status» needs a cargo-status tool that answered.
+  - The burst's media is read from the stored chat.
+  - Night is the pump's own rule, never restated hours.
+  - The streak counts machine presses since his last decision or his last message of his own. The pump's echo and the
+    Business robot's `auto_sent` do not count as his.
+  - The day is the Tashkent day.
+  - At scheduling the day's count includes the replies already counting down, except this chat's live one (which this
+    draft supersedes).
+- **Refusing at scheduling what would be refused at the press** (fix pass A, C8). Three facts are only known there:
+  `budget_spent`, `sending_disabled` and `listener_behind`. Before, a card counted down to a press that was certain to
+  be refused. The stated trade: a draft written during a listener catch-up stays an ordinary card even if the catch-up
+  finishes within the hold.
+
+1645. **0143 adds three side tables and changes none.**
+- **`agent_auto_config`** — the singleton: armed_at/by paired, hold_sec 120 (30-600), per_day 30 (1-80), max_chars
+  400, min_confidence 0.80, `categories ⊆ {greeting, qualification, faq, status}` and non-empty, the last disarm and
+  its reason.
+- **`agent_auto_verdicts`** — one row per reply draft the inbound run wrote. It is the rehearsal record AND the send
+  state.
+  - CHECKs: `(state IS NULL) = (NOT eligible)`, `(state IS NULL) = (due_at IS NULL)`, and 👎 only on a 'pressed' row.
+  - It is written inside `createDraft`'s transaction, in a savepoint so a refused insert never fails the draft. The
+    first card therefore already carries the countdown.
+  - It cascades with its draft.
+  - `draftFromRun` is the one builder of a run's row, so the plan judges exactly the row `createDraft` inserts.
+- **`agent_auto_chats`** — the per-chat «off», purged with the chat.
+- **The ready probe.** `agentAutoReady()` (config.ts, cached TRUE only) guards every reader and writer, and is read
+  BEFORE any transaction it shapes, because a statement on a missing table aborts the transaction. One migration
+  behind, every card, press, page and `/agent` answer is what it was.
+- **`gsr_ai_reader`** gets no grant on these tables.
+
+1646. **The hold counts from the card reaching his Telegram, not from the draft** (fix pass A, C4).
+- **The defect.** The verdict's `due_at` was the insert plus 120 s. With the staff drain paused, slow or muted, the
+  machine pressed a reply whose card he had never seen. A re-pointed card whose edit failed went on showing the
+  PREVIOUS draft, and its ⏸ stopped a dead row.
+- **The stamp.** The staff drain now stamps `payload.shown = {draftId, at}` beside `tg`; platform reads only the
+  payload key and imports nothing of wms. The drain's after-send correction and a successful `refreshAgentCard` move
+  the stamp to the draft now on screen. A failed edit leaves it.
+- **The press.** `pressOne` waits until THIS draft's card has been on screen a whole hold. An unseen card is asked
+  again every minute and says «⏱ Karta Telegramingizga hali yetib bormadi». The layer fails closed: no card, no press.
+- **Superseded drafts.** `createDraft` settles a superseded draft's waiting row as 'gone' after commit. A ⏸ on a dead
+  card stops the chat's live reply, or says «Bu javob endi o‘zi ketmaydi» — never «To‘xtatildi» about nothing.
+- **The residual window, stated.** Telegram could apply two edits of one message out of order within milliseconds.
+  Closing it would need a sequence number Telegram does not give.
+
+1647. **⏸ and the press are decided by one row lock, never by a check before an act** (fix pass A, C2 C5).
+- **The claim.** The sweep claims up to 20 due rows as 'pressing' in one statement and presses them in due order.
+- **The defect.** ⏸ matched only 'waiting'. So a claimed row not yet pressed — the batch's tail, or a dead sweep's row
+  for five minutes until its reclaim — answered «Kech — yuborilmoqda» while ❌ would still have worked, and the reclaim
+  then pressed a reply he believed was gone.
+- **The tempting fix was the wrong one.** «`pressOne` re-reads and skips a stopped row», measured: a ⏸ during the
+  approval answered «To'xtatildi» and the reply went anyway.
+- **What was built.**
+  - ⏸ and every disarm move 'waiting' OR 'pressing' to 'stopped'.
+  - The machine's approval takes the layer row FOR SHARE first, alone (#1585) and requires it armed. It re-reads
+    `tg_accounts.work_account`. Its LAST statement moves the verdict 'pressing' → 'pressed' (`settleAutoPressInTx`).
+  - A miss throws and the whole approval rolls back (`auto_stopped`, `auto_disarmed`).
+  - The lock order is layer → draft → outbox → verdict, the same in every disarm.
+  - A ⏸ that came first wins. A ⏸ during the approval waits on the verdict row and answers «kech» with where the
+    reply is.
+- **His own press, bot or page, stops the countdown first** (`owner_send|edit|reject|human`), and so do his typed
+  words. A press whose stop found nothing reads the draft again, because the machine's approval may have committed
+  between the read and the stop (fix pass C, FIX-SEND-2). His ❌ then still takes the reply back, and his words get
+  «kech» instead of «faol emas» while the AI's own text goes.
+- **The page's ✏️** was a box opened in the browser with no server press, so the countdown ran on while he typed and
+  his «Saqlash» was refused after the machine pressed (fix pass B, C1). It now asks the server first
+  (`stopAutoForEdit`, outcome owner_edit). It opens on «nothing to stop», and stays shut with «kech» after a press.
+
+1648. **His ❌ and 🙋 still mean something after the machine pressed** (fix pass A, C3; fix pass C, FIX-SEND-1).
+- **The defect.** Both answered `not_live` on an approved draft. The queued reply went, and no takeover was recorded.
+- **❌ now** cancels the reply while it waits in the outbox, unread (the web cancel's own compare-and-set). It is
+  audited, and the toast says «❌ Bekor qilindi — javob mijozga ketmaydi».
+- **🙋 now** writes `human_until` and withdraws the chat's waiting rows through ONE `takeChatInTx`, shared with the
+  live card's 🙋.
+- **The re-review found a blocker in that 🙋.** It left the chat's NEXT live reply counting down. And because no draft
+  became his `taken_over`, the send step's clock either dated the press by an OLD takeover (the machine's next reply
+  went into a chat he had just taken) or by none (his OWN later ✅ was refused for 24 h).
+  - Now `takeChatInTx` first retires the chat's live reply as his (`taken_over`, `decided_by`) and stops its countdown
+    (`owner_human`). It locks the draft before the verdict, as the approval does.
+  - outbox-store `human_pressed_ms` also reads the after-press 🙋's audit row (`via` AFTER_AUTO, `takenOver`), so a ✅
+    he gives after it is dated after it.
+- **The deliberate consequence.** After-press 🙋 retires whatever draft the chat has live, including a pending price
+  draft or one carrying his ✏️ words — exactly what 🙋 on that draft's own card does.
+- **What cannot be taken back.** A reply already handed to Telegram ('sending') goes, as it does for «off» and a live
+  🙋.
+
+1649. **He arms it; everything else can only disarm it.**
+- **Arming:** `/agent auto on` or the page's panel. Only the agent's holder may arm, with the agent running and his
+  number marked «Ish raqami».
+- **Disarming:** the holder or a super_admin, by `/agent auto off` or the page. A disarm is also made inside the
+  transaction of each of:
+  - «off» (`setAgentMode`);
+  - the machine's `forceAgentOff`;
+  - `setAgentOwner`;
+  - setting the agent's number back to «Shaxsiy» (fix pass A, C5).
+- **What a disarm does.** It stops every countdown, and takes back machine-approved replies still unsent in the outbox
+  (`auto_off`).
+- **Forced offs by name** (fix pass B, C10). Every forced off had read «Telegram akkaunti cheklandi» — a customer
+  block and Telegram's 777000 notice included. Forced off is now a closed list (`forced-off.ts`: account_paused,
+  flood_repeat, blocks, telegram_notice), each with its own words on the page, in `/agent` and in the alarm.
+- **Armed on a number that is not «Ish raqami»** (fix pass B, C9). The panel shows ⚠ and the sentence «hech qaysi
+  javob o‘zi ketmaydi», never a green «yoqilgan». When it cannot be armed, it says why BEFORE the press.
+- Re-arming is always his press.
+
+1650. **Three step-downs.**
+- **The three.** Each disarms the layer with an alarm (the existing `AgentForcedOff` type, only when it was armed) to
+  the holder and every super_admin. The AI keeps drafting.
+  - **2 × 👎 within 7 days.** Each 👎 also switches that chat off for 30 days.
+  - **A block** (`USER_IS_BLOCKED` at the send step) by a customer the machine answered within 7 days.
+    `INPUT_USER_DEACTIVATED` and `USER_PRIVACY_RESTRICTED` are not blocks.
+  - **A «botmisiz?»** after a machine reply within 7 days switches that chat off for 30 days. The second such chat
+    within 7 days disarms.
+- **Changed from the design.**
+  - The «botmisiz?» window is 7 days, not §18.3's 30 minutes. A customer asks it on their next visit, not in the same
+    half hour.
+  - «3 failure signals in 24 h» was not built: it named no fact this system sees.
+- **The windows are tested at their edges** (6 and 8 days), because deleting any of the three had stayed green (review
+  TESTS-4).
+
+1651. **What he sees says what happened, never what was meant to.**
+- **The countdown card.** «⏱ HH:MM da o'zi ketadi — to'xtatish uchun ⏸ bosing» (Tashkent time), with [⏸ To'xtat]
+  [✅ Hozir yubor] / [✏️] / [❌][🙋]. A card too long to draw its ✅ shows no countdown and is never pressed
+  (`too_long`, found in stage 2).
+- **After the press** (fix pass B, C6). It had read «🤖 O‘zi yuborildi» from the press. The words now follow the
+  outbox:
+  - «🤖 AI o'zi tasdiqladi.» while the reply is on its way;
+  - «🤖 O'zi yuborildi (AI).» only once it is 'sent';
+  - «🤖 AI o'zi tasdiqlagan edi.» for one that never left.
+
+  The keyboard follows too: [❌ Bekor qilish][🙋] while the reply can be taken back, then [👎 Xato edi] once.
+- **A purged chat's card** loses every auto button, and a stale 👎 says «Bu javob topilmadi» (C7).
+- **The page's panel and `/agent`.**
+  - The panel: state, arm/disarm, the four kinds (a replace-all form with no disabled checkbox, #171), today's
+    counts, and the last 20 sent or sending, each with where its reply is.
+  - Today's counts are sent · sending · unknown · ⏸ · waiting · left to him, disjoint so they add up.
+  - The list's title says what it holds (fix pass C, FIX-REGRESS-2).
+  - `/agent`'s status line: «🤖 O‘zi yuborish: yoqilgan (bugun N/30)».
+- **The words are i18n keys in all four bundles,** and every refusal code reaching the page has a key, derived by a
+  test from the word maps.
+
+1652. **The gate never grades itself.** `agentStats`, the calibration and `scripts/agent-calibration.ts` count
+machine presses APART (`autoSent`, any outbox state). They are never in «unchanged», decided or the rate, or each
+auto send would read as one more reply he approved unchanged.
+
+1653. **Reviewed as built, and every fix reviewed again.**
+- **The first review.** Five lenses over the two build commits:
+  - wrong-send, races and words found 14 findings, deduplicated into 10 clusters (C1-C10);
+  - tests and regression died on the usage limit and were re-run; the tests lens added TESTS-1..6.
+- **Verified: 16 of 16 upheld.** Each was verified by a refuter told to reproduce it — most were reproduced with a
+  real test on its own database copy.
+- **Fixed in two passes:**
+  - pass A (dd72a46) — the press against ⏸, a disarm, a person, the card's arrival, the certain refusals;
+  - pass B (8959a9f) — what he sees, and the six missing tests: the streak through the real echo, the gate's database
+    facts, the Tashkent day, the step-downs' edges, the block hook through the real outcome, the reclaim and the
+    savepoint.
+- **The fixes' own review: 4 of 4 upheld.** Two lenses over the fixes found 4, all reproduced:
+  - the after-press 🙋 blocker (#1648);
+  - a person's press losing to an approval committing between its read and its stop (#1647);
+  - ⏸'s words after that race;
+  - the panel's list title.
+
+  Fixed in pass C (54dc808). Ten new tests reproduce the races with no stand-ins: another connection holds the verdict
+  row, the real approval and the real press queue behind it, both waits are observed in `pg_stat_activity`, then the
+  holder commits. All ten were red before the fix.
+- **An independent final check of the three passes: 2 of 2 upheld, both reproduced.** Fixed in ea38306.
+  - **🙋 while the chat's next reply was being drafted.** The model call takes 10-60 s. A 🙋 in that window retired
+    only what was live. The reply born seconds later was scheduled, pressed and sent into the chat he had just taken,
+    while the human path would only have left it as a card. The takeover and the AI mute are now gate facts
+    (`human_active`, `chat_muted`), read at scheduling, at the press, and inside the approval under the draft's lock
+    (`autoChatTakenInTx`, FOR SHARE on the conversation row alone, after the draft — `takeChatInTx`'s own order).
+  - **A countdown on a card that never rang.** `createDraft` re-points a chat's card at its newest draft and edits it
+    in place (fit-9). An edit rings nothing, so a reply that counted down on a card from five hours ago went with no
+    push at all. Now a counting-down reply rides an old copy only if that copy rang within one hold
+    (`countdownMayRide`). Otherwise it gets a fresh card, and the old copy is closed after the commit.
+- **And the final check's fix was checked once more: 1 defect upheld and reproduced, 3 nits.**
+  - **The defect: a card sent in the quiet hour rings nothing either.** The staff drain sends an `AgentDraft` card
+    silently between 22:00 and 08:00, judged at SEND time. The gate judged night only by the DUE time. So a reply
+    written in the last two minutes before 08:00 counted down on a card that arrived without a sound — and
+    `countdownMayRide` took that silent send as «it rang». Fixed in e6845f6:
+    - the gate refuses `night` at the moment the card is QUEUED as well as at the due time;
+    - the drain records on each AI card copy whether its send rang (`rang`, decided once by the run's own clock — a
+      run begun at 07:59:59 sends silently with `sent_at` after 08:00);
+    - `copyRang` reads that record, and a countdown rides only a copy that RANG within one hold;
+    - the press asks it again (`cardOnScreen`) and refuses `night` on a card that never rang.
+  - **Nits, stated and not changed:**
+    - a reply that is eligible but whose card is too long to count down gets a fresh card anyway (one extra push);
+    - closing the old copy is one best-effort edit — if it fails, the stale card keeps buttons that all answer «not
+      live» in words;
+    - `purgeAgentChat` deletes verdicts before drafts while the approval locks draft then verdict. A purge landing
+      inside an approval's few milliseconds deadlocks once (reproduced only with a helper holding a lock; 0 of 60
+      natural runs). The press wins and the purge is pressed again. Owed: delete the drafts first.
+
+1654. **Stated, not built.**
+- **The batch.** The 20-row batch claim stays: the row lock decides every race (#1647), and pressing one row at a time
+  would only narrow a window that no longer lies.
+- **Conservative counts.** A press later taken back still counts toward the day's cap, the streak, the step-downs and
+  `autoSent` — failing closed. Only the panel's list leaves it out.
+- **Owed:**
+  - an alarm for cards that never reach him (the layer fails closed and the card and page say so);
+  - the page refreshing itself while a card counts down;
+  - the 20:00 «🤖 AI bugun …» line;
+  - a truthful word for a late press on an 'unknown' outbox (it says «yuborildi»; the card's own line says
+    «❓ noma’lum»).
+- **Not tested in integration.** The 'stranger' gate fact: `tg_messages_owner_check` makes such a chat impossible to
+  draft, so the unit gate pins it.
+- **The narrowest remaining window, not reproduced.** The listener claims a just-committed machine reply between that
+  commit and an after-press 🙋's cancel.
+- **Not provable here.** No real Telegram or real model. The first armed day is watched on the page and in the
+  tg-listen log.
+
+1655. **Process.**
+- **(1) A dead workflow's «0 upheld».** The first review workflow hit the usage limit: 30 agents died, and its «0
+  upheld» was the absence of verifiers, not their verdict. The result was read from the journal before it was
+  believed, and the dead lenses were re-run.
+- **(2) Isolation.** Every verifier got its own copy of the database (`gsr_av0..31`) and its own worktree for any edit.
+  Two agents run at once, and the `agent_auto_config` singleton would have made one agent's arming another's fixture.
+- **(3) The fix nobody should build.** The verifier of C2 built report 2's proposed fix in a worktree and showed it
+  worse than the defect. A fix proposed inside a finding is a hypothesis too.
+- **(4) Each review layer again found the previous layer's regressions.** Pass A's after-press 🙋 was itself the
+  blocker of the next review. There were five layers before the merge (16, 4, 2, then 1 defect), each narrower than
+  the last: the final one is a two-minute window before 08:00. The stopping rule: a layer whose only defect is that
+  narrow, with its fix red-proven, ships.
+- **(5) The ritual and CI ran in parallel.** His «buni tezlashtir»: the fresh database was built while the last fix
+  agent worked, and the PR was opened as the local ritual started, so both ran on the same commit.

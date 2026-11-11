@@ -3451,8 +3451,10 @@ TOOL, status backed by a tool, media from the stored chat, the pump's night rule
 (counting the countdowns), budget / CRM switch / listener refused at scheduling. 0143: `agent_auto_config` (singleton),
 `agent_auto_verdicts` (one row per reply draft, written in `createDraft`'s tx in a savepoint; state waiting →
 pressing → pressed | stopped | refused | gone), `agent_auto_chats`; `agentAutoReady()` read BEFORE any tx. RULES WITH
-ONE HOME: the hold counts from the card REACHING him (`payload.shown {draftId, at}` stamped by the staff drain; no card,
-no press); who wins is ONE row lock — the approval takes the layer FOR SHARE first, re-reads «Ish raqami», and its LAST
+ONE HOME: the hold counts from the card REACHING him WITH A SOUND (`payload.shown {draftId, at}` + `rang`, stamped by
+the staff drain; no card, no press; an edit and a quiet-hour send ring nothing, so a countdown never rides a copy
+that rang more than one hold ago or not at all — `countdownMayRide`, `copyRang`; the takeover and the AI mute are
+gate facts read again under the draft's lock, `autoChatTakenInTx`); who wins is ONE row lock — the approval takes the layer FOR SHARE first, re-reads «Ish raqami», and its LAST
 statement moves 'pressing' → 'pressed' (`settleAutoPressInTx`), while ⏸ and every disarm move 'waiting' OR 'pressing'
 to 'stopped' (lock order layer → draft → outbox → verdict; a check-then-act re-read was measured WORSE — «To'xtatildi»
 and the reply went); a person's press stops the countdown first and re-reads the draft if the stop found nothing
@@ -3463,7 +3465,8 @@ disarm inside «off», `forceAgentOff` (a closed reason list, `forced-off.ts`), 
 taking back unsent machine replies. Step-downs: 2×👎 in 7 days (each 👎 = that chat off 30 days), a block within 7
 days, the second «botmisiz?» chat within 7 days. Card words follow the OUTBOX («🤖 O'zi yuborildi» only on 'sent').
 Stats count machine presses apart (`autoSent`). Reviewed as built (five lenses, 16 of 16 upheld, passes A/B), the
-fixes reviewed (4 of 4, one blocker, pass C), then an independent final check. Deploy MUST rebuild tg-listen
+fixes reviewed (4 of 4, one blocker, pass C), then two independent checks (2, then 1 — a two-minute window before
+08:00). Deploy MUST rebuild tg-listen
 (the send step reads the 🙋 audit row and the block hook). Owed: an alarm for cards that never reach him, the page's
 self-refresh, the 20:00 line. NOT provable here: real Telegram and the real model — the first armed day is watched.
 

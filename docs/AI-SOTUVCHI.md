@@ -1218,7 +1218,9 @@ stays a record on the page and in the script; it gates nothing (#1642).
   - **The chat:** a client or a lead, never the client-finding agent's prospect; not switched off for this chat; not
     his for 24 h after a 🙋 and the AI not muted in it (read at scheduling, at the press, and again under the draft's
     lock inside the machine's approval).
-  - **The account and time:** the holder's number marked «Ish raqami»; daytime by the pump's own night rule.
+  - **The account and time:** the holder's number marked «Ish raqami»; daytime by the pump's own night rule — judged
+    when the reply would go AND when its card is queued, because a card the drain sends in the quiet hour arrives
+    without a sound.
   - **Limits:**
     - at most 2 machine presses in a row in one chat with no decision or message of his between;
     - at most 30 a Tashkent day (counting the replies already counting down);
@@ -1238,6 +1240,8 @@ stays a record on the page and in the script; it gates nothing (#1642).
   is never pressed — it says «⏱ Karta Telegramingizga hali yetib bormadi».
   - An edit rings nothing, so a reply that counts down never rides an old card copy that rang more than one hold ago
     (`countdownMayRide`): it gets a card of its own (a push), and the old copy is closed («↪️ Mijoz yana yozdi»).
+  - The drain records on each card copy whether its send rang (`rang`). A countdown never runs on a copy that did
+    not: the press refuses `night` on it (`copyRang`, `cardOnScreen`).
 - **Who wins** (#1647):
   - The approval transaction takes the layer row FOR SHARE first and requires it armed. It re-reads «Ish raqami».
     Its LAST statement moves the verdict 'pressing' → 'pressed'; a miss rolls the whole approval back
