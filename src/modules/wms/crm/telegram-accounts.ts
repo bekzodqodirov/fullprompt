@@ -1,6 +1,8 @@
 import { asc, eq, sql } from 'drizzle-orm';
 import { db, pgClient } from '../../platform/db/client';
+import { logger } from '../../platform/logger';
 import { clients, leads, tgAccounts, tgMessages, tgOutbox, users } from '../../platform/db/schema';
+import { agentAutoReady, disarmAutoInTx, readAgentConfig } from '../agent/config';
 import { openSession, sealSession, sessionKey, sessionOpens } from './telegram-session';
 import { bridgeState, type BridgeState } from './telegram-live';
 import type { ClientPhones, MessageRow } from './telegram-import';
@@ -532,14 +534,33 @@ export async function takeListenerLock(accountId: string): Promise<(() => Promis
  * Mark the actor's own connected account as a work number, or back to
  * personal (0064). Returns false when they have no account to set it on —
  * a refusal the screen can print, rather than a silent no-op.
+ *
+ * «Shaxsiy raqam» on the AI sotuvchi's own account switches «o'zi yuborish»
+ * off in the same transaction (fix pass A, C5): arming needs «Ish raqami», a
+ * press in flight must lose to it (the press takes the layer's row first —
+ * agent auto-send `autoPressStandsInTx`), and what the machine approved and
+ * has not yet sent is taken back. Re-arming is always his press.
  */
 export async function setWorkAccount(managerUserId: string, work: boolean): Promise<boolean> {
-  const done = await db
-    .update(tgAccounts)
-    .set({ workAccount: work })
-    .where(eq(tgAccounts.managerUserId, managerUserId))
-    .returning({ id: tgAccounts.id });
-  return done.length > 0;
+  // Read BEFORE the transaction: a statement on a missing table would abort it.
+  const disarm = !work && (await agentAutoReady()) && (await readAgentConfig())?.ownerUserId === managerUserId;
+  const out = await db.transaction(async (tx) => {
+    const done = await tx
+      .update(tgAccounts)
+      .set({ workAccount: work })
+      .where(eq(tgAccounts.managerUserId, managerUserId))
+      .returning({ id: tgAccounts.id });
+    if (done.length === 0 || !disarm) return { done: done.length > 0, cards: [] as string[] };
+    const off = await disarmAutoInTx(tx, 'not_work_account', managerUserId, { takeBack: true });
+    return { done: true, cards: [...off.stoppedDraftIds, ...off.takenBackDraftIds] };
+  });
+  if (out.cards.length > 0) {
+    const { refreshAgentCard } = await import('../agent/card-io');
+    for (const id of out.cards) {
+      await refreshAgentCard(id).catch((err: unknown) => logger.warn({ err, draftId: id }, '[agent] card not refreshed after «Shaxsiy raqam»'));
+    }
+  }
+  return out.done;
 }
 
 /**

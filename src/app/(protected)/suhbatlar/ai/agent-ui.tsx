@@ -5,9 +5,14 @@ import { useTranslations } from 'next-intl';
 import {
   agentAddFactAction,
   agentApproveStyleAction,
+  agentAutoArmAction,
+  agentAutoCategoriesAction,
+  agentAutoFeedbackAction,
+  agentAutoStopAction,
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
+  agentEditOpenAction,
   agentModeAction,
   agentNumbersAction,
   agentOwnTextAction,
@@ -17,7 +22,7 @@ import {
   agentSessionAction,
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
-import { errorKey } from './labels';
+import { CATEGORY_KEYS, errorKey } from './labels';
 
 /**
  * The page's buttons. Each calls ONE server action — the same function the
@@ -81,6 +86,7 @@ export function DraftActions({
   holderName,
   canSend,
   waitingInChat,
+  autoWaiting = false,
 }: {
   draftId: string;
   digest: string;
@@ -90,6 +96,8 @@ export function DraftActions({
   canSend: boolean;
   /** The chat's approved replies still waiting — 🙋 takes them back too, so it asks first (F10). */
   waitingInChat: number;
+  /** «O'zi yuborish» counts down on this card: ⏸ first, and ✅ is «send now» — the bot's keyboard. */
+  autoWaiting?: boolean;
 }) {
   const t = useTranslations('agentAi');
   const { pending, error, note, run } = useAction();
@@ -105,15 +113,26 @@ export function DraftActions({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {canSend && (
+        {autoWaiting && (
           <button
             type="button"
             className="btn-primary"
             disabled={pending}
+            data-testid="agent-auto-stop"
+            onClick={() => run(() => agentAutoStopAction(draftId))}
+          >
+            ⏸ {t('autoStop')}
+          </button>
+        )}
+        {canSend && (
+          <button
+            type="button"
+            className={autoWaiting ? 'btn-secondary' : 'btn-primary'}
+            disabled={pending}
             data-testid="agent-send"
             onClick={() => run(() => agentDecideAction(draftId, 'send', digest))}
           >
-            ✅ {t('send')}
+            ✅ {autoWaiting ? t('sendNow') : t('send')}
           </button>
         )}
         <button
@@ -121,7 +140,15 @@ export function DraftActions({
           className="btn-secondary"
           disabled={pending}
           data-testid="agent-edit"
-          onClick={() => setEditing((was) => !was)}
+          onClick={() => {
+            if (editing) {
+              setEditing(false);
+              return;
+            }
+            // The server FIRST (fix pass B, C1): a reply counting down to the machine's press stops before the box
+            // opens — never his typing while the AI's own text goes. «Kech» when the press already went: no box.
+            run(() => agentEditOpenAction(draftId), () => setEditing(true));
+          }}
         >
           ✏️ {t('edit')}
         </button>
@@ -566,5 +593,140 @@ export function StyleApprove() {
       </button>
       <Feedback error={error} note={null} />
     </div>
+  );
+}
+
+/**
+ * «O'zi yuborish» on or off. Arming is the account holder's alone, and asks
+ * first — from then on a reply the rules admit leaves his account without his
+ * press; switching off is the holder's or any super_admin's, and never asks.
+ * What arming would refuse (the agent off, the number not «Ish raqami») is
+ * said by the panel BEFORE the press (fix pass B, C9), and the button is then
+ * not offered — never a confirm about a switch that cannot move. A refusal
+ * the page could not know of is still said in words.
+ */
+export function AutoArmButtons({
+  armed,
+  canArm,
+  canDisarm,
+  armBlocked = false,
+}: {
+  armed: boolean;
+  canArm: boolean;
+  canDisarm: boolean;
+  /** Arming would be refused for a reason the panel already says above the button. */
+  armBlocked?: boolean;
+}) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  if (armed && !canDisarm) return null;
+  if (!armed && !canArm) {
+    return (
+      <p className="text-xs text-ink-500" data-testid="agent-auto-holder-only">
+        {t('autoArmHolderOnly')}
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-1">
+      {armed ? (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending}
+          data-testid="agent-auto-disarm"
+          onClick={() => run(() => agentAutoArmAction(false))}
+        >
+          ⏹ {t('autoDisarm')}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={pending || armBlocked}
+          data-testid="agent-auto-arm"
+          onClick={() => {
+            if (armBlocked) return;
+            if (!window.confirm(t('autoArmConfirm'))) return;
+            run(() => agentAutoArmAction(true));
+          }}
+        >
+          🤖 {t('autoArm')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** The four kinds of reply the layer may send — the order the design names them. */
+const AUTO_CATEGORIES = ['greeting', 'qualification', 'faq', 'status'] as const;
+
+/**
+ * Which kinds go by themselves — a replace-all of the four boxes. Controlled,
+ * posted as one list by the action (never a form whose disabled box posts
+ * nothing, #171); a reader who may not change it sees the boxes and no save.
+ */
+export function AutoCategoriesForm({ current, editable }: { current: readonly string[]; editable: boolean }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  const [chosen, setChosen] = useState<string[]>([...current]);
+  const changed = chosen.length !== current.length || chosen.some((c) => !current.includes(c));
+  return (
+    <div className="space-y-2" data-testid="agent-auto-categories">
+      <p className="text-sm font-semibold">{t('autoCategoriesTitle')}</p>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {AUTO_CATEGORIES.map((c) => (
+          <label key={c} className="flex min-h-11 items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={chosen.includes(c)}
+              disabled={!editable || pending}
+              onChange={(event) =>
+                setChosen((was) => (event.target.checked ? [...was.filter((x) => x !== c), c] : was.filter((x) => x !== c)))
+              }
+              data-testid={`agent-auto-category-${c}`}
+            />
+            {t(CATEGORY_KEYS[c] as 'category.greeting')}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-ink-500">{t('autoCategoriesHint')}</p>
+      {editable && (
+        <button
+          type="button"
+          className="btn-secondary"
+          disabled={pending || !changed || chosen.length === 0}
+          data-testid="agent-auto-categories-save"
+          onClick={() => run(() => agentAutoCategoriesAction(chosen))}
+        >
+          {t('save')}
+        </button>
+      )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/** «👎 Xato edi» on a reply the machine sent — the bot's op `f`; asks first, because a second one in a week switches the layer off. */
+export function AutoBadButton({ draftId }: { draftId: string }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        className="btn-ghost !min-h-8 !px-2 text-xs"
+        disabled={pending}
+        data-testid="agent-auto-bad"
+        onClick={() => {
+          if (!window.confirm(t('autoBadConfirm'))) return;
+          run(() => agentAutoFeedbackAction(draftId));
+        }}
+      >
+        👎 {t('autoBad')}
+      </button>
+      {error && <span className="text-xs font-semibold text-bad">{error}</span>}
+    </span>
   );
 }

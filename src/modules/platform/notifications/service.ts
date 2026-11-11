@@ -1439,7 +1439,38 @@ async function correctAgentCopyInFlight(
   const rows = [...(buttonsFor(type, now) ?? []), ...(message.urlRow ? [message.urlRow] : [])];
   if (message.html === sent.html && JSON.stringify(rows) === JSON.stringify(sent.rows)) return;
   const res = await editText({ chatId: tg.chatId, messageId: tg.messageId, html: message.html, replyMarkup: keyboardOf(rows) });
-  if (!res.ok) logger.warn({ notificationId, description: res.description }, 'agent card copy not corrected after its send');
+  if (!res.ok) {
+    logger.warn({ notificationId, description: res.description }, 'agent card copy not corrected after its send');
+    return;
+  }
+  // The copy now shows the card as the row stands — a draft the row was re-pointed at while it was in flight.
+  const shown = shownStamp(type, now);
+  if (shown) {
+    await db
+      .update(notifications)
+      .set({ payload: sql`${notifications.payload} || ${JSON.stringify({ shown })}::jsonb` })
+      .where(and(eq(notifications.id, notificationId), sql`${notifications.payload}->>'draftId' = ${shown.draftId}`));
+  }
+}
+
+/**
+ * Which AI draft a copy of an `AgentDraft` card shows on his screen, and since
+ * when (`shown`, written beside `tg`): the payload's own `draftId` as it went
+ * out, or as an edit put it there. «O'zi yuborish» presses a reply only a hold
+ * after its OWN card reached him (wms agent auto-send `cardShownAt`) — a card
+ * re-pointed at a newer draft whose edit failed still shows the previous one.
+ * A plain payload key; nothing here knows what a draft is. Null for any other
+ * message.
+ *
+ * Written beside it, once, by the send: `rang` — whether the copy arrived with a
+ * sound (`sendsSilently`, decided by the run's own clock). An edit rings nothing
+ * and never rewrites it, so it stays the fact about the copy whichever draft the
+ * row is re-pointed at: «o'zi yuborish» counts down only on a card that rang
+ * (auto-send `copyRang`).
+ */
+function shownStamp(type: string, payload: Record<string, unknown>): { draftId: string; at: string } | null {
+  if (type !== 'AgentDraft' || typeof payload.draftId !== 'string' || payload.draftId === '') return null;
+  return { draftId: payload.draftId, at: new Date().toISOString() };
 }
 
 /**
@@ -1596,6 +1627,9 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
     let res: SendResult;
     // What went out — the text and every keyboard row — for the agent card's after-send check.
     let sentAs: { html: string; rows: BotButton[][] } | null = null;
+    // Without a sound — decided ONCE, by this run's own clock, and recorded on an AI card's copy (`rang`): the row's
+    // `sent_at` is written after the round trip, and a run begun at 07:59:59 sends silently past 08:00.
+    const silent = sendsSilently(notification.type, payload, now);
     try {
       // Inline buttons ride on the send, by type (staff bot, round 35): a
       // task lands with its buttons, a debtor request with «Ruxsat / Yo‘q».
@@ -1613,13 +1647,13 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
           link.telegramChatId,
           message,
           payload,
-          sendsSilently(notification.type, payload, now),
+          silent,
         )) ??
         (await deliverStaffMessage(
           link.telegramChatId,
           message,
           buttons,
-          sendsSilently(notification.type, payload, now),
+          silent,
         ));
     } catch (err) {
       // The sender answers rather than throws; this is the database under
@@ -1644,6 +1678,7 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
         res.messageId !== null
           ? { chatId: Number(link.telegramChatId), messageId: res.messageId }
           : null;
+      const shown = tg ? shownStamp(notification.type, payload) : null;
       await db
         .update(notifications)
         .set({
@@ -1652,7 +1687,7 @@ export async function sendPendingTelegram(now: Date = new Date()): Promise<void>
           error: null,
           // Merged in SQL, not spread from the row read above: the forward
           // may have written `forwarded` onto it since.
-          ...(tg ? { payload: sql`${notifications.payload} || ${JSON.stringify({ tg })}::jsonb` } : {}),
+          ...(tg ? { payload: sql`${notifications.payload} || ${JSON.stringify(shown ? { tg, shown, rang: !silent } : { tg })}::jsonb` } : {}),
         })
         .where(eq(notifications.id, notification.id));
       settled.add(notification.id);

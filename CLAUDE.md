@@ -168,7 +168,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The price's link to its calculation; a new deal per coded request; a lead for a colleague's client; a won lead split by SALE; the one-line tarkib and «шт» | `docs/UCH-BAND.md` — agreed 2026-10-27 (his «3b / 4 a / 5 a / 6 a / 7 b», Q1-Q2 ⭐), BUILT; §7 is the design as judged |
 | A plan that takes cargo still on the road to its warehouse — the road part, owed, missed, the landing claim | `docs/YOLDAGI-YUK.md` — agreed 2026-10-27 (his 1a 2a 3a 4a 5a), BUILT; v2 is the design as judged |
 | Horgos and Yallama hold the truck until the logist's press — the wait as typed, the phone's arrival, the late warning once per wait | `docs/XORGOS-NAVBAT.md` — agreed 2026-11-08 (his 1a 2a 3a 4a 5a, code HOR), BUILT; §5 is the design as judged |
-| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, the auto-send design and his six questions of 2026-11-10) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live |
+| **AI sotuvchi** — the shadow salesperson on HIS personal Telegram session: drafts, his ✅, the ban fuses, the calc loop, strangers, the knowledge page | `docs/AI-SOTUVCHI.md` (§17 = phase 1 as built, §17.14 = his four sets of answers 2026-10-24, binding; **§18 = the road to an autonomous sales manager** — two context windows, «80 %» as a measured number, his six questions of 2026-11-10; **§18.3 = «o'zi yuborish», the auto-send layer AS BUILT** on his answer of 2026-11-11, migration 0145) + `docs/AI-SOTUVCHI-REVIEW.md` (the pre-code review); phase 1 SHIPPED and live; auto-send SHIPPED, armed only by him |
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
@@ -3562,7 +3562,44 @@ questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
 498 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 2ee5b70, ledger 145; opened as PR #145 together with
 the tarkib tuzatishlari round (0143) it sits on.
 
-**Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
+**Round — «o'zi yuborish», the AI sotuvchi's auto-send (2026-11-11; DECISIONS #1683-#1696 — renumbered from #1642-#1655 on the
+merge, the THIRTY-SIXTH collision: PR #145's tarkib rounds took #1642-#1682 and 0143-0144 first; migration 0145
+`agent_auto` — ledger must reach 146; spec `docs/AI-SOTUVCHI.md` §18.3 as built).** His «sen aytgandek bolsin faqat 50
+talik test bolmasin ozi javob beraversin men bergan tasdiq kop kutib qolmasin»: every ⭐ of §18.7 but NO proof gate
+and NO 1-in-5 holdback — the §18.2 measurement stays a record and gates nothing (#1683, the cost told to him). A
+MACHINE PRESS of the same ✅: the minute sweep's step 7 `pressDueAutos` → `decideDraft(holder, id, 'send', {digest,
+auto: true}, {actorId: null})` → the existing pump; `{auto}` is stricter (strictly pending, any warning on the fresh
+re-run refuses `auto_warning`, audit `via: 'auto'`, `decided_by` = holder — the AUDIT marker tells a machine press
+from his). A layer over shadow (`mode` stays 'shadow'). The gate is pure (`auto-gate.ts` `autoVerdict`, 28 codes, every
+one collected, `AUTO_REFUSAL_WORDS`), its facts read by `autoFactsFor` at scheduling AND fresh at the press: money by
+TOOL, status backed by a tool, media from the stored chat, the pump's night rule, a streak of 2, 30 a Tashkent day
+(counting the countdowns), budget / CRM switch / listener refused at scheduling. 0145: `agent_auto_config` (singleton),
+`agent_auto_verdicts` (one row per reply draft, written in `createDraft`'s tx in a savepoint; state waiting →
+pressing → pressed | stopped | refused | gone), `agent_auto_chats`; `agentAutoReady()` read BEFORE any tx. RULES WITH
+ONE HOME: the hold counts from the card REACHING him WITH A SOUND (`payload.shown {draftId, at}` + `rang`, stamped by
+the staff drain; no card, no press; an edit and a quiet-hour send ring nothing, so a countdown never rides a copy
+that rang more than one hold ago or not at all — `countdownMayRide`, `copyRang`; the takeover and the AI mute are
+gate facts read again under the draft's lock, `autoChatTakenInTx`); who wins is ONE row lock — the approval takes the layer FOR SHARE first, re-reads «Ish raqami», and its LAST
+statement moves 'pressing' → 'pressed' (`settleAutoPressInTx`), while ⏸ and every disarm move 'waiting' OR 'pressing'
+to 'stopped' (lock order layer → draft → outbox → verdict; a check-then-act re-read was measured WORSE — «To'xtatildi»
+and the reply went); a person's press stops the countdown first and re-reads the draft if the stop found nothing
+(the page's ✏️ asks the server before its box opens); after the machine's press ❌ takes the unread reply back and 🙋
+(`takeChatInTx`, ONE body for live and pressed cards) retires the chat's live reply as his and its audit row dates the
+press for `human_pressed_ms`. Arming: the holder, agent running, «Ish raqami» (`/agent auto on`, the page panel);
+disarm inside «off», `forceAgentOff` (a closed reason list, `forced-off.ts`), `setAgentOwner`, `setWorkAccount(false)`,
+taking back unsent machine replies. Step-downs: 2×👎 in 7 days (each 👎 = that chat off 30 days), a block within 7
+days, the second «botmisiz?» chat within 7 days. Card words follow the OUTBOX («🤖 O'zi yuborildi» only on 'sent').
+Stats count machine presses apart (`autoSent`). Reviewed as built (five lenses, 16 of 16 upheld, passes A/B), the
+fixes reviewed (4 of 4, one blocker, pass C), then two independent checks (2, then 1 — a two-minute window before
+08:00). Deploy MUST rebuild tg-listen
+(the send step reads the 🙋 audit row and the block hook). Owed: an alarm for cards that never reach him, the page's
+self-refresh, the 20:00 line. NOT provable here: real Telegram and the real model — the first armed day is watched.
+**16,074 unit/integration (913 files) + 499 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at f74f4df (the
+merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
+job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
+
+**Latest migration: 0145** (`agent_auto`, `when` …124; ledger must reach **146**). Before
+it: 0144 (`tarkib_takliflar`, `when` …123). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
 it: 0141 (`intake_door`, `when` …120). Before
@@ -3711,7 +3748,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **145** since 0144 (144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **146** since 0145 (145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

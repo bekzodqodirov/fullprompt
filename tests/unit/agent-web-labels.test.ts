@@ -7,6 +7,7 @@ import uz from '../../messages/uz.json';
 import zh from '../../messages/zh-CN.json';
 import {
   AGENT_SECTIONS,
+  AUTO_DISARM_KEYS,
   CATEGORY_KEYS,
   ERROR_KEYS,
   PAUSE_KIND_KEYS,
@@ -38,6 +39,7 @@ function lookup(tree: Tree, path: string): unknown {
 
 const MAPS: Record<string, Record<string, string>> = {
   ERROR_KEYS,
+  AUTO_DISARM_KEYS,
   SECTION_KEYS,
   PAUSE_KIND_KEYS,
   CATEGORY_KEYS,

@@ -79,6 +79,7 @@ const row = (patch: Partial<CalibrationDraftRow> = {}): CalibrationDraftRow => (
   notes: 0,
   money: false,
   actions: [],
+  autoSent: false,
   ...patch,
 });
 
