@@ -319,6 +319,18 @@ describe('nobody loses what they hear today', () => {
     const quiet = await receive(sellers.ops.clientId, deal.id);
     await processPendingEvents();
     expect((await rowsAbout(alarmed)).of(sellers.ops.id).map((r) => [r.type, r.status])).toEqual([['UnquotedCargo', 'pending']]);
+    // …and the bell's row is the same one: both rows are born under the type the person still hears.
+    const bell = await db
+      .select({ type: notifications.type })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.channel, 'in_app'),
+          eq(notifications.userId, sellers.ops.id),
+          sql`${notifications.payload}->>'receiptId' = ${alarmed}`,
+        ),
+      );
+    expect(bell.map((r) => r.type)).toEqual(['UnquotedCargo']);
     expect((await rowsAbout(quiet)).of(sellers.ops.id).map((r) => [r.type, r.status, r.error])).toEqual([
       ['ReceiptConfirmed', 'muted', 'muted by user'],
     ]);
@@ -352,6 +364,8 @@ describe('the alarm reaches somebody who can act', () => {
     expect(text.split('\n')[0]).toMatch(/^📥 Prixod keldi — /);
     expect(text).toContain(`(Prixod mijoz ${SUFFIX}-6)`);
     expect(text).not.toContain('undefined');
+    // WHY it came to an admin — on the admins' copy alone.
+    expect(text).toContain('👤 Mijozning sotuvchisi yo‘q — sizga yuborildi');
     expect(buttonsFor(row.type, row.payload as Record<string, unknown>)).toEqual([
       [{ text: '📎 Fayl qo‘shish', callback_data: `pf:${receiptId}` }],
     ]);
@@ -371,6 +385,36 @@ describe('the alarm reaches somebody who can act', () => {
     expect(of(sellers.nochat.id).map((r) => [r.type, r.status, r.error])).toEqual([
       ['ReceiptConfirmed', 'muted', 'telegram not linked'],
     ]);
+    expect(of(adminId).map((r) => [r.type, r.status])).toEqual([['UnquotedCargo', 'pending']]);
+    // The admin is told it is HIS to act on: the client's card names a
+    // seller, and without this line he would assume that seller was told.
+    const admins = renderTelegramText('UnquotedCargo', of(adminId)[0]!.payload as Record<string, unknown>, 'uz');
+    expect(admins).toContain(`👤 Sotuvchi PX nochat ${SUFFIX} bu xabarni ololmaydi`);
+    // …and the seller's own copy says nothing of the kind.
+    const own = renderTelegramText('ReceiptConfirmed', of(sellers.nochat.id)[0]!.payload as Record<string, unknown>, 'uz');
+    expect(own).not.toContain('👤');
+  });
+
+  it('a seller who LEFT keeps his linked chat — and is still nobody: the admins hear it', async () => {
+    // The realistic leaver: deactivating a person flips `users.active` and
+    // nothing else, so his Telegram link stays `linked` and his clients go on
+    // pointing at him. «Has a linked chat» alone would call him reachable.
+    const leaverId = await mintUser('leaver', { role: 'sales_manager' });
+    const clientId = await mintClient(leaverId);
+    await db.update(users).set({ active: false }).where(eq(users.id, leaverId));
+    const receiptId = await receive(clientId);
+    await processPendingEvents();
+    const { of } = await rowsAbout(receiptId);
+    expect(of(adminId).map((r) => [r.type, r.status])).toEqual([['UnquotedCargo', 'pending']]);
+  });
+
+  it('an admin who is himself the client’s seller, and unreachable, is not told twice — the OTHER admins hear it', async () => {
+    const bossId = await mintUser('boss', { role: 'admin', chat: false });
+    const clientId = await mintClient(bossId);
+    const receiptId = await receive(clientId);
+    await processPendingEvents();
+    const { of } = await rowsAbout(receiptId);
+    expect(of(bossId).map((r) => [r.type, r.status, r.error])).toEqual([['ReceiptConfirmed', 'muted', 'telegram not linked']]);
     expect(of(adminId).map((r) => [r.type, r.status])).toEqual([['UnquotedCargo', 'pending']]);
   });
 });
@@ -425,6 +469,43 @@ describe('what the fold must not touch', () => {
     const ev = await eventsOf(receiptId);
     expect(ev('UnquotedCargo')).toHaveLength(0);
     expect(ev('UnlinkedCargo')).toHaveLength(0);
+  });
+
+  it('the claim door reads the deal by the same rule: a deal the prixod carried under its PREVIOUS client is no deal of the new one’s', async () => {
+    // A → B: the correction moves the client and leaves `deal_id` on A's job.
+    const previous = await mintDeal(sellers.plain.clientId, true);
+    const receiptId = await receive(sellers.plain.clientId, previous.id);
+    await processPendingEvents();
+    await assignReceiptClient(receiptId, sellers.alerts.clientId, ctx());
+    await processPendingEvents();
+    const { of } = await rowsAbout(receiptId);
+    const row = of(sellers.alerts.id).find((r) => (r.payload as Record<string, unknown>).via === 'assign')!;
+    const payload = row.payload as Record<string, unknown>;
+    // B's seller is never shown A's job: «attach it» (B has a deal of its own
+    // from the test above) or «price it» — and no code of A's anywhere.
+    expect(['none', 'attachable']).toContain(payload.dealState);
+    expect(payload.dealCode).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain(previous.code);
+    expect(renderTelegramText(row.type, payload, 'uz')).not.toContain(previous.code);
+  });
+
+  it('…and the claim is no «first cargo»: the staff group is not told a seller brought in cargo that came weeks ago', async () => {
+    // `staff_group_posts` holds one claimed row per thing said (skipped when
+    // no group is linked) — the claim door must write none.
+    const fresh = await mintClient(sellers.plain.id);
+    const receiptId = await receive(null);
+    await processPendingEvents();
+    await assignReceiptClient(receiptId, fresh, ctx());
+    await processPendingEvents();
+    const posts = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${fresh}`}`);
+    expect(posts).toHaveLength(0);
+    // The control: the same client's own CONFIRMED prixod is one.
+    const second = await mintClient(sellers.plain.id);
+    await receive(second);
+    await processPendingEvents();
+    const said = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${second}`}`);
+    expect(said).toHaveLength(1);
+    await db.execute(sql`DELETE FROM staff_group_posts WHERE dedupe_key IN (${`first_cargo:${fresh}`}, ${`first_cargo:${second}`})`);
   });
 
   it('the claim door for a client with no seller tells nobody, as it always did', async () => {

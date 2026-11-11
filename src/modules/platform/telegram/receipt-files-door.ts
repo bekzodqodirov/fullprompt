@@ -24,6 +24,7 @@ import {
   receiptFilesDone,
   receiptFilesKeyboard,
   receiptFilesPrompt,
+  receiptFilesReplied,
   receiptFilesReopenKeyboard,
   standingReceiptFiles,
   type ReceiptFilesWait,
@@ -65,9 +66,23 @@ interface FileCtx {
     date: number;
     photo?: { file_id: string; file_size?: number }[];
     document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
+    reply_to_message?: { message_id: number; from?: { is_bot?: boolean } };
   };
   reply: Reply;
   api?: unknown;
+}
+
+/**
+ * Does this file swipe-reply to one of the BOT's messages that is not the
+ * collection's own? Telegram's gesture for «this belongs to that message»: a
+ * reply to another prixod's «Prixod keldi», to an AI answer (the add door),
+ * to a thread or a task ping. Such a file is never this collection's — it
+ * was storing GS812's packing list on GS777's prixod, and it took a file
+ * the add door had always opened on.
+ */
+function repliesElsewhere(message: FileCtx['message'], wait: ReceiptFilesWait): boolean {
+  const target = message.reply_to_message;
+  return Boolean(target && target.from?.is_bot === true && target.message_id !== wait.messageId);
 }
 
 const apiOf = (ctx: { api?: unknown }) => ctx.api as KeptLastApi | undefined;
@@ -250,6 +265,10 @@ export async function receiptFileArrives(ctx: FileCtx, chatId: bigint): Promise<
   if (!standing) return false;
   const file = fileOf(ctx.message);
   if (!file) return false;
+  // A reply to another message is that message's: the doors below this one
+  // (the add door, a thread, a task) answer it as they always did, and what
+  // none of them takes is told by `receiptFileRepliedElsewhere`.
+  if (repliesElsewhere(ctx.message, standing.wait)) return false;
   const at = { messageId: ctx.message.message_id, date: ctx.message.date };
   const under = { reply_parameters: { message_id: at.messageId, allow_sending_without_reply: true } };
 
@@ -328,6 +347,21 @@ export async function receiptFileArrives(ctx: FileCtx, chatId: bigint): Promise<
   return true;
 }
 
+/**
+ * A replied file that NO door took, while a collection is live: said under
+ * the file — never the silence a staff chat's unclaimed file meets, under a
+ * prompt that still says «shu yerga yuboring». Asked by the ladder AFTER the
+ * task door and the reply door declined it. True = said.
+ */
+export async function receiptFileRepliedElsewhere(ctx: FileCtx, chatId: bigint): Promise<boolean> {
+  const standing = standingReceiptFiles(chatId, ctx.message.date);
+  if (!standing || standing.state !== 'live' || !repliesElsewhere(ctx.message, standing.wait)) return false;
+  await ctx.reply(receiptFilesReplied(standing.wait), {
+    reply_parameters: { message_id: ctx.message.message_id, allow_sending_without_reply: true },
+  });
+  return true;
+}
+
 /** How long a run of files waits before its one acknowledgement — an album's parts arrive within a second of each other. */
 export const RECEIPT_ACK_DEBOUNCE_MS = 1200;
 
@@ -335,7 +369,19 @@ export const RECEIPT_ACK_DEBOUNCE_MS = 1200;
 async function drawReceiptFiles(ctx: { reply: Reply; api?: unknown }, chatId: bigint): Promise<void> {
   // Re-read: «✅ Bo‘ldi», the cancel or another collector may have ended it during the debounce.
   const standing = standingReceiptFiles(chatId);
-  if (!standing || standing.state !== 'live' || standing.wait.files.length === 0) return;
+  if (!standing || standing.wait.files.length === 0) return;
+  if (standing.state === 'closed') {
+    // Taken by its own date and drawn after the window passed by the clock
+    // (a file sent into a long outage): it IS on the prixod, so it is said —
+    // as the collection's last word, with no «Yana yuboring», because
+    // nothing more will be taken. The closed entry STAYS: a file sent after
+    // this is still told that it was not attached. Closed by another
+    // collector's opening, nothing is said here: that collector is talking.
+    if (standing.why !== 'quiet') return;
+    if (standing.wait.messageId) await retireCopy(apiOf(ctx), chatId, standing.wait.messageId);
+    await ctx.reply(receiptFilesDone(standing.wait));
+    return;
+  }
   const now = standing.wait;
   const drawn = await drawKeptLast(
     { reply: (text, extra) => ctx.reply(text, extra), api: apiOf(ctx) },

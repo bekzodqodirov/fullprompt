@@ -570,6 +570,11 @@ export function updateIntake(
   let next: IntakeState = { ...state, ...patch };
   if (!opts.quiet) {
     const now = Date.now();
+    // A PARKED collection that starts to hold again («▶️ Davom etamiz», a
+    // press on its table, a reply to it) is a collector opening as far as the
+    // chat is concerned: a prixod's file collection opened beside it closes,
+    // or the file sent after this collection lands would go to that prixod.
+    if (!intakeHolds(state, now)) closeReceiptFiles(chatId);
     next = { ...next, touchedAt: now, remindedAt: null };
     const scope = messageScope.getStore();
     if (scope && scope.chat === key(chatId) && scope.messageId !== null) {

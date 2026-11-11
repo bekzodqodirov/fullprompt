@@ -148,6 +148,7 @@ import {
   doneReceiptFilesPress,
   openReceiptFilesPress,
   receiptFileArrives,
+  receiptFileRepliedElsewhere,
   receiptFilesRefuseOther,
   receiptFilesTextAnswer,
 } from './receipt-files-door';
@@ -770,6 +771,10 @@ export function registerStaffBot(bot: Bot): void {
         // A photo or file sent as a REPLY to a thread or task ping — only
         // after every collector declined it (E10 a, text first).
         if (await refuseMediaReply(ctx, chatId)) return;
+        // …and a replied file that none of them took, while a prixod's
+        // collection is open: it replied to ANOTHER message, so it was not
+        // stored on this prixod — said, never dropped in silence.
+        if (await receiptFileRepliedElsewhere(ctx, chatId)) return;
         // A staff file into nothing, from the backlog: the cabinet answers a
         // staff chat with nothing at all, so it is told once instead.
         if (late && (await staffForChat(chatId))) {

@@ -371,7 +371,16 @@ async function buildRecipients(event: {
       const heard = seller ? (await reachOf([seller], 'ReceiptConfirmed')).get(seller) !== 'no_chat' : false;
       if (!heard) {
         const admins = await usersWithRoles(['admin', 'super_admin']);
-        for (const userId of admins) if (userId !== seller) rows.push({ userId, type: alert, payload });
+        // WHY it came to them, on their copy alone. Before the fold an admin
+        // received this alarm only for a seller-less client, so «this one is
+        // mine» was implied by its arrival; now it also comes for a client
+        // whose card names a seller — and an admin who opens the client, sees
+        // a seller and assumes that seller was told leaves the cargo unpriced.
+        const [named] = seller
+          ? await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, seller)).limit(1)
+          : [];
+        const theirs = { ...payload, sellerReach: seller ? 'no_chat' : 'none', sellerName: named?.fullName ?? null };
+        for (const userId of admins) if (userId !== seller) rows.push({ userId, type: alert, payload: theirs });
       }
       return rows;
     }

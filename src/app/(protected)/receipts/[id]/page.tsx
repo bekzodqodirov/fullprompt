@@ -379,6 +379,12 @@ export default async function ReceiptDetailPage({
   const linkedDeal = receipt.dealId
     ? ((await db.query.deals.findFirst({ where: eq(deals.id, receipt.dealId) })) ?? null)
     : null;
+  // «The prixod's deal» is the client's OWN (`ownDealOf`, finance/truck-deal.ts
+  // — the rule the seller's «Prixod keldi» message reads the state by): a
+  // client correction leaves `deal_id` on the old client's job, and the block
+  // its «🔗 Bitim biriktirish» button opens must not print that job as linked.
+  const ownDeal = linkedDeal && linkedDeal.clientId === receipt.clientId ? linkedDeal : null;
+  const foreignDeal = linkedDeal && !ownDeal ? linkedDeal : null;
   const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
   // 0105: a compensation for this prixod's lost cargo follows it to another
   // deal — said under the picker BEFORE the press. Caught: the column is
@@ -392,13 +398,13 @@ export default async function ReceiptDetailPage({
   const mayLinkCalc = calcControlScopeFor(actor) !== 'none';
   const calcOptions = mayLinkCalc ? await calcLinkOptions(receipt.dealId) : [];
   const dealChoices =
-    linkedDeal && !dealOptions.some((d) => d.id === linkedDeal.id)
+    ownDeal && !dealOptions.some((d) => d.id === ownDeal.id)
       ? [
           // The deal this prixod is ON, even once it has left the open list —
           // hiding it would hide the mistake being corrected. It goes through
           // the same composer as the rest: it is the SELECTED option, so a
           // blank cargo line beside filled ones would read as a broken row.
-          ...(await withCargo([linkedDeal])),
+          ...(await withCargo([ownDeal])),
           ...dealOptions,
         ]
       : dealOptions;
@@ -594,11 +600,12 @@ export default async function ReceiptDetailPage({
       {canLinkDeal && (
         <DealLink
           receiptId={id}
-          current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
+          current={ownDeal ? { id: ownDeal.id, code: ownDeal.code } : null}
           options={dealChoices}
           hasCompensation={hasCompensation}
+          foreign={foreignDeal ? { code: foreignDeal.code } : null}
           newDealHref={
-            !linkedDeal && mayEditDealTerms(actor.permissions)
+            !ownDeal && mayEditDealTerms(actor.permissions)
               ? `/bitimlar/new?client=${receipt.clientId}&prixod=${id}`
               : null
           }

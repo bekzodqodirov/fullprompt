@@ -48,6 +48,8 @@ export interface ReceiptFilesWait {
   lastSeen: number | null;
   /** Another collector opened: nothing more is taken, and the next file is told so. */
   closed?: 'other';
+  /** When it was closed that way (unix seconds) — a quiet one closed at its own expiry. */
+  closedAt?: number;
 }
 
 /** The state a message dated `atSec` meets. */
@@ -56,6 +58,17 @@ export type ReceiptFilesStanding =
   | { state: 'closed'; wait: ReceiptFilesWait; why: 'quiet' | 'other' };
 
 const KIND = 'receipt_files' as const;
+
+/**
+ * How long a CLOSED collection still answers (the «⌛» sentence under the
+ * next file, a late «↩️ Bekor qilish»). «Told once» was the design; it did
+ * not say «however much later» — and memory keeps an entry for as long as
+ * the process lives: a forgotten «Bo‘ldi» on Monday met Tuesday's unrelated
+ * photo with «bu fayl biriktirilmadi» and a button inviting it onto that
+ * prixod, and Monday's «↩️ Bekor qilish» still deleted the papers the VED
+ * had worked from. Past this, the entry goes in silence.
+ */
+export const RECEIPT_FILES_TOLD_S = 2 * 3600;
 
 /**
  * Open the chat's collection. Armed at the PROMPT's own date — a wait exists
@@ -88,9 +101,14 @@ export function openReceiptFiles(
 export function standingReceiptFiles(chatId: bigint, atSec: number = nowSec()): ReceiptFilesStanding | null {
   const entry = readWait<ReceiptFilesWait>(chatId, KIND);
   if (!entry) return null;
-  if (entry.payload.closed) return { state: 'closed', wait: entry.payload, why: entry.payload.closed };
-  if (waitVerdict(entry, atSec, false) !== 'answers') return { state: 'closed', wait: entry.payload, why: 'quiet' };
-  return { state: 'live', wait: entry.payload };
+  const why = entry.payload.closed ?? (waitVerdict(entry, atSec, false) !== 'answers' ? ('quiet' as const) : null);
+  if (why === null) return { state: 'live', wait: entry.payload };
+  const closedAt = why === 'other' ? (entry.payload.closedAt ?? entry.expiresAt) : entry.expiresAt;
+  if (atSec - closedAt > RECEIPT_FILES_TOLD_S) {
+    dropWait(chatId, KIND);
+    return null;
+  }
+  return { state: 'closed', wait: entry.payload, why };
 }
 
 /** A new object over the standing payload, the clocks untouched (a merge with a one-second life cannot move the expiry). */
@@ -140,7 +158,7 @@ export function noteReceiptFilesMessage(chatId: bigint, receiptId: string, messa
 export function closeReceiptFiles(chatId: bigint): void {
   const entry = readWait<ReceiptFilesWait>(chatId, KIND);
   if (!entry || entry.payload.closed) return;
-  rewrite(chatId, entry, { ...entry.payload, closed: 'other' });
+  rewrite(chatId, entry, { ...entry.payload, closed: 'other', closedAt: nowSec() });
 }
 
 /** End it for good («✅ Bo‘ldi», the cancel, the closed sentence said). Returns what stood. */
@@ -211,6 +229,18 @@ export function receiptFilesClosed(w: { number: string; files: readonly unknown[
       : 'boshqa ish boshlangani uchun';
   const had = w.files.length > 0 ? ` (unda ${w.files.length} ta fayl biriktirilgan)` : '';
   return `⌛ Prixod ${w.number} uchun fayl yig‘ish ${reason} yopilgan${had} — bu fayl biriktirilmadi.\nYana qo‘shish uchun tugmani bosib, faylni qaytadan yuboring.`;
+}
+
+/**
+ * A file that swipe-REPLIES to another of the bot's messages while a
+ * collection is open, and that no other door took: it belongs to that
+ * message, not to this prixod — never stored here, and said so.
+ */
+export function receiptFilesReplied(w: { number: string }): string {
+  return (
+    `↩️ Bu fayl boshqa xabarga javob qilib yuborilgan — prixod ${w.number} ga biriktirilmadi.\n` +
+    `Shu prixodga qo‘shish uchun javob (reply) qilmasdan yuboring; boshqa prixodga — o‘sha xabar ostidagi «${RECEIPT_FILES_BUTTON}» ni bosing.`
+  );
 }
 
 /** After «↩️ Bekor qilish»: what was taken back, and what could not be. */

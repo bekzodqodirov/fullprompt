@@ -1098,7 +1098,8 @@
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
-    "dealNew": "Yangi bitim ochish"
+    "dealNew": "Yangi bitim ochish",
+    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki yangisini oching."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",

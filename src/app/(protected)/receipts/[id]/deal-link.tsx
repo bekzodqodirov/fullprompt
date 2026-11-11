@@ -30,7 +30,16 @@ export function DealLink({
   options,
   hasCompensation = false,
   newDealHref = null,
+  foreign = null,
 }: {
+  /**
+   * The prixod still carries a deal of ANOTHER client (a client correction
+   * leaves `deal_id` on the old client's job). It is no deal of this
+   * prixod's — the seller's message said «no deal» — so the block must not
+   * print it as linked: it is named in one muted line, and the first save
+   * (or a new deal) replaces it.
+   */
+  foreign?: { code: string } | null;
   receiptId: string;
   current: { id: string; code: string } | null;
   options: { id: string; code: string; title: string | null; cargo: string }[];
@@ -88,6 +97,11 @@ export function DealLink({
           <span className="text-ink-500">{t('dealNone')}</span>
         )}
       </div>
+      {foreign && (
+        <p className="text-xs text-ink-500" data-testid="receipt-deal-foreign">
+          {t('dealForeign', { code: foreign.code })}
+        </p>
+      )}
       <div className="flex gap-2">
         <select
           value={dealId}

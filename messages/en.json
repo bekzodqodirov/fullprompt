@@ -1098,7 +1098,8 @@
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
     "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them",
-    "dealNew": "Open a new deal"
+    "dealNew": "Open a new deal",
+    "dealForeign": "Still on another client's deal: {code}. Pick this client's own deal, or open a new one."
   },
   "stock": {
     "title": "Warehouse stock",

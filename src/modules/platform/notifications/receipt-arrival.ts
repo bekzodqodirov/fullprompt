@@ -149,6 +149,11 @@ export function receiptArrivalText(
     `📥 ${head} — ${String(payload.number ?? '')}`,
     `${L.client}: ${String(payload.clientCode ?? '—')} (${String(payload.clientName ?? '—')})`,
   ];
+  // The admins' fallback copy: why it came to them (`buildRecipients`).
+  if (payload.sellerReach === 'none') lines.push(`👤 ${L.arrivalNoSeller}`);
+  else if (payload.sellerReach === 'no_chat') {
+    lines.push(`👤 ${L.arrivalSellerUnreachable.replace('{name}', String(payload.sellerName ?? '—'))}`);
+  }
   const deal = dealLine(payload, L);
   if (deal) lines.push(deal);
   lines.push(`${L.warehouse}: ${String(payload.warehouseCode ?? '')}`, '');

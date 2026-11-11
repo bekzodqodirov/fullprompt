@@ -297,6 +297,20 @@ const DICT = {
   },
   arrivalDeal: { ru: 'Сделка: {code}', uz: 'Bitim: {code}', 'zh-CN': '交易：{code}', en: 'Deal: {code}' },
   totalWord: { ru: 'Итого', uz: 'Jami', 'zh-CN': '合计', en: 'Total' },
+  // On an ADMIN's copy only: why the seller's message came to them instead.
+  arrivalNoSeller: {
+    ru: 'У клиента нет продавца — отправлено вам',
+    uz: 'Mijozning sotuvchisi yo‘q — sizga yuborildi',
+    'zh-CN': '该客户没有销售——已发给您',
+    en: 'The client has no seller — sent to you',
+  },
+  // `{name}` is the seller: no linked Telegram, or no longer on the staff.
+  arrivalSellerUnreachable: {
+    ru: 'Продавец {name} не получит это сообщение (Telegram не подключён или не работает) — отправлено вам',
+    uz: 'Sotuvchi {name} bu xabarni ololmaydi (Telegrami ulanmagan yoki ishlamaydi) — sizga yuborildi',
+    'zh-CN': '销售 {name} 收不到此消息（未连接 Telegram 或已离职）——已发给您',
+    en: 'Seller {name} cannot receive this (no linked Telegram, or no longer on the staff) — sent to you',
+  },
   // The card link's own words when it opens the prixod AT its deal picker.
   attachDealButton: {
     ru: '🔗 Привязать сделку',

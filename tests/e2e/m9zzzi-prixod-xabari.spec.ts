@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
-import { SELLER_PHONE, cleanupAll, database, mint, newRun } from './prixod-xabari-fixture';
+import { SELLER_PHONE, cleanupAll, database, mint, mintSibling, newRun } from './prixod-xabari-fixture';
 
 /**
  * «🔗 Bitim biriktirish» — where the seller's Telegram button lands, in a
@@ -144,6 +144,60 @@ test('the VED may re-file the cargo but not open a deal: the block, without the 
   await page.goto(`/receipts/${receiptId}#bitim`);
   await expect(page.getByTestId('receipt-deal-block')).toBeVisible();
   await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
+});
+
+test('a prixod a client correction left on ANOTHER client’s deal: the card does not call it linked, and a new deal replaces it', async ({ page }) => {
+  // What `assignReceiptClient` leaves behind: the client moves, `deal_id`
+  // stays on the old client's job. The seller's «Prixod keldi» message reads
+  // such a prixod as having NO deal (the client's own, `ownDealOf`) — the
+  // block its button opens must say the same thing.
+  const sql = database();
+  let foreign: { id: string; code: string };
+  let sibling: { clientId: string; code: string };
+  try {
+    const rows = await sql<{ id: string; code: string }[]>`SELECT id, code FROM deals WHERE client_id = ${clientId}`;
+    expect(rows).toHaveLength(1);
+    foreign = rows[0]!;
+    sibling = await mintSibling(sql, run);
+    await sql`UPDATE receipts SET client_id = ${sibling.clientId}, deal_id = ${foreign.id} WHERE id = ${receiptId}`;
+  } finally {
+    await sql.end();
+  }
+
+  await login(page, SELLER_PHONE);
+  await page.goto(`/receipts/${receiptId}#bitim`);
+  const block = page.getByTestId('receipt-deal-block');
+  await expect(block).toBeVisible();
+  // Named, in one muted line — and NOT printed as the prixod's deal.
+  await expect(page.getByTestId('receipt-deal-foreign')).toContainText(foreign.code);
+  await expect(block.locator(`a[href="/bitimlar/${foreign.id}"]`)).toHaveCount(0);
+  // The picker offers this client's deals only: the old client's job is no choice.
+  await expect(page.getByTestId('receipt-deal-pick').locator(`option[value="${foreign.id}"]`)).toHaveCount(0);
+  // «No deal of its own» = the new-deal link is offered, as on a bare prixod.
+  await expect(page.getByTestId('receipt-deal-new')).toBeVisible();
+  await fits(page);
+
+  await page.getByTestId('receipt-deal-new').click();
+  await expect(page).toHaveURL(new RegExp(`/bitimlar/new\\?client=${sibling.clientId}&prixod=${receiptId}$`));
+  // The form knows which prixod it is for — the page did not drop it because
+  // the prixod «already has a deal».
+  await expect(page.getByTestId('deal-form-receipt')).toContainText(number);
+  await page.locator('input[name="title"]').fill(`Tuzatilgan bitim ${run.marker}`);
+  await page.getByTestId('deal-form').locator('button[type="submit"]').click();
+  await expect(page).toHaveURL(new RegExp(`/receipts/${receiptId}\\?bitim=1$`));
+  await expect(page.getByTestId('receipt-deal-foreign')).toHaveCount(0);
+  const mine = page.getByTestId('receipt-deal-block').locator('a[href^="/bitimlar/"]').first();
+  await expect(mine).toHaveText(/^B-\d+$/);
+  await expect(mine).not.toHaveText(foreign.code);
+
+  const check = database();
+  try {
+    const rows = await check<{ client_id: string }[]>`
+      SELECT d.client_id FROM receipts r JOIN deals d ON d.id = r.deal_id WHERE r.id = ${receiptId}`;
+    expect(rows.map((row) => row.client_id)).toEqual([sibling.clientId]);
+  } finally {
+    await check.end();
+  }
 });
 
 test('cleanup — nothing of this spec is left for the next one', async () => {

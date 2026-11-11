@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { asc, eq } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { clients, leads, receipts } from '@/modules/platform/db/schema';
+import { clients, deals, leads, receipts } from '@/modules/platform/db/schema';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
@@ -70,8 +70,17 @@ export default async function NewDealPage({
           where: eq(receipts.id, params.prixod),
         })
       : null;
+  // «No deal yet» is the card's own reading: none at all, or one left behind
+  // on ANOTHER client's job by a client correction (which the new deal replaces).
+  const standing = forReceipt?.dealId
+    ? await db.query.deals.findFirst({ columns: { clientId: true }, where: eq(deals.id, forReceipt.dealId) })
+    : null;
   const receipt =
-    forReceipt && preset && forReceipt.clientId === preset.id && !forReceipt.dealId && forReceipt.status === 'confirmed'
+    forReceipt &&
+    preset &&
+    forReceipt.clientId === preset.id &&
+    forReceipt.status === 'confirmed' &&
+    (!forReceipt.dealId || (standing != null && standing.clientId !== preset.id))
       ? { id: forReceipt.id, number: forReceipt.number ?? '' }
       : null;
 

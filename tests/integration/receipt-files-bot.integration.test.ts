@@ -25,8 +25,14 @@ import { __forgetKeptLast } from '@/modules/platform/telegram/kept-last';
 import { __resetLifecycle, markBoot } from '@/modules/platform/telegram/lifecycle';
 import { endCapture, startCapture } from '@/modules/platform/telegram/note-capture';
 import { __resetPresses } from '@/modules/platform/telegram/press';
-import { closeReceiptFiles, standingReceiptFiles } from '@/modules/platform/telegram/receipt-files';
-import { __resetDrafts } from '@/modules/platform/telegram/task-draft';
+import { endIntake, HOLD_MS, startIntake, updateIntake } from '@/modules/platform/telegram/calc-store';
+import {
+  closeReceiptFiles,
+  MAX_RECEIPT_FILES,
+  openReceiptFiles,
+  standingReceiptFiles,
+} from '@/modules/platform/telegram/receipt-files';
+import { __resetDrafts, startDraft } from '@/modules/platform/telegram/task-draft';
 import { __forgetWaitMemory, flushWaitWrites, hydrateWaits, setDurableWaits } from '@/modules/platform/telegram/waits';
 import { botHarness, tg, type BotHarness } from '../fixtures/bot-harness';
 
@@ -81,7 +87,11 @@ async function open(chat: number, receiptId: string) {
 
 let fileSeq = 0;
 /** A document update whose bytes the fake Telegram will hand over. `after` = a bot message it must be newer than. */
-function doc(chat: number, name: string, opts: { after?: number; date?: number; forwarded?: boolean; mime?: string } = {}) {
+function doc(
+  chat: number,
+  name: string,
+  opts: { after?: number; date?: number; forwarded?: boolean; mime?: string; replyTo?: number } = {},
+) {
   fileSeq += 1;
   const fileId = `rf-${STAMP}-${fileSeq}`;
   h.serveFile(fileId, Buffer.from(`%PDF-1.4 ${name}`));
@@ -91,6 +101,7 @@ function doc(chat: number, name: string, opts: { after?: number; date?: number; 
     ...(opts.after ? { messageId: opts.after + fileSeq } : {}),
     ...(opts.date ? { date: opts.date } : {}),
     ...(opts.forwarded ? { forwarded: true } : {}),
+    ...(opts.replyTo ? { replyTo: opts.replyTo } : {}),
   });
 }
 
@@ -282,9 +293,15 @@ describe('a collection never ends in silence', () => {
     const t0 = Math.floor(Date.now() / 1000) - 3600;
     h.setClock(t0);
     const prompt = await open(sellerChat, receipt.id);
+    let m = h.mark();
     await h.handle(doc(sellerChat, 'in-time.pdf', { after: prompt.messageId, date: t0 + 60 }));
     await h.settle();
-    const m = h.mark();
+    // Taken by its OWN date — and handled an hour later, after the window had
+    // passed by the clock (a file sent into a long outage). It is on the
+    // prixod, so it is SAID: as the collection's last word, with no «Yana
+    // yuboring» — it would be stored with no line at all otherwise.
+    expect(saidSince(m).at(-1)).toBe(`✅ 1 ta fayl prixod ${receipt.number} ga biriktirildi.`);
+    m = h.mark();
     // 31 minutes after the last file.
     await h.handle(doc(sellerChat, 'late.pdf', { after: prompt.messageId, date: t0 + 60 + 31 * 60 }));
     await h.settle();
@@ -353,6 +370,47 @@ describe('a collection never ends in silence', () => {
   });
 });
 
+describe('a file that belongs somewhere else', () => {
+  it('a file that swipe-REPLIES to another of the bot’s messages is not this prixod’s — and is told so, never dropped in silence', async () => {
+    const receipt = await mintReceipt('n');
+    const prompt = await open(sellerChat, receipt.id);
+    // Another prixod's «Prixod keldi», an AI answer, a thread ping: any of
+    // the bot's messages that is not the collection's own.
+    const elsewhere = prompt.messageId - 40;
+    const m = h.mark();
+    await h.handle(doc(sellerChat, 'other-prixod.pdf', { after: prompt.messageId, replyTo: elsewhere }));
+    await h.settle();
+    expect(await filesOn(receipt.id)).toEqual([]);
+    expect(saidSince(m)).toEqual([expect.stringContaining(`boshqa xabarga javob qilib yuborilgan — prixod ${receipt.number} ga biriktirilmadi`)]);
+    // …while a reply to the collection's OWN message is an ordinary file of it.
+    await h.handle(doc(sellerChat, 'mine.pdf', { after: prompt.messageId, replyTo: prompt.messageId }));
+    await h.settle();
+    expect((await filesOn(receipt.id)).map((f) => f.fileName)).toEqual(['mine.pdf']);
+  });
+
+  it('a PARKED «Hisoblatish» that starts to hold again closes the collection — its next file must not land on the prixod', async () => {
+    const receipt = await mintReceipt('o');
+    const chat = BigInt(sellerChat);
+    startIntake(chat, 'rastamojka', { staffId: sellerId });
+    try {
+      // Quiet for longer than it holds: parked (a bookkeeping patch moves no clock).
+      updateIntake(chat, { touchedAt: Date.now() - HOLD_MS - 60_000 }, { quiet: true });
+      // «📎» opens beside a parked collection — it refuses nobody.
+      const prompt = await open(sellerChat, receipt.id);
+      expect(standingReceiptFiles(chat)?.state).toBe('live');
+      // A bookkeeping write changes nothing…
+      updateIntake(chat, {}, { quiet: true });
+      expect(standingReceiptFiles(chat)?.state).toBe('live');
+      // …«▶️ Davom etamiz», a press on its table, a reply to it: it holds again.
+      updateIntake(chat, {});
+      expect(standingReceiptFiles(chat)).toMatchObject({ state: 'closed', why: 'other' });
+      void prompt;
+    } finally {
+      endIntake(chat);
+    }
+  });
+});
+
 describe('the door, asked at the press and at every file', () => {
   it('a voided prixod takes no collection — and one voided mid-collection takes no more files', async () => {
     const receipt = await mintReceipt('i');
@@ -379,6 +437,61 @@ describe('the door, asked at the press and at every file', () => {
     await h.handle(tg.callback(operatorChat, 41_600, `pf:${receipt.id}`));
     expect(saidSince(m)).toEqual(['Bu prixodni ochishga huquqingiz yo‘q.']);
     expect(standingReceiptFiles(BigInt(operatorChat))).toBeNull();
+  });
+
+  it('refused in words beside a HOLDING «Hisoblatish» and beside a task draft too — each in its own sentence', async () => {
+    const receipt = await mintReceipt('p');
+    const chat = BigInt(sellerChat);
+    startIntake(chat, 'rastamojka', { staffId: sellerId });
+    try {
+      const m = h.mark();
+      await h.handle(tg.callback(sellerChat, 41_710, `pf:${receipt.id}`));
+      expect(saidSince(m)).toEqual([expect.stringContaining('Avval «Hisoblatish»ni tugating yoki bekor qiling')]);
+      expect(standingReceiptFiles(chat)).toBeNull();
+    } finally {
+      endIntake(chat);
+    }
+    startDraft(chat);
+    const m = h.mark();
+    await h.handle(tg.callback(sellerChat, 41_711, `pf:${receipt.id}`));
+    expect(saidSince(m)).toEqual([expect.stringContaining('Avval topshiriq qoralamasini tugating yoki bekor qiling')]);
+    expect(standingReceiptFiles(chat)).toBeNull();
+    __resetDrafts();
+  });
+
+  it(`the ${MAX_RECEIPT_FILES + 1}st file of one collection is refused in words, and is not stored`, async () => {
+    const receipt = await mintReceipt('q');
+    const prompt = await open(sellerChat, receipt.id);
+    // Thirty already taken (the set is what counts — the ceiling reads it).
+    openReceiptFiles(BigInt(sellerChat), { id: receipt.id, number: receipt.number, clientCode: null }, { messageId: prompt.messageId, date: Math.floor(Date.now() / 1000) }, {
+      receiptId: receipt.id,
+      number: receipt.number,
+      clientCode: null,
+      files: Array.from({ length: MAX_RECEIPT_FILES }, (_, i) => ({ m: i + 1, a: crypto.randomUUID() })),
+      messageId: prompt.messageId,
+      lastSeen: null,
+    });
+    const m = h.mark();
+    await h.handle(doc(sellerChat, 'one-too-many.pdf', { after: prompt.messageId }));
+    expect(saidSince(m)).toEqual([expect.stringContaining(`Bir yig‘ishda eng ko‘pi ${MAX_RECEIPT_FILES} ta fayl`)]);
+    expect(await filesOn(receipt.id)).toEqual([]);
+  });
+
+  it('«↩️ Bekor qilish» says what it could NOT take back: a file that is no longer the presser’s to remove stays, and is counted', async () => {
+    const receipt = await mintReceipt('r');
+    const prompt = await open(sellerChat, receipt.id);
+    await h.handle(doc(sellerChat, 'goes.pdf', { after: prompt.messageId }));
+    await h.handle(doc(sellerChat, 'stays.pdf', { after: prompt.messageId }));
+    await h.settle();
+    // The delete door refuses it (as it refuses a paper a tarkib cites): here,
+    // a file that became somebody else's upload.
+    await db.update(attachments).set({ uploadedBy: operatorId }).where(and(eq(attachments.entityId, receipt.id), eq(attachments.fileName, 'stays.pdf')));
+    const m = h.mark();
+    await h.handle(tg.callback(sellerChat, prompt.messageId, `pf:no:${receipt.id}`));
+    expect((await filesOn(receipt.id)).map((f) => f.fileName)).toEqual(['stays.pdf']);
+    const said = saidSince(m).at(-1)!;
+    expect(said).toContain(`↩️ Prixod ${receipt.number}: 1 ta fayl olib tashlandi.`);
+    expect(said).toContain('1 ta fayl qoldi');
   });
 
   it('refused in words while another collector holds the chat', async () => {
@@ -415,6 +528,56 @@ describe('a deploy in the middle', () => {
       await flushWaitWrites();
       setDurableWaits(false);
     }
+  });
+
+  it('a redelivered file JOINS the set when the write that counted it was lost with the process', async () => {
+    const receipt = await mintReceipt('s');
+    setDurableWaits(true);
+    try {
+      const prompt = await open(sellerChat, receipt.id);
+      const invoice = doc(sellerChat, 'kept.pdf', { after: prompt.messageId });
+      await h.handle(invoice);
+      await h.settle();
+      await flushWaitWrites();
+      // The kill: the row landed on the prixod, the wait's own UPSERT did not.
+      await db.execute(sql`
+        UPDATE telegram_chat_waits SET payload = jsonb_set(payload, '{files}', '[]'::jsonb)
+         WHERE chat_id = ${String(sellerChat)}::bigint AND kind = 'receipt_files'`);
+      __forgetWaitMemory();
+      await hydrateWaits();
+      expect(standingReceiptFiles(BigInt(sellerChat))?.wait.files).toEqual([]);
+      // Telegram delivers the unconfirmed update again.
+      await h.handle(tg.again(invoice));
+      await h.settle();
+      expect(await filesOn(receipt.id)).toHaveLength(1);
+      const m = h.mark();
+      await h.handle(tg.callback(sellerChat, prompt.messageId, `pf:ok:${receipt.id}`));
+      // Counted — or «Bo‘ldi» would say «fayl qo‘shilmadi» about a prixod that
+      // has it, and «↩️ Bekor qilish» would have left it there.
+      expect(saidSince(m).at(-1)).toBe(`✅ 1 ta fayl prixod ${receipt.number} ga biriktirildi.`);
+    } finally {
+      await flushWaitWrites();
+      setDurableWaits(false);
+    }
+  });
+
+  it('a closed collection does not speak for ever: hours later the next file meets nothing, and the old «↩️ Bekor qilish» removes nothing', async () => {
+    const receipt = await mintReceipt('t');
+    const t0 = Math.floor(Date.now() / 1000) - 5 * 3600;
+    h.setClock(t0);
+    const prompt = await open(sellerChat, receipt.id);
+    await h.handle(doc(sellerChat, 'monday.pdf', { after: prompt.messageId, date: t0 + 60 }));
+    await h.settle();
+    // Three hours after the window closed (it closed at t0 + 60 + 30 min).
+    const m = h.mark();
+    await h.handle(doc(sellerChat, 'tuesday.pdf', { after: prompt.messageId, date: t0 + 60 + 1800 + 3 * 3600 }));
+    await h.settle();
+    expect(saidSince(m).filter((text) => text.startsWith('⌛'))).toEqual([]);
+    expect(standingReceiptFiles(BigInt(sellerChat))).toBeNull();
+    const m2 = h.mark();
+    await h.handle(tg.callback(sellerChat, prompt.messageId, `pf:no:${receipt.id}`));
+    expect(saidSince(m2).at(-1)).toContain('Bu yig‘ish allaqachon yopilgan');
+    expect((await filesOn(receipt.id)).map((f) => f.fileName)).toEqual(['monday.pdf']);
   });
 
   it('a file sent INTO the outage, after the press, is taken — updates come in order, so it was sent for this prixod', async () => {

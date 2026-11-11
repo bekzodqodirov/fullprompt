@@ -200,10 +200,20 @@ export function auditFieldLabel(key: string): { label: string | null; item: stri
   if (AUDIT_FIELD_LABELS[key]) return { label: AUDIT_FIELD_LABELS[key]!, item: null };
   const at = key.indexOf(':');
   if (at > 0 && AUDIT_FIELD_LABELS[key.slice(0, at)]) {
-    return { label: AUDIT_FIELD_LABELS[key.slice(0, at)]!, item: key.slice(at + 1) };
+    const base = key.slice(0, at);
+    return { label: AUDIT_FIELD_LABELS[base]!, item: ITEM_NOT_PRINTED.has(base) ? null : key.slice(at + 1) };
   }
   return { label: null, item: null };
 }
+
+/**
+ * Per-item keys whose item is there for UNIQUENESS only and means nothing to
+ * a reader: `fileAdded:<telegram message id>` — the History would print
+ * «Fayl qo'shildi · 913742», a code of the kind the owner asked to have out
+ * of it (round 100, item 4). The value («invoice.pdf · Telegram») names the
+ * file; the key only keeps one file's line from netting into the next.
+ */
+const ITEM_NOT_PRINTED: ReadonlySet<string> = new Set(['fileAdded']);
 
 /**
  * Which recorded columns hold a REFERENCE rather than a value.
