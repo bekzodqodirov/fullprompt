@@ -458,8 +458,10 @@ describe('the words (§4.4)', () => {
 
   it('a header FOUND with no goods row under it is not «sarlavhasini topa olmadim» (xlsx1-04)', async () => {
     const chatId = collection();
-    // The lone drill is taken for a total row by its name: the header was found, no row came out.
-    const body = await B.sheetsBook([['PL', ['Description', 'Qty', 'Ctns', 'N.W.', 'G.W.', 'CBM'], [['TOTAL cordless drill TDLI20012', 50, 5, 110, 120, 0.6]]]]);
+    // The only row is the container's total: the header was found, no goods row came out. (The
+    // fixture was a lone «TOTAL cordless drill» until P-reader made that drill a good — xlsx1-04 is
+    // exactly that bug — so it now stands on a row the reader still refuses, a label-only total.)
+    const body = await B.sheetsBook([['PL', ['Description', 'Qty', 'Ctns', 'N.W.', 'G.W.', 'CBM'], [["TOTAL 1X40'HQ", 50, 5, 110, 120, 0.6]]]]);
     const read = await readGoodsFile(body, null);
     expect(read).toMatchObject({ kind: 'text', why: 'header' });
     const answer = await forward(chatId, body, 'drill.xlsx');
