@@ -56,7 +56,9 @@ describe('the analysis actually looks at the photographs', () => {
     // caption reached «nothing to read» and was never coded.
     expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets && !codesAsked) {');
     expect(AI).toContain('const codesAsked = input.codeKnown === true && knownList.some((_, i) => ask(i));');
-    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');");
+    // …and the rows a reader dropped under a list are context, never a reason
+    // to call (as-built review MODEL-8).
+    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => !s.dropped && s.text.trim() !== '');");
     expect(AI).toContain("return { ok: false, failure: 'nothing_to_read' };");
   });
 
