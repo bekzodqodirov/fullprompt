@@ -1,0 +1,870 @@
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { writeAudit, type AuditContext } from '../../platform/audit/service';
+import { db, type Db, type Tx } from '../../platform/db/client';
+import { agentAutoChats, agentAutoConfig, agentAutoVerdicts, agentConfig, agentDrafts, agentRuns, tgAccounts } from '../../platform/db/schema';
+import { logger } from '../../platform/logger';
+import { notifyStaffTelegram } from '../../platform/notifications/staff';
+import { usersWithRoles } from '../../platform/notifications/service';
+import { actorGrants } from '../../platform/rbac/authorize';
+import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { AUTO_SEND_CATEGORIES, autoVerdict, type AutoGateInput, type AutoRefusal } from './auto-gate';
+import { cardDigest, digestBody } from './card';
+import { agentAutoReady, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
+import type { DecideRefusal } from './decide';
+import type { NewDraft } from './drafts';
+import { sendWindowFor } from './send-window';
+import { CATEGORIES } from './tools';
+import type { DraftPolicyJson } from './types';
+
+/**
+ * «O'zi yuborish» — the impure side of auto-send (docs/AI-SOTUVCHI.md §18.3,
+ * his answer of 2026-11-11: «ozi javob beraversin men bergan tasdiq kop kutib
+ * qolmasin» — no proof cell, no holdback, every other ⭐ stands).
+ *
+ * A LAYER over shadow, never a mode: the agent stays 'shadow', and a reply the
+ * gate admits goes by a MACHINE PRESS of the same ✅ (`decideDraft(…, {auto})`)
+ * after a hold he can ⏸ — then the existing pump, so every check a human press
+ * runs runs again and there is no second send path.
+ *
+ *  - The plan (`autoPlanFor`) is computed by the INBOUND run only, after the
+ *    policy, and written by `createDraft` inside its own transaction, beside the
+ *    draft, before the card is rendered — the first card already carries the
+ *    timer. One row per reply draft while 0143 exists: eligible with its due
+ *    time, or not with every reason (the rehearsal record).
+ *  - The press (`pressDueAutos`) is the minute sweep's: claim the due rows,
+ *    judge again on FRESH facts, press through `decideDraft`.
+ *  - A person's own decision on the draft stops a waiting auto
+ *    (`stopAutoForPerson`, called by every non-auto `decideDraft`); a row
+ *    already being pressed is left to the draft's own compare-and-set.
+ *  - Off, a forced off and a new owner disarm inside their own transactions
+ *    (config `disarmAutoInTx`); three step-downs disarm by themselves, with an
+ *    alarm. Re-arming is always his press.
+ *
+ * Every reader and writer asks `agentAutoReady()` first.
+ */
+
+// ── the configuration ───────────────────────────────────────────────────────
+
+export interface AutoConfig {
+  armed: boolean;
+  armedAt: Date | null;
+  armedBy: string | null;
+  holdSec: number;
+  perDay: number;
+  maxChars: number;
+  minConfidence: number;
+  categories: string[];
+  disarmedAt: Date | null;
+  disarmReason: string | null;
+}
+
+function toAutoConfig(row: typeof agentAutoConfig.$inferSelect): AutoConfig {
+  return {
+    armed: row.armedAt !== null,
+    armedAt: row.armedAt,
+    armedBy: row.armedBy,
+    holdSec: row.holdSec,
+    perDay: row.perDay,
+    maxChars: row.maxChars,
+    // numeric comes back as text; the CHECK keeps it in [0.5, 1].
+    minConfidence: Number(row.minConfidence),
+    categories: row.categories ?? [],
+    disarmedAt: row.disarmedAt,
+    disarmReason: row.disarmReason,
+  };
+}
+
+/** The auto layer's singleton, or null when 0143 has not landed. */
+export async function readAutoConfig(handle: Db | Tx = db): Promise<AutoConfig | null> {
+  if (!(await agentAutoReady())) return null;
+  const [row] = await handle.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1));
+  return row ? toAutoConfig(row) : null;
+}
+
+// ── the facts ───────────────────────────────────────────────────────────────
+
+/** What the gate reads of a draft — a stored row, or the one the run is about to write. */
+export interface AutoDraftShape {
+  managerUserId: string;
+  peerId: bigint;
+  runId: string | null;
+  clientId: string | null;
+  leadId: string | null;
+  anchorTgMessageId: bigint;
+  kind: string;
+  status: string;
+  finalBody: string | null;
+  proposedBody: string | null;
+  blocked: boolean;
+  needsOwner: boolean;
+  category: string | null;
+  language: string | null;
+  /** numeric(3,2) comes back as text; the run's own is a number. */
+  confidence: string | number | null;
+  policy: unknown;
+  actions: unknown;
+}
+
+type ToolCall = { name: string; ok: boolean };
+
+function toolCallsOf(raw: unknown): ToolCall[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t): t is { name: unknown; ok: unknown } => typeof t === 'object' && t !== null)
+    .map((t) => ({ name: typeof t.name === 'string' ? t.name : '', ok: t.ok === true }));
+}
+
+function confidenceOf(raw: string | number | null): number | null {
+  if (raw === null) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : null;
+}
+
+/** The Tashkent day `now` falls in, from its start — the day the per-day cap counts. */
+function dayStartOf(now: Date): Date {
+  return tashkentDayStart(tashkentDay(now));
+}
+
+/** Auto presses on this account since the Tashkent day began. */
+export async function autoPressedToday(managerUserId: string, now: Date): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentAutoVerdicts)
+    .where(
+      and(
+        eq(agentAutoVerdicts.managerUserId, managerUserId),
+        eq(agentAutoVerdicts.state, 'pressed'),
+        gte(agentAutoVerdicts.pressedAt, dayStartOf(now)),
+      ),
+    );
+  return Number(row?.n ?? 0);
+}
+
+/**
+ * Auto replies in a row in this chat (§18.3: at most 2): the presses since the
+ * last thing a PERSON did here — a draft he decided himself (his ✅, ✏️, ❌,
+ * 🙋; never one the machine pressed), or a message of his own (his phone, the
+ * CRM; never the AI's send and never the account's Business robot, `auto_sent`).
+ */
+async function autoStreak(managerUserId: string, peerId: bigint): Promise<number> {
+  const rows = await db.execute<{ n: number }>(sql`
+    WITH person AS (
+      SELECT greatest(
+        (SELECT max(d.decided_at) FROM agent_drafts d
+          WHERE d.manager_user_id = ${managerUserId}::uuid AND d.peer_id = ${String(peerId)}::bigint
+            AND d.decided_by IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = d.id AND v.state = 'pressed')),
+        (SELECT max(m.sent_at) FROM tg_messages m
+           LEFT JOIN tg_message_flags f ON f.message_id = m.id
+          WHERE m.manager_user_id = ${managerUserId}::uuid AND m.peer_id = ${String(peerId)}::bigint
+            AND m.direction = 'out' AND f.deleted_at IS NULL AND coalesce(f.auto_sent, false) = false
+            AND NOT EXISTS (SELECT 1 FROM agent_outbox o
+                             WHERE o.manager_user_id = m.manager_user_id AND o.tg_message_id = m.tg_message_id))
+      ) AS at
+    )
+    SELECT count(*)::int AS n FROM agent_auto_verdicts v, person
+     WHERE v.manager_user_id = ${managerUserId}::uuid AND v.peer_id = ${String(peerId)}::bigint
+       AND v.state = 'pressed' AND (person.at IS NULL OR v.pressed_at > person.at)`);
+  return Number(rows[0]?.n ?? 0);
+}
+
+/**
+ * Did the customer's burst — his lines since our last message, up to the one
+ * the draft answers — carry a photo, a voice note or a file? (§18.3: a message
+ * that came with one never goes by itself.) Read from the stored chat, the
+ * context's own measure (`has_media`), at the scheduling and at the press.
+ */
+async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' | 'anchorTgMessageId'>): Promise<boolean> {
+  const rows = await db.execute<{ media: boolean }>(sql`
+    SELECT EXISTS (
+      SELECT 1 FROM tg_messages m
+        LEFT JOIN tg_message_flags f ON f.message_id = m.id
+       WHERE m.manager_user_id = ${d.managerUserId}::uuid AND m.peer_id = ${String(d.peerId)}::bigint
+         AND m.direction = 'in' AND m.has_media AND f.deleted_at IS NULL
+         AND m.tg_message_id <= ${String(d.anchorTgMessageId)}::bigint
+         AND m.tg_message_id > coalesce((
+           SELECT max(o.tg_message_id) FROM tg_messages o
+             LEFT JOIN tg_message_flags of2 ON of2.message_id = o.id
+            WHERE o.manager_user_id = ${d.managerUserId}::uuid AND o.peer_id = ${String(d.peerId)}::bigint
+              AND o.direction = 'out' AND of2.deleted_at IS NULL
+              AND o.tg_message_id < ${String(d.anchorTgMessageId)}::bigint), 0)
+    ) AS media`);
+  return rows[0]?.media === true;
+}
+
+/**
+ * The gate's input, read from the database — at the scheduling (`tools` from
+ * the run in hand: its ledger row is settled only after the draft is written)
+ * and again at the press, where the run's stored `tool_calls` are read.
+ * `at` is when the reply would go: the due time, or the press's own moment.
+ */
+export async function autoFactsFor(
+  d: AutoDraftShape,
+  opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null },
+): Promise<AutoGateInput> {
+  const auto = opts.config === undefined ? await readAutoConfig() : opts.config;
+  const agent = await readAgentConfig();
+  const policy = (d.policy ?? {}) as Partial<DraftPolicyJson>;
+  const actions = Array.isArray(d.actions) ? (d.actions as { type?: unknown }[]) : [];
+  let tools: readonly ToolCall[] = opts.tools ?? [];
+  if (opts.tools === undefined && d.runId) {
+    const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d.runId));
+    tools = toolCallsOf(run?.toolCalls);
+  }
+  const [acc] = await db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, d.managerUserId));
+  const [off] = await db
+    .select({ offUntil: agentAutoChats.offUntil })
+    .from(agentAutoChats)
+    .where(and(eq(agentAutoChats.managerUserId, d.managerUserId), eq(agentAutoChats.peerId, d.peerId)));
+  return {
+    config: {
+      armed: auto?.armed === true,
+      categories: auto?.categories ?? [],
+      maxChars: auto?.maxChars ?? 0,
+      minConfidence: auto?.minConfidence ?? 1,
+      perDay: auto?.perDay ?? 0,
+    },
+    agentOn: agentRunning(agent) && agent.ownerUserId === d.managerUserId,
+    draft: {
+      kind: d.kind,
+      status: d.status,
+      ownText: d.finalBody !== null,
+      blocked: d.blocked,
+      needsOwner: d.needsOwner,
+      warnings: Array.isArray(policy.warnings) ? policy.warnings.length : 0,
+      notes: Array.isArray(policy.notes) ? policy.notes.length : 0,
+      actionTypes: actions.map((a) => (typeof a?.type === 'string' ? a.type : '?')),
+      category: d.category,
+      language: d.language,
+      body: digestBody(d),
+      confidence: confidenceOf(d.confidence),
+      moneyLedger: Array.isArray(policy.ledger) && policy.ledger.some((e) => e?.kind === 'money'),
+      hasEstimate: policy.memory?.hasEstimate === true,
+    },
+    tools,
+    burstMedia: await burstHadMedia(d),
+    chat: {
+      hasOwner: d.clientId !== null || d.leadId !== null,
+      prospect: (await sendWindowFor(d)) === 'agent_lead',
+      offUntil: off?.offUntil ?? null,
+    },
+    workAccount: acc?.work === true,
+    at: opts.at,
+    now: opts.now,
+    streak: await autoStreak(d.managerUserId, d.peerId),
+    pressedToday: await autoPressedToday(d.managerUserId, opts.now),
+  };
+}
+
+// ── the plan, at the scheduling ─────────────────────────────────────────────
+
+/** What the inbound run hands `createDraft`: the verdict, its reasons, and — eligible — when it goes. */
+export interface AutoPlan {
+  eligible: boolean;
+  reasons: AutoRefusal[];
+  category: string | null;
+  confidence: number | null;
+  /** `cardDigest` of the body and actions — the press passes it, so an edited card refuses. */
+  digest: string;
+  dueAt: Date | null;
+}
+
+/**
+ * The draft the run is about to write, as the gate reads a draft — the row
+ * `createDraft` will insert (drafts `draftFromRun`): pending, none of his words,
+ * the lead only when no client holds the chat.
+ */
+export function autoShapeOf(n: NewDraft): AutoDraftShape {
+  return {
+    managerUserId: n.managerUserId,
+    peerId: n.peerId,
+    runId: n.runId,
+    clientId: n.clientId,
+    leadId: n.clientId ? null : n.leadId,
+    anchorTgMessageId: n.anchorTgMessageId,
+    kind: n.kind,
+    status: 'pending',
+    finalBody: null,
+    proposedBody: n.body,
+    blocked: n.blocked,
+    needsOwner: n.needsOwner,
+    category: n.category,
+    language: n.language,
+    confidence: n.confidence,
+    policy: n.policy,
+    actions: n.actions,
+  };
+}
+
+/**
+ * The plan for a reply the inbound run is about to write — or null when 0143
+ * has not landed, and null (logged) when it could not be computed: a plan is
+ * never a reason for the draft to fail.
+ */
+export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonly ToolCall[]; now: Date }): Promise<AutoPlan | null> {
+  try {
+    const config = await readAutoConfig();
+    if (!config) return null;
+    // Stored as `createDraft` stores them: a category outside the seven is 'other', the confidence to cents.
+    const category = input.draft.category && (CATEGORIES as readonly string[]).includes(input.draft.category) ? input.draft.category : 'other';
+    const draft: AutoDraftShape = { ...input.draft, category, confidence: confidenceOf(input.draft.confidence) };
+    const dueAt = new Date(input.now.getTime() + config.holdSec * 1000);
+    const verdict = autoVerdict(await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config }));
+    return {
+      eligible: verdict.eligible,
+      reasons: verdict.reasons,
+      category,
+      confidence: confidenceOf(draft.confidence),
+      digest: cardDigest(digestBody(draft), Array.isArray(draft.actions) ? draft.actions : []),
+      dueAt: verdict.eligible ? dueAt : null,
+    };
+  } catch (err) {
+    logger.error({ err, peer: String(input.draft.peerId) }, '[agent] auto plan not computed');
+    return null;
+  }
+}
+
+/**
+ * What a card knows of its auto press — the seam the card's words read
+ * (`renderDraftCardFull`'s `auto`). Null: no row, or a row the gate refused at
+ * the scheduling (an ordinary card).
+ */
+export interface AutoCardState {
+  state: 'waiting' | 'pressing' | 'pressed' | 'stopped' | 'refused' | 'gone';
+  dueAt: Date | null;
+  /** The press's refusal code(s), or why it stopped. */
+  outcome: string | null;
+  reasons: string[];
+  feedback: 'bad' | null;
+}
+
+function cardStateOf(row: Pick<typeof agentAutoVerdicts.$inferSelect, 'state' | 'dueAt' | 'outcome' | 'reasons' | 'feedback'>): AutoCardState | null {
+  if (row.state === null) return null;
+  return {
+    state: row.state as AutoCardState['state'],
+    dueAt: row.dueAt,
+    outcome: row.outcome,
+    reasons: row.reasons ?? [],
+    feedback: row.feedback === 'bad' ? 'bad' : null,
+  };
+}
+
+/** The draft's auto state for its card, or null (no row, an ineligible one, or 0143 not landed). */
+export async function autoCardStateFor(draftId: string): Promise<AutoCardState | null> {
+  if (!(await agentAutoReady())) return null;
+  const [row] = await db.select().from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));
+  return row ? cardStateOf(row) : null;
+}
+
+/**
+ * The verdict row, written by `createDraft` INSIDE its transaction right after
+ * the draft — in a savepoint, so a refused insert costs the plan and never the
+ * draft. Returns the card's state (null for an ineligible plan or a failure).
+ */
+export async function recordAutoVerdictInTx(
+  tx: Tx,
+  draft: { id: string; managerUserId: string; peerId: bigint },
+  plan: AutoPlan,
+): Promise<AutoCardState | null> {
+  try {
+    const [row] = await tx.transaction(async (sp) =>
+      sp
+        .insert(agentAutoVerdicts)
+        .values({
+          draftId: draft.id,
+          managerUserId: draft.managerUserId,
+          peerId: draft.peerId,
+          eligible: plan.eligible,
+          reasons: plan.reasons,
+          category: plan.category,
+          confidence: plan.confidence === null ? null : plan.confidence.toFixed(2),
+          digest: plan.digest,
+          state: plan.eligible ? 'waiting' : null,
+          dueAt: plan.eligible ? plan.dueAt : null,
+        })
+        .returning(),
+    );
+    return row ? cardStateOf(row) : null;
+  } catch (err) {
+    logger.error({ err, draftId: draft.id }, '[agent] auto verdict not written');
+    return null;
+  }
+}
+
+// ── the press ───────────────────────────────────────────────────────────────
+
+/** A row being pressed for longer than this died with its sweep (a deploy, a kill). */
+export const AUTO_RECLAIM_MS = 5 * 60_000;
+/** Rows one sweep presses — the minute's share, never a burst. */
+export const AUTO_PRESS_BATCH = 20;
+
+async function refreshCard(draftId: string): Promise<void> {
+  try {
+    const { refreshAgentCard } = await import('./card-io');
+    await refreshAgentCard(draftId);
+  } catch (err) {
+    logger.warn({ err, draftId }, '[agent] auto card not refreshed');
+  }
+}
+
+/** The holder as `decideDraft` reads a decider — his roles and grants, read now. */
+async function holderActor(userId: string) {
+  const grants = await actorGrants(userId);
+  return { id: userId, roles: grants.roles, permissions: grants.permissions };
+}
+
+/** Did the machine's press approve this draft? Its approval's audit row says `via: 'auto'`. */
+async function approvedByAuto(draftId: string): Promise<boolean> {
+  const rows = await db.execute<{ ok: boolean }>(sql`
+    SELECT EXISTS (SELECT 1 FROM audit_log
+                    WHERE entity_type = 'agent_draft' AND entity_id = ${draftId}::uuid
+                      AND after->>'status' = 'approved' AND after->>'via' = 'auto') AS ok`);
+  return rows[0]?.ok === true;
+}
+
+/**
+ * A row left 'pressing' — its sweep died, or threw after the draft moved —
+ * settled from the draft itself: approved by the machine's press → pressed;
+ * approved by HIS press → stopped as his; still pending → waiting again (the
+ * next sweep presses it, judged afresh); anything else → gone.
+ */
+async function settleFromDraft(draftId: string, now: Date): Promise<void> {
+  const [d] = await db
+    .select({ status: agentDrafts.status, decidedBy: agentDrafts.decidedBy, decidedAt: agentDrafts.decidedAt })
+    .from(agentDrafts)
+    .where(eq(agentDrafts.id, draftId));
+  const pressing = and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'pressing'));
+  if (d?.status === 'approved' && (await approvedByAuto(draftId))) {
+    await db.update(agentAutoVerdicts).set({ state: 'pressed', pressedAt: d.decidedAt ?? now }).where(pressing);
+  } else if (d?.status === 'approved') {
+    await db.update(agentAutoVerdicts).set({ state: 'stopped', outcome: 'owner_send', stoppedAt: d.decidedAt ?? now, stoppedBy: d.decidedBy }).where(pressing);
+  } else if (d?.status === 'pending') {
+    await db.update(agentAutoVerdicts).set({ state: 'waiting', claimedAt: null }).where(pressing);
+  } else {
+    await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: d?.status ?? 'deleted' }).where(pressing);
+  }
+}
+
+type PressOutcome = 'pressed' | 'refused' | 'gone';
+
+/** One claimed row: the draft read afresh, the gate asked afresh, then the same ✅ a person presses. */
+async function pressOne(row: { draftId: string; digest: string | null }, now: Date): Promise<PressOutcome> {
+  const where = and(eq(agentAutoVerdicts.draftId, row.draftId), eq(agentAutoVerdicts.state, 'pressing'));
+  const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, row.draftId));
+  if (!d || d.status !== 'pending') {
+    await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: d?.status ?? 'deleted' }).where(where);
+    if (d) await refreshCard(d.id);
+    return 'gone';
+  }
+  const verdict = autoVerdict(await autoFactsFor(d, { at: now, now }));
+  if (!verdict.eligible) {
+    await db
+      .update(agentAutoVerdicts)
+      .set({ state: 'refused', reasons: verdict.reasons, outcome: verdict.reasons.join(',').slice(0, 300) })
+      .where(where);
+    await refreshCard(d.id);
+    return 'refused';
+  }
+  const { decideDraft } = await import('./decide');
+  // A machine press: no actor in the audit row (nobody pressed), `via: 'auto'` in its `after`; the
+  // decider is the holder, so `decided_by` and the action replay read the person whose account speaks.
+  const r = await decideDraft(await holderActor(d.managerUserId), d.id, 'send', { digest: row.digest, auto: true }, { actorId: null });
+  if (r.ok) {
+    await db.update(agentAutoVerdicts).set({ state: 'pressed', pressedAt: now }).where(where);
+    await refreshCard(d.id);
+    return 'pressed';
+  }
+  const code: DecideRefusal = r.code;
+  await db
+    .update(agentAutoVerdicts)
+    .set(code === 'not_live' ? { state: 'gone', outcome: code } : { state: 'refused', outcome: (r.detail ? `${code}:${r.detail}` : code).slice(0, 300) })
+    .where(where);
+  await refreshCard(d.id);
+  return code === 'not_live' ? 'gone' : 'refused';
+}
+
+/**
+ * The minute sweep's auto step (jobs `agentSweep`): reclaim what a dead sweep
+ * left 'pressing', claim the due rows (`FOR UPDATE SKIP LOCKED`, so two sweeps
+ * at once press each row once), and press each — never throwing out of the
+ * sweep for one row. Returns how many it pressed.
+ */
+export async function pressDueAutos(now: Date = new Date()): Promise<number> {
+  if (!(await agentAutoReady())) return 0;
+  const stale = await db
+    .select({ draftId: agentAutoVerdicts.draftId })
+    .from(agentAutoVerdicts)
+    .where(and(eq(agentAutoVerdicts.state, 'pressing'), sql`${agentAutoVerdicts.claimedAt} < ${new Date(now.getTime() - AUTO_RECLAIM_MS).toISOString()}::timestamptz`));
+  for (const s of stale) {
+    await settleFromDraft(s.draftId, now).catch((err: unknown) => logger.warn({ err, draftId: s.draftId }, '[agent] auto reclaim failed'));
+  }
+  const claimed = await db.execute<{ draft_id: string; digest: string | null }>(sql`
+    UPDATE agent_auto_verdicts SET state = 'pressing', claimed_at = ${now.toISOString()}::timestamptz
+     WHERE draft_id IN (
+       SELECT draft_id FROM agent_auto_verdicts
+        WHERE state = 'waiting' AND due_at <= ${now.toISOString()}::timestamptz
+        ORDER BY due_at
+        LIMIT ${AUTO_PRESS_BATCH}
+        FOR UPDATE SKIP LOCKED)
+       AND state = 'waiting'
+    RETURNING draft_id::text, digest`);
+  let pressed = 0;
+  for (const row of claimed) {
+    try {
+      if ((await pressOne({ draftId: row.draft_id, digest: row.digest }, now)) === 'pressed') pressed += 1;
+    } catch (err) {
+      logger.error({ err, draftId: row.draft_id }, '[agent] auto press failed');
+      await settleFromDraft(row.draft_id, now).catch(() => undefined);
+    }
+  }
+  if (claimed.length > 0) logger.info({ claimed: claimed.length, pressed }, '[agent] auto presses');
+  return pressed;
+}
+
+// ── a person on the card ────────────────────────────────────────────────────
+
+/** Why a waiting auto stopped because of HIM: his own decision on the card, or ⏸. */
+export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause';
+
+/**
+ * His own decision on a draft stops its waiting auto — every non-auto
+ * `decideDraft` (bot AND web) and his ✏️ words call this first. A row already
+ * being pressed is left alone: the draft's compare-and-set decides who wins.
+ * The card is redrawn (it becomes the ordinary card).
+ */
+export async function stopAutoForPerson(draftId: string, actorId: string, why: PersonStop): Promise<boolean> {
+  if (!(await agentAutoReady())) return false;
+  const stopped = await db
+    .update(agentAutoVerdicts)
+    .set({ state: 'stopped', outcome: why, stoppedAt: new Date(), stoppedBy: actorId })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'waiting')))
+    .returning({ draftId: agentAutoVerdicts.draftId });
+  if (stopped.length === 0) return false;
+  await refreshCard(draftId);
+  return true;
+}
+
+export type StopAutoRefusal = 'not_ready' | 'not_found' | 'not_account_holder' | 'pressing' | 'pressed' | 'not_waiting';
+
+/** ⏸'s answers in his words — «kech» when the press already started or finished. */
+export const STOP_AUTO_WORDS: Record<StopAutoRefusal, string> = {
+  not_ready: 'Server hali yangilanmagan — o‘zi yuborish yo‘q.',
+  not_found: 'Bu javob o‘zi yuborilmaydi.',
+  not_account_holder: 'Bu javob sizning akkauntingizdan emas.',
+  pressing: 'Kech — javob yuborilmoqda.',
+  pressed: 'Kech — javob yuborildi.',
+  not_waiting: 'Bu javob endi o‘zi ketmaydi.',
+};
+
+/** ⏸ «To‘xtat»: the holder alone; a waiting auto becomes his card again. */
+export async function stopAuto(staffId: string, draftId: string): Promise<{ ok: true } | { ok: false; code: StopAutoRefusal }> {
+  if (!(await agentAutoReady())) return { ok: false, code: 'not_ready' };
+  const [row] = await db
+    .select({ managerUserId: agentAutoVerdicts.managerUserId, state: agentAutoVerdicts.state })
+    .from(agentAutoVerdicts)
+    .where(eq(agentAutoVerdicts.draftId, draftId));
+  if (!row || row.state === null) return { ok: false, code: 'not_found' };
+  if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  if (await stopAutoForPerson(draftId, staffId, 'pause')) return { ok: true };
+  const [now] = await db.select({ state: agentAutoVerdicts.state }).from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));
+  if (now?.state === 'pressing') return { ok: false, code: 'pressing' };
+  if (now?.state === 'pressed') return { ok: false, code: 'pressed' };
+  return { ok: false, code: 'not_waiting' };
+}
+
+// ── step-downs ──────────────────────────────────────────────────────────────
+
+/** How far back a step-down looks, and how long a chat stays out of the layer. */
+export const AUTO_STEP_DOWN = { windowMs: 7 * 86_400_000, chatOffMs: 30 * 86_400_000, feedbackToDisarm: 2, botQuestionChatsToDisarm: 2 } as const;
+
+type StepDownReason = Extract<AutoDisarmReason, 'feedback' | 'blocked' | 'bot_question'>;
+
+const STEP_DOWN_WORDS: Record<StepDownReason, string> = {
+  feedback: '7 kun ichida o‘zi ketgan 2 ta javobga «👎 Xato edi» bosildi',
+  blocked: 'o‘zi javob yuborilgan mijoz akkauntni bloklagan',
+  bot_question: '7 kun ichida o‘zi javob olgan 2 ta mijoz «botmisiz?» deb so‘radi',
+};
+
+/** Pure: the alarm a step-down raises — the reason, what stays, and that re-arming is his. No customer in it. */
+export function autoDisarmAlarmText(reason: StepDownReason): string {
+  return (
+    `⚠️ AI o‘zi yuborishi o‘chirildi. Sabab: ${STEP_DOWN_WORDS[reason]}.\n` +
+    `AI qoralama yozishda davom etadi — har bir javobni siz ✅ bilan yuborasiz. ` +
+    `Qayta yoqish faqat sizning bosishingiz bilan.`
+  );
+}
+
+/**
+ * Disarm by itself, with ONE alarm to the holder and every super_admin (the
+ * account's alarms ride the bot — crm/account-alarm's rule): only when it WAS
+ * armed, so a second step-down on the same day is silent. The replies it
+ * stopped get their cards back as ordinary cards.
+ */
+async function stepDown(reason: StepDownReason, holderId: string): Promise<boolean> {
+  const out = await db.transaction((tx) => disarmAutoInTx(tx, reason, null));
+  for (const id of out.stoppedDraftIds) await refreshCard(id);
+  if (!out.wasArmed) return false;
+  const supers = await usersWithRoles(['super_admin']);
+  await notifyStaffTelegram({ userIds: [holderId, ...supers], type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
+  logger.warn({ reason }, '[agent] auto-send disarmed itself');
+  return true;
+}
+
+/** The chat stays out of the layer for 30 days — the later of what it already had and this. */
+async function chatOff(managerUserId: string, peerId: bigint, reason: string, now: Date): Promise<void> {
+  const until = new Date(now.getTime() + AUTO_STEP_DOWN.chatOffMs);
+  await db
+    .insert(agentAutoChats)
+    .values({ managerUserId, peerId, offUntil: until, reason, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [agentAutoChats.managerUserId, agentAutoChats.peerId],
+      // `${table}.column`: inside ON CONFLICT the bare name is the proposed row's as much as the existing one's.
+      set: { offUntil: sql`greatest(${agentAutoChats}.off_until, ${until.toISOString()}::timestamptz)`, reason, updatedAt: now },
+    });
+}
+
+/** Did this chat get an auto reply within the step-down window? */
+async function autoPressedInChat(managerUserId: string, peerId: bigint, now: Date): Promise<boolean> {
+  const [row] = await db
+    .select({ id: agentAutoVerdicts.draftId })
+    .from(agentAutoVerdicts)
+    .where(
+      and(
+        eq(agentAutoVerdicts.managerUserId, managerUserId),
+        eq(agentAutoVerdicts.peerId, peerId),
+        eq(agentAutoVerdicts.state, 'pressed'),
+        gte(agentAutoVerdicts.pressedAt, new Date(now.getTime() - AUTO_STEP_DOWN.windowMs)),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
+}
+
+export type AutoFeedbackRefusal = 'not_ready' | 'not_found' | 'not_account_holder' | 'not_sent' | 'already';
+
+export const AUTO_FEEDBACK_WORDS: Record<AutoFeedbackRefusal, string> = {
+  not_ready: 'Server hali yangilanmagan.',
+  not_found: 'Bu javob o‘zi yuborilmagan.',
+  not_account_holder: 'Bu javob sizning akkauntingizdan emas.',
+  not_sent: 'Bu javob o‘zi yuborilmagan.',
+  already: 'Allaqachon belgilangan.',
+};
+
+/**
+ * 👎 «Xato edi» on a reply the machine sent: the holder alone, once. The chat
+ * leaves the layer for 30 days; two in seven days disarm it (step-down).
+ */
+export async function autoFeedback(
+  staffId: string,
+  draftId: string,
+  now: Date = new Date(),
+): Promise<{ ok: true; disarmed: boolean } | { ok: false; code: AutoFeedbackRefusal }> {
+  if (!(await agentAutoReady())) return { ok: false, code: 'not_ready' };
+  const [row] = await db
+    .select({ managerUserId: agentAutoVerdicts.managerUserId, peerId: agentAutoVerdicts.peerId, state: agentAutoVerdicts.state, feedback: agentAutoVerdicts.feedback })
+    .from(agentAutoVerdicts)
+    .where(eq(agentAutoVerdicts.draftId, draftId));
+  if (!row || row.state === null) return { ok: false, code: 'not_found' };
+  if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  if (row.state !== 'pressed') return { ok: false, code: 'not_sent' };
+  const marked = await db
+    .update(agentAutoVerdicts)
+    .set({ feedback: 'bad', feedbackAt: now })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'pressed'), isNull(agentAutoVerdicts.feedback)))
+    .returning({ id: agentAutoVerdicts.draftId });
+  if (marked.length === 0) return { ok: false, code: 'already' };
+  await chatOff(row.managerUserId, row.peerId, 'feedback', now);
+  const [count] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentAutoVerdicts)
+    .where(
+      and(
+        eq(agentAutoVerdicts.managerUserId, row.managerUserId),
+        eq(agentAutoVerdicts.feedback, 'bad'),
+        gte(agentAutoVerdicts.feedbackAt, new Date(now.getTime() - AUTO_STEP_DOWN.windowMs)),
+      ),
+    );
+  const disarmed = Number(count?.n ?? 0) >= AUTO_STEP_DOWN.feedbackToDisarm ? await stepDown('feedback', row.managerUserId) : false;
+  await refreshCard(draftId);
+  return { ok: true, disarmed };
+}
+
+/**
+ * A customer who got an auto reply within seven days turned out to have
+ * BLOCKED the account (outbox-store's `recipient_final` branch): the layer
+ * disarms itself. Called on the listener's pump — never throws.
+ */
+export async function autoStepDownOnBlock(managerUserId: string, peerId: bigint, now: Date = new Date()): Promise<boolean> {
+  try {
+    if (!(await agentAutoReady())) return false;
+    if (!(await autoPressedInChat(managerUserId, peerId, now))) return false;
+    return await stepDown('blocked', managerUserId);
+  } catch (err) {
+    logger.error({ err }, '[agent] auto block step-down failed');
+    return false;
+  }
+}
+
+/**
+ * «Siz botmisiz?» in a chat that got an auto reply within seven days (run's
+ * `bot_question` notice): that chat leaves the layer for 30 days, and a
+ * SECOND such chat within seven days disarms it. Never throws.
+ */
+export async function autoStepDownOnBotQuestion(managerUserId: string, peerId: bigint, now: Date = new Date()): Promise<{ chatOff: boolean; disarmed: boolean }> {
+  try {
+    if (!(await agentAutoReady())) return { chatOff: false, disarmed: false };
+    if (!(await autoPressedInChat(managerUserId, peerId, now))) return { chatOff: false, disarmed: false };
+    await chatOff(managerUserId, peerId, 'bot_question', now);
+    const [count] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(agentAutoChats)
+      .where(
+        and(
+          eq(agentAutoChats.managerUserId, managerUserId),
+          eq(agentAutoChats.reason, 'bot_question'),
+          gte(agentAutoChats.updatedAt, new Date(now.getTime() - AUTO_STEP_DOWN.windowMs)),
+        ),
+      );
+    const disarmed = Number(count?.n ?? 0) >= AUTO_STEP_DOWN.botQuestionChatsToDisarm ? await stepDown('bot_question', managerUserId) : false;
+    return { chatOff: true, disarmed };
+  } catch (err) {
+    logger.error({ err }, '[agent] auto bot-question step-down failed');
+    return { chatOff: false, disarmed: false };
+  }
+}
+
+// ── arming ──────────────────────────────────────────────────────────────────
+
+export type AutoConfigRefusal = 'not_ready' | 'forbidden' | 'not_account_holder' | 'agent_off' | 'not_work_account' | 'bad_value';
+
+export class AutoConfigError extends Error {
+  constructor(public readonly code: AutoConfigRefusal) {
+    super(code);
+  }
+}
+
+/** Every refusal of the arming doors, in his words. */
+export const AUTO_CONFIG_WORDS: Record<AutoConfigRefusal, string> = {
+  not_ready: 'Server hali yangilanmagan — o‘zi yuborish yo‘q.',
+  forbidden: 'Buni faqat akkaunt egasi yoki super admin qila oladi.',
+  not_account_holder: 'O‘zi yuborishni faqat akkaunt egasi yoqadi.',
+  agent_off: 'Avval AI sotuvchini yoqing.',
+  not_work_account: 'Avval raqamni «Ish raqami» deb belgilang.',
+  bad_value: 'Noto‘g‘ri qiymat.',
+};
+
+type AutoActor = { id: string; roles: readonly string[] };
+
+const AUTO_AUDIT_ID = '00000000-0000-0000-0000-000000000143';
+
+async function workAccountOf(userId: string): Promise<boolean> {
+  const [acc] = await db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, userId));
+  return acc?.work === true;
+}
+
+/**
+ * Arm or disarm «o'zi yuborish». Arming is the ACCOUNT HOLDER's alone (his
+ * answer 15: a message leaves a personal account only by its holder), only
+ * while the agent runs, and only on a number marked «Ish raqami» (his Q5 ⭐);
+ * it clears the last disarm. Disarming is open to the holder and any
+ * super_admin — an off switch never waits for one person. Audited.
+ */
+export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditContext): Promise<AutoConfig> {
+  if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  const pre = await readAgentConfig();
+  if (armed) {
+    if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+    if (!agentRunning(pre)) throw new AutoConfigError('agent_off');
+    if (!(await workAccountOf(pre.ownerUserId))) throw new AutoConfigError('not_work_account');
+  } else if (!mayRunAgent(actor, pre)) {
+    throw new AutoConfigError('forbidden');
+  }
+  const out = await db.transaction(async (tx) => {
+    // agent_config first, then the layer's row — the order «off» locks them in (config `setAgentMode`).
+    const [agent] = await tx.select().from(agentConfig).where(eq(agentConfig.id, 1)).for('share');
+    if (armed && (agent?.mode !== 'shadow' || agent.ownerUserId !== actor.id)) throw new AutoConfigError('agent_off');
+    const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
+    if (!before) throw new AutoConfigError('not_ready');
+    const now = new Date();
+    let stopped: string[] = [];
+    if (armed) {
+      await tx
+        .update(agentAutoConfig)
+        .set({ armedAt: before.armedAt ?? now, armedBy: before.armedBy ?? actor.id, disarmedAt: null, disarmReason: null, updatedAt: now })
+        .where(eq(agentAutoConfig.id, 1));
+    } else {
+      stopped = (await disarmAutoInTx(tx, 'manual', actor.id)).stoppedDraftIds;
+    }
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_auto_config',
+      entityId: AUTO_AUDIT_ID,
+      action: 'update',
+      before: { armed: before.armedAt !== null },
+      after: { armed, ...(stopped.length > 0 ? { stopped: stopped.length } : {}) },
+    });
+    const [row] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1));
+    return { config: toAutoConfig(row!), stopped };
+  });
+  for (const id of out.stopped) await refreshCard(id);
+  return out.config;
+}
+
+/** Which kinds of reply may go by themselves — the holder's choice among the four, at least one. Audited. */
+export async function setAutoCategories(actor: AutoActor, categories: readonly string[], ctx: AuditContext): Promise<AutoConfig> {
+  const chosen = [...new Set(categories)];
+  if (chosen.length === 0 || chosen.some((c) => !(AUTO_SEND_CATEGORIES as readonly string[]).includes(c))) throw new AutoConfigError('bad_value');
+  if (!(await agentAutoReady())) throw new AutoConfigError('not_ready');
+  const pre = await readAgentConfig();
+  if (!pre?.ownerUserId || actor.id !== pre.ownerUserId) throw new AutoConfigError('not_account_holder');
+  // In the design's own order, so the stored list never depends on the order of the boxes.
+  const ordered = AUTO_SEND_CATEGORIES.filter((c) => chosen.includes(c));
+  return db.transaction(async (tx) => {
+    const [before] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('update');
+    if (!before) throw new AutoConfigError('not_ready');
+    const [row] = await tx
+      .update(agentAutoConfig)
+      .set({ categories: [...ordered], updatedAt: new Date() })
+      .where(eq(agentAutoConfig.id, 1))
+      .returning();
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_auto_config',
+      entityId: AUTO_AUDIT_ID,
+      action: 'update',
+      before: { categories: before.categories },
+      after: { categories: ordered },
+    });
+    return toAutoConfig(row!);
+  });
+}
+
+/**
+ * Tests: put the layer's singleton back the way a file found it (#183 — a
+ * configuration row is the next file's input on the one shared database).
+ */
+export async function __restoreAutoConfig(snapshot: AutoConfig | null): Promise<void> {
+  if (!snapshot) return;
+  await db
+    .update(agentAutoConfig)
+    .set({
+      armedAt: snapshot.armedAt,
+      armedBy: snapshot.armedBy,
+      holdSec: snapshot.holdSec,
+      perDay: snapshot.perDay,
+      maxChars: snapshot.maxChars,
+      minConfidence: snapshot.minConfidence.toFixed(2),
+      categories: snapshot.categories,
+      disarmedAt: snapshot.disarmedAt,
+      disarmReason: snapshot.disarmReason,
+    })
+    .where(eq(agentAutoConfig.id, 1));
+}
+
+/** The newest verdict rows of a chat — the page's and the tests' reader. */
+export async function autoVerdictsOf(managerUserId: string, peerId: bigint) {
+  if (!(await agentAutoReady())) return [];
+  return db
+    .select()
+    .from(agentAutoVerdicts)
+    .where(and(eq(agentAutoVerdicts.managerUserId, managerUserId), eq(agentAutoVerdicts.peerId, peerId)))
+    .orderBy(desc(agentAutoVerdicts.createdAt));
+}

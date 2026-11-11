@@ -6492,6 +6492,7 @@
       "calc_in_flight": "The calculation is being queued right now — look again in a minute.",
       "identity_changed": "The chat is now bound to another customer (or to nobody) — this reply will not be sent.",
       "window_closed": "The client-finding agent found this lead: it is written to only Mon–Sat 10:00–17:00, and by then the customer’s message will be over 24 hours old — the reply was not queued. Write yourself during working hours.",
+      "auto_warning": "⏱ The card carries a warning — the reply did not go by itself; decide yourself.",
       "empty": "The text is empty.",
       "not_ready": "The database is not updated yet.",
       "forbidden": "No access.",

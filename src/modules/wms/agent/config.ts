@@ -1,7 +1,7 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
-import { agentConfig, agentDrafts, agentOutbox, tgAccounts, users } from '../../platform/db/schema';
+import { agentAutoConfig, agentAutoVerdicts, agentConfig, agentDrafts, agentOutbox, tgAccounts, users } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { canLogInSql } from '../../platform/users/login';
 
@@ -64,6 +64,79 @@ export async function agentTablesReady(): Promise<boolean> {
 /** Tests: a server one migration behind, as far as this process knows. */
 export function __forgetAgentReady(): void {
   ready = false;
+}
+
+let autoReady = false;
+let autoBehind = false;
+
+/**
+ * Does 0143 exist — «o'zi yuborish» (docs/AI-SOTUVCHI.md §18.3)? Cached TRUE
+ * only, like `agentTablesReady`. EVERY reader and writer of the auto layer
+ * asks it first: one migration behind there are no verdict rows, every card is
+ * the ordinary card, and the layer's doors answer «yangilanmagan».
+ */
+export async function agentAutoReady(): Promise<boolean> {
+  if (autoBehind) return false;
+  if (autoReady) return true;
+  if (!(await agentTablesReady())) return false;
+  try {
+    const rows = await db.execute<{ ok: boolean }>(sql`
+      SELECT to_regclass('public.agent_auto_config') IS NOT NULL
+         AND to_regclass('public.agent_auto_verdicts') IS NOT NULL
+         AND to_regclass('public.agent_auto_chats') IS NOT NULL AS ok`);
+    autoReady = rows[0]?.ok === true;
+  } catch (err) {
+    logger.warn({ err }, '[agent] auto tables not checked');
+    return false;
+  }
+  return autoReady;
+}
+
+/** Tests: forget the cached answer (and any pretence below). */
+export function __forgetAgentAutoReady(): void {
+  autoReady = false;
+  autoBehind = false;
+}
+
+/**
+ * Tests: a server one migration behind 0143 — the probe answers «no» until
+ * forgotten. The other processes on the shared database still see the
+ * tables; dropping them in a rolled-back transaction would hide them from
+ * nobody but that one connection.
+ */
+export function __pretendAgentAutoBehind(): void {
+  autoBehind = true;
+  autoReady = false;
+}
+
+/** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
+export type AutoDisarmReason = 'manual' | 'agent_off' | 'owner_changed' | 'feedback' | 'blocked' | 'bot_question' | `forced: ${string}`;
+
+/**
+ * The auto layer off, INSIDE the caller's transaction (§18.3: «off» disarms
+ * the layer in the same transaction; re-arming is always his press): armed
+ * no more, the reason and the moment stamped, and every reply still WAITING
+ * its press stopped — a row already being pressed is the draft's own
+ * compare-and-set's to decide. The caller asks `agentAutoReady()` BEFORE its
+ * transaction: a statement on a missing table would abort it.
+ */
+export async function disarmAutoInTx(
+  tx: Tx,
+  reason: AutoDisarmReason,
+  by: string | null,
+): Promise<{ wasArmed: boolean; stoppedDraftIds: string[] }> {
+  const now = new Date();
+  const was = await tx
+    .update(agentAutoConfig)
+    .set({ armedAt: null, armedBy: null, disarmedAt: now, disarmReason: reason.slice(0, 200), updatedAt: now })
+    .where(and(eq(agentAutoConfig.id, 1), isNotNull(agentAutoConfig.armedAt)))
+    .returning({ id: agentAutoConfig.id });
+  const stopped = await tx
+    .update(agentAutoVerdicts)
+    .set({ state: 'stopped', outcome: 'disarmed', stoppedAt: now, stoppedBy: by })
+    .where(eq(agentAutoVerdicts.state, 'waiting'))
+    .returning({ draftId: agentAutoVerdicts.draftId });
+  return { wasArmed: was.length > 0, stoppedDraftIds: stopped.map((r) => r.draftId) };
 }
 
 function toConfig(row: typeof agentConfig.$inferSelect): AgentConfig {
@@ -177,12 +250,16 @@ export async function setAgentMode(actor: AgentActor, mode: string, ctx: AuditCo
   } else if (!mayRunAgent(actor, pre)) {
     throw new AgentConfigError('forbidden');
   }
+  // Read BEFORE the transaction: a statement on a missing table would abort it.
+  const autoReady = mode === 'off' && (await agentAutoReady());
 
   return db.transaction(async (tx) => {
     const before = await lockConfig(tx);
     let expiredDraftIds: string[] = [];
     let cancelledOutboxIds: string[] = [];
     if (mode === 'off') {
+      // «Off» disarms «o'zi yuborish» in the same transaction (§18.3); re-arming is always his press.
+      if (autoReady) await disarmAutoInTx(tx, 'agent_off', actor.id);
       const cancelled = await tx
         .update(agentOutbox)
         .set({ status: 'cancelled', lastError: 'agent_off' })
@@ -232,10 +309,13 @@ export async function setAgentOwner(actor: AgentActor, userId: string | null, ct
     if (!u?.live) throw new AgentConfigError('bad_value');
     if (!(await ownerConnected(db, userId))) throw new AgentConfigError('owner_not_connected');
   }
+  const autoReady = await agentAutoReady();
   return db.transaction(async (tx) => {
     const before = await lockConfig(tx);
     if (before.mode !== 'off') throw new AgentConfigError('turn_off_first');
     const changed = before.ownerUserId !== userId;
+    // A new account is a new person's name: whatever was armed was armed by the old holder (§18.3).
+    if (autoReady) await disarmAutoInTx(tx, 'owner_changed', actor.id);
     const [row] = await tx
       .update(agentConfig)
       .set({
@@ -422,9 +502,11 @@ export async function __restoreAgentConfig(snapshot: AgentConfig | null): Promis
  */
 export async function forceAgentOff(reason: string): Promise<ModeChange | null> {
   if (!(await agentTablesReady())) return null;
+  const autoReady = await agentAutoReady();
   return db.transaction(async (tx) => {
     const before = await lockConfig(tx);
     if (before.mode === 'off') return null;
+    if (autoReady) await disarmAutoInTx(tx, `forced: ${reason.slice(0, 180)}`, null);
     const cancelled = await tx
       .update(agentOutbox)
       .set({ status: 'cancelled', lastError: `agent_off: ${reason}`.slice(0, 500) })

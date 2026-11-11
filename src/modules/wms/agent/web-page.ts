@@ -18,7 +18,7 @@ import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, digestBody } from './card';
 import { renderDraftCardFull } from './card-io';
-import { agentTablesReady, type AgentConfig } from './config';
+import { agentAutoReady, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
 import { dayRunCounts, sendsToday } from './today';
@@ -388,6 +388,10 @@ export async function tariffMismatchSeen(now = new Date()): Promise<boolean> {
 /** The last 30 days of drafts, counted by `agentStats`. */
 export async function webStats(now = new Date()): Promise<AgentStats> {
   const since = new Date(now.getTime() - 30 * 86_400_000);
+  // The machine's own presses are counted apart (stats `autoSent`) — read only once 0143 is there.
+  const autoSent = (await agentAutoReady())
+    ? sql<boolean>`EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = ${agentDrafts}.id AND v.state = 'pressed')`
+    : sql<boolean>`false`;
   const rows = await db
     .select({
       status: agentDrafts.status,
@@ -395,11 +399,12 @@ export async function webStats(now = new Date()): Promise<AgentStats> {
       edited: sql<boolean>`${agentDrafts.finalBody} IS NOT NULL`,
       outboxStatus: agentOutbox.status,
       category: agentDrafts.category,
+      autoSent,
     })
     .from(agentDrafts)
     .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id))
     .where(gte(agentDrafts.createdAt, since));
-  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true })));
+  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true })));
 }
 
 export interface OwnerAccountState {

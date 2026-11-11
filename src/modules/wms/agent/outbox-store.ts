@@ -570,6 +570,10 @@ export async function applyAgentOutcome(
           if (error.code === 'USER_IS_BLOCKED') {
             const since = new Date(now.getTime() - AGENT_LIMITS.blockWindowDays * 86_400_000);
             if ((await blocksSince(row.managerUserId, since)) >= 2) await agentBlocked(account);
+            // A customer the machine answered by itself this week blocked us: «o'zi yuborish» stands down
+            // (§18.3 step-down). Loaded on demand — the pump runs in the listener — and never throws.
+            const { autoStepDownOnBlock } = await import('./auto-send');
+            await autoStepDownOnBlock(row.managerUserId, row.peerId, now);
           }
           break;
         default:

@@ -23,6 +23,7 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
+import { stopAutoForPerson } from './auto-send';
 import { cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentRunning, readAgentConfig } from './config';
@@ -83,6 +84,12 @@ export type DecideRefusal =
    * nothing is queued (a ✅ on Saturday evening; Sunday is no window).
    */
   | 'window_closed'
+  /**
+   * «O'zi yuborish»'s press (§18.3) found a WARNING on the fresh policy re-run:
+   * a person may press past a warning he has read, the machine may not. Nothing
+   * is written — the card stays an ordinary card he can press.
+   */
+  | 'auto_warning'
   | 'empty';
 
 export type DecideResult =
@@ -611,21 +618,38 @@ async function requeueLanded(
   }
 }
 
+/**
+ * `auto`: «o'zi yuborish»'s machine press (§18.3, auto-send `pressDueAutos`) —
+ * the same ✅, stricter: only 'send', only a strictly 'pending' machine reply
+ * (never 'editing', never his words, never a price), only with the digest the
+ * verdict was scheduled on, and refused on ANY warning of the fresh policy
+ * re-run. Its approval's audit row says `via: 'auto'`; `decided_by` is the
+ * holder the press speaks for. Every other call is a PERSON on the card, and
+ * stops the draft's waiting auto first (`stopAutoForPerson`).
+ */
 export async function decideDraft(
   actor: DeciderActor,
   draftId: string,
   decision: DraftDecision,
-  opts: { digest?: string | null },
+  opts: { digest?: string | null; auto?: boolean },
   ctx: AuditContext,
 ): Promise<DecideResult> {
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d) return { ok: false, code: 'not_found' };
   if (d.managerUserId !== actor.id) return { ok: false, code: 'not_account_holder' };
+  // His own press on the card is his decision: the machine's waiting press stands down before anything else
+  // (a row already being pressed is the draft's compare-and-set's to decide).
+  if (!opts.auto) await stopAutoForPerson(draftId, actor.id, `owner_${decision}`);
   const config = await readAgentConfig();
   if (decision !== 'reject' && decision !== 'human' && (!agentRunning(config) || config.ownerUserId !== d.managerUserId)) {
     return { ok: false, code: 'agent_off' };
   }
   if (d.status !== 'pending' && d.status !== 'editing') return { ok: false, code: 'not_live', detail: d.status };
+  // The machine presses a pending machine reply and nothing else: never a draft he opened ✏️ on, never his words.
+  if (opts.auto && (decision !== 'send' || d.status !== 'pending' || d.finalBody !== null || d.kind !== 'reply')) {
+    return { ok: false, code: 'not_live', detail: d.status };
+  }
+  if (opts.auto && !opts.digest) return { ok: false, code: 'stale_card' };
 
   if (decision === 'reject' || decision === 'human' || decision === 'edit') {
     const status = decision === 'reject' ? 'rejected' : decision === 'human' ? 'taken_over' : 'editing';
@@ -751,6 +775,10 @@ export async function decideDraft(
       .where(eq(agentDrafts.id, draftId));
     await refreshDraftCard(draftId);
     return { ok: false, code: 'policy_block', detail: blocks.map((b) => b.code).join(',') };
+  }
+  // A person presses past a warning he has read on the card; the machine never does — and writes nothing.
+  if (opts.auto && policy.warnings.length > 0) {
+    return { ok: false, code: 'auto_warning', detail: policy.warnings.map((w) => w.code).join(',') };
   }
 
   const moved = await chatMoved(d);
@@ -889,7 +917,7 @@ export async function decideDraft(
       entityId: draftId,
       action: 'status_change',
       before: { status: d.status },
-      after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId },
+      after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
     });
     return true;
   });
@@ -968,6 +996,8 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
   if (d.status !== 'editing' && d.status !== 'pending') return { ok: false, code: 'not_live', detail: d.status };
   const body = text.trim();
   if (!body) return { ok: false, code: 'empty' };
+  // His words on the card are his decision — a waiting machine press stands down (the web's ✏️ is a box, no `edit`).
+  await stopAutoForPerson(draftId, actor.id, 'owner_edit');
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
   // His words pass the owner subset; the same-text count is only a warning on his card (K3).
   const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? [], {

@@ -6,6 +6,7 @@ import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf, STAFF_TEXT_CAP } from '../../platform/notifications/staff-html';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
+import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
 import { readAgentConfig } from './config';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
@@ -54,6 +55,11 @@ export interface CardRenderOptions {
   surface?: 'bot' | 'web';
   humanPauseMin?: number | null;
   humanWroteAt?: Date | null;
+  /**
+   * The draft's «o'zi yuborish» state (auto-send `autoCardStateFor`) — the
+   * seam the card's auto lines read. Absent or null: the ordinary card.
+   */
+  auto?: AutoCardState | null;
 }
 
 /** «2 soat» for whole hours, «90 daqiqa» otherwise — the config is minutes, he reads time. */

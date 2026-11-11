@@ -450,3 +450,109 @@ export const tgPeerPulls = pgTable(
       .where(sql`${t.doneAt} IS NULL`),
   ],
 );
+
+/**
+ * «O'zi yuborish» (0143, docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11) —
+ * the singleton HIS press arms. A layer over shadow, never a mode: the agent
+ * stays 'shadow' and an eligible reply goes by a machine press of the same ✅.
+ * No proof cell and no holdback: his answer removed both.
+ */
+export const agentAutoConfig = pgTable(
+  'agent_auto_config',
+  {
+    id: smallint('id').primaryKey().default(1),
+    armedAt: timestamp('armed_at', { withTimezone: true }),
+    armedBy: uuid('armed_by').references(() => users.id),
+    /** The ⏸ window before a reply goes by itself (his Q3 ⭐ a: 2 minutes). */
+    holdSec: integer('hold_sec').notNull().default(120),
+    perDay: integer('per_day').notNull().default(30),
+    maxChars: integer('max_chars').notNull().default(400),
+    minConfidence: numeric('min_confidence', { precision: 3, scale: 2 }).notNull().default('0.80'),
+    categories: text('categories').array().notNull().default(sql`'{greeting,qualification,faq,status}'`),
+    disarmedAt: timestamp('disarmed_at', { withTimezone: true }),
+    disarmReason: text('disarm_reason'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('agent_auto_config_singleton_check', sql`${t.id} = 1`),
+    check('agent_auto_config_armed_check', sql`(${t.armedAt} IS NULL) = (${t.armedBy} IS NULL)`),
+    check('agent_auto_config_hold_check', sql`${t.holdSec} BETWEEN 30 AND 600`),
+    check('agent_auto_config_day_check', sql`${t.perDay} BETWEEN 1 AND 80`),
+    check('agent_auto_config_chars_check', sql`${t.maxChars} BETWEEN 50 AND 1000`),
+    check('agent_auto_config_confidence_check', sql`${t.minConfidence} >= 0.5 AND ${t.minConfidence} <= 1`),
+    check(
+      'agent_auto_config_categories_check',
+      sql`${t.categories} <@ ARRAY['greeting', 'qualification', 'faq', 'status']::text[] AND cardinality(${t.categories}) >= 1`,
+    ),
+  ],
+);
+
+/**
+ * ONE row per reply draft the inbound run wrote while 0143 exists: the gate's
+ * verdict with every reason it refused (the rehearsal record), and — for an
+ * eligible one — the send state the minute sweep claims and presses. An
+ * ineligible row has no state. It follows its draft.
+ */
+export const agentAutoVerdicts = pgTable(
+  'agent_auto_verdicts',
+  {
+    draftId: uuid('draft_id')
+      .primaryKey()
+      .references(() => agentDrafts.id, { onDelete: 'cascade' }),
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    eligible: boolean('eligible').notNull(),
+    reasons: text('reasons').array().notNull().default(sql`'{}'`),
+    category: text('category'),
+    confidence: numeric('confidence', { precision: 3, scale: 2 }),
+    /** `cardDigest` of the body and actions at scheduling — the press passes it, so an edited card refuses. */
+    digest: text('digest'),
+    state: text('state'),
+    dueAt: timestamp('due_at', { withTimezone: true }),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    pressedAt: timestamp('pressed_at', { withTimezone: true }),
+    stoppedAt: timestamp('stopped_at', { withTimezone: true }),
+    stoppedBy: uuid('stopped_by').references(() => users.id),
+    /** The press's refusal code(s), or why it stopped (`owner_send`, `pause`, `disarmed`, …). */
+    outcome: text('outcome'),
+    feedback: text('feedback'),
+    feedbackAt: timestamp('feedback_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check(
+      'agent_auto_verdicts_state_check',
+      sql`${t.state} IS NULL OR ${t.state} IN ('waiting', 'pressing', 'pressed', 'stopped', 'refused', 'gone')`,
+    ),
+    check('agent_auto_verdicts_eligible_check', sql`(${t.state} IS NULL) = (NOT ${t.eligible})`),
+    check('agent_auto_verdicts_due_check', sql`(${t.state} IS NULL) = (${t.dueAt} IS NULL)`),
+    check('agent_auto_verdicts_confidence_check', sql`${t.confidence} IS NULL OR (${t.confidence} >= 0 AND ${t.confidence} <= 1)`),
+    check('agent_auto_verdicts_feedback_check', sql`${t.feedback} IS NULL OR ${t.feedback} IN ('bad')`),
+    check('agent_auto_verdicts_feedback_at_check', sql`(${t.feedback} IS NULL) = (${t.feedbackAt} IS NULL)`),
+    check('agent_auto_verdicts_feedback_sent_check', sql`${t.feedback} IS NULL OR ${t.state} = 'pressed'`),
+    index('agent_auto_verdicts_due_idx')
+      .on(t.dueAt)
+      .where(sql`${t.state} IN ('waiting', 'pressing')`),
+    index('agent_auto_verdicts_chat_idx').on(t.managerUserId, t.peerId, t.createdAt.desc()),
+    index('agent_auto_verdicts_pressed_idx')
+      .on(t.pressedAt)
+      .where(sql`${t.state} = 'pressed'`),
+  ],
+);
+
+/** A chat the auto layer stays out of until `off_until` — his 👎, a «botmisiz?» after an auto reply. */
+export const agentAutoChats = pgTable(
+  'agent_auto_chats',
+  {
+    managerUserId: uuid('manager_user_id')
+      .notNull()
+      .references(() => users.id),
+    peerId: bigint('peer_id', { mode: 'bigint' }).notNull(),
+    offUntil: timestamp('off_until', { withTimezone: true }).notNull(),
+    reason: text('reason').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.managerUserId, t.peerId] })],
+);

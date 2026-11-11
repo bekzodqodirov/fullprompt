@@ -72,6 +72,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   calc_in_flight: 'errors.calc_in_flight',
   identity_changed: 'errors.identity_changed',
   window_closed: 'errors.window_closed',
+  auto_warning: 'errors.auto_warning',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
