@@ -1114,10 +1114,9 @@ keyinchalik quramiz toliq avtanom sotuv manageriga aylantiramiz shuni arxetektur
 Three asks:
 1. **Read up to 100 messages, not 30.** BUILT (§18.1).
 2. **Send by itself, to everyone, when it is ≥ 80 % sure.**
-   - DESIGNED (§18.3).
-   - The measurement that turns «80 %» into a number is BUILT (§18.2).
-   - The sending waits on his six answers (§18.7) and on that measurement. On deploy day there is no record yet that
-     proves any kind of reply, and the design opens nothing without one.
+   - BUILT 2026-11-11 (§18.3), on his answer «sen aytgandek bolsin faqat 50 talik test bolmasin»: every ⭐ of §18.7
+     except the proof gate — an eligible reply goes from the day he arms it.
+   - The measurement that turns «80 %» into a number is BUILT (§18.2) and stays a record; it gates nothing.
 3. **A sales manager, later a fully autonomous one.** This section is that record (§18.4-§18.6). Designed by a
    map → three designs (risk-first, measurement-first, owner-first) → a judge, before any code (DECISIONS #1626).
 
@@ -1183,69 +1182,118 @@ Three asks:
   through `migrate`. Drafts before 2026-11-10 carry the old, undefined confidence: the table shows them, and they are
   no gate.
 
-### 18.3 Auto-send — the design (phase 2), waiting on his answers and on the record
+### 18.3 Auto-send — «o'zi yuborish», as built (2026-11-11; DECISIONS #1642-#1655; migration 0143 `agent_auto`)
 
-- **Shape: a MACHINE PRESS of the same ✅.**
-  - It goes through `decideDraft` and then the pump, so every check a human press runs runs again: policy re-check,
-    identity, chat moved on, send window, night, caps, ramp, CRM send switch, listener current.
-  - It is a LAYER over shadow, not a new mode. `agent_config.mode` stays 'shadow', because `toConfig` maps any other
-    value to 'off' and a tg-listen that was not rebuilt would cancel every approved reply.
-  - «Off» disarms the layer in the same transaction. Re-arming is always his press.
-- **What may go without his press — ALL must hold, re-checked at the press.**
-  - The draft:
-    - kind 'reply', status strictly 'pending', no `final_body`;
-    - not blocked, not needs_owner, and ZERO warnings on the fresh policy re-run;
-    - no card note;
-    - actions none or a follow-up date only (never `calc_submit` or `mute`);
-    - no money (no money ledger entry, no estimate, no `own_balance` / `yolkira_estimate` / `avia_estimate` call —
-      money makes it «price» whatever the model labelled it);
-    - category greeting / status / faq / qualification, and the label agrees with the facts;
-    - language uz, uz_cyrl or ru;
-    - no photo, voice or file in the burst;
-    - ≤ 400 characters.
-  - The chat and the account:
-    - a client or a lead, never an agent-found prospect;
-    - the account marked «Ish raqami»;
-    - daytime only;
-    - at most 2 auto replies in a row in one chat;
-    - at most 30 auto sends a day, inside the existing min(ramp, 80).
-  - The proof: the category's cell proven (§18.2) and switched on by him, and the draft not drawn into the 1-in-5
-    holdback.
-- **The holdback keeps the measurement honest.**
-  - 1 in 5 eligible drafts stays an ordinary, unmarked card, and positive labels come only from those.
-  - From auto cards come only negative signals (his ⏸ / ✏️ / ❌ / 🙋, 👎, his correction).
-  - A cell closes on 4 failures in its last 20 true labels.
-  - If he stops deciding, the record shrinks and the cell closes by itself.
-- **What he sees.**
-  - The card arrives as today plus «⏱ 14:32 da o'zi ketadi (2 daqiqa)», with [⏸ To'xtat] [✏️] [❌] [✅ Hozir yubor].
-  - His own message or a new customer line also stops it.
-  - After the hold, a bot «⏹ Bekor qilish» works until the read step. Nothing can unsend.
-  - After sending: «🤖 O'zi yuborildi» with [👎 Xato edi] [🙋 Suhbat meniki].
-  - A daily line «🤖 AI bugun: o'zi yubordi N · to'xtatdingiz M · sizga qoldi K».
-  - A «Yuborilganlar» list and the cell table on the page.
-- **Step-down.** On top of every existing fuse and forced-off, the layer disarms itself (the AI keeps drafting, an
-  alarm to the holder and super_admins) on any of:
-  - 2 × 👎 in 7 days;
-  - any block by a customer it auto-answered within 7 days;
-  - a «botmisiz?» within 30 minutes of an auto reply (that chat off for 30 days; 2 in 7 days disarm);
-  - 3 failure signals in 24 h.
-- **Build (phase 2, not started).**
-  - Migration (next free number) with side tables only, behind a ready probe:
-    - `agent_auto_config` (armed, hold, per-day, holdback, max chars, pause);
-    - `agent_auto_categories` (a CHECK that admits only the four);
-    - `agent_auto_verdicts` (one row per reply draft: verdict, reasons, cell snapshot, state — the calibration
-      dataset itself);
-    - `agent_auto_chats`.
-  - Code:
-    - `auto-gate.ts` (pure), `auto-cells.ts`, `auto-send.ts` (the claim of due rows by the minute sweep);
-    - `decideDraft({auto})`;
-    - the disarm inside off / forceAgentOff / setAgentOwner;
-    - card, bot and page.
-  - `stats.ts` counts auto sends APART, or the gate grades itself.
-  - Order:
-    1. a rehearsal that writes verdict rows and sends nothing;
-    2. his answers;
-    3. arming.
+His answer to §18.7, verbatim: «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan
+tasdiq kop kutib qolmasin». Every ⭐ of §18.7 holds except question 1: **there is no proof gate** (no 45/50 cell)
+**and no 1-in-5 holdback.** An eligible reply goes by itself from the day he arms the layer. The §18.2 measurement
+stays a record on the page and in the script; it gates nothing (#1642).
+
+- **Shape: a MACHINE PRESS of the same ✅** (#1643).
+  - The minute sweep (`jobs.ts` step 7, `pressDueAutos`) calls
+    `decideDraft(holder, id, 'send', {digest, auto: true}, {actorId: null})`.
+  - Then the existing pump sends it. Every check a human ✅ runs runs again: policy re-run, identity, chat moved on,
+    send window, night, caps, ramp, CRM send switch, listener current.
+  - The auto press is stricter than his:
+    - status strictly 'pending', never 'editing', no `final_body`;
+    - kind 'reply';
+    - the digest of the card it scheduled;
+    - ANY warning on the fresh policy re-run refuses `auto_warning` and writes nothing.
+  - The approval's audit row says `via: 'auto'`; `decided_by` is the holder (the CHECK and the action replay read it).
+  - It is a LAYER over shadow. `agent_config.mode` stays 'shadow', and `setAgentMode` still refuses 'auto'.
+- **The gate** — `auto-gate.ts` (pure) `autoVerdict`. Every refusal is collected, each is one of 28 codes, and each
+  has Uzbek words (`AUTO_REFUSAL_WORDS`) (#1644). The facts are read by `autoFactsFor`, at scheduling and again,
+  fresh, at the press. What must hold:
+  - **The layer:** armed; the agent running with the draft's holder as its owner.
+  - **The reply itself:**
+    - kind reply, pending, not blocked, no `needs_owner`;
+    - zero warnings, no card note;
+    - actions none or a follow-up date only.
+  - **No money:** no money tool called (`own_balance`, `yolkira_estimate`, `avia_estimate` — answered or not), no
+    estimate in memory, no money in the policy ledger.
+  - **Category and language:** category in the armed set (greeting / qualification / faq / status); a «status» needs
+    a cargo-status tool that answered; language uz, uz_cyrl or ru.
+  - **The burst:** no photo, voice note or file; the reply ≤ 400 characters (and a card too long to draw its ✅ is
+    never pressed); confidence ≥ 0.80.
+  - **The chat:** a client or a lead, never the client-finding agent's prospect; not switched off for this chat; not
+    his for 24 h after a 🙋 and the AI not muted in it (read at scheduling, at the press, and again under the draft's
+    lock inside the machine's approval).
+  - **The account and time:** the holder's number marked «Ish raqami»; daytime by the pump's own night rule.
+  - **Limits:**
+    - at most 2 machine presses in a row in one chat with no decision or message of his between;
+    - at most 30 a Tashkent day (counting the replies already counting down);
+    - the day's send budget not spent;
+    - CRM sending switched on;
+    - the listener current.
+- **Data** (0143, side tables only, behind `agentAutoReady()`) (#1645):
+  - `agent_auto_config` — the singleton: armed, hold 120 s, 30 a day, 400 characters, 0.80, the four categories, the
+    last disarm and why.
+  - `agent_auto_verdicts` — one row per reply draft the inbound run wrote: eligible, reasons, category, confidence,
+    digest, and the state `waiting → pressing → pressed | stopped | refused | gone`. It is written inside
+    `createDraft`'s transaction, so the first card already counts down.
+  - `agent_auto_chats` — the per-chat «off» (30 days after a 👎 or a «botmisiz?»).
+  - One migration behind, every reader behaves exactly as before.
+- **The hold counts from the card REACHING him** (#1646). The staff drain stamps `payload.shown {draftId, at}` beside
+  `tg`. The press waits until THIS draft's card has been on his screen for a whole hold. A card that never arrived
+  is never pressed — it says «⏱ Karta Telegramingizga hali yetib bormadi».
+  - An edit rings nothing, so a reply that counts down never rides an old card copy that rang more than one hold ago
+    (`countdownMayRide`): it gets a card of its own (a push), and the old copy is closed («↪️ Mijoz yana yozdi»).
+- **Who wins** (#1647):
+  - The approval transaction takes the layer row FOR SHARE first and requires it armed. It re-reads «Ish raqami».
+    Its LAST statement moves the verdict 'pressing' → 'pressed'; a miss rolls the whole approval back
+    (`auto_stopped` / `auto_disarmed`).
+  - ⏸ and every disarm move 'waiting' OR 'pressing' to 'stopped', so the one row lock decides: a ⏸ that came first
+    wins, and a ⏸ during the approval waits and then answers «kech».
+  - Lock order everywhere: layer → draft → outbox → verdict.
+  - A person's own press (✅ ✏️ ❌ 🙋, bot or page, and his typed words) stops the countdown first, as `owner_<press>`.
+    The page's ✏️ asks the server before its box opens.
+- **After the machine's press** (#1648):
+  - ❌ still takes the reply back while it waits in the outbox, unread (the web cancel's own compare-and-set).
+  - 🙋 takes the chat for 24 h: it retires the chat's live reply, stops its countdown, withdraws what waits, and its
+    audit row dates the press for the send step.
+  - ✅ and ✏️ answer «kech».
+  - A reply already handed to Telegram ('sending') cannot be taken back. Nothing can unsend.
+- **Arming and disarming** (#1649):
+  - **Arming** — `/agent auto on` or the page. The agent's holder only, with the agent running and the number marked
+    «Ish raqami».
+  - **Disarming** — the holder or a super_admin (`/agent auto off`, the page). A disarm is also made inside the
+    transactions of:
+    - «off»;
+    - the machine's forced off;
+    - an owner change;
+    - setting the number back to «Shaxsiy».
+  - A disarm stops every countdown and takes back machine-approved replies still unsent.
+  - Each forced off is named by its own reason (a closed list).
+  - Re-arming is always his press.
+- **Step-downs** (#1650) disarm the layer with an alarm to the holder and every super_admin. The AI keeps drafting.
+  - 2 × 👎 within 7 days. Each 👎 also switches that chat off for 30 days.
+  - A block by a customer the machine answered within 7 days.
+  - A «botmisiz?» after a machine reply switches that chat off for 30 days; the second such chat within 7 days
+    disarms.
+  - §18.3's «3 failure signals in 24 h» was not built — it named no fact this system sees.
+- **What he sees** (#1651):
+  - **The card:** «⏱ HH:MM da o'zi ketadi — to'xtatish uchun ⏸ bosing» with [⏸ To'xtat][✅ Hozir yubor] / [✏️] /
+    [❌][🙋].
+  - **After the press:**
+    - «🤖 AI o'zi tasdiqladi.»;
+    - «🤖 O'zi yuborildi (AI).» only once the outbox says sent;
+    - «🤖 AI o'zi tasdiqlagan edi.» for one that never left;
+    - [❌ Bekor qilish][🙋] while it can be taken back, then [👎 Xato edi] once.
+  - **A refusal at the press** is said in words.
+  - **`/agent`** gains its status line («🤖 O'zi yuborish: yoqilgan (bugun N/30)»).
+  - **The page's «🤖 O'zi yuborish» panel:**
+    - state, arm/disarm with the reason it cannot be armed;
+    - the four kinds;
+    - today: sent · sending · unknown · ⏸ · waiting · left to him;
+    - the last 20 sent or sending, each with where it is and its 👎.
+- **The record stays honest** (#1652). `agentStats` and the calibration count machine presses APART (`autoSent`),
+  never in «unchanged», decided or the rate — the gate never grades itself.
+- **Stated, not built** (#1654):
+  - the 20:00 daily Telegram line «🤖 AI bugun …»;
+  - an alarm when cards never reach him (the layer fails closed and says so on the card and the page);
+  - the page refreshing itself while a card counts down;
+  - a taken-back press still counting toward the cap and the streak (conservative);
+  - an 'unknown' outbox answering a late press «yuborildi».
 
 ### 18.4 The roadmap
 
@@ -1253,7 +1301,7 @@ Three asks:
 |---|---|---|---|
 | **0 — Draft** (live since 2026-10-29) | every reply drafted in seconds; he presses ✅ | phase 1 (§17) | — |
 | **1 — Wide memory + measuring** (this round) | the AI reads up to 100 messages; the system measures which replies could have gone alone; nothing changes for customers | §18.1-§18.2; next: the rehearsal's verdict rows, the page's table, the 20:00 AI line, the bot ⏹ | ≥ 2 weeks on the current brain; one category at lower95 ≥ 0.80 over ≥ 50 blind labels; his six answers |
-| **2 — It answers by itself** | greetings, qualifying questions, standard information and cargo status go out in 2-4 minutes without him | §18.3 | 4 weeks armed with no forced-off and no block traced to an auto reply; ≤ 1 👎 per category a week; the holdback still ≥ 0.80 |
+| **2 — It answers by itself** (BUILT 2026-11-11, armed by him) | greetings, qualifying questions, standard information and cargo status go out 2 minutes after the card reaches him | §18.3 | 4 weeks armed with no forced-off and no block traced to an auto reply; ≤ 1 👎 a week; his ⏸/❌ on machine replies not rising |
 | **3 — A sales manager's actions** | each act rehearsed, then switched on, with its own measured cell: (a) `calc_submit` by itself when the checklist is complete (label = the VED did not hand it back); (b) yo'lkira estimates from the website table (a money cell, lower95 ≥ 0.95); (c) the holding line on escalation; (d) hand-back questions; (e) follow-ups that ACT on the date — the first controlled exception to «never first»: chats that wrote within 30 days, an open lead, a small daily cap; (f) lead stage moves through `moveLead` (never won — that mints codes; never lost — a person's reason) | per act | each act's cell proven; customer blocks and complaints per 100 auto messages not rising |
 | **4 — Autonomous sales manager** | an AI seat that owns leads end to end, measured against the sellers | the AI as a no-login `users` row (0120's pattern) owning leads, in /crm/tahlil, out of the rating and KPI pay; its own KPI page (response time, conversion, money won); payment reminders from `own_balance` with his template; a weekly self-report; the style refreshed from his edits; more accounts, each with its holder's consent; and, for full autonomy, an OFFICIAL channel (Telegram Business bot / WhatsApp Cloud API) so a ban never costs a person's account — §0 forbade AI sends through personal sessions, and his 10-23 override covered shadow | phase-3 cells stable for a quarter; conversion of AI-owned leads ≥ the median seller's |
 | **5 — Other channels** | WhatsApp, Instagram, on the same gate | the channel adapters | — |
@@ -1275,13 +1323,19 @@ Three asks:
 - A sent message cannot be taken back. He has 2 minutes of ⏸ and then a short ⏹.
 - A mistake goes out in his name, in the first person.
 - Telegram never tells us «spam»; only a block and «botmisiz?» are seen.
-- Weeks of measuring come first, and each kind of reply opens separately.
-- One in five eligible replies still comes to him; if he stops pressing, the measurement stops and auto closes itself.
+- ~~Weeks of measuring come first, and each kind of reply opens separately.~~ ~~One in five eligible replies still
+  comes to him.~~ He refused both (2026-11-11: «50 talik test bolmasin»). What that costs, stated to him: nothing
+  measures how often a machine reply is right — only his ⏸, ❌, 👎 and the step-downs see a wrong one, and only after
+  the card has waited its 2 minutes.
 - Price, complaints and calculations never go by themselves in phase 2.
 - The original plan said the AI never writes from a personal session. His shadow permission did not cover sending by
   itself; auto-send makes that risk his decision.
 
 ### 18.7 His six questions (sent 2026-11-10) — the ⭐ is what is built when he says «sen aytgandek»
+
+**His answer, 2026-11-11:** «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan
+tasdiq kop kutib qolmasin» — ⭐ for 2-6; question 1 is «b» in effect (the AI's own ≥ 0.80 plus the deterministic
+gate, no proof by his presses). Built as §18.3.
 
 1. How «80 %» is measured:
    - ⭐ a: the AI's ≥ 0.80 AND that kind proven by his presses (45/50, 87/100, 170/200);
