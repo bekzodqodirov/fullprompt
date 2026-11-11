@@ -6535,7 +6535,7 @@
       "auto_stop_sending": "太晚了——回复正在发送。",
       "auto_stop_sent": "太晚了——回复已发送。",
       "auto_stop_not_waiting": "这条回复已不会自动发送。",
-      "auto_fb_not_found": "这条回复并非自动发送。",
+      "auto_fb_not_found": "找不到这条回复。",
       "auto_fb_not_account_holder": "这条回复不是从您的账号发出的。",
       "auto_fb_not_sent": "这条回复并非自动发送。",
       "auto_fb_already": "已标记。"
@@ -6559,23 +6559,34 @@
     "autoCategoriesHint": "报价、投诉和其他类型的回复永远不会自动发送。至少勾选一项。",
     "autoToday": "今天：自动发送 {sent} · 您已暂停 {paused} · 留给您 {left}",
     "autoTodayWaiting": "等待中 {n}",
-    "autoSentTitle": "已发送",
-    "autoSentEmpty": "还没有自动发送的回复。",
+    "autoSentTitle": "AI 自动批准的回复",
+    "autoSentEmpty": "AI 还没有自动批准过回复。",
     "autoBad": "发错了",
     "autoBadGiven": "已标记为错误",
     "autoBadConfirm": "这条回复发错了吗？此对话中 AI 将 30 天不自动发送；7 天内第二次 👎 将关闭自动发送。",
-    "statsAutoSent": "自动发送（不计入比率）",
+    "statsAutoSent": "AI 自动批准（不计入比率）",
     "autoOff": {
       "manual": "手动关闭",
       "agent_off": "AI 销售已关闭",
       "owner_changed": "AI 账号已更换",
-      "feedback": "7 天内两条自动发送的回复被标记为「👎 发错了」",
-      "blocked": "收到自动回复的客户屏蔽了账号",
+      "feedback": "7 天内两条 AI 自动批准的回复被标记为「👎 发错了」",
+      "blocked": "AI 自动批准回复的客户屏蔽了账号",
       "bot_question": "7 天内两位收到自动回复的客户问「你是机器人吗？」",
-      "forced": "Telegram 限制了账号——AI 销售已自动关闭",
+      "forced": "AI 销售已自动关闭",
       "not_work_account": "该号码被标记为非「工作号码」",
-      "unknown": "原因未知"
+      "unknown": "原因未知",
+      "forced_account_paused": "Telegram 限制了账号——AI 销售已自动关闭",
+      "forced_flood_repeat": "24 小时内 Telegram 两次要求等待——AI 销售已自动关闭",
+      "forced_blocks": "7 天内两位客户屏蔽了账号——AI 销售已自动关闭",
+      "forced_telegram_notice": "Telegram 服务账号（777000）发来消息——AI 销售已自动关闭"
     },
-    "autoStateLabel": "状态"
+    "autoStateLabel": "状态",
+    "autoTodayGoing": "发送中 {n}",
+    "autoTodayUnclear": "是否送达未知 {n}",
+    "autoRowSent": "已发送 {when}",
+    "autoRowGoing": "发送中",
+    "autoRowUnclear": "是否送达未知——请在 Telegram 中查看",
+    "autoArmedNotWork": "该号码未标记为「工作号码」——不会有任何回复自动发出。请在「连接 Telegram」页面将号码标记为「工作号码」，或关闭自动发送。",
+    "autoNeedsWork": "要开启，请先在「连接 Telegram」页面将号码标记为「工作号码」。"
   }
 }

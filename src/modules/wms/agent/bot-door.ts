@@ -16,6 +16,7 @@ import {
   AutoConfigError,
   autoFeedback,
   autoPressedToday,
+  workAccountOf,
   readAutoConfig,
   setAutoArmed,
   stopAuto,
@@ -1067,17 +1068,28 @@ export async function agentCommand(staffId: string, arg: string): Promise<string
  * «🤖 O‘zi yuborish: yoqilgan (bugun N/30)» or «… o‘chiq» with why it was last
  * switched off — null when 0143 has not landed. The day's count is the
  * account's the agent speaks from, the one the per-day cap counts.
+ *
+ * The number is asked too (fix pass B, C9): armed on an account not marked
+ * «Ish raqami», the gate refuses every reply — «yoqilgan» alone would promise
+ * what cannot happen; and off on such an account, «Yoqish: /agent auto on»
+ * names what to do first.
  */
 export async function autoStatusLine(ownerUserId: string | null, now: Date = new Date()): Promise<string | null> {
   const auto = await readAutoConfig();
   if (!auto) return null;
+  const work = ownerUserId ? await workAccountOf(ownerUserId) : false;
   if (auto.armed) {
     const today = ownerUserId ? await autoPressedToday(ownerUserId, now) : 0;
-    return `🤖 O‘zi yuborish: yoqilgan (bugun ${today}/${auto.perDay}). O‘chirish: /agent auto off`;
+    const warn = work ? '' : ` — ⚠ ${AUTO_NOT_WORK_WORDS}`;
+    return `🤖 O‘zi yuborish: yoqilgan (bugun ${today}/${auto.perDay})${warn}. O‘chirish: /agent auto off`;
   }
   const why = auto.disarmReason ? ` — oxirgi marta: ${autoDisarmWords(auto.disarmReason)}` : '';
-  return `🤖 O‘zi yuborish: o‘chiq${why}. Yoqish: /agent auto on`;
+  const on = ownerUserId && !work ? 'Yoqish uchun avval «Telegram ulash» sahifasida raqamni «Ish raqami» deb belgilang' : 'Yoqish: /agent auto on';
+  return `🤖 O‘zi yuborish: o‘chiq${why}. ${on}`;
 }
+
+/** Armed on a number that is not «Ish raqami»: nothing goes by itself (fix pass B, C9). */
+export const AUTO_NOT_WORK_WORDS = 'raqam «Ish raqami» emas, hech qaysi javob o‘zi ketmaydi';
 
 /** «/agent auto on|off» — `setAutoArmed` decides who may (arm: the holder; disarm: he or a super_admin). */
 async function autoCommand(

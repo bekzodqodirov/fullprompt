@@ -19,6 +19,7 @@ import {
   webKbFacts,
   webStats,
   type AutoPanel,
+  type AutoSentRow,
   type WebDraft,
   type WebViewer,
 } from '@/modules/wms/agent/web-page';
@@ -576,6 +577,13 @@ async function SettingsSection({
   );
 }
 
+/** A machine-approved reply's place, by colour — literal classes, so Tailwind sees them (#1203's rule). */
+const DELIVERY_TONE: Record<AutoSentRow['delivery'], string> = {
+  sent: 'text-good',
+  going: 'text-ink-700',
+  unclear: 'text-warn',
+};
+
 /** «2 daqiqa» / «90 soniya» — the hold as he reads it. */
 function holdWords(t: T, sec: number): string {
   return sec % 60 === 0 ? t('autoHoldMin', { n: sec / 60 }) : t('autoHoldSec', { n: sec });
@@ -613,12 +621,13 @@ function AutoSection({
         label={t('autoStateLabel')}
         value={
           <span data-testid="agent-auto-state">
+            {/* Armed on a number nothing can go from is never a green ✅ (fix pass B, C9): the line below says why. */}
             {c.armed
-              ? `✅ ${t('autoArmedValue', { when: c.armedAt ? tashkentWhen(c.armedAt) : '—', name: auto.armedByName ?? '—' })}`
+              ? `${auto.workAccount ? '✅' : '⚠'} ${t('autoArmedValue', { when: c.armedAt ? tashkentWhen(c.armedAt) : '—', name: auto.armedByName ?? '—' })}`
               : `⏹ ${t('autoOffValue')}`}
           </span>
         }
-        tone={c.armed ? 'text-good' : 'text-ink-700'}
+        tone={c.armed ? (auto.workAccount ? 'text-good' : 'text-warn') : 'text-ink-700'}
       />
       {!c.armed && off && c.disarmedAt && (
         <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="agent-auto-last-off">
@@ -633,18 +642,35 @@ function AutoSection({
           confidence: Math.round(c.minConfidence * 100),
         })}
       </p>
+      {/* Armed on a number that is not «Ish raqami» (fix pass B, C9): the gate refuses every reply — the switch
+          must not read «yoqilgan» as if something could go. */}
+      {c.armed && !auto.workAccount && (
+        <p className="text-sm font-semibold text-warn [overflow-wrap:anywhere]" data-testid="agent-auto-not-work">
+          ⚠ {t('autoArmedNotWork')}
+        </p>
+      )}
+      {/* What arming would refuse, said BEFORE the press — and the button is not offered until it can arm. */}
       {!c.armed && holder && !running && (
         <p className="text-xs font-semibold text-warn" data-testid="agent-auto-needs-running">
           {t('autoNeedsRunning')}
         </p>
       )}
-      <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} />
+      {!c.armed && holder && !auto.workAccount && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="agent-auto-needs-work">
+          {t('autoNeedsWork')}
+        </p>
+      )}
+      <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} armBlocked={!running || !auto.workAccount} />
       <div className="border-t border-line pt-2">
         <AutoCategoriesForm current={c.categories} editable={holder} />
       </div>
       <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
         {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
         {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}
+        {/* «O‘zi yubordi» is what went (fix pass B, C6) — approved and still on its way, or not known to have
+            arrived, said apart. */}
+        {auto.today.going > 0 ? ` · ${t('autoTodayGoing', { n: auto.today.going })}` : ''}
+        {auto.today.unclear > 0 ? ` · ${t('autoTodayUnclear', { n: auto.today.unclear })}` : ''}
       </p>
       <div className="space-y-2 border-t border-line pt-2" data-testid="agent-auto-sent">
         <h3 className="text-sm font-bold">{t('autoSentTitle')}</h3>
@@ -662,6 +688,17 @@ function AutoSection({
                 </div>
                 <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{row.text}</p>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span
+                    className={`font-semibold ${DELIVERY_TONE[row.delivery]}`}
+                    data-testid="agent-auto-delivery"
+                    data-delivery={row.delivery}
+                  >
+                    {row.delivery === 'sent'
+                      ? `✅ ${t('autoRowSent', { when: row.sentAt ? tashkentWhen(row.sentAt) : '—' })}`
+                      : row.delivery === 'going'
+                        ? `⏳ ${t('autoRowGoing')}`
+                        : `❓ ${t('autoRowUnclear')}`}
+                  </span>
                   {row.bad ? (
                     <span className="font-semibold text-bad" data-testid="agent-auto-marked-bad">
                       👎 {t('autoBadGiven')}

@@ -2,6 +2,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import type { UnmutableType } from '../../platform/notifications/mutes';
 import { agentRunning, forceAgentOff, readAgentConfig } from '../agent/config';
+import type { ForcedOffReason } from '../agent/forced-off';
 import { AGENT_LIMITS } from '../agent/limits';
 import type { TelegramNoticeKind } from '../agent/listener-hooks';
 import { onAgentDraftsRetired, onAgentOutboxSettled } from '../agent/settle-hooks';
@@ -53,7 +54,7 @@ export function pausedAlarmText(input: {
   );
 }
 
-export type AgentOffReason = 'flood_repeat' | 'blocks' | 'telegram_notice';
+export type AgentOffReason = Extract<ForcedOffReason, 'flood_repeat' | 'blocks' | 'telegram_notice'>;
 
 const AGENT_OFF_WORDS: Record<AgentOffReason, string> = {
   flood_repeat: '24 soat ichida Telegram ikki marta yuborishni kutishga buyurdi (FLOOD_WAIT)',
@@ -113,7 +114,7 @@ export async function announceSessionDeadToOthers(account: AlarmAccount, reason:
  * on the same account switches nothing and returns false. The approved
  * replies it cancelled have cards that must say so.
  */
-async function agentOffFor(account: AlarmAccount, reason: string): Promise<boolean> {
+async function agentOffFor(account: AlarmAccount, reason: ForcedOffReason): Promise<boolean> {
   const config = await readAgentConfig();
   if (!agentRunning(config) || config.ownerUserId !== account.managerUserId) return false;
   const change = await forceAgentOff(reason);

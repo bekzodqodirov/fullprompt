@@ -872,6 +872,44 @@ export async function stopAuto(staffId: string, draftId: string): Promise<{ ok: 
   return { ok: false, code: 'not_waiting' };
 }
 
+/**
+ * The page's ✏️, BEFORE its box opens (fix pass B, C1). The bot's ✏️ is a
+ * decision (`decideDraft` 'edit') and stops the countdown there; the page's is
+ * a box that writes nothing until «Saqlash» — so his typing would race the
+ * machine, which presses the AI's own text at its due minute and leaves his
+ * «Saqlash» «faol emas». The countdown stops HERE, on the server, as his ✏️
+ * («owner_edit»), and only then does the box open: a row the sweep claimed
+ * stops too (its press loses inside its approval, fix pass A). A reply the
+ * machine already approved answers «kech» in ⏸'s own words, and the box stays
+ * shut. A card that never counted down — every card while the layer was never
+ * armed, one migration behind — opens its box as it always did, nothing
+ * written.
+ */
+export async function stopAutoForEdit(
+  staffId: string,
+  draftId: string,
+): Promise<{ ok: true; stopped: boolean } | { ok: false; code: 'not_account_holder' | AfterPress }> {
+  if (!(await agentAutoReady())) return { ok: true, stopped: false };
+  const read = async () =>
+    (
+      await db
+        .select({ managerUserId: agentAutoVerdicts.managerUserId, state: agentAutoVerdicts.state })
+        .from(agentAutoVerdicts)
+        .where(eq(agentAutoVerdicts.draftId, draftId))
+    )[0];
+  const row = await read();
+  if (!row || row.state === null) return { ok: true, stopped: false };
+  if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  if (row.state !== 'pressed' && (await stopAutoForPerson(draftId, staffId, 'owner_edit'))) return { ok: true, stopped: true };
+  // Nothing stopped: the machine's press may have gone through a moment ago — then the box stays shut.
+  const fresh = row.state === 'pressed' ? row : await read();
+  if (fresh?.state === 'pressed') {
+    const after = afterPressOf((await machinePressedReply(draftId))?.outbox ?? null);
+    if (after) return { ok: false, code: after };
+  }
+  return { ok: true, stopped: false };
+}
+
 // ── step-downs ──────────────────────────────────────────────────────────────
 
 /** How far back a step-down looks, and how long a chat stays out of the layer. */
@@ -939,7 +977,8 @@ export type AutoFeedbackRefusal = 'not_ready' | 'not_found' | 'not_account_holde
 
 export const AUTO_FEEDBACK_WORDS: Record<AutoFeedbackRefusal, string> = {
   not_ready: 'Server hali yangilanmagan.',
-  not_found: 'Bu javob o‘zi yuborilmagan.',
+  // No row at all — a purged chat took it (fix pass B, C7): never «o‘zi yuborilmagan» about a reply that was.
+  not_found: 'Bu javob topilmadi.',
   not_account_holder: 'Bu javob sizning akkauntingizdan emas.',
   not_sent: 'Bu javob o‘zi yuborilmagan.',
   already: 'Allaqachon belgilangan.',
@@ -959,8 +998,9 @@ export async function autoFeedback(
     .select({ managerUserId: agentAutoVerdicts.managerUserId, peerId: agentAutoVerdicts.peerId, state: agentAutoVerdicts.state, feedback: agentAutoVerdicts.feedback })
     .from(agentAutoVerdicts)
     .where(eq(agentAutoVerdicts.draftId, draftId));
-  if (!row || row.state === null) return { ok: false, code: 'not_found' };
+  if (!row) return { ok: false, code: 'not_found' };
   if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
+  // A reply the gate refused at the scheduling (no state), or one the machine never pressed: not its own.
   if (row.state !== 'pressed') return { ok: false, code: 'not_sent' };
   const marked = await db
     .update(agentAutoVerdicts)
@@ -1052,7 +1092,8 @@ type AutoActor = { id: string; roles: readonly string[] };
 
 const AUTO_AUDIT_ID = '00000000-0000-0000-0000-000000000143';
 
-async function workAccountOf(userId: string): Promise<boolean> {
+/** Is this person's connected account marked «Ish raqami» — false with none (the gate's own fact, `autoFactsFor`). */
+export async function workAccountOf(userId: string): Promise<boolean> {
   const [acc] = await db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, userId));
   return acc?.work === true;
 }

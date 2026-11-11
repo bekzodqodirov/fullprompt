@@ -490,15 +490,27 @@ export async function userName(userId: string | null): Promise<string | null> {
   return row?.name ?? null;
 }
 
-/** One reply «o'zi yuborish» sent — the panel's «Yuborilganlar». */
+/**
+ * Where a reply the machine approved is (fix pass B, C6) — read from its outbox
+ * row, the card's own fact: Telegram took it ('sent'), still on its way
+ * ('going': with the pump, or being sent), or Telegram's answer was lost
+ * ('unclear': it may well be in the chat, and is never re-sent). A reply that
+ * never left — taken back, expired, refused — is not one of them: it is his.
+ */
+export type AutoDelivery = 'sent' | 'going' | 'unclear';
+
+/** One reply the machine approved by itself — the panel's list, each with where it is. */
 export interface AutoSentRow {
   draftId: string;
   managerUserId: string;
   /** «GS777 · Ali Valiyev» — the card's own label for the customer. */
   customerLabel: string;
   pressedAt: Date;
-  /** The words that went (`digestBody`). */
+  /** The words it approved (`digestBody`). */
   text: string;
+  delivery: AutoDelivery;
+  /** When Telegram took it — 'sent' only. */
+  sentAt: Date | null;
   /** He said «👎 Xato edi» on it. */
   bad: boolean;
   /** Where the conversation is read. */
@@ -510,13 +522,30 @@ export interface AutoPanel {
   config: AutoConfig;
   armedByName: string | null;
   /**
-   * Today (Tashkent) on the agent's account, by the reply drafts its runs wrote:
-   * sent by the machine, stopped by his ⏸, still counting down, and every
-   * other one — left to him (not eligible, refused at the press, decided by
-   * him before the timer).
+   * Is the agent's account marked «Ish raqami» (fix pass B, C9)? While it is
+   * not, nothing goes by itself whatever the switch says — the gate refuses
+   * every reply — and arming is refused: the panel says so BEFORE he presses.
    */
-  today: { sent: number; paused: number; waiting: number; left: number };
+  workAccount: boolean;
+  /**
+   * Today (Tashkent) on the agent's account, by the reply drafts its runs wrote:
+   * approved by the machine and gone to the customer (`sent`), on its way
+   * (`going`), Telegram's answer lost (`unclear`), stopped by his ⏸, still
+   * counting down, and every other one — left to him (not eligible, refused
+   * at the press, decided by him before the timer, a machine-approved reply
+   * that never left). «O‘zi yubordi» counts only what went (fix pass B, C6).
+   */
+  today: { sent: number; going: number; unclear: number; paused: number; waiting: number; left: number };
   sent: AutoSentRow[];
+}
+
+/** An outbox status as the panel's delivery — null: the reply never left (or, one migration behind, nothing). */
+function deliveryOf(status: string | null): AutoDelivery | null {
+  if (status === 'sent') return 'sent';
+  if (status === 'unknown') return 'unclear';
+  // No outbox row under a machine approval is a reply the ✅ queued and nobody has read since: on its way.
+  if (status === null || status === 'agent' || status === 'sending') return 'going';
+  return null;
 }
 
 const AUTO_SENT_SHOWN = 20;
@@ -531,14 +560,20 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
   const config = await readAutoConfig();
   if (!config) return null;
   const dayStart = tashkentDayStart(tashkentDay(now));
-  // Sent = pressed by the machine and not taken back since (❌ «Bekor qilish», 🙋, a disarm — fix pass A): a
-  // reply that never left is his decision, counted with what was left to him and never listed as sent.
-  const leftOrGoing = sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.draft_id = ${agentAutoVerdicts}.draft_id AND o.status IN ('cancelled', 'expired'))`;
-  const [counts, rows, armedByName] = await Promise.all([
+  // The machine's approvals by where their reply is (fix pass B, C6) — the outbox row is one per draft (its
+  // `draft_id` is unique), so the LEFT JOIN multiplies nothing. A reply that never left (❌ «Bekor qilish», 🙋, a
+  // disarm, Telegram's refusal — fix pass A) is his decision: counted with what was left to him, never listed.
+  const pressed = eq(agentAutoVerdicts.state, 'pressed');
+  const sent = sql`${pressed} AND ${agentOutbox.status} = 'sent'`;
+  const going = sql`${pressed} AND (${agentOutbox.status} IS NULL OR ${agentOutbox.status} IN ('agent', 'sending'))`;
+  const unclear = sql`${pressed} AND ${agentOutbox.status} = 'unknown'`;
+  const [counts, rows, armedByName, account] = await Promise.all([
     ownerUserId
       ? db
           .select({
-            sent: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'pressed' AND ${leftOrGoing})::int`,
+            sent: sql<number>`count(*) FILTER (WHERE ${sent})::int`,
+            going: sql<number>`count(*) FILTER (WHERE ${going})::int`,
+            unclear: sql<number>`count(*) FILTER (WHERE ${unclear})::int`,
             paused: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'stopped' AND ${agentAutoVerdicts.outcome} = 'pause')::int`,
             // Counting down means a LIVE reply: a row whose draft the chat retired waits only for the sweep to
             // call it gone (auto-send `pressOne`), and is his already.
@@ -547,36 +582,49 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
           })
           .from(agentAutoVerdicts)
           .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+          .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentAutoVerdicts.draftId))
           .where(and(eq(agentAutoVerdicts.managerUserId, ownerUserId), gte(agentAutoVerdicts.createdAt, dayStart)))
       : Promise.resolve([]),
     db
-      .select({ v: agentAutoVerdicts, d: agentDrafts })
+      .select({ v: agentAutoVerdicts, d: agentDrafts, status: agentOutbox.status, sentAt: agentOutbox.sentAt })
       .from(agentAutoVerdicts)
       .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
-      .where(and(eq(agentAutoVerdicts.state, 'pressed'), leftOrGoing, draftsSeenBy(viewer)))
+      .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentAutoVerdicts.draftId))
+      .where(and(sql`(${sent} OR ${going} OR ${unclear})`, draftsSeenBy(viewer)))
       .orderBy(desc(agentAutoVerdicts.pressedAt))
       .limit(AUTO_SENT_SHOWN),
     userName(config.armedBy),
+    ownerUserId
+      ? db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, ownerUserId))
+      : Promise.resolve([]),
   ]);
   const c = counts[0];
   const n = (x: number | undefined) => Number(x ?? 0);
+  const today = { sent: n(c?.sent), going: n(c?.going), unclear: n(c?.unclear), paused: n(c?.paused), waiting: n(c?.waiting) };
   return {
     config,
     armedByName,
+    workAccount: account[0]?.work === true,
     today: {
-      sent: n(c?.sent),
-      paused: n(c?.paused),
-      waiting: n(c?.waiting),
-      left: Math.max(0, n(c?.total) - n(c?.sent) - n(c?.paused) - n(c?.waiting)),
+      ...today,
+      left: Math.max(0, n(c?.total) - today.sent - today.going - today.unclear - today.paused - today.waiting),
     },
-    sent: rows.map(({ v, d }) => ({
-      draftId: d.id,
-      managerUserId: d.managerUserId,
-      customerLabel: ((d.policy ?? {}) as { card?: { customerLabel?: string } }).card?.customerLabel ?? '—',
-      pressedAt: v.pressedAt ?? v.createdAt,
-      text: digestBody(d),
-      bad: v.feedback === 'bad',
-      chatHref: chatHrefOf(d),
-    })),
+    sent: rows.flatMap(({ v, d, status, sentAt }) => {
+      const delivery = deliveryOf(status);
+      if (!delivery) return [];
+      return [
+        {
+          draftId: d.id,
+          managerUserId: d.managerUserId,
+          customerLabel: ((d.policy ?? {}) as { card?: { customerLabel?: string } }).card?.customerLabel ?? '—',
+          pressedAt: v.pressedAt ?? v.createdAt,
+          text: digestBody(d),
+          delivery,
+          sentAt: delivery === 'sent' ? sentAt : null,
+          bad: v.feedback === 'bad',
+          chatHref: chatHrefOf(d),
+        },
+      ];
+    }),
   };
 }

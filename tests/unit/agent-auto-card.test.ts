@@ -12,6 +12,7 @@ import {
   AUTO_DISARMED_LINE,
   AUTO_PAUSED_LINE,
   AUTO_PRESS_WORDS,
+  AUTO_APPROVED_PREFIX,
   AUTO_SENT_PREFIX,
   AUTO_TAKEN_BACK_PREFIX,
   AUTO_UNSEEN_LINE,
@@ -22,6 +23,7 @@ import {
   withAutoLine,
 } from '@/modules/wms/agent/auto-card';
 import { AUTO_REFUSAL_WORDS } from '@/modules/wms/agent/auto-gate';
+import { FORCED_OFF_REASONS } from '@/modules/wms/agent/forced-off';
 import { AUTO_CONFIG_WORDS, AUTO_FEEDBACK_WORDS, STOP_AUTO_WORDS, type AutoCardState } from '@/modules/wms/agent/auto-send';
 import { autoArmedWords } from '@/modules/wms/agent/bot-door';
 import { cardExtra, POLICY_WORDS } from '@/modules/wms/agent/card';
@@ -114,10 +116,11 @@ describe('the status line per state (auto-card `withAutoLine`)', () => {
     );
   });
 
-  it('pressed: «🤖 O‘zi yuborildi (AI).» before the approved line, and his 👎 under it', () => {
+  it('pressed: «🤖 O‘zi yuborildi (AI).» before the approved line of a reply that went, and his 👎 under it', () => {
     const approved = { status: 'approved', finalBody: null };
-    expect(withAutoLine('✅ Yuborildi 11.11 14:33.', auto({ state: 'pressed' }), approved, false)).toBe(`${AUTO_SENT_PREFIX} ✅ Yuborildi 11.11 14:33.`);
-    expect(withAutoLine('✅ Yuborildi 11.11 14:33.', auto({ state: 'pressed', feedback: 'bad' }), approved, false)).toBe(
+    // DELIBERATE EDIT (fix pass B, C6): the reply's outbox status is passed — «yuborildi» needs it to be 'sent'.
+    expect(withAutoLine('✅ Yuborildi 11.11 14:33.', auto({ state: 'pressed' }), approved, false, 'sent')).toBe(`${AUTO_SENT_PREFIX} ✅ Yuborildi 11.11 14:33.`);
+    expect(withAutoLine('✅ Yuborildi 11.11 14:33.', auto({ state: 'pressed', feedback: 'bad' }), approved, false, 'sent')).toBe(
       `${AUTO_SENT_PREFIX} ✅ Yuborildi 11.11 14:33.\n${AUTO_BAD_LINE}`,
     );
     expect(AUTO_BAD_LINE).toBe('👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.');
@@ -130,10 +133,16 @@ describe('the status line per state (auto-card `withAutoLine`)', () => {
         `${AUTO_TAKEN_BACK_PREFIX} ✖ Yuborilmadi — o‘zingiz qaytarib oldingiz.`,
       );
     }
-    // On its way, gone, or unknown: the design's own prefix.
-    for (const sendStatus of ['agent', 'sending', 'sent', 'unknown', null]) {
-      expect(withAutoLine('✅ Tasdiqlandi.', auto({ state: 'pressed' }), approved, false, sendStatus), String(sendStatus)).toBe(`${AUTO_SENT_PREFIX} ✅ Tasdiqlandi.`);
+    // DELIBERATE EDIT (fix pass B, C6): «O‘zi yuborildi» for the reply that went and for no other — on its way,
+    // Telegram's answer lost, no outbox row: the machine APPROVED it, and the base line says where it is.
+    expect(withAutoLine('✅ Yuborildi 11.11 14:33.', auto({ state: 'pressed' }), approved, false, 'sent')).toBe(`${AUTO_SENT_PREFIX} ✅ Yuborildi 11.11 14:33.`);
+    for (const sendStatus of ['agent', 'sending', 'unknown', null]) {
+      expect(withAutoLine('✅ Tasdiqlandi · yuborilmoqda…', auto({ state: 'pressed' }), approved, false, sendStatus), String(sendStatus)).toBe(
+        `${AUTO_APPROVED_PREFIX} ✅ Tasdiqlandi · yuborilmoqda…`,
+      );
     }
+    expect(AUTO_APPROVED_PREFIX).not.toMatch(/yuborildi/iu);
+    expect(AUTO_TAKEN_BACK_PREFIX).not.toMatch(/yuborildi/iu);
   });
 
   it('a card that has not reached his Telegram yet says so instead of a clock — ⏸ still on it (fix pass A, C4)', () => {
@@ -295,6 +304,40 @@ describe('words — every code said, never printed', () => {
     expect(actions).toMatch(/`auto_stop_\$\{r\.code\}`/u);
     expect(actions).toMatch(/`auto_fb_\$\{r\.code\}`/u);
     expect(actions).toMatch(/`auto_\$\{err\.code\}`/u);
+  });
+
+  it('every forced «off» is said as its own reason — never «cheklandi» about a block or Telegram’s notice (fix pass B, C10)', () => {
+    expect(autoDisarmWords('forced: account_paused')).toBe(AUTO_DISARM_WORDS.forced_account_paused);
+    expect(autoDisarmWords('forced: flood_repeat')).toBe(AUTO_DISARM_WORDS.forced_flood_repeat);
+    expect(autoDisarmWords('forced: blocks')).toBe(AUTO_DISARM_WORDS.forced_blocks);
+    expect(autoDisarmWords('forced: telegram_notice')).toBe(AUTO_DISARM_WORDS.forced_telegram_notice);
+    expect(autoDisarmWords('forced: blocks')).toContain('bloklagan');
+    expect(autoDisarmWords('forced: telegram_notice')).toContain('777000');
+    for (const r of FORCED_OFF_REASONS.filter((x) => x !== 'account_paused')) expect(autoDisarmWords(`forced: ${r}`), r).not.toMatch(/chekla/iu);
+    // A tail no list knows (an old row) is said neutrally, never as a restriction.
+    expect(autoDisarmWords('forced: SESSION_REVOKED')).toBe('AI sotuvchi o‘zi o‘chdi');
+    // The page: one key per reason, distinct words in every bundle.
+    for (const r of FORCED_OFF_REASONS) expect(autoDisarmKey(`forced: ${r}`)).toBe(`autoOff.forced_${r}`);
+    expect(autoDisarmKey('forced: SESSION_REVOKED')).toBe('autoOff.forced');
+    for (const [locale, bundle] of Object.entries({ ru, uz, en, zh })) {
+      const off = (bundle as { agentAi: { autoOff: Record<string, string> } }).agentAi.autoOff;
+      const words = [...FORCED_OFF_REASONS.map((r) => off[`forced_${r}`]), off.forced];
+      expect(new Set(words).size, locale).toBe(words.length);
+    }
+  });
+
+  it('the forced reasons are ONE list: every reason a caller switches the agent off with is in it, and every one is used', () => {
+    const alarm = readFileSync('src/modules/wms/crm/account-alarm.ts', 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
+    const used = [...alarm.matchAll(/agentOffFor\(account, '([a-z_]+)'\)/gu)].map((m) => m[1]);
+    expect(new Set(used)).toEqual(new Set(FORCED_OFF_REASONS));
+    expect(alarm).toMatch(/async function agentOffFor\(account: AlarmAccount, reason: ForcedOffReason\)/u);
+    expect(readFileSync('src/modules/wms/agent/config.ts', 'utf8')).toMatch(/export async function forceAgentOff\(reason: ForcedOffReason\)/u);
+  });
+
+  it('👎 on a reply nobody can find says so — never «o‘zi yuborilmagan» about one a purge took (fix pass B, C7)', () => {
+    expect(AUTO_FEEDBACK_WORDS.not_found).toBe('Bu javob topilmadi.');
+    expect(AUTO_FEEDBACK_WORDS.not_found).not.toBe(AUTO_FEEDBACK_WORDS.not_sent);
+    expect(uz.agentAi.errors.auto_fb_not_found).not.toBe(uz.agentAi.errors.auto_fb_not_sent);
   });
 
   it('arming says the numbers the press keeps', () => {

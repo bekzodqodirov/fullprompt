@@ -6535,7 +6535,7 @@
       "auto_stop_sending": "Kech — javob yuborilmoqda.",
       "auto_stop_sent": "Kech — javob yuborildi.",
       "auto_stop_not_waiting": "Bu javob endi o‘zi ketmaydi.",
-      "auto_fb_not_found": "Bu javob o‘zi yuborilmagan.",
+      "auto_fb_not_found": "Bu javob topilmadi.",
       "auto_fb_not_account_holder": "Bu javob sizning akkauntingizdan emas.",
       "auto_fb_not_sent": "Bu javob o‘zi yuborilmagan.",
       "auto_fb_already": "Allaqachon belgilangan."
@@ -6559,23 +6559,34 @@
     "autoCategoriesHint": "Narx, shikoyat va boshqa turdagi javoblar hech qachon o‘zi ketmaydi. Kamida bittasi belgilangan bo‘lsin.",
     "autoToday": "Bugun: o‘zi yubordi {sent} · to‘xtatdingiz {paused} · sizga qoldi {left}",
     "autoTodayWaiting": "kutmoqda {n}",
-    "autoSentTitle": "Yuborilganlar",
-    "autoSentEmpty": "Hali o‘zi yuborilgan javob yo‘q.",
+    "autoSentTitle": "AI o‘zi tasdiqlagan javoblar",
+    "autoSentEmpty": "Hali AI o‘zi tasdiqlagan javob yo‘q.",
     "autoBad": "Xato edi",
     "autoBadGiven": "Xato deb belgilangan",
     "autoBadConfirm": "Bu javob xato edimi? Bu suhbatda AI 30 kun o‘zi yozmaydi; 7 kun ichida ikkinchi 👎 o‘zi yuborishni o‘chiradi.",
-    "statsAutoSent": "O‘zi yuborilgan (bahoga kirmaydi)",
+    "statsAutoSent": "AI o‘zi tasdiqlagan (bahoga kirmaydi)",
     "autoOff": {
       "manual": "qo‘lda o‘chirildi",
       "agent_off": "AI sotuvchi o‘chirildi",
       "owner_changed": "AI akkaunti almashtirildi",
-      "feedback": "7 kun ichida o‘zi ketgan 2 ta javobga «👎 Xato edi» bosildi",
-      "blocked": "o‘zi javob yuborilgan mijoz akkauntni bloklagan",
+      "feedback": "7 kun ichida AI o‘zi tasdiqlagan 2 ta javobga «👎 Xato edi» bosildi",
+      "blocked": "AI o‘zi javob tasdiqlagan mijoz akkauntni bloklagan",
       "bot_question": "7 kun ichida o‘zi javob olgan 2 ta mijoz «botmisiz?» deb so‘radi",
-      "forced": "Telegram akkaunti cheklandi — AI sotuvchi o‘zi o‘chdi",
+      "forced": "AI sotuvchi o‘zi o‘chdi",
       "not_work_account": "raqam «Ish raqami» emas deb belgilandi",
-      "unknown": "sababi noma’lum"
+      "unknown": "sababi noma’lum",
+      "forced_account_paused": "Telegram akkauntni chekladi — AI sotuvchi o‘zi o‘chdi",
+      "forced_flood_repeat": "24 soat ichida Telegram ikki marta kutishni buyurdi — AI sotuvchi o‘zi o‘chdi",
+      "forced_blocks": "7 kun ichida ikki mijoz akkauntni bloklagan — AI sotuvchi o‘zi o‘chdi",
+      "forced_telegram_notice": "Telegramning xizmat akkaunti (777000) xabar yubordi — AI sotuvchi o‘zi o‘chdi"
     },
-    "autoStateLabel": "Holati"
+    "autoStateLabel": "Holati",
+    "autoTodayGoing": "yuborilmoqda {n}",
+    "autoTodayUnclear": "yetib bordimi — noma’lum {n}",
+    "autoRowSent": "yuborildi {when}",
+    "autoRowGoing": "yuborilmoqda",
+    "autoRowUnclear": "yetib bordimi — noma’lum, Telegramda tekshiring",
+    "autoArmedNotWork": "Raqam «Ish raqami» emas — hech qaysi javob o‘zi ketmaydi. «Telegram ulash» sahifasida raqamni «Ish raqami» deb belgilang yoki o‘zi yuborishni o‘chiring.",
+    "autoNeedsWork": "Yoqish uchun avval «Telegram ulash» sahifasida raqamni «Ish raqami» deb belgilang."
   }
 }

@@ -12,6 +12,7 @@ import {
   agentAviaRateAction,
   agentDecideAction,
   agentEditFactAction,
+  agentEditOpenAction,
   agentModeAction,
   agentNumbersAction,
   agentOwnTextAction,
@@ -139,7 +140,15 @@ export function DraftActions({
           className="btn-secondary"
           disabled={pending}
           data-testid="agent-edit"
-          onClick={() => setEditing((was) => !was)}
+          onClick={() => {
+            if (editing) {
+              setEditing(false);
+              return;
+            }
+            // The server FIRST (fix pass B, C1): a reply counting down to the machine's press stops before the box
+            // opens — never his typing while the AI's own text goes. «Kech» when the press already went: no box.
+            run(() => agentEditOpenAction(draftId), () => setEditing(true));
+          }}
         >
           ✏️ {t('edit')}
         </button>
@@ -591,9 +600,23 @@ export function StyleApprove() {
  * «O'zi yuborish» on or off. Arming is the account holder's alone, and asks
  * first — from then on a reply the rules admit leaves his account without his
  * press; switching off is the holder's or any super_admin's, and never asks.
- * A refusal (the agent off, the number not «Ish raqami») is said in words.
+ * What arming would refuse (the agent off, the number not «Ish raqami») is
+ * said by the panel BEFORE the press (fix pass B, C9), and the button is then
+ * not offered — never a confirm about a switch that cannot move. A refusal
+ * the page could not know of is still said in words.
  */
-export function AutoArmButtons({ armed, canArm, canDisarm }: { armed: boolean; canArm: boolean; canDisarm: boolean }) {
+export function AutoArmButtons({
+  armed,
+  canArm,
+  canDisarm,
+  armBlocked = false,
+}: {
+  armed: boolean;
+  canArm: boolean;
+  canDisarm: boolean;
+  /** Arming would be refused for a reason the panel already says above the button. */
+  armBlocked?: boolean;
+}) {
   const t = useTranslations('agentAi');
   const { pending, error, run } = useAction();
   if (armed && !canDisarm) return null;
@@ -620,9 +643,10 @@ export function AutoArmButtons({ armed, canArm, canDisarm }: { armed: boolean; c
         <button
           type="button"
           className="btn-primary"
-          disabled={pending}
+          disabled={pending || armBlocked}
           data-testid="agent-auto-arm"
           onClick={() => {
+            if (armBlocked) return;
             if (!window.confirm(t('autoArmConfirm'))) return;
             run(() => agentAutoArmAction(true));
           }}

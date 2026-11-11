@@ -4,6 +4,7 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import { agentAutoConfig, agentAutoVerdicts, agentConfig, agentDrafts, agentOutbox, tgAccounts, users } from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { canLogInSql } from '../../platform/users/login';
+import type { ForcedOffReason } from './forced-off';
 
 /**
  * Whether the AI sotuvchi runs, from whose account, and who may say so.
@@ -119,7 +120,8 @@ export type AutoDisarmReason =
   | 'bot_question'
   // The agent's account set back to «Shaxsiy raqam» (crm `setWorkAccount`, fix pass A, C5): arming needs «Ish raqami».
   | 'not_work_account'
-  | `forced: ${string}`;
+  // The machine's own «off» (`forceAgentOff`), with WHY — each reason worded apart (forced-off, fix pass B, C10).
+  | `forced: ${ForcedOffReason}`;
 
 /** The `last_error` of a reply a disarm took back (card-io CANCEL_WORDS names it). */
 export const AUTO_OFF_CANCEL = 'auto_off';
@@ -538,15 +540,17 @@ export async function __restoreAgentConfig(snapshot: AgentConfig | null): Promis
  * second send-path flood in a day, two blocks in a week. Same effect as the
  * kill switch — no approved reply left to send, no live draft — written with
  * no actor, because nobody pressed anything. Returns null when the agent was
- * already off (the alarm is sent once, by the call that switched it).
+ * already off (the alarm is sent once, by the call that switched it). The
+ * reason is one of a closed list (forced-off `ForcedOffReason`): «o'zi
+ * yuborish» stores it as its last «off», and each is said as itself.
  */
-export async function forceAgentOff(reason: string): Promise<ModeChange | null> {
+export async function forceAgentOff(reason: ForcedOffReason): Promise<ModeChange | null> {
   if (!(await agentTablesReady())) return null;
   const autoReady = await agentAutoReady();
   return db.transaction(async (tx) => {
     const before = await lockConfig(tx);
     if (before.mode === 'off') return null;
-    if (autoReady) await disarmAutoInTx(tx, `forced: ${reason.slice(0, 180)}`, null);
+    if (autoReady) await disarmAutoInTx(tx, `forced: ${reason}`, null);
     const cancelled = await tx
       .update(agentOutbox)
       .set({ status: 'cancelled', lastError: `agent_off: ${reason}`.slice(0, 500) })

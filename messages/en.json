@@ -6535,7 +6535,7 @@
       "auto_stop_sending": "Too late — the reply is being sent.",
       "auto_stop_sent": "Too late — the reply was sent.",
       "auto_stop_not_waiting": "This reply no longer goes by itself.",
-      "auto_fb_not_found": "This reply did not go by itself.",
+      "auto_fb_not_found": "This reply was not found.",
       "auto_fb_not_account_holder": "This reply is not from your account.",
       "auto_fb_not_sent": "This reply did not go by itself.",
       "auto_fb_already": "Already marked."
@@ -6559,23 +6559,34 @@
     "autoCategoriesHint": "Prices, complaints and other replies never go by themselves. Tick at least one.",
     "autoToday": "Today: sent by itself {sent} · you stopped {paused} · left to you {left}",
     "autoTodayWaiting": "waiting {n}",
-    "autoSentTitle": "Sent",
-    "autoSentEmpty": "No reply has gone by itself yet.",
+    "autoSentTitle": "Replies it approved by itself",
+    "autoSentEmpty": "It has not approved a reply by itself yet.",
     "autoBad": "It was wrong",
     "autoBadGiven": "Marked wrong",
     "autoBadConfirm": "Was this reply wrong? The AI will not write by itself in this chat for 30 days; a second 👎 within 7 days switches it off.",
-    "statsAutoSent": "Sent by itself (not in the rate)",
+    "statsAutoSent": "Approved by itself (not in the rate)",
     "autoOff": {
       "manual": "switched off by hand",
       "agent_off": "the AI seller was switched off",
       "owner_changed": "the AI’s account was changed",
-      "feedback": "two replies it sent were marked «👎 It was wrong» within 7 days",
-      "blocked": "a customer it replied to blocked the account",
+      "feedback": "two replies it approved by itself were marked «👎 It was wrong» within 7 days",
+      "blocked": "a customer whose reply it approved by itself blocked the account",
       "bot_question": "two customers it replied to asked «are you a bot?» within 7 days",
-      "forced": "Telegram limited the account — the AI seller switched itself off",
+      "forced": "the AI seller switched itself off",
       "not_work_account": "the number was marked as not a «work number»",
-      "unknown": "reason unknown"
+      "unknown": "reason unknown",
+      "forced_account_paused": "Telegram limited the account — the AI seller switched itself off",
+      "forced_flood_repeat": "Telegram ordered a wait twice within 24 hours — the AI seller switched itself off",
+      "forced_blocks": "two customers blocked the account within 7 days — the AI seller switched itself off",
+      "forced_telegram_notice": "Telegram’s service account (777000) sent a message — the AI seller switched itself off"
     },
-    "autoStateLabel": "State"
+    "autoStateLabel": "State",
+    "autoTodayGoing": "being sent {n}",
+    "autoTodayUnclear": "delivery unknown {n}",
+    "autoRowSent": "sent {when}",
+    "autoRowGoing": "being sent",
+    "autoRowUnclear": "delivery unknown — check in Telegram",
+    "autoArmedNotWork": "The number is not marked «Work number» — no reply goes by itself. Mark it «Work number» on the «Connect Telegram» page, or switch this off.",
+    "autoNeedsWork": "To switch it on, first mark the number «Work number» on the «Connect Telegram» page."
   }
 }

@@ -23,7 +23,7 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
-import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, stopAuto } from './auto-send';
+import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, stopAuto, stopAutoForEdit } from './auto-send';
 
 /**
  * The web half of the AI sotuvchi's decisions (spec §17.7 «Web: the same
@@ -129,6 +129,20 @@ export async function agentDecideAction(
     if (!r.ok) return { ok: false, error: r.code === 'superseded' ? (SUPERSEDED_ERROR[r.detail as SupersededDetail] ?? r.code) : r.code };
     revalidatePath('/suhbatlar', 'layout');
     return { ok: true, sendAt: r.sendAt?.toISOString() };
+  });
+}
+
+/**
+ * ✏️ pressed — BEFORE the box opens (fix pass B, C1): a reply counting down to
+ * the machine's press stops here, on the server, as his ✏️ (auto-send
+ * `stopAutoForEdit`), so the AI's own text cannot go while he types his
+ * correction. «Kech» once the machine pressed; the box opens only on `ok`.
+ */
+export async function agentEditOpenAction(draftId: string): Promise<AgentActionResult> {
+  return run(async ({ actor }) => {
+    const r = await stopAutoForEdit(actor.id, draftId);
+    if (!r.ok) return { ok: false, error: `auto_stop_${r.code}` };
+    if (r.stopped) revalidatePath('/suhbatlar', 'layout');
   });
 }
 

@@ -3,6 +3,7 @@ import type { AutoCardState } from './auto-send';
 import { POLICY_WORDS, type CardAutoPayload } from './card';
 import type { AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
+import { forcedKindOf, type ForcedOffReason } from './forced-off';
 import type { PolicyCode } from './policy';
 
 /**
@@ -92,11 +93,18 @@ export function autoRefusalWords(state: Pick<AutoCardState, 'outcome' | 'reasons
 export const AUTO_PAUSED_LINE = '⏸ To‘xtatildi — o‘zingiz qaror qilasiz.';
 /** The layer was switched off while this reply waited: it is his card again. */
 export const AUTO_DISARMED_LINE = '⏸ O‘zi yuborish o‘chirildi — bu javobni o‘zingiz qaror qilasiz.';
-/** The prefix of an approved card the machine pressed. */
+/** The prefix of an approved card the machine pressed — once its reply really went (Telegram took it). */
 export const AUTO_SENT_PREFIX = '🤖 O‘zi yuborildi (AI).';
 /**
+ * …while the reply it approved is still on its way, or Telegram never said whether it arrived (fix pass B, C6):
+ * «yuborildi» is said of a reply that went and of no other — never above «· yuborilmoqda…», never above
+ * «❓ Yuborildimi — noma’lum», never before «✖ Yuborilmadi».
+ */
+export const AUTO_APPROVED_PREFIX = '🤖 AI o‘zi tasdiqladi.';
+/**
  * …and of one whose reply never left (fix pass A, C3/C5): he took it back with ❌, 🙋 took the chat, a disarm took
- * back what the machine had not yet sent. «O‘zi yuborildi» above «✖ Yuborilmadi» said two opposite things.
+ * back what the machine had not yet sent, Telegram refused it. «O‘zi yuborildi» above «✖ Yuborilmadi» said two
+ * opposite things.
  */
 export const AUTO_TAKEN_BACK_PREFIX = '🤖 AI o‘zi tasdiqlagan edi.';
 /**
@@ -137,14 +145,24 @@ export function autoCountingDown(
 const NEVER_LEFT: ReadonlySet<string> = new Set(['cancelled', 'expired', 'failed']);
 
 /**
+ * The pressed card's prefix by where its reply is (fix pass B, C6): went → «O‘zi yuborildi»; never left → «AI o‘zi
+ * tasdiqlagan edi»; anything else — on its way, Telegram's answer lost, no outbox row — «AI o‘zi tasdiqladi».
+ */
+export function autoPressedPrefix(sendStatus: string | null): string {
+  if (sendStatus === 'sent') return AUTO_SENT_PREFIX;
+  if (sendStatus !== null && NEVER_LEFT.has(sendStatus)) return AUTO_TAKEN_BACK_PREFIX;
+  return AUTO_APPROVED_PREFIX;
+}
+
+/**
  * The status line with the auto state folded in. `base` is the line the
  * draft's own status gives (card-io `statusLine`):
  *  - counting down → the timer, above whatever the pending line says — or, while
  *    the card has not reached his Telegram yet (`outcome` 'unseen'), that;
  *  - a live draft the press refused, ⏸ stopped, or the layer's «off» stopped
  *    → that sentence, above it — the card is his again;
- *  - an approved reply the machine pressed → the prefix on the approved line,
- *    and his 👎 under it;
+ *  - an approved reply the machine pressed → the prefix on the approved line
+ *    (`autoPressedPrefix`: «yuborildi» only once it went), and his 👎 under it;
  *  - anything else → the base line alone.
  */
 export function withAutoLine(
@@ -152,7 +170,7 @@ export function withAutoLine(
   auto: AutoCardState | null | undefined,
   d: { status: string; finalBody: string | null },
   sendable: boolean,
-  /** The reply's outbox status, when it has one — a pressed reply that never left is not «yuborildi». */
+  /** The reply's outbox status, when it has one — only a reply that went is «yuborildi». */
   sendStatus: string | null = null,
 ): string | null {
   if (!auto) return base;
@@ -163,7 +181,7 @@ export function withAutoLine(
   if (live && auto.state === 'stopped' && auto.outcome === 'pause') return join(AUTO_PAUSED_LINE, base);
   if (live && auto.state === 'stopped' && auto.outcome === 'disarmed') return join(AUTO_DISARMED_LINE, base);
   if (d.status === 'approved' && auto.state === 'pressed') {
-    const prefix = sendStatus !== null && NEVER_LEFT.has(sendStatus) ? AUTO_TAKEN_BACK_PREFIX : AUTO_SENT_PREFIX;
+    const prefix = autoPressedPrefix(sendStatus);
     return join(base ? `${prefix} ${base}` : prefix, auto.feedback === 'bad' ? AUTO_BAD_LINE : null);
   }
   return base;
@@ -199,8 +217,11 @@ export function autoPayload(
   };
 }
 
-/** A disarm reason with its free tail cut: `forced: <Telegram code>` is one reason. */
-export type AutoDisarmKind = Exclude<AutoDisarmReason, `forced: ${string}`> | 'forced';
+/**
+ * A disarm reason as a kind: `forced: blocks` is `forced_blocks` — each of the machine's own «off»s said as
+ * itself (fix pass B, C10) — and a forced tail no list knows is plain `forced`, said neutrally.
+ */
+export type AutoDisarmKind = Exclude<AutoDisarmReason, `forced: ${string}`> | `forced_${ForcedOffReason}` | 'forced';
 
 /**
  * Why the layer was switched off, in his words — the bot's status line, and
@@ -211,18 +232,25 @@ export const AUTO_DISARM_WORDS: Record<AutoDisarmKind, string> = {
   manual: 'qo‘lda o‘chirildi',
   agent_off: 'AI sotuvchi o‘chirildi',
   owner_changed: 'AI akkaunti almashtirildi',
-  feedback: '7 kun ichida o‘zi ketgan 2 ta javobga «👎 Xato edi» bosildi',
-  blocked: 'o‘zi javob yuborilgan mijoz akkauntni bloklagan',
+  // A press is counted, never a delivery (fix pass B, C6): the reply may not have reached the customer.
+  feedback: '7 kun ichida AI o‘zi tasdiqlagan 2 ta javobga «👎 Xato edi» bosildi',
+  blocked: 'AI o‘zi javob tasdiqlagan mijoz akkauntni bloklagan',
   bot_question: '7 kun ichida o‘zi javob olgan 2 ta mijoz «botmisiz?» deb so‘radi',
-  forced: 'Telegram akkaunti cheklandi — AI sotuvchi o‘zi o‘chdi',
+  // The machine's own «off», each by its reason (forced-off, fix pass B, C10) — the alarm said the reason once;
+  // this is what stays on the page and in «/agent».
+  forced_account_paused: 'Telegram akkauntni chekladi — AI sotuvchi o‘zi o‘chdi',
+  forced_flood_repeat: '24 soat ichida Telegram ikki marta kutishni buyurdi — AI sotuvchi o‘zi o‘chdi',
+  forced_blocks: '7 kun ichida ikki mijoz akkauntni bloklagan — AI sotuvchi o‘zi o‘chdi',
+  forced_telegram_notice: 'Telegramning xizmat akkaunti (777000) xabar yubordi — AI sotuvchi o‘zi o‘chdi',
+  forced: 'AI sotuvchi o‘zi o‘chdi',
   // The account was set back to «Shaxsiy raqam» (fix pass A, C5) — arming needs «Ish raqami».
   not_work_account: 'raqam «Ish raqami» emas deb belgilandi',
 };
 
-/** The stored reason as its kind — `forced: …` is 'forced'; anything unknown is null. */
+/** The stored reason as its kind — `forced: blocks` is 'forced_blocks' (forced-off `forcedKindOf`); anything unknown is null. */
 export function autoDisarmKind(reason: string | null): AutoDisarmKind | null {
   if (!reason) return null;
-  if (reason.startsWith('forced:')) return 'forced';
+  if (reason.startsWith('forced:')) return forcedKindOf(reason);
   return Object.hasOwn(AUTO_DISARM_WORDS, reason) ? (reason as AutoDisarmKind) : null;
 }
 

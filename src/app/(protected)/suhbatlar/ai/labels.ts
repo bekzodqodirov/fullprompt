@@ -1,4 +1,5 @@
 import type { AutoDisarmKind } from '@/modules/wms/agent/auto-card';
+import { forcedKindOf } from '@/modules/wms/agent/forced-off';
 import type { AutoConfigRefusal, AutoFeedbackRefusal, StopAutoRefusal } from '@/modules/wms/agent/auto-send';
 import type { PriceRefusal } from '@/modules/wms/agent/calc-loop';
 import type { AgentConfigRefusal } from '@/modules/wms/agent/config';
@@ -181,9 +182,11 @@ export function sourceKey(source: string): string {
 
 /**
  * Why «o'zi yuborish» was last switched off (config `AutoDisarmReason`, the
- * stored `disarm_reason`) — `forced: <Telegram code>` is one kind. Restated
- * here and not imported: this file is read by the page's client buttons, and
- * auto-card's value side reaches the database modules.
+ * stored `disarm_reason`) — `forced: blocks` is its own kind, each forced
+ * reason worded apart (fix pass B, C10), and a tail no list knows is plain
+ * `forced`. Restated here and not imported: this file is read by the page's
+ * client buttons, and auto-card's value side reaches the database modules
+ * (forced-off is pure, and is the one list both read).
  */
 export const AUTO_DISARM_KEYS: Record<AutoDisarmKind, string> = {
   manual: 'autoOff.manual',
@@ -192,12 +195,16 @@ export const AUTO_DISARM_KEYS: Record<AutoDisarmKind, string> = {
   feedback: 'autoOff.feedback',
   blocked: 'autoOff.blocked',
   bot_question: 'autoOff.bot_question',
+  forced_account_paused: 'autoOff.forced_account_paused',
+  forced_flood_repeat: 'autoOff.forced_flood_repeat',
+  forced_blocks: 'autoOff.forced_blocks',
+  forced_telegram_notice: 'autoOff.forced_telegram_notice',
   forced: 'autoOff.forced',
   not_work_account: 'autoOff.not_work_account',
 };
 
 export function autoDisarmKey(reason: string | null): string | null {
   if (!reason) return null;
-  if (reason.startsWith('forced:')) return AUTO_DISARM_KEYS.forced;
+  if (reason.startsWith('forced:')) return AUTO_DISARM_KEYS[forcedKindOf(reason)];
   return (AUTO_DISARM_KEYS as Record<string, string>)[reason] ?? 'autoOff.unknown';
 }

@@ -1135,7 +1135,9 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
   if (d.status !== 'editing' && d.status !== 'pending') return { ok: false, code: 'not_live', detail: d.status };
   const body = text.trim();
   if (!body) return { ok: false, code: 'empty' };
-  // His words on the card are his decision — a waiting machine press stands down (the web's ✏️ is a box, no `edit`).
+  // His words on the card are his decision — a waiting machine press stands down. The page's ✏️ is a box, no
+  // `edit`: it stopped the countdown already, before the box opened (auto-send `stopAutoForEdit`, fix pass B, C1);
+  // this is the net for words that reach here any other way.
   await stopAutoForPerson(draftId, actor.id, 'owner_edit');
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
   // His words pass the owner subset; the same-text count is only a warning on his card (K3).

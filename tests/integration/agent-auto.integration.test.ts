@@ -15,6 +15,9 @@ import {
   agentRuns,
   auditLog,
   clients,
+  leadSources,
+  leadStages,
+  leads,
   notifications,
   roles,
   tgAccountGuard,
@@ -26,10 +29,14 @@ import {
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
-import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_STOPPED_TOAST, agentCommand, agentPress } from '@/modules/wms/agent/bot-door';
+import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_STOPPED_TOAST, agentCommand, agentPress, autoStatusLine } from '@/modules/wms/agent/bot-door';
 import {
+  AUTO_RECLAIM_MS,
   autoFeedback,
   autoStepDownOnBlock,
+  autoStepDownOnBotQuestion,
+  recordAutoVerdictInTx,
+  stopAutoForEdit,
   pressDueAutos,
   readAutoConfig,
   setAutoArmed,
@@ -50,6 +57,7 @@ import {
 } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep } from '@/modules/wms/agent/jobs';
+import { agentRowById, applyAgentOutcome } from '@/modules/wms/agent/outbox-store';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
@@ -107,6 +115,8 @@ let otherId = '';
 let accountId = '';
 let clientId = '';
 let client2Id = '';
+/** A lead the client-finding agent found (source `agent`) — its chat is a prospect the layer never answers. */
+let prospectLeadId = '';
 let agentSnapshot: AgentConfig | null = null;
 let autoSnapshot: AutoConfig | null = null;
 let sendingBefore = false;
@@ -321,6 +331,13 @@ beforeAll(async () => {
     .values({ clientCode: `AV${SUFFIX}`, name: `Auto Ikkinchi ${SUFFIX}`, phones: [`+99895${SUFFIX}66`], salesManagerId: ownerId })
     .returning({ id: clients.id });
   client2Id = c2!.id;
+  const [source] = await db.select({ id: leadSources.id }).from(leadSources).where(eq(leadSources.key, 'agent'));
+  const [stage] = await db.select({ id: leadStages.id }).from(leadStages).where(eq(leadStages.kind, 'open')).orderBy(leadStages.sortOrder).limit(1);
+  const [lead] = await db
+    .insert(leads)
+    .values({ name: `Auto prospekt ${SUFFIX}`, phone: `+99895${SUFFIX}77`, stageId: stage!.id, sourceId: source!.id, ownerId })
+    .returning({ id: leads.id });
+  prospectLeadId = lead!.id;
   await setSetting('tg_sending_enabled', true, ownerId);
 });
 
@@ -349,6 +366,11 @@ afterAll(async () => {
   await db
     .delete(notifications)
     .where(and(eq(notifications.type, 'AgentForcedOff'), sql`${notifications.payload}->>'text' LIKE '%o‘zi yuborishi o‘chirildi%'`));
+  // The agent's own «off» on a second block (fix pass B) alarms the account's manager and every super_admin by name.
+  await db
+    .delete(notifications)
+    .where(and(eq(notifications.type, 'AgentForcedOff'), sql`${notifications.payload}->>'text' LIKE ${`%Auto egasi ${SUFFIX}%`}`));
+  await db.delete(leads).where(eq(leads.id, prospectLeadId));
   await db.delete(tgAccountGuard).where(eq(tgAccountGuard.accountId, accountId));
   await db.delete(tgAccounts).where(eq(tgAccounts.id, accountId));
   await db.delete(clients).where(inArray(clients.id, [clientId, client2Id]));
@@ -617,8 +639,9 @@ describe('arming and disarming', () => {
 
   it('the machine’s own «off» (forceAgentOff) disarms too', async () => {
     const d = await drafted();
-    expect(await forceAgentOff('test')).not.toBeNull();
-    expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'forced: test' });
+    // DELIBERATE EDIT (fix pass B, C10): the reason is a closed list now (forced-off), so the test names a real one.
+    expect(await forceAgentOff('flood_repeat')).not.toBeNull();
+    expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'forced: flood_repeat' });
     expect(await verdictOf(d.id)).toMatchObject({ state: 'stopped', outcome: 'disarmed' });
   });
 });
@@ -760,18 +783,21 @@ describe('the card he reads and presses (stage 2: the words, the payload, the ke
     expect(await pressDueAutos(DUE)).toBe(0);
   });
 
-  it('pressed: «🤖 O‘zi yuborildi (AI).» on the approved line and «👎 Xato edi»; 👎 (op f) once, then no button', async () => {
+  it('pressed: «🤖 AI o‘zi tasdiqladi.» while it goes, «🤖 O‘zi yuborildi (AI).» once it went, and «👎 Xato edi»; 👎 (op f) once, then no button', async () => {
     const d = await drafted();
     expect(await pressDueAutos(DUE)).toBe(1);
     let p = await payloadOf(d.id);
     expect(p).toMatchObject({ live: false, autoAt: null, autoSent: true, autoBad: false });
-    expect(String(p.text)).toContain('🤖 O‘zi yuborildi (AI). ✅ Tasdiqlandi');
+    // DELIBERATE EDIT (fix pass B, C6): «yuborildi» only for a reply that went — on its way it is «tasdiqladi».
+    expect(String(p.text)).toContain('🤖 AI o‘zi tasdiqladi. ✅ Tasdiqlandi');
+    expect(String(p.text)).not.toContain('yuborildi');
     // DELIBERATE EDIT (fix pass A, C3): while the reply has not left, the card also offers ❌ «Bekor qilish»
     // and 🙋 — the keyboard this test pins is the one once it went.
     await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
     const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
     await refreshAgentCard(d.id);
     p = await payloadOf(d.id);
+    expect(String(p.text)).toContain('🤖 O‘zi yuborildi (AI). ✅ Yuborildi');
     expect(keys(p)).toEqual([['👎 Xato edi']]);
     expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
     p = await payloadOf(d.id);
@@ -863,12 +889,20 @@ describe('the page’s panel (web-page `autoPanel`)', () => {
     expect(await pressDueAutos(DUE)).toBe(1);
     // An ineligible one: left to him.
     await drafted({ peer: PEER2, now: new Date(T0.getTime() + 60_000), steps: [compose('Tekshirib aytaman.', { category: 'complaint' })] });
-    const panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    let panel = (await autoPanel(actorOf(ownerId), ownerId))!;
     expect(panel.config.armed).toBe(true);
     expect(panel.armedByName).toBe(`Auto egasi ${SUFFIX}`);
-    expect(panel.today).toEqual({ sent: 1, paused: 1, waiting: 0, left: 1 });
+    expect(panel.workAccount).toBe(true);
+    // DELIBERATE EDIT (fix pass B, C6): approved and still with the pump is «yuborilmoqda», never «o‘zi yubordi».
+    expect(panel.today).toEqual({ sent: 0, going: 1, unclear: 0, paused: 1, waiting: 0, left: 1 });
+    expect(panel.sent.find((r) => r.draftId === sent.id)).toMatchObject({ delivery: 'going', sentAt: null });
+    const at = new Date();
+    await db.update(agentOutbox).set({ status: 'sent', sentAt: at }).where(eq(agentOutbox.draftId, sent.id));
+    panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel.today).toEqual({ sent: 1, going: 0, unclear: 0, paused: 1, waiting: 0, left: 1 });
     const row = panel.sent.find((r) => r.draftId === sent.id)!;
-    expect(row).toMatchObject({ managerUserId: ownerId, text: REPLY, bad: false, chatHref: `/suhbatlar/${clientId}` });
+    expect(row).toMatchObject({ managerUserId: ownerId, text: REPLY, bad: false, chatHref: `/suhbatlar/${clientId}`, delivery: 'sent' });
+    expect(row.sentAt!.getTime()).toBe(at.getTime());
     await autoFeedback(ownerId, sent.id);
     expect((await autoPanel(actorOf(ownerId), ownerId))!.sent.find((r) => r.draftId === sent.id)!.bad).toBe(true);
     // A reader who sees only his own account's chats is shown none of another's.
@@ -878,11 +912,11 @@ describe('the page’s panel (web-page `autoPanel`)', () => {
 
   it('«kutmoqda» is a LIVE reply counting down — one the chat already retired is his', async () => {
     const d = await drafted();
-    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, paused: 0, waiting: 1, left: 0 });
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, going: 0, unclear: 0, paused: 0, waiting: 1, left: 0 });
     // Retired under the waiting row (the sweep would call it gone at its due time).
     await db.update(agentDrafts).set({ status: 'superseded' }).where(eq(agentDrafts.id, d.id));
     expect((await verdictOf(d.id))!.state).toBe('waiting');
-    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, paused: 0, waiting: 0, left: 1 });
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, going: 0, unclear: 0, paused: 0, waiting: 0, left: 1 });
   });
 });
 
@@ -1083,7 +1117,8 @@ describe('fix pass A — a person after the machine pressed (C3)', () => {
     expect(String((await payloadOf(a.id)).text)).toContain('🤖 AI o‘zi tasdiqlagan edi. ✖ Yuborilmadi — o‘zingiz qaytarib oldingiz.');
     const panel = (await autoPanel(actorOf(ownerId), ownerId))!;
     expect(panel.sent.map((r) => r.draftId)).toEqual([b.id]);
-    expect(panel.today).toEqual({ sent: 1, paused: 0, waiting: 0, left: 1 });
+    // DELIBERATE EDIT (fix pass B, C6): b is still with the pump — on its way, not yet «o‘zi yubordi».
+    expect(panel.today).toEqual({ sent: 0, going: 1, unclear: 0, paused: 0, waiting: 0, left: 1 });
     // B: the listener has read the customer's line already — too late to take it back from here.
     await db.update(agentOutbox).set({ readDone: true }).where(eq(agentOutbox.draftId, b.id));
     expect(await decideDraft(actorOf(ownerId), b.id, 'reject', {}, { actorId: ownerId })).toEqual({ ok: false, code: 'auto_sending' });
@@ -1252,5 +1287,403 @@ describe('fix pass A — no card counts down to a certain refusal (C8)', () => {
     expect((await verdictOf(first.id))!.state).toBe('waiting');
     const second = await drafted({ peer: PEER2 });
     expect(await verdictOf(second.id)).toMatchObject({ eligible: false, reasons: ['budget_spent'] });
+  });
+});
+
+/** The agent's account as the listener's pump names it — its alarms name the manager (crm account-alarm). */
+const alarmAccount = () => ({ id: accountId, managerUserId: ownerId, managerName: `Auto egasi ${SUFFIX}` });
+
+describe('fix pass B — what he sees and presses (C1 C6 C7 C9 C10)', () => {
+  it('C1: the page’s ✏️ stops the countdown on the server BEFORE its box opens — nothing is pressed while he types', async () => {
+    const d = await drafted();
+    expect(await stopAutoForEdit(otherId, d.id)).toEqual({ ok: false, code: 'not_account_holder' });
+    expect((await verdictOf(d.id))!.state).toBe('waiting');
+    expect(await stopAutoForEdit(ownerId, d.id)).toEqual({ ok: true, stopped: true });
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'stopped', outcome: 'owner_edit', stoppedBy: ownerId });
+    // The card is his ordinary card again, at once — no timer, no ⏸.
+    expect((await payloadOf(d.id)).autoAt).toBeNull();
+    // He types for minutes; the sweep comes due and presses nothing; his «Saqlash» lands.
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await submitOwnText(actorOf(ownerId), d.id, 'Ha, olib kelamiz. Yukingiz nima?', { actorId: ownerId })).toMatchObject({ ok: true });
+    expect(await outboxOf(d.id)).toBeNull();
+  });
+
+  it('C1: ✏️ once the machine pressed says «kech» — the box stays shut; a card that never counted down opens as always', async () => {
+    const d = await drafted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect(await stopAutoForEdit(ownerId, d.id)).toEqual({ ok: false, code: 'pressed' });
+    await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
+    expect(await stopAutoForEdit(ownerId, d.id)).toEqual({ ok: false, code: 'sent' });
+    // Never counted down (a complaint): nothing to stop, nothing written, the box opens.
+    const plain = await drafted({ peer: PEER2, steps: [compose('Tekshirib aytaman.', { category: 'complaint' })] });
+    expect(await stopAutoForEdit(ownerId, plain.id)).toEqual({ ok: true, stopped: false });
+    expect(await verdictOf(plain.id)).toMatchObject({ eligible: false, state: null });
+  });
+
+  it('C1: the page’s ✏️ button asks the server first and opens its box only on «ok» (agent-ui wire)', () => {
+    const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
+    const edit = ui.slice(ui.indexOf('data-testid="agent-edit"'), ui.indexOf('data-testid="agent-reject"'));
+    expect(edit).toMatch(/run\(\(\) => agentEditOpenAction\(draftId\), \(\) => setEditing\(true\)\)/u);
+    expect(edit).not.toMatch(/setEditing\(\(was\) => !was\)/u);
+    const actions = readFileSync('src/modules/wms/agent/web-actions.ts', 'utf8');
+    const open = actions.slice(actions.indexOf('export async function agentEditOpenAction'));
+    expect(open.slice(0, open.indexOf('\n}\n'))).toMatch(/stopAutoForEdit\(actor\.id, draftId\)/u);
+  });
+
+  it('C6: «o‘zi yubordi» counts and lists only what went; on its way, unknown and never-left are each said as they are', async () => {
+    const a = await drafted();
+    const b = await drafted({ peer: PEER2 });
+    expect(await pressDueAutos(DUE)).toBe(2);
+    await db.update(agentOutbox).set({ status: 'unknown', lastError: 'timeout' }).where(eq(agentOutbox.draftId, a.id));
+    const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
+    await refreshAgentCard(a.id);
+    expect(String((await payloadOf(a.id)).text)).toContain('🤖 AI o‘zi tasdiqladi. ❓ Yuborildimi — noma’lum.');
+    let panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel.today).toEqual({ sent: 0, going: 1, unclear: 1, paused: 0, waiting: 0, left: 0 });
+    expect(Object.fromEntries(panel.sent.map((r) => [r.draftId, r.delivery]))).toEqual({ [a.id]: 'unclear', [b.id]: 'going' });
+    // Telegram refuses b: never left — his, not listed, and the card never says «yuborildi».
+    await db.update(agentOutbox).set({ status: 'failed', lastError: 'USER_PRIVACY_RESTRICTED' }).where(eq(agentOutbox.draftId, b.id));
+    await refreshAgentCard(b.id);
+    expect(String((await payloadOf(b.id)).text)).toMatch(/^.*🤖 AI o‘zi tasdiqlagan edi\. ⚠️ Yuborilmadi/mu);
+    expect(String((await payloadOf(b.id)).text)).not.toContain('O‘zi yuborildi');
+    panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel.today).toEqual({ sent: 0, going: 0, unclear: 1, paused: 0, waiting: 0, left: 1 });
+    expect(panel.sent.map((r) => r.draftId)).toEqual([a.id]);
+  });
+
+  it('C7: a purged chat’s pressed card offers no 👎, and a stale 👎 says the reply is not found — never «o‘zi yuborilmagan»', async () => {
+    const d = await drafted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    await db.update(agentOutbox).set({ status: 'sent', sentAt: new Date() }).where(eq(agentOutbox.draftId, d.id));
+    const { refreshAgentCard } = await import('@/modules/wms/agent/card-io');
+    await refreshAgentCard(d.id);
+    expect(keys(await payloadOf(d.id))).toEqual([['👎 Xato edi']]);
+    await purgeAgentChat(ownerId, PEER);
+    const p = await payloadOf(d.id);
+    expect(p).toMatchObject({ live: false, autoSent: false, autoBad: false, autoAt: null });
+    expect(buttonsFor('AgentDraft', p)).toBeNull();
+    // A keyboard Telegram did not take back (the edit failed): its press says what is true.
+    expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Bu javob topilmadi.' });
+  });
+
+  it('C9: armed on a number that is not «Ish raqami» (another writer than the switch) — the panel and «/agent» say nothing can go', async () => {
+    await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    const panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel).toMatchObject({ workAccount: false, config: { armed: true } });
+    expect(await autoStatusLine(ownerId, DUE)).toBe(
+      '🤖 O‘zi yuborish: yoqilgan (bugun 0/30) — ⚠ raqam «Ish raqami» emas, hech qaysi javob o‘zi ketmaydi. O‘chirish: /agent auto off',
+    );
+    // …and off on such a number, the status says what to do first — before «/agent auto on» refuses.
+    await setAutoArmed(actorOf(ownerId), false, { actorId: ownerId });
+    expect(await autoStatusLine(ownerId, DUE)).toBe(
+      '🤖 O‘zi yuborish: o‘chiq — oxirgi marta: qo‘lda o‘chirildi. Yoqish uchun avval «Telegram ulash» sahifasida raqamni «Ish raqami» deb belgilang',
+    );
+    await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
+    expect(await autoStatusLine(ownerId, DUE)).toContain('. Yoqish: /agent auto on');
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.workAccount).toBe(true);
+  });
+
+  it('C9: the page says why it cannot arm BEFORE the press, and offers no button then (page + agent-ui wire)', () => {
+    const page = readFileSync('src/app/(protected)/suhbatlar/ai/page.tsx', 'utf8');
+    expect(page).toMatch(/\{c\.armed && !auto\.workAccount && \(/u);
+    expect(page).toMatch(/tone=\{c\.armed \? \(auto\.workAccount \? 'text-good' : 'text-warn'\) : 'text-ink-700'\}/u);
+    expect(page).toMatch(/\{!c\.armed && holder && !auto\.workAccount && \(/u);
+    expect(page).toMatch(/armBlocked=\{!running \|\| !auto\.workAccount\}/u);
+    const ui = readFileSync('src/app/(protected)/suhbatlar/ai/agent-ui.tsx', 'utf8');
+    const arm = ui.slice(ui.indexOf('data-testid="agent-auto-arm"') - 200, ui.indexOf('data-testid="agent-auto-arm"') + 200);
+    expect(arm).toMatch(/disabled=\{pending \|\| armBlocked\}/u);
+    expect(arm).toMatch(/if \(armBlocked\) return;/u);
+  });
+
+  it('C10: each machine «off» stays said as its own reason — a block is never «Telegram akkaunti cheklandi»', async () => {
+    const said: Record<string, string> = {};
+    for (const reason of ['account_paused', 'flood_repeat', 'blocks', 'telegram_notice'] as const) {
+      await agentOn();
+      await armFresh();
+      expect(await forceAgentOff(reason)).not.toBeNull();
+      expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: `forced: ${reason}` });
+      said[reason] = (await autoStatusLine(ownerId, DUE))!;
+    }
+    expect(said.account_paused).toContain('oxirgi marta: Telegram akkauntni chekladi');
+    expect(said.flood_repeat).toContain('oxirgi marta: 24 soat ichida Telegram ikki marta kutishni buyurdi');
+    expect(said.blocks).toContain('oxirgi marta: 7 kun ichida ikki mijoz akkauntni bloklagan');
+    expect(said.telegram_notice).toContain('oxirgi marta: Telegramning xizmat akkaunti (777000) xabar yubordi');
+    for (const r of ['flood_repeat', 'blocks', 'telegram_notice']) expect(said[r], r).not.toMatch(/chekla/u);
+  });
+
+  it('C10: the second block of the week — the agent’s own «off» lands first, and the record says customers blocked it', async () => {
+    // A reply HE sent, refused by a customer who blocked us: one block, nothing the machine pressed.
+    const his = await drafted({ peer: PEER2, steps: [compose('Tekshirib aytaman.', { category: 'complaint' })] });
+    expect(await decideDraft(actorOf(ownerId), his.id, 'send', { digest: await cardDigestOf(his.id) }, { actorId: ownerId })).toMatchObject({ ok: true });
+    const blocked = { kind: 'failed' as const, reason: 'USER_IS_BLOCKED', error: { kind: 'recipient_final' as const, code: 'USER_IS_BLOCKED' }, markUnread: false };
+    await applyAgentOutcome((await agentRowById((await outboxOf(his.id))!.id))!, blocked, alarmAccount(), DUE);
+    expect((await readAutoConfig())!.armed).toBe(true);
+    // The machine's reply meets the second: `agentBlocked` switches the agent off before the step-down asks.
+    const auto = await drafted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    await applyAgentOutcome((await agentRowById((await outboxOf(auto.id))!.id))!, blocked, alarmAccount(), DUE);
+    expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'forced: blocks' });
+    expect(await autoStatusLine(ownerId, DUE)).toContain('oxirgi marta: 7 kun ichida ikki mijoz akkauntni bloklagan — AI sotuvchi o‘zi o‘chdi');
+  });
+});
+
+describe('fix pass B — the tests the review found missing (TESTS-1…6)', () => {
+  describe('the streak, as production writes the chat (TESTS-1)', () => {
+    const WORDS = ['birinchi', 'ikkinchi', 'uchinchi'];
+    const tag = SUFFIX.split('').map((d) => 'abcdefghij'[Number(d)]).join('');
+    /** Each reply its own words and each question its own line: the echo keeps every sent reply, and a repeat is refused. */
+    function say(i: number) {
+      while ((msgSeq + 1n) % BigInt(QUESTIONS.length) !== BigInt(i)) msgSeq += 1n;
+      return [compose(`${WORDS[i]} javob: Xitoydan olib kelamiz. Qanday yuk ${tag}?`)];
+    }
+    /** The pump sends it — `applyAgentOutcome`'s own 'sent': the outbox row, then the thread's copy (`recordSent`). */
+    async function pumpSends(draftId: string, at: Date) {
+      msgSeq += 1n;
+      await applyAgentOutcome((await agentRowById((await outboxOf(draftId))!.id))!, { kind: 'sent', tgMessageId: msgSeq }, alarmAccount(), at);
+    }
+    /** Two machine replies, each pressed and SENT; returns when the third arrives. */
+    async function twoAutos(): Promise<Date> {
+      let at = T0;
+      for (let i = 0; i < 2; i++) {
+        const d = await drafted({ now: at, steps: say(i) });
+        expect(await pressDueAutos(new Date(at.getTime() + HOLD_MS + 1_000))).toBe(1);
+        await pumpSends(d.id, new Date(at.getTime() + HOLD_MS + 30_000));
+        expect(await outboxOf(d.id)).toMatchObject({ status: 'sent' });
+        at = new Date(at.getTime() + 5 * 60_000);
+      }
+      return at;
+    }
+
+    it('two replies the pump SENT — each echoed into the chat — and the third waits for him', async () => {
+      const at = await twoAutos();
+      const echoes = await db.select().from(tgMessages).where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.direction, 'out')));
+      expect(echoes).toHaveLength(2);
+      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: false, reasons: ['streak'] });
+    });
+
+    it('the account’s Business robot is not him: an auto_sent line resets nothing', async () => {
+      const at = await twoAutos();
+      msgSeq += 1n;
+      const [robot] = await db
+        .insert(tgMessages)
+        .values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction: 'out', body: 'Ish vaqtimiz 9:00 dan', sentAt: new Date(at.getTime() - 120_000) })
+        .returning({ id: tgMessages.id });
+      await db.execute(sql`INSERT INTO tg_message_flags (message_id, auto_sent) VALUES (${robot!.id}::uuid, true)
+                             ON CONFLICT (message_id) DO UPDATE SET auto_sent = true`);
+      expect(await verdictOf((await drafted({ now: at, steps: say(2) })).id)).toMatchObject({ eligible: false, reasons: ['streak'] });
+    });
+
+    it('a line he wrote from his phone after them resets it', async () => {
+      await db.update(agentConfig).set({ humanPauseMin: 1 }).where(eq(agentConfig.id, 1));
+      const at = await twoAutos();
+      msgSeq += 1n;
+      // After both presses and both sends — never the AI's echo, never the robot.
+      await db
+        .insert(tgMessages)
+        .values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction: 'out', body: 'Men o‘zim yozdim', sentAt: new Date(at.getTime() - 120_000) });
+      const next = new Date(at.getTime() + 5 * 60_000);
+      expect(await verdictOf((await drafted({ now: next, steps: say(2) })).id)).toMatchObject({ eligible: true, reasons: [], state: 'waiting' });
+    });
+  });
+
+  describe('the gate’s facts read from the database (TESTS-2)', () => {
+    it('a photo in the customer’s burst: refused «media» at the scheduling', async () => {
+      msgSeq += 1n;
+      await db
+        .insert(tgMessages)
+        .values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: msgSeq, direction: 'in', body: null, hasMedia: true, sentAt: new Date(T0.getTime() - 90_000) });
+      expect(await verdictOf((await drafted()).id)).toMatchObject({ eligible: false, reasons: ['media'], state: null });
+    });
+
+    it('…and at the press: a photo that reached the chat late, inside the burst the reply answers', async () => {
+      const d = await drafted();
+      await db
+        .insert(tgMessages)
+        .values({ clientId, managerUserId: ownerId, peerId: PEER, tgMessageId: d.anchorTgMessageId - 1n, direction: 'in', body: null, hasMedia: true, sentAt: new Date(T0.getTime() - 90_000) });
+      expect(await pressDueAutos(DUE)).toBe(0);
+      expect(await verdictOf(d.id)).toMatchObject({ state: 'refused', reasons: ['media'] });
+    });
+
+    it('a chat on a lead the client-finding agent found: refused «prospect»', async () => {
+      const peer = OTHERS[0]!;
+      msgSeq += 1n;
+      await db.insert(tgMessages).values({
+        clientId: null,
+        leadId: prospectLeadId,
+        managerUserId: ownerId,
+        peerId: peer,
+        tgMessageId: msgSeq,
+        direction: 'in',
+        body: 'Assalomu alaykum, yuk olib kelasizmi?',
+        sentAt: new Date(T0.getTime() - 60_000),
+      });
+      const out = await handleInbound(job(msgSeq, peer), { callModel: scripted([compose()]), now: () => T0 });
+      expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+      expect(await verdictOf((out as { draftId: string }).draftId)).toMatchObject({ eligible: false, reasons: ['prospect'], state: null });
+    });
+
+    it('money the STORED policy carries — a money figure in its ledger, an estimate in its memory: refused «money» at the press', async () => {
+      for (const policyPatch of [{ ledger: [{ kind: 'money', raw: '110 $' }] }, { memory: { hasEstimate: true } }]) {
+        await clearChats();
+        const d = await drafted();
+        await db
+          .update(agentDrafts)
+          .set({ policy: { ...(d.policy as Record<string, unknown>), ...policyPatch } })
+          .where(eq(agentDrafts.id, d.id));
+        expect(await pressDueAutos(DUE), JSON.stringify(policyPatch)).toBe(0);
+        expect(await verdictOf(d.id), JSON.stringify(policyPatch)).toMatchObject({ state: 'refused', reasons: ['money'] });
+      }
+    });
+
+    it('the agent now speaks from another account than the draft’s: refused «agent_off» at the press', async () => {
+      const d = await drafted();
+      await db.update(agentConfig).set({ ownerUserId: otherId, sessionExclusiveBy: otherId }).where(eq(agentConfig.id, 1));
+      expect(await pressDueAutos(DUE)).toBe(0);
+      expect(await verdictOf(d.id)).toMatchObject({ state: 'refused', reasons: ['agent_off'] });
+    });
+  });
+
+  describe('the Tashkent day (TESTS-3)', () => {
+    const yday = (d: Date) => new Date(d.getTime() - 86_400_000);
+
+    it('a press yesterday counts toward neither today’s cap nor «bugun» — and today’s does', async () => {
+      await db.update(agentAutoConfig).set({ perDay: 1 }).where(eq(agentAutoConfig.id, 1));
+      const y = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      // That press happened the day before — the row as production holds one.
+      await db.update(agentAutoVerdicts).set({ pressedAt: yday(DUE), createdAt: yday(T0) }).where(eq(agentAutoVerdicts.draftId, y.id));
+      expect(await autoStatusLine(ownerId, DUE)).toContain('(bugun 0/1)');
+      const today = await drafted({ peer: PEER2, now: new Date(T0.getTime() + 60_000) });
+      expect(await verdictOf(today.id)).toMatchObject({ eligible: true, state: 'waiting' });
+      expect(await pressDueAutos(new Date(DUE.getTime() + 60_000))).toBe(1);
+      expect(await autoStatusLine(ownerId, DUE)).toContain('(bugun 1/1)');
+    });
+
+    it('the panel’s «bugun» is today’s rows only', async () => {
+      const y = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      await db.update(agentAutoVerdicts).set({ pressedAt: yday(DUE), createdAt: yday(T0) }).where(eq(agentAutoVerdicts.draftId, y.id));
+      await drafted({ peer: PEER2 });
+      expect((await autoPanel(actorOf(ownerId), ownerId, DUE))!.today).toEqual({ sent: 0, going: 0, unclear: 0, paused: 0, waiting: 1, left: 0 });
+    });
+  });
+
+  describe('the step-downs’ seven days (TESTS-4)', () => {
+    const DAY = 86_400_000;
+
+    it('👎: one older than a week does not count — the second inside it does', async () => {
+      const a = await drafted();
+      const b = await drafted({ peer: PEER2 });
+      expect(await pressDueAutos(DUE)).toBe(2);
+      expect(await autoFeedback(ownerId, a.id, DUE)).toEqual({ ok: true, disarmed: false });
+      await db.update(agentAutoVerdicts).set({ feedbackAt: new Date(DUE.getTime() - 8 * DAY) }).where(eq(agentAutoVerdicts.draftId, a.id));
+      expect(await autoFeedback(ownerId, b.id, DUE)).toEqual({ ok: true, disarmed: false });
+      expect((await readAutoConfig())!.armed).toBe(true);
+    });
+
+    it('👎: six days back is inside the week — two disarm', async () => {
+      const a = await drafted();
+      const b = await drafted({ peer: PEER2 });
+      expect(await pressDueAutos(DUE)).toBe(2);
+      expect(await autoFeedback(ownerId, a.id, DUE)).toEqual({ ok: true, disarmed: false });
+      await db.update(agentAutoVerdicts).set({ feedbackAt: new Date(DUE.getTime() - 6 * DAY) }).where(eq(agentAutoVerdicts.draftId, a.id));
+      expect(await autoFeedback(ownerId, b.id, DUE)).toEqual({ ok: true, disarmed: true });
+    });
+
+    it('a block eight days after the machine’s reply is not its doing; six days after, it is', async () => {
+      await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      expect(await autoStepDownOnBlock(ownerId, PEER, new Date(DUE.getTime() + 8 * DAY))).toBe(false);
+      expect((await readAutoConfig())!.armed).toBe(true);
+      expect(await autoStepDownOnBlock(ownerId, PEER, new Date(DUE.getTime() + 6 * DAY))).toBe(true);
+      expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'blocked' });
+    });
+
+    it('«botmisiz?»: a chat sent off eight days ago is not this week’s — six days ago it is', async () => {
+      await drafted();
+      await drafted({ peer: PEER2 });
+      expect(await pressDueAutos(DUE)).toBe(2);
+      expect(await autoStepDownOnBotQuestion(ownerId, PEER, DUE)).toEqual({ chatOff: true, disarmed: false });
+      const back = (days: number) =>
+        db
+          .update(agentAutoChats)
+          .set({ updatedAt: new Date(DUE.getTime() - days * DAY) })
+          .where(and(eq(agentAutoChats.managerUserId, ownerId), eq(agentAutoChats.peerId, PEER)));
+      await back(8);
+      expect(await autoStepDownOnBotQuestion(ownerId, PEER2, DUE)).toEqual({ chatOff: true, disarmed: false });
+      expect((await readAutoConfig())!.armed).toBe(true);
+      await back(6);
+      expect(await autoStepDownOnBotQuestion(ownerId, PEER2, DUE)).toEqual({ chatOff: true, disarmed: true });
+    });
+  });
+
+  describe('the block hook, through the pump’s own outcome (TESTS-5)', () => {
+    const failed = (code: string) => ({ kind: 'failed' as const, reason: code, error: { kind: 'recipient_final' as const, code }, markUnread: false });
+
+    it('a deactivated or private customer is not a block — the layer stays armed', async () => {
+      for (const code of ['INPUT_USER_DEACTIVATED', 'USER_PRIVACY_RESTRICTED']) {
+        await clearChats();
+        const d = await drafted();
+        expect(await pressDueAutos(DUE)).toBe(1);
+        await applyAgentOutcome((await agentRowById((await outboxOf(d.id))!.id))!, failed(code), alarmAccount(), DUE);
+        expect(await outboxOf(d.id), code).toMatchObject({ status: 'failed' });
+        expect((await readAutoConfig())!.armed, code).toBe(true);
+      }
+    });
+
+    it('USER_IS_BLOCKED on the machine’s reply disarms it — «blocked»', async () => {
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      await applyAgentOutcome((await agentRowById((await outboxOf(d.id))!.id))!, failed('USER_IS_BLOCKED'), alarmAccount(), DUE);
+      expect(await readAutoConfig()).toMatchObject({ armed: false, disarmReason: 'blocked' });
+    });
+  });
+
+  describe('a dead sweep’s claim, and the verdict’s savepoint (TESTS-6)', () => {
+    const pressing = (draftId: string, claimedAt: Date, extra: Record<string, unknown> = {}) =>
+      db.update(agentAutoVerdicts).set({ state: 'pressing', claimedAt, ...extra }).where(eq(agentAutoVerdicts.draftId, draftId));
+
+    it('a pending reply claimed and never pressed: left alone for five minutes, then waiting again — and pressed by that same sweep', async () => {
+      const d = await drafted();
+      const now = new Date(DUE.getTime() + 7 * 60_000);
+      await pressing(d.id, new Date(now.getTime() - 6 * 60_000));
+      expect(await pressDueAutos(new Date(now.getTime() - 3 * 60_000))).toBe(0);
+      expect((await verdictOf(d.id))!.state).toBe('pressing');
+      expect(await pressDueAutos(now)).toBe(1);
+      expect((await verdictOf(d.id))!.state).toBe('pressed');
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+    });
+
+    it('a reply the machine approved before its sweep died: pressed, at the approval’s own time', async () => {
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      const decidedAt = (await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id)))[0]!.decidedAt!;
+      await pressing(d.id, DUE, { pressedAt: null });
+      expect(await pressDueAutos(new Date(DUE.getTime() + AUTO_RECLAIM_MS + 60_000))).toBe(0);
+      const v = await verdictOf(d.id);
+      expect(v).toMatchObject({ state: 'pressed' });
+      expect(v!.pressedAt!.getTime()).toBe(decidedAt.getTime());
+    });
+
+    it('a reply HE approved while the row was claimed: stopped as his, never counted as the machine’s', async () => {
+      const d = await drafted();
+      expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId })).toMatchObject({ ok: true });
+      await pressing(d.id, DUE, { outcome: null, stoppedAt: null, stoppedBy: null });
+      expect(await pressDueAutos(new Date(DUE.getTime() + AUTO_RECLAIM_MS + 60_000))).toBe(0);
+      expect(await verdictOf(d.id)).toMatchObject({ state: 'stopped', outcome: 'owner_send', stoppedBy: ownerId });
+    });
+
+    it('a verdict the table refuses costs the plan, never the draft’s transaction', async () => {
+      const d = await drafted();
+      await db.delete(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, d.id));
+      await db.transaction(async (tx) => {
+        const out = await recordAutoVerdictInTx(tx, d, { eligible: true, reasons: [], category: 'faq', confidence: 5, digest: 'x', dueAt: DUE });
+        expect(out).toBeNull();
+        // The transaction is still usable: a refused INSERT outside a savepoint would abort it here.
+        const [row] = await tx.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.id, d.id));
+        expect(row?.id).toBe(d.id);
+      });
+      expect(await verdictOf(d.id)).toBeNull();
+    });
   });
 });
