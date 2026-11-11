@@ -24,6 +24,8 @@ import {
   users,
 } from '@/modules/platform/db/schema';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
+import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
+import { AUTO_BAD_DISARMED_TOAST, AUTO_BAD_TOAST, AUTO_STOPPED_TOAST, agentCommand, agentPress } from '@/modules/wms/agent/bot-door';
 import {
   autoFeedback,
   autoStepDownOnBlock,
@@ -49,7 +51,7 @@ import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep } from '@/modules/wms/agent/jobs';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
-import { webStats } from '@/modules/wms/agent/web-page';
+import { autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 
 /**
@@ -648,7 +650,184 @@ describe('the record and the purge', () => {
   });
 });
 
+/** The card's notification row as written — what the bot draws the card and its keyboard from. */
+async function payloadOf(draftId: string): Promise<Record<string, unknown>> {
+  const [row] = await db
+    .select({ payload: notifications.payload })
+    .from(notifications)
+    .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`));
+  return row!.payload as Record<string, unknown>;
+}
+
+const keys = (payload: Record<string, unknown>) => (buttonsFor('AgentDraft', payload) ?? []).map((r) => r.map((b) => b.text));
+
+describe('the card he reads and presses (stage 2: the words, the payload, the keyboard)', () => {
+  it('the FIRST card already counts down: autoAt is the due time, the timer in words, ⏸ first', async () => {
+    const d = await drafted();
+    const p = await payloadOf(d.id);
+    expect(p.autoAt).toBe(new Date(T0.getTime() + HOLD_MS).toISOString());
+    expect(p).toMatchObject({ live: true, blocked: false, autoSent: false, autoBad: false });
+    expect(String(p.text)).toMatch(/⏱ \d\d:\d\d da o‘zi ketadi — to‘xtatish uchun ⏸ bosing\./u);
+    expect(keys(p)).toEqual([['⏸ To‘xtat', '✅ Hozir yubor'], ['✏️ O‘zgartirish'], ['❌ Kerak emas', '🙋 Suhbat meniki']]);
+  });
+
+  it('an ineligible reply’s card is today’s card — no timer, no ⏸', async () => {
+    const d = await drafted({ steps: [compose('Tekshirib aytaman.', { category: 'complaint' })] });
+    const p = await payloadOf(d.id);
+    expect(p.autoAt).toBeNull();
+    expect(String(p.text)).not.toContain('o‘zi ketadi');
+    expect(keys(p)[0]).toEqual(['✅ Yuborish', '✏️ O‘zgartirish']);
+  });
+
+  it('⏸ from the bot (op a): stopped, the card his again — its words and its ordinary ✅; a second ⏸ says so', async () => {
+    const d = await drafted();
+    expect(await agentPress(otherId, 'a', d.id, undefined)).toMatchObject({ toast: 'Bu javob sizning akkauntingizdan emas.' });
+    expect(await agentPress(ownerId, 'a', d.id, undefined)).toEqual({ toast: AUTO_STOPPED_TOAST });
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'stopped', outcome: 'pause' });
+    const p = await payloadOf(d.id);
+    expect(p.autoAt).toBeNull();
+    expect(String(p.text)).toContain('⏸ To‘xtatildi — o‘zingiz qaror qilasiz.');
+    expect(keys(p)[0]).toEqual(['✅ Yuborish', '✏️ O‘zgartirish']);
+    expect(await agentPress(ownerId, 'a', d.id, undefined)).toEqual({ toast: 'Bu javob endi o‘zi ketmaydi.' });
+    expect(await pressDueAutos(DUE)).toBe(0);
+  });
+
+  it('pressed: «🤖 O‘zi yuborildi (AI).» on the approved line and «👎 Xato edi»; 👎 (op f) once, then no button', async () => {
+    const d = await drafted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    let p = await payloadOf(d.id);
+    expect(p).toMatchObject({ live: false, autoAt: null, autoSent: true, autoBad: false });
+    expect(String(p.text)).toContain('🤖 O‘zi yuborildi (AI). ✅ Tasdiqlandi');
+    expect(keys(p)).toEqual([['👎 Xato edi']]);
+    expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
+    p = await payloadOf(d.id);
+    expect(p).toMatchObject({ autoSent: true, autoBad: true });
+    expect(String(p.text)).toContain('👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.');
+    expect(buttonsFor('AgentDraft', p)).toBeNull();
+    expect(await agentPress(ownerId, 'f', d.id, undefined)).toEqual({ toast: 'Allaqachon belgilangan.' });
+  });
+
+  it('the second 👎 in a week answers that the layer switched itself off', async () => {
+    const a = await drafted();
+    const b = await drafted({ peer: PEER2 });
+    expect(await pressDueAutos(DUE)).toBe(2);
+    expect(await agentPress(ownerId, 'f', a.id, undefined)).toEqual({ toast: AUTO_BAD_TOAST });
+    expect(await agentPress(ownerId, 'f', b.id, undefined)).toEqual({ toast: AUTO_BAD_DISARMED_TOAST });
+  });
+
+  it('refused at the press: the card says why in words and is his again', async () => {
+    const d = await drafted();
+    await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const p = await payloadOf(d.id);
+    expect(String(p.text)).toContain('⏱ O‘zi ketmadi: raqam «Ish raqami» deb belgilanmagan — o‘zingiz qaror qiling.');
+    expect(p.autoAt).toBeNull();
+    expect(keys(p)[0]).toEqual(['✅ Yuborish', '✏️ O‘zgartirish']);
+  });
+
+  it('a card too long to show its reply is not pressed — what has no ✅ for him has none for the machine', async () => {
+    const d = await drafted();
+    const policy = d.policy as { card: Record<string, unknown> };
+    await db
+      .update(agentDrafts)
+      .set({ policy: { ...policy, card: { ...policy.card, customerLabel: `GS${'7'.repeat(3800)}` } } })
+      .where(eq(agentDrafts.id, d.id));
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'refused', reasons: ['too_long'] });
+    expect((await db.select().from(agentDrafts).where(eq(agentDrafts.id, d.id)))[0]!.status).toBe('pending');
+    expect(await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, d.id))).toHaveLength(0);
+  });
+
+  it('the layer switched off while a reply waited: the card says so and draws today’s keyboard', async () => {
+    const d = await drafted();
+    await setAutoArmed(actorOf(ownerId), false, { actorId: ownerId });
+    const p = await payloadOf(d.id);
+    expect(String(p.text)).toContain('O‘zi yuborish o‘chirildi — bu javobni o‘zingiz qaror qilasiz.');
+    expect(p.autoAt).toBeNull();
+  });
+
+  it('the page reads the same card — ⏸ drawn while it counts down, gone after it', async () => {
+    const d = await drafted();
+    const viewer = actorOf(ownerId);
+    let card = (await webDrafts(viewer)).pending.find((w) => w.id === d.id)!;
+    expect(card.autoWaiting).toBe(true);
+    expect(card.cardText).toContain('da o‘zi ketadi');
+    await stopAuto(ownerId, d.id);
+    card = (await webDrafts(viewer)).pending.find((w) => w.id === d.id)!;
+    expect(card.autoWaiting).toBe(false);
+    expect(card.cardText).toContain('⏸ To‘xtatildi');
+  });
+});
+
+describe('/agent auto (bot-door `agentCommand`)', () => {
+  it('the status answer carries the layer’s line; off says why it was last switched off', async () => {
+    expect(await agentCommand(ownerId, '')).toMatch(/🤖 O‘zi yuborish: yoqilgan \(bugun \d+\/30\)\. O‘chirish: \/agent auto off/u);
+    expect(await agentCommand(ownerId, 'auto off')).toBe('⏹ O‘zi yuborish o‘chirildi — har bir javobni o‘zingiz ✅ bilan yuborasiz.');
+    expect(await agentCommand(ownerId, '')).toContain('🤖 O‘zi yuborish: o‘chiq — oxirgi marta: qo‘lda o‘chirildi. Yoqish: /agent auto on');
+    expect(await agentCommand(ownerId, 'auto')).toContain('🤖 O‘zi yuborish: o‘chiq');
+  });
+
+  it('on: the holder alone, a work number, a running agent — each refusal in words', async () => {
+    await db.update(agentAutoConfig).set({ armedAt: null, armedBy: null }).where(eq(agentAutoConfig.id, 1));
+    expect(await agentCommand(otherId, 'auto on')).toBe('O‘zi yuborishni faqat akkaunt egasi yoqadi.');
+    await db.update(tgAccounts).set({ workAccount: false }).where(eq(tgAccounts.id, accountId));
+    expect(await agentCommand(ownerId, 'auto on')).toBe('Avval raqamni «Ish raqami» deb belgilang.');
+    await db.update(tgAccounts).set({ workAccount: true }).where(eq(tgAccounts.id, accountId));
+    expect(await agentCommand(ownerId, 'AUTO  ON')).toMatch(/^🤖 O‘zi yuborish yoqildi: mos javob kartasi 2 daqiqa kutadi/u);
+    expect((await readAutoConfig())!.armed).toBe(true);
+    // Any super_admin may switch it off.
+    expect(await agentCommand(otherId, 'auto off')).toContain('o‘chirildi');
+    expect((await readAutoConfig())!.armed).toBe(false);
+  });
+});
+
+describe('the page’s panel (web-page `autoPanel`)', () => {
+  it('today’s counts and the sent replies with his 👎 — the reader sees the chats he may read', async () => {
+    const sent = await drafted();
+    const paused = await drafted({ peer: PEER2 });
+    await stopAuto(ownerId, paused.id);
+    expect(await pressDueAutos(DUE)).toBe(1);
+    // An ineligible one: left to him.
+    await drafted({ peer: PEER2, now: new Date(T0.getTime() + 60_000), steps: [compose('Tekshirib aytaman.', { category: 'complaint' })] });
+    const panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel.config.armed).toBe(true);
+    expect(panel.armedByName).toBe(`Auto egasi ${SUFFIX}`);
+    expect(panel.today).toEqual({ sent: 1, paused: 1, waiting: 0, left: 1 });
+    const row = panel.sent.find((r) => r.draftId === sent.id)!;
+    expect(row).toMatchObject({ managerUserId: ownerId, text: REPLY, bad: false, chatHref: `/suhbatlar/${clientId}` });
+    await autoFeedback(ownerId, sent.id);
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.sent.find((r) => r.draftId === sent.id)!.bad).toBe(true);
+    // A reader who sees only his own account's chats is shown none of another's.
+    const own = await autoPanel({ id: otherId, roles: [], permissions: new Set<string>() }, ownerId);
+    expect(own!.sent.some((r) => r.draftId === sent.id)).toBe(false);
+  });
+
+  it('«kutmoqda» is a LIVE reply counting down — one the chat already retired is his', async () => {
+    const d = await drafted();
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, paused: 0, waiting: 1, left: 0 });
+    // Retired under the waiting row (the sweep would call it gone at its due time).
+    await db.update(agentDrafts).set({ status: 'superseded' }).where(eq(agentDrafts.id, d.id));
+    expect((await verdictOf(d.id))!.state).toBe('waiting');
+    expect((await autoPanel(actorOf(ownerId), ownerId))!.today).toEqual({ sent: 0, paused: 0, waiting: 0, left: 1 });
+  });
+});
+
 describe('one migration behind — today’s behaviour', () => {
+  it('no panel, no status line, «/agent auto» says «yangilanmagan», a card with no timer', async () => {
+    __pretendAgentAutoBehind();
+    try {
+      const d = await drafted();
+      expect((await payloadOf(d.id)).autoAt).toBeNull();
+      expect(keys(await payloadOf(d.id))[0]).toEqual(['✅ Yuborish', '✏️ O‘zgartirish']);
+      expect(await autoPanel(actorOf(ownerId), ownerId)).toBeNull();
+      expect(await agentCommand(ownerId, '')).not.toContain('O‘zi yuborish');
+      expect(await agentCommand(ownerId, 'auto on')).toBe('Server hali yangilanmagan — o‘zi yuborish yo‘q.');
+      expect(await agentPress(ownerId, 'a', d.id, undefined)).toEqual({ toast: 'Server hali yangilanmagan — o‘zi yuborish yo‘q.' });
+    } finally {
+      __forgetAgentAutoReady();
+    }
+  });
+
   it('no verdict row, an ordinary card, nothing pressed, ⏸ says «yangilanmagan», his ✅ as before', async () => {
     __pretendAgentAutoBehind();
     try {

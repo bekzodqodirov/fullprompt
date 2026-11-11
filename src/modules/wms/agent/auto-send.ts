@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
 import { agentAutoChats, agentAutoConfig, agentAutoVerdicts, agentConfig, agentDrafts, agentRuns, tgAccounts } from '../../platform/db/schema';
@@ -7,6 +7,7 @@ import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
+import { AUTO_DISARM_WORDS } from './auto-card';
 import { AUTO_SEND_CATEGORIES, autoVerdict, type AutoGateInput, type AutoRefusal } from './auto-gate';
 import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
@@ -356,6 +357,18 @@ export async function autoCardStateFor(draftId: string): Promise<AutoCardState |
   return row ? cardStateOf(row) : null;
 }
 
+/** `autoCardStateFor` for a page of cards in ONE query (web-page `webDrafts`) — absent = the ordinary card. */
+export async function autoCardStatesFor(draftIds: readonly string[]): Promise<Map<string, AutoCardState>> {
+  const out = new Map<string, AutoCardState>();
+  if (draftIds.length === 0 || !(await agentAutoReady())) return out;
+  const rows = await db.select().from(agentAutoVerdicts).where(inArray(agentAutoVerdicts.draftId, [...draftIds]));
+  for (const row of rows) {
+    const state = cardStateOf(row);
+    if (state) out.set(row.draftId, state);
+  }
+  return out;
+}
+
 /**
  * The verdict row, written by `createDraft` INSIDE its transaction right after
  * the draft — in a savepoint, so a refused insert costs the plan and never the
@@ -457,6 +470,13 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     return 'gone';
   }
   const verdict = autoVerdict(await autoFactsFor(d, { at: now, now }));
+  // A card too long to show its whole reply draws no ✅ (card-io `renderDraftCardFull`): what a person may
+  // not press from it, the machine does not press either — said as «too long», the reply being the part cut.
+  if (verdict.eligible) {
+    const { renderDraftCardFull } = await import('./card-io');
+    if (renderDraftCardFull(d, null).tooLong) verdict.reasons.push('too_long');
+    verdict.eligible = verdict.reasons.length === 0;
+  }
   if (!verdict.eligible) {
     await db
       .update(agentAutoVerdicts)
@@ -579,16 +599,10 @@ export const AUTO_STEP_DOWN = { windowMs: 7 * 86_400_000, chatOffMs: 30 * 86_400
 
 type StepDownReason = Extract<AutoDisarmReason, 'feedback' | 'blocked' | 'bot_question'>;
 
-const STEP_DOWN_WORDS: Record<StepDownReason, string> = {
-  feedback: '7 kun ichida o‘zi ketgan 2 ta javobga «👎 Xato edi» bosildi',
-  blocked: 'o‘zi javob yuborilgan mijoz akkauntni bloklagan',
-  bot_question: '7 kun ichida o‘zi javob olgan 2 ta mijoz «botmisiz?» deb so‘radi',
-};
-
-/** Pure: the alarm a step-down raises — the reason, what stays, and that re-arming is his. No customer in it. */
+/** Pure: the alarm a step-down raises — the reason (auto-card's one map), what stays, and that re-arming is his. No customer in it. */
 export function autoDisarmAlarmText(reason: StepDownReason): string {
   return (
-    `⚠️ AI o‘zi yuborishi o‘chirildi. Sabab: ${STEP_DOWN_WORDS[reason]}.\n` +
+    `⚠️ AI o‘zi yuborishi o‘chirildi. Sabab: ${AUTO_DISARM_WORDS[reason]}.\n` +
     `AI qoralama yozishda davom etadi — har bir javobni siz ✅ bilan yuborasiz. ` +
     `Qayta yoqish faqat sizning bosishingiz bilan.`
   );

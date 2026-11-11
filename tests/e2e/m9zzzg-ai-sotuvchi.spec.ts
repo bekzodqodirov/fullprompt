@@ -14,7 +14,10 @@ import postgres from 'postgres';
  *  3. the account holder (the demo seller, configured as the agent's owner —
  *     a door that is a fact in agent_config, not a role) is offered the tab,
  *     sees the ✅, is told in words that the agent is off, and ❌ retires
- *     the draft;
+ *     the draft; on the settings tab «🤖 O‘zi yuborish» (0143) offers HIM the
+ *     switch and the four kinds, and its refusal with the agent off is words —
+ *     nothing written, so nothing to put back; the owner (not the holder) is
+ *     shown the same panel with neither;
  *  4. cleanup, a FINAL TEST (#183): agent_config is a singleton
  *     CONFIGURATION row every later spec and the app's sweep read — it is put
  *     back exactly, and the fixture rows are deleted. The same restore runs
@@ -116,6 +119,14 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   // Not his account: he may switch it off, never on.
   await expect(page.getByTestId('agent-on-holder-only')).toBeVisible();
   await expect(page.getByTestId('agent-mode-on')).toHaveCount(0);
+  // «O‘zi yuborish» (0143): read, never armed by him — the kinds are shown and cannot be changed.
+  const auto = page.getByTestId('agent-auto');
+  await expect(auto).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-today')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-holder-only')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-arm')).toHaveCount(0);
+  await expect(auto.getByTestId('agent-auto-category-faq')).toBeDisabled();
+  await expect(auto.getByTestId('agent-auto-categories-save')).toHaveCount(0);
   await fitsThePhone(page);
 });
 
@@ -160,6 +171,26 @@ test('the account holder is offered the page by its door, gets the ✅, and is t
       SELECT status, decided_by FROM agent_drafts WHERE id = ${draftId}`;
     expect(row!.status).toBe('rejected');
     expect(row!.decided_by).not.toBeNull();
+  } finally {
+    await sql.end();
+  }
+});
+
+test('the holder is offered «O‘zi yuborish», and with the agent off is told so in words — nothing written', async ({ page }) => {
+  await login(page, SELLER);
+  await page.goto('/suhbatlar/ai?bolim=sozlamalar');
+  const auto = page.getByTestId('agent-auto');
+  await expect(auto).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-needs-running')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await auto.getByTestId('agent-auto-arm').click();
+  await expect(auto.getByTestId('agent-error')).toBeVisible();
+  await fitsThePhone(page);
+  const sql = database();
+  try {
+    const [row] = await sql<{ armed_at: Date | null }[]>`SELECT armed_at FROM agent_auto_config WHERE id = 1`;
+    expect(row!.armed_at).toBeNull();
   } finally {
     await sql.end();
   }

@@ -9,6 +9,19 @@ import { phoneSiblingClients } from '../client-cabinet/service';
 import { digestBody, hitWords } from './card';
 import { actionLines } from './card-io';
 import { agentRunning, readAgentConfig, setAgentMode, AgentConfigError } from './config';
+import {
+  AUTO_CONFIG_WORDS,
+  AUTO_FEEDBACK_WORDS,
+  STOP_AUTO_WORDS,
+  AutoConfigError,
+  autoFeedback,
+  autoPressedToday,
+  readAutoConfig,
+  setAutoArmed,
+  stopAuto,
+  type AutoConfig,
+} from './auto-send';
+import { autoDisarmWords } from './auto-card';
 import { chatProof } from './context';
 import { decideDraft, submitOwnText, type DecideRefusal, type SupersededDetail } from './decide';
 import { KbError, carriesMoney, moneyIn, personalBitsWithBook, writeKbFact, type KbRefusal } from './kb';
@@ -28,7 +41,7 @@ import type { ComposedAction, DraftPolicyJson } from './types';
  * nothing».
  */
 
-export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z';
+export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f';
 export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code';
 
 export interface PressAnswer {
@@ -256,8 +269,26 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'c':
     case 'b':
       return strangerPress(staffId, op, id, digest);
+    case 'a': {
+      // ⏸ — the machine's press stands down; the card is his again (auto-send `stopAuto` redraws it).
+      const r = await stopAuto(staffId, id);
+      return r.ok ? { toast: AUTO_STOPPED_TOAST } : { toast: STOP_AUTO_WORDS[r.code].slice(0, 190) };
+    }
+    case 'f': {
+      // 👎 — the reply the machine sent was wrong: that chat leaves the layer for 30 days; two in a week
+      // disarm it (its alarm comes to him and every super_admin as a message of its own).
+      const r = await autoFeedback(staffId, id);
+      if (!r.ok) return { toast: AUTO_FEEDBACK_WORDS[r.code].slice(0, 190) };
+      return r.disarmed ? { toast: AUTO_BAD_DISARMED_TOAST } : { toast: AUTO_BAD_TOAST };
+    }
   }
 }
+
+/** ⏸'s answer. */
+export const AUTO_STOPPED_TOAST = '⏸ To‘xtatildi — javobni o‘zingiz hal qilasiz';
+/** 👎's answers — the second one is the step-down (auto-send `autoFeedback`). */
+export const AUTO_BAD_TOAST = '👎 Belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi';
+export const AUTO_BAD_DISARMED_TOAST = '👎 Belgilandi — o‘zi yuborish o‘chirildi (7 kunda 2-marta)';
 
 /**
  * ✏️'s question (2026-10-29): «O‘zim yozaman» and «oddiy xabar bilan» read as
@@ -972,12 +1003,17 @@ export async function queuePull(managerUserId: string, peerId: bigint, requested
     .catch((err: unknown) => logger.warn({ err }, '[agent] pull not queued'));
 }
 
-/** «/agent», «/agent on», «/agent off» — the bot's kill switch (spec §1, his 16 ⭐). */
+/**
+ * «/agent», «/agent on», «/agent off» — the bot's kill switch (spec §1, his 16 ⭐) — and «/agent auto
+ * on|off», «o'zi yuborish»'s own switch (§18.3). The status answer carries the layer's line.
+ */
 export async function agentCommand(staffId: string, arg: string): Promise<string> {
   const actor = await deciderFor(staffId);
   const config = await readAgentConfig();
   if (!config) return "AI sotuvchi hali o'rnatilmagan (baza yangilanmagan).";
   const want = arg.trim().toLowerCase();
+  const [head, sub = ''] = want.split(/\s+/u);
+  if (head === 'auto') return autoCommand(actor, staffId, sub, config.ownerUserId);
   if (want === 'off' || want === 'on') {
     try {
       const r = await setAgentMode(actor, want === 'on' ? 'shadow' : 'off', { actorId: staffId });
@@ -1004,7 +1040,54 @@ export async function agentCommand(staffId: string, arg: string): Promise<string
     }
   }
   const running = agentRunning(config);
-  return running ? '🤖 AI sotuvchi ishlayapti (soya rejimi). O‘chirish: /agent off' : "⏹ AI sotuvchi o'chiq. Yoqish: /agent on";
+  const status = running ? '🤖 AI sotuvchi ishlayapti (soya rejimi). O‘chirish: /agent off' : "⏹ AI sotuvchi o'chiq. Yoqish: /agent on";
+  // One migration behind there is no layer and no line — the answer is today's.
+  const auto = await autoStatusLine(config.ownerUserId);
+  return auto ? `${status}\n${auto}` : status;
+}
+
+/**
+ * «🤖 O‘zi yuborish: yoqilgan (bugun N/30)» or «… o‘chiq» with why it was last
+ * switched off — null when 0143 has not landed. The day's count is the
+ * account's the agent speaks from, the one the per-day cap counts.
+ */
+export async function autoStatusLine(ownerUserId: string | null, now: Date = new Date()): Promise<string | null> {
+  const auto = await readAutoConfig();
+  if (!auto) return null;
+  if (auto.armed) {
+    const today = ownerUserId ? await autoPressedToday(ownerUserId, now) : 0;
+    return `🤖 O‘zi yuborish: yoqilgan (bugun ${today}/${auto.perDay}). O‘chirish: /agent auto off`;
+  }
+  const why = auto.disarmReason ? ` — oxirgi marta: ${autoDisarmWords(auto.disarmReason)}` : '';
+  return `🤖 O‘zi yuborish: o‘chiq${why}. Yoqish: /agent auto on`;
+}
+
+/** «/agent auto on|off» — `setAutoArmed` decides who may (arm: the holder; disarm: he or a super_admin). */
+async function autoCommand(
+  actor: { id: string; roles: readonly string[] },
+  staffId: string,
+  sub: string,
+  ownerUserId: string | null,
+): Promise<string> {
+  if (sub !== 'on' && sub !== 'off') {
+    return (await autoStatusLine(ownerUserId)) ?? AUTO_CONFIG_WORDS.not_ready;
+  }
+  try {
+    const c: AutoConfig = await setAutoArmed(actor, sub === 'on', { actorId: staffId });
+    return sub === 'on' ? autoArmedWords(c) : '⏹ O‘zi yuborish o‘chirildi — har bir javobni o‘zingiz ✅ bilan yuborasiz.';
+  } catch (err) {
+    if (err instanceof AutoConfigError) return AUTO_CONFIG_WORDS[err.code];
+    throw err;
+  }
+}
+
+/** What arming promises — the numbers the press keeps (hold, per day), the night, ⏸. */
+export function autoArmedWords(c: Pick<AutoConfig, 'holdSec' | 'perDay'>): string {
+  const hold = c.holdSec % 60 === 0 ? `${c.holdSec / 60} daqiqa` : `${c.holdSec} soniya`;
+  return (
+    `🤖 O‘zi yuborish yoqildi: mos javob kartasi ${hold} kutadi, keyin o‘zi ketadi — to‘xtatish uchun ⏸ bosing. ` +
+    `Kuniga ko‘pi bilan ${c.perDay} ta, tunda yo‘q; narx, shikoyat va savolli javoblar har doim sizga qoladi.`
+  );
 }
 
 /** A second ✏️ elsewhere: the first draft is no longer being edited — never silently re-targeted (leak-6). */

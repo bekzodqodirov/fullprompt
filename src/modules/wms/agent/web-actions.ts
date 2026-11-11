@@ -23,6 +23,7 @@ import { approveStyleGuide } from './style';
 import { AgentCancelError, cancelAgentReply } from './web-thread';
 import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact } from './web-kb';
 import { AGENT_PAGE } from './web-door';
+import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, stopAuto } from './auto-send';
 
 /**
  * The web half of the AI sotuvchi's decisions (spec §17.7 «Web: the same
@@ -302,4 +303,56 @@ export async function cancelAgentReplyAction(outboxId: string, path: string | nu
   if (done.clientId) revalidatePath(`/admin/clients/${done.clientId}`);
   if (path && path.startsWith('/') && !path.startsWith('//')) revalidatePath(path);
   return { ok: true };
+}
+
+/**
+ * «🤖 O‘zi yuborish» on the page (§18.3) — the same functions the bot's
+ * «/agent auto», ⏸ and 👎 call, which ask their own narrower question (arm:
+ * the account holder; disarm: he or a super_admin; ⏸ and 👎: the draft's
+ * holder). Each refusal comes back as its OWN page code (`auto_…`): the
+ * services share words like `not_found` and `not_account_holder` with the
+ * draft decisions, and the page must not say «qoralama topilmadi» about a
+ * switch.
+ */
+export async function agentAutoArmAction(armed: boolean): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoArmed(actor, armed === true, ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: `auto_${err.code}` };
+      throw err;
+    }
+    revalidatePath('/suhbatlar', 'layout');
+  });
+}
+
+/** Which kinds of reply may go by themselves — the four boxes, replace-all (none disabled, #171). */
+export async function agentAutoCategoriesAction(categories: string[]): Promise<AgentActionResult> {
+  if (!Array.isArray(categories) || categories.some((c) => typeof c !== 'string')) return { ok: false, error: 'auto_bad_value' };
+  return run(async ({ actor, ctx }) => {
+    try {
+      await setAutoCategories(actor, categories, ctx);
+    } catch (err) {
+      if (err instanceof AutoConfigError) return { ok: false, error: `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/** ⏸ on a card counting down — the bot's op `a`. */
+export async function agentAutoStopAction(draftId: string): Promise<AgentActionResult> {
+  return run(async ({ actor }) => {
+    const r = await stopAuto(actor.id, draftId);
+    if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_stop_${r.code}` };
+    revalidatePath('/suhbatlar', 'layout');
+  });
+}
+
+/** 👎 «Xato edi» on a reply the machine sent — the bot's op `f`. */
+export async function agentAutoFeedbackAction(draftId: string): Promise<AgentActionResult> {
+  return run(async ({ actor }) => {
+    const r = await autoFeedback(actor.id, draftId);
+    // Said by the page itself: the row reads «👎», and a step-down shows as the panel's «o‘chiq» with its reason.
+    if (!r.ok) return { ok: false, error: r.code === 'not_ready' ? 'auto_not_ready' : `auto_fb_${r.code}` };
+  });
 }

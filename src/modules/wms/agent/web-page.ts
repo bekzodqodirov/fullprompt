@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
+  agentAutoVerdicts,
   agentDrafts,
   agentOutbox,
   calcRequests,
@@ -18,6 +19,8 @@ import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, digestBody } from './card';
 import { renderDraftCardFull } from './card-io';
+import { autoCountingDown } from './auto-card';
+import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
 import { agentAutoReady, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
@@ -70,6 +73,11 @@ export interface WebDraft {
    * because a card the press retires is gone from the page with the note.
    */
   waitingInChat: number;
+  /**
+   * «O'zi yuborish» counts down on this card (auto-card `autoCountingDown`):
+   * the page draws ⏸ beside ✅, as the bot's keyboard does (payload `autoAt`).
+   */
+  autoWaiting: boolean;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -97,10 +105,11 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   return null;
 }
 
-function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
+function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0, auto: AutoCardState | null = null): WebDraft {
   const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
-  const card = renderDraftCardFull(d, o, [], { surface: 'web' });
+  const card = renderDraftCardFull(d, o, [], { surface: 'web', auto });
+  const sendable = cardDrawsSend({ blocked: d.blocked || card.tooLong, status: d.status, ownText: d.finalBody !== null });
   return {
     id: d.id,
     managerUserId: d.managerUserId,
@@ -120,6 +129,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     kbArmed: kb === 'general_armed',
     kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
+    autoWaiting: autoCountingDown(auto, d, sendable),
   };
 }
 
@@ -223,12 +233,16 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
         .groupBy(agentOutbox.managerUserId, agentOutbox.peerId)
     : [];
   const waitingIn = new Map(waitingCounts.map((w) => [`${w.managerUserId}:${String(w.peerId)}`, Number(w.n)]));
-  const live = liveRows.map((r) => toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0));
+  // Each card's «o'zi yuborish» state in one query — the bot's card and this one say the same line.
+  const autos = await autoCardStatesFor([...liveRows, ...waitingRows].map((r) => r.d.id));
+  const live = liveRows.map((r) =>
+    toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0, autos.get(r.d.id) ?? null),
+  );
   return {
     pending: live.filter((d) => !d.needsOwner),
     questions: live.filter((d) => d.needsOwner),
     remember: rememberRows.map((r) => toWeb(r.d, r.o, r.holder)),
-    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder)),
+    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder, 0, autos.get(r.d.id) ?? null)),
   };
 }
 
@@ -474,4 +488,92 @@ export async function userName(userId: string | null): Promise<string | null> {
   if (!userId) return null;
   const [row] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, userId));
   return row?.name ?? null;
+}
+
+/** One reply «o'zi yuborish» sent — the panel's «Yuborilganlar». */
+export interface AutoSentRow {
+  draftId: string;
+  managerUserId: string;
+  /** «GS777 · Ali Valiyev» — the card's own label for the customer. */
+  customerLabel: string;
+  pressedAt: Date;
+  /** The words that went (`digestBody`). */
+  text: string;
+  /** He said «👎 Xato edi» on it. */
+  bad: boolean;
+  /** Where the conversation is read. */
+  chatHref: string | null;
+}
+
+/** The «🤖 O‘zi yuborish» panel on the settings tab (§18.3, his answer of 2026-11-11). */
+export interface AutoPanel {
+  config: AutoConfig;
+  armedByName: string | null;
+  /**
+   * Today (Tashkent) on the agent's account, by the reply drafts its runs wrote:
+   * sent by the machine, stopped by his ⏸, still counting down, and every
+   * other one — left to him (not eligible, refused at the press, decided by
+   * him before the timer).
+   */
+  today: { sent: number; paused: number; waiting: number; left: number };
+  sent: AutoSentRow[];
+}
+
+const AUTO_SENT_SHOWN = 20;
+
+/**
+ * What the panel reads — null when 0143 has not landed (the page is then
+ * exactly today's). The counts are the AGENT's account's, the one the layer
+ * speaks from; the sent replies are listed only where the reader may read the
+ * chat (`draftsSeenBy`, K10).
+ */
+export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, now = new Date()): Promise<AutoPanel | null> {
+  const config = await readAutoConfig();
+  if (!config) return null;
+  const dayStart = tashkentDayStart(tashkentDay(now));
+  const [counts, rows, armedByName] = await Promise.all([
+    ownerUserId
+      ? db
+          .select({
+            sent: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'pressed')::int`,
+            paused: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'stopped' AND ${agentAutoVerdicts.outcome} = 'pause')::int`,
+            // Counting down means a LIVE reply: a row whose draft the chat retired waits only for the sweep to
+            // call it gone (auto-send `pressOne`), and is his already.
+            waiting: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} IN ('waiting', 'pressing') AND ${agentDrafts.status} = 'pending')::int`,
+            total: sql<number>`count(*)::int`,
+          })
+          .from(agentAutoVerdicts)
+          .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+          .where(and(eq(agentAutoVerdicts.managerUserId, ownerUserId), gte(agentAutoVerdicts.createdAt, dayStart)))
+      : Promise.resolve([]),
+    db
+      .select({ v: agentAutoVerdicts, d: agentDrafts })
+      .from(agentAutoVerdicts)
+      .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+      .where(and(eq(agentAutoVerdicts.state, 'pressed'), draftsSeenBy(viewer)))
+      .orderBy(desc(agentAutoVerdicts.pressedAt))
+      .limit(AUTO_SENT_SHOWN),
+    userName(config.armedBy),
+  ]);
+  const c = counts[0];
+  const n = (x: number | undefined) => Number(x ?? 0);
+  return {
+    config,
+    armedByName,
+    today: {
+      sent: n(c?.sent),
+      paused: n(c?.paused),
+      waiting: n(c?.waiting),
+      left: Math.max(0, n(c?.total) - n(c?.sent) - n(c?.paused) - n(c?.waiting)),
+    },
+    sent: rows.map(({ v, d }) => ({
+      draftId: d.id,
+      managerUserId: d.managerUserId,
+      customerLabel: ((d.policy ?? {}) as { card?: { customerLabel?: string } }).card?.customerLabel ?? '—',
+      pressedAt: v.pressedAt ?? v.createdAt,
+      text: digestBody(d),
+      bad: v.feedback === 'bad',
+      chatHref: chatHrefOf(d),
+    })),
+  };
 }

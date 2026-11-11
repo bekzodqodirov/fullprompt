@@ -390,7 +390,7 @@ export type BotCallback =
   | { kind: 'calc_undo'; tag: string }
   /**
    * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
-   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z), a
+   * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z a f), a
    * calculation request (p) or a tray rule (n k x c b); the digest rides only
    * on ✅ and names what the card SHOWED, so a press on a card that has since
    * changed is refused (leak-3). `ag:` collides with nothing: `a:` is
@@ -398,8 +398,11 @@ export type BotCallback =
    */
   | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
 
-/** ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed · ↩ not that client · 📌 general · 👤 own · ✖ skip. */
-export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z'] as const;
+/**
+ * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
+ * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0143) · 👎 it sent wrong (0143).
+ */
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f'] as const;
 export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
@@ -891,13 +894,26 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
         [{ text: '✖ Saqlamaslik', callback_data: `ag:z:${id}` }],
       ];
     }
-    if (payload.live !== true) return null;
+    if (payload.live !== true) {
+      // A reply «o'zi yuborish» sent (0143): its one press is «👎 Xato edi», once — then none.
+      if (payload.autoSent === true && payload.autoBad !== true) return [[{ text: '👎 Xato edi', callback_data: `ag:f:${id}` }]];
+      return null;
+    }
     const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
+    const send = payload.blocked !== true && digest ? digest : null;
+    const lastRow: BotButton[] = [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }];
+    // «O'zi yuborish» counting down (0143, payload `autoAt`): ⏸ first — the press that keeps the reply his —
+    // then the same ✅ with its digest, named for what it does now. A card with no ✅ never counts down.
+    if (typeof payload.autoAt === 'string' && payload.autoAt !== '') {
+      const first: BotButton[] = [{ text: '⏸ To‘xtat', callback_data: `ag:a:${id}` }];
+      if (send) first.push({ text: '✅ Hozir yubor', callback_data: `ag:s:${id}:${send}` });
+      return [first, [{ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` }], lastRow];
+    }
     const first: BotButton[] = [];
-    if (payload.blocked !== true && digest) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${digest}` });
+    if (send) first.push({ text: '✅ Yuborish', callback_data: `ag:s:${id}:${send}` });
     // His own word for it (2026-10-29): «O‘zim yozaman» read as «I will answer the customer myself».
     first.push({ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` });
-    return [first, [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }]];
+    return [first, lastRow];
   }
   const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;
   // A purged answer card (`live: false`) offers no price: its link went with the chat.

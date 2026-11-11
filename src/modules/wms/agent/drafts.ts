@@ -4,6 +4,7 @@ import { agentDrafts, agentOutbox, calcOffers, calcRequests, notifications } fro
 import { logger } from '../../platform/logger';
 import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../../platform/notifications/staff';
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
+import { autoPayload } from './auto-card';
 import { recordAutoVerdictInTx, type AutoPlan } from './auto-send';
 import { cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
@@ -149,7 +150,16 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     // A card too long to show what ✅ approves draws no ✅ — the text says so, and the keyboard agrees (card-io).
     const { text, tooLong } = renderDraftCardFull(row, null, [], { auto });
     const sendable = cardDrawsSend({ blocked: row.blocked || tooLong, status: row.status, ownText: false });
-    const extra = cardExtra({ id: row.id, body: row.proposedBody ?? '', actions: n.actions, blocked: !sendable, live: true, kind: row.kind });
+    const extra = cardExtra({
+      id: row.id,
+      body: row.proposedBody ?? '',
+      actions: n.actions,
+      blocked: !sendable,
+      live: true,
+      kind: row.kind,
+      // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
+      auto: autoPayload(auto, row, sendable),
+    });
     const old = live ? await cardRowFor(tx, live.id) : null;
     if (old) {
       // The old card becomes the new one: its row now names the new draft,

@@ -6,6 +6,7 @@ import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf, STAFF_TEXT_CAP } from '../../platform/notifications/staff-html';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
+import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
 import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
 import { readAgentConfig } from './config';
@@ -361,7 +362,9 @@ export function renderDraftCardFull(
   const input = (sendable: boolean): CardInput => ({
     customerLabel: card.customerLabel,
     title: TITLES[d.kind] ?? TITLES.reply!,
-    statusLine: statusLine(d, o, opts, sendable),
+    // «O'zi yuborish» folded in (auto-card `withAutoLine`): the timer while it counts down, the reason it
+    // did not go, ⏸, the layer's «off», «🤖 O‘zi yuborildi» on the approved line and his 👎.
+    statusLine: withAutoLine(statusLine(d, o, opts, sendable), opts.auto, d, sendable),
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
     notes: [...(p.notes ?? []), ...extraNotes],
@@ -377,8 +380,11 @@ export function renderDraftCardFull(
   });
   const drawn = (tooLong: boolean) => cardDrawsSend({ blocked: d.blocked || tooLong, status: d.status, ownText: d.finalBody !== null });
   const first = fitCard(input(drawn(false)), live);
-  // The fit took the ✅ away: the editing line above it must not still offer one.
-  return first.tooLong && drawn(false) && d.status === 'editing' ? fitCard(input(false), live) : first;
+  // The fit took the ✅ away: the editing line above it must not still offer one — and a card counting
+  // down to the machine's press must not promise to send what it cannot show (auto-card `autoCountingDown`).
+  return first.tooLong && drawn(false) && (d.status === 'editing' || autoCountingDown(opts.auto, d, true))
+    ? fitCard(input(false), live)
+    : first;
 }
 
 /** The card's text alone — `renderDraftCardFull` for a reader that draws no buttons. */
@@ -425,13 +431,24 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const ownReply = d.status === 'taken_over' && !d.decidedBy;
   const humanPauseMin = ownReply ? ((await readAgentConfig())?.humanPauseMin ?? null) : null;
   const humanWroteAt = ownReply ? await humanReplyAt(d) : null;
-  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt });
+  // «O'zi yuborish»'s state — every redraw keeps the timer, the reason or the 👎 (null one migration behind).
+  const { autoCardStateFor } = await import('./auto-send');
+  const auto = await autoCardStateFor(draftId);
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
   const sendable = cardDrawsSend({ blocked: d.blocked || tooLong, status: d.status, ownText: d.finalBody !== null });
   const extra = {
-    ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: !sendable, live, kind: d.kind }),
+    ...cardExtra({
+      id: d.id,
+      body,
+      actions: (d.actions ?? []) as unknown[],
+      blocked: !sendable,
+      live,
+      kind: d.kind,
+      auto: autoPayload(auto, d, sendable),
+    }),
     // After he answered the agent's question himself and it went out, the
     // card offers to REMEMBER the answer (spec §7.1.4) — once.
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',

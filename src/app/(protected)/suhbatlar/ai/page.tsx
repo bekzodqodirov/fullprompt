@@ -8,6 +8,7 @@ import { cancellable } from '@/modules/wms/agent/web-thread';
 import {
   agentRules,
   agentToday,
+  autoPanel,
   openCalcsFor,
   ownerAccountState,
   ownerCandidates,
@@ -17,6 +18,7 @@ import {
   webDrafts,
   webKbFacts,
   webStats,
+  type AutoPanel,
   type WebDraft,
   type WebViewer,
 } from '@/modules/wms/agent/web-page';
@@ -25,6 +27,9 @@ import { AgentCancelButton } from '@/components/agent-cancel-button';
 import { ClearPauseButton } from '@/components/clear-pause-button';
 import { agentSendAtLabel } from '@/components/agent-waiting-bubble';
 import {
+  AutoArmButtons,
+  AutoBadButton,
+  AutoCategoriesForm,
   AviaRateForm,
   DraftActions,
   FactEditor,
@@ -40,6 +45,7 @@ import {
 import {
   AGENT_SECTIONS,
   PAUSE_KIND_KEYS,
+  autoDisarmKey,
   SCOPE_KEYS,
   SECTION_KEYS,
   categoryKey,
@@ -109,6 +115,7 @@ function DraftCard({ d, viewerId, t }: { d: WebDraft; viewerId: string; t: T }) 
         holderName={d.holderName}
         canSend={pageDrawsSend(d)}
         waitingInChat={d.waitingInChat}
+        autoWaiting={d.autoWaiting}
       />
     </article>
   );
@@ -379,13 +386,15 @@ async function SettingsSection({
   owner: Awaited<ReturnType<typeof ownerAccountState>>;
 }) {
   const superAdmin = actor.roles.includes('super_admin');
-  const [today, calcs, mismatch, stats, ownerName, candidates] = await Promise.all([
+  const [today, calcs, mismatch, stats, ownerName, candidates, auto] = await Promise.all([
     agentToday(config),
     openCalcsFor(config.ownerUserId),
     tariffMismatchSeen(),
     webStats(),
     userName(config.ownerUserId),
     superAdmin ? ownerCandidates() : Promise.resolve([]),
+    // Null one migration behind 0143: no panel, and the page is today's.
+    autoPanel(actor, config.ownerUserId),
   ]);
   const pct = (rate: number | null) => (rate === null ? '—' : `${Math.round(rate * 100)} %`);
   const holder = actor.id === config.ownerUserId;
@@ -427,6 +436,17 @@ async function SettingsSection({
           </p>
         )}
       </section>
+
+      {auto && (
+        <AutoSection
+          t={t}
+          auto={auto}
+          viewerId={actor.id}
+          holder={holder}
+          mayDisarm={holder || superAdmin}
+          running={running}
+        />
+      )}
 
       {!config.sessionExclusiveAt && config.ownerUserId && (
         <section className="card space-y-2" data-testid="agent-session">
@@ -503,6 +523,7 @@ async function SettingsSection({
         <Line label={t('statsSentEdited')} value={stats.sentEdited} />
         <Line label={t('statsRejected')} value={stats.rejected} />
         <Line label={t('statsHimself')} value={stats.answeredHimself} />
+        {stats.autoSent > 0 && <Line label={t('statsAutoSent')} value={stats.autoSent} />}
         <p className="pt-1 text-xs text-ink-500">
           {t('statsBeside', {
             superseded: stats.superseded,
@@ -552,5 +573,113 @@ async function SettingsSection({
       </section>
 
     </div>
+  );
+}
+
+/** «2 daqiqa» / «90 soniya» — the hold as he reads it. */
+function holdWords(t: T, sec: number): string {
+  return sec % 60 === 0 ? t('autoHoldMin', { n: sec / 60 }) : t('autoHoldSec', { n: sec });
+}
+
+/**
+ * «🤖 O‘zi yuborish» (docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11): a
+ * layer over the shadow mode — whether it is armed and since when, why it was
+ * last switched off, the numbers the press keeps, which kinds go by
+ * themselves, today's count, and what the machine sent (with his 👎). Every
+ * number is `autoPanel`'s, i.e. the rows the press and the gate write.
+ */
+function AutoSection({
+  t,
+  auto,
+  viewerId,
+  holder,
+  mayDisarm,
+  running,
+}: {
+  t: T;
+  auto: AutoPanel;
+  viewerId: string;
+  holder: boolean;
+  mayDisarm: boolean;
+  running: boolean;
+}) {
+  const c = auto.config;
+  const off = autoDisarmKey(c.disarmReason);
+  return (
+    <section className="card space-y-2" data-testid="agent-auto">
+      <h2 className="section-title">🤖 {t('autoTitle')}</h2>
+      <p className="text-xs text-ink-500">{t('autoHint')}</p>
+      <Line
+        label={t('autoStateLabel')}
+        value={
+          <span data-testid="agent-auto-state">
+            {c.armed
+              ? `✅ ${t('autoArmedValue', { when: c.armedAt ? tashkentWhen(c.armedAt) : '—', name: auto.armedByName ?? '—' })}`
+              : `⏹ ${t('autoOffValue')}`}
+          </span>
+        }
+        tone={c.armed ? 'text-good' : 'text-ink-700'}
+      />
+      {!c.armed && off && c.disarmedAt && (
+        <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="agent-auto-last-off">
+          {t('autoLastOff', { reason: t(off as 'autoOff.manual'), when: tashkentWhen(c.disarmedAt) })}
+        </p>
+      )}
+      <p className="text-xs text-ink-500">
+        {t('autoNumbers', {
+          hold: holdWords(t, c.holdSec),
+          perDay: c.perDay,
+          maxChars: c.maxChars,
+          confidence: Math.round(c.minConfidence * 100),
+        })}
+      </p>
+      {!c.armed && holder && !running && (
+        <p className="text-xs font-semibold text-warn" data-testid="agent-auto-needs-running">
+          {t('autoNeedsRunning')}
+        </p>
+      )}
+      <AutoArmButtons armed={c.armed} canArm={holder} canDisarm={mayDisarm} />
+      <div className="border-t border-line pt-2">
+        <AutoCategoriesForm current={c.categories} editable={holder} />
+      </div>
+      <p className="border-t border-line pt-2 text-sm [overflow-wrap:anywhere]" data-testid="agent-auto-today">
+        {t('autoToday', { sent: auto.today.sent, paused: auto.today.paused, left: auto.today.left })}
+        {auto.today.waiting > 0 ? ` · ${t('autoTodayWaiting', { n: auto.today.waiting })}` : ''}
+      </p>
+      <div className="space-y-2 border-t border-line pt-2" data-testid="agent-auto-sent">
+        <h3 className="text-sm font-bold">{t('autoSentTitle')}</h3>
+        {auto.sent.length === 0 ? (
+          <p className="text-sm text-ink-500" data-testid="agent-auto-sent-empty">
+            {t('autoSentEmpty')}
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {auto.sent.map((row) => (
+              <li key={row.draftId} className="space-y-1 rounded-lg bg-surface-sunken p-2" data-testid="agent-auto-sent-row">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-xs text-ink-500">
+                  <span className="min-w-0 font-semibold text-ink-700 [overflow-wrap:anywhere]">{row.customerLabel}</span>
+                  <span>{tashkentWhen(row.pressedAt)}</span>
+                </div>
+                <p className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{row.text}</p>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {row.bad ? (
+                    <span className="font-semibold text-bad" data-testid="agent-auto-marked-bad">
+                      👎 {t('autoBadGiven')}
+                    </span>
+                  ) : (
+                    row.managerUserId === viewerId && <AutoBadButton draftId={row.draftId} />
+                  )}
+                  {row.chatHref && (
+                    <Link href={row.chatHref} className="ml-auto font-semibold text-brand-700 underline">
+                      {t('openChat')}
+                    </Link>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
