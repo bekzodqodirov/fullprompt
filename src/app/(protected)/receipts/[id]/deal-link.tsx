@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useTransition } from 'react';
+import { useEffect, useState, useTransition } from 'react';
 import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -51,6 +51,15 @@ export function DealLink({
   const [dealId, setDealId] = useState(current?.id ?? '');
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Arrived from the new-deal form (`?bitim=1`): a server action's redirect
+  // cannot carry `#bitim`, so the block brings itself into view and wears
+  // the same ring the anchor gives it.
+  const [arrived, setArrived] = useState(false);
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('bitim') !== '1') return;
+    setArrived(true);
+    document.getElementById('bitim')?.scrollIntoView({ block: 'start' });
+  }, []);
 
   return (
     // `id` = RECEIPT_DEAL_ANCHOR: the seller's «🔗 Bitim biriktirish» button
@@ -60,7 +69,7 @@ export function DealLink({
     <div
       id="bitim"
       data-testid="receipt-deal-block"
-      className="card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500"
+      className={`card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500 ${arrived ? 'ring-2 ring-brand-500' : ''}`}
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-semibold">{t('deal')}: </span>

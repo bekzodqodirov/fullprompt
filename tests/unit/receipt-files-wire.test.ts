@@ -92,7 +92,12 @@ describe('the card', () => {
   it('the button’s anchor and the deal block’s id are one word', () => {
     expect(RECEIPT_DEAL_ANCHOR).toBe('bitim');
     expect(read('src/app/(protected)/receipts/[id]/deal-link.tsx')).toContain(`id="${RECEIPT_DEAL_ANCHOR}"`);
-    expect(read('src/app/(protected)/bitimlar/actions.ts')).toContain('redirect(`/receipts/${receiptId}#bitim`);');
+    // …and the way BACK from the new-deal form is a query the block reads: a
+    // server action's redirect drops a `#fragment` (the browser spec found
+    // the card opening at its top).
+    expect(read('src/app/(protected)/bitimlar/actions.ts')).toContain('redirect(`/receipts/${receiptId}?bitim=1`);');
+    expect(read('src/app/(protected)/bitimlar/actions.ts')).not.toContain('#bitim`)');
+    expect(read('src/app/(protected)/receipts/[id]/deal-link.tsx')).toContain("get('bitim') !== '1'");
   });
 
   it('a file sent through the bot is stored as a PAPER, and its delete rule is stated', () => {

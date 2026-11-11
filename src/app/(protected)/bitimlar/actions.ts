@@ -158,8 +158,11 @@ export async function createDealAction(
   });
   if (state.ok && id && receiptId && linked) {
     revalidatePath(`/receipts/${receiptId}`);
-    // Back to the cargo the deal was opened for, at its deal block.
-    redirect(`/receipts/${receiptId}#bitim`);
+    // Back to the cargo the deal was opened for, at its deal block. A QUERY
+    // and not `#bitim`: a server action's redirect drops the fragment (found
+    // in the browser — the page opened at its top), so the block scrolls
+    // itself into view when it reads this (deal-link.tsx).
+    redirect(`/receipts/${receiptId}?bitim=1`);
   }
   // Straight to the card: a deal that was just created is a deal somebody is
   // about to price, and the list is one more tap in the way.

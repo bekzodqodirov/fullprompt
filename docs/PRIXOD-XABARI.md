@@ -624,8 +624,9 @@ Questions (⭐ = built):
 - «+ Yangi bitim ochish» is drawn for a prixod with no deal, for whoever may open one (`mayEditDealTerms` —
   never the VED), and **carries the prixod**: `/bitimlar/new?client=<id>&prixod=<receipt>` → the form says
   «Prixod N shu bitimga biriktiriladi» → the create action links it through `linkReceipt` right after the
-  deal exists and returns to `/receipts/<id>#bitim`. A refused link does not un-create the deal: its own card
-  opens instead.
+  deal exists and returns to `/receipts/<id>?bitim=1` — a QUERY the block reads and scrolls itself into
+  view by, because a server action's redirect drops a `#fragment` (found by the browser spec: the card
+  opened at its top). A refused link does not un-create the deal: its own card opens instead.
 
 ### G.F Tests
 

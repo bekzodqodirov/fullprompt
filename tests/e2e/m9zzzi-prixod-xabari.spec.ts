@@ -87,9 +87,17 @@ test('«+ Yangi bitim ochish»: the deal is born with the prixod on it, and the 
   await expect(page.getByTestId('deal-form-receipt')).toContainText(number);
   await page.locator('input[name="title"]').fill(`Xabar bitimi ${run.marker}`);
   await page.getByTestId('deal-form').locator('button[type="submit"]').click();
-  await expect(page).toHaveURL(new RegExp(`/receipts/${receiptId}#bitim$`));
+  // A query, not a fragment: a server action's redirect drops `#bitim`, so
+  // the block brings itself into view — which is what is asserted.
+  await expect(page).toHaveURL(new RegExp(`/receipts/${receiptId}\\?bitim=1$`));
   const block = page.getByTestId('receipt-deal-block');
   await expect(block.locator('a[href^="/bitimlar/"]').first()).toHaveText(/^B-\d+$/);
+  await expect
+    .poll(async () => {
+      const box = await block.boundingBox();
+      return box !== null && box.y >= 40 && box.y < page.viewportSize()!.height * 0.6;
+    })
+    .toBe(true);
   // A prixod that has its deal is not offered another.
   await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
   await fits(page);
