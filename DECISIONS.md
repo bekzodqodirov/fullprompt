@@ -8371,7 +8371,10 @@ vanished in «aralash» and NET weights were not said (B9). 41 red proofs by str
 (6 for #1679, 35 here) and one in the browser (B5: the old behaviour rebuilt, the spec red at «3 / 20»); one
 stayed GREEN first — the name is cut by code points, which already keeps an emoji whole, so removing
 `toWellFormed()` proved nothing until a name that ARRIVES with half a pair was added. STATED: two tabs, or two
-people, on one document are still two paid readings (no server-side guard); cooling is per process.
+people, on one document are still two paid readings (no server-side guard); cooling is per process. The
+browser spec still does not drive «Almashtirish», «Qayta o'qish», the nothing-ticked start of a several-lot
+prixod, the ≈ dollars line or the dialog at 1280 px, and its 502 step asserts only that a refusal is shown
+(B12 d-e) — the rules behind them are unit-tested, the screens themselves are looked at only at 360 px.
 
 **#1681 — PROCESS.** (1) **A second caller of a model is written from the NEWEST caller's as-built block,
 not from memory of the idiom** — the call's shape has a home (`docs/FAYL-OQISH.md` §0.3) and T1 was drafted
