@@ -763,6 +763,7 @@
     "badValue": "Invalid value — enter a date (YYYY-MM-DD) or an instant (YYYY-MM-DDTHH:MM+05:00); empty = off. Nothing was saved.",
     "badValueReasons": "Invalid value — enter at least one reason («;»-separated, each at most 80 characters). Nothing was saved.",
     "badValueWhole": "Invalid value — type a whole number (for example 300); 0 means off. Nothing was saved.",
+    "badValueOrigins": "Invalid value — write the site addresses in full (each starting with https://…), several separated by a space or a comma; empty = no site is allowed. Nothing was saved.",
     "aiSpentToday": "Today: {used} / {limit}",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 days ≈ ${usd}",

@@ -385,13 +385,14 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo‘q». Shunda 
 1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
 2. `git pull`, keyin `docker compose build migrate`, so‘ng
    `docker compose --profile https --profile telegram up -d --build`.
-   (Bu raundda **tg-listen** kodi o‘zgarmagan — uni alohida qayta qurish shart emas; bot `app` ichida ishlaydi va
-   u bilan birga yangilanadi.)
+   (Bu buyruq **tg-listen**ni ham qayta quradi — alohida hech narsa qilish shart emas; bot `app` ichida
+   ishlaydi va u bilan birga yangilanadi.)
 3. Sonni o‘qing — **145**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
 4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
-5. Ko‘zga ko‘rinadigan belgi: istalgan mashina → «Bojxona» bo‘limida «Bugun AI: N / 300 marta» satri turadi
-   (satr yo‘q bo‘lsa — migratsiya o‘tmagan). Xuddi shu satr Boshqaruv → Sozlamalar’da ikkala limit qutisi
-   ostida ham bor — u yerda taxminiy dollar ham ko‘rinadi.
+5. Ko‘zga ko‘rinadigan belgi: **Boshqaruv → Sozlamalar** → `tnved_ai_daily_limit` qutisi ostida «Bugun AI:
+   N / 300 marta» satri turadi (satr yo‘q bo‘lsa — migratsiya o‘tmagan); u yerda taxminiy dollar ham
+   ko‘rinadi. Xuddi shu satr mashinaning «Bojxona» bo‘limida ham bor — lekin faqat ichida yuki bor mashinada
+   (bo‘sh mashinada u chizilmaydi, shuning uchun belgini Sozlamalar’dan qarang).
 6. Sinov (bitta prixodda, 10 daqiqa):
    - Telegrami ulangan mijozga yangi prixod qiling — 10 daqiqadan keyin mijozga boradigan xabar tagida
      «✅ To‘g‘ri / ❌ Xato bor» chiqishi kerak; «✅» bosilsa — «Sklad qoldig‘i»da shu lot ✅ bo‘ladi;

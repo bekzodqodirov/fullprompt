@@ -1,7 +1,7 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { isServerBehind } from '../../platform/db/errors';
-import { ANALYST_MODEL, approxMicroUsd, microUsdToUsd, type ModelTokens } from '../../platform/ai/model';
+import { ANALYST_MODEL, approxMicroUsd, type ModelTokens } from '../../platform/ai/model';
 import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
 import type { CompanyMoneySight } from '../finance/scope';
@@ -130,6 +130,12 @@ export async function reservePress(input: {
 
 export type PressOutcome = 'ok' | 'failed' | 'no_answer';
 
+/** A token count as the ledger stores it: a whole number ≥ 0, whatever it was handed. */
+function tokenCount(value: unknown): number {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 /**
  * Close a reserved press with what happened. Never throws: a ledger that
  * cannot be written must not cost the answer it was measuring. Only a row
@@ -137,16 +143,30 @@ export type PressOutcome = 'ok' | 'failed' | 'no_answer';
  */
 export async function settlePress(id: string, result: { outcome: PressOutcome; usage?: ModelTokens | null }): Promise<void> {
   try {
+    // The counts are cleaned ONCE and both the stored figures and the price
+    // are made from the cleaned ones. Priced from the raw usage, a count that
+    // was not a number made the UPDATE itself throw (22P02 on the integer, or
+    // 23514 on a negative price) — swallowed below — and the press stayed
+    // `reserved`: counted against the day, never billed (the as-built review).
+    const model = result.usage?.model ?? ANALYST_MODEL;
+    const inputTokens = tokenCount(result.usage?.inputTokens);
+    const outputTokens = tokenCount(result.usage?.outputTokens);
     // Priced NOW, by the model the call was made with; null = no list price
     // known for it, and the row then says so by being NULL.
-    const micro = result.usage ? approxMicroUsd([result.usage]) : null;
+    const micro = result.usage ? approxMicroUsd([{ model, inputTokens, outputTokens }]) : null;
+    // The call's MICRO-dollars, as dollars at six decimals: the sum stays
+    // exact until a screen rounds it. The model module's cent helper is the
+    // SCREEN's rounding — frozen through it, a short answer was stored as
+    // 0.000000 (not NULL, so not even «narxi noma'lum») and every row was
+    // rounded before it was summed.
+    const frozen = micro === null ? null : (micro / 1_000_000).toFixed(6);
     await db.execute(sql`
       UPDATE ai_calc_passes
          SET outcome = ${result.outcome},
-             model = ${result.usage?.model ?? ANALYST_MODEL},
-             input_tokens = ${Math.max(0, Math.round(result.usage?.inputTokens ?? 0))},
-             output_tokens = ${Math.max(0, Math.round(result.usage?.outputTokens ?? 0))},
-             cost_usd = ${micro === null ? null : microUsdToUsd(micro).toFixed(6)}::numeric
+             model = ${model},
+             input_tokens = ${inputTokens},
+             output_tokens = ${outputTokens},
+             cost_usd = ${frozen}::numeric
        WHERE id = ${id}::uuid AND outcome = 'reserved'
     `);
   } catch (err) {

@@ -763,6 +763,7 @@
     "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi.",
     "badValueReasons": "Qiymat noto‘g‘ri — kamida bitta sabab yozing («;» bilan, har biri 80 belgidan oshmasin). Hech narsa saqlanmadi.",
     "badValueWhole": "Qiymat noto‘g‘ri — butun son yozing (masalan 300); 0 — o‘chirilgan. Hech narsa saqlanmadi.",
+    "badValueOrigins": "Qiymat noto‘g‘ri — sayt manzillarini to‘liq yozing (har biri https://… bilan boshlansin), bir nechtasini bo‘sh joy yoki vergul bilan ajrating; bo‘sh = hech qaysi saytga ruxsat yo‘q. Hech narsa saqlanmadi.",
     "aiSpentToday": "Bugun: {used} / {limit} marta",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 kun ≈ ${usd}",

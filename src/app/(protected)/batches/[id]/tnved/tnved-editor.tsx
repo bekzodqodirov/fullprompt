@@ -61,8 +61,19 @@ export function TnvedEditor({
   const tc = useTranslations('common');
   const router = useRouter();
   const [rows, setRows] = useState(initial);
-  /** The count beside the buttons: the page's reading, then each press's own answer. */
+  /**
+   * The count beside the buttons: the page's reading, then each press's own
+   * answer — and the PAGE's again whenever a refresh hands a new one (after
+   * «Saqlash», the 🔄, any action of the tab). Seeded once, the line kept the
+   * first load's figure: a colleague's presses, a limit the admin had just
+   * raised and the dollars never arrived until the tab was reloaded.
+   */
   const [today, setToday] = useState(aiToday);
+  const [todaySeed, setTodaySeed] = useState(aiToday);
+  if (todaySeed !== aiToday) {
+    setTodaySeed(aiToday);
+    setToday(aiToday);
+  }
   /**
    * What a save has just written, until the refresh brings the rows back.
    * «Changed» is «differs from what the server holds», and for the moment

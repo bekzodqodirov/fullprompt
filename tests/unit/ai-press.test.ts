@@ -93,7 +93,12 @@ describe('the ledger’s shape', () => {
 
   it('the dollars are frozen at SETTLE and only summed at read — a model change must not re-price last month', () => {
     const settle = press.slice(press.indexOf('export async function settlePress('), press.indexOf('export interface PressToday'));
-    expect(settle).toContain('approxMicroUsd([result.usage])');
+    // Priced from the CLEANED counts — the raw usage made the UPDATE itself throw on a bad count.
+    expect(settle).toContain('approxMicroUsd([{ model, inputTokens, outputTokens }])');
+    expect(settle).not.toContain('approxMicroUsd([result.usage])');
+    // …and frozen as MICRO-dollars at six decimals, never through the screen's rounding to the cent.
+    expect(settle).toContain('(micro / 1_000_000).toFixed(6)');
+    expect(press).not.toContain('microUsdToUsd(');
     expect(settle).toContain('cost_usd = ${');
     const today = press.slice(press.indexOf('export async function pressToday('));
     expect(today).not.toContain('approxMicroUsd(');
@@ -123,6 +128,29 @@ describe('the limit’s own box — 0 means «off for the whole company», so a 
       const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { settings: Record<string, string> };
       expect(bundle.settings.badValueWhole, locale).toBeTruthy();
     }
+  });
+
+  it('EVERY validated setting refuses in its own words — the date’s sentence is the date’s alone', () => {
+    // `badValue` asks for a date: it was drawn under the website-origins list too (a list of web
+    // addresses refused with «YYYY-MM-DD yozing»). Derived: a validator added tomorrow is red here
+    // until its sentence exists in four languages.
+    const page = strip(readFileSync('src/app/(protected)/admin/settings/page.tsx', 'utf8'));
+    const map = page.slice(page.indexOf('const BAD_VALUE_TEXT'), page.indexOf('};', page.indexOf('const BAD_VALUE_TEXT')));
+    for (const key of Object.keys(SETTING_VALIDATORS)) {
+      if (key === 'unpriced_gate_since') continue; // the one that IS a date
+      const named = new RegExp(`\\b${key}: '(badValue\\w+)',`).exec(map);
+      expect(named, `${key} has a validator and no sentence of its own`).not.toBeNull();
+      for (const locale of ['ru', 'uz', 'zh-CN', 'en']) {
+        const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { settings: Record<string, string> };
+        expect(bundle.settings[named![1]!], `${locale} · ${named![1]}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('«Bugun AI» on the Bojxona tab follows the page’s reading — a refresh replaces what a press answered', () => {
+    const editor = strip(readFileSync('src/app/(protected)/batches/[id]/tnved/tnved-editor.tsx', 'utf8'));
+    expect(editor).toContain('const [todaySeed, setTodaySeed] = useState(aiToday);');
+    expect(editor).toMatch(/if \(todaySeed !== aiToday\) \{\s+setTodaySeed\(aiToday\);\s+setToday\(aiToday\);\s+\}/);
   });
 
   it('the bill is shown where the limit is CHANGED — the count for the page’s readers, the dollars only through the sight', () => {
@@ -166,13 +194,86 @@ describe('the LAST migration that re-makes the ledger’s CHECKs still knows eve
   const files = readdirSync(dir)
     .filter((name) => /^\d{4}_.*\.sql$/.test(name))
     .sort();
+  /**
+   * A migration's SQL with its `--` comments gone (the statement-breakpoint
+   * marker is kept): a comment naming a kind inside the statement must not
+   * satisfy a fence about the statement.
+   */
+  const sqlOf = (name: string) =>
+    readFileSync(`${dir}/${name}`, 'utf8')
+      .split('\n')
+      .filter((line) => !/^\s*--(?!> statement-breakpoint)/.test(line))
+      .join('\n');
+  /** `ADD CONSTRAINT <name>`, quoted or not — 0119 re-made both CHECKs unquoted. */
+  const remakes = (constraint: string) => new RegExp(`ADD\\s+CONSTRAINT\\s+"?${constraint}"?\\b`, 'i');
   const lastWith = (constraint: string) => {
-    const hit = [...files].reverse().find((name) => new RegExp(`ADD CONSTRAINT "${constraint}"`).test(readFileSync(`${dir}/${name}`, 'utf8')));
+    const hit = [...files].reverse().find((name) => remakes(constraint).test(sqlOf(name)));
     expect(hit, constraint).toBeDefined();
-    const text = readFileSync(`${dir}/${hit!}`, 'utf8');
-    const at = text.lastIndexOf(`ADD CONSTRAINT "${constraint}"`);
-    return { file: hit!, body: text.slice(at, text.indexOf('--> statement-breakpoint', at) === -1 ? undefined : text.indexOf('--> statement-breakpoint', at)) };
+    const text = sqlOf(hit!);
+    const at = [...text.matchAll(new RegExp(remakes(constraint).source, 'gi'))].at(-1)!.index!;
+    const end = text.indexOf('--> statement-breakpoint', at);
+    return { file: hit!, body: text.slice(at, end === -1 ? undefined : end) };
   };
+
+  it('the finder sees a re-make however it is spelled — and is blind to comments', () => {
+    // 0119 re-made both CHECKs with the names UNQUOTED: a later migration written in that spelling
+    // would have left 0144 as «the last» and this fence green.
+    expect(remakes('ai_calc_passes_kind_check').test(sqlOf('0119_price_icons.sql'))).toBe(true);
+    expect(remakes('ai_calc_passes_anchor_check').test(sqlOf('0119_price_icons.sql'))).toBe(true);
+    expect(sqlOf('0144_tarkib_takliflar.sql')).not.toMatch(/^\s*-- /m);
+    expect(sqlOf('0144_tarkib_takliflar.sql')).toContain('--> statement-breakpoint');
+  });
+
+  /**
+   * What 0144 added to the ledger is 0144's: a later migration that adds it
+   * again dies on every database that has 0144 — and since drizzle runs all
+   * pending migrations in ONE transaction, nothing of that deploy lands. The
+   * other session's draft (docs/SAKKIZ-R5.md) adds `lot_id`, `cost_usd` and
+   * the cost CHECK under the same names; a sentence in a handoff is not a
+   * fence, this is.
+   */
+  const reAdds = (sqlText: string): string[] => {
+    const found: string[] = [];
+    for (const column of ['lot_id', 'batch_id', 'outcome', 'cost_usd']) {
+      if (new RegExp(`ALTER\\s+TABLE\\s+"?ai_calc_passes"?\\s+ADD\\s+COLUMN\\s+"?${column}"?\\b`, 'i').test(sqlText)) found.push(`column ${column}`);
+    }
+    for (const constraint of ['ai_calc_passes_cost_check', 'ai_calc_passes_outcome_check']) {
+      const add = remakes(constraint).exec(sqlText);
+      if (!add) continue;
+      const dropped = new RegExp(`DROP\\s+CONSTRAINT\\s+IF\\s+EXISTS\\s+"?${constraint}"?\\b`, 'i').exec(sqlText);
+      if (!dropped || dropped.index > add.index) found.push(`constraint ${constraint}`);
+    }
+    return found;
+  };
+
+  it('no migration after 0144 adds again what 0144 owns on the ledger', () => {
+    const later = files.filter((name) => name > '0144_tarkib_takliflar.sql');
+    for (const name of later) expect(reAdds(sqlOf(name)), name).toEqual([]);
+    // The rule itself, on the draft it exists for (its own `lot_id` line removed, as the handoff first said):
+    const draft = [
+      'ALTER TABLE "ai_calc_passes" ADD COLUMN "cost_usd" numeric(12,6);',
+      '--> statement-breakpoint',
+      'ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_cost_check" CHECK ("cost_usd" IS NULL OR "cost_usd" >= 0);',
+    ].join('\n');
+    expect(reAdds(draft)).toEqual(['column cost_usd', 'constraint ai_calc_passes_cost_check']);
+    // …and what such a migration may do instead: no column, and the CHECK dropped first.
+    const fine = [
+      'ALTER TABLE "ai_calc_passes" DROP CONSTRAINT IF EXISTS "ai_calc_passes_cost_check";',
+      '--> statement-breakpoint',
+      'ALTER TABLE ai_calc_passes ADD CONSTRAINT ai_calc_passes_cost_check CHECK (cost_usd IS NULL OR cost_usd >= 0);',
+    ].join('\n');
+    expect(reAdds(fine)).toEqual([]);
+    // 0144 itself is the owner: it adds all four, and its price column refuses NaN.
+    expect(reAdds(sqlOf('0144_tarkib_takliflar.sql')).sort()).toEqual([
+      'column batch_id',
+      'column cost_usd',
+      'column lot_id',
+      'column outcome',
+      'constraint ai_calc_passes_cost_check',
+      'constraint ai_calc_passes_outcome_check',
+    ]);
+    expect(sqlOf('0144_tarkib_takliflar.sql')).toContain(`"cost_usd" <> 'NaN'::numeric`);
+  });
   const ledger = strip(readFileSync('src/modules/wms/calc/ai-press.ts', 'utf8'));
   const kinds = [...ledger.matchAll(/^\s+(\w+): '(\w+_ai_daily_limit)',$/gm)].map((m) => m[1]!);
 

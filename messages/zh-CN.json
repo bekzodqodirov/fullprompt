@@ -763,6 +763,7 @@
     "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。",
     "badValueReasons": "值无效——请至少填写一个原因（用「;」分隔，每个不超过80个字符）。未保存任何内容。",
     "badValueWhole": "值无效 — 请输入整数（例如 300）；0 表示关闭。未保存任何内容。",
+    "badValueOrigins": "值不正确 — 请完整填写网站地址（每个以 https://… 开头），多个用空格或逗号分隔；留空 = 不允许任何网站。未保存任何内容。",
     "aiSpentToday": "今天：{used} / {limit} 次",
     "aiSpentUsd": "≈ ${usd}",
     "aiSpentMonth": "30 天 ≈ ${usd}",

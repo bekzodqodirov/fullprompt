@@ -234,6 +234,52 @@ describe('what a day cost — shown only to a reader of the company’s money', 
     await db.execute(sql`UPDATE ai_calc_passes SET cost_usd = 10 WHERE id = ${one.id}::uuid`);
   });
 
+  it('the frozen price is the call’s MICRO-dollars — a call under half a cent is not $0, and rows are summed before anything is rounded', async () => {
+    // The as-built review (L4-1). The row was priced with the SCREEN's rounding (to the cent) and only
+    // then written at six decimals: a short answer froze as 0.000000 — not NULL, so it was not even
+    // «narxi noma'lum» — and every row was rounded before it was summed.
+    const sight = companyMoneySight(reader as never);
+    const start = await pressToday('tnved', sight);
+    await setLimit('tnved', (await used('tnved')) + 3);
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const pass = await reservePress({ kind: 'tnved', staffId, lotId: LOT.money, batchId: null });
+      if (!pass.ok) throw new Error('reservation refused');
+      // 600 in + 200 out on the staff model: $2 and $10 per million → 1 200 + 2 000 = 3 200 micro-dollars.
+      await settlePress(pass.id, { outcome: 'ok', usage: { model: STAFF_MODEL, inputTokens: 600, outputTokens: 200 } });
+      ids.push(pass.id);
+    }
+    const frozen = (await db.execute(sql`
+      SELECT cost_usd::text AS cost FROM ai_calc_passes WHERE id IN (${ids[0]!}::uuid, ${ids[1]!}::uuid, ${ids[2]!}::uuid)
+    `)) as unknown as { cost: string }[];
+    expect(frozen.map((row) => row.cost)).toEqual(['0.003200', '0.003200', '0.003200']);
+    const after = await pressToday('tnved', sight);
+    expect(Math.round((after.usd30! - start.usd30!) * 1_000_000)).toBe(9600);
+  });
+
+  it('a count that is not a number of tokens never strands the press: it is settled, and never priced «NaN»', async () => {
+    // L4-6. The stored counts were clamped and the PRICE was made from the raw ones: NaN → the UPDATE
+    // itself threw (swallowed) and the press stayed «reserved» — counted against the day, never billed.
+    await setLimit('tnved', (await used('tnved')) + 2);
+    for (const usage of [
+      { model: ANALYST_MODEL, inputTokens: Number.NaN, outputTokens: 10 },
+      { model: ANALYST_MODEL, inputTokens: -100_000, outputTokens: 0 },
+    ]) {
+      const pass = await reservePress({ kind: 'tnved', staffId, lotId: LOT.money, batchId: null });
+      if (!pass.ok) throw new Error('reservation refused');
+      await settlePress(pass.id, { outcome: 'ok', usage });
+      const [row] = (await db.execute(sql`
+        SELECT outcome, input_tokens, output_tokens, cost_usd::text AS cost FROM ai_calc_passes WHERE id = ${pass.id}::uuid
+      `)) as unknown as { outcome: string; input_tokens: number; output_tokens: number; cost: string | null }[];
+      expect(row!.outcome, JSON.stringify(usage)).toBe('ok');
+      expect(Number(row!.input_tokens)).toBe(0);
+      expect(row!.cost).not.toBe('NaN');
+      expect(Number(row!.cost ?? 0)).toBeGreaterThanOrEqual(0);
+    }
+    // …and the column itself refuses the one value `>= 0` lets through (round 110's rule for money).
+    await expect(db.execute(sql`UPDATE ai_calc_passes SET cost_usd = 'NaN'::numeric WHERE lot_id = ${LOT.money}::uuid`)).rejects.toThrow();
+  });
+
   it('a model nobody has priced is COUNTED as unpriced — never summed as $0, never a guess', async () => {
     const sight = companyMoneySight(reader as never);
     const before = await pressToday('tnved', sight);

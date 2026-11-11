@@ -11,8 +11,11 @@ import { companyMoneySight } from '@/modules/wms/finance/scope';
  * unpriced-cargo ban and asks for a DATE — under the agent's reason list that
  * sentence would send the owner looking for a calendar.
  */
-const BAD_VALUE_TEXT: Partial<Record<SettingKey, 'badValueReasons' | 'badValueWhole'>> = {
+const BAD_VALUE_TEXT: Partial<Record<SettingKey, 'badValueReasons' | 'badValueWhole' | 'badValueOrigins'>> = {
   agent_no_contact_reasons: 'badValueReasons',
+  // A list of web addresses refused with «write a date» (the as-built review
+  // found it on this door; it predates the round).
+  lead_assign_origins: 'badValueOrigins',
   tnved_ai_daily_limit: 'badValueWhole',
   tarkib_ai_daily_limit: 'badValueWhole',
 };

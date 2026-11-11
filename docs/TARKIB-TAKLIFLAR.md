@@ -642,10 +642,19 @@ does. Where a paragraph above says otherwise, it is wrong.
   noma'lum»), never summed as $0.
 - **The handoff to the other session's R5** is a fence, not a sentence: `tests/unit/ai-press.test.ts` finds
   the LAST migration that re-makes `ai_calc_passes_kind_check` / `_anchor_check` and requires every pressed
-  kind in both. R5's migration must therefore: delete only its own `ADD COLUMN lot_id`; re-make both CHECKs as
-  the UNION (its kinds + `tnved`, `tarkib`, with their `lot_id IS NOT NULL` arms); drop its second
-  `recordAiPass({kind: 'tnved'})` (a press is already one reserved-then-settled row); filter its continuity
-  pick to the calc kinds.
+  kind in both — the finder is spelling-tolerant (0119 re-made both with UNQUOTED names) and blind to `--`
+  comments. A second fence: **no migration after 0144 adds again what 0144 owns** (`lot_id`, `batch_id`,
+  `outcome`, `cost_usd`; the cost and outcome CHECKs unless dropped first). R5's migration must therefore:
+  delete its own `ADD COLUMN lot_id` AND `ADD COLUMN cost_usd`; re-make `ai_calc_passes_cost_check` only behind
+  `DROP CONSTRAINT IF EXISTS`; re-make both kind/anchor CHECKs as the UNION (its kinds + `tnved`, `tarkib`,
+  with their `lot_id IS NOT NULL` arms); drop its second `recordAiPass({kind: 'tnved'})` (a press is already
+  one reserved-then-settled row); filter its continuity pick to the calc kinds; and read `cost_usd IS NULL` as
+  «not priced yet» only on rows that were answered — a press that got no answer is NULL by design. The same
+  note stands in `docs/SAKKIZ-R5.md` beside the draft's own lines.
+- **The price is the call's MICRO-dollars** at six decimals (`(micro / 1_000_000).toFixed(6)`), from counts
+  cleaned once (`tokenCount`): the screen's rounding to the cent froze a short answer as 0.000000 and rounded
+  every row before it was summed; a count that was not a number made the UPDATE itself throw and left the
+  press `reserved`. The column refuses NaN (`<> 'NaN'::numeric`, round 110's rule for money).
 
 ### 7.2 T3 — the Bojxona 🤖
 
@@ -721,11 +730,14 @@ Every reading is one `tarkib` ledger row.
 1. Backup (verified non-zero), merge, `git pull`, `docker compose build migrate app`, `docker compose run --rm
    migrate`, `docker compose up -d`. **The ledger must read 145** (`0144_tarkib_takliflar`); then
    `/api/version` must show today's build.
-2. The visible oracle that 0144 landed: a truck's «Bojxona» tab shows «Bugun AI: N / 300». One migration
+2. The visible oracle that 0144 landed: **Boshqaruv → Sozlamalar**, under `tnved_ai_daily_limit` — the line
+   «Bugun AI: N / 300». (The same line is on a truck's «Bojxona» tab, but only on a truck that has cargo: the
+   editor it lives in is not drawn for an empty one, so «no line there» proves nothing.) One migration
    behind, the 🤖 answers «server hali yangilanmagan» and the ✅/❓ chips go on working as before.
-3. `tg-listen` does NOT need a rebuild for this round (it never starts the worker fleet and imports none of
-   the changed modules at run time). The bot runs inside `app`: the standard step restarts it, and the ✅/❌
-   handler arrives with it.
+3. `tg-listen` LOADS several of the changed modules (settings, the mute and night lists, labels, the schema),
+   but nothing it RUNS changed — the additions are two notification types it never emits, labels, three
+   setting defaults it never reads. The standard command rebuilds it with the rest anyway. The bot runs inside
+   `app`: the standard step restarts it, and the ✅/❌ handler arrives with it.
 4. `migrate` seeds the three settings as ROWS, so a default changed in code later never reaches his server:
    the limits and the switch are his to type on Boshqaruv → Sozlamalar.
 5. **`client_confirm_on_receipt` ships ON**: from the first prixod after the deploy every customer with a

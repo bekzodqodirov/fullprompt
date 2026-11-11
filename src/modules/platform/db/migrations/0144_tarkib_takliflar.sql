@@ -60,8 +60,10 @@ ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_outcome_check"
 -- screen as a count), or a press that got no answer.
 ALTER TABLE "ai_calc_passes" ADD COLUMN "cost_usd" numeric(12,6);
 --> statement-breakpoint
+-- `<> 'NaN'` is the only comparison postgres has that excludes it: NaN answers
+-- TRUE to `>= 0`, and one such row turns every sum on the screen into «≈ $NaN».
 ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_cost_check"
-  CHECK ("cost_usd" IS NULL OR "cost_usd" >= 0);
+  CHECK ("cost_usd" IS NULL OR ("cost_usd" >= 0 AND "cost_usd" <> 'NaN'::numeric));
 --> statement-breakpoint
 ALTER TABLE "ai_calc_passes" DROP CONSTRAINT IF EXISTS "ai_calc_passes_kind_check";
 --> statement-breakpoint

@@ -4032,12 +4032,12 @@ export const aiCalcPasses = pgTable(
      * the two PRESSED kinds 'tnved' (the Bojxona 🤖) and 'tarkib' (a tarkib read
      * from the client's file), which stand on a lot and no request.
      *
-     * Their three columns — `lot_id`, `batch_id`, `outcome` — exist in the
-     * table and are NOT declared here, on purpose: `recordAiPass` inserts
-     * through this object and swallows its own failure, so a declared column
-     * would be named by every calc bill and lose them all, silently, on a
-     * server one migration behind (#472). `wms/calc/ai-press.ts` reads and
-     * writes them in SQL; tests/unit/takliflar-sql-only.test.ts keeps it so.
+     * Their four columns — `lot_id`, `batch_id`, `outcome`, `cost_usd` —
+     * exist in the table and are NOT declared here, on purpose: `recordAiPass`
+     * inserts through this object and swallows its own failure, so a declared
+     * column would be named by every calc bill and lose them all, silently,
+     * on a server one migration behind (#472). `wms/calc/ai-press.ts` reads
+     * and writes them in SQL; tests/unit/ai-press.test.ts keeps it so.
      */
     kind: text('kind').notNull(),
     /**
