@@ -47,7 +47,12 @@ vi.mock('@/modules/platform/rbac/authorize', async (original) => {
 });
 /** A server whose migration has not landed (#472) — the last test alone turns it off. */
 const ready = vi.hoisted(() => ({ on: true }));
-vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({ lotChecksReady: async () => ready.on }));
+vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
+  lotChecksReady: async () => ready.on,
+  // 0144's second answer (the client's own ✅/❌ table): there whenever the first is.
+  lotClientConfirmsReady: () => ready.on,
+  clientConfirmsReady: async () => ready.on,
+}));
 
 import { db, pgClient } from '@/modules/platform/db/client';
 import {

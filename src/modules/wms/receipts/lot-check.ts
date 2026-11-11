@@ -8,6 +8,7 @@ import { mayOpenBatchVed } from '../batches/card-door';
 import { lockReceiptShareNoWait } from './grow-lot';
 import {
   checkTermsSql,
+  clientDisputeSql,
   clientHoldsSql,
   lotAskableSql,
   lotCheckStateSql,
@@ -15,7 +16,7 @@ import {
   tarkibStandsSql,
   type LotCheckState,
 } from './lot-check-sql';
-import { lotChecksReady } from './lot-check-ready';
+import { lotChecksReady, lotClientConfirmsReady } from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -69,8 +70,48 @@ export const lotCheckInputSchema = z.object({
    * colleague's confirmation it did not see (`check_changed`).
    */
   seenCheckedAt: z.string().max(64).nullable(),
+  /**
+   * The CLIENT's own answer as the panel drew it (`answered_at::text`, null =
+   * none — 0144). A tick pressed after a ❌ lifts it, so the person must have
+   * SEEN that ❌: an answer that arrived after the page was drawn refuses the
+   * press (`check_changed`). Absent on a page opened before the deploy — the
+   * press is then judged by the two clocks alone.
+   */
+  seenClientAt: z.string().max(64).nullable().optional(),
 });
 export type LotCheckInput = z.infer<typeof lotCheckInputSchema>;
+
+/**
+ * A tick and a client's answer about ONE lot are ordered (0144): whichever
+ * commits second has seen the first. Taken by `checkLot` and by the client's
+ * answer (`client-confirm.ts`) just before each reads the other's row — an
+ * advisory lock of its own, never the lot's or the prixod's, so the client's
+ * press waits behind a colleague's tick for milliseconds and behind nothing
+ * the warehouse holds.
+ */
+export async function lockLotAnswersTx(tx: Tx, lotId: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lotId}`}, 0))`);
+}
+
+/** The client's row on a lot, as the tick needs it: its token, and whether it outranks the standing tick. */
+async function clientAnswerFor(
+  tx: Tx,
+  lotId: string,
+  clientId: string,
+): Promise<{ token: string | null; outranksTick: boolean }> {
+  if (!lotClientConfirmsReady()) return { token: null, outranksTick: false };
+  await lockLotAnswersTx(tx, lotId);
+  const rows = (await tx.execute(sql`
+    SELECT cc.answered_at::text AS token,
+           (cc.verdict = 'no' AND cc.shown_client_id = ${clientId}::uuid
+            AND coalesce(k.checked_at <= cc.answered_at, false)) AS outranks
+      FROM lot_client_confirms cc
+      LEFT JOIN lot_checks k ON k.lot_id = cc.lot_id
+     WHERE cc.lot_id = ${lotId}::uuid
+  `)) as unknown as { token: string; outranks: boolean }[];
+  const row = rows[0];
+  return { token: row?.token ?? null, outranksTick: row?.outranks === true };
+}
 
 export const lotUncheckInputSchema = z.object({
   lotId: z.string().uuid(),
@@ -215,8 +256,15 @@ export async function checkLot(
       prev.seen_name_ru === lot.name_ru &&
       Number(prev.seen_box_count) === lot.box_count &&
       prev.seen_client_id === current.client_id;
-    if (holdsNow && prev.note === note && prev.checked_by === actor.id) return { changed: false };
+    // The client's own answer (0144). A ❌ not older than the standing tick
+    // outranks it (`lotCheckStateSql`, arm 3), so the same press by the same
+    // person is then NOT «already confirmed»: it must write, and its new
+    // `checked_at` is what lifts the ❌. And the press must have SEEN the
+    // answer it lifts.
+    const answer = await clientAnswerFor(tx, lot.id, current.client_id);
+    if (holdsNow && prev.note === note && prev.checked_by === actor.id && !answer.outranksTick) return { changed: false };
     if ((prev?.checked_at ?? null) !== parsed.seenCheckedAt) throw new LotCheckError('check_changed');
+    if (parsed.seenClientAt !== undefined && answer.token !== parsed.seenClientAt) throw new LotCheckError('check_changed');
 
     await tx.execute(sql`
       INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, note, checked_by)
@@ -244,7 +292,11 @@ export async function checkLot(
         [keys.note]: prev?.note ?? null,
       },
       after: {
-        [keys.check]: summary(lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null),
+        // A re-tick past the client's ❌ changes no word of the snapshot —
+        // the History must still show that somebody answered for it.
+        [keys.check]:
+          summary(lot.name_zh, lot.name_ru, lot.box_count, codes.get(current.client_id) ?? null) +
+          (answer.outranksTick ? ' · mijozning ❌ idan keyin qayta tasdiqlandi' : ''),
         [keys.note]: note,
       },
     });
@@ -347,7 +399,18 @@ export interface LotCheckView {
   client: {
     verdict: 'yes' | 'no';
     at: Date;
+    /** `answered_at::text` — the token «E'tirozni yopish» and the tick post back. */
+    token: string;
     holds: boolean;
+    /**
+     * A ❌ that is why the lot reads ❓ right now — computed from the
+     * sentence's own state, never re-derived by a page: this owner's ❌ with
+     * nothing vouching past it. While true the card leads with the ❌ and
+     * draws every ✅ line as history.
+     */
+    vetoes: boolean;
+    /** The answer is the prixod's CURRENT owner's — a previous owner's is nobody's. */
+    ofOwner: boolean;
     /** Who pressed «Mijozdan so'rash»; null = the receipt's own push asked. */
     askedBy: string | null;
   } | null;
@@ -365,6 +428,22 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
   if (ids.length === 0 || !(await lotChecksReady())) return new Map();
   const refs = { lot: sql`l`, receipt: sql`r`, check: sql`lc` };
   const terms = checkTermsSql(refs);
+  // The client's answers only where their table exists (0144, #472): one
+  // migration behind, the card draws the two bases it has always drawn.
+  const withClient = lotClientConfirmsReady();
+  const clientColumns = withClient
+    ? sql`lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
+           lot_client.answered_at::text AS client_token,
+           ${clientHoldsSql(refs)} AS client_holds, ${clientDisputeSql(refs)} AS client_dispute,
+           (lot_client.shown_client_id IS NOT DISTINCT FROM r.client_id) AS client_of_owner,
+           ua.full_name AS client_asked_by`
+    : sql`NULL::text AS client_verdict, NULL::timestamptz AS client_at, NULL::text AS client_token,
+           NULL::boolean AS client_holds, NULL::boolean AS client_dispute, NULL::boolean AS client_of_owner,
+           NULL::text AS client_asked_by`;
+  const clientJoins = withClient
+    ? sql`LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
+      LEFT JOIN users ua ON ua.id = lot_client.asked_by`
+    : sql``;
   const rows = (await exec.execute(sql`
     SELECT l.id AS lot_id,
            ${lotCheckStateSql(refs)} AS state,
@@ -376,15 +455,13 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
            ${terms.count} AS count_ok,
            ${terms.client} AS client_ok,
            lc.note, lc.checked_at::text AS checked_at, u.full_name AS checked_by,
-           lot_client.verdict AS client_verdict, lot_client.answered_at AS client_at,
-           ${clientHoldsSql(refs)} AS client_holds, ua.full_name AS client_asked_by
+           ${clientColumns}
       FROM receipt_lots l
       JOIN receipts r ON r.id = l.receipt_id
       LEFT JOIN lot_checks lc ON lc.lot_id = l.id
       LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
-      LEFT JOIN lot_client_confirms AS lot_client ON lot_client.lot_id = l.id
       LEFT JOIN users u ON u.id = lc.checked_by
-      LEFT JOIN users ua ON ua.id = lot_client.asked_by
+      ${clientJoins}
      WHERE l.id IN (${sql.join(
        ids.map((id) => sql`${id}::uuid`),
        sql`, `,
@@ -404,7 +481,10 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
     checked_by: string | null;
     client_verdict: 'yes' | 'no' | null;
     client_at: string | Date | null;
+    client_token: string | null;
     client_holds: boolean | null;
+    client_dispute: boolean | null;
+    client_of_owner: boolean | null;
     client_asked_by: string | null;
   }[];
   return new Map(
@@ -434,7 +514,12 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
             ? {
                 verdict: row.client_verdict,
                 at: new Date(row.client_at!),
+                token: row.client_token!,
                 holds: row.client_holds === true,
+                // The sentence's arm 5: this owner's ❌, and nothing vouched
+                // past it (the state would be «checked» if anything had).
+                vetoes: row.client_dispute === true && row.state === 'none',
+                ofOwner: row.client_of_owner === true,
                 askedBy: row.client_asked_by,
               }
             : null,

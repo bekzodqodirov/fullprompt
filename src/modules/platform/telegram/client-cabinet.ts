@@ -31,8 +31,9 @@ import {
 import { chatLocaleFor, setChatLocale } from './cabinet-locale';
 import { h } from './format';
 import { cabinetInlineKeyboard, setCabinetMenuButton } from './menu-button';
+import { isConfirmButton, parseConfirmCallback } from './confirm-callback';
 import { adVisitFor, clearAdVisit } from './ad-intake';
-import { editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
+import { editMarkup, editText, quietHour, sendAlbum, sendPhoto, sendText, sendTextBriefRetry, type ChatId } from './send';
 import { isCabinetText, staffForChat } from './staff-bot';
 import { canLogInSql } from '../users/login';
 import { settleWithin } from './lifecycle';
@@ -207,6 +208,13 @@ export function dispatch(what: string, chatId: ChatId, work: () => Promise<unkno
 export async function __dispatchSettled(): Promise<void> {
   while (chains.size > 0) await Promise.all([...chains.values()]);
 }
+
+/**
+ * What a press on the client's ✅ / ❌ came to (0144): the verdict when it was
+ * recorded, else why not — `wms/receipts/client-confirm.ts`'s outcomes plus
+ * the one of our own making.
+ */
+type ConfirmOutcome = 'yes' | 'no' | 'already' | 'stale' | 'unknown' | 'busy' | 'failed';
 
 /** The keyboard this chat is owed — re-derived, never named (round 100, 13A). */
 async function replyKeyboard(chatId: number, locale: string | null) {
@@ -1129,6 +1137,88 @@ export function registerClientCabinet(bot: Bot): void {
     const linked = await clientsForChat(BigInt(chatId));
     if (!linked.length) return;
     dispatch('manager', chatId, () => sendManagers(chatId, linked, chatLocale(linked)));
+  });
+
+  /**
+   * `yt:` — the client's own ✅ / ❌ under a push (0144,
+   * docs/TARKIB-TAKLIFLAR.md §4.4).
+   *
+   * DECIDE, then answer: the toast is the outcome's — «rahmat», «eskirgan»,
+   * «allaqachon» — which `mg`'s answer-first shape cannot give (the house's
+   * other ✅/❌, the staff link, is built the same way). Every path answers
+   * exactly ONCE: a throw is logged and answered in words. What the press
+   * leaves behind — the pressed message without its ✅/❌ row, and the ❌'s
+   * one sentence — goes off the poller through `dispatch`.
+   *
+   * A ❌ gets no toast: its sentence is a MESSAGE (the invitation to say what
+   * is wrong must stay on the screen), and a late press repeats a toast as a
+   * message of its own — the two would say it twice.
+   *
+   * Registered on the PREFIX: a push stays in the chat for ever, so the
+   * buttons of any later grammar's past must still be answered («eskirgan»)
+   * and never left to spin.
+   */
+  bot.callbackQuery(/^yt:/, async (ctx) => {
+    const chatId = ctx.chat?.id ?? ctx.callbackQuery.from.id;
+    const press = parseConfirmCallback(ctx.callbackQuery.data);
+    let locale: string | null = null;
+    let outcome: ConfirmOutcome = 'stale';
+    try {
+      locale = chatLocale(await clientsForChat(BigInt(chatId)));
+      if (press) {
+        const { answerClientAsk } = await import('../../wms/receipts/client-confirm');
+        const answer = await answerClientAsk({ chatId: BigInt(chatId), ...press });
+        outcome = answer.outcome === 'recorded' ? answer.verdict : answer.outcome;
+      }
+    } catch (err) {
+      logger.error({ err, chatId: String(chatId) }, '[cabinet] confirm press failed');
+      outcome = 'failed';
+    }
+    const t = clientLabels(locale);
+    const toastOf: Record<ConfirmOutcome, string | undefined> = {
+      yes: t.confirmThanks,
+      no: undefined,
+      already: t.confirmAlready,
+      // One neutral word for «the facts moved», «not this chat's» and «no
+      // such prixod»: a hand-made button learns nothing from the difference.
+      stale: t.confirmStale,
+      unknown: t.confirmStale,
+      busy: t.confirmFailed,
+      failed: t.confirmFailed,
+    };
+    await answerPress(ctx, toastOf[outcome]);
+
+    // «Busy» and «failed» wrote nothing and may be pressed again: the row stays.
+    const settled = outcome !== 'busy' && outcome !== 'failed';
+    // A ❌ is somebody trying to say something is wrong — also when the
+    // message they pressed it on is out of date (the design judge: «eskirgan»
+    // alone told nobody and took the buttons away).
+    const disputing = press?.verdict === 'no' && (outcome === 'no' || outcome === 'stale');
+    if (!settled) return;
+    const pressed = ctx.callbackQuery.message;
+    dispatch('confirm', chatId, async () => {
+      const rows = (pressed as { reply_markup?: { inline_keyboard?: unknown[][] } } | undefined)?.reply_markup?.inline_keyboard;
+      if (pressed && Array.isArray(rows)) {
+        // The pressed message keeps its Mini App and manager rows; only the
+        // ✅/❌ row goes — it has been answered, or it is about data that moved.
+        const kept = rows
+          .map((row) => (Array.isArray(row) ? row.filter((button) => !isConfirmButton(button)) : []))
+          .filter((row) => row.length > 0);
+        const edit = await editMarkup({
+          chatId,
+          messageId: pressed.message_id,
+          replyMarkup: kept.length > 0 ? { inline_keyboard: kept } : undefined,
+        });
+        if (!edit.ok) logger.warn({ chatId: String(chatId), detail: edit.description }, '[cabinet] confirm row not removed');
+      }
+      if (!disputing) return;
+      // In a chat that is ALSO a staff chat the relay refuses (their words
+      // are the staff bot's business), so «write here» would be a promise
+      // nobody keeps: the short form — and only when something WAS recorded.
+      const staff = await staffForChat(BigInt(chatId));
+      if (staff && outcome !== 'no') return;
+      await sendText({ chatId, html: h(staff ? t.confirmNoted : t.confirmTellUs) });
+    });
   });
 
   /*

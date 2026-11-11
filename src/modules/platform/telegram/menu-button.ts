@@ -1,5 +1,6 @@
 import { logger } from '../logger';
 import { clientLabels } from './client-labels';
+import { confirmCallback, type ConfirmAsk } from './confirm-callback';
 import { botCall } from './send';
 
 /**
@@ -128,12 +129,26 @@ export interface PushKeyboard {
 export function clientPushKeyboard(
   appUrl: string | undefined,
   locale: string | null | undefined,
-  opts: { lotId?: string | null; contact?: boolean } = {},
+  opts: { lotId?: string | null; contact?: boolean; confirm?: ConfirmAsk | null } = {},
 ): PushKeyboard | null {
   const t = clientLabels(locale);
   const rows: PushKeyboard['inline_keyboard'] = [];
   const url = cabinetLotUrl(appUrl, opts.lotId);
   if (url) rows.push([{ text: t.openApp, web_app: { url } }]);
   if (opts.contact !== false) rows.push([{ text: t.contactManager, callback_data: 'mg' }]);
+  // The client's own ✅ / ❌ (0144) — LAST, so the two rows above stay where
+  // every push has always had them. Both buttons or neither: a button whose
+  // data would not parse back is not built (a refused button costs the
+  // message its whole keyboard).
+  if (opts.confirm) {
+    const yes = confirmCallback('yes', opts.confirm);
+    const no = confirmCallback('no', opts.confirm);
+    if (yes && no) {
+      rows.push([
+        { text: t.confirmYes, callback_data: yes },
+        { text: t.confirmNo, callback_data: no },
+      ]);
+    }
+  }
   return rows.length ? { inline_keyboard: rows } : null;
 }

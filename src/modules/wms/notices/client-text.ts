@@ -240,7 +240,7 @@ export interface ReceivedSummary {
  * ago and only now given its owner (unclaimed cargo) → «added to your
  * cabinet», the bar where the cargo really is, and that rung's own sentence.
  */
-export function receivedText(summary: ReceivedSummary, locale?: string | null): string {
+export function receivedText(summary: ReceivedSummary, locale?: string | null, opts: { ask?: boolean } = {}): string {
   const t = clientLabels(locale);
   const step = milestoneOf(summary.stage);
   const fresh = summary.fresh ?? step === 0;
@@ -253,6 +253,10 @@ export function receivedText(summary: ReceivedSummary, locale?: string | null): 
       !fresh ? restOfRung(summary.stage, step, t) : step === 0 ? h(t.pushNextReceived) : '',
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
+    // The client's own ✅ / ❌ (0144): the question is the LAST line, right
+    // above its buttons, and it names what is being confirmed — the lines
+    // above print kilos and cubic metres too, which are not.
+    opts.ask ? [h(t.confirmAskLine)] : null,
   );
 }
 

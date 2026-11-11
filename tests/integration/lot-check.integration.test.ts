@@ -28,8 +28,14 @@ vi.mock('next/cache', async (original) => ({
   revalidatePath: () => {},
 }));
 /** A server whose migration has not landed (#472) — test 18 alone turns it off. */
-const ready = vi.hoisted(() => ({ on: true }));
-vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({ lotChecksReady: async () => ready.on }));
+const ready = vi.hoisted(() => ({ on: true, client: true }));
+vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
+  lotChecksReady: async () => ready.on,
+  // 0144's second answer (the client's own ✅/❌ table): `ready.client = false`
+  // is a deploy whose 0144 did not land while 0122/0123 are live.
+  lotClientConfirmsReady: () => ready.on && ready.client,
+  clientConfirmsReady: async () => ready.on && ready.client,
+}));
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();
   return {
@@ -558,25 +564,68 @@ describe('the document\'s check (his 3a: a lot tarkibi counts)', () => {
 describe('the worklist (his 4a: only cargo standing in China)', () => {
   it('13. cargo in Uzbekistan is never counted; the home count equals a direct count of the same rule', async () => {
     await uncheckLot({ lotId: lot.N }, logist(), ctx(logistId));
+    /*
+     * The rule restated by hand, over the whole database — with the client's
+     * own answers in it since 0144 (the design judge: an oracle that knew two
+     * sources would disagree with the count the day any file left a client's
+     * row on a Chinese shelf, green or red by the order the files happen to
+     * run in). ✅ = a standing tarkib the owner has not rejected the goods of,
+     * or a tick the owner has not said ❌ after, or the owner's own ✅ that
+     * still matches.
+     */
+    const directCount = async (): Promise<number> => {
+      const [direct] = (await db.execute(sql`
+        SELECT count(DISTINCT r.id)::int AS n
+          FROM boxes b
+          JOIN receipt_lots l ON l.id = b.lot_id
+          JOIN receipts r ON r.id = l.receipt_id
+          JOIN warehouses w ON w.id = b.current_warehouse_id
+          LEFT JOIN lot_checks lc ON lc.lot_id = l.id
+          LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
+          LEFT JOIN lot_client_confirms cc ON cc.lot_id = l.id
+         WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
+           AND w.country = 'CN'
+           AND r.client_id IS NOT NULL
+           AND NOT ((lot_tarkib.lot_id IS NOT NULL AND lot_tarkib.seen_box_count = l.box_count
+                     AND lot_tarkib.kg = l.total_weight_kg AND lot_tarkib.m3 = l.total_volume_m3)
+                    AND NOT (coalesce(cc.verdict = 'no' AND cc.shown_client_id = r.client_id, false)
+                             AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key))
+           AND NOT ((lc.lot_id IS NOT NULL AND lc.seen_name_zh = l.product_name_zh
+                     AND lc.seen_name_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
+                     AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id)
+                    AND NOT coalesce(cc.verdict = 'no' AND cc.shown_client_id = r.client_id AND lc.checked_at <= cc.answered_at, false))
+           AND NOT coalesce(cc.verdict = 'yes' AND cc.shown_zh = l.product_name_zh
+                            AND cc.shown_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
+                            AND cc.shown_count = l.box_count AND cc.shown_client_id = r.client_id
+                            AND cc.shown_goods_key IS NOT DISTINCT FROM lot_tarkib.goods_key, false)
+      `)) as unknown as { n: number }[];
+      return Number(direct!.n);
+    };
     const counted = await uncheckedPrixodCount(logist());
-    const [direct] = (await db.execute(sql`
-      SELECT count(DISTINCT r.id)::int AS n
-        FROM boxes b
-        JOIN receipt_lots l ON l.id = b.lot_id
-        JOIN receipts r ON r.id = l.receipt_id
-        JOIN warehouses w ON w.id = b.current_warehouse_id
-        LEFT JOIN lot_checks lc ON lc.lot_id = l.id
-        LEFT JOIN ${lotTarkibJoinSql()} ON lot_tarkib.lot_id = l.id
-       WHERE b.status IN ('in_stock', 'planned', 'loading', 'ready_for_pickup')
-         AND w.country = 'CN'
-         AND r.client_id IS NOT NULL
-         AND NOT (lot_tarkib.lot_id IS NOT NULL AND lot_tarkib.seen_box_count = l.box_count
-                  AND lot_tarkib.kg = l.total_weight_kg AND lot_tarkib.m3 = l.total_volume_m3)
-         AND NOT (lc.lot_id IS NOT NULL AND lc.seen_name_zh = l.product_name_zh
-                  AND lc.seen_name_ru IS NOT DISTINCT FROM NULLIF(l.product_name_ru, '')
-                  AND lc.seen_box_count = l.box_count AND lc.seen_client_id = r.client_id)
-    `)) as unknown as { n: number }[];
-    expect(counted).toBe(Number(direct!.n));
+    expect(counted).toBe(await directCount());
+    // The client's side of the same count: the owner's ❌ after a colleague's
+    // tick puts the prixod on the list, and their ✅ on an unasked lot takes it off.
+    const [k] = await db.select().from(receiptLots).where(eq(receiptLots.id, lot.K));
+    const [kReceipt] = await db.select().from(receipts).where(eq(receipts.id, k!.receiptId));
+    const kState = async () => (await lotCheckViewsFor([lot.K])).get(lot.K)!.state;
+    const answer = (verdict: 'yes' | 'no') =>
+      db.execute(sql`
+        INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, chat_id, answered_at)
+        VALUES (${lot.K}::uuid, ${verdict}, ${k!.productNameZh}, ${k!.productNameRu}, ${k!.boxCount}, ${kReceipt!.clientId}::uuid, 1, clock_timestamp())
+        ON CONFLICT (lot_id) DO UPDATE SET verdict = EXCLUDED.verdict, answered_at = EXCLUDED.answered_at
+      `);
+    const before = await kState();
+    try {
+      await answer('no');
+      expect(await kState()).toBe('none');
+      expect(await uncheckedPrixodCount(logist())).toBe(await directCount());
+      await answer('yes');
+      expect(await kState()).toBe('checked');
+      expect(await uncheckedPrixodCount(logist())).toBe(await directCount());
+    } finally {
+      await db.execute(sql`DELETE FROM lot_client_confirms WHERE lot_id = ${lot.K}::uuid`);
+    }
+    expect(await kState()).toBe(before);
     // A scoped reader at the Uzbek warehouse has nothing on the list.
     expect(await uncheckedPrixodCount({ ...logist(), warehouseScoped: true, warehouseIds: [wh.UZ] })).toBe(0);
   });
@@ -762,10 +811,35 @@ describe('a server whose migration has not landed (#472)', () => {
       expect(await uncheckedPrixodCount(logist())).toBeNull();
       expect((await lotCheckViewsFor([lot.K])).size).toBe(0);
       expect(sent.length).toBeGreaterThan(0);
-      expect(sent.filter((q) => /lot_checks|lot_composition/.test(q))).toEqual([]);
+      expect(sent.filter((q) => /lot_checks|lot_composition|lot_client_confirms/.test(q))).toEqual([]);
     } finally {
       spy.mockRestore();
       ready.on = true;
+    }
+  });
+
+  it('23. 0144 alone not landed: every reader runs the sentence that shipped with 0123 — chips drawn, and no statement names the client’s table', async () => {
+    ready.client = false;
+    const sent: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      sent.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    try {
+      const plan = await plannableStock(wh.CN);
+      // The chips are there — the feature that has been live since 0123 is not switched off by a table it never needed.
+      expect(plan.askable).toBe(true);
+      expect(plan.lots.find((l) => l.lotId === lot.K)?.check ?? null).not.toBeNull();
+      expect(await uncheckedPrixodCount(logist())).not.toBeNull();
+      const view = (await lotCheckViewsFor([lot.K])).get(lot.K);
+      expect(view).toBeDefined();
+      expect(view!.client).toBeNull();
+      expect(sent.filter((q) => /lot_checks/.test(q)).length).toBeGreaterThan(0);
+      expect(sent.filter((q) => /lot_client_confirms|lot_client\b/.test(q))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      ready.client = true;
     }
   });
 });
