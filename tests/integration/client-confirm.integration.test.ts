@@ -686,6 +686,47 @@ describe('a press', () => {
     expect(await queued()).toEqual([]);
   }, 20_000);
 
+  it('a ❌ that had to wait for a tick in flight is NEWER than that tick: the colleague could not have seen it, so it vetoes', async () => {
+    // K: the client's ✅ stands and nobody has ticked. A colleague's tick is in flight — it holds the lot's answer lock.
+    expect((await stateOf('K')).state).toBe('checked');
+    const holder = await pgClient.reserve();
+    let pressed: ReturnType<typeof press> | null = null;
+    try {
+      await holder`BEGIN`;
+      await holder`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lot.K}`}, 0))`;
+      // The client presses ❌ now: its transaction BEGINS here and waits for the lock.
+      pressed = press('no');
+      for (let i = 0; i < 40; i += 1) {
+        const [waiting] = await db.execute(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND datname = current_database()
+        `) as unknown as { n: number }[];
+        if (Number(waiting?.n ?? 0) > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      // The tick commits AFTER the ❌'s transaction began — with the transaction's own clock the ❌ would read OLDER than it.
+      await holder`
+        INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at)
+        VALUES (${lot.K}, ${`键盘${RUN}`}, ${`Клавиатура ${RUN}`}, 3, ${client.A}, ${staffId}, clock_timestamp())
+      `;
+      await holder`COMMIT`;
+    } catch (err) {
+      await holder`ROLLBACK`.catch(() => undefined);
+      throw err;
+    } finally {
+      holder.release();
+    }
+    expect((await pressed!).outcome).toBe('recorded');
+    const k = await stateOf('K');
+    expect(k.person).toMatchObject({ holds: true });
+    expect(k.client).toMatchObject({ verdict: 'no', vetoes: true });
+    expect(k.state).toBe('none');
+    // Back to the fixture: no tick on K, the client's ✅ on all three.
+    await db.delete(lotChecks).where(eq(lotChecks.lotId, lot.K));
+    await clearQueued();
+    expect((await press('yes')).outcome).toBe('recorded');
+    for (const key of ['K', 'T', 'S'] as const) expect((await stateOf(key)).state, key).toBe('checked');
+  }, 20_000);
+
   it('a server whose migration has not landed draws nothing and asks nothing (#472)', async () => {
     ready.on = false;
     expect(await lotCheckViewsFor([lot.K])).toEqual(new Map());

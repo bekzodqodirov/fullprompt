@@ -3,6 +3,7 @@ import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { db, pgClient } from '@/modules/platform/db/client';
 import {
+  attachments,
   boxes,
   clientNotices,
   clientTelegramLinks,
@@ -18,13 +19,17 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
+import { getStorage } from '@/modules/platform/files/storage';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
 import { parseConfirmCallback } from '@/modules/platform/telegram/confirm-callback';
-import { htmlToPlain } from '@/modules/platform/telegram/format';
+import { htmlToPlain, visibleLength } from '@/modules/platform/telegram/format';
+import { MAX_CAPTION_CHARS } from '@/modules/platform/telegram/limits';
 import { __resetPresses } from '@/modules/platform/telegram/press';
 import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import { sendDueArrivalNotices } from '@/modules/wms/notices/arrival-jobs';
 import { NOTICE_RECEIVED } from '@/modules/wms/notices/client-claims';
+import { receivedFacts } from '@/modules/wms/notices/client-summary';
+import { receivedText } from '@/modules/wms/notices/client-text';
 import { NOTICE_LOT_ASK, askClientAboutReceipt, clientAskFacts } from '@/modules/wms/receipts/client-confirm';
 import { askFits } from '@/modules/wms/receipts/client-confirm-text';
 import type { LotCheckActor } from '@/modules/wms/receipts/lot-check';
@@ -54,8 +59,10 @@ let h: BotHarness;
 let staffId = '';
 let whId = '';
 const client = { A: '', B: '', S: '' };
-const receipt = { plain: '', tarkib: '' };
+const receipt = { plain: '', tarkib: '', long: '' };
 const lot = { P1: '', P2: '', T: '' };
+const longLots: string[] = [];
+const storedKeys: string[] = [];
 const madeBoxes: string[] = [];
 const saved = { app: process.env.APP_URL, setting: undefined as unknown };
 
@@ -183,7 +190,7 @@ beforeAll(async () => {
     client[key] = row!.id;
     await db.insert(clientTelegramLinks).values({ clientId: row!.id, telegramChatId: BigInt(chat), status: 'linked', linkedAt: new Date() });
   }
-  for (const key of ['plain', 'tarkib'] as const) {
+  for (const key of ['plain', 'tarkib', 'long'] as const) {
     const [row] = await db
       .insert(receipts)
       .values({
@@ -212,8 +219,11 @@ beforeAll(async () => {
 afterAll(async () => {
   await clearState();
   for (const id of Object.values(receipt).filter(Boolean)) await db.delete(clientNotices).where(eq(clientNotices.refId, id));
-  const lotIds = Object.values(lot).filter(Boolean);
+  const lotIds = [...Object.values(lot).filter(Boolean), ...longLots];
   if (lotIds.length > 0) {
+    await db.delete(lotClientConfirms).where(inArray(lotClientConfirms.lotId, lotIds));
+    await db.delete(attachments).where(and(eq(attachments.entityType, 'receipt_lot'), inArray(attachments.entityId, lotIds)));
+    for (const key of storedKeys) await getStorage().delete(key).catch(() => undefined);
     await db.delete(lotChecks).where(inArray(lotChecks.lotId, lotIds));
     await db.delete(lotCompositions).where(inArray(lotCompositions.lotId, lotIds));
     if (madeBoxes.length > 0) await db.delete(boxes).where(inArray(boxes.id, madeBoxes));
@@ -296,6 +306,64 @@ describe('what the sweep sends', () => {
     const push = await pushOf();
     expect(push.text).toContain(`Мышь ${RUN} +1`);
     plain(push);
+  });
+
+  it('the question never costs the PHOTOGRAPH: a caption the extra line would push past Telegram’s limit goes without it — the buttons carry the question', async () => {
+    // Eight lots, the first one photographed; names sized so the push fits a caption and the push PLUS the question does not.
+    const n = 8;
+    for (let i = 0; i < n; i += 1) {
+      const [row] = await db
+        .insert(receiptLots)
+        .values({ receiptId: receipt.long, seq: i + 1, letter: String.fromCharCode(65 + i), productNameZh: `长${i}${RUN}`, productNameRu: `Товар ${i}`, boxCount: 1, totalWeightKg: '10.000', totalVolumeM3: '0.1000' })
+        .returning({ id: receiptLots.id });
+      longLots.push(row!.id);
+      const [box] = await db
+        .insert(boxes)
+        .values({ lotId: row!.id, seqInLot: 1, shortCode: `CL${RUN}${i}`, status: 'in_stock', currentWarehouseId: whId })
+        .returning({ id: boxes.id });
+      madeBoxes.push(box!.id);
+    }
+    const key = `cb-test/${longLots[0]}.jpg`;
+    const bytes = Buffer.from('not-really-a-jpeg-but-bytes');
+    await getStorage().put(key, bytes, 'image/jpeg');
+    storedKeys.push(key);
+    await db.insert(attachments).values({
+      entityType: 'receipt_lot',
+      entityId: longLots[0]!,
+      kind: 'photo',
+      storageKey: key,
+      fileName: 'x.jpg',
+      contentType: 'image/jpeg',
+      sizeBytes: bytes.length,
+      uploadedBy: staffId,
+    });
+    // The pad that lands the plain push just under the limit — found with the push's own renderer.
+    const lengths = async (pad: number) => {
+      for (let i = 0; i < n; i += 1) {
+        await db.update(receiptLots).set({ productNameRu: `Товар ${i} ${'я'.repeat(pad)}` }).where(eq(receiptLots.id, longLots[i]!));
+      }
+      const got = await receivedFacts(client.A, receipt.long);
+      if ('skip' in got) throw new Error(got.skip);
+      const summary = { ...got.summary, clientCode: `AB${RUN}` };
+      return { plain: visibleLength(receivedText(summary, 'uz')), asking: visibleLength(receivedText(summary, 'uz', { ask: true })) };
+    };
+    let fit: { plain: number; asking: number } | null = null;
+    for (let pad = 70; pad >= 0 && !fit; pad -= 1) {
+      const at = await lengths(pad);
+      if (at.plain <= MAX_CAPTION_CHARS && at.asking > MAX_CAPTION_CHARS) fit = at;
+    }
+    expect(fit, 'no name length puts the push between the two limits — re-size the fixture').not.toBeNull();
+
+    await db.insert(clientNotices).values({ clientId: client.A, kind: NOTICE_RECEIVED, refType: 'receipt', refId: receipt.long, sendAfter: new Date('2001-01-01T00:00:00Z'), staffNotifiedAt: new Date() });
+    const mark = h.mark();
+    await sendDueArrivalNotices(SWEEP_AT);
+    const push = sentSince(mark).filter((call) => call.chatId === CHAT_A)[0]!;
+    // Still a PHOTO — the question did not push it into a text message…
+    expect(push.method).toBe('sendPhoto');
+    expect(push.text).not.toContain(clientLabels('uz').confirmAskLine);
+    // …and the ✅ / ❌ are there all the same.
+    expect(push.rows).toHaveLength(3);
+    expect(parseConfirmCallback(String(push.rows[2]![0]!.callback_data))).toMatchObject({ receiptId: receipt.long, verdict: 'yes' });
   });
 
   it('«Mijozdan so‘rash»: the question lists every lot — a tarkib’s goods one per line with their pieces — in the chat’s language, no kilos, ✅ / ❌ under it', async () => {

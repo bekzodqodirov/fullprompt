@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ANALYST_MODEL, MODEL_USD_PER_MTOK, STAFF_MODEL, approxMicroUsd, microUsdToUsd } from '@/modules/platform/ai/model';
 import { limitOf } from '@/modules/wms/calc/ai-press';
+import { SETTING_VALIDATORS, wholeNumberSettingValid } from '@/modules/platform/settings/service';
 
 /**
  * The pressed-AI ledger's pure halves and the shape no behavioural test can
@@ -103,6 +104,32 @@ describe('the ledger’s shape', () => {
     const reserve = press.slice(press.indexOf('export async function reservePress('), press.indexOf('export type PressOutcome'));
     expect(reserve).toContain("if (isServerBehind(err)) return { ok: false, error: 'server_behind' };");
     expect(press).not.toContain('violatedCheck');
+  });
+});
+
+describe('the limit’s own box — 0 means «off for the whole company», so a typo must not BECOME 0', () => {
+  it('whole digits and nothing else; «0» is a real answer', () => {
+    for (const good of ['0', '1', '50', '300', '999999']) expect(wholeNumberSettingValid(good), good).toBe(true);
+    for (const bad of ['', ' ', '1 000', '-5', '3.7', '3,7', '1e3', '0x10', 'abc', '1234567', '+5']) expect(wholeNumberSettingValid(bad), bad).toBe(false);
+  });
+
+  it('both pressed-AI ceilings carry the validator — and their own sentence, not the date’s', () => {
+    expect(SETTING_VALIDATORS.tnved_ai_daily_limit).toBe(wholeNumberSettingValid);
+    expect(SETTING_VALIDATORS.tarkib_ai_daily_limit).toBe(wholeNumberSettingValid);
+    const page = strip(readFileSync('src/app/(protected)/admin/settings/page.tsx', 'utf8'));
+    expect(page).toContain("tnved_ai_daily_limit: 'badValueWhole',");
+    expect(page).toContain("tarkib_ai_daily_limit: 'badValueWhole',");
+    for (const locale of ['ru', 'uz', 'zh-CN', 'en']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { settings: Record<string, string> };
+      expect(bundle.settings.badValueWhole, locale).toBeTruthy();
+    }
+  });
+
+  it('the bill is shown where the limit is CHANGED — the count for the page’s readers, the dollars only through the sight', () => {
+    const page = strip(readFileSync('src/app/(protected)/admin/settings/page.tsx', 'utf8'));
+    expect(page).toContain('const sight = companyMoneySight(actor);');
+    expect(page).toContain('await pressToday(kind, sight).catch(() => null)');
+    expect(page).toContain('data-testid={`setting-spent-${key}`}');
   });
 });
 
