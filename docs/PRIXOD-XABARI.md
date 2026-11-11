@@ -27,7 +27,12 @@ What that binds (the numbers are the eight questions sent with `docs/TARKIB-TAKL
 | R7 | «qolgan savollaringa … taklifing boyicha» | Q1, Q2, Q3, Q5, Q6, Q7 = ⭐ — checked against the shipped code and pinned (§D). |
 
 Migration **0145** `prixod_xabari` (ledger 146). Sections: §A the client's confirmation, §B the summary's AI
-line, §C the one message and its two buttons, §D the pins, §E deploy, §F stated-not-built and questions.
+line, §C the one message and its two buttons, §D the pins, §E deploy, §F stated-not-built and questions,
+**§G as built — BINDING**.
+
+§A-§C below are the design as it went to its three judges (confirm / fold + summary / collector: 9 + 13 + 13
+objections, none refuted). **Where §G says otherwise, §G is what the code does** — it lists every change the
+judges and the build made, section by section.
 
 ## §A. The client's ✅ / ❌ covers name, cartons, kg and m³ (R1)
 
@@ -420,7 +425,8 @@ it is called answered (#1229), and pinned by a test that names it where only rea
 
 `0145_prixod_xabari.sql`, `when` …124, ledger **146**. Additive only:
 
-1. `lot_client_confirms` + `shown_kg numeric(12,3)`, `shown_m3 numeric(12,4)` and their pair / range CHECK.
+1. `lot_client_confirms` + `shown_kg numeric(12,2)`, `shown_m3 numeric(12,3)` — the precision a customer
+   reads (§A.3) — and their pair / range CHECK.
 2. `ai_questions` + `model text`, four token counters (integer, default 0, `>= 0`).
 3. `telegram_chat_waits_kind_check` re-made wider: every kind it holds today plus `receipt_files`.
 
@@ -438,25 +444,196 @@ Deploy check: the count (146) and `/api/version`.
 Stated:
 
 - `DealDeviation` («yuk hisob-kitobga to‘g‘ri kelmadi») stays its own message: it is about the deal's
-  totals, goes to the deal's owner and carries numbers the prixod message does not.
-- A file added through the bot is removed on the web by whoever may edit the prixod (the logist); the
-  seller's card has no ✕.
-- «Fayl qo‘shish» takes photos and documents (what «Hisoblatish» takes); a video or a voice note is
-  answered in words and not stored.
-- Text typed during a file collection is not stored on the prixod.
+  totals, goes to the deal's owner and carries numbers the prixod message does not. So does `ArrivalDiff`
+  (the prixod answered a promise and came out different) — it goes to the promise's author, who is usually
+  the same seller: a second message about one prixod that this round does not fold.
+- The seller's message goes to the CLIENT's seller (and, where nobody is there to hear a deal problem, the
+  admins). The claim door — unclaimed cargo given its owner — tells the new owner's seller alone and alarms
+  nobody, as it always did.
+- «📎 Fayl qo‘shish» stores photos and files (a video sent as a FILE and a GIF are files and are stored); a
+  video, a voice note, a sticker or a place is answered in words and not stored. A typed text is answered in
+  words too, and is not sent to the paid assistant while a collection is live. A caption under a file is not
+  kept.
+- A picture sent through the bot is stored as a FILE on the prixod, never as one of its photos: it is a
+  paper. It opens from the «Fayllar» panel like a PDF, and the tarkib's «🤖 Fayldan to‘ldirish» reads it.
+- A file sent as a REPLY to the «Prixod keldi» message, without pressing the button first, is not attached
+  (the bot answers nothing about it) — the button is the door.
+- Every file is downloaded on the bot's one sequential poller, as «Hisoblatish» files are: an album of
+  thirty holds every customer's cabinet for the sum of its downloads.
+- «🔗 Bitim biriktirish» opened in a browser with no session (Telegram's own, the first time) lands on the
+  login page and then on Home — the address is not carried through a login. True of every «↗️ Ochish»
+  today; the second press works.
 - A `basic` ✅ given before this release keeps vouching for the name and the count; it is not re-asked.
-- The AI line is list prices of answered calls; assistant questions asked before this release have no
-  tokens and are counted as «narxi noma’lum» until they age out of the window.
+- The AI line is list prices, «≈», and is on no screen — the summary is its one place. It does not include
+  the deal card's goods-file import (its AI grouping writes no usage row) or an AI-sotuvchi run whose chat
+  was purged afterwards.
+- Uploads on the SITE still write no History line (`saveAttachment` never has) — «no line» does not mean
+  «nobody added it»; only files sent through the bot are named there.
 
 Questions (⭐ = built):
 
 1. Qayta tortilganda (kg/kub o‘zgarganda) mijozga savol o‘zi qayta borsinmi? ⭐ a) yo‘q — lot «o‘zgardi»
    bo‘lib ❓ ro‘yxatiga tushadi, xodim «Mijozdan so‘rash»ni bosadi · b) ha, o‘zi qayta so‘rasin.
-2. Xodim qo‘ygan ✅ ham kg/kub o‘zgarsa «o‘zgardi» bo‘lsinmi? ⭐ a) yo‘q, faqat mijozning Telegram tasdig‘i ·
-   b) ha.
-3. Sotuvchi prixod kartasida (saytda) ham fayl qo‘sha olsin va o‘zi qo‘shganini o‘chira olsinmi? ⭐ a)
-   hozircha faqat bot orqali qo‘shadi · b) ha, saytda ham.
-4. Fayl qo‘shilganda logist/VED ga xabar borsinmi? ⭐ a) yo‘q, kartada va tarixda ko‘rinadi · b) ha.
-5. «Narxi kelishilmagan / bitimga biriktirilmagan» ogohlantirishi endi «Prixod keldi» xabarining ichida.
-   Bitim narxdan oshib ketganda keladigan alohida xabar («Yuk hisob-kitobga to‘g‘ri kelmadi») ham shu
-   xabarga qo‘shilsinmi? ⭐ a) yo‘q, alohida qolsin · b) ha.
+2. Xodim qo‘ygan ✅ (yoki yozilgan tarkib) ham kg/kub o‘zgarsa «o‘zgardi» bo‘lsinmi? ⭐ a) yo‘q, faqat
+   mijozning Telegram tasdig‘i · b) ha.
+3. Yuk Xitoydan chiqib ketgandan KEYIN (yo‘lda yoki O‘zbekistonda) qayta tortilsa, mijozning ✅ belgisi
+   ham olib tashlansinmi? U paytda mijozdan qayta so‘rab bo‘lmaydi (tugma faqat yuk Xitoyda turganda bor).
+   ⭐ a) ha, olib tashlansin — tasdiq aynan o‘sha og‘irlikka berilgan · b) yo‘q, kg/kub faqat yuk Xitoyda
+   turganida solishtirilsin.
+4. Sotuvchi prixod kartasida (saytda) ham fayl QO‘SHA olsinmi? (O‘zi bot orqali yuborganini kartadan
+   o‘chira oladi — bu qurildi.) ⭐ a) hozircha faqat bot orqali · b) ha, saytda ham.
+5. Fayl qo‘shilganda logist/VED ga xabar borsinmi? ⭐ a) yo‘q, kartada va tarixda ko‘rinadi · b) ha.
+6. «Yuk hisob-kitobga to‘g‘ri kelmadi» (bitim narxidan oshib ketganda) va «va’da qilingandan farq qildi»
+   xabarlari ham «Prixod keldi» xabariga qo‘shilsinmi? ⭐ a) yo‘q, alohida qolsin · b) ha.
+7. Egasiz yuk mijozga biriktirilganda (sotuvchisi yo‘q mijoz bo‘lsa) adminlarga xabar borsinmi? ⭐ a) yo‘q,
+   hozirgidek hech kimga · b) ha.
+
+## §G. As built — BINDING (overrides §A-§C where they differ)
+
+### G.A The client's confirmation
+
+- **A narrower answer never replaces a wider one of the same verdict.** `answerClientAsk`: a `basic` ✅ (a
+  press on a message sent before 0145 — only the PRESSED message ever loses its buttons, so those stay live
+  for ever) on a lot whose row is this owner's ✅ WITH measures is not written (`keeps`) and answers
+  «allaqachon»; the lot then still reads «o‘zgardi» after a re-weigh. `same()` compares the measures only
+  when the press is `full`. A ❌ is always written.
+- **On a 0145 server the two columns are written for EVERY answer** — the figures for `full`, NULL for
+  `basic` — by the raw `UPDATE` in the same transaction (`measuresHere`). So a `basic` ❌ over a `full` ✅
+  takes the kilos away with the answer that held them. (§A.3's «only for a full answer» is superseded.)
+- **`recorded` carries the ANSWER's scope**, and the toast, the staff alert and the History line read it —
+  never `facts.scope`. A `basic` answer on a 0145 server is said in words: «bu javob faqat tovar nomi va quti
+  soniga tegishli — og‘irlik va hajm so‘ralmagan».
+- **The probe's early return is all three flags** (`ready && clientReady && measuresReady`), and the third
+  answer is read off `pg_attribute` (0.36 ms warm against `information_schema.columns`' 2.8 ms; it runs on
+  every reader call of a server behind). With the first two alone, a process that had seen 0144 and not 0145
+  never asked again: a repaired migration switched nothing on until a restart, with the ledger and the build
+  stamp both right. Pinned by `tests/unit/lot-check-ready.test.ts` (a faked `db.execute`) and the reader
+  fence in `client-confirm-wire.test.ts` (the columns are named in four files; the remembered flag is read
+  by the sentence and the card only; the writer asks `clientMeasuresReady()` itself).
+- **A full question never goes out without its words.** The «qabul qilindi» push with a photograph carries
+  its text as the caption; when the caption cannot hold the (longer) ask line, the photograph YIELDS and the
+  message goes as text, question and buttons together (`arrival-jobs.ts`). For a `basic` question the 0144
+  rule stands.
+- **`measuresMoved` is true only while the five 0144 facts still hold** (`clientFactsHoldSql`): the card
+  names the weight or the volume only when THEY are what moved.
+- **The card's words** (`lotCheck.*`, four bundles): `clientYesFull` («… — nomi, quti soni, og‘irligi va
+  hajmi»), `clientYesBasicNote` under an answer that did not cover them, `clientStaleMeasures` /
+  `clientYesOldMeasures` («… og‘irlik yoki hajm o‘zgardi»), `askHintFull` beside «📨 Mijozdan so‘rash»
+  (`clientAskCardFor` returns `full`).
+- **§A.5's «back on the ❓ worklist while it is askable»** means: while a carton stands on a Chinese shelf.
+  Off it, a re-weigh still removes the client's ✅ from the lists and there is no door to ask again — stated,
+  and asked of him (§F question 3).
+
+### G.B The summary's AI line
+
+- **The window is the LAST 24 HOURS** on the daily message and on the pull («📊 Holat»), read to the moment
+  of reading; the Monday message reads the closed week, whole Tashkent days (`aiSpendWindow`). A
+  Tashkent-day window was the design, and it would never have shown 20:00-24:00 in any daily message — the
+  hours the AI sotuvchi answers customers in. Label: «🤖 AI (oxirgi 24 soat): …» / «🤖 AI (hafta): …».
+- **«Murojaat» is defined per ledger** (`ai-spend.ts`'s header): a calc row = one answered model call or one
+  settled press (`ok` / `failed`; never `reserved` / `no_answer`); an agent RUN that spent tokens, or one
+  that ended `error` with none recorded (it may have reached the model — counted, unpriced; `refused`,
+  `notice`, `capped`, `stood_down` and `reserved` never called anything); an assistant QUESTION with tokens,
+  or an answer with none (asked before 0145).
+- **Unpriced** = no list price for its model, or usage never recorded — counted and said, never a $0. A
+  settled press with neither a frozen cost nor tokens is a request with nothing to price (`pressToday`'s own
+  reading, so the Bojxona tab and the summary agree about one press).
+- **The line** (`aiLine`): `≈ $4.20 · 132 murojaat`; `(5 tasining narxi noma’lum)` beside the count;
+  **no dollar figure at all** when nothing could be priced; a ledger that could not be read is NAMED (`⚠
+  o‘qilmadi: sotuvchi AI`); no request and nothing unread → no line. It does not make a quiet business day
+  «not quiet» (`summaryQuiet` is unchanged).
+- **The assistant records its own usage**: summed over a question's rounds and written by a SECOND, caught
+  `UPDATE` (the answer is already the person's when it runs; a server one migration behind refuses it and
+  the question still succeeds).
+- **The price map carries the cache's two prices** (`cacheRead`, `cacheWrite`) — the agent ledger's tokens
+  are mostly cached context.
+
+### G.C One message, two buttons
+
+- **The deal state has one home, `wms/receipts/deal-state.ts` `receiptDealInTx`**, asked by BOTH doors (the
+  confirm and the claim) on their own transaction, and «the prixod's deal» is `ownDealOf`'s: a deal of
+  another client — left by a client correction, posted by a stale form — is no deal here, is never named to
+  this client's seller and is never compared against (price control is HANDED `{ state, dealId }`).
+- **ONE predicate says «this row is the new message»**: `isReceiptArrival(type, payload)` = one of the three
+  types AND `payload.dealState` is one of the four strings (`platform/notifications/receipt-arrival.ts`, a
+  leaf). The recipients, the renderer, the open button's label and `buttonsFor` all ask it. `folded` lives on
+  the alert EVENT only and is an ARGUMENT of `priceControlOnReceipt` (default false): only the caller knows
+  it wrote the `ReceiptConfirmed` that carries the alarm. The «alert row without `lots`» sentence of §C.4 is
+  withdrawn.
+- **The claim door** (`assignReceiptClient`) carries `via: 'assign'`: its own header — «📥 Prixod mijozga
+  biriktirildi — N», never «keldi» —, the deal line, the two buttons, and **recipients as before: the new
+  owner's seller alone**. `arrivalAlertOf` returns null for it: it has never run price control, emits no
+  alert event, and must not start alarming the admins about cargo that came weeks ago.
+- **Recipients on the confirm door** (`buildRecipients`): the seller gets ONE row (`ReceiptConfirmed`,
+  `alsoType` = the state's alarm when not `priced`). The admins hear the deal problem — typed as the alarm,
+  with the client's code and name on their copy — when nobody is there to hear it: no seller, one who can no
+  longer log in, or one with no linked staff chat (`reachOf(...) === 'no_chat'`; the seller's own row is
+  still written). A MUTE is the person's own choice and never falls back.
+- **The mute rule** is `rowTypeFor` (exported, the one place a mute is read when a row is born): silenced
+  only by somebody who muted BOTH types; written under the type they still hear; the in-app row and the
+  Telegram row carry the same type.
+- **The message** (`receiptArrivalText`): header · «Mijoz: CODE (Name)» · the deal line · «Sklad» · blank ·
+  one line per lot, kilos to two places and cubic metres to three (what the customer's push prints) · at most
+  12 lots, then «… yana N ta» · «Jami» for more than one lot = the printed lines' own sum (`arrivalTotals`,
+  `sumRounded`) · blank · the card link alone on the last line. The `none` line reads «⚠️ Narxlangan bitimi
+  yo‘q — narxlatib qo‘ying» (a client made since round 111 always has an EMPTY deal, which the card's picker
+  offers); `unpriced` reads «💰 B-… bitimida narx yo‘q — narx qo‘ying» (no «Xitoyda turganida»: the claim
+  door's cargo may be anywhere); `priced` prints «🔗 Bitim: B-…». The event's payload carries the three
+  totals too.
+- **Buttons**: «📎 Fayl qo‘shish» (`pf:<receipt>`, lowercased — the one shape the parser takes) on every new
+  row under any of its three types; the lifted card link is «🔗 Bitim biriktirish» → `/receipts/<id>#bitim`
+  for `none` / `attachable`, «↗️ Ochish» → `/receipts/<id>` otherwise. A prixod message written before the
+  fold keeps the keyboard it never had.
+
+### G.D «📎 Fayl qo‘shish»
+
+- **A collection never ends in silence** (the judge's blocker). Thirty quiet minutes, or another collector
+  opening («Hisoblatish», a task draft, a zametka — `closeReceiptFiles` beside each of the three
+  `endBurst(chatId)` lines), CLOSE it; the closed entry stays, and the first file that meets it is told once
+  — «⌛ Prixod N uchun fayl yig‘ish … yopilgan — bu fayl biriktirilmadi» with a button that opens it again —
+  and then goes on down the ladder as if this collector were not there.
+- **Both of the collection's buttons carry their prixod** — `pf:ok:<receipt>`, `pf:no:<receipt>`: a press
+  under an EARLIER prixod's message closes nothing, and says so as a message.
+- **«↩️ Bekor qilish»** (drawn once there is something to take back) removes exactly what THIS collection
+  put on the prixod, through the shared delete door under the presser's own right; a file a tarkib already
+  cites stays and is counted as kept.
+- **The payload carries what was stored** — `files: [{ m: message, a: attachment }]`: the count is the set's
+  size, a redelivered file JOINS it (its row is looked up FIRST — the id is `uuidv5(prixod:chat:message)`),
+  and the cancel has its ids. A second press for the SAME prixod while it is open is the same collection.
+- **A backlog file IS taken** (unlike every other collector): updates are handled in order, so a file handled
+  after the press was sent after it — and the file lands visibly, with the cancel under it. The thirty
+  minutes re-arm from each file's own date, never the processing clock.
+- **Stored as a paper** (`saveAttachment`'s `asPaper` → `kind: 'file'`): a prixod's `kind = 'photo'` rows are
+  its carton photos, and the loader's list, the stock table and the Ostatka Excel draw the first of them
+  where the cargo should be. `DELETE_RULES.receipt = 'shared'`.
+- **One acknowledgement per burst** through `keepLastSoon` + `drawKeptLast` (1.2 s): the collection's ONE
+  message — the prompt first, then «N ta fayl biriktirildi» — is edited while still last, else sent below
+  and the old copy deleted.
+- **A video, a voice note, a sticker, a place** are answered in words before the task door can offer to make
+  a task of them; **a typed text** that no free lookup answered is told it is not kept, before the paid
+  assistant is asked.
+- **The History** names every file: one audit row each under its own key, `fileAdded:<message>`
+  (`AUDIT_FIELD_LABELS.fileAdded`, four bundles) — a shared key folded an album of three into one line about
+  the last.
+- **The card**: the reader's OWN uploads carry a ✕ whoever they are (`AttachmentsPanel removableIds`; the
+  delete door has always allowed it).
+
+### G.E «🔗 Bitim biriktirish» on the card
+
+- `DealLink` is `id="bitim"` (`RECEIPT_DEAL_ANCHOR`), with a scroll margin and a `:target` ring.
+- «+ Yangi bitim ochish» is drawn for a prixod with no deal, for whoever may open one (`mayEditDealTerms` —
+  never the VED), and **carries the prixod**: `/bitimlar/new?client=<id>&prixod=<receipt>` → the form says
+  «Prixod N shu bitimga biriktiriladi» → the create action links it through `linkReceipt` right after the
+  deal exists and returns to `/receipts/<id>#bitim`. A refused link does not un-create the deal: its own card
+  opens instead.
+
+### G.F Tests
+
+Unit: `receipt-arrival` (the message, the predicate, the alarm, `rowTypeFor`, the buttons, the wait kind's
+three homes), `receipt-files-wire` (the ladder's order, the three collector openings, the leaf, the anchor),
+`ai-spend`, `lot-check-ready`, `lot-check-panel-render`, `client-confirm-wire`. Integration:
+`receipt-arrival` (who is told, per person and mute list; the claim door; a foreign deal; R6),
+`receipt-files-bot` (the whole handler chain), `ai-spend` (the three ledgers' real rows, the assistant's
+usage), `client-confirm` (96 combinations; the measures), `client-confirm-bot`. Browser:
+`m9zzzi-prixod-xabari`. Not verifiable here: real Telegram — the first real «Prixod keldi», the first press
+of each button and the first file are the proof.
