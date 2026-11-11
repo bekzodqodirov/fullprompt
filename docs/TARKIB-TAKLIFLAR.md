@@ -4,7 +4,7 @@ His answer to the tarkib round's report (ten ⭐ questions, three suggestions), 
 
 > «Hammasi yulduzcha javob va taklifingni qoshamiz»
 
-The first half is recorded in `docs/TARKIB-TUZATISH.md` §7 and DECISIONS #1651 (every ⭐ stands; two were
+The first half is recorded in `docs/TARKIB-TUZATISH.md` §7 and DECISIONS #1663 (every ⭐ stands; two were
 pinned only now). This document is the second half — the three suggestions as they were sent to him:
 
 1. «Tarkibni mijozning packing-list fayli yoki rasmidan AI o'qib to'ldirsin — 10–20 qatorni qo'lda yozmaslik
@@ -16,9 +16,14 @@ pinned only now). This document is the second half — the three suggestions as 
 
 LEAD'S READING, stated to him at the top of the report: «taklifingni» = all three.
 
-Numbering: DECISIONS from **#1652** (re-read main's tail before writing each). Migration **0144**
-`tarkib_takliflar`, `when` 1785190000123 — ledger must reach **145**. Re-fetch main before minting: the other
-session's open PR #141 («Fayl o'qish») carries no migration but rewrites the file readers (§3.0).
+Numbering: DECISIONS from **#1664** — minted as #1652 and moved by twelve when the other session's «Fayl
+o'qish» (PR #141) merged first and took #1630-#1641 (the THIRTY-FIFTH collision; the pin of his ten ⭐ is #1663).
+Migration **0144** `tarkib_takliflar`, `when` 1785190000123 — ledger must reach **145**. PR #141 carried no
+migration and rewrote the file readers — which is why T1 reads through none of them (§7.4).
+
+**§7 is BINDING — «as judged and as built». It overrides §1-§6 wherever they differ**; those sections are the
+design as it stood BEFORE the judge and are kept for the reasoning, not for the rules. §8 is the deploy, §9 the
+questions he was sent, §10 what is stated and not built.
 
 Binding rules of the house that every package meets (named once, not repeated per section): a refusal keeps
 what was typed (#171); every door before any spend; nothing pooled inside a transaction (`tx-pool`); a column
@@ -544,3 +549,152 @@ Sent with the round's report, in Uzbek, numbered — see CHANGELOG. In short:
 Each package: its own test files (new ones wherever possible), `flock /tmp/gsr-heavy.lock` around typecheck and
 build, its own database, WIP commits before every red proof, a final report that carries `completed: true`.
 Merge by cherry-pick; then a review of the merged tree; then the full CI order on a fresh `gsr_ci`.
+
+---
+
+## §7 As judged and as built — BINDING (overrides §1-§6)
+
+Five lenses read §1-§6 against the code before the packages were written: the SENTENCE, the customer's
+TELEGRAM, the FILE reading, the LEDGER and deploy, and the OWNER's words. Four reported — 54 objections, two
+of them blockers, every one verified against a line of code; the fifth died on the usage limit and its ground
+(the words, the ⭐ defaults) was read again in the review of the built round. What follows is what the code
+does. Where a paragraph above says otherwise, it is wrong.
+
+### 7.1 The kernel
+
+- **0144** as shipped: `lot_client_confirms` (PK `lot_id`; `verdict`, `shown_zh`, `shown_ru`, `shown_count`,
+  `shown_client_id`, **`shown_goods_key`**, `chat_id`, `asked_by`, `answered_at`); `client_notices.asked_by`;
+  on `ai_calc_passes`: `lot_id`, `batch_id`, `outcome`, **`cost_usd`**, the kind list + `tnved`, `tarkib`, the
+  anchor's two lot-anchored arms, `ai_calc_passes_kind_day_idx`. Every column added to an OLD table is
+  SQL-only — never declared on its drizzle table (#472: `recordAiPass` and the receipt's own notice claim
+  insert through those objects).
+- **Not the tarkib's `rev`** (blocker, two lenses): `rev` is a write token — it moves on every save and on
+  every TNVED code typed on the Bojxona tab. The client's answer is compared with **`goods_key`** = md5 of the
+  tarkib's names and pieces in order, ONE SQL expression in `lotTarkibJoinSql`, read by the question and by the
+  sentence through that same join. kg, m³, cartons and codes are not in it: the client is not shown them.
+- **The probe gives two answers** (`lot-check-ready.ts`): `lotChecksReady()` still means 0122/0123;
+  `lotClientConfirmsReady()` (sync, remembered by the same statement) is 0144's table. One flag would have
+  switched off every ✅/❓ chip, the worklist, the tick and the tarkib's shown names on a server whose 0144
+  did not land. The sentence and `withLotCheckJoins` speak their two-source form while it is «no».
+- **Settings**: `tnved_ai_daily_limit` 300, `tarkib_ai_daily_limit` 50, `client_confirm_on_receipt` true.
+  The two limits take whole digits only (`wholeNumberSettingValid`, `badValueWhole` ×4) — an empty box used to
+  become 0, and **0 means «off for the whole company»**. `limitOf`: anything that is not a positive number is
+  0, never the default (a cap on a bill fails closed).
+- **`calc/ai-press.ts`** as built: `reservePress` → `{ok, id}` or `ai_off | ai_limit | server_behind | failed`
+  (never throws; `server_behind` = 42703 / 42P01 and nothing else — a 23514 is a fault of ours);
+  `settlePress(id, {outcome: ok | failed | no_answer, usage})`; `pressToday(kind, sight)` → `{used, limit, usd,
+  usd30, unpriced}`. **A call our own deadline abandoned is COUNTED** (`failed`, zero tokens): the provider had
+  been working, and an uncounted timeout can be pressed for ever. `no_answer` (not counted) = nothing can have
+  been generated — a refused key, a rate limit, a dead network.
+- **The dollars are frozen on the row at settle** (`cost_usd`), from the list price of the model the call was
+  MADE with (the constant — never the id the provider echoes). Summed at read, never re-priced: a model change
+  must not re-price last month, nor lose its price. A row with no known price is counted («N ta chaqiruv narxi
+  noma'lum»), never summed as $0.
+- **The handoff to the other session's R5** is a fence, not a sentence: `tests/unit/ai-press.test.ts` finds
+  the LAST migration that re-makes `ai_calc_passes_kind_check` / `_anchor_check` and requires every pressed
+  kind in both. R5's migration must therefore: delete only its own `ADD COLUMN lot_id`; re-make both CHECKs as
+  the UNION (its kinds + `tnved`, `tarkib`, with their `lot_id IS NOT NULL` arms); drop its second
+  `recordAiPass({kind: 'tnved'})` (a press is already one reserved-then-settled row); filter its continuity
+  pick to the calc kinds.
+
+### 7.2 T3 — the Bojxona 🤖
+
+Both suggest actions: every door → `aiConfigured()` (a keyless server writes no row) → `reservePress` → the
+photograph → the model → `settlePress`, with `today` returned on every answer. The line «Bugun AI: N / LIMIT»
+(`tnved-ai-today`) is for everyone behind the tab's door; «≈ $», «30 kun ≈ $» and the unpriced count only
+through `companyMoneySight`. **The same line stands under both limit boxes on /admin/settings**
+(`setting-spent-<key>`) — the door of the people who can move the limit; on the tab alone the accountant never
+saw it and a document reading's spend was shown nowhere.
+
+### 7.3 T2 — the client's own ✅ / ❌
+
+**The sentence** (`lotCheckStateSql`). A ❌ stands against exactly what it rejected, whatever else has moved:
+
+1. a standing tarkib vouches UNLESS this owner's ❌ was given on the goods it still lists (`goods_key`);
+2. unclaimed cargo → «unclaimed» (never vetoed: a previous owner's ❌ is nobody's);
+3. a colleague's tick that holds vouches UNLESS this owner's ❌ is not older than it;
+4. the client's own ✅ while it is about what the lists still show (count, owner, goods, both names);
+5. a ❌ nothing vouches past → «none» (❓) — never «o'zgardi»;
+6. anything that was confirmed and no longer matches → «stale».
+
+So a ❌ ends **four** ways: the rejected goods are changed; a colleague ticks AFTER it; the client answers
+again; «E'tirozni yopish». A typo fixed in the Chinese name lifts nothing; a count corrected on a tarkib lot
+lifts nothing by itself (a person ticks or closes). kg and m³ are in no arm. 72 combinations are pinned
+against literal states (`client-confirm.integration`).
+
+- **A tick and an answer on one lot are ordered** (`lockLotAnswersTx`, an advisory lock of its own): the
+  answer's clock is `clock_timestamp()`, the tick posts the answer it SAW (`seenClientAt`) and is refused
+  `check_changed` when the table holds another. A re-tick by the same colleague past a ❌ WRITES (it is what
+  lifts the ❌). The customer's press is bounded by `lock_timeout = '3s'` → «busy», buttons kept.
+- **What a question shows** (`clientAskFacts`): ONE statement for names, counts, goods and their digest; the
+  tag = 8 hex of `[client, lots[id, zh, shown ru, count, goods_key]]`.
+- **The push's row** (`clientAskOffer`), asked at SEND time: the switch on and 0144 landed; this client's
+  prixod; at most 12 lots; **no lot with a tarkib written** (the push prints «Мышь +1» and cannot list the
+  goods — that question is the card's); some lot askable and not ✅ (his 4a); and **the lines the push PRINTS
+  are the lines the tag vouches for** (a rename between the two reads costs the buttons). The question line is
+  always in the text and in a photo's caption only while it fits 1024 — the question never costs the photograph.
+- **A press** (`answerClientAsk`): linked chat → 0144 → facts → the chat owns the prixod → the tag → **some lot
+  still askable** (cargo that has left China takes no answer) → «already» only when every lot holds this answer
+  AND it is newer than the last question sent → write + audit (actor null) + staff notifications **in one
+  transaction**. ❌ tells the client's seller and `plans.manage` (`ClientLotDisputed`, alerts); either answer
+  tells the person who pressed «Mijozdan so'rash», past their own mute; a ✅ on the receipt's own push tells
+  nobody. Neither type rings at night.
+- **The handler** (`/^yt:/`, on the prefix): decide, then answer ONCE with the outcome's toast; ❌ has no toast
+  — its one sentence is a message; the pressed message keeps its Mini App and manager rows and loses the third;
+  «busy»/«failed» keep the row; a stale ❌ is still told where to write; in a chat that is also a staff chat the
+  relay does not run, so it says «xodimlarga xabar berildi» and never «shu yerga yozing».
+- **«Mijozdan so'rash»** (`askClientAboutReceipt`): the lot check's door + the card's read door; refused in
+  words `no_client | no_lots | no_chat | not_askable | too_long | already_queued | too_soon | server_behind`;
+  one row per (client, prixod), re-armed only after it went and ten minutes passed; the sweep is woken at
+  once. The preparer re-proves the OWNER at send time (`client_changed`) — a question that waited never
+  reaches the previous owner's chat. The card prints the last question's fate in a CLOSED list of words
+  (`askFailureOf`), never a Bot API sentence.
+- **«E'tirozni yopish»** (`dismissClientDisputes`): only the ❌ the card drew (`answered_at::text` token, all
+  posted lots or none → `check_changed`), on a confirmed prixod, one History row; per lot, and for a prixod
+  whose one ❌ landed on several lots in one press.
+- **The card** (`lot-check-panel.tsx`, `client-ask-panel.tsx`): a vetoing ❌ leads in the bad colour and every
+  ✅ line under it is drawn as history — no green on a disputed lot; the ❌ line and the dismissal stay
+  wherever the cargo stands.
+- **The customer's words** name what is confirmed — «Tovar nomi va quti soni to'g'rimi?» — never «hammasi»:
+  the push prints kilos too, and they are not part of the answer.
+
+### 7.4 T1
+
+Built in its own worktree; its «As built» block is in §3. The rule that replaced §3.3 entirely: **one reader,
+the model, for every file kind** — the «Excel is read with no model» path is gone (it had three different
+answers to «does it count», stood on a parser another session is rewriting, and its eight families of edge
+cases — text thousands, the sheet tie, merged figures, carton-number columns — are a model's ordinary reading).
+Every reading is one `tarkib` ledger row.
+
+## §8 Deploy
+
+1. Backup (verified non-zero), merge, `git pull`, `docker compose build migrate app`, `docker compose run --rm
+   migrate`, `docker compose up -d`. **The ledger must read 145** (`0144_tarkib_takliflar`); then
+   `/api/version` must show today's build.
+2. The visible oracle that 0144 landed: a truck's «Bojxona» tab shows «Bugun AI: N / 300». One migration
+   behind, the 🤖 answers «server hali yangilanmagan» and the ✅/❓ chips go on working as before.
+3. `tg-listen` does NOT need a rebuild for this round (it never starts the worker fleet and imports none of
+   the changed modules at run time). The bot runs inside `app`: the standard step restarts it, and the ✅/❌
+   handler arrives with it.
+4. `migrate` seeds the three settings as ROWS, so a default changed in code later never reaches his server:
+   the limits and the switch are his to type on Boshqaruv → Sozlamalar.
+5. **`client_confirm_on_receipt` ships ON**: from the first prixod after the deploy every customer with a
+   linked Telegram gets «✅ To'g'ri / ❌ Xato bor» under «yukingiz qabul qilindi» (cargo in China, no tarkib,
+   up to 12 lots). Told to him BEFORE the deploy, with the switch's name.
+6. The AI key: T1 and the 🤖 need `ANTHROPIC_API_KEY` in the server `.env`; without it both say «sozlanmagan»
+   and write nothing.
+7. A code rollback after presses were made lets the previous release count that day's `tnved` / `tarkib` rows
+   into the VED's calc budget — harmless for a day, stated.
+
+## §10 Stated, not built
+
+- One button answers the whole MESSAGE: on a prixod of several lots a ❌ is written on every lot listed (the
+  staff alert says so; the prixod-level «E'tirozlarni yopish» closes them in one press). «Qaysi lot?» as a
+  second question is asked of him, not built.
+- kg and m³ are printed on the push and are NOT part of the answer (the question names its subject); asked.
+- A name longer than 80 characters is shown cut, as on every push; the ✅ is recorded for the whole name.
+- No reminder when a client never answers; a question is not re-sent by itself when the data changes.
+- The Mini App shows nothing of it.
+- The client's ✅ on a prixod WITH a tarkib comes only through «Mijozdan so'rash».
+- Nothing here has met the real Telegram: `editMessageReplyMarkup` echoing a `web_app` button, a forwarded
+  push's buttons, messages older than 48 hours. The first real press is watched in the app's log.

@@ -81,10 +81,16 @@ describe('Excel 97 (BIFF8), read from a file LibreOffice wrote', () => {
       volumeM3: 0,
       tnvedCode: '6201930000',
     });
-    // The packing sheet is the SAME goods; it is text for the model, never a
-    // second set of lines.
-    expect(read.text).toContain('[Packing]');
-    expect(read.text).toContain('Масло | 3 | 240');
+    // The packing sheet is never a second set of lines here. Re-anchored by
+    // docs/FAYL-OQISH.md §4.1 (2026-11-10): its header is mapped, so it is
+    // handed over beside the goods for the bot to judge by its shape
+    // (`receiveGoodsSheet`), its own rows as text riding with it for the
+    // model — the reader's `text` is the sheets with NO header mapped, and
+    // here there are none.
+    expect(read.text).toBe('');
+    expect(read.moreSheets.map((m) => [m.sheet, m.shape])).toEqual([['Packing', 'packing']]);
+    expect(read.moreSheets[0]!.ownText.text).toContain('[Packing]');
+    expect(read.moreSheets[0]!.ownText.text).toContain('Масло | 3 | 240');
   });
 
   it('refuses an Excel 95 workbook, a password and a broken stream — in kinds the bot words', async () => {

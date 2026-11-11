@@ -11,7 +11,9 @@ import {
   goodsNameKeys,
   LINE_FIGURES,
   figureOf,
+  namesContradict,
   namesMeet,
+  otherName,
   packingTotals,
   sameFigures,
   sameLine,
@@ -57,7 +59,21 @@ export type IntakeStage = 'section' | 'client' | 'material' | 'review';
  * that squeezes it out of the model's shared budget can name it (round-4
  * integration S-d). The model is never shown the label.
  */
-export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & { label?: string };
+export type SheetText = import('../../wms/calc/intake-ai').IntakeSheetText & {
+  label?: string;
+  /**
+   * A workbook's sheets with NO header the reader mapped (docs/FAYL-OQISH.md
+   * §4.1) — beside the Excel rows, material the model reads that may hold
+   * goods of its own, so a line the model finds there is named, never dropped
+   * in silence (§4.6). Absent: a mapped sheet's own text — a packing list of
+   * the same goods, or a sheet read for the totals — or a text stored before.
+   */
+  unmapped?: true;
+  /** What the reader saw on a header-less file, for its words (§4.4, `sheetTextLine`). */
+  why?: 'header' | 'no_rows';
+  /** The workbook carries pictures nothing reads (§4.4). */
+  pictures?: true;
+};
 
 /** An inline keyboard as Telegram takes it — what a stored reply carries. */
 export type InlineKeyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
@@ -195,6 +211,13 @@ export interface IntakeState {
     at: number;
     jobId: string | null;
     noticeMessageId?: number | null;
+    /**
+     * What the «⏳ AI o‘qiyapti…» notice is edited to (docs/FAYL-OQISH.md
+     * §2.3), decided at SETTLE from what the reading did — never from the
+     * stage at delivery. Absent on a reply stored before it: today's
+     * «✅ O‘qildi».
+     */
+    notice?: 'read' | 'cut' | 'failed' | 'no_model' | 'arrived';
   } | null;
   /** The table answers the seller was told, for the undo (P3). */
   echoes: IntakeEcho[];
@@ -479,6 +502,34 @@ export interface IntakeState {
   usages?: { model: string; inputTokens: number; outputTokens: number; at?: number }[];
   /** Why the model's reading is missing (his 1.6 a) — null when it read. */
   aiFailure: import('../../wms/calc/intake').AiReadFailure | null;
+  /**
+   * docs/FAYL-OQISH.md §10 — what the reading did NOT read, as state, so the
+   * table, the save branch, the landing and the sweep all ask the same
+   * `aiReadingWhole` (reading-whole.ts). Optional: a row written before this
+   * round reads as «nothing unread» (`migrateIntakeState` defaults them).
+   *
+   * `aiCut` — the model stopped before the end; the goods it completed are
+   * the reading's, and the rest is unread (§3.3). Written by every reading.
+   */
+  aiCut?: import('../../wms/calc/intake-ai').AiReadingCut | null;
+  /** «🔄» was pressed once on a clock cut; new material clears it (§1.2). */
+  aiCutRetried?: boolean;
+  /** The model was not shown all of an accepted sheet text (§1.1 f). Written by every reading. */
+  aiInputCut?: boolean;
+  /** Stored files the reading could not load (§2.5). Written by every reading. */
+  filesMissing?: number;
+  /** PDFs the API refused (attachment ids) — skipped by later readings, named on the table (§3.4). */
+  unreadPdfs?: string[];
+  /**
+   * Files refused AT ARRIVAL, with the words the seller was told — named, never
+   * blocking (§1.1). `resent`: a same-named file was TAKEN after it — said as an
+   * earlier copy, never deleted on the name (review of the fixes RF-FILES-1).
+   */
+  refusedFiles?: { name: string; why: string; resent?: boolean }[];
+  /** The restart question stands: material is refused in words until it is answered (§2.4). */
+  restartAsked?: { messageId: number | null; at: number } | null;
+  /** What the landing press chose — the AI's figure, or the VED alone (§1.3 a). */
+  landAs?: 'ai' | 'ved' | null;
   /**
    * The analysis in flight, by a token minted at «Bo'ldi».
    *
@@ -1061,7 +1112,7 @@ type GoodsList = NonNullable<import('../../wms/calc/intake').CalcFacts['goods']>
 
 
 /** A line the Excel kept out of the job, and why — see `PickedGoods.sameAsInvoice`. */
-export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' };
+export type LeftOutLine = GoodsList[number] & { why: 'same' | 'typed' | 'file' };
 
 /** What `pickGoods` lands, and the lines it left out because an Excel answered for them. */
 export interface PickedGoods {
@@ -1075,7 +1126,11 @@ export interface PickedGoods {
    *  - `typed` — a line the seller TYPED, which the model read too, that the
    *    Excel does not carry, while nobody was asked whether another file is
    *    another factory's (round-4 integration S-a: an Excel and a typed «Shim
-   *    200 dona», no PDF — the line was dropped and nobody was asked).
+   *    200 dona», no PDF — the line was dropped and nobody was asked);
+   *  - `file` — a line the model read off material beside the Excel that can
+   *    hold other goods (a workbook's header-less sheet, the typed text) and
+   *    the Excel does not carry (docs/FAYL-OQISH.md §4.6, xlsxN-02 J2): with
+   *    `aiGoods` null it was dropped with no word at all.
    */
   sameAsInvoice: LeftOutLine[];
 }
@@ -1140,6 +1195,22 @@ export function pickGoods(input: {
    * — a product the seller photographed vanished in silence). Absent = none.
    */
   modelSawImages?: boolean;
+  /**
+   * The model read material beside the Excel that can hold OTHER goods
+   * (docs/FAYL-OQISH.md §4.6, narrowed by sheets-08): a workbook's sheet with
+   * no header mapped, or typed text. Only then is a model line the Excel does
+   * not carry named on the null path — a lone Excel's model can only restate
+   * the Excel's own rows, and a translation of each («Куртка женская» 300
+   * beside «Ladies jacket» 300) read as «AI found another good». Absent =
+   * none.
+   */
+  otherMaterial?: boolean;
+  /**
+   * The model's answer was CUT (docs/FAYL-OQISH.md §3.3): its goods are the
+   * ones it closed before the clock, never the material's every good. Absent =
+   * a whole answer.
+   */
+  cut?: boolean;
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
@@ -1177,6 +1248,43 @@ export function pickGoods(input: {
           named.add(names.whole);
           sameAsInvoice.push({ ...g, why: 'typed' });
         }
+      } else if (input.otherMaterial) {
+        // …and a model line read off a header-less sheet or the typed text,
+        // which the Excel does not carry, is named the same way (§4.6) —
+        // unless it is a row of the Excel restated: its count and weight, or
+        // an equal count under names that do not contradict (a translation).
+        // ONE row answers ONE line (review sheets-break-file-naming-length):
+        // the rows the model repeated by name first, then — in a list as long
+        // as the Excel's — the line at a place against the row at that place,
+        // then any row not yet answered. «Exactly one row with that count»
+        // named every translation of an invoice whose 300 came three times,
+        // and «a list as long as the Excel's» passed every line of one —
+        // another factory's two goods beside a two-row invoice went unsaid.
+        const lines = input.model.map((g) => ({ g, names: goodsNameKeys(g.name) }));
+        const claimed = new Set<number>();
+        const claim = (at: number) => (at >= 0 && !claimed.has(at) ? (claimed.add(at), true) : false);
+        const restates = (row: GoodsList[number], g: GoodsList[number]) => {
+          const q = figureOf(g, 'quantity');
+          return sameFigures(row, g) || (q !== null && figureOf(row, 'quantity') === q && !namesContradict(row.name, g.name));
+        };
+        const done = lines.map(({ g, names }) => {
+          if (!names.whole || named.has(names.whole) || !carried(g, names)) return false;
+          claim(invoice.findIndex((inv, k) => !claimed.has(k) && sameLine(inv.row, inv.names, g, names)));
+          return true;
+        });
+        if (lines.length === invoice.length) {
+          lines.forEach(({ g }, i) => {
+            if (!done[i] && !claimed.has(i) && restates(invoice[i]!.row, g)) done[i] = claim(i);
+          });
+        }
+        const typedNames = sameAsInvoice.map((t) => goodsNameKeys(t.name));
+        lines.forEach(({ g, names }, i) => {
+          if (done[i] || !names.whole || named.has(names.whole)) return;
+          if (claim(invoice.findIndex((inv, k) => !claimed.has(k) && restates(inv.row, g)))) return;
+          if (typedNames.some((t) => namesMeet(t, names))) return;
+          named.add(names.whole);
+          sameAsInvoice.push({ ...g, why: 'file' });
+        });
       }
       return { goods: input.invoice, sameAsInvoice };
     }
@@ -1213,8 +1321,78 @@ export function pickGoods(input: {
     return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
   if (input.model === null) return { goods: input.typed, sameAsInvoice: [] };
+  // A CUT answer is the goods the model closed before the clock (§3.3), and
+  // «the model answered, so its goods are the list» was written for a whole
+  // one: every typed good it had not reached yet was dropped — the caption
+  // «Erkaklar shimi 50 dona» beside an unmapped Excel, and the goods the
+  // table's own remedy asks to be typed, lost again on the next cut (as-built
+  // review OWNER-2). So a typed line no model line names stays, after the
+  // model's, its figures as typed. Before the salvage a timeout kept nothing
+  // and the typed lines WERE the goods.
+  if (input.cut && input.model.length > 0) {
+    const read = input.model.map((g) => goodsNameKeys(g.name));
+    const typed = input.typed.map((t) => ({ t, names: goodsNameKeys(t.name) })).filter(({ names }) => names.whole !== '');
+    const byName = typed.map(({ names }) => read.some((m) => m.whole === names.whole || namesMeet(m, names)));
+    // …or by its FIGURES (review of the fixes RF-REGRESSION-1): the model
+    // writes a typed «Erkaklar shimi 50 dona 2 kub» as «Брюки мужские» (its
+    // prompt asks for Russian names), so a name meet missed the ordinary case
+    // and the trousers landed twice — through «✅ Tasdiqlash» on the plain
+    // door, item_count and Σ m³ with them. A model line meets a typed line by
+    // an equal count and a second figure both state, every shared figure
+    // agreeing, under names that do not contradict (the «nomi boshqacha,
+    // raqamlari bir xil» rule, `sameFigures`); a count ALONE only between two
+    // names of one script that are not two names (`otherName`) — across
+    // scripts nothing but the figures speaks, and «Tovar 5» 50 beside the
+    // caption's «Erkaklar shimi 50 dona» is two goods. And only where exactly
+    // ONE typed line meets it: two «50 dona» lines are kept both, a line the
+    // table shows twice being better than a good lost in silence.
+    const reached = new Set(typed.flatMap((_, i) => (byName[i] ? [i] : [])));
+    for (const m of input.model) {
+      const q = figureOf(m, 'quantity');
+      if (q === null) continue;
+      const meets = typed.flatMap(({ t }, i) =>
+        !reached.has(i) && figureOf(t, 'quantity') === q && typedLineRestated(m, t) ? [i] : [],
+      );
+      if (meets.length === 1) reached.add(meets[0]!);
+    }
+    return { goods: [...input.model, ...typed.flatMap(({ t }, i) => (reached.has(i) ? [] : [t]))], sameAsInvoice: [] };
+  }
   return { goods: input.model.length > 0 ? input.model : input.typedLabelled, sameAsInvoice: [] };
 }
+
+/**
+ * Is a model line of a CUT answer the typed line (an equal count already
+ * checked) read again under another name (`pickGoods`, review of the fixes
+ * RF-REGRESSION-1)? Every figure both state agrees, each by its own rule
+ * (`LINE_FIGURES`); and either a second figure besides the count agrees, under
+ * names that do not contradict, or the two names are written in the same
+ * scripts and are not two names there (`otherName`). Pure.
+ */
+function typedLineRestated(model: GoodsList[number], typed: GoodsList[number]): boolean {
+  let shared = 0;
+  for (const f of LINE_FIGURES) {
+    const x = figureOf(model, f.field);
+    const y = figureOf(typed, f.field);
+    if (x === null || y === null) continue;
+    shared += 1;
+    if (f.unit === null ? x !== y : Math.abs(x - y) >= f.unit && Math.abs(x - y) > 0.005 * Math.max(Math.abs(x), Math.abs(y))) return false;
+  }
+  if (namesContradict(model.name, typed.name)) return false;
+  if (shared >= 2) return true;
+  // A count alone only between names written in the SAME scripts: «some
+  // script in common» let a Russian name with one Latin brand or size word
+  // («Кепка бейсболка Nike», «Куртка женская XL») share the Latin of an
+  // Uzbek-Latin typed line, `otherName` then compared the Latin words alone
+  // ({nike} inside {krossovka, nike}) and a DIFFERENT good of an equal count
+  // left the list in silence (the independent check's IC-NEW-1).
+  const ofTyped = NAME_SCRIPTS.filter((re) => re.test(typed.name));
+  const ofModel = NAME_SCRIPTS.filter((re) => re.test(model.name));
+  const sameScripts = ofTyped.length > 0 && ofTyped.length === ofModel.length && ofTyped.every((re) => ofModel.includes(re));
+  return sameScripts && !otherName(goodsNameKey(model.name), goodsNameKey(typed.name));
+}
+
+/** The scripts a goods name is written in, for «do two names share one» (`typedLineRestated`). */
+const NAME_SCRIPTS = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Han}/u] as const;
 
 /** Three names, each cut at 30, and a count of the rest — the whole sentence fits the summary's cut. */
 function namedLines(lines: readonly { name: string }[]): string {
@@ -1231,7 +1409,7 @@ function namedLines(lines: readonly { name: string }[]): string {
  * (`typedLeftOutNote`).
  */
 export function sameAsInvoiceNote(lines: readonly (GoodsList[number] & { why?: LeftOutLine['why'] })[]): string | null {
-  const same = lines.filter((g) => g.why !== 'typed');
+  const same = lines.filter((g) => g.why !== 'typed' && g.why !== 'file');
   if (same.length === 0) return null;
   // No ⚠️ (docs/IKKI-ESHIK.md §1.2.4): taking the same goods once is the
   // designed outcome now, not a doubt the seller is asked about.
@@ -1266,6 +1444,19 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
 }
 
 /**
+ * The seller's word for the model's lines read off material beside the Excel
+ * that the Excel does not carry (docs/FAYL-OQISH.md §4.6) — named, never
+ * added: the model read a header-less sheet or the typed text, and nothing
+ * says the line is not the Excel's own under a word it does not share. Null =
+ * none.
+ */
+export function fileLeftOutNote(lines: readonly LeftOutLine[]): string | null {
+  const found = lines.filter((g) => g.why === 'file');
+  if (found.length === 0) return null;
+  return `AI fayldan yana ${namedLines(found)} ni topdi — ro‘yxatga qo‘shilmadi, VED ko‘radi`;
+}
+
+/**
  * The seller's word for the photographs and PDFs the reading could not load
  * back from storage (docs/SAKKIZ-R3.md K5, §2.6's words). Since K the
  * collection keeps attachment ids and the bytes are read back at «Bo‘ldi»; a
@@ -1273,9 +1464,42 @@ export function typedLeftOutNote(lines: readonly LeftOutLine[]): string | null {
  * had promised it the photos, with nothing on the screen to say so. Null =
  * every file was read.
  */
-export function filesMissingNote(missing: number): string | null {
+export function filesMissingNote(missing: number, retry = false): string | null {
   if (missing <= 0) return null;
-  return `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
+  // Where the table draws «🔄» for it (the AI door's first or seeded
+  // collection, docs/FAYL-OQISH.md §2.5) the note IS the 🔄 sentence: a re-read
+  // loads the files again, a re-send doubles them for the model (pdfimg-3 b).
+  return retry
+    ? `⚠️ ${missing} ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.`
+    : `⚠️ ${missing} ta fayl o‘qilmadi — saqlangan joydan olib bo‘lmadi. Kerak bo‘lsa qayta yuboring.`;
+}
+
+/**
+ * A refused PDF's reason once its table named it (`analyzeCollected`) — a
+ * noun phrase, as every `refusedFiles` reason is.
+ */
+export const PDF_REFUSED_WHY = 'AI qabul qilmadi';
+
+/**
+ * The reading's own moves of the collection's files, onto the LIVE
+ * collection (`settleAnalysis`): a refused PDF the reading named like an
+ * arrival refusal (`analyzeCollected`) leaves `pdfs` and joins
+ * `refusedFiles` there too — `...live` kept both as they were, and the PDF
+ * went on blocking. Applied as the reading's DIFF against what it read
+ * (`snapshot`): a PDF or a refusal that arrived while it ran is the live
+ * collection's and stays.
+ */
+export function readingFileMoves(
+  live: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+  snapshot: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+  analysed: Pick<IntakeState, 'pdfs' | 'refusedFiles'>,
+): Pick<IntakeState, 'pdfs' | 'refusedFiles'> {
+  const read = new Set(snapshot.pdfs.map((p) => p.attachmentId));
+  const kept = new Set(analysed.pdfs.map((p) => p.attachmentId));
+  return {
+    pdfs: live.pdfs.filter((p) => !read.has(p.attachmentId) || kept.has(p.attachmentId)),
+    refusedFiles: [...(live.refusedFiles ?? []), ...(analysed.refusedFiles ?? []).slice((snapshot.refusedFiles ?? []).length)],
+  };
 }
 
 /** At most this many photographs reach the model (his 1.4 b: twelve). */
@@ -1347,6 +1571,7 @@ export function collectionDoor(
 // The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
 // every importer's import.
 export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
+import { nothingNewToRead } from './calc-store';
 
 /** No bytes to read — a collection of text alone, or a caller that loads none. */
 const NO_FILES: IntakeFiles = { images: [], pdfs: [], missing: 0 };
@@ -1407,7 +1632,24 @@ export async function analyzeCollected(
   const { aiCalcBudgetLeft } = await import('../../wms/calc/ai-cost');
   const budgetLeft = await aiCalcBudgetLeft().catch(() => Number.POSITIVE_INFINITY);
   type Outcome = Awaited<ReturnType<typeof analyzeIntake>>;
-  const outcome: Outcome =
+  // A packing-shaped goods sheet keeps its own rows as text (`GoodsFileMeta.
+  // text`): beside the numbered list they let the model code a row by its
+  // specs, under the totals heading (docs/FAYL-OQISH.md §3.7, sheets-04 (3)).
+  // Read here, never stored in `invoiceTexts` — and not when a branch already
+  // put the very text there. Only while that file is the collection's ONE
+  // goods file and holds every row — `loneFileTotals`' own test, where the
+  // file's totals outrank the model's anyway (as-built review OWNER-1,
+  // MODEL-1, SHEETS-2, REGRESSION-3): after a fold (another factory's sheet,
+  // or a second factory's file) it is ONE factory's sheet with ONE factory's
+  // TOTAL row, under a heading that asks for the shipment's totals; nothing
+  // outranks the model's figure there, so factory A's brutto and cube landed
+  // as the shipment's under a ✅, and on podklyuch the road was priced on them.
+  const goodsFile = loneGoodsFile(state);
+  const goodsSheetText =
+    codeKnown && goodsFile?.text && !state.invoiceTexts.some((t) => t.text === goodsFile.text)
+      ? { text: goodsFile.text, cut: goodsFile.textCut ?? false, cellsCut: goodsFile.textCellsCut ?? false }
+      : null;
+  const read: Outcome =
     opts.timeoutMs !== undefined && opts.timeoutMs <= 0
       ? { ok: false, failure: 'timeout' }
       : budgetLeft <= 0
@@ -1436,13 +1678,69 @@ export async function analyzeCollected(
           ...(codeKnown ? { codeKnown: true, knownCoded: invoice.map((g) => Boolean(g.tnvedCode?.trim())) } : {}),
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
+          ...(goodsSheetText ? { goodsSheetText } : {}),
+          // Beside a fold the other sheets are one factory's (`foldNoTotals`).
+          ...(foldNoTotals(state) ? { foldedSheets: true } : {}),
+          // A cut keeps the goods it completed, and the collection carries
+          // the cut (`aiCut`, docs/FAYL-OQISH.md §3.3): the AI door draws no
+          // «✅ Tasdiqlash» over a reading that did not finish.
+          salvage: true,
           // Absent: the reader's own leash (`INTAKE_TIMEOUT_MS`).
           ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
         }).catch((err: unknown): Outcome => {
           logger.warn({ err }, 'intake analyze failed');
           return { ok: false, failure: 'network' };
         });
+  // A stored file that did not load is a storage blip, which a re-read heals
+  // (docs/FAYL-OQISH.md §2.5, pdfimg-3) — never «nothing to read» under a
+  // prompt that said «📎 2 ta fayl qabul qilindi».
+  const outcome: Outcome =
+    !read.ok && read.failure === 'nothing_to_read' && files.missing > 0 ? { ...read, failure: 'files_missing' } : read;
   const ai = outcome.ok ? outcome : null;
+  // What this reading left unread, as state (docs/FAYL-OQISH.md §10): the
+  // table, the save branch, the landing and the sweep ask `aiReadingWhole`
+  // of these, never of this job's locals. Written on EVERY reading, so a whole
+  // re-read clears what a cut one left.
+  const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+  const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const sheetFit = fitSheetRows([...state.sheetTexts, ...state.invoiceTexts].map((t) => t.text.trim()), SHEET_TEXT_BUDGET);
+  const stillPdfs = new Set(state.pdfs.map((p) => p.attachmentId));
+  // A PDF the API refused, which the table before this reading NAMED (the
+  // `unreadPdfs` it starts with), is named from now on like a file refused at
+  // arrival (review model-break-refused-pdf-blocks-forever): out of the PDFs
+  // to read, into `refusedFiles`. It is never sent again (`loadIntakeFiles`),
+  // so it never reads — kept blocking, nothing the seller sent could ever
+  // reach «✅ Tasdiqlash»: not the password-free copy its warning asks for,
+  // not the Excel or the typed lines the table's remedy asks for. It blocks
+  // the table of the reading that met the refusal (§1.1 d), and is named on
+  // every one after.
+  const named = new Set(state.unreadPdfs ?? []);
+  // A same-named PDF TAKEN after it, and not refused itself, marks the entry
+  // `resent` (review of the fixes RF-WORDS-4, RF-FILES-3): the password-free
+  // copy its own warning asked for arrives while the refused one is still a
+  // PDF to read, so the arrival's re-send rule (`resentAccepted`) finds no
+  // entry yet, and the demotion then wrote «o‘qilmadi» beside the goods that
+  // very copy gave. Marked like the arrival's — a name is no identity.
+  const refusedNow = new Set(outcome.unreadPdfs ?? []);
+  const takenAfter = (name: string, at: number) =>
+    state.pdfs.some((q, j) => j > at && q.name === name && !named.has(q.attachmentId) && !refusedNow.has(q.attachmentId));
+  const demoted = state.pdfs.flatMap((p, at) =>
+    named.has(p.attachmentId) ? [{ name: p.name, why: PDF_REFUSED_WHY, ...(takenAfter(p.name, at) ? { resent: true } : {}) }] : [],
+  );
+  const unread: Pick<IntakeState, 'aiCut' | 'aiInputCut' | 'filesMissing' | 'unreadPdfs' | 'pdfs' | 'refusedFiles'> = {
+    aiCut: outcome.ok && outcome.cut ? outcome.cut : null,
+    // A goods sheet the model was not shown whole — the reader stopped
+    // before its end, or the shared budget kept fewer rows than it has
+    // (§1.1 f). The workbooks' other sheets are read for the totals only.
+    aiInputCut: state.sheetTexts.some(
+      (t, i) => t.text.trim() !== '' && (t.cut || (sheetFit.kept[i] ?? 0) < (sheetFit.total[i] ?? 0)),
+    ),
+    filesMissing: files.missing,
+    // This reading's own refusals — the named ones above were not sent.
+    unreadPdfs: [...new Set(outcome.unreadPdfs ?? [])].filter((id) => stillPdfs.has(id) && !named.has(id)),
+    pdfs: state.pdfs.filter((p) => !named.has(p.attachmentId)),
+    refusedFiles: [...(state.refusedFiles ?? []), ...demoted],
+  };
 
   // Typed facts win over read ones: the person is looking at the material.
   // A total the text writes TWO ways («1,200 kg») is asked, and the model —
@@ -1474,6 +1772,8 @@ export async function analyzeCollected(
     typed: manual.goods ?? [],
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
     modelSawImages: files.images.length > 0,
+    otherMaterial: text.trim() !== '' || state.invoiceTexts.some((t) => t.unmapped),
+    cut: Boolean(outcome.ok && outcome.cut),
   });
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
@@ -1493,23 +1793,59 @@ export async function analyzeCollected(
     modelAdded,
     sameAsInvoiceNote(picked.sameAsInvoice),
     typedLeftOutNote(picked.sameAsInvoice),
-    filesMissingNote(files.missing),
+    fileLeftOutNote(picked.sameAsInvoice),
+    // One sentence per fact (§2.5, critic-said-twice): a reading whose files
+    // ALL failed to load says it as its failure (`files_missing`); beside
+    // other material read, the note says it — with the «🔄» the AI door's
+    // first or seeded table draws for it (§1.2), elsewhere today's words.
+    outcome.ok || outcome.failure !== 'files_missing'
+      ? filesMissingNote(files.missing, collectionDoor(state) === 'ai' && !state.amend)
+      : null,
   ].filter((n): n is string => n !== null);
   // The model's codes for the Excel's rows, each by the index it was shown
   // with and re-checked against the row there (`withKnownCodes`) — under the
   // seller's answers, which go on top next.
   const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
+  // A re-read of the SAME material (the «🔄» after a cut, `aiCutRetried`)
+  // that read LESS than the cut it replaces keeps the earlier reading (as-built
+  // review CRITIC-1): the clock moves with the load and the thinking, so a
+  // second cut earlier than the first is ordinary, and written over the first
+  // it turned «Tovarlar (7)» into two, or into none — the round's own remedy
+  // making its own salvage worse, in silence, and «👤 VED hisoblasin» then
+  // landed the two. A cut's goods are the file's order up to the clock, so the
+  // longer prefix is the better reading. A whole answer, or a cut that read as
+  // many, replaces it as before.
+  //  - New material is a new reading — judged on THIS snapshot (review of the
+  //    fixes RF-TOTALS-4): the press set the mark before a line typed after it
+  //    reached the job, and «Shapka 50 dona» was in the material and in no
+  //    good, past a mark that called it read.
+  //  - A SEEDED collection too (RF-TOTALS-5, RF-REGRESSION-6): it draws the
+  //    same «🔄», and WORDS-8 locks the same press; only an add collection's
+  //    table draws none.
+  const sameAgain = state.aiCutRetried === true && nothingNewToRead(state);
+  const earlierCut = sameAgain && !state.amend ? (state.aiCut ?? null) : null;
+  const readNow = outcome.ok ? (outcome.cut ? outcome.cut.goods : Number.POSITIVE_INFINITY) : 0;
+  if (earlierCut && readNow < earlierCut.goods) {
+    logger.info({ earlier: earlierCut.goods, now: outcome.ok ? readNow : outcome.failure }, 'calc intake re-read kept the earlier reading');
+    return { ...state, ...unread, aiCut: earlierCut, notes: keptReadingNotes(state, earlierCut.goods, files.missing), stage: 'review', answered: outcome.answered ?? [] };
+  }
+  // …and a reading of new material earns its own «🔄» (once per material mark).
+  const retried = { aiCutRetried: sameAgain };
   if (kept) {
     const { conflictOf } = await import('../../wms/calc/amend');
     const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
-    return addReading(
-      state,
-      // A coded line that IS a stored row is that row and carries nothing
-      // onto it (`addReading` keeps the stored row); only the fresh ones keep
-      // the model's proposal.
-      { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
-      { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
-    );
+    return {
+      ...addReading(
+        state,
+        // A coded line that IS a stored row is that row and carries nothing
+        // onto it (`addReading` keeps the stored row); only the fresh ones keep
+        // the model's proposal.
+        { kept, picked: { ...picked, goods: coded }, manual, ai, outcome, notes, text },
+        { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
+      ),
+      ...unread,
+      ...retried,
+    };
   }
   // A route the seller answered in the table goes above everything a reading
   // finds — unless the material AFTER the answer names another city, read
@@ -1535,7 +1871,15 @@ export async function analyzeCollected(
   // the model read both lists and its figure — their sum, as often as not —
   // must not land where the note promised «ikkalasi ham olinmadi».
   const clashed = (field: 'weightKg' | 'volumeM3') => fileTotals?.clash?.includes(field) ?? false;
-  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg') || clashed('weightKg'));
+  // Beside a fold no file's totals answering for the whole list (`foldNoTotals`,
+  // review of the fixes RF-TOTALS-1/3/6), the model's figure is not the
+  // shipment's either: every sheet it was shown for totals is ONE factory's —
+  // a packing list that covered the list before the fold, a dropped
+  // «Итого по разделу» row, a sheet judged the same goods — and nothing
+  // outranked it. The brutto is asked and the cube is the rows' Σ (§4.3).
+  const noModelTotals = foldNoTotals(state);
+  const modelTotals = noModelTotals ? null : (ai?.facts ?? null);
+  const fromModel = totalWeightFrom(state.section, manual, modelTotals, asked('weightKg') || clashed('weightKg'));
   const fromFile =
     fileTotals && fileTotals.weightKg !== null
       ? totalWeightFrom(
@@ -1545,7 +1889,7 @@ export async function analyzeCollected(
           asked('weightKg'),
         )
       : null;
-  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
+  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (modelTotals?.volumeM3 ?? null);
   const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
@@ -1599,7 +1943,49 @@ export async function analyzeCollected(
     // refused, unreadable) included (r1-fix typed #21), each re-read its own
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
+    ...unread,
+    ...retried,
   };
+}
+
+/**
+ * The notes of a re-read that KEPT the earlier reading (CRITIC-1): the earlier
+ * reading's own, its keep sentence ONCE (review of the fixes RF-WORDS-7,
+ * RF-REGRESSION-5 — every stale «Bo‘ldi» on the plain door appended another),
+ * and what THIS reading found of the files (RF-TOTALS-4, RF-WORDS-2,
+ * RF-REGRESSION-4): the earlier «N ta fayl saqlangan joydan olinmadi» goes
+ * when the store handed them back, and this reading's own is said — kept, the
+ * table drew «🔄» for a file no line named. A re-read that lost a file is not
+ * the AI reading less: the keep sentence does not blame it there.
+ */
+function keptReadingNotes(state: IntakeState, keptGoods: number, missing: number): string[] {
+  const retry = collectionDoor(state) === 'ai' && !state.amend;
+  const earlierMissing = filesMissingNote(state.filesMissing ?? 0, retry);
+  const missingNow = filesMissingNote(missing, retry);
+  const keep =
+    missing > 0
+      ? `⚠️ Qayta o‘qishda avvalgi o‘qishdagi ${keptGoods} ta tovar qoldi.`
+      : `⚠️ Qayta o‘qishda AI avvalgidan kam o‘qidi — avvalgi o‘qishdagi ${keptGoods} ta tovar qoldi.`;
+  return [
+    ...state.notes.filter((n) => n !== earlierMissing && !n.startsWith(KEPT_READING_HEAD)),
+    keep,
+    ...(missingNow ? [missingNow] : []),
+  ];
+}
+
+/** The head every keep sentence starts with — one is said, never two. */
+const KEPT_READING_HEAD = '⚠️ Qayta o‘qishda ';
+
+/**
+ * Beside a fold — goods of more than one file or sheet in the list — with no
+ * packing list's totals standing for the whole of it (review of the fixes
+ * RF-TOTALS-1/3/6): the model's totals do not land (`analyzeCollected`), and
+ * the model is told the sheets it reads are one factory's (`foldedSheets`).
+ * A top-up keeps its own rule (its totals go on the note). Pure.
+ */
+export function foldNoTotals(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'amend' | 'seed'>): boolean {
+  if (state.fileTotals || state.amend || state.seed !== null) return false;
+  return (state.goodsFiles ?? []).filter((f) => f.rows > 0).length > 1;
 }
 
 /**
@@ -1621,10 +2007,9 @@ export function loneFileTotals(
   state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed'>,
 ): IntakeState['fileTotals'] {
   if (state.fileTotals || state.amend || state.seed !== null) return null;
-  const files = state.goodsFiles ?? [];
   const rows = state.invoiceGoods ?? [];
-  const only = files.length === 1 ? files[0]! : null;
-  if (!only || only.capped || rows.length === 0 || only.rows !== rows.length) return null;
+  const only = loneGoodsFile(state);
+  if (!only) return null;
   const totals =
     only.shape === 'packing'
       ? packingTotals(only, rows)
@@ -1639,6 +2024,22 @@ export function loneFileTotals(
     // seller is not doubted by it (PF-ADV-9). Unknown = before everything.
     at: only.at ?? { material: 0, files: 0 },
   };
+}
+
+/**
+ * The collection's ONE goods file when it holds every row the collection has —
+ * uncapped, a single entry, its row count the list's — or null. Its totals
+ * are the shipment's (`loneFileTotals`), and only then may its own text sit
+ * under the model's totals heading (`analyzeCollected`): beside a fold it is
+ * one factory's (as-built review OWNER-1). Pure.
+ */
+export function loneGoodsFile(
+  state: Pick<IntakeState, 'goodsFiles' | 'invoiceGoods'>,
+): NonNullable<IntakeState['goodsFiles']>[number] | null {
+  const files = state.goodsFiles ?? [];
+  const rows = state.invoiceGoods ?? [];
+  const only = files.length === 1 ? files[0]! : null;
+  return only && !only.capped && rows.length > 0 && only.rows === rows.length ? only : null;
 }
 
 /**

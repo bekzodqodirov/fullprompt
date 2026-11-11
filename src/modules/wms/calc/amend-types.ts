@@ -92,4 +92,19 @@ export interface AmendSubmission {
    * FR-SELL-6). Optional: a stored «waiting» row from before has none.
    */
   fileNotes?: string[];
+  /**
+   * The add collection's OWN reading was not whole (docs/FAYL-OQISH.md §1.6) —
+   * what it did not read, as its table said it («1 ta PDF»). The addition is
+   * written all the same, and NOTHING re-runs: a figure over a file nobody
+   * read is the option b his ⭐ rejected. Absent = whole (and every row from
+   * before the round).
+   */
+  unread?: string | null;
+  /**
+   * The files the add collection refused at arrival (`IntakeState.refusedFiles`,
+   * as-built review WORDS-2): their goods are in no figure, and the VED reads
+   * which in the thread and on the card. Absent = none (and every row from
+   * before).
+   */
+  refusedFiles?: { name: string; why: string; resent?: boolean }[];
 }

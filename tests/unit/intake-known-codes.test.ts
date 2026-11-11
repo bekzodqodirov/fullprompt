@@ -1,58 +1,33 @@
-import http from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { startSseStandIn, type SseStandIn } from '../fixtures/sse-anthropic';
 
 /**
  * `known_codes` over the wire (docs/IKKI-ESHIK.md §3.1): what the model is
  * SHOWN — the Excel's rows numbered, within `KNOWN_GOODS_CHARS` — and how its
- * answer comes back, against a local stand-in for the Messages API (the SDK
- * itself makes the call). A number the model was not shown is dropped, and a
- * shown number lands on the caller's own index.
+ * answer comes back, against the shared STREAMING stand-in for the Messages
+ * API (re-anchored, docs/FAYL-OQISH.md §3.2: the reading is streamed, and the
+ * SDK itself parses the events). A number the model was not shown is dropped,
+ * and a shown number lands on the caller's own index.
  */
 import { analyzeIntake } from '@/modules/wms/calc/intake-ai';
 
-const bodies: { messages: { content: { type: string; text?: string }[] }[] }[] = [];
-const answers: unknown[] = [];
-let server: http.Server;
-const saved = { key: process.env.ANTHROPIC_API_KEY, url: process.env.ANTHROPIC_BASE_URL };
+let api: SseStandIn;
+/** The next answers, as JSON objects; streamed in order. */
+const answers = {
+  push: (...bodies: unknown[]) => api.script.push(...bodies.map((b) => ({ text: JSON.stringify(b ?? {}) }))),
+};
 
 beforeAll(async () => {
-  server = http.createServer((req, res) => {
-    let raw = '';
-    req.on('data', (chunk) => (raw += chunk));
-    req.on('end', () => {
-      bodies.push(JSON.parse(raw));
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(
-        JSON.stringify({
-          id: 'msg_stand_in',
-          type: 'message',
-          role: 'assistant',
-          model: 'stand-in',
-          content: [{ type: 'text', text: JSON.stringify(answers.shift() ?? {}) }],
-          stop_reason: 'end_turn',
-          stop_sequence: null,
-          usage: { input_tokens: 10, output_tokens: 5 },
-        }),
-      );
-    });
-  });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  process.env.ANTHROPIC_API_KEY = 'test-key';
-  process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  api = await startSseStandIn();
 });
 
 afterAll(async () => {
-  if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY;
-  else process.env.ANTHROPIC_API_KEY = saved.key;
-  if (saved.url === undefined) delete process.env.ANTHROPIC_BASE_URL;
-  else process.env.ANTHROPIC_BASE_URL = saved.url;
-  await new Promise<void>((resolve) => server.close(() => resolve()));
+  await api.close();
 });
 
 beforeEach(() => {
-  bodies.length = 0;
-  answers.length = 0;
+  api.bodies.length = 0;
+  api.script.length = 0;
 });
 
 const reading = (knownCodes: unknown) => ({
@@ -67,7 +42,7 @@ const reading = (knownCodes: unknown) => ({
 });
 
 const promptText = () =>
-  bodies
+  api.bodies
     .at(-1)!
     .messages[0]!.content.filter((b) => b.type === 'text')
     .map((b) => b.text)
@@ -86,7 +61,7 @@ describe('the Excel’s rows, numbered, and the codes the model gives them', () 
         { n: 79, tnved_code: '8528520000' },
       ]),
     );
-    const out = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods, codeKnown: true, timeoutMs: 10_000 });
+    const out = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods, codeKnown: true, timeoutMs: 10_000, salvage: true });
     expect(out.ok).toBe(true);
     expect(out.ok && out.knownCodes).toEqual([
       { index: 1, code: '6201930000' },
@@ -102,7 +77,7 @@ describe('the Excel’s rows, numbered, and the codes the model gives them', () 
 
   it('not asked → the list is today’s, and an answer’s codes are not taken', async () => {
     answers.push(reading([{ n: 1, tnved_code: '6201930000' }]));
-    const out = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], timeoutMs: 10_000 });
+    const out = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], timeoutMs: 10_000, salvage: true });
     expect(out.ok && out.knownCodes).toBeUndefined();
     expect(promptText()).toContain('- Kurtka');
     expect(promptText()).not.toContain('1. Kurtka');
@@ -113,10 +88,10 @@ describe('the Excel’s rows, numbered, and the codes the model gives them', () 
     const old: Record<string, unknown> = reading([]);
     delete old.known_codes;
     answers.push(old);
-    const before = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, timeoutMs: 10_000 });
+    const before = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, timeoutMs: 10_000, salvage: true });
     expect(before.ok).toBe(true);
     answers.push(reading([{ n: 'one', tnved_code: 6201930000 }, { n: 1, tnved_code: '6201930000' }]));
-    const broken = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, timeoutMs: 10_000 });
+    const broken = await analyzeIntake({ section: 'rastamojka', text: 'x', fileCount: 1, knownGoods: ['Kurtka'], codeKnown: true, timeoutMs: 10_000, salvage: true });
     expect(broken.ok && broken.knownCodes).toEqual([{ index: 0, code: '6201930000' }]);
   });
 });

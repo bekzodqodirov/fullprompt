@@ -11,6 +11,15 @@ import { saveLinesAction } from './actions';
  * lines until the confirm button — the proposal is a draft on screen, codes
  * editable in place. Without the AI key the file still parses and every row
  * becomes its own line for hand grouping.
+ *
+ * The rows the reader did NOT take as goods come back beside them
+ * (FAYL-OQISH §5.5) and are shown under the draft, each with a «＋» that
+ * makes it a line: a figure-less last line under the list reads as a footer
+ * («Made in China») and is left out of the goods — and when it was a good
+ * after all, the person confirming is the one who knows (review
+ * break-deal-import-ui-ignores-dropped). A label-only total («TOTAL»,
+ * «Итого») is no news to anybody and is not shown, as on the bot's receipt
+ * (`droppedRowsLine`).
  */
 
 interface Good {
@@ -32,10 +41,18 @@ interface Group {
   duty_rate_pct: number | null;
 }
 
+/** A row the file held and the reader did not take as a good (goods-import.ts `DroppedRow`). */
+interface Dropped {
+  text: string;
+  name: string;
+  why: 'total' | 'footer_total' | 'subtotal' | 'footer';
+}
+
 interface Proposal {
   goods: Good[];
   groups: Group[] | null;
   aiError: string | null;
+  dropped?: Dropped[];
 }
 
 interface DraftLine {
@@ -131,6 +148,7 @@ export function ImportLines({
   const [busy, setBusy] = useState<'parse' | 'save' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftLine[] | null>(null);
+  const [dropped, setDropped] = useState<Dropped[]>([]);
   const [ai, setAi] = useState(false);
 
   async function upload(file: File) {
@@ -147,6 +165,7 @@ export function ImportLines({
       }
       setAi(Boolean(json.groups));
       setDraft(toDraft(json));
+      setDropped((json.dropped ?? []).filter((row) => row.why !== 'total'));
     } catch {
       setError('failed');
     } finally {
@@ -176,7 +195,30 @@ export function ImportLines({
       return;
     }
     setDraft(null);
+    setDropped([]);
     router.refresh();
+  }
+
+  /** A dropped row the person says IS a good becomes a line of its own, name only — the figures are theirs to type. */
+  function addDropped(i: number) {
+    const row = dropped[i];
+    if (!row || !row.name) return;
+    setDraft((d) => [
+      ...(d ?? []),
+      {
+        description: row.name,
+        tnvedCode: '',
+        quantity: null,
+        unit: null,
+        weightKg: null,
+        volumeM3: null,
+        amount: null,
+        items: [],
+        dutyRatePct: null,
+        confidence: null,
+      },
+    ]);
+    setDropped((rows) => rows.filter((_, j) => j !== i));
   }
 
   const estimatedDuty = draft
@@ -279,6 +321,30 @@ export function ImportLines({
         ))}
       </div>
 
+      {dropped.length > 0 && (
+        <div className="space-y-1 rounded-xl border border-dashed border-line p-2" data-testid="import-dropped">
+          <p className="text-xs font-semibold text-warn">{t('importDropped', { count: dropped.length })}</p>
+          {dropped.map((row, i) => (
+            <div key={`${i}-${row.text}`} className="flex items-center gap-1.5" data-testid="import-dropped-row">
+              <p className="min-w-0 flex-1 truncate text-xs text-ink-500" title={row.text}>
+                {row.text} · {t('importDroppedWhy', { why: row.why })}
+              </p>
+              {row.name && (
+                <button
+                  type="button"
+                  onClick={() => addDropped(i)}
+                  disabled={busy !== null}
+                  data-testid="import-dropped-add"
+                  className="btn-secondary shrink-0 !min-h-9 !px-2 !py-1 text-xs"
+                >
+                  {t('importDroppedAdd')}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
       {estimatedDuty !== null && (
         <p className="text-xs text-ink-500">
           {t('importDutyTotal', { amount: estimatedDuty })} — {t('importDutyNote')}
@@ -289,7 +355,10 @@ export function ImportLines({
       <div className="flex gap-2">
         <button
           type="button"
-          onClick={() => setDraft(null)}
+          onClick={() => {
+            setDraft(null);
+            setDropped([]);
+          }}
           disabled={busy !== null}
           className="btn-secondary flex-1"
         >

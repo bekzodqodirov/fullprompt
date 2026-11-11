@@ -686,9 +686,14 @@ describe('a press', () => {
     expect(await queued()).toEqual([]);
   }, 20_000);
 
-  it('a ❌ that had to wait for a tick in flight is NEWER than that tick: the colleague could not have seen it, so it vetoes', async () => {
-    // K: the client's ✅ stands and nobody has ticked. A colleague's tick is in flight — it holds the lot's answer lock.
-    expect((await stateOf('K')).state).toBe('checked');
+  it.each([
+    ['a FIRST answer (the row is inserted)', true],
+    ['a re-answer (the row is updated)', false],
+  ])('a ❌ that had to wait for a tick in flight is NEWER than that tick — %s: the colleague could not have seen it, so it vetoes', async (_what, fresh) => {
+    // K: nobody has ticked. Either the client has not answered at all (the ❌ will INSERT its row), or their ✅ stands (it will UPDATE it).
+    if (fresh) await db.delete(lotClientConfirms).where(inArray(lotClientConfirms.lotId, [lot.K, lot.T, lot.S]));
+    expect((await stateOf('K')).state).toBe(fresh ? 'none' : 'checked');
+    // A colleague's tick is in flight — it holds the lot's answer lock.
     const holder = await pgClient.reserve();
     let pressed: ReturnType<typeof press> | null = null;
     try {
@@ -696,14 +701,17 @@ describe('a press', () => {
       await holder`SELECT pg_advisory_xact_lock(hashtextextended(${`lot-answer:${lot.K}`}, 0))`;
       // The client presses ❌ now: its transaction BEGINS here and waits for the lock.
       pressed = press('no');
-      for (let i = 0; i < 40; i += 1) {
-        const [waiting] = await db.execute(sql`
-          SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND datname = current_database()
-        `) as unknown as { n: number }[];
-        if (Number(waiting?.n ?? 0) > 0) break;
+      let waiting = 0;
+      for (let i = 0; i < 60 && waiting === 0; i += 1) {
         await new Promise((resolve) => setTimeout(resolve, 50));
+        const [row] = (await db.execute(sql`
+          SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND wait_event = 'advisory' AND datname = current_database()
+        `)) as unknown as { n: number }[];
+        waiting = Number(row?.n ?? 0);
       }
-      // The tick commits AFTER the ❌'s transaction began — with the transaction's own clock the ❌ would read OLDER than it.
+      // The premise, or the test proves nothing: the press really is waiting behind the tick.
+      expect(waiting).toBeGreaterThan(0);
+      // The tick commits AFTER the ❌'s transaction began — by the transaction's own clock the ❌ would read OLDER than it.
       await holder`
         INSERT INTO lot_checks (lot_id, seen_name_zh, seen_name_ru, seen_box_count, seen_client_id, checked_by, checked_at)
         VALUES (${lot.K}, ${`键盘${RUN}`}, ${`Клавиатура ${RUN}`}, 3, ${client.A}, ${staffId}, clock_timestamp())

@@ -309,6 +309,10 @@ describe('parseGoods', () => {
     const parsed = parseGoods(rows);
     if (c.expected.goods) expect(goodsProblems(parsed.goods as unknown as Line[], c.expected.goods)).toEqual([]);
     if (c.expected.headerRow !== undefined) expect(parsed.headerRow, 'headerRow').toBe(c.expected.headerRow);
+    for (const key of ['grossKg', 'volumeM3', 'shape'] as const) {
+      if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
+    }
+    if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
   });
 });
 
@@ -594,6 +598,15 @@ async function fileProblems(
     if (read.kind !== 'goods') out.push('no goods');
     else out.push(...goodsProblems(read.goods as unknown as Line[], want.goods));
   }
+  for (const key of ['grossKg', 'volumeM3'] as const) {
+    if (want[key] === undefined) continue;
+    const got = read.kind === 'goods' ? read[key] : '-';
+    if (got !== want[key]) out.push(`${key} ${JSON.stringify(got)}, want ${JSON.stringify(want[key])}`);
+  }
+  if (want.dropped !== undefined) {
+    const got = read.kind === 'goods' ? read.dropped : '-';
+    if (!same(got, want.dropped)) out.push(`dropped ${JSON.stringify(got)}, want ${JSON.stringify(want.dropped)}`);
+  }
   const text = read.text;
   if (want.text !== undefined && text !== want.text) out.push(`text ${JSON.stringify(text.slice(0, 300))}, want ${JSON.stringify(want.text)}`);
   for (const s of want.textIncludes ?? []) if (!text.includes(s)) out.push(`text lacks ${JSON.stringify(s)}: ${JSON.stringify(text.slice(0, 200))}`);
@@ -788,7 +801,7 @@ async function realAnalyze(script: Scripted[], timeoutMs: number) {
   const real = await vi.importActual<typeof import('@/modules/wms/calc/intake-ai')>('@/modules/wms/calc/intake-ai');
   return withStandIn(script, async (calls) => {
     const started = Date.now();
-    const out = await real.analyzeIntake({ section: 'rastamojka', text: 'Kurtka', fileCount: 0, timeoutMs });
+    const out = await real.analyzeIntake({ section: 'rastamojka', salvage: true, text: 'Kurtka', fileCount: 0, timeoutMs });
     return { out, ms: Date.now() - started, calls: calls() };
   });
 }
@@ -2258,6 +2271,31 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     model.analyze.mockResolvedValueOnce(reads([]));
     const read = await analyzeCollected(s);
     expect([read.facts.weightKg, read.facts.volumeM3]).toEqual([211, 1.6]);
+  },
+  c2904: async () => {
+    // sheets-08's collector pin (docs/FAYL-OQISH.md §4.6): a lone Excel whose model answer is
+    // count-only translations of every row names nothing — typed text beside it, or a header-less
+    // cover sheet in the workbook, is model-read material that can carry other goods, and still
+    // every translated line meets one row by its count.
+    const invoice: Cell[][] = [['Description', 'Qty'], ['Ladies jacket', 300], ['Mens jacket', 240], ['Kids pants', 400]];
+    const cover: Cell[][] = [['YIWU XINGHUA IMPORT & EXPORT CO., LTD'], ['PROFORMA INVOICE'], ['To: GSR LOGISTICS']];
+    const translated = [line('Куртка женская', { quantity: 300 }), line('Куртка мужская', { quantity: 240 }), line('Брюки детские', { quantity: 400 })];
+    for (const [material, book] of [
+      [['GS777'], xlsx({ name: 'Invoice', rows: invoice })],
+      [[], xlsx({ name: 'Cover', rows: cover }, { name: 'Invoice', rows: invoice })],
+    ] as const) {
+      const { chatId } = collection({ stage: 'material', material: [...material] });
+      await forward(chatId, book, 'inv.xlsx');
+      const s = activeIntake(chatId)!;
+      expect(s.invoiceGoods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
+      model.analyze.mockResolvedValueOnce(reads(translated));
+      const calls = model.analyze.mock.calls.length;
+      const read = await analyzeCollected(s);
+      // The model read (the case is about its answer, not about not asking it).
+      expect(model.analyze.mock.calls.length).toBe(calls + 1);
+      expect(read.notes).toEqual([]);
+      expect(read.facts.goods?.map((g) => g.name)).toEqual(['Ladies jacket', 'Mens jacket', 'Kids pants']);
+    }
   },
 };
 

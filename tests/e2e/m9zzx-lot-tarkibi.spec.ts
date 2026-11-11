@@ -34,6 +34,7 @@ test.describe.configure({ mode: 'serial' });
 
 const PASSWORD = 'demo1234';
 const VED = '+998900000004';
+const OWNER = '+998900000001';
 const LOGIST = '+998900000003';
 const YW_OPERATOR = '+998900000006';
 /** Where every spec here leaves its screenshots (the CI artifact). */
@@ -241,6 +242,14 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
   // the row. Either way nothing is written and the button comes back.
   await expect(rows.getByTestId('tnved-tarkib-ai')).toHaveCount(2);
   await expect(page.getByTestId('tnved-ai-all')).toContainText('(2)');
+  // 0144: the day's count stands beside the button — «N / limit» for everyone
+  // behind the tab's door, and NO dollars for the VED (the company's spending
+  // is the money sight's). A browser has to look: an ICU slip in one locale's
+  // sentence throws at render and takes the whole tab down in that locale.
+  const todayLine = page.getByTestId('tnved-ai-today');
+  await expect(todayLine).toBeVisible();
+  await expect(todayLine).toContainText(/\d+ \/ \d+/);
+  await expect(todayLine).not.toContainText('≈');
   // A line whose name a person coded before carries a 💡 — on a fresh
   // database neither does; a long-lived one may hold «мышь» in the memory.
   const hinted = await rows.getByTestId('tnved-tarkib-hint').count();
@@ -314,6 +323,31 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
   // The prixod's own papers, folded, on the truck's tab.
   await page.getByTestId('receipt-docs').click();
   await expect(page.locator('a[title="packing.pdf"]')).toBeVisible();
+});
+
+test('the 🤖’s bill: a reader of the company’s money sees ≈ dollars beside the count — on the tab, and where the limit is changed', async ({ page }) => {
+  await login(page, OWNER);
+  await page.goto(tnvedPath());
+  const todayLine = page.getByTestId('tnved-ai-today');
+  await expect(todayLine).toContainText(/\d+ \/ \d+/);
+  await expect(todayLine).toContainText('≈');
+  const size = page.viewportSize();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(size!.width);
+  // …and on the settings page, under both limit boxes — the door of the people who can move the limit.
+  await page.goto('/admin/settings');
+  for (const key of ['tnved_ai_daily_limit', 'tarkib_ai_daily_limit']) {
+    const spent = page.getByTestId(`setting-spent-${key}`);
+    await expect(spent).toContainText(/\d+ \/ \d+/);
+    await expect(spent).toContainText('≈');
+  }
+  // A typo in the limit box is refused in words and nothing is stored: «1 000» is not a number, and it must not become 0.
+  const box = page.locator('#setting-tarkib_ai_daily_limit');
+  const before = await box.inputValue();
+  await box.fill('1 000');
+  await box.locator('xpath=ancestor::form').locator('button[type="submit"]').click();
+  await expect(page.getByTestId('setting-bad')).toBeVisible();
+  await page.goto('/admin/settings');
+  await expect(page.locator('#setting-tarkib_ai_daily_limit')).toHaveValue(before);
 });
 
 test('the customs invoice prints the two goods, each with its own weight, places and code', async ({ page }) => {

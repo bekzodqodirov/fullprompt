@@ -173,6 +173,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
 | The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
+| «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
 
 ## State — 2026-08-23
 
@@ -3415,10 +3416,34 @@ a GOOD fix everywhere** (`COARSE_FIX_M`'s `IS NULL OR`). Answer `{accepted, drop
 leaves `last_seen_at` alone. No APK needed — jammed queues flush on the next cycle. The `[track] device …` log line
 names the cause on his server. Owed to an app release: accuracy ≥ 9 999 m is sent as «none».
 
-**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1630-#1650 — renumbered from #1622-#1642 on three merges, the
-THIRTY-SECOND, THIRTY-THIRD and THIRTY-FOURTH collisions: main's AI sotuvchi «100 ta xabar» round took #1622-#1627
+**Round — Fayl o‘qish (2026-11-10 → 11-11; DECISIONS #1630-#1641; NO migration, ledger 143; spec
+`docs/FAYL-OQISH.md`).** His «ai rastamojkaga malumotlar bergandan kegin ham tovar nomi topilmadi … fillarni qabul qil
+degandan keyin … togridan togri tasdiq deyabti», the day after Ikki eshik. A 68-agent diagnosis through the real
+handler chain (73 findings): the commonest order — one mapped Excel, no caption — never reached the model and drew
+«✅» at once, and a file gave zero goods by four routes (a timed-out non-streaming call that kept nothing, sheets only
+the model could read, the bot handing it nothing, one refused PDF sinking the rest). `aiReadingWhole`
+(platform/telegram/reading-whole.ts, state fields only) is the ONE «did the AI read what the bot ACCEPTED»: blocking
+(no goods, a cut, model-only material unanswered, a refused PDF, a missing file, an input cut, a capped Excel) vs
+named (refused at arrival, never blocking). Not whole → no «✅» anywhere it is named; 🔄 / 📄 / ➕ / «👤 VED hisoblasin»
+(`c:to_ved`, durable `landAs`, lands `intake_door='plain'` with the silent pass). The reading streams under its own
+150 s leash (32 000 / effort medium), keeps the goods a cut completed (a hand tokenizer, never the partial parser),
+bills every attempt, retries a PDF-rejected request without the PDFs. Every mapped sheet is judged by shape
+(`moreSheets`, `receiveGoodsSheet`), and the reader (`parseGoods`) finds deep headers, transposes a label|value card,
+names every row it does not take (`dropped`, `totalRowOf` the one total rule — the Latin «TOTAL» is a brand), reads
+«1,500» per column. **One factory's Σ never stands as the shipment's**: `loneGoodsFile` hands a sheet's own totals on
+only when it is the one goods file holding every row, totals written before a later fold drop (`totalsBeforeFold`),
+and beside a fold with no whole-list packing list the model's weight and cube do not land (`foldNoTotals`) — the
+brutto is asked. Built as kernel K + four packages in worktrees, then THREE review layers (as built 42 confirmed;
+the fixes 24; an independent check of those 3 more) — each found the previous layer's own regressions. Corpus 2819,
+ratchet unchanged. OWED to him: §6 Q1-Q3 (⭐ built), the `[calc intake]` log line (which route his file took), the
+typed-KGS/CBM manual reader (IC-NEW-2), the deal card's headerless import (SHEETS-4), and the cross-file mixtures §8
+records as his call.
+
+**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1642-#1662 — renumbered from #1622-#1642 on four merges, the
+THIRTY-SECOND to THIRTY-FIFTH collisions: main's AI sotuvchi «100 ta xabar» round took #1622-#1627
 first, then its `m0-smoke` locator fix (PR #144) took #1628 while the merged tree was being verified, then the driver
-app's «HTTP 400» hotfix (PR #142) took #1629 the day after the push; migration 0143
+app's «HTTP 400» hotfix (PR #142) took #1629 the day after the push, then the other session's «Fayl o'qish» (PR #141)
+took #1630-#1641 while the three suggestions were being built; migration 0143
 `tarkib_document_optional`, `when` …122 — ledger must reach 144; minted as 0142 and renumbered on the first merge, the
 THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9
 and every «As built» block binding).** His
@@ -3455,10 +3480,10 @@ shown, so a stale answer names nothing); never across a customs scope, never «�
 «Маркировка» after «№» (client code / marking + lot letter), RED where one lot's tarkib stands on several positions.
 **Every reader of the invoice sheet reads by HEADER** (`tests/fixtures/invoice-sheet.ts`). Found on the way: the
 client-history XLSX answered 500 for every client since it shipped (exceljs refuses a sheet named «History»); the
-document guard 404s a malformed id. Reviewed as built (#1648-#1649: ten findings, none refuted, all fixed and
+document guard 404s a malformed id. Reviewed as built (#1660-#1661: ten findings, none refuted, all fixed and
 red-proven — the skeptics died on the usage limit, so each was reproduced by a failing test first). LOOKED AT at 360
-and 1280 with a 60-character first good (#1647): on a phone the stock and truck tables scroll sideways (fixed
-min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1650): a red proof that turns
+and 1280 with a 60-character first good (#1659): on a phone the stock and truck tables scroll sideways (fixed
+min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1662): a red proof that turns
 a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
 `scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
 findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144) before the

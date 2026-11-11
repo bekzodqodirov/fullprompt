@@ -7,6 +7,7 @@ import { PHOTO_READ_MS, readWithin } from '../files/read-within';
 import { getStorage } from '../files/storage';
 import { logger } from '../logger';
 import {
+  collectionDoor,
   intakeFileKind,
   MAX_INTAKE_IMAGES,
   MAX_INTAKE_PDF_BYTES,
@@ -17,21 +18,29 @@ import {
 import {
   fillsWords,
   foldInvoice,
+  goodsNameKey,
   notedTotalsNote,
   packingFills,
   packingNote,
+  packingCoversHeld,
   packingOfHeld,
   packingTotals,
+  positionalFills,
+  provenOther,
   rowKindsOf,
   sameFileAgain,
   sameFileNote,
+  samePositions,
+  sameWorkbookAgain,
   totalsClashNote,
   withFileTotals,
   type GoodsFileMeta,
 } from './file-goods';
 import type { ForwardPart } from './task-draft';
+import { MAX_TELEGRAM_DOWNLOAD_BYTES } from './limits';
 import { BRIEF_RETRY_MAX_S } from './retry';
 import { botCall } from './send';
+import { clipUnits } from '../text/clip';
 
 /**
  * What a file the seller forwards becomes in a «Hisoblatish» collection, and
@@ -47,6 +56,142 @@ const FILE_DOWNLOAD_MS = 30_000;
 
 /** A PDF past this is not shown to the model — Anthropic refuses it anyway. */
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
+
+/**
+ * A file refused AT ARRIVAL, kept by name for the table (docs/FAYL-OQISH.md
+ * §1.1, judge critic-refused-unread): the seller was told then, and the table
+ * names it again — «X o‘qilmadi (sabab) — undagi tovarlar hisobga kirmaydi» —
+ * because its goods are not in the figure. Named, never blocking: there is no
+ * door to take a file back out of a collection. `why` is the reason the
+ * seller was told, as a NOUN phrase: it is read inside «X o‘qilmadi (…)» and
+ * «X — …», and a «Word fayl o‘qilmaydi» there said «not read» twice (review
+ * model-spec-refused-why-doubles-verb).
+ */
+export function refusedFilePatch(
+  state: Pick<IntakeState, 'refusedFiles'>,
+  name: string,
+  why: string,
+): Pick<IntakeState, 'refusedFiles'> {
+  return { refusedFiles: [...(state.refusedFiles ?? []), { name, why }] };
+}
+
+/**
+ * The photographs past the twelve, as ONE entry counted in place (review
+ * model-break-photo-cap-names): a Telegram photo has no name, so thirty
+ * photos wrote eighteen identical «rasm» entries, and the table named each.
+ * The first keeps its own name; from the second on, «N ta rasm».
+ */
+function photoCapPatch(state: Pick<IntakeState, 'refusedFiles'>, fileName: string): Pick<IntakeState, 'refusedFiles'> {
+  const why = `${MAX_INTAKE_IMAGES} tadan ortiq rasm`;
+  const list = state.refusedFiles ?? [];
+  const at = list.findIndex((f) => f.why === why);
+  if (at < 0) return refusedFilePatch(state, fileName || 'rasm', why);
+  const counted = /^(\d+) ta rasm$/u.exec(list[at]!.name);
+  const n = (counted ? Number(counted[1]) : 1) + 1;
+  return { refusedFiles: list.map((f, i) => (i === at ? { name: `${n} ta rasm`, why } : f)) };
+}
+
+/** Telegram hands a bot no file past 20 MB (docs/FAYL-OQISH.md §3.4, pdfimg-5): said, never «saqlab bo‘lmadi». */
+export const TOO_BIG_SAY = 'Fayl 20 MB dan katta — Telegram uni botga bermaydi. Kichikroq qilib (yoki Excel) yuboring.';
+export const TOO_BIG_WHY = '20 MB dan katta';
+/** A type storage keeps no attachment of — `readIntakeFile`'s «not read» refusal's reason too. */
+export const UNKNOWN_TYPE_WHY = 'noma’lum fayl turi';
+/**
+ * A picture DOCUMENT past storage's photo ceiling (as-built review MODEL-3):
+ * between storage's 15 MB and Telegram's 20 MB a JPEG sent as a file
+ * downloads and is then refused, and read as a failed download it dropped the
+ * caption and named nothing — every re-send failing the same way. Never
+ * `TOO_BIG_SAY`, whose «Telegram uni botga bermaydi» is false here.
+ */
+export const TOO_LARGE_PHOTO_WHY = '15 MB dan katta rasm';
+/**
+ * A table saved as HTML or XML, or a macro or binary workbook — what an ERP
+ * exports — is a type storage keeps no attachment of (as-built review
+ * OWNER-10, REGRESSION-5): «Excel/CSV yuboring» told a seller who sent a table
+ * to send a table, and «noma’lum fayl turi» called it unknown. Its own words,
+ * with the one cure that works: save it as .xlsx. By the name, else the mime.
+ */
+const TABLE_EXPORT_WHY: [RegExp, RegExp, string][] = [
+  [/\.x?html?$/iu, /^(text\/html|application\/xhtml\+xml)$/iu, 'HTML jadval'],
+  [/\.xml$/iu, /^(text|application)\/xml$/iu, 'XML jadval'],
+  // A noun phrase with no brackets of its own (review of the fixes RF-FILES-5):
+  // read inside «X o‘qilmadi (…)» it nested two, said the extension twice and
+  // put an English word in an Uzbek sentence.
+  [/\.xlsb$/iu, /^application\/vnd\.ms-excel\.sheet\.binary\.macroenabled\.12$/iu, '.xlsb Excel fayli'],
+];
+function tableExportWhy(file: { name: string; mime?: string | null }): string | null {
+  for (const [ext, mime, why] of TABLE_EXPORT_WHY) {
+    if (ext.test(file.name) || (file.mime ? mime.test(file.mime) : false)) return why;
+  }
+  return null;
+}
+
+/**
+ * What a collection's door does with a file it could not STORE (docs/
+ * FAYL-OQISH.md §3.4) — one rule for the file door and the add door's two
+ * media doors. A refusal no re-send can heal — past Telegram's 20 MB, a type
+ * storage will not keep — is said in its own words and named on the table
+ * (`refusedFiles`), and the door reads the caption: no later copy of the
+ * message brings the file, so its typed goods would be lost with it. Null for
+ * a `download_failed`: then the door TAKES NOTHING — the same message sent
+ * again brings the file and its caption together, and a caption read now was
+ * read twice when the seller did what he was told, two rows of one good,
+ * priced twice (review model-break-caption-kept-then-retyped). The burst
+ * take has always left such a part whole for the re-press.
+ */
+export function permanentRefusal(
+  state: Pick<IntakeState, 'refusedFiles'>,
+  refused: BotFileRefusal['refused'],
+  file: { name: string; isPhoto: boolean; mime?: string | null },
+): { patch: Pick<IntakeState, 'refusedFiles'>; say: string } | null {
+  const name = file.name || (file.isPhoto ? 'rasm' : 'fayl');
+  const label = file.name ? `«${file.name}»` : 'Fayl';
+  if (refused === 'too_big') return { patch: refusedFilePatch(state, name, TOO_BIG_WHY), say: TOO_BIG_SAY };
+  if (refused === 'too_large') {
+    return {
+      patch: refusedFilePatch(state, name, TOO_LARGE_PHOTO_WHY),
+      // «(yoki PDF)» offered a route the PDF rule closes (review of the fixes
+      // RF-FILES-4): a picture wrapped in a PDF keeps its bytes, and past
+      // 10 MB a PDF is refused again. The cure that always works is a PHOTO —
+      // Telegram shrinks it, and the model reads 1568 px anyway.
+      say: `🖼 ${label} — rasm 15 MB dan katta, saqlanmadi. Fayl emas, rasm qilib (yoki kichraytirib) yuboring.`,
+    };
+  }
+  const table = refused === 'unsupported' ? tableExportWhy(file) : null;
+  if (table) {
+    return {
+      patch: refusedFilePatch(state, name, table),
+      say: `📎 ${label} kartada saqlanmadi: ${table} o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.`,
+    };
+  }
+  if (refused === 'unsupported') {
+    return {
+      patch: refusedFilePatch(state, name, UNKNOWN_TYPE_WHY),
+      say: `📎 ${label} kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.`,
+    };
+  }
+  return null;
+}
+
+/**
+ * Does the PDF say it is ENCRYPTED (docs/FAYL-OQISH.md §3.4, judge
+ * model-encrypt-sniff)? Its trailer's `/Encrypt n g R` — looked for in the
+ * trailer region only: the last 4 KB, and the first 2 KB where a linearized
+ * file keeps its first-page trailer. Never the whole file, where a page's own
+ * text may say «/Encrypt» (measured: an uncompressed page about the
+ * dictionary greps true and is no encrypted file). A WARNING, never a
+ * refusal: an owner-password-only PDF (no-print, no-edit — how many supplier
+ * ERPs export) carries the same entry and opens with no password; whether the
+ * API reads it is learned at the reading, where a refusal is named
+ * (`unreadPdfs`).
+ */
+export function pdfMayBeEncrypted(body: Buffer): boolean {
+  const entry = /\/Encrypt\s+\d+\s+\d+\s+R\b/;
+  return (
+    entry.test(body.subarray(Math.max(0, body.length - 4096)).toString('latin1')) ||
+    entry.test(body.subarray(0, 2048).toString('latin1'))
+  );
+}
 
 /**
  * The namespace of an intake file's attachment id: `uuidv5(noteId:messageId)`
@@ -65,7 +210,28 @@ export const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string
   encrypted: (label) => `📄 ${label} — parol bilan himoyalangan, o‘qilmaydi. Parolsiz yuboring.`,
   broken: (label) => `📄 ${label} — Excel fayl buzilgan yoki o‘qib bo‘lmadi. Qayta saqlab yuboring.`,
   empty: (label) => `📄 ${label} — jadval bo‘sh.`,
+  pictures: (label) => `📄 ${label} — jadval bo‘sh. ${PICTURES_LINE}`,
 };
+
+/** The same refusals as a table's reason (`refusedFiles`); null = nothing of it was lost. A NOUN phrase each (`refusedFilePatch`). */
+export const SHEET_REFUSAL_WHY: Record<SheetRefusalReason, string | null> = {
+  old_format: 'Excel 95 yoki undan eski format',
+  encrypted: 'parol bilan himoyalangan',
+  broken: 'Excel fayl buzilgan',
+  empty: null,
+  // A workbook whose only content is pictures (§4.4): the goods it shows were
+  // never read, so the table names it as a file the AI did not see.
+  // A noun phrase (as-built review OWNER-11, MODEL-7): «X o‘qilmadi (Excel
+  // ichidagi rasm o‘qilmaydi)» said «not read» twice.
+  pictures: 'ichida faqat rasm, jadval yo‘q',
+};
+
+/**
+ * A workbook whose goods are in a picture (docs/FAYL-OQISH.md §4.4,
+ * unmapped-embedded-picture-dropped): nothing reads a picture inside an
+ * Excel, and «jadval bo‘sh» or «AI o‘qiydi» alone sent nobody to the cure.
+ */
+export const PICTURES_LINE = 'Excel ichidagi rasm o‘qilmaydi — rasmni alohida (rasm yoki PDF qilib) yuboring.';
 
 /**
  * What a file is worth to the collection, and what the seller is told — pure.
@@ -100,7 +266,12 @@ export function refusalOf(answer: FileAnswer): string | null {
  * reader stopped before its end. One home for the receipt's words and the
  * prompt's (§1.4), which redraws them as later files squeeze the budget.
  */
-export function sheetTextLine(label: string, fit: { kept: number; total: number }, readerCut: boolean): string {
+export function sheetTextLine(
+  label: string,
+  fit: { kept: number; total: number },
+  readerCut: boolean,
+  saw: Pick<SheetText, 'why' | 'pictures'> = {},
+): string {
   const cut =
     fit.kept === 0
       ? '\n⚠️ Bu jadval AI ga sig‘madi (oldingi jadvallar bilan birga juda katta) — VED faylni kartadan o‘qiydi.'
@@ -109,7 +280,17 @@ export function sheetTextLine(label: string, fit: { kept: number; total: number 
         : fit.kept < fit.total
           ? `\n⚠️ Jadval katta: AI faqat birinchi ${fit.kept} / ${fit.total} qatorini o‘qiydi — qolganini VED fayldan ko‘radi.`
           : '';
-  return `📄 ${label} — jadval sarlavhasini topa olmadim, AI o‘qiydi.${cut}`;
+  // What the reader saw says the first words (docs/FAYL-OQISH.md §4.4): a
+  // header it FOUND, with no goods row under it, is not «sarlavhasini topa
+  // olmadim»; a text with no row pairing a name with a figure promises no
+  // goods the model could find.
+  const head =
+    saw.why === 'header'
+      ? 'jadvaldan tovar qatorlarini o‘zim ajrata olmadim, AI o‘qiydi.'
+      : saw.why === 'no_rows'
+        ? 'jadvalda tovar qatori ko‘rinmadi.'
+        : 'jadval sarlavhasini topa olmadim, AI o‘qiydi.';
+  return `📄 ${label} — ${head}${saw.pictures ? ` ${PICTURES_LINE}` : ''}${cut}`;
 }
 
 /**
@@ -144,19 +325,46 @@ export function receivePdf(
   state: IntakeState,
   pdf: { attachmentId: string; name: string; bytes: number },
   label: string,
+  /** Its trailer names an `/Encrypt` dictionary (`pdfMayBeEncrypted`) — warned, still read. */
+  opts: { encrypted?: boolean } = {},
 ): FileAnswer {
+  // Every refusal here is named on the table too (`refusedFiles`), with the
+  // reason the seller is told now.
   if (pdf.bytes > MAX_PDF_BYTES) {
-    return { patch: {}, say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.` };
-  }
-  const bytes = state.pdfs.reduce((n, p) => n + p.bytes, 0);
-  if (state.pdfs.length >= MAX_INTAKE_PDFS || bytes + pdf.bytes > MAX_INTAKE_PDF_BYTES) {
     return {
-      patch: {},
+      patch: refusedFilePatch(state, pdf.name, 'PDF 10 MB dan katta'),
+      say: `📄 ${label} — PDF juda katta (10 MB dan ortiq), AI o‘qimaydi. Kartada saqlandi.`,
+    };
+  }
+  // Only the PDFs a reading will SEND count against the caps: one the API
+  // refused is never sent again (`unreadPdfs`, `loadIntakeFiles`), and
+  // counted it refused the very password-free copy its warning asked for
+  // (review model-break-pdf-caps-count-refused).
+  const refused = new Set(state.unreadPdfs ?? []);
+  const live = state.pdfs.filter((p) => !refused.has(p.attachmentId));
+  // Two caps, two sentences (pdfimg-8): the third of three 5 MB PDFs was
+  // told «3 tadan ortiq PDF» — it was the third, and the bytes stopped it.
+  if (live.length >= MAX_INTAKE_PDFS) {
+    return {
+      patch: refusedFilePatch(state, pdf.name, `${MAX_INTAKE_PDFS} tadan ortiq PDF`),
       say: `📄 ${label} — bitta so‘rovga ${MAX_INTAKE_PDFS} tadan ortiq PDF o‘qilmaydi. Kartada saqlandi.`,
     };
   }
+  const bytes = live.reduce((n, p) => n + p.bytes, 0);
+  if (bytes + pdf.bytes > MAX_INTAKE_PDF_BYTES) {
+    const mb = Math.round(MAX_INTAKE_PDF_BYTES / (1024 * 1024));
+    return {
+      patch: refusedFilePatch(state, pdf.name, `PDFlar jami ${mb} MB dan oshdi`),
+      say: `📄 ${label} — PDFlar jami ${mb} MB dan oshdi, bu PDF AI ga o‘qilmaydi. Kichikroq qilib yuboring. Kartada saqlandi.`,
+    };
+  }
+  // A PDF that may be password-protected is READ and warned about (§3.4):
+  // the warning is a receipt-time note, which the ONE prompt draws.
+  const warned = opts.encrypted
+    ? { fileNotes: [...(state.fileNotes ?? []), `⚠️ ${label} parol bilan himoyalangan bo‘lishi mumkin — AI o‘qiy olmasa, parolsiz saqlab yuboring.`] }
+    : {};
   return {
-    patch: { pdfs: [...state.pdfs, pdf], ...beside(state) },
+    patch: { pdfs: [...state.pdfs, pdf], ...beside(state), ...warned },
     say: `📄 ${label} — AI o‘qiydi.`,
   };
 }
@@ -169,12 +377,22 @@ export function receivePdf(
  * workbook's other sheets the shared budget squeezed. Pure; `fit` is
  * `fitSheetRows` at the reader's cap (what `receiveSheetText` asks).
  */
-export function promptFileLines(state: Pick<IntakeState, 'pdfs' | 'sheetTexts' | 'invoiceTexts'>, fit: SheetFit): string[] {
+export function promptFileLines(
+  state: Pick<IntakeState, 'pdfs' | 'sheetTexts' | 'invoiceTexts' | 'unreadPdfs'>,
+  fit: SheetFit,
+): string[] {
   const all = [...state.sheetTexts, ...state.invoiceTexts];
   const fitted = all.length > 0 ? fit(all.map((s) => s.text.trim())) : { kept: [], total: [] };
-  const pdfs = state.pdfs.map((p) => `📄 «${p.name}» — AI o‘qiydi.`);
+  // A PDF the API refused stays in `pdfs` until the NEXT reading moves it to
+  // the named refusals, and the reading sends it no more (`loadIntakeFiles`):
+  // «AI o‘qiydi» under the seller's next file promised what the table above
+  // had just said did not happen (as-built review WORDS-5). The table's words.
+  const refused = new Set(state.unreadPdfs ?? []);
+  const pdfs = state.pdfs.map((p) =>
+    refused.has(p.attachmentId) ? `📄 «${p.name}» — AI bu faylni qabul qilmadi.` : `📄 «${p.name}» — AI o‘qiydi.`,
+  );
   const sheets = state.sheetTexts.map((s, i) =>
-    sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut),
+    sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut, s),
   );
   // A workbook's other sheets, by its file: squeezed only when the fit took
   // rows the reader itself kept — its own cut is a receipt note already.
@@ -238,7 +456,7 @@ export function receiveSheetText(state: IntakeState, label: string, sheet: Sheet
   });
   return {
     patch: { sheetTexts, ...beside(state) },
-    say: sheetTextLine(label, { kept, total }, sheet.cut) + squeezed.join(''),
+    say: sheetTextLine(label, { kept, total }, sheet.cut, sheet) + squeezed.join(''),
   };
 }
 
@@ -288,12 +506,74 @@ export function receiveGoodsSheet(
     shape?: Partial<Pick<GoodsFileMeta, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>>;
     /** A packing list's own rows as text, with the reader's cuts (`GoodsFileRead.ownText`). */
     ownText?: { text: string; cut: boolean; cellsCut: boolean } | null;
+    /**
+     * `text` is the workbook's sheets with NO header mapped (docs/FAYL-OQISH.md
+     * §4.1) — model-read material that may hold goods of its own, which the
+     * reading names rather than drops (§4.6). Absent = a caller that hands
+     * the other sheets over as one text, as before.
+     */
+    unmapped?: boolean;
+    /**
+     * The workbook was judged «not sent before» as a WHOLE (`sameWorkbookAgain`,
+     * §4.1): its goods sheet is not asked alone, or a workbook whose goods
+     * sheet came before and whose «Zavod B» is new would read «bu fayl avval
+     * yuborilgan».
+     */
+    wholeJudged?: boolean;
+    /**
+     * A FURTHER mapped sheet of the workbook whose goods sheet came first
+     * (docs/FAYL-OQISH.md §4.2): judged by its shape against everything held,
+     * never as a second file — `sheet` its name, and the goods sheet's name,
+     * rows as read and shape.
+     */
+    further?: {
+      sheet: string;
+      goodsSheet: string;
+      goodsRows: NonNullable<IntakeState['invoiceGoods']>;
+      goodsShape: 'invoice' | 'packing';
+      /**
+       * The most goods one request holds (`MAX_CALC_ITEMS`, the queue's own
+       * limit): a fold past it is not made (as-built review REGRESSION-1).
+       * Absent = no bound (a caller from before).
+       */
+      itemCap?: number;
+    };
+    /**
+     * The rows the reader did NOT take as goods (docs/FAYL-OQISH.md §5.5):
+     * the receipt's words for them (`droppedRowsLine`, null = nothing worth
+     * saying) and the text of each row it names.
+     */
+    dropped?: { line: string | null; rows: readonly string[] };
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
+  // A further sheet's own words name the SHEET (as-built review SHEETS-1): its
+  // dropped rows are that sheet's, never the goods sheet's.
+  const ownLabel = sheet.further ? `${label}, ${sheetName(sheet.further.sheet)} varag‘i` : label;
   const texts: SheetText[] = sheet.text
-    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label }]
+    ? [{ text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, label, ...(sheet.unmapped ? { unmapped: true as const } : {}) }]
     : [];
+  // A row not taken as goods is SAID and SHOWN, never lost in silence
+  // (§5.5, review reader-b-break-dropped-has-no-reader): a figure-less last
+  // line under the list may be a real good — «Шапка», «Шарф» after the rows
+  // that carry figures — and the reader cannot tell it from «Made in China».
+  // The seller reads it on the receipt (a receipt-time note: the prompt and
+  // the card's note carry it, so the VED does too) and types it back if it
+  // is a good; on the AI door the model reads the same rows beside the list,
+  // under the totals-only heading. The plain door asks no model of a lone
+  // Excel, and a footer must not start one there; a label-only «TOTAL» is no
+  // news to the seller or the model (`droppedRowsLine`) and starts none.
+  const droppedRows = sheet.dropped?.rows ?? [];
+  if (droppedRows.length > 0 && collectionDoor(state) === 'ai') {
+    texts.push({
+      text: [`[Под таблицей ${sheet.further ? `${label}, лист ${sheetName(sheet.further.sheet)}` : label}: строки, не взятые как товары]`, ...droppedRows].join('\n'),
+      cut: false,
+      cellsCut: false,
+      label,
+      // Context for a reading, never the reason for one (as-built review MODEL-8).
+      dropped: true,
+    });
+  }
   // Where the material stood: a totals answer given before this file is
   // older than what it gave (`totalsDoubts`, §1.2.5) — kept ON the file, so a
   // packing list that came first hands its own mark over (PF-ADV-9).
@@ -315,6 +595,7 @@ export function receiveGoodsSheet(
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
   const cutLines = [
+    ...(sheet.dropped?.line ? [`📄 ${ownLabel} — ${sheet.dropped.line}.`] : []),
     ...(sheet.capped
       ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
       : []),
@@ -353,14 +634,22 @@ export function receiveGoodsSheet(
     };
   };
 
+  if (sheet.further && held.length > 0) return receiveFurtherSheet(state, sheet, sheet.further, meta, cutLines, texts, { answer, totalsOf, ownText });
+  // The rows the request already stores (an add or seeded collection).
+  const kept = state.amend?.items ?? state.seed ?? [];
   if (held.length === 0) {
-    if (topUp && packing) {
+    if (topUp && packing && kept.length > 0) {
       // A top-up's packing list is a NOTED file (§1.2.3): its totals go on the
       // note for the VED and its rows change no row — kept as goods, every one
       // a stored row does not `sameLine` landed as a 🆕 line, the request's
       // own goods priced twice (review PF-SPEC-2, law-money-5). Its text rides
       // with the model's totals-only sheets; it is no goods list, so an
-      // invoice after it is the goods list and takes nothing from it.
+      // invoice after it is the goods list and takes nothing from it. Only
+      // while the request HAS rows for it to be the totals of
+      // (docs/FAYL-OQISH.md §4.5, known-2): a returned request with none, or a
+      // ➕ on an empty one, priced nothing twice by taking it — and noting it
+      // withheld the only goods list there was, under a heading telling the
+      // model its goods were «already taken».
       return answer(
         { invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts] },
         [notedTotalsNote(label, packingTotals(meta, goods)), ...cutLines],
@@ -378,7 +667,7 @@ export function receiveGoodsSheet(
     );
   }
   // The same file again: nothing of it is new, and it is said (PF-ADV-6).
-  if (sameFileAgain(held, goods, sheet.text, state.invoiceTexts)) {
+  if (!sheet.wholeJudged && sameFileAgain(held, goods, sheet.text, state.invoiceTexts)) {
     return answer({}, [sameFileNote(label)]);
   }
   const kinds = rowKindsOf(files, held.length);
@@ -410,7 +699,12 @@ export function receiveGoodsSheet(
   const first = files.length === 1 ? files[0]! : null;
   if (
     !packing &&
-    !topUp &&
+    // …and on a top-up whose packing list WAS the goods list (§4.5: nothing
+    // stored for it to be the totals of) — barred there too, the invoice after
+    // it was folded in as new goods and the order read twice (review
+    // sheets-break-empty-topup-swap). `totalsOf` keeps a top-up's totals on
+    // the note.
+    !(topUp && kept.length > 0) &&
     first &&
     first.shape === 'packing' &&
     first.rows === held.length &&
@@ -450,6 +744,231 @@ export function receiveGoodsSheet(
 }
 
 /**
+ * A packing list of SOME of the held goods, beside another factory's folded in
+ * (as-built review SHEETS-3): its netto gaps are filled, its totals are not the
+ * shipment's and are not taken.
+ */
+function partOfHeldNote(label: string, filled: number): string {
+  const fills = filled > 0 ? ` ${fillsWords(filled)}` : '';
+  return `📄 ${label} — ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk uchun olinmadi.${fills}`;
+}
+
+/**
+ * Did the standing totals TAKE a figure (the independent check's IC-NEW-3)?
+ * Two packing lists that disagreed leave a clash with both figures null —
+ * the seller was already told «ikkalasi ham olinmadi», so «undan olingan …
+ * endi butun yukniki emas» would name figures that were never taken.
+ */
+const tookFigures = (t: NonNullable<IntakeState['fileTotals']>): boolean => t.weightKg !== null || t.volumeM3 !== null;
+
+/** Totals a packing list gave before another factory's goods were folded in — no longer the shipment's (SHEETS-3). */
+function staleTotalsNote(label: string): string {
+  return `📄 ${label} — undan olingan umumiy brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.`;
+}
+
+/**
+ * Were the standing `fileTotals` written BEFORE goods of another file were
+ * folded into the list (review of the fixes RF-TOTALS-1)? Then they are the
+ * list's as it stood, never with those goods in it. Judged by the receipt
+ * marks: a folded goods file that added rows and arrived after the totals.
+ * The sheets of ONE workbook share a mark, and a fold among them already
+ * drops what stood before it (SHEETS-3), so totals that share a fold's mark
+ * were written after it — a whole packing list later in the same workbook.
+ */
+function totalsBeforeFold(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles'>): boolean {
+  const totals = state.fileTotals;
+  if (!totals) return false;
+  return (state.goodsFiles ?? []).slice(1).some((f) => f.rows > 0 && (f.at === undefined || f.at.files > totals.at.files));
+}
+
+/** A sheet's name as the seller's words carry it — capped, it is anybody's text. */
+const sheetName = (name: string) => `«${name.length > 60 ? `${clipUnits(name, 59)}…` : name}»`;
+
+/**
+ * A FURTHER mapped sheet of a workbook, by its SHAPE (docs/FAYL-OQISH.md §4.2,
+ * his 2a ⭐: «boshqa varaqdagi tovarlar BOSHQA ekani aniq ko‘rinsa, ular
+ * qo‘shiladi; packing list varag‘i bo‘lsa, undan og‘irlik va kub olinadi;
+ * aniqlab bo‘lmasa, hozirgidek qoladi va bot buni aytadi»). Before, every
+ * other sheet became text the model was told not to list — another factory's
+ * goods on «Zavod B» vanished with no word, and the same goods' packing list
+ * gave its totals only if the model read them. Against EVERYTHING held (the
+ * sheets before it, and the files before the workbook):
+ *  - a PACKING-shaped sheet of the held goods — `packingOfHeld`, as a second
+ *    file is judged; or, inside this one workbook, a packing list line for
+ *    line with an invoice goods sheet in another script (`samePositions`,
+ *    R1) — gives the totals and the netto gaps (by position for R1), as a
+ *    second file does; in a top-up its totals go on the note, never the
+ *    request (R3 interp 2);
+ *  - a sheet PROVEN to hold other goods (`provenOther`; in a top-up the
+ *    stored rows fence its names) is folded in as new goods and named; its text goes
+ *    nowhere — left under the model's «for totals» heading, its Σ came back
+ *    as the shipment's (sheets-07);
+ *  - anything else keeps TODAY's reading: its text goes to the model for the
+ *    totals (the «НЕ перечисляй» heading stands — the round-2 C2/C6 doubling
+ *    is what lifting it brings back), and the seller is told so, once, with
+ *    the cure. The role swap of an invoice after a packing goods sheet is NOT
+ *    done here (§8): a one-line «AS PER PACKING LIST» invoice would take the
+ *    goods role from twelve mapped rows.
+ * Never a second file's rules unjudged: `foldInvoice` alone doubled an
+ * invoice and its own translation sheet (unmapped-other-sheets R1). Pure.
+ */
+function receiveFurtherSheet(
+  state: IntakeState,
+  sheet: Parameters<typeof receiveGoodsSheet>[1],
+  further: NonNullable<Parameters<typeof receiveGoodsSheet>[1]['further']>,
+  meta: GoodsFileMeta,
+  /** The sheet's receipt words (its dropped rows, its cap) — said on EVERY branch (SHEETS-1). */
+  cutLines: string[],
+  /** …and its dropped rows as the AI door's context (`receiveGoodsSheet`'s `texts`). */
+  texts: SheetText[],
+  tools: {
+    answer: (patch: Partial<IntakeState>, lines: string[]) => FileAnswer;
+    totalsOf: (
+      m: GoodsFileMeta,
+      rows: NonNullable<IntakeState['invoiceGoods']>,
+      rowsFrom: string,
+      filled: number,
+    ) => { patch: Partial<IntakeState>; lines: string[] };
+    ownText: (m: GoodsFileMeta) => SheetText[];
+  },
+): FileAnswer {
+  const { goods, label } = sheet;
+  const held = state.invoiceGoods ?? [];
+  const files = state.goodsFiles ?? [];
+  const kinds = rowKindsOf(files, held.length);
+  const sheetLabel = `${label}, ${sheetName(further.sheet)} varag‘i`;
+  const m: GoodsFileMeta = { ...meta, label: sheetLabel };
+  const topUp = state.amend !== null || state.seed !== null;
+  if (m.shape === 'packing') {
+    const ofHeld = packingOfHeld(held, kinds, goods, m.weightKind);
+    // Its totals are the shipment's only while it answers for the WHOLE held
+    // list (as-built review SHEETS-3): with another factory's goods already
+    // folded in (two goods files held), factory A's packing list still passes
+    // `packingOfHeld`, and its Σ was written — and announced — as the
+    // shipment's brutto and cube with factory B's cargo out of both. One goods
+    // file held keeps the loose rule a second file has always had. A top-up
+    // writes no totals anyway (its note carries the list's own).
+    const covers = ofHeld && (topUp || files.length <= 1 || packingCoversHeld(held, kinds, goods, m.weightKind));
+    if (ofHeld && !covers) {
+      const fill = packingFills(held, kinds, goods, m.weightKind);
+      // Totals a packing list gave BEFORE the fold that made this list a part
+      // (review of the fixes RF-TOTALS-1, «[CI A, PL A] then [CI B, PL B]»):
+      // factory B's invoice folds on the main path, which drops nothing, so
+      // PL B was the first to meet PL A's standing Σ — and, taking none
+      // itself, left factory A's brutto and cube as the shipment's under a ✅.
+      // By this branch's own proof they are a part's. Dropped and said, as
+      // the fold below drops them.
+      const stale = totalsBeforeFold(state) ? state.fileTotals : null;
+      // Its text goes nowhere: under the model's totals heading its Σ came
+      // back as the shipment's (seam 1's shape); its dropped rows still reach
+      // the model on the AI door (SHEETS-1).
+      return tools.answer(
+        {
+          invoiceGoods: fill.goods,
+          ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
+          ...(stale ? { fileTotals: null } : {}),
+        },
+        [partOfHeldNote(m.label, fill.filled), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
+      );
+    }
+    // R1 only while the held list IS the goods sheet's rows, place for place:
+    // with other goods held (a file before the workbook, a sheet folded in
+    // before this one) the packing list's Σ is not the list's, and the same
+    // goods held in another order would take each other's netto.
+    const inLine =
+      !ofHeld &&
+      further.goodsShape === 'invoice' &&
+      held.length === further.goodsRows.length &&
+      held.every((h, i) => goodsNameKey(h.name) === goodsNameKey(further.goodsRows[i]!.name)) &&
+      samePositions(further.goodsRows, goods);
+    if (covers || inLine) {
+      const fill = covers ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
+      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled);
+      // The text keeps the FILE's label: a later file that squeezes it names
+      // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
+      // name is the text's first line for the model.
+      return tools.answer(
+        // Its own text (the model's) holds its every row; the receipt says
+        // what was not taken as a row of the held goods (SHEETS-1).
+        { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText({ ...m, label })], ...totals.patch },
+        [...totals.lines, ...cutLines],
+      );
+    }
+  }
+  // The stored rows of a top-up fence the names only (`provenOther`'s `stored`).
+  const kept = topUp ? (state.amend?.items ?? state.seed ?? []) : [];
+  // Past the queue's limit the JUDGEMENT is not made either (as-built review
+  // REGRESSION-2): `provenOther` asks every row against every held row, and
+  // the held list grows with each fold — ten sheets of 500 cost 4 s and twenty
+  // two minutes of synchronous CPU on the one process the bot's poller awaits.
+  // A fold can only keep or add rows, so a list that would pass the limit
+  // whatever the answer is not asked; the sheet keeps today's reading.
+  const pastCap = further.itemCap !== undefined && held.length + goods.length > further.itemCap;
+  const fold =
+    !pastCap && provenOther(held, goods, kept)
+      ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ')
+      : null;
+  // Another factory's goods past the queue's limit are not folded (as-built
+  // review REGRESSION-1): one file was bounded at 500 rows and the queue
+  // refuses a job over a thousand, and three sheets of 400 folded into a table
+  // that invited «✅ Tasdiqlash» — whose press then ENDED the collection, every
+  // file lost. The sheet keeps today's reading, and the seller is told.
+  const overCap = pastCap || (fold !== null && further.itemCap !== undefined && fold.goods.length > further.itemCap);
+  if (fold && !overCap) {
+    // Totals a packing list gave BEFORE this fold were the list's then, never
+    // with these new goods in it (as-built review SHEETS-3, the order «CI A,
+    // PL A, CI B»): kept, factory A's brutto and cube stood as the shipment's.
+    // Dropped and said — the brutto is asked, as beside any fold (§4.3). A
+    // packing list that happened to list B's goods too is lost with it; the
+    // seller answers one figure, and nothing is priced on half a truck.
+    const stale = !topUp && state.fileTotals ? state.fileTotals : null;
+    return tools.answer(
+      {
+        invoiceGoods: fold.goods,
+        goodsFiles: [...files, { ...m, rows: fold.added, text: null }],
+        // A folded sheet's text goes nowhere (§4.2), so its dropped rows go to
+        // the model here, on the AI door (SHEETS-1).
+        ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
+        ...(stale ? { fileTotals: null } : {}),
+      },
+      [
+        ...(fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines),
+        ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : []),
+      ],
+    );
+  }
+  // Today's reading, said (§4.2): the sheet's text for the totals — and when
+  // the reader cut it (the further sheets share one budget), that is said too.
+  const own = sheet.ownText;
+  const cut = own?.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
+  if (overCap) {
+    // NOTHING of it goes to the model (review of the fixes RF-TOTALS-3): its
+    // goods are not in the list and it was never judged, so it cannot be the
+    // list's totals — under the totals heading, beside the fold that filled
+    // the list, a 150-row sheet's TOTAL was the only figure the model was
+    // told to take. Nor the «⚠️ Jadval katta … (tovarlar ro‘yxati to‘liq
+    // olindi)» line (RF-WORDS-5, RF-REGRESSION-2): one line after «qo‘shilmadi»
+    // it claimed the opposite, about a text no model is shown.
+    // Unjudged, it may be the same goods again (a translation, a packing
+    // list): the cure is conditional.
+    return tools.answer({}, [
+      `📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.`,
+    ]);
+  }
+  return tools.answer(
+    {
+      invoiceTexts: [
+        ...state.invoiceTexts,
+        ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : []),
+      ],
+    },
+    // No row of this sheet is taken as a good here, and its whole text goes to
+    // the model: there is no «not taken» to name.
+    [`📄 ${sheetLabel} — o‘sha tovarlar deb olindi (faqat jami uchun o‘qildi); boshqa tovar bo‘lsa, alohida fayl qilib yuboring.`, ...cut],
+  );
+}
+
+/**
  * What a forwarded file is worth to the calculation, and the one sentence the
  * seller is told about it — every file is ANSWERED (the diagnosis' cause 3:
  * an .xls, a second PDF, a seventh photo, a photo sent as a file were all
@@ -478,11 +997,56 @@ export async function readIntakeFile(
   mime: string | null,
   state: IntakeState,
 ): Promise<FileAnswer> {
+  const answer = await answerIntakeFile(saved, fileName, mime, state);
+  return { ...answer, patch: { ...answer.patch, ...resentAccepted(state, answer.patch, fileName) } };
+}
+
+/**
+ * A file ACCEPTED under the name of one refused before (as-built review
+ * MODEL-5): the bot's own refusal asks for a re-send — «kichikroq qilib
+ * yuboring», «parolsiz saqlab yuboring» — and the ✅ table went on saying
+ * «CI-2611.pdf o‘qilmadi» beside the goods that very file gave. The entry
+ * STAYS and is marked `resent` (review of the fixes RF-FILES-1): a name is no
+ * identity — factory A's picture-only «装箱单.xlsx» and factory B's real one,
+ * two suppliers' «CI.pdf», share it in the very collections this round is
+ * about — and deleted on a name match the refusal that was still true went
+ * silent. Marked, it reads «(avvalgi nusxa) … keyin shu nomli fayl olindi»,
+ * which is true either way. Never under a name the bot made up («rasm»,
+ * «fayl», «N ta rasm»), which is any unnamed photo's. Nothing = no change.
+ */
+function resentAccepted(state: IntakeState, patch: Partial<IntakeState>, fileName: string): Pick<IntakeState, 'refusedFiles'> | Record<string, never> {
+  const name = fileName.trim();
+  const list = patch.refusedFiles ?? state.refusedFiles ?? [];
+  if (!name || name === 'rasm' || name === 'fayl' || /^\d+ ta rasm$/u.test(name)) return {};
+  if (!list.some((f) => f.name === name && !f.resent)) return {};
+  const grew = (now: readonly unknown[] | undefined, was: readonly unknown[]) => now !== undefined && now.length > was.length;
+  const taken =
+    grew(patch.pdfs, state.pdfs) ||
+    grew(patch.images, state.images) ||
+    grew(patch.sheetTexts, state.sheetTexts) ||
+    grew(patch.invoiceTexts, state.invoiceTexts) ||
+    patch.invoiceGoods !== undefined;
+  // …and taken in THIS answer: a refusal it wrote of the same name stands.
+  const fresh = (patch.refusedFiles ?? []).slice((state.refusedFiles ?? []).length).some((f) => f.name === name);
+  if (!taken || fresh) return {};
+  return { refusedFiles: list.map((f) => (f.name === name && !f.resent ? { ...f, resent: true as const } : f)) };
+}
+
+/** `readIntakeFile`'s answer before the re-send rule (`resentAccepted`). */
+async function answerIntakeFile(
+  saved: { isPhoto: boolean; body: Buffer; attachmentId: string },
+  fileName: string,
+  mime: string | null,
+  state: IntakeState,
+): Promise<FileAnswer> {
   const label = fileName ? `«${fileName}»` : 'Fayl';
   const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
   if (kind === 'image' || kind === 'isomedia') {
-    // Counted, never silent: the prompt says how many will not be read.
-    if (state.images.length >= MAX_INTAKE_IMAGES) return { patch: { imagesSkipped: state.imagesSkipped + 1 }, say: null };
+    // Counted, never silent: the prompt says how many will not be read — and
+    // the table names them after the reading (pdfimg-12, `refusedFiles`).
+    if (state.images.length >= MAX_INTAKE_IMAGES) {
+      return { patch: { imagesSkipped: state.imagesSkipped + 1, ...photoCapPatch(state, fileName) }, say: null };
+    }
     const reduced = await reduceForModel(saved.body).catch(() => null);
     // The reduction this needs anyway is KEPT, beside the original, for the
     // reading to send (docs/SAKKIZ-R3.md §7.2.4): a dozen 3-5 MB photos read
@@ -491,7 +1055,10 @@ export async function readIntakeFile(
     if (reduced) void storeModelCopy(saved.attachmentId, reduced);
     if (!reduced) {
       return {
-        patch: { imagesSkipped: state.imagesSkipped + 1 },
+        patch: {
+          imagesSkipped: state.imagesSkipped + 1,
+          ...refusedFilePatch(state, fileName || 'rasm', kind === 'isomedia' ? 'HEIC rasm' : 'rasm ochilmadi'),
+        },
         say:
           kind === 'isomedia'
             ? `📷 ${label} — HEIC rasm, o‘qib bo‘lmaydi. JPG yoki skrinshot qilib yuboring.`
@@ -513,30 +1080,53 @@ export async function readIntakeFile(
       state,
       { attachmentId: saved.attachmentId, name: fileName || 'invoice.pdf', bytes: saved.body.length },
       label,
+      { encrypted: pdfMayBeEncrypted(saved.body) },
     );
   }
-  if (kind === 'docx') return { patch: {}, say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.` };
-  if (kind === 'video') return { patch: {}, say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  // Refused at arrival, and named on the table after the reading too
+  // (`refusedFiles`, docs/FAYL-OQISH.md §1.1).
+  const named = fileName || 'fayl';
+  if (kind === 'docx') {
+    return {
+      patch: refusedFilePatch(state, named, 'Word fayl'),
+      say: `📄 ${label} — Word fayl o‘qilmaydi. PDF yoki Excel qilib yuboring.`,
+    };
+  }
+  if (kind === 'video') {
+    return { patch: refusedFilePatch(state, named, 'video'), say: `🎬 ${label} — video o‘qilmaydi. Rasm yoki matn yuboring.` };
+  }
   if (kind === 'archive') {
-    return { patch: {}, say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.` };
+    return {
+      patch: refusedFilePatch(state, named, 'arxiv'),
+      say: `🗜 ${label} — arxiv o‘qilmaydi. Ichidagi fayllarni alohida yuboring.`,
+    };
   }
 
-  const { readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+  const { droppedRowsLine, readGoodsFile, SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const sheet = await readGoodsFile(saved.body, mime).catch((err: unknown) => {
     logger.warn({ err }, '[calc-intake] spreadsheet unreadable');
     return { kind: 'refused', reason: 'broken' } as const;
   });
   if (!sheet) {
-    return { patch: {}, say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.` };
+    return {
+      patch: refusedFilePatch(state, named, UNKNOWN_TYPE_WHY),
+      say: `📎 ${label} kartada saqlandi, lekin o‘qilmaydi: faqat rasm, PDF va Excel/CSV o‘qiladi.`,
+    };
   }
-  if (sheet.kind === 'refused') return { patch: {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  if (sheet.kind === 'refused') {
+    // An EMPTY sheet held no goods to lose; every other refusal did.
+    const why = SHEET_REFUSAL_WHY[sheet.reason];
+    return { patch: why ? refusedFilePatch(state, named, why) : {}, say: SHEET_REFUSAL[sheet.reason](label) };
+  }
   // The reader's own two words travel with the text (round-2 review,
   // C1/C4/C5; round-3, R3-C2): `textCut` = rows are missing — the seller and
   // the model are told; `cellsCut` = every row is there, some cells shortened
   // — the model is told, the seller nothing.
   if (sheet.kind === 'text') {
     const { fitSheetRows } = await import('../../wms/calc/intake-ai');
-    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut }, (texts) =>
+    // …and what the reader saw, for the words (docs/FAYL-OQISH.md §4.4).
+    const saw = { ...(sheet.why ? { why: sheet.why } : {}), ...(sheet.pictures > 0 ? { pictures: true as const } : {}) };
+    return receiveSheetText(state, label, { text: sheet.text, cut: sheet.textCut, cellsCut: sheet.cellsCut, ...saw }, (texts) =>
       fitSheetRows(texts, SHEET_TEXT_BUDGET),
     );
   }
@@ -544,28 +1134,90 @@ export async function readIntakeFile(
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
   const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
-  const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan; boshqa varaqlarni AI o‘qiydi)` : '';
-  return receiveGoodsSheet(state, {
-    goods: invoiceFacts(sheet.goods),
+  const { MAX_CALC_ITEMS } = await import('../../wms/calc/service');
+  // The reader stops at its ceiling and says so (`stoppedShort`, as-built
+  // review REGRESSION-6): a list of exactly 500 read whole is no cut — counted
+  // by its length, it lost «✅» on the AI door, where a cap blocks (§1.1 g).
+  const capOf = (stoppedShort: boolean) => (stoppedShort ? { capped: MAX_GOODS_ROWS } : {});
+  // What a sheet IS, by its columns (§1.2.1).
+  const shapeOf = (m: Pick<typeof sheet, 'shape' | 'weightKind' | 'grossKg' | 'grossColumn' | 'volumeM3'>) => ({
+    shape: m.shape,
+    weightKind: m.weightKind,
+    grossKg: m.grossKg,
+    grossColumn: m.grossColumn,
+    volumeM3: m.volumeM3,
+  });
+  const goods = invoiceFacts(sheet.goods);
+  // The arrival line names the goods sheet, and claims for the OTHER sheets
+  // only what is done with them (docs/FAYL-OQISH.md §4.4): the unmapped ones
+  // are read for the totals; a mapped one says its own line below — and where
+  // there is one, «the other sheets» would be false of a sheet folded in as
+  // goods two lines down (the P-sheets review's arrival-fold finding), so the
+  // clause names the sheets it is true of: those no goods row was taken from.
+  const others = sheet.moreSheets.length > 0 ? 'tovar qatori olinmagan varaqlar' : 'boshqa varaqlar';
+  const where = sheet.sheets > 1 ? ` («${sheet.sheet}» varag‘idan${sheet.text ? `; ${others} faqat jami uchun o‘qiladi` : ''})` : '';
+  const first = {
+    goods,
     label,
     text: sheet.text,
     textCut: sheet.textCut,
     cellsCut: sheet.cellsCut,
     where,
-    // What the sheet IS, by its columns (§1.2.1) — and a packing list's own
-    // rows, for the model's totals-only sheets.
-    shape: {
-      shape: sheet.shape,
-      weightKind: sheet.weightKind,
-      grossKg: sheet.grossKg,
-      grossColumn: sheet.grossColumn,
-      volumeM3: sheet.volumeM3,
-    },
+    shape: shapeOf(sheet),
+    // …and a packing list's own rows, for the model's totals-only sheets.
     ownText: sheet.ownText,
-    // The reader stops at its ceiling and says nothing; reaching it is the
-    // one sign the file may hold more (round-4 integration S-b).
-    ...(sheet.goods.length >= MAX_GOODS_ROWS ? { capped: MAX_GOODS_ROWS } : {}),
-  });
+    ...(sheet.text ? { unmapped: true } : {}),
+    // …and what it did not take as goods, said and shown (§5.5).
+    dropped: {
+      line: droppedRowsLine(sheet.dropped),
+      rows: sheet.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
+    },
+    ...capOf(sheet.stoppedShort),
+  };
+  if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);
+  // Every mapped sheet is judged, one after another, each against the state
+  // the one before left (docs/FAYL-OQISH.md §4.1, sheets-06): here and not
+  // in a door, so the fresh collection, the burst take and both ➕ media
+  // doors share one rule. One file: one receipt mark, one patch, one say.
+  const more = sheet.moreSheets.map((m) => ({ ...m, facts: invoiceFacts(m.goods) }));
+  const held = state.invoiceGoods ?? [];
+  if (
+    held.length > 0 &&
+    sameWorkbookAgain(held, goods, more.map((m) => ({ goods: m.facts, text: m.ownText.text })), sheet.text, state.invoiceTexts)
+  ) {
+    const again = sameFileNote(label);
+    return { patch: { fileNotes: [...(state.fileNotes ?? []), again] }, say: again };
+  }
+  const steps: Parameters<typeof receiveGoodsSheet>[1][] = [
+    { ...first, wholeJudged: true },
+    ...more.map((m) => ({
+      goods: m.facts,
+      label,
+      text: '',
+      textCut: false,
+      cellsCut: false,
+      where: '',
+      shape: shapeOf(m),
+      ownText: m.ownText,
+      dropped: {
+        line: droppedRowsLine(m.dropped),
+        rows: m.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
+      },
+      ...capOf(m.stoppedShort),
+      further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, itemCap: MAX_CALC_ITEMS },
+    })),
+  ];
+  let live = state;
+  let patch: Partial<IntakeState> = {};
+  for (const step of steps) {
+    const answer = receiveGoodsSheet(live, step);
+    patch = { ...patch, ...answer.patch };
+    live = { ...live, ...answer.patch };
+  }
+  // The lines this file said, each once (two sheets read short say one cut).
+  const before = state.fileNotes ?? [];
+  const lines = [...new Set((live.fileNotes ?? []).slice(before.length))];
+  return { patch: { ...patch, fileNotes: [...before, ...lines] }, say: lines.join('\n') || null };
 }
 
 /**
@@ -579,12 +1231,24 @@ export async function readIntakeFile(
  * collection's attachment id, `uuidv5(noteId:messageId)`, would have been
  * minted at random on exactly the paths that re-run (durability-1).
  */
-export type BotFile = { fileId: string; isPhoto: boolean; fileName?: string; mime?: string; messageId?: number };
+export type BotFile = {
+  fileId: string;
+  isPhoto: boolean;
+  fileName?: string;
+  mime?: string;
+  messageId?: number;
+  /**
+   * What Telegram says the file weighs (`file_size`) — checked BEFORE the
+   * download, because a bot is handed nothing past 20 MB (docs/FAYL-OQISH.md
+   * §3.4): absent when Telegram did not say.
+   */
+  size?: number;
+};
 
 type BotMessage = {
   message_id?: number;
-  photo?: { file_id: string }[];
-  document?: { file_id: string; file_name?: string; mime_type?: string };
+  photo?: { file_id: string; file_size?: number }[];
+  document?: { file_id: string; file_name?: string; mime_type?: string; file_size?: number };
 };
 
 /**
@@ -601,12 +1265,15 @@ export function fileOf(src: BotMessage | ForwardPart): BotFile | null {
       fileName: src.file.name ?? undefined,
       mime: src.file.mime ?? undefined,
       messageId: src.messageId,
+      ...(typeof src.file.size === 'number' ? { size: src.file.size } : {}),
     };
   }
   const message = src as BotMessage;
   const messageId = message.message_id;
   const photo = message.photo?.length ? message.photo[message.photo.length - 1] : undefined;
-  if (photo) return { fileId: photo.file_id, isPhoto: true, messageId };
+  if (photo) {
+    return { fileId: photo.file_id, isPhoto: true, messageId, ...(typeof photo.file_size === 'number' ? { size: photo.file_size } : {}) };
+  }
   if (message.document) {
     return {
       fileId: message.document.file_id,
@@ -614,6 +1281,7 @@ export function fileOf(src: BotMessage | ForwardPart): BotFile | null {
       fileName: message.document.file_name,
       mime: message.document.mime_type,
       messageId,
+      ...(typeof message.document.file_size === 'number' ? { size: message.document.file_size } : {}),
     };
   }
   return null;
@@ -632,7 +1300,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * a 400 «file is too big» (a document past 20 MB, an ordinary case) must say
  * why in the log, not only «Faylni saqlab bo‘lmadi» in the chat.
  */
-async function filePathOf(fileId: string): Promise<string | null> {
+async function filePathOf(fileId: string): Promise<string | BotFileRefusal> {
   let meta = await botCall('getFile', { file_id: fileId }, FILE_DOWNLOAD_MS);
   for (let i = 0; i < 2; i += 1) {
     if (meta.ok || meta.status !== 429 || meta.retryAfter === null || meta.retryAfter > BRIEF_RETRY_MAX_S) break;
@@ -645,11 +1313,28 @@ async function filePathOf(fileId: string): Promise<string | null> {
     { status: meta.status, description: meta.description, retryAfter: meta.retryAfter },
     '[bot-file] getFile refused',
   );
-  return null;
+  // Telegram's own word for a file past the bot's 20 MB — when the message
+  // did not say its size, this is where it is learned (note-send.ts reads the
+  // same description).
+  return { refused: /file is too big/i.test(meta.description ?? '') ? 'too_big' : 'download_failed' };
 }
 
 /** A stored bot file: its bytes (for the readers) and its attachment. */
 export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: string };
+
+/**
+ * Why a file the bot was sent is not stored (docs/FAYL-OQISH.md §3.4) — a
+ * typed refusal, never a bare null: `too_big` is past what Telegram hands a
+ * bot (20 MB) and is SAID so, never «Faylni saqlab bo‘lmadi», which invites
+ * the same file again; `unsupported` is a type storage keeps no attachment of
+ * (a drawing, a macro workbook — review model-break-unknown-type-unnamed: it
+ * threw, read as a failed download, and was asked for again); `download_failed`
+ * is everything else, which a re-send may heal.
+ */
+export type BotFileRefusal = { refused: 'too_big' | 'too_large' | 'unsupported' | 'download_failed' };
+
+/** Is this a refusal rather than a stored file? */
+export const isFileRefusal = (saved: SavedBotFile | BotFileRefusal): saved is BotFileRefusal => 'refused' in saved;
 
 /**
  * A file the bot was sent, stored.
@@ -676,11 +1361,15 @@ export async function saveBotFile(
     keyName?: string;
   },
   file: BotFile | null = fileOf(ctx.message ?? {}),
-): Promise<SavedBotFile | null> {
+): Promise<SavedBotFile | BotFileRefusal> {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  if (!token || !file) return null;
+  if (!token || !file) return { refused: 'download_failed' };
+  // Past Telegram's bot limit nothing is asked of it at all: it would refuse
+  // (docs/FAYL-OQISH.md §3.4). Here, the one home of the crossing, so the
+  // collection's doors and the zametka door all meet it.
+  if (typeof file.size === 'number' && file.size > MAX_TELEGRAM_DOWNLOAD_BYTES) return { refused: 'too_big' };
   const path = await filePathOf(file.fileId);
-  if (!path) return null;
+  if (typeof path !== 'string') return path;
   // A deadline, because there was none: a Telegram file endpoint that accepts
   // the connection and then stops sending held this handler — and grammy's
   // poller is SEQUENTIAL, so it held every customer's cabinet with it. Thirty
@@ -688,28 +1377,39 @@ export async function saveBotFile(
   const res = await fetch(`https://api.telegram.org/file/bot${token}/${path}`, {
     signal: AbortSignal.timeout(FILE_DOWNLOAD_MS),
   });
-  if (!res.ok) return null;
+  if (!res.ok) return { refused: 'download_failed' };
   const body = Buffer.from(await res.arrayBuffer());
-  if (body.length === 0) return null;
+  if (body.length === 0) return { refused: 'download_failed' };
 
   const isPhoto = file.isPhoto;
-  const { saveAttachment } = await import('../files/service');
+  const { saveAttachment, FileValidationError } = await import('../files/service');
   const { generateThumbnails } = await import('../jobs/thumbnails');
-  const { id } = await saveAttachment(
-    {
-      entityType: target.entityType,
-      entityId: target.entityId,
-      fileName: isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`),
-      contentType: isPhoto ? 'image/jpeg' : (file.mime ?? 'application/octet-stream'),
-      body,
-      uploadedBy: target.uploadedBy,
-    },
-    {
-      thumbnails: 'skip',
-      ...(target.id !== undefined ? { id: target.id } : {}),
-      ...(target.keyName !== undefined ? { keyName: target.keyName } : {}),
-    },
-  );
+  let id: string;
+  try {
+    ({ id } = await saveAttachment(
+      {
+        entityType: target.entityType,
+        entityId: target.entityId,
+        fileName: isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`),
+        contentType: isPhoto ? 'image/jpeg' : (file.mime ?? 'application/octet-stream'),
+        body,
+        uploadedBy: target.uploadedBy,
+      },
+      {
+        thumbnails: 'skip',
+        ...(target.id !== undefined ? { id: target.id } : {}),
+        ...(target.keyName !== undefined ? { keyName: target.keyName } : {}),
+      },
+    ));
+  } catch (err) {
+    // A type storage will not keep — no re-send stores it, so it is a refusal
+    // with its own words, never the «saqlab bo‘lmadi» a blip gets.
+    if (err instanceof FileValidationError && err.code === 'unsupported_type') return { refused: 'unsupported' };
+    // …and a picture past storage's photo ceiling (MODEL-3): no re-send of
+    // the same bytes stores it either.
+    if (err instanceof FileValidationError && err.code === 'too_large') return { refused: 'too_large' };
+    throw err;
+  }
   await generateThumbnails(id).catch(() => {});
   return { isPhoto, body, attachmentId: id };
 }
@@ -730,8 +1430,8 @@ export async function saveIntakeFile(
   noteId: string,
   uploadedBy: string,
   file: BotFile | null = fileOf(ctx.message ?? {}),
-): Promise<SavedBotFile | null> {
-  if (!file) return null;
+): Promise<SavedBotFile | BotFileRefusal> {
+  if (!file) return { refused: 'download_failed' };
   const messageId = file.messageId ?? ctx.message?.message_id ?? null;
   const id = messageId !== null ? uuidv5(`${noteId}:${messageId}`, INTAKE_FILE_NS) : undefined;
   if (id !== undefined) {
@@ -813,7 +1513,8 @@ export async function storeModelCopy(attachmentId: string, reduced: Buffer): Pro
 /** The bytes a reading sends the model, loaded from storage (K5). */
 export interface IntakeFiles {
   images: { data: Buffer; mediaType: 'image/jpeg' }[];
-  pdfs: { data: Buffer; name: string }[];
+  /** Each PDF with its attachment, so a PDF the API refuses is named by it (docs/FAYL-OQISH.md §3.4). */
+  pdfs: { data: Buffer; name: string; attachmentId?: string }[];
   missing: number;
 }
 
@@ -873,9 +1574,14 @@ export async function loadIntakeFiles(state: IntakeState, opts: { deadline: numb
     if (reduced) out.images.push({ data: reduced, mediaType: image.mediaType });
     else out.missing += 1;
   }
+  // A PDF the API refused is not sent again (docs/FAYL-OQISH.md §3.4,
+  // pdfimg-9 S9a): it sank every re-read after it, the photos' goods with it.
+  // Neither read nor missing — the table names it by `unreadPdfs`.
+  const refused = new Set(state.unreadPdfs ?? []);
   for (const pdf of state.pdfs) {
+    if (refused.has(pdf.attachmentId)) continue;
     const data = await bytesOf(pdf.attachmentId);
-    if (data) out.pdfs.push({ data, name: pdf.name });
+    if (data) out.pdfs.push({ data, name: pdf.name, attachmentId: pdf.attachmentId });
     else out.missing += 1;
   }
   return out;

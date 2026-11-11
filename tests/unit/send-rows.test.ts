@@ -197,6 +197,31 @@ describe('the VED paste never asks, and lands every column (P1.6, TT-16)', () =>
     expect(kurtka).toMatchObject({ quantity: null, weightKg: null, note: 'qatorda: «Kurtka; 300; 150» — aniq emas' });
   });
 
+  it('a two-column paste headed by a count word keeps its header (the fix round’s reader-a-break-twocol-value-refusal)', () => {
+    // «Наименование | Шт» was refused as a card's first line, so the paste
+    // read line by line and posted an item named «Наименование Шт».
+    const items = pasteItems('Наименование\tШт\nКуртка женская\t300\nБрюки мужские\t200');
+    expect(items.map((i) => i.name)).toEqual(['Куртка женская', 'Брюки мужские']);
+  });
+
+  it('a pasted «1.234,56» and «12,5» keep the reading they have always had (FAYL-OQISH §5.9, critic-paste-5.9)', () => {
+    // A rule that sent every string through the kernel's `readNumberCell`
+    // read «1.234,56» as `bad` and the VED's own paste lost the weight.
+    const items = pasteItems('Наименование\tКол-во\tВес нетто, кг\nКабель\t100\t1.234,56\nКружка\t50\t12,5');
+    expect(items).toMatchObject([
+      { name: 'Кабель', quantity: 100, weightKg: 1234.56, note: null },
+      { name: 'Кружка', quantity: 50, weightKg: 12.5, note: null },
+    ]);
+  });
+
+  it('a pasted piece count «1,500» is fifteen hundred; an evidence-less «1,250» kg is asked in the note (FAYL-OQISH §5.9)', () => {
+    const items = pasteItems('Наименование\tКол-во\tВес нетто, кг\nКабель\t1,500\t1,250\nКружка\t50\t2,500');
+    expect(items).toMatchObject([
+      { name: 'Кабель', quantity: 1500, weightKg: null, note: 'vazn «1,250» — aniq emas' },
+      { name: 'Кружка', quantity: 50, weightKg: null, note: 'vazn «2,500» — aniq emas' },
+    ]);
+  });
+
   it('nothing pasted is nothing posted', () => {
     expect(pasteItems('')).toEqual([]);
     expect(pasteItems('\n  \n')).toEqual([]);

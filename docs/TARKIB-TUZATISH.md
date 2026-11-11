@@ -334,7 +334,7 @@ Built:
 - The editor's root carries `data-tnved-unsaved` (typed and not saved, product rows and
   lines) — the invoice button reads it (§6.4).
 - **The editor re-seeds by MERGE, never by remount** (the review of the built round, five
-  findings — DECISIONS #1649). `editor-state.ts` (pure): `reseedRows` keeps a code that is
+  findings — DECISIONS #1661). `editor-state.ts` (pure): `reseedRows` keeps a code that is
   typed or suggested and not saved on its row when the server's rows come back, and takes the
   server's row everywhere else; the page's `key` built from the line revisions is gone. The
   save is not stopped by one refusal (`saveLineCodesAction` → `refused`, `saveTnvedAction` →
@@ -516,7 +516,7 @@ i.e. the shipped default — nothing to rebuild. Each was checked against the SH
 (the rule of #1229: read a «standart» against the code before calling it one), by a read-only
 scout and then by the lead. Eight were already held by a test that goes red on the non-star
 option. Two were only half held and are pinned now, each red-proven by a reversible edit
-(DECISIONS #1651):
+(DECISIONS #1663):
 
 - **3a** — «only the agent's FILE prints a row per good». The file half and the plan EDITOR's
   list were pinned; the plan's own screen (`/plans/<id>`) had its query inline in the page, where

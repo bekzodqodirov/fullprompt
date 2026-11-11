@@ -39,6 +39,8 @@ import { fitTelegram, TELEGRAM_LIMIT } from './fit-telegram';
 import { SELLER_TAIL_NO_ASK } from './tail-words';
 import { AI_CODE_MARK } from './code-source';
 import { clipText } from '../../platform/telegram/format';
+import type { IntakeState } from '../../platform/telegram/calc-intake';
+import { TO_VED_LABEL, type ReadingWholeness } from '../../platform/telegram/reading-whole';
 
 /** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
 export { fitTelegram };
@@ -158,7 +160,10 @@ export type AiReadFailure =
   | 'auth'
   | 'rejected'
   | 'unreadable'
-  | 'network';
+  | 'network'
+  // A stored file the reading could not load (docs/FAYL-OQISH.md §2.5): a
+  // storage blip, which a re-read heals — never «nothing to read».
+  | 'files_missing';
 
 /** The sentence per failure, and whether pressing «🔄 Qayta o‘qish» can help. */
 export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boolean }> = {
@@ -186,6 +191,7 @@ export const AI_READ_FAILURE: Record<AiReadFailure, { text: string; retry: boole
   },
   unreadable: { text: 'AI javobini o‘qib bo‘lmadi.', retry: true },
   network: { text: 'AI bilan aloqa uzildi.', retry: true },
+  files_missing: { text: 'Yuborilgan fayl saqlangan joydan olinmadi.', retry: true },
 };
 
 /** What the AI (or a human) managed to read out of the sent material. */
@@ -805,6 +811,15 @@ export interface TableInput {
    */
   marker?: string | null;
   /**
+   * The plain door's reading stopped part-way (`IntakeState.aiCut`, as-built
+   * review OWNER-3): the bot keeps the goods a cut answer completed on BOTH
+   * doors (§3.6), and the plain summary listed «7 ta tovar» of a 12-good
+   * invoice with no word of the rest — the VED priced seven. Said above the
+   * closing; the keyboard and the landing are his 2a's, unchanged. Absent =
+   * no cut. The AI door says it through `ai.reading`.
+   */
+  cut?: { goods: number; why: 'clock' | 'size' | 'dropped' } | null;
+  /**
    * The AI door's TABLE (docs/IKKI-ESHIK.md §3.1-§3.4, his 4a/5a): the door
    * in its head, a code the model proposed marked as its proposal, a row with
    * no code told who finds it, the closing promising the AI's figure, and —
@@ -827,6 +842,36 @@ export interface TableAi {
    * rendered by the dialogue from the echo records, never cut.
    */
   last: readonly string[];
+  /**
+   * What the reading read (docs/FAYL-OQISH.md §1.1-§1.2, §1.6): its
+   * wholeness as `aiReadingWhole` judged the LIVE state, the state fields the
+   * words are drawn from, and the one sheet the model was not shown whole, as
+   * the dialogue measured it. Not whole → the closing says what was not read,
+   * in words, and points at «👤 VED hisoblasin» (an addition: at «✅ Qo‘shish»
+   * adding only what was read); the files refused at arrival are named on
+   * every AI table. Absent = a table drawn without it: today's closing.
+   */
+  reading?: TableReading | null;
+}
+
+/** The state a not-whole closing is drawn from — the collection's own fields, never a projection a caller built (#513). */
+export type ReadingState = Pick<
+  IntakeState,
+  'fileCount' | 'material' | 'invoiceGoods' | 'seed' | 'images' | 'pdfs' | 'sheetTexts' | 'aiUsed' | 'aiFailure' | 'goodsFiles'
+> &
+  Partial<Pick<IntakeState, 'aiCut' | 'aiCutRetried' | 'filesMissing' | 'unreadPdfs' | 'refusedFiles' | 'invoiceTexts'>>;
+
+/** A sheet the model was not shown whole, by its file — `total` null when nobody counted the rest (the reader's own stop, the row ceiling). */
+export interface InputCut {
+  label: string;
+  kept: number;
+  total: number | null;
+}
+
+export interface TableReading {
+  state: ReadingState;
+  whole: ReadingWholeness;
+  inputCut: InputCut | null;
 }
 
 /**
@@ -1025,6 +1070,438 @@ function aiCompleteLine(amend: TableAmend | null, available: boolean): string {
 }
 
 /**
+ * The AI door's zero-row line when no file was sent (docs/FAYL-OQISH.md §1.2):
+ * the seller's to send, said once — the remedy line under it says how. Its
+ * own constant: `NO_GOODS_CLOSING` stays the legacy table's words (critic-pins).
+ */
+export const AI_NO_GOODS = '⚠️ Tovar nomi yozilmagan.';
+
+/** The AI door's goods row on a table of no rows, after a FILE: the file was not read — the seller is not blamed for typing nothing (critic-said-twice). */
+export const AI_GOODS_ROW_UNREAD = '⚠️ tovar — fayldan o‘qilmadi';
+
+export { TO_VED_LABEL };
+
+/** Was anything TYPED (§2.2: a caption or a message with letters or figures — never whitespace)? */
+export const typedSomething = (material: readonly string[]) => material.some((s) => s.trim() !== '');
+
+/**
+ * The tail's «what WAS read» when the model's reading is missing (§2.2, his
+ * 1.6 a), by what was actually read: the Excel rows and the typed text, either,
+ * or neither. The Excel-and-typed words are today's (c1892, the r4 pin).
+ *
+ * `rows`: the table's goods rows. Neither read, yet rows on the table — a
+ * returned request's own, an addition's stored ones (door-break-7): the line
+ * is left out (null), because «Hech narsa o‘qilmadi» stood right above
+ * «⚠️ 2 ta tovar so‘rovdan olindi», and the closing below already says where
+ * the rows came from. One sentence per fact.
+ */
+export function readInsteadWords(state: Pick<ReadingState, 'material' | 'invoiceGoods'>, rows = 0): string | null {
+  const excel = (state.invoiceGoods ?? []).length > 0;
+  const typed = typedSomething(state.material);
+  if (excel && typed) return 'Faqat Excel va yozilganidan o‘qildi.';
+  if (excel) return 'Faqat Excel’dan o‘qildi.';
+  if (typed) return 'Faqat yozilganidan o‘qildi.';
+  return rows > 0 ? null : 'Hech narsa o‘qilmadi.';
+}
+
+/**
+ * A stored file that did not load, said on the tail with its count and the
+ * press that heals it (§2.5) — once: the tail's failure line when the reading
+ * had nothing else to read. The not-whole remedy below it then starts at
+ * «Faylni …», never naming «🔄» a second time (door-break-6, critic-said-twice).
+ */
+export function tailNamesRetry(state: Pick<ReadingState, 'aiUsed' | 'aiFailure' | 'filesMissing'>): boolean {
+  return !state.aiUsed && state.aiFailure === 'files_missing' && (state.filesMissing ?? 0) > 0;
+}
+
+/**
+ * Has the table already named «🔄» for a stored file that did not load (as-built
+ * review OWNER-7)? The tail's failure line when nothing else was read
+ * (`tailNamesRetry`), else the reading's own note (calc-intake
+ * `filesMissingNote`, which on the AI door's first or seeded table IS the «🔄»
+ * sentence, §2.5) — either way the remedy under it starts at «Faylni …»: one
+ * sentence per fact (critic-said-twice). The press re-reads everything.
+ */
+export const retryNamedAbove = (state: Pick<ReadingState, 'filesMissing'>) => (state.filesMissing ?? 0) > 0;
+
+/** §2.5's words for that line. */
+export const filesMissingRetryLine = (missing: number) => `${missing} ta fayl saqlangan joydan olinmadi — «🔄 AI qayta o‘qisin» ni bosing.`;
+
+/** Where a not-whole table's rows came from — «Excel’dan», «yozilganidan», both, or the returned request's own. */
+function rowsFromWords(state: ReadingState): string {
+  const excel = (state.invoiceGoods ?? []).length > 0;
+  const typed = typedSomething(state.material);
+  if (excel && typed) return 'Excel va yozilganidan';
+  if (excel) return 'Excel’dan';
+  if (typed) return 'yozilganidan';
+  return 'so‘rovdan';
+}
+
+/**
+ * A file or sheet as a sentence names it, quoted ONCE (as-built review
+ * OWNER-6): the readers store a label already quoted — «x.xlsx»
+ * (`readIntakeFile`), «x.xlsx», «Zavod B» varag‘i (a further sheet) — and a
+ * bare one only as a fallback or in a test. Wrapped again, every capped and
+ * cut table said ««x.xlsx»».
+ */
+const quotedLabel = (label: string) => (label.includes('«') ? label : `«${label}»`);
+/** A further sheet's label already says «… varag‘i»; a file's is called a table. */
+const SHEET_LABEL = / varag‘i$/u;
+/** «X jadvali» — the table a cut or a cap is about, as a noun («… to‘liq o‘qilmadi»). */
+const tableNoun = (label: string) =>
+  label === 'Jadval' ? 'jadval' : SHEET_LABEL.test(label) ? label : `${quotedLabel(label)} jadvali`;
+/** «X jadvalining» — the same table owning its rows («… birinchi 500 qatori»). */
+const tableOwner = (label: string) =>
+  label === 'Jadval' ? 'Jadvalning' : SHEET_LABEL.test(label) ? `${label}ning` : `${quotedLabel(label)} jadvalining`;
+
+/** The material only the model reads that it did not read — «1 ta PDF, 2 ta rasm, «Invoice» varag‘i». */
+function unreadMaterialWords(state: ReadingState): string {
+  const refused = new Set(state.unreadPdfs ?? []);
+  const pdfs = state.pdfs.filter((p) => !refused.has(p.attachmentId)).length;
+  const sheets = state.sheetTexts.filter((t) => t.text.trim() !== '');
+  const named = sheets.flatMap((t) => (t.label ? [`${quotedLabel(t.label)} varag‘i`] : []));
+  const unnamed = sheets.filter((t) => !t.label).length;
+  return [
+    ...(pdfs > 0 ? [`${pdfs} ta PDF`] : []),
+    ...(state.images.length > 0 ? [`${state.images.length} ta rasm`] : []),
+    ...named,
+    ...(unnamed > 0 ? [`${unnamed} ta jadval`] : []),
+  ].join(', ');
+}
+
+/**
+ * Did a FILE the seller sent reach the material (as-built review OWNER-5) — a
+ * PDF, a photo, a sheet read as text or as rows, a file storage then did not
+ * hand back — as opposed to a file refused at arrival? `fileCount` counts a
+ * DOCX, a video or a broken Excel the arrival refused and leaves out one past
+ * 20 MB, so one fact read two ways: «AI yuborilgan fayllardan tovar topa
+ * olmadi» about a Word file no model was shown, «Tovar nomi yozilmagan»
+ * blaming the seller whose goods were in the 25 MB invoice.
+ */
+export function filesAccepted(state: ReadingState): boolean {
+  return (
+    state.pdfs.length > 0 ||
+    state.images.length > 0 ||
+    state.sheetTexts.some((t) => t.text.trim() !== '') ||
+    (state.invoiceTexts ?? []).some((t) => t.text.trim() !== '') ||
+    (state.invoiceGoods ?? []).length > 0 ||
+    (state.goodsFiles ?? []).length > 0 ||
+    (state.unreadPdfs ?? []).length > 0 ||
+    (state.filesMissing ?? 0) > 0
+  );
+}
+
+/** A file was sent: taken, or refused at arrival and named (`refusedFiles`). */
+const fileSent = (state: ReadingState) => filesAccepted(state) || (state.refusedFiles ?? []).length > 0;
+
+/** The zero-row line when every file sent was refused at arrival: the reasons are the named lines under it. */
+export const AI_FILES_REFUSED = '⚠️ Yuborilgan fayl o‘qilmadi — sababi pastda.';
+
+/** The refused PDFs by name, as the table names them (§3.4). */
+function refusedPdfNames(state: ReadingState): string[] {
+  const refused = new Set(state.unreadPdfs ?? []);
+  return state.pdfs.filter((p) => refused.has(p.attachmentId)).map((p) => p.name);
+}
+
+/**
+ * The first line of a not-whole AI table's closing (docs/FAYL-OQISH.md §1.2) —
+ * ONE choice by the first reason that blocks, in the order the seller can do
+ * something about. Null where the reason's own words already stand on the
+ * table: a refused PDF (`refusedPdfLines`), a file storage did not hand back
+ * (the reading's note, or the tail's failure line — §2.5, one sentence per
+ * fact). With no rows after a model failure the REASON is the tail's failure
+ * block, never said twice (critic-said-twice). Pure.
+ */
+export function notWholeClosing(state: ReadingState, whole: ReadingWholeness, rows: number, inputCut: InputCut | null): string | null {
+  const blocking = new Set(whole.blocking);
+  if (blocking.has('no_goods')) {
+    if (!filesAccepted(state)) return fileSent(state) ? AI_FILES_REFUSED : AI_NO_GOODS;
+    return state.aiUsed ? '⚠️ AI yuborilgan fayllardan tovar topa olmadi.' : '⚠️ Fayldan tovar o‘qilmadi.';
+  }
+  if (blocking.has('cut') && state.aiCut) {
+    return state.aiCut.why === 'size' ? `${cutWords(state.aiCut)} Kamroq sahifa yoki Excel yuboring.` : cutWords(state.aiCut);
+  }
+  if (blocking.has('model_failed')) {
+    return `⚠️ ${rows} ta tovar ${rowsFromWords(state)} olindi; ${unreadMaterialWords(state)} o‘qilmadi.`;
+  }
+  if (blocking.has('input_cut') || blocking.has('capped')) {
+    if (!inputCut) return '⚠️ Jadval AI ga to‘liq ko‘rsatilmadi — bir qismi o‘qildi.';
+    return inputCut.total !== null
+      ? `⚠️ ${tableOwner(inputCut.label)} ${inputCut.kept}/${inputCut.total} qatori o‘qildi.`
+      : `⚠️ ${tableOwner(inputCut.label)} birinchi ${inputCut.kept} qatori o‘qildi.`;
+  }
+  return null;
+}
+
+/** A cut reading's line (§1.2's table): how many goods were read, and that the rest were not. */
+export function cutWords(cut: { goods: number; why: 'clock' | 'size' | 'dropped' }): string {
+  return cut.why === 'size'
+    ? `⚠️ Material juda katta — ${cut.goods} ta tovar o‘qildi, qolgani o‘qilmadi.`
+    : `⚠️ AI faylni oxirigacha o‘qib ulgurmadi — ${cut.goods} ta tovar o‘qildi, qolgani o‘qilmadi.`;
+}
+
+/**
+ * The card's record of a cut reading that landed as it is — the plain door's
+ * (as-built review OWNER-3): the VED prices from the card, and «Tovarlar:» of
+ * seven read like the whole invoice of twelve.
+ */
+export function cutNoteText(cut: { goods: number; why: 'clock' | 'size' | 'dropped' }): string {
+  return `⚠️ AI faylni oxirigacha o‘qimadi — ${cut.goods} ta tovar o‘qildi, qolgani o‘qilmadi: ro‘yxat to‘liq emas, faylni ko‘ring.`;
+}
+
+/**
+ * Does the closing name this failure itself (as-built review OWNER-12)? A
+ * request the API refused over the PDFs it would not take, with nothing else
+ * to read: the closing names each one («📄 «X.pdf» — AI bu faylni qabul
+ * qilmadi»), and the tail's «AI so‘rovni qabul qilmadi … — fayllarni boshqacha
+ * yuboring» said the one refusal twice, with two remedies.
+ */
+export function failureSaidBelow(state: ReadingState, failure: AiReadFailure): boolean {
+  return failure === 'rejected' && refusedPdfNames(state).length > 0;
+}
+
+/** «📄 «X.pdf» — AI bu faylni qabul qilmadi», one per PDF the API refused (§3.4) — said on the table, every time it is drawn. */
+export function refusedPdfLines(state: ReadingState): string[] {
+  return refusedPdfNames(state).map((name) => `📄 «${name}» — AI bu faylni qabul qilmadi`);
+}
+
+/** How many files refused at arrival the table names one by one; the rest are counted. */
+export const REFUSED_NAMED_MAX = 5;
+
+/** A reason as the seller was told it at arrival, folded into the table's sentence: no closing stop of its own. */
+const reasonClause = (why: string) => why.trim().replace(/[.\s]+$/u, '');
+
+/**
+ * A name the bot MADE UP for a file that had none (review of the fixes
+ * RF-WORDS-9, RF-REGRESSION-9): a Telegram photo has no name and is kept as
+ * «rasm», a nameless document as «fayl», the photos past the cap as «N ta
+ * rasm». Said as words, never quoted — quoted, «rasm» read as a file the
+ * seller had named «rasm».
+ */
+const madeUpName = (name: string) => name === 'rasm' || name === 'fayl' || /^\d+ ta /u.test(name);
+/** A refused file as a sentence names it: its own name quoted once, a made-up one bare. */
+const refusedName = (name: string) => (madeUpName(name) ? name : `«${name}»`);
+
+/**
+ * The entries past the first few, counted per reason in FILES (as-built review
+ * REGRESSION-4) — a counted entry («9 ta rasm») is nine. One rule for the
+ * table and the card's note (review of the fixes RF-WORDS-10): the note
+ * counted entries, so the VED read «yana 2 ta» where the seller had read ten.
+ */
+function refusedRest(files: readonly { name: string; why: string }[]): [string, number][] {
+  const rest = new Map<string, number>();
+  for (const f of files) {
+    const n = /^(\d+) ta /u.exec(f.name);
+    const why = reasonClause(f.why);
+    rest.set(why, (rest.get(why) ?? 0) + (n ? Number(n[1]) : 1));
+  }
+  return [...rest];
+}
+
+type RefusedEntry = { name: string; why: string; resent?: boolean };
+/**
+ * A refused copy a same-named file was taken after (`resent`) is not «goods
+ * not counted»: the name is all the bot knows, and the later copy may hold
+ * them. So the resent entries are kept apart from the real refusals — counted
+ * apart past the first few, and outside the note's «tovarlari hisobga
+ * kirmagan» heading — and two identical earlier copies are said once (the
+ * independent check's IC-NEW-4).
+ */
+function splitResent(files: readonly RefusedEntry[]): { refused: RefusedEntry[]; resent: RefusedEntry[] } {
+  const seen = new Set<string>();
+  const resent = files.filter((f) => {
+    if (!f.resent) return false;
+    const key = `${f.name}\u0000${f.why}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { refused: files.filter((f) => !f.resent), resent };
+}
+
+/**
+ * The files refused AT ARRIVAL, named on the table with their own reasons
+ * (docs/FAYL-OQISH.md §1.1): never blocking — the seller was told then, and
+ * no door takes a file back out of a collection — but never forgotten either,
+ * or «✅ Tasdiqlash» reads «the AI read everything you sent» (critic-refused-unread).
+ * An entry a same-named file was TAKEN after (`resent`, review of the fixes
+ * RF-FILES-1) says both facts and claims neither file is the other: the name
+ * is all the bot knows.
+ */
+export function refusedFileLines(named: readonly { name: string; why: string; resent?: boolean }[]): string[] {
+  const line = (f: { name: string; why: string; resent?: boolean }) =>
+    f.resent
+      ? `${refusedName(f.name)} (avvalgi nusxa) o‘qilmadi (${reasonClause(f.why)}) — keyin shu nomli fayl olindi.`
+      : /^\d+ ta /u.test(f.name)
+        ? // A counted entry («3 ta rasm», the photo cap's) is plural: «ulardagi».
+          `${f.name} o‘qilmadi (${reasonClause(f.why)}) — ulardagi tovarlar hisobga kirmaydi.`
+        : `${refusedName(f.name)} o‘qilmadi (${reasonClause(f.why)}) — undagi tovarlar hisobga kirmaydi.`;
+  const { refused, resent } = splitResent(named);
+  const all = [...refused, ...resent];
+  if (all.length <= REFUSED_NAMED_MAX) return all.map(line);
+  // Bounded (as-built review REGRESSION-4): an album of HEIC photos forwarded
+  // as files is one entry each, and sixty of them, in the closing the table's
+  // fit holds fixed, left no goods row and cut the remedy away. The first few
+  // by name, the rest counted per reason — the reasons are a short list.
+  const shown = all.slice(0, REFUSED_NAMED_MAX);
+  const rest = all.slice(REFUSED_NAMED_MAX);
+  return [
+    ...shown.map(line),
+    ...refusedRest(rest.filter((f) => !f.resent)).map(
+      ([why, n]) => `Yana ${n} ta fayl o‘qilmadi (${why}) — ulardagi tovarlar hisobga kirmaydi.`,
+    ),
+    ...refusedRest(rest.filter((f) => f.resent)).map(
+      ([why, n]) => `Yana ${n} ta avvalgi nusxa o‘qilmadi (${why}) — keyin shu nomli fayllar olindi.`,
+    ),
+  ];
+}
+
+/**
+ * Does «🔄 AI qayta o‘qisin» help a not-whole reading (§1.2)? A failure a retry
+ * heals, a file storage did not hand back, or a CLOCK cut — at most once per
+ * material mark (`aiCutRetried`): the same long invoice against the same wall
+ * is cut again (model-reread-and-codes). A size cut never: the same material
+ * under the same ceiling, another paid call (review #21). A dropped stream is
+ * the clock's kind — the network, not the input.
+ */
+export function notWholeRetry(state: ReadingState): boolean {
+  const failure = state.aiUsed ? null : state.aiFailure;
+  if (failure !== null && AI_READ_FAILURE[failure].retry) return true;
+  if ((state.filesMissing ?? 0) > 0) return true;
+  return state.aiCut != null && state.aiCut.why !== 'size' && state.aiCutRetried !== true;
+}
+
+/**
+ * What «➕ Yana ma’lumot» can do for a block (as-built review OWNER-8,
+ * WORDS-3): no door takes a file back OUT of a collection, so new material
+ * heals only a block that is not a property of the material already in it.
+ * - `more`: it heals — no rows yet, a retryable failure (the next reading
+ *   calls the model again), a stored file not handed back (it is loaded
+ *   again), a refused PDF (the next reading names it as refused at arrival).
+ * - `later`: the model will not answer TODAY for a cause no material moves —
+ *   the day's budget, no key, a dead key; anything sent after it is back is
+ *   read together with all of it.
+ * - `restart`: never — a capped or cut table, a size cut, a refusal of the
+ *   material itself: the same file stays in the collection, so only «✖️» and
+ *   sending it again without it reads it.
+ */
+type RemedyKind = 'more' | 'later' | 'restart';
+const LATER_FAILURES: ReadonlySet<AiReadFailure> = new Set(['budget', 'not_configured', 'auth']);
+function remedyOf(state: ReadingState, reason: ReadingWholeness['blocking'][number]): { kind: RemedyKind; how?: string } {
+  switch (reason) {
+    case 'no_goods':
+    case 'pdf_refused':
+    case 'files_missing':
+      return { kind: 'more' };
+    case 'model_failed': {
+      const failure = state.aiUsed ? null : state.aiFailure;
+      if (failure === null || AI_READ_FAILURE[failure].retry) return { kind: 'more' };
+      if (LATER_FAILURES.has(failure)) return { kind: 'later' };
+      return failure === 'truncated'
+        ? { kind: 'restart', how: 'kamroq sahifa yoki Excel qilib' }
+        : { kind: 'restart', how: 'o‘qilmagan faylsiz (Excel qilib yoki yozib)' };
+    }
+    case 'cut':
+      // A clock cut is «🔄»'s while its one retry stands (`notWholeRetry`);
+      // after it the same long file meets the same wall.
+      return state.aiCut?.why === 'size'
+        ? { kind: 'restart', how: 'kamroq sahifa yoki Excel qilib' }
+        : { kind: 'restart', how: 'faylni kichikroq (yoki Excel) qilib' };
+    case 'input_cut':
+    case 'capped':
+      return { kind: 'restart', how: 'jadvalni kichikroq bo‘laklarga bo‘lib' };
+  }
+}
+
+/**
+ * The not-whole closing's last line (§1.2): only the presses that are drawn,
+ * and only the roads that lead somewhere (as-built review OWNER-8, WORDS-3).
+ * One sentence for every block sent the seller round a loop: under a capped
+ * Excel, a budget day's PDF or a size cut, «Faylni Excel qilib … «➕ Yana
+ * ma’lumot» bilan yuboring» was followed exactly and the next table said the
+ * same, still with no «✅» — the file it could not read was still in the
+ * collection. The VED is promised «fayllarni ko‘rib» only where a file
+ * reached the card. `retry`: «🔄» is drawn and nothing above has named it.
+ */
+export function notWholeRemedy(state: ReadingState, whole: ReadingWholeness, retry: boolean): string {
+  const remedies = whole.blocking.map((r) => remedyOf(state, r));
+  const restart = remedies.find((r) => r.kind === 'restart');
+  const later = remedies.some((r) => r.kind === 'later');
+  // A file on the card: one taken, or one refused after it was stored (a
+  // DOCX); a file past 20 MB never is, and `fileCount` counts exactly the
+  // stored ones (the landing's ✅ asks the same, WORDS-2).
+  const ved = filesAccepted(state) || state.fileCount > 0
+    ? `«${TO_VED_LABEL}» — VED xodimi fayllarni o‘zi ko‘rib hisoblaydi (AI hisoblamaydi).`
+    : `«${TO_VED_LABEL}» — VED xodimi o‘zi hisoblaydi (AI hisoblamaydi).`;
+  if (!restart && !later) {
+    const send = fileSent(state)
+      ? 'faylni Excel qilib / tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring.'
+      : 'tovarlarni yozib «➕ Yana ma’lumot» bilan yuboring.';
+    const lead = retry ? `«🔄 AI qayta o‘qisin» ni bosing, yoki ${send}` : `${send.charAt(0).toUpperCase()}${send.slice(1)}`;
+    return `${lead} Yoki ${ved}`;
+  }
+  const press = retry ? `«🔄 AI qayta o‘qisin» ni bosing, yoki ${ved}` : `${ved.replace(/^(«[^»]+»)/u, '$1 ni bosing')}`;
+  if (restart) return `${press} Yoki «✖️ Bekor qilish» ni bosib, ${restart.how} qaytadan yuboring.`;
+  const back = state.aiFailure === 'budget' ? 'ertaga' : 'AI ulangach';
+  return `${press} Yoki ${back} «➕ Yana ma’lumot» bilan biror narsa yuboring — AI hammasini qayta o‘qiydi.`;
+}
+
+/**
+ * What a not-whole reading did not read, as a noun phrase — «1 ta PDF»,
+ * «faylning oxiri», ««Invoice» jadvali to‘liq» — for the add table's line
+ * (§1.6) and, with «o‘qilmadi», the VED landing's reason (§1.3). Null when
+ * the reading is whole.
+ */
+export function unreadWhat(state: ReadingState, whole: ReadingWholeness, inputCut: InputCut | null): string | null {
+  const first = whole.blocking[0];
+  if (first === undefined) return null;
+  switch (first) {
+    case 'no_goods':
+      return filesAccepted(state) ? 'fayldagi tovarlar' : fileSent(state) ? 'yuborilgan fayl' : 'tovar';
+    case 'cut':
+      return 'faylning oxiri';
+    case 'model_failed':
+      return unreadMaterialWords(state) || 'fayl';
+    case 'pdf_refused':
+      return refusedPdfNames(state).map((n) => `«${n}»`).join(', ') || 'PDF';
+    case 'files_missing':
+      return `${state.filesMissing ?? 0} ta fayl`;
+    case 'input_cut':
+    case 'capped':
+      return inputCut ? `${tableNoun(inputCut.label)} to‘liq` : 'jadval to‘liq';
+  }
+  return null;
+}
+
+/** «AI hisoblamadi: {sabab}» — why a landing went to the VED alone (§1.3 b): what was not read, or the press itself. */
+export function vedLandingReason(state: ReadingState, whole: ReadingWholeness, inputCut: InputCut | null): string {
+  if (whole.whole) return `«${TO_VED_LABEL}» bosildi`;
+  if (whole.blocking[0] === 'no_goods' && !fileSent(state)) return 'tovar nomi yozilmagan';
+  return `${unreadWhat(state, whole, inputCut) ?? 'fayl'} o‘qilmadi`;
+}
+
+/**
+ * The lenta's honest record of a VED landing (§1.3 a): the card is the «🧮»
+ * door's from here on, and the VED reads why — and what the bot DID read, so
+ * he knows which files are still his to open.
+ */
+export function vedLandingNote(state: ReadingState, whole: ReadingWholeness, inputCut: InputCut | null, rows: number): string {
+  const read = [
+    ...((state.invoiceGoods ?? []).length > 0 ? ['Excel'] : []),
+    ...(typedSomething(state.material) ? ['yozilgan matn'] : []),
+    ...(state.aiUsed ? ['AI o‘qigan fayllar'] : []),
+    ...(state.seed ? ['qaytarilgan so‘rov'] : []),
+  ];
+  const got = rows > 0 ? `${rows} ta tovar${read.length > 0 ? ` (${read.join(', ')})` : ''}` : 'tovar yo‘q';
+  return `🤖 AI eshigidan keldi — AI hisoblamadi: ${vedLandingReason(state, whole, inputCut)}. O‘qilgan: ${got}.`;
+}
+
+/** The add table's closing when its own reading is not whole (§1.6): what the press does — adds what was read, and nothing re-runs. */
+export function amendNotWholeLine(what: string, confirm: string): string {
+  return `⚠️ ${what.charAt(0).toUpperCase()}${what.slice(1)} o‘qilmadi — ${confirm} faqat o‘qilganini qo‘shadi, AI qayta hisoblamaydi.`;
+}
+
+/**
  * The table the seller reads after a reading and after every answer (his
  * 1.10 c, docs/SAKKIZ-R3.md §2.1) — it replaces the summary. Every line ✅ or
  * ⚠️ with WHY under it, the totals rows, and how to answer, so a seller fills
@@ -1173,7 +1650,11 @@ export function intakeTableText(input: TableInput): string {
     // the AI table's adv-18).
     if (!input.marker) {
       closing.push(
-        rows.length > 0 && warnRows.length === 0 && !totalsWarn
+        ...(input.cut ? [cutWords(input.cut)] : []),
+        // Never «to‘liq» under a list the line above says was not read to its
+        // end (review of the fixes RF-WORDS-1, RF-REGRESSION-7): the keyboard
+        // and the landing are his 2a's, only the words follow the cut.
+        rows.length > 0 && warnRows.length === 0 && !totalsWarn && !input.cut
           ? `✅ Ma’lumot to‘liq — ${confirm} ni bosing, so‘rov VED ga tushadi.`
           : `ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — ${confirm} ni hozir bosishingiz mumkin.`,
         PLAIN_SUMMARY_LAST,
@@ -1185,15 +1666,43 @@ export function intakeTableText(input: TableInput): string {
     // press the save guard refuses (review adv-18): the marker points at
     // «Bo‘ldi», and only what is still open is said.
     const collecting = Boolean(input.marker);
-    if (rows.length === 0) {
-      if (!collecting) closing.push(NO_GOODS_CLOSING, vedLine);
-    } else if (complete) {
-      if (!collecting) closing.push(aiCompleteLine(input.amend, ai.available));
-    } else {
-      // After an answer the state names what is still open (§3.4): «⚠️ Yana 1 ta: 5-qator.»
+    // After an answer the state names what is still open (§3.4): «⚠️ Yana 1 ta: 5-qator.»
+    const openLine = () => {
       const open = tableOpenOf(input);
-      closing.push(ai.last.length > 0 && open.length > 0 ? `⚠️ Yana ${open.length} ta: ${openTargetsText(open)}.` : shortage);
-      if (!collecting) closing.push(...answerHow(input, rows, missing, stale), vedLine);
+      return ai.last.length > 0 && open.length > 0 ? `⚠️ Yana ${open.length} ta: ${openTargetsText(open)}.` : shortage;
+    };
+    // The files refused at arrival, named on every AI table with their own
+    // reasons (docs/FAYL-OQISH.md §1.1) — never blocking, never forgotten.
+    const named = collecting ? [] : refusedFileLines(ai.reading?.whole.named ?? []);
+    // Not whole (§1.2): the closing says what was not read, in words, and
+    // replaces the complete line and `vedLine` — ONLY here: a whole table,
+    // complete or not, keeps today's closing (IKKI-ESHIK §3.2, critic-pins).
+    const unread = ai.reading && !ai.reading.whole.whole ? ai.reading : null;
+    if (unread && input.amend) {
+      // An addition keeps its keyboard (§1.6): its press adds what WAS read,
+      // and says so — never «AI qayta hisoblaydi» over a file nobody read.
+      const line = amendNotWholeLine(unreadWhat(unread.state, unread.whole, unread.inputCut) ?? 'fayl', confirm);
+      if (rows.length > 0 && !complete) {
+        closing.push(openLine());
+        if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, line);
+      } else if (!collecting) closing.push(...named, line);
+    } else if (unread) {
+      const first = notWholeClosing(unread.state, unread.whole, rows.length, unread.inputCut);
+      const said = [...(first ? [first] : []), ...refusedPdfLines(unread.state)];
+      // «🔄» is drawn either way; named once — on the tail when it said it there.
+      const remedy = notWholeRemedy(unread.state, unread.whole, notWholeRetry(unread.state) && !retryNamedAbove(unread.state));
+      if (rows.length > 0 && !complete) {
+        if (!collecting) closing.push(...said);
+        closing.push(openLine());
+        if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, remedy);
+      } else if (!collecting) closing.push(...said, ...named, remedy);
+    } else if (rows.length === 0) {
+      if (!collecting) closing.push(...named, NO_GOODS_CLOSING, vedLine);
+    } else if (complete) {
+      if (!collecting) closing.push(...named, aiCompleteLine(input.amend, ai.available));
+    } else {
+      closing.push(openLine());
+      if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, vedLine);
     }
   } else if (rows.length === 0) {
     closing.push(NO_GOODS_CLOSING, vedLine);
@@ -1219,8 +1728,19 @@ export function intakeTableText(input: TableInput): string {
     ...(plain || ai ? [] : ['', ...closing]),
     ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
   ];
+  // No rows after a FILE on the AI door: the file was not read — «tovar
+  // nomi yozilmagan» there was the very phrase he quoted (critic-said-twice).
+  // The plain door and a table from before the doors keep their words (§8).
   const goodsLines =
-    rows.length === 0 ? [plain ? `ℹ️ ${FIELD_LABEL.goods} yozilmagan ${PLAIN_GAP_TAIL}` : `⚠️ ${FIELD_LABEL.goods} — yozilmagan`] : null;
+    rows.length === 0
+      ? [
+          plain
+            ? `ℹ️ ${FIELD_LABEL.goods} yozilmagan ${PLAIN_GAP_TAIL}`
+            : ai && (ai.reading ? fileSent(ai.reading.state) : input.fileCount > 0)
+              ? AI_GOODS_ROW_UNREAD
+              : `⚠️ ${FIELD_LABEL.goods} — yozilmagan`,
+        ]
+      : null;
   const length = (lines: string[], cut = false) => [...head, ...lines, ...fixed(cut), ...tail].join('\n').length;
   const fits = (lines: string[]) => length(lines) <= TELEGRAM_LIMIT;
   const draw = (lines: string[], cut = false) =>
@@ -1414,6 +1934,19 @@ export function intakeNoteText(input: {
    * submission nobody could reopen.
    */
   material?: string[];
+  /**
+   * The AI door's job landed for the VED alone (docs/FAYL-OQISH.md §1.3 a,
+   * `vedLandingNote`): the card says so under its head — why the AI did not
+   * compute, and what the bot did read. Absent = every other landing.
+   */
+  doorNote?: string | null;
+  /**
+   * The files refused AT ARRIVAL (`IntakeState.refusedFiles`, as-built review
+   * WORDS-2): the table named them to the seller, and the VED, who prices from
+   * the card, was never told which files the AI did not read and that their
+   * goods are not in the figure — and of a file past 20 MB he has no copy.
+   */
+  refusedFiles?: readonly { name: string; why: string; resent?: boolean }[];
 }): string {
   const goods = itemFacts(input.facts);
   const goodsLines = goods
@@ -1440,17 +1973,39 @@ export function intakeNoteText(input: {
   return (
     `🧮 Hisoblatish — ${SECTION_LABEL[input.section]}\n` +
     `Yig‘di: ${input.collectedBy} (${input.via ?? 'Telegram bot'})\n` +
+    (input.doorNote ? `${input.doorNote}\n` : '') +
     (input.section === 'rastamojka'
       ? ''
       : `Yo‘nalish: ${input.facts.fromCity?.trim() || '—'} → ${input.facts.toCity?.trim() || '—'}\n`) +
     `${weightLabel(input.section, input.facts)}: ${num(input.facts.weightKg, 'kg')} · Hajm: ${volumeText(input.facts)}\n` +
     (input.fileCount ? `Fayllar: ${input.fileCount}\n` : '') +
+    (input.refusedFiles?.length ? `${refusedFilesNote(input.refusedFiles)}\n` : '') +
     (goods.length ? `\nTovarlar:\n${goodsLines}\n` : '') +
     (input.steps.length ? `\nAI izohi:\n${input.steps.map((s) => `— ${s}`).join('\n')}\n` : '') +
     (material ? `\nSotuvchi yuborgani (asl matn):\n${material}\n` : '') +
     (fields.length ? `\n⚠️ Yetishmayotgan ma’lumot: ${fields.map((f) => FIELD_LABEL[f]).join(', ')}` : '') +
     (lines.length ? `\n⚠️ Qatorlarda yetishmayapti:\n${linesBlock(lines)}` : '')
   );
+}
+
+/**
+ * «⚠️ O‘qilmagan fayllar: «CI.pdf» — 20 MB dan katta; «spec.docx» — Word fayl»
+ * — the note's one line for the files refused at arrival (WORDS-2), in the
+ * table's bound: the first few by name, the rest counted per reason in files,
+ * as the table counts them (`refusedRest`).
+ */
+export function refusedFilesNote(files: readonly { name: string; why: string; resent?: boolean }[]): string {
+  const { refused, resent } = splitResent(files);
+  const listed = (list: readonly RefusedEntry[]) => {
+    const shown = list.slice(0, REFUSED_NAMED_MAX).map((f) => `${refusedName(f.name)} — ${reasonClause(f.why)}`);
+    const rest = refusedRest(list.slice(REFUSED_NAMED_MAX)).map(([why, n]) => `yana ${n} ta (${why})`);
+    return `${shown.join('; ')}${rest.length > 0 ? `; ${rest.join(', ')}` : ''}`;
+  };
+  const parts = [
+    ...(refused.length > 0 ? [`⚠️ O‘qilmagan fayllar (tovarlari hisobga kirmagan): ${listed(refused)}`] : []),
+    ...(resent.length > 0 ? [`⚠️ Avvalgi nusxalar o‘qilmadi (keyin shu nomli fayl olindi): ${listed(resent)}`] : []),
+  ];
+  return parts.join('\n');
 }
 
 /**

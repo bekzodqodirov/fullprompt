@@ -48,9 +48,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   // The merged positions travel with the rows: a carton's weight or a line
-  // total merged over two lines is counted once (R3-S3).
-  const { goods } = parseGoods(sheet.rows, sheet.covered ?? null);
-  if (goods.length === 0) return NextResponse.json({ error: 'no_goods' }, { status: 400 });
+  // total merged over two lines is counted once (R3-S3). The rows the reader
+  // did not take as goods — total rows, a footer under the list — come back
+  // beside them (FAYL-OQISH §5.5), so a figure-less last line is not lost in
+  // silence on this door either.
+  const { goods, dropped } = parseGoods(sheet.rows, sheet.covered ?? null);
+  if (goods.length === 0) return NextResponse.json({ error: 'no_goods', dropped }, { status: 400 });
 
   // Memory first (Phase 1.5): a product the book already knows never goes
   // back to the AI with an empty code. The SUPPLIER's own code, when the file
@@ -83,5 +86,5 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     aiError = err instanceof TnvedError ? err.code : 'ai_failed';
   }
 
-  return NextResponse.json({ goods, groups, aiError });
+  return NextResponse.json({ goods, groups, aiError, dropped });
 }

@@ -351,11 +351,20 @@ describe('a code the seller typed lands as his own (PF-ADV-11)', () => {
   it('the landing hands the INSERT the marked rows — a wire a test of the pure half cannot see (#531)', () => {
     const src = readFileSync('src/modules/platform/telegram/staff-bot.ts', 'utf8').replace(/\/\/.*$/gm, '');
     const land = src.slice(src.indexOf('export async function landCollectedIntake'));
-    expect(land.slice(0, land.indexOf('return landIntake(') + 2_000)).toMatch(/facts:\s*state\.facts\.goods\s*\?\s*\{\s*\.\.\.state\.facts,\s*goods:\s*typedCodesOwn\(state\.facts\.goods,\s*state\.lineAnswers\)/);
+    // Anchored on the landing's own call (docs/FAYL-OQISH.md §1.3 a put the
+    // door's derivation above it; `return landIntake(` was never the shape,
+    // so the window had been the function's first 2 000 characters).
+    expect(land.indexOf('await landIntake('), 're-anchor: the landing call moved').toBeGreaterThan(0);
+    expect(land.slice(0, land.indexOf('await landIntake(') + 2_000)).toMatch(/facts:\s*state\.facts\.goods\s*\?\s*\{\s*\.\.\.state\.facts,\s*goods:\s*typedCodesOwn\(state\.facts\.goods,\s*state\.lineAnswers\)/);
   });
 });
 
 describe('a top-up’s packing list is a NOTED file (PF-SPEC-2, PF-SPEC-5)', () => {
+  // Re-anchored by docs/FAYL-OQISH.md §4.5 (known-2, 2026-11-10): the rule is
+  // about a request that HAS rows for the packing list to be the totals of —
+  // here one stored row. On a request with none it is the goods list
+  // (fayl-sheets.test.ts pins that): noting it priced nothing twice and
+  // withheld the only goods there were.
   const amend: AmendBase = {
     requestId: '00000000-0000-4000-8000-000000000099',
     cardLabel: 'B-000067',
@@ -365,7 +374,9 @@ describe('a top-up’s packing list is a NOTED file (PF-SPEC-2, PF-SPEC-5)', () 
     section: 'rastamojka',
     clientLabel: 'GS777',
     openedRev: 0,
-    items: [],
+    items: [
+      { itemId: '00000000-0000-4000-8000-000000000097', seq: 1, name: 'Ladies jacket', quantity: 300, weightKg: null, volumeM3: null, measureUnit: null, measureQty: null, tnvedCode: null, law: null, confirmed: false },
+    ],
     weightKg: null,
     volumeM3: null,
     fromCity: null,

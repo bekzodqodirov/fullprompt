@@ -162,11 +162,17 @@ describe('the round-1 review of the header detective', () => {
       ['LED bulb', '300PCS', '1,200.50KGS', '0,125CBM'],
       ['LED strip', '1 200 PCS', '12.500KGS', '1.5 CBM'],
     ];
+    // …unless the column SAYS which comma it writes (FAYL-OQISH §5.9,
+    // xlsxN-07's verifier, his own example): the N.W. column's «1,200.50KGS»
+    // is a thousands comma, so its «1,200KGS» is 1200 kg. The quantity
+    // column says nothing, and its glued «12,500PCS» stays unread (c0076).
     expect(parseGoods(rows).goods.map((g) => [g.quantity, g.weightKg, g.volumeM3])).toEqual([
-      [null, null, 2.5],
+      [null, 1200, 2.5],
       [300, 1200.5, 0.125],
       [1200, 12.5, 1.5],
     ]);
+    // …and the same «1,200KGS» in a column that says nothing stays unread.
+    expect(parseGoods([rows[0]!, rows[1]!]).goods.map((g) => [g.quantity, g.weightKg])).toEqual([[null, null]]);
   });
 
   it('a per-carton «N.W./CTN» before «TOTAL N.W.» is not the line’s weight (#11)', () => {

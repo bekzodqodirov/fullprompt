@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { expect, test, type Page } from '@playwright/test';
-import { cleanup, cleanupEarlier, database, mint, newRun, type Minted } from './yuk-tekshiruv-fixture';
+import { chatOf, cleanup, cleanupEarlier, database, mint, newRun, type Minted } from './yuk-tekshiruv-fixture';
 
 /**
  * «Yuk ma'lumoti tekshirildi» in a real browser (docs/YUK-TEKSHIRUV.md): the
@@ -153,6 +153,106 @@ test('a rename after the check: ⚠ on the list and on the card, naming what mov
   page.once('dialog', (dialog) => void dialog.accept());
   await panel.getByTestId('lot-check-undo').click();
   await expect(panel).toHaveAttribute('data-state', 'none');
+});
+
+/*
+ * The CLIENT's own ✅ / ❌ (0144, docs/TARKIB-TAKLIFLAR.md §4). No browser can
+ * press a Telegram button, so the answers are written the way the bot writes
+ * them (the rule itself is client-confirm.integration's and the bot's own
+ * suite's); what only a browser can show is the CARD: the question's block,
+ * a ❌ that leads in red with no green line left under it, and the ways out.
+ */
+test('«Mijozdan so‘rash»: no Telegram — a sentence; linked — the button queues the question and the card says so', async ({ page }) => {
+  await login(page, LOGIST);
+  await page.goto(`/receipts/${minted!.receiptId}`);
+  const block = page.getByTestId('client-ask');
+  await expect(block).toBeVisible();
+  // The client has no Telegram linked: said in words, and no button to press in vain.
+  await expect(block.getByTestId('client-ask-nochat')).toBeVisible();
+  await expect(block.getByTestId('client-ask-send')).toHaveCount(0);
+
+  const sql = database();
+  try {
+    await sql`
+      INSERT INTO client_telegram_links (client_id, telegram_chat_id, status, linked_at)
+      SELECT id, ${chatOf(run)}::bigint, 'linked', now() FROM clients WHERE client_code = ${run.marker}`;
+  } finally {
+    await sql.end();
+  }
+  await page.reload();
+  await expect(block.getByTestId('client-ask-nochat')).toHaveCount(0);
+  page.once('dialog', (dialog) => void dialog.accept());
+  await block.getByTestId('client-ask-send').click();
+  await expect(block.getByTestId('client-ask-done')).toBeVisible();
+  // The test server has no bot token, so the question waits in the queue — and the card says exactly that.
+  await expect(block.getByTestId('client-ask-status')).toHaveAttribute('data-state', /pending|sending/);
+  await expect(block.getByTestId('client-ask-send')).toBeDisabled();
+  // A second press while it waits is refused in words, never a second message.
+  const w = await widths(page);
+  expect(w.scroll).toBeLessThanOrEqual(w.client);
+  await page.screenshot({ path: `${SHOTS}/yuk-tekshiruv-mijozdan-sorash.png`, fullPage: true });
+});
+
+test('the client’s ❌ leads in red and leaves NO green line; «E’tirozni yopish» brings the colleague’s tick back; the client’s ✅ is green by itself', async ({ page }) => {
+  await login(page, LOGIST);
+  await page.goto(`/receipts/${minted!.receiptId}`);
+  const panel = page.locator(`#lot-${minted!.lotId}`).getByTestId('lot-check');
+  // A colleague ticks first…
+  await panel.getByTestId('lot-check-yes').click();
+  await expect(panel.getByTestId('lot-check-face-person')).toBeVisible();
+  // …and then the client presses «❌ Xato bor» in Telegram (written as the bot writes it).
+  const answer = async (verdict: 'yes' | 'no') => {
+    const sql = database();
+    try {
+      await sql`
+        INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, chat_id, answered_at)
+        SELECT l.id, ${verdict}, l.product_name_zh, l.product_name_ru, l.box_count, r.client_id, ${chatOf(run)}::bigint, clock_timestamp()
+          FROM receipt_lots l JOIN receipts r ON r.id = l.receipt_id WHERE l.id = ${minted!.lotId}
+        ON CONFLICT (lot_id) DO UPDATE SET verdict = EXCLUDED.verdict, answered_at = EXCLUDED.answered_at`;
+    } finally {
+      await sql.end();
+    }
+  };
+  await answer('no');
+  await page.reload();
+  await expect(panel).toHaveAttribute('data-state', 'none');
+  await expect(panel.getByTestId('lot-check-face-client-no')).toBeVisible();
+  // The colleague's earlier tick is history now — drawn muted, never green beside the dispute.
+  await expect(panel.getByTestId('lot-check-face-person-held')).toBeVisible();
+  await expect(panel.getByTestId('lot-check-face-person')).toHaveCount(0);
+  await expect(panel.locator('.text-good')).toHaveCount(0);
+  // …and the lists agree: the row is back on the ❓ worklist.
+  await page.goto(`/stock?q=${run.marker}&tek=yoq`);
+  await expect(stockRow(page).getByTestId('lot-check-chip')).toHaveAttribute('data-state', 'none');
+  await page.goto(`/receipts/${minted!.receiptId}`);
+  await page.screenshot({ path: `${SHOTS}/yuk-tekshiruv-mijoz-etiroz.png`, fullPage: true });
+  const w = await widths(page);
+  expect(w.scroll).toBeLessThanOrEqual(w.client);
+
+  // Way out: the person who has talked to the client closes the dispute — the tick vouches again.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await panel.getByTestId('lot-check-dispute-close').click();
+  await expect(panel.getByTestId('lot-check-face-client-no')).toHaveCount(0);
+  await expect(panel.getByTestId('lot-check-face-person')).toBeVisible();
+  await expect(panel).toHaveAttribute('data-state', 'checked');
+
+  // The client's own ✅ needs no colleague at all: the tick is taken back, the client confirms, the lot is ✅.
+  page.once('dialog', (dialog) => void dialog.accept());
+  await panel.getByTestId('lot-check-undo').click();
+  await expect(panel).toHaveAttribute('data-state', 'none');
+  await answer('yes');
+  await page.reload();
+  await expect(panel).toHaveAttribute('data-state', 'checked');
+  await expect(panel.getByTestId('lot-check-face-client-yes')).toBeVisible();
+  await page.goto(`/stock?q=${run.marker}&tek=ha`);
+  await expect(stockRow(page).getByTestId('lot-check-chip')).toHaveAttribute('data-state', 'checked');
+  // Leave the lot as the next test expects it: nobody's answer on it.
+  const sql = database();
+  try {
+    await sql`DELETE FROM lot_client_confirms WHERE lot_id = ${minted!.lotId}`;
+  } finally {
+    await sql.end();
+  }
 });
 
 test('the warehouse reads the face and cannot tick', async ({ page }) => {

@@ -600,6 +600,36 @@ describe('a cut-off landing that keeps failing (the P1 review: SPEC-2, ADV-4)', 
     await tick;
     expect(textsTo(id)).toEqual(['Saqlab bo‘lmadi — «✅ Tasdiqlash» ni qayta bosing.']);
   });
+
+  it('…naming «👤 VED hisoblasin» when that was the press — or the AI reading under it is not whole (docs/FAYL-OQISH.md §1.2)', async () => {
+    const PDF = { attachmentId: 'pdf-sweep', name: 'invoice.pdf', bytes: 10 };
+    const KURTKA = [{ name: 'Kurtka', quantity: 300, tnvedCode: '6201400000' }];
+    const states: Partial<IntakeState>[] = [
+      // «👤» pressed on a whole reading: the choice, not the reading, names it.
+      { ai: true, landAs: 'ved', invoiceGoods: KURTKA, facts: { weightKg: 300, volumeM3: 2, goods: KURTKA } },
+      // A «✅» over a reading that is not whole (a PDF the model never read).
+      { ai: true, fileCount: 1, pdfs: [PDF], aiUsed: false, aiFailure: 'timeout', facts: { weightKg: 300, volumeM3: 2, goods: KURTKA } },
+    ];
+    for (const patch of states) {
+      const now = Date.now();
+      const id = open(now, 5 * MIN, { stage: 'review', ...patch });
+      stub.landing = 'note_only';
+      let fail: (err: Error) => void = () => {};
+      vi.mocked(landCollectedIntake).mockImplementation(
+        () => new Promise((_resolve, reject) => {
+          fail = reject;
+        }),
+      );
+      const tick = runIntakeSweep(now);
+      await vi.waitFor(() => expect(landCollectedIntake).toHaveBeenCalled());
+      expect(await landedAlreadyReply({ reply: async () => ({ message_id: 1 }) }, id, peekIntake(id)!)).toBe(true);
+      fail(new Error('database blip'));
+      await tick;
+      expect(textsTo(id)).toEqual(['Saqlab bo‘lmadi — «👤 VED hisoblasin» ni qayta bosing.']);
+      endIntake(id);
+      vi.mocked(landCollectedIntake).mockClear();
+    }
+  });
 });
 
 describe('the ✅ and the end line are said, and said again after a failure that may pass (SPEC-3, ADV-6)', () => {

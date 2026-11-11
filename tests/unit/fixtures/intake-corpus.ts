@@ -96,6 +96,12 @@ export interface HintExpect {
 export interface ParseGoodsExpect {
   goods?: GoodsExpect;
   headerRow?: number | null;
+  /** The sheet's own sums and shape (`SheetShape`), where the reviewer named them. */
+  grossKg?: number | null;
+  volumeM3?: number | null;
+  shape?: 'invoice' | 'packing';
+  /** The rows the reader did not take as goods, in order, exactly (`ParsedGoods.dropped`, FAYL-OQISH §5.4-§5.5). */
+  dropped?: { text: string; why: string }[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */
@@ -150,6 +156,10 @@ export interface FileExpect {
   maxHeapMb?: number;
   /** Any one of these holds (the reviewer allowed either answer). */
   either?: FileExpect[];
+  /** A goods read's own sums (`SheetShape`) and the rows it did not take as goods (FAYL-OQISH §5.5), exactly. */
+  grossKg?: number | null;
+  volumeM3?: number | null;
+  dropped?: { text: string; why: string }[];
 }
 
 /** The customer question («Mijoz kim?») answered once or twice with the same text. */
@@ -693,11 +703,12 @@ export const readGoodsFileCases = corpusCases<CorpusCase<FileSpec, FileExpect>>(
   {
     id: "c0215",
     input: { kind: 'xlsx', sheets: [{ name: 'Packing list', rows: () => [['YIWU JINHUA TRADING CO., LTD'], ['No. 88 Futian Road, Yiwu, Zhejiang, China'], ['TEL: +86 579 8555 1234'], [], ['PACKING LIST'], [], ['To:', 'GSR LOGISTICS / Tashkent, Uzbekistan'], ['Invoice No:', 'YW2026-1021', 'Date:', '2026-10-21'], ['From:', 'Yiwu', 'To:', 'Tashkent'], ['Shipping marks:', 'GS777'], [], [], ['No.', 'Model', 'Description', 'Material', 'Color', 'Qty (pcs)', 'Unit price USD', 'Amount USD', 'CTN', 'CTN size (cm)', 'N.W.(kg)', 'G.W.(kg)', 'CBM'], ...Array.from({ length: 130 }, (_, k): Cell[] => { const i = k + 1; return [i, `YW-${2300 + i}`, `Куртка женская утеплённая, модель ${i} (女士羽绒夹克)`, 'polyester 100%', 'black/white', 100 + i, 12.5, (100 + i) * 12.5, 5, '60*40*45', 20 + i / 10, 22 + i / 10, 0.35]; }), ['TOTAL', '', '', '', 999, 999, 9999, 9999, 99]] }] },
-    expected: {"either": [{"kind": "goods", "goods": {"count": 130}}, {"kind": "text", "textCut": true, "wholeRows": true, "replyIncludes": ["⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi "]}]},
+    expected: {"kind": "goods", "goods": {"count": 130, "rows": [{"name": "Куртка женская утеплённая, модель 1 (女士羽绒夹克)", "quantity": 101, "weightKg": 20.1, "volumeM3": 0.35}]}},
     said: "no line lost in silence: either kind 'goods' with every row, or kind 'text' with textCut true, its text ending on a whole row (never mid-row), and readIntakeFile's reply naming the cut («⚠️ Jadval katta: AI faqat boshini o‘qiydi (birinchi N qator)»); the TOTAL row is never silently dropped either",
     why: "Vote 1: header on row 13 past the reader's first ten → kind 'text' 19 801 chars; goods 1-98 whole, line 99 cut mid-row, 100-130 + TOTAL lost.",
     source: "r1 c17 ai — vote 1 probe 2",
     weight: "defect",
+    pick: "FAYL-OQISH §5.1 (2026-11-10, xlsx1-02's verifier): rows 10-49 are searched under two guards, so the header on row 13 is found — re-anchored from the «either» to kind 'goods' with all 130 lines and the first line's figures",
     vague: "«the TOTAL row is never silently dropped either»: covered by the text branch (textCut + the reply); on the goods branch only the 130 product lines are counted",
     note: "rowsGen: one row per i, a «{expr}» cell evaluated as a number",
   },

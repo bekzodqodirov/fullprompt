@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
-import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type GoodsRow, type SheetShape } from './goods-import';
+import { clipUnits } from '../../platform/text/clip';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type DroppedRow, type GoodsRow, type SheetShape } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -174,7 +175,10 @@ function csvSheet(text: string): SheetRows {
   // writes for every empty row of a template's used range (the fifth review):
   // an empty tail past the bound is no row left out.
   const rowsLeftOut = filled.slice(MAX_ROWS).some((line) => /[^\s;,\t"]/.test(line));
-  return withLeftOut({ name: 'CSV', rows }, rowsLeftOut, colsLeftOut);
+  // The delimiter is the file's word on its comma (§5.9): «;» is a decimal
+  // comma's, «,» a quoted thousands comma's; a tab says nothing.
+  const comma = delim === ';' ? 'decimal' : delim === ',' ? 'thousands' : null;
+  return withLeftOut({ name: 'CSV', rows, ...(comma ? { comma } : {}) }, rowsLeftOut, colsLeftOut);
 }
 
 function splitCsvLine(line: string, delim: string): { cells: Cell[]; leftOut: boolean } {
@@ -215,13 +219,28 @@ function splitCsvLine(line: string, delim: string): { cells: Cell[]; leftOut: bo
  * SECOND sheet as often as the first, and only `worksheets[0]` was opened).
  */
 export async function workbookSheets(body: ArrayBuffer | Buffer): Promise<SheetRows[] | null> {
+  return (await loadWorkbook(body))?.sheets ?? null;
+}
+
+/**
+ * The sheets, and how many pictures the workbook carries (docs/FAYL-OQISH.md
+ * §4.4): nothing here reads a picture, so a workbook whose goods exist only
+ * as a pasted screenshot read as «jadval bo‘sh» or «AI o‘qiydi», and the
+ * seller was never told to send the picture itself. Counted from what the
+ * load already holds — every `xl/media/*` entry, which is where floating,
+ * WPS and in-cell pictures all keep their bytes — never `getImages()`, which
+ * sees the drawing-anchored ones alone.
+ */
+async function loadWorkbook(body: ArrayBuffer | Buffer): Promise<{ sheets: SheetRows[]; pictures: number } | null> {
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(body as ArrayBuffer);
   } catch {
     return null;
   }
-  return workbook.worksheets.map(worksheetRows);
+  // `media` is the loaded workbook's own list; the typings put it on the model only.
+  const media = (workbook as unknown as { media?: { type?: string }[] }).media ?? [];
+  return { sheets: workbook.worksheets.map(worksheetRows), pictures: media.filter((m) => m.type === 'image').length };
 }
 
 /**
@@ -250,14 +269,41 @@ export function decodeText(body: Buffer): string {
   return new TextDecoder('windows-1251').decode(body);
 }
 
+/**
+ * A further sheet of a workbook whose header the reader MAPPED
+ * (docs/FAYL-OQISH.md §4.1): its own rows, its shape, and its rows as text
+ * with the reader's two cuts — what the bot needs to judge it against the
+ * goods list (`receiveGoodsSheet`): the same goods' packing list gives the
+ * totals, another factory's own goods are folded in, and anything it cannot
+ * prove either way keeps today's reading, its text read for the totals.
+ */
+export interface MappedSheet extends SheetShape {
+  sheet: string;
+  goods: GoodsRow[];
+  ownText: { text: string; cut: boolean; cellsCut: boolean };
+  /**
+   * What the reader did not take as goods on THIS sheet (§5.5, as-built review
+   * SHEETS-1): a further sheet's figure-less last lines were trimmed and
+   * reached no reader on any surface — «Zavod B»'s «Шарф», said nowhere.
+   */
+  dropped: DroppedRow[];
+  /** The reader stopped at its ceiling with rows left unread (`ParsedGoods.stoppedShort`). */
+  stoppedShort: boolean;
+}
+
 /** What the bot learns from a spreadsheet the seller forwarded. */
 export type GoodsFileRead =
   /**
-   * The reader found a header and read the goods exactly — from ONE sheet,
-   * the one with the most lines. An «Invoice» sheet and a «Packing list»
-   * sheet in one workbook usually list the SAME goods, and adding them would
-   * double the order. The other sheets go to the model as `text` (their
-   * gross weights and volumes are the shipment's totals).
+   * The reader found a header and read the goods exactly. The goods sheet is
+   * the one with the most lines (the first on a tie); an «Invoice» sheet and a
+   * «Packing list» sheet in one workbook usually list the SAME goods, and
+   * adding them would double the order. Every OTHER sheet whose header the
+   * reader maps is handed over beside it (`moreSheets`) for the bot to judge
+   * by its shape (docs/FAYL-OQISH.md §4.2) — before, it became text the model
+   * was told not to list, and another factory's goods on «Sheet2» were lost
+   * with no word. Only the sheets with no header the reader knows are `text`
+   * (their gross weights and volumes are the shipment's totals), under their
+   * own `textCut` / `cellsCut`.
    */
   | ({
       kind: 'goods';
@@ -267,6 +313,20 @@ export type GoodsFileRead =
       text: string;
       textCut: boolean;
       cellsCut: boolean;
+      /** The other visible sheets the reader mapped, in workbook order. */
+      moreSheets: MappedSheet[];
+      /**
+       * The goods sheet's rows the reader did NOT take as goods, and why
+       * (FAYL-OQISH §5.4, §5.5): its total rows, a figure-less «SAY TOTAL»
+       * line, a subtotal the arithmetic shows, and the footer under the last
+       * line that states anything («Made in China», «Remarks:», a stamp).
+       * The collector shows their text to the model as context — a real
+       * good typed there without figures is still read — and names them on
+       * receipt (`droppedRowsLine`).
+       */
+      dropped: DroppedRow[];
+      /** The goods sheet was cut at the reader's ceiling with rows left unread (`ParsedGoods.stoppedShort`). */
+      stoppedShort: boolean;
       /**
        * The goods sheet's OWN rows as text, the way `text` writes the others
        * — only for a packing-shaped sheet (docs/IKKI-ESHIK.md §1.2.2): when it
@@ -296,13 +356,75 @@ export type GoodsFileRead =
    *    description past 300 characters is ordinary, and calling that «rows
    *    left out» told the seller and the model so on almost every invoice.
    */
-  | { kind: 'text'; text: string; sheets: number; textCut: boolean; cellsCut: boolean }
+  | {
+      kind: 'text';
+      text: string;
+      sheets: number;
+      textCut: boolean;
+      cellsCut: boolean;
+      /**
+       * What the reader saw, for the seller's words (docs/FAYL-OQISH.md §4.4):
+       * `header` — a sheet's header WAS found and no goods row came out under
+       * it (a lone «TOTAL cordless drill» row, xlsx1-04), so «sarlavhasini
+       * topa olmadim» is false of it; `no_rows` — no row of the text holds a
+       * name beside a figure (a cover, a letterhead, a picture's caption), so
+       * «AI o‘qiydi» promised goods the model cannot find there. Absent =
+       * today's header-less table.
+       */
+      why?: 'header' | 'no_rows';
+      /** The workbook carries pictures the reader does not read (`loadWorkbook`). */
+      pictures: number;
+    }
+  /**
+   * A workbook whose cells are empty and which carries pictures: the goods
+   * are in a picture this reader does not read (docs/FAYL-OQISH.md §4.4), and
+   * «jadval bo‘sh» alone sent nobody to the cure.
+   */
+  | { kind: 'refused'; reason: 'pictures' }
   /**
    * A spreadsheet that cannot be read, and why — said to the seller. A markup
    * text past `MAX_MARKUP_CHARS` is `broken`: «save it again» (as .xlsx) is
    * the honest cure.
    */
   | { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };
+
+/** How many dropped rows the receipt names by their text — the rest are counted. */
+const DROPPED_NAMED = 3;
+
+/**
+ * The receipt's words for the rows a goods sheet held and the reader did not
+ * take as goods (FAYL-OQISH §5.5) — «said, never silent»: a footer under the
+ * goods («Made in China», «Remarks:») or a subtotal the arithmetic found is a
+ * row the seller may know to be a good. A label-only total row («TOTAL»,
+ * «Итого», «Umumiy») is no news to anybody and is not said; nothing else to
+ * say is null.
+ *
+ * The phrase opens in lower case so the collector can set it after the
+ * file's own line («📄 «pl.xlsx» — …»): all of them footers under the table
+ * reads «ostidagi N ta qator tovar deb olinmadi: «…», «…»»; otherwise each
+ * says why. Pure, for the collector (calc-files.ts) to print; the collector also
+ * hands the rows' text to the model as context.
+ */
+export function droppedRowsLine(dropped: readonly DroppedRow[]): string | null {
+  const said = dropped.filter((row) => row.why !== 'total');
+  if (said.length === 0) return null;
+  const why: Record<DroppedRow['why'], string> = {
+    total: 'jami qatori',
+    subtotal: 'jami qatori',
+    footer_total: 'izoh qatori',
+    footer: 'jadval ostida',
+  };
+  // «ostidagi» («under it») only when every row said IS under the table: a
+  // footer is by construction; a figure-less «Total station Leica» can stand
+  // mid-list and says why on its own (review break-ostidagi-midlist).
+  const below = said.every((row) => row.why === 'footer');
+  const quoted = said.slice(0, DROPPED_NAMED).map((row) => {
+    const text = clipUnits(row.text, 40);
+    return `«${text}${text.length < row.text.length ? '…' : ''}»${below ? '' : ` (${why[row.why]})`}`;
+  });
+  const more = said.length > DROPPED_NAMED ? ` va yana ${said.length - DROPPED_NAMED} ta` : '';
+  return `${below ? 'ostidagi ' : ''}${said.length} ta qator tovar deb olinmadi: ${quoted.join(', ')}${more}`;
+}
 
 /**
  * Sheets as text for the model: `[name]`, then one line per row with its
@@ -334,7 +456,7 @@ export type GoodsFileRead =
  * out past its bound; `cellsCut` a cell or a row's tail shortened while the
  * row itself is there, here or by the reader (R3-S6, `SheetRows.rowsLeftOut`).
  */
-function sheetsAsText(sheets: SheetRows[]): { text: string; rowsCut: boolean; cellsCut: boolean } {
+function sheetsAsText(sheets: SheetRows[], budget = SHEET_TEXT_BUDGET): { text: string; rowsCut: boolean; cellsCut: boolean } {
   let text = '';
   let rowsCut = sheets.some((sheet) => sheet.rowsLeftOut);
   let cellsCut = sheets.some((sheet) => sheet.colsLeftOut);
@@ -344,7 +466,7 @@ function sheetsAsText(sheets: SheetRows[]): { text: string; rowsCut: boolean; ce
       const read = rowLine(row, r, sheet.covered ?? null);
       if (!read.line) continue;
       const head = opened ? '\n' : `${text ? '\n\n' : ''}[${sheet.name.slice(0, 100)}]\n`;
-      if (text.length + head.length + read.line.length > SHEET_TEXT_BUDGET) {
+      if (text.length + head.length + read.line.length > budget) {
         rowsCut = true;
         break each;
       }
@@ -364,14 +486,17 @@ function rowLine(row: Cell[], r: number, covered: Covered | null): { line: strin
     if (cell === null || (covered?.has(r, c) && readsAsFigure(cell))) continue;
     const raw = String(cell);
     // Only the head of a long cell is read: a cell is never the length of
-    // the text it lands in (the 30,000-character shared string, #8).
-    const window = raw.slice(0, CELL_TEXT_CHARS * 4);
+    // the text it lands in (the 30,000-character shared string, #8). Both
+    // cuts keep an emoji whole (`clipUnits`, docs/FAYL-OQISH.md §3.8,
+    // apireq-1): a UTF-16 `slice` through one left a lone half in the text,
+    // and the Messages API refuses the whole request over it.
+    const window = clipUnits(raw, CELL_TEXT_CHARS * 4);
     const flat = window
       .trim()
       .replace(/\s*[\r\n]+\s*/g, ' / ')
       .replace(/\s+/g, ' ');
     if (!flat) continue;
-    const kept = flat.slice(0, CELL_TEXT_CHARS);
+    const kept = clipUnits(flat, CELL_TEXT_CHARS);
     if (kept.length < flat.length || /\S/.test(raw.slice(window.length))) cut = true;
     const piece = line ? ` | ${kept}` : kept;
     if (line.length + piece.length > LINE_TEXT_CHARS) return { line, cut: true };
@@ -389,11 +514,12 @@ function rowLine(row: Cell[], r: number, covered: Covered | null): { line: strin
  * all (a PDF, a picture) — the caller has other doors for those.
  *
  * Every sheet is read. The sheet whose header the reader FINDS answers with
- * its rows, exactly — no model, no tokens. A sheet with no recognisable header no
- * longer becomes «every row's first text cell is a product» (the seller's
- * company name, the address and «Invoice No» became goods and overruled the
- * model's reading); it goes to the model as text, which can read a table it
- * has never seen.
+ * its rows, exactly — no model, no tokens; so does every other sheet whose
+ * header it finds (`moreSheets`), for the bot to judge beside the first. A
+ * sheet with no recognisable header no longer becomes «every row's first text
+ * cell is a product» (the seller's company name, the address and «Invoice No»
+ * became goods and overruled the model's reading); it goes to the model as
+ * text, which can read a table it has never seen.
  *
  * Only VISIBLE sheets are chosen from (the review: a hidden 300-line price
  * list behind the order form's drop-downs out-counted the 20-line order and
@@ -405,9 +531,12 @@ function rowLine(row: Cell[], r: number, covered: Covered | null): { line: strin
  */
 export async function readGoodsFile(body: Buffer, contentType: string | null): Promise<GoodsFileRead | null> {
   let sheets: SheetRows[] | null = null;
+  let pictures = 0;
   if (body.length > 1 && body[0] === 0x50 && body[1] === 0x4b) {
-    sheets = await workbookSheets(body);
-    if (!sheets) return { kind: 'refused', reason: 'broken' };
+    const book = await loadWorkbook(body);
+    if (!book) return { kind: 'refused', reason: 'broken' };
+    sheets = book.sheets;
+    pictures = book.pictures;
   } else if (isCompoundFile(body)) {
     const xls = readXls(body);
     if (!xls.ok) return { kind: 'refused', reason: xls.reason };
@@ -423,28 +552,64 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   const nonEmpty = sheets.filter((sheet) => sheet.rows.some((row) => row.some((cell) => cell !== null && String(cell).trim() !== '')));
   const shown = nonEmpty.filter((sheet) => !sheet.hidden);
   const filled = shown.length > 0 ? shown : nonEmpty;
-  let best: { sheet: SheetRows; parsed: ReturnType<typeof parseGoods> } | null = null;
-  for (const sheet of filled) {
-    const parsed = parseGoods(sheet.rows, sheet.covered ?? null);
-    if (parsed.headerRow !== null && parsed.goods.length > (best?.parsed.goods.length ?? 0)) {
-      best = { sheet, parsed };
-    }
-  }
-  const others = sheetsAsText(filled.filter((sheet) => sheet !== best?.sheet));
-  const ownSheetText = (sheet: SheetRows) => {
-    const own = sheetsAsText([sheet]);
+  const parsed = filled.map((sheet) => ({ sheet, parsed: parseGoods(sheet.rows, sheet.covered ?? null, sheet) }));
+  const mapped = parsed.filter((p) => p.parsed.headerRow !== null && p.parsed.goods.length > 0);
+  // The goods sheet: the most lines, the first on a tie (strict `>`).
+  let best: (typeof parsed)[number] | null = null;
+  for (const p of mapped) if (p.parsed.goods.length > (best?.parsed.goods.length ?? 0)) best = p;
+  // The text is the sheets no header was mapped on — the mapped ones travel
+  // as rows (docs/FAYL-OQISH.md §4.1, sheets-07): a folded «Zavod B» left in
+  // the text sat under the model's «for totals only» heading, and its Σ came
+  // back as the shipment's.
+  const unmapped = parsed.filter((p) => p !== best && !mapped.includes(p));
+  const others = sheetsAsText(unmapped.map((p) => p.sheet));
+  const ownSheetText = (sheet: SheetRows, budget = SHEET_TEXT_BUDGET) => {
+    const own = sheetsAsText([sheet], budget);
     return { text: own.text, cut: own.rowsCut, cellsCut: own.cellsCut };
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    const { goods, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    const { goods, dropped, stoppedShort, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    // The further mapped sheets' texts share ONE budget among themselves, in
+    // workbook order; a sheet the budget did not reach says so in its own
+    // `cut`. The bound is stated, not the old one (review
+    // sheets-break-budget-comment): beside the unmapped sheets' own budget
+    // and a packing goods sheet's `ownText`, a workbook stores up to three
+    // budgets of text in the collection, where every non-goods sheet once
+    // shared one. Not the unmapped sheets' budget ON PURPOSE: behind a long
+    // cover sheet a further sheet would come with no text at all, and a sheet
+    // with no text is held by nothing when the workbook is sent again
+    // (`sameWorkbookAgain` cannot tell it from a new «Zavod B»). What reaches
+    // the model is bounded apart (`fitSheetRows`).
+    let room = SHEET_TEXT_BUDGET;
+    const moreSheets: MappedSheet[] = mapped
+      .filter((p) => p !== best)
+      .map((p) => {
+        const ownText = ownSheetText(p.sheet, room);
+        room = Math.max(0, room - ownText.text.length);
+        return {
+          sheet: p.sheet.name,
+          goods: p.parsed.goods,
+          shape: p.parsed.shape,
+          weightKind: p.parsed.weightKind,
+          grossKg: p.parsed.grossKg,
+          grossColumn: p.parsed.grossColumn,
+          volumeM3: p.parsed.volumeM3,
+          ownText,
+          dropped: p.parsed.dropped,
+          stoppedShort: p.parsed.stoppedShort,
+        };
+      });
     return {
       kind: 'goods',
       goods,
+      dropped,
+      stoppedShort,
       sheet: best.sheet.name,
       sheets: filled.length,
       text: others.text,
       ...cut,
+      moreSheets,
       shape,
       weightKind,
       grossKg,
@@ -453,8 +618,53 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       ownText: shape === 'packing' ? ownSheetText(best.sheet) : null,
     };
   }
-  if (others.text) return { kind: 'text', text: others.text, sheets: filled.length, ...cut };
-  return { kind: 'refused', reason: 'empty' };
+  if (others.text) {
+    // No goods row came out of a sheet whose header WAS found, or every line
+    // of the text is a cover's (docs/FAYL-OQISH.md §4.4).
+    const why = parsed.some((p) => p.parsed.headerRow !== null)
+      ? ('header' as const)
+      : unmapped.every((p) => p.sheet.rows.every(coverRow))
+        ? ('no_rows' as const)
+        : undefined;
+    return { kind: 'text', text: others.text, sheets: filled.length, ...cut, ...(why ? { why } : {}), pictures };
+  }
+  return { kind: 'refused', reason: pictures > 0 ? 'pictures' : 'empty' };
+}
+
+/*
+ * What a cover or a letterhead is made of, and nothing a goods line is: a
+ * document's title, the sender's company, a contact or document label, a
+ * total. Positive and narrow ON PURPOSE (review sheets-spec-no-rows-too-wide):
+ * a sheet whose every line is one of these says «jadvalda tovar qatori
+ * ko‘rinmadi», and anything it does not know keeps «AI o‘qiydi» — «no row
+ * pairs a name with a figure» also took a names-only list, «Kurtka 300 dona»
+ * in one cell and «12 рулонов», goods the model then read off that very text.
+ * «Tovar:», «Soni:» are a goods card's labels, not a cover's.
+ */
+const COVER_TITLE =
+  /(?<!\p{L})(?:commercial|proforma|invoice|packing\s*list|contract|specification|инвойс|сч[её]т(?:-фактура)?|спецификаци\p{L}*|контракт|упаковочн\p{L}*\s+лист|hisob-faktura|faktura|shartnoma)(?!\p{L})|商业发票|形式发票|发票|装箱单|合同/giu;
+/** What a title carries beside its words: its number and its date. */
+const TITLE_FILLER = /(?<!\p{L})(?:no|nr|date|от|dated)(?!\p{L})/giu;
+const COVER_COMPANY = /(?<!\p{L})(?:co\.?,?\s*(?:ltd|limited)|ltd|llc|ооо|оао|зао|ип|mchj)(?!\p{L})|有限公司|进出口/iu;
+const COVER_LABEL =
+  /^(?:no|nr|№|to|from|attn|add|address|tel|telephone|phone|mob|fax|e-?mail|date|invoice\s*no|contract\s*no|po\s*no|shipping\s*mark|buyer|seller|shipper|consignee|notify|port|payment|terms|дата|адрес|тел|телефон|кому|от|покупатель|продавец|грузополучатель|отправитель|manzil|sana|oluvchi|jo‘natuvchi|地址|电话|日期|收货人|发货人|买方|卖方|唛头)\.?\s*[:：#№]/iu;
+const COVER_TOTAL = /^(?:(?:grand\s+)?total|say|итого|всего|jami|合计|总计|共计)(?!\p{L})/iu;
+/** A cell that is a document's title and nothing else but its number or date («PROFORMA INVOICE», «装箱单 PACKING LIST»). */
+const coverTitle = (text: string) => {
+  const rest = text.replace(COVER_TITLE, ' ');
+  return rest !== text && !/\p{L}/u.test(rest.replace(TITLE_FILLER, ' '));
+};
+
+/**
+ * One line of a cover: led by a contact label or a total (what follows is its
+ * value — «Date: | 2026-10-28», «TOTAL G.W. | 1592 KGS»), or every cell of it
+ * a title, the company or a label. An empty line is no evidence either way.
+ */
+function coverRow(row: Cell[]): boolean {
+  const cells = row.filter((cell) => cell !== null && String(cell).trim() !== '').map((cell) => String(cell).trim());
+  if (cells.length === 0) return true;
+  if (COVER_LABEL.test(cells[0]!) || COVER_TOTAL.test(cells[0]!)) return true;
+  return cells.every((text) => coverTitle(text) || COVER_COMPANY.test(text) || COVER_LABEL.test(text));
 }
 
 function looksTextual(body: Buffer, contentType: string | null): boolean {
