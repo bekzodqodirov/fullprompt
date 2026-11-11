@@ -102,6 +102,15 @@ const msOf = (column: SQL) => sql`(extract(epoch FROM ${column}) * 1000)::float8
 const dateOf = (ms: number | null): Date | null => (ms === null ? null : new Date(ms));
 
 /**
+ * The `via` on the audit row of a PERSON's press on a card whose reply the
+ * MACHINE had already approved (decide `afterMachinePress`, fix pass A, C3) —
+ * his ❌'s and his 🙋's. A 🙋 there is a press on record even when no draft of
+ * the chat became his `taken_over` (none was live): `human_pressed_ms` reads it
+ * (fix pass C, FIX-SEND-1).
+ */
+export const AFTER_AUTO = 'after_auto';
+
+/**
  * A file this system KEPT from the message — the stored record's «it carries a
  * medium» for `asksAnew` (review S4), asked by the send's stored check and by
  * the ✅'s own re-check (`chatMoved`). Not `has_media`: that is true of a
@@ -154,8 +163,13 @@ type ChatFactsRow = {
  *                   PERSON decided 'taken_over' (`decideDraft` stamps
  *                   `decided_by`/`decided_at`; the machine's «he answered
  *                   himself» — `chatMoved`, the human-reply job — writes
- *                   neither), so a reply he approves AFTER the press is not
- *                   withdrawn by it (K2's follow-up);
+ *                   neither), or the newest 🙋 he pressed on a card whose
+ *                   reply the MACHINE had approved (its audit row, `via`
+ *                   AFTER_AUTO, on a draft of the chat's own outbox — fix
+ *                   pass C: with no live draft to retire, nothing else dates
+ *                   that press, and a ✅ of his after it was refused as if
+ *                   he had answered himself), so a reply he approves AFTER
+ *                   the press is not withdrawn by it (K2's follow-up);
  *   caps          — the Tashkent day and the last hour. The AI's rows are
  *                   every one handed to Telegram: 'sent', and 'unknown'
  *                   (S5: perhaps delivered, and a fuse that cannot see it
@@ -209,9 +223,17 @@ async function chatFacts(row: AgentOutboxRow, now: Date): Promise<ChatFactsRow> 
         SELECT h.human_until FROM agent_conversations h
          WHERE h.manager_user_id = ${m} AND h.peer_id = ${p})`)} AS human_until_ms,
       ${msOf(sql`(
-        SELECT max(tk.decided_at) FROM agent_drafts tk
-         WHERE tk.manager_user_id = ${m} AND tk.peer_id = ${p}
-           AND tk.status = 'taken_over' AND tk.decided_by IS NOT NULL)`)} AS human_pressed_ms,
+        SELECT max(pr.at) FROM (
+          SELECT tk.decided_at AS at FROM agent_drafts tk
+           WHERE tk.manager_user_id = ${m} AND tk.peer_id = ${p}
+             AND tk.status = 'taken_over' AND tk.decided_by IS NOT NULL
+          UNION ALL
+          SELECT al.created_at FROM agent_outbox ox
+            JOIN audit_log al ON al.entity_type = 'agent_draft' AND al.entity_id = ox.draft_id
+           WHERE ox.manager_user_id = ${m} AND ox.peer_id = ${p}
+             AND al.actor_id IS NOT NULL
+             AND al.after->>'via' = ${AFTER_AUTO} AND al.after->>'takenOver' = 'true'
+        ) pr)`)} AS human_pressed_ms,
       EXISTS (
         SELECT 1 FROM agent_conversations c
          WHERE c.manager_user_id = ${m} AND c.peer_id = ${p} AND c.muted_at IS NOT NULL

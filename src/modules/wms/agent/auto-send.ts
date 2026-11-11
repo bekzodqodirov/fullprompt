@@ -840,7 +840,7 @@ export async function stopAuto(staffId: string, draftId: string): Promise<{ ok: 
   if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
   if (row.draftStatus === 'pending' || row.draftStatus === 'editing') {
     if (await stopAutoForPerson(draftId, staffId, 'pause')) return { ok: true };
-    return { ok: false, code: 'not_waiting' };
+    return { ok: false, code: await notStoppedWhy(draftId) };
   }
   if (row.state === 'pressed') {
     const pressed = await machinePressedReply(draftId);
@@ -869,7 +869,19 @@ export async function stopAuto(staffId: string, draftId: string): Promise<{ ok: 
     await refreshCard(draftId);
     return { ok: true };
   }
-  return { ok: false, code: 'not_waiting' };
+  return { ok: false, code: live ? await notStoppedWhy(live.draftId) : 'not_waiting' };
+}
+
+/**
+ * Why ⏸ stopped nothing (fix pass C, FIX-REGRESS-1): the row read a moment
+ * ago as waiting or claimed may have been pressed since — the machine's
+ * approval committing between that read and the stop, the stop waiting on its
+ * verdict row and finding it 'pressed'. Then «kech», with where the reply is
+ * (still takeable back: «❌ Bekor qilish»), as `stopAutoForEdit` answers —
+ * never «Bu javob endi o‘zi ketmaydi» about a reply that is going.
+ */
+async function notStoppedWhy(draftId: string): Promise<AfterPress | 'not_waiting'> {
+  return afterPressOf((await machinePressedReply(draftId))?.outbox ?? null) ?? 'not_waiting';
 }
 
 /**

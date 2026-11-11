@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { readFileSync } from 'node:fs';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
+import postgres from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CallModel, ModelRequest, ModelResponse } from '@/modules/platform/ai/model';
 import { db } from '@/modules/platform/db/client';
@@ -57,7 +58,8 @@ import {
 } from '@/modules/wms/agent/config';
 import { decideDraft, submitOwnText } from '@/modules/wms/agent/decide';
 import { agentSweep } from '@/modules/wms/agent/jobs';
-import { agentRowById, applyAgentOutcome } from '@/modules/wms/agent/outbox-store';
+import { agentRowById, applyAgentOutcome, sendFactsFor } from '@/modules/wms/agent/outbox-store';
+import { agentSendVerdict } from '@/modules/wms/agent/send-step';
 import { purgeAgentChat } from '@/modules/wms/agent/purge';
 import { handleInbound } from '@/modules/wms/agent/run';
 import { autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
@@ -1685,5 +1687,235 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       });
       expect(await verdictOf(d.id)).toBeNull();
     });
+  });
+});
+
+/**
+ * Fix pass C (the re-review of fix passes A and B): a person's press read the card BEFORE it stopped the machine,
+ * so a machine ✅ committing in between was answered as if nothing had been pressed (FIX-SEND-2, FIX-REGRESS-1);
+ * 🙋 on a card the machine had already pressed took the chat without the chat's NEXT reply, and dated no press
+ * (FIX-SEND-1); and the panel's list was titled by what it does not hold (FIX-REGRESS-2). Each test was red on
+ * 8959a9f8 before its fix.
+ */
+describe('fix pass C — a person against the machine’s press, and 🙋 after it', () => {
+  /** How many sessions wait on a lock — asked through the POOL (#873), never inside a transaction. */
+  async function lockWaiters(): Promise<number> {
+    const rows = await db.execute<{ n: number }>(sql`
+      SELECT count(*)::int AS n FROM pg_stat_activity
+       WHERE datname = current_database() AND wait_event_type = 'Lock' AND pid <> pg_backend_pid()`);
+    return Number(rows[0]?.n ?? 0);
+  }
+  async function waiting(n: number): Promise<boolean> {
+    for (let i = 0; i < 300; i += 1) {
+      if ((await lockWaiters()) >= n) return true;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return false;
+  }
+
+  /**
+   * The machine's ✅ committing while a person's press stands between its read and its stop. Nothing is stood in
+   * for: another connection holds the verdict row FOR UPDATE, so the machine's approval queues on it at its LAST
+   * statement (`settleAutoPressInTx`) — the draft approved and its reply queued, uncommitted; the person's press
+   * reads the card as it was committed, and queues behind the machine; then the holder lets go.
+   */
+  async function machineCommitsUnder<T>(draftId: string, person: () => Promise<T>): Promise<T> {
+    await db.update(agentAutoVerdicts).set({ state: 'pressing', claimedAt: DUE }).where(eq(agentAutoVerdicts.draftId, draftId));
+    const digest = await cardDigestOf(draftId);
+    const helper = postgres(process.env.DATABASE_URL!, { max: 1, onnotice: () => {} });
+    const held = await helper.reserve();
+    try {
+      await held`BEGIN`;
+      await held`SELECT 1 FROM agent_auto_verdicts WHERE draft_id = ${draftId}::uuid FOR UPDATE`;
+      const machine = decideDraft(actorOf(ownerId), draftId, 'send', { digest, auto: true, autoAt: DUE }, { actorId: null });
+      expect(await waiting(1), 'the machine’s approval never reached the verdict row').toBe(true);
+      const pressed = person();
+      expect(await waiting(2), 'the person’s press never had to wait on the machine').toBe(true);
+      await held`COMMIT`;
+      expect(await machine).toMatchObject({ ok: true, status: 'approved' });
+      return await pressed;
+    } finally {
+      held.release();
+      await helper.end();
+    }
+  }
+
+  const TAKEN_BACK = '❌ Bekor qilindi — javob mijozga ketmaydi';
+
+  describe('FIX-SEND-2 / FIX-REGRESS-1: the machine’s ✅ commits between his read and his stop', () => {
+    it('❌ still takes the reply back', async () => {
+      const d = await drafted();
+      expect(await machineCommitsUnder(d.id, () => agentPress(ownerId, 'r', d.id, undefined))).toMatchObject({ toast: TAKEN_BACK });
+      expect(await verdictOf(d.id)).toMatchObject({ state: 'pressed' });
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'cancelled', lastError: CANCELLED_BY_HOLDER });
+    });
+
+    it('🙋 still takes the chat — and the reply with it', async () => {
+      const d = await drafted();
+      const r = await machineCommitsUnder(d.id, () => agentPress(ownerId, 'h', d.id, undefined));
+      expect(r.toast).toMatch(/^🙋 Suhbat 24 soat sizniki/u);
+      expect((await humanUntilOf(PEER))!.getTime()).toBeGreaterThan(Date.now() + 23 * 3_600_000);
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'cancelled' });
+    });
+
+    it('✅, ✏️ and his typed words: «kech», naming «❌ Bekor qilish» — never «faol emas»', async () => {
+      const a = await drafted();
+      const digest = await cardDigestOf(a.id);
+      expect(
+        await machineCommitsUnder(a.id, () => decideDraft(actorOf(ownerId), a.id, 'send', { digest }, { actorId: ownerId })),
+      ).toEqual({ ok: false, code: 'auto_pressed' });
+      await clearChats();
+      const b = await drafted();
+      expect(await machineCommitsUnder(b.id, () => decideDraft(actorOf(ownerId), b.id, 'edit', {}, { actorId: ownerId }))).toEqual({
+        ok: false,
+        code: 'auto_pressed',
+      });
+      expect(await draftStatus(b.id)).toBe('approved');
+      await clearChats();
+      const c = await drafted();
+      expect(
+        await machineCommitsUnder(c.id, () => submitOwnText(actorOf(ownerId), c.id, 'Ha, olib kelamiz. Yukingiz nima?', { actorId: ownerId })),
+      ).toEqual({ ok: false, code: 'auto_pressed' });
+      const [row] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, c.id));
+      expect(row).toMatchObject({ status: 'approved', finalBody: null });
+      expect(await outboxOf(c.id)).toMatchObject({ status: 'agent', body: REPLY });
+    });
+
+    it('⏸: «Kech — AI javobni o‘zi tasdiqladi…», never «Bu javob endi o‘zi ketmaydi»', async () => {
+      const d = await drafted();
+      expect(await machineCommitsUnder(d.id, () => stopAuto(ownerId, d.id))).toEqual({ ok: false, code: 'pressed' });
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+    });
+
+    it('⏸ on a re-pointed card while the chat’s live reply is being pressed: «kech» about that reply', async () => {
+      const a = await drafted();
+      const b = await drafted({ now: new Date(T0.getTime() + 30_000), shown: null });
+      expect(await draftStatus(a.id)).toBe('superseded');
+      expect(await machineCommitsUnder(b.id, () => stopAuto(ownerId, a.id))).toEqual({ ok: false, code: 'pressed' });
+      expect(await verdictOf(b.id)).toMatchObject({ state: 'pressed' });
+    });
+  });
+
+  describe('FIX-SEND-1: 🙋 on the card the machine already pressed', () => {
+    const stepCtx = () => ({ accountId, caughtUp: () => true, random: () => 0 });
+
+    /** «💵 Narx yozaman»: the reply drafted from the figure he typed — HIS word, approved by him after the 🙋. */
+    async function priceApprovedAfter(anchor: bigint) {
+      const [p] = await db
+        .insert(agentDrafts)
+        .values({
+          managerUserId: ownerId,
+          peerId: PEER,
+          anchorTgMessageId: anchor,
+          clientId,
+          kind: 'price',
+          status: 'pending',
+          proposedBody: 'Hisob tayyor: yo‘lkira narxi — 1 200 $.',
+        })
+        .returning({ id: agentDrafts.id });
+      expect(await decideDraft(actorOf(ownerId), p!.id, 'send', {}, { actorId: ownerId })).toMatchObject({ ok: true, status: 'approved' });
+      return (await agentRowById((await outboxOf(p!.id))!.id))!;
+    }
+
+    /** His ✅ after the press goes: the press is on record, dated before it — never «o‘zingiz javob berdingiz». */
+    async function expectHisAfterPressGoes(row: Awaited<ReturnType<typeof priceApprovedAfter>>, pressedFrom: Date) {
+      const now = new Date();
+      const f = await sendFactsFor(row, now, stepCtx());
+      expect(f.humanUntil!.getTime()).toBeGreaterThan(now.getTime());
+      expect(f.humanPressedAt, 'the 🙋 left no press on record').not.toBeNull();
+      expect(f.humanPressedAt!.getTime()).toBeGreaterThanOrEqual(pressedFrom.getTime() - 1_000);
+      expect(f.humanPressedAt!.getTime()).toBeLessThan(row.queuedAt.getTime());
+      const v = agentSendVerdict(row, f);
+      // At the real minute a night can hold it (a wait); nothing FINAL may refuse it — least of all «he answered himself».
+      expect(v.ok || !v.final, JSON.stringify(v)).toBe(true);
+    }
+
+    it('the chat’s next reply, counting down, is his too: retired as his 🙋, its countdown stopped, never pressed', async () => {
+      // A 🙋 of three days ago is on record — the press the old code dated every later reply by.
+      const old = await inbound('Rahmat, tushunarli.', PEER, new Date(T0.getTime() - 3 * 86_400_000));
+      await db.insert(agentDrafts).values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        anchorTgMessageId: old,
+        clientId,
+        status: 'taken_over',
+        proposedBody: 'Mayli.',
+        decidedBy: ownerId,
+        decidedAt: new Date(Date.now() - 3 * 86_400_000),
+      });
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      const t1 = new Date(T0.getTime() + 10_000);
+      const e = await drafted({ now: t1 });
+      expect(await verdictOf(e.id)).toMatchObject({ state: 'waiting' });
+      const before = new Date();
+      expect((await agentPress(ownerId, 'h', d.id, undefined)).toast).toMatch(/^🙋 Suhbat 24 soat sizniki/u);
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'cancelled' });
+      // E is retired exactly as 🙋 on its own card would retire it — and its countdown stopped as his.
+      const [retired] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, e.id));
+      expect(retired).toMatchObject({ status: 'taken_over', decidedBy: ownerId });
+      expect(await verdictOf(e.id)).toMatchObject({ state: 'stopped', outcome: 'owner_human', stoppedBy: ownerId });
+      expect(String((await payloadOf(e.id)).text)).toContain('🙋 Suhbatni o‘zingizga oldingiz');
+      expect(await pressDueAutos(new Date(t1.getTime() + HOLD_MS + 1_000))).toBe(0);
+      expect(await outboxOf(e.id)).toBeNull();
+      // His own price, approved after the press, goes.
+      await expectHisAfterPressGoes(await priceApprovedAfter(e.anchorTgMessageId), before);
+    });
+
+    it('no reply counting down and no 🙋 ever before: the press is dated all the same — his ✅ after it goes', async () => {
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      const before = new Date();
+      expect((await agentPress(ownerId, 'h', d.id, undefined)).toast).toMatch(/^🙋 Suhbat 24 soat sizniki/u);
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'cancelled' });
+      await expectHisAfterPressGoes(await priceApprovedAfter(d.anchorTgMessageId), before);
+    });
+
+    it('🙋 while the next reply is being pressed: that press loses — nothing of it is queued', async () => {
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      const t1 = new Date(T0.getTime() + 10_000);
+      const e = await drafted({ now: t1 });
+      let answer: { toast: string } | null = null;
+      // The gate's facts ask the window first; the second ask is the machine's own ✅, after its claim and its gate.
+      seam.hook = { skip: 1, run: async () => void (answer = await agentPress(ownerId, 'h', d.id, undefined)) };
+      expect(await pressDueAutos(new Date(t1.getTime() + HOLD_MS + 1_000))).toBe(0);
+      expect(answer!.toast).toMatch(/^🙋 Suhbat 24 soat sizniki/u);
+      expect(await verdictOf(e.id)).toMatchObject({ state: 'stopped', outcome: 'owner_human' });
+      expect(await draftStatus(e.id)).toBe('taken_over');
+      expect(await outboxOf(e.id)).toBeNull();
+    });
+
+    it('the next reply’s approval commits while 🙋 waits on it: its reply is withdrawn with the rest', async () => {
+      const d = await drafted();
+      expect(await pressDueAutos(DUE)).toBe(1);
+      const e = await drafted({ now: new Date(T0.getTime() + 10_000) });
+      const r = await machineCommitsUnder(e.id, () => decideDraft(actorOf(ownerId), d.id, 'human', {}, { actorId: ownerId }));
+      expect(r).toMatchObject({ ok: true, withdrawn: { total: 2, own: 0 } });
+      expect(await verdictOf(e.id)).toMatchObject({ state: 'pressed' });
+      expect(await outboxOf(e.id)).toMatchObject({ status: 'cancelled' });
+      expect(await outboxOf(d.id)).toMatchObject({ status: 'cancelled' });
+    });
+  });
+
+  it('FIX-REGRESS-2: a reply the machine pressed and he took back is not listed — and the list never says «not approved yet»', async () => {
+    const d = await drafted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect(await agentPress(ownerId, 'r', d.id, undefined)).toMatchObject({ toast: TAKEN_BACK });
+    const panel = (await autoPanel(actorOf(ownerId), ownerId))!;
+    expect(panel.sent).toEqual([]);
+    expect(panel.today).toEqual({ sent: 0, going: 0, unclear: 0, paused: 0, waiting: 0, left: 1 });
+    // The day's count is of presses (the cap's) — one — while the list holds only what went or is going: its title
+    // and its empty line say so in every bundle the page renders, never «AI approved nothing yet».
+    expect(await autoStatusLine(ownerId, DUE)).toContain('bugun 1/30');
+    const said: Record<string, RegExp> = { uz: /yubor/u, ru: /отправ/u, en: /\bsen[dt]/u, 'zh-CN': /发送/u };
+    for (const [locale, sent] of Object.entries(said)) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { agentAi: Record<string, unknown> };
+      for (const key of ['autoSentTitle', 'autoSentEmpty']) {
+        const words = String(bundle.agentAi[key]);
+        expect(words, `${locale} ${key}`).toMatch(sent);
+        expect(words, `${locale} ${key}`).not.toMatch(/tasdiqla|одобр|approv|批准/iu);
+      }
+    }
   });
 });
