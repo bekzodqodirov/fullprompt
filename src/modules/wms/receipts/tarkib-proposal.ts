@@ -98,6 +98,34 @@ export type ProposalWarning =
   | { code: 'doc_other' }
   | { code: 'totals_differ'; params: { field: 'cartons' | 'kg' | 'm3'; sum: string; total: string } };
 
+/**
+ * Is this a warning this build knows how to word? Asked of a warning that
+ * came back out of the browser's own storage (the editor's draft keeps the
+ * reading's warnings until «Saqlash»): a draft written by yesterday's build
+ * must not put a shape today's switch cannot read on the screen.
+ */
+export function isProposalWarning(value: unknown): value is ProposalWarning {
+  if (typeof value !== 'object' || value === null) return false;
+  const { code, params } = value as { code?: unknown; params?: Record<string, unknown> | null };
+  switch (code) {
+    case 'text_cut':
+    case 'cells_cut':
+    case 'doc_invoice':
+    case 'doc_other':
+      return true;
+    case 'rows_cut':
+      return typeof params?.shown === 'number' && typeof params.total === 'number';
+    case 'totals_differ':
+      return (
+        (params?.field === 'cartons' || params?.field === 'kg' || params?.field === 'm3') &&
+        typeof params.sum === 'string' &&
+        typeof params.total === 'string'
+      );
+    default:
+      return false;
+  }
+}
+
 export interface ProposalRow {
   /** The good as the PAPER names it — one line, at most 200 characters. */
   name: string;
