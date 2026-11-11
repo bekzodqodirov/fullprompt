@@ -382,7 +382,8 @@ ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (mo
   qilingan prixodlar xabari ham shu yangi savol bilan ketadi.
 - Sotuvchiga endi **bitta** xabar boradi («📥 Prixod keldi — …») — avvalgi ikkitasi o‘rniga. Deploy paytida
   navbatda turgan eski xabarlar eski ko‘rinishda (ikkita bo‘lib) boradi — bu to‘g‘ri, bir martalik.
-- Kechki 20:00 xulosasida yangi qator: «🤖 AI (oxirgi 24 soat): ≈ $… · N murojaat».
+- Kechki 20:00 xulosasida yangi qator: «🤖 AI (oxirgi 24 soat): ≈ $… · N murojaat». Dushanbadagi haftalik
+  xulosada ikki qator bo‘ladi: «🤖 AI (hafta): …» va uning ostida «🤖 AI (oxirgi 24 soat): …».
 
 1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
 2. `git pull`, keyin `docker compose build migrate`, so‘ng
@@ -411,7 +412,10 @@ ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (mo
      chiqmaydi).
 6. Sotuvchisi yo‘q mijozning bitimsiz prixodi haqidagi ogohlantirish, avvalgidek, adminlarga boradi — endi
    «📥 Prixod keldi» ko‘rinishida va ikki tugma bilan. Sotuvchisi bor, lekin Telegrami botga **ulanmagan**
-   bo‘lsa ham adminlarga boradi (avval bunday holda hech kim eshitmasdi).
+   bo‘lsa ham adminlarga boradi (avval bunday holda hech kim eshitmasdi). Adminga borgan xabarda nega unga
+   kelgani yozilgan bo‘ladi: «👤 Mijozning sotuvchisi yo‘q — sizga yuborildi» yoki «👤 Sotuvchi … bu xabarni
+   ololmaydi … — sizga yuborildi». Ikkinchisi chiqsa — o‘sha sotuvchi botga /start yuborib, telefonini
+   ulasin (yoki ishdan ketgan bo‘lsa, mijozlarini boshqa sotuvchiga o‘tkazing).
 
 ## Tarkib takliflari (2026-11-11, 0144) — tekshiruv tartibi
 

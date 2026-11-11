@@ -489,6 +489,25 @@ describe('what the fold must not touch', () => {
     expect(renderTelegramText(row.type, payload, 'uz')).not.toContain(previous.code);
   });
 
+  it('…and back again: corrected to the client whose deal it stands on, that deal IS its own — named, and read as priced', async () => {
+    // A → B → A. The second correction lands the prixod on a deal of its own
+    // client; with the claim door passing no deal at all (`dealId: null`)
+    // every other test here stays green and this message reads «no deal».
+    const own = await mintDeal(sellers.plain.clientId, true);
+    const receiptId = await receive(sellers.plain.clientId, own.id);
+    await processPendingEvents();
+    await assignReceiptClient(receiptId, sellers.alerts.clientId, ctx());
+    await assignReceiptClient(receiptId, sellers.plain.clientId, ctx());
+    await processPendingEvents();
+    const { of } = await rowsAbout(receiptId);
+    const back = of(sellers.plain.id).filter((r) => (r.payload as Record<string, unknown>).via === 'assign');
+    expect(back).toHaveLength(1);
+    const payload = back[0]!.payload as Record<string, unknown>;
+    expect(payload.dealState).toBe('priced');
+    expect(payload.dealCode).toBe(own.code);
+    expect(renderTelegramText(back[0]!.type, payload, 'uz')).toContain(`🔗 Bitim: ${own.code}`);
+  });
+
   it('…and the claim is no «first cargo»: the staff group is not told a seller brought in cargo that came weeks ago', async () => {
     // `staff_group_posts` holds one claimed row per thing said (skipped when
     // no group is linked) — the claim door must write none.
@@ -524,6 +543,11 @@ describe('what the fold must not touch', () => {
 
   it('a deal of ANOTHER client is no deal of this prixod’s: never named to this client’s seller, never compared against', async () => {
     const foreign = await mintDeal(sellers.alerts.clientId, true);
+    // Quoted at a TENTH of what arrives: compared against, this deal would
+    // raise «yuk hisob-kitobga to‘g‘ri kelmadi». With the quote the same size
+    // as the prixod (the fixture's default) the «no deviation» line below
+    // could not fail whatever the code did — the as-built review's note.
+    await db.update(deals).set({ quotedVolumeM3: '0.100', quotedWeightKg: '10.000' }).where(eq(deals.id, foreign.id));
     const receiptId = await receive(sellers.ops.clientId, foreign.id);
     await processPendingEvents();
     const ev = await eventsOf(receiptId);

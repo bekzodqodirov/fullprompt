@@ -799,6 +799,11 @@ describe('a server whose migration has not landed (#472)', () => {
     // Every statement sent while the server is «behind»: none may name a
     // table 0122/0123 created — on a real ledger-123 database that is the
     // 42P01 this branch exists to avoid.
+    // NOTE on this recorder: it sees the POOL's statements only. A drizzle
+    // transaction runs through `sql.begin`, whose scoped client has an
+    // `unsafe` of its own — nothing sent inside `db.transaction` is recorded
+    // here. Right for these READERS (they run on the pool); a test about a
+    // WRITER must wrap `begin` too (client-confirm.integration.test.ts does).
     const sent: string[] = [];
     const unsafe = pgClient.unsafe.bind(pgClient);
     const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {

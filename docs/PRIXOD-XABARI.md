@@ -457,7 +457,8 @@ Stated:
 - A picture sent through the bot is stored as a FILE on the prixod, never as one of its photos: it is a
   paper. It opens from the «Fayllar» panel like a PDF, and the tarkib's «🤖 Fayldan to‘ldirish» reads it.
 - A file sent as a REPLY to the «Prixod keldi» message, without pressing the button first, is not attached
-  (the bot answers nothing about it) — the button is the door.
+  (the bot answers nothing about it) — the button is the door. With a collection OPEN, a file that
+  swipe-replies to another of the bot's messages is not the collection's either, and is told so (§G.G).
 - Every file is downloaded on the bot's one sequential poller, as «Hisoblatish» files are: an album of
   thirty holds every customer's cabinet for the sum of its downloads.
 - «🔗 Bitim biriktirish» opened in a browser with no session (Telegram's own, the first time) lands on the
@@ -468,7 +469,15 @@ Stated:
   the deal card's goods-file import (its AI grouping writes no usage row) or an AI-sotuvchi run whose chat
   was purged afterwards.
 - Uploads on the SITE still write no History line (`saveAttachment` never has) — «no line» does not mean
-  «nobody added it»; only files sent through the bot are named there.
+  «nobody added it»; only files sent through the bot are named there. (A REMOVED file is named whichever
+  way it came — §G.G.)
+- `linkReceipt` — and so the card's picker and the new-deal form — asks no READ door of the prixod. It is
+  unreachable today: no warehouse-scoped role holds `crm.leads` or `clients.manage`. A scoped role given
+  `crm.leads` on /admin/roles could file a prixod it cannot open, and would be sent to a card that refuses
+  it. Named by the as-built review; not changed in this round.
+- The verifiers of the as-built review confirmed every finding it called a defect (RF-1, RF-2, CARD-1,
+  CARD-2, CARD-3, CA-1) by reading the frozen tree; the nits were not sent to a verifier — each was
+  reproduced as a failing test before its fix instead.
 
 Questions (⭐ = built):
 
@@ -527,7 +536,8 @@ Questions (⭐ = built):
 ### G.B The summary's AI line
 
 - **The window is the LAST 24 HOURS** on the daily message and on the pull («📊 Holat»), read to the moment
-  of reading; the Monday message reads the closed week, whole Tashkent days (`aiSpendWindow`). A
+  of reading; the Monday message reads the closed week, whole Tashkent days (`aiSpendWindow`) — and, since
+  the as-built review, carries the last 24 hours on a second line (§G.G). A
   Tashkent-day window was the design, and it would never have shown 20:00-24:00 in any daily message — the
   hours the AI sotuvchi answers customers in. Label: «🤖 AI (oxirgi 24 soat): …» / «🤖 AI (hafta): …».
 - **«Murojaat» is defined per ledger** (`ai-spend.ts`'s header): a calc row = one answered model call or one
@@ -626,7 +636,112 @@ Questions (⭐ = built):
   «Prixod N shu bitimga biriktiriladi» → the create action links it through `linkReceipt` right after the
   deal exists and returns to `/receipts/<id>?bitim=1` — a QUERY the block reads and scrolls itself into
   view by, because a server action's redirect drops a `#fragment` (found by the browser spec: the card
-  opened at its top). A refused link does not un-create the deal: its own card opens instead.
+  opened at its top). A refused link does not un-create the deal: its own card opens instead, and says so
+  (§G.G, which also adds the re-proof at the save, the confirmed-only link and the voided line).
+
+### G.G After the as-built review — BINDING (overrides G.C-G.E where they differ)
+
+Four lenses read the built round (fold · collector · confirm + AI line · the card). What changed:
+
+**The collector**
+
+- **A file that swipe-REPLIES to another of the bot's messages is not the open collection's**
+  (`repliesElsewhere`: the reply target is a BOT message and is not the collection's own). It was being
+  stored on the open prixod — GS812's packing list on GS777 — and it took a file the «➕ Shu so‘rovga
+  qo‘shish» door had always opened on. `receiptFileArrives` declines it; the doors below (a draft, the add
+  door, a thread, a task) answer as they always did; and a replied file NONE of them took is told under the
+  file — «↩️ Bu fayl boshqa xabarga javob qilib yuborilgan — prixod N ga biriktirilmadi…»
+  (`receiptFileRepliedElsewhere`, asked by the ladder after `refuseMediaReply`). A reply to the
+  collection's own message, or to a PERSON's message, is the collection's as before.
+- **A parked «Hisoblatish» that starts to hold again closes the collection** (`updateIntake`: the intake
+  did not hold before this non-quiet update → `closeReceiptFiles`). «Another collector opened» had three
+  homes and missed the fourth: «▶️ Davom etamiz», a press on a parked table, a reply to it.
+- **A file taken by its own date and drawn after the window passed is SAID** — the debounce's draw finds
+  the collection closed by quiet with files in it: the old message is retired and «✅ K ta fayl prixod N
+  ga biriktirildi.» is sent as the collection's last word, with no «Yana yuboring». The closed entry stays, so
+  the next file is still told that it was not attached.
+- **A closed collection answers for two hours, not for as long as the process lives**
+  (`RECEIPT_FILES_TOLD_S`; `closedAt` on a collection another collector closed, the wait's own expiry on a
+  quiet one). Past it the entry is dropped in silence: Monday's forgotten collection no longer meets
+  Tuesday's unrelated photo with «bu fayl biriktirilmadi», and Monday's «↩️ Bekor qilish» removes nothing.
+- **The History prints «Fayl qo‘shildi: invoice.pdf · Telegram»** — the key's item (the Telegram message
+  id, there for uniqueness alone) is not printed (`ITEM_NOT_PRINTED` in `audit/fields.ts`).
+
+**The fold**
+
+- **The admins' copy says WHY it came to them**, on their copy alone: «👤 Mijozning sotuvchisi yo‘q —
+  sizga yuborildi» / «👤 Sotuvchi {ism} bu xabarni ololmaydi (Telegrami ulanmagan yoki ishdan ketgan) —
+  sizga yuborildi» (`payload.sellerReach` + `sellerName`, written by `buildRecipients` onto the admins'
+  rows only). Before the fold an admin received this alarm only for a seller-less client; now it also
+  comes for a client whose card names a seller.
+- **The claim door is no «first cargo»** (`celebrateFirstCargo` returns for `via: 'assign'` and for the
+  older `assignedFromUnclaimed` payloads): the staff group is no longer told a seller brought in cargo that
+  came weeks ago. This stood in a comment since 0134 and nothing asked it — found by the review, not made
+  by this round.
+
+**The card**
+
+- **A deal of ANOTHER client is not printed as the prixod's** (what a client correction leaves on
+  `deal_id`). The block's «current» is the client's OWN deal (`ownDealOf`, the message's own rule); a
+  foreign one is named in one muted line — «Boshqa mijozning bitimida qolgan: B-…» —, the picker offers
+  this client's deals, «+ Yangi bitim ochish» is drawn, and the new-deal form accepts such a prixod (the
+  new deal replaces the foreign one through `linkReceipt`). The seller's message and the block its button
+  opens now say the same thing.
+- **«Born with the prixod» is re-proved at the SAVE** (`bornWithVerdict`, `wms/receipts/deal-state.ts`:
+  this client's prixod, confirmed, on no deal of its OWN). ONE rule asked three times: by the new-deal page
+  when it draws «📦 Prixod N shu bitimga biriktiriladi»; by `createDealAction` BEFORE the deal exists
+  (`bornWithRefusal`, which also answers `receipt_not_found` and `upsale_paid`) — a form older than the
+  prixod's deal is refused in words and mints nothing; and by `linkReceipt(…, { bornWith: true })` under
+  the prixod's row lock (`FOR NO KEY UPDATE`, after the deal and KPI locks; the row alone, then its deal —
+  #1585). Before, a stale form MOVED the prixod off the deal a colleague had just chosen and erased its
+  confirmed calculation link, silently. Every other caller of `linkReceipt` chose the move and passes
+  nothing. Words: `deals.errors.receipt_has_deal / receipt_not_confirmed / upsale_paid` (four bundles).
+- **Past the deal's creation nothing becomes an error page.** The link is caught whole (a dropped
+  connection used to rethrow over a form whose next press minted a second deal) and logged; a deal that
+  was opened for a prixod which did not land on it opens its own card with `?prixod=yoq`, and that card
+  says so in one line (`deals.receiptNotLinked`).
+- **The new-deal link is drawn only for a CONFIRMED prixod**, and a VOIDED prixod's deal block says so in
+  its own first line (`receipts.dealVoided`): the Telegram button outlives the prixod — a wrong prixod is
+  voided and received again, and the button under the FIRST message still opens this block, with the
+  void's only marks scrolled under the sticky bar.
+- **The History prints a removed file's name** (`removedFile`, `audit/history.ts`; label
+  `audit.fields.fileName`): `deleteAttachment` audits on the file's parent with `before` only, so a
+  prixod's card printed a bare «o‘chirdi» — which reads as cargo data deleted — for the seller's ✕ and for
+  every file of a «↩️ Bekor qilish». A bot file is recorded under the name it is STORED under
+  (`SavedBotFile.fileName`), the one its tile reads; a photo used to be recorded as «rasm».
+
+**The confirmation and the AI line**
+
+- **The five 0144 facts are written once in SQL** (`clientFactTerms`, `lot-check-sql.ts`):
+  `clientHoldsSql` and `clientFactsHoldSql` were two hand copies of the same five terms.
+- **Monday's message carries TWO AI lines**: «🤖 AI (hafta): …» and, under it, «🤖 AI (oxirgi 24 soat): …»
+  (`SummaryFacts.aiDay`, a second `aiSpend` read). On a Monday there is no daily message, so with the
+  week's line alone Monday's own working hours were on no evening's «oxirgi 24 soat» line — a twenty-hour
+  hole in the rolling series every week. This supersedes G.B's «the Monday message reads the closed week»
+  where it implies one line; the pull on a Monday shows both too.
+
+**Tests that could not see their subject, re-anchored** (each shown red with its subject stripped)
+
+- The «0145 has not landed» press test spied on the POOL's `unsafe`; a drizzle transaction runs on a
+  scoped client with an `unsafe` of its own, so the two statements 0145 added to the press were invisible
+  and the test held with their guard deleted. It records the transaction's statements now, and its control
+  is the press's own upsert.
+- The browser spec's «opens AT the deal block» held with the anchor and the scroll effect deleted (for a
+  seller the block sits at ~295 px with no scrolling). It asserts the scroll (`landsOnBlock`).
+- `measuresMoved` with the name AND the weight moved; the FULL tag recipe as a literal (`3795624c`, beside
+  the basic `5a0ae98c`); `client-confirm-text.ts` on the rounding fence (§A.7 promised it).
+- The AI line's wire through `composeOwnerSummary` (daily and Monday), an unreadable ledger NAMED on the
+  line, the assistant's refused usage write still answering, its ledger read through the row's json.
+
+Pinned: `receipt-files-bot` (the reply, the parked resume, the two-hour life, the late draw, the busy
+collectors, the ceiling, the cancel's kept half, a redelivery that joins the set, the stored name),
+`receipt-arrival` (the why-line on the admins' copy and its absence on the seller's; a leaver who keeps a
+linked chat; an admin who is the seller; the bell row's type; the claim door's deal; no celebration; the
+born-with rule at both asks), `receipt-files-wire`, `audit-fields`, `ai-spend` (unit and integration),
+`client-confirm` (integration and wire), `client-push-text`, and the browser spec's four new walks (the
+scroll, a stale form, a voided prixod, a foreign deal). Red proofs by string edit, in the second worktree:
+37 for the review's fixes — 32 by vitest, 5 in a browser (the spec is serial, so one build per strip) — all
+red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1711).
 
 ### G.F Tests
 

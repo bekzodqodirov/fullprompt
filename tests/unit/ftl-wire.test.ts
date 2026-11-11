@@ -68,7 +68,13 @@ describe('a prixod that gets a deal carries the deal’s FTL (1a)', () => {
     const link = bodyOf(deals, 'export async function linkReceipt(');
     // REQUIRED, never optional: an optional door fails OPEN (null = nobody vouches).
     const signature = deals.slice(deals.indexOf('export async function linkReceipt('), deals.indexOf('): Promise<void> {', deals.indexOf('export async function linkReceipt(')));
-    expect(signature).toMatch(/\bftlDoor: FtlDoor \| null,\s*$/);
+    expect(signature).toMatch(/\n  ftlDoor: FtlDoor \| null,\n/);
+    expect(signature).not.toMatch(/ftlDoor\?:|ftlDoor: FtlDoor \| null =/);
+    // The ONE parameter after it is the new-deal form's option (0145,
+    // `bornWith`) — optional by design: its absence means «a person chose
+    // this move», which is every caller but that form. Nothing else may
+    // follow the door, and the door itself stays required.
+    expect(signature).toMatch(/\n  ftlDoor: FtlDoor \| null,\n  opts: \{[\s\S]*?\n    bornWith\?: boolean;\n  \} = \{\},\s*$/);
     expect(link).toContain('inheritFromDealTx(tx, receiptId, ftlDoor, ftlLocked, ctx)');
     // A seller's own re-file that carried the mark is told to the office like his own mark.
     expect(link).toMatch(/if \(ftlInherited && ftlDoor && !ftlDoor\.office\) \{\s*await notifyFtlMarked\(/);

@@ -24,13 +24,19 @@ ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0
   mijoz «✅» bosadimi-yo'qmi, farqi yo'q. (Avval ham shunday edi; endi buni test ushlab turadi.)
 - **Kim oladi:** mijozning sotuvchisi. Hech kim eshitmaydigan holatda — mijozning sotuvchisi yo'q, sotuvchi
   ishdan ketgan yoki uning Telegrami botga ulanmagan bo'lsa — bitim muammosi bor prixod haqida **adminlar**
-  oladi (shu «Prixod keldi» ko'rinishida, ikki tugma bilan). Sotuvchi xabarni o'zi ovozsiz qilgan bo'lsa —
-  bu uning tanlovi, adminlarga o'tmaydi.
+  oladi (shu «Prixod keldi» ko'rinishida, ikki tugma bilan). Adminga borgan nusxada **nega unga kelgani**
+  yoziladi: «👤 Mijozning sotuvchisi yo'q — sizga yuborildi» yoki «👤 Sotuvchi … bu xabarni ololmaydi
+  (Telegrami ulanmagan yoki ishdan ketgan) — sizga yuborildi» — aks holda admin mijoz kartasida sotuvchini
+  ko'rib, «u xabar olgan» deb o'ylashi mumkin edi. Sotuvchi xabarni o'zi ovozsiz qilgan bo'lsa — bu uning
+  tanlovi, adminlarga o'tmaydi.
 - **Ovozsiz qilganlar hech narsa yo'qotmaydi:** «Operatsiya xabarlari»ni o'chirib, «Ogohlantirishlar»ni
   qoldirgan odam bitimsiz prixodni baribir eshitadi; «Ogohlantirishlar»ni o'chirgan odam har bir prixodni
   eshitadi; faqat ikkalasini ham o'chirgan odam eshitmaydi.
 - **Egasiz yuk mijozga biriktirilganda** sotuvchiga «📥 Prixod mijozga biriktirildi — …» boradi (yuk bir
   necha hafta oldin kelgan bo'lishi mumkin — shuning uchun «keldi» emas), shu ikki tugma bilan.
+- Yo'l-yo'lakay topilgan eski xato: egasiz yuk mijozga biriktirilganda jamoa guruhiga «mijozning birinchi
+  yuki keldi» tabrigi chiqib ketar edi (yuk aslida bir necha hafta oldin kelgan). Endi chiqmaydi — tabrik
+  faqat skladchi prixodni tasdiqlaganda.
 - Avtomatik qoidalar (Boshqaruv → Qoidalar) «narxsiz yuk» / «biriktirilmagan yuk» hodisalarini avvalgidek
   eshitadi — hodisalar yozilishda davom etadi, faqat sotuvchiga ikkinchi xabar bo'lib bormaydi.
 
@@ -47,17 +53,34 @@ ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0
   biriktirilmadi» va qayta ochish tugmasini beradi.
 - Video, ovozli xabar, stiker va matn prixodga yozilmaydi — bot buni so'z bilan aytadi (matn AI yordamchiga
   savol bo'lib ketmaydi).
+- **Boshqa xabarga «javob» (reply) qilib yuborilgan fayl** bu prixodga biriktirilmaydi — u o'sha xabarniki
+  (masalan, boshqa prixodning «Prixod keldi» xabari yoki AI javobi). Hech bir joy uni olmasa, bot aytadi:
+  «↩️ Bu fayl boshqa xabarga javob qilib yuborilgan — prixod … ga biriktirilmadi».
+- To'xtab turgan «Hisoblatish»ni davom ettirsangiz ham fayl yig'ish yopiladi (keyingi fayl prixodga emas,
+  hisobga ketishi uchun).
+- Yopilgan yig'ish 2 soatdan keyin butunlay unutiladi: ertasi kuni yuborilgan boshqa rasmga «biriktirilmadi»
+  deb javob bermaydi va eski «↩️ Bekor qilish» tugmasi kechagi fayllarni o'chirmaydi.
 - Kim qo'sha oladi: prixod kartasini saytda ocha oladigan har bir xodim (sotuvchi, logist, VED, admin; skladchi
   — o'z skladidagi yukka). Bekor qilingan prixodga qo'shib bo'lmaydi.
 - Bot orqali yuborilgan **rasm ham «fayl» bo'lib saqlanadi** (hujjat sifatida) — yuk rasmi o'rniga invoys
   rasmi chiqib qolmasligi uchun. Kartadagi «Fayllar»dan ochiladi; tarkibdagi «🤖 Fayldan to'ldirish» uni o'qiydi.
-- Prixod tarixida har bir fayl alohida yoziladi: kim, qachon, qaysi fayl («… · Telegram»).
+- Prixod tarixida har bir fayl alohida yoziladi: kim, qachon, qaysi fayl («… · Telegram») — kartadagi
+  fayl nomi bilan bir xil. Fayl **o'chirilganda** ham nomi yoziladi («Fayl o'chirildi: invoice.pdf»); avval
+  tarixda faqat «… o'chirdi» degan yalang'och qator chiqardi.
 - **Prixod kartasida:** o'zingiz qo'shgan faylning yonida endi ✕ bor (sotuvchi ham o'z faylini o'chira oladi).
 
 ### 3. «🔗 Bitim biriktirish» — prixod kartasi bitim tanlash joyida ochiladi
 - Tugma prixod kartasini to'g'ridan-to'g'ri «Bitim» bo'limida ochadi — ro'yxatdan bitimni tanlab «Saqlash».
 - Mijozning bitimi bo'lmasa — o'sha joyda **«+ Yangi bitim ochish»**: bitim ochiladi va **shu prixod unga
   o'zi biriktiriladi**, siz yana prixod kartasiga qaytasiz.
+- **Eskirgan forma prixodni ko'chirib yubormaydi.** Siz «Yangi bitim» formasini ochib turganingizda
+  hamkasbingiz shu prixodni boshqa bitimga biriktirib qo'ysa — «Saqlash» so'z bilan rad etiladi («Bu prixod
+  allaqachon bitimga biriktirilgan — yangi bitim ochilmadi»), yangi bitim ochilmaydi, prixod joyida qoladi.
+- **Mijozi o'zgartirilgan prixod:** unda eski mijozning bitimi qolib ketgan bo'lsa, blok uni «biriktirilgan»
+  deb ko'rsatmaydi — «Boshqa mijozning bitimida qolgan: B-…» deb yozadi va yangi mijozning o'z bitimini
+  tanlash yoki yangisini ochishni taklif qiladi (xabarda ham «bitimi yo'q» deyilgan — endi ikkalasi bir xil).
+- **Bekor qilingan prixod:** eski xabardagi tugma uni ham ochadi — «Bitim» blokining o'zida «Bu prixod bekor
+  qilingan» deb yoziladi va «Yangi bitim ochish» taklif qilinmaydi.
 - Brauzerda tizimga kirilmagan bo'lsa (Telegramning o'z brauzeri, birinchi marta): login so'raydi va bosh
   sahifaga tushadi — tugmani yana bir marta bosing. (Bu barcha «↗️ Ochish» tugmalarida shunday.)
 
@@ -75,8 +98,9 @@ ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0
   ketmaydi.
 
 ### 5. Kechki 20:00 xulosasida AI xarajati («8 ha»)
-- Yangi qator: **«🤖 AI (oxirgi 24 soat): ≈ $4.20 · 132 murojaat»**. Dushanbadagi haftalik xulosada —
-  o'tgan hafta bo'yicha.
+- Yangi qator: **«🤖 AI (oxirgi 24 soat): ≈ $4.20 · 132 murojaat»**. Dushanbadagi haftalik xulosada **ikki
+  qator**: «🤖 AI (hafta): …» — o'tgan hafta bo'yicha, va uning ostida «🤖 AI (oxirgi 24 soat): …» (dushanba
+  kuni kunlik xulosa bo'lmaydi — bu qatorsiz dushanba kungi ish hech bir kechki xulosaga tushmay qolardi).
 - «Oxirgi 24 soat» — chunki xulosa 20:00 da ketadi: «bugun» deb hisoblansa, kechki 20:00–24:00 dagi xarajat
   (AI sotuvchi mijozlarga aynan shu paytda javob beradi) hech qaysi kunlik xulosaga tushmay qolardi.
 - Uchta hisobdan yig'iladi: hisob-kitob AI (AI VED, Bojxona 🤖, «Fayldan to'ldirish»), AI sotuvchi va AI
