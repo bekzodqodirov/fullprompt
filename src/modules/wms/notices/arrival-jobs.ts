@@ -5,7 +5,8 @@ import { clients, warehouses } from '@/modules/platform/db/schema';
 import { logger } from '@/modules/platform/logger';
 import { chatLocaleFor } from '@/modules/platform/telegram/cabinet-locale';
 import { clientLabels } from '@/modules/platform/telegram/client-labels';
-import { h } from '@/modules/platform/telegram/format';
+import { h, visibleLength } from '@/modules/platform/telegram/format';
+import { MAX_CAPTION_CHARS } from '@/modules/platform/telegram/limits';
 import { clientPushKeyboard } from '@/modules/platform/telegram/menu-button';
 import { quietHour, type SendResult } from '@/modules/platform/telegram/send';
 import {
@@ -19,7 +20,7 @@ import {
 } from './arrival';
 import { emitArrivalStaffEvent, staffPendingNotices } from './arrival-staff';
 import { arrivalCleared, arrivalText } from './arrival-text';
-import { NOTICE_ISSUED, NOTICE_RECEIVED } from './client-claims';
+import { NOTICE_ISSUED, NOTICE_RECEIVED, SKIP_CLIENT_CHANGED } from './client-claims';
 import {
   firstLotPhoto,
   linkedChats,
@@ -36,7 +37,9 @@ import {
   type Skip,
 } from './client-push';
 import { issuedFacts, receivedFacts } from './client-summary';
-import { issuedText, receivedText } from './client-text';
+import { issuedText, pushLotName, receivedText } from './client-text';
+import { clientAskFacts, clientAskOffer, NOTICE_LOT_ASK } from '../receipts/client-confirm';
+import { askFits, askText } from '../receipts/client-confirm-text';
 import { preparePickupNotice } from '../pickups/notice';
 import { NOTICE_PICKED_UP } from '../pickups/service';
 import { enqueue, JOB_PROCESS_EVENTS } from '@/modules/platform/jobs/boss';
@@ -100,13 +103,47 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
   const facts = await receivedFacts(notice.clientId, notice.refId);
   if ('skip' in facts) return facts;
   const summary = { ...facts.summary, clientCode: client.clientCode };
+  // The client's own ✅ / ❌ (0144): asked HERE, at send time, like everything
+  // else this push says — cargo still in China that nobody has confirmed, and
+  // a prixod the push prints whole. A failure to ask is «no buttons», never
+  // «no push»: the sentence is the message, the row is an addition.
+  const printed = summary.lines.map((line) => ({ lotId: line.lotId, name: line.name, boxCount: line.boxCount }));
+  const confirm = await clientAskOffer(notice.refId, notice.clientId, printed, pushLotName).catch((err) => {
+    logger.warn({ err, receiptId: notice.refId }, 'client confirm offer failed — the push goes without buttons');
+    return null;
+  });
   return {
     render: (locale) => {
-      const text = receivedText(summary, locale);
-      return { text, caption: text };
+      const plain = receivedText(summary, locale);
+      if (!confirm) return { text: plain, caption: plain };
+      const asking = receivedText(summary, locale, { ask: true });
+      // The question must never cost the photograph: a caption that the
+      // extra line would push past Telegram's limit goes without it, and the
+      // buttons — «✅ To'g'ri» / «❌ Xato bor» — carry the question alone.
+      return { text: asking, caption: visibleLength(asking) <= MAX_CAPTION_CHARS ? asking : plain };
     },
-    keyboard: { lotId: facts.lotIds[0] ?? null },
+    keyboard: { lotId: facts.lotIds[0] ?? null, confirm },
     photo: await firstLotPhoto(facts.lotIds),
+  };
+}
+
+/**
+ * «📋 Yuk ma'lumotini tasdiqlang» — the question a person sent from the
+ * prixod card (0144, `receipts/client-confirm.ts`). Everything is read NOW:
+ * a question queued while the bot was down, for a prixod since corrected to
+ * another client, must not reach the old owner's chat (the judge's PRIV-4
+ * lesson, again) — and one that outgrew a message since it was asked is not
+ * sent cut. No photograph: the caption limit would cost the list.
+ */
+async function prepareLotAsk(notice: NoticeRow): Promise<PreparedPush | Skip> {
+  const facts = await clientAskFacts(notice.refId);
+  if ('skip' in facts) return facts;
+  if (facts.clientId !== notice.clientId) return { skip: SKIP_CLIENT_CHANGED };
+  if (!askFits(facts)) return { skip: 'too_long' };
+  return {
+    render: (locale) => ({ text: askText(facts, locale), caption: null }),
+    keyboard: { lotId: facts.lots[0]?.lotId ?? null, confirm: { receiptId: facts.receiptId, tag: facts.tag } },
+    photo: null,
   };
 }
 
@@ -129,6 +166,7 @@ const PREPARERS: Record<string, Preparer> = {
   [NOTICE_PICKED_UP]: preparePickupNotice,
   [NOTICE_RECEIVED]: prepareReceived,
   [NOTICE_ISSUED]: prepareIssued,
+  [NOTICE_LOT_ASK]: prepareLotAsk,
 };
 
 /** The kinds this sweep claims — exactly the ones it can render. */
@@ -162,7 +200,11 @@ async function deliverNotice(notice: NoticeRow, now: Date, photos: PhotoBreaker)
   for (const chatId of chats) {
     const locale = (await chatLocaleFor(chatId)) ?? client.locale;
     const keyboard = prepared.keyboard
-      ? clientPushKeyboard(process.env.APP_URL, locale, { lotId: prepared.keyboard.lotId, contact: true })
+      ? clientPushKeyboard(process.env.APP_URL, locale, {
+          lotId: prepared.keyboard.lotId,
+          contact: true,
+          confirm: prepared.keyboard.confirm ?? null,
+        })
       : null;
     const result = await pushToChat({ chatId, message: prepared.render(locale), keyboard, photo, silent });
     results.push(result);

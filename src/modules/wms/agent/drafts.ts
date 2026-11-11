@@ -90,7 +90,7 @@ export interface NewDraft {
    * «O'zi yuborish»'s plan (§18.3) — the INBOUND run's only (run `handleInbound`):
    * its verdict row is written beside the draft in this same transaction, before
    * the card is rendered, so the first card already carries the timer. Absent or
-   * null: no row (an owner-triggered draft, 0143 not landed, a plan that failed).
+   * null: no row (an owner-triggered draft, 0145 not landed, a plan that failed).
    */
   autoPlan?: AutoPlan | null;
 }

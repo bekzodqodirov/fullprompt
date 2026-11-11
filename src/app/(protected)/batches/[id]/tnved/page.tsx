@@ -20,7 +20,10 @@ import { BatchCard, batchTabMetadata } from '../batch-card';
 import { CustomsCleared } from '../customs-cleared';
 import { CustomsFirm } from '../customs-firm';
 import { CustomsPerReceipt } from '../customs-per-receipt';
+import { pressToday } from '@/modules/wms/calc/ai-press';
+import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { TnvedEditor } from './tnved-editor';
+import { InvoiceDownload } from './invoice-download';
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
   return batchTabMetadata((await params).id, 'bojxona');
@@ -98,6 +101,11 @@ export default async function BatchTnvedPage({
     .from(attachments)
     .where(and(eq(attachments.entityType, 'batch'), eq(attachments.entityId, id)));
 
+  // Today's 🤖 count for the line beside the buttons — the dollars only for a
+  // reader of the company's money. Unreadable (a server one migration behind)
+  // is «no line», never a tab that will not open.
+  const aiToday = await pressToday('tnved', companyMoneySight(actor)).catch(() => null);
+
   // The editor's rows — the list the header counts «TNVED kodsiz» from.
   const products = await batchTnvedProducts(id, batch.departedAt !== null);
   const lotIds = products.flatMap((row) => row.lotIds);
@@ -142,10 +150,6 @@ export default async function BatchTnvedPage({
       line: row.line ? { ...row.line, readable: readable.has(row.line.receiptId), firstOfLot } : undefined,
     };
   });
-  // A save elsewhere (the receipt card) replaces every line id and bumps the
-  // revision: the key re-seeds the editor instead of leaving it posting dead
-  // ids for ever.
-  const editorKey = rows.map((row) => (row.line ? `${row.line.rowKey}@${row.line.rev}` : row.lotId)).join('|');
   const readableReceipts = receiptRows.filter((r) => readable.has(r.id));
   const receiptDocs = readableReceipts.length
     ? await db
@@ -180,9 +184,9 @@ export default async function BatchTnvedPage({
       <section id="hujjatlar" className="card max-w-3xl scroll-mt-20 space-y-2">
         <h2 className="text-lg font-bold">📑 {t('vedDocs')}</h2>
         <div className="flex flex-wrap gap-2">
-          <a href={`/api/batches/${batch.id}/invoice`} target="_blank" className="btn-secondary flex-1 whitespace-nowrap px-3">
-            ⬇️ {t('invoice')}
-          </a>
+          {/* A button with a question first (his item 6): codes that hold
+              several rows are listed and asked before the file is made. */}
+          <InvoiceDownload batchId={batch.id} label={`⬇️ ${t('invoice')}`} />
           {/* The photo packing list replaced the draft one in practice
               (owner); the generator stays reachable at /api/batches/[id]/packing. */}
           {loaded && (
@@ -295,7 +299,11 @@ export default async function BatchTnvedPage({
           took 32 px off a 360 px phone the editor's buttons needed. */}
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🏷 {ttn('title')}</h2>
-        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor key={editorKey} batchId={id} rows={rows} />}
+        {rows.length === 0 ? (
+          <p className="text-sm text-ink-500">{ttn('empty')}</p>
+        ) : (
+          <TnvedEditor batchId={id} rows={rows} aiToday={aiToday} />
+        )}
       </section>
     </BatchCard>
   );

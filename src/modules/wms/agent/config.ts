@@ -71,7 +71,7 @@ let autoReady = false;
 let autoBehind = false;
 
 /**
- * Does 0143 exist — «o'zi yuborish» (docs/AI-SOTUVCHI.md §18.3)? Cached TRUE
+ * Does 0145 exist — «o'zi yuborish» (docs/AI-SOTUVCHI.md §18.3)? Cached TRUE
  * only, like `agentTablesReady`. EVERY reader and writer of the auto layer
  * asks it first: one migration behind there are no verdict rows, every card is
  * the ordinary card, and the layer's doors answer «yangilanmagan».
@@ -100,7 +100,7 @@ export function __forgetAgentAutoReady(): void {
 }
 
 /**
- * Tests: a server one migration behind 0143 — the probe answers «no» until
+ * Tests: a server one migration behind 0145 — the probe answers «no» until
  * forgotten. The other processes on the shared database still see the
  * tables; dropping them in a rolled-back transaction would hide them from
  * nobody but that one connection.

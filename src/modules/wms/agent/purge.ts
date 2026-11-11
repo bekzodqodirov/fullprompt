@@ -37,7 +37,7 @@ export const PURGED_TABLES = [
   'agent_outbox',
   'agent_calc_links',
   'tg_peer_pulls',
-  // «O'zi yuborish» (0143): the verdicts follow their drafts by cascade and are deleted here too; the chat's «off».
+  // «O'zi yuborish» (0145): the verdicts follow their drafts by cascade and are deleted here too; the chat's «off».
   'agent_auto_verdicts',
   'agent_auto_chats',
 ] as const;

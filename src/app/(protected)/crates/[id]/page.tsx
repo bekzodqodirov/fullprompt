@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
@@ -28,6 +28,8 @@ import { tillOptionsFor } from '@/modules/wms/costing/till-props';
 import { costSightFor, tillView } from '@/modules/wms/costing/cost-sight';
 import { mayPickTill } from '@/modules/wms/accounting/till-door';
 import { costEntriesFor } from '@/modules/wms/costing/service';
+import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 /** Crate detail: contents, measured dims, label, dissolve (spec 6.2). */
 export default async function CrateDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -59,7 +61,9 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
       box: boxes,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      // As SHOWN: a standing tarkib's «first +N», else the lot's own
+      // (`receipts/lot-name.ts`, the owner's items 3-4 of 2026-11-10).
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
@@ -194,12 +198,7 @@ export default async function CrateDetailPage({ params }: { params: Promise<{ id
               <span className="font-mono text-lg font-extrabold text-brand-700">
                 {lotMembers[0]!.letter ?? '·'}
               </span>
-              <span className="truncate">
-                {lotMembers[0]!.productNameZh}
-                {lotMembers[0]!.productNameRu && (
-                  <span className="text-ink-500"> ({lotMembers[0]!.productNameRu})</span>
-                )}
-              </span>
+              <LotGoodsName zh={lotMembers[0]!.productNameZh} ru={lotMembers[0]!.productNameRu} />
               <span className="ml-auto text-sm font-semibold">{lotMembers.length} 📦</span>
             </div>
             <p className="mt-1 font-mono text-xs text-ink-500">

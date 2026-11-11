@@ -45,7 +45,16 @@ export interface PreparedPush {
    * Null = no keyboard at all: the factory pickup has no boxes yet, so the
    * cabinet would open on nothing (`pickups/notice.ts`'s own reason).
    */
-  keyboard: { lotId: string | null } | null;
+  keyboard: {
+    lotId: string | null;
+    /**
+     * The client's own ✅ / ❌ row (0144, `receipts/client-confirm.ts`): the
+     * prixod the message is about and the tag of the facts it prints. Absent
+     * or null = no row — every push before 0144, and every push the offer
+     * rule says no to.
+     */
+    confirm?: { receiptId: string; tag: string } | null;
+  } | null;
   photo: PhotoRef | null;
 }
 

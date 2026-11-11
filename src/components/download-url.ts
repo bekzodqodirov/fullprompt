@@ -19,3 +19,30 @@ export async function signedDownloadUrl(path: string): Promise<string> {
     return path;
   }
 }
+
+/**
+ * Follow an address as a press would: a one-off anchor, marked so the layout's
+ * download listener (`download-links.tsx`) lets its click through.
+ * `downloadName` carries an original link's `download` attribute.
+ */
+export function followAddress(target: string, downloadName?: string | null): void {
+  const link = document.createElement('a');
+  link.href = target;
+  link.setAttribute('data-dl-done', '');
+  if (downloadName !== undefined && downloadName !== null) link.setAttribute('download', downloadName);
+  link.rel = 'noreferrer';
+  link.style.display = 'none';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+/**
+ * Download one of this app's files from a BUTTON (a file whose address is
+ * decided at the press — the invoice with its merge answers): the signed
+ * address first, then follow it. A link with an `href` needs none of this —
+ * the layout's listener already takes its press.
+ */
+export async function followDownload(path: string): Promise<void> {
+  followAddress(await signedDownloadUrl(path));
+}

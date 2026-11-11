@@ -394,7 +394,7 @@ async function SettingsSection({
     webStats(),
     userName(config.ownerUserId),
     superAdmin ? ownerCandidates() : Promise.resolve([]),
-    // Null one migration behind 0143: no panel, and the page is today's.
+    // Null one migration behind 0145: no panel, and the page is today's.
     autoPanel(actor, config.ownerUserId),
   ]);
   const pct = (rate: number | null) => (rate === null ? '—' : `${Math.round(rate * 100)} %`);

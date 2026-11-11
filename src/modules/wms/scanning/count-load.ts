@@ -37,6 +37,8 @@ import {
   shrinkGrownInTx,
 } from '../receipts/grow-lot';
 import { likeNeedle } from '../search/query';
+import { withoutLabelCount } from '../../platform/text/label-count';
+import { lotRuShownSql, tarkibLineMatchSql } from '../receipts/lot-name';
 import { notifyPricedCargoGrew, notifyPricedCargoTakenBack } from '../finance/off-truck';
 
 /*
@@ -189,10 +191,14 @@ async function planNumber(exec: Db | Tx, batchId: string, lotId: string, road: R
   return Number(rows[0]?.n ?? 0);
 }
 
-/** The lot's label as every screen prints it («GS777-A»), with its goods. */
+/**
+ * The lot's label as every screen prints it («GS777-A»), with its goods —
+ * the Russian name as SHOWN (a standing tarkib's «first +N», lot-name.ts),
+ * read in the caller's own statement: inside a press that is its transaction.
+ */
 async function lotLabel(exec: Db | Tx, lotId: string) {
   const rows = (await exec.execute(sql`
-    SELECT l.id, l.receipt_id, l.letter, l.product_name_zh, l.product_name_ru,
+    SELECT l.id, l.receipt_id, l.letter, l.product_name_zh, ${lotRuShownSql(sql`l`)} AS product_name_ru,
            r.unclaimed_marking AS marking, c.client_code
       FROM receipt_lots l
       JOIN receipts r ON r.id = l.receipt_id
@@ -796,7 +802,7 @@ export async function countLoadPanel(batch: {
     sql`, `,
   );
   const lots = (await db.execute(sql`
-    SELECT l.id AS lot_id, l.letter, l.product_name_zh, l.product_name_ru,
+    SELECT l.id AS lot_id, l.letter, l.product_name_zh, ${lotRuShownSql(sql`l`)} AS product_name_ru,
            r.unclaimed_marking AS marking, c.client_code,
            count(b.id) FILTER (WHERE b.current_batch_id = ${batchId}::uuid AND b.status = 'planned')::int AS reserved,
            count(b.id) FILTER (WHERE b.current_batch_id = ${batchId}::uuid AND b.status = 'loading')::int AS aboard,
@@ -930,9 +936,12 @@ export async function countableLotsAt(
   batch: { id: string; originWarehouseId: string },
   q?: string,
 ): Promise<{ lots: CountableLot[]; total: number }> {
-  const needle = q?.trim() ? likeNeedle(q.trim()) : null;
+  // A label copied off a row («Клавиатура +2») is searched without its
+  // count: no stored name and no tarkib line says «+2».
+  const typed = withoutLabelCount(q ?? '');
+  const needle = typed ? likeNeedle(typed) : null;
   const rows = (await db.execute(sql`
-    SELECT l.id AS lot_id, l.letter, l.product_name_zh, l.product_name_ru,
+    SELECT l.id AS lot_id, l.letter, l.product_name_zh, ${lotRuShownSql(sql`l`)} AS product_name_ru,
            r.unclaimed_marking AS marking, c.client_code,
            count(*)::int AS spare,
            coalesce(bool_or(${qrlessRowSql(sql`b`, sql`l`)}), false) AS qrless,
@@ -955,6 +964,7 @@ export async function countableLotsAt(
          needle
            ? sql`AND (c.client_code ILIKE ${needle} OR r.unclaimed_marking ILIKE ${needle}
                 OR l.product_name_zh ILIKE ${needle} OR l.product_name_ru ILIKE ${needle}
+                OR ${tarkibLineMatchSql(sql`l`, needle)}
                 OR (coalesce(r.unclaimed_marking, c.client_code) || '-' || l.letter) ILIKE ${needle}
                 OR (c.client_code || '-' || l.letter) ILIKE ${needle})`
            : sql``

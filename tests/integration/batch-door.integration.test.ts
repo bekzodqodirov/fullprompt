@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -19,7 +19,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  */
 
 const session = vi.hoisted(() => ({ user: null as null | Record<string, unknown> }));
-const model = vi.hoisted(() => ({ calls: [] as string[] }));
+const model = vi.hoisted(() => ({ calls: [] as string[], key: true }));
 
 vi.mock('@/modules/platform/auth/session', async (original) => ({
   ...(await original<typeof import('@/modules/platform/auth/session')>()),
@@ -31,6 +31,12 @@ vi.mock('@/modules/platform/auth/session', async (original) => ({
 vi.mock('next/cache', async (original) => ({
   ...(await original<typeof import('next/cache')>()),
   revalidatePath: () => {},
+}));
+// CI has no key, and since 0144 the 🤖 asks for one BEFORE it counts the press
+// (a keyless server writes no ledger row) — so the key is a switch here.
+vi.mock('@/modules/platform/ai/model', async (original) => ({
+  ...(await original<typeof import('@/modules/platform/ai/model')>()),
+  aiConfigured: () => model.key,
 }));
 vi.mock('@/modules/wms/tnved/service', async (original) => ({
   ...(await original<typeof import('@/modules/wms/tnved/service')>()),
@@ -252,8 +258,19 @@ beforeAll(async () => {
   )[0]!.id;
 });
 
+/** The 🤖's bill lines for one lot (0144 — the ledger's pressed kind). */
+async function billed(lotId: string) {
+  return (await db.execute(sql`
+    SELECT outcome, staff_id, batch_id FROM ai_calc_passes WHERE kind = 'tnved' AND lot_id = ${lotId}::uuid ORDER BY created_at
+  `)) as unknown as { outcome: string; staff_id: string; batch_id: string }[];
+}
+
 afterAll(async () => {
   session.user = null;
+  // The 🤖's bill lines first: they name the demo logist, who stays.
+  for (const lotId of [lotOn, lotOff].filter(Boolean)) {
+    await db.execute(sql`DELETE FROM ai_calc_passes WHERE kind = 'tnved' AND lot_id = ${lotId}::uuid`);
+  }
   // Children first (the phones, cartons, lots and prixods all point up).
   const trucks = [truck, otherTruck, pinTruck].filter(Boolean);
   if (trucks.length) await db.delete(driverDevices).where(inArray(driverDevices.batchId, trucks));
@@ -389,6 +406,8 @@ describe('the TNVED suggestion', () => {
     model.calls.length = 0;
     expect(await suggestTnvedForLotAction(truck, lotOff)).toEqual({ ok: false, error: 'forbidden' });
     expect(model.calls).toEqual([]);
+    // …and a refused press is not counted against the day (0144).
+    expect(await billed(lotOff)).toEqual([]);
   });
 
   it('refuses a truck that is not there the same way', async () => {
@@ -412,6 +431,27 @@ describe('the TNVED suggestion', () => {
     expect(answer.ok).toBe(true);
     expect(answer.suggestion?.tnved_code).toBe('6109100000');
     expect(model.calls).toEqual([`上衣${SUFFIX}`]);
+    // The press is one bill line: this lot, this truck, the person who pressed.
+    expect(await billed(lotOn)).toEqual([{ outcome: 'ok', staff_id: people.get('logist')!.id, batch_id: truck }]);
+    // The count comes back with the answer; the logist reads no dollars.
+    expect(answer.today).toMatchObject({ usd: null, usd30: null });
+    expect(answer.today!.used).toBeGreaterThanOrEqual(1);
+    // The suggestion that reaches the browser carries no token counts.
+    expect(answer.suggestion).not.toHaveProperty('usage');
+  });
+
+  it('a server with no key says so and counts nothing', async () => {
+    signIn('logist');
+    model.calls.length = 0;
+    model.key = false;
+    try {
+      const before = (await billed(lotOn)).length;
+      expect(await suggestTnvedForLotAction(truck, lotOn)).toEqual({ ok: false, error: 'ai_not_configured' });
+      expect(model.calls).toEqual([]);
+      expect((await billed(lotOn)).length).toBe(before);
+    } finally {
+      model.key = true;
+    }
   });
 
   it('a person without the permission is refused before the truck is read', async () => {

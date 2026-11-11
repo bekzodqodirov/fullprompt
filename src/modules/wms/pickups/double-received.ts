@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
+import { lotGoodsShownSql } from '../receipts/lot-name';
 import {
   candidateReceiptSql,
   costWithoutCargoSql,
@@ -219,7 +220,10 @@ function lineOf(r: LineRow): CheckLine {
   };
 }
 
-/** Number · date · boxes · warehouse · owner · goods for a set of prixods, in one read. */
+/**
+ * Number · date · boxes · warehouse · owner · goods for a set of prixods, in
+ * one read. The goods are the first lot's name as the screens show it.
+ */
 export async function receiptFacts(receiptIds: string[]): Promise<Map<string, CheckReceipt>> {
   const unique = [...new Set(receiptIds)];
   if (!unique.length) return new Map();
@@ -236,7 +240,7 @@ export async function receiptFacts(receiptIds: string[]): Promise<Map<string, Ch
   }>(sql`
     SELECT r.id, r.number, r.confirmed_at, r.voided_at, w.code AS warehouse_code,
            c.client_code, r.unclaimed_marking,
-           (SELECT coalesce(nullif(btrim(rl.product_name_ru), ''), rl.product_name_zh)
+           (SELECT ${lotGoodsShownSql(sql.raw('rl'))}
               FROM receipt_lots rl WHERE rl.receipt_id = r.id ORDER BY rl.seq LIMIT 1) AS goods,
            (SELECT coalesce(sum(rl.box_count), 0)::int FROM receipt_lots rl WHERE rl.receipt_id = r.id) AS boxes
       FROM receipts r

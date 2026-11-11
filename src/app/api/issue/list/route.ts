@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { boxes, clients, receiptLots, receipts } from '@/modules/platform/db/schema';
@@ -9,6 +9,7 @@ import { counterDebtRelease, mayOverridePrice } from '@/modules/wms/finance/scop
 import { ISSUABLE_STATUSES } from '@/modules/wms/issue/parties';
 import { gatedAt, uncoveredBoxesOn, unpricedGate, unpricedReceiptsOn } from '@/modules/wms/finance/unpriced';
 import { compensatedReceiptsAmong } from '@/modules/wms/finance/compensation';
+import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -54,7 +55,9 @@ export async function GET(request: Request) {
       receiptId: receiptLots.receiptId,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      // As the lists show it: a standing tarkib's «first +N», else the lot's
+      // own (`receipts/lot-name.ts`, the owner's items 3-4 of 2026-11-10).
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
     })
     .from(boxes)
     .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))

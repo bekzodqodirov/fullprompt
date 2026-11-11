@@ -34,7 +34,7 @@ import {
   mayWriteComposition,
   oneGoodPrefillFor,
 } from '@/modules/wms/receipts/lot-composition';
-import { isStale } from '@/modules/wms/receipts/composition-math';
+import { isStale, tarkibLabel } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
@@ -69,6 +69,8 @@ import { canLogInSql } from '@/modules/platform/users/login';
 import { lotCheckViewsFor, mayCheckLot, type LotCheckView } from '@/modules/wms/receipts/lot-check';
 import { telegramPhoneUrl } from '@/modules/platform/telegram/map-link';
 import { LotCheckPanel } from './lot-check-panel';
+import { clientAskCardFor } from '@/modules/wms/receipts/client-confirm';
+import { ClientAskPanel } from './client-ask-panel';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { mayReadThread } from '@/modules/wms/crm/thread-door';
 import { threadReadMarks } from '@/modules/wms/crm/thread';
@@ -195,10 +197,20 @@ export default async function ReceiptDetailPage({
   const compositions = await compositionsFor(lotIds);
   const lotTrucks = await lotTrucksFor(db, lotIds);
   const mayCompose = mayWriteComposition(actor.permissions);
+  // What every list calls a composed lot (docs/TARKIB-TUZATISH.md §3).
+  const zhOf = new Map(lots.map((l) => [l.id, l.productNameZh]));
+  const shownRu = new Map(
+    [...compositions].flatMap(([lotId, c]) => {
+      const label = tarkibLabel(c.lines, zhOf.get(lotId) ?? '');
+      return label === null ? [] : [[lotId, label] as const];
+    }),
+  );
   // «Bitta tovar» — read only for the writer: the receipt card is opened by
   // warehouse staff too, and the prefill carries the memory's code.
   const oneGood = mayCompose && receipt.status === 'confirmed' ? await oneGoodPrefillFor(receipt, lots) : new Map();
-  const citedDocs = new Set([...compositions.values()].map((c) => c.attachment.id));
+  const citedDocs = new Set(
+    [...compositions.values()].map((c) => c.attachment?.id).filter((id): id is string => id !== undefined),
+  );
   const paperDocs = receiptFileRows
     .filter((f) => isPaperDocument(f, receipt))
     .map((f) => ({ id: f.id, fileName: f.fileName, removable: f.uploadedBy === actor.id && !citedDocs.has(f.id) }));
@@ -211,6 +223,47 @@ export default async function ReceiptDetailPage({
     return new Map<string, LotCheckView>();
   });
   const mayCheck = mayCheckLot(actor.permissions) && receipt.status === 'confirmed';
+  // «📨 Mijozdan so'rash» (0144): ONE block for the prixod — the question is
+  // one message about every lot. Null on a server whose 0144 has not landed,
+  // for a reader who may not tick, and for cargo with no client: nothing of
+  // it is drawn then. The button needs a linked chat and a lot still worth
+  // asking about (his 4a); the last question's fate and a multi-lot dispute
+  // are shown wherever the cargo stands.
+  const askCard = mayCheck ? await clientAskCardFor(id, receipt.clientId) : null;
+  const askDisputes = lots
+    .map((lot) => ({ lotId: lot.id, answer: lotChecks.get(lot.id)?.client ?? null }))
+    .filter((row) => row.answer?.verdict === 'no' && row.answer.ofOwner)
+    .map((row) => ({ lotId: row.lotId, token: row.answer!.token }));
+  const anyAskable = lots.some((lot) => lotChecks.get(lot.id)?.askable === true);
+  // A question still waiting, as the service judged it on the database's own
+  // clock: held by Telegram, or due long ago and still here (`ClientAskStatus`).
+  const askDue = askCard?.status?.dueAt ?? null;
+  const askWait = askCard?.status?.wait ?? 'soon';
+  // The block is mounted wherever the client's side exists; `askShow` says
+  // whether it has anything to draw (it keeps its own «✅ yopildi» otherwise).
+  const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1);
+  const askFace = askCard
+    ? {
+        canAsk: askCard.hasChat && anyAskable,
+        noChat: !askCard.hasChat && anyAskable,
+        status: askCard.status
+          ? {
+              state: askCard.status.status,
+              // The OFFICE clock — the page's default, and the History tab's
+              // under this block. In the warehouse's zone a question that
+              // went out at 14:05 Tashkent read 17:05 on a Chinese prixod: a
+              // time in the reader's future, and the one the ten-minute
+              // «too soon» is judged by.
+              when: askCard.status.deliveredAt ? format.dateTime(askCard.status.deliveredAt, { dateStyle: 'short', timeStyle: 'short' }) : null,
+              by: askCard.status.askedBy,
+              failure: askCard.status.failure,
+              wait: askWait,
+              waitAt: askDue && askWait !== 'soon' ? format.dateTime(askDue, { timeStyle: 'short' }) : null,
+            }
+          : null,
+        disputes: askDisputes,
+      }
+    : null;
   // The client's phones, for the person who rings: this reader has passed
   // `mayReadReceipt`, which is the staff bot's own «cargo in reach» rule for
   // showing a phone (bot/lookup.ts `maySeePhones`).
@@ -567,14 +620,18 @@ export default async function ReceiptDetailPage({
       )}
 
       <section className="space-y-3">
+        {askFace && <ClientAskPanel receiptId={id} face={askFace} show={askShow} />}
         {lots.map((lot) => (
           <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
               <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
-              <span className="font-semibold">
+              <span className="font-semibold" data-testid="lot-name">
                 {lot.productNameZh}
-                {lot.productNameRu && (
-                  <span className="font-normal text-ink-700"> ({lot.productNameRu})</span>
+                {/* The Russian name SHOWN: the tarkib's, while one stands
+                    (items 3-4 — the pure twin of `lotRuShownSql`, off the
+                    compositions this page already holds); else the lot's own. */}
+                {(shownRu.get(lot.id) ?? lot.productNameRu) && (
+                  <span className="font-normal text-ink-700"> ({shownRu.get(lot.id) ?? lot.productNameRu})</span>
                 )}
               </span>
               {canPrint && receipt.status === 'confirmed' && (qrState.get(lot.id)?.printable ?? 0) > 0 && (
@@ -594,6 +651,7 @@ export default async function ReceiptDetailPage({
             </p>
             {lotChecks.has(lot.id) && (
               <LotCheckPanel
+                receiptId={id}
                 lotId={lot.id}
                 face={(() => {
                   const view = lotChecks.get(lot.id)!;
@@ -602,22 +660,39 @@ export default async function ReceiptDetailPage({
                     askable: view.askable,
                     byDocument: view.byDocument,
                     documentStale: view.documentStale,
-                    documentOtherName: view.documentOtherName,
                     person: view.person
                       ? {
                           by: view.person.by,
-                          day: dayIn(view.person.at, warehouse.timezone),
+                          // The OFFICE day, as the History under the card
+                          // prints it: who vouched and when is the office's
+                          // record, not a warehouse event. In the warehouse's
+                          // zone a customer's evening press (after 21:00
+                          // Tashkent) was dated tomorrow on a Chinese prixod.
+                          day: tashkentDay(view.person.at),
                           token: view.person.token,
                           note: view.person.note,
                           holds: view.person.holds,
                           moved: view.person.moved,
                         }
                       : null,
+                    client: view.client
+                      ? {
+                          verdict: view.client.verdict,
+                          day: tashkentDay(view.client.at),
+                          token: view.client.token,
+                          holds: view.client.holds,
+                          vetoes: view.client.vetoes,
+                          ofOwner: view.client.ofOwner,
+                          askedBy: view.client.askedBy,
+                        }
+                      : null,
                   };
                 })()}
                 seen={{
                   nameZh: lot.productNameZh,
-                  nameRu: lot.productNameRu ?? '',
+                  // What the header above PRINTS — the tarkib's label while one
+                  // is written: a person confirms the name they saw (§9.3).
+                  nameRu: shownRu.get(lot.id) ?? lot.productNameRu ?? '',
                   boxCount: lot.boxCount,
                   clientId: receipt.clientId,
                 }}
@@ -681,6 +756,7 @@ export default async function ReceiptDetailPage({
               lot={{
                 id: lot.id,
                 label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
+                nameZh: lot.productNameZh,
                 boxCount: lot.boxCount,
                 kg: lot.totalWeightKg,
                 m3: lot.totalVolumeM3,
@@ -717,6 +793,7 @@ export default async function ReceiptDetailPage({
               <div className="mt-2">
                 <LotEditForm
                   hasComposition={compositions.has(lot.id)}
+                  shownName={shownRu.get(lot.id) ?? null}
                   lot={{
                     lotId: lot.id,
                     dimsMode: lot.dimsMode,

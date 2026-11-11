@@ -43,7 +43,7 @@ function row(over: Partial<UncollectedRow> & { clientCode: string }): Uncollecte
     kg: 312,
     m3: 1.8,
     goods: 'Kurtka',
-    moreLots: 0,
+    moreKinds: 0,
     landedFrom: new Date('2026-09-14T04:00:00Z'),
     lastPickupAt: null,
     days: 12,

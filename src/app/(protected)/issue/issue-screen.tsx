@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Scanner } from '@/components/scan/scanner';
 import { armScanAudio, scanFeedback } from '@/components/scan/feedback';
 import { approvalCovers } from '@/modules/wms/issue/approval-covers';
+import { LotGoodsName } from '@/components/lot-goods-name';
 import { issueBoxesAction, requestIssueApprovalAction } from './actions';
 
 interface WarehouseOption {
@@ -42,6 +43,7 @@ interface IssuableBox {
   receiptId: string;
   letter: string | null;
   productNameZh: string;
+  /** As the lists show it: a standing tarkib's «first +N», else the lot's own (`/api/issue/list`). */
   productNameRu: string | null;
   /** No price covers it (`finance/unpriced.ts`). */
   uncovered?: boolean;
@@ -821,10 +823,7 @@ export function IssueScreen({ warehouses }: { warehouses: WarehouseOption[] }) {
                       {allIn ? '✓' : ''}
                     </span>
                     <span className="font-mono text-lg font-extrabold text-brand-700">{first.letter ?? '·'}</span>
-                    <span className="truncate">
-                      {first.productNameZh}
-                      {first.productNameRu && <span className="text-ink-500"> ({first.productNameRu})</span>}
-                    </span>
+                    <LotGoodsName zh={first.productNameZh} ru={first.productNameRu} />
                     {lotGated && (
                       <span className="chip shrink-0 bg-bad/10 text-xs text-bad" data-testid="lot-unpriced">
                         {t('lotUnpriced')}

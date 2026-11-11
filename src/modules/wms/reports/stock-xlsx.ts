@@ -60,6 +60,13 @@ export interface StockSheetLine {
     boxHeightCm: number | null;
     note: string | null;
   };
+  /**
+   * The Russian name as the screen SHOWS it — a standing lot tarkibi's «first
+   * +N» (`receipts/lot-name.ts`, the owner's items 3-4 of 2026-11-10), else
+   * the lot's own. Optional like `check`: a sheet built without it prints the
+   * stored name, as before.
+   */
+  shownNameRu?: string | null;
   receivedAt: Date;
   marking: string | null;
   whCode: string;
@@ -456,11 +463,15 @@ export async function buildStockXlsx(input: {
      */
     const { boxLengthCm: x, boxWidthCm: y, boxHeightCm: z } = line.lot;
     const xyz = x && y && z ? `${x}×${y}×${z}` : '';
+    // The name the screen shows: a standing tarkib's label when the row
+    // carries one, else the lot's own. Plain text and no clip — a sheet's
+    // cell holds the whole name, «+N» and all.
+    const nameRu = line.shownNameRu ?? line.lot.productNameRu;
     const row = sheet.addRow({
       xyz,
       wh: line.whCode,
       code: `${line.clientCode ?? line.marking ?? '?'}-${line.lot.letter ?? ''}`,
-      product: `${line.lot.productNameZh}${line.lot.productNameRu ? ` (${line.lot.productNameRu})` : ''}`,
+      product: `${line.lot.productNameZh}${nameRu ? ` (${nameRu})` : ''}`,
       boxCount: Number(line.inStock),
       perBoxKg: Math.round(perBoxKg * 10) / 10,
       totalKg: Math.round(stockKg * 10) / 10,

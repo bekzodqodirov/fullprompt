@@ -145,7 +145,7 @@ describe('the AI pass keeps a bill', () => {
     const [used] = await db.execute<{ n: string }>(sql`
       SELECT count(*)::text AS n FROM ai_calc_passes
        WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
-         AND kind <> 'similar'`);
+         AND kind IN ('intake', 'grouping', 'pick', 'invoice')`);
     await setSetting('ai_calc_daily_limit', Number(used!.n) + 1, actorId);
     expect(await aiCalcBudgetLeft()).toBe(1);
 
@@ -157,7 +157,7 @@ describe('the AI pass keeps a bill', () => {
     // An afternoon of pricing presses must not stop the VED's Telegram
     // estimates until midnight: the two are counted apart.
     const [used] = await db.execute<{ calc: string; similar: string }>(sql`
-      SELECT count(*) FILTER (WHERE kind <> 'similar')::text AS calc,
+      SELECT count(*) FILTER (WHERE kind IN ('intake', 'grouping', 'pick', 'invoice'))::text AS calc,
              count(*) FILTER (WHERE kind = 'similar')::text AS similar
         FROM ai_calc_passes
        WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'`);

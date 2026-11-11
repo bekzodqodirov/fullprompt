@@ -34,7 +34,7 @@ async function main(): Promise<number> {
     }
   }
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
-  // «O'zi yuborish» (0143): a reply the machine pressed is nobody's decision — counted apart, never graded.
+  // «O'zi yuborish» (0145): a reply the machine pressed is nobody's decision — counted apart, never graded.
   // A database one migration behind has no verdicts to read.
   const [probe] = await db.execute<{ ok: boolean }>(sql`SELECT to_regclass('public.agent_auto_verdicts') IS NOT NULL AS ok`);
   const autoSent = probe?.ok === true

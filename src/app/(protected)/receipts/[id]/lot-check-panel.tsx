@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { dismissDisputesAction } from './client-ask-actions';
 import { checkLotAction, uncheckLotAction } from './lot-check-actions';
 
 /**
@@ -16,6 +17,15 @@ import { checkLotAction, uncheckLotAction } from './lot-check-actions';
  * OTHER one holds is a muted history line, never «ask again» about a lot every
  * list calls verified.
  *
+ * The CLIENT's own answer in Telegram (0144) is a third line. Their ✅ is
+ * drawn like a colleague's. Their ❌ is a veto, and while it is the reason the
+ * lot reads ❓ (`client.vetoes`, the sentence's own word — never re-derived
+ * here) it LEADS in the bad colour and every ✅ line under it is history: a
+ * disputed lot must not show green on the one screen that explains the
+ * dispute. The ways out are on the same panel: the tick (a colleague who has
+ * heard the client) and «E'tirozni yopish» — which stays wherever the cargo
+ * stands, so a dispute raised in China does not vanish when the truck unloads.
+ *
  * No `router.refresh()` after the action: the action revalidates the page,
  * and a refresh on top of that can leave the transition pending for ever
  * (#1242).
@@ -26,7 +36,6 @@ export interface LotCheckFace {
   askable: boolean;
   byDocument: boolean;
   documentStale: boolean;
-  documentOtherName: boolean;
   person: {
     by: string | null;
     day: string;
@@ -36,9 +45,24 @@ export interface LotCheckFace {
     holds: boolean;
     moved: { name: boolean; count: boolean; client: boolean };
   } | null;
+  /** The client's own ✅ / ❌ in Telegram (0144); null = none, or a server without 0144. */
+  client: {
+    verdict: 'yes' | 'no';
+    day: string;
+    /** `answered_at::text` — posted back by the tick and by «E'tirozni yopish». */
+    token: string;
+    /** The answer is about what the lists still show. */
+    holds: boolean;
+    /** This ❌ is why the lot reads ❓ right now. */
+    vetoes: boolean;
+    /** The prixod's CURRENT owner's answer — a previous owner's is drawn nowhere. */
+    ofOwner: boolean;
+    askedBy: string | null;
+  } | null;
 }
 
 export function LotCheckPanel({
+  receiptId,
   lotId,
   face,
   seen,
@@ -46,6 +70,7 @@ export function LotCheckPanel({
   canRename,
   phones,
 }: {
+  receiptId: string;
   lotId: string;
   face: LotCheckFace;
   /** The lot as this page drew it — the service compares it with the locked row. */
@@ -64,6 +89,16 @@ export function LotCheckPanel({
   const [done, setDone] = useState(false);
 
   const person = face.person;
+  // A previous owner's answer is nobody's: it is neither this client's ✅ nor
+  // a dispute to close.
+  const client = face.client?.ofOwner ? face.client : null;
+  // …but their ✅ is still WHY the lot reads «o'zgardi»: the client is one of
+  // the facts a ✅ is about (as it is for a colleague's tick), so the sentence
+  // calls such a lot stale and the worklist links it here. Dropped without a
+  // word, the card drew nothing at all — no line, no tick, no phones (the
+  // as-built review, L3-1).
+  const formerYes = face.client && !face.client.ofOwner && face.client.verdict === 'yes' ? face.client : null;
+  const vetoed = client?.vetoes === true;
   const checked = face.state === 'checked';
   /** «Ask again» is said only where the lot is still asked about. */
   const asking = !checked && face.askable;
@@ -88,6 +123,9 @@ export function LotCheckPanel({
         seen: { nameZh: seen.nameZh, nameRu: seen.nameRu, boxCount: seen.boxCount, clientId: seen.clientId ?? '' },
         note: note.trim() || undefined,
         seenCheckedAt: person?.token ?? null,
+        // Whatever answer the table holds for this lot, as this page drew it:
+        // a ❌ that arrived since must not be lifted by a tick that never saw it.
+        seenClientAt: face.client?.token ?? null,
       });
       if (res.ok) {
         setDone(true);
@@ -115,20 +153,112 @@ export function LotCheckPanel({
     }
   }
 
+  async function closeDispute() {
+    if (!client || !window.confirm(t('disputeCloseConfirm'))) return;
+    setBusy(true);
+    setError(null);
+    setDone(false);
+    try {
+      const res = await dismissDisputesAction({ receiptId, seen: [{ lotId, token: client.token }], note: note.trim() || undefined });
+      if (res.ok) {
+        setDone(true);
+        setNote('');
+      } else setError(res.error);
+    } catch {
+      setError('network');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const lines: React.ReactNode[] = [];
+  const asked = client ? (client.askedBy ? t('clientAskedBy', { by: client.askedBy }) : t('clientViaPush')) : '';
+  if (client && vetoed) {
+    lines.push(
+      <p key="client-no" className="font-semibold text-bad [overflow-wrap:anywhere]" data-testid="lot-check-face-client-no">
+        ❌ {t('clientNo')} · {client.day}
+        <span className="block text-xs font-normal text-ink-500">
+          {asked}
+          {!client.holds && ` · ${t('clientMovedSince')}`}
+        </span>
+      </p>,
+    );
+  }
+  // For a reader who cannot tick — the client's SELLER above all, who is the
+  // ❌ alert's first recipient and opens this card from its link: who does.
+  if (client && vetoed && !canWrite) {
+    lines.push(
+      <p key="dispute-others" className="text-xs text-ink-500" data-testid="lot-check-dispute-others">
+        {t('disputeNotYours')}
+      </p>,
+    );
+  }
   if (face.byDocument) {
     lines.push(
-      <p key="doc" className="font-semibold text-good" data-testid="lot-check-face-document">
-        ✅ {t('byDocument')}
-      </p>,
+      vetoed ? (
+        <p key="doc-held" className="text-xs text-ink-500" data-testid="lot-check-face-document-held">
+          {t('documentHeld')}
+        </p>
+      ) : (
+        <p key="doc" className="font-semibold text-good" data-testid="lot-check-face-document">
+          ✅ {t('byDocument')}
+        </p>
+      ),
     );
   }
   if (person?.holds) {
     lines.push(
-      <p key="person" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-person">
-        ✅ {t('byClient')} · {person.by ?? '—'} · {person.day}
-        {person.note && <span className="block text-xs font-normal italic text-ink-500">«{person.note}»</span>}
+      vetoed ? (
+        <p key="person-held" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-person-held">
+          {t('personHeld', { by: person.by ?? '—', day: person.day })}
+        </p>
+      ) : (
+        <p key="person" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-person">
+          ✅ {t('byClient')} · {person.by ?? '—'} · {person.day}
+          {person.note && <span className="block text-xs font-normal italic text-ink-500">«{person.note}»</span>}
+        </p>
+      ),
+    );
+  }
+  if (client?.verdict === 'yes' && client.holds) {
+    lines.push(
+      <p key="client-yes" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-client-yes">
+        ✅ {t('clientYes')} · {client.day}
+        <span className="block text-xs font-normal text-ink-500">{asked}</span>
       </p>,
+    );
+  }
+  if (client?.verdict === 'yes' && !client.holds) {
+    lines.push(
+      asking ? (
+        <p key="client-stale" className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-check-face-client-stale">
+          ⚠️ {t('clientStale', { day: client.day })}
+        </p>
+      ) : (
+        <p key="client-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-client-old">
+          {t('clientYesOld', { day: client.day })}
+        </p>
+      ),
+    );
+  }
+  if (client?.verdict === 'no' && !vetoed) {
+    lines.push(
+      <p key="client-no-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-client-no-old">
+        {t('clientNoOld', { day: client.day })}
+      </p>,
+    );
+  }
+  if (formerYes) {
+    lines.push(
+      asking ? (
+        <p key="former-owner" className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-check-face-former-owner">
+          ⚠️ {t('formerOwnerStale', { day: formerYes.day })}
+        </p>
+      ) : (
+        <p key="former-owner-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-former-owner-old">
+          {t('formerOwnerOld', { day: formerYes.day })}
+        </p>
+      ),
     );
   }
   if (person && !person.holds) {
@@ -160,14 +290,8 @@ export function LotCheckPanel({
       ),
     );
   }
-  if (face.documentOtherName && asking) {
-    lines.push(
-      <p key="doc-other" className="text-xs text-ink-700 [overflow-wrap:anywhere]" data-testid="lot-check-face-document-other">
-        🧩 {t('documentOtherName')}
-      </p>,
-    );
-  }
-  if (face.state === 'none' && face.askable) {
+  // Under a veto the ❌ line above IS the reason — a second «❓ tekshirilmagan» would say it twice.
+  if (face.state === 'none' && face.askable && !vetoed) {
     lines.push(
       <p key="none" className="font-semibold text-ink-700" data-testid="lot-check-face-none">
         ❓ {t('none')}
@@ -181,8 +305,14 @@ export function LotCheckPanel({
       </p>,
     );
   }
-  // Cargo already in Uzbekistan that nobody checked says nothing (his 4a).
-  if (lines.length === 0 && !offerUndo && !done && !error) return null;
+  // «E'tirozni yopish»: for every ❌ of this owner still on record — the one
+  // that vetoes, and one a later tick or a changed tarkib has outranked (it
+  // would veto again the day that basis goes stale).
+  const offerClose = canWrite && client?.verdict === 'no';
+  // Cargo already in Uzbekistan that nobody checked says nothing (his 4a) —
+  // but never while the tick is OFFERED: a state with no line of its own must
+  // still draw the button that cures it.
+  if (lines.length === 0 && !offerConfirm && !offerUndo && !offerClose && !done && !error) return null;
 
   return (
     <div
@@ -193,7 +323,7 @@ export function LotCheckPanel({
     >
       {lines}
 
-      {(offerConfirm || offerUndo) && (
+      {(offerConfirm || offerUndo || offerClose) && (
         <div className="space-y-1.5 border-t border-line pt-1.5">
           {offerConfirm && phones.length > 0 && (
             <p className="flex flex-wrap gap-x-3 gap-y-1" data-testid="lot-check-phones">
@@ -217,16 +347,23 @@ export function LotCheckPanel({
               ))}
             </p>
           )}
+          {/* ONE note field for whichever of the two is pressed: the tick's
+              «how I know», or why the dispute is closed. It was drawn under
+              the tick alone, so on cargo that had left China — where every
+              unresolved ❌ ends up — a dispute could only be closed without a
+              word. */}
+          {(offerConfirm || offerClose) && (
+            <input
+              className="input"
+              data-testid="lot-check-note"
+              maxLength={500}
+              value={note}
+              placeholder={t('notePlaceholder')}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          )}
           {offerConfirm && (
             <>
-              <input
-                className="input"
-                data-testid="lot-check-note"
-                maxLength={500}
-                value={note}
-                placeholder={t('notePlaceholder')}
-                onChange={(e) => setNote(e.target.value)}
-              />
               <button
                 type="button"
                 className="btn-primary w-full"
@@ -239,10 +376,35 @@ export function LotCheckPanel({
               {/* Where the two other answers go — the ✏️ form is drawn for
                   `receipts.edit` alone, so the VED writes a one-line 🧩 for
                   the papers and asks the logist to rename the lot itself
-                  (his 2026-10-27: a tarkib may be ONE line). */}
+                  (his 2026-10-27: a tarkib may be ONE line). While a tarkib
+                  is WRITTEN the ✏️ is no cure for anybody: the card prints
+                  the tarkib's name and the ✅ records it (2026-11-10), so a
+                  rename there changes neither — the person who followed the
+                  hint would tick «Мышь» the client had just denied. Both
+                  roles are sent to the 🧩 then (the review of the built round). */}
               <p className="text-xs text-ink-500" data-testid="lot-check-other">
-                {canRename ? t('otherAnswers') : t('otherAnswersAskLogist')}
+                {canRename && !face.documentStale ? t('otherAnswers') : t('otherAnswersAskLogist')}
               </p>
+            </>
+          )}
+          {offerClose && (
+            <>
+              {/* The hint names only the buttons this panel draws: with the
+                  cargo out of China there is no tick to press. */}
+              {vetoed && (
+                <p className="text-xs text-ink-500" data-testid="lot-check-dispute-hint">
+                  {offerConfirm ? t('disputeHint') : t('disputeHintGone')}
+                </p>
+              )}
+              <button
+                type="button"
+                className="btn-secondary w-full"
+                data-testid="lot-check-dispute-close"
+                disabled={busy}
+                onClick={closeDispute}
+              >
+                {t('disputeClose')}
+              </button>
             </>
           )}
           {offerUndo && (
@@ -259,7 +421,10 @@ export function LotCheckPanel({
         </div>
       )}
 
-      {done && (
+      {/* Never under a veto: `done` is this panel's own state and outlives the
+          press, so a ❌ that a later render of the page brings in would
+          otherwise stand above a green «saved» line. */}
+      {done && !vetoed && (
         <p className="text-xs font-semibold text-good" role="status" data-testid="lot-check-done">
           {t('done')}
         </p>

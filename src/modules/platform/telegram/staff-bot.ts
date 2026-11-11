@@ -400,7 +400,7 @@ export type BotCallback =
 
 /**
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
- * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0143) · 👎 it sent wrong (0143).
+ * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145).
  */
 export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f'] as const;
 export type AgentOp = (typeof AGENT_OPS)[number];
@@ -896,7 +896,7 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     }
     if (payload.live !== true) {
       if (payload.autoSent !== true) return null;
-      // A reply «o'zi yuborish» pressed (0143): while it has not left, ❌ takes it back and 🙋 takes the chat
+      // A reply «o'zi yuborish» pressed (0145): while it has not left, ❌ takes it back and 🙋 takes the chat
       // (payload `autoCancel`); «👎 Xato edi» once — then none.
       const rows: BotButton[][] = [];
       if (payload.autoCancel === true) {
@@ -911,7 +911,7 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
     const send = payload.blocked !== true && digest ? digest : null;
     const lastRow: BotButton[] = [{ text: '❌ Kerak emas', callback_data: `ag:r:${id}` }, { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` }];
-    // «O'zi yuborish» counting down (0143, payload `autoAt`): ⏸ first — the press that keeps the reply his —
+    // «O'zi yuborish» counting down (0145, payload `autoAt`): ⏸ first — the press that keeps the reply his —
     // then the same ✅ with its digest, named for what it does now. A card with no ✅ never counts down.
     if (typeof payload.autoAt === 'string' && payload.autoAt !== '') {
       const first: BotButton[] = [{ text: '⏸ To‘xtat', callback_data: `ag:a:${id}` }];

@@ -9,6 +9,7 @@ import { submitPlanAction } from '../actions';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { QrlessChip } from '@/components/qrless-chip';
 import { LotCheckChip } from '@/components/lot-check-chip';
+import { LotGoodsName } from '@/components/lot-goods-name';
 import { chipFace, inCheckFilter, type CheckFilter, type LotCheckState } from '@/modules/wms/receipts/lot-check-face';
 
 interface WarehouseOption {
@@ -25,6 +26,7 @@ interface StockLot {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /** As the lists show it: a standing tarkib's «first +N», else the lot's own (`plannableStock`). */
   productNameRu: string | null;
   clientCode: string | null;
   marking: string | null;
@@ -755,11 +757,10 @@ export function PlanEditor({
                         </span>
                       )}
                     </td>
-                    <td className="max-w-44 truncate p-2">
-                      {lot.productNameZh}
-                      {lot.productNameRu && (
-                        <span className="text-ink-500"> ({lot.productNameRu})</span>
-                      )}
+                    {/* The cell keeps its width; the NAME shortens inside it and
+                        a tarkib's «+N» never does (LotGoodsName). */}
+                    <td className="max-w-44 p-2">
+                      <LotGoodsName zh={lot.productNameZh} ru={lot.productNameRu} />
                     </td>
                     <td className="p-2 text-right font-semibold">
                       {count > 0 ? (

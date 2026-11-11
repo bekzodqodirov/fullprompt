@@ -45,7 +45,7 @@ import type { DraftPolicyJson } from './types';
  *  - The plan (`autoPlanFor`) is computed by the INBOUND run only, after the
  *    policy, and written by `createDraft` inside its own transaction, beside the
  *    draft, before the card is rendered — the first card already carries the
- *    timer. One row per reply draft while 0143 exists: eligible with its due
+ *    timer. One row per reply draft while 0145 exists: eligible with its due
  *    time, or not with every reason (the rehearsal record).
  *  - The press (`pressDueAutos`) is the minute sweep's: claim the due rows,
  *    judge again on FRESH facts, press through `decideDraft`.
@@ -90,7 +90,7 @@ function toAutoConfig(row: typeof agentAutoConfig.$inferSelect): AutoConfig {
   };
 }
 
-/** The auto layer's singleton, or null when 0143 has not landed. */
+/** The auto layer's singleton, or null when 0145 has not landed. */
 export async function readAutoConfig(handle: Db | Tx = db): Promise<AutoConfig | null> {
   if (!(await agentAutoReady())) return null;
   const [row] = await handle.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1));
@@ -364,7 +364,7 @@ export function autoShapeOf(n: NewDraft): AutoDraftShape {
 }
 
 /**
- * The plan for a reply the inbound run is about to write — or null when 0143
+ * The plan for a reply the inbound run is about to write — or null when 0145
  * has not landed, and null (logged) when it could not be computed: a plan is
  * never a reason for the draft to fail.
  */
@@ -417,7 +417,7 @@ function cardStateOf(row: Pick<typeof agentAutoVerdicts.$inferSelect, 'state' | 
   };
 }
 
-/** The draft's auto state for its card, or null (no row, an ineligible one, or 0143 not landed). */
+/** The draft's auto state for its card, or null (no row, an ineligible one, or 0145 not landed). */
 export async function autoCardStateFor(draftId: string): Promise<AutoCardState | null> {
   if (!(await agentAutoReady())) return null;
   const [row] = await db.select().from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));

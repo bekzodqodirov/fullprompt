@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { saveReceiptCostGridAction } from '../../costs/actions';
 import { LightboxImg } from '@/components/lightbox-img';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
+import { splitLabelCount } from '@/modules/platform/text/label-count';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { latestTxDate } from '@/modules/wms/finance/dates';
 import { TwinGapNote, TwinWarning } from '@/components/twin-warning';
@@ -406,27 +407,39 @@ export function ReceiptCostGrid({
                       </div>
                     </div>
                     <ul className="mt-1 space-y-0.5 text-xs text-ink-700">
-                      {row.lots.map((lot, index) => (
-                        <li key={`${lot.letter}-${index}`} className="line-clamp-2">
-                          {lot.letter && <b className="num">{lot.letter}</b>}
-                          {lot.letter && ' · '}
-                          {lot.name}{' '}
-                          <span
-                            className="num whitespace-nowrap text-ink-500"
-                            title={
-                              lot.onBatch < lot.lotBoxCount
-                                ? t('gridSplitLot', {
-                                    onBatch: lot.onBatch,
-                                    total: lot.lotBoxCount,
-                                  })
-                                : undefined
-                            }
-                          >
-                            📦 {lot.onBatch}
-                            {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`}
-                          </span>
-                        </li>
-                      ))}
+                      {row.lots.map((lot, index) => {
+                        // The NAME clamps at two lines; what follows it never
+                        // does. One clamped line held everything, and a clamp
+                        // cuts the END — a tarkib label's «+N» and the carton
+                        // figure, the two things on the line a person reads
+                        // for (found at 360 px with a long first good: the
+                        // cell read «耳机 · Наушники беспроводные с…»).
+                        const { name, count } = splitLabelCount(lot.name);
+                        return (
+                          <li key={`${lot.letter}-${index}`} className="flex items-end gap-1">
+                            <span className="line-clamp-2 min-w-0" title={lot.name}>
+                              {lot.letter && <b className="num">{lot.letter}</b>}
+                              {lot.letter && ' · '}
+                              {name}
+                            </span>
+                            <span
+                              className="num shrink-0 whitespace-nowrap text-ink-500"
+                              title={
+                                lot.onBatch < lot.lotBoxCount
+                                  ? t('gridSplitLot', {
+                                      onBatch: lot.onBatch,
+                                      total: lot.lotBoxCount,
+                                    })
+                                  : undefined
+                              }
+                            >
+                              {count && <span data-testid="lot-name-count">{count} · </span>}
+                              📦 {lot.onBatch}
+                              {lot.onBatch < lot.lotBoxCount && `/${lot.lotBoxCount}`}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </td>
                   {types.map((type) => {

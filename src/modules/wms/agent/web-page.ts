@@ -402,7 +402,7 @@ export async function tariffMismatchSeen(now = new Date()): Promise<boolean> {
 /** The last 30 days of drafts, counted by `agentStats`. */
 export async function webStats(now = new Date()): Promise<AgentStats> {
   const since = new Date(now.getTime() - 30 * 86_400_000);
-  // The machine's own presses are counted apart (stats `autoSent`) — read only once 0143 is there.
+  // The machine's own presses are counted apart (stats `autoSent`) — read only once 0145 is there.
   const autoSent = (await agentAutoReady())
     ? sql<boolean>`EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = ${agentDrafts}.id AND v.state = 'pressed')`
     : sql<boolean>`false`;
@@ -551,7 +551,7 @@ function deliveryOf(status: string | null): AutoDelivery | null {
 const AUTO_SENT_SHOWN = 20;
 
 /**
- * What the panel reads — null when 0143 has not landed (the page is then
+ * What the panel reads — null when 0145 has not landed (the page is then
  * exactly today's). The counts are the AGENT's account's, the one the layer
  * speaks from; the sent replies are listed only where the reader may read the
  * chat (`draftsSeenBy`, K10).

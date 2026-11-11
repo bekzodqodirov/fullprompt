@@ -10,6 +10,7 @@ import { lockOwnersTx, reconcileFxResidueTx } from './fx-residue';
 import { rateFor } from '../costing/service';
 import { RIDE_CAUSES, rideMovementSql } from '../batches/riders';
 import { internalLegSql } from '../batches/internal';
+import { lotGoodsShownSql } from '../receipts/lot-name';
 import { chosenNoneSql } from './standing-price-sql';
 import { usersWithPermission } from '../../platform/notifications/service';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
@@ -89,13 +90,14 @@ export interface LostCargoReceipt {
 /**
  * The form's list: this client's live prixods with a lost carton, newest
  * first. One grouped query, capped at 100 with the truth said (`truncated`).
+ * The goods are each lot's name as the screens show it (`lotGoodsShownSql`).
  */
 export async function lostCargoForClient(
   clientId: string,
 ): Promise<{ rows: LostCargoReceipt[]; truncated: boolean }> {
   const rows = (await db.execute(sql`
     SELECT r.id AS receipt_id, r.number, r.deal_id, d.code AS deal_code,
-           string_agg(DISTINCT coalesce(nullif(rl.product_name_ru, ''), rl.product_name_zh), ', ') AS goods,
+           string_agg(DISTINCT ${lotGoodsShownSql(sql.raw('rl'))}, ', ') AS goods,
            (count(b.id) FILTER (WHERE b.status = 'lost'))::int AS lost,
            (count(b.id) FILTER (WHERE b.status <> 'void'))::int AS total,
            max(r.received_at) AS received_at

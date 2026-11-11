@@ -12,6 +12,8 @@ import {
   clientNotices,
   clients,
   events,
+  lotCompositionLines,
+  lotCompositions,
   notifications,
   planLineRoad,
   planRoadClaims,
@@ -349,6 +351,48 @@ describe('the loading ends without the road part (4a)', () => {
     expect(cells[landed + 1]![3]).toBe('2');
     expect(cells.some((r) => r[0]!.startsWith('Принято на складе'))).toBe(false);
 
+    // The same plan with a TARKIB on the lot (docs/TARKIB-TUZATISH.md §4): a
+    // row per good in each block, the two blocks cut out of the plan's
+    // positions ONCE — so a good's cartons over «came on the first truck» and
+    // «did not come» are the typed 3 + 1 + 1, and each block's rows add up to
+    // that block's own heading. Three goods on purpose: with two, every split
+    // of a lot this small comes out right even when each block is priced from
+    // position 0 (measured) — with these three that prints «А» four times and
+    // «В» never.
+    await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 5, savedBy: actorId });
+    await db.insert(lotCompositionLines).values([
+      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 3, weightKg: '30', volumeM3: '0.18' },
+      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+    ]);
+    const composed = new ExcelJS.Workbook();
+    await composed.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+    const goods: string[][] = [];
+    composed.worksheets[0]!.eachRow((row) => goods.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+    // A block's goods: the rows under its heading, up to the next heading
+    // (a heading has no product cell).
+    const under = (heading: number) => {
+      const out: (string | undefined)[][] = [];
+      for (let at = heading + 1; at < goods.length && (goods[at]![1] ?? '') !== ''; at += 1) {
+        const r = goods[at]!;
+        out.push([r[1], r[3], r[4], r[5]]);
+      }
+      return out;
+    };
+    const cameAt = goods.findIndex((r) => r[0]!.includes(first.code));
+    const notCameAt = goods.findIndex((r) => r[0]!.startsWith('Не пришло / Did not come'));
+    // The lot's own (Chinese) name rides the first row of each block: no good
+    // is the name on the cartons, and the agent reads Chinese.
+    expect(under(cameAt)).toEqual([['Товар А\nНа коробке / On the carton: 路上的货', '2', '20', '0.12']]);
+    expect(goods[cameAt]![0]).toContain('2 Коробок / Boxes · 20.0 кг · 0.120 м³');
+    expect(under(notCameAt)).toEqual([
+      ['Товар А\nНа коробке / On the carton: 路上的货', '1', '10', '0.06'],
+      ['Товар Б', '1', '10', '0.06'],
+      ['Товар В', '1', '10', '0.06'],
+    ]);
+    expect(goods[notCameAt]![0]).toContain('3 Коробок / Boxes · 30.0 кг · 0.180 м³');
+    await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.lotId));
+
     // After the finish the count door still asks for the two — never the five,
     // which would grow the lot by three cartons that later land as duplicates.
     const after = await countLoadPanel({ id: truck.id, originWarehouseId: W.hor });
@@ -504,6 +548,97 @@ describe('the readers say the road part', () => {
     const landed = cells.findIndex((r) => r[0]!.includes(first.code) && r[0]!.startsWith('Партия прихода'));
     expect(landed).toBeGreaterThan(0);
     expect(cells[landed + 1]![3]).toBe('4');
+
+    // With a tarkib (docs/TARKIB-TUZATISH.md §4): the landed four and the
+    // road's two are cut out of ONE run of six positions — 2+1+1 here, 0+1+1
+    // on the road, the typed 2 + 2 + 2 in all. Priced from position 0 each,
+    // the road would print «А» and «Б» and the sheet three «А» and one «В».
+    await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 6, savedBy: actorId });
+    await db.insert(lotCompositionLines).values([
+      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 2, weightKg: '20', volumeM3: '0.12' },
+      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 2, weightKg: '20', volumeM3: '0.12' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 2, weightKg: '20', volumeM3: '0.12' },
+    ]);
+    const composed = new ExcelJS.Workbook();
+    await composed.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+    const goods: string[][] = [];
+    composed.worksheets[0]!.eachRow((row) => goods.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+    const under = (heading: number) => {
+      const out: string[][] = [];
+      for (let at = heading + 1; at < goods.length && (goods[at]![1] ?? '') !== ''; at += 1) out.push(goods[at]!);
+      return out;
+    };
+    const figures = (rows: string[][]) => rows.map((r) => [r[1]!.split('\n')[0], r[3], r[4]]);
+    const hereAt = goods.findIndex((r) => r[0]!.includes(first.code) && r[0]!.startsWith('Партия прихода'));
+    const roadAt = goods.findIndex((r) => r[0]!.startsWith('В пути / On the road'));
+    expect(figures(under(hereAt))).toEqual([
+      ['Товар А', '2', '20'],
+      ['Товар Б', '1', '10'],
+      ['Товар В', '1', '10'],
+    ]);
+    expect(figures(under(roadAt))).toEqual([
+      ['Товар Б', '1', '10'],
+      ['Товар В', '1', '10'],
+    ]);
+    // Every good's row names its own truck: the one that brought it, or the
+    // one it is still on.
+    for (const r of under(hereAt)) expect(r[7]).toContain(first.code);
+    for (const r of under(roadAt)) expect(r[7]).toBe(`🚚 ${second.code}`);
+    await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.lotId));
+  });
+});
+
+describe('the same plan’s file does not change its goods at the approval (the tarkib round’s review)', () => {
+  it('an approved plan whose truck holds no carton of the lot yet prints what the pending plan printed', async () => {
+    // A lot of five: «А» 3, «Б» 1, «В» 1. Two cartons crossed the border
+    // earlier (positions 0-1: two «А»). The other three are on the road to
+    // the hub, and the hub's plan takes them as a road part: «А» 1, «Б» 1,
+    // «В» 1. Approved with nothing on the shelf, every carton is OWED and
+    // the new truck holds none of the lot — it is not among the lot's
+    // trucks, and the file took the plan's goods from position 0: «А» 2,
+    // «Б» 1, no «В». Over the earlier truck's paper that is four «А» of
+    // three. It went back when the first carton landed.
+    const lot = await mkLot(W.yw, 5);
+    const toHub = await roadTruck(W.yw, W.hor, lot, 2, 0);
+    await unloadRemaining(toHub.id, ctx());
+    const crossed = await roadTruck(W.hor, W.and, lot, 2, 0);
+    const inbound = await roadTruck(W.yw, W.hor, lot, 3, 2);
+    await db.insert(lotCompositions).values({ lotId: lot.lotId, seenBoxCount: 5, savedBy: actorId });
+    await db.insert(lotCompositionLines).values([
+      { lotId: lot.lotId, seq: 1, name: 'Товар А', cartons: 3, weightKg: '30', volumeM3: '0.18' },
+      { lotId: lot.lotId, seq: 2, name: 'Товар Б', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+      { lotId: lot.lotId, seq: 3, name: 'Товар В', cartons: 1, weightKg: '10', volumeM3: '0.06' },
+    ]);
+    const sub = await submit(W.hor, W.and, [{ lot, take: 3 }], true);
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 0, missed: 0 });
+
+    const { buildAgentXlsx } = await import('@/modules/wms/documents/agent-xlsx');
+    const ExcelJS = (await import('exceljs')).default;
+    const roadGoods = async () => {
+      const book = new ExcelJS.Workbook();
+      await book.xlsx.load((await buildAgentXlsx(sub.plan.id, sub.version.versionNo))! as unknown as ArrayBuffer);
+      const cells: string[][] = [];
+      book.worksheets[0]!.eachRow((row) => cells.push((row.values as unknown[]).slice(1).map((v) => String(v ?? ''))));
+      const at = cells.findIndex((r) => r[0]!.startsWith('В пути / On the road'));
+      expect(at).toBeGreaterThan(0);
+      const out: string[][] = [];
+      for (let i = at + 1; i < cells.length && (cells[i]![1] ?? '') !== ''; i += 1) out.push(cells[i]!);
+      return out.map((r) => [r[1]!.split('\n')[0], r[3]]);
+    };
+    const pending = await roadGoods();
+    expect(pending).toEqual([
+      ['Товар А', '1'],
+      ['Товар Б', '1'],
+      ['Товар В', '1'],
+    ]);
+
+    const onward = await approve(sub.version.id);
+    // The premise: all three are owed, and the new truck holds none of the lot.
+    expect(await roadRow(sub.version.id, lot)).toEqual({ part: 3, owed: 3, missed: 0 });
+    expect((await statusOf(lot, { X: crossed.id, I: inbound.id, O: onward.id })).filter((s) => s.endsWith('@O'))).toEqual([]);
+    expect(await roadGoods()).toEqual(pending);
+
+    await db.delete(lotCompositions).where(eq(lotCompositions.lotId, lot.lotId));
   });
 });
 

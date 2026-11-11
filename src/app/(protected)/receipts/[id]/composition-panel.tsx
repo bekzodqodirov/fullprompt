@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -12,23 +12,35 @@ import {
   M3_SCALE,
   MAX_LINES,
   MIN_LINES,
-  lineIsLotGood,
   parseDraft,
   prefillByCartons,
   remainderOf,
   scaleToLot,
   storedUnits,
+  tarkibLabel,
   toCount,
   type DraftLine,
   type DraftRefusal,
   type LotTotals,
 } from '@/modules/wms/receipts/composition-math';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
+import { isProposalWarning, type ProposalWarning } from '@/modules/wms/receipts/tarkib-proposal';
 import {
   clearLotCompositionAction,
   saveLotCompositionAction,
   type CompositionActionResult,
 } from './composition-actions';
+import {
+  cachedRead,
+  forgetRead,
+  ReadTodayLine,
+  requestTarkibRead,
+  storeRead,
+  TarkibReadDialog,
+  useProposalWords,
+  type ReadToday,
+  type StoredRead,
+} from './tarkib-read-dialog';
 
 /**
  * Lot tarkibi on the receipt card (docs/LOT-TARKIBI.md §8): the lot keeps its
@@ -74,7 +86,8 @@ export interface PanelComposition {
   rev: number;
   seenBoxCount: number;
   lines: PanelLine[];
-  attachment: { id: string; fileName: string };
+  /** The client's document, when one is cited (optional since 0143). */
+  attachment: { id: string; fileName: string } | null;
   savedBy: string | null;
   /** The Tashkent day of the save (`tashkentDay`), never an ISO instant's UTC date. */
   savedDay: string;
@@ -88,7 +101,42 @@ export interface PanelDocument {
 }
 
 type Mode = 'separate' | 'mixed';
-type Refusal = { error: string; seq?: number; field?: string; sums?: { sum: string; lot: string }; tnvedCode?: string };
+type Refusal = {
+  error: string;
+  seq?: number;
+  field?: string;
+  sums?: { sum: string; lot: string };
+  tnvedCode?: string;
+  /** «🤖 Fayldan to'ldirish»: the model's own sentence (`read_no_goods`), and the day's count beside a refusal. */
+  detail?: string;
+  today?: ReadToday;
+};
+
+/**
+ * The rows came from «🤖 Fayldan to'ldirish» and nobody has saved them yet:
+ * the notice above the lines, and which reading to forget once they are
+ * saved. Kept in the draft, so a phone that reloaded the page mid-check still
+ * says the figures are a machine's reading.
+ */
+type FilledFrom = {
+  attachmentId: string;
+  single: boolean;
+  warnings: ProposalWarning[];
+  /**
+   * Which weight the kg cells hold — said in the dialog, and gone with it:
+   * after «Qo'llash» (and after the reload the draft exists for) nothing told
+   * the person that the kilos below are NET.
+   */
+  weightKind?: 'gross' | 'net' | null;
+};
+
+/**
+ * A photographed packing list is read by the model afterwards: the warehouse
+ * screens' 0.3 MB / 1600 px (the carton photo's size) crushes the small print
+ * of a table, so the document uploaded from HERE keeps more of itself. Every
+ * other caller of the uploader keeps the default.
+ */
+const DOCUMENT_PHOTO = { maxSizeMB: 1, maxWidthOrHeight: 2000 } as const;
 
 const EMPTY_LINE: DraftLine = { name: '', pieces: '', cartons: '', kg: '', m3: '', tnved: '' };
 
@@ -123,6 +171,7 @@ function refusalOfDraft(r: DraftRefusal): Refusal {
 function useRefusalText(): (r: Refusal) => string {
   const t = useTranslations('tarkib');
   const tr = useTranslations('receipts');
+  const tv = useTranslations('receive');
   return (r: Refusal): string => {
     const seq = r.seq ?? 0;
     switch (r.error) {
@@ -130,6 +179,12 @@ function useRefusalText(): (r: Refusal) => string {
         return t('uploading');
       case 'upload_failed':
         return tr('attachFailed');
+      // The card's own «Hujjatlar» panel says which — a scanned PDF over the
+      // cap and a file type nobody stores both read «Fayl yuklanmadi» here.
+      case 'too_large':
+        return tv('fileTooLarge');
+      case 'unsupported_type':
+        return tv('fileTypeUnsupported');
       case 'in_use':
         return tr('attachInUse');
       case 'remove_failed':
@@ -162,8 +217,6 @@ function useRefusalText(): (r: Refusal) => string {
         return t('errors.kg_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
       case 'm3_sum':
         return t('errors.m3_sum', { sum: r.sums?.sum ?? '', lot: r.sums?.lot ?? '' });
-      case 'document_required':
-        return t('errors.document_required');
       case 'document_not_on_receipt':
         return t('errors.document_not_on_receipt');
       case 'document_is_photo':
@@ -180,6 +233,54 @@ function useRefusalText(): (r: Refusal) => string {
         return t('errors.busy');
       case 'server_behind':
         return t('errors.server_behind');
+      // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3). Every code a
+      // reading can answer has its OWN sentence — the default below would
+      // say «Ma'lumot to'liq emas» about a file that is merely too large, and
+      // the upload's `too_large` / `unsupported_type` above are another
+      // door's words. Held against the route's list by
+      // tests/unit/tarkib-read-wire.test.ts.
+      case 'unauthorized':
+        return t('read.errors.unauthorized');
+      case 'read_unsupported':
+        return t('read.errors.read_unsupported');
+      case 'read_too_large':
+        return t('read.errors.read_too_large');
+      case 'read_broken':
+        return t('read.errors.read_broken');
+      case 'read_old_format':
+        return t('read.errors.read_old_format');
+      case 'read_encrypted':
+        return t('read.errors.read_encrypted');
+      case 'read_empty':
+        return t('read.errors.read_empty');
+      case 'read_no_goods':
+        return r.detail ? `${t('read.errors.read_no_goods')} — ${r.detail}` : t('read.errors.read_no_goods');
+      case 'file_unavailable':
+        return t('read.errors.file_unavailable');
+      case 'ai_not_configured':
+        return t('read.errors.ai_not_configured');
+      case 'cooling':
+        return t('read.errors.cooling');
+      case 'ai_off':
+        return t('read.errors.ai_off');
+      case 'ai_limit':
+        return t('read.errors.ai_limit');
+      case 'failed':
+        return t('read.errors.failed');
+      case 'ai_refused':
+        return t('read.errors.ai_refused');
+      case 'ai_truncated':
+        return t('read.errors.ai_truncated');
+      case 'ai_timeout':
+        return t('read.errors.ai_timeout');
+      case 'ai_failed':
+        return t('read.errors.ai_failed');
+      case 'ai_rejected':
+        return t('read.errors.ai_rejected');
+      case 'read_deadline':
+        return t('read.errors.read_deadline');
+      case 'read_offline':
+        return t('read.errors.read_offline');
       default:
         return t('errors.validation');
     }
@@ -199,7 +300,7 @@ export function CompositionPanel({
   canClearOnly = false,
   oneGood = null,
 }: {
-  lot: { id: string; label: string; boxCount: number; kg: string; m3: string };
+  lot: { id: string; label: string; nameZh: string; boxCount: number; kg: string; m3: string };
   receiptId: string;
   composition: PanelComposition | null;
   stale: boolean;
@@ -257,16 +358,21 @@ export function CompositionPanel({
             ))}
           </ul>
           <p className="mt-1 text-xs text-ink-500">
-            📎{' '}
-            <a
-              href={`/api/attachments/${composition.attachment.id}`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-brand-700 underline"
-            >
-              {composition.attachment.fileName}
-            </a>{' '}
-            · {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedDay })}
+            {composition.attachment && (
+              <>
+                📎{' '}
+                <a
+                  href={`/api/attachments/${composition.attachment.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-brand-700 underline"
+                >
+                  {composition.attachment.fileName}
+                </a>{' '}
+                ·{' '}
+              </>
+            )}
+            {t('savedBy', { name: composition.savedBy ?? '—', date: composition.savedDay })}
           </p>
         </details>
       )}
@@ -342,6 +448,7 @@ export function CompositionPanel({
         <CompositionEditor
           key={composition?.rev ?? 0}
           lotId={lot.id}
+          lotZh={lot.nameZh}
           receiptId={receiptId}
           totals={totals}
           composition={composition}
@@ -360,6 +467,7 @@ export function CompositionPanel({
 
 function CompositionEditor({
   lotId,
+  lotZh,
   receiptId,
   totals,
   composition,
@@ -369,6 +477,8 @@ function CompositionEditor({
   onCancel,
 }: {
   lotId: string;
+  /** The lot's Chinese name: a ONE-line tarkib that only repeats it changes no list. */
+  lotZh: string;
   receiptId: string;
   totals: LotTotals;
   composition: PanelComposition | null;
@@ -399,7 +509,7 @@ function CompositionEditor({
         m3: l.m3,
         tnved: l.tnvedCode ?? '',
       })),
-      doc: composition.attachment.id,
+      doc: composition.attachment?.id ?? null,
     };
   };
 
@@ -412,6 +522,22 @@ function CompositionEditor({
   const [uploading, setUploading] = useState(0);
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3): the reading in
+  // flight, the proposal on screen, and whether the rows below came from one.
+  const [reading, setReading] = useState(false);
+  const [readOpen, setReadOpen] = useState(false);
+  const [read, setRead] = useState<StoredRead | null>(null);
+  const [filled, setFilled] = useState<FilledFrom | null>(null);
+  // A reading may outlive the editor (a minute is long; «Bekor qilish» is one
+  // tap): its answer is still KEPT for the next press, but no state is set
+  // on an editor that has gone.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   // The per-lot draft: fetching the client's PDF on a phone means leaving for
   // Telegram, and iOS may reload the standalone app (the receive wizard's own
@@ -423,10 +549,19 @@ function CompositionEditor({
     try {
       const raw = window.localStorage.getItem(draftKey(lotId, rev));
       if (!raw) return;
-      const saved = JSON.parse(raw) as { mode?: Mode; lines?: DraftLine[]; doc?: string | null };
+      const saved = JSON.parse(raw) as { mode?: Mode; lines?: DraftLine[]; doc?: string | null; filled?: FilledFrom | null };
       if (saved.mode) setMode(oneCarton ? 'mixed' : saved.mode);
       if (Array.isArray(saved.lines) && saved.lines.length > 0) setLines(saved.lines.slice(0, MAX_LINES));
       if (saved.doc !== undefined) setDoc(saved.doc);
+      if (saved.filled && typeof saved.filled.attachmentId === 'string' && Array.isArray(saved.filled.warnings)) {
+        setFilled({
+          attachmentId: saved.filled.attachmentId,
+          single: saved.filled.single === true,
+          // Only what this build can word — the draft may be an older build's.
+          warnings: saved.filled.warnings.filter(isProposalWarning),
+          weightKind: saved.filled.weightKind === 'gross' || saved.filled.weightKind === 'net' ? saved.filled.weightKind : null,
+        });
+      }
     } catch {
       /* no draft — the fresh editor */
     }
@@ -435,11 +570,11 @@ function CompositionEditor({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(draftKey(lotId, rev), JSON.stringify({ mode, lines, doc }));
+      window.localStorage.setItem(draftKey(lotId, rev), JSON.stringify({ mode, lines, doc, filled }));
     } catch {
       /* storage refused — the draft simply is not kept */
     }
-  }, [lotId, rev, mode, lines, doc]);
+  }, [lotId, rev, mode, lines, doc, filled]);
 
   function forgetDraft() {
     try {
@@ -470,6 +605,11 @@ function CompositionEditor({
         : lines.map((l) => (mode === 'mixed' ? { ...l, cartons: '' } : l)),
     [lines, mode, single, totals.boxCount],
   );
+  // The pure twin of `lotRuShownSql`: rows a person has named, in screen order.
+  const shownName = tarkibLabel(
+    posted.map((l, i) => ({ seq: i + 1, name: l.name.trim() })).filter((l) => l.name !== ''),
+    lotZh,
+  );
   const remainder = remainderOf(posted, totals);
   const prefill = shownMode === 'separate' ? prefillByCartons(posted, totals) : null;
   const scaleKg = scaleToLot(posted, totals, 'kg');
@@ -487,17 +627,23 @@ function CompositionEditor({
     setRefusal(null);
     try {
       for (const file of list) {
-        const res = await uploadAttachmentFile(file, 'receipt', receiptId);
+        const res = await uploadAttachmentFile(file, 'receipt', receiptId, DOCUMENT_PHOTO);
         if (res.ok) {
           setUploads((prev) => [...prev, { id: res.item.id, fileName: res.item.fileName, removable: true }]);
           setDoc(res.item.id);
         } else {
-          setRefusal({ error: res.error === 'forbidden' ? 'forbidden' : 'upload_failed' });
+          setRefusal({ error: res.error === 'failed' ? 'upload_failed' : res.error });
         }
       }
       // The card's own «Hujjatlar» panel re-seeds from the server (no action
       // revalidated anything here, so this refresh is the only one, #1242).
       router.refresh();
+    } catch {
+      // A photo the browser cannot decode (an HEIC with no codec) or a phone
+      // gone offline THROWS out of the uploader; called as `void
+      // addDocument(…)`, that was a rejection nobody heard — no chip, no
+      // sentence, and a save that then said nothing either.
+      setRefusal({ error: 'upload_failed' });
     } finally {
       setUploading((n) => n - 1);
     }
@@ -523,6 +669,71 @@ function CompositionEditor({
     setRefusal({ error: code === 'in_use' ? 'in_use' : 'remove_failed' });
   }
 
+  // The document the button reads: the CHOSEN chip, and only while it is drawn.
+  const chosen = doc !== null ? (docs.find((d) => d.id === doc) ?? null) : null;
+
+  /**
+   * «🤖 Fayldan to'ldirish»: the model reads the chosen document and the rows
+   * it found are offered in a dialog. Nothing is written — «Qo'llash» fills
+   * this editor's lines and «Saqlash» is still the person's press.
+   *
+   * A document read in the last half hour is SHOWN again, not paid for again
+   * (`again` is the dialog's own «Qayta o'qish», asked first): a reading takes
+   * up to a minute and one of the day's fifty. The answer is kept even when
+   * the editor has gone meanwhile — only the state is not touched then.
+   */
+  async function readDocument(target: { id: string; fileName: string }, again: boolean) {
+    if (reading) return;
+    setRefusal(null);
+    if (!again) {
+      const kept = cachedRead(target.id);
+      if (kept) {
+        setRead(kept);
+        setReadOpen(true);
+        return;
+      }
+    }
+    setReading(true);
+    try {
+      const answer = await requestTarkibRead(lotId, target.id);
+      if (answer.ok) {
+        const stored: StoredRead = {
+          attachmentId: target.id,
+          fileName: target.fileName,
+          at: Date.now(),
+          proposal: answer.proposal,
+          today: answer.today ?? null,
+        };
+        storeRead(stored);
+        if (alive.current) {
+          setRead(stored);
+          setReadOpen(true);
+        }
+      } else if (alive.current) {
+        setRefusal({ error: answer.error, detail: answer.detail, today: answer.today });
+      }
+    } finally {
+      // Always: a refusal, a dead connection and a deadline all hand the button back.
+      if (alive.current) setReading(false);
+    }
+  }
+
+  /** The ticked rows become this editor's lines — and nothing is saved. */
+  function applyRead(next: DraftLine[]) {
+    if (!read) return;
+    setLines(next);
+    setRefusal(null);
+    setReadOpen(false);
+    // The file that was read is the file the tarkib cites — while its chip is still drawn.
+    if (docs.some((d) => d.id === read.attachmentId)) setDoc(read.attachmentId);
+    setFilled({
+      attachmentId: read.attachmentId,
+      single: read.proposal.lotsOnReceipt <= 1,
+      warnings: read.proposal.warnings,
+      weightKind: read.proposal.weightKind,
+    });
+  }
+
   async function save() {
     if (uploading > 0) {
       setRefusal({ error: 'uploading' });
@@ -533,7 +744,6 @@ function CompositionEditor({
     if (!parsed.ok) return setRefusal(refusalOfDraft(parsed.refusal));
     const sums = checkSums(parsed.lines, totals);
     if (sums) return setRefusal(refusalOfDraft(sums));
-    if (!doc) return setRefusal({ error: 'document_required' });
     setPending(true);
     setRefusal(null);
     try {
@@ -543,11 +753,20 @@ function CompositionEditor({
         seenBoxCount: totals.boxCount,
         seenKg: totals.kg,
         seenM3: totals.m3,
-        attachmentId: doc,
+        // Optional since 0143 — and only an id that is among the DRAWN chips:
+        // a draft restored from localStorage may name a file since deleted,
+        // which answered «hujjat shu prixodga yuklangan bo'lishi kerak» about
+        // a chip nobody could see, let alone un-tick.
+        attachmentId: doc !== null && docs.some((d) => d.id === doc) ? doc : null,
         lines: posted,
       });
       if (res.ok) {
         forgetDraft();
+        // The reading has done its work once its rows are saved — on a prixod
+        // of ONE lot. With several, the next lot ticks its own rows from the
+        // same reading (a packing list covers the shipment), so it is kept
+        // for its half hour rather than paid for again.
+        if (filled?.single) forgetRead(filled.attachmentId);
         onDone({ cleared: false, frozen: res.frozen });
       } else {
         setRefusal(res);
@@ -588,6 +807,7 @@ function CompositionEditor({
     refusal?.seq === index + 1 && refusedField(refusal) === field ? ' ring-2 ring-bad' : '';
 
   const errorText = useRefusalText();
+  const proposalWords = useProposalWords();
 
   const measure = (label: string, units: number | null, scale: number) => {
     if (units === null) return null;
@@ -614,61 +834,7 @@ function CompositionEditor({
     <div className="space-y-3 rounded-lg border border-line p-2" data-testid="tarkib-editor">
       <p className="text-xs text-ink-500">{t('hint')}</p>
 
-      {/* 1. The document FIRST — the VED types FROM it. */}
-      <div className="space-y-1">
-        <p className="label">{t('document')}</p>
-        <div className="flex flex-wrap gap-2">
-          {docs.length === 0 && <span className="text-xs text-ink-500">{t('documentNone')}</span>}
-          {docs.map((d) => (
-            <span key={d.id} className="inline-flex max-w-full items-center gap-1">
-              <button
-                type="button"
-                data-testid="tarkib-doc"
-                data-id={d.id}
-                aria-pressed={doc === d.id}
-                className={`chip !min-h-10 max-w-[14rem] border ${doc === d.id ? 'border-brand-600 bg-brand-50 text-brand-800 ring-2 ring-brand-500' : 'border-line bg-surface'}`}
-                onClick={() => setDoc(doc === d.id ? null : d.id)}
-              >
-                <span className="truncate">📄 {d.fileName}</span>
-              </button>
-              <a
-                href={`/api/attachments/${d.id}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-brand-700 underline"
-                aria-label={d.fileName}
-              >
-                ↗
-              </a>
-              {d.removable && d.id !== composition?.attachment.id && (
-                <button
-                  type="button"
-                  aria-label="✕"
-                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs text-bad"
-                  onClick={() => void removeDocument(d.id)}
-                >
-                  ✕
-                </button>
-              )}
-            </span>
-          ))}
-          <label className="btn-secondary !min-h-10 cursor-pointer whitespace-normal px-3 text-sm">
-            {uploading > 0 ? '⏳' : '📎'} {t('documentUpload')}
-            <input
-              type="file"
-              className="hidden"
-              data-testid="tarkib-upload"
-              onChange={(e) => {
-                void addDocument(e.target.files);
-                e.currentTarget.value = '';
-              }}
-            />
-          </label>
-        </div>
-        <p className="text-xs text-ink-500">{t('docWhere')}</p>
-      </div>
-
-      {/* 2. The mode — only once there is more than one good to divide. */}
+      {/* 1. The mode — only once there is more than one good to divide. */}
       {!single && (
         <div className="flex flex-wrap gap-2">
           {!oneCarton && (
@@ -697,7 +863,30 @@ function CompositionEditor({
         <p className="text-xs text-ink-500">{oneCarton ? t('oneCartonMixed') : t('modeMixedHint')}</p>
       )}
 
-      {/* 3. The lines. One header row of labels from xl up. */}
+      {/* The rows below were read from the client's file by the model and
+          nobody has saved them yet: said above them until «Saqlash», with
+          whatever the reading itself warned about. */}
+      {filled && (
+        <div className="space-y-0.5 rounded-lg bg-warn/10 p-2 text-xs text-warn" data-testid="tarkib-filled">
+          <p className="font-semibold">🤖 {t('read.filled')}</p>
+          {filled.weightKind === 'net' && <p className="break-words font-semibold">{t('read.weightNet')}</p>}
+          {/* The paper's carton counts were applied, and «aralash» posts none:
+              the cells are invisible in that mode, so say it rather than lose
+              them without a word. */}
+          {mode === 'mixed' && !single && lines.some((l) => l.cartons.trim() !== '') && (
+            <p className="break-words font-semibold" data-testid="tarkib-filled-cartons">
+              {t('read.filledCartonsHidden')}
+            </p>
+          )}
+          {filled.warnings.map((w, i) => (
+            <p key={i} className="break-words">
+              ⚠ {proposalWords.warning(w)}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* 2. The lines. One header row of labels from xl up. */}
       <div className="hidden text-xs font-semibold text-ink-700 xl:grid xl:grid-cols-[minmax(9rem,1fr)_minmax(4.5rem,6rem)_minmax(4.5rem,6rem)_minmax(5.5rem,7rem)_minmax(5.5rem,7rem)_minmax(7rem,9rem)_2.75rem] xl:items-end xl:gap-2">
         <span>{t('name')}</span>
         <span>{t('pieces')}</span>
@@ -744,14 +933,6 @@ function CompositionEditor({
                   placeholder={i === 0 ? t('nameHint') : undefined}
                   onChange={(e) => setCell(i, 'name', e.target.value)}
                 />
-                {/* The VED is told to write the INVOICE name, and a one-line
-                    tarkib that names another good earns no ✅ (8.6) — said
-                    here, by the very key the ✅ asks (judge product-20). */}
-                {single && oneGood && l.name.trim() !== '' && !lineIsLotGood(l.name, oneGood) ? (
-                  <span className="mt-1 block text-xs text-ink-500" data-testid="tarkib-no-vouch">
-                    {t('oneLineNoVouch')}
-                  </span>
-                ) : null}
               </label>
               <div className="mt-1.5 grid grid-cols-2 gap-1.5 xl:contents">
                 <label className="block">
@@ -896,6 +1077,16 @@ function CompositionEditor({
         )}
       </div>
 
+      {/* 3. What the lists will call the lot (items 3-4): the tarkib's name
+          stands where the lot's Russian name is shown — said here, live,
+          before the save, because the name typed for the INVOICE is also
+          what the stock, the plan and the truck card print from now on. */}
+      {shownName !== null && (
+        <p className="text-xs text-ink-500" data-testid="tarkib-shown-name">
+          {t('shownName', { name: shownName })}
+        </p>
+      )}
+
       {/* 4. The person-pressed helpers. */}
       {(prefill || scaleKg || scaleM3) && (
         <div className="space-y-1">
@@ -935,10 +1126,88 @@ function CompositionEditor({
         </div>
       )}
 
+      {/* 5. The client's document — OPTIONAL since 0143 (the owner,
+          2026-11-10): it stood first and was demanded last, after every
+          line was typed and balanced. Below the lines now, and «none» is a
+          real choice: a chosen chip un-chooses on a second press. */}
+      <div className="space-y-1">
+        <p className="label">{t('document')}</p>
+        <div className="flex flex-wrap gap-2">
+          {docs.length === 0 && <span className="text-xs text-ink-500">{t('documentNone')}</span>}
+          {docs.map((d) => (
+            <span key={d.id} className="inline-flex max-w-full items-center gap-1">
+              <button
+                type="button"
+                data-testid="tarkib-doc"
+                data-id={d.id}
+                aria-pressed={doc === d.id}
+                className={`chip !min-h-10 max-w-[14rem] border ${doc === d.id ? 'border-brand-600 bg-brand-50 text-brand-800 ring-2 ring-brand-500' : 'border-line bg-surface'}`}
+                onClick={() => setDoc(doc === d.id ? null : d.id)}
+              >
+                <span className="truncate">📄 {d.fileName}</span>
+              </button>
+              <a
+                href={`/api/attachments/${d.id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-brand-700 underline"
+                aria-label={d.fileName}
+              >
+                ↗
+              </a>
+              {d.removable && d.id !== composition?.attachment?.id && (
+                <button
+                  type="button"
+                  aria-label="✕"
+                  className="flex h-8 w-8 items-center justify-center rounded-full text-xs text-bad"
+                  onClick={() => void removeDocument(d.id)}
+                >
+                  ✕
+                </button>
+              )}
+            </span>
+          ))}
+          <label className="btn-secondary !min-h-10 cursor-pointer whitespace-normal px-3 text-sm">
+            {uploading > 0 ? '⏳' : '📎'} {t('documentUpload')}
+            <input
+              type="file"
+              className="hidden"
+              data-testid="tarkib-upload"
+              onChange={(e) => {
+                void addDocument(e.target.files);
+                e.currentTarget.value = '';
+              }}
+            />
+          </label>
+          {/* «🤖 Fayldan to'ldirish» (the owner, 2026-11-11): the model reads
+              the CHOSEN document and offers its rows — the file read is the
+              file the tarkib will cite, so there is no second upload. Nothing
+              is saved by it. */}
+          <button
+            type="button"
+            data-testid="tarkib-read"
+            className="btn-secondary !min-h-10 whitespace-normal px-3 text-sm disabled:opacity-50"
+            disabled={chosen === null || reading || uploading > 0 || pending}
+            onClick={() => {
+              if (chosen) void readDocument(chosen, false);
+            }}
+          >
+            {reading ? '⏳' : '🤖'} {reading ? t('read.reading') : t('read.button')}
+          </button>
+        </div>
+        <p className="text-xs text-ink-500">{t('docWhere')}</p>
+        {chosen === null && (
+          <p className="text-xs text-ink-500" data-testid="tarkib-read-hint">
+            🤖 {t('read.hint')}
+          </p>
+        )}
+      </div>
+
       {/* 6. The refusal, and the way out of the two that need a reload. */}
       {refusal && (
         <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad" data-testid="tarkib-error">
           <p>{errorText(refusal)}</p>
+          {refusal.today && <ReadTodayLine today={refusal.today} />}
           {(refusal.error === 'lot_changed' ||
             refusal.error === 'composition_changed' ||
             refusal.error === 'composition_changed_self') && (
@@ -957,7 +1226,7 @@ function CompositionEditor({
         </div>
       )}
 
-      {/* 5. The sticky bar: the remainder on screen while the keyboard is up. */}
+      {/* 7. The sticky bar: the remainder on screen while the keyboard is up. */}
       <div className="sticky bottom-20 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface p-2 shadow md:bottom-2">
         <p className="min-w-0 flex-1 text-xs font-semibold" data-testid="tarkib-remainder">
           {remainderParts.map((p, i) => (
@@ -995,6 +1264,24 @@ function CompositionEditor({
           </button>
         )}
       </div>
+
+      {/* The reading's rows, ticked by the person. Kept MOUNTED and toggled
+          (an Overlay mounted already open closes itself); a portal, so it is
+          no child of this box's layout. */}
+      <TarkibReadDialog
+        open={readOpen}
+        read={read}
+        lot={{ zh: lotZh, ru: oneGood?.ru ?? null }}
+        totals={totals}
+        existing={lines}
+        busy={reading}
+        error={readOpen && refusal ? errorText(refusal) : null}
+        onApply={applyRead}
+        onAgain={() => {
+          if (read) void readDocument({ id: read.attachmentId, fileName: read.fileName }, true);
+        }}
+        onClose={() => setReadOpen(false)}
+      />
     </div>
   );
 }

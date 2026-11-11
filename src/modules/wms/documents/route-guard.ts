@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import { batches } from '../../platform/db/schema';
+import { isUuidShaped } from '../../platform/audit/fields';
 import { AuthError, requireActor } from '../../platform/rbac/authorize';
 import { inScope } from '../../platform/rbac/scope';
 
@@ -32,6 +33,9 @@ export async function guardBatchDocument(
     if (err instanceof AuthError) return new Response('Unauthorized', { status: 401 });
     throw err;
   }
+  // A malformed id is no truck — and bound into the query below it is a
+  // 22P02, i.e. a 500 on every document route.
+  if (!isUuidShaped(batchId)) return new Response('Not found', { status: 404 });
   const row = await db.query.batches.findFirst({
     where: eq(batches.id, batchId),
     columns: { originWarehouseId: true, destWarehouseId: true },

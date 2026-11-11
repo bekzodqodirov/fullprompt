@@ -9,7 +9,8 @@ import {
   txView,
   type ClientLabels,
 } from '../../platform/telegram/client-labels';
-import { buttonLabel, MAX_TELEGRAM_PHOTO_BYTES } from '../../platform/telegram/limits';
+import { buttonLabel, MAX_BUTTON_CHARS, MAX_TELEGRAM_PHOTO_BYTES } from '../../platform/telegram/limits';
+import { clipKeepingCount } from '../../platform/text/label-count';
 import { MILESTONES, isMovingStage, milestoneCounts, milestoneOf, type CargoStage } from './stages';
 import { tashkentMinute } from '../../platform/time/tashkent';
 import type { CabinetLot, CargoGroup, DebtSummary, IssuedHandover, ManagerContact } from './service';
@@ -36,7 +37,11 @@ import type { CabinetLot, CargoGroup, DebtSummary, IssuedHandover, ManagerContac
  * crossing that module already makes (the judge's RULE-2).
  */
 
-/** The customer's words for their goods: translated first, Chinese when nothing else. */
+/**
+ * The customer's words for their goods: translated first, Chinese when nothing
+ * else. `productNameRu` arrives as the name the screens SHOW — the lot's
+ * tarkib while one stands, «Клавиатура +2» (`cargoOverview`, `issuedHandovers`).
+ */
 export function productName(lot: { productNameRu: string | null; productNameZh: string }): string {
   return lot.productNameRu?.trim() || lot.productNameZh;
 }
@@ -202,6 +207,11 @@ export const MAX_PHOTO_BUTTONS = 12;
  * tell them apart. Newest receipt first, because the cargo that just arrived
  * is the one whose photo is wanted, and twelve at most — past that the Mini
  * App's gallery is the better door.
+ *
+ * A button holds 40 characters, and a cut at the end took a tarkib label's
+ * «+2» first: the NAME is shortened to what the button has left after its
+ * head, the count kept (`clipKeepingCount`), until the whole label fits — so
+ * `buttonLabel` finds nothing more to cut.
  */
 export function photoButtonRows(lots: CabinetLot[]): { text: string; callback_data: string }[][] {
   const picked = lots
@@ -210,7 +220,20 @@ export function photoButtonRows(lots: CabinetLot[]): { text: string; callback_da
     .slice(0, MAX_PHOTO_BUTTONS);
   const rows: { text: string; callback_data: string }[][] = [];
   for (const lot of picked) {
-    const text = buttonLabel(`📷 ${lot.letter ? `${lot.letter} · ` : ''}${productName(lot)}`, '📷');
+    const head = `📷 ${lot.letter ? `${lot.letter} · ` : ''}`;
+    const name = productName(lot).replace(/\s+/g, ' ').trim();
+    // The room is in the unit `buttonLabel` enforces (UTF-16), `clipKeepingCount`
+    // counts characters: an emoji in the name is one of these and two of
+    // those. Unshrunk, such a label came out a unit too long, `buttonLabel`
+    // cut its END again — and the end is the count («… телеф… …», the review
+    // of the built round).
+    let room = MAX_BUTTON_CHARS - head.length;
+    let label = `${head}${clipKeepingCount(name, room)}`;
+    while (label.length > MAX_BUTTON_CHARS && room > 1) {
+      room -= 1;
+      label = `${head}${clipKeepingCount(name, room)}`;
+    }
+    const text = buttonLabel(label, '📷');
     const button = { text, callback_data: `ph:${lot.lotId}` };
     const last = rows[rows.length - 1];
     if (last && last.length < 2) last.push(button);
@@ -244,7 +267,7 @@ export function photoCaption(
   facts: { clientCode: string; letter: string | null; name: string; boxes: number },
   locale: string | null,
 ): string {
-  const name = clipText(facts.name, 200);
+  const name = clipKeepingCount(facts.name, 200);
   const title = facts.letter ? `${facts.clientCode} · ${facts.letter}` : facts.clientCode;
   return `${b(h(title))} · ${h(name)} · ${boxes(facts.boxes, locale)}`;
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { signedDownloadUrl } from './download-url';
+import { followAddress, signedDownloadUrl } from './download-url';
 
 /**
  * Every file link on every screen goes through a download link
@@ -47,15 +47,7 @@ export function DownloadLinks() {
     function follow(target: string, anchor: HTMLAnchorElement) {
       // A one-off anchor carries the original's `download` name; marked, so
       // this listener lets its own click through.
-      const link = document.createElement('a');
-      link.href = target;
-      link.setAttribute('data-dl-done', '');
-      if (anchor.hasAttribute('download')) link.setAttribute('download', anchor.getAttribute('download') ?? '');
-      link.rel = 'noreferrer';
-      link.style.display = 'none';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      followAddress(target, anchor.hasAttribute('download') ? (anchor.getAttribute('download') ?? '') : null);
     }
 
     function onClick(event: MouseEvent) {

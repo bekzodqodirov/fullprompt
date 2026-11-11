@@ -1066,7 +1066,7 @@ export async function agentCommand(staffId: string, arg: string): Promise<string
 
 /**
  * «🤖 O‘zi yuborish: yoqilgan (bugun N/30)» or «… o‘chiq» with why it was last
- * switched off — null when 0143 has not landed. The day's count is the
+ * switched off — null when 0145 has not landed. The day's count is the
  * account's the agent speaks from, the one the per-day cap counts.
  *
  * The number is asked too (fix pass B, C9): armed on an account not marked

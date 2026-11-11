@@ -2508,6 +2508,20 @@ CREATE TABLE "ai_model_prices" (
 --> statement-breakpoint
 -- (4) The one ledger, widened (never a second table: two ledgers of one fact is #513, and a
 -- new table would strand R3's attachIntakePasses).
+--
+-- ⚠ NOTE FROM THE OTHER SESSION (2026-11-11, «Tarkib takliflari», migration 0144 — MERGED):
+-- 0144 already added to this table `lot_id`, `batch_id`, `outcome`, `cost_usd`, and the CHECKs
+-- `ai_calc_passes_cost_check` (NaN excluded) and `ai_calc_passes_outcome_check`; its kinds are
+-- `tnved` and `tarkib`, each anchored on `lot_id`. So in THIS migration:
+--   · DELETE the two lines below that add `cost_usd` and `lot_id` (they fail on every database
+--     that has 0144, and drizzle runs all pending migrations in one transaction);
+--   · re-make `ai_calc_passes_cost_check` only behind `DROP CONSTRAINT IF EXISTS`;
+--   · re-make the kind and anchor CHECKs as the UNION — this draft's kinds + `tnved`, `tarkib`
+--     with their `"lot_id" IS NOT NULL` arms;
+--   · `cost_usd IS NULL` is BY DESIGN on a pressed row that got no answer (outcome `no_answer`,
+--     a timeout with no tokens, a reservation a dead process left): an «unpriced» index or
+--     backfill must skip them — `outcome IS NULL OR outcome IN ('ok', 'failed')`.
+-- `tests/unit/ai-press.test.ts` is red until all of that holds (docs/TARKIB-TAKLIFLAR.md §7.1).
 ALTER TABLE "ai_calc_passes" ADD COLUMN "requested_model" text;
 --> statement-breakpoint
 ALTER TABLE "ai_calc_passes" ADD COLUMN "cache_write_tokens" integer NOT NULL DEFAULT 0;

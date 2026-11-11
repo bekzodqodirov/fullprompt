@@ -1182,14 +1182,14 @@ Three asks:
   through `migrate`. Drafts before 2026-11-10 carry the old, undefined confidence: the table shows them, and they are
   no gate.
 
-### 18.3 Auto-send — «o'zi yuborish», as built (2026-11-11; DECISIONS #1642-#1655; migration 0143 `agent_auto`)
+### 18.3 Auto-send — «o'zi yuborish», as built (2026-11-11; DECISIONS #1683-#1696; migration 0145 `agent_auto`)
 
 His answer to §18.7, verbatim: «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan
 tasdiq kop kutib qolmasin». Every ⭐ of §18.7 holds except question 1: **there is no proof gate** (no 45/50 cell)
 **and no 1-in-5 holdback.** An eligible reply goes by itself from the day he arms the layer. The §18.2 measurement
-stays a record on the page and in the script; it gates nothing (#1642).
+stays a record on the page and in the script; it gates nothing (#1683).
 
-- **Shape: a MACHINE PRESS of the same ✅** (#1643).
+- **Shape: a MACHINE PRESS of the same ✅** (#1684).
   - The minute sweep (`jobs.ts` step 7, `pressDueAutos`) calls
     `decideDraft(holder, id, 'send', {digest, auto: true}, {actorId: null})`.
   - Then the existing pump sends it. Every check a human ✅ runs runs again: policy re-run, identity, chat moved on,
@@ -1202,7 +1202,7 @@ stays a record on the page and in the script; it gates nothing (#1642).
   - The approval's audit row says `via: 'auto'`; `decided_by` is the holder (the CHECK and the action replay read it).
   - It is a LAYER over shadow. `agent_config.mode` stays 'shadow', and `setAgentMode` still refuses 'auto'.
 - **The gate** — `auto-gate.ts` (pure) `autoVerdict`. Every refusal is collected, each is one of 28 codes, and each
-  has Uzbek words (`AUTO_REFUSAL_WORDS`) (#1644). The facts are read by `autoFactsFor`, at scheduling and again,
+  has Uzbek words (`AUTO_REFUSAL_WORDS`) (#1685). The facts are read by `autoFactsFor`, at scheduling and again,
   fresh, at the press. What must hold:
   - **The layer:** armed; the agent running with the draft's holder as its owner.
   - **The reply itself:**
@@ -1227,7 +1227,7 @@ stays a record on the page and in the script; it gates nothing (#1642).
     - the day's send budget not spent;
     - CRM sending switched on;
     - the listener current.
-- **Data** (0143, side tables only, behind `agentAutoReady()`) (#1645):
+- **Data** (0145, side tables only, behind `agentAutoReady()`) (#1686):
   - `agent_auto_config` — the singleton: armed, hold 120 s, 30 a day, 400 characters, 0.80, the four categories, the
     last disarm and why.
   - `agent_auto_verdicts` — one row per reply draft the inbound run wrote: eligible, reasons, category, confidence,
@@ -1235,14 +1235,14 @@ stays a record on the page and in the script; it gates nothing (#1642).
     `createDraft`'s transaction, so the first card already counts down.
   - `agent_auto_chats` — the per-chat «off» (30 days after a 👎 or a «botmisiz?»).
   - One migration behind, every reader behaves exactly as before.
-- **The hold counts from the card REACHING him** (#1646). The staff drain stamps `payload.shown {draftId, at}` beside
+- **The hold counts from the card REACHING him** (#1687). The staff drain stamps `payload.shown {draftId, at}` beside
   `tg`. The press waits until THIS draft's card has been on his screen for a whole hold. A card that never arrived
   is never pressed — it says «⏱ Karta Telegramingizga hali yetib bormadi».
   - An edit rings nothing, so a reply that counts down never rides an old card copy that rang more than one hold ago
     (`countdownMayRide`): it gets a card of its own (a push), and the old copy is closed («↪️ Mijoz yana yozdi»).
   - The drain records on each card copy whether its send rang (`rang`). A countdown never runs on a copy that did
     not: the press refuses `night` on it (`copyRang`, `cardOnScreen`).
-- **Who wins** (#1647):
+- **Who wins** (#1688):
   - The approval transaction takes the layer row FOR SHARE first and requires it armed. It re-reads «Ish raqami».
     Its LAST statement moves the verdict 'pressing' → 'pressed'; a miss rolls the whole approval back
     (`auto_stopped` / `auto_disarmed`).
@@ -1251,13 +1251,13 @@ stays a record on the page and in the script; it gates nothing (#1642).
   - Lock order everywhere: layer → draft → outbox → verdict.
   - A person's own press (✅ ✏️ ❌ 🙋, bot or page, and his typed words) stops the countdown first, as `owner_<press>`.
     The page's ✏️ asks the server before its box opens.
-- **After the machine's press** (#1648):
+- **After the machine's press** (#1689):
   - ❌ still takes the reply back while it waits in the outbox, unread (the web cancel's own compare-and-set).
   - 🙋 takes the chat for 24 h: it retires the chat's live reply, stops its countdown, withdraws what waits, and its
     audit row dates the press for the send step.
   - ✅ and ✏️ answer «kech».
   - A reply already handed to Telegram ('sending') cannot be taken back. Nothing can unsend.
-- **Arming and disarming** (#1649):
+- **Arming and disarming** (#1690):
   - **Arming** — `/agent auto on` or the page. The agent's holder only, with the agent running and the number marked
     «Ish raqami».
   - **Disarming** — the holder or a super_admin (`/agent auto off`, the page). A disarm is also made inside the
@@ -1269,13 +1269,13 @@ stays a record on the page and in the script; it gates nothing (#1642).
   - A disarm stops every countdown and takes back machine-approved replies still unsent.
   - Each forced off is named by its own reason (a closed list).
   - Re-arming is always his press.
-- **Step-downs** (#1650) disarm the layer with an alarm to the holder and every super_admin. The AI keeps drafting.
+- **Step-downs** (#1691) disarm the layer with an alarm to the holder and every super_admin. The AI keeps drafting.
   - 2 × 👎 within 7 days. Each 👎 also switches that chat off for 30 days.
   - A block by a customer the machine answered within 7 days.
   - A «botmisiz?» after a machine reply switches that chat off for 30 days; the second such chat within 7 days
     disarms.
   - §18.3's «3 failure signals in 24 h» was not built — it named no fact this system sees.
-- **What he sees** (#1651):
+- **What he sees** (#1692):
   - **The card:** «⏱ HH:MM da o'zi ketadi — to'xtatish uchun ⏸ bosing» with [⏸ To'xtat][✅ Hozir yubor] / [✏️] /
     [❌][🙋].
   - **After the press:**
@@ -1290,9 +1290,9 @@ stays a record on the page and in the script; it gates nothing (#1642).
     - the four kinds;
     - today: sent · sending · unknown · ⏸ · waiting · left to him;
     - the last 20 sent or sending, each with where it is and its 👎.
-- **The record stays honest** (#1652). `agentStats` and the calibration count machine presses APART (`autoSent`),
+- **The record stays honest** (#1693). `agentStats` and the calibration count machine presses APART (`autoSent`),
   never in «unchanged», decided or the rate — the gate never grades itself.
-- **Stated, not built** (#1654):
+- **Stated, not built** (#1695):
   - the 20:00 daily Telegram line «🤖 AI bugun …»;
   - an alarm when cards never reach him (the layer fails closed and says so on the card and the page);
   - the page refreshing itself while a card counts down;

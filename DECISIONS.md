@@ -7810,9 +7810,602 @@ package's DEFECT as its premise (the lone «TOTAL cordless drill» as a header w
 a red pin is first asked whether its premise is still true. (4) Every review of a round's fixes again found the
 fixes' own regressions — three review layers, each smaller, before the merge.
 
-## O'zi yuborish — the AI sotuvchi sends an ordinary reply by itself two minutes after its card reaches him (2026-11-11; migration 0143 `agent_auto`, ledger 144; spec `docs/AI-SOTUVCHI.md` §18.3 as built)
+## Tarkib tuzatishlari — the document optional, the name every screen shows, a row per good, 🤖 on a line, the invoice as positions (2026-11-10; migration 0143 `tarkib_document_optional`, `when` …122, ledger 144; numbered #1642-#1662 — minted as #1622-#1642 and renumbered four times: by six on the second merge, the THIRTY-SECOND collision (main's AI sotuvchi round «100 ta xabar» took #1622-#1627 first), by one more on the third, the THIRTY-THIRD (main's `m0-smoke` locator fix, PR #144, took #1628 while this round's merged tree was being verified), by one more on the fourth, the THIRTY-FOURTH (the driver app's «HTTP 400» hotfix, PR #142, took #1629 the day after the push), and by twelve on the fifth, the THIRTY-FIFTH (the other session's «Fayl o'qish», PR #141, took #1630-#1641 while the three suggestions below were being built); the migration was minted as 0142 and renumbered on the first merge — the THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 with the same `when` first)
 
-1642. **His answer removed the proof, and that is stated, not hidden.** §18.7 asked six questions. His answer was «sen
+His six items after using the lot tarkibi for six weeks («togirlash kerak bolgan ishlar bor … savollarin
+takliflarin bolsa ber»). Spec, binding where it says so: `docs/TARKIB-TUZATISH.md` (§9 = what the last maps and
+the papers judge changed). Built with the ⭐ of every question that could wait for him — the questions went out
+with the result.
+
+**#1642 — The client's document is OPTIONAL (his item 1; the recorded reversal of rule 3 of 2026-10-01).** «tarkib
+qoshganda tasdiq sorash rasim file» was read as: the save must stop demanding a file. 0143 drops NOT NULL on
+`lot_compositions.attachment_id` and nothing else; a file that IS cited is checked exactly as before
+(`document_not_on_receipt`, `document_is_photo`, the FK's NO ACTION → `in_use`), so the reason the rule existed —
+a carton photograph standing in for the client's packing list — still holds wherever a paper is claimed. The
+reader's `JOIN attachments` became a LEFT JOIN in the same one statement (#600's rule again: with the inner join a
+document-less tarkib vanishes from the receipt card and can then be neither edited nor cleared). One migration
+behind is named, never guessed: `violatedNotNull(err)` → `server_behind` only for that table and column. The six
+sentences that claimed «by the document» say «by the tarkib» now. Found on the way: the editor's upload swallowed
+every failure (`void addDocument(…)` with a try/finally and no catch) — a HEIC photo or an offline phone said
+nothing; it says `upload_failed` and the attachments panel's own words now. ASKED of him: optional for every
+tarkib (built), or mandatory again when the tarkib names several goods.
+
+**#1643 — The Russian name a lot is SHOWN under is DERIVED from its tarkib, never written (his items 3-4).** One
+line → its name; several → the first line's name and how many more («Клавиатура +2» for three goods — the house's
+«first +N»; his «yonida + nechta tarkibligi» could also mean the total, and that is asked). The first design wrote
+the label into `receipt_lots.product_name_ru` at the save; the map of that column killed it: 72 files read it and
+a dozen read it as IDENTITY (the papers of a truck frozen with «no composition», `refuseVanishingCode`, the TNVED
+memory's hint match, two model prompts, the price-history needle, the sticker, the person's ✅ snapshot), `editLot`
+re-posts the name from an uncontrolled form with no compare-and-set, and two screens append their own «+N». Every
+one of those failures is silent. Derived, the label exists exactly while the lines do, an identity reader stays
+right by construction, a reader nobody swapped shows yesterday's name (visible, harmless), and a tarkib written
+before the deploy shows its name the minute the code runs. ONE home, `receipts/lot-name.ts`: `tarkibLabel` (pure)
+and its SQL twins `lotRuShownSql` / `lotGoodsShownSql` / `lotGoodsKindsSql` / `tarkibLineMatchSql` /
+`lotRuShownFor`, pinned against each other at 0 / 1 / 3 / 20 lines. Measured: 2.3 µs per lot row as a scalar
+subquery, legal in a grouped select.
+
+**#1644 — A one-line tarkib named as the lot's CHINESE name gives no label.** «Bitta tovar» pre-fills the line
+with the Russian name ELSE the Chinese one, and most lots are typed in Chinese only — so the commonest one-line
+tarkib made every list print «键盘 (键盘)». `tarkibLabel(lines, lotZh)` takes the Chinese name as a REQUIRED
+argument (an optional one is forgotten at the one caller that matters) and the SQL twin restates it in its HAVING.
+
+**#1645 — «+N» survives a cut.** A truncating cell cut the count off, and the count is the one thing that says
+there is more in the carton than the name. `platform/text/label-count.ts` (`splitLabelCount`, `clipKeepingCount`,
+`withoutLabelCount` for a search needle someone copied off the screen) and `components/lot-goods-name.tsx` (the
+count in its own `shrink-0` span) — every truncating cell and every clip goes through one of the two.
+
+**#1646 — Any STANDING tarkib makes the lot ✅ (the recorded reversal of his 8.6), and the person's ✅ is for the
+name the card SHOWS.** 8.6 withheld the ✅ from a one-line tarkib naming another good because the warehouse screens
+went on printing the lot's own name beside it; the screens print the tarkib's name now, so what the ✅ stands
+beside IS what a person stated. The other half was found by walking it: with the STORED name in the snapshot, a
+tick made as «Клавиатура», then a one-line tarkib «Мышь» and a re-weigh, read ✅ «mijoz tasdiqladi» beside «键盘
+(Мышь)». `checkTermsSql`'s name term, the snapshot the tick writes and the card's `seen` all read `lotRuShownSql`;
+a tarkib written, changed or cleared after a tick makes it «o'zgardi», and a tick pressed under a stale tarkib is
+for the label it was pressed under. THE TRAP: reading the shown name inside the tick's transaction through
+`lotRuShownFor(…, tx)` turned `tx-pool.test.ts` red on every caller of `lockLot` (a function that calls a pooled
+name is pooled) — the tick reads it with the pure SQL builder on its own handle.
+
+**#1647 — The agent file prints a row per good (his item 2; reverses the «one row, contents in the cell» of
+#1263-2a).** «Yuklama» is in no UI string; exactly one surface matched his description — the plan's «Agent uchun
+Excel», whose composed lot was one row with «Состав лота: …» inside the product cell. Now each block (here by
+arrival, «В пути», «Не пришло») prints one row per good, grouped by LOT ID (labels are not unique: 27 of 605 on
+gsr_ci are carried by two lots), the figures from ONE fit over the plan's cartons sliced consecutively for the
+blocks (`paperLinesByPart` — fitting each block from position 0 gave 51/49 where the paper says 50/50), at the
+plan's own decimals (kg 3, m³ 4 — `round1` made 33.3 + 33.3 + 33.3 under a heading of 100.0). The photograph once
+per group; the Chinese name never leaves the one sheet read Chinese-first («На коробке / On the carton: 键盘»
+when no line is the lot's own good). TEST LESSON: the road twins held with the slicing broken, because a split of
+TWO goods is always «lucky» (`seatsPrefix`) — three goods made eight proofs red.
+
+**#1648 — The invoice draft is built from POSITIONS (his item 6).** `documents/invoice-rows.ts`, pure: source rows
+(one per lot or tarkib line, each knowing its lot's label and its customs scope) → positions. Merged BY ITSELF:
+the same code AND the same name (`nameKey`) AND the same unit inside one customs scope — his «tnved kod 1 xil
+bo'lsa nomi ham 1 xil bo'lsa qo'shib yuborsin». ASKED: one code, different names («alohida oyna ochilsin … 
+qo'shaymi yo'qmi deb so'rasin»). The papers judge's two blockers shaped the key: a merge never crosses a customs
+choice (cargo a client clears with their own firm beside cargo we clear — one position would put it on OUR
+declaration), and never takes «шт» off the paper by itself (a «кг» row and a «шт» row under one name are two
+units; merged on request, the dialog says the pieces will not be on the row). The answer travels in the file's
+ADDRESS (`?merge=<code>.<sig>,…` or `all.<fp>`): `sig` is a hash of the scope, the code and the names it was
+shown with, so an answer given about yesterday's names names nothing today — a bare address, a bookmark and a
+stale link all print every asked group apart. No table, nothing stored.
+
+**#1649 — «Маркировка» after «№», and red where a carton may hold another good.** Every position names the lots
+behind it — client code (or the unclaimed marking, both when both exist) and the lot letter: «GS777-A». A lot
+whose tarkib stands on two or more positions is printed RED and bold on each of them: opening a carton of that
+sticker may show any of those goods — his «shu orqali men bilaman». A lot wholly inside one position (a merged
+one included) is plain. The estimate note names its lots («GS777-A: доля лота…»), because one note on a row of
+three lots said nothing about which. THE COLUMN MOVED EVERY READER: nine tests and the e2e read the sheet by
+position; all read by HEADER now through one fixture (`tests/fixtures/invoice-sheet.ts`), and the fence's rule
+on the invoice is re-anchored on `invoiceSourceRows` + `invoiceModel`.
+
+**#1650 — «Invoys» is a button that asks, and the file still comes through a signed link.** A link with an
+onClick would have been taken by the layout's capture-phase download listener before React heard it — on a phone
+the file would come unmerged AND the dialog would open. `followDownload` (components/download-url.ts) is the
+button's door to the same signed link, so Telegram's in-app browser gets the merged file too; the groups route
+and the invoice are NetworkOnly in the service worker and `no-store`. The device remembers a truck's last answers
+by group key (a convenience, never a record). The dialog says how many codes are typed and not saved — the paper
+is made from the SAVED codes. Found by the browser run: for the third of a second between «✅ Saqlandi» and the
+refreshed page the editor still counted the saved code as unsaved (it compared against the rows it was handed),
+so the dialog warned about a code already written — the editor keeps what a save wrote until the refresh lands.
+
+**#1651 — The document guard answers 404 to an id that is not an id.** Bound into the query a malformed uuid is a
+22P02 — a 500 on all four document routes and the new one. The fence first named the predicate only and held
+with the refusal switched off (`isUuidShaped(batchId) && false`); it names the refusing statement now.
+
+**#1652 — A tarkib line has its 🤖 (his item 5; the recorded reversal of «a line row has no 🤖»).** A truck of
+composed lots had no AI at all, and nothing on the screen said why (`tnved.lineNoAi` sat in four bundles and was
+referenced nowhere) — he met a missing button. The old rule was about the PHOTOGRAPH (a keyboard carton steering
+the mouse's code), so that is what the new one answers: `lineQuestion` (pure) asks about the line's own name;
+the lot's photo goes only when the tarkib has ONE line (every carton is that good); a line that IS the lot's own
+good asks the product row's own question; the context carries the line's figures, what else lies in the same
+cartons (capped at six) and, for another good, what the warehouse received the cartons as — a statement, never a
+second «Товар». Every door before any spend, in the save's own order (the tab's audience, the truck's card, a
+carton of the lot riding it, a live composition still holding the line BY ID, the prixod readable and
+confirmed): the model is never paid for a code that could not be saved. It writes nothing — the code is the
+editor's until «Saqlash», on the line and never in the memory. ASKED: photo for lots of several goods (⭐ no);
+a daily limit (⭐ none, like the lot's 🤖).
+
+**#1653 — The model call had 2048 tokens and no voice.** The analyst model thinks INSIDE `max_tokens`: on a hard
+good the JSON had no room, `JSON.parse('')` threw, and the person read «AI javob bermadi» about a model that had
+answered (`intake-ai.ts` met this at 4096). 16000 now, a cut-off answer named in the log, the tokens of every
+press logged (this button has no ledger), and the catch that turned a timeout, a burned key and an unreadable
+answer into one silent `ai_failed` writes the cause down.
+
+**#1654 — «🤖 AI taklif (N)» counts lines, never overwrites a typed code, and stops at a shut door.** N is every
+empty code the 🤖 can fill. The walk fills a line that has a 💡 (a code a person stated for that name) without
+asking; asks the rest one at a time; keeps ONE answer per line name (two asks can return two codes for one good,
+and the invoice merges same-named goods only when their codes are equal); writes through `fillEmpty`, whose
+emptiness check is inside the state updater — so a code typed while the model was thinking cannot be replaced
+by an answer arriving late; and ends at any refusal that is not the model's own failure, or two of those in a
+row — it used to press a dead button once per row. Progress and «To'xtatish» on the button itself.
+
+**#1655 — «Saqlash» posts only the codes that changed.** Every coded product row was posted on every save, so
+one product a colleague had composed meanwhile (its row is a tarkib's lines now) refused the whole save
+`not_on_truck`, and the reload that cures it drops every answer typed or suggested and not yet saved.
+
+**#1656 — The warehouse screens and the searches print the tarkib's name (package P2a).** /stock (table, lot and
+client drill-downs) and the Ostatka XLSX, the plan editor's two lists and the plan view, the truck card's contents,
+the cost grid and the «Narx» tab, the count panels and their alarm texts, the unload's missing-lot lines, box and
+crate pages, the crate builder and the handover screen, the staff bot, the client card's «Yuklar», the map's popup,
+⌘K. Each reader's SELECT is swapped through `lot-name.ts` and the field keeps its name. Where a row is BOTH display
+and identity it gets a second field, never a swapped one: `BatchLot.productNameRu` stays the price history's trigram
+needle and `shownNameRu` (+ `goodsKinds`) sit beside it. Four statements that already branch on `lotChecksReady()`
+carry the label behind that probe (a statement naming `lot_composition_lines` with the probe off turned an existing
+half-applied-deploy test red — no new probe was added). The four searches (/stock, ⌘K, the count door's picker, the
+broadcast's goods filter) keep their stored arms — the word on the sticker must go on finding the carton — and OR
+`tarkibLineMatchSql` beside them, the needle first through `withoutLabelCount`: «мышь» finds the lot whose second
+line is mice, and a label copied off a card finds its lot. Platform reaches the arm by dynamic import. The count
+alarms' stored payloads carry the label because the payload IS the text; a labelled name is QUOTED there — «GS777-A
+· «Клавиатура +2»: +3» — since «+2: +3» read as two figures of one sum.
+
+**#1657 — The office lists and the customer's surfaces (package P2b).** The deal pickers' cargo label and the
+uncollected list already printed «first +N» over SEVERAL lots; fed the lot's label they would read «Клавиатура +2
++1», so they unnest the goods KINDS (`lotGoodsKindsSql`) and keep ONE number (`UncollectedRow.moreLots` →
+`moreKinds`: its meaning changed, so its name did, and the compiler named every consumer). The lenta, the freight
+split's lot lines, landed cost / client history / stock aging and their XLSX, the unpriced and compensation lists,
+double-received, the annul picker, the manifest; the Mini App's cargo, history and map, the bot's blocks, photo
+buttons and captions (`clipKeepingCount` — a 40-unit button kept «… +2»), and the three pushes, which re-read at
+SEND time (`receivedFacts`, `arrivedSummary`, `issuedFacts`). STORED payloads keep the lot's own name (`BoxIssued`,
+the re-emitted «prixod confirmed»): a label must never be stored as if it were a name. The handover act: pdf-lib
+does not wrap, and a 60-character first name ran past the sheet's right edge with the «+2)» on it — `actRowText`
+shortens the Russian name against the font's own width (rows that fit are byte for byte the old rows), looked at
+through pdfium. Measured: the label costs 3.3-5.5 µs per carton row in `boxMeasures` (+20-30 ms on a 5,000-carton
+truck's recompute). **FOUND by the package's own test, and not about names at all: the client-history XLSX has
+answered 500 for every client since it shipped** — exceljs refuses a worksheet named «History». Renamed; the file
+downloads for the first time.
+
+**#1658 — The fence (`tests/unit/lot-name-fence.test.ts`), derived.** A list written tomorrow with the stored
+column in its select would print the warehouse's word beside forty lists printing the tarkib's, and nothing would
+fail. (1) Every `receiptLots.productNameRu` and raw `product_name_ru` is counted per file against a list with EXACT
+counts and the reason (the probe-off branches, the search arms, identity); zero anywhere else, a stale entry red
+too. (2) Every file naming the property is CLASSIFIED shown / own / writer / both — a file that starts naming it is
+red until somebody decides. (3) The label's « +N» is concatenated in SQL in the home alone, and the three «first
++N» lists read goods kinds. Blind spot, stated in the file: a `shown` file that starts reading a whole row's own
+name — the per-package tests read a tarkib back through each reader and are what goes red there.
+
+**#1659 — Looked at, at 360 px, with a 60-character first good.** Fifteen screens photographed with a fixture
+whose first line is sixty characters; document width equal to the viewport on all, every «+N» inside its cell.
+Three things only the pictures showed. The cost grid's lot line was ONE clamped line — and a clamp cuts the END,
+i.e. the label's count and the carton figure («耳机 · Наушники беспроводные с…»): the name clamps now, what follows
+it never does. The stock and truck tables carry a fixed minimum width (860 / 520 px) and scroll sideways on a
+phone: narrowing the product cell only hands its room to the other columns (measured 224 → 173 px against a
+computed max of 160), so on a phone the «+N» of a LONG name sits past the edge until the table is swiped — as that
+cell's end always has. The tweak was withdrawn and this is told to him. And the script's own artifact, recorded so
+nobody chases it: `scrollIntoView` on a node inside a truncating box scrolls the BOX, and the Chinese name at its
+start «vanished» from four crops.
+
+**#1660 — Reviewed as built: four lenses over the lead's halves, every finding reproduced before it was fixed.**
+Ten findings, none refuted. The skeptics that were to verify them died on the usage limit (as did five of the six
+design judges before the build), so each was reproduced the way a skeptic would have — a failing test first, or the
+finder's own repro — and red-proven after the fix (21 proofs by string edit). **Agent file**: a good's row was 20 pt whatever it
+held and only a first row with the sticker's name wrapped, so a name with its code in brackets lost its END —
+«Мышь компьютерная беспроводная [84716060», a ten-digit code read as a valid eight-digit one; every row wraps and
+is as tall as its text now (`wrappedLines`, calibrated against LibreOffice's own layout). And an APPROVED plan
+whose truck held no carton of the lot yet (all owed from the road) was cut from position 0 — `truckSegments`
+answers «from 0» for a truck it does not know — so the same plan's file changed its goods at the approval and
+changed back at the first landing; such a plan keeps the truckless plan's positions. **Invoice**: the button
+replaced an `<a target="_blank">`, so its download is a navigation of the Bojxona tab — a list that could not be
+read fell back to the plain file, whose address fails for the same reason, and the error page REPLACED the screen
+and every unsaved code on it; now nothing is followed unless the list was read a moment ago, at the press and
+again at «Invoysni olish», where a list that moved under the open dialog is shown and asked again. `all.<fp>`
+named the whole list, so one renamed group dropped every other answer: the address carries pairs whenever it can
+hold them. **Lot check**: the «boshqa tovar» hint sent a `receipts.edit` holder to the ✏️ rename while a tarkib was
+written — which changes neither the name the card prints nor the one the ✅ records. The SQL label was compared
+with `tarkibLabel` over 3,000 random lots by that lens: no mismatch. **The names packages** were reviewed after
+the merge by two narrow lenses that ran every changed statement OLD against NEW on rows built inside a rolled-back
+transaction (the first attempt died on the limit and returned «no findings» — which is why the workflow's result
+now says whether a finder COMPLETED): no row set, sum or scoping moved; one nit, fixed — the 📷 button's room was
+counted in characters and Telegram's limit in UTF-16 units, so an emoji in the name cost the «+N»; and the
+platform's own `buttonLabel` could cut an emoji in half (a lone surrogate — Telegram refuses the button and with
+it the whole message), for every caller since it shipped.
+
+**#1661 — The Bojxona editor re-seeds by MERGE, never by remount (five of the ten).** The page keyed the editor on
+every line's revision, so it re-seeded by REMOUNT: one lot's tarkib moving, or one line code saved, threw away
+every unsaved code on the screen — in real use model answers already paid for — and a product-only save did not
+re-seed at all, so a row nobody had touched read as «changed» when the shared memory moved under it and the next
+«Saqlash» wrote the stale code back over a colleague's correction. `editor-state.ts` (pure, unit-tested):
+`reseedRows` — when the server's rows come back every row is the server's except a code that is not saved yet,
+which stays on the server's row; a row the refresh no longer has is gone. The key is deleted. On top of it:
+«Saqlash» is no longer stopped by ONE refusal — `saveLineCodesAction` goes on past a refused lot and names it
+(`refused`), `saveTnvedAction` validates every code before the first write and writes the names that ARE product
+rows while naming the ones that are not (`gone`; a name off the truck is still never written); the walk ends with
+the editor (an unmount used to leave it asking the model for every remaining row, unseen and unstoppable);
+`walkStep` — a fact about ONE lot leaves that lot alone and goes on, a shut door stops; `sameNameCode` — a
+same-named line already coded on the screen IS the answer and costs no call. Browser proof in `m9zzx`: a
+colleague's code and a bumped revision written by SQL, the tab re-read, the typed code still on its row.
+
+**#1662 — PROCESS.** (1) **The usage limit ended three workflows mid-run** (the design judge after one lens of six,
+the review's seven skeptics, the first names review): work that depends on an agent's VERDICT must be able to go
+on without it — every finding here carried its own repro, which is what made that possible; a finder that returns
+nothing because it died is not a clean bill, and the workflow's result says which it was. (2) **A red proof that
+turns a refusal into a success leaves what it wrote behind** (#523's shape): REV-E10 wrote «Мышь» into the dev
+database's TNVED memory and the test failed before its own delete — and the next browser run met a 💡 nobody had
+planned («AI taklif (1)», not «(2)»). The dev database was rebuilt; the spec no longer assumes a database without
+hints. (3) **Three proofs stayed green first** and each was a fence anchored on the wrong thing: the predicate's
+NAME rather than the refusing statement; a door masked by the next door (the fixture now receives the prixod at a
+third warehouse); a label test that held because the stored name had been renamed by an earlier case. (4) **The
+browser found what no test could**: the «1 ta kod saqlanmagan» warning about a code saved a third of a second
+earlier, and the cost grid's clamp. (5) Main moved under the branch TWICE. Once before the build's end (#140): the migration and its `when`
+moved, the DECISIONS numbers did not need to — the thirty-first collision. And once AFTER the push (#143, the
+AI sotuvchi «kontekst 100» round, found by fetching main before the report rather than after it): it took
+#1622-#1627, so every number of this section moved by six on the branch BEFORE the merge — a blanket replace
+after it would have renumbered main's own references — the thirty-second; the whole CI order was run again on
+the merged tree (880 files / 14,817 tests, 491 browser tests; a container restart cut it between vitest and the
+build, and the two last gates resumed on the database vitest had left). While THAT ran, main took PR #144 (one
+e2e locator and #1628): the numbers moved by one more — the thirty-third — and this time the gates re-run were
+the ones the delta can reach (typecheck, lint, the changed spec), because the delta is one spec file this round
+never touched. And the morning after the push main took #1629 (PR #142, the driver app's hotfix) — the
+thirty-fourth: one more shift, done before the follow-up round wrote a single number. RULE, twice in one day:
+fetch main immediately before the report, not only before the push — and again before the first number of the
+next round is minted. (6) `eslint .` lints
+`.claude/worktrees/**`: remove merged worktrees before the whole-repo lint.
+
+## Tarkib takliflari — his «hammasi yulduzcha» pinned, then the three suggestions (2026-11-11; spec `docs/TARKIB-TAKLIFLAR.md`)
+
+His answer to the tarkib round's ten questions and three suggestions: «Hammasi yulduzcha javob va taklifingni
+qoshamiz» — every ⭐ stands, and the suggestions are to be built.
+
+**#1663 — «Hammasi yulduzcha»: ten defaults read against the shipped code, two of them pinned only now.** A
+«standart» is checked against the code before it is called one (#1229). A read-only scout read every test body,
+the lead re-read its two doubts. EIGHT answers were already held by an assertion that goes red on the non-star
+option (1a `lot-composition.integration` «2c»; 2a `lot-check.integration` 11/12d; 4a `tarkib-label`; 5a
+`lot-name-office.integration`'s customer block; 6a and 7a `invoice-merge.integration` + `invoice-rows`; 9a
+`invoice-rows`; 10a `tnved-line-ai.integration`). TWO were half held. **3a** — the plan's own screen
+(`/plans/<id>`) queried inline in the page, so «the screen keeps a lot whole» was true by reading only: the query
+is `planLinesView` (`wms/planning/plan-lines.ts`, NAMES through `lot-name.ts`, never the tarkib's lines — the
+folder is on the composition fence's DENY list) and `lot-name-warehouse.integration` asks it (two plan lines, two
+rows, the composed lot «Клавиатура +2»). Red twice: a join onto the tarkib's lines (four rows), the stored name
+in place of the shown one. **8a** — «this device, never stored for everyone» was held for ONE device in the
+browser and for nobody else: `invoice-merge.integration` now calls the two routes' own `GET` (merged address →
+five rows; the bare address after it → seven, and the list still asks, same keys, same fingerprint) with the
+document guard stood open (its gate is `document-route-gates`' subject), and `invoice-dialog-wire` pins where
+the memory lives — the browser's store keyed by truck, the dialog opened on every press that has a question, no
+server action, no route that names `db`, a setting or a cookie. Red twice: a route that remembers the last
+answer per truck; a press that follows the remembered answer without opening the dialog. And a nit under 9a:
+the dialog's mixed-units sentence, drawn by no test, is pinned source-shape. TEST NOTE: the plan fixture is
+deleted lines → versions → plan before its lots — none of the three foreign keys cascades.
+
+**#1664 — «Taklifingni qo'shamiz» is read as ALL THREE suggestions, and he is told so first.** The sentence is
+singular («taklifing»), the report carried three. Building one and guessing which would have been a second
+question about his own answer; building all three and saying «uchala taklif ham» at the top of the report costs
+him one line to correct. The three, as they were sent: the tarkib filled from the client's file by AI (T1), the
+client's own ✅/❌ in Telegram (T2 — the «5b» owed since 0123, widened to the tarkib because the sentence he
+approved says «tarkibni»), the Bojxona 🤖's bill and daily limit (T3). The design was written (`docs/
+TARKIB-TAKLIFLAR.md` §1-§6), then judged by five lenses BEFORE any package — 54 objections from four of them, two
+blockers, each tied to a line of code — and §7 of that document is what was built. The fifth lens (the owner's
+words) died on the usage limit; its ground was read again in the review of the built round.
+
+**#1665 — A pressed model call is COUNTED before it spends and BILLED after (`calc/ai-press.ts`, 0144).** The
+Bojxona tab's 🤖 had no ledger row and no ceiling — one press of «🤖 AI taklif (N)» is up to N calls. `reservePress`
+writes one `reserved` row only while the day's count is under the limit: the advisory lock as its OWN statement,
+then the counting INSERT (folded into the INSERT, ten of ten presses passed a limit of three — `ai_questions`'
+measured lesson); `settlePress` gives the row its outcome and tokens. Not `ai-cost.ts`'s read-then-write budget,
+which is safe only because one worker drains its queue: twenty people hold this button. The limit **fails
+closed** — anything that is not a positive number is 0, and 0 means «off», never «no cap» (the calc limit's 0
+reads the other way and is not copied). `aiCalcBudgetLeft('calc')` became a POSITIVE list of four kinds, so the
+two new kinds (and any later one) stay out of the VED's Telegram budget by default. A keyless server writes no row
+(`aiConfigured()` before the ledger); the reservation sits after the last door and before the photograph.
+
+**#1666 — What a failed call costs (the ledger lens).** (1) **A timeout of ours is COUNTED.** `no_answer` meant
+«no usage came back», which put a call our own 60-second deadline abandoned in the same uncounted bucket as a
+dead key — though the provider had been generating for the whole minute, and the same hard good (or, for T1, the
+same 10 MB PDF) could then be pressed for ever outside the cap. `no_answer` now means nothing can have been
+generated (a refused key, a rate limit, a dead network); the reader names the SDK's typed timeout and the row is
+`failed` with zero tokens. (2) **The dollars are frozen on the row at settle** (`cost_usd`), from the list price
+of the model the call was MADE with — the constant, never the id the provider echoes. Computed at read time from
+a map keyed by today's constants, a model change re-priced last month, or showed «30 kun ≈» as nothing; and the
+unit test «the map covers both constants» could not fail by construction. A row with no known price is counted on
+the screen, never summed as $0. (3) **«Behind» is 42703 / 42P01 and nothing else.** The writer names 0144's own
+columns, so an older schema fails on the column before any CHECK is evaluated (tried against a pre-0144 copy); a
+23514 mapped to «server yangilanmoqda» would have sent the VED to wait for a deploy that is not coming, and its
+test restated the code by mocking the error it asserted.
+
+**#1667 — The limit's box, and where the bill is read.** The settings door turned an EMPTY box into 0 —
+which this round makes «switched off for the whole company» — stored «-5» and «3.7» as typed while the cap
+enforced something else, and said nothing about «1 000». Both limits take whole digits only
+(`wholeNumberSettingValid`, their own sentence in four languages). And «xarajat hisobi» had no reader who could
+reach it: on the tab the dollars need the company's money sight, and of the people behind the tab's door only the
+admins hold it — the accountant is redirected, and a document reading's spend was shown nowhere. The same line
+(count for the page's readers, ≈ dollars through the sight) stands under both limit boxes on /admin/settings,
+the door of the people who can move the limit.
+
+**#1668 — A handoff written as a sentence would have broken production on a green CI.** The other session's
+next migration (R5) re-makes `ai_calc_passes`' kind and anchor CHECKs for its own kinds. Written from its
+handoff, it re-makes them WITHOUT `tnved` and `tarkib`: on CI's fresh database that passes, on production (rows
+of those kinds exist) the ADD CONSTRAINT fails and rolls back every pending migration — or, the other way round,
+every press becomes a refused INSERT. `tests/unit/ai-press.test.ts` finds the LAST migration that re-makes either
+CHECK and requires every pressed kind in both, with its `lot_id IS NOT NULL` arm. Recorded for that session: keep
+re-making both as the UNION, delete only its own `ADD COLUMN lot_id`, drop its second `recordAiPass` per press,
+and filter its model-continuity pick to the calc kinds.
+
+**#1669 — The client's answer is compared with what they were SHOWN — and that is not the tarkib's `rev`
+(the judge's blocker, found by two lenses).** `lot_client_confirms` snapshots what the message printed: both
+name spellings, the carton count, the owner, the tarkib's goods. v1 stored the composition's `rev` for the last —
+a WRITE token that moves on every save and on every TNVED code typed on the Bojxona tab. The VED's next routine
+step would have turned every button «eskirgan», made the card say «tarkib o'zgargan» about a customs code, and
+lifted a client's ❌. The row holds `goods_key` = md5 of the names and pieces in order — ONE SQL expression in
+`lotTarkibJoinSql`, read by the question and by the sentence through the same join, never restated in JS. The
+question's facts (names, counts, goods, digest) are ONE statement, so the tag vouches for exactly what is printed.
+
+**#1670 — A ❌ stands against exactly what it rejected.** v1's veto held while the WHOLE snapshot still matched,
+which was too weak and too strong at once: a typo fixed in the lot's Chinese name dropped it, and the untouched
+tarkib the client had rejected read ✅ again with nobody asked; a colleague who phoned the client and ticked could
+not lift it at all. The sentence (`lotCheckStateSql`): a standing tarkib vouches unless this owner's ❌ was given
+on the goods it still lists; a holding tick vouches unless this owner's ❌ is not older than it; the client's own
+✅ while it matches; a ❌ nothing vouches past reads ❓ («none», never «o'zgardi» — the lot is not something that
+WAS confirmed); unclaimed cargo is never vetoed. Four ways out and no fifth: the rejected goods are changed, a
+colleague ticks after it, the client answers again, «E'tirozni yopish». The ORDER of the CASE is the design and
+only scenarios pinned it — 72 combinations of tarkib × tick × answer are now read through the card's own reader
+against LITERAL states (a table recomputed from a JS twin would be the rule agreeing with itself). STATED: a count
+corrected on a tarkib lot lifts nothing by itself (the goods are the same) — a person ticks or closes.
+
+**#1671 — A tick and an answer about one lot are ORDERED, or «newer» means nothing.** «The tick outranks a ❌
+it is newer than» is only true if newer means «pressed by somebody who could have seen it». `lockLotAnswersTx`
+(an advisory lock of its own — never the lot's or the prixod's, so the customer's press waits behind nothing the
+warehouse holds) is taken by both writers before each reads the other's row; the answer's clock is
+`clock_timestamp()`, because its transaction may have BEGUN before a tick that committed first; the tick posts
+the answer the panel drew (`seenClientAt`) and is refused `check_changed` when the table holds another; and the
+same colleague's press again, when a ❌ outranks their standing tick, WRITES (it used to be the double tap's
+no-op — «saqlandi», and nothing changed). The customer's wait is bounded by `lock_timeout = '3s'` → «hozir band»,
+buttons kept. RED-PROOF LESSON: with `clock_timestamp()` swapped for `now()` in the INSERT's values the ordering
+test stayed GREEN — the lot already held the client's ✅, so the press took the UPDATE path. A rule with two
+code paths needs a fixture per path; the test runs both.
+
+**#1672 — One probe flag would have switched off what has been live since 0123.** The readers JOIN the new
+table, so the first build folded `lot_client_confirms` into `lotChecksReady()`. On a deploy whose 0144 did not
+land that answers «no» for everything: no ✅/❓ chip, no worklist, no home count, the colleague's tick not drawn,
+the tarkib's shown names gone from /stock, the XLSX and the plan editor — for a table none of them needs. The
+probe gives TWO answers from its one catalog statement; the sentence and the joins ask the second
+(`lotClientConfirmsReady()`, sync) and speak their two-source form while it is «no». Pinned by a spy on every
+statement sent while 0144 is «missing»: the chips are drawn and none names the client's table.
+
+**#1673 — What the push asks, and when it does not.** The ✅/❌ row rides the customer's «yukingiz qabul
+qilindi» only when it means something, asked at SEND time: the switch on; this client's prixod; every lot printed
+(≤ 12); **no lot with a tarkib written** (the push prints «Мышь +1» and cannot list the goods — a ✅ there would
+confirm a list nobody showed; that question is «Mijozdan so'rash»'s); some lot still worth asking about (his 4a);
+and the lines the push PRINTS are the lines the tag vouches for (the text and the tag are two reads at the end of
+a correction window — a rename between them costs the buttons, never records a ✅ for a name not shown). The
+question names its subject — «Tovar nomi va quti soni to'g'rimi?», never «hammasi» — because the lines above it
+print kilos and cubic metres, which are the warehouse's measurement and not part of the answer. It never costs
+the photograph: in a caption it would push past 1024, the caption goes without it and the buttons carry the
+question. `client_confirm_on_receipt` ships ON — he asked for the feature, and one shipped behind a switch he
+must find reads as «built, not working»; the deploy steps name the switch BEFORE he deploys.
+
+**#1674 — A press is decided, then answered once.** The house's `mg` handler answers first; this one cannot —
+its toast is the outcome's («rahmat», «allaqachon», «eskirgan», «hozir band»). Every path answers exactly once,
+a throw included. ❌ gets NO toast: its sentence must stay on the screen, so it is a message, and a late press
+repeats a toast as a message of its own — the two would say it twice. The pressed message keeps its Mini App and
+manager rows and loses only the third; «busy» and «failed» keep it. A ❌ on a message whose data has moved is
+still somebody trying to say something is wrong: «eskirgan» alone told nobody and took the buttons away, so it is
+followed by where to write. In a chat that is ALSO a staff chat the relay refuses, so «shu yerga yozing» would be
+a promise nobody keeps — the short form, and only when something was recorded. An answer is taken only while
+some lot is still askable: a button lives under its message for ever, and a ❌ tapped after the cargo reached
+Tashkent would take a ✅ off /stock, stand on no list and alarm the seller about papers already made. The answer,
+its audit row (actor null — nobody of ours pressed) and the staff notifications are ONE transaction: a crash
+between them left a redelivered press reading «already» and telling nobody. Registered on the PREFIX — a push
+stays in the chat for ever, and a later grammar's old buttons must be answered, never left to spin.
+
+**#1675 — «Mijozdan so'rash» and «E'tirozni yopish».** The question a person sends is one row per (client,
+prixod), re-armed only once it went and ten minutes passed, refused in words for everything a person can act on;
+its preparer re-proves the OWNER at send time, because a question that waited (the bot down, a 429) while the
+prixod was corrected to another client would otherwise send B's goods to A's chat — C1's own recorded lesson,
+which the spec had restated for the press and not for the send. The card prints the question's fate from a
+CLOSED list of words; the row's own error is a Bot API sentence in English. The dismissal takes the answer the
+card DREW (`answered_at::text`, every posted lot or none): without it, a second ❌ that landed after the page was
+drawn — the client pressed again on a new question — was erased by somebody who never saw it. One button answers
+the whole MESSAGE, so one ❌ lands on every lot listed: the staff alert says so in words, and a prixod whose ❌
+landed on several lots can be closed in one press. «Qaysi lot?» as a second question is asked of him, not built.
+
+**#1676 — The card never shows green on a disputed lot.** v1 only ADDED lines: the panel drew «✅ tarkib
+bo'yicha» from `byDocument` and «✅ Mijoz tasdiqladi · Sardor» from `person.holds`, never from the state — so a
+vetoed lot would have read two ✅, a ❌ and a ❓ together on the one screen that explains the dispute.
+`client.vetoes` comes from the sentence's own arm (this owner's ❌, and the state is «none»), never re-derived by
+the page; while it is true the ❌ leads in the bad colour and every ✅ line under it is history. The ❌ line and
+the dismissal are drawn wherever the cargo stands — a dispute raised in China must not vanish from the card when
+the truck unloads.
+
+
+**#1677 — T1 as built: ONE reader, and it is never a writer.** The design had two paths — a spreadsheet read
+«exactly, with no model» and a PDF or photo read by the model — and the judge took the first one apart: it had
+three different answers to «does it count against the day», stood on a parser another session was rewriting
+that week, and its eight families of edge cases (thousands written as text, two sheets tied for «the» goods
+sheet, merged figures, a carton-NUMBER column read as a count) are a model's ordinary reading. So there is one
+reader for every file kind, and a spreadsheet reaches it as TEXT through one adapter (`receipts/tarkib-file.ts`)
+over the readers' low-level exports — `goods-file.ts` and `xls.ts` are imported, never edited. Every reading is
+one row of the pressed-AI ledger (#1665), whatever the file. **Every door before any spend**, each a refusal in
+its own words and each before the one that costs more: the save's own door (a reading nobody could save is not
+paid for), the file is a paper of the LOT's prixod, kind and size from the attachment's ROW (a video is never
+loaded), a key on the server, the document not cooling, the bytes, the day's limit — and only then the model.
+**It writes nothing but its own bill line**: the answer is a proposal, the dialog puts ticked rows into the
+editor's DRAFT, and the editor's «Saqlash» — its parse, its exact sums — is still the only writer of a tarkib.
+A figure the reading did not give is an empty cell, never 0; the lot's own good keeps the lot's own name, never
+the model's translation; where the paper prints its own total and the rows do not add up to it, that is SAID
+per measure and never corrected. **The proposal does not depend on the lot** (the builder's own decision, and
+the right one): kept in the browser by its DOCUMENT for thirty minutes, so the second lot of a prixod ticks its
+rows from the reading the first one paid for. **Cooling** is ten minutes on a document whose reading ran out of
+time or of room — pressing again would spend another of the day's readings on the same pages. ONE deadline of
+150 s and nothing retried inside it (as first built the SDK's own retry sat under that deadline and the call
+was not streamed — the review took both out, #1680). STATED: two TABS on one document are two paid readings
+(within one tab the second request waits for the first, #1680); cooling is per process and a deploy forgets
+it; the model's wire has never met the real API from this container — the first real press is watched in the
+log (`[tarkib-read]`).
+
+**#1678 — Reviewed as built: five lenses over T2 and T3, every finding reproduced red before it was fixed.**
+The sentence, the customer's Telegram, the card, the ledger, the owner's words — each reviewer read-only,
+each finding with a recipe the lead turned into a failing test FIRST (31 red proofs by string edit, run in a
+second worktree so neither the reviewers nor the lead's edits were disturbed). What they found was, again,
+mostly a rule enforced in one direction or remembered in one place:
+
+- **The tick trusted what another screen had warmed (L1-1).** `lotClientConfirmsReady()` is a remembered
+  answer; `checkLot` read it and never asked the probe. A server action is a module instance of its own, so
+  after every restart «✅ To'g'ri» on a lot the client had answered was refused `check_changed` — on every
+  press, until somebody pressed «Mijozdan so'rash». No test could see it: both integration files MOCK the
+  probe's module. The tick asks the probe itself, on the pool, before its transaction; a new file mocks
+  nothing of it (vitest's per-file module state IS the fresh process); a derived fence lists every reader of
+  the flag. RULE: a remembered «is the table there» belongs to the readers that asked it — a writer asks.
+- **«Already» swallowed the customer's second ❌ (L1-2).** The push goes to every linked chat with its own
+  buttons: chat 1 says ❌, the logist phones and ticks, chat 2 presses ❌ on its copy — same tag, same facts,
+  same verdict as the row that stands. Decided from reads made BEFORE the answer locks, it was «already»: the
+  lot stayed ✅ by the tick, nobody was told, the customer's toast said it was recorded. «Already» is decided
+  under the locks now, and never for a ❌ that a colleague has ticked over since — any tick, holding or not:
+  the rule errs toward writing, never toward swallowing a customer's objection.
+- **«Stale» was said before «whose» (L2-6)**, so any linked chat could tell which uuids are voided, draft or
+  unclaimed prixods, and a stranger's ❌ on one was invited to write to a manager. The owner is asked first;
+  a skip carries the prixod's owner.
+- **Three things a customer would have met in Telegram.** A late press that came back «busy» says «press
+  again» — and the late-press memory then swallowed exactly that repeat (L2-1, `again`). The ❌'s one sentence
+  was a bare send queued behind the keyboard edit: a ❌ has no toast, so one 429 in the burst after a deploy
+  left the buttons gone and nothing said (L2-2 — first, through the ordered send). And what the customer
+  writes after «nima noto'g'ri ekanini yozing» went to the manager of the chat's FIRST code (L2-3): one person
+  holds several codes in one chat and the codes can have different sellers — the ❌ is remembered per chat for
+  thirty minutes and the words follow it, with the prixod's link.
+- **A message Telegram no longer echoes the keyboard of kept its ✅/❌ row for ever (L2-5)** — ❌, ✅, ❌ flipped
+  on one message, every ❌ alarming the seller and every logist. The two standing rows are rebuilt.
+- **The card.** A PREVIOUS owner's ✅ reads «o'zgardi» on every list (the client is one of the facts a ✅ is
+  about, by design — as for a colleague's tick) and the card drew NOTHING for it: no line, no tick, no phones
+  (L3-1 — the sentence stays, the card says why). Times were the WAREHOUSE's zone on a card whose History is
+  the office's: 14:05 read 17:05 on a Chinese prixod, and a customer's evening press was dated tomorrow
+  (L3-2). «Navbatda — bir-ikki daqiqada» was read for hours on a server that cannot send (L3-4 — a wait is
+  worded by its age). The dispute's hint named a button the panel does not draw once the cargo has left China
+  (L3-5). The re-answer's audit row was empty (L1-3 = L2-4 = L3-3, three lenses, one line).
+- **The ledger.** The price was frozen through the SCREEN's rounding to the cent: a short answer stored as
+  0.000000 — not NULL, so not even «narxi noma'lum» (L4-1 — micro-dollars at six decimals). A count that was
+  not a number made the UPDATE itself throw, swallowed, and the press stayed `reserved` (L4-6 — counts cleaned
+  once, the column refuses NaN). The migration fence matched only QUOTED constraint names — 0119 re-made both
+  CHECKs unquoted — and read comments as SQL (L4-5); and the handoff to the other session was stale by two
+  statements: 0144 also owns `cost_usd` and its CHECK, which R5's draft adds again (L4-4 — a second fence, and
+  a dated note in that session's own document).
+
+STATED, not changed: `askFailed.client_changed` can never be drawn (the card reads the CURRENT owner's question;
+a question skipped because the owner changed belongs to the previous one) — the word stays in the bundles,
+harmless. The sentence's shown-name comparison is a correlated subquery per carton (L1-4: 9 → 27-46 ms on
+20 000 synthetic cartons) — linear and small; the cure (carry the label's ingredients out of the per-lot join)
+is recorded, not built. PROCESS: a source-shape test passed on a page that did not compile — a name imported
+twice is invisible to eslint and to vitest, and only `tsc` (or the build, twelve minutes later) says so:
+typecheck BEFORE the build, every time a file with imports is touched.
+
+**#1679 — The fifth lens read the round as HE will: what the deploy does before he can refuse it, and who is
+told to press what.** Eight findings, none in a formula. (1) **The switch he was offered cannot be touched
+before the deploy** (L5-1). `client_confirm_on_receipt` is listed by the RUNNING build's settings page, defaults
+ON when no row exists, and the offer is asked at SEND time — so the first «✅ / ❌» message can leave a minute
+or two after the deploy, for prixods confirmed up to ten minutes BEFORE it (their notice is still pending).
+Told to him in the CHANGELOG's ⚠️, as its own step 4a in `docs/UPDATE.md` («o'chirmoqchi bo'lsangiz — shu
+qadamda darhol»), and as a choice BEFORE the deploy: say so and it ships off. A default that reaches customers
+is announced where it can still be declined, not in the list of switches. (2) **The ❌ alert's first reader has
+neither button** (L5-2): it goes to the client's SELLER, and `mayCheckLot` is the logist's and the VED's. The
+alert now says who presses, the card draws one muted line for a reader who cannot («buni logist yoki VED hal
+qiladi», `lot-check-dispute-others`), and the CHANGELOG names the real audience — the seller plus everybody
+holding `plans.manage`, which is the logists, the admins and him. Whether the seller should get the buttons is
+his call and is not changed quietly. (3) **A ✅ that withdraws a ❌ tells everybody the ❌ told** (L5-4): the
+people who were alarmed heard nothing when the customer took it back, and the lot simply read ✅. A plain ✅
+still tells only whoever asked. (4) **The question asks about what it lists** (L5-7): a question that prints a
+tarkib's goods with their pieces — and whose answer is compared with names AND pieces — asked «tovar nomi va
+quti soni to'g'rimi?»; it has its own line now, the Russian question counts «коробок» like the lines above it,
+the English one says «names». (5) **One «server behind» sentence on the card** (L5-6): the Bojxona 🤖 printed
+the tarkib namespace's «server yangilanmoqda — birozdan keyin», the wording #1666 had already named as wrong
+for a migration that did not land; it is the lot check's sentence in four locales, held equal by a test.
+(6) Words only: «four ways out» of a ❌ said honestly (a corrected name alone lifts nothing on a lot without
+a tarkib; the customer can answer again only on a NEW question; once unloaded in Uzbekistan two ways remain),
+the limit counts CALLS (one press of «AI taklifi (N)» spends up to N; T3 has no off switch), and the deploy's
+test steps name a CHINESE warehouse and what his own staff-linked Telegram will answer (L5-3, L5-5, L5-8).
+STATED, not built: a push whose text comes within a line of Telegram's 1 024-character caption goes out
+without the question LINE while its keyboard keeps the two buttons (twelve lots with long names — L5-7 d).
+
+**#1680 — T1 reviewed as built: the model call was the one production had already proven wrong.** Two
+read-only lenses (the server and the file; the proposal and the screen), 28 findings, every one reproduced
+before it was fixed. **The headline (A3)**: the call was, parameter for parameter, the shape
+`docs/FAYL-OQISH.md` §0.3 names as the reason real readings came back EMPTY on his server — not streamed, the
+effort left at the provider's default, the thinking inside 16 000 tokens, a 150 s leash — and which PR #141
+replaced that same week in the other reader. T1 was written from the older idiom. It is the house's document
+call now: `messages.stream(…).finalMessage()`, 32 000 tokens, effort medium, no SDK retry, one deadline of our
+own. It cannot be verified here (no key), so the wire is at least exercised for real: the SDK itself against a
+local streaming stand-in (`tarkib-read-ai-wire.test.ts`, A12 — both older test files replaced
+`messages.create` itself, so nothing the SDK does had ever run in a T1 test). **What «a timeout» is (A1,
+both ways)**: the SDK calls any fetch failure whose text says «timed out» a timeout — a connection that never
+opened was counted against the day, cooled the document for ten minutes and told the person their paper was
+too large; and a deadline landing while the answer's body streamed threw a bare abort, read as «never
+answered» about a call the provider had billed. OUR deadline is `deadline.aborted` and nothing else.
+**No retry inside a leash (A2)**: on a 429 with `retry-after` the SDK sleeps the whole of it, deaf to the
+signal. A rate limit is `no_answer` at once; the person presses again. **A 400 is the file's fault only when
+a file was sent (A7)** — a spreadsheet goes as text, and a spend limit answers 400 too; a cut at the context
+window is a size cut (A13); the request's text is well-formed at the boundary (A15 — a lone surrogate is a
+400 that sinks the whole request). **The file door**: `.xlsm` (the person who attached an Excel was told to
+attach an Excel, A4); a transparent PNG flattened onto WHITE (sharp's default is black: a paid reading of a
+black rectangle, A5); a workbook is the zip's four-byte header, not «PK» — «PKG NO.» begins a CSV (A6); a
+text file weighed before it is split into lines on the one process (A9); a reader that throws on one cell (a
+barcode under a date format) is a code, never an error page no retry can cure (A10). **The budget (A8 =
+B10)**: the browser waited 165 s against a server that could take 20 + parse + 150 — a paid answer to nobody,
+and «press again» a second bill; storage is 10 s, the browser 190. Switched off is said before a byte is
+loaded (A14). **The dollars were kept with the reading (A11 = B3)**, under a key that names the document and
+not the viewer: after an account switch — which he does to test as another role — a VED read «≈ $… · 30 kun
+≈ $…». Only the proposal is kept. **The proposal**: a paper of more than forty goods read CORRECTLY returns
+exactly forty rows and its own total — and was told «AI may have misread a figure» (B1: `rows_full`, and no
+totals judgement at the ceiling); the detector compared cells after their rounding, so a list whose formula
+figures add up exactly was told the same (B2: exact decimals of what the paper prints); ten digits on a
+Chinese exporter's paper are THEIR code — carried, said to be the paper's, and never applied to the lot's own
+good, where it would silently replace the memory's code on the invoice (B4); the column's ceiling is judged
+after the rounding and a note never prints an exponent (B7); 鞋 with its Russian wording is a good, not «the
+name could not be read» (B8). **The screen**: the person's ticks were lost on «Yopish» — the only way to look
+at the document — and the list came back ticked from scratch (B5: held by the dialog, tied to the reading);
+«a reading is running» was one editor's state (B6: one request per document per tab); applied carton counts
+vanished in «aralash» and NET weights were not said (B9). 41 red proofs by string edit in the second worktree
+(6 for #1679, 35 here) and one in the browser (B5: the old behaviour rebuilt, the spec red at «3 / 20»); one
+stayed GREEN first — the name is cut by code points, which already keeps an emoji whole, so removing
+`toWellFormed()` proved nothing until a name that ARRIVES with half a pair was added. STATED: two tabs, or two
+people, on one document are still two paid readings (no server-side guard); cooling is per process. The
+browser spec still does not drive «Almashtirish», «Qayta o'qish», the nothing-ticked start of a several-lot
+prixod, the ≈ dollars line or the dialog at 1280 px, and its 502 step asserts only that a refusal is shown
+(B12 d-e) — the rules behind them are unit-tested, the screens themselves are looked at only at 360 px.
+
+**#1681 — PROCESS.** (1) **A second caller of a model is written from the NEWEST caller's as-built block,
+not from memory of the idiom** — the call's shape has a home (`docs/FAYL-OQISH.md` §0.3) and T1 was drafted
+the week it changed. (2) **A path with `[id]` in it is a glob to eslint**: `pnpm exec eslint
+"src/app/(protected)/receipts/[id]"` lints nothing and exits 0 — the build then refused a clock read in a
+page's render (`react-hooks/purity`) twelve minutes later. Lint the project (`pnpm lint`), or quote the
+bracket as `[[]id]`. The wait's wording is judged in SQL for that reason, on the database's clock. (3) **A
+finished agent's worktree under `.claude/worktrees` doubles what `eslint .` reads** — exit 134, out of memory;
+remove it before the gates. (4) **A waiter that greps for a marker must grep the FRESH log**: one read
+`E2E_EXIT=0` from the previous run's file while the build it was waiting for was still running. New names, or
+delete first. (5) **Red proofs run in a second worktree** when reviewers are reading the tree and the lead is
+still editing it: the proof's edit can neither be read as a defect nor swept into a commit, and the harness
+restores from the text it read, never from git. (6) A red proof that stays green is evidence about the
+FIXTURE (#166, again): the answer was a case the fix is the only thing that handles.
+
+**#1682 — The full run went red on a file this round never touched, and the cause was this round's test.**
+`client-owner.integration`'s «every assigned owner in the real book is renderable» found a client owned by the
+VED — whom `salesManagerOptions()` does not offer, so the card's form would erase him on the next save. The client
+was `automation.integration`'s, whose owner is «the second of `select … from users where active limit 2`» — an
+UNORDERED read, which answers in the table's physical order. L2-3's relay test (#1678) had un-muted two seeded
+people and put the mutes back: the VALUES were restored and the ROWS were not, because an UPDATE writes a new row
+version at the end of the heap — Admin and Logist now came after the VED, and the automation file drew him.
+Reproduced on a fresh database with the three files run one at a time (bot → automation → client-owner: red;
+automation → client-owner alone: green), then fixed at both ends, each half proven alone: the relay test MINTS its
+two sellers (no seeded row is written; they are deactivated after, the house rule), and the automation file names
+its two people by their seeded phones — what it always got on a fresh database. RULE, #524's shape a second
+time: **a test that writes a SEEDED row has changed the database for every unordered read after it, whatever it
+restores** — mint the person, or read the seed by a key.
+## O'zi yuborish — the AI sotuvchi sends an ordinary reply by itself two minutes after its card reaches him (2026-11-11; migration 0145 `agent_auto`, `when` …124, ledger 146; spec `docs/AI-SOTUVCHI.md` §18.3 as built; numbered #1683-#1696 — minted as #1642-#1655 with migration 0143 and renumbered on the merge, the THIRTY-SIXTH collision: the other session's «Tarkib tuzatishlari + takliflari», PR #145, took #1642-#1682 and 0143-0144 with the same `when` while this round's last check ran)
+
+1683. **His answer removed the proof, and that is stated, not hidden.** §18.7 asked six questions. His answer was «sen
 aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan tasdiq kop kutib qolmasin»: ⭐ for
 questions 2-6, and no 50-sample proof for question 1.
 - **Two things went with the proof.**
@@ -7822,13 +8415,13 @@ questions 2-6, and no 50-sample proof for question 1.
 - **The measurement stays a record.** The page's numbers, `scripts/agent-calibration.ts` and the confidence stored as
   given are all still there.
 - **What the layer rests on instead:**
-  - a deterministic gate (#1644);
-  - a hold he can see and stop (#1646, #1647);
-  - three step-downs (#1650).
+  - a deterministic gate (#1685);
+  - a hold he can see and stop (#1687, #1688);
+  - three step-downs (#1691).
 - **The cost, told to him in Uzbek:** nothing measures how often a machine reply is right. Only his ⏸, ❌ and 👎, a
   block, or a «botmisiz?» see a wrong one, and only after it went or after it waited its two minutes.
 
-1643. **A machine press of the same ✅, and stricter than his.**
+1684. **A machine press of the same ✅, and stricter than his.**
 - **The press.** The minute sweep's step 7 (`pressDueAutos`) presses through
   `decideDraft(holder, id, 'send', {digest, auto: true}, {actorId: null})`. The send is the existing pump's. There is
   no second send path, so every check a human ✅ meets is met again: policy re-run, identity, chat moved, window, night,
@@ -7849,7 +8442,7 @@ questions 2-6, and no 50-sample proof for question 1.
 - **A layer over shadow, never a mode.** `agent_config.mode` stays 'shadow', because `toConfig` maps any other value to
   'off' and a tg-listen that was not rebuilt would cancel every approved reply.
 
-1644. **The gate is pure and says every reason in words.**
+1685. **The gate is pure and says every reason in words.**
 - **The function.** `auto-gate.ts` `autoVerdict` collects ALL refusals in a stable order. There are 28 codes, each
   with Uzbek words in ONE map `AUTO_REFUSAL_WORDS`, which the card, the page and `/agent` print — a raw code never
   reaches him.
@@ -7869,7 +8462,7 @@ questions 2-6, and no 50-sample proof for question 1.
   be refused. The stated trade: a draft written during a listener catch-up stays an ordinary card even if the catch-up
   finishes within the hold.
 
-1645. **0143 adds three side tables and changes none.**
+1686. **0145 adds three side tables and changes none.**
 - **`agent_auto_config`** — the singleton: armed_at/by paired, hold_sec 120 (30-600), per_day 30 (1-80), max_chars
   400, min_confidence 0.80, `categories ⊆ {greeting, qualification, faq, status}` and non-empty, the last disarm and
   its reason.
@@ -7886,7 +8479,7 @@ questions 2-6, and no 50-sample proof for question 1.
   behind, every card, press, page and `/agent` answer is what it was.
 - **`gsr_ai_reader`** gets no grant on these tables.
 
-1646. **The hold counts from the card reaching his Telegram, not from the draft** (fix pass A, C4).
+1687. **The hold counts from the card reaching his Telegram, not from the draft** (fix pass A, C4).
 - **The defect.** The verdict's `due_at` was the insert plus 120 s. With the staff drain paused, slow or muted, the
   machine pressed a reply whose card he had never seen. A re-pointed card whose edit failed went on showing the
   PREVIOUS draft, and its ⏸ stopped a dead row.
@@ -7900,7 +8493,7 @@ questions 2-6, and no 50-sample proof for question 1.
 - **The residual window, stated.** Telegram could apply two edits of one message out of order within milliseconds.
   Closing it would need a sequence number Telegram does not give.
 
-1647. **⏸ and the press are decided by one row lock, never by a check before an act** (fix pass A, C2 C5).
+1688. **⏸ and the press are decided by one row lock, never by a check before an act** (fix pass A, C2 C5).
 - **The claim.** The sweep claims up to 20 due rows as 'pressing' in one statement and presses them in due order.
 - **The defect.** ⏸ matched only 'waiting'. So a claimed row not yet pressed — the batch's tail, or a dead sweep's row
   for five minutes until its reclaim — answered «Kech — yuborilmoqda» while ❌ would still have worked, and the reclaim
@@ -7923,7 +8516,7 @@ questions 2-6, and no 50-sample proof for question 1.
   his «Saqlash» was refused after the machine pressed (fix pass B, C1). It now asks the server first
   (`stopAutoForEdit`, outcome owner_edit). It opens on «nothing to stop», and stays shut with «kech» after a press.
 
-1648. **His ❌ and 🙋 still mean something after the machine pressed** (fix pass A, C3; fix pass C, FIX-SEND-1).
+1689. **His ❌ and 🙋 still mean something after the machine pressed** (fix pass A, C3; fix pass C, FIX-SEND-1).
 - **The defect.** Both answered `not_live` on an approved draft. The queued reply went, and no takeover was recorded.
 - **❌ now** cancels the reply while it waits in the outbox, unread (the web cancel's own compare-and-set). It is
   audited, and the toast says «❌ Bekor qilindi — javob mijozga ketmaydi».
@@ -7941,7 +8534,7 @@ questions 2-6, and no 50-sample proof for question 1.
 - **What cannot be taken back.** A reply already handed to Telegram ('sending') goes, as it does for «off» and a live
   🙋.
 
-1649. **He arms it; everything else can only disarm it.**
+1690. **He arms it; everything else can only disarm it.**
 - **Arming:** `/agent auto on` or the page's panel. Only the agent's holder may arm, with the agent running and his
   number marked «Ish raqami».
 - **Disarming:** the holder or a super_admin, by `/agent auto off` or the page. A disarm is also made inside the
@@ -7959,7 +8552,7 @@ questions 2-6, and no 50-sample proof for question 1.
   javob o‘zi ketmaydi», never a green «yoqilgan». When it cannot be armed, it says why BEFORE the press.
 - Re-arming is always his press.
 
-1650. **Three step-downs.**
+1691. **Three step-downs.**
 - **The three.** Each disarms the layer with an alarm (the existing `AgentForcedOff` type, only when it was armed) to
   the holder and every super_admin. The AI keeps drafting.
   - **2 × 👎 within 7 days.** Each 👎 also switches that chat off for 30 days.
@@ -7974,7 +8567,7 @@ questions 2-6, and no 50-sample proof for question 1.
 - **The windows are tested at their edges** (6 and 8 days), because deleting any of the three had stayed green (review
   TESTS-4).
 
-1651. **What he sees says what happened, never what was meant to.**
+1692. **What he sees says what happened, never what was meant to.**
 - **The countdown card.** «⏱ HH:MM da o'zi ketadi — to'xtatish uchun ⏸ bosing» (Tashkent time), with [⏸ To'xtat]
   [✅ Hozir yubor] / [✏️] / [❌][🙋]. A card too long to draw its ✅ shows no countdown and is never pressed
   (`too_long`, found in stage 2).
@@ -7995,11 +8588,11 @@ questions 2-6, and no 50-sample proof for question 1.
 - **The words are i18n keys in all four bundles,** and every refusal code reaching the page has a key, derived by a
   test from the word maps.
 
-1652. **The gate never grades itself.** `agentStats`, the calibration and `scripts/agent-calibration.ts` count
+1693. **The gate never grades itself.** `agentStats`, the calibration and `scripts/agent-calibration.ts` count
 machine presses APART (`autoSent`, any outbox state). They are never in «unchanged», decided or the rate, or each
 auto send would read as one more reply he approved unchanged.
 
-1653. **Reviewed as built, and every fix reviewed again.**
+1694. **Reviewed as built, and every fix reviewed again.**
 - **The first review.** Five lenses over the two build commits:
   - wrong-send, races and words found 14 findings, deduplicated into 10 clusters (C1-C10);
   - tests and regression died on the usage limit and were re-run; the tests lens added TESTS-1..6.
@@ -8011,8 +8604,8 @@ auto send would read as one more reply he approved unchanged.
     facts, the Tashkent day, the step-downs' edges, the block hook through the real outcome, the reclaim and the
     savepoint.
 - **The fixes' own review: 4 of 4 upheld.** Two lenses over the fixes found 4, all reproduced:
-  - the after-press 🙋 blocker (#1648);
-  - a person's press losing to an approval committing between its read and its stop (#1647);
+  - the after-press 🙋 blocker (#1689);
+  - a person's press losing to an approval committing between its read and its stop (#1688);
   - ⏸'s words after that race;
   - the panel's list title.
 
@@ -8047,8 +8640,8 @@ auto send would read as one more reply he approved unchanged.
       inside an approval's few milliseconds deadlocks once (reproduced only with a helper holding a lock; 0 of 60
       natural runs). The press wins and the purge is pressed again. Owed: delete the drafts first.
 
-1654. **Stated, not built.**
-- **The batch.** The 20-row batch claim stays: the row lock decides every race (#1647), and pressing one row at a time
+1695. **Stated, not built.**
+- **The batch.** The 20-row batch claim stays: the row lock decides every race (#1688), and pressing one row at a time
   would only narrow a window that no longer lies.
 - **Conservative counts.** A press later taken back still counts toward the day's cap, the streak, the step-downs and
   `autoSent` — failing closed. Only the panel's list leaves it out.
@@ -8065,7 +8658,7 @@ auto send would read as one more reply he approved unchanged.
 - **Not provable here.** No real Telegram or real model. The first armed day is watched on the page and in the
   tg-listen log.
 
-1655. **Process.**
+1696. **Process.**
 - **(1) A dead workflow's «0 upheld».** The first review workflow hit the usage limit: 30 agents died, and its «0
   upheld» was the absence of verifiers, not their verdict. The result was read from the journal before it was
   believed, and the dead lenses were re-run.

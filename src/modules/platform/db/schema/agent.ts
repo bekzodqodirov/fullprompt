@@ -452,7 +452,7 @@ export const tgPeerPulls = pgTable(
 );
 
 /**
- * «O'zi yuborish» (0143, docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11) —
+ * «O'zi yuborish» (0145, docs/AI-SOTUVCHI.md §18.3, his answer of 2026-11-11) —
  * the singleton HIS press arms. A layer over shadow, never a mode: the agent
  * stays 'shadow' and an eligible reply goes by a machine press of the same ✅.
  * No proof cell and no holdback: his answer removed both.
@@ -488,7 +488,7 @@ export const agentAutoConfig = pgTable(
 );
 
 /**
- * ONE row per reply draft the inbound run wrote while 0143 exists: the gate's
+ * ONE row per reply draft the inbound run wrote while 0145 exists: the gate's
  * verdict with every reason it refused (the rehearsal record), and — for an
  * eligible one — the send state the minute sweep claims and presses. An
  * ineligible row has no state. It follows its draft.

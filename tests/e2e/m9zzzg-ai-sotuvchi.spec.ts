@@ -16,7 +16,7 @@ import postgres from 'postgres';
  *     sees the ✅, is told in words that the agent is off, opens ✏️ (it asks
  *     the server first — fix pass B, C1 — and this card never counted down,
  *     so the box opens as always) and ❌ retires the draft; on the settings
- *     tab «🤖 O‘zi yuborish» (0143) offers HIM the four kinds and says, BEFORE
+ *     tab «🤖 O‘zi yuborish» (0145) offers HIM the four kinds and says, BEFORE
  *     any press, why it cannot be switched on — the agent off, the number not
  *     «Ish raqami» — with the switch not offered (fix pass B, C9): nothing
  *     written, so nothing to put back; the owner (not the holder) is shown
@@ -122,7 +122,7 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   // Not his account: he may switch it off, never on.
   await expect(page.getByTestId('agent-on-holder-only')).toBeVisible();
   await expect(page.getByTestId('agent-mode-on')).toHaveCount(0);
-  // «O‘zi yuborish» (0143): read, never armed by him — the kinds are shown and cannot be changed.
+  // «O‘zi yuborish» (0145): read, never armed by him — the kinds are shown and cannot be changed.
   const auto = page.getByTestId('agent-auto');
   await expect(auto).toBeVisible();
   await expect(auto.getByTestId('agent-auto-today')).toBeVisible();

@@ -1,5 +1,5 @@
 import { DOC, docDate } from './labels';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import fontkit from '@pdf-lib/fontkit';
 import { PDFDocument, rgb } from 'pdf-lib';
 import { db } from '../../platform/db/client';
@@ -13,7 +13,67 @@ import {
 } from '../../platform/db/schema';
 import { getSetting } from '../../platform/settings/service';
 import { cjkSubsetFor, pdfTextCleaner } from '../labels/cjk-font';
+import { lotRuShownSql } from '../receipts/lot-name';
+import { clipKeepingCount } from '@/modules/platform/text/label-count';
 import { OFFICE_TZ } from '@/modules/platform/time/tashkent';
+
+/** Below this many characters a clipped name stops being one; the row is left to the sheet's edge. */
+const ACT_NAME_FLOOR = 8;
+/**
+ * A carton row's width: the sheet (595 pt) less its indent (60) and the strip
+ * no office printer reaches (20). Not the left margin's mirror — a row that
+ * ran into the right margin was always printed whole, and still is.
+ */
+const ACT_ROW_ROOM = 595 - 60 - 20;
+
+/**
+ * One carton's row, fitted to the sheet. pdf-lib does not wrap: a row wider
+ * than the page is cut by its edge, and an edge cuts the END — on a tarkib's
+ * label that is the «+2» the owner asked to see (item 4, 2026-11-10), and a
+ * tarkib's names are invoice wording, long by nature. The Russian name gives
+ * way instead (`clipKeepingCount`); a row that fits is the row it always was.
+ * `fits` is the sheet's own measure, so the rule is testable with no font.
+ */
+export function actRowText(head: string, zh: string, ru: string | null, fits: (text: string) => boolean): string {
+  const row = (name: string | null) => `${head}   ${zh}${name ? ` (${name})` : ''}`;
+  if (!ru || fits(row(ru))) return row(ru);
+  // The longest clip that fits — widths only grow with the clip, so bisect.
+  let low = ACT_NAME_FLOOR;
+  let high = Array.from(ru).length - 1;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    if (fits(row(clipKeepingCount(ru, mid)))) low = mid;
+    else high = mid - 1;
+  }
+  return row(clipKeepingCount(ru, low));
+}
+
+/**
+ * The cartons an act lists, in the order it lists them. `productNameRu` is the
+ * name the screens SHOW (the lot's tarkib while one stands) — swapped in THIS
+ * select because the act's font is subset from these very strings: a label
+ * read anywhere later would be drawn with glyphs the subset does not hold,
+ * which is blanks on a signed paper and no error. Exported so a test reads
+ * what the paper prints without parsing a PDF.
+ */
+export async function handoverActRows(handoverId: string) {
+  const scans = await db
+    .select({ boxId: scanEvents.boxId })
+    .from(scanEvents)
+    .where(eq(scanEvents.handoverId, handoverId));
+  if (scans.length === 0) return [];
+  return db
+    .select({
+      box: boxes,
+      letter: receiptLots.letter,
+      productNameZh: receiptLots.productNameZh,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+    })
+    .from(boxes)
+    .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
+    .where(inArray(boxes.id, scans.map((s) => s.boxId)))
+    .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot));
+}
 
 /** Handover act PDF (spec 6.7, optional per issue): who took what, signatures. */
 export async function buildHandoverAct(handoverId: string): Promise<Uint8Array | null> {
@@ -25,18 +85,7 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
       : null,
     db.query.warehouses.findFirst({ where: eq(warehouses.id, handover.warehouseId) }),
   ]);
-  const scans = await db
-    .select({ boxId: scanEvents.boxId })
-    .from(scanEvents)
-    .where(eq(scanEvents.handoverId, handoverId));
-  const boxRows = scans.length
-    ? await db
-        .select({ box: boxes, letter: receiptLots.letter, productNameZh: receiptLots.productNameZh, productNameRu: receiptLots.productNameRu })
-        .from(boxes)
-        .innerJoin(receiptLots, eq(boxes.lotId, receiptLots.id))
-        .where(inArray(boxes.id, scans.map((s) => s.boxId)))
-        .orderBy(asc(receiptLots.letter), asc(boxes.seqInLot))
-    : [];
+  const boxRows = await handoverActRows(handoverId);
 
   const doc = await PDFDocument.create();
   doc.registerFontkit(fontkit);
@@ -92,10 +141,16 @@ export async function buildHandoverAct(handoverId: string): Promise<Uint8Array |
   // rows) and silently drop the rest — a 50-box handover printed 33 rows and
   // both sides signed an incomplete list. 137 = the 120pt signature floor
   // plus one 17pt row, so a row never invades the signature zone.
+  const fits = (text: string) => font.widthOfTextAtSize(clean(text), 10) <= ACT_ROW_ROOM;
   for (const row of boxRows) {
     if (y < 137) newPage();
     line(
-      `${row.box.shortCode}   ${client?.clientCode ?? ''}-${row.letter ?? ''}   ${row.productNameZh}${row.productNameRu ? ` (${row.productNameRu})` : ''}`,
+      actRowText(
+        `${row.box.shortCode}   ${client?.clientCode ?? ''}-${row.letter ?? ''}`,
+        row.productNameZh,
+        row.productNameRu,
+        fits,
+      ),
       10,
       60,
     );

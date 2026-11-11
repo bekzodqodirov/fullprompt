@@ -11,6 +11,7 @@ import {
   unconvertedCosts,
 } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { LotGoodsName } from '@/components/lot-goods-name';
 import { PageHeader } from '@/components/ui/page';
 
 /**
@@ -117,9 +118,8 @@ export default async function LandedCostReportPage({
                       <td className="p-1.5 font-mono font-extrabold text-brand-700">
                         {selected.clientId ? lot.letter : `${lot.marking ?? '?'}-${lot.letter ?? ''}`}
                       </td>
-                      <td className="max-w-52 truncate p-1.5">
-                        {lot.productNameZh}
-                        {lot.productNameRu && <span className="text-ink-500"> ({lot.productNameRu})</span>}
+                      <td className="max-w-52 p-1.5">
+                        <LotGoodsName zh={lot.productNameZh} ru={lot.productNameRu} />
                       </td>
                       <td className="p-1.5 text-right">{lot.boxCount}</td>
                       <td className="p-1.5 text-right">{lot.kg}</td>

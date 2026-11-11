@@ -8,6 +8,7 @@ import { calendarDaysBetween, tashkentDay } from '../../platform/time/tashkent';
 import { landedHereAtSql } from '../documents/arrivals';
 import { gatedAt, uncoveredBoxesOn, type Exec, type GateSince } from '../finance/unpriced';
 import { balancesForClients, debtBlocks } from '../finance/service';
+import { lotGoodsKindsSql } from '../receipts/lot-name';
 import { ISSUABLE_STATUSES } from './parties';
 
 /**
@@ -65,10 +66,15 @@ export interface UncollectedRow {
   /** Per-carton SHARES of each lot (`shareOf`), summed as printed. */
   kg: number;
   m3: number;
-  /** The goods of the lot that has waited longest. */
+  /** The first good of the lot that has waited longest — its tarkib's first line while one stands. */
   goods: string;
-  /** How many other lots stand in the same row. */
-  moreLots: number;
+  /**
+   * How many MORE goods stand in the same row — the «+N» beside `goods`. A
+   * plain lot is one, a lot whose tarkib names three goods is three
+   * (`lotGoodsKindsSql`): ONE number. Fed the lot's label, the row read
+   * «Клавиатура +2 +1» — the tarkib's count, then the count of further lots.
+   */
+  moreKinds: number;
   /** The oldest waiting carton's landing; null only for a carton with no landing movement. */
   landedFrom: Date | null;
   /** The client's last handover at THIS warehouse, if any. */
@@ -238,7 +244,7 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
            c.sales_manager_id, u.full_name AS seller_name,
            l.warehouse_id, w.code AS warehouse_code, w.type AS warehouse_type,
            l.n, rl.box_count, rl.total_weight_kg, rl.total_volume_m3,
-           coalesce(nullif(rl.product_name_ru, ''), rl.product_name_zh) AS goods,
+           ${lotGoodsKindsSql(sql.raw('rl'))} AS kinds,
            l.landed_from::text AS landed_from,
            p.last_pickup_at::text AS last_pickup_at
       FROM w_lot l
@@ -264,15 +270,16 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
     box_count: number;
     total_weight_kg: string | null;
     total_volume_m3: string | null;
-    goods: string | null;
+    kinds: string[] | null;
     landed_from: string | null;
     last_pickup_at: string | null;
   }[];
 
   const today = tashkentDay(q.asOf);
-  const folded = new Map<string, { row: UncollectedRow; kg: number[]; m3: number[]; lots: number }>();
+  const folded = new Map<string, { row: UncollectedRow; kg: number[]; m3: number[]; kinds: number }>();
   for (const lot of lots) {
     const key = `${lot.client_id}|${lot.warehouse_id}`;
+    const kinds = lot.kinds ?? [];
     let entry = folded.get(key);
     if (!entry) {
       entry = {
@@ -291,8 +298,8 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
           boxes: 0,
           kg: 0,
           m3: 0,
-          goods: lot.goods ?? '',
-          moreLots: 0,
+          goods: kinds[0] ?? '',
+          moreKinds: 0,
           landedFrom: null,
           lastPickupAt: lot.last_pickup_at ? new Date(lot.last_pickup_at) : null,
           days: null,
@@ -301,14 +308,15 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
         },
         kg: [],
         m3: [],
-        lots: 0,
+        kinds: 0,
       };
       folded.set(key, entry);
     }
     const n = Number(lot.n);
     const of = Number(lot.box_count);
     entry.row.boxes += n;
-    entry.lots += 1;
+    // A lot always counts once, so a row with no tarkib reads as it always did.
+    entry.kinds += Math.max(1, kinds.length);
     entry.kg.push(shareOf(Number(lot.total_weight_kg ?? 0), n, of));
     entry.m3.push(shareOf(Number(lot.total_volume_m3 ?? 0), n, of));
     if (lot.landed_from) {
@@ -318,10 +326,10 @@ export async function uncollectedCargo(exec: Exec, q: UncollectedQuery): Promise
   }
 
   const rows: UncollectedRow[] = [];
-  for (const { row, kg, m3, lots: lotCount } of folded.values()) {
+  for (const { row, kg, m3, kinds } of folded.values()) {
     row.kg = sumRounded(kg, roundKg);
     row.m3 = sumRounded(m3, roundM3);
-    row.moreLots = lotCount - 1;
+    row.moreKinds = kinds - 1;
     // The oldest landing's TASHKENT day — the earliest instant is on the
     // earliest day, so the day is read off the instant (R5's one home).
     row.days = row.landedFrom ? calendarDaysBetween(tashkentDay(row.landedFrom), today) : null;

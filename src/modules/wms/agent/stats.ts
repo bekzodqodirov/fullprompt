@@ -31,7 +31,7 @@ export interface StatsDraftRow {
   outboxStatus: string | null;
   category: string | null;
   /**
-   * «O'zi yuborish» pressed it (0143 `agent_auto_verdicts.state = 'pressed'`):
+   * «O'zi yuborish» pressed it (0145 `agent_auto_verdicts.state = 'pressed'`):
    * nobody DECIDED it, so it is counted apart and never in the rate — or the
    * gate would grade itself (§18.3). REQUIRED: every reader says.
    */

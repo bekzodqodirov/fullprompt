@@ -4,6 +4,7 @@ import { db, type Db, type Tx } from '../../platform/db/client';
 import { boxes, clients, deals, receiptLots, receipts } from '../../platform/db/schema';
 import { leftBehindSql, riderFilter, riderRowsSql, rodeLaterSql } from './riders';
 import { dealCandidatesOf, type DealCandidates } from '../finance/truck-deal';
+import { lotGoodsKindsSql, lotRuShownSql } from '../receipts/lot-name';
 
 /**
  * What rode this truck, one row per LOT — the goods, not the client (owner,
@@ -42,7 +43,27 @@ export interface BatchLot {
   lotId: string;
   letter: string | null;
   productNameZh: string;
+  /**
+   * The lot's OWN stored Russian name: the price history's trigram needle
+   * reads it off this row (`price-history.ts`), so it is never a label. A
+   * screen draws `shownNameRu ?? productNameRu`.
+   */
   productNameRu: string | null;
+  /**
+   * The Russian name as the screens SHOW it (the owner's items 3-4,
+   * 2026-11-10): a standing lot tarkibi's name, «first +N» for several
+   * goods, else the lot's own — `receipts/lot-name.ts`. A second field, not a
+   * swapped one: this row is display AND identity. Optional so a row built by
+   * hand still types.
+   */
+  shownNameRu?: string | null;
+  /**
+   * The names this lot's goods go by — the tarkib's lines in order while it
+   * has a label, else the one `ru || zh` name. For a list that prints «first
+   * +N» over SEVERAL lots (the «Narx» table's deal label): it counts KINDS,
+   * so there is one number and never «Клавиатура +2 +1».
+   */
+  goodsKinds?: string[];
   receiptId: string;
   receiptNumber: string | null;
   clientId: string | null;
@@ -109,6 +130,8 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
       productNameRu: receiptLots.productNameRu,
+      shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
+      goodsKinds: sql<string[]>`${lotGoodsKindsSql(sql`${receiptLots}`)}`,
       lotBoxCount: receiptLots.boxCount,
       lotWeightKg: receiptLots.totalWeightKg,
       lotVolumeM3: receiptLots.totalVolumeM3,
@@ -180,6 +203,8 @@ export const batchLots = cache(async function batchLots(batchId: string): Promis
       letter: row.letter,
       productNameZh: row.productNameZh,
       productNameRu: row.productNameRu,
+      shownNameRu: row.shownNameRu,
+      goodsKinds: row.goodsKinds,
       receiptId: row.receiptId,
       receiptNumber: row.receiptNumber,
       clientId: row.clientId,

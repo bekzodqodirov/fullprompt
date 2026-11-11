@@ -15,6 +15,7 @@ import { seesAllClients } from '../../platform/clients/card-door';
 import { clientBalanceUsd } from '../finance/service';
 import { arrivalLabelsForPairs } from '../documents/arrivals';
 import { clientCargoRows } from '../inventory/client-cargo-now';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { roadLossInScope, roadLossTruck } from '../boxes/road-loss';
 import { dayIn, OFFICE_TZ } from '@/modules/platform/time/tashkent';
 import { alias } from 'drizzle-orm/pg-core';
@@ -163,7 +164,9 @@ async function lookupBox(actor: BotActor, code: string): Promise<string | null> 
       box: boxes,
       letter: receiptLots.letter,
       productZh: receiptLots.productNameZh,
-      productRu: receiptLots.productNameRu,
+      // As the screens show it (lot-name.ts): the bot may know only what the
+      // person already sees, and the row they see prints the tarkib's name.
+      productRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       receiptNumber: receipts.number,
       clientCode: clients.clientCode,
       clientName: clients.name,

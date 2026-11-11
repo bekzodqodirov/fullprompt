@@ -18,6 +18,7 @@ import {
 import { COUNT_REASONS } from '../scanning/count-rules';
 import { landedHereDaySql } from '../documents/arrivals';
 import { heldFreightSql } from '../costing/service';
+import { lotRuShownSql } from '../receipts/lot-name';
 import { withoutJit } from '../../platform/db/no-jit';
 import { addDays, calendarDaysBetween, tashkentDay } from '../../platform/time/tashkent';
 
@@ -424,7 +425,9 @@ export async function heldFreightCosts(): Promise<{ count: number; usd: number }
 /**
  * Per-lot landed cost breakdown for one client (letter, product, boxes, kg,
  * USD) — or, with `null`, for the unclaimed cargo: `landedCostByClient`'s
- * «Egasiz yuk» row drills into the same allocations.
+ * «Egasiz yuk» row drills into the same allocations. `productNameRu` is the
+ * name the screens show (the lot's tarkib while one stands) — on all three
+ * reports of this file and their XLSX.
  */
 export async function landedCostByLot(clientId: string | null) {
   const rows = await db
@@ -432,7 +435,7 @@ export async function landedCostByLot(clientId: string | null) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       // What is written on the carton — how unclaimed cargo is told apart,
       // where the letter alone repeats from prixod to prixod.
       marking: sql<string | null>`max(${receipts.unclaimedMarking})`,
@@ -503,7 +506,7 @@ export async function stockAging(warehouseIds?: string[], asOf: Date = new Date(
     async (exec) =>
       (await exec.execute(sql`
         SELECT w.code AS wh_code, c.client_code, r.unclaimed_marking AS marking,
-               rl.letter, rl.product_name_zh, rl.product_name_ru,
+               rl.letter, rl.product_name_zh, ${lotRuShownSql(sql.raw('rl'))} AS shown_name_ru,
                count(*)::int AS box_count,
                sum(rl.total_weight_kg / rl.box_count) AS kg,
                sum(rl.total_volume_m3 / rl.box_count) AS m3,
@@ -521,7 +524,7 @@ export async function stockAging(warehouseIds?: string[], asOf: Date = new Date(
         marking: string | null;
         letter: string | null;
         product_name_zh: string;
-        product_name_ru: string | null;
+        shown_name_ru: string | null;
         box_count: number;
         kg: string | null;
         m3: string | null;
@@ -536,7 +539,11 @@ export async function stockAging(warehouseIds?: string[], asOf: Date = new Date(
       return {
         whCode: r.wh_code,
         code: `${r.client_code ?? r.marking ?? '?'}-${r.letter ?? ''}`,
-        product: `${r.product_name_zh}${r.product_name_ru ? ` (${r.product_name_ru})` : ''}`,
+        product: `${r.product_name_zh}${r.shown_name_ru ? ` (${r.shown_name_ru})` : ''}`,
+        // The two halves apart, for the page's cell: a `truncate` over the
+        // joined string cuts the «+N» of a tarkib's label first.
+        productNameZh: r.product_name_zh,
+        productNameRu: r.shown_name_ru,
         boxCount: Number(r.box_count),
         kg: Math.round(kg * 10) / 10,
         m3: Math.round(m3 * 100) / 100,
@@ -809,7 +816,7 @@ export async function clientHistory(clientId: string) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       boxCount: receiptLots.boxCount,
       receivedAt: receipts.receivedAt,
       whCode: warehouses.code,

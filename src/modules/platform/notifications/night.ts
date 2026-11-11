@@ -31,6 +31,11 @@ export const NIGHT_SILENT_TYPES: ReadonlySet<string> = new Set([
   'AgentStranger',
   'AgentCalcAnswered',
   'AgentNotice',
+  // A client's ✅ / ❌ under their cargo (0144): customers press it whenever
+  // the push reaches them, and nothing about a lot can be corrected at
+  // midnight — the message is there in the morning, without the ring.
+  'ClientLotDisputed',
+  'ClientLotConfirmed',
 ]);
 
 export function sendsSilently(

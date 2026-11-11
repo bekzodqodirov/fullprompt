@@ -29,7 +29,7 @@ export type PressAnswer = 'answered' | 'stale' | 'failed';
 type PressCtx = { answerCallbackQuery: (other?: { text?: string }) => Promise<unknown> };
 
 /** What a late press would have said — read back by the middleware after the handler. */
-const lateOf = new WeakMap<object, { toast: string | null; say: boolean }>();
+const lateOf = new WeakMap<object, { toast: string | null; say: boolean; again: boolean }>();
 
 /** Telegram's «too late» for a press: 400 + «query is too old» / «query ID is invalid» / «QUERY_ID_INVALID». */
 export function isStalePress(err: unknown): boolean {
@@ -47,14 +47,24 @@ export function isStalePress(err: unknown): boolean {
  * The ONLY caller of answerCallbackQuery (fenced). Never throws. `say: false`
  * = a progress notice for dispatched work, which is never repeated as a chat
  * message when it comes too late to be a toast.
+ *
+ * `again: true` = the handler did NOTHING and its words ask for the press to
+ * be repeated («hozir band — birozdan keyin yana bosing»). A late press is
+ * otherwise remembered for a minute so that five taps into a bot that was not
+ * there are one request; remembered here, the one press that was told to
+ * come back would be the one answered with silence and not run.
  */
-export async function answerPress(ctx: PressCtx, toast?: string, opts: { say?: boolean } = {}): Promise<PressAnswer> {
+export async function answerPress(
+  ctx: PressCtx,
+  toast?: string,
+  opts: { say?: boolean; again?: boolean } = {},
+): Promise<PressAnswer> {
   try {
     await ctx.answerCallbackQuery(toast ? { text: clipText(toast, 200) } : undefined);
     return 'answered';
   } catch (err) {
     if (isStalePress(err)) {
-      lateOf.set(ctx, { toast: toast ?? null, say: opts.say !== false });
+      lateOf.set(ctx, { toast: toast ?? null, say: opts.say !== false, again: opts.again === true });
       logger.info({ data: (ctx as unknown as Context).callbackQuery?.data }, '[bot] press answered late');
       return 'stale';
     }
@@ -116,8 +126,12 @@ export function pressMiddleware(): MiddlewareFn<Context> {
     const late = lateOf.get(ctx);
     if (!late) return;
     const now = Date.now();
-    prune(lateAt, now);
-    lateAt.set(same, now);
+    // A press the handler asked to have repeated is not «already handled»:
+    // its repeat must reach the handler.
+    if (!late.again) {
+      prune(lateAt, now);
+      lateAt.set(same, now);
+    }
     const toastKey = `${chat}:${msg}:${late.toast ?? ''}`;
     if (late.toast && late.say && !said && !toastSaid.has(toastKey)) {
       prune(toastSaid, now);

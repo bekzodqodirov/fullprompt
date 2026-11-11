@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getTranslations } from 'next-intl/server';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { globalSearch, type SearchHit, type SearchKind } from '@/modules/wms/search/service';
+import { LotNameText } from '@/components/lot-goods-name';
 
 /**
  * The search PAGE — the same answers as the ⌘K palette, from the same
@@ -64,11 +65,14 @@ export default async function SearchPage({
                 {hit.code}
               </span>
               {(hit.label || hit.formerCode) && (
-                <span className="truncate text-ink-700">
-                  {[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
+                // A lot's label may end in a tarkib's «+N» — the name gives
+                // way, the count stays (LotNameText).
+                <LotNameText
+                  className="min-w-0 text-ink-700"
+                  text={[hit.formerCode ? t('formerCode', { code: hit.formerCode }) : '', hit.label ?? '']
                     .filter(Boolean)
                     .join(' · ')}
-                </span>
+                />
               )}
             </Link>
           ))}

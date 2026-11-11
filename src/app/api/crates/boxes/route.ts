@@ -1,8 +1,9 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/modules/platform/db/client';
 import { boxes, receiptLots, receipts } from '@/modules/platform/db/schema';
 import { AuthError, authorize } from '@/modules/platform/rbac/authorize';
+import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
 
 const querySchema = z.object({
   warehouseId: z.string().uuid(),
@@ -33,7 +34,9 @@ export async function GET(request: Request) {
       lotId: receiptLots.id,
       letter: receiptLots.letter,
       productNameZh: receiptLots.productNameZh,
-      productNameRu: receiptLots.productNameRu,
+      // As the lists show it: a standing tarkib's «first +N», else the lot's
+      // own (`receipts/lot-name.ts`).
+      productNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
       boxCount: receiptLots.boxCount,
       receiptNumber: receipts.number,
     })

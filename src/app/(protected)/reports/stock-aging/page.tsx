@@ -4,6 +4,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { SortTh, sortRows } from '@/components/sort-th';
 import { stockAging } from '@/modules/wms/reports/queries';
 import { BackLink } from '@/components/back-link';
+import { LotGoodsName } from '@/components/lot-goods-name';
 
 const SORTABLE = ['whCode', 'code', 'boxCount', 'kg', 'm3', 'density', 'days'] as const;
 
@@ -57,7 +58,9 @@ export default async function StockAgingReportPage({
                 <tr key={i} className="border-b border-line last:border-0">
                   <td className="p-2 font-mono font-bold">{row.whCode}</td>
                   <td className="p-2 font-mono font-extrabold text-brand-700">{row.code}</td>
-                  <td className="max-w-56 truncate p-2">{row.product}</td>
+                  <td className="max-w-56 p-2">
+                    <LotGoodsName zh={row.productNameZh} ru={row.productNameRu} />
+                  </td>
                   <td className="p-2 text-right">{row.boxCount}</td>
                   <td className="p-2 text-right">{row.kg}</td>
                   <td className="p-2 text-right">{row.m3}</td>
