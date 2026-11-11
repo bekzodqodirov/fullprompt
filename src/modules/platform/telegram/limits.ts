@@ -64,5 +64,15 @@ export const MAX_BUTTON_CHARS = 40;
 export function buttonLabel(text: string, fallback: string): string {
   const clean = text.replace(/\s+/g, ' ').trim();
   if (clean === '') return fallback;
-  return clean.length > MAX_BUTTON_CHARS ? `${clean.slice(0, MAX_BUTTON_CHARS - 1)}…` : clean;
+  if (clean.length <= MAX_BUTTON_CHARS) return clean;
+  // Cut on whole CHARACTERS, counted in the UTF-16 units the limit is in. A
+  // `slice` can halve an emoji, and the lone surrogate it leaves is not valid
+  // text: Telegram refuses the button — and with it the whole message. For a
+  // title with no emoji this is the slice it always was.
+  let kept = '';
+  for (const ch of clean) {
+    if (kept.length + ch.length > MAX_BUTTON_CHARS - 1) break;
+    kept += ch;
+  }
+  return `${kept}…`;
 }

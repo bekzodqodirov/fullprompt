@@ -210,8 +210,8 @@ export const MAX_PHOTO_BUTTONS = 12;
  *
  * A button holds 40 characters, and a cut at the end took a tarkib label's
  * «+2» first: the NAME is shortened to what the button has left after its
- * head, the count kept (`clipKeepingCount`), so `buttonLabel` finds nothing
- * more to cut.
+ * head, the count kept (`clipKeepingCount`), until the whole label fits — so
+ * `buttonLabel` finds nothing more to cut.
  */
 export function photoButtonRows(lots: CabinetLot[]): { text: string; callback_data: string }[][] {
   const picked = lots
@@ -222,7 +222,18 @@ export function photoButtonRows(lots: CabinetLot[]): { text: string; callback_da
   for (const lot of picked) {
     const head = `📷 ${lot.letter ? `${lot.letter} · ` : ''}`;
     const name = productName(lot).replace(/\s+/g, ' ').trim();
-    const text = buttonLabel(`${head}${clipKeepingCount(name, MAX_BUTTON_CHARS - head.length)}`, '📷');
+    // The room is in the unit `buttonLabel` enforces (UTF-16), `clipKeepingCount`
+    // counts characters: an emoji in the name is one of these and two of
+    // those. Unshrunk, such a label came out a unit too long, `buttonLabel`
+    // cut its END again — and the end is the count («… телеф… …», the review
+    // of the built round).
+    let room = MAX_BUTTON_CHARS - head.length;
+    let label = `${head}${clipKeepingCount(name, room)}`;
+    while (label.length > MAX_BUTTON_CHARS && room > 1) {
+      room -= 1;
+      label = `${head}${clipKeepingCount(name, room)}`;
+    }
+    const text = buttonLabel(label, '📷');
     const button = { text, callback_data: `ph:${lot.lotId}` };
     const last = rows[rows.length - 1];
     if (last && last.length < 2) last.push(button);

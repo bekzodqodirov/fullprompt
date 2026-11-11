@@ -18,6 +18,7 @@ import {
   startGreetingHtml,
   throttledHtml,
 } from '@/modules/wms/client-cabinet/bot-text';
+import { buttonLabel } from '@/modules/platform/telegram/limits';
 import type { CabinetLot, CargoGroup, DebtSummary } from '@/modules/wms/client-cabinet/service';
 
 /**
@@ -206,6 +207,41 @@ describe('the 📷 buttons', () => {
     const button = photoButtonRows([lot({ hasPhotos: true, productNameRu: 'y'.repeat(200) })])[0]![0]!;
     expect(button.text.length).toBeLessThanOrEqual(40);
     expect(button.text.startsWith('📷 A · ')).toBe(true);
+  });
+
+  it('a tarkib label keeps its «+N» on the button — with an emoji in the name too', () => {
+    // The limit is in UTF-16 units and the clip counts characters: an emoji
+    // is one of these and two of those. The label came out a unit too long,
+    // was cut at its END again, and the end is the count.
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (const name of [
+      'Клавиатура проводная механическая с подсветкой +2',
+      'Чехол 📱 силиконовый для телефона +2',
+      'Наушники 🎧 беспроводные Bluetooth 5.3 +2',
+      `${'🎧'.repeat(20)} +3`,
+    ]) {
+      const { text } = photoButtonRows([lot({ hasPhotos: true, productNameRu: name })])[0]![0]!;
+      expect(text.length, name).toBeLessThanOrEqual(40);
+      expect(text, name).toMatch(/… \+\d$/);
+      expect(text, name).not.toMatch(lone);
+    }
+  });
+
+  it('a label cut by the platform’s own limit never ends in half a character', () => {
+    // `slice` can halve an emoji; the lone surrogate is not valid text and
+    // Telegram refuses the button — and with it the whole message. Every
+    // caller of `buttonLabel` (task titles, people, zametka names) had it.
+    const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+    for (const title of ['🎧'.repeat(30), `a${'🎧'.repeat(30)}`, `${'я'.repeat(38)}🎧🎧`]) {
+      const label = buttonLabel(title, 'x');
+      expect(label.length, title).toBeLessThanOrEqual(40);
+      expect(label, title).not.toMatch(lone);
+      expect(label.endsWith('…'), title).toBe(true);
+    }
+    // No emoji: the slice it always was.
+    expect(buttonLabel('y'.repeat(200), 'x')).toBe(`${'y'.repeat(39)}…`);
+    expect(buttonLabel('  short  ', 'x')).toBe('short');
+    expect(buttonLabel('   ', 'x')).toBe('x');
   });
 
   it('says what the photos are, on the first one', () => {
