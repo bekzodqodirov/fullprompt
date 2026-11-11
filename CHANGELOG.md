@@ -123,6 +123,40 @@ ishlaydi.
    donasi izohda qoladi · b) bunday qatorlar umuman qo'shilmasin.
 10. Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi: ⭐ a) shunday · b) rasm ham yuborilsin.
 
+## 2026-11-10 — Haydovchi ilovasi birinchi joylashuvdan keyin to'xtab qolmaydi
+
+Sizning so'zingiz: «driverlar mobile appida muammo bor faqat boshida joylashuvini jonatyabti keyin uzilib qolyabti
+https 400 hatolik chiqazdi». **Migratsiya yo'q** (baza hisobi 143 da qoladi), shuning uchun deploy `/api/version`
+bilan tekshiriladi. **Yangi ilova (APK) kerak emas.** Tuzatish serverda.
+
+### Nima bo'layotgan edi
+- Haydovchi telefoni joylashuvlarni navbatda saqlaydi va serverga eng eskisidan boshlab yuboradi. Telefon navbatni
+  faqat server «qabul qildim» desa o'chiradi.
+- Agar to'plamdagi **bitta** nuqtada bitta qiymat chegaradan chiqsa (masalan GPS bir lahzada tezlikni 500 km/soat
+  deb ko'rsatsa), server butun to'plamni «400» bilan qaytarardi.
+- Telefon o'sha to'plamni keyingi safar ham boshidan yuborardi va yana 400 olardi. Shu tariqa birinchi nuqtadan
+  keyin bironta joylashuv yetib kelmasdi. Ekranda esa faqat «HTTP 400» yozilardi.
+
+### Endi qanday
+- Har bir nuqta alohida tekshiriladi. Joyi va vaqti bor nuqta **qabul qilinadi**, faqat noto'g'ri qiymati olib
+  tashlanadi:
+  - noto'g'ri tezlik o'chiriladi;
+  - aniqligi juda yomon nuqta «xira nuqta» bo'lib saqlanadi. U tarixda turadi, lekin xaritada mashinaning joyi deb
+    ko'rsatilmaydi.
+- Joyi yoki vaqti umuman o'qilmaydigan nuqta tashlab yuboriladi, faqat o'zi. Qolganlari o'tadi.
+- Server endi har doim «qabul qildim» deydi, shuning uchun telefon navbati to'xtab qolmaydi.
+- Telefonda tiqilib qolgan nuqtalar deploydan keyingi birinchi aylanishda (15 daqiqagacha) yoki ilovada **«Hozir
+  yuborish»** bosilganda **hammasi** yetib keladi. Mashinaning o'tgan yo'li ham xaritaga tushadi.
+- Faqat yaroqsiz nuqtalardan iborat to'plam kelsa, «mashina jim» ogohlantirishi o'chmaydi, chunki logistda mashina
+  joyi baribir yo'q.
+- Sabab serverning yozuvida ko'rinadi: `[track]` bilan boshlanadigan qator qaysi nuqta nima uchun tashlangani yoki
+  tuzatilganini ko'rsatadi.
+
+### Ilovaning o'zida qolgan ikkita kamchilik (yangi APK chiqqanda tuzatiladi)
+- Telefon aniqligi 10 km dan yomon nuqtani «aniqligi noma'lum» deb yuboradi. Server uni yaxshi nuqtadan ajrata
+  olmaydi.
+- Xato bo'lganda ilova faqat raqamni ko'rsatadi, sababini ko'rsatmaydi.
+
 ## 2026-11-10 (kechqurun) — AI 100 tagacha xabarni o'qiydi; «80 % ishonch» endi o'lchanadi; avtonom sotuv menejerining yo'li yozildi
 
 Sizning so'zingiz: «kopi bn 30 ta emas 100 tagacha oshirish kerak. va ozi yozsin hammaga agarda 80foiz shu javob
