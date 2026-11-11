@@ -1208,12 +1208,15 @@ export function registerClientCabinet(bot: Bot): void {
     let outcome: ConfirmOutcome = 'stale';
     /** Whose prixod the press was about — known only when it is this chat's. */
     let about: { clientId: string; receiptId: string } | null = null;
+    /** What the pressed message asked (0145): its thanks name exactly that. */
+    let full = false;
     try {
       locale = chatLocale(await clientsForChat(BigInt(chatId)));
       if (press) {
         const { answerClientAsk } = await import('../../wms/receipts/client-confirm');
         const answer = await answerClientAsk({ chatId: BigInt(chatId), ...press });
         outcome = answer.outcome === 'recorded' ? answer.verdict : answer.outcome;
+        full = answer.outcome === 'recorded' && answer.scope === 'full';
         if (answer.outcome === 'recorded') about = { clientId: answer.facts.clientId, receiptId: answer.facts.receiptId };
         else if (answer.outcome === 'stale') about = { clientId: answer.clientId, receiptId: press.receiptId };
       }
@@ -1223,7 +1226,10 @@ export function registerClientCabinet(bot: Bot): void {
     }
     const t = clientLabels(locale);
     const toastOf: Record<ConfirmOutcome, string | undefined> = {
-      yes: t.confirmThanks,
+      // A ✅ to a question that asked about the kilos and cubic metres is
+      // thanked for them too; a press on a message sent before 0145 for what
+      // THAT message asked.
+      yes: full ? t.confirmThanksFull : t.confirmThanks,
       no: undefined,
       already: t.confirmAlready,
       // One neutral word for «the facts moved», «not this chat's» and «no

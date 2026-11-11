@@ -2,7 +2,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { PgSelect } from 'drizzle-orm/pg-core';
 import { lotChecks, receiptLots } from '../../platform/db/schema';
 import type { CheckFilter } from './lot-check-face';
-import { lotClientConfirmsReady } from './lot-check-ready';
+import { lotClientConfirmsReady, lotClientMeasuresReady } from './lot-check-ready';
 import { lotRuShownSql } from './lot-name';
 
 export {
@@ -28,8 +28,9 @@ export {
  *    the client. A rename, a count correction, the QR-siz count growth or a
  *    new client make it read «stale» by COMPARISON — and a take-back to the
  *    vouched count reads checked again by itself, which a clear-on-write
- *    could never do. kg/m³ are deliberately not compared: a re-weigh is the
- *    warehouse's correction, not «what is it». The Russian name compared is
+ *    could never do. kg/m³ are deliberately not compared HERE: a re-weigh is
+ *    the warehouse's correction, not «what is it» (the CLIENT's own answer
+ *    does compare them since 0145 — below). The Russian name compared is
  *    the one the screens SHOW (`lotRuShownSql` — the tarkib's label while one
  *    is written, standing or not): a person confirms what the card printed,
  *    so a tarkib written, changed or cleared after the tick makes it «stale»,
@@ -52,8 +53,11 @@ export {
  *    `lot_client_confirms` row: the ✅ or ❌ the client pressed in Telegram,
  *    with what the message SHOWED them. A ✅ is the same kind of snapshot,
  *    compared the same way, plus the tarkib's goods as printed
- *    (`goods_key`): while it matches the lot reads «checked» and nobody has
- *    to telephone. A ❌ is a VETO, and it stands against exactly what it
+ *    (`goods_key`) and — when the question asked about them (0145, the
+ *    owner's «4 ha»: «og'irlik va hajmga urg'u berilsin») — the lot's kilos
+ *    and cubic metres as the customer reads them: while it matches the lot
+ *    reads «checked» and nobody has to telephone. A ❌ is a VETO, and it
+ *    stands against exactly what it
  *    rejected: a tarkib does not vouch for the goods the client rejected,
  *    and a colleague's tick does not vouch unless it was pressed AFTER the
  *    ❌ (`lotCheckStateSql` spells the four ways it ends). No fourth state:
@@ -83,8 +87,12 @@ export const LOT_TARKIB = sql.raw('lot_tarkib');
  * (0144). Deliberately not the composition's `rev`: that token moves on
  * every save AND on every TNVED code typed on the Bojxona tab, so a client's
  * ✅ would read «eskirgan» after routine coding and a ❌ would be lifted by
- * it — the design judge's blocker. kg, m³, cartons and codes are not in it:
- * the client is not shown them.
+ * it — the design judge's blocker. A LINE's kg, m³, cartons and codes are not
+ * in it: the client is not shown them. (The LOT's own kilos and cubic metres
+ * are shown, and since 0145 they are part of the answer — as two figures of
+ * their own, `shown_kg` / `shown_m3`, never inside this digest: arm 1 below
+ * asks whether a ❌ was given on the very GOODS a tarkib still lists, and a
+ * re-weigh must not answer that.)
  */
 export function lotTarkibJoinSql(): SQL {
   return sql`(
@@ -145,16 +153,66 @@ export function checkTermsSql(refs: LotCheckRefs): { name: SQL; count: SQL; clie
 }
 
 /**
+ * The lot's kilos and cubic metres AS A CUSTOMER READS THEM — two places and
+ * three (`roundKg` / `roundM3`'s). ONE pair of expressions for what a
+ * question remembers (`client-confirm.ts` reads them into `shown_kg` /
+ * `shown_m3`) and for what the sentence compares them with, both rounded by
+ * the DATABASE: a figure rounded in JavaScript on one side and in SQL on the
+ * other differs on a half (100.005 kg), and such a lot's ✅ could never match.
+ */
+export function lotShownKgSql(lot: SQL): SQL {
+  return sql`round(${lot}.total_weight_kg, 2)`;
+}
+
+export function lotShownM3Sql(lot: SQL): SQL {
+  return sql`round(${lot}.total_volume_m3, 3)`;
+}
+
+/**
+ * The measures the client confirmed still stand (0145). NULL = the question
+ * did not ask about them — every answer given before 0145 and every press on
+ * a button sent before it — and such an answer holds on the five 0144 terms
+ * alone. Named columns, so only where they exist (`lotClientMeasuresReady()`;
+ * `lot-check-ready.ts` says why not `to_jsonb`).
+ */
+export function clientMeasuresHoldSql(lot: SQL): SQL {
+  if (!lotClientMeasuresReady()) return sql`TRUE`;
+  return sql`(${LOT_CLIENT}.shown_kg IS NULL
+    OR (${LOT_CLIENT}.shown_kg = ${lotShownKgSql(lot)} AND ${LOT_CLIENT}.shown_m3 = ${lotShownM3Sql(lot)}))`;
+}
+
+/**
  * The client's answer is about what the lists still show (0144): the five
  * things the question printed — the carton count, the owner, the tarkib's
  * goods (`goods_key`; NULL on both sides = no tarkib then, none now) and
- * both name spellings. A rename, a count correction, a new owner, a tarkib
- * written, changed or cleared afterwards — and a ✅ is about data that no
- * longer exists. The SHOWN Russian name, as on the person's tick, and LAST:
- * it is the one term that costs a subquery, and the sentence runs once per
- * carton on the lists (the design judge measured 4.5 → 48 ms with it first).
+ * both name spellings — and, for a question that asked about them (0145),
+ * the lot's kilos and cubic metres. A rename, a count correction, a new
+ * owner, a tarkib written, changed or cleared afterwards, a re-weigh a
+ * customer would see — and a ✅ is about data that no longer exists. The
+ * SHOWN Russian name, as on the person's tick, and LAST: it is the one term
+ * that costs a subquery, and the sentence runs once per carton on the lists
+ * (the design judge measured 4.5 → 48 ms with it first).
  */
 export function clientHoldsSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
+  const { lot, receipt } = refs;
+  return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
+    AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
+    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id
+    AND ${clientMeasuresHoldSql(lot)}
+    AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key
+    AND ${LOT_CLIENT}.shown_zh = ${lot}.product_name_zh
+    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`;
+}
+
+/**
+ * The 0144 half alone — the five things every question has printed — for
+ * the CARD, which says WHY a ✅ stopped holding: «og'irlik yoki hajm
+ * o'zgardi» only when these still stand and the measures are what moved.
+ * The lists never ask it; the state is `clientHoldsSql`'s, which is this AND
+ * `clientMeasuresHoldSql` term for term (pinned by the 96-cell table reading
+ * both through the card's reader).
+ */
+export function clientFactsHoldSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
   const { lot, receipt } = refs;
   return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
     AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
@@ -195,7 +253,9 @@ export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
  *
  * So a ❌ ends four ways and no fifth: the rejected goods are changed, a
  * colleague ticks after it, the client answers again, or «E'tirozni yopish».
- * kg and m³ are in no arm — a complaint about a weight is closed by a person.
+ * kg and m³ lift no ❌ — a complaint about a weight is closed by a person;
+ * they are compared in ONE place, arm 4: a ✅ given to a question that asked
+ * about them (0145) stops vouching once they move.
  *
  * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
  * this is the two-source sentence that shipped with 0123, word for word.

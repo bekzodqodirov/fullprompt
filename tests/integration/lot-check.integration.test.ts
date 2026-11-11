@@ -35,6 +35,9 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // is a deploy whose 0144 did not land while 0122/0123 are live.
   lotClientConfirmsReady: () => ready.on && ready.client,
   clientConfirmsReady: async () => ready.on && ready.client,
+  // 0145's third answer (the answer's kilos and cubic metres): there whenever the second is.
+  lotClientMeasuresReady: () => ready.on && ready.client,
+  clientMeasuresReady: async () => ready.on && ready.client,
 }));
 vi.mock('@/modules/platform/rbac/authorize', async (original) => {
   const real = await original<typeof import('@/modules/platform/rbac/authorize')>();

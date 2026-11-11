@@ -107,7 +107,13 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
   // else this push says — cargo still in China that nobody has confirmed, and
   // a prixod the push prints whole. A failure to ask is «no buttons», never
   // «no push»: the sentence is the message, the row is an addition.
-  const printed = summary.lines.map((line) => ({ lotId: line.lotId, name: line.name, boxCount: line.boxCount }));
+  const printed = summary.lines.map((line) => ({
+    lotId: line.lotId,
+    name: line.name,
+    boxCount: line.boxCount,
+    weightKg: line.weightKg,
+    volumeM3: line.volumeM3,
+  }));
   const confirm = await clientAskOffer(notice.refId, notice.clientId, printed, pushLotName).catch((err) => {
     logger.warn({ err, receiptId: notice.refId }, 'client confirm offer failed — the push goes without buttons');
     return null;
@@ -116,13 +122,24 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
     render: (locale) => {
       const plain = receivedText(summary, locale);
       if (!confirm) return { text: plain, caption: plain };
-      const asking = receivedText(summary, locale, { ask: true });
-      // The question must never cost the photograph: a caption that the
-      // extra line would push past Telegram's limit goes without it, and the
-      // buttons — «✅ To'g'ri» / «❌ Xato bor» — carry the question alone.
-      return { text: asking, caption: visibleLength(asking) <= MAX_CAPTION_CHARS ? asking : plain };
+      // The question's words follow its SCOPE (0145): `full` asks about the
+      // kilos and cubic metres the lines above print, and its tag covers them.
+      const asking = receivedText(summary, locale, { ask: confirm.scope });
+      const fits = visibleLength(asking) <= MAX_CAPTION_CHARS;
+      // A FULL question (0145) is never sent without its words: its ✅ is
+      // recorded as «the weight and the volume too», and a client must have
+      // been ASKED that — the owner's «urg'u berilsin, tekshirib olsin». So
+      // where the caption cannot carry the ask line, the PHOTOGRAPH yields:
+      // the push goes as text, lines, question and buttons together (the
+      // design judge, A3 — the picture is one tap away in the Mini App).
+      if (confirm.scope === 'full') return { text: asking, caption: fits ? asking : null };
+      // A BASIC question (a server without 0145) keeps 0144's trade: the
+      // question never costs the photograph — a caption the extra line would
+      // push past Telegram's limit goes without it, and the buttons carry
+      // the question alone.
+      return { text: asking, caption: fits ? asking : plain };
     },
-    keyboard: { lotId: facts.lotIds[0] ?? null, confirm },
+    keyboard: { lotId: facts.lotIds[0] ?? null, confirm: confirm ? { receiptId: confirm.receiptId, tag: confirm.tag } : null },
     photo: await firstLotPhoto(facts.lotIds),
   };
 }

@@ -14,8 +14,8 @@ import { linkedChats } from '../notices/client-push';
 import { PUSH_LOT_LINES } from '../notices/client-text';
 import { isBusyError, isServerBehind } from '../../platform/db/errors';
 import { lockLotAnswersTx, lotCheckViewsFor, mayCheckLot, type LotCheckActor } from './lot-check';
-import { clientConfirmsReady } from './lot-check-ready';
-import { lotTarkibJoinSql } from './lot-check-sql';
+import { clientConfirmsReady, clientMeasuresReady } from './lot-check-ready';
+import { lotShownKgSql, lotShownM3Sql, lotTarkibJoinSql } from './lot-check-sql';
 import { lotRuShownSql } from './lot-name';
 import { mayReadReceipt } from './read-door';
 
@@ -42,6 +42,16 @@ import { mayReadReceipt } from './read-door';
  * owner or a tarkib written afterwards make every button sent before it
  * «eskirgan» — a client cannot confirm what they were not shown, the staff
  * tick's `lot_changed` in the customer's hands.
+ *
+ * THE SCOPE (0145, docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik
+ * va hajmga urg'u berilsin, tekshirib olsin klient va tasdiqlasin»): a
+ * question asked from now on is `full` — it also asks about the lot's kilos
+ * and cubic metres, its tag covers them, and its answer remembers them
+ * (`shown_kg` / `shown_m3`, at the precision a customer reads). A question
+ * sent before 0145 was `basic`; its buttons still carry the 0144 tag, and a
+ * press on one is judged against that recipe (`basicTag`) and recorded as
+ * what THAT message asked — so no button a customer already holds dies at
+ * the deploy, and none is taken for more than it said.
  *
  * NO LOT OR PRIXOD LOCK, on purpose. The row is written from the facts just
  * read, and a ✅ is a snapshot every reader COMPARES (`lot-check-sql.ts`): a
@@ -70,6 +80,9 @@ export const ASK_MAX_CHARS = 3500;
 /** …and so is one about more lots than a phone will be read through. */
 export const ASK_MAX_LOTS = 30;
 
+/** What a question asks about (§A.1): `full` = the 0144 five facts plus the lot's kilos and cubic metres. */
+export type AskScope = 'basic' | 'full';
+
 export interface ClientAskLot {
   lotId: string;
   letter: string | null;
@@ -78,6 +91,17 @@ export interface ClientAskLot {
   /** The Russian name as every list SHOWS it (a tarkib's «first +N»); null, never ''. */
   ru: string | null;
   count: number;
+  /** The lot's totals as STORED — what the push's own lines are checked against (`clientAskOffer`). */
+  kg: number;
+  m3: number;
+  /**
+   * …and as a customer reads them, rounded by the DATABASE (`lotShownKgSql`
+   * / `lotShownM3Sql` — the sentence's own two expressions), as its text:
+   * what a `full` tag hashes and a `full` answer remembers. Never rounded in
+   * JS: the two round a half differently.
+   */
+  shownKg: string;
+  shownM3: string;
   /**
    * The tarkib's goods as a question prints them, digested (`lot-check-sql.ts`
    * `goods_key` — the reader's own column, so the answer and the sentence
@@ -96,7 +120,12 @@ export interface ClientAskFacts {
   warehouseName: string;
   receivedAt: Date | null;
   lots: ClientAskLot[];
+  /** `full` on a server whose 0145 has landed (`clientMeasuresReady()`), `basic` otherwise. */
+  scope: AskScope;
+  /** The tag of exactly what a question of this scope prints. */
   tag: string;
+  /** The 0144 recipe over the same facts — what a button sent before 0145 carries. */
+  basicTag: string;
 }
 
 export type ClientAskSkip = 'receipt_gone' | 'voided' | 'not_confirmed' | 'no_client' | 'no_lots';
@@ -112,12 +141,25 @@ export interface ClientAskSkipped {
   clientId: string | null;
 }
 
-/** Eight hex digits of what a question prints. Pure — the send and the press both call it. */
+/**
+ * Eight hex digits of what a question prints. Pure — the send and the press
+ * both call it. `basic` is the 0144 recipe BYTE FOR BYTE (the buttons already
+ * in customers' chats were hashed with it); `full` adds each lot's two
+ * figures as the database's own text.
+ */
 export function askTag(
   clientId: string,
-  lots: readonly Pick<ClientAskLot, 'lotId' | 'zh' | 'ru' | 'count' | 'goodsKey'>[],
+  lots: readonly Pick<ClientAskLot, 'lotId' | 'zh' | 'ru' | 'count' | 'goodsKey' | 'shownKg' | 'shownM3'>[],
+  scope: AskScope = 'basic',
 ): string {
-  const facts = [clientId, lots.map((l) => [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? ''])];
+  const facts = [
+    clientId,
+    lots.map((l) =>
+      scope === 'full'
+        ? [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? '', l.shownKg, l.shownM3]
+        : [l.lotId, l.zh, l.ru ?? '', l.count, l.goodsKey ?? ''],
+    ),
+  ];
   return createHash('sha256').update(JSON.stringify(facts)).digest('hex').slice(0, 8);
 }
 
@@ -147,13 +189,19 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
   if (receipt.voidedAt || receipt.status === 'voided') return { skip: 'voided', clientId: receipt.clientId };
   if (receipt.status !== 'confirmed') return { skip: 'not_confirmed', clientId: receipt.clientId };
   if (!receipt.clientId || !receipt.clientCode) return { skip: 'no_client', clientId: null };
+  // Asked of the probe HERE, by the question's own door (never a flag another
+  // screen remembered): can this server remember kilos and cubic metres?
+  const scope: AskScope = (await clientMeasuresReady()) ? 'full' : 'basic';
 
-  // ONE statement for the names, the counts, the goods and their digest: the
-  // tag vouches for exactly what the message prints, and two reads would let
-  // a tarkib saved between them print one list under the other's tag.
+  // ONE statement for the names, the counts, the measures, the goods and
+  // their digest: the tag vouches for exactly what the message prints, and
+  // two reads would let a tarkib saved between them print one list under the
+  // other's tag.
   const rows = (await db.execute(sql`
     SELECT l.id, l.letter, l.product_name_zh AS zh, NULLIF(${lotRuShownSql(sql`l`)}, '') AS ru,
            l.box_count, lot_tarkib.goods_key,
+           l.total_weight_kg::text AS kg, l.total_volume_m3::text AS m3,
+           ${lotShownKgSql(sql`l`)}::text AS kg_shown, ${lotShownM3Sql(sql`l`)}::text AS m3_shown,
            (SELECT coalesce(json_agg(json_build_object('name', cl.name, 'pieces', cl.pieces) ORDER BY cl.seq), '[]'::json)
               FROM lot_composition_lines cl WHERE cl.lot_id = l.id) AS goods
       FROM receipt_lots l
@@ -167,6 +215,12 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     ru: string | null;
     box_count: number;
     goods_key: string | null;
+    kg: string;
+    m3: string;
+    // Named apart from the answer's own columns (`shown_kg` / `shown_m3`): these
+    // are read off the LOT and exist on every server.
+    kg_shown: string;
+    m3_shown: string;
     goods: { name: string; pieces: number | null }[] | string | null;
   }[];
   if (rows.length === 0) return { skip: 'no_lots', clientId: receipt.clientId };
@@ -179,6 +233,10 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
       zh: row.zh,
       ru: row.ru,
       count: Number(row.box_count),
+      kg: Number(row.kg),
+      m3: Number(row.m3),
+      shownKg: row.kg_shown,
+      shownM3: row.m3_shown,
       goodsKey: row.goods_key,
       // A tarkib that is WRITTEN prints its goods; none written, none printed.
       goods: row.goods_key === null ? [] : goods.map((line) => ({ name: line.name, pieces: line.pieces === null ? null : Number(line.pieces) })),
@@ -193,7 +251,9 @@ export async function clientAskFacts(receiptId: string): Promise<ClientAskFacts 
     warehouseName: receipt.warehouseName || receipt.warehouseCode,
     receivedAt: receipt.receivedAt,
     lots,
-    tag: askTag(receipt.clientId, lots),
+    scope,
+    tag: askTag(receipt.clientId, lots, scope),
+    basicTag: askTag(receipt.clientId, lots, 'basic'),
   };
 }
 
@@ -202,6 +262,9 @@ export interface PrintedLot {
   lotId: string;
   name: string;
   boxCount: number;
+  /** The totals the line printed its kilos and cubic metres FROM (`receivedFacts`' own read). */
+  weightKg: number;
+  volumeM3: number;
 }
 
 /**
@@ -216,14 +279,16 @@ export interface PrintedLot {
  * is about to PRINT are the lines the tag vouches for (`printed`, with the
  * push's own name rule handed in) — the text and the tag come from two
  * reads, and a rename landing between them must cost the buttons, never
- * record a ✅ for a name the client was not shown.
+ * record a ✅ for a name the client was not shown. A `full` question ties the
+ * two reads by the kilos and cubic metres too: a re-weigh landing between
+ * them must not record a ✅ for a weight the message did not print.
  */
 export async function clientAskOffer(
   receiptId: string,
   clientId: string,
   printed: readonly PrintedLot[],
   nameOf: (ru: string | null, zh: string) => string,
-): Promise<{ receiptId: string; tag: string } | null> {
+): Promise<{ receiptId: string; tag: string; scope: AskScope } | null> {
   if ((await getSetting('client_confirm_on_receipt')) !== true) return null;
   if (!(await clientConfirmsReady())) return null;
   const facts = await clientAskFacts(receiptId);
@@ -235,7 +300,12 @@ export async function clientAskOffer(
     printed.length === facts.lots.length &&
     facts.lots.every((lot) => {
       const line = shown.get(lot.lotId);
-      return line !== undefined && line.boxCount === lot.count && line.name === nameOf(lot.ru, lot.zh);
+      return (
+        line !== undefined &&
+        line.boxCount === lot.count &&
+        line.name === nameOf(lot.ru, lot.zh) &&
+        (facts.scope === 'basic' || (line.weightKg === lot.kg && line.volumeM3 === lot.m3))
+      );
     });
   if (!asPrinted) return null;
   const views = await lotCheckViewsFor(facts.lots.map((lot) => lot.lotId));
@@ -243,7 +313,7 @@ export async function clientAskOffer(
     const view = views.get(lot.lotId);
     return view !== undefined && view.askable && (view.state === 'none' || view.state === 'stale');
   });
-  return worthAsking ? { receiptId, tag: facts.tag } : null;
+  return worthAsking ? { receiptId, tag: facts.tag, scope: facts.scope } : null;
 }
 
 export type ClientVerdict = 'yes' | 'no';
@@ -261,11 +331,20 @@ export type ClientAnswer =
   | { outcome: 'already'; verdict: ClientVerdict }
   /** A lot of this prixod is being edited this very second — nothing written, the buttons stay. */
   | { outcome: 'busy' }
-  | { outcome: 'recorded'; verdict: ClientVerdict; facts: ClientAskFacts };
+  /** `scope` = what the pressed message asked: its thanks name exactly that. */
+  | { outcome: 'recorded'; verdict: ClientVerdict; facts: ClientAskFacts; scope: AskScope };
 
-/** `键盘 (Клавиатура) × 100` — the History's value for one lot of an answer. */
-function shownLine(lot: Pick<ClientAskLot, 'zh' | 'ru' | 'count'>): string {
-  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}`;
+/** «200 kg · 1.5 m³» from the database's two texts — a History and alert value, never a customer's line. */
+function measuresText(kg: string | null, m3: string | null): string {
+  return kg === null || m3 === null ? '' : ` · ${Number(kg)} kg · ${Number(m3)} m³`;
+}
+
+/**
+ * `键盘 (Клавиатура) × 100` — the History's value for one lot of an answer;
+ * `… × 100 · 200 kg · 1.5 m³` when the answer covered the measures.
+ */
+function shownLine(lot: Pick<ClientAskLot, 'zh' | 'ru' | 'count'>, kg: string | null = null, m3: string | null = null): string {
+  return `${lot.zh}${lot.ru ? ` (${lot.ru})` : ''} × ${lot.count}${measuresText(kg, m3)}`;
 }
 
 /** The History's key for a lot's answer — per LOT, as the staff tick's (`lotCheck:A`). */
@@ -287,11 +366,31 @@ async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: 
   return row ? { askedBy: row.asked_by, sentAt: row.sent_at ? new Date(row.sent_at) : null } : null;
 }
 
-/** The staff's sentence about an answer — plain Uzbek, the card's link last (the drain makes it a button). */
-function staffText(facts: ClientAskFacts, verdict: ClientVerdict, opts: { withdraws?: boolean } = {}): string {
+/**
+ * The staff's sentence about an answer — plain Uzbek, the card's link last
+ * (the drain makes it a button). The lots print what the answer was ABOUT:
+ * their kilos and cubic metres only when the pressed message asked.
+ */
+function staffText(
+  facts: ClientAskFacts,
+  verdict: ClientVerdict,
+  opts: { withdraws?: boolean; scope?: AskScope } = {},
+): string {
+  const full = opts.scope === 'full';
+  // An answer that covered the name and the count only, on a server whose
+  // questions ask about the weight too: a button under a message sent before
+  // 0145 was pressed. Said in words — the lots below print no kilos, and a
+  // reader must not take that for «the weight was confirmed and is not shown».
+  const narrower =
+    opts.scope === 'basic' && facts.scope === 'full'
+      ? ['Eski xabardagi tugma bosildi: bu javob faqat tovar nomi va quti soniga tegishli — og‘irlik va hajm so‘ralmagan.']
+      : [];
   const lots = facts.lots
     .slice(0, 12)
-    .map((lot) => `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti`);
+    .map(
+      (lot) =>
+        `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti${full ? measuresText(lot.shownKg, lot.shownM3) : ''}`,
+    );
   if (facts.lots.length > 12) lots.push(`… yana ${facts.lots.length - 12} ta lot`);
   const link = cardLink('receipt', facts.receiptId);
   const head =
@@ -318,7 +417,7 @@ function staffText(facts: ClientAskFacts, verdict: ClientVerdict, opts: { withdr
       : opts.withdraws
         ? ['Mijozning avvalgi «Xato bor» javobi shu bilan bekor bo‘ldi.']
       : [];
-  return [...head, ...lots, ...tail, ...(link ? [link] : [])].join('\n');
+  return [...head, ...lots, ...narrower, ...tail, ...(link ? [link] : [])].join('\n');
 }
 
 /**
@@ -345,7 +444,18 @@ export async function answerClientAsk(input: {
   const ownerId = facts.clientId;
   if (ownerId === null || !linked.some((client) => client.id === ownerId)) return { outcome: 'unknown' };
   if ('skip' in facts) return { outcome: 'stale', clientId: ownerId };
-  if (facts.tag !== input.tag) return { outcome: 'stale', clientId: ownerId };
+  // What the pressed MESSAGE asked: the tag of today's question, or — on a
+  // message sent before 0145 — the 0144 recipe over the same facts. Anything
+  // else is about data that has since moved.
+  const scope: AskScope | null =
+    input.tag === facts.tag ? facts.scope : facts.scope === 'full' && input.tag === facts.basicTag ? 'basic' : null;
+  if (scope === null) return { outcome: 'stale', clientId: ownerId };
+  /** The two figures this answer remembers for a lot: the scope's, or none. */
+  const kgOf = (lot: ClientAskLot): string | null => (scope === 'full' ? lot.shownKg : null);
+  const m3Of = (lot: ClientAskLot): string | null => (scope === 'full' ? lot.shownM3 : null);
+  // The measure columns are named only where they exist — `facts.scope` is
+  // the probe's own answer, asked a moment ago by `clientAskFacts`.
+  const measuresHere = facts.scope === 'full';
 
   const lotIds = facts.lots.map((lot) => lot.lotId);
   // His 4a, and the question's own door: an answer is taken while some lot
@@ -395,6 +505,7 @@ export async function answerClientAsk(input: {
     // a row that no longer stood (the as-built review, L1-2).
     const held = (await tx.execute(sql`
       SELECT cc.lot_id, cc.verdict, cc.shown_zh, cc.shown_ru, cc.shown_count, cc.shown_client_id, cc.shown_goods_key,
+             ${measuresHere ? sql`cc.shown_kg::text AS shown_kg, cc.shown_m3::text AS shown_m3` : sql`NULL::text AS shown_kg, NULL::text AS shown_m3`},
              (${askedAt}::timestamptz IS NULL OR cc.answered_at > ${askedAt}::timestamptz) AS after_ask,
              coalesce(k.checked_at > cc.answered_at, false) AS ticked_since
         FROM lot_client_confirms cc
@@ -411,23 +522,56 @@ export async function answerClientAsk(input: {
       shown_count: number;
       shown_client_id: string;
       shown_goods_key: string | null;
+      shown_kg: string | null;
+      shown_m3: string | null;
       after_ask: boolean;
       ticked_since: boolean;
     }[];
     const heldBy = new Map(held.map((row) => [row.lot_id, row]));
-    /** The lot holds this very answer about these very facts. */
+    /**
+     * The lot holds this very answer about these very facts — in the terms of
+     * the SCOPE that was pressed. A `full` press compares the two measures
+     * too: over a `basic` answer it says MORE and is written. A `basic` press
+     * compares the five facts it asked about and nothing else: it can say
+     * nothing about a weight.
+     */
     const same = (lot: ClientAskLot): boolean => {
       const row = heldBy.get(lot.lotId);
+      if (
+        row === undefined ||
+        row.verdict !== input.verdict ||
+        row.shown_zh !== lot.zh ||
+        (row.shown_ru ?? null) !== lot.ru ||
+        Number(row.shown_count) !== lot.count ||
+        row.shown_client_id !== facts.clientId ||
+        (row.shown_goods_key ?? null) !== lot.goodsKey
+      ) {
+        return false;
+      }
+      return scope === 'basic' || ((row.shown_kg ?? null) === lot.shownKg && (row.shown_m3 ?? null) === lot.shownM3);
+    };
+    /**
+     * A NARROWER ✅ never replaces a WIDER one (the design judge, A1): the
+     * lot holds this owner's ✅ to a question that asked about the kilos and
+     * cubic metres, and the press is on a message sent before 0145, which
+     * did not. Written, it would strip the figures — and where the lot has
+     * been re-weighed since, turn «o'zgardi» back into ✅ by a button under
+     * a message that printed the OLD weight. Such a lot is left exactly as it
+     * is, whatever else is written by this press. A ❌ is never narrower:
+     * an objection is an objection.
+     */
+    const keeps = (lot: ClientAskLot): boolean => {
+      const row = heldBy.get(lot.lotId);
       return (
+        scope === 'basic' &&
+        input.verdict === 'yes' &&
         row !== undefined &&
-        row.verdict === input.verdict &&
-        row.shown_zh === lot.zh &&
-        (row.shown_ru ?? null) === lot.ru &&
-        Number(row.shown_count) === lot.count &&
+        row.verdict === 'yes' &&
         row.shown_client_id === facts.clientId &&
-        (row.shown_goods_key ?? null) === lot.goodsKey
+        (row.shown_kg ?? null) !== null
       );
     };
+    const writes = facts.lots.filter((lot) => !keeps(lot));
     // «Already» = every lot holds this very answer about these very facts,
     // it was given after the last question went out, AND — for a ❌ — no
     // colleague has ticked the lot since.
@@ -445,25 +589,27 @@ export async function answerClientAsk(input: {
       const row = heldBy.get(lot.lotId);
       return row !== undefined && same(lot) && row.after_ask === true && !(input.verdict === 'no' && row.ticked_since === true);
     };
-    if (facts.lots.every(settled)) return false;
+    if (writes.every(settled)) return false;
 
     const before: Record<string, unknown> = {};
     const after: Record<string, unknown> = {};
-    for (const lot of facts.lots) {
+    for (const lot of writes) {
       const key = clientConfirmAuditKey(lot.letter);
       const prev = heldBy.get(lot.lotId);
-      before[key] = prev ? `${mark(prev.verdict)} ${shownLine({ zh: prev.shown_zh, ru: prev.shown_ru, count: Number(prev.shown_count) })}` : null;
+      before[key] = prev
+        ? `${mark(prev.verdict)} ${shownLine({ zh: prev.shown_zh, ru: prev.shown_ru, count: Number(prev.shown_count) }, prev.shown_kg ?? null, prev.shown_m3 ?? null)}`
+        : null;
       // Every lot of the message is written again, so every lot is a line —
       // and the same answer about the same facts says that it was given
       // AGAIN. Skipping those left the re-answer's row with nothing under it
       // («Tizim · o'zgartirdi» over an empty box, #502).
-      after[key] = `${mark(input.verdict)} Telegram · ${shownLine(lot)}${same(lot) ? ' · qayta' : ''}`;
+      after[key] = `${mark(input.verdict)} Telegram · ${shownLine(lot, kgOf(lot), m3Of(lot))}${same(lot) ? ' · qayta' : ''}`;
     }
 
     await tx
       .insert(lotClientConfirms)
       .values(
-        facts.lots.map((lot) => ({
+        writes.map((lot) => ({
           lotId: lot.lotId,
           verdict: input.verdict,
           shownZh: lot.zh,
@@ -493,6 +639,22 @@ export async function answerClientAsk(input: {
           answeredAt: sql`clock_timestamp()`,
         },
       });
+    // The two measures (0145) — SQL-only columns, so a statement of their own
+    // beside the upsert, in the same transaction and under the same locks.
+    // ALWAYS written where the columns exist: a `basic` answer that replaces
+    // a `full` one must not keep the old kilos (the upsert's SET does not
+    // name them), or the row would claim a weight nobody was asked about.
+    if (measuresHere) {
+      await tx.execute(sql`
+        UPDATE lot_client_confirms AS cc
+           SET shown_kg = v.kg::numeric, shown_m3 = v.m3::numeric
+          FROM (VALUES ${sql.join(
+            writes.map((lot) => sql`(${lot.lotId}::uuid, ${kgOf(lot)}::text, ${m3Of(lot)}::text)`),
+            sql`, `,
+          )}) AS v(lot_id, kg, m3)
+         WHERE cc.lot_id = v.lot_id
+      `);
+    }
     // Nobody of ours pressed: the actor is null and the VALUE says «Telegram».
     await writeAudit(tx, { actorId: null }, { entityType: 'receipt', entityId: facts.receiptId, action: 'update', before, after });
     // Queued in the SAME transaction as the answer: a crash between the two
@@ -501,7 +663,8 @@ export async function answerClientAsk(input: {
     // This ✅ takes back a ❌ of the same owner that stood on one of the lots.
     const withdraws = input.verdict === 'yes' && held.some((row) => row.verdict === 'no' && row.shown_client_id === facts.clientId);
     const others = input.verdict === 'no' || withdraws ? alarmed : [];
-    const text = staffText(facts, input.verdict, { withdraws });
+    // The lots this press WROTE: one left alone (`keeps`) was not answered about.
+    const text = staffText({ ...facts, lots: writes }, input.verdict, { withdraws, scope });
     if (others.length > 0) await queueStaffTelegram(tx, { userIds: others, type, text });
     // The asker pressed a button and is waiting for this very answer: it goes
     // past their own mute, as the re-run a seller started does.
@@ -514,7 +677,7 @@ export async function answerClientAsk(input: {
   }
   if (!written) return { outcome: 'already', verdict: input.verdict };
   await kickTelegramDrain().catch(() => {});
-  return { outcome: 'recorded', verdict: input.verdict, facts };
+  return { outcome: 'recorded', verdict: input.verdict, facts, scope };
 }
 
 export type ClientAskRefusal =

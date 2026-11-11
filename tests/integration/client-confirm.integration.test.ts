@@ -20,13 +20,17 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
  * whose migration has not landed (#472).
  */
 
-const ready = vi.hoisted(() => ({ on: true, client: true }));
+const ready = vi.hoisted(() => ({ on: true, client: true, measures: true }));
 vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   lotChecksReady: async () => ready.on,
   // The probe's SECOND answer: is 0144's table there? (`ready.client = false` =
   // a deploy whose 0144 did not land while 0122/0123 are live.)
   lotClientConfirmsReady: () => ready.on && ready.client,
   clientConfirmsReady: async () => ready.on && ready.client,
+  // …and its THIRD (0145): can an answer remember kilos and cubic metres?
+  // (`ready.measures = false` = a deploy whose 0145 did not land.)
+  lotClientMeasuresReady: () => ready.on && ready.client && ready.measures,
+  clientMeasuresReady: async () => ready.on && ready.client && ready.measures,
 }));
 vi.mock('@/modules/platform/auth/session', async (original) => ({
   ...(await original<typeof import('@/modules/platform/auth/session')>()),
@@ -81,8 +85,8 @@ let staffId = '';
 let sellerId = '';
 const wh = { cn: '', uz: '' };
 const client = { A: '', B: '' };
-const receipt = { main: '', uz: '', matrix: '' };
-const lot = { K: '', T: '', S: '', U: '', M: '' };
+const receipt = { main: '', uz: '', matrix: '', weigh: '' };
+const lot = { K: '', T: '', S: '', U: '', M: '', W: '' };
 const MATRIX_ZH = `母${RUN}`;
 const MATRIX_RU = `Матрица ${RUN}`;
 const madeBoxes: string[] = [];
@@ -130,6 +134,14 @@ const rowsOfAnswers = async () =>
   (await db.select().from(lotClientConfirms).where(inArray(lotClientConfirms.lotId, [lot.K, lot.T, lot.S]))).sort((a, b) =>
     a.lotId < b.lotId ? -1 : 1,
   );
+/** The two measures each answer remembers (0145 — SQL-only columns), in the lots' own order; null = not asked. */
+const measuresOfAnswers = async (): Promise<[string | null, string | null][]> =>
+  (
+    (await db.execute(sql`
+      SELECT shown_kg::text AS kg, shown_m3::text AS m3 FROM lot_client_confirms
+       WHERE lot_id IN (${lot.K}::uuid, ${lot.T}::uuid, ${lot.S}::uuid) ORDER BY lot_id
+    `)) as unknown as { kg: string | null; m3: string | null }[]
+  ).map((row) => [row.kg, row.m3]);
 /** The staff messages this file's answers queued, newest first. */
 const queued = async () =>
   db
@@ -188,6 +200,7 @@ beforeAll(async () => {
     ['main', wh.cn],
     ['uz', wh.uz],
     ['matrix', wh.cn],
+    ['weigh', wh.cn],
   ] as const) {
     const [row] = await db
       .insert(receipts)
@@ -209,6 +222,9 @@ beforeAll(async () => {
   await mintLot('U', receipt.uz, 1, 'A', `茶${RUN}`, `Чай ${RUN}`, 1, wh.uz);
   // M: the matrix's one lot, on a prixod of its own — every combination is arranged on it by hand.
   await mintLot('M', receipt.matrix, 1, 'A', MATRIX_ZH, MATRIX_RU, 2, wh.cn);
+  // W: one plain lot on a prixod of its own, with figures that ROUND (0145's measures): 40 kg, 0.35 m³.
+  await mintLot('W', receipt.weigh, 1, 'A', `秤${RUN}`, `Tarozi ${RUN}`, 2, wh.cn);
+  await db.update(receiptLots).set({ totalWeightKg: '40.000', totalVolumeM3: '0.3500' }).where(eq(receiptLots.id, lot.W));
   // T: a tarkib of two goods that STANDS (two cartons, the lot's own totals).
   await db.insert(lotCompositions).values({ lotId: lot.T, seenBoxCount: 2, savedBy: staffId });
   await db.insert(lotCompositionLines).values([
@@ -262,8 +278,52 @@ describe('what a question shows, and its tag', () => {
     ]);
     expect(f.lots.map((l) => l.goodsKey === null)).toEqual([true, false, true]);
     expect(f.tag).toMatch(/^[0-9a-f]{8}$/);
-    expect(f.tag).toBe(askTag(f.clientId, f.lots));
+    // A question asked on a 0145 server is FULL: its tag covers the measures, and the 0144 recipe
+    // over the same facts rides beside it for the buttons already in customers' chats.
+    expect(f.scope).toBe('full');
+    expect(f.tag).toBe(askTag(f.clientId, f.lots, 'full'));
+    expect(f.basicTag).toBe(askTag(f.clientId, f.lots));
+    expect(f.basicTag).not.toBe(f.tag);
+    // The two figures: as stored (what the push's lines are checked against) and as a customer
+    // reads them — rounded by the DATABASE, as its own text.
+    expect(f.lots.map((l) => [l.kg, l.m3, l.shownKg, l.shownM3])).toEqual([
+      [100, 1, '100.00', '1.000'],
+      [100, 1, '100.00', '1.000'],
+      [100, 1, '100.00', '1.000'],
+    ]);
     expect((await facts()).tag).toBe(f.tag);
+  });
+
+  it('a FULL tag moves with a re-weigh a customer would SEE — and stays through one they would not (0145)', async () => {
+    const base = await facts();
+    const setLot = (set: Partial<typeof receiptLots.$inferInsert>) => db.update(receiptLots).set(set).where(eq(receiptLots.id, lot.K));
+    try {
+      await setLot({ totalWeightKg: '100.010' });
+      const heavier = await facts();
+      expect(heavier.tag).not.toBe(base.tag);
+      // The 0144 recipe never knew the weight: an old button is not unsettled by it.
+      expect(heavier.basicTag).toBe(base.basicTag);
+      await setLot({ totalWeightKg: '100.000', totalVolumeM3: '1.0010' });
+      expect((await facts()).tag).not.toBe(base.tag);
+      // Below what any list prints (two places of a kilo, three of a cubic metre): nothing moved for the customer.
+      await setLot({ totalWeightKg: '100.004', totalVolumeM3: '1.0004' });
+      expect((await facts()).tag).toBe(base.tag);
+    } finally {
+      await setLot({ totalWeightKg: '100.000', totalVolumeM3: '1.0000' });
+    }
+    expect((await facts()).tag).toBe(base.tag);
+  });
+
+  it('on a server whose 0145 has not landed the question is the 0144 one: basic scope, the 0144 tag', async () => {
+    ready.measures = false;
+    try {
+      const f = await facts();
+      expect(f.scope).toBe('basic');
+      expect(f.tag).toBe(askTag(f.clientId, f.lots));
+      expect(f.tag).toBe(f.basicTag);
+    } finally {
+      ready.measures = true;
+    }
   });
 
   it('the tag moves with what the client is SHOWN — a name, a count, the goods, their pieces, the owner', async () => {
@@ -317,7 +377,13 @@ describe('the ✅ / ❌ row under «yukingiz qabul qilindi» — offered only wh
   const offerFor = async (receiptId: string, clientId: string) => {
     const got = await receivedFacts(clientId, receiptId);
     if ('skip' in got) return null;
-    const printed = got.summary.lines.map((line) => ({ lotId: line.lotId, name: line.name, boxCount: line.boxCount }));
+    const printed = got.summary.lines.map((line) => ({
+      lotId: line.lotId,
+      name: line.name,
+      boxCount: line.boxCount,
+      weightKg: line.weightKg,
+      volumeM3: line.volumeM3,
+    }));
     return clientAskOffer(receiptId, clientId, printed, pushLotName);
   };
   const offer = () => offerFor(receipt.main, client.A);
@@ -341,13 +407,13 @@ describe('the ✅ / ❌ row under «yukingiz qabul qilindi» — offered only wh
   it('cargo in China that nobody has confirmed: offered, with the tag of the facts', async () => {
     await withoutTarkib(async () => {
       const answer = await offer();
-      expect(answer).toEqual({ receiptId: receipt.main, tag: (await facts()).tag });
+      expect(answer).toEqual({ receiptId: receipt.main, tag: (await facts()).tag, scope: 'full' });
     });
   });
 
   it('not for another client, not with the switch off, not on a server whose migration has not landed', async () => {
     await withoutTarkib(async () => {
-      const lines = (await facts()).lots.map((l) => ({ lotId: l.lotId, name: pushLotName(l.ru, l.zh), boxCount: l.count }));
+      const lines = (await facts()).lots.map((l) => ({ lotId: l.lotId, name: pushLotName(l.ru, l.zh), boxCount: l.count, weightKg: l.kg, volumeM3: l.m3 }));
       expect(await clientAskOffer(receipt.main, client.B, lines, pushLotName)).toBeNull();
       await setSetting('client_confirm_on_receipt', false, null);
       expect(await offer()).toBeNull();
@@ -363,8 +429,20 @@ describe('the ✅ / ❌ row under «yukingiz qabul qilindi» — offered only wh
   it('only for the lines the push PRINTS: a name or a count that moved between the text and the tag costs the buttons', async () => {
     await withoutTarkib(async () => {
       const f = await facts();
-      const lines = f.lots.map((l) => ({ lotId: l.lotId, name: pushLotName(l.ru, l.zh), boxCount: l.count }));
-      expect(await clientAskOffer(receipt.main, client.A, lines, pushLotName)).toEqual({ receiptId: receipt.main, tag: f.tag });
+      const lines = f.lots.map((l) => ({ lotId: l.lotId, name: pushLotName(l.ru, l.zh), boxCount: l.count, weightKg: l.kg, volumeM3: l.m3 }));
+      expect(await clientAskOffer(receipt.main, client.A, lines, pushLotName)).toEqual({ receiptId: receipt.main, tag: f.tag, scope: 'full' });
+      // 0145: the same fence for the kilos and the cubic metres — a re-weigh landing between the
+      // push's text and the tag costs the buttons, never records a ✅ for a weight nobody was shown.
+      expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 0 ? { ...l, weightKg: l.weightKg + 5 } : l)), pushLotName)).toBeNull();
+      expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 2 ? { ...l, volumeM3: l.volumeM3 + 0.2 } : l)), pushLotName)).toBeNull();
+      // …and a BASIC question (a server without 0145) never asked about them: its buttons do not depend on them.
+      ready.measures = false;
+      try {
+        const basic = await clientAskOffer(receipt.main, client.A, lines.map((l) => ({ ...l, weightKg: 1, volumeM3: 1 })), pushLotName);
+        expect(basic).toEqual({ receiptId: receipt.main, tag: f.basicTag, scope: 'basic' });
+      } finally {
+        ready.measures = true;
+      }
       // The text was rendered a moment before a rename / a recount / a lot added.
       expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 0 ? { ...l, name: `${l.name} (eski)` } : l)), pushLotName)).toBeNull();
       expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 1 ? { ...l, boxCount: l.boxCount + 1 } : l)), pushLotName)).toBeNull();
@@ -441,7 +519,16 @@ describe('a press', () => {
       .limit(1);
     expect(audit!.actorId).toBeNull();
     expect(Object.keys(audit!.after as object).sort()).toEqual(['clientConfirm:A', 'clientConfirm:B', 'clientConfirm:C']);
-    expect((audit!.after as Record<string, string>)['clientConfirm:A']).toBe(`✅ Telegram · 键盘${RUN} (Клавиатура ${RUN}) × 3`);
+    // A FULL answer's History value names what it covered: the count AND the lot's kilos and cubic metres.
+    expect((audit!.after as Record<string, string>)['clientConfirm:A']).toBe(`✅ Telegram · 键盘${RUN} (Клавиатура ${RUN}) × 3 · 100 kg · 1 m³`);
+    // …and the row remembers them, at the precision a customer reads (0145).
+    expect(await measuresOfAnswers()).toEqual([
+      ['100.00', '1.000'],
+      ['100.00', '1.000'],
+      ['100.00', '1.000'],
+    ]);
+    expect(answer).toMatchObject({ scope: 'full' });
+    expect(k.client).toMatchObject({ measures: true, measuresMoved: false });
   });
 
   it('the same press again — a second tap, a redelivery, the other chat — is «already», and writes nothing', async () => {
@@ -1054,15 +1141,23 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
 describe('the sentence, combination by combination — against literal states', () => {
   type Tarkib = 'none' | 'stands' | 'stale';
   type Tick = 'none' | 'old' | 'new' | 'stale';
-  /** The client's answer, given an hour ago: none · ✅ that matches · ✅ about a count since changed · ❌ on the goods now listed · ❌ on OTHER goods · a previous owner's ❌. */
-  const CLIENT = ['none', 'yes', 'yesMoved', 'no', 'noOtherGoods', 'noOtherOwner'] as const;
+  /**
+   * The client's answer, given an hour ago: none · ✅ that matches · ✅ about a count since changed · ❌ on
+   * the goods now listed · ❌ on OTHER goods · a previous owner's ❌ — and 0145's two: a FULL ✅ whose kilos
+   * and cubic metres still match · a FULL ✅ about a weight since changed. (The first six carry no
+   * measures: they are answers to the 0144 question, which is what every row written before 0145 is.)
+   */
+  const CLIENT = ['none', 'yes', 'yesMoved', 'no', 'noOtherGoods', 'noOtherOwner', 'yesFull', 'yesReweighed'] as const;
   type Answer = (typeof CLIENT)[number];
   // c = ✅ checked · n = ❓ none · s = ⚠ stale — one letter per CLIENT case, in that order.
   // Tick: «old» holds and was pressed two hours ago (before the answer); «new» holds and was pressed now (after it).
+  // The last two letters are 0145's: a full ✅ that matches vouches exactly where a 0144 ✅ does, and one
+  // about a weight since changed reads exactly as one about a count since changed — «o'zgardi» where
+  // nothing else vouches, and ✅ where a standing tarkib or a holding tick still does (the arms' order).
   const EXPECTED: Record<Tarkib, Record<Tick, string>> = {
-    none: { none: 'ncsnnn', old: 'cccnnc', new: 'cccccc', stale: 'scsnns' },
-    stands: { none: 'cccncc', old: 'cccncc', new: 'cccccc', stale: 'cccncc' },
-    stale: { none: 'scsnns', old: 'cccnnc', new: 'cccccc', stale: 'scsnns' },
+    none: { none: 'ncsnnncs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
+    stands: { none: 'cccncccc', old: 'cccncccc', new: 'cccccccc', stale: 'cccncccc' },
+    stale: { none: 'scsnnscs', old: 'cccnnccc', new: 'cccccccc', stale: 'scsnnscs' },
   };
   const LETTER = { checked: 'c', none: 'n', stale: 's', unclaimed: 'u' } as const;
 
@@ -1088,17 +1183,22 @@ describe('the sentence, combination by combination — against literal states', 
       `);
     }
     if (answer !== 'none') {
+      const yes = answer === 'yes' || answer === 'yesMoved' || answer === 'yesFull' || answer === 'yesReweighed';
+      // The lot weighs 100 kg / 1 m³: a full ✅ that remembers 90 kg is about a weight since changed.
+      const kg = answer === 'yesFull' ? '100.00' : answer === 'yesReweighed' ? '90.00' : null;
+      const m3 = kg === null ? null : '1.000';
       await db.execute(sql`
-        INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, shown_goods_key, chat_id, answered_at)
-        VALUES (${lot.M}::uuid, ${answer === 'yes' || answer === 'yesMoved' ? 'yes' : 'no'}, ${MATRIX_ZH}, ${MATRIX_RU},
+        INSERT INTO lot_client_confirms (lot_id, verdict, shown_zh, shown_ru, shown_count, shown_client_id, shown_goods_key, chat_id, answered_at, shown_kg, shown_m3)
+        VALUES (${lot.M}::uuid, ${yes ? 'yes' : 'no'}, ${MATRIX_ZH}, ${MATRIX_RU},
                 ${answer === 'yesMoved' ? 9 : 2}, ${answer === 'noOtherOwner' ? client.B : client.A}::uuid,
-                ${answer === 'noOtherGoods' ? 'f'.repeat(32) : goodsKey}, ${CHAT_A}, now() - interval '60 minutes')
+                ${answer === 'noOtherGoods' ? 'f'.repeat(32) : goodsKey}, ${CHAT_A}, now() - interval '60 minutes',
+                ${kg}::numeric, ${m3}::numeric)
       `);
     }
   }
   const read = async () => (await lotCheckViewsFor([lot.M])).get(lot.M)!;
 
-  it('72 combinations of tarkib × tick × the client’s answer', async () => {
+  it('96 combinations of tarkib × tick × the client’s answer (0144’s 72 and the two full-scope answers of 0145)', async () => {
     const wrong: string[] = [];
     for (const tarkib of Object.keys(EXPECTED) as Tarkib[]) {
       for (const tick of Object.keys(EXPECTED[tarkib]) as Tick[]) {
@@ -1132,5 +1232,172 @@ describe('the sentence, combination by combination — against literal states', 
       await db.update(receipts).set({ clientId: client.A }).where(eq(receipts.id, receipt.matrix));
       await arrange('none', 'none', 'none');
     }
+  });
+});
+
+/**
+ * 0145 (docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik va hajmga urg'u
+ * berilsin, tekshirib olsin klient va tasdiqlasin»): the answer covers the
+ * lot's kilos and cubic metres. On a prixod of its own — lot W, 2 cartons,
+ * 40 kg, 0.35 m³ — so nothing above is read differently.
+ */
+describe('the measures in the answer (0145)', () => {
+  const factsW = async (): Promise<ClientAskFacts> => {
+    const answer = await clientAskFacts(receipt.weigh);
+    if ('skip' in answer) throw new Error(`facts skipped: ${answer.skip}`);
+    return answer;
+  };
+  const pressW = async (verdict: 'yes' | 'no', tag?: string) =>
+    answerClientAsk({ chatId: CHAT_A, receiptId: receipt.weigh, verdict, tag: tag ?? (await factsW()).tag });
+  const measuresW = async (): Promise<[string | null, string | null] | null> => {
+    const [row] = (await db.execute(sql`
+      SELECT shown_kg::text AS kg, shown_m3::text AS m3 FROM lot_client_confirms WHERE lot_id = ${lot.W}::uuid
+    `)) as unknown as { kg: string | null; m3: string | null }[];
+    return row ? [row.kg, row.m3] : null;
+  };
+  const weigh = (kg: string, m3: string) =>
+    db.update(receiptLots).set({ totalWeightKg: kg, totalVolumeM3: m3 }).where(eq(receiptLots.id, lot.W));
+  const forget = () => db.delete(lotClientConfirms).where(eq(lotClientConfirms.lotId, lot.W));
+  const shelf = async () => (await plannableStock(wh.cn)).lots.find((l) => l.lotId === lot.W)?.check;
+
+  it('a FULL ✅ remembers what it was shown, and a re-weigh a customer would SEE turns it «o‘zgardi» — on the card and on the lists; back at the vouched figures it is ✅ again by itself', async () => {
+    const answer = await pressW('yes');
+    expect(answer).toMatchObject({ outcome: 'recorded', verdict: 'yes', scope: 'full' });
+    expect(await measuresW()).toEqual(['40.00', '0.350']);
+    let view = await stateOf('W');
+    expect(view.state).toBe('checked');
+    expect(view.client).toMatchObject({ verdict: 'yes', holds: true, measures: true, measuresMoved: false });
+    expect(await shelf()).toBe('checked');
+    try {
+      // The kilos…
+      await weigh('44.000', '0.3500');
+      view = await stateOf('W');
+      expect(view.state).toBe('stale');
+      expect(view.client).toMatchObject({ verdict: 'yes', holds: false, measures: true, measuresMoved: true });
+      // …the same sentence on the plan editor's list (one home, #513).
+      expect(await shelf()).toBe('stale');
+      // …the cubic metres alone…
+      await weigh('40.000', '0.3600');
+      expect((await stateOf('W')).state).toBe('stale');
+      // …and a correction below what any list prints (40.004 kg is «40 kg», 0.3504 m³ is «0.35 m³») is not one.
+      await weigh('40.004', '0.3504');
+      view = await stateOf('W');
+      expect(view.state).toBe('checked');
+      expect(view.client).toMatchObject({ holds: true, measuresMoved: false });
+    } finally {
+      await weigh('40.000', '0.3500');
+    }
+    expect((await stateOf('W')).state).toBe('checked');
+    expect(await shelf()).toBe('checked');
+    // The same press again is «already»: it would say nothing new.
+    expect(await pressW('yes')).toEqual({ outcome: 'already', verdict: 'yes' });
+  });
+
+  it('…and a re-weigh after the message went makes its buttons «eskirgan» — a client cannot confirm a weight they were not shown', async () => {
+    const sent = (await factsW()).tag;
+    try {
+      await weigh('41.000', '0.3500');
+      expect(await pressW('yes', sent)).toEqual({ outcome: 'stale', clientId: client.A });
+    } finally {
+      await weigh('40.000', '0.3500');
+    }
+    expect(await measuresW()).toEqual(['40.00', '0.350']);
+  });
+
+  it('a press on a message sent BEFORE 0145 — the 0144 tag — is a BASIC answer: no measures remembered, and a re-weigh does not unsettle it', async () => {
+    await forget();
+    const f = await factsW();
+    const answer = await pressW('yes', f.basicTag);
+    expect(answer).toMatchObject({ outcome: 'recorded', verdict: 'yes', scope: 'basic' });
+    expect(await measuresW()).toEqual([null, null]);
+    let view = await stateOf('W');
+    expect(view.state).toBe('checked');
+    expect(view.client).toMatchObject({ holds: true, measures: false, measuresMoved: false });
+    try {
+      await weigh('55.000', '0.9000');
+      view = await stateOf('W');
+      // It was asked about the name and the count — exactly what a ✅ given before 0145 means.
+      expect(view.state).toBe('checked');
+      expect(view.client).toMatchObject({ holds: true, measures: false, measuresMoved: false });
+    } finally {
+      await weigh('40.000', '0.3500');
+    }
+  });
+
+  it('a FULL ✅ over a BASIC one says more and is WRITTEN; a BASIC press over a FULL ✅ that still stands is «already» and strips nothing', async () => {
+    // Held: the basic ✅ of the test above.
+    expect(await measuresW()).toEqual([null, null]);
+    expect(await pressW('yes')).toMatchObject({ outcome: 'recorded', scope: 'full' });
+    expect(await measuresW()).toEqual(['40.00', '0.350']);
+    // The old message's button, pressed afterwards: the stronger answer is left alone.
+    const f = await factsW();
+    expect(await pressW('yes', f.basicTag)).toEqual({ outcome: 'already', verdict: 'yes' });
+    expect(await measuresW()).toEqual(['40.00', '0.350']);
+  });
+
+  it('a BASIC answer that REPLACES a full one does not keep its kilos: ✅ (full), then ❌ on the old message', async () => {
+    const f = await factsW();
+    const answer = await pressW('no', f.basicTag);
+    expect(answer).toMatchObject({ outcome: 'recorded', verdict: 'no', scope: 'basic' });
+    // The row's verdict moved and the figures went with the answer that held them.
+    expect(await measuresW()).toEqual([null, null]);
+    const view = await stateOf('W');
+    expect(view.state).toBe('none');
+    expect(view.client).toMatchObject({ verdict: 'no', vetoes: true, measures: false });
+    await clearQueued();
+  });
+
+  it('a ❌ is lifted by no re-weigh — a complaint about a weight is closed by a person — and a FULL ❌ says what it rejected', async () => {
+    await forget();
+    const answer = await pressW('no');
+    expect(answer).toMatchObject({ outcome: 'recorded', verdict: 'no', scope: 'full' });
+    expect(await measuresW()).toEqual(['40.00', '0.350']);
+    try {
+      await weigh('39.000', '0.3400');
+      const view = await stateOf('W');
+      expect(view.state).toBe('none');
+      expect(view.client).toMatchObject({ verdict: 'no', vetoes: true });
+    } finally {
+      await weigh('40.000', '0.3500');
+    }
+    // The staff alert and the History name the figures the client was shown.
+    const told = await queued();
+    expect(told.length).toBeGreaterThan(0);
+    expect(String((told[0]!.payload as { text?: string }).text)).toContain('— 2 quti · 40 kg · 0.35 m³');
+    const [audit] = await db
+      .select({ after: auditLog.after })
+      .from(auditLog)
+      .where(and(eq(auditLog.entityType, 'receipt'), eq(auditLog.entityId, receipt.weigh)))
+      .orderBy(sql`${auditLog.id} DESC`)
+      .limit(1);
+    expect((audit!.after as Record<string, string>)['clientConfirm:A']).toBe(`❌ Telegram · 秤${RUN} (Tarozi ${RUN}) × 2 · 40 kg · 0.35 m³`);
+    await clearQueued();
+    await forget();
+  });
+
+  it('a server whose 0145 has not landed: the press is the 0144 press — recorded, no measure column named by any statement, and the sentence reads as it did', async () => {
+    ready.measures = false;
+    const sent: string[] = [];
+    const unsafe = pgClient.unsafe.bind(pgClient);
+    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      sent.push(query);
+      return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
+    }) as typeof pgClient.unsafe);
+    try {
+      const f = await factsW();
+      expect(f.scope).toBe('basic');
+      const answer = await answerClientAsk({ chatId: CHAT_A, receiptId: receipt.weigh, verdict: 'yes', tag: f.tag });
+      expect(answer).toMatchObject({ outcome: 'recorded', verdict: 'yes', scope: 'basic' });
+      const view = await stateOf('W');
+      expect(view.state).toBe('checked');
+      expect(view.client).toMatchObject({ holds: true, measures: false, measuresMoved: false });
+      expect(await shelf()).toBe('checked');
+      expect(sent.filter((q) => /lot_client_confirms/.test(q)).length).toBeGreaterThan(0);
+      expect(sent.filter((q) => /shown_kg|shown_m3/.test(q))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+      ready.measures = true;
+    }
+    await forget();
   });
 });

@@ -125,16 +125,31 @@ describe('what the question lists is what it asks about (L5-7)', () => {
     warehouseName: 'Yiwu',
     receivedAt: null,
     lots: [],
+    scope: 'basic',
     tag: 'a1b2c3d4',
+    basicTag: 'a1b2c3d4',
   };
-  const plain = { lotId: 'l-1', letter: 'A', zh: '键盘', ru: 'Клавиатура', count: 3, goodsKey: null, goods: [] };
-  const withGoods = { lotId: 'l-2', letter: 'B', zh: '杂货', ru: 'Мышь +1', count: 2, goodsKey: 'k', goods: [{ name: 'Мышь', pieces: 500 }, { name: 'Коврик', pieces: null }] };
+  const kgs = { kg: 12.5, m3: 0.4, shownKg: '12.50', shownM3: '0.400' };
+  const plain = { lotId: 'l-1', letter: 'A', zh: '键盘', ru: 'Клавиатура', count: 3, goodsKey: null, goods: [], ...kgs };
+  const withGoods = { lotId: 'l-2', letter: 'B', zh: '杂货', ru: 'Мышь +1', count: 2, goodsKey: 'k', goods: [{ name: 'Мышь', pieces: 500 }, { name: 'Коврик', pieces: null }], ...kgs };
 
   it('a plain lot: «name and box count»', () => {
     for (const locale of ['uz', 'ru', 'en'] as const) {
       const text = htmlToPlain(askText({ ...base, lots: [plain] }, locale));
       expect(text, locale).toContain(clientLabels(locale).confirmAskLine);
       expect(text, locale).not.toContain(clientLabels(locale).confirmAskLineGoods);
+    }
+  });
+
+  it('a FULL question (0145) asks about the weight and the volume too — in the words of ITS scope, never the 0144 ones', () => {
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      const t = clientLabels(locale);
+      const one = htmlToPlain(askText({ ...base, scope: 'full', lots: [plain] }, locale));
+      expect(one, locale).toContain(t.confirmAskLineFull);
+      expect(one, locale).not.toContain(t.confirmAskLine);
+      const goods = htmlToPlain(askText({ ...base, scope: 'full', lots: [plain, withGoods] }, locale));
+      expect(goods, locale).toContain(t.confirmAskLineGoodsFull);
+      expect(goods, locale).not.toContain(t.confirmAskLineFull);
     }
   });
 
@@ -374,7 +389,7 @@ describe('who hears, and when', () => {
   });
 });
 
-const facts = (lots: ClientAskFacts['lots']): ClientAskFacts => ({
+const facts = (lots: ClientAskFacts['lots'], scope: ClientAskFacts['scope'] = 'full'): ClientAskFacts => ({
   receiptId: RECEIPT,
   receiptNumber: 'YW-000123',
   clientId: '0190d4b2-7c3a-7a11-8f00-3c5a9d2e41bb',
@@ -382,15 +397,33 @@ const facts = (lots: ClientAskFacts['lots']): ClientAskFacts => ({
   warehouseName: 'Yiwu',
   receivedAt: new Date('2026-11-09T04:00:00Z'),
   lots,
-  tag: askTag('0190d4b2-7c3a-7a11-8f00-3c5a9d2e41bb', lots),
+  scope,
+  tag: askTag('0190d4b2-7c3a-7a11-8f00-3c5a9d2e41bb', lots, scope),
+  basicTag: askTag('0190d4b2-7c3a-7a11-8f00-3c5a9d2e41bb', lots, 'basic'),
 });
-const PLAIN = { lotId: 'l1', letter: 'A', zh: '键盘', ru: 'Клавиатура', count: 100, goodsKey: null, goods: [] };
+const PLAIN = {
+  lotId: 'l1',
+  letter: 'A',
+  zh: '键盘',
+  ru: 'Клавиатура',
+  count: 100,
+  goodsKey: null,
+  goods: [],
+  kg: 1000,
+  m3: 2.5,
+  shownKg: '1000.00',
+  shownM3: '2.500',
+};
 const TARKIB = {
   lotId: 'l2',
   letter: 'B',
   zh: '杂货',
   ru: 'Мышь +1',
   count: 2,
+  kg: 450.5,
+  m3: 3.2,
+  shownKg: '450.50',
+  shownM3: '3.200',
   goodsKey: 'k',
   goods: [
     { name: 'Мышь <USB>', pieces: 1500 },
@@ -399,8 +432,33 @@ const TARKIB = {
 };
 
 describe('the question a person sends («Mijozdan so‘rash»)', () => {
-  it('prints what the ✅ is ABOUT and nothing else: per lot the goods and the carton count — no kilos, no cubic metres', () => {
+  it('a FULL question prints what its ✅ is ABOUT: per lot the goods, the carton count and the LOT’s kilos and cubic metres — a tarkib’s on the lot line, never per good — and the prixod’s total', () => {
     const text = htmlToPlain(askText(facts([PLAIN, TARKIB]), 'uz'));
+    const t = clientLabels('uz');
+    const lines = text.split('\n').filter((line) => line.trim() !== '');
+    expect(lines[0]).toBe(t.confirmAskTitle);
+    expect(lines.slice(2, 7)).toEqual([
+      `📦 A · Клавиатура — 100 quti · ${groupDigits(1000)} kg · 2.5 m³`,
+      '📦 B — 2 quti · 450.5 kg · 3.2 m³',
+      `   • Мышь <USB> — ${groupDigits(1500)} ${t.unitDona}`,
+      '   • Коврик',
+      `${t.arrivedTotal}: 102 quti · ${groupDigits(1450.5)} kg · 5.7 m³`,
+    ]);
+    // Goods are listed with their pieces, so the question asks about them too — and about the measures.
+    expect(lines).toContain(t.confirmAskLineGoodsFull);
+    expect(lines.at(-1)).toContain('YW-000123');
+    // «Urg'u»: the ask is bold in the message itself.
+    expect(askText(facts([PLAIN, TARKIB]), 'uz')).toContain(`<b>${t.confirmAskLineGoodsFull.replace(/&/g, '&amp;')}</b>`);
+  });
+
+  it('one lot is its own total — no «Jami» line under a single lot', () => {
+    const text = htmlToPlain(askText(facts([PLAIN]), 'uz'));
+    expect(text).not.toContain(clientLabels('uz').arrivedTotal);
+    expect(text).toContain(`100 quti · ${groupDigits(1000)} kg · 2.5 m³`);
+  });
+
+  it('a BASIC question (a server without 0145) prints what ITS ✅ is about and nothing else: no kilos, no cubic metres, the 0144 words', () => {
+    const text = htmlToPlain(askText(facts([PLAIN, TARKIB], 'basic'), 'uz'));
     const t = clientLabels('uz');
     const lines = text.split('\n').filter((line) => line.trim() !== '');
     expect(lines[0]).toBe(t.confirmAskTitle);
@@ -425,9 +483,23 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
   it('says it in the chat’s language — and the question names WHAT is being confirmed, never «hammasi»', () => {
     for (const locale of ['uz', 'ru', 'en'] as const) {
       const t = clientLabels(locale);
-      const text = htmlToPlain(askText(facts([PLAIN]), locale));
+      const text = htmlToPlain(askText(facts([PLAIN], 'basic'), locale));
       expect(text).toContain(t.confirmAskTitle);
       expect(text).toContain(t.confirmAskLine);
+    }
+    // Under the FULL scope the same subjects come first, in the same order, then the two measures
+    // and the ask to CHECK — the owner's «tekshirib olsin klient va tasdiqlasin» (0145).
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      expect(htmlToPlain(askText(facts([PLAIN], 'basic'), locale))).not.toContain(clientLabels(locale).confirmAskLineFull);
+    }
+    expect(clientLabels('uz').confirmAskLineFull).toMatch(/nomi.*quti soni.*og‘irligi.*hajmi.*Tekshirib/);
+    expect(clientLabels('ru').confirmAskLineFull).toMatch(/[Нн]азвание товара.*количество коробок.*вес.*объём.*Проверьте/);
+    expect(clientLabels('en').confirmAskLineFull).toMatch(/names.*box count.*weight.*volume.*check/);
+    expect(clientLabels('uz').confirmAskLineGoodsFull).toMatch(/donasi.*quti soni.*og‘irligi.*hajmi/);
+    expect(clientLabels('uz').confirmThanksFull).toMatch(/nomi.*quti soni.*og‘irligi.*hajmi/);
+    // A toast is 200 characters at most (Telegram's own limit on a callback answer).
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      expect(clientLabels(locale).confirmThanksFull.length, locale).toBeLessThanOrEqual(200);
     }
     expect(clientLabels('uz').confirmAskLine).toMatch(/nomi.*quti soni/);
     // The question counts in the SAME word as the lines above it («коробок», `boxMany`) — never «мест»
@@ -437,8 +509,9 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(clientLabels('ru').confirmThanks).not.toContain('мест');
     expect(clientLabels('en').confirmAskLine).toMatch(/names/);
     expect(clientLabels('en').confirmAskLine).toMatch(/goods.*box count/);
-    // The ✅'s thanks repeat the subject — weight is not part of the answer.
+    // The BASIC ✅'s thanks repeat ITS subject — a press on a message sent before 0145 confirmed no weight.
     expect(clientLabels('uz').confirmThanks).toMatch(/nomi.*quti soni/);
+    expect(clientLabels('uz').confirmThanks).not.toMatch(/og‘irli|hajm/);
   });
 
   it('a list that would not fit one message is refused to the PRESSER, in every language at once', () => {
@@ -459,9 +532,25 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(facts([{ ...PLAIN, ru: 'Клавиатуры' }, TARKIB]).tag).not.toBe(base);
     expect(facts([{ ...PLAIN, count: 101 }, TARKIB]).tag).not.toBe(base);
     expect(facts([PLAIN, { ...TARKIB, goodsKey: 'other' }]).tag).not.toBe(base);
-    expect(askTag('another-client', [PLAIN, TARKIB])).not.toBe(base);
+    expect(askTag('another-client', [PLAIN, TARKIB], 'full')).not.toBe(base);
     // The goods' printed list rides in `goodsKey` (the reader's own digest), so the array itself is not hashed twice.
     expect(facts([PLAIN, { ...TARKIB, goods: [] }]).tag).toBe(base);
+  });
+
+  it('a FULL tag covers the two measures as the customer reads them; the BASIC tag is the 0144 recipe byte for byte (0145)', () => {
+    const full = facts([PLAIN, TARKIB]);
+    // The recipe every button already in a customer's chat was hashed with — a LITERAL, computed from
+    // the 0144 function before it was touched: a changed basic recipe kills every such button at deploy.
+    expect(full.basicTag).toBe('5a0ae98c');
+    expect(askTag(full.clientId, full.lots)).toBe('5a0ae98c');
+    expect(full.tag).not.toBe(full.basicTag);
+    // A re-weigh a customer would SEE moves the full tag and leaves the basic one alone…
+    expect(facts([{ ...PLAIN, shownKg: '1000.01' }, TARKIB]).tag).not.toBe(full.tag);
+    expect(facts([PLAIN, { ...TARKIB, shownM3: '3.201' }]).tag).not.toBe(full.tag);
+    expect(facts([{ ...PLAIN, shownKg: '1000.01' }, TARKIB]).basicTag).toBe(full.basicTag);
+    // …and the STORED figures are not hashed at all: a correction below what any list prints
+    // (1000.000 → 1000.004 kg, both «1 000 kg») leaves both tags where they were.
+    expect(facts([{ ...PLAIN, kg: 1000.004 }, TARKIB]).tag).toBe(full.tag);
   });
 });
 
@@ -479,11 +568,24 @@ describe('«yukingiz qabul qilindi» with the question', () => {
   it('the question is the LAST block, and without it the push is byte for byte what it was', () => {
     for (const locale of ['uz', 'ru', 'en'] as const) {
       const plain = receivedText(summary, locale);
-      const asking = receivedText(summary, locale, { ask: true });
+      const asking = receivedText(summary, locale, { ask: 'basic' });
       expect(receivedText(summary, locale, {})).toBe(plain);
-      expect(receivedText(summary, locale, { ask: false })).toBe(plain);
+      expect(receivedText(summary, locale, { ask: undefined })).toBe(plain);
       expect(asking.startsWith(plain)).toBe(true);
       expect(htmlToPlain(asking).trimEnd().split('\n').at(-1)).toBe(clientLabels(locale).confirmAskLine);
+    }
+  });
+
+  it('a FULL question (0145) asks about the kilos and cubic metres the lines above it print — in bold, still the LAST block', () => {
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      const t = clientLabels(locale);
+      const plain = receivedText(summary, locale);
+      const asking = receivedText(summary, locale, { ask: 'full' });
+      expect(asking.startsWith(plain)).toBe(true);
+      expect(htmlToPlain(asking).trimEnd().split('\n').at(-1)).toBe(t.confirmAskLineFull);
+      expect(asking.trimEnd().endsWith('</b>')).toBe(true);
+      // The line it asks about IS on the push: the lot's kilos and cubic metres.
+      expect(htmlToPlain(plain)).toMatch(new RegExp(`${groupDigits(1000)} ${t.kg} · 2\\.5 ${t.m3}`));
     }
   });
 });
