@@ -173,8 +173,8 @@ describe('the LAST migration that re-makes the ledger’s CHECKs still knows eve
     const at = text.lastIndexOf(`ADD CONSTRAINT "${constraint}"`);
     return { file: hit!, body: text.slice(at, text.indexOf('--> statement-breakpoint', at) === -1 ? undefined : text.indexOf('--> statement-breakpoint', at)) };
   };
-  const module = strip(readFileSync('src/modules/wms/calc/ai-press.ts', 'utf8'));
-  const kinds = [...module.matchAll(/^\s+(\w+): '(\w+_ai_daily_limit)',$/gm)].map((m) => m[1]!);
+  const ledger = strip(readFileSync('src/modules/wms/calc/ai-press.ts', 'utf8'));
+  const kinds = [...ledger.matchAll(/^\s+(\w+): '(\w+_ai_daily_limit)',$/gm)].map((m) => m[1]!);
 
   it('finds the pressed kinds in the module itself', () => {
     expect(kinds.sort()).toEqual(['tarkib', 'tnved']);
