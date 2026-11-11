@@ -32,9 +32,9 @@ import {
   endIntake,
   startIntake,
   updateIntake,
-  type CalcSection,
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
+import type { CalcSection } from '@/modules/wms/calc/intake';
 import { permanentRefusal, promptFileLines, readIntakeFile, saveBotFile } from '@/modules/platform/telegram/calc-files';
 import { RESTART_HOLD } from '@/modules/platform/telegram/calc-dialog';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
@@ -225,10 +225,10 @@ describe('a cut answer keeps the goods the seller typed (OWNER-2)', () => {
     model.analyze.mockResolvedValueOnce({ ok: true, facts: { goods: seven }, steps: [], usage: BILL, answered: [BILL], cut: { goods: 7, why: 'clock' } });
     const out = await analyzeCollected(activeIntake(chatId)!);
     expect(out.aiCut).toEqual({ goods: 7, why: 'clock' });
-    const names = out.facts.goods.map((g) => g.name);
+    const names = (out.facts.goods ?? []).map((g) => g.name);
     expect(names).toHaveLength(8);
     expect(names.slice(0, 7)).toEqual(seven.map((g) => g.name));
-    expect(out.facts.goods[7]).toMatchObject({ quantity: 50 });
+    expect(out.facts.goods?.[7]).toMatchObject({ quantity: 50 });
     expect(names[7]).toMatch(/Erkaklar shimi/);
   });
 

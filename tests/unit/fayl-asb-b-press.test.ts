@@ -96,7 +96,7 @@ describe('a re-read that reads less keeps the earlier reading (CRITIC-1)', () =>
     // The press's own mark: the same material, re-read (`pressAnalyse`).
     updateIntake(chatId, { aiCutRetried: true });
     const after = await readAndSettle(chatId, cutAt(2));
-    expect(after.facts.goods.map((g) => g.name)).toEqual(goods(7).map((g) => g.name));
+    expect((after.facts.goods ?? []).map((g) => g.name)).toEqual(goods(7).map((g) => g.name));
     expect(after.aiCut).toEqual({ goods: 7, why: 'clock' });
     expect(after.notes).toContain('⚠️ Qayta o‘qishda AI avvalgidan kam o‘qidi — avvalgi o‘qishdagi 7 ta tovar qoldi.');
   });
