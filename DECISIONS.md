@@ -7646,7 +7646,13 @@ again at «Invoysni olish», where a list that moved under the open dialog is sh
 named the whole list, so one renamed group dropped every other answer: the address carries pairs whenever it can
 hold them. **Lot check**: the «boshqa tovar» hint sent a `receipts.edit` holder to the ✏️ rename while a tarkib was
 written — which changes neither the name the card prints nor the one the ✅ records. The SQL label was compared
-with `tarkibLabel` over 3,000 random lots by that lens: no mismatch.
+with `tarkibLabel` over 3,000 random lots by that lens: no mismatch. **The names packages** were reviewed after
+the merge by two narrow lenses that ran every changed statement OLD against NEW on rows built inside a rolled-back
+transaction (the first attempt died on the limit and returned «no findings» — which is why the workflow's result
+now says whether a finder COMPLETED): no row set, sum or scoping moved; one nit, fixed — the 📷 button's room was
+counted in characters and Telegram's limit in UTF-16 units, so an emoji in the name cost the «+N»; and the
+platform's own `buttonLabel` could cut an emoji in half (a lone surrogate — Telegram refuses the button and with
+it the whole message), for every caller since it shipped.
 
 **#1641 — The Bojxona editor re-seeds by MERGE, never by remount (five of the ten).** The page keyed the editor on
 every line's revision, so it re-seeded by REMOUNT: one lot's tarkib moving, or one line code saved, threw away
