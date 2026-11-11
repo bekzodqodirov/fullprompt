@@ -3384,9 +3384,11 @@ replies, 303 dangerous) — keep them green on ANY policy change; G10's same-tex
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
 phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
 
-**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1622-#1642; migration 0143 `tarkib_document_optional`, `when`
-…122 — ledger must reach 144; minted as 0142 and renumbered on the merge, the THIRTY-FIRST collision: main's «✅ Yuborish
-chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9 and every «As built» block binding).** His
+**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1628-#1648 — renumbered from #1622-#1642 on the second merge,
+the THIRTY-SECOND collision: main's AI sotuvchi «100 ta xabar» round took #1622-#1627 first; migration 0143
+`tarkib_document_optional`, `when` …122 — ledger must reach 144; minted as 0142 and renumbered on the first merge, the
+THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9
+and every «As built» block binding).** His
 six items after six weeks of the lot tarkibi, built with every ⭐ (ten questions sent with the result — the CHANGELOG
 entry lists them). (1) The client's document is OPTIONAL (0143 drops NOT NULL on `lot_compositions.attachment_id`; a
 cited file is checked as before; the reader LEFT JOINs; `violatedNotNull` names the one-migration-behind refusal).
@@ -3420,10 +3422,10 @@ shown, so a stale answer names nothing); never across a customs scope, never «�
 «Маркировка» after «№» (client code / marking + lot letter), RED where one lot's tarkib stands on several positions.
 **Every reader of the invoice sheet reads by HEADER** (`tests/fixtures/invoice-sheet.ts`). Found on the way: the
 client-history XLSX answered 500 for every client since it shipped (exceljs refuses a sheet named «History»); the
-document guard 404s a malformed id. Reviewed as built (#1640-#1641: ten findings, none refuted, all fixed and
+document guard 404s a malformed id. Reviewed as built (#1646-#1647: ten findings, none refuted, all fixed and
 red-proven — the skeptics died on the usage limit, so each was reproduced by a failing test first). LOOKED AT at 360
-and 1280 with a 60-character first good (#1639): on a phone the stock and truck tables scroll sideways (fixed
-min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1642): a red proof that turns
+and 1280 with a 60-character first good (#1645): on a phone the stock and truck tables scroll sideways (fixed
+min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1648): a red proof that turns
 a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
 `scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
 findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144); pushed to
