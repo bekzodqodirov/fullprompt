@@ -174,8 +174,8 @@ test('«Mijozdan so‘rash»: no Telegram — a sentence; linked — the button 
   const sql = database();
   try {
     await sql`
-      INSERT INTO client_telegram_links (client_id, telegram_chat_id, status, linked_at)
-      SELECT id, ${chatOf(run)}::bigint, 'linked', now() FROM clients WHERE client_code = ${run.marker}`;
+      INSERT INTO client_telegram_links (id, client_id, telegram_chat_id, status, linked_at)
+      SELECT gen_random_uuid(), id, ${chatOf(run)}::bigint, 'linked', now() FROM clients WHERE client_code = ${run.marker}`;
   } finally {
     await sql.end();
   }
