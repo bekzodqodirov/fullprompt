@@ -3558,7 +3558,9 @@ un-muted two seeded people, the automation file's `limit 2` then drew the VED as
 DEPLOY: ledger 145; **the customers' ✅/❌ buttons start within minutes of the deploy and their switch exists only
 after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); `ANTHROPIC_API_KEY` must be on the
 server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐
-questions in the CHANGELOG entry. NUMBERS-TO-FILL
+questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
+498 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 2ee5b70, ledger 145; opened as PR #145 together with
+the tarkib tuzatishlari round (0143) it sits on.
 
 **Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
