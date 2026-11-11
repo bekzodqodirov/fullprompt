@@ -3495,6 +3495,69 @@ e2e locator, #1628) was merged after that run: typecheck, lint and the changed s
 spec this round never touched. Pushed to `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked),
 deploy not done.
 
+**Round — Tarkib takliflari (2026-11-11; DECISIONS #1663-#1681 — minted from #1651 and moved by twelve, the
+THIRTY-FIFTH collision: the other session's «Fayl o'qish» (PR #141) took #1630-#1641 while this was being built;
+migration 0144 `tarkib_takliflar`, `when` …123 — ledger must reach 145; spec `docs/TARKIB-TAKLIFLAR.md`, **§7 binding**,
+§8 the deploy, §10 stated-not-built).** His «Hammasi yulduzcha javob va taklifingni qoshamiz»: the ten ⭐ of the tarkib
+round stand (#1663 — eight were already pinned, two only now) and «taklifingni» was read as ALL THREE suggestions, said
+to him first. Designed, judged by five lenses BEFORE code (54 objections from four, two blockers; the fifth died on the
+usage limit), built as a kernel + T2 + T3 by the lead and T1 in a worktree, reviewed as built.
+**T3 — the pressed-AI ledger** (`calc/ai-press.ts`): a press is COUNTED before it spends (`reservePress`: the advisory
+lock as its own statement, then the counting INSERT) and BILLED after (`settlePress`); limits `tnved_ai_daily_limit`
+300 / `tarkib_ai_daily_limit` 50, whole digits only, **0 = off** (a cap on a bill fails closed — never the calc limit's
+«0 = no cap»); refusals `ai_off | ai_limit | server_behind | failed`; **a timeout of ours is counted** (`failed`),
+`no_answer` = nothing can have been generated; **the dollars are frozen on the row at settle** (`cost_usd`, the constant
+the call was MADE with — never `response.model`), summed at read, an unpriced row counted and never summed as $0;
+`pressToday(kind, sight)` — the count for everyone behind the door, the dollars only through `companyMoneySight`, on
+the Bojxona tab AND under both limit boxes on /admin/settings. Every column 0144 adds to an OLD table is SQL-only
+(`ai_calc_passes.lot_id/batch_id/outcome/cost_usd`, `client_notices.asked_by`). `tests/unit/ai-press.test.ts` fences
+the LAST migration that re-makes `ai_calc_passes`' kind/anchor CHECKs: it must carry every pressed kind (the other
+session's R5 would have re-made them without).
+**T2 — the client's own ✅/❌** (`receipts/client-confirm.ts`, the ONE writer of `lot_client_confirms`): the customer's
+«yukingiz qabul qilindi» push carries «✅ To'g'ri / ❌ Xato bor» (the THIRD keyboard row, `yt:<1|0>:<receipt>:<tag8>`)
+when `clientAskOffer` says so — switch on (`client_confirm_on_receipt`, ships ON), ≤ 12 lots, NO lot with a tarkib
+written, some lot askable and not ✅, and the lines the push PRINTS are the lines the tag vouches for; «📨 Mijozdan
+so'rash» on the prixod card queues one `lot_ask` notice (re-proved for its OWNER at send time) that lists every lot's
+goods. **The answer is compared with what was SHOWN — `goods_key` (md5 of the tarkib's names+pieces, one SQL
+expression in `lotTarkibJoinSql`), never the tarkib's `rev`** (a write token that moves on every TNVED code). **The
+sentence** (`lotCheckStateSql`): a standing tarkib vouches unless this owner's ❌ was given on the goods it still lists;
+a holding tick vouches unless this owner's ❌ is not older than it; the client's ✅ while it matches; a ❌ nothing
+vouches past is «none»; four ways out (the goods changed · a colleague ticks AFTER it · the client answers again ·
+«E'tirozni yopish») — 72 combinations pinned against literal states. A tick and an answer on one lot are ORDERED
+(`lockLotAnswersTx`; the answer's clock is `clock_timestamp()`; the tick posts `seenClientAt`; a re-tick past a ❌
+writes). **The probe gives TWO answers** (`lotChecksReady()` = 0122/0123, `lotClientConfirmsReady()` = 0144) — one flag
+would have switched off the chips, the worklist and the tick on a half-applied deploy. The handler (`/^yt:/`, on the
+prefix): decide, then answer ONCE; ❌ has no toast (its sentence is a message); a stale ❌ is still told where to
+write; a staff chat is never told «shu yerga yozing»; «busy» keeps the buttons; an answer is taken only while some lot
+is askable. The card: a vetoing ❌ leads in red and every ✅ under it is history; the dismissal takes the answer the
+card DREW. kg/m³ are printed on the push and are NOT part of the answer (the question names its subject).
+**T1 — «🤖 Fayldan to'ldirish»** (`receipts/tarkib-read.ts` the service, `tarkib-read-ai.ts` the call, `tarkib-file.ts`
+the ONE adapter over the spreadsheet readers' low-level exports — `goods-file.ts` / `xls.ts` imported, never edited —
+`tarkib-proposal.ts` pure and client-safe, `POST /api/tarkib/read`): ONE reader, the model, for every file kind (a
+spreadsheet goes as TEXT), and **it is never a writer** — the answer is a proposal, ticked rows go into the editor's
+DRAFT, the editor's «Saqlash» is still the only writer of a tarkib; an unread figure is an EMPTY cell. Every door
+before any spend, in order: the save's own door → a paper of the lot's prixod → kind and size from the attachment's
+ROW → a key → `ai_off` → cooling (10 min per document after a reading that ran out of time or room) → the bytes
+(10 s) → the file → `reservePress` → the model → `settlePress`. **The call is the house's DOCUMENT shape**
+(`docs/FAYL-OQISH.md` §0.3): streamed, 32 000 tokens, effort medium, `maxRetries: 0`, one 150 s deadline, and «our
+timeout» is `deadline.aborted` and nothing else. The browser waits 190 s (longer than the server's WHOLE budget),
+keeps the PROPOSAL by its document for 30 min (never the count or the dollars), holds the person's ticks in the
+dialog, and asks once per document per tab. Ten digits on the paper are the PAPER's code (`paper_code`) and are never
+applied to the lot's own good (`appliedCode`); a reading that reached forty rows says so (`rows_full`) and is not
+judged against the paper's total; the totals check compares the paper's exact figures, never the rounded cells.
+**Any change to that call keeps `tests/unit/tarkib-read-ai-wire.test.ts` green** — the real SDK against a local
+streaming stand-in, the only T1 test in which the SDK itself runs.
+**Reviewed as built twice** — five lenses over T2/T3 (34 findings, #1678-#1679) and two over T1 (28, #1680), each
+finding reproduced red before its fix: 31 + 41 red proofs by string edit in a SECOND worktree (the harness restores
+from the text it read, never from git) and one in the browser. The headline of each: the tick read a remembered
+«is 0144 there» that only another screen warmed (a writer asks the probe itself); T1's model call was the shape
+production had already proven empty. PROCESS (#1681): a path with `[id]` is a glob to eslint — lint the project; a
+finished agent's worktree under `.claude/worktrees` makes `eslint .` run out of memory; typecheck before every build.
+DEPLOY: ledger 145; **the customers' ✅/❌ buttons start within minutes of the deploy and their switch exists only
+after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); `ANTHROPIC_API_KEY` must be on the
+server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐
+questions in the CHANGELOG entry. NUMBERS-TO-FILL
+
 **Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
