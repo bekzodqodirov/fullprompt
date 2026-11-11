@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import {
@@ -24,11 +24,23 @@ import {
   type LotTotals,
 } from '@/modules/wms/receipts/composition-math';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
+import { isProposalWarning, type ProposalWarning } from '@/modules/wms/receipts/tarkib-proposal';
 import {
   clearLotCompositionAction,
   saveLotCompositionAction,
   type CompositionActionResult,
 } from './composition-actions';
+import {
+  cachedRead,
+  forgetRead,
+  ReadTodayLine,
+  requestTarkibRead,
+  storeRead,
+  TarkibReadDialog,
+  useProposalWords,
+  type ReadToday,
+  type StoredRead,
+} from './tarkib-read-dialog';
 
 /**
  * Lot tarkibi on the receipt card (docs/LOT-TARKIBI.md §8): the lot keeps its
@@ -89,7 +101,32 @@ export interface PanelDocument {
 }
 
 type Mode = 'separate' | 'mixed';
-type Refusal = { error: string; seq?: number; field?: string; sums?: { sum: string; lot: string }; tnvedCode?: string };
+type Refusal = {
+  error: string;
+  seq?: number;
+  field?: string;
+  sums?: { sum: string; lot: string };
+  tnvedCode?: string;
+  /** «🤖 Fayldan to'ldirish»: the model's own sentence (`read_no_goods`), and the day's count beside a refusal. */
+  detail?: string;
+  today?: ReadToday;
+};
+
+/**
+ * The rows came from «🤖 Fayldan to'ldirish» and nobody has saved them yet:
+ * the notice above the lines, and which reading to forget once they are
+ * saved. Kept in the draft, so a phone that reloaded the page mid-check still
+ * says the figures are a machine's reading.
+ */
+type FilledFrom = { attachmentId: string; single: boolean; warnings: ProposalWarning[] };
+
+/**
+ * A photographed packing list is read by the model afterwards: the warehouse
+ * screens' 0.3 MB / 1600 px (the carton photo's size) crushes the small print
+ * of a table, so the document uploaded from HERE keeps more of itself. Every
+ * other caller of the uploader keeps the default.
+ */
+const DOCUMENT_PHOTO = { maxSizeMB: 1, maxWidthOrHeight: 2000 } as const;
 
 const EMPTY_LINE: DraftLine = { name: '', pieces: '', cartons: '', kg: '', m3: '', tnved: '' };
 
@@ -186,6 +223,54 @@ function useRefusalText(): (r: Refusal) => string {
         return t('errors.busy');
       case 'server_behind':
         return t('errors.server_behind');
+      // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3). Every code a
+      // reading can answer has its OWN sentence — the default below would
+      // say «Ma'lumot to'liq emas» about a file that is merely too large, and
+      // the upload's `too_large` / `unsupported_type` above are another
+      // door's words. Held against the route's list by
+      // tests/unit/tarkib-read-wire.test.ts.
+      case 'unauthorized':
+        return t('read.errors.unauthorized');
+      case 'read_unsupported':
+        return t('read.errors.read_unsupported');
+      case 'read_too_large':
+        return t('read.errors.read_too_large');
+      case 'read_broken':
+        return t('read.errors.read_broken');
+      case 'read_old_format':
+        return t('read.errors.read_old_format');
+      case 'read_encrypted':
+        return t('read.errors.read_encrypted');
+      case 'read_empty':
+        return t('read.errors.read_empty');
+      case 'read_no_goods':
+        return r.detail ? `${t('read.errors.read_no_goods')} — ${r.detail}` : t('read.errors.read_no_goods');
+      case 'file_unavailable':
+        return t('read.errors.file_unavailable');
+      case 'ai_not_configured':
+        return t('read.errors.ai_not_configured');
+      case 'cooling':
+        return t('read.errors.cooling');
+      case 'ai_off':
+        return t('read.errors.ai_off');
+      case 'ai_limit':
+        return t('read.errors.ai_limit');
+      case 'failed':
+        return t('read.errors.failed');
+      case 'ai_refused':
+        return t('read.errors.ai_refused');
+      case 'ai_truncated':
+        return t('read.errors.ai_truncated');
+      case 'ai_timeout':
+        return t('read.errors.ai_timeout');
+      case 'ai_failed':
+        return t('read.errors.ai_failed');
+      case 'ai_rejected':
+        return t('read.errors.ai_rejected');
+      case 'read_deadline':
+        return t('read.errors.read_deadline');
+      case 'read_offline':
+        return t('read.errors.read_offline');
       default:
         return t('errors.validation');
     }
@@ -427,6 +512,22 @@ function CompositionEditor({
   const [uploading, setUploading] = useState(0);
   const [pending, setPending] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3): the reading in
+  // flight, the proposal on screen, and whether the rows below came from one.
+  const [reading, setReading] = useState(false);
+  const [readOpen, setReadOpen] = useState(false);
+  const [read, setRead] = useState<StoredRead | null>(null);
+  const [filled, setFilled] = useState<FilledFrom | null>(null);
+  // A reading may outlive the editor (a minute is long; «Bekor qilish» is one
+  // tap): its answer is still KEPT for the next press, but no state is set
+  // on an editor that has gone.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   // The per-lot draft: fetching the client's PDF on a phone means leaving for
   // Telegram, and iOS may reload the standalone app (the receive wizard's own
@@ -438,10 +539,18 @@ function CompositionEditor({
     try {
       const raw = window.localStorage.getItem(draftKey(lotId, rev));
       if (!raw) return;
-      const saved = JSON.parse(raw) as { mode?: Mode; lines?: DraftLine[]; doc?: string | null };
+      const saved = JSON.parse(raw) as { mode?: Mode; lines?: DraftLine[]; doc?: string | null; filled?: FilledFrom | null };
       if (saved.mode) setMode(oneCarton ? 'mixed' : saved.mode);
       if (Array.isArray(saved.lines) && saved.lines.length > 0) setLines(saved.lines.slice(0, MAX_LINES));
       if (saved.doc !== undefined) setDoc(saved.doc);
+      if (saved.filled && typeof saved.filled.attachmentId === 'string' && Array.isArray(saved.filled.warnings)) {
+        setFilled({
+          attachmentId: saved.filled.attachmentId,
+          single: saved.filled.single === true,
+          // Only what this build can word — the draft may be an older build's.
+          warnings: saved.filled.warnings.filter(isProposalWarning),
+        });
+      }
     } catch {
       /* no draft — the fresh editor */
     }
@@ -450,11 +559,11 @@ function CompositionEditor({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(draftKey(lotId, rev), JSON.stringify({ mode, lines, doc }));
+      window.localStorage.setItem(draftKey(lotId, rev), JSON.stringify({ mode, lines, doc, filled }));
     } catch {
       /* storage refused — the draft simply is not kept */
     }
-  }, [lotId, rev, mode, lines, doc]);
+  }, [lotId, rev, mode, lines, doc, filled]);
 
   function forgetDraft() {
     try {
@@ -507,7 +616,7 @@ function CompositionEditor({
     setRefusal(null);
     try {
       for (const file of list) {
-        const res = await uploadAttachmentFile(file, 'receipt', receiptId);
+        const res = await uploadAttachmentFile(file, 'receipt', receiptId, DOCUMENT_PHOTO);
         if (res.ok) {
           setUploads((prev) => [...prev, { id: res.item.id, fileName: res.item.fileName, removable: true }]);
           setDoc(res.item.id);
@@ -549,6 +658,70 @@ function CompositionEditor({
     setRefusal({ error: code === 'in_use' ? 'in_use' : 'remove_failed' });
   }
 
+  // The document the button reads: the CHOSEN chip, and only while it is drawn.
+  const chosen = doc !== null ? (docs.find((d) => d.id === doc) ?? null) : null;
+
+  /**
+   * «🤖 Fayldan to'ldirish»: the model reads the chosen document and the rows
+   * it found are offered in a dialog. Nothing is written — «Qo'llash» fills
+   * this editor's lines and «Saqlash» is still the person's press.
+   *
+   * A document read in the last half hour is SHOWN again, not paid for again
+   * (`again` is the dialog's own «Qayta o'qish», asked first): a reading takes
+   * up to a minute and one of the day's fifty. The answer is kept even when
+   * the editor has gone meanwhile — only the state is not touched then.
+   */
+  async function readDocument(target: { id: string; fileName: string }, again: boolean) {
+    if (reading) return;
+    setRefusal(null);
+    if (!again) {
+      const kept = cachedRead(target.id);
+      if (kept) {
+        setRead(kept);
+        setReadOpen(true);
+        return;
+      }
+    }
+    setReading(true);
+    try {
+      const answer = await requestTarkibRead(lotId, target.id);
+      if (answer.ok) {
+        const stored: StoredRead = {
+          attachmentId: target.id,
+          fileName: target.fileName,
+          at: Date.now(),
+          proposal: answer.proposal,
+          today: answer.today ?? null,
+        };
+        storeRead(stored);
+        if (alive.current) {
+          setRead(stored);
+          setReadOpen(true);
+        }
+      } else if (alive.current) {
+        setRefusal({ error: answer.error, detail: answer.detail, today: answer.today });
+      }
+    } finally {
+      // Always: a refusal, a dead connection and a deadline all hand the button back.
+      if (alive.current) setReading(false);
+    }
+  }
+
+  /** The ticked rows become this editor's lines — and nothing is saved. */
+  function applyRead(next: DraftLine[]) {
+    if (!read) return;
+    setLines(next);
+    setRefusal(null);
+    setReadOpen(false);
+    // The file that was read is the file the tarkib cites — while its chip is still drawn.
+    if (docs.some((d) => d.id === read.attachmentId)) setDoc(read.attachmentId);
+    setFilled({
+      attachmentId: read.attachmentId,
+      single: read.proposal.lotsOnReceipt <= 1,
+      warnings: read.proposal.warnings,
+    });
+  }
+
   async function save() {
     if (uploading > 0) {
       setRefusal({ error: 'uploading' });
@@ -577,6 +750,11 @@ function CompositionEditor({
       });
       if (res.ok) {
         forgetDraft();
+        // The reading has done its work once its rows are saved — on a prixod
+        // of ONE lot. With several, the next lot ticks its own rows from the
+        // same reading (a packing list covers the shipment), so it is kept
+        // for its half hour rather than paid for again.
+        if (filled?.single) forgetRead(filled.attachmentId);
         onDone({ cleared: false, frozen: res.frozen });
       } else {
         setRefusal(res);
@@ -617,6 +795,7 @@ function CompositionEditor({
     refusal?.seq === index + 1 && refusedField(refusal) === field ? ' ring-2 ring-bad' : '';
 
   const errorText = useRefusalText();
+  const proposalWords = useProposalWords();
 
   const measure = (label: string, units: number | null, scale: number) => {
     if (units === null) return null;
@@ -670,6 +849,20 @@ function CompositionEditor({
       )}
       {shownMode === 'mixed' && (
         <p className="text-xs text-ink-500">{oneCarton ? t('oneCartonMixed') : t('modeMixedHint')}</p>
+      )}
+
+      {/* The rows below were read from the client's file by the model and
+          nobody has saved them yet: said above them until «Saqlash», with
+          whatever the reading itself warned about. */}
+      {filled && (
+        <div className="space-y-0.5 rounded-lg bg-warn/10 p-2 text-xs text-warn" data-testid="tarkib-filled">
+          <p className="font-semibold">🤖 {t('read.filled')}</p>
+          {filled.warnings.map((w, i) => (
+            <p key={i} className="break-words">
+              ⚠ {proposalWords.warning(w)}
+            </p>
+          ))}
+        </div>
       )}
 
       {/* 2. The lines. One header row of labels from xl up. */}
@@ -965,14 +1158,35 @@ function CompositionEditor({
               }}
             />
           </label>
+          {/* «🤖 Fayldan to'ldirish» (the owner, 2026-11-11): the model reads
+              the CHOSEN document and offers its rows — the file read is the
+              file the tarkib will cite, so there is no second upload. Nothing
+              is saved by it. */}
+          <button
+            type="button"
+            data-testid="tarkib-read"
+            className="btn-secondary !min-h-10 whitespace-normal px-3 text-sm disabled:opacity-50"
+            disabled={chosen === null || reading || uploading > 0 || pending}
+            onClick={() => {
+              if (chosen) void readDocument(chosen, false);
+            }}
+          >
+            {reading ? '⏳' : '🤖'} {reading ? t('read.reading') : t('read.button')}
+          </button>
         </div>
         <p className="text-xs text-ink-500">{t('docWhere')}</p>
+        {chosen === null && (
+          <p className="text-xs text-ink-500" data-testid="tarkib-read-hint">
+            🤖 {t('read.hint')}
+          </p>
+        )}
       </div>
 
       {/* 6. The refusal, and the way out of the two that need a reload. */}
       {refusal && (
         <div className="rounded-lg bg-bad/10 p-2 text-sm font-semibold text-bad" data-testid="tarkib-error">
           <p>{errorText(refusal)}</p>
+          {refusal.today && <ReadTodayLine today={refusal.today} />}
           {(refusal.error === 'lot_changed' ||
             refusal.error === 'composition_changed' ||
             refusal.error === 'composition_changed_self') && (
@@ -1029,6 +1243,24 @@ function CompositionEditor({
           </button>
         )}
       </div>
+
+      {/* The reading's rows, ticked by the person. Kept MOUNTED and toggled
+          (an Overlay mounted already open closes itself); a portal, so it is
+          no child of this box's layout. */}
+      <TarkibReadDialog
+        open={readOpen}
+        read={read}
+        lot={{ zh: lotZh, ru: oneGood?.ru ?? null }}
+        totals={totals}
+        existing={lines}
+        busy={reading}
+        error={readOpen && refusal ? errorText(refusal) : null}
+        onApply={applyRead}
+        onAgain={() => {
+          if (read) void readDocument({ id: read.attachmentId, fileName: read.fileName }, true);
+        }}
+        onClose={() => setReadOpen(false)}
+      />
     </div>
   );
 }
