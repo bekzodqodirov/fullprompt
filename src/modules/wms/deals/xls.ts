@@ -69,6 +69,15 @@ export interface SheetRows {
    */
   rowsLeftOut?: true;
   colsLeftOut?: true;
+  /**
+   * What the FILE says of its figures' comma beyond its cells (FAYL-OQISH
+   * §5.9): a CSV separated by «;» is written with a decimal comma (Excel on
+   * a Russian or Uzbek machine), one separated by «,» had to quote a comma
+   * in a cell, so its «"1,500"» is fifteen hundred (Excel en-US «Save as
+   * CSV» writes the displayed value). `parseGoods` takes it as the sheet's
+   * word where a figure column has none of its own.
+   */
+  comma?: 'decimal' | 'thousands';
 }
 
 /** A sheet's two left-out words, set only when true — every reader's one shape. */

@@ -135,9 +135,11 @@ export type WeightKind = 'net' | 'gross' | 'plain' | null;
  * and NO money column — a packing list, whose rows restate an invoice's goods
  * and whose sums are the shipment's totals; anything else is an `invoice`.
  *  - `weightKind` — the column the line weights came from;
- *  - `grossKg` — Σ of the gross column over every row, null when any row
- *    lacks it (reported even when the line weights came from a net column);
- *  - `volumeM3` — Σ of the m³ column over every row, all or none
+ *  - `grossKg` — Σ of the gross column over every row it keeps as a good,
+ *    null when any of them lacks it (reported even when the line weights
+ *    came from a net column) — a total row, a subtotal and a footer under the
+ *    list are no rows of it (`dropped`, FAYL-OQISH §5.4-§5.5);
+ *  - `volumeM3` — Σ of the m³ column over the same rows, all or none
  *    (`linesVolumeM3`'s rule).
  * A position a merge DOWN covers is its master's, stated once: it lacks
  * nothing. A headerless sheet is no mapped sheet: `invoice`, nothing summed.
@@ -281,9 +283,19 @@ const lastNames = (header: string): boolean => {
  * heading. And it is claimed only when most of its data cells READ as codes.
  */
 const TNVED_KEYS = ['hs code', 'hs-code', 'тн вэд', 'тнвэд', 'tn ved', 'tnved', '海关编码', '商品编码'];
-const QTY_KEYS = ['кол-во', 'кол.', 'количество', 'колич', 'soni', 'miqdor', 'dona', 'qty', 'quantity', 'pcs', '数量', '件数'];
+/**
+ * Header keys match as SUBSTRINGS of the header folded by `matchKey` — so a
+ * stem holds an Uzbek word's every ending (§5.13, unmapped-uz-header-words):
+ * «og'irl» is «Og‘irligi», «Ogʻirlik», «Umumiy og'irligi» (which, read as no
+ * weight, became the line's MONEY by its «umumiy»), and «nechta» is «Nechta».
+ * A bare «necha» only before what it counts (`NECHA_COUNT`): «Necha so‘m» is
+ * a price. A «Brutto» / «Брутто» column ALONE is the line's weight, a gross
+ * one (§5.14, xlsxN-12), as «G.W.» and «毛重» always were.
+ */
+const QTY_KEYS = ['кол-во', 'кол.', 'количество', 'колич', 'soni', 'miqdor', 'dona', 'nechta', 'qty', 'quantity', 'pcs', '数量', '件数'];
+const NECHA_COUNT = /(?<![\p{L}])necha(?![\p{L}])(?!\s*(?:so'?m|pul)(?![\p{L}]))/u;
 const UNIT_KEYS = ['ед.', 'ед изм', 'единиц', 'birlik', 'unit', '单位'];
-const WEIGHT_KEYS = ['вес', 'кг', "og'irlik", 'ogirlik', 'vazn', 'weight', 'kg', '重量', '毛重', '净重', 'g.w', 'n.w', 'gross'];
+const WEIGHT_KEYS = ['вес', 'кг', "og'irl", 'ogirl', 'vazn', 'weight', 'kg', '重量', '毛重', '净重', 'g.w', 'n.w', 'gross', 'брутто', 'brutto'];
 /**
  * A line's weight is NETTO (the row's own unit of account, `CalcField`), so a
  * packing list carrying both «N.W.» and «G.W.» is read by its net column
@@ -403,8 +415,23 @@ function invoiceHeader(texts: string[]): boolean {
 }
 /** A count of packages — «TOTAL CTNS», «Кол-во мест», «箱数» — is no money either. */
 const PACKAGE_COUNT = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест|箱数|件数|包数/i;
+/**
+ * …and the package as a LATIN or CYRILLIC word — what makes a count header a
+ * carton column (§5.10): «CTN QTY», «Carton Quantity», «PKG QTY». Never 件数:
+ * on a Chinese list «件数» alone is the pieces (c1778) and «总件数» their total
+ * (c2453).
+ */
+const LATIN_PACKAGE = /ctns?\b|cartons?|pkgs?\b|packages?|короб|мест/i;
+/** A count header that is the line's TOTAL — «TOTAL QTY», «Всего шт», «Jami soni», a leading 总 / 總 («总数量»). */
+const COUNT_TOTAL = /(?<![\p{L}])(?:total|totals|ttl|sum|всего|итого|итог|jami|жами|umumiy|умумий)(?![\p{L}])/iu;
+const COUNT_TOTAL_HAN = /^\s*[总總]|合计|总计|合計|總計/u;
 
-/** Rows that are arithmetic, not goods. */
+/**
+ * A total word ANYWHERE in a cell — how the HEADER search judges a row's
+ * neighbourhood (a serial read past its «TOTAL», a deep candidate whose name
+ * is a total, a table line). Never whether a row is a good: that is
+ * `totalRowOf`, which a product named «TOTAL cordless drill» passes.
+ */
 const TOTAL_ROW_KEYS = ['итого', 'всего', 'подытог', 'jami', 'total', '合计', '总计'];
 /**
  * …and a Chinese SUBTOTAL row (review PF-ADV-3): «小计», «共计» under each
@@ -412,7 +439,151 @@ const TOTAL_ROW_KEYS = ['итого', 'всего', 'подытог', 'jami', 't
  * the cell's own word — never inside a name: «小计算器» is a pocket calculator.
  */
 const SUBTOTAL_HAN = /^(?:小计|小計|共计|共計|合計|總計)(?!\p{Script=Han})/u;
-const isTotalRow = (text: string): boolean => matchKey(text, TOTAL_ROW_KEYS) || SUBTOTAL_HAN.test(text.trim());
+const mentionsTotal = (text: string): boolean => matchKey(text, TOTAL_ROW_KEYS) || SUBTOTAL_HAN.test(text.trim());
+
+/**
+ * The words a TOTAL row's label is made of (§5.4, reader-5.4ab-vocab) —
+ * whole words, never a substring: as `includes` the old keys ate «TOTAL
+ * cordless drill» (a TOTAL Tools drill, xlsx1-04) and «Итоговая папка», and
+ * missed «Umumiy», «Итог», «Жами», «Sum» and «Общий итог» (xlsx1-05), which
+ * became a second good and doubled the brutto and the cube.
+ *  - `TOTAL_WORDS` say «total» by themselves («umumiy» and «sum» only here,
+ *    where a whole cell is judged: «Umumiy maqsadli lak», «Sumka»);
+ *  - `CORE_TOTAL` are the ones that make a FIGURE-LESS row a footer even
+ *    beside other words («SAY TOTAL: US DOLLARS …») — never «umumiy» or «sum»;
+ *  - `TOTAL_PREFIX` qualify a total and never stand for one («Grand», «Общий»);
+ *  - `TOTAL_QUALIFIERS` is the closed vocabulary a total label may carry
+ *    beside its word: what is totalled, its unit, its currency, «по счету»,
+ *    «к оплате», «SAY» — a cell of nothing else is a label, never a product.
+ * Han has no spaces: a Han run is judged by stripping what a total label is
+ * written in («合计数量», «总计（箱）») and seeing whether anything is left.
+ */
+const TOTAL_WORDS = new Set(['total', 'totals', 'ttl', 'subtotal', 'итого', 'итог', 'всего', 'подытог', 'jami', 'жами', 'umumiy', 'умумий', 'sum']);
+const CORE_TOTAL = new Set(['total', 'totals', 'итого', 'всего', 'jami']);
+const TOTAL_PREFIX = new Set(['grand', 'sub', 'общий', 'общая', 'общее']);
+const TOTAL_QUALIFIERS = new Set([
+  // what is totalled, as an English / Chinglish packing list writes it
+  'amount', 'amounts', 'value', 'price', 'qty', 'quantity', 'quantities', 'ctn', 'ctns', 'carton', 'cartons', 'pkg', 'pkgs',
+  'package', 'packages', 'pack', 'packs', 'pcs', 'pc', 'piece', 'pieces', 'set', 'sets', 'pair', 'pairs', 'weight', 'gross',
+  'net', 'nw', 'gw', 'n', 'g', 'w', 'wt', 'volume', 'vol', 'meas', 'measurement', 'cbm', 'm', 'kg', 'kgs', 'usd', 'us',
+  'dollar', 'dollars', 'rmb', 'cny', 'eur', 'uzs', 'rub', 'say', 'of', 'the', 'in', 'all', 'invoice', 'payable', 'due',
+  'incl', 'including', 'excl', 'excluding', 'vat', 'tax', 'with', 'without', 'page', 'section', 'group', 'fob', 'cif',
+  'exw', 'cfr', 'ddp', 'dap',
+  // …as a Russian invoice does
+  'по', 'счету', 'счёту', 'накладной', 'документу', 'разделу', 'разделам', 'группе', 'листу', 'странице', 'сумма', 'сумме',
+  'к', 'оплате', 'оплаты', 'с', 'без', 'ндс', 'учетом', 'учётом', 'вес', 'веса', 'брутто', 'нетто', 'кол', 'во',
+  'количество', 'мест', 'места', 'шт', 'кг', 'м', 'куб', 'руб', 'сум', 'долл', 'всех', 'позиций', 'позициям', 'товаров',
+  'товара', 'за', 'на',
+  // …and an Uzbek one
+  'summa', 'soni', 'miqdori', 'vazni', 'vazn', "og'irligi", 'ogirligi', 'hajmi', 'hajm', 'kub', 'dona', 'ta', 'karobka',
+  'joy', 'narxi', 'qiymati', "bo'yicha", 'uchun', "so'm",
+]);
+const TOTAL_HAN = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/u;
+const TOTAL_HINT = /total|ttl|sum|итог|всего|подытог|jami|жами|umumiy|умумий|合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總/i;
+const TOTAL_HAN_LAST = /(?:合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總)$/u;
+const HAN_QUALIFIERS = /合计|总计|合計|總計|小计|小計|共计|共計|汇总|匯總|数量|數量|件数|件數|箱数|箱數|重量|毛重|净重|淨重|体积|體積|金额|金額|总额|總額|总价|總價|美元|人民币|公斤|立方米|立方|[总總共箱件个個包元米]/gu;
+
+/** What a cell says as a total label (null: no total word in it at all). */
+interface TotalLabel {
+  /** Nothing word-like is left beside the total word(s) and their qualifiers. */
+  only: boolean;
+  /** A CORE total word stands in it as a whole word. */
+  core: boolean;
+  /** Its LAST word is a total word — Excel's subtotal «Куртка женская Итог», «Jacket Total», «女士夹克 汇总». */
+  last: boolean;
+}
+function totalLabel(text: string): TotalLabel | null {
+  // Most cells say no total at all: they are answered before a word is split
+  // (`totalRows` asks this of every string cell of the sheet).
+  if (text.length > 300 || !TOTAL_HINT.test(text)) return null;
+  const words =
+    foldKey(text.trim())
+      .replace(/(\p{Script=Han}+)/gu, ' $1 ')
+      .match(/[\p{L}']+/gu)
+      ?.map((w) => w.replace(/^'+|'+$/g, ''))
+      .filter(Boolean) ?? [];
+  let total = false;
+  let core = false;
+  let only = true;
+  for (const word of words) {
+    if (/\p{Script=Han}/u.test(word)) {
+      // A Han total word is the run's own only when nothing but qualifiers is
+      // left beside it, or the run ENDS with it: «合计数量», «女士夹克 汇总» —
+      // never «小计算器», a pocket calculator.
+      const rest = word.replace(HAN_QUALIFIERS, '');
+      if (TOTAL_HAN.test(word) && (rest === '' || TOTAL_HAN_LAST.test(word))) {
+        total = true;
+        core ||= /合计|总计|合計|總計/u.test(word);
+      }
+      if (rest !== '') only = false;
+    } else if (TOTAL_WORDS.has(word)) {
+      total = true;
+      core ||= CORE_TOTAL.has(word);
+    } else if (!TOTAL_PREFIX.has(word) && !TOTAL_QUALIFIERS.has(word)) only = false;
+  }
+  if (!total) return null;
+  const tail = words.at(-1) ?? '';
+  return { only, core, last: TOTAL_WORDS.has(tail) || TOTAL_HAN_LAST.test(tail) };
+}
+
+/**
+ * Why a row the sheet holds is no good — said, never dropped in silence
+ * (`dropped`, §5.5):
+ *  - `total` — a label-only total («TOTAL», «Итого по счету», «TOTAL 15
+ *    CTNS», «Umumiy», «Общий итог», «合计数量»), whatever its figures;
+ *  - `footer_total` — a figure-less line with a CORE total word in it, the
+ *    «SAY TOTAL: US DOLLARS …» footer;
+ *  - `subtotal` — a total word in a named row whose figures ARE the Σ of the
+ *    goods above it (Excel's «Куртка женская Итог»);
+ *  - `footer` — a figure-less line under the last line that states
+ *    anything (§5.5): «Made in China», «Remarks:», a stamp.
+ */
+export type DroppedWhy = 'total' | 'footer_total' | 'subtotal' | 'footer';
+export interface DroppedRow {
+  /** The row as one line, its cells joined by « | » (what the model is shown of it). */
+  text: string;
+  why: DroppedWhy;
+}
+
+/** What `totalRowOf` is told of a row. */
+export interface TotalRowFacts {
+  /** The row's name cell (any cell, for `totalRows`). */
+  name: string;
+  /** Does the row state a figure of its own in a mapped figure column (headerless: in any cell)? */
+  figures: boolean;
+  /**
+   * Its figures equal the Σ of the goods landed since the sheet's start or
+   * the last total row, over `rows` goods; `twin` = there is one and it
+   * bears this row's own name. Absent: not judged.
+   */
+  sum?: { rows: number; twin: boolean } | null;
+}
+
+/**
+ * Is this row arithmetic and not a good — and why? ONE predicate (#513),
+ * asked by every reader of «is this a total row»: `parseGoods`' own rows,
+ * its stopped-short test, and `totalRows` that the contradiction check reads
+ * (reader-5.4ab-vocab: with two rules a «TOTAL QUARTZ 9000» oil kept as a good
+ * was still read as the sheet's grand total and nulled the Σ).
+ *
+ * The Σ may drop a row ONLY when its name says total as well (§5.4 (c),
+ * reader-5.4c-silent-arith): label-free, it took the third colour of one
+ * jacket (100/200/300), the «Шкаф» of «Стол 5 / Стул 10 / Шкаф 15» and the
+ * grey socks of 100/100/200 — all of which equal what stands above them.
+ * Over one good only, the total word must be the LAST word and the row must
+ * not bear that good's own name: Excel's subtotal of a one-line group is
+ * «Куртка Итог», and two «Colgate Total» lines with the same figures are
+ * two lines.
+ */
+export function totalRowOf(row: TotalRowFacts): Exclude<DroppedWhy, 'footer'> | null {
+  const label = totalLabel(row.name);
+  if (!label) return null;
+  if (label.only) return 'total';
+  if (!row.figures && label.core) return 'footer_total';
+  const sum = row.sum;
+  if (sum && (sum.rows >= 2 || (sum.rows === 1 && label.last && !sum.twin))) return 'subtotal';
+  return null;
+}
 
 /**
  * What a whole cell LABELS, when it is nothing but a field's name — the left
@@ -508,10 +679,16 @@ const SAMPLE_ROWS = 50;
 
 const cellText = (cell: Cell): string => (cell === null ? '' : String(cell).trim());
 
+/** The header's text as the keys are written: lower case, every apostrophe Uzbek types «ʻ ‘ ’ ` ʼ» the ASCII one (§5.13). */
+const foldKey = (text: string): string => text.toLowerCase().replace(/[ʻ‘’`ʼ]/g, "'");
+
 const matchKey = (text: string, keys: string[]): boolean => {
-  const t = text.toLowerCase();
+  const t = foldKey(text);
   return t.length > 0 && keys.some((k) => t.includes(k));
 };
+
+/** A header that counts — a quantity key, or «Necha …» before what it counts (§5.13). */
+const namesCount = (text: string): boolean => matchKey(text, QTY_KEYS) || NECHA_COUNT.test(foldKey(text));
 
 /** `1 234,56` and `1,234.56` both reach us; the last separator is the decimal one. */
 export function parseNumber(cell: Cell): number | null {
@@ -938,7 +1115,7 @@ function landsBetween(rows: Cell[][], found: Detected, r: number, covered: Cover
   for (let d = dataFrom; d < r; d++) {
     const name = rows[d]?.[columns.name] ?? null;
     const text = cellText(name);
-    if (text === '' || labelCell(name) || isHeaderText(name, own) || isTotalRow(text)) continue;
+    if (text === '' || labelCell(name) || isHeaderText(name, own) || mentionsTotal(text)) continue;
     if (repeatsHeader(rows[d]!, d, columns, covered)) continue;
     return true;
   }
@@ -1096,7 +1273,7 @@ function headerAt(
   // Количество мест | Вес брутто» names figure columns over the shipment's
   // sums, and is no goods header however deep.
   if (deep && [columns.quantity, columns.weight, columns.volume, columns.amount, columns.gross].every((i) => i === null)) return null;
-  if (deep && isTotalRow(cellText(raw[columns.name] ?? null))) return null;
+  if (deep && mentionsTotal(cellText(raw[columns.name] ?? null))) return null;
   return { detected: { headerRow: r, dataFrom: repeats.has(r + 1) ? r + 2 : r + 1, columns }, score: mappedBeside(columns) };
 }
 
@@ -1179,7 +1356,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // «Brand name» column (the fourth review, c2615) — so the article half is
   // scoped to «item».
   const serial = (i: number) => {
-    const cells = sampled(i).map(cellText).filter((text) => !isTotalRow(text));
+    const cells = sampled(i).map(cellText).filter((text) => !mentionsTotal(text));
     return cells.length > 1 && cells.every((text, at) => /^\d+\.?$/.test(text) && Number.parseInt(text, 10) === at + 1);
   };
   const itemOnly = (i: number) => !matchKey(cellText(header[i]!), NAME_KEYS_FIRST);
@@ -1247,21 +1424,75 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   let weightFromQty: number | null = null;
   let volumeFromQty: number | null = null;
   let cartonCol: { index: number; word: string } | null = null;
+  // The line's count is CHOSEN among the count headers, never the first
+  // one standing (§5.10, xlsxN-08): «QTY/CTN | CTN QTY | TOTAL QTY» took «CTN
+  // QTY» — 15 «dona» for 300 jackets — and «TOTAL QTY» was passed over.
+  const counts: { i: number; text: string; unit: ReturnType<typeof unitOf>; word: string | null }[] = [];
   for (let i = 0; i < header.length; i++) {
-    if (taken.has(i) || !matchKey(cellText(header[i]!), QTY_KEYS)) continue;
+    const text = cellText(header[i]!);
+    // A header that counts by its own LAST unit word is a count too (§5.11,
+    // xlsxN-09's verifier): «Всего шт», «Итого (шт.)», «Total pieces», «Jami,
+    // ta» name no quantity key, and the 300 pieces were lost beside «Кол-во
+    // коробок». Never money («Цена, шт», «Цена за шт»), never the UNIT column
+    // («Ед.» — the kernel reads «ед» as a piece), and never a weight or a
+    // volume OF a piece («Вес 1 шт», «Объём 1 шт» — whose «кг» / «м3» the
+    // unit word already refuses when it is written).
+    const pieces =
+      unitOf(headerUnitWord(text)) === 'dona' &&
+      !MONEY_HEADER.test(text) &&
+      !matchKey(text, UNIT_KEYS) &&
+      !matchKey(text, WEIGHT_KEYS) &&
+      !matchKey(text, VOLUME_KEYS);
+    if (taken.has(i) || !(namesCount(text) || pieces)) continue;
     // One package's count is nobody's count (FILES-1): passed over, so the
     // line's own total count column is the line's.
-    if (PER_PACKAGE_COUNT.test(cellText(header[i]!))) continue;
-    const word = headerUnitWord(cellText(header[i]!));
+    if (PER_PACKAGE_COUNT.test(text)) continue;
+    const word = headerUnitWord(text);
     const unit = unitOf(word);
     if (unit === 'kg') weightFromQty ??= i;
     else if (unit === 'm3') volumeFromQty ??= i;
     else if (unit === 'karobka') cartonCol ??= { index: i, word: word! };
-    else if (quantity === null) {
-      quantity = i;
-      quantityUnit = unit === 'dona' || unit === null ? null : word;
-    } else continue;
+    else {
+      counts.push({ i, text, unit, word });
+      continue;
+    }
     taken.add(i);
+  }
+  // The ranking (§5.10): a TOTAL first — «TOTAL QTY», «总数量» — then a header
+  // that names what it counts by its unit, then one that names no package,
+  // then the leftmost. A header naming money or a measure ranks below every
+  // other: the count by its unit would otherwise put «Price/pcs» and
+  // «Weight/pcs» above «Qty» (both are quantity keys by their «pcs»), where
+  // the first-found rule had them only when they stood first. A named
+  // measure («Кол-во, м2») ranks with a piece unit — the leftmost of the two
+  // stays the line's count, as it always was: m² is what a tile is priced by.
+  const rank = (c: (typeof counts)[number]) => [
+    MONEY_HEADER.test(c.text) || matchKey(c.text, WEIGHT_KEYS) || matchKey(c.text, VOLUME_KEYS) ? 1 : 0,
+    COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text) ? 0 : 1,
+    c.unit !== null ? 0 : 1,
+    PACKAGE_COUNT.test(c.text) ? 1 : 0,
+    c.i,
+  ];
+  const byRank = [...counts].sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    const k = x.findIndex((v, j) => v !== y[j]);
+    return k < 0 ? 0 : x[k]! - y[k]!;
+  });
+  const chosen = byRank[0];
+  if (chosen && counts.length === 1 && chosen.unit === null && LATIN_PACKAGE.test(chosen.text)) {
+    // A LONE «CTN QTY» counts cartons: the door's carton rule sends it to the
+    // note, never into pieces. Never by «件数» / «总件数»: alone, that is the
+    // pieces (c1778, c2453).
+    cartonCol ??= { index: chosen.i, word: 'ctn' };
+    taken.add(chosen.i);
+  } else if (chosen) {
+    quantity = chosen.i;
+    quantityUnit = chosen.unit === 'dona' || chosen.unit === null ? null : chosen.word;
+    taken.add(chosen.i);
+    // …and a count passed over that names a package in a Latin or Cyrillic
+    // word is the packing list's carton column, said as one («ctn»).
+    const packages = byRank.slice(1).find((c) => c.unit === null && LATIN_PACKAGE.test(c.text));
+    if (packages) cartonCol ??= { index: packages.i, word: 'ctn' };
   }
   if (quantity === null && cartonCol) {
     // Only cartons: their number goes where a carton count goes — through
@@ -1397,7 +1628,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
         isNetWeight(text) ||
         matchKey(text, VOLUME_KEYS) ||
         VOLUME_WORD.test(text) ||
-        matchKey(text, QTY_KEYS) ||
+        namesCount(text) ||
         PER_PACKAGE.test(text) ||
         PACKAGE_COUNT.test(text)
       );
@@ -1454,7 +1685,7 @@ function repeatsHeader(row: Cell[], d: number, columns: ColumnMap, covered: Cove
   const name = cellText(at(columns.name));
   if (!matchKey(name, NAME_KEYS) || carriesFigure(name) || /\d/.test(name)) return false;
   const own: [number | null, (text: string) => boolean][] = [
-    [columns.quantity, (text) => matchKey(text, QTY_KEYS)],
+    [columns.quantity, (text) => namesCount(text)],
     [columns.weight, (text) => matchKey(text, WEIGHT_KEYS) || matchKey(text, NET_WEIGHT_KEYS) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
     [columns.gross, (text) => GROSS_HEADER.test(text) || matchKey(text, WEIGHT_KEYS)],
     [columns.volume, (text) => matchKey(text, VOLUME_KEYS) || VOLUME_WORD.test(text)],
@@ -1697,26 +1928,27 @@ export const MAX_GOODS_ROWS = 500;
 /** The first data row under a header row. */
 const r0 = (headerRow: number) => headerRow + 1;
 
-/** A GRAND total row's own word — never a subtotal («подытог», «subtotal», «小计»). */
-const GRAND_TOTAL = /^(?:grand\s+)?(?:total|totals|итого|всего|jami|合计|总计)(?![\p{L}])/iu;
+/** A SUBTOTAL's own word — a total row, never the sheet's grand total («подытог», «subtotal», «小计»). */
 const SUBTOTAL_WORD = /sub\s*-?\s*total|подытог|小计|小計/iu;
 
 /**
- * The sheet's total rows under the header, in order — a packing list closes
- * with one («TOTAL … 190 … 1.6»), and a sectioned one closes each section
- * with its own (fix review FR-SELL-3). Any cell may carry the word: the «No.»
- * column as often as the name's.
+ * The sheet's total rows under the header, in order, with where each stands —
+ * a packing list closes with one («TOTAL … 190 … 1.6»), and a sectioned one
+ * closes each section with its own (fix review FR-SELL-3). Any cell may carry
+ * the label: the «No.» column as often as the name's. A label is a total by
+ * the row filter's OWN rule (`totalRowOf`, #513, reader-5.4ab-vocab): so
+ * «Umumiy», «Итог», «Общий итог» are read here, and a «TOTAL QUARTZ 9000»
+ * oil kept as a good no longer nulls the Σ as the sheet's «grand total».
  */
-function totalRows(rows: Cell[][], from: number, covered: Covered | null): Cell[][] {
-  const out: Cell[][] = [];
+function totalRows(rows: Cell[][], from: number, covered: Covered | null): { d: number; row: Cell[] }[] {
+  const out: { d: number; row: Cell[] }[] = [];
   for (let d = from; d < rows.length; d++) {
     const row = rows[d]!;
     const says = row.some((cell, i) => {
       if (covered?.has(d, i) || typeof cell !== 'string') return false;
-      const text = cell.trim();
-      return text.length <= 24 && GRAND_TOTAL.test(text) && !SUBTOTAL_WORD.test(text);
+      return totalRowOf({ name: cell, figures: true }) === 'total' && !SUBTOTAL_WORD.test(cell);
     });
-    if (says) out.push(row);
+    if (says) out.push({ d, row });
   }
   return out;
 }
@@ -1765,6 +1997,137 @@ function contradicts(sum: number, rows: readonly Cell[][], column: number, unit:
 }
 
 /**
+ * How a figure column writes its comma (§5.9, xlsxN-07's verifier): a text
+ * «1,500» is fifteen hundred pieces on an English packing list and 1.5 kg
+ * on a Russian one, and `parseNumber` read every lone comma as a decimal —
+ * so the ERP's «Export to Excel» (an HTML table named .xls) and Excel's
+ * «Save as CSV» (the displayed «"1,500"») landed 1000× small, with no word.
+ */
+export type Comma = 'decimal' | 'thousands';
+/** The one shape that reads two ways — the kernel's AMBIGUOUS (`readNumberCell`): 1-3 digits, a comma, 3 digits. */
+const AMBIGUOUS_COMMA = /^[1-9]\d{0,2},\d{3}$/;
+/** The figure of a cell, without its spaces or the unit glued to it («1,050.50KGS»). */
+function figureText(cell: Cell): string | null {
+  if (typeof cell !== 'string' || cell.length > 64) return null;
+  const text = cell.trim();
+  const glued = GLUED_FIGURE.exec(text);
+  return (glued ? glued[1]! : text).replace(/\s+/g, '').replace(/^-/, '');
+}
+/**
+ * What ONE cell says of its file's comma, if anything:
+ *  - thousands: two comma groups («1,500,000»), a group then a dot decimal
+ *    («1,950.00»), or a dot decimal at all («0.15», «12.5» — never «1.500»,
+ *    which reads two ways itself);
+ *  - decimal: one comma that cannot group thousands — 1-2 or 4+ digits after
+ *    it («142,5», «0,90», «1234,5678»), 4+ before it, a leading 0 («0,125»),
+ *    or after dot-grouped thousands («1.234,56»).
+ */
+function commaEvidence(cell: Cell): Comma | null {
+  const text = figureText(cell);
+  if (!text) return null;
+  if (/^\d{1,3}(?:,\d{3}){2,}(?:\.\d+)?$|^\d{1,3}(?:,\d{3})+\.\d+$/.test(text)) return 'thousands';
+  if (/^\d+\.\d+$/.test(text)) return /^[1-9]\d{0,2}\.\d{3}$/.test(text) ? null : 'thousands';
+  if (/^(?:\d+|\d{1,3}(?:\.\d{3})+),\d+$/.test(text) && !AMBIGUOUS_COMMA.test(text)) return 'decimal';
+  return null;
+}
+/** A figure column's comma: what its OWN cells say, and what the sheet says where they say nothing. */
+interface ColumnComma {
+  /** The column's own cells' word — null when they say nothing or both. */
+  own: Comma | null;
+  /** …and the reading a bare text cell takes: `own` when the column said anything, else the sheet's. */
+  bare: Comma | null;
+}
+/**
+ * The comma of each figure column, settled ONCE from its own string cells;
+ * a column with no evidence of its own takes the SHEET's — every figure
+ * column's cells and what the file itself says (a «;» CSV is written with a
+ * decimal comma, a «,» CSV quotes a thousands one). Evidence both ways is
+ * null: nobody can say, and the ambiguous cell is asked («— aniq emas»).
+ * The sheet's word is what lets an HTML export's «1,950» money beside its
+ * «0.15» cube read 1950 (§5.9's pin): the money column itself held only
+ * the ambiguous shape.
+ */
+function commaReadings(
+  rows: Cell[][],
+  from: number,
+  columns: readonly (number | null)[],
+  covered: Covered | null,
+  hint: Comma | null,
+): Map<number, ColumnComma> {
+  const seen = new Map<number, Set<Comma>>();
+  const sheet = new Set<Comma>(hint ? [hint] : []);
+  for (const col of columns) {
+    if (col === null || seen.has(col)) continue;
+    const own = new Set<Comma>();
+    for (let d = from; d < rows.length; d++) {
+      if (covered?.has(d, col)) continue;
+      const said = commaEvidence(rows[d]![col] ?? null);
+      if (said) own.add(said);
+    }
+    seen.set(col, own);
+    for (const said of own) sheet.add(said);
+  }
+  const one = (set: Set<Comma>): Comma | null => (set.size === 1 ? [...set][0]! : null);
+  return new Map(
+    [...seen].map(([col, own]): [number, ColumnComma] => [col, { own: one(own), bare: own.size > 0 ? one(own) : one(sheet) }]),
+  );
+}
+/**
+ * A figure cell read with its column's comma. Only the AMBIGUOUS shape is
+ * ever decided here; anything else reads as before — `parseMeasure` for a
+ * measured column, `parseNumber` otherwise — so «1.234,56», «-50», «0,125»
+ * and every numeric cell are untouched.
+ *  - A BARE text «1,500» takes the column's reading (`bare`); a PIECE count
+ *    is fifteen hundred whatever the sheet says — 1.5 pieces is no count
+ *    (`pieces`). With no reading it is null, and the line says «— aniq emas».
+ *  - A figure with its unit GLUED on («1,200KGS», «12,500PCS») takes only
+ *    what its OWN column says (`own`): «1,200KGS» beside «1,050.50KGS» is
+ *    1200, and alone it stays unread — round 1's ruling for the glued shape
+ *    (c0076-c0080, c0095, c0456, c0081, all three votes), which xlsxN-07's
+ *    verifier kept.
+ */
+function readFigure(cell: Cell, accept: 'dona' | 'kg' | 'm3' | null, comma: ColumnComma | null, pieces = false): number | null {
+  if (typeof cell === 'string' && cell.length <= 64) {
+    const text = cell.trim();
+    const glued = accept ? GLUED_FIGURE.exec(text) : null;
+    const isGlued = glued !== null && unitOf(glued[2]!.replace(/\.$/, '')) === accept;
+    const head = (isGlued ? glued[1]! : text).replace(/\s+/g, '');
+    if (AMBIGUOUS_COMMA.test(head)) {
+      const reading = isGlued ? (comma?.own ?? null) : pieces ? 'thousands' : (comma?.bare ?? null);
+      return reading === null ? null : Number(reading === 'decimal' ? head.replace(',', '.') : head.replace(',', ''));
+    }
+  }
+  return accept ? parseMeasure(cell, accept) : parseNumber(cell);
+}
+
+/**
+ * A cell that states a figure — a number, or a short text that reads as one
+ * («300 PCS», «1,500»). Never a long text: a merged 30,000-character master
+ * repeated down a sheet is no figure, and asked of every cell it cost
+ * seconds (c1306, c1879).
+ */
+const figureCell = (cell: Cell): boolean =>
+  typeof cell === 'number' || (typeof cell === 'string' && cell.length <= 64 && (readsAsFigure(cell) || parseNumber(cell) !== null));
+
+/** A row as one line — its cells joined by « | », a merge's covered figure left out — for `dropped`. */
+function rowText(row: readonly Cell[], d: number, covered: Covered | null): string {
+  const cells = row.flatMap((cell, c) => {
+    if (cell === null || (covered?.has(d, c) && readsAsFigure(cell))) return [];
+    const text = clipUnits(String(cell).slice(0, 400).trim().replace(/\s*[\r\n]+\s*/g, ' / ').replace(/\s+/g, ' '), 100);
+    return text ? [text] : [];
+  });
+  return clipUnits(cells.join(' | '), 300);
+}
+
+/** What `parseGoods` read out of a sheet. */
+export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped: DroppedRow[] } & SheetShape;
+
+/** What the FILE says about its figures beyond its cells (§5.9): the comma a CSV's delimiter implies. */
+export interface SheetHints {
+  comma?: Comma | null;
+}
+
+/**
  * The whole file → goods rows. With a header, each mapped column; without
  * one, the first non-empty text cell of each row is the product and nothing
  * else is guessed at.
@@ -1774,21 +2137,30 @@ function contradicts(sum: number, rows: readonly Cell[][], column: number, unit:
  * merge's master's — one carton's weight or one sum over the lines packed
  * together — and read as empty, so they are counted once; the name, the
  * TNVED code, the unit and a unit PRICE are every covered line's own.
+ *
+ * `dropped` names every row the sheet holds that the reader did not take as
+ * a good, and why (§5.4, §5.5): a total row and a footer are not lost in
+ * silence — the bot shows the model their text and says them on receipt,
+ * and the deal import returns them beside the goods.
  */
-export function parseGoods(
-  rows: Cell[][],
-  covered: Covered | null = null,
-): { goods: GoodsRow[]; headerRow: number | null } & SheetShape {
+export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints: SheetHints = {}): ParsedGoods {
   const card = cardGood(rows, covered);
-  if (card) return card;
+  if (card) return { ...card, dropped: [] };
   const header = findHeader(rows, covered);
   const detected = header.found;
   const goods: GoodsRow[] = [];
+  const dropped: (DroppedRow & { d: number })[] = [];
+  const said = (): DroppedRow[] => [...dropped].sort((a, b) => a.d - b.d).map(({ text, why }) => ({ text, why }));
 
-  const push = (row: GoodsRow): boolean => {
+  /** One row onto the list — or into `dropped` when `totalRowOf` says it is arithmetic. */
+  const push = (row: GoodsRow, d: number, facts: Omit<TotalRowFacts, 'name'>): boolean => {
     const description = row.description.trim();
     if (!description) return false;
-    if (isTotalRow(description)) return false;
+    const total = totalRowOf({ name: description, ...facts });
+    if (total) {
+      dropped.push({ d, text: rowText(rows[d] ?? [], d, covered), why: total });
+      return false;
+    }
     // Cut by UTF-16 units as before, never through an emoji (§3.8): the half
     // left at the edge reached the state, the table and the next model pass.
     goods.push({ ...row, description: clipUnits(description, 300) });
@@ -1797,12 +2169,43 @@ export function parseGoods(
 
   if (detected) {
     const { headerRow, dataFrom, columns } = detected;
-    // The sheet's two sums over the rows it LANDS (a total row is arithmetic,
-    // never a line): null as soon as one landed row lacks its figure — a Σ
-    // one line short is a smaller number wearing the shipment's name.
-    let grossKg: number | null = columns.gross === null ? null : 0;
-    let volumeM3: number | null = columns.volume === null ? null : 0;
     const headerName = cellText(rows[headerRow]![columns.name] ?? null).toLowerCase();
+    const figureCols = [columns.quantity, columns.weight, columns.gross, columns.volume, columns.amount];
+    const comma = commaReadings(rows, dataFrom, figureCols, covered, hints.comma ?? null);
+    const commaOf = (col: number | null): ColumnComma | null => (col === null ? null : (comma.get(col) ?? null));
+    // A row STATES something when a mapped figure column has a figure (or a
+    // merge's covered figure stands there), or a TNVED code, or a unit
+    // (reader-5.5-footer): the last good of a pair packed in one carton, its
+    // figures merged down from the line above, and a last row carrying only
+    // its code are goods — never a footer.
+    const figureIn = (row: Cell[], d: number) => figureCols.some((i) => i !== null && !covered?.has(d, i) && figureCell(row[i] ?? null));
+    const statesIn = (row: Cell[], d: number) =>
+      figureIn(row, d) ||
+      figureCols.some((i) => i !== null && covered?.has(d, i)) ||
+      (columns.tnved !== null && cellText(row[columns.tnved] ?? null) !== '' && normalizeTnved(row[columns.tnved] ?? null) !== null) ||
+      (columns.unit !== null && cellText(row[columns.unit] ?? null) !== '');
+    // Per landed good: where it stands, what it states, and what it adds to
+    // the sheet's two sums (a covered position is its master's, stated once).
+    const landed: { d: number; states: boolean; figures: boolean; gross: number | 'covered' | null; volume: number | 'covered' | null }[] = [];
+    // §5.4 (c)'s window: the goods landed since the sheet's start or the last
+    // total row, summed per figure kind — NaN once one of them lacks it.
+    const KINDS = ['quantity', 'weightKg', 'volumeM3', 'amount', 'gross'] as const;
+    type Kind = (typeof KINDS)[number];
+    const opened = () => ({ rows: 0, last: '', sums: new Map<Kind, number>(KINDS.map((k) => [k, 0])) });
+    let window = opened();
+    const equalsWindow = (values: Record<Kind, number | null>): boolean => {
+      if (window.rows === 0) return false;
+      let compared = 0;
+      for (const kind of KINDS) {
+        const value = values[kind];
+        if (value === null) continue;
+        const sum = window.sums.get(kind)!;
+        const decimals = /\.(\d+)$/.exec(String(Number(value.toPrecision(12))))?.[1]?.length ?? 0;
+        if (Number.isNaN(sum) || Math.abs(sum - value) > 0.5 * 10 ** -decimals + 1e-9 * Math.max(1, Math.abs(value))) return false;
+        compared += 1;
+      }
+      return compared > 0;
+    };
     let r = dataFrom;
     for (; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
@@ -1827,6 +2230,10 @@ export function parseGoods(
             : code === null
               ? `TNVED «${cellText(codeCell).slice(0, 40)}» — kod emas`
               : null;
+      const unitText = cellText(at(columns.unit));
+      // A PIECE count with no unit of its own other than pieces is never 1.5
+      // pieces (§5.9): its ambiguous «1,500» is fifteen hundred.
+      const pieces = columns.quantityUnit === null && (unitText === '' || unitOf(unitText) === 'dona');
       const qtyCell = once(columns.quantity);
       const weightCell = once(columns.weight);
       const volumeCell = once(columns.volume);
@@ -1834,12 +2241,23 @@ export function parseGoods(
       const figures: [what: string, cell: Cell, value: number | null][] = [
         // A piece column takes «300 PCS»; a column whose header names
         // another unit («Кол-во, м2») keeps the plain number, as before.
-        ['soni', qtyCell, columns.quantityUnit ? parseNumber(qtyCell) : parseMeasure(qtyCell, 'dona')],
-        ['vazn', weightCell, parseMeasure(weightCell, 'kg')],
-        ['hajm', volumeCell, parseMeasure(volumeCell, 'm3')],
-        ['summa', amountCell, parseNumber(amountCell)],
+        ['soni', qtyCell, readFigure(qtyCell, columns.quantityUnit ? null : 'dona', commaOf(columns.quantity), pieces)],
+        ['vazn', weightCell, readFigure(weightCell, 'kg', commaOf(columns.weight))],
+        ['hajm', volumeCell, readFigure(volumeCell, 'm3', commaOf(columns.volume))],
+        ['summa', amountCell, readFigure(amountCell, null, commaOf(columns.amount))],
       ];
-      const [quantity, weightKg, rowVolume, amount] = figures.map(([, , value]) => value);
+      const [quantity, weightKg, rowVolume, amount] = figures.map(([, , value]) => value) as [number | null, number | null, number | null, number | null];
+      const grossValue = columns.gross === columns.weight ? weightKg : readFigure(once(columns.gross), 'kg', commaOf(columns.gross));
+      const values: Record<Kind, number | null> = { quantity, weightKg, volumeM3: rowVolume, amount, gross: columns.gross === columns.weight ? null : grossValue };
+      const description = cellText(at(columns.name));
+      if (!description) {
+        // No name, and a total all the same: «TOTAL» in the «No.» column, or
+        // the figures alone adding up — the next subtotal sums from here.
+        if (row.some((cell, i) => !covered?.has(r, i) && typeof cell === 'string' && totalRowOf({ name: cell, figures: true }) === 'total') || equalsWindow(values)) {
+          window = opened();
+        }
+        continue;
+      }
       // A figure cell the reader could not use is SAID, never dropped in
       // silence (round 1): «12,500PCS» and «1,200KGS» read two ways and land
       // empty — the paste door's own promise — and the line's note is where
@@ -1847,61 +2265,121 @@ export function parseGoods(
       const unread = figures
         .filter(([, cell, value]) => value === null && /\d/.test(cellText(cell)))
         .map(([what, cell]) => `${what} «${cellText(cell).slice(0, 40)}» — aniq emas`);
-      const landed = push({
-        description: cellText(at(columns.name)),
-        quantity: quantity ?? null,
-        unit: (cellText(at(columns.unit)) || columns.quantityUnit || '').slice(0, 20) || null,
-        weightKg: weightKg ?? null,
-        volumeM3: rowVolume ?? null,
-        amount: amount ?? null,
-        tnvedCode: code && 'code' in code ? code.code : null,
-        note: [codeNote, ...unread].filter(Boolean).join(' · ') || null,
+      const hasFigures = figureIn(row, r);
+      const sum = equalsWindow(values) ? { rows: window.rows, twin: window.rows === 1 && window.last === description } : null;
+      const landedHere = push(
+        {
+          description,
+          quantity,
+          unit: (unitText || columns.quantityUnit || '').slice(0, 20) || null,
+          weightKg,
+          volumeM3: rowVolume,
+          amount,
+          tnvedCode: code && 'code' in code ? code.code : null,
+          note: [codeNote, ...unread].filter(Boolean).join(' · ') || null,
+        },
+        r,
+        { figures: hasFigures, sum },
+      );
+      if (!landedHere) {
+        // A total row closes its window: the next subtotal sums what follows it.
+        window = opened();
+        continue;
+      }
+      const contribution = (col: number | null, value: number | null): number | 'covered' | null =>
+        col === null ? null : covered?.has(r, col) ? 'covered' : value;
+      landed.push({
+        d: r,
+        states: statesIn(row, r),
+        figures: hasFigures || figureCols.some((i) => i !== null && covered?.has(r, i)),
+        gross: contribution(columns.gross, grossValue),
+        volume: contribution(columns.volume, rowVolume),
       });
-      if (landed) {
-        // A covered position is its master's figure, stated once: it lacks nothing.
-        const sum = (total: number | null, col: number | null, value: number | null): number | null =>
-          total === null || col === null ? null : covered?.has(r, col) ? total : value !== null && value > 0 ? total + value : null;
-        grossKg = sum(grossKg, columns.gross, columns.gross === columns.weight ? (weightKg ?? null) : parseMeasure(once(columns.gross), 'kg'));
-        volumeM3 = sum(volumeM3, columns.volume, rowVolume ?? null);
+      window.rows += 1;
+      window.last = description;
+      for (const kind of KINDS) {
+        const col = { quantity: columns.quantity, weightKg: columns.weight, volumeM3: columns.volume, amount: columns.amount, gross: columns.gross }[kind];
+        if (col !== null && covered?.has(r, col)) continue;
+        const value = values[kind];
+        window.sums.set(kind, value === null ? Number.NaN : window.sums.get(kind)! + value);
       }
     }
     // A list the reader STOPPED at its ceiling sums nothing (review PF-ADV-2):
     // the Σ of its first 500 lines is a smaller number wearing the shipment's
-    // name, and it outranks the model that may read the TOTAL row.
+    // name, and it outranks the model that may read the TOTAL row. A line
+    // past the ceiling that is a footer by §5.5 — states nothing where the
+    // list's lines state something — is no line left unread.
+    const anyStates = landed.some((l) => l.states);
     const stoppedShort =
       goods.length >= MAX_GOODS_ROWS &&
       rows.slice(r).some((row, k) => {
+        const d = r + k;
         const name = cellText(row[columns.name] ?? null);
-        return name !== '' && !isTotalRow(name) && !repeatsHeader(row, r + k, columns, covered);
+        if (name === '' || repeatsHeader(row, d, columns, covered)) return false;
+        if (totalRowOf({ name, figures: figureIn(row, d) })) return false;
+        return !anyStates || statesIn(row, d);
       });
-    if (stoppedShort) {
-      grossKg = null;
-      volumeM3 = null;
+    const stated = totalRows(rows, r0(headerRow), covered);
+    // §5.5 (reader-5.5-footer, xlsx1-06's verifier): the TAIL under the last
+    // line that states anything is a footer — «Made in China», «Remarks:», a
+    // stamp, «制表人» — never a good, and never a reason for the sheet's Σ to
+    // be null. So is a figure-less line below the last grand-total row once
+    // no line with figures follows it. Never mid-list (V7: a section heading
+    // between goods stays), never when no line states anything (a names-only
+    // list), never in the headerless branch, never on a list cut short.
+    const footers = new Set<number>();
+    if (!stoppedShort && anyStates) {
+      const lastStates = landed.findLastIndex((l) => l.states);
+      const lastFigures = landed.findLastIndex((l) => l.figures);
+      const grand = stated.at(-1)?.d ?? null;
+      landed.forEach((l, k) => {
+        if ((k > lastStates && !l.states) || (grand !== null && l.d > grand && k > lastFigures && !l.figures)) footers.add(k);
+      });
     }
+    const kept = goods.filter((_, k) => !footers.has(k));
+    for (const k of footers) dropped.push({ d: landed[k]!.d, text: rowText(rows[landed[k]!.d] ?? [], landed[k]!.d, covered), why: 'footer' });
+    const keptLanded = landed.filter((_, k) => !footers.has(k));
+    // The sheet's two sums over the rows it KEEPS (a total row is arithmetic,
+    // never a line): null as soon as one kept row lacks its figure — a Σ one
+    // line short is a smaller number wearing the shipment's name.
+    const sumOf = (col: number | null, pick: (l: (typeof landed)[number]) => number | 'covered' | null): number | null => {
+      if (col === null || stoppedShort) return null;
+      let total = 0;
+      for (const l of keptLanded) {
+        const value = pick(l);
+        if (value === 'covered') continue;
+        if (value === null || value <= 0) return null;
+        total += value;
+      }
+      return total;
+    };
+    let grossKg = sumOf(columns.gross, (l) => l.gross);
+    let volumeM3 = sumOf(columns.volume, (l) => l.volume);
     // …and a Σ the sheet's OWN grand total contradicts is no total (as-built
     // review CRITIC-1, the belt): whatever header shape the reader misread,
     // the file's «TOTAL» row says what the column adds up to, and a Σ of
     // single cartons beside it is a smaller number wearing the shipment's
     // name. Refused, never corrected: the VED reads the file, the model reads
     // the row.
-    const stated = totalRows(rows, r0(headerRow), covered);
     if (stated.length > 0) {
-      if (grossKg !== null && columns.gross !== null && contradicts(grossKg, stated, columns.gross, 'kg', 1)) grossKg = null;
-      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, stated, columns.volume, 'm3', 0.01)) volumeM3 = null;
+      const totals = stated.map((t) => t.row);
+      if (grossKg !== null && columns.gross !== null && contradicts(grossKg, totals, columns.gross, 'kg', 1)) grossKg = null;
+      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, totals, columns.volume, 'm3', 0.01)) volumeM3 = null;
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
     // read wrong, never a figure to land.
     if (grossKg !== null && columns.weightKind === 'net' && columns.gross !== columns.weight) {
-      const net = goods.every((g) => g.weightKg !== null) ? goods.reduce((n, g) => n + (g.weightKg ?? 0), 0) : null;
+      const net = kept.every((g) => g.weightKg !== null) ? kept.reduce((n, g) => n + (g.weightKg ?? 0), 0) : null;
       if (net !== null && grossKg + 0.5 < net) grossKg = null;
     }
     // A money column is a money HEADER, claimed or not (PF-SPEC-1, §1.2.1's
     // «NO money column»): «Value (USD)», a unit price the amount did not take.
     const money = columns.amount !== null || rows[headerRow]!.some((cell) => MONEY_HEADER.test(cellText(cell)));
-    const round = (n: number | null, places: number) => (n === null || goods.length === 0 ? null : Number(n.toFixed(places)));
+    const round = (n: number | null, places: number) => (n === null || kept.length === 0 ? null : Number(n.toFixed(places)));
     return {
-      goods,
+      goods: kept,
       headerRow,
+      dropped: said(),
       shape: (columns.cartons || columns.gross !== null) && !money ? 'packing' : 'invoice',
       weightKind: columns.weightKind,
       grossKg: round(grossKg, 3),
@@ -1913,19 +2391,25 @@ export function parseGoods(
   // A one-column list refused a header: its heading and its title are no
   // products either (R3-S4).
   const start = header.refused === null ? 0 : header.refused + 1;
-  for (const row of rows.slice(start)) {
+  for (let d = start; d < rows.length; d++) {
     if (goods.length >= MAX_GOODS_ROWS) break;
+    const row = rows[d]!;
     const first = row.find((cell) => typeof cell === 'string' && cell.trim().length > 0);
-    push({
-      description: cellText(first ?? null),
-      quantity: null,
-      unit: null,
-      weightKg: null,
-      volumeM3: null,
-      amount: null,
-      tnvedCode: null,
-      note: null,
-    });
+    push(
+      {
+        description: cellText(first ?? null),
+        quantity: null,
+        unit: null,
+        weightKg: null,
+        volumeM3: null,
+        amount: null,
+        tnvedCode: null,
+        note: null,
+      },
+      d,
+      // A headerless row's figures are whatever cell beside its name reads as one.
+      { figures: row.some((cell, c) => cell !== first && !covered?.has(d, c) && figureCell(cell)) },
+    );
   }
-  return { goods, headerRow: null, shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
+  return { goods, headerRow: null, dropped: said(), shape: 'invoice', weightKind: null, grossKg: null, grossColumn: false, volumeM3: null };
 }

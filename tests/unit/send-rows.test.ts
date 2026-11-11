@@ -214,6 +214,14 @@ describe('the VED paste never asks, and lands every column (P1.6, TT-16)', () =>
     ]);
   });
 
+  it('a pasted piece count «1,500» is fifteen hundred; an evidence-less «1,250» kg is asked in the note (FAYL-OQISH §5.9)', () => {
+    const items = pasteItems('Наименование\tКол-во\tВес нетто, кг\nКабель\t1,500\t1,250\nКружка\t50\t2,500');
+    expect(items).toMatchObject([
+      { name: 'Кабель', quantity: 1500, weightKg: null, note: 'vazn «1,250» — aniq emas' },
+      { name: 'Кружка', quantity: 50, weightKg: null, note: 'vazn «2,500» — aniq emas' },
+    ]);
+  });
+
   it('nothing pasted is nothing posted', () => {
     expect(pasteItems('')).toEqual([]);
     expect(pasteItems('\n  \n')).toEqual([]);

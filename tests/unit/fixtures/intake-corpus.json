@@ -40083,6 +40083,2612 @@
    "why": "xlsxN-12",
    "source": "fayl-oqish P-reader-B neighbours",
    "weight": "pinned"
+  },
+  {
+   "id": "c3049",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "TOTAL cordless drill TDLI20012",
+     50,
+     120,
+     0.6
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL cordless drill TDLI20012",
+       "quantity": 50,
+       "weightKg": 120
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 120,
+    "volumeM3": 0.6,
+    "dropped": []
+   },
+   "said": "a TOTAL Tools drill alone is a good — a brand is no total row",
+   "why": "xlsx1-04: isTotalRow was a plain `includes`; the sheet came back as TEXT with 0 goods",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3051",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "TOTAL cordless drill TDLI20012",
+     50,
+     120,
+     0.6
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL cordless drill TDLI20012"
+      },
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 270,
+    "volumeM3": 1.8
+   },
+   "said": "the drill beside a jacket: both are goods, Σ 270 kg / 1.8 m³",
+   "why": "xlsx1-04: the drill vanished and the card said «Ma’lumot to‘liq» over 150 kg",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3052",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL cordless drill TDLI20012",
+     50,
+     120,
+     0.6
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "TOTAL cordless drill TDLI20012"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 270,
+    "volumeM3": 1.8
+   },
+   "said": "the drill as the LAST line (where a total stands): still a good — its figures are not the Σ",
+   "why": "xlsx1-04 verifier: the drill first and last",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3053",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "TOTAL cordless drill TDLI20012",
+     50,
+     120,
+     0.6
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL",
+     350,
+     270,
+     1.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL cordless drill TDLI20012"
+      },
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 270,
+    "volumeM3": 1.8,
+    "dropped": [
+     {
+      "text": "TOTAL | 350 | 270 | 1.8",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "the drill and a jacket under a closing TOTAL row: two goods, the TOTAL dropped and named",
+   "why": "xlsx1-04 verifier: with and without a TOTAL row",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3054",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL QUARTZ 9000 5W-40",
+     20,
+     20,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "TOTAL QUARTZ 9000 5W-40"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 170,
+    "volumeM3": 1.3
+   },
+   "said": "a TOTAL QUARTZ oil beside a jacket with NO closing total: kept, and the Σ kept — it is no «grand total» for the contradiction check",
+   "why": "reader-5.4ab-vocab: totalRows asked GRAND_TOTAL and nulled the Σ (probe4b)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3055",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "TOTAL QUARTZ 9000 5W-40",
+     20,
+     20,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL QUARTZ 9000 5W-40"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 20
+   },
+   "said": "TOTAL QUARTZ alone is a good",
+   "why": "xlsx1-04: came back as TEXT",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3056",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL 15 CTNS",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "TOTAL 15 CTNS | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 15 CTNS» is a label-only total: dropped, named, Σ 150 / 1.2",
+   "why": "xlsx1-04 betterFix (a): the closed qualifier vocabulary",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3057",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Итого по счету",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Итого по счету | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Итого по счету» is a label-only total: dropped, named, Σ 150 / 1.2",
+   "why": "xlsx1-04 betterFix (a): the closed qualifier vocabulary",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3058",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Umumiy",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Umumiy"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Umumiy | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Umumiy» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3059",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Umumiy:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Umumiy:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Umumiy: | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Umumiy:» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3060",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Итог",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Итог"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Итог | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Итог» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3061",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Итог:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Итог:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Итог: | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Итог:» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3062",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Общий итог",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Общий итог"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Общий итог | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Общий итог» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3063",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Жами",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Жами"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Жами | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Жами» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3064",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Жами:",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Жами:"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Жами: | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Жами:» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3065",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Умумий",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Умумий"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Умумий | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Умумий» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3066",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Sum",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1,
+     "absent": [
+      "Sum"
+     ]
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Sum | 300 | 150 | 1.2",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Sum» closing the list is a total row: one good, Σ 150 / 1.2 — never a second good doubling the brutto and the cube",
+   "why": "xlsx1-05: kept as a second good, Σ 300 kg / 2.4 m³ (zz-repro-skx05-totals)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3067",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Объём"
+    ],
+    [
+     "Куртка женская",
+     100,
+     50,
+     0.4
+    ],
+    [
+     "Куртка женская",
+     200,
+     100,
+     0.8
+    ],
+    [
+     "Куртка женская Итог",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Брюки",
+     50,
+     20,
+     0.2
+    ],
+    [
+     "Брюки Итог",
+     50,
+     20,
+     0.2
+    ],
+    [
+     "Общий итог",
+     350,
+     170,
+     1.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 100
+      },
+      {
+       "name": "Куртка женская",
+       "quantity": 200
+      },
+      {
+       "name": "Брюки"
+      }
+     ],
+     "count": 3
+    },
+    "volumeM3": 1.4,
+    "dropped": [
+     {
+      "text": "Куртка женская Итог | 300 | 150 | 1.2",
+      "why": "subtotal"
+     },
+     {
+      "text": "Брюки Итог | 50 | 20 | 0.2",
+      "why": "subtotal"
+     },
+     {
+      "text": "Общий итог | 350 | 170 | 1.4",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "Excel's own Russian subtotals: «Куртка женская Итог» (the Σ of the two lines above) and «Брюки Итог» (a one-line group) are subtotals, «Общий итог» the total — three goods, cube 1.4",
+   "why": "reader-5.4c-silent-arith fix: Σ-equality drops a row only when its name carries a total word, the subtotal form over one line",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3068",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Colgate Total",
+     100,
+     10,
+     0.1
+    ],
+    [
+     "Colgate Total",
+     100,
+     10,
+     0.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Colgate Total"
+      },
+      {
+       "name": "Colgate Total"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 20,
+    "dropped": []
+   },
+   "said": "two «Colgate Total» lines with the same figures are two lines — a one-line subtotal never bears the line's own name",
+   "why": "reader-5.4c twin guard (xlsx1-05 verifier: a twin over one row must not vanish)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3069",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Итоговая папка",
+     100,
+     20,
+     0.1
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Итоговая папка"
+      },
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 170
+   },
+   "said": "«Итоговая папка» (a folder) is a good: «итого» inside a word is no total",
+   "why": "xlsx1-05 verifier: today's includes key ate it",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3070",
+   "input": [
+    [
+     "Наименование"
+    ],
+    [
+     "Итоговая папка"
+    ],
+    [
+     "Umumiy maqsadli lak"
+    ],
+    [
+     "Sumka ayollar"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Итоговая папка"
+      },
+      {
+       "name": "Umumiy maqsadli lak"
+      },
+      {
+       "name": "Sumka ayollar"
+      }
+     ],
+     "count": 3
+    }
+   },
+   "said": "a names-only list keeps «Итоговая папка» too",
+   "why": "reader-5.4ab-vocab: (b) asks whole CORE words",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3071",
+   "input": [
+    [
+     "Итоговая папка"
+    ],
+    [
+     "Ayollar kurtkasi"
+    ]
+   ],
+   "expected": {
+    "headerRow": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Итоговая папка"
+      },
+      {
+       "name": "Ayollar kurtkasi"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a headerless list keeps «Итоговая папка»",
+   "why": "reader-5.4ab-vocab",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3072",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Men pants",
+     200,
+     100,
+     0.8
+    ],
+    [
+     "Umumiy",
+     500,
+     300,
+     2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null,
+    "volumeM3": 2
+   },
+   "said": "an «Umumiy» total row is read by the contradiction check: its 300 kg against a 250 kg Σ (a pallet in it) refuses the Σ; its cube agrees",
+   "why": "reader-5.4ab-vocab: the new totals were invisible to `contradicts`",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3073",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     null,
+     "Made in China",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Made in China",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V2: «Made in China» under the goods is a footer: one good, Σ 150 / 1.2, the footer named",
+   "why": "xlsx1-06 verifier V2",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3074",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Shipping mark: N/M",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Shipping mark: N/M",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "«Shipping mark: N/M» under the one good is a footer, never a second good wiping the brutto and the cube",
+   "why": "xlsx1-06 (zz-repro-xlsx1-shapes footer cases)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3075",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Signature:",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Signature:",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "«Signature:» under the one good is a footer, never a second good wiping the brutto and the cube",
+   "why": "xlsx1-06 (zz-repro-xlsx1-shapes footer cases)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3076",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Remarks: 30 cartons",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Remarks: 30 cartons",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "«Remarks: 30 cartons» under the one good is a footer, never a second good wiping the brutto and the cube",
+   "why": "xlsx1-06 (zz-repro-xlsx1-shapes footer cases)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3077",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Продавец: ____",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Продавец: ____",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "«Продавец: ____» under the one good is a footer, never a second good wiping the brutto and the cube",
+   "why": "xlsx1-06 (zz-repro-xlsx1-shapes footer cases)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3078",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Men jacket",
+     200,
+     120,
+     1
+    ],
+    [
+     "Kids jacket",
+     100,
+     50,
+     0.5
+    ],
+    [
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "Remarks: 30 cartons",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Men jacket"
+      },
+      {
+       "name": "Kids jacket"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 320,
+    "volumeM3": 2.7,
+    "dropped": [
+     {
+      "text": "Remarks: 30 cartons",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V6: three goods and a «Remarks:» footer — the Σ of all three kept",
+   "why": "xlsx1-06 verifier V6",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3079",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Men jacket",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "dropped": [
+     {
+      "text": "Men jacket",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V8: a figure-less LAST line is trimmed as a footer — and NAMED, so the model reads it and the seller is told",
+   "why": "xlsx1-06 betterFix: hand the trimmed text to the model; said, never silent",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3080",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "箱数",
+     "毛重(KG)",
+     "体积(CBM)"
+    ],
+    [
+     "女士夹克",
+     300,
+     10,
+     150,
+     1.2
+    ],
+    [
+     "合计",
+     300,
+     10,
+     150,
+     1.2
+    ],
+    [
+     "制表人: 王",
+     null,
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "合计 | 300 | 10 | 150 | 1.2",
+      "why": "total"
+     },
+     {
+      "text": "制表人: 王",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V9: «制表人: 王» under «合计» is a footer",
+   "why": "xlsx1-06 verifier V9",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3081",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во"
+    ],
+    [
+     "Куртка женская",
+     300
+    ],
+    [
+     "Брюки мужские",
+     200
+    ],
+    [
+     "Шарф"
+    ],
+    [
+     "Перчатки"
+    ],
+    [
+     "Шапка"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская"
+      },
+      {
+       "name": "Брюки мужские"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": [
+     {
+      "text": "Шарф",
+      "why": "footer"
+     },
+     {
+      "text": "Перчатки",
+      "why": "footer"
+     },
+     {
+      "text": "Шапка",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "a list with figures on its first lines only: the figure-less tail is not taken as goods — and every one of its names is in `dropped`, shown to the model and the seller",
+   "why": "reader-5.5-footer: «a partial-figure names list, shown»",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3082",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Unit",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     "pcs",
+     150,
+     1.2
+    ],
+    [
+     "TOTAL",
+     300,
+     null,
+     150,
+     1.2
+    ],
+    [
+     "Seller signature:",
+     null,
+     "stamp",
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "dropped": [
+     {
+      "text": "TOTAL | 300 | 150 | 1.2",
+      "why": "total"
+     },
+     {
+      "text": "Seller signature: | stamp",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "a figure-less line BELOW the last grand total is a footer even when its unit cell holds a word",
+   "why": "xlsx1-06 betterFix step 2 (the strong V5/V9 signal)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3083",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "WOMEN",
+     null,
+     null,
+     null
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "TOTAL",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "MEN",
+     null,
+     null,
+     null
+    ],
+    [
+     "Men jacket",
+     200,
+     120,
+     1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "WOMEN"
+      },
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "MEN"
+      },
+      {
+       "name": "Men jacket"
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "a section heading after a section TOTAL is untouched: goods with figures follow it",
+   "why": "xlsx1-06 V7 with a section total (the step-2 guard)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3090",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Кабель",
+     100,
+     "1,250"
+    ],
+    [
+     "Кружка",
+     50,
+     "2,500"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "weightKg": null,
+       "note": "vazn «1,250» — aniq emas"
+      },
+      {
+       "name": "Кружка",
+       "weightKg": null,
+       "note": "vazn «2,500» — aniq emas"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a kg column of nothing but «1,250» / «2,500», and no word anywhere on the sheet: null, and the line says «— aniq emas» — never a silent 1.25",
+   "why": "FAYL-OQISH §5.9: with no evidence it is null plus the note",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3091",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Кабель",
+     "1,500",
+     3
+    ],
+    [
+     "Кружка",
+     50,
+     2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "quantity": 1500,
+       "note": null
+      },
+      {
+       "name": "Кружка"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a piece column's «1,500» is fifteen hundred whatever else the sheet says: 1.5 pieces is no count",
+   "why": "xlsxN-07 betterFix point 3",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3092",
+   "input": [
+    [
+     "Description",
+     "Quantity",
+     "N.W.",
+     "CBM"
+    ],
+    [
+     "LED panel light",
+     "12,500PCS",
+     "1,200KGS",
+     "2.5CBM"
+    ],
+    [
+     "LED bulb",
+     "300PCS",
+     "1,200.50KGS",
+     "0,125CBM"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "LED panel light",
+       "quantity": null,
+       "weightKg": 1200
+      },
+      {
+       "name": "LED bulb",
+       "weightKg": 1200.5
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a glued «1,200KGS» in a column that also holds «1,200.50KGS» is 1200 kg; the quantity column says nothing, so its glued «12,500PCS» stays unread (c0076)",
+   "why": "xlsxN-07 betterFix point 4: the glued branch takes the column decision",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3093",
+   "input": [
+    [
+     "DESCRIPTION",
+     "QTY/CTN",
+     "CTN QTY",
+     "TOTAL QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     20,
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«QTY/CTN | CTN QTY | TOTAL QTY»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3094",
+   "input": [
+    [
+     "DESCRIPTION",
+     "CTN QTY",
+     "TOTAL QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«CTN QTY | TOTAL QTY»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3095",
+   "input": [
+    [
+     "DESCRIPTION",
+     "CARTON QTY",
+     "TOTAL QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«CARTON QTY | TOTAL QTY»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3096",
+   "input": [
+    [
+     "DESCRIPTION",
+     "CTN QTY",
+     "TOTAL PCS",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«CTN QTY | TOTAL PCS»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3097",
+   "input": [
+    [
+     "DESCRIPTION",
+     "PKG QTY",
+     "TOTAL QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«PKG QTY | TOTAL QTY»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3098",
+   "input": [
+    [
+     "DESCRIPTION",
+     "PACKAGE QTY",
+     "QTY (PCS)",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«PACKAGE QTY | QTY (PCS)»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3099",
+   "input": [
+    [
+     "DESCRIPTION",
+     "Carton Quantity",
+     "Total Quantity",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Carton Quantity | Total Quantity»: the line counts 300 pieces — the carton count is no piece count",
+   "why": "xlsxN-08: 15 «dona» for 300 jackets (zz-repro-skep08-ctnqty)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3100",
+   "input": [
+    [
+     "品名",
+     "件数",
+     "数量",
+     "净重"
+    ],
+    [
+     "女士夹克",
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 300,
+       "unit": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«品名 | 件数 | 数量»: 数量 is the count; 件数 beside it the packages",
+   "why": "xlsxN-08 (c): the header naming no package wins",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3101",
+   "input": [
+    [
+     "DESCRIPTION",
+     "CTN QTY",
+     "N.W.(KG)"
+    ],
+    [
+     "Ladies jacket",
+     15,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 15,
+       "unit": "ctn"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a LONE «CTN QTY» counts cartons: the line says so («ctn»), and the door routes it to the note, never into pieces",
+   "why": "reader-5.10-jianshu: a lone candidate is a carton column only by a Latin or Cyrillic package word",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3102",
+   "input": [
+    [
+     "Description",
+     "Price/pcs",
+     "Qty",
+     "Amount"
+    ],
+    [
+     "Ladies jacket",
+     4.5,
+     300,
+     1350
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "amount": 1350
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Price/pcs» before «Qty»: the count is 300, never the price 4.5 — a money header ranks below every count",
+   "why": "xlsxN-09 verifier side finding: today 4.5",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3103",
+   "input": [
+    [
+     "Наименование",
+     "Цена за шт, $",
+     "Всего шт",
+     "Сумма"
+    ],
+    [
+     "Куртка",
+     4.5,
+     300,
+     1350
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "unit": null,
+       "amount": 1350
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Цена за шт, $ | Всего шт»: 300 pieces",
+   "why": "reader-5.11-sht: the count column named by its last unit word",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3104",
+   "input": [
+    [
+     "Наименование",
+     "Итого, шт",
+     "Вес, кг"
+    ],
+    [
+     "Куртка",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 300,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Итого, шт» is a count, not money",
+   "why": "xlsxN-09 verifier: today amount = 300",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3105",
+   "input": [
+    [
+     "Description",
+     "Total pieces",
+     "N.W. (kg)"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 300,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Total pieces» is a count",
+   "why": "xlsxN-09 verifier: today amount = 300",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3106",
+   "input": [
+    [
+     "Наименование товара",
+     "Кол-во в коробке",
+     "Кол-во коробок",
+     "Всего шт",
+     "Вес нетто, кг"
+    ],
+    [
+     "Куртка женская",
+     20,
+     15,
+     300,
+     142.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка женская",
+       "quantity": 300,
+       "unit": null,
+       "weightKg": 142.5,
+       "note": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Кол-во в коробке | Кол-во коробок | Всего шт»: 300 pieces, never «sotuvchi: 15 коробок»",
+   "why": "xlsxN-09 (case H)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3107",
+   "input": [
+    [
+     "№",
+     "Наименование товара",
+     "Кол-во",
+     "Ед.",
+     "Вес, кг"
+    ],
+    [
+     1,
+     "Носки мужские",
+     100,
+     "шт",
+     25.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Носки мужские",
+       "quantity": 100,
+       "unit": "шт"
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Ед.» stays the UNIT column beside «Кол-во» — the kernel reads «ед» as a piece, and a unit column is no count",
+   "why": "P-reader-B: the last-unit-word count must not take the unit column (goods-import.test.ts)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3108",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Og'irligi"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Og'irligi» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3109",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Og‘irlik"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Og‘irlik» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3110",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Ogʻirlik"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Ogʻirlik» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3111",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Ogʻirligi"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Ogʻirligi» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3112",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Ogirligi"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Ogirligi» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3113",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Umumiy og‘irligi"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150,
+       "amount": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Umumiy og‘irligi» is the line's weight",
+   "why": "unmapped-uz-header-words: kg null (or MONEY for «Umumiy og‘irligi»)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3114",
+   "input": [
+    [
+     "Nomi",
+     "Nechta",
+     "Vazni"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Nechta» is the count",
+   "why": "unmapped-uz-header-words: q null",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3115",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Necha kilo"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 300,
+       "weightKg": 150
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Necha kilo» is the weight",
+   "why": "unmapped-uz-header-words verifier probe 6",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3116",
+   "input": [
+    [
+     "Nomi",
+     "Necha so‘m"
+    ],
+    [
+     "Ayollar kurtkasi",
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Necha so‘m» is a price, never the count",
+   "why": "unmapped-uz-header-words verifier: a bare «necha» key would make it one",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3117",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Брутто",
+     "Объём"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     157.5,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "weightKg": 157.5
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 157.5
+   },
+   "said": "«Брутто» alone is the row weight, a gross one, as «G.W.» is",
+   "why": "xlsxN-12",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3118",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Brutto",
+     "Hajm"
+    ],
+    [
+     "Ayollar kurtkasi",
+     300,
+     157.5,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "weightKg": 157.5
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 157.5
+   },
+   "said": "«Brutto» alone is the row weight, a gross one, as «G.W.» is",
+   "why": "xlsxN-12",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
@@ -74279,13 +76885,15 @@
       }
      ],
      "count": 4
-    }
+    },
+    "grossKg": 330,
+    "volumeM3": 2.7,
+    "dropped": []
    },
    "said": "the last good of a pair packed in one carton (qty, kg, m³ merged down from the line above) is a good, never a footer; the carton counted once",
    "why": "reader-5.5-footer: a covered merge-down position states its master's figure",
    "source": "fayl-oqish P-reader-B neighbours",
-   "weight": "pinned",
-   "note": "Σ asserted in the change commit, where `dropped` and the Σ are checked together"
+   "weight": "pinned"
   },
   {
    "id": "c3047",
@@ -74371,6 +76979,296 @@
    "why": "xlsxN-07 verifier case 1",
    "source": "fayl-oqish P-reader-B neighbours",
    "weight": "pinned"
+  },
+  {
+   "id": "c3050",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "TOTAL cordless drill TDLI20012",
+        50,
+        120,
+        0.6
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "TOTAL cordless drill TDLI20012"
+      }
+     ],
+     "count": 1
+    },
+    "replyIncludes": [
+     "1 ta tovar o‘qildi"
+    ],
+    "replyExcludes": [
+     "sarlavhasini topa olmadim"
+    ]
+   },
+   "said": "the drill alone through the bot: «1 ta tovar o‘qildi», never «jadval sarlavhasini topa olmadim»",
+   "why": "xlsx1-04 verifier: the header was found and the receipt said it was not",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3084",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "Ladies jacket",
+        300,
+        150,
+        1.2
+       ],
+       [
+        "Beneficiary: YIWU HUAXIN CO LTD",
+        null,
+        null,
+        null
+       ]
+      ],
+      "merges": [
+       "A3:D3"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "Beneficiary: YIWU HUAXIN CO LTD",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V4: a footer merged across the row from the name column is a footer",
+   "why": "xlsx1-06 verifier V4",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3085",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "Description",
+        "Qty",
+        "G.W. (kg)",
+        "CBM"
+       ],
+       [
+        "Ladies jacket",
+        300,
+        150,
+        1.2
+       ],
+       [
+        "TOTAL",
+        300,
+        150,
+        1.2
+       ],
+       [
+        null,
+        null,
+        null,
+        null
+       ],
+       [
+        "YIWU HUAXIN IMPORT & EXPORT CO., LTD",
+        null,
+        null,
+        null
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2,
+    "dropped": [
+     {
+      "text": "TOTAL | 300 | 150 | 1.2",
+      "why": "total"
+     },
+     {
+      "text": "YIWU HUAXIN IMPORT & EXPORT CO., LTD",
+      "why": "footer"
+     }
+    ]
+   },
+   "said": "V5: the company stamp under the TOTAL row is a footer",
+   "why": "xlsx1-06 verifier V5: the loop ran on past TOTAL",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3086",
+   "input": {
+    "kind": "csv",
+    "text": "No.,Description,Qty,G.W.(KG),CBM,Amount (USD)\r\n1,USB cable 1m,\"1,500\",\"1,050\",0.15,\"1,950.00\"\r\n2,Ceramic mug,480,168,0.9,432.00"
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "USB cable 1m",
+       "quantity": 1500,
+       "weightKg": 1050,
+       "amount": 1950,
+       "note": null
+      },
+      {
+       "name": "Ceramic mug"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 1218
+   },
+   "said": "Excel en-US «Save as CSV»: «\"1,500\"» pieces is 1500, «\"1,050\"» kg 1050",
+   "why": "xlsxN-07: read 1.5 / 1.05 in silence (zz-repro-sk07-shapes case 2)",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3087",
+   "input": {
+    "kind": "html",
+    "contentType": "application/vnd.ms-excel",
+    "text": "<html><body><table><tr><td>No.</td><td>Description</td><td>Qty</td><td>G.W.(KG)</td><td>CBM</td><td>Amount (USD)</td></tr>\n<tr><td>1</td><td>USB cable 1m</td><td>1,500</td><td>1,050</td><td>0.15</td><td>1,950</td></tr>\n<tr><td>2</td><td>Ceramic mug</td><td>480</td><td>168</td><td>0.9</td><td>432</td></tr></table></body></html>"
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "USB cable 1m",
+       "quantity": 1500,
+       "weightKg": 1050,
+       "amount": 1950,
+       "note": null
+      },
+      {
+       "name": "Ceramic mug"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 1218
+   },
+   "said": "an ERP «Export to Excel» (an HTML table named .xls): «1,500 / 1,050 / 1,950» are 1500 / 1050 / 1950 — the sheet's «0.15» cube says its comma groups thousands",
+   "why": "xlsxN-07 (case 3): 1.5 / 1.05 / 1.95",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3088",
+   "input": {
+    "kind": "csv",
+    "text": "Наименование;Кол-во;Вес, кг\r\nКабель;100;1,250\r\nКружка;50;2,500"
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Кабель",
+       "weightKg": 1.25,
+       "note": null
+      },
+      {
+       "name": "Кружка",
+       "weightKg": 2.5
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «;» CSV whose kg column holds only «1,250» / «2,500»: the delimiter is a decimal comma's, 1.25 / 2.5",
+   "why": "reader-5.9-decimal-comma: the «;» CSV reads decimal",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
+  },
+  {
+   "id": "c3089",
+   "input": {
+    "kind": "csv",
+    "text": "Description,Qty,N.W.(KG)\r\nCable,100,\"1,250\"\r\nMug,50,\"2,500\""
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Cable",
+       "weightKg": 1250,
+       "note": null
+      },
+      {
+       "name": "Mug",
+       "weightKg": 2500
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «,» CSV whose quoted kg cells are «\"1,250\"»: a thousands comma, 1250 / 2500",
+   "why": "reader-5.9-decimal-comma: a «,»-delimited CSV with quoted cells reads thousands",
+   "source": "fayl-oqish P-reader-B",
+   "weight": "defect"
   }
  ],
  "isArticleNumberCases": [

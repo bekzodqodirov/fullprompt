@@ -312,6 +312,7 @@ describe('parseGoods', () => {
     for (const key of ['grossKg', 'volumeM3', 'shape'] as const) {
       if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
     }
+    if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
   });
 });
 
@@ -596,6 +597,15 @@ async function fileProblems(
   if (want.goods) {
     if (read.kind !== 'goods') out.push('no goods');
     else out.push(...goodsProblems(read.goods as unknown as Line[], want.goods));
+  }
+  for (const key of ['grossKg', 'volumeM3'] as const) {
+    if (want[key] === undefined) continue;
+    const got = read.kind === 'goods' ? read[key] : '-';
+    if (got !== want[key]) out.push(`${key} ${JSON.stringify(got)}, want ${JSON.stringify(want[key])}`);
+  }
+  if (want.dropped !== undefined) {
+    const got = read.kind === 'goods' ? read.dropped : '-';
+    if (!same(got, want.dropped)) out.push(`dropped ${JSON.stringify(got)}, want ${JSON.stringify(want.dropped)}`);
   }
   const text = read.text;
   if (want.text !== undefined && text !== want.text) out.push(`text ${JSON.stringify(text.slice(0, 300))}, want ${JSON.stringify(want.text)}`);

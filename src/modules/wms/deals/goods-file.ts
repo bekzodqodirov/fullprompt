@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { clipUnits } from '../../platform/text/clip';
-import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type GoodsRow, type SheetShape } from './goods-import';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type DroppedRow, type GoodsRow, type SheetShape } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -175,7 +175,10 @@ function csvSheet(text: string): SheetRows {
   // writes for every empty row of a template's used range (the fifth review):
   // an empty tail past the bound is no row left out.
   const rowsLeftOut = filled.slice(MAX_ROWS).some((line) => /[^\s;,\t"]/.test(line));
-  return withLeftOut({ name: 'CSV', rows }, rowsLeftOut, colsLeftOut);
+  // The delimiter is the file's word on its comma (§5.9): «;» is a decimal
+  // comma's, «,» a quoted thousands comma's; a tab says nothing.
+  const comma = delim === ';' ? 'decimal' : delim === ',' ? 'thousands' : null;
+  return withLeftOut({ name: 'CSV', rows, ...(comma ? { comma } : {}) }, rowsLeftOut, colsLeftOut);
 }
 
 function splitCsvLine(line: string, delim: string): { cells: Cell[]; leftOut: boolean } {
@@ -305,6 +308,16 @@ export type GoodsFileRead =
       /** The other visible sheets the reader mapped, in workbook order. */
       moreSheets: MappedSheet[];
       /**
+       * The goods sheet's rows the reader did NOT take as goods, and why
+       * (FAYL-OQISH §5.4, §5.5): its total rows, a figure-less «SAY TOTAL»
+       * line, a subtotal the arithmetic shows, and the footer under the last
+       * line that states anything («Made in China», «Remarks:», a stamp).
+       * The collector shows their text to the model as context — a real
+       * good typed there without figures is still read — and names them on
+       * receipt (`droppedRowsLine`).
+       */
+      dropped: DroppedRow[];
+      /**
        * The goods sheet's OWN rows as text, the way `text` writes the others
        * — only for a packing-shaped sheet (docs/IKKI-ESHIK.md §1.2.2): when it
        * gives the shipment's totals beside an invoice, its whole text goes to
@@ -364,6 +377,41 @@ export type GoodsFileRead =
    * the honest cure.
    */
   | { kind: 'refused'; reason: 'old_format' | 'encrypted' | 'broken' | 'empty' };
+
+/** How many dropped rows the receipt names by their text — the rest are counted. */
+const DROPPED_NAMED = 3;
+
+/**
+ * The receipt's words for the rows a goods sheet held and the reader did not
+ * take as goods (FAYL-OQISH §5.5) — «said, never silent»: a footer under the
+ * goods («Made in China», «Remarks:») or a subtotal the arithmetic found is a
+ * row the seller may know to be a good. A label-only total row («TOTAL»,
+ * «Итого», «Umumiy») is no news to anybody and is not said; nothing else to
+ * say is null.
+ *
+ * The phrase opens in lower case so the collector can set it after the
+ * file's own line («📄 «pl.xlsx» — …»): all of them under the table reads
+ * «ostidagi N ta qator tovar deb olinmadi: «…», «…»»; otherwise each says
+ * why. Pure, for the collector (calc-files.ts) to print; the collector also
+ * hands the rows' text to the model as context.
+ */
+export function droppedRowsLine(dropped: readonly DroppedRow[]): string | null {
+  const said = dropped.filter((row) => row.why !== 'total');
+  if (said.length === 0) return null;
+  const why: Record<DroppedRow['why'], string> = {
+    total: 'jami qatori',
+    subtotal: 'jami qatori',
+    footer_total: 'izoh qatori',
+    footer: 'jadval ostida',
+  };
+  const below = said.every((row) => row.why === 'footer' || row.why === 'footer_total');
+  const quoted = said.slice(0, DROPPED_NAMED).map((row) => {
+    const text = clipUnits(row.text, 40);
+    return `«${text}${text.length < row.text.length ? '…' : ''}»${below ? '' : ` (${why[row.why]})`}`;
+  });
+  const more = said.length > DROPPED_NAMED ? ` va yana ${said.length - DROPPED_NAMED} ta` : '';
+  return `${below ? 'ostidagi ' : ''}${said.length} ta qator tovar deb olinmadi: ${quoted.join(', ')}${more}`;
+}
 
 /**
  * Sheets as text for the model: `[name]`, then one line per row with its
@@ -491,7 +539,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   const nonEmpty = sheets.filter((sheet) => sheet.rows.some((row) => row.some((cell) => cell !== null && String(cell).trim() !== '')));
   const shown = nonEmpty.filter((sheet) => !sheet.hidden);
   const filled = shown.length > 0 ? shown : nonEmpty;
-  const parsed = filled.map((sheet) => ({ sheet, parsed: parseGoods(sheet.rows, sheet.covered ?? null) }));
+  const parsed = filled.map((sheet) => ({ sheet, parsed: parseGoods(sheet.rows, sheet.covered ?? null, sheet) }));
   const mapped = parsed.filter((p) => p.parsed.headerRow !== null && p.parsed.goods.length > 0);
   // The goods sheet: the most lines, the first on a tie (strict `>`).
   let best: (typeof parsed)[number] | null = null;
@@ -508,7 +556,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    const { goods, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    const { goods, dropped, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
     // The further mapped sheets' texts share ONE budget among themselves, in
     // workbook order; a sheet the budget did not reach says so in its own
     // `cut`. The bound is stated, not the old one (review
@@ -540,6 +588,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
     return {
       kind: 'goods',
       goods,
+      dropped,
       sheet: best.sheet.name,
       sheets: filled.length,
       text: others.text,

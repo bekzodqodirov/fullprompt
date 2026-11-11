@@ -100,6 +100,8 @@ export interface ParseGoodsExpect {
   grossKg?: number | null;
   volumeM3?: number | null;
   shape?: 'invoice' | 'packing';
+  /** The rows the reader did not take as goods, in order, exactly (`ParsedGoods.dropped`, FAYL-OQISH §5.4-§5.5). */
+  dropped?: { text: string; why: string }[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */
@@ -154,6 +156,10 @@ export interface FileExpect {
   maxHeapMb?: number;
   /** Any one of these holds (the reviewer allowed either answer). */
   either?: FileExpect[];
+  /** A goods read's own sums (`SheetShape`) and the rows it did not take as goods (FAYL-OQISH §5.5), exactly. */
+  grossKg?: number | null;
+  volumeM3?: number | null;
+  dropped?: { text: string; why: string }[];
 }
 
 /** The customer question («Mijoz kim?») answered once or twice with the same text. */
