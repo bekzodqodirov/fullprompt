@@ -1,7 +1,13 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
 import { eq, inArray } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+
+// The two routes' door (permission AND warehouse) is pinned where it belongs —
+// tests/unit/document-route-gates.test.ts. Here it stands open, so the test
+// below can ask the routes themselves what they remember.
+vi.mock('@/modules/wms/documents/route-guard', () => ({ guardBatchDocument: async () => null }));
+
 import { db } from '@/modules/platform/db/client';
 import {
   batches,
@@ -16,7 +22,9 @@ import {
   users,
   warehouses,
 } from '@/modules/platform/db/schema';
-import { NO_MERGE, invoiceModel } from '@/modules/wms/documents/invoice-rows';
+import { GET as invoiceGet } from '@/app/api/batches/[id]/invoice/route';
+import { GET as groupsGet } from '@/app/api/batches/[id]/invoice/groups/route';
+import { NO_MERGE, invoiceModel, mergeQuery, type InvoiceGroupsView } from '@/modules/wms/documents/invoice-rows';
 import { DOC } from '@/modules/wms/documents/labels';
 import { buildInvoiceXlsx, invoiceLotLabel, invoiceSourceRows } from '@/modules/wms/documents/ved-xlsx';
 import { productKey } from '@/modules/wms/tnved/service';
@@ -357,6 +365,32 @@ describe('the answers the address carries', () => {
       const sheet = await readInvoiceSheet(await buildInvoiceXlsx(truckId, answer));
       expect(sheet.rows.map((r) => [r.marks, r.product, r.quantity])).toEqual(bare.rows.map((r) => [r.marks, r.product, r.quantity]));
     }
+  });
+
+  it('an answer lives in the ADDRESS and nowhere else: after «Qo‘shish» the bare address is still the unmerged file and the list still asks (his 8a)', async () => {
+    const model = invoiceModel((await invoiceSourceRows(truckId))!.rows);
+    const params = { params: Promise.resolve({ id: truckId }) };
+    const at = (query: string) => new Request(`http://local/api/batches/${truckId}/invoice${query}`);
+    const sheetOf = async (res: Response) => {
+      expect(res.status).toBe(200);
+      return readInvoiceSheet(Buffer.from(await res.arrayBuffer()));
+    };
+    // Somebody answers «Qo‘shish»: the file they get is the merged one.
+    const query = mergeQuery(model, new Set([model.groups[0]!.key]));
+    expect(query).toBe(`?merge=${model.groups[0]!.key}`);
+    const merged = await sheetOf(await invoiceGet(at(query!), params));
+    expect(merged.rows).toHaveLength(5);
+    expect(merged.rows[0]!.product).toBe('Клавиатура, Клавиатура беспроводная');
+    // The next person — another device, a colleague, the same person an hour
+    // later — opens the bare address: nothing of that answer is there.
+    const bare = await sheetOf(await invoiceGet(at(''), params));
+    expect(bare.rows).toHaveLength(7);
+    expect(bare.rows.map((r) => r.product)).not.toContain('Клавиатура, Клавиатура беспроводная');
+    // …and the list a dialog opens with asks the same question again, unanswered.
+    const list = (await (await groupsGet(at('/groups'), params)).json()) as InvoiceGroupsView;
+    expect(list.groups.map((g) => g.key)).toEqual(model.groups.map((g) => g.key));
+    expect(list.positions).toBe(7);
+    expect(list.fp).toBe(model.fp);
   });
 
   it('a name typed after the list was shown asks again: the old key no longer merges', async () => {

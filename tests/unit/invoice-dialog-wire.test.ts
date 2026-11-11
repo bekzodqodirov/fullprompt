@@ -76,3 +76,52 @@ describe('the invoice dialog follows a file only after the list was read', () =>
     expect(SRC).toContain('{listFailed && !open && (');
   });
 });
+
+/**
+ * His answer 8a (2026-11-11): «shu qurilma oxirgi javobni belgilab turadi,
+ * oyna har safar chiqadi» — never «asked once per truck and stored for
+ * everyone». What a browser proves is one device (m9zzx); what the routes
+ * answer to a bare address is proven in invoice-merge.integration. The rest
+ * is where the memory LIVES, which only the source can say.
+ */
+describe('the device remembers the last answer; the server remembers nothing', () => {
+  const route = strip(readFileSync('src/app/api/batches/[id]/invoice/route.ts', 'utf8'));
+  const groups = strip(readFileSync('src/app/api/batches/[id]/invoice/groups/route.ts', 'utf8'));
+
+  it('the memory is this browser’s own store, one entry per truck', () => {
+    expect(SRC).toContain('const STORE = (batchId: string) => `gsr.invoys.merge.${batchId}`;');
+    expect(SRC).toContain('window.localStorage.getItem(STORE(batchId))');
+    expect(SRC).toContain('window.localStorage.setItem(STORE(batchId), JSON.stringify([...keys]))');
+    // A remembered answer is kept only while the list still has that key.
+    expect(SRC).toContain("keys.filter((k): k is string => typeof k === 'string' && known.has(k))");
+  });
+
+  it('a press that has a question OPENS the dialog every time, with the remembered answers pre-selected', () => {
+    const press = body('press');
+    let at = -1;
+    for (const step of ['setView(body);', 'setChosen(remembered(batchId, body));', 'setOpen(true);']) {
+      const next = press.indexOf(step);
+      expect(next, step).toBeGreaterThan(at);
+      at = next;
+    }
+    // The only press that skips the dialog is one with nothing to ask.
+    expect(press).toMatch(/if \(body\.groups\.length === 0 && drafts === 0\) \{\s*await followDownload\(base\);\s*return;\s*\}/);
+  });
+
+  it('the dialog posts to no server action, and neither route reads or writes a stored answer', () => {
+    expect(SRC).not.toMatch(/from '[^']*actions'/);
+    expect(SRC).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);
+    // The file: the answer is the address, read as a forged post.
+    expect(route).toContain("parseMergeParam(new URL(request.url).searchParams.get('merge'))");
+    // The list: always the UNANSWERED model of the source rows.
+    expect(groups).toContain('invoiceModel(source.rows)');
+    for (const src of [route, groups]) {
+      expect(src).not.toMatch(/\b(db|getSetting|setSetting|cookies)\b/);
+      expect(src).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
+    }
+  });
+
+  it('a group that mixes «шт» and «кг» says so in the dialog before it is merged (his 9a)', () => {
+    expect(SRC).toMatch(/\{group\.merged\.mixedUnits && <p[^>]*>⚠ \{t\('mixedUnits'\)\}<\/p>\}/);
+  });
+});
