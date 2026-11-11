@@ -240,6 +240,11 @@ describe('how a reading ends', () => {
     const [, ask] = readContent(pdf, long) as [unknown, { text: string }];
     expect(ask.text.isWellFormed()).toBe(true);
     expect(ask.text).toContain(`${'я'.repeat(119)}🙂`);
+    // …and a name that ARRIVES with half a pair (a file renamed by a broken tool) is made whole too: the cut
+    // by code points keeps a pair together, it does not mend one that was never whole.
+    const [, broken] = readContent(pdf, 'pack\ud83d list.pdf') as [unknown, { text: string }];
+    expect(broken.text.isWellFormed()).toBe(true);
+    expect(broken.text).toContain('pack');
     const lone = readContent({ ...sheet, text: 'Name | Qty\n键盘\ud83d | 500' }, 'a.xls')[0] as { text: string };
     expect(lone.text.isWellFormed()).toBe(true);
   });

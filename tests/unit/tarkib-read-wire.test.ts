@@ -543,7 +543,7 @@ describe('the browser’s half', () => {
     expect(read(PANEL)).toContain('warnings: saved.filled.warnings.filter(isProposalWarning),');
   });
 
-  it('the notice over applied rows says what the cells cannot: the weights are NET, and «aralash» posts no carton counts (B8, B9)', () => {
+  it('the notice over applied rows says what the cells cannot: the weights are NET, and «aralash» posts no carton counts (B9)', () => {
     const panel = read(PANEL);
     // The kind travels from the reading into the notice and survives the draft.
     expect(panel).toContain('weightKind: read.proposal.weightKind,');

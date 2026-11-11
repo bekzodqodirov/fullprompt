@@ -354,28 +354,45 @@ to'liq emas», which would be wrong for every one of these). i18n namespace `tar
   give is an EMPTY cell, never 0. No composition, no TNVED memory, no audit row is written by a reading.
 - **The file is decided from the attachment's ROW before a byte is loaded** (`receipts/tarkib-file.ts`, the one
   adapter over the spreadsheet readers' low-level exports — `goods-file.ts` / `xls.ts` are imported, never
-  edited): a PDF whole (≤ 10 MB), a photo reduced to 2000 px JPEG (≤ 15 MB in, ≤ 4.5 MB out), a spreadsheet
-  (xlsx / xls / csv, ≤ 15 MB, cell XML ≤ 40 MB) written out as TEXT under one budget — 15 000 characters, 400
+  edited): a PDF whole (≤ 10 MB — our own ceiling, not the provider's), a photo reduced to 2000 px JPEG
+  (≤ 15 MB in, ≤ 4.5 MB out, a transparent page flattened onto WHITE), a spreadsheet (xlsx / xlsm / xls / csv,
+  ≤ 15 MB, cell XML ≤ 40 MB, a text file ≤ 2 MB) written out as TEXT under one budget — 15 000 characters, 400
   rows, whole lines, a cell at most 300 characters, columns kept in place, merged-down cells marked `↑`, only
-  visible sheets. What did not fit is a warning on the proposal (`rows_cut` / `text_cut` / `cells_cut`).
+  visible sheets. What did not fit is a warning on the proposal (`rows_cut` / `text_cut` / `cells_cut`). The
+  shape is decided by CONTENT: a workbook is the zip's four-byte header (never «PK» alone — «PKG NO.» begins a
+  CSV), and a reader that throws on one cell is `read_broken`, never an error page.
 - **Every door before any spend, in this order**: the save's own door (`compositionDoor`, confirmed prixod) →
   the file is a paper of the LOT's prixod and not a receive-time carton photo → kind and size from the row →
-  a key on the server (`ai_not_configured`, no ledger row) → not cooling → the bytes (20 s) and the file made
-  ready → `reservePress('tarkib')` → the model (the analyst model by constant, one 150 s deadline over the
-  SDK's own retry) → `settlePress`. **Every reading — PDF, photo, spreadsheet — is one ledger row.** A refusal,
-  a cut-off answer, garbage and OUR timeout are `failed` (counted, billed when tokens were reported); a request
-  the provider would not take (400 / 413 / 422) and a call that never answered are `no_answer` (not counted).
+  a key on the server (`ai_not_configured`, no ledger row) → the feature not switched off (`ai_off`, said
+  before a byte is loaded) → not cooling → the bytes (10 s) and the file made ready → the prixod's lot count →
+  `reservePress('tarkib')` → the model → `settlePress`. **Every reading — PDF, photo, spreadsheet — is one
+  ledger row.** **The call is the house's DOCUMENT shape** (`docs/FAYL-OQISH.md` §0.3): streamed
+  (`messages.stream(…).finalMessage()`), `max_tokens` 32 000, effort medium, the analyst model by constant, NO
+  SDK retry, ONE 150 s deadline of our own. A refusal, a cut-off answer (the cap or the context window),
+  garbage and OUR deadline are `failed` (counted, billed when tokens were reported). «Ours» is
+  `deadline.aborted` and nothing else: the SDK calls any fetch failure whose text says «timed out» a timeout,
+  and a connection that never opened must not spend one of the day's readings or cool the document. A request
+  the provider would not take about a FILE (400 / 413 / 422 → `ai_rejected`; a spreadsheet goes as text, has
+  no pages and cannot be a broken file, so there it is plain `ai_failed`), a rate limit and a call that never
+  answered are `no_answer` (not counted).
 - **Cooling**: ten minutes after a reading that ran out of time or of room, that DOCUMENT is not read again
   (`cooling`) — the same pages would spend another of the day's readings for the same result. In memory, per
   process; a deploy forgets it.
 - **The proposal** (`receipts/tarkib-proposal.ts`, pure, client-safe): at most 40 rows; kg 3 decimals and m³ 4,
-  half-up in BigInt from the decimal the model wrote; counts whole or empty; a TNVED cell only for exactly ten
-  digits; gross weight only when EVERY row has it, else net, else none; notes and warnings travel as
-  `{code, params}` and are worded in the browser. The misread detector: where the paper prints its own total
-  and every listed row states that measure, a sum that differs is SAID (`totals_differ`, per measure) and
-  never corrected.
+  half-up in BigInt from the decimal the model wrote (the column's ceiling judged AFTER the rounding); counts
+  whole or empty; a TNVED cell only for exactly ten digits — said to be the PAPER's code (`paper_code`: a
+  Chinese exporter's commodity code is ten digits too), and never applied to the lot's OWN good
+  (`appliedCode`: the save's `tnved_would_vanish` guard returns as soon as a line carries any code, so the
+  exporter's ten digits would have replaced the memory's on the invoice); gross weight only when EVERY row has
+  it, else net, else none; notes and warnings travel as `{code, params}` and are worded in the browser. The
+  misread detector: where the paper prints its own total and every listed row states that measure, a sum that
+  differs is SAID (`totals_differ`, per measure) and never corrected — compared as the paper's own EXACT
+  figures (a formula's five decimals add up on the paper and are off by one unit in the rounded cells), and
+  never on a reading that reached the forty-row ceiling: the prompt asks for the FIRST forty rows of a longer
+  paper, so exactly forty is what a cut list looks like, and that is said instead (`rows_full`).
 - **The proposal does not depend on the lot**: it is kept in the browser by its DOCUMENT for 30 minutes
-  (sessionStorage), so a second lot of the prixod ticks its own rows from the reading the first one paid for;
+  (sessionStorage) — the PROPOSAL only, never the day's count or the ≈ dollars, which are for the person the
+  route sent them to — so a second lot of the prixod ticks its own rows from the reading the first one paid for;
   the cache is cleared on Save only when the prixod has one lot. The name rule (the lot's own good keeps the
   lot's own name — its Chinese one when it has no Russian — never the model's translation) is applied in the
   dialog with the editor's lot.
@@ -383,17 +400,23 @@ to'liq emas», which would be wrong for every one of these). i18n namespace `tar
   ticked rows stands beside the lot's own figures (coloured where they differ) and the paper's totals;
   «Qo'shish» / «Almashtirish» when the editor already holds rows; two ticked rows of one name and more than
   twenty are refused in words; a backdrop tap or Escape does not close a paid reading; «Qayta o'qish» asks
-  first — a new reading is a new bill line. The browser waits 165 s (`read_deadline`), longer than the server.
+  first — a new reading is a new bill line. The browser waits 190 s (`read_deadline`) — longer than the
+  server's WHOLE budget (10 s storage + the file made ready + the model's 150 s), or a paid answer arrives to
+  nobody. The person's ticks survive «Yopish» (held by the dialog, tied to the reading), and within one tab a
+  second request for a document being read waits for the first one's answer (`inFlight`). After «Qo'llash» the
+  notice above the rows says when the weights are NET and when «aralash» will not post the carton counts.
 - **26 codes, each with its own sentence in four locales** (`tarkib-read-wire.test.ts` holds the lists against
   each other): the service's 23 (`TARKIB_READ_ERRORS`), the route's `unauthorized`, the browser's
   `read_deadline` / `read_offline`. `today` (the count, and ≈ dollars for a reader of the company's money)
   rides only on answers that reached the ledger.
 - **The editor's document upload** compresses a photographed packing list at document grade (1 MB, 2000 px) so
   the model can read it; every other uploader is unchanged.
-- Not built: a server-side in-flight guard (two tabs on one document are two paid readings); HEIC is read only
-  where the image's `sharp` decodes it.
+- Not built: a SERVER-side in-flight guard (two tabs, or two people, on one document are two paid readings);
+  HEIC is read only where the image's `sharp` decodes it.
 - Proven: 62 of the builder's 63 red proofs went red on their first run; the one that stayed green (the
-  misread detector's cartons half had no test) got its test, and the m³ half with it.
+  misread detector's cartons half had no test) got its test, and the m³ half with it. Then two reviewers read
+  T1 as built (28 findings, DECISIONS #1680): every bullet above is the reviewed shape, and the call itself is
+  now exercised by the real SDK against a local streaming stand-in (`tarkib-read-ai-wire.test.ts`).
 
 ## §4 T2 — the client's own ✅/❌ in Telegram
 

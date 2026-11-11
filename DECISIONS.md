@@ -8242,10 +8242,12 @@ the model's translation; where the paper prints its own total and the rows do no
 per measure and never corrected. **The proposal does not depend on the lot** (the builder's own decision, and
 the right one): kept in the browser by its DOCUMENT for thirty minutes, so the second lot of a prixod ticks its
 rows from the reading the first one paid for. **Cooling** is ten minutes on a document whose reading ran out of
-time or of room — pressing again would spend another of the day's readings on the same pages. One deadline of
-150 s lies over the SDK's own retry (150 s twice would outlive the browser's 165 s). STATED: two tabs on one
-document are two paid readings; cooling is per process and a deploy forgets it; the model's wire has never met
-the real API from this container — the first real press is watched in the log (`[tarkib-read]`).
+time or of room — pressing again would spend another of the day's readings on the same pages. ONE deadline of
+150 s and nothing retried inside it (as first built the SDK's own retry sat under that deadline and the call
+was not streamed — the review took both out, #1680). STATED: two TABS on one document are two paid readings
+(within one tab the second request waits for the first, #1680); cooling is per process and a deploy forgets
+it; the model's wire has never met the real API from this container — the first real press is watched in the
+log (`[tarkib-read]`).
 
 **#1678 — Reviewed as built: five lenses over T2 and T3, every finding reproduced red before it was fixed.**
 The sentence, the customer's Telegram, the card, the ledger, the owner's words — each reviewer read-only,
