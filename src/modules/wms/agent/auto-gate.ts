@@ -12,11 +12,19 @@ import { isTashkentNight } from './send-step';
  * order: the rehearsal record is the list of everything that kept a reply
  * back, and a page that shows only the first hides the rest.
  *
- * What it does not judge, because the press itself does: everything a human ✅
- * asks — the policy re-run (any WARNING then refuses an auto press,
- * `decideDraft`'s `auto_warning`), the chat moved, the identity, the send
- * window, the CRM send switch, the listener, the budget. The machine press is
- * the same ✅ (`decideDraft`), so those cannot disagree.
+ * What it does not judge, because the press itself does: the policy re-run
+ * (any WARNING then refuses an auto press, `decideDraft`'s `auto_warning`),
+ * the chat moved, the identity, the send window. The machine press is the
+ * same ✅ (`decideDraft`), so those cannot disagree.
+ *
+ * Three of the ✅'s own refusals ARE judged here at the SCHEDULING (fix pass
+ * A, C8), because they are facts then already: the CRM's send switch, a
+ * listener that is not current, and the agent's day of sends spent — the
+ * replies still counting down included. A card must never count down to a
+ * press that is certain to be refused: it holds his attention for the hold
+ * and then says «o‘zi ketmadi». Refused at the scheduling, it is an ordinary
+ * card from its first second. At the press they are null — not judged here:
+ * the ✅ itself asks them, on its own clock.
  */
 
 /** Every refusal, in the order the verdict lists them. */
@@ -44,6 +52,9 @@ export const AUTO_REFUSALS = [
   'night',
   'streak',
   'daily_cap',
+  'budget_spent',
+  'sending_disabled',
+  'listener_behind',
 ] as const;
 
 export type AutoRefusal = (typeof AUTO_REFUSALS)[number];
@@ -73,6 +84,9 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   night: 'tun — ertalab o‘zingiz qaror qilasiz',
   streak: 'bu chatga ketma-ket 2 ta javob o‘zi ketdi',
   daily_cap: 'bugungi o‘zi yuborish chegarasi tugadi',
+  budget_spent: 'bugungi AI yuborish chegarasi tugagan',
+  sending_disabled: 'CRM’dan Telegramga yuborish o‘chirilgan',
+  listener_behind: 'Telegram ko‘prigi (tinglovchi) yangilanmagan',
 };
 
 /** The categories the layer may ever open (§18.3) — never price, complaint or other. One home: the CHECK says the same. */
@@ -145,8 +159,22 @@ export interface AutoGateInput {
   now: Date;
   /** Auto replies already in a row in this chat since his own decision or message. */
   streak: number;
-  /** Auto presses this Tashkent day. */
+  /**
+   * Auto presses this Tashkent day — at the scheduling, with the replies still
+   * counting down (waiting or being pressed): each of those is a press the cap
+   * already owes (fix pass A, C8).
+   */
   pressedToday: number;
+  /**
+   * The agent's sends it may still make today (today `sendsToday`: ceiling −
+   * used), less the replies still counting down — the ✅'s `budget_spent`,
+   * known before the hold. Null at the press (the ✅ asks it itself).
+   */
+  budgetLeft: number | null;
+  /** The CRM's own send switch (`tg_sending_enabled`) — the ✅'s `sending_disabled`. Null at the press. */
+  sendingEnabled: boolean | null;
+  /** A current listener on the account (account-guard `listenerIsCurrent`) — the ✅'s `listener_behind`. Null at the press. */
+  listenerCurrent: boolean | null;
 }
 
 export interface AutoVerdict {
@@ -185,6 +213,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (isTashkentNight(input.at)) hit.add('night');
   if (input.streak >= AUTO_STREAK_MAX) hit.add('streak');
   if (input.pressedToday >= config.perDay) hit.add('daily_cap');
+  if (input.budgetLeft !== null && input.budgetLeft <= 0) hit.add('budget_spent');
+  if (input.sendingEnabled === false) hit.add('sending_disabled');
+  if (input.listenerCurrent === false) hit.add('listener_behind');
   const reasons = AUTO_REFUSALS.filter((r) => hit.has(r));
   return { eligible: reasons.length === 0, reasons };
 }

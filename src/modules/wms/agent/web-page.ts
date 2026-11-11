@@ -531,11 +531,14 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
   const config = await readAutoConfig();
   if (!config) return null;
   const dayStart = tashkentDayStart(tashkentDay(now));
+  // Sent = pressed by the machine and not taken back since (❌ «Bekor qilish», 🙋, a disarm — fix pass A): a
+  // reply that never left is his decision, counted with what was left to him and never listed as sent.
+  const leftOrGoing = sql`NOT EXISTS (SELECT 1 FROM agent_outbox o WHERE o.draft_id = ${agentAutoVerdicts}.draft_id AND o.status IN ('cancelled', 'expired'))`;
   const [counts, rows, armedByName] = await Promise.all([
     ownerUserId
       ? db
           .select({
-            sent: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'pressed')::int`,
+            sent: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'pressed' AND ${leftOrGoing})::int`,
             paused: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'stopped' AND ${agentAutoVerdicts.outcome} = 'pause')::int`,
             // Counting down means a LIVE reply: a row whose draft the chat retired waits only for the sweep to
             // call it gone (auto-send `pressOne`), and is his already.
@@ -550,7 +553,7 @@ export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, n
       .select({ v: agentAutoVerdicts, d: agentDrafts })
       .from(agentAutoVerdicts)
       .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
-      .where(and(eq(agentAutoVerdicts.state, 'pressed'), draftsSeenBy(viewer)))
+      .where(and(eq(agentAutoVerdicts.state, 'pressed'), leftOrGoing, draftsSeenBy(viewer)))
       .orderBy(desc(agentAutoVerdicts.pressedAt))
       .limit(AUTO_SENT_SHOWN),
     userName(config.armedBy),

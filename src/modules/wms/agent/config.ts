@@ -110,21 +110,46 @@ export function __pretendAgentAutoBehind(): void {
 }
 
 /** Why the layer was disarmed — the person's press, the agent's «off», or a step-down (§18.3). */
-export type AutoDisarmReason = 'manual' | 'agent_off' | 'owner_changed' | 'feedback' | 'blocked' | 'bot_question' | `forced: ${string}`;
+export type AutoDisarmReason =
+  | 'manual'
+  | 'agent_off'
+  | 'owner_changed'
+  | 'feedback'
+  | 'blocked'
+  | 'bot_question'
+  // The agent's account set back to «Shaxsiy raqam» (crm `setWorkAccount`, fix pass A, C5): arming needs «Ish raqami».
+  | 'not_work_account'
+  | `forced: ${string}`;
+
+/** The `last_error` of a reply a disarm took back (card-io CANCEL_WORDS names it). */
+export const AUTO_OFF_CANCEL = 'auto_off';
 
 /**
  * The auto layer off, INSIDE the caller's transaction (§18.3: «off» disarms
  * the layer in the same transaction; re-arming is always his press): armed
  * no more, the reason and the moment stamped, and every reply still WAITING
- * its press stopped — a row already being pressed is the draft's own
- * compare-and-set's to decide. The caller asks `agentAutoReady()` BEFORE its
- * transaction: a statement on a missing table would abort it.
+ * its press — or CLAIMED by the sweep and not yet pressed — stopped (fix
+ * pass A, C2/C5). That is safe because the machine's approval takes this row
+ * FOR SHARE as its first statement and moves its verdict to 'pressed' as its
+ * last (decide `auto`, auto-send `autoPressStandsInTx`/`settleAutoPressInTx`):
+ * a disarm that locks the row first makes the press lose, and one that waits
+ * on the press finds its verdict already 'pressed'.
+ *
+ * `takeBack`: also take back what the machine approved and has not yet sent
+ * (outbox 'agent' under a 'pressed' verdict) — the person's «o‘chirish», a
+ * step-down and «Shaxsiy raqam» mean «stop sending by yourself», and a reply
+ * pressed a second before must not reach the customer after it. «Off» and a
+ * forced off cancel EVERY waiting reply themselves, with their own reason.
+ *
+ * The caller asks `agentAutoReady()` BEFORE its transaction: a statement on a
+ * missing table would abort it.
  */
 export async function disarmAutoInTx(
   tx: Tx,
   reason: AutoDisarmReason,
   by: string | null,
-): Promise<{ wasArmed: boolean; stoppedDraftIds: string[] }> {
+  opts: { takeBack?: boolean } = {},
+): Promise<{ wasArmed: boolean; stoppedDraftIds: string[]; takenBackDraftIds: string[] }> {
   const now = new Date();
   const was = await tx
     .update(agentAutoConfig)
@@ -134,9 +159,24 @@ export async function disarmAutoInTx(
   const stopped = await tx
     .update(agentAutoVerdicts)
     .set({ state: 'stopped', outcome: 'disarmed', stoppedAt: now, stoppedBy: by })
-    .where(eq(agentAutoVerdicts.state, 'waiting'))
+    .where(inArray(agentAutoVerdicts.state, ['waiting', 'pressing']))
     .returning({ draftId: agentAutoVerdicts.draftId });
-  return { wasArmed: was.length > 0, stoppedDraftIds: stopped.map((r) => r.draftId) };
+  let takenBack: string[] = [];
+  if (opts.takeBack) {
+    // The send step claims by 'agent' (outbox-store `claimAgentSend`): a row already 'sending' is in flight and goes.
+    const rows = await tx
+      .update(agentOutbox)
+      .set({ status: 'cancelled', lastError: `${AUTO_OFF_CANCEL}: ${reason}`.slice(0, 500) })
+      .where(
+        and(
+          eq(agentOutbox.status, 'agent'),
+          sql`EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = ${agentOutbox}.draft_id AND v.state = 'pressed')`,
+        ),
+      )
+      .returning({ draftId: agentOutbox.draftId });
+    takenBack = rows.map((r) => r.draftId);
+  }
+  return { wasArmed: was.length > 0, stoppedDraftIds: stopped.map((r) => r.draftId), takenBackDraftIds: takenBack };
 }
 
 function toConfig(row: typeof agentConfig.$inferSelect): AgentConfig {

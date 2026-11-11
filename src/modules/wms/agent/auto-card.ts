@@ -48,6 +48,13 @@ export const AUTO_PRESS_WORDS: Record<DecideRefusal, string> = {
   identity_changed: 'chat boshqa mijozga o‘tdi',
   window_closed: 'mijoz topuvchi agentning lidi — ish vaqti emas',
   auto_warning: 'kartada ogohlantirish bor',
+  // The press lost inside its own approval (fix pass A, C2/C5): a stop or a disarm landed first.
+  auto_stopped: 'to‘xtatildi',
+  auto_disarmed: 'o‘zi yuborish o‘chirilgan yoki raqam «Ish raqami» emas',
+  // A person's words about a reply the machine already approved — the machine never meets them.
+  auto_pressed: 'AI javobni allaqachon tasdiqlagan',
+  auto_sending: 'javob yuborilmoqda',
+  auto_sent: 'javob yuborilgan',
   empty: 'javob bo‘sh',
 };
 
@@ -87,6 +94,17 @@ export const AUTO_PAUSED_LINE = '⏸ To‘xtatildi — o‘zingiz qaror qilasiz.
 export const AUTO_DISARMED_LINE = '⏸ O‘zi yuborish o‘chirildi — bu javobni o‘zingiz qaror qilasiz.';
 /** The prefix of an approved card the machine pressed. */
 export const AUTO_SENT_PREFIX = '🤖 O‘zi yuborildi (AI).';
+/**
+ * …and of one whose reply never left (fix pass A, C3/C5): he took it back with ❌, 🙋 took the chat, a disarm took
+ * back what the machine had not yet sent. «O‘zi yuborildi» above «✖ Yuborilmadi» said two opposite things.
+ */
+export const AUTO_TAKEN_BACK_PREFIX = '🤖 AI o‘zi tasdiqlagan edi.';
+/**
+ * The press waits for the card (fix pass A, C4): the hold runs from the moment his Telegram showed THIS card, and
+ * it has not yet — the staff bot's queue paused, an edit that did not land. No clock: none would be true.
+ */
+export const AUTO_UNSEEN_LINE =
+  '⏱ Karta Telegramingizga hali yetib bormadi — u yetib borgach, kutish vaqtidan keyin javob o‘zi ketadi. To‘xtatish uchun ⏸ bosing.';
 /** His 👎 on it — the chat leaves the layer for 30 days (auto-send `autoFeedback`). */
 export const AUTO_BAD_LINE = '👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.';
 
@@ -115,10 +133,14 @@ export function autoCountingDown(
   return auto?.state === 'waiting' && auto.dueAt !== null && d.status === 'pending' && d.finalBody === null && sendable;
 }
 
+/** Outbox states in which a reply the machine approved never reached the customer — and never will. */
+const NEVER_LEFT: ReadonlySet<string> = new Set(['cancelled', 'expired', 'failed']);
+
 /**
  * The status line with the auto state folded in. `base` is the line the
  * draft's own status gives (card-io `statusLine`):
- *  - counting down → the timer, above whatever the pending line says;
+ *  - counting down → the timer, above whatever the pending line says — or, while
+ *    the card has not reached his Telegram yet (`outcome` 'unseen'), that;
  *  - a live draft the press refused, ⏸ stopped, or the layer's «off» stopped
  *    → that sentence, above it — the card is his again;
  *  - an approved reply the machine pressed → the prefix on the approved line,
@@ -130,35 +152,50 @@ export function withAutoLine(
   auto: AutoCardState | null | undefined,
   d: { status: string; finalBody: string | null },
   sendable: boolean,
+  /** The reply's outbox status, when it has one — a pressed reply that never left is not «yuborildi». */
+  sendStatus: string | null = null,
 ): string | null {
   if (!auto) return base;
   const join = (...lines: (string | null)[]) => lines.filter((l): l is string => !!l).join('\n') || null;
   const live = d.status === 'pending' || d.status === 'editing';
-  if (autoCountingDown(auto, d, sendable)) return join(autoWaitingLine(auto.dueAt!), base);
+  if (autoCountingDown(auto, d, sendable)) return join(auto.outcome === 'unseen' ? AUTO_UNSEEN_LINE : autoWaitingLine(auto.dueAt!), base);
   if (live && auto.state === 'refused') return join(autoRefusedLine(auto), base);
   if (live && auto.state === 'stopped' && auto.outcome === 'pause') return join(AUTO_PAUSED_LINE, base);
   if (live && auto.state === 'stopped' && auto.outcome === 'disarmed') return join(AUTO_DISARMED_LINE, base);
   if (d.status === 'approved' && auto.state === 'pressed') {
-    return join(base ? `${AUTO_SENT_PREFIX} ${base}` : AUTO_SENT_PREFIX, auto.feedback === 'bad' ? AUTO_BAD_LINE : null);
+    const prefix = sendStatus !== null && NEVER_LEFT.has(sendStatus) ? AUTO_TAKEN_BACK_PREFIX : AUTO_SENT_PREFIX;
+    return join(base ? `${prefix} ${base}` : prefix, auto.feedback === 'bad' ? AUTO_BAD_LINE : null);
   }
   return base;
 }
 
 /**
+ * Can he still take back a reply the machine approved — ❌ «Bekor qilish» (fix pass A, C3)? The web cancel's own
+ * rule (web-thread `cancellable`): still with the agent pump, and the customer's line not yet marked read.
+ */
+export function autoTakeBackable(o: { status: string; readDone: boolean } | null | undefined): boolean {
+  return o?.status === 'agent' && o.readDone === false;
+}
+
+/**
  * The payload's auto fields (card `cardExtra`) — by the rules the line above
  * follows, so the keyboard and the words cannot disagree: ⏸ exactly while the
- * card counts down, 👎 under a reply the machine sent until he gave it.
+ * card counts down, 👎 under a reply the machine sent until he gave it, and ❌
+ * «Bekor qilish» with 🙋 while the reply the machine approved can still be
+ * taken back (fix pass A, C3).
  */
 export function autoPayload(
   auto: AutoCardState | null | undefined,
   d: { status: string; finalBody: string | null },
   sendable: boolean,
+  o: { status: string; readDone: boolean } | null = null,
 ): CardAutoPayload {
   const sent = auto?.state === 'pressed' && d.status === 'approved';
   return {
     autoAt: auto && autoCountingDown(auto, d, sendable) ? auto.dueAt!.toISOString() : null,
     autoSent: sent,
     autoBad: sent && auto?.feedback === 'bad',
+    autoCancel: sent && autoTakeBackable(o),
   };
 }
 
@@ -178,6 +215,8 @@ export const AUTO_DISARM_WORDS: Record<AutoDisarmKind, string> = {
   blocked: 'o‘zi javob yuborilgan mijoz akkauntni bloklagan',
   bot_question: '7 kun ichida o‘zi javob olgan 2 ta mijoz «botmisiz?» deb so‘radi',
   forced: 'Telegram akkaunti cheklandi — AI sotuvchi o‘zi o‘chdi',
+  // The account was set back to «Shaxsiy raqam» (fix pass A, C5) — arming needs «Ish raqami».
+  not_work_account: 'raqam «Ish raqami» emas deb belgilandi',
 };
 
 /** The stored reason as its kind — `forced: …` is 'forced'; anything unknown is null. */

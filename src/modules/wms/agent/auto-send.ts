@@ -1,19 +1,32 @@
-import { and, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
 import { db, type Db, type Tx } from '../../platform/db/client';
-import { agentAutoChats, agentAutoConfig, agentAutoVerdicts, agentConfig, agentDrafts, agentRuns, tgAccounts } from '../../platform/db/schema';
+import {
+  agentAutoChats,
+  agentAutoConfig,
+  agentAutoVerdicts,
+  agentConfig,
+  agentDrafts,
+  agentOutbox,
+  agentRuns,
+  notifications,
+  tgAccounts,
+} from '../../platform/db/schema';
 import { logger } from '../../platform/logger';
 import { notifyStaffTelegram } from '../../platform/notifications/staff';
 import { usersWithRoles } from '../../platform/notifications/service';
 import { actorGrants } from '../../platform/rbac/authorize';
+import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
-import { AUTO_DISARM_WORDS } from './auto-card';
+import { listenerIsCurrent, readGuard } from '../crm/account-guard';
+import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
 import { AUTO_SEND_CATEGORIES, autoVerdict, type AutoGateInput, type AutoRefusal } from './auto-gate';
 import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
 import type { DecideRefusal } from './decide';
 import type { NewDraft } from './drafts';
 import { sendWindowFor } from './send-window';
+import { sendsToday } from './today';
 import { CATEGORIES } from './tools';
 import type { DraftPolicyJson } from './types';
 
@@ -126,6 +139,29 @@ function dayStartOf(now: Date): Date {
   return tashkentDayStart(tashkentDay(now));
 }
 
+/**
+ * Replies of this account still counting down — waiting, or claimed by the sweep — on a draft that is still the
+ * chat's live reply (a row whose draft the chat retired waits only for the sweep to call it gone). Each is a press
+ * the day already owes: the scheduling counts them toward the cap and the day's sends (fix pass A, C8). Never the
+ * chat being drafted: its live reply is the one the new draft supersedes (one live draft per chat, drafts
+ * `createDraft`).
+ */
+async function autoQueued(managerUserId: string, exceptPeer: bigint): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentAutoVerdicts)
+    .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+    .where(
+      and(
+        eq(agentAutoVerdicts.managerUserId, managerUserId),
+        inArray(agentAutoVerdicts.state, ['waiting', 'pressing']),
+        eq(agentDrafts.status, 'pending'),
+        ne(agentAutoVerdicts.peerId, exceptPeer),
+      ),
+    );
+  return Number(row?.n ?? 0);
+}
+
 /** Auto presses on this account since the Tashkent day began. */
 export async function autoPressedToday(managerUserId: string, now: Date): Promise<number> {
   const [row] = await db
@@ -198,10 +234,17 @@ async function burstHadMedia(d: Pick<AutoDraftShape, 'managerUserId' | 'peerId' 
  * the run in hand: its ledger row is settled only after the draft is written)
  * and again at the press, where the run's stored `tool_calls` are read.
  * `at` is when the reply would go: the due time, or the press's own moment.
+ *
+ * `scheduling`: the replies still counting down are presses the day already
+ * owes — counted into the cap and spent from the day's sends (fix pass A,
+ * C8). At the press they are not: the row being pressed is one of them, and so
+ * may be the rest of the sweep's batch. And the three facts the ✅ itself asks
+ * (the send switch, the listener, the day's sends) are judged at the
+ * scheduling only: at the press the ✅ asks them on its own clock.
  */
 export async function autoFactsFor(
   d: AutoDraftShape,
-  opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null },
+  opts: { at: Date; now: Date; tools?: readonly ToolCall[]; config?: AutoConfig | null; scheduling?: boolean },
 ): Promise<AutoGateInput> {
   const auto = opts.config === undefined ? await readAutoConfig() : opts.config;
   const agent = await readAgentConfig();
@@ -212,7 +255,15 @@ export async function autoFactsFor(
     const [run] = await db.select({ toolCalls: agentRuns.toolCalls }).from(agentRuns).where(eq(agentRuns.id, d.runId));
     tools = toolCallsOf(run?.toolCalls);
   }
-  const [acc] = await db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, d.managerUserId));
+  const [acc] = await db
+    .select({ id: tgAccounts.id, work: tgAccounts.workAccount })
+    .from(tgAccounts)
+    .where(eq(tgAccounts.managerUserId, d.managerUserId));
+  const queued = opts.scheduling ? await autoQueued(d.managerUserId, d.peerId) : 0;
+  // The ✅'s own refusals that are already facts at the scheduling (decide `decideDraft`): a card must never count
+  // down to them. At the press the ✅ asks them itself.
+  const sends = opts.scheduling ? await sendsToday(d.managerUserId, agent?.startedAt ?? null, opts.now) : null;
+  const guard = opts.scheduling && acc ? await readGuard(acc.id) : null;
   const [off] = await db
     .select({ offUntil: agentAutoChats.offUntil })
     .from(agentAutoChats)
@@ -253,7 +304,10 @@ export async function autoFactsFor(
     at: opts.at,
     now: opts.now,
     streak: await autoStreak(d.managerUserId, d.peerId),
-    pressedToday: await autoPressedToday(d.managerUserId, opts.now),
+    pressedToday: (await autoPressedToday(d.managerUserId, opts.now)) + queued,
+    budgetLeft: sends ? sends.ceiling - sends.used - queued : null,
+    sendingEnabled: opts.scheduling ? (await getSetting('tg_sending_enabled')) === true : null,
+    listenerCurrent: opts.scheduling ? listenerIsCurrent(guard, opts.now) : null,
   };
 }
 
@@ -310,7 +364,7 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
     const category = input.draft.category && (CATEGORIES as readonly string[]).includes(input.draft.category) ? input.draft.category : 'other';
     const draft: AutoDraftShape = { ...input.draft, category, confidence: confidenceOf(input.draft.confidence) };
     const dueAt = new Date(input.now.getTime() + config.holdSec * 1000);
-    const verdict = autoVerdict(await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config }));
+    const verdict = autoVerdict(await autoFactsFor(draft, { at: dueAt, now: input.now, tools: input.tools, config, scheduling: true }));
     return {
       eligible: verdict.eligible,
       reasons: verdict.reasons,
@@ -410,11 +464,16 @@ export async function recordAutoVerdictInTx(
 export const AUTO_RECLAIM_MS = 5 * 60_000;
 /** Rows one sweep presses — the minute's share, never a burst. */
 export const AUTO_PRESS_BATCH = 20;
+/**
+ * A card that has not reached his Telegram yet is asked about again this much later (fix pass A, C4) — the sweep's
+ * own minute: the hold starts the moment it lands, and a slower look would hold a delivered reply past its hold.
+ */
+export const AUTO_UNSEEN_RECHECK_MS = 60_000;
 
-async function refreshCard(draftId: string): Promise<void> {
+async function refreshCard(draftId: string, now?: Date): Promise<void> {
   try {
     const { refreshAgentCard } = await import('./card-io');
-    await refreshAgentCard(draftId);
+    await refreshAgentCard(draftId, [], now ? { now } : {});
   } catch (err) {
     logger.warn({ err, draftId }, '[agent] auto card not refreshed');
   }
@@ -439,7 +498,8 @@ async function approvedByAuto(draftId: string): Promise<boolean> {
  * A row left 'pressing' — its sweep died, or threw after the draft moved —
  * settled from the draft itself: approved by the machine's press → pressed;
  * approved by HIS press → stopped as his; still pending → waiting again (the
- * next sweep presses it, judged afresh); anything else → gone.
+ * next sweep presses it, judged afresh); anything else → gone. A row a stop
+ * moved meanwhile is no longer 'pressing', and nothing here revives it.
  */
 async function settleFromDraft(draftId: string, now: Date): Promise<void> {
   const [d] = await db
@@ -458,18 +518,90 @@ async function settleFromDraft(draftId: string, now: Date): Promise<void> {
   }
 }
 
-type PressOutcome = 'pressed' | 'refused' | 'gone';
+/**
+ * Since when his Telegram has shown THIS draft's card — or null: never yet (fix
+ * pass A, C4). The staff drain stamps `shown` beside `tg` when it sends the
+ * card, and a successful edit re-stamps it when the card's row was re-pointed
+ * at a newer draft (card-io `refreshAgentCard`, notifications'
+ * after-send correction). A row re-pointed here whose edit did not land still
+ * shows the PREVIOUS draft: its `shown` names that one, and this answers null.
+ */
+export async function cardShownAt(draftId: string, managerUserId: string): Promise<Date | null> {
+  const [row] = await db
+    .select({ at: sql<string | null>`${notifications.payload}->'shown'->>'at'` })
+    .from(notifications)
+    .where(
+      and(
+        eq(notifications.type, 'AgentDraft'),
+        eq(notifications.userId, managerUserId),
+        eq(notifications.status, 'sent'),
+        sql`${notifications.payload}->>'draftId' = ${draftId}`,
+        sql`${notifications.payload}->'shown'->>'draftId' = ${draftId}`,
+        sql`${notifications.payload} ? 'tg'`,
+      ),
+    )
+    .orderBy(desc(notifications.createdAt))
+    .limit(1);
+  const at = row?.at ? new Date(row.at) : null;
+  return at && Number.isFinite(at.getTime()) ? at : null;
+}
 
-/** One claimed row: the draft read afresh, the gate asked afresh, then the same ✅ a person presses. */
+/**
+ * The press waits for the card (fix pass A, C4): due again when the card has
+ * been on his screen a whole hold, or — never shown yet — asked again in a
+ * minute, the row saying so («unseen», the card's words). Only a row still
+ * 'pressing' moves: a ⏸ that landed meanwhile stands. The card is redrawn —
+ * its time is the new one — and a redraw that put THIS draft on his screen
+ * right now (an edit that landed) starts the hold from that moment at once.
+ */
+async function deferForCard(d: { id: string; managerUserId: string }, shownAt: Date | null, holdSec: number, now: Date): Promise<void> {
+  const pressing = and(eq(agentAutoVerdicts.draftId, d.id), eq(agentAutoVerdicts.state, 'pressing'));
+  if (shownAt) {
+    await db
+      .update(agentAutoVerdicts)
+      .set({ state: 'waiting', claimedAt: null, dueAt: new Date(shownAt.getTime() + holdSec * 1000), outcome: null })
+      .where(pressing);
+    await refreshCard(d.id, now);
+    return;
+  }
+  await db
+    .update(agentAutoVerdicts)
+    .set({ state: 'waiting', claimedAt: null, dueAt: new Date(now.getTime() + AUTO_UNSEEN_RECHECK_MS), outcome: 'unseen' })
+    .where(pressing);
+  await refreshCard(d.id, now);
+  const landed = await cardShownAt(d.id, d.managerUserId);
+  if (!landed) return;
+  const moved = await db
+    .update(agentAutoVerdicts)
+    .set({ dueAt: new Date(landed.getTime() + holdSec * 1000), outcome: null })
+    .where(and(eq(agentAutoVerdicts.draftId, d.id), eq(agentAutoVerdicts.state, 'waiting'), eq(agentAutoVerdicts.outcome, 'unseen')))
+    .returning({ id: agentAutoVerdicts.draftId });
+  if (moved.length > 0) await refreshCard(d.id, now);
+}
+
+type PressOutcome = 'pressed' | 'refused' | 'gone' | 'deferred' | 'stopped';
+
+/**
+ * One claimed row: the row and the draft read afresh, the gate asked afresh,
+ * the card asked whether it reached him a hold ago, then the same ✅ a person
+ * presses — whose approval checks the layer and the row again INSIDE its own
+ * transaction (decide `auto`): a ⏸, a disarm or «Shaxsiy» that lands first
+ * makes this press lose, whenever it lands.
+ */
 async function pressOne(row: { draftId: string; digest: string | null }, now: Date): Promise<PressOutcome> {
   const where = and(eq(agentAutoVerdicts.draftId, row.draftId), eq(agentAutoVerdicts.state, 'pressing'));
+  // A stop that landed after the claim (⏸, a disarm): nothing to press. The approval's own check is the guard;
+  // this only spares the work.
+  const [held] = await db.select({ state: agentAutoVerdicts.state }).from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, row.draftId));
+  if (held?.state !== 'pressing') return 'stopped';
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, row.draftId));
   if (!d || d.status !== 'pending') {
     await db.update(agentAutoVerdicts).set({ state: 'gone', outcome: d?.status ?? 'deleted' }).where(where);
     if (d) await refreshCard(d.id);
     return 'gone';
   }
-  const verdict = autoVerdict(await autoFactsFor(d, { at: now, now }));
+  const config = await readAutoConfig();
+  const verdict = autoVerdict(await autoFactsFor(d, { at: now, now, config }));
   // A card too long to show its whole reply draws no ✅ (card-io `renderDraftCardFull`): what a person may
   // not press from it, the machine does not press either — said as «too long», the reply being the part cut.
   if (verdict.eligible) {
@@ -485,16 +617,26 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
     await refreshCard(d.id);
     return 'refused';
   }
+  // The hold is his time to read the card: it runs from the card reaching his Telegram, never from the draft
+  // being written — a paused bot queue, a re-pointed card whose edit did not land, would make it zero.
+  const shownAt = await cardShownAt(d.id, d.managerUserId);
+  const holdSec = config?.holdSec ?? 120;
+  if (!shownAt || shownAt.getTime() + holdSec * 1000 > now.getTime()) {
+    await deferForCard(d, shownAt, holdSec, now);
+    return 'deferred';
+  }
   const { decideDraft } = await import('./decide');
   // A machine press: no actor in the audit row (nobody pressed), `via: 'auto'` in its `after`; the
   // decider is the holder, so `decided_by` and the action replay read the person whose account speaks.
-  const r = await decideDraft(await holderActor(d.managerUserId), d.id, 'send', { digest: row.digest, auto: true }, { actorId: null });
+  // The verdict becomes 'pressed' INSIDE the approval, as its last statement (decide `auto`).
+  const r = await decideDraft(await holderActor(d.managerUserId), d.id, 'send', { digest: row.digest, auto: true, autoAt: now }, { actorId: null });
   if (r.ok) {
-    await db.update(agentAutoVerdicts).set({ state: 'pressed', pressedAt: now }).where(where);
     await refreshCard(d.id);
     return 'pressed';
   }
   const code: DecideRefusal = r.code;
+  // Lost to a stop inside the approval: the stop already wrote the row (and redrew the card).
+  if (code === 'auto_stopped') return 'stopped';
   await db
     .update(agentAutoVerdicts)
     .set(code === 'not_live' ? { state: 'gone', outcome: code } : { state: 'refused', outcome: (r.detail ? `${code}:${r.detail}` : code).slice(0, 300) })
@@ -506,8 +648,8 @@ async function pressOne(row: { draftId: string; digest: string | null }, now: Da
 /**
  * The minute sweep's auto step (jobs `agentSweep`): reclaim what a dead sweep
  * left 'pressing', claim the due rows (`FOR UPDATE SKIP LOCKED`, so two sweeps
- * at once press each row once), and press each — never throwing out of the
- * sweep for one row. Returns how many it pressed.
+ * at once press each row once), and press each in its due order — never
+ * throwing out of the sweep for one row. Returns how many it pressed.
  */
 export async function pressDueAutos(now: Date = new Date()): Promise<number> {
   if (!(await agentAutoReady())) return 0;
@@ -518,7 +660,7 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
   for (const s of stale) {
     await settleFromDraft(s.draftId, now).catch((err: unknown) => logger.warn({ err, draftId: s.draftId }, '[agent] auto reclaim failed'));
   }
-  const claimed = await db.execute<{ draft_id: string; digest: string | null }>(sql`
+  const claimed = await db.execute<{ draft_id: string; digest: string | null; due_at: string }>(sql`
     UPDATE agent_auto_verdicts SET state = 'pressing', claimed_at = ${now.toISOString()}::timestamptz
      WHERE draft_id IN (
        SELECT draft_id FROM agent_auto_verdicts
@@ -527,9 +669,11 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
         LIMIT ${AUTO_PRESS_BATCH}
         FOR UPDATE SKIP LOCKED)
        AND state = 'waiting'
-    RETURNING draft_id::text, digest`);
+    RETURNING draft_id::text, digest, due_at::text`);
+  // RETURNING follows no ORDER BY: the batch is pressed in its due order, the earliest first.
+  const batch = [...claimed].sort((x, y) => new Date(x.due_at).getTime() - new Date(y.due_at).getTime());
   let pressed = 0;
-  for (const row of claimed) {
+  for (const row of batch) {
     try {
       if ((await pressOne({ draftId: row.draft_id, digest: row.digest }, now)) === 'pressed') pressed += 1;
     } catch (err) {
@@ -537,8 +681,94 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
       await settleFromDraft(row.draft_id, now).catch(() => undefined);
     }
   }
-  if (claimed.length > 0) logger.info({ claimed: claimed.length, pressed }, '[agent] auto presses');
+  if (batch.length > 0) logger.info({ claimed: batch.length, pressed }, '[agent] auto presses');
   return pressed;
+}
+
+/** Why the machine's press lost INSIDE its own approval (decide `auto`, fix pass A, C2/C5). */
+export type AutoPressLoss = 'auto_stopped' | 'auto_disarmed';
+
+/**
+ * The machine's ✅, checked as the FIRST statements of its approval transaction
+ * (decide `decideDraft` with `auto`): the layer's row taken FOR SHARE — alone,
+ * never through a join (#1585) — and still armed, and the account still a
+ * work number. FOR SHARE first is the lock order every disarm keeps («off»,
+ * `forceAgentOff`, `setAutoArmed`, a step-down, «Shaxsiy raqam»: the layer's
+ * row before the verdicts, the outbox and the drafts), so a disarm that took
+ * the row first makes this press lose, and one that comes after waits for the
+ * approval to commit — and finds its verdict 'pressed'.
+ */
+export async function autoPressStandsInTx(tx: Tx, managerUserId: string): Promise<AutoPressLoss | null> {
+  const [config] = await tx.select({ armedAt: agentAutoConfig.armedAt }).from(agentAutoConfig).where(eq(agentAutoConfig.id, 1)).for('share');
+  if (!config?.armedAt) return 'auto_disarmed';
+  const [acc] = await tx.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, managerUserId));
+  return acc?.work === true ? null : 'auto_disarmed';
+}
+
+/**
+ * The verdict pressed — the approval transaction's LAST statement, a
+ * compare-and-set on 'pressing': false when a stop moved the row first (⏸, a
+ * person's own decision, a disarm), and the caller then rolls the whole
+ * approval back. Inside the approval, so «pressed» and «approved and queued»
+ * are one fact, and a stop that waits on this row finds it 'pressed'.
+ */
+export async function settleAutoPressInTx(tx: Tx, draftId: string, at: Date): Promise<boolean> {
+  const rows = await tx
+    .update(agentAutoVerdicts)
+    .set({ state: 'pressed', pressedAt: at, outcome: null })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'pressing')))
+    .returning({ id: agentAutoVerdicts.draftId });
+  return rows.length > 0;
+}
+
+/**
+ * A draft the MACHINE approved, and where its reply is (fix pass A, C3) — or
+ * null: no verdict pressed it (a person's own ✅, one migration behind), and
+ * every press on it answers as it always did.
+ */
+export async function machinePressedReply(
+  draftId: string,
+): Promise<{ outbox: { id: string; status: string; readDone: boolean } | null } | null> {
+  if (!(await agentAutoReady())) return null;
+  const [v] = await db.select({ state: agentAutoVerdicts.state }).from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));
+  if (v?.state !== 'pressed') return null;
+  const [o] = await db
+    .select({ id: agentOutbox.id, status: agentOutbox.status, readDone: agentOutbox.readDone })
+    .from(agentOutbox)
+    .where(eq(agentOutbox.draftId, draftId));
+  return { outbox: o ?? null };
+}
+
+/** Where a reply the machine approved is, as the «kech» a press after it says — or null: it never left. */
+export type AfterPress = 'pressed' | 'sending' | 'sent';
+
+/**
+ * The reply's place, for the words (fix pass A, C3): still takeable back (❌
+ * «Bekor qilish»), being sent (the listener has read or claimed it), gone — or
+ * null when it never left (taken back, expired, failed): then the press after
+ * it answers as it always did.
+ */
+export function afterPressOf(o: { status: string; readDone: boolean } | null): AfterPress | null {
+  if (!o) return null;
+  if (autoTakeBackable(o)) return 'pressed';
+  if (o.status === 'agent' || o.status === 'sending') return 'sending';
+  if (o.status === 'sent' || o.status === 'unknown') return 'sent';
+  return null;
+}
+
+/**
+ * A draft the chat superseded leaves the layer (fix pass A, C4): its waiting
+ * row is gone — never pressed, and never what ⏸ on an old card stops. Called by
+ * `createDraft` after its commit (inside it would take the verdict after the
+ * draft, the opposite of every disarm's order). A row being pressed is the
+ * press's own: it reads the draft and calls it gone.
+ */
+export async function settleSupersededAuto(draftId: string): Promise<void> {
+  if (!(await agentAutoReady())) return;
+  await db
+    .update(agentAutoVerdicts)
+    .set({ state: 'gone', outcome: 'superseded' })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'waiting')));
 }
 
 // ── a person on the card ────────────────────────────────────────────────────
@@ -547,48 +777,98 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
 export type PersonStop = 'owner_send' | 'owner_edit' | 'owner_reject' | 'owner_human' | 'pause';
 
 /**
- * His own decision on a draft stops its waiting auto — every non-auto
- * `decideDraft` (bot AND web) and his ✏️ words call this first. A row already
- * being pressed is left alone: the draft's compare-and-set decides who wins.
- * The card is redrawn (it becomes the ordinary card).
+ * His own decision on a draft stops its auto — every non-auto `decideDraft`
+ * (bot AND web) and his ✏️ words call this first. A row the sweep has CLAIMED
+ * stops too (fix pass A, C2): its press checks the row inside its approval
+ * and loses. The card is redrawn (it becomes the ordinary card).
  */
 export async function stopAutoForPerson(draftId: string, actorId: string, why: PersonStop): Promise<boolean> {
   if (!(await agentAutoReady())) return false;
   const stopped = await db
     .update(agentAutoVerdicts)
     .set({ state: 'stopped', outcome: why, stoppedAt: new Date(), stoppedBy: actorId })
-    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'waiting')))
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), inArray(agentAutoVerdicts.state, ['waiting', 'pressing'])))
     .returning({ draftId: agentAutoVerdicts.draftId });
   if (stopped.length === 0) return false;
   await refreshCard(draftId);
   return true;
 }
 
-export type StopAutoRefusal = 'not_ready' | 'not_found' | 'not_account_holder' | 'pressing' | 'pressed' | 'not_waiting';
+export type StopAutoRefusal = 'not_ready' | 'not_found' | 'not_account_holder' | AfterPress | 'not_waiting';
 
-/** ⏸'s answers in his words — «kech» when the press already started or finished. */
+/**
+ * ⏸'s answers in his words — «kech» once the machine's press went through:
+ * still takeable back, the words name «❌ Bekor qilish» (fix pass A, C3).
+ * The same three sentences answer a person's press after the machine's
+ * (bot-door DECIDE_WORDS `auto_pressed`/`auto_sending`/`auto_sent`).
+ */
 export const STOP_AUTO_WORDS: Record<StopAutoRefusal, string> = {
   not_ready: 'Server hali yangilanmagan — o‘zi yuborish yo‘q.',
   not_found: 'Bu javob o‘zi yuborilmaydi.',
   not_account_holder: 'Bu javob sizning akkauntingizdan emas.',
-  pressing: 'Kech — javob yuborilmoqda.',
-  pressed: 'Kech — javob yuborildi.',
+  pressed: 'Kech — AI javobni o‘zi tasdiqladi. Ketmasin desangiz, kartadagi «❌ Bekor qilish»ni bosing.',
+  sending: 'Kech — javob yuborilmoqda.',
+  sent: 'Kech — javob yuborildi.',
   not_waiting: 'Bu javob endi o‘zi ketmaydi.',
 };
 
-/** ⏸ «To‘xtat»: the holder alone; a waiting auto becomes his card again. */
+/**
+ * ⏸ «To‘xtat»: the holder alone; the auto becomes his card again — waiting, or
+ * claimed by the sweep and not yet pressed (fix pass A, C2: the press checks
+ * the row inside its approval and loses, so «To‘xtatildi» is true).
+ *
+ * A card whose draft is no longer the chat's live reply (fix pass A, C4) — a
+ * newer customer line re-pointed the card's row at a newer draft and the edit
+ * did not land, so his screen still shows the old draft's ⏸: his press is
+ * about this chat's card, so it stops the chat's LIVE reply, and the old
+ * draft's own row leaves the layer. No live reply counting down: «it will not
+ * go» — never «To‘xtatildi» about a row nothing would have pressed.
+ */
 export async function stopAuto(staffId: string, draftId: string): Promise<{ ok: true } | { ok: false; code: StopAutoRefusal }> {
   if (!(await agentAutoReady())) return { ok: false, code: 'not_ready' };
   const [row] = await db
-    .select({ managerUserId: agentAutoVerdicts.managerUserId, state: agentAutoVerdicts.state })
+    .select({
+      managerUserId: agentAutoVerdicts.managerUserId,
+      peerId: agentAutoVerdicts.peerId,
+      state: agentAutoVerdicts.state,
+      draftStatus: agentDrafts.status,
+    })
     .from(agentAutoVerdicts)
+    .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
     .where(eq(agentAutoVerdicts.draftId, draftId));
   if (!row || row.state === null) return { ok: false, code: 'not_found' };
   if (row.managerUserId !== staffId) return { ok: false, code: 'not_account_holder' };
-  if (await stopAutoForPerson(draftId, staffId, 'pause')) return { ok: true };
-  const [now] = await db.select({ state: agentAutoVerdicts.state }).from(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, draftId));
-  if (now?.state === 'pressing') return { ok: false, code: 'pressing' };
-  if (now?.state === 'pressed') return { ok: false, code: 'pressed' };
+  if (row.draftStatus === 'pending' || row.draftStatus === 'editing') {
+    if (await stopAutoForPerson(draftId, staffId, 'pause')) return { ok: true };
+    return { ok: false, code: 'not_waiting' };
+  }
+  if (row.state === 'pressed') {
+    const pressed = await machinePressedReply(draftId);
+    return { ok: false, code: afterPressOf(pressed?.outbox ?? null) ?? 'not_waiting' };
+  }
+  // A dead card: its own row leaves the layer, and the press follows the card to the chat's live reply.
+  await db
+    .update(agentAutoVerdicts)
+    .set({ state: 'gone', outcome: row.draftStatus })
+    .where(and(eq(agentAutoVerdicts.draftId, draftId), eq(agentAutoVerdicts.state, 'waiting')));
+  const [live] = await db
+    .select({ draftId: agentAutoVerdicts.draftId })
+    .from(agentAutoVerdicts)
+    .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+    .where(
+      and(
+        eq(agentAutoVerdicts.managerUserId, row.managerUserId),
+        eq(agentAutoVerdicts.peerId, row.peerId),
+        inArray(agentAutoVerdicts.state, ['waiting', 'pressing']),
+        eq(agentDrafts.status, 'pending'),
+      ),
+    )
+    .orderBy(desc(agentAutoVerdicts.createdAt))
+    .limit(1);
+  if (live && (await stopAutoForPerson(live.draftId, staffId, 'pause'))) {
+    await refreshCard(draftId);
+    return { ok: true };
+  }
   return { ok: false, code: 'not_waiting' };
 }
 
@@ -615,8 +895,9 @@ export function autoDisarmAlarmText(reason: StepDownReason): string {
  * stopped get their cards back as ordinary cards.
  */
 async function stepDown(reason: StepDownReason, holderId: string): Promise<boolean> {
-  const out = await db.transaction((tx) => disarmAutoInTx(tx, reason, null));
-  for (const id of out.stoppedDraftIds) await refreshCard(id);
+  // «Stop sending by yourself»: what it approved and has not yet sent is taken back too (fix pass A, C5).
+  const out = await db.transaction((tx) => disarmAutoInTx(tx, reason, null, { takeBack: true }));
+  for (const id of [...out.stoppedDraftIds, ...out.takenBackDraftIds]) await refreshCard(id);
   if (!out.wasArmed) return false;
   const supers = await usersWithRoles(['super_admin']);
   await notifyStaffTelegram({ userIds: [holderId, ...supers], type: 'AgentForcedOff', text: autoDisarmAlarmText(reason) });
@@ -801,25 +1082,29 @@ export async function setAutoArmed(actor: AutoActor, armed: boolean, ctx: AuditC
     if (!before) throw new AutoConfigError('not_ready');
     const now = new Date();
     let stopped: string[] = [];
+    let takenBack: string[] = [];
     if (armed) {
       await tx
         .update(agentAutoConfig)
         .set({ armedAt: before.armedAt ?? now, armedBy: before.armedBy ?? actor.id, disarmedAt: null, disarmReason: null, updatedAt: now })
         .where(eq(agentAutoConfig.id, 1));
     } else {
-      stopped = (await disarmAutoInTx(tx, 'manual', actor.id)).stoppedDraftIds;
+      // His «o‘chirish» means «stop sending by yourself»: a reply pressed a second before it is taken back too.
+      const off = await disarmAutoInTx(tx, 'manual', actor.id, { takeBack: true });
+      stopped = off.stoppedDraftIds;
+      takenBack = off.takenBackDraftIds;
     }
     await writeAudit(tx, ctx, {
       entityType: 'agent_auto_config',
       entityId: AUTO_AUDIT_ID,
       action: 'update',
       before: { armed: before.armedAt !== null },
-      after: { armed, ...(stopped.length > 0 ? { stopped: stopped.length } : {}) },
+      after: { armed, ...(stopped.length > 0 ? { stopped: stopped.length } : {}), ...(takenBack.length > 0 ? { takenBack: takenBack.length } : {}) },
     });
     const [row] = await tx.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1));
-    return { config: toAutoConfig(row!), stopped };
+    return { config: toAutoConfig(row!), cards: [...stopped, ...takenBack] };
   });
-  for (const id of out.stopped) await refreshCard(id);
+  for (const id of out.cards) await refreshCard(id);
   return out.config;
 }
 

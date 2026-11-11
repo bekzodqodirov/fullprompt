@@ -290,12 +290,15 @@ export function cardDrawsSend(d: { blocked: boolean; status: string; ownText: bo
  * plain fields, because the bot draws the keyboard in platform, which never
  * imports wms: `autoAt` (ISO) while the machine's press counts down (⏸ and
  * «✅ Hozir yubor»), `autoSent` once it pressed and `autoBad` once he said
- * «👎 Xato edi» (the closed card's one button, then none).
+ * «👎 Xato edi» (the closed card's one button, then none), and `autoCancel`
+ * while the reply it approved can still be taken back (❌ «Bekor qilish» and
+ * 🙋, fix pass A, C3).
  */
 export interface CardAutoPayload {
   autoAt: string | null;
   autoSent: boolean;
   autoBad: boolean;
+  autoCancel: boolean;
 }
 
 /**
@@ -323,6 +326,7 @@ export function cardExtra(draft: {
     autoAt: draft.auto?.autoAt ?? null,
     autoSent: draft.auto?.autoSent === true,
     autoBad: draft.auto?.autoBad === true,
+    autoCancel: draft.auto?.autoCancel === true,
   };
 }
 

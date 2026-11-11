@@ -104,6 +104,13 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
     "Bu lidni mijoz topuvchi agent topgan: unga faqat dushanba–shanba 10:00–17:00 da yoziladi, o'sha paytgacha mijozning xabari 24 soatdan eskiradi — javob navbatga qo'yilmadi. Ish vaqtida o'zingiz yozing.",
   // Only «o'zi yuborish»'s machine press meets it (decide `auto`): a person presses past a warning he read.
   auto_warning: '⏱ Kartada ogohlantirish bor — javob o‘zi ketmadi, o‘zingiz qaror qiling.',
+  // Only the machine's press meets these two either (fix pass A, C2/C5): it lost to a stop or a disarm.
+  auto_stopped: '⏸ To‘xtatildi — javob o‘zi ketmaydi.',
+  auto_disarmed: '⏹ O‘zi yuborish o‘chirilgan — javobni o‘zingiz yuboring.',
+  // A person's press after the machine's (fix pass A, C3) — ⏸'s own «kech» words, one sentence for both doors.
+  auto_pressed: STOP_AUTO_WORDS.pressed,
+  auto_sending: STOP_AUTO_WORDS.sending,
+  auto_sent: STOP_AUTO_WORDS.sent,
   empty: "Javob bo'sh.",
 };
 
@@ -247,9 +254,12 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
     case 'h': {
       const r = await decideDraft(actor, id, op === 'r' ? 'reject' : 'human', {}, ctx);
       if (!r.ok) return { toast: DECIDE_WORDS[r.code].slice(0, 190) };
-      if (op === 'r') return { toast: '❌ Rad etildi', drop: 'agent_edit' };
+      // ❌ on a reply the machine approved took that reply back (decide `afterMachinePress`, fix pass A, C3).
+      if (op === 'r') return { toast: r.status === 'cancelled' ? AUTO_TAKEN_BACK_TOAST : '❌ Rad etildi', drop: 'agent_edit' };
       const taken = humanTakeoverWords(r.withdrawn);
-      return { toast: taken.toast, ...(taken.reply ? { reply: taken.reply } : {}), drop: 'agent_edit' };
+      // 🙋 on a reply the machine approved and could no longer take back: the chat is his — and he hears where it is.
+      const toast = r.autoReply ? `${taken.toast} — ${AUTO_REPLY_GONE[r.autoReply]}` : taken.toast;
+      return { toast: toast.slice(0, 190), ...(taken.reply ? { reply: taken.reply } : {}), drop: 'agent_edit' };
     }
     case 'p': {
       return {
@@ -286,6 +296,13 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
 
 /** ⏸'s answer. */
 export const AUTO_STOPPED_TOAST = '⏸ To‘xtatildi — javobni o‘zingiz hal qilasiz';
+/** ❌ «Bekor qilish» on a reply the machine approved, taken back before it left (fix pass A, C3). */
+export const AUTO_TAKEN_BACK_TOAST = '❌ Bekor qilindi — javob mijozga ketmaydi';
+/** 🙋 on a reply the machine approved that could no longer be taken back: where it is. */
+const AUTO_REPLY_GONE: Record<'sending' | 'sent', string> = {
+  sending: 'AI javobi allaqachon yuborilmoqda',
+  sent: 'AI javobi allaqachon ketgan',
+};
 /** 👎's answers — the second one is the step-down (auto-send `autoFeedback`). */
 export const AUTO_BAD_TOAST = '👎 Belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi';
 export const AUTO_BAD_DISARMED_TOAST = '👎 Belgilandi — o‘zi yuborish o‘chirildi (7 kunda 2-marta)';

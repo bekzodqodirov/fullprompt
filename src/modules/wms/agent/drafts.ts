@@ -5,7 +5,7 @@ import { logger } from '../../platform/logger';
 import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../../platform/notifications/staff';
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { autoPayload } from './auto-card';
-import { recordAutoVerdictInTx, type AutoPlan } from './auto-send';
+import { recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
 import { cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
@@ -101,6 +101,7 @@ const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'comp
  * is kicked — and a sent copy edited — only after the commit.
  */
 export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
+  let superseded = null as string | null;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
       .select({ id: agentDrafts.id, status: agentDrafts.status })
@@ -116,6 +117,7 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     if (live?.status === 'editing') return { kind: 'editing', draftId: live.id };
     if (live) {
       await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
+      superseded = live.id;
     }
     const [draft] = await tx
       .insert(agentDrafts)
@@ -174,6 +176,11 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     return { kind: 'written', draftId: row.id, retargeted: false };
   });
   if (out.kind === 'written') {
+    // The superseded draft's «o'zi yuborish» row leaves the layer (fix pass A, C4) — after the commit: inside,
+    // it would take the verdict after the draft, the opposite of every disarm's order.
+    if (superseded) {
+      await settleSupersededAuto(superseded).catch((err: unknown) => logger.warn({ err, draftId: superseded }, '[agent] superseded auto not settled'));
+    }
     await kickTelegramDrain();
     if (out.retargeted) {
       const { refreshAgentCard } = await import('./card-io');

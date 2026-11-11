@@ -895,9 +895,18 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
       ];
     }
     if (payload.live !== true) {
-      // A reply «o'zi yuborish» sent (0143): its one press is «👎 Xato edi», once — then none.
-      if (payload.autoSent === true && payload.autoBad !== true) return [[{ text: '👎 Xato edi', callback_data: `ag:f:${id}` }]];
-      return null;
+      if (payload.autoSent !== true) return null;
+      // A reply «o'zi yuborish» pressed (0143): while it has not left, ❌ takes it back and 🙋 takes the chat
+      // (payload `autoCancel`); «👎 Xato edi» once — then none.
+      const rows: BotButton[][] = [];
+      if (payload.autoCancel === true) {
+        rows.push([
+          { text: '❌ Bekor qilish', callback_data: `ag:r:${id}` },
+          { text: '🙋 Suhbat meniki', callback_data: `ag:h:${id}` },
+        ]);
+      }
+      if (payload.autoBad !== true) rows.push([{ text: '👎 Xato edi', callback_data: `ag:f:${id}` }]);
+      return rows.length > 0 ? rows : null;
     }
     const digest = typeof payload.digest === 'string' && /^[0-9a-f]{8}$/.test(payload.digest) ? payload.digest : null;
     const send = payload.blocked !== true && digest ? digest : null;

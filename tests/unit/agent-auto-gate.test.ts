@@ -53,6 +53,9 @@ function eligible(): AutoGateInput {
     now: NOON,
     streak: 0,
     pressedToday: 0,
+    budgetLeft: 10,
+    sendingEnabled: true,
+    listenerCurrent: true,
   };
 }
 
@@ -81,6 +84,10 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   night: (i) => (i.at = NIGHT),
   streak: (i) => (i.streak = 2),
   daily_cap: (i) => (i.pressedToday = 30),
+  // The ✅'s own refusals that are already facts at the scheduling (fix pass A, C8).
+  budget_spent: (i) => (i.budgetLeft = 0),
+  sending_disabled: (i) => (i.sendingEnabled = false),
+  listener_behind: (i) => (i.listenerCurrent = false),
 };
 
 describe('the gate', () => {
@@ -108,6 +115,14 @@ describe('the gate', () => {
     // …and a category outside the chosen set is the category's own refusal beside it.
     input.config.categories = ['greeting'];
     expect(autoVerdict(input).reasons).toEqual([...AUTO_REFUSALS]);
+  });
+
+  it('at the press the three facts the ✅ asks itself are not the gate’s (null): the scheduling alone judges them', () => {
+    const input = eligible();
+    input.budgetLeft = null;
+    input.sendingEnabled = null;
+    input.listenerCurrent = null;
+    expect(autoVerdict(input)).toEqual({ eligible: true, reasons: [] });
   });
 
   it('every refusal has words, and no word is a code', () => {

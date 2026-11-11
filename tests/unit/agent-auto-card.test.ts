@@ -13,6 +13,8 @@ import {
   AUTO_PAUSED_LINE,
   AUTO_PRESS_WORDS,
   AUTO_SENT_PREFIX,
+  AUTO_TAKEN_BACK_PREFIX,
+  AUTO_UNSEEN_LINE,
   autoCountingDown,
   autoDisarmWords,
   autoPayload,
@@ -121,6 +123,25 @@ describe('the status line per state (auto-card `withAutoLine`)', () => {
     expect(AUTO_BAD_LINE).toBe('👎 Xato deb belgilandi — bu suhbatda AI 30 kun o‘zi yozmaydi.');
   });
 
+  it('a reply the machine pressed that never left — taken back, expired, failed: never «O‘zi yuborildi» (fix pass A)', () => {
+    const approved = { status: 'approved', finalBody: null };
+    for (const sendStatus of ['cancelled', 'expired', 'failed']) {
+      expect(withAutoLine('✖ Yuborilmadi — o‘zingiz qaytarib oldingiz.', auto({ state: 'pressed' }), approved, false, sendStatus), sendStatus).toBe(
+        `${AUTO_TAKEN_BACK_PREFIX} ✖ Yuborilmadi — o‘zingiz qaytarib oldingiz.`,
+      );
+    }
+    // On its way, gone, or unknown: the design's own prefix.
+    for (const sendStatus of ['agent', 'sending', 'sent', 'unknown', null]) {
+      expect(withAutoLine('✅ Tasdiqlandi.', auto({ state: 'pressed' }), approved, false, sendStatus), String(sendStatus)).toBe(`${AUTO_SENT_PREFIX} ✅ Tasdiqlandi.`);
+    }
+  });
+
+  it('a card that has not reached his Telegram yet says so instead of a clock — ⏸ still on it (fix pass A, C4)', () => {
+    expect(withAutoLine(null, auto({ outcome: 'unseen' }), pending, true)).toBe(AUTO_UNSEEN_LINE);
+    expect(AUTO_UNSEEN_LINE).not.toMatch(/\d\d:\d\d/u);
+    expect(AUTO_UNSEEN_LINE).toContain('⏸');
+  });
+
   it('no state (no row, an ineligible one, one migration behind): the line is the draft’s own', () => {
     expect(withAutoLine('x', null, pending, true)).toBe('x');
     expect(withAutoLine(null, undefined, pending, true)).toBeNull();
@@ -154,7 +175,12 @@ describe('the payload the keyboard is drawn from (card `cardExtra`, auto-card `a
     }
     expect(extra(auto({}), pending, false).autoAt).toBeNull();
     // A writer that passes no state at all still writes the keys.
-    expect(cardExtra({ id: ID, body: 'x', actions: [], blocked: false, live: true, kind: 'reply' })).toMatchObject({ autoAt: null, autoSent: false, autoBad: false });
+    expect(cardExtra({ id: ID, body: 'x', actions: [], blocked: false, live: true, kind: 'reply' })).toMatchObject({
+      autoAt: null,
+      autoSent: false,
+      autoBad: false,
+      autoCancel: false,
+    });
   });
 
   it('autoSent once the machine pressed an approved reply, autoBad once he said 👎', () => {
@@ -165,10 +191,23 @@ describe('the payload the keyboard is drawn from (card `cardExtra`, auto-card `a
     expect(extra(auto({ state: 'pressed' }), pending)).toMatchObject({ autoSent: false });
   });
 
+  it('autoCancel while the reply the machine approved can still be taken back — the web cancel’s own rule (fix pass A, C3)', () => {
+    const approved = { status: 'approved', finalBody: null };
+    const withOutbox = (o: { status: string; readDone: boolean } | null) =>
+      cardExtra({ id: ID, body: 'x', actions: [], blocked: true, live: false, kind: 'reply', auto: autoPayload(auto({ state: 'pressed' }), approved, false, o) });
+    expect(withOutbox({ status: 'agent', readDone: false })).toMatchObject({ autoSent: true, autoCancel: true });
+    for (const o of [{ status: 'agent', readDone: true }, { status: 'sending', readDone: true }, { status: 'sent', readDone: true }, { status: 'cancelled', readDone: false }, null]) {
+      expect(withOutbox(o), JSON.stringify(o)).toMatchObject({ autoSent: true, autoCancel: false });
+    }
+    // A person's own approval: no auto fields at all.
+    expect(extra(null, approved, false)).toMatchObject({ autoSent: false, autoCancel: false });
+  });
+
   it('both writers of a card’s payload hand it the auto state — createDraft and refreshAgentCard', () => {
     const io = readFileSync('src/modules/wms/agent/card-io.ts', 'utf8');
     const drafts = readFileSync('src/modules/wms/agent/drafts.ts', 'utf8');
-    expect(io).toMatch(/auto: autoPayload\(auto, d, sendable\)/u);
+    // The redraw hands the reply's outbox row too: ❌ «Bekor qilish» while it can still be taken back (fix pass A).
+    expect(io).toMatch(/auto: autoPayload\(auto, d, sendable, o \?\? null\)/u);
     expect(io).toMatch(/renderDraftCardFull\(d, o \?\? null, extraNotes, \{[^}]*\bauto \}\)/u);
     expect(drafts).toMatch(/auto: autoPayload\(auto, row, sendable\)/u);
     expect(drafts).toMatch(/renderDraftCardFull\(row, null, \[\], \{ auto \}\)/u);
@@ -205,11 +244,21 @@ describe('the keyboard per state (staff-bot `agentButtons`)', () => {
     expect(buttonsFor('AgentDraft', closed)).toBeNull();
   });
 
+  it('a reply the machine pressed and that can still be taken back: ❌ «Bekor qilish» and 🙋, then 👎 (fix pass A, C3)', () => {
+    const closed = { ...base, live: false, autoSent: true, autoCancel: true };
+    expect(labels(buttonsFor('AgentDraft', closed))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki'], ['👎 Xato edi']]);
+    expect(data(buttonsFor('AgentDraft', closed))).toEqual([`ag:r:${ID}`, `ag:h:${ID}`, `ag:f:${ID}`]);
+    expect(labels(buttonsFor('AgentDraft', { ...closed, autoBad: true }))).toEqual([['❌ Bekor qilish', '🙋 Suhbat meniki']]);
+    // A person's own approval never draws them, whatever the key says.
+    expect(buttonsFor('AgentDraft', { ...base, live: false, autoSent: false, autoCancel: true })).toBeNull();
+  });
+
   it('every button of every state is one the parser takes, as the op it names', () => {
     const states = [
       { ...base, autoAt: DUE.toISOString() },
       { ...base, blocked: true, autoAt: DUE.toISOString() },
       { ...base, live: false, autoSent: true },
+      { ...base, live: false, autoSent: true, autoCancel: true },
     ];
     for (const payload of states) {
       for (const cb of data(buttonsFor('AgentDraft', payload))) expect(parseCallback(cb), cb).toMatchObject({ kind: 'agent', id: ID });

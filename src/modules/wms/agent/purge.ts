@@ -169,7 +169,9 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
       await tx.delete(kbFacts).where(sql`${kbFacts.scope} <> 'general' AND ${kbFacts.sourceRef}->>'draftId' IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})`);
     }
     // Every card of the chat says nothing of it any more, and offers nothing:
-    // `live`, `kbAsk` and `priceable` are what `agentButtons` draws a door
+    // `live`, `kbAsk`, `priceable` and the auto keys (`autoAt`, `autoSent`,
+    // `autoCancel` — ⏸, 👎, ❌ «Bekor qilish» and 🙋 on a reply «o'zi yuborish»
+    // pressed) are what `agentButtons` draws a door
     // from, and a calculation answer's «💵 Narx yozaman» would arm a price
     // wait whose link this same transaction deletes. A copy not yet sent is
     // never sent (a blank card is noise, not news). A copy the drain has
@@ -179,7 +181,16 @@ export async function purgeAgentChat(managerUserId: string, peerId: bigint): Pro
     const blanked = await tx
       .update(notifications)
       .set({
-        payload: sql`${notifications.payload} || ${JSON.stringify({ text: PURGED_CARD_TEXT, live: false, kbAsk: false, priceable: false })}::jsonb`,
+        payload: sql`${notifications.payload} || ${JSON.stringify({
+          text: PURGED_CARD_TEXT,
+          live: false,
+          kbAsk: false,
+          priceable: false,
+          autoAt: null,
+          autoSent: false,
+          autoBad: false,
+          autoCancel: false,
+        })}::jsonb`,
         status: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'muted' ELSE ${notifications.status} END`,
         error: sql`CASE WHEN ${notifications.status} = 'pending' THEN 'chat purged' ELSE ${notifications.error} END`,
       })

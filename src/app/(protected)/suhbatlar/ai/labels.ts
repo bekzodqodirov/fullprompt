@@ -80,6 +80,11 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   identity_changed: 'errors.identity_changed',
   window_closed: 'errors.window_closed',
   auto_warning: 'errors.auto_warning',
+  auto_stopped: 'errors.auto_stopped',
+  auto_disarmed: 'errors.auto_disarmed',
+  auto_pressed: 'errors.auto_pressed',
+  auto_sending: 'errors.auto_sending',
+  auto_sent: 'errors.auto_sent',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
@@ -117,8 +122,9 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_bad_value: 'errors.auto_bad_value',
   auto_stop_not_found: 'errors.auto_stop_not_found',
   auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
-  auto_stop_pressing: 'errors.auto_stop_pressing',
   auto_stop_pressed: 'errors.auto_stop_pressed',
+  auto_stop_sending: 'errors.auto_stop_sending',
+  auto_stop_sent: 'errors.auto_stop_sent',
   auto_stop_not_waiting: 'errors.auto_stop_not_waiting',
   auto_fb_not_found: 'errors.auto_fb_not_found',
   auto_fb_not_account_holder: 'errors.auto_fb_not_account_holder',
@@ -187,6 +193,7 @@ export const AUTO_DISARM_KEYS: Record<AutoDisarmKind, string> = {
   blocked: 'autoOff.blocked',
   bot_question: 'autoOff.bot_question',
   forced: 'autoOff.forced',
+  not_work_account: 'autoOff.not_work_account',
 };
 
 export function autoDisarmKey(reason: string | null): string | null {
