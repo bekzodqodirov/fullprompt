@@ -243,8 +243,8 @@ export default async function ReceiptDetailPage({
           status: askCard.status
             ? {
                 state: askCard.status.status,
-                when: askCard.status.sentAt
-                  ? format.dateTime(askCard.status.sentAt, { dateStyle: 'short', timeStyle: 'short', timeZone: warehouse.timezone })
+                when: askCard.status.deliveredAt
+                  ? format.dateTime(askCard.status.deliveredAt, { dateStyle: 'short', timeStyle: 'short', timeZone: warehouse.timezone })
                   : null,
                 by: askCard.status.askedBy,
                 failure: askCard.status.failure,

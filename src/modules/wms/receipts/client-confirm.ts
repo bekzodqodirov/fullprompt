@@ -563,7 +563,8 @@ export function askFailureOf(status: string, reason: string | null): AskFailure 
 /** The last question about a prixod, for its card: when it went, or why it has not. */
 export interface ClientAskStatus {
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
-  sentAt: Date | null;
+  /** When the question went out to the client's Telegram; null while it waits or when it never went. */
+  deliveredAt: Date | null;
   /** The row's own `last_error` — for the log and the tests; the card reads `failure`. */
   reason: string | null;
   failure: AskFailure | null;
@@ -588,7 +589,7 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
   if (!row) return null;
   return {
     status: row.status,
-    sentAt: row.sent_at ? new Date(row.sent_at) : null,
+    deliveredAt: row.sent_at ? new Date(row.sent_at) : null,
     reason: row.last_error,
     failure: askFailureOf(row.status, row.last_error),
     askedBy: row.asked_by,

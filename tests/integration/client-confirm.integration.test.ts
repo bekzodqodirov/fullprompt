@@ -813,7 +813,7 @@ describe('«Mijozdan so‘rash» — a person asks, once, and hears the answer',
     const row = await noticeRow();
     expect(row).toMatchObject({ status: 'pending', attempts: 0, asked_by: staffId, sent_at: null });
     expect(new Date(row!.send_after).getTime()).toBeLessThanOrEqual(Date.now() + 1000);
-    expect(await clientAskStatusFor(receipt.main)).toMatchObject({ status: 'pending', sentAt: null });
+    expect(await clientAskStatusFor(receipt.main)).toMatchObject({ status: 'pending', deliveredAt: null });
     const [audit] = await db
       .select({ actorId: auditLog.actorId, after: auditLog.after })
       .from(auditLog)
