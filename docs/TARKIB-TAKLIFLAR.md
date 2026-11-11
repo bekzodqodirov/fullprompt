@@ -685,6 +685,10 @@ against literal states (`client-confirm.integration`).
   answer's clock is `clock_timestamp()`, the tick posts the answer it SAW (`seenClientAt`) and is refused
   `check_changed` when the table holds another. A re-tick by the same colleague past a ❌ WRITES (it is what
   lifts the ❌). The customer's press is bounded by `lock_timeout = '3s'` → «busy», buttons kept.
+  **The tick asks the probe ITSELF** (`clientConfirmsReady()` on the pool, before its transaction): a server
+  action is its own module instance, so the remembered flag was «no» after every restart and the tick was
+  refused on every answered lot until somebody pressed «Mijozdan so'rash» (review L1-1; a derived fence lists
+  every reader of the flag, and `lot-check-probe.integration` mocks nothing of the probe).
 - **What a question shows** (`clientAskFacts`): ONE statement for names, counts, goods and their digest; the
   tag = 8 hex of `[client, lots[id, zh, shown ru, count, goods_key]]`.
 - **The push's row** (`clientAskOffer`), asked at SEND time: the switch on and 0144 landed; this client's
@@ -692,16 +696,29 @@ against literal states (`client-confirm.integration`).
   goods — that question is the card's); some lot askable and not ✅ (his 4a); and **the lines the push PRINTS
   are the lines the tag vouches for** (a rename between the two reads costs the buttons). The question line is
   always in the text and in a photo's caption only while it fits 1024 — the question never costs the photograph.
-- **A press** (`answerClientAsk`): linked chat → 0144 → facts → the chat owns the prixod → the tag → **some lot
-  still askable** (cargo that has left China takes no answer) → «already» only when every lot holds this answer
-  AND it is newer than the last question sent → write + audit (actor null) + staff notifications **in one
+- **A press** (`answerClientAsk`): linked chat → 0144 → facts → **the chat owns the prixod, asked BEFORE
+  anything is said about it** (a voided, draft or ownerless prixod of somebody else answers «unknown», never
+  «stale» — review L2-6; «stale» names the owner) → the tag → **some lot still askable** (cargo that has left
+  China takes no answer) → **under the lots' answer locks**: «already» only when every lot holds this very
+  answer about these very facts, it is newer than the last question sent, AND — for a ❌ — no colleague has
+  ticked the lot since (a tick newer than the ❌ has outranked it; the same ❌ from the other chat's copy of
+  the message is a NEW objection, written and told — review L1-2) → write + audit (actor null; every lot of
+  the message a line, the same answer again « · qayta» — never an empty row) + staff notifications **in one
   transaction**. ❌ tells the client's seller and `plans.manage` (`ClientLotDisputed`, alerts); either answer
   tells the person who pressed «Mijozdan so'rash», past their own mute; a ✅ on the receipt's own push tells
   nobody. Neither type rings at night.
 - **The handler** (`/^yt:/`, on the prefix): decide, then answer ONCE with the outcome's toast; ❌ has no toast
-  — its one sentence is a message; the pressed message keeps its Mini App and manager rows and loses the third;
-  «busy»/«failed» keep the row; a stale ❌ is still told where to write; in a chat that is also a staff chat the
-  relay does not run, so it says «xodimlarga xabar berildi» and never «shu yerga yozing».
+  — its one sentence is a message, sent FIRST and through the ordered send (a brief 429 waited out, a refusal
+  logged — L2-2); the pressed message keeps its Mini App and manager rows and loses the third, and a message
+  whose keyboard Telegram no longer echoes gets its two standing rows rebuilt (L2-5); «busy»/«failed» keep the
+  row and tell the press middleware the press may be REPEATED (`again` — a late press is otherwise remembered
+  for a minute and its repeat swallowed, L2-1); a stale ❌ is still told where to write; in a chat that is also
+  a staff chat the relay does not run, so it says «xodimlarga xabar berildi» and never «shu yerga yozing».
+- **The words after a ❌** (`forwardClientMessage`): the chat's last ❌ is remembered for 30 minutes, in memory
+  — what the customer writes next goes to THAT prixod's client's seller when reachable (never «the chat's first
+  code with a reachable manager»: one person's several codes can have several sellers), the disputed code
+  leads the staff copy and the link is the prixod's card (L2-3). A restart forgets it; the relay is then what
+  it was.
 - **«Mijozdan so'rash»** (`askClientAboutReceipt`): the lot check's door + the card's read door; refused in
   words `no_client | no_lots | no_chat | not_askable | too_long | already_queued | too_soon | server_behind`;
   one row per (client, prixod), re-armed only after it went and ten minutes passed; the sweep is woken at
@@ -709,11 +726,19 @@ against literal states (`client-confirm.integration`).
   reaches the previous owner's chat. The card prints the last question's fate in a CLOSED list of words
   (`askFailureOf`), never a Bot API sentence.
 - **«E'tirozni yopish»** (`dismissClientDisputes`): only the ❌ the card drew (`answered_at::text` token, all
-  posted lots or none → `check_changed`), on a confirmed prixod, one History row; per lot, and for a prixod
-  whose one ❌ landed on several lots in one press.
+  posted lots or none → `check_changed`) **and only the current OWNER's** (a previous owner's ❌ is nobody's
+  to close — L1-5), on a confirmed prixod, one History row; per lot, and for a prixod whose one ❌ landed on
+  several lots in one press. It takes the panel's note wherever the cargo stands.
 - **The card** (`lot-check-panel.tsx`, `client-ask-panel.tsx`): a vetoing ❌ leads in the bad colour and every
-  ✅ line under it is drawn as history — no green on a disputed lot; the ❌ line and the dismissal stay
-  wherever the cargo stands.
+  ✅ line under it is drawn as history — no green on a disputed lot (nor a «saved» line of an earlier press);
+  the ❌ line and the dismissal stay wherever the cargo stands; the dispute's hint names only the buttons that
+  are drawn (with the cargo out of China there is no tick). **A previous owner's ✅** is nobody's answer but
+  is WHY the lot reads «o'zgardi» (the client is one of the facts a ✅ is about, as for a tick): the card says
+  so and offers the tick — it used to draw nothing at all (L3-1). **Times are the office clock's**
+  (`tashkentDay`, the page's default formatter), like the History under the card — never the warehouse's zone
+  (L3-2). **A waiting question is worded by its age**: due now → «a minute or two»; held by Telegram → when it
+  will go; due five minutes ago and still here → «bot hozir yubora olmayapti» with since-when (L3-4). The ask
+  block is mounted wherever the client's side exists and keeps its own «✅ yopildi» when the face empties.
 - **The customer's words** name what is confirmed — «Tovar nomi va quti soni to'g'rimi?» — never «hammasi»:
   the push prints kilos too, and they are not part of the answer.
 

@@ -61,7 +61,7 @@ import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
 import { canEditReceipt, mayCorrectReceived, mayEditReceiptAt, mayFlipQrSkip, qrSwitchPlaces } from '@/modules/wms/receipts/edit';
 import { QrSkipToggle } from './qr-skip-toggle';
-import { dayIn, tashkentDay } from '@/modules/platform/time/tashkent';
+import { dayIn } from '@/modules/platform/time/tashkent';
 import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
