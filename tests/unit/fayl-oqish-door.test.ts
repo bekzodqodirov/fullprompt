@@ -956,6 +956,18 @@ describe('the as-built review’s words on the AI table (as-built review A)', ()
     expect((await drawn(whole.chatId)).text).not.toContain('oxirigacha');
   });
 
+  it('RF-WORDS-1 / RF-REGRESSION-7: a cut list is never «Ma’lumot to‘liq» on the plain summary, its rows complete or not', async () => {
+    const seven = Array.from({ length: 7 }, (_, i) => line(`Tovar ${i + 1}`, { quantity: 10, weightKg: 5, tnvedCode: '6201400000' }));
+    const cut = collection({ ai: false, fileCount: 1, aiUsed: true, aiCut: { goods: 7, why: 'clock' }, facts: { ...FULL, goods: seven } });
+    const table = await drawn(cut.chatId);
+    expect(data(table)).toContain('c:save');
+    expect(table.text).not.toContain('Ma’lumot to‘liq');
+    expect(table.text).toContain('ℹ️ Yetishmaganini VED xodimi o‘zi so‘raydi — «✅ Tasdiqlash» ni hozir bosishingiz mumkin.');
+    // The same rows read whole ARE complete (control): the cut is what the words follow.
+    const whole = collection({ ai: false, fileCount: 1, aiUsed: true, facts: { ...FULL, goods: seven } });
+    expect((await drawn(whole.chatId)).text).toContain('✅ Ma’lumot to‘liq');
+  });
+
   it('WORDS-2: the card names the files refused at arrival, and its doorNote can carry a cut', () => {
     const note = intakeNoteText({
       section: 'rastamojka',

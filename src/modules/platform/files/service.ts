@@ -19,7 +19,9 @@ const DOC_TYPES = new Set([
   // A macro-enabled workbook is an ordinary OOXML zip the goods reader opens
   // (as-built review OWNER-10, MODEL-4): refused here, a supplier's .xlsm was
   // told «send Excel». Served as a download only, like every non-image document.
-  'application/vnd.ms-excel.sheet.macroEnabled.12',
+  // Lower case, as every type here: a type is compared lower-cased
+  // (`resolveContentType`, review of the fixes RF-FILES-2).
+  'application/vnd.ms-excel.sheet.macroenabled.12',
   'application/msword',
   'text/plain',
   'text/csv',
@@ -67,7 +69,7 @@ const EXT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   xls: 'application/vnd.ms-excel',
-  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
+  xlsm: 'application/vnd.ms-excel.sheet.macroenabled.12',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword',
   txt: 'text/plain',
@@ -98,18 +100,22 @@ const EXT_TYPES: Record<string, string> = {
  * storage refuses is never fetched and never logged as a failure.
  */
 export function isStorableType(contentType: string): boolean {
-  return (
-    PHOTO_TYPES.has(contentType) ||
-    DOC_TYPES.has(contentType) ||
-    VIDEO_TYPES.has(contentType) ||
-    AUDIO_TYPES.has(contentType)
-  );
+  const type = contentType.toLowerCase();
+  return PHOTO_TYPES.has(type) || DOC_TYPES.has(type) || VIDEO_TYPES.has(type) || AUDIO_TYPES.has(type);
 }
 
+/**
+ * The type a file is stored under — LOWER-CASED (review of the fixes
+ * RF-FILES-2): a type is case-insensitive (RFC 2045 §5.1) and a sender writes
+ * whichever spelling its library has — mime-db and the `mime` package spell
+ * the macro workbook «macroenabled», /etc/mime.types «macroEnabled» — so one
+ * spelling was stored and the other told «faylning bu turi o‘qilmaydi».
+ */
 export function resolveContentType(fileName: string, contentType: string): string {
-  if (contentType && contentType !== 'application/octet-stream') return contentType;
+  const declared = contentType.toLowerCase();
+  if (declared && declared !== 'application/octet-stream') return declared;
   const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
-  return EXT_TYPES[ext] ?? contentType;
+  return EXT_TYPES[ext] ?? declared;
 }
 
 export class FileValidationError extends Error {

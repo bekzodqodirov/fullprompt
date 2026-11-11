@@ -269,7 +269,9 @@ describe('a picture document past storage’s photo ceiling is refused for good,
     const answer = permanentRefusal(activeIntake(chatId)!, 'too_large', { name: 'scan.jpg', isPhoto: false });
     expect(answer).toEqual({
       patch: { refusedFiles: [{ name: 'scan.jpg', why: '15 MB dan katta rasm' }] },
-      say: '🖼 «scan.jpg» — rasm 15 MB dan katta, saqlanmadi. Kichikroq qilib (yoki PDF) yuboring.',
+      // «(yoki PDF)» is gone (review of the fixes RF-FILES-4): a PDF past 10 MB
+      // is refused again; a PHOTO always passes.
+      say: '🖼 «scan.jpg» — rasm 15 MB dan katta, saqlanmadi. Fayl emas, rasm qilib (yoki kichraytirib) yuboring.',
     });
   });
 });
@@ -281,7 +283,8 @@ describe('a macro workbook is stored and read; an HTML or XML table is refused i
 
   it('storage keeps a .xlsm — by its mime and by its name', () => {
     expect(isStorableType(XLSM)).toBe(true);
-    expect(resolveContentType('invoice.xlsm', 'application/octet-stream')).toBe(XLSM);
+    // Stored lower-cased, whichever spelling arrived (review of the fixes RF-FILES-2).
+    expect(resolveContentType('invoice.xlsm', 'application/octet-stream')).toBe(XLSM.toLowerCase());
   });
 
   it('the reader reads a real .xlsm, and the file door takes its rows', async () => {
@@ -307,19 +310,39 @@ describe('a macro workbook is stored and read; an HTML or XML table is refused i
     // …and an unknown drawing keeps today's words.
     expect(permanentRefusal(s, 'unsupported', { name: 'chizma.dwg', isPhoto: false })!.say).toContain('rasm, PDF va Excel/CSV yuboring');
   });
+
+  it('an .xlsb’s reason is a plain noun phrase — no brackets inside «o‘qilmadi (…)» (review of the fixes RF-FILES-5)', () => {
+    const chatId = collection('rastamojka');
+    expect(permanentRefusal(activeIntake(chatId)!, 'unsupported', { name: 'narx.xlsb', isPhoto: false })).toEqual({
+      patch: { refusedFiles: [{ name: 'narx.xlsb', why: '.xlsb Excel fayli' }] },
+      say: '📎 «narx.xlsb» kartada saqlanmadi: .xlsb Excel fayli o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.',
+    });
+  });
+
+  it('the lower-case spelling of the macro workbook is the same type (review of the fixes RF-FILES-2)', async () => {
+    const lower = XLSM.toLowerCase();
+    expect(isStorableType(lower)).toBe(true);
+    expect(resolveContentType('invoice.xlsm', lower)).toBe(lower);
+    expect(resolveContentType('invoice.xlsm', XLSM)).toBe(lower);
+    const chatId = collection('rastamojka');
+    await forward(chatId, xlsm(), 'invoice.xlsm', lower);
+    expect((activeIntake(chatId)!.invoiceGoods ?? []).map((g) => g.name)).toEqual(['Куртка женская', 'Брюки мужские']);
+  });
 });
 
-describe('a refused file sent again and taken leaves the named tier (MODEL-5)', () => {
+describe('a refused file sent again and taken is said as an earlier copy (MODEL-5, review of the fixes RF-FILES-1)', () => {
   const pdfBody = (bytes: number) => Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(bytes)]);
 
-  it('refused at 11 MB, accepted at 3 MB under the same name: named nowhere', async () => {
+  it('refused at 11 MB, accepted at 3 MB under the same name: marked, never «undagi tovarlar hisobga kirmaydi»', async () => {
     const chatId = collection('rastamojka');
     await forward(chatId, pdfBody(11 * 1024 * 1024), 'CI-2611.pdf', 'application/pdf');
     expect(activeIntake(chatId)!.refusedFiles).toEqual([{ name: 'CI-2611.pdf', why: 'PDF 10 MB dan katta' }]);
     await forward(chatId, pdfBody(3 * 1024 * 1024), 'CI-2611.pdf', 'application/pdf');
     const live = activeIntake(chatId)!;
     expect(live.pdfs.map((p) => p.name)).toEqual(['CI-2611.pdf']);
-    expect(live.refusedFiles).toEqual([]);
+    // Kept and marked: the name is all the bot knows (another factory's
+    // «CI-2611.pdf» reads the same), so the line says both facts.
+    expect(live.refusedFiles).toEqual([{ name: 'CI-2611.pdf', why: 'PDF 10 MB dan katta', resent: true }]);
   });
 
   it('another file’s refusal stands, and a second refusal of the same name is kept', async () => {

@@ -114,7 +114,10 @@ export const TOO_LARGE_PHOTO_WHY = '15 MB dan katta rasm';
 const TABLE_EXPORT_WHY: [RegExp, RegExp, string][] = [
   [/\.x?html?$/iu, /^(text\/html|application\/xhtml\+xml)$/iu, 'HTML jadval'],
   [/\.xml$/iu, /^(text|application)\/xml$/iu, 'XML jadval'],
-  [/\.xlsb$/iu, /^application\/vnd\.ms-excel\.sheet\.binary\.macroenabled\.12$/iu, 'Excel binary (.xlsb)'],
+  // A noun phrase with no brackets of its own (review of the fixes RF-FILES-5):
+  // read inside «X o‘qilmadi (…)» it nested two, said the extension twice and
+  // put an English word in an Uzbek sentence.
+  [/\.xlsb$/iu, /^application\/vnd\.ms-excel\.sheet\.binary\.macroenabled\.12$/iu, '.xlsb Excel fayli'],
 ];
 function tableExportWhy(file: { name: string; mime?: string | null }): string | null {
   for (const [ext, mime, why] of TABLE_EXPORT_WHY) {
@@ -147,7 +150,11 @@ export function permanentRefusal(
   if (refused === 'too_large') {
     return {
       patch: refusedFilePatch(state, name, TOO_LARGE_PHOTO_WHY),
-      say: `🖼 ${label} — rasm 15 MB dan katta, saqlanmadi. Kichikroq qilib (yoki PDF) yuboring.`,
+      // «(yoki PDF)» offered a route the PDF rule closes (review of the fixes
+      // RF-FILES-4): a picture wrapped in a PDF keeps its bytes, and past
+      // 10 MB a PDF is refused again. The cure that always works is a PHOTO —
+      // Telegram shrinks it, and the model reads 1568 px anyway.
+      say: `🖼 ${label} — rasm 15 MB dan katta, saqlanmadi. Fayl emas, rasm qilib (yoki kichraytirib) yuboring.`,
     };
   }
   const table = refused === 'unsupported' ? tableExportWhy(file) : null;
@@ -751,6 +758,21 @@ function staleTotalsNote(label: string): string {
   return `📄 ${label} — undan olingan umumiy brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.`;
 }
 
+/**
+ * Were the standing `fileTotals` written BEFORE goods of another file were
+ * folded into the list (review of the fixes RF-TOTALS-1)? Then they are the
+ * list's as it stood, never with those goods in it. Judged by the receipt
+ * marks: a folded goods file that added rows and arrived after the totals.
+ * The sheets of ONE workbook share a mark, and a fold among them already
+ * drops what stood before it (SHEETS-3), so totals that share a fold's mark
+ * were written after it — a whole packing list later in the same workbook.
+ */
+function totalsBeforeFold(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles'>): boolean {
+  const totals = state.fileTotals;
+  if (!totals) return false;
+  return (state.goodsFiles ?? []).slice(1).some((f) => f.rows > 0 && (f.at === undefined || f.at.files > totals.at.files));
+}
+
 /** A sheet's name as the seller's words carry it — capped, it is anybody's text. */
 const sheetName = (name: string) => `«${name.length > 60 ? `${clipUnits(name, 59)}…` : name}»`;
 
@@ -821,12 +843,24 @@ function receiveFurtherSheet(
     const covers = ofHeld && (topUp || files.length <= 1 || packingCoversHeld(held, kinds, goods, m.weightKind));
     if (ofHeld && !covers) {
       const fill = packingFills(held, kinds, goods, m.weightKind);
+      // Totals a packing list gave BEFORE the fold that made this list a part
+      // (review of the fixes RF-TOTALS-1, «[CI A, PL A] then [CI B, PL B]»):
+      // factory B's invoice folds on the main path, which drops nothing, so
+      // PL B was the first to meet PL A's standing Σ — and, taking none
+      // itself, left factory A's brutto and cube as the shipment's under a ✅.
+      // By this branch's own proof they are a part's. Dropped and said, as
+      // the fold below drops them.
+      const stale = totalsBeforeFold(state) ? state.fileTotals : null;
       // Its text goes nowhere: under the model's totals heading its Σ came
       // back as the shipment's (seam 1's shape); its dropped rows still reach
       // the model on the AI door (SHEETS-1).
       return tools.answer(
-        { invoiceGoods: fill.goods, ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}) },
-        [partOfHeldNote(m.label, fill.filled), ...cutLines],
+        {
+          invoiceGoods: fill.goods,
+          ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
+          ...(stale ? { fileTotals: null } : {}),
+        },
+        [partOfHeldNote(m.label, fill.filled), ...cutLines, ...(stale ? [staleTotalsNote(stale.label)] : [])],
       );
     }
     // R1 only while the held list IS the goods sheet's rows, place for place:
@@ -900,12 +934,18 @@ function receiveFurtherSheet(
   const own = sheet.ownText;
   const cut = own?.cut ? ['⚠️ Jadval katta: AI boshqa varaqlarning faqat boshini o‘qiydi (tovarlar ro‘yxati to‘liq olindi).'] : [];
   if (overCap) {
-    return tools.answer(
-      { invoiceTexts: [...state.invoiceTexts, ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : [])] },
-      // Unjudged, it may be the same goods again (a translation, a packing
-      // list): the cure is conditional.
-      [`📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.`, ...cut],
-    );
+    // NOTHING of it goes to the model (review of the fixes RF-TOTALS-3): its
+    // goods are not in the list and it was never judged, so it cannot be the
+    // list's totals — under the totals heading, beside the fold that filled
+    // the list, a 150-row sheet's TOTAL was the only figure the model was
+    // told to take. Nor the «⚠️ Jadval katta … (tovarlar ro‘yxati to‘liq
+    // olindi)» line (RF-WORDS-5, RF-REGRESSION-2): one line after «qo‘shilmadi»
+    // it claimed the opposite, about a text no model is shown.
+    // Unjudged, it may be the same goods again (a translation, a packing
+    // list): the cure is conditional.
+    return tools.answer({}, [
+      `📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.`,
+    ]);
   }
   return tools.answer(
     {
@@ -955,19 +995,22 @@ export async function readIntakeFile(
 
 /**
  * A file ACCEPTED under the name of one refused before (as-built review
- * MODEL-5): the bot's own refusal asks for exactly this re-send — «kichikroq
- * qilib yuboring», «parolsiz saqlab yuboring» — and `refusedFiles` only ever
- * grew, so the ✅ table and the card's note went on saying «CI-2611.pdf
- * o‘qilmadi» beside the goods that very file gave. The entries of that name
- * leave the named tier when a copy is TAKEN (a PDF, a photo, a sheet's rows or
- * text); never under a name the bot made up («rasm», «fayl», «N ta rasm»),
- * which is any unnamed photo's. Nothing = no change.
+ * MODEL-5): the bot's own refusal asks for a re-send — «kichikroq qilib
+ * yuboring», «parolsiz saqlab yuboring» — and the ✅ table went on saying
+ * «CI-2611.pdf o‘qilmadi» beside the goods that very file gave. The entry
+ * STAYS and is marked `resent` (review of the fixes RF-FILES-1): a name is no
+ * identity — factory A's picture-only «装箱单.xlsx» and factory B's real one,
+ * two suppliers' «CI.pdf», share it in the very collections this round is
+ * about — and deleted on a name match the refusal that was still true went
+ * silent. Marked, it reads «(avvalgi nusxa) … keyin shu nomli fayl olindi»,
+ * which is true either way. Never under a name the bot made up («rasm»,
+ * «fayl», «N ta rasm»), which is any unnamed photo's. Nothing = no change.
  */
 function resentAccepted(state: IntakeState, patch: Partial<IntakeState>, fileName: string): Pick<IntakeState, 'refusedFiles'> | Record<string, never> {
   const name = fileName.trim();
   const list = patch.refusedFiles ?? state.refusedFiles ?? [];
   if (!name || name === 'rasm' || name === 'fayl' || /^\d+ ta rasm$/u.test(name)) return {};
-  if (!list.some((f) => f.name === name)) return {};
+  if (!list.some((f) => f.name === name && !f.resent)) return {};
   const grew = (now: readonly unknown[] | undefined, was: readonly unknown[]) => now !== undefined && now.length > was.length;
   const taken =
     grew(patch.pdfs, state.pdfs) ||
@@ -978,7 +1021,7 @@ function resentAccepted(state: IntakeState, patch: Partial<IntakeState>, fileNam
   // …and taken in THIS answer: a refusal it wrote of the same name stands.
   const fresh = (patch.refusedFiles ?? []).slice((state.refusedFiles ?? []).length).some((f) => f.name === name);
   if (!taken || fresh) return {};
-  return { refusedFiles: list.filter((f) => f.name !== name) };
+  return { refusedFiles: list.map((f) => (f.name === name && !f.resent ? { ...f, resent: true as const } : f)) };
 }
 
 /** `readIntakeFile`'s answer before the re-send rule (`resentAccepted`). */

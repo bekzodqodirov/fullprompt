@@ -106,5 +106,5 @@ export interface AmendSubmission {
    * which in the thread and on the card. Absent = none (and every row from
    * before).
    */
-  refusedFiles?: { name: string; why: string }[];
+  refusedFiles?: { name: string; why: string; resent?: boolean }[];
 }

@@ -492,7 +492,7 @@ export async function landIntake(input: {
    * card's note names them for the VED (as-built review WORDS-2). Absent on
    * every door that has none.
    */
-  refusedFiles?: readonly { name: string; why: string }[];
+  refusedFiles?: readonly { name: string; why: string; resent?: boolean }[];
 }): Promise<IntakeTarget> {
   // The note's text first — the book's law for the lines' codes is what its
   // «qatorlarda yetishmayapti» asks by (judge TT-5), a pooled read, so it is

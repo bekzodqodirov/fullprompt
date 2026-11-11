@@ -180,6 +180,22 @@ no longer refused — storage keeps it as a download-only document and the reade
 TAKEN later under the name of one refused before leaves the tier: the bot's own refusal asks for exactly that
 re-send (MODEL-5); never under a name the bot made up («rasm», «fayl», «N ta rasm»).
 
+As built after the review of the fixes:
+- A refusal is never DELETED on a name (RF-FILES-1): a name is no identity — factory A's picture-only
+  «装箱单.xlsx» and factory B's real one, two suppliers' «CI.pdf», share it — and the lift turned a refusal that
+  was still true into silence. The entry stays and is marked `resent` when a same-named file is TAKEN after it;
+  it reads ««X» (avvalgi nusxa) o‘qilmadi ({sabab}) — keyin shu nomli fayl olindi.» on the table and «X»
+  (avvalgi nusxa; keyin shu nomli fayl olindi) — {sabab} on the card — true whichever file the second one is.
+  The reading's demotion of an API-refused PDF marks it the same way when a same-named PDF taken after it is in
+  the collection and was not refused itself (RF-WORDS-4, RF-FILES-3): the password-free copy its warning asks
+  for arrives while the refused one is still a PDF to read, so the arrival's rule found no entry then.
+- A name the bot MADE UP («rasm», «fayl», «N ta rasm») is said bare, never quoted as a file (RF-WORDS-9,
+  RF-REGRESSION-9): «rasm o‘qilmadi (12 tadan ortiq rasm) — undagi tovarlar hisobga kirmaydi.».
+- The card's note counts the rest as the table does, per reason in FILES (RF-WORDS-10): «…; yana 1 ta (HEIC
+  rasm), yana 9 ta (12 tadan ortiq rasm)», never «yana 2 ta» entries.
+- The reason for an .xlsb is the noun phrase «.xlsb Excel fayli» (RF-FILES-5), never «Excel binary (.xlsb)»
+  nested inside «o‘qilmadi (…)».
+
 1.2 **Not whole → no «✅ Tasdiqlash»** (§6 Q1 ⭐ a, built as ⭐). On a first or seeded AI-door collection the
 keyboard is:
 - `[🔄 AI qayta o‘qisin]` only when a retry can help:
@@ -259,6 +275,20 @@ As built after the as-built review (B):
   or a failure with none, leaves the earlier cut's goods, totals and `aiCut`, with the note «⚠️ Qayta o‘qishda AI
   avvalgidan kam o‘qidi — avvalgi o‘qishdagi {N} ta tovar qoldi.». A whole answer, or a cut that read as many,
   replaces it; new material is a new reading. Both doors (the plain door's «Bo‘ldi» re-reads too).
+- As built after the review of the fixes (RF-TOTALS-4, RF-TOTALS-5, RF-REGRESSION-6, RF-WORDS-2, RF-REGRESSION-4,
+  RF-WORDS-7, RF-REGRESSION-5):
+  - «the same material» is judged on the snapshot the reading took (`nothingNewToRead`), never on the press's
+    mark alone: a line typed after the press and before the job is in the material, and that reading is a new
+    reading — it replaces, and its own cut earns its own «🔄» (`aiCutRetried` comes back from the reading and
+    the settle takes it);
+  - a SEEDED AI-door collection keeps its better reading too (it draws the same «🔄» and WORDS-8 locks the same
+    press); an add collection draws no «🔄» and keeps today's;
+  - the kept notes say what THIS reading found of the files: the earlier «N ta fayl saqlangan joydan olinmadi»
+    goes when the store handed the file back, this reading's own is said (it is the «🔄» sentence the remedy's
+    count assumes), and when a file was lost the keep sentence does not blame the AI: «⚠️ Qayta o‘qishda avvalgi
+    o‘qishdagi {N} ta tovar qoldi.»;
+  - the keep sentence is said ONCE however many stale presses re-read (the plain door's «Bo‘ldi» has no
+    WORDS-8 guard by design).
 - The input-cut row has two more first lines (OWNER-9 e): «⚠️ «{X}» jadvalining birinchi {kept} qatori
   o‘qildi.» when the reader's own stop or the 500-row ceiling counted no total, and «⚠️ Jadval AI ga to‘liq
   ko‘rsatilmadi — bir qismi o‘qildi.» when `aiInputCut` names no sheet.
@@ -317,6 +347,11 @@ plain summary of a cut reading says it above its closing, «⚠️ AI faylni oxi
 tovar o‘qildi, qolgani o‘qilmadi.» (a size cut: «⚠️ Material juda katta — …»), and the landed note says «⚠️ AI
 faylni oxirigacha o‘qimadi — {N} ta tovar o‘qildi, qolgani o‘qilmadi: ro‘yxat to‘liq emas, faylni ko‘ring.» —
 seven of twelve goods had read as the whole invoice to the VED. Keyboard and landing unchanged.
+
+As built after the review of the fixes, RF-WORDS-1 / RF-REGRESSION-7: under that line the closing is never «✅
+Ma’lumot to‘liq»: a list the line above says was not read to its end takes «ℹ️ Yetishmaganini VED xodimi o‘zi
+so‘raydi — «✅ Tasdiqlash» ni hozir bosishingiz mumkin.», its rows complete or not. Keyboard and landing
+unchanged (his 2a).
 
 1.5 **Pinned by:**
 - a unit test over `intakeTableText` + `tableWords` + every function §1.2 lists, for these states: zero rows
@@ -490,6 +525,15 @@ model-cut-unbilled):
   for a whole answer: the caption «Erkaklar shimi 50 dona» beside an unmapped Excel, and the goods the remedy
   asks to be typed, were dropped by every cut. The trade, stated: a typed good the model read under another name
   is listed twice — on a table that draws no ✅ (a cut).
+- As built after the review of the fixes, RF-REGRESSION-1: the trade's premise was false — the PLAIN door draws «✅
+  Tasdiqlash» over a cut (his 2a), and the model writes a typed «Erkaklar shimi 50 dona 2 kub» as «Брюки
+  мужские» as a rule (its prompt asks for Russian names), so the trousers landed twice with their m³. A typed line
+  is also REACHED by a model line that states its count and a second figure, every figure both state agreeing,
+  under names that do not contradict (the «nomi boshqacha, raqamlari bir xil» rule) — or by a count alone only
+  between two names of one script that are not two names (`otherName`); and only where exactly ONE typed line
+  meets it. Across scripts a count alone says nothing («Tovar 5» 50 beside «Erkaklar shimi 50 dona» are two
+  goods), and two typed lines the figures cannot tell apart are both kept: a line shown twice is still better
+  than a good lost in silence. That is the trade that remains.
 
 3.4 **What the API refuses, named.**
 - **An encrypted PDF** (model-encrypt-sniff). In `readIntakeFile`'s pdf branch, look for `/Encrypt <n> <g> R`
@@ -529,6 +573,15 @@ model-cut-unbilled):
     refused the very password-free copy its warning asks for.
   - The refused PDF's «later re-reads skip them … The reading is not whole» above is §1.1 d's as-built rule: it
     blocks the table of the reading that met the refusal, and is named, not blocking, after.
+- As built after the review of the fixes:
+  - `too_large` reads «🖼 «X» — rasm 15 MB dan katta, saqlanmadi. Fayl emas, rasm qilib (yoki kichraytirib)
+    yuboring.» (RF-FILES-4): «(yoki PDF)» offered a route the PDF rule closes — a picture wrapped in a PDF keeps
+    its bytes and past 10 MB is refused again; a PHOTO always passes, Telegram shrinks it.
+  - The .xlsb words are «… .xlsb Excel fayli o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.» (RF-FILES-5).
+  - A content type is stored and judged LOWER-CASED (`resolveContentType`, `isStorableType`, RF-FILES-2): a type
+    is case-insensitive and mime-db spells the macro workbook «macroenabled» where /etc/mime.types spells
+    «macroEnabled», so one sender's .xlsm was told «faylning bu turi o‘qilmaydi». Every upload's stored type is
+    lower case from now on; serving already compared it lower-cased.
 
 3.5 **The log line** (model-thinking-null). `[calc intake] model tokens` carries `in`, `out`, `thinking`,
 `stop`, `ms`, `cut`, and the material counts (images, pdfs, sheets, known).
@@ -567,6 +620,19 @@ model-cut-unbilled):
   возьми из листов выше; коды — в known_codes.» when a context sheet with rows is shown, else «Других материалов
   нет: goods оставь пустым, дай только known_codes для строк списка.»; and «Текста нет.» for a context-only
   reading.
+- As built after the review of the fixes (RF-TOTALS-1, RF-TOTALS-3, RF-TOTALS-6): withholding the goods sheet's text
+  did not make «the brutto is asked» true. Beside a fold the CONTEXT sheets are one factory's too — a packing
+  list that covered the list before the fold (its own text stays in `invoiceTexts`), a sheet judged the same
+  goods, a dropped «Итого по разделу …» row — under the heading that asks for the shipment's totals, with the
+  closing «общий вес и объём возьми из листов выше». So, beside a fold with no packing list's totals standing
+  for the whole list (`foldNoTotals`: more than one goods file that added rows, no `fileTotals`, not a top-up):
+  - the model's weight and cube do not land (`analyzeCollected`): the brutto is asked and the cube is the rows'
+    Σ — whatever it read them off, a PDF included (the seller answers one figure; nothing is priced on one
+    factory's Σ);
+  - the model is told: `foldedSheets` puts the other sheets under «Другие листы, товары из которых уже взяты в
+    список. В списке товары нескольких фабрик, а эти листы — только часть отгрузки: их итоги (вес/объём) НЕ
+    общие — общий вес и объём отсюда не бери.» and the codes-only closing.
+  A whole packing list standing in `fileTotals` (the shipment's) still outranks the model, as before.
 - Pins: `intake-images.test.ts:51` is re-anchored. Three tests:
   - an AI-door lone Excel makes ONE call;
   - an all-coded Excel makes none;
@@ -636,6 +702,11 @@ or packing data of the same goods.
     synchronous CPU on the one process the poller awaits, twenty sheets two minutes). A fold only keeps or adds
     rows, so the answer cannot matter. Unjudged, the sheet may be the same goods again, so the cure is
     conditional: «boshqa tovarlar bo‘lsa, …».
+  - As built after the review of the fixes (RF-TOTALS-3, RF-WORDS-5, RF-REGRESSION-2): a sheet NOT ADDED gives the
+    model nothing — its goods are not in the list and it was never judged, so it cannot be the list's totals
+    (beside the fold that filled the list, its 150-row TOTAL was the only figure the model was told to take) —
+    and its receipt is the one «qo‘shilmadi» sentence, never followed by «⚠️ Jadval katta: … (tovarlar ro‘yxati
+    to‘liq olindi).» about a text no model is shown.
   - As built after the as-built review (A), SHEETS-1: every further sheet carries its own dropped rows
     (`MappedSheet.dropped`, §5.5). On a fold and on a packing-of-held sheet they are said on receipt under the
     SHEET's label («📄 «X», «Zavod B» varag‘i — ostidagi 2 ta qator tovar deb olinmadi: …») and kept in
@@ -658,6 +729,13 @@ or packing data of the same goods.
     brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.». The
     loss, stated: a packing list that happened to list factory B's goods too is dropped with it, and the seller
     answers one figure. Workbook sheets only; three FILES are §8's.
+  - As built after the review of the fixes, RF-TOTALS-1: the part-of-held branch drops standing totals too —
+    «[CI A, PL A] then [CI B, PL B]» folds factory B's invoice on the main path, which drops nothing, so PL B was
+    the first sheet to meet PL A's Σ, and taking none itself it left factory A's brutto and cube as the
+    shipment's under a ✅. Totals written before a folded goods file arrived (`totalsBeforeFold`, by the receipt
+    marks; one workbook's sheets share a mark and a fold among them already drops what stood before it) are
+    dropped and said with the same «… endi butun yukniki emas …» sentence. The workbook-and-file mixtures that
+    never reach a further sheet (a workbook [CI A, PL A] then a FILE CI B) stay §8's three-FILES case.
   - As built after the as-built review (B), SHEETS-6 (4): every sheet line is said with its file's label first («📄 «file», «Zavod B»
     varag‘idan …») — the house style of every file line, since a seller forwards workbooks whose sheets share
     names.
@@ -1030,6 +1108,8 @@ After the deploy, the same line shows `thinking` and `ms`.
   the cross-file packing rule is today's (PF-ADV-5's lineage) and PL A's Σ is still written as the shipment's.
   The workbook path is fixed (§4.2); widening it to files changes the plain door's cross-file reading and is
   his call.
+  As built after the review of the fixes: those shapes keep PL A's Σ in `fileTotals`, which outranks the model;
+  the fold gate (§3.7, `foldNoTotals`) applies only where no file's totals stand, so it does not reach them.
 - **The Σ of folded sheets' own totals** (as-built review OWNER-1's optional half): when every goods file states
   a gross column and a cube, their Σ could stand for the shipment's. Not written — §4.3 asks the brutto beside a
   fold, and a deterministic total over two factories' lists is a new rule, not a fix.
@@ -1117,13 +1197,15 @@ New `IntakeState` fields, all optional in the type, defaulted in the initial sta
 - `aiCut?: { goods: number; why: 'clock' | 'size' | 'dropped' } | null` — analyzeCollected, every reading;
 - `aiCutRetried?: boolean` — set by the 🔄 press on a clock cut, cleared by new material; as built (B), set by
   the press of a re-read on a clock OR dropped cut, and read by `analyzeCollected` (a re-read that reads less
-  keeps the earlier reading, CRITIC-1) and by the press (no second re-read, WORDS-8);
+  keeps the earlier reading, CRITIC-1) and by the press (no second re-read, WORDS-8); after the review of the
+  fixes also WRITTEN by the reading — true only when its snapshot held nothing past the previous mark
+  (RF-TOTALS-4) — and copied by `settleAnalysis`;
 - `aiInputCut?: boolean` — analyzeCollected;
 - `filesMissing?: number` — analyzeCollected;
 - `unreadPdfs?: string[]` — analyzeCollected, from the outcome;
-- `refusedFiles?: { name: string; why: string }[]` — every refusal site at arrival; as built (B), also the
-  READING (the API-refused PDF it names, §1.1 d), and an accepted re-send of the same name removes its entries
-  (MODEL-5);
+- `refusedFiles?: { name: string; why: string; resent?: boolean }[]` — every refusal site at arrival; as built
+  (B), also the READING (the API-refused PDF it names, §1.1 d); after the review of the fixes an accepted
+  same-named file MARKS its entries `resent` and never removes them (RF-FILES-1, RF-WORDS-4);
 - `restartAsked?: { messageId: number | null; at: number } | null` — the restart question;
 - `landAs?: 'ai' | 'ved' | null` — c:save / c:to_ved.
 

@@ -464,6 +464,10 @@ export function settleAnalysis(
     // own, or `...live` keeps the previous reading's: a cut then never reached
     // the table (✅ drawn), or a stale cut survived a whole «🔄».
     aiCut: analysed.aiCut ?? null,
+    // …and whether it was the same material read again (review of the fixes
+    // RF-TOTALS-4): the press marks it before a line typed after it reaches the
+    // job, and a reading of that line is a new reading with its own «🔄».
+    aiCutRetried: analysed.aiCutRetried ?? live.aiCutRetried,
     aiInputCut: analysed.aiInputCut ?? false,
     filesMissing: analysed.filesMissing ?? 0,
     unreadPdfs: analysed.unreadPdfs ?? [],

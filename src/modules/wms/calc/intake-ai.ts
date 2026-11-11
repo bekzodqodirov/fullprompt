@@ -444,6 +444,8 @@ export function sheetsPromptText(
   goods: readonly IntakeSheetText[],
   context: readonly IntakeSheetText[],
   cap: number,
+  /** The context is ONE factory's beside a fold (`foldedSheets`): not the shipment's totals. */
+  folded = false,
 ): string {
   const all = [...goods, ...context].map((s) => ({ text: s.text.trim(), cut: s.cut, cellsCut: s.cellsCut }));
   const fit = fitSheetTexts(all.map((s) => s.text), cap);
@@ -479,7 +481,10 @@ export function sheetsPromptText(
   return (
     (goodsText ? `Таблица Excel (текстом):\n${goodsText}\n\n` : '') +
     (contextText
-      ? 'Другие листы книги, товары из которой уже взяты в список, — только для итогов (общий вес/объём). ' +
+      ? (folded
+          ? 'Другие листы, товары из которых уже взяты в список. В списке товары нескольких фабрик, а эти листы — только часть отгрузки: ' +
+            'их итоги (вес/объём) НЕ общие — общий вес и объём отсюда не бери. '
+          : 'Другие листы книги, товары из которой уже взяты в список, — только для итогов (общий вес/объём). ') +
         `Товары отсюда НЕ перечисляй в goods:\n${contextText}\n\n`
       : '')
   );
@@ -921,6 +926,15 @@ export async function analyzeIntake(input: {
    */
   goodsSheetText?: IntakeSheetText | null;
   /**
+   * The list holds goods of more than one file or sheet and no packing list
+   * answers for the whole of it (review of the fixes RF-TOTALS-1/3/6): every
+   * other sheet shown is ONE factory's, so its Σ is not the shipment's. They
+   * are shown under a heading that says so, and the model is not sent to them
+   * for the totals; the bot does not take its totals there either. Absent =
+   * today's heading.
+   */
+  foldedSheets?: boolean;
+  /**
    * Line names the seller's Excel already lists (round-1 review, c4): the
    * seller said a separate PDF or sheet is ANOTHER factory's goods, so the
    * model's lines are appended to the Excel's — and a model not told what is
@@ -1054,6 +1068,7 @@ export async function analyzeIntake(input: {
       known,
       requestNames,
       numbered ? ask : null,
+      input.foldedSheets === true,
     );
     const run = await streamAttempt(content, left);
     if (run.kind === 'failed') {
@@ -1358,10 +1373,16 @@ function intakeContent(
   request: readonly string[] = [],
   /** The codes asked (numbered), and of which rows — null = none asked. */
   ask: ((index: number) => boolean) | null = null,
+  /**
+   * The other sheets are one factory's beside a fold (`foldedSheets`): no
+   * shipment's totals, so the codes-only closing, never «возьми из листов
+   * выше» (review of the fixes RF-TOTALS-3/6).
+   */
+  folded = false,
 ): Anthropic.ContentBlockParam[] {
   const { requestText, knownBudget } = knownBudgetAfter(request);
-  const sheetsText = sheetsPromptText(sheets, [...contextSheets, ...coding], SHEET_TEXT_BUDGET);
-  const totalsShown = contextSheets.some((t) => sheetRowCount(t.text.trim()) > 0);
+  const sheetsText = sheetsPromptText(sheets, [...contextSheets, ...coding], SHEET_TEXT_BUDGET, folded);
+  const totalsShown = !folded && contextSheets.some((t) => sheetRowCount(t.text.trim()) > 0);
   const closing = material
     ? `Материалы:\n${clipUnits(material, 20000)}`
     : images.length > 0 || pdfs.length > 0

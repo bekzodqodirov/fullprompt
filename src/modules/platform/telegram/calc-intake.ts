@@ -13,6 +13,7 @@ import {
   figureOf,
   namesContradict,
   namesMeet,
+  otherName,
   packingTotals,
   sameFigures,
   sameLine,
@@ -519,8 +520,12 @@ export interface IntakeState {
   filesMissing?: number;
   /** PDFs the API refused (attachment ids) — skipped by later readings, named on the table (§3.4). */
   unreadPdfs?: string[];
-  /** Files refused AT ARRIVAL, with the words the seller was told — named, never blocking (§1.1). */
-  refusedFiles?: { name: string; why: string }[];
+  /**
+   * Files refused AT ARRIVAL, with the words the seller was told — named, never
+   * blocking (§1.1). `resent`: a same-named file was TAKEN after it — said as an
+   * earlier copy, never deleted on the name (review of the fixes RF-FILES-1).
+   */
+  refusedFiles?: { name: string; why: string; resent?: boolean }[];
   /** The restart question stands: material is refused in words until it is answered (§2.4). */
   restartAsked?: { messageId: number | null; at: number } | null;
   /** What the landing press chose — the AI's figure, or the VED alone (§1.3 a). */
@@ -1326,14 +1331,60 @@ export function pickGoods(input: {
   // and the typed lines WERE the goods.
   if (input.cut && input.model.length > 0) {
     const read = input.model.map((g) => goodsNameKeys(g.name));
-    const typed = input.typed.filter((t) => {
-      const names = goodsNameKeys(t.name);
-      return names.whole !== '' && !read.some((m) => m.whole === names.whole || namesMeet(m, names));
-    });
-    return { goods: [...input.model, ...typed], sameAsInvoice: [] };
+    const typed = input.typed.map((t) => ({ t, names: goodsNameKeys(t.name) })).filter(({ names }) => names.whole !== '');
+    const byName = typed.map(({ names }) => read.some((m) => m.whole === names.whole || namesMeet(m, names)));
+    // …or by its FIGURES (review of the fixes RF-REGRESSION-1): the model
+    // writes a typed «Erkaklar shimi 50 dona 2 kub» as «Брюки мужские» (its
+    // prompt asks for Russian names), so a name meet missed the ordinary case
+    // and the trousers landed twice — through «✅ Tasdiqlash» on the plain
+    // door, item_count and Σ m³ with them. A model line meets a typed line by
+    // an equal count and a second figure both state, every shared figure
+    // agreeing, under names that do not contradict (the «nomi boshqacha,
+    // raqamlari bir xil» rule, `sameFigures`); a count ALONE only between two
+    // names of one script that are not two names (`otherName`) — across
+    // scripts nothing but the figures speaks, and «Tovar 5» 50 beside the
+    // caption's «Erkaklar shimi 50 dona» is two goods. And only where exactly
+    // ONE typed line meets it: two «50 dona» lines are kept both, a line the
+    // table shows twice being better than a good lost in silence.
+    const reached = new Set(typed.flatMap((_, i) => (byName[i] ? [i] : [])));
+    for (const m of input.model) {
+      const q = figureOf(m, 'quantity');
+      if (q === null) continue;
+      const meets = typed.flatMap(({ t }, i) =>
+        !reached.has(i) && figureOf(t, 'quantity') === q && typedLineRestated(m, t) ? [i] : [],
+      );
+      if (meets.length === 1) reached.add(meets[0]!);
+    }
+    return { goods: [...input.model, ...typed.flatMap(({ t }, i) => (reached.has(i) ? [] : [t]))], sameAsInvoice: [] };
   }
   return { goods: input.model.length > 0 ? input.model : input.typedLabelled, sameAsInvoice: [] };
 }
+
+/**
+ * Is a model line of a CUT answer the typed line (an equal count already
+ * checked) read again under another name (`pickGoods`, review of the fixes
+ * RF-REGRESSION-1)? Every figure both state agrees, each by its own rule
+ * (`LINE_FIGURES`); and either a second figure besides the count agrees, under
+ * names that do not contradict, or the two names share a script and are not
+ * two names there (`otherName`). Pure.
+ */
+function typedLineRestated(model: GoodsList[number], typed: GoodsList[number]): boolean {
+  let shared = 0;
+  for (const f of LINE_FIGURES) {
+    const x = figureOf(model, f.field);
+    const y = figureOf(typed, f.field);
+    if (x === null || y === null) continue;
+    shared += 1;
+    if (f.unit === null ? x !== y : Math.abs(x - y) >= f.unit && Math.abs(x - y) > 0.005 * Math.max(Math.abs(x), Math.abs(y))) return false;
+  }
+  if (namesContradict(model.name, typed.name)) return false;
+  if (shared >= 2) return true;
+  const ofTyped = NAME_SCRIPTS.filter((re) => re.test(typed.name));
+  return ofTyped.some((re) => re.test(model.name)) && !otherName(goodsNameKey(model.name), goodsNameKey(typed.name));
+}
+
+/** The scripts a goods name is written in, for «do two names share one» (`typedLineRestated`). */
+const NAME_SCRIPTS = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Han}/u] as const;
 
 /** Three names, each cut at 30, and a count of the rest — the whole sentence fits the summary's cut. */
 function namedLines(lines: readonly { name: string }[]): string {
@@ -1512,6 +1563,7 @@ export function collectionDoor(
 // The store moved to calc-store.ts (docs/SAKKIZ-R3.md K3); these four keep
 // every importer's import.
 export { activeIntake, endIntake, startIntake, updateIntake } from './calc-store';
+import { nothingNewToRead } from './calc-store';
 
 /** No bytes to read — a collection of text alone, or a caller that loads none. */
 const NO_FILES: IntakeFiles = { images: [], pdfs: [], missing: 0 };
@@ -1619,6 +1671,8 @@ export async function analyzeCollected(
           // …and the rows already on the request, so the model lists only NEW goods.
           ...(kept ? { requestGoods: kept.map((g) => g.name) } : {}),
           ...(goodsSheetText ? { goodsSheetText } : {}),
+          // Beside a fold the other sheets are one factory's (`foldNoTotals`).
+          ...(foldNoTotals(state) ? { foldedSheets: true } : {}),
           // A cut keeps the goods it completed, and the collection carries
           // the cut (`aiCut`, docs/FAYL-OQISH.md §3.3): the AI door draws no
           // «✅ Tasdiqlash» over a reading that did not finish.
@@ -1653,7 +1707,18 @@ export async function analyzeCollected(
   // the table of the reading that met the refusal (§1.1 d), and is named on
   // every one after.
   const named = new Set(state.unreadPdfs ?? []);
-  const demoted = state.pdfs.filter((p) => named.has(p.attachmentId));
+  // A same-named PDF TAKEN after it, and not refused itself, marks the entry
+  // `resent` (review of the fixes RF-WORDS-4, RF-FILES-3): the password-free
+  // copy its own warning asked for arrives while the refused one is still a
+  // PDF to read, so the arrival's re-send rule (`resentAccepted`) finds no
+  // entry yet, and the demotion then wrote «o‘qilmadi» beside the goods that
+  // very copy gave. Marked like the arrival's — a name is no identity.
+  const refusedNow = new Set(outcome.unreadPdfs ?? []);
+  const takenAfter = (name: string, at: number) =>
+    state.pdfs.some((q, j) => j > at && q.name === name && !named.has(q.attachmentId) && !refusedNow.has(q.attachmentId));
+  const demoted = state.pdfs.flatMap((p, at) =>
+    named.has(p.attachmentId) ? [{ name: p.name, why: PDF_REFUSED_WHY, ...(takenAfter(p.name, at) ? { resent: true } : {}) }] : [],
+  );
   const unread: Pick<IntakeState, 'aiCut' | 'aiInputCut' | 'filesMissing' | 'unreadPdfs' | 'pdfs' | 'refusedFiles'> = {
     aiCut: outcome.ok && outcome.cut ? outcome.cut : null,
     // A goods sheet the model was not shown whole — the reader stopped
@@ -1666,7 +1731,7 @@ export async function analyzeCollected(
     // This reading's own refusals — the named ones above were not sent.
     unreadPdfs: [...new Set(outcome.unreadPdfs ?? [])].filter((id) => stillPdfs.has(id) && !named.has(id)),
     pdfs: state.pdfs.filter((p) => !named.has(p.attachmentId)),
-    refusedFiles: [...(state.refusedFiles ?? []), ...demoted.map((p) => ({ name: p.name, why: PDF_REFUSED_WHY }))],
+    refusedFiles: [...(state.refusedFiles ?? []), ...demoted],
   };
 
   // Typed facts win over read ones: the person is looking at the material.
@@ -1733,6 +1798,31 @@ export async function analyzeCollected(
   // with and re-checked against the row there (`withKnownCodes`) — under the
   // seller's answers, which go on top next.
   const coded = codeKnown && ai?.knownCodes ? withKnownCodes(picked.goods, invoice.map((g) => g.name), ai.knownCodes) : picked.goods;
+  // A re-read of the SAME material (the «🔄» after a cut, `aiCutRetried`)
+  // that read LESS than the cut it replaces keeps the earlier reading (as-built
+  // review CRITIC-1): the clock moves with the load and the thinking, so a
+  // second cut earlier than the first is ordinary, and written over the first
+  // it turned «Tovarlar (7)» into two, or into none — the round's own remedy
+  // making its own salvage worse, in silence, and «👤 VED hisoblasin» then
+  // landed the two. A cut's goods are the file's order up to the clock, so the
+  // longer prefix is the better reading. A whole answer, or a cut that read as
+  // many, replaces it as before.
+  //  - New material is a new reading — judged on THIS snapshot (review of the
+  //    fixes RF-TOTALS-4): the press set the mark before a line typed after it
+  //    reached the job, and «Shapka 50 dona» was in the material and in no
+  //    good, past a mark that called it read.
+  //  - A SEEDED collection too (RF-TOTALS-5, RF-REGRESSION-6): it draws the
+  //    same «🔄», and WORDS-8 locks the same press; only an add collection's
+  //    table draws none.
+  const sameAgain = state.aiCutRetried === true && nothingNewToRead(state);
+  const earlierCut = sameAgain && !state.amend ? (state.aiCut ?? null) : null;
+  const readNow = outcome.ok ? (outcome.cut ? outcome.cut.goods : Number.POSITIVE_INFINITY) : 0;
+  if (earlierCut && readNow < earlierCut.goods) {
+    logger.info({ earlier: earlierCut.goods, now: outcome.ok ? readNow : outcome.failure }, 'calc intake re-read kept the earlier reading');
+    return { ...state, ...unread, aiCut: earlierCut, notes: keptReadingNotes(state, earlierCut.goods, files.missing), stage: 'review', answered: outcome.answered ?? [] };
+  }
+  // …and a reading of new material earns its own «🔄» (once per material mark).
+  const retried = { aiCutRetried: sameAgain };
   if (kept) {
     const { conflictOf } = await import('../../wms/calc/amend');
     const { volumeIsLinesSum } = await import('../../wms/calc/line-totals');
@@ -1746,28 +1836,7 @@ export async function analyzeCollected(
         { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
       ),
       ...unread,
-    };
-  }
-  // A re-read of the SAME material (the «🔄» after a cut, `aiCutRetried`)
-  // that read LESS than the cut it replaces keeps the earlier reading (as-built
-  // review CRITIC-1): the clock moves with the load and the thinking, so a
-  // second cut earlier than the first is ordinary, and written over the first
-  // it turned «Tovarlar (7)» into two, or into none — the round's own remedy
-  // making its own salvage worse, in silence, and «👤 VED hisoblasin» then
-  // landed the two. A cut's goods are the file's order up to the clock, so the
-  // longer prefix is the better reading. A whole answer, or a cut that read as
-  // many, replaces it as before; new material is a new reading.
-  const earlierCut = state.aiCutRetried === true ? (state.aiCut ?? null) : null;
-  const readNow = outcome.ok ? (outcome.cut ? outcome.cut.goods : Number.POSITIVE_INFINITY) : 0;
-  if (earlierCut && readNow < earlierCut.goods) {
-    logger.info({ earlier: earlierCut.goods, now: outcome.ok ? readNow : outcome.failure }, 'calc intake re-read kept the earlier reading');
-    return {
-      ...state,
-      ...unread,
-      aiCut: earlierCut,
-      notes: [...state.notes, `⚠️ Qayta o‘qishda AI avvalgidan kam o‘qidi — avvalgi o‘qishdagi ${earlierCut.goods} ta tovar qoldi.`],
-      stage: 'review',
-      answered: outcome.answered ?? [],
+      ...retried,
     };
   }
   // A route the seller answered in the table goes above everything a reading
@@ -1794,7 +1863,15 @@ export async function analyzeCollected(
   // the model read both lists and its figure — their sum, as often as not —
   // must not land where the note promised «ikkalasi ham olinmadi».
   const clashed = (field: 'weightKg' | 'volumeM3') => fileTotals?.clash?.includes(field) ?? false;
-  const fromModel = totalWeightFrom(state.section, manual, ai?.facts ?? null, asked('weightKg') || clashed('weightKg'));
+  // Beside a fold no file's totals answering for the whole list (`foldNoTotals`,
+  // review of the fixes RF-TOTALS-1/3/6), the model's figure is not the
+  // shipment's either: every sheet it was shown for totals is ONE factory's —
+  // a packing list that covered the list before the fold, a dropped
+  // «Итого по разделу» row, a sheet judged the same goods — and nothing
+  // outranked it. The brutto is asked and the cube is the rows' Σ (§4.3).
+  const noModelTotals = foldNoTotals(state);
+  const modelTotals = noModelTotals ? null : (ai?.facts ?? null);
+  const fromModel = totalWeightFrom(state.section, manual, modelTotals, asked('weightKg') || clashed('weightKg'));
   const fromFile =
     fileTotals && fileTotals.weightKg !== null
       ? totalWeightFrom(
@@ -1804,7 +1881,7 @@ export async function analyzeCollected(
           asked('weightKg'),
         )
       : null;
-  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (ai?.facts.volumeM3 ?? null);
+  const modelVolume = asked('volumeM3') || clashed('volumeM3') ? null : (modelTotals?.volumeM3 ?? null);
   const fileVolume = asked('volumeM3') ? null : (fileTotals?.volumeM3 ?? null);
   const reading: IntakeState['facts'] = {
     fromCity: route.fromCity ?? manual.fromCity ?? ai?.facts.fromCity ?? state.route?.fromCity ?? null,
@@ -1859,7 +1936,48 @@ export async function analyzeCollected(
     // (2.9 c) — for the job's bill.
     answered: outcome.answered ?? [],
     ...unread,
+    ...retried,
   };
+}
+
+/**
+ * The notes of a re-read that KEPT the earlier reading (CRITIC-1): the earlier
+ * reading's own, its keep sentence ONCE (review of the fixes RF-WORDS-7,
+ * RF-REGRESSION-5 — every stale «Bo‘ldi» on the plain door appended another),
+ * and what THIS reading found of the files (RF-TOTALS-4, RF-WORDS-2,
+ * RF-REGRESSION-4): the earlier «N ta fayl saqlangan joydan olinmadi» goes
+ * when the store handed them back, and this reading's own is said — kept, the
+ * table drew «🔄» for a file no line named. A re-read that lost a file is not
+ * the AI reading less: the keep sentence does not blame it there.
+ */
+function keptReadingNotes(state: IntakeState, keptGoods: number, missing: number): string[] {
+  const retry = collectionDoor(state) === 'ai' && !state.amend;
+  const earlierMissing = filesMissingNote(state.filesMissing ?? 0, retry);
+  const missingNow = filesMissingNote(missing, retry);
+  const keep =
+    missing > 0
+      ? `⚠️ Qayta o‘qishda avvalgi o‘qishdagi ${keptGoods} ta tovar qoldi.`
+      : `⚠️ Qayta o‘qishda AI avvalgidan kam o‘qidi — avvalgi o‘qishdagi ${keptGoods} ta tovar qoldi.`;
+  return [
+    ...state.notes.filter((n) => n !== earlierMissing && !n.startsWith(KEPT_READING_HEAD)),
+    keep,
+    ...(missingNow ? [missingNow] : []),
+  ];
+}
+
+/** The head every keep sentence starts with — one is said, never two. */
+const KEPT_READING_HEAD = '⚠️ Qayta o‘qishda ';
+
+/**
+ * Beside a fold — goods of more than one file or sheet in the list — with no
+ * packing list's totals standing for the whole of it (review of the fixes
+ * RF-TOTALS-1/3/6): the model's totals do not land (`analyzeCollected`), and
+ * the model is told the sheets it reads are one factory's (`foldedSheets`).
+ * A top-up keeps its own rule (its totals go on the note). Pure.
+ */
+export function foldNoTotals(state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'amend' | 'seed'>): boolean {
+  if (state.fileTotals || state.amend || state.seed !== null) return false;
+  return (state.goodsFiles ?? []).filter((f) => f.rows > 0).length > 1;
 }
 
 /**

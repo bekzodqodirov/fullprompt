@@ -42,7 +42,7 @@ export type UnreadReason =
 export interface ReadingWholeness {
   whole: boolean;
   blocking: UnreadReason[];
-  named: { name: string; why: string }[];
+  named: { name: string; why: string; resent?: boolean }[];
 }
 
 /**
