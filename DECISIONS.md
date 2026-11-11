@@ -8672,3 +8672,11 @@ auto send would read as one more reply he approved unchanged.
   narrow, with its fix red-proven, ships.
 - **(5) The ritual and CI ran in parallel.** His «buni tezlashtir»: the fresh database was built while the last fix
   agent worked, and the PR was opened as the local ritual started, so both ran on the same commit.
+- **(6) The thirty-sixth collision arrived during the last check.** PR #145 took 0143-0144 (with this round's own
+  `when`) and #1642-#1682. The first ritual run was stopped, main merged, the migration renamed to 0145 (`when` …124),
+  the four bundles resolved as a verified union, and the ritual re-run from a fresh database: 16,074
+  unit/integration (913 files) + 499 e2e, ledger 146, at f74f4df.
+- **(7) Merged on the local ritual alone, and said so.** GitHub's CI run for PR #147 sat «queued» with no job for 45
+  minutes — PR #146's run beside it too, so the stall was GitHub's. The owner had asked for speed and holds the
+  deploy. The local run is CI's own order on a fresh database at the merged head; what it cannot see is what only
+  CI's network can (#278). Main's CI run after the merge is the check still owed.

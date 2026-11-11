@@ -3594,6 +3594,9 @@ fixes reviewed (4 of 4, one blocker, pass C), then two independent checks (2, th
 08:00). Deploy MUST rebuild tg-listen
 (the send step reads the 🙋 audit row and the block hook). Owed: an alarm for cards that never reach him, the page's
 self-refresh, the 20:00 line. NOT provable here: real Telegram and the real model — the first armed day is watched.
+**16,074 unit/integration (913 files) + 499 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at f74f4df (the
+merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
+job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
 
 **Latest migration: 0145** (`agent_auto`, `when` …124; ledger must reach **146**). Before
 it: 0144 (`tarkib_takliflar`, `when` …123). Before
