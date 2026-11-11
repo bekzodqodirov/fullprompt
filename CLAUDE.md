@@ -3495,7 +3495,7 @@ e2e locator, #1628) was merged after that run: typecheck, lint and the changed s
 spec this round never touched. Pushed to `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked),
 deploy not done.
 
-**Round — Tarkib takliflari (2026-11-11; DECISIONS #1663-#1681 — minted from #1651 and moved by twelve, the
+**Round — Tarkib takliflari (2026-11-11; DECISIONS #1663-#1682 — minted from #1651 and moved by twelve, the
 THIRTY-FIFTH collision: the other session's «Fayl o'qish» (PR #141) took #1630-#1641 while this was being built;
 migration 0144 `tarkib_takliflar`, `when` …123 — ledger must reach 145; spec `docs/TARKIB-TAKLIFLAR.md`, **§7 binding**,
 §8 the deploy, §10 stated-not-built).** His «Hammasi yulduzcha javob va taklifingni qoshamiz»: the ten ⭐ of the tarkib
@@ -3552,7 +3552,9 @@ finding reproduced red before its fix: 31 + 41 red proofs by string edit in a SE
 from the text it read, never from git) and one in the browser. The headline of each: the tick read a remembered
 «is 0144 there» that only another screen warmed (a writer asks the probe itself); T1's model call was the shape
 production had already proven empty. PROCESS (#1681): a path with `[id]` is a glob to eslint — lint the project; a
-finished agent's worktree under `.claude/worktrees` makes `eslint .` run out of memory; typecheck before every build.
+finished agent's worktree under `.claude/worktrees` makes `eslint .` run out of memory; typecheck before every build;
+**a test that writes a SEEDED row reorders the table for every unordered read after it** (#1682 — the relay test
+un-muted two seeded people, the automation file's `limit 2` then drew the VED as a client's owner): mint, or read by key.
 DEPLOY: ledger 145; **the customers' ✅/❌ buttons start within minutes of the deploy and their switch exists only
 after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); `ANTHROPIC_API_KEY` must be on the
 server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐

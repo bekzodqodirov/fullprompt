@@ -8389,3 +8389,17 @@ delete first. (5) **Red proofs run in a second worktree** when reviewers are rea
 still editing it: the proof's edit can neither be read as a defect nor swept into a commit, and the harness
 restores from the text it read, never from git. (6) A red proof that stays green is evidence about the
 FIXTURE (#166, again): the answer was a case the fix is the only thing that handles.
+
+**#1682 — The full run went red on a file this round never touched, and the cause was this round's test.**
+`client-owner.integration`'s «every assigned owner in the real book is renderable» found a client owned by the
+VED — whom `salesManagerOptions()` does not offer, so the card's form would erase him on the next save. The client
+was `automation.integration`'s, whose owner is «the second of `select … from users where active limit 2`» — an
+UNORDERED read, which answers in the table's physical order. L2-3's relay test (#1678) had un-muted two seeded
+people and put the mutes back: the VALUES were restored and the ROWS were not, because an UPDATE writes a new row
+version at the end of the heap — Admin and Logist now came after the VED, and the automation file drew him.
+Reproduced on a fresh database with the three files run one at a time (bot → automation → client-owner: red;
+automation → client-owner alone: green), then fixed at both ends, each half proven alone: the relay test MINTS its
+two sellers (no seeded row is written; they are deactivated after, the house rule), and the automation file names
+its two people by their seeded phones — what it always got on a fresh database. RULE, #524's shape a second
+time: **a test that writes a SEEDED row has changed the database for every unordered read after it, whatever it
+restores** — mint the person, or read the seed by a key.

@@ -613,21 +613,24 @@ describe('a press', () => {
     // minter is the manager», so two codes of one person can have two sellers. The bot says «nima
     // noto‘g‘ri ekanini shu yerga yozing»; the relay sent those words to the manager of the chat's FIRST
     // code: seller SA got «❌ xato dedi» with no explanation, seller SB the explanation with no prixod.
-    const sellers = await db.select({ id: users.id }).from(users).where(and(eq(users.active, true), sql`${users.id} <> ${staffId}`)).limit(2);
-    expect(sellers).toHaveLength(2);
-    const [sa, sb] = [sellers[0]!.id, sellers[1]!.id];
+    // The two sellers are MINTED, never borrowed from the seed. Un-muting two seeded people and putting it
+    // back left their values as they were and their ROWS at the end of the table — an UPDATE writes a new
+    // row version — so another file's unordered «the first two active users» then picked the VED as a
+    // client's owner, whom no owner list can render, and client-owner.integration went red in the full run
+    // (DECISIONS #1682). A fresh person has no mutes and no link to park.
+    const [sa, sb] = (
+      await db
+        .insert(users)
+        .values([0, 1].map((i) => ({ fullName: `Relay sotuvchi ${i} ${RUN}`, phone: `+99896${RUN}${i}`, passwordHash: 'x', locale: 'uz' })))
+        .returning({ id: users.id })
+    ).map((row) => row.id) as [string, string];
     const chats = [BigInt(CHAT_STAFF + 100), BigInt(CHAT_STAFF + 101)];
     const before = await db.select({ id: clients.id, seller: clients.salesManagerId }).from(clients).where(inArray(clients.id, [client.A, client.B]));
-    const mutes = await db.select({ id: users.id, muted: users.mutedNotificationTypes }).from(users).where(inArray(users.id, [sa, sb]));
-    // The seeded people may hold a link of their own: theirs are parked for the test and put back.
-    const parked = await db.select().from(telegramLinks).where(inArray(telegramLinks.userId, [sa, sb]));
     try {
-      await db.delete(telegramLinks).where(inArray(telegramLinks.userId, [sa, sb]));
       await db.insert(telegramLinks).values([
         { userId: sa, telegramChatId: chats[0]!, status: 'linked', linkedAt: new Date() },
         { userId: sb, telegramChatId: chats[1]!, status: 'linked', linkedAt: new Date() },
       ]);
-      await db.update(users).set({ mutedNotificationTypes: [] }).where(inArray(users.id, [sa, sb]));
       await db.update(clients).set({ salesManagerId: sa }).where(eq(clients.id, client.A));
       await db.update(clients).set({ salesManagerId: sb }).where(eq(clients.id, client.B));
       // B is the chat's OLDER code — the one the relay used to choose.
@@ -651,9 +654,10 @@ describe('a press', () => {
       await db.delete(notifications).where(and(eq(notifications.type, 'ClientBotMessage'), like(sql`${notifications.payload}::text`, `%nomi xato ${RUN}%`)));
       await db.delete(clientTelegramLinks).where(and(eq(clientTelegramLinks.clientId, client.B), eq(clientTelegramLinks.telegramChatId, BigInt(CHAT_A))));
       for (const row of before) await db.update(clients).set({ salesManagerId: row.seller }).where(eq(clients.id, row.id));
-      for (const row of mutes) await db.update(users).set({ mutedNotificationTypes: row.muted }).where(eq(users.id, row.id));
       await db.delete(telegramLinks).where(inArray(telegramLinks.telegramChatId, chats));
-      if (parked.length > 0) await db.insert(telegramLinks).values(parked);
+      // Their own alerts go with them; the people stay, DEACTIVATED (the house rule — a row may still name them).
+      await db.delete(notifications).where(inArray(notifications.userId, [sa, sb]));
+      await db.update(users).set({ active: false }).where(inArray(users.id, [sa, sb]));
       await clearState();
     }
   });
