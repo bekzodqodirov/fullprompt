@@ -143,10 +143,6 @@ export default async function BatchTnvedPage({
       line: row.line ? { ...row.line, readable: readable.has(row.line.receiptId), firstOfLot } : undefined,
     };
   });
-  // A save elsewhere (the receipt card) replaces every line id and bumps the
-  // revision: the key re-seeds the editor instead of leaving it posting dead
-  // ids for ever.
-  const editorKey = rows.map((row) => (row.line ? `${row.line.rowKey}@${row.line.rev}` : row.lotId)).join('|');
   const readableReceipts = receiptRows.filter((r) => readable.has(r.id));
   const receiptDocs = readableReceipts.length
     ? await db
@@ -296,7 +292,7 @@ export default async function BatchTnvedPage({
           took 32 px off a 360 px phone the editor's buttons needed. */}
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🏷 {ttn('title')}</h2>
-        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor key={editorKey} batchId={id} rows={rows} />}
+        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor batchId={id} rows={rows} />}
       </section>
     </BatchCard>
   );

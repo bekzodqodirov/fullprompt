@@ -73,6 +73,10 @@ const ALLOWED = new Set([
   ...MUST,
   'src/app/(protected)/receipts/[id]/lot-edit-form.tsx',
   'src/app/(protected)/batches/[id]/tnved/tnved-editor.tsx',
+  // The editor's own pure half (its row, the row's key, the re-seed and the
+  // walk's decisions — 2026-11-10): the same audience as the editor, and it
+  // asks only `nameKey`, to tell two tarkib lines of one name apart.
+  'src/app/(protected)/batches/[id]/tnved/editor-state.ts',
   // «Yuk ma'lumoti tekshirildi» (0123, the owner's 3a): a lot tarkibi that
   // still STANDS counts as ✅ «hujjat bo'yicha». The sentence reads only the
   // composition's totals (whether it stands — `isStale`'s three terms), never

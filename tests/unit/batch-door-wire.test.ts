@@ -291,9 +291,19 @@ describe('what the truck door cannot see — the other id in the same post', () 
     const walk = editor.slice(editor.indexOf('async function suggestAllMissing()'), editor.indexOf('const changedProducts'));
     expect(walk).not.toContain('setCode(');
     expect(walk).toContain('rowsRef.current.find((r) => rowKey(r) === key)');
-    // Anything but the model's own failure ends the walk; two of those do too.
-    expect(walk).toContain("if (res.error !== 'ai_failed' || failed >= 2) break;");
+    // What a refusal means is `walkStep`'s (editor-state.ts, unit-tested):
+    // a fact about ONE lot leaves that lot alone and goes on; a shut door
+    // ends the walk, and so do two model failures in a row.
+    expect(walk).toContain("} else if (walkStep(res.error) === 'skip-lot') {");
+    expect(walk).toContain('skipped.add(target.lotId);');
+    expect(walk).toContain('!skipped.has(target.lotId)');
+    expect(walk).toMatch(/if \(walkStep\(res\.error\) === 'stop' \|\| failed >= 2\) \{\s*stopped = true;\s*break;/);
+    expect(walk).toContain('if (!stopped && skipped.size > 0) refuse(skippedFor);');
     expect(walk).toContain('if (stopWalk.current) break;');
+    // One answer per line name: this walk's own, or a code a same-named line
+    // already holds on the screen — asked BEFORE the model is.
+    expect(walk).toContain('const onScreen = sameNameCode(rowsRef.current, target);');
+    expect(walk.indexOf('sameNameCode(')).toBeLessThan(walk.indexOf('await ask(target)'));
     // A row the 🤖 may be asked about: a product, or a LIVE line.
     expect(editor).toContain('const askable = (row: TnvedRow) => !row.line || (!row.line.frozen && row.line.lineId !== null);');
     expect(editor).toContain('const missing = rows.filter((r) => askable(r) && !r.code.trim()).length;');
@@ -303,5 +313,56 @@ describe('what the truck door cannot see — the other id in the same post', () 
     expect(editor).not.toMatch(/\.filter\(\(r\) => !r\.line && r\.code\.trim\(\)\)\s*\.map/);
     // The invoice button beside the editor reads how many codes are unsaved.
     expect(editor).toContain('data-tnved-unsaved={changedProducts.length + changedLines.length}');
+  });
+
+  it('TNVED: the walk ends with the editor — an unmount stops it before the next ask', () => {
+    // It went on asking the model for every remaining row after the person
+    // had opened another screen: unseen, unstoppable, every answer dropped.
+    const editor = read(TNVED_EDITOR);
+    expect(editor).toMatch(/useEffect\(\s*\(\) => \(\) => \{\s*stopWalk\.current = true;\s*\},\s*\[\],\s*\);/);
+  });
+
+  it('TNVED: the editor re-seeds by MERGE when the server’s rows come back — it is never remounted by a key', () => {
+    // A key built from the line revisions threw away every unsaved code on
+    // the screen whenever ONE lot's tarkib moved or one line code was saved,
+    // and a product-only save did not re-seed at all (a row nobody touched
+    // read as «changed» and was written back over a colleague's correction).
+    const editor = read(TNVED_EDITOR);
+    expect(editor).toMatch(
+      /if \(seed !== initial\) \{\s*const baseOf = \(key: string\) => written\[key\] \?\? seed\.find\(\(r\) => rowKey\(r\) === key\)\?\.code \?\? '';\s*setRows\(reseedRows\(rows, baseOf, initial\)\);\s*setSeed\(initial\);\s*setWritten\(\{\}\);\s*\}/,
+    );
+    const page = read(TNVED_PAGE);
+    expect(page).toContain('<TnvedEditor batchId={id} rows={rows} />');
+    expect(page).not.toMatch(/<TnvedEditor[^>]*\bkey=/);
+  });
+
+  it('TNVED: one refused name or lot does not stop the rest of «Saqlash», and the server’s rows come back after it', () => {
+    const editor = read(TNVED_EDITOR);
+    const save = editor.slice(editor.indexOf('async function saveAll()'), editor.indexOf('const missing ='));
+    // A product whose lot was composed meanwhile is named; the names the
+    // action did write are settled, and the line codes are still posted.
+    expect(save).toContain('const gone = new Set(res.gone ?? []);');
+    expect(save).toContain('markWritten(changedProducts.filter((r) => !gone.has(r.nameZh)));');
+    expect(save).toMatch(/if \(res\.error !== 'not_on_truck'\) \{\s*setError\(refusals\.join\(' '\)\);\s*return;\s*\}/);
+    expect(save.indexOf('saveLineCodesAction(')).toBeGreaterThan(save.indexOf("if (res.error !== 'not_on_truck')"));
+    // The lots that committed are settled whatever another lot answered.
+    expect(save).toContain("markWritten(changedLines.filter((r) => res.revs[r.line!.lotId] !== undefined));");
+    // Whatever was saved, the rows are re-read — what was not saved stays on its row.
+    expect(save).toContain('if (said.length > 0 || refusals.length === 0) router.refresh();');
+
+    const actions = exportedActions(TNVED_ACTIONS);
+    const lines = actions.get('saveLineCodesAction')!;
+    // Each lot is its own transaction: a refused one is recorded and the loop goes on.
+    expect(lines).toContain('error ??= code;');
+    expect(lines).toContain('refused.push(lotId);');
+    expect(lines).toContain("if (code === 'server_behind') break;");
+    expect(lines).not.toMatch(/catch \(err\) \{\s*if \(err instanceof CompositionError\) return/);
+    const products = actions.get('saveTnvedAction')!;
+    // Every code is validated BEFORE the first write; a name off the truck is
+    // never written and no longer refuses the names that are on it.
+    expect(products.indexOf("return { ok: false, error: 'invalid_code' };")).toBeGreaterThan(-1);
+    expect(products.indexOf("return { ok: false, error: 'invalid_code' };")).toBeLessThan(products.indexOf('await saveTnved('));
+    expect(products).toContain('for (const entry of posted.filter(onTruck)) {');
+    expect(products).toContain("return gone.length > 0 ? { ok: false, saved, error: 'not_on_truck', gone } : { ok: true, saved };");
   });
 });

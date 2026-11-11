@@ -5,46 +5,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { nameKey } from '@/modules/wms/receipts/composition-math';
-import type { TnvedProductRow } from '@/modules/wms/tnved/batch-lots';
 import {
   saveLineCodesAction,
   saveTnvedAction,
   suggestTnvedForLineAction,
   suggestTnvedForLotAction,
 } from './actions';
-
-export interface TnvedRow {
-  lotId: string;
-  nameZh: string;
-  nameRu: string | null;
-  photoId: string | null;
-  boxCount: number;
-  /** From memory — pre-filled. */
-  code: string;
-  source: 'manual' | 'ai' | null;
-  /** The lots behind the row; `readable` = the person may open that prixod. */
-  lots: { lotId: string; receiptId: string; label: string; readable: boolean }[];
-  /** A lot tarkibi LINE (docs/LOT-TARKIBI.md §5); absent on a product row. */
-  line?: NonNullable<TnvedProductRow['line']> & { readable: boolean; firstOfLot: boolean };
-}
-
-/**
- * Every piece of per-row state is keyed by THIS — never by `lotId`: both
- * lines of a composed lot share their lot's id, so a `lotId` key wrote the
- * mouse's code into the keyboard's line too (the lot tarkibi judge's R1, a
- * misdeclaration no other test saw).
- */
-export function rowKey(row: Pick<TnvedRow, 'lotId' | 'line'>): string {
-  return row.line ? row.line.rowKey : row.lotId;
-}
-
-/**
- * The ✅ of the last save, per truck, for the editor that REPLACES this one:
- * the page keys the editor on the line revisions, so a saved line code
- * remounts it on the refresh — and the sentence would vanish with the
- * instance that said it.
- */
-const lastSaved = new Map<string, string>();
+// The row, its key (`rowKey(` — never the lot's id: two lines of one lot
+// share it) and the decisions that are not React live in the pure module.
+import { reseedRows, rowKey, sameNameCode, walkStep, type TnvedRow } from './editor-state';
 
 /**
  * ТНВЭД editor (Phase 1.5): per-product code entry with an AI suggestion
@@ -68,6 +37,13 @@ const lastSaved = new Map<string, string>();
  * The root carries `data-tnved-unsaved` = how many codes are typed and not
  * saved: the invoice button beside it reads the count and says so before it
  * hands over a paper made from the SAVED codes (`invoice-download.tsx`).
+ *
+ * The editor is NOT remounted when the server's rows come back (a save, the
+ * 🔄, a colleague's change): it re-seeds itself row by row (`reseedRows`), so
+ * a code typed or suggested and not saved yet stays on its row. It used to
+ * be keyed on the line revisions — one lot's tarkib moving, or one line code
+ * saved, threw away every unsaved code on the screen (the review of the
+ * built round; every answer of the 🤖 is paid for).
  */
 export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows: TnvedRow[] }) {
   const t = useTranslations('tnved');
@@ -75,6 +51,26 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
   const tc = useTranslations('common');
   const router = useRouter();
   const [rows, setRows] = useState(initial);
+  /**
+   * What a save has just written, until the refresh brings the rows back.
+   * «Changed» is «differs from what the server holds», and for the moment
+   * between the ✅ and the refreshed page that is NOT the rows the editor was
+   * handed: the invoice button beside it said «1 ta kod saqlanmagan» about a
+   * code saved a third of a second earlier (found by the browser test — the
+   * press came before the refresh landed).
+   */
+  const [written, setWritten] = useState<Record<string, string>>({});
+  // The rows this state was last seeded from. A refresh hands the editor new
+  // ones; the state is re-seeded HERE, during the render that sees them
+  // (React's «adjust state when a prop changes»): every row takes the
+  // server's code and revision, except a code that is not saved yet.
+  const [seed, setSeed] = useState(initial);
+  if (seed !== initial) {
+    const baseOf = (key: string) => written[key] ?? seed.find((r) => rowKey(r) === key)?.code ?? '';
+    setRows(reseedRows(rows, baseOf, initial));
+    setSeed(initial);
+    setWritten({});
+  }
   // The rows as they are NOW, for the walk below: it runs across many awaits
   // and must judge each row by what the person has typed meanwhile, not by
   // the render it started in.
@@ -87,24 +83,22 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
   /** «🤖 AI taklif (N)» in flight: how far it is, and the person's «stop». */
   const [walk, setWalk] = useState<{ done: number; n: number } | null>(null);
   const stopWalk = useRef(false);
+  // The walk ends with the editor. Left alone it went on asking the model
+  // for every remaining row after the person had opened another screen —
+  // unseen, unstoppable, every answer dropped, and every other action of the
+  // tab queued behind each call (the review of the built round). At most the
+  // call already in flight is paid for.
+  useEffect(
+    () => () => {
+      stopWalk.current = true;
+    },
+    [],
+  );
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<string | null>(() => {
-    const said = lastSaved.get(batchId) ?? null;
-    lastSaved.delete(batchId);
-    return said;
-  });
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
 
-  /**
-   * What a save has just written, until the refresh brings the rows back.
-   * «Changed» is «differs from what the server holds», and for the moment
-   * between the ✅ and the refreshed page that is NOT the rows the editor was
-   * handed: the invoice button beside it said «1 ta kod saqlanmagan» about a
-   * code saved a third of a second earlier (found by the browser test — the
-   * press came before the refresh landed).
-   */
-  const [written, setWritten] = useState<Record<string, string>>({});
   const initialCode = (key: string) => written[key] ?? initial.find((r) => rowKey(r) === key)?.code ?? '';
   const markWritten = (saved: readonly TnvedRow[]) =>
     setWritten((prev) => ({ ...prev, ...Object.fromEntries(saved.map((r) => [rowKey(r), r.code])) }));
@@ -157,6 +151,8 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         return lineError(code);
       case 'receipt_not_confirmed':
         return tk('errors.receipt_not_confirmed');
+      case 'not_found':
+        return t('notOnTruck');
       default:
         return t('aiFailed');
     }
@@ -164,9 +160,10 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
 
   function refuse(code: string | undefined) {
     setError(askError(code));
-    // The tarkib was re-saved on the prixod card: these rows name lines that
-    // are gone, and only a reload brings the new ones.
-    setStale(code === 'composition_changed');
+    // The tarkib was re-saved on the prixod card (or the lot left the truck):
+    // these rows name lines that are gone, and a reload brings the new ones —
+    // keeping every other row's unsaved code (`reseedRows`).
+    setStale(code === 'composition_changed' || code === 'not_found');
   }
 
   async function suggest(row: TnvedRow) {
@@ -198,12 +195,16 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
    *     LIVE before its ask — a code typed meanwhile is the person's — and
    *     written through `fillEmpty`, which cannot overwrite one;
    *  3. one answer per line NAME: «Мышь» on a second lot takes the first
-   *     «Мышь»'s answer. Two asks could come back with two codes for one
-   *     good, and the invoice merges same-named goods only when their codes
-   *     are equal;
-   *  4. it STOPS at a door that stays shut — no key, no permission, a ticked
-   *     truck, a tarkib re-saved under the screen — and after two model
-   *     failures in a row, instead of pressing a dead button N times.
+   *     «Мышь»'s answer — the one this walk was given, or a code a line of
+   *     that name already holds on the screen (`sameNameCode`: typed, from
+   *     the row's own 🤖, from a walk that stopped). Two asks could come back
+   *     with two codes for one good, and the invoice merges same-named goods
+   *     only when their codes are equal;
+   *  4. `walkStep` decides what a refusal means: a door shut for every row
+   *     (no key, no permission, a ticked truck) STOPS the walk, as do two
+   *     model failures in a row — a dead button is not pressed N times; a
+   *     fact about ONE lot (its tarkib re-saved under the screen) leaves
+   *     that lot's rows alone, goes on, and names the lot at the end.
    */
   async function suggestAllMissing() {
     stopWalk.current = false;
@@ -219,6 +220,10 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     }
     const queue = rowsRef.current.filter((row) => empty(row) && !hinted.has(rowKey(row)));
     const byName = new Map<string, { code: string; note: string }>();
+    /** The lots this walk leaves alone, and why (the last reason is the one said). */
+    const skipped = new Set<string>();
+    let skippedFor: string | undefined;
+    let stopped = false;
     let failed = 0;
     let done = 0;
     setWalk({ done, n: queue.length });
@@ -227,11 +232,15 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
         if (stopWalk.current) break;
         const key = rowKey(target);
         const live = rowsRef.current.find((r) => rowKey(r) === key);
-        if (live && empty(live)) {
-          const same = target.line ? byName.get(nameKey(target.nameZh)) : undefined;
+        if (live && empty(live) && !skipped.has(target.lotId)) {
+          const name = nameKey(target.nameZh);
+          const onScreen = sameNameCode(rowsRef.current, target);
+          const same = target.line
+            ? (byName.get(name) ?? (onScreen ? { code: onScreen, note: t('aiSameName') } : undefined))
+            : undefined;
           if (same) {
             fillEmpty(key, same.code, 'ai');
-            setReasonings((prev) => ({ ...prev, [key]: `${same.note} · ${t('aiSameName')}` }));
+            setReasonings((prev) => ({ ...prev, [key]: same.note }));
           } else {
             setBusy(key);
             const res = await ask(target);
@@ -241,17 +250,27 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
               const note = noteOf(target, res);
               fillEmpty(key, res.suggestion.tnved_code, 'ai');
               setReasonings((prev) => ({ ...prev, [key]: note }));
-              if (target.line) byName.set(nameKey(target.nameZh), { code: res.suggestion.tnved_code, note });
+              if (target.line) {
+                byName.set(name, { code: res.suggestion.tnved_code, note: `${note} · ${t('aiSameName')}` });
+              }
+            } else if (walkStep(res.error) === 'skip-lot') {
+              skipped.add(target.lotId);
+              skippedFor = res.error;
             } else {
               refuse(res.error);
               failed += 1;
-              if (res.error !== 'ai_failed' || failed >= 2) break;
+              if (walkStep(res.error) === 'stop' || failed >= 2) {
+                stopped = true;
+                break;
+              }
             }
           }
         }
         done += 1;
         setWalk({ done, n: queue.length });
       }
+      // The lots left alone are named last — unless a shut door already spoke.
+      if (!stopped && skipped.size > 0) refuse(skippedFor);
     } finally {
       setBusy(null);
       setWalk(null);
@@ -280,18 +299,30 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     }
   }
 
+  /**
+   * «Saqlash». What the server wrote is settled at once (`markWritten`), and
+   * ONE refusal never stops the rest: a product whose lot a colleague
+   * composed meanwhile is named while the other names are saved, a lot whose
+   * tarkib moved under the screen is named while the other lots are saved
+   * — and the line codes are posted whatever the products answered. The
+   * review of the built round: one such row blocked every code after it,
+   * and the only way on the screen offered was a reload that dropped them.
+   * Then the server's rows come back (`router.refresh` → `reseedRows`): what
+   * was saved is the baseline, what was not stays on its row.
+   */
   async function saveAll() {
     setSaving(true);
     setError(null);
     setMessage(null);
     setStale(false);
     const said: string[] = [];
+    const refusals: string[] = [];
+    let reload = false;
     try {
       if (changedProducts.length > 0) {
-        // The CHANGED rows only. Every coded row used to be posted, so one
-        // product a colleague composed meanwhile (its row is a tarkib's
-        // lines now) refused the whole save `not_on_truck` — and the reload
-        // that cures it drops every answer typed or suggested and not saved.
+        // The CHANGED rows only. Every coded row used to be posted — one
+        // stale row refused them all, and an untouched row wrote its code
+        // back over a colleague's correction of the shared memory.
         const res = await saveTnvedAction(
           batchId,
           changedProducts.map((r) => ({
@@ -302,8 +333,13 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
             aiReasoning: reasonings[rowKey(r)] ?? null,
           })),
         );
+        const gone = new Set(res.gone ?? []);
+        if (res.saved) {
+          markWritten(changedProducts.filter((r) => !gone.has(r.nameZh)));
+          said.push(t('saved', { n: res.saved }));
+        }
         if (!res.ok) {
-          setError(
+          refusals.push(
             res.error === 'invalid_code'
               ? t('invalidCode')
               : res.error === 'not_on_truck'
@@ -313,12 +349,15 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
                   : (res.error ?? 'error'),
           );
           // «Sahifani yangilang» with the button that does it — a colleague
-          // composed the lot and its product row is gone (the review's nit).
-          setStale(res.error === 'not_on_truck');
-          return;
+          // composed the lot and its product row is gone.
+          reload = res.error === 'not_on_truck';
+          // A wrong code or a shut door wrote nothing and is the person's to
+          // cure before anything else is posted.
+          if (res.error !== 'not_on_truck') {
+            setError(refusals.join(' '));
+            return;
+          }
         }
-        markWritten(changedProducts);
-        said.push(t('saved', { n: res.saved ?? 0 }));
       }
       if (changedLines.length > 0) {
         const res = await saveLineCodesAction(
@@ -338,18 +377,20 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
           // …and those lots' codes are on their lines now, refusal or not.
           markWritten(changedLines.filter((r) => res.revs[r.line!.lotId] !== undefined));
         }
+        if (res.saved) said.push(t('lineSaved', { n: res.saved }));
         if (!res.ok) {
-          setError(lineError(res.error));
-          setStale(res.error === 'composition_changed');
-          if (said.length > 0) setMessage(`✅ ${said.join(' · ')}`);
-          return;
+          refusals.push(lineError(res.error));
+          reload ||= res.error === 'composition_changed';
         }
-        said.push(t('lineSaved', { n: res.saved ?? 0 }));
       }
-      const done = `✅ ${said.length > 0 ? said.join(' · ') : t('saved', { n: 0 })}`;
-      setMessage(done);
-      lastSaved.set(batchId, done);
-      router.refresh();
+      if (said.length > 0 || refusals.length === 0) {
+        setMessage(`✅ ${said.length > 0 ? said.join(' · ') : t('saved', { n: 0 })}`);
+      }
+      if (refusals.length > 0) {
+        setError(refusals.join(' '));
+        setStale(reload);
+      }
+      if (said.length > 0 || refusals.length === 0) router.refresh();
     } finally {
       setSaving(false);
     }

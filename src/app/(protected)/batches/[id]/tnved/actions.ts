@@ -9,6 +9,7 @@ import { requireActor } from '@/modules/platform/rbac/authorize';
 import { mayOpenBatchCard } from '@/modules/wms/batches/card-door';
 import { batchMemberFilter } from '@/modules/wms/scanning/unload';
 import {
+  isValidTnved,
   lineQuestion,
   productKey,
   saveTnved,
@@ -207,6 +208,16 @@ export async function suggestTnvedForLineAction(
  * product row of `batchTnvedProducts` on this truck is refused
  * `not_on_truck` — which is also what makes «a composition line's code never
  * writes the memory» a server rule and not a promise of the editor (#531).
+ *
+ * Refused means NEVER WRITTEN, and since the review of the built round
+ * (2026-11-10) it no longer means «and neither is anything else»: the names
+ * that ARE product rows are saved and the others come back in `gone`. One
+ * product a colleague had composed meanwhile (its row is a tarkib's lines
+ * now) used to refuse every other code on the screen, and the reload the
+ * screen then offered dropped them. Every code is validated BEFORE the first
+ * write, so a wrong code is still all-or-nothing: the loop writes row by
+ * row, and an invalid code at row k left the rows above it in the memory
+ * while the screen was told nothing had been saved.
  */
 export async function saveTnvedAction(
   batchId: string,
@@ -217,7 +228,7 @@ export async function saveTnvedAction(
     source: 'manual' | 'ai';
     aiReasoning?: string | null;
   }[],
-): Promise<{ ok: boolean; saved?: number; error?: string }> {
+): Promise<{ ok: boolean; saved?: number; error?: string; gone?: string[] }> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
   if (!isUuidShaped(batchId)) return { ok: false, error: 'forbidden' };
@@ -226,24 +237,24 @@ export async function saveTnvedAction(
     columns: { originWarehouseId: true, destWarehouseId: true, departedAt: true },
   });
   if (!batch || !mayOpenBatchCard(actor, batch)) return { ok: false, error: 'forbidden' };
+  const posted = entries.filter((entry) => entry.code.trim());
+  if (posted.some((entry) => !isValidTnved(entry.code.trim()))) return { ok: false, error: 'invalid_code' };
   const products = await batchTnvedProducts(batchId, batch.departedAt !== null);
   const productKeys = new Set(products.filter((row) => !row.line).map((row) => productKey(row.nameZh)));
-  if (entries.some((entry) => entry.code.trim() && !productKeys.has(productKey(entry.nameZh)))) {
-    return { ok: false, error: 'not_on_truck' };
-  }
+  const onTruck = (entry: { nameZh: string }) => productKeys.has(productKey(entry.nameZh));
+  const gone = posted.filter((entry) => !onTruck(entry)).map((entry) => entry.nameZh);
   const meta = await requestMeta();
   let saved = 0;
   try {
-    for (const entry of entries) {
-      if (!entry.code.trim()) continue;
+    for (const entry of posted.filter(onTruck)) {
       await saveTnved(entry, { actorId: actor.id, ...meta });
       saved += 1;
     }
-    return { ok: true, saved };
   } catch (err) {
-    if (err instanceof TnvedError) return { ok: false, error: err.code };
+    if (err instanceof TnvedError) return { ok: false, saved, error: err.code };
     throw err;
   }
+  return gone.length > 0 ? { ok: false, saved, error: 'not_on_truck', gone } : { ok: true, saved };
 }
 
 /**
@@ -253,14 +264,22 @@ export async function saveTnvedAction(
  * ticked truck prints its frozen copy, so its line codes are read-only here
  * (`frozen`). Entries are GROUPED per lot into ONE `setLineCodes` call each —
  * two calls for one lot would refuse the second by the first's revision bump
- * — and the revisions of the lots that DID commit travel with the first
- * refusal, so the editor never keeps posting dead ones. No revalidatePath:
- * the editor refreshes after both saves (#1242).
+ * — and the revisions of the lots that DID commit travel with the answer, so
+ * the editor never keeps posting dead ones. No revalidatePath: the editor
+ * refreshes after both saves (#1242).
+ *
+ * Each lot is its own transaction, and a refused lot does not stop the lots
+ * after it (the review of the built round): lot B's tarkib re-saved under
+ * the screen used to leave C and D unsaved however often «Saqlash» was
+ * pressed — B was posted first again, refused again, and the action returned.
+ * `error` is the FIRST refusal and `refused` names every lot that did not
+ * commit. Only a schema one migration behind ends the loop: every lot would
+ * answer the same.
  */
 export async function saveLineCodesAction(
   batchId: string,
   entries: { lotId: string; lineId: string; rev: number; code: string }[],
-): Promise<{ ok: boolean; revs: Record<string, number>; saved?: number; error?: string }> {
+): Promise<{ ok: boolean; revs: Record<string, number>; saved?: number; error?: string; refused?: string[] }> {
   const revs: Record<string, number> = {};
   const actor = await vedActor();
   if (!actor || !mayWriteComposition(actor.permissions)) return { ok: false, revs, error: 'forbidden' };
@@ -292,6 +311,8 @@ export async function saveLineCodesAction(
   if ([...papers.values()].some((comp) => comp.frozen)) return { ok: false, revs, error: 'frozen' };
   const meta = await requestMeta();
   let saved = 0;
+  let error: string | undefined;
+  const refused: string[] = [];
   for (const [lotId, group] of byLot) {
     try {
       const res = await setLineCodes({ lotId, seenRev: group.rev, codes: group.codes }, actor, {
@@ -301,11 +322,19 @@ export async function saveLineCodesAction(
       revs[lotId] = res.rev;
       saved += group.codes.length;
     } catch (err) {
-      if (err instanceof CompositionError) return { ok: false, revs, saved, error: err.code };
-      if (isBusyError(err)) return { ok: false, revs, saved, error: 'busy' };
-      if (isServerBehind(err)) return { ok: false, revs, saved, error: 'server_behind' };
-      throw err;
+      const code =
+        err instanceof CompositionError
+          ? err.code
+          : isBusyError(err)
+            ? 'busy'
+            : isServerBehind(err)
+              ? 'server_behind'
+              : null;
+      if (code === null) throw err;
+      error ??= code;
+      refused.push(lotId);
+      if (code === 'server_behind') break;
     }
   }
-  return { ok: true, revs, saved };
+  return error ? { ok: false, revs, saved, error, refused } : { ok: true, revs, saved };
 }

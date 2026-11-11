@@ -22,7 +22,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
  * tarkib that does NOT ride the truck. RCV is what lets the card door be
  * proven alone: a person standing there may read the prixod (the
  * composition's door lets them through) and may not open the truck.
- * Cleanup is the final test (#57).
+ * Cleanup is the final test (#57); the three warehouses are deactivated,
+ * not deleted (an audit row names one).
  */
 
 const override = vi.hoisted(() => ({ actor: null as null | Record<string, unknown> }));
@@ -81,8 +82,13 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
-import { suggestTnvedForLineAction } from '@/app/(protected)/batches/[id]/tnved/actions';
+import {
+  saveLineCodesAction,
+  saveTnvedAction,
+  suggestTnvedForLineAction,
+} from '@/app/(protected)/batches/[id]/tnved/actions';
 import { batchTnvedProducts } from '@/modules/wms/tnved/batch-lots';
+import { productKey } from '@/modules/wms/tnved/service';
 
 const SFX = randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
 const NOWHERE = '00000000-0000-4000-8000-00000a1a1a00';
@@ -405,6 +411,70 @@ describe('the 🤖 on a tarkib line — every door before any spend', () => {
   });
 });
 
+describe('«Saqlash»: one refusal does not stop the rest (the review of the built round)', () => {
+  const revOf = async (lotKey: keyof typeof lot) =>
+    (await batchTnvedProducts(truck, true)).find((r) => r.line?.lotId === lot[lotKey])!.line!.rev;
+  const codesOf = async (lotKey: keyof typeof lot) =>
+    (
+      await db
+        .select({ seq: lotCompositionLines.seq, code: lotCompositionLines.tnvedCode })
+        .from(lotCompositionLines)
+        .where(eq(lotCompositionLines.lotId, lot[lotKey]))
+        .orderBy(lotCompositionLines.seq)
+    ).map((r) => r.code);
+
+  it('a lot whose tarkib moved under the screen is refused and NAMED — the lots after it are saved', async () => {
+    // Lot M is posted FIRST with a dead revision (its tarkib was re-saved on
+    // the prixod card), lot S after it with a live one. The action used to
+    // return at M: S was never attempted, however often «Saqlash» was
+    // pressed, and the only way on the screen offered was a reload that
+    // dropped S's code.
+    override.actor = ved();
+    const answer = await saveLineCodesAction(truck, [
+      { lotId: lot.M, lineId: lineId.M1, rev: 0, code: '8471607000' },
+      { lotId: lot.S, lineId: lineId.S, rev: await revOf('S'), code: '8471300000' },
+    ]);
+    expect(answer).toMatchObject({ ok: false, error: 'composition_changed', refused: [lot.M], saved: 1 });
+    expect(Object.keys(answer.revs)).toEqual([lot.S]);
+    expect(await codesOf('S')).toEqual(['8471300000']);
+    expect(await codesOf('M')).toEqual([null, null]);
+    // …and the revision that came back is the one the next press must carry.
+    expect(answer.revs[lot.S]).toBe(await revOf('S'));
+    await db.update(lotCompositionLines).set({ tnvedCode: null }).where(eq(lotCompositionLines.lotId, lot.S));
+  });
+
+  it('a wrong code is all-or-nothing: every code is read before the first write', async () => {
+    // The loop writes row by row, so an invalid code at row two used to
+    // leave row one in the memory while the screen was told nothing was saved.
+    override.actor = ved();
+    expect(
+      await saveTnvedAction(truck, [
+        { nameZh: ZH.P, nameRu: null, code: '9405100000', source: 'manual' },
+        { nameZh: ZH.P, nameRu: null, code: '12', source: 'manual' },
+      ]),
+    ).toEqual({ ok: false, error: 'invalid_code' });
+    expect((await db.select({ id: tnvedAssignments.id }).from(tnvedAssignments)).length).toBe(memoryBefore);
+  });
+
+  it('a name that is no longer a product row of the truck is never written — and no longer refuses the names that are', async () => {
+    // A colleague composed a lot meanwhile: its product row is a tarkib's
+    // lines now. That one name used to refuse every other code on the screen.
+    override.actor = ved();
+    const stranger = `不在${SFX}`;
+    const answer = await saveTnvedAction(truck, [
+      { nameZh: stranger, nameRu: null, code: '9405100000', source: 'manual' },
+      { nameZh: ZH.P, nameRu: null, code: '9405100000', source: 'ai', aiReasoning: 'test' },
+      // A tarkib LINE's name is not a product row either: its code never reaches the memory.
+      { nameZh: `Мышь ${SFX}`, nameRu: null, code: '8471607000', source: 'manual' },
+    ]);
+    expect(answer).toEqual({ ok: false, saved: 1, error: 'not_on_truck', gone: [stranger, `Мышь ${SFX}`] });
+    const keys = [ZH.P, stranger, `Мышь ${SFX}`].map(productKey);
+    const stored = await db.select({ key: tnvedAssignments.productKey, code: tnvedAssignments.tnvedCode }).from(tnvedAssignments).where(inArray(tnvedAssignments.productKey, keys));
+    expect(stored).toEqual([{ key: productKey(ZH.P), code: '9405100000' }]);
+    await db.delete(tnvedAssignments).where(inArray(tnvedAssignments.productKey, keys));
+  });
+});
+
 describe('cleanup', () => {
   it('leaves nothing of this file behind', async () => {
     override.actor = null;
@@ -421,7 +491,9 @@ describe('cleanup', () => {
     await db.delete(receipts).where(inArray(receipts.id, [receiptId, offReceiptId]));
     await db.delete(batches).where(eq(batches.id, truck));
     await db.delete(clients).where(eq(clients.id, clientId));
-    await db.delete(warehouses).where(inArray(warehouses.id, Object.values(wh)));
+    // DEACTIVATED, never deleted: the line-code save above wrote an audit row
+    // that names the prixod's warehouse, and audit_log keeps what it names.
+    await db.update(warehouses).set({ active: false }).where(inArray(warehouses.id, Object.values(wh)));
     expect(await db.query.batches.findFirst({ where: eq(batches.id, truck) })).toBeUndefined();
     expect((await db.select({ id: tnvedAssignments.id }).from(tnvedAssignments)).length).toBe(memoryBefore);
   });
