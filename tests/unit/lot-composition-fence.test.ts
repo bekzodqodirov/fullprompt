@@ -94,6 +94,18 @@ const ALLOWED = new Set([
   // `wms/client-cabinet/` names a composition token for it — the send half
   // takes the lines from `clientAskFacts`' answer.
   'src/modules/wms/receipts/client-confirm.ts',
+  // «🤖 Fayldan to'ldirish» (docs/TARKIB-TAKLIFLAR.md §3 — the owner's
+  // «tarkibni mijozning fayli yoki rasmidan AI o'qib to'ldirsin»): it fills
+  // the tarkib EDITOR's draft and stops — the composition tables are neither
+  // read nor written by it; «Saqlash» stays the one writer. The pure half
+  // turns what the model transcribed into the editor's own cells with the
+  // editor's own parsers (`composition-math` — scales, `toUnits`, `nameKey`)…
+  'src/modules/wms/receipts/tarkib-proposal.ts',
+  // …the reading asks the SAVE's own door before it spends anything
+  // (`compositionDoor`, `isPaperDocument`), and names no table…
+  'src/modules/wms/receipts/tarkib-read.ts',
+  // …and the dialog applies the ticked rows with the same arithmetic.
+  'src/app/(protected)/receipts/[id]/tarkib-read-dialog.tsx',
 ]);
 
 /**
