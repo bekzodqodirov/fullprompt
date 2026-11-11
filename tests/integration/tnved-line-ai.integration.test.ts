@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 /**
@@ -30,6 +30,11 @@ const override = vi.hoisted(() => ({ actor: null as null | Record<string, unknow
 const model = vi.hoisted(() => ({
   asked: [] as { nameZh: string; nameRu: string | null; photo: boolean; context: string[] }[],
   fail: null as null | string,
+  /** A failure AFTER the model answered carries what the answer cost. */
+  failUsage: null as null | { model: string; inputTokens: number; outputTokens: number },
+  /** What a good answer cost (0144: the press is billed). */
+  usage: null as null | { model: string; inputTokens: number; outputTokens: number },
+  key: true,
 }));
 
 vi.mock('@/modules/platform/auth/session', async (original) => ({
@@ -48,6 +53,12 @@ vi.mock('@/modules/platform/rbac/authorize', async (original) => {
     requireActor: async () => (override.actor ?? (await real.requireActor())) as Awaited<ReturnType<typeof real.requireActor>>,
   };
 });
+// CI has no key, and since 0144 the action asks for one BEFORE it counts the
+// press — so the key is a switch here.
+vi.mock('@/modules/platform/ai/model', async (original) => ({
+  ...(await original<typeof import('@/modules/platform/ai/model')>()),
+  aiConfigured: () => model.key,
+}));
 vi.mock('@/modules/wms/tnved/service', async (original) => {
   const real = await original<typeof import('@/modules/wms/tnved/service')>();
   return {
@@ -59,8 +70,14 @@ vi.mock('@/modules/wms/tnved/service', async (original) => {
         photo: Boolean(input.photo),
         context: [...(input.context ?? [])],
       });
-      if (model.fail) throw new real.TnvedError(model.fail as 'ai_failed');
-      return { tnved_code: '8471607000', name_ru: 'Мышь', confidence: 'high' as const, reasoning: 'test' };
+      if (model.fail) throw new real.TnvedError(model.fail as 'ai_failed', model.failUsage ?? undefined);
+      return {
+        tnved_code: '8471607000',
+        name_ru: 'Мышь',
+        confidence: 'high' as const,
+        reasoning: 'test',
+        ...(model.usage ? { usage: model.usage } : {}),
+      };
     },
   };
 });
@@ -82,6 +99,7 @@ import {
   warehouses,
 } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
+import { getSetting, setSetting } from '@/modules/platform/settings/service';
 import {
   saveLineCodesAction,
   saveTnvedAction,
@@ -319,10 +337,129 @@ describe('the 🤖 on a tarkib line — what the model is asked', () => {
   it('the model’s own failure comes back in its own word', async () => {
     override.actor = ved();
     model.fail = 'ai_failed';
-    expect(await press('M', lineId.M2)).toEqual({ ok: false, error: 'ai_failed' });
+    expect(await press('M', lineId.M2)).toMatchObject({ ok: false, error: 'ai_failed' });
     model.fail = 'ai_not_configured';
-    expect(await press('M', lineId.M2)).toEqual({ ok: false, error: 'ai_not_configured' });
+    expect(await press('M', lineId.M2)).toMatchObject({ ok: false, error: 'ai_not_configured' });
     model.fail = null;
+  });
+});
+
+/**
+ * 0144 (docs/TARKIB-TAKLIFLAR.md §2): the press is COUNTED before it spends
+ * and BILLED after. The ledger's pressed rows of this file's lots are read
+ * back by lot id — the day's count belongs to every file on this database.
+ */
+describe('the 🤖 on a tarkib line — counted before, billed after', () => {
+  const billed = async (lotKey: keyof typeof lot) =>
+    (await db.execute(sql`
+      SELECT outcome, input_tokens, output_tokens, staff_id::text AS staff_id, batch_id::text AS batch_id
+        FROM ai_calc_passes WHERE kind = 'tnved' AND lot_id = ${lot[lotKey]}::uuid ORDER BY created_at
+    `)) as unknown as { outcome: string; input_tokens: number; output_tokens: number; staff_id: string; batch_id: string }[];
+  const countedToday = async () =>
+    Number(
+      (
+        (await db.execute(sql`
+          SELECT count(*)::int AS n FROM ai_calc_passes
+           WHERE kind = 'tnved' AND outcome IS DISTINCT FROM 'no_answer'
+             AND created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'
+        `)) as unknown as { n: number }[]
+      )[0]!.n,
+    );
+  let limitBefore: unknown;
+
+  it('(setup) the day’s limit as this file found it', async () => {
+    limitBefore = await getSetting('tnved_ai_daily_limit');
+    // The presses of the tests above are this file's too; the block below counts from none.
+    for (const lotId of Object.values(lot)) {
+      await db.execute(sql`DELETE FROM ai_calc_passes WHERE kind = 'tnved' AND lot_id = ${lotId}::uuid`);
+    }
+  });
+
+  it('a press that reached the model is ONE bill line with its tokens — this lot, this truck, the presser', async () => {
+    override.actor = ved();
+    model.usage = { model: 'm-test', inputTokens: 1200, outputTokens: 340 };
+    const answer = await press('S', lineId.S);
+    model.usage = null;
+    expect(answer.ok).toBe(true);
+    expect(await billed('S')).toEqual([
+      { outcome: 'ok', input_tokens: 1200, output_tokens: 340, staff_id: author, batch_id: truck },
+    ]);
+    // The count rides back with the answer; a VED reads no dollars.
+    expect(answer.today).toMatchObject({ usd: null, usd30: null });
+    expect(answer.today!.used).toBe(await countedToday());
+    // …and the browser gets a suggestion, never the token counts.
+    expect(answer.suggestion).not.toHaveProperty('usage');
+  });
+
+  it('an answer that was no good was still paid for: «failed», with its tokens, and it counts', async () => {
+    override.actor = ved();
+    const before = await countedToday();
+    model.fail = 'ai_failed';
+    model.failUsage = { model: 'm-test', inputTokens: 900, outputTokens: 16000 };
+    expect(await press('M', lineId.M1)).toMatchObject({ ok: false, error: 'ai_failed' });
+    model.fail = null;
+    model.failUsage = null;
+    expect(await billed('M')).toEqual([
+      { outcome: 'failed', input_tokens: 900, output_tokens: 16000, staff_id: author, batch_id: truck },
+    ]);
+    expect(await countedToday()).toBe(before + 1);
+  });
+
+  it('no answer at all — a timeout, a dead key — is written down and NOT counted against the day', async () => {
+    override.actor = ved();
+    const before = await countedToday();
+    model.fail = 'ai_failed';
+    expect(await press('M', lineId.M2)).toMatchObject({ ok: false, error: 'ai_failed' });
+    model.fail = null;
+    expect((await billed('M')).map((row) => row.outcome)).toEqual(['failed', 'no_answer']);
+    expect(await countedToday()).toBe(before);
+  });
+
+  it('a door that refuses writes no bill line', async () => {
+    override.actor = ved({ permissions: new Set(['receipts.edit']) });
+    const before = (await billed('M')).length;
+    expect(await press('M', lineId.M1)).toEqual({ ok: false, error: 'forbidden' });
+    expect((await billed('M')).length).toBe(before);
+  });
+
+  it('a server with no key says so before the ledger: nothing counted', async () => {
+    override.actor = ved();
+    const before = (await billed('M')).length;
+    model.key = false;
+    try {
+      expect(await press('M', lineId.M1)).toEqual({ ok: false, error: 'ai_not_configured' });
+    } finally {
+      model.key = true;
+    }
+    expect(model.asked).toEqual([]);
+    expect((await billed('M')).length).toBe(before);
+  });
+
+  it('the day’s limit: at the limit the press is refused in its own word — the model unasked, the photograph unread', async () => {
+    override.actor = ved();
+    await setSetting('tnved_ai_daily_limit', await countedToday(), author);
+    const before = (await billed('S')).length;
+    const refused = await press('S', lineId.S);
+    expect(refused).toMatchObject({ ok: false, error: 'ai_limit' });
+    expect(refused.today).toMatchObject({ used: await countedToday(), limit: await countedToday() });
+    expect(model.asked).toEqual([]);
+    expect((await billed('S')).length).toBe(before);
+    // One more allowed: exactly one press goes through, the next is refused.
+    await setSetting('tnved_ai_daily_limit', (await countedToday()) + 1, author);
+    expect((await press('S', lineId.S)).ok).toBe(true);
+    expect(await press('S', lineId.S)).toMatchObject({ ok: false, error: 'ai_limit' });
+  });
+
+  it('a limit of 0 is «switched off», and says so', async () => {
+    override.actor = ved();
+    await setSetting('tnved_ai_daily_limit', 0, author);
+    expect(await press('S', lineId.S)).toMatchObject({ ok: false, error: 'ai_off' });
+    expect(model.asked).toEqual([]);
+  });
+
+  it('(teardown) the limit goes back as it was', async () => {
+    await setSetting('tnved_ai_daily_limit', limitBefore as number, author);
+    expect(await getSetting('tnved_ai_daily_limit')).toBe(limitBefore);
   });
 });
 
@@ -480,6 +617,8 @@ describe('cleanup', () => {
     override.actor = null;
     for (const key of photoKeys) await getStorage().delete(key).catch(() => {});
     const lotIds = Object.values(lot);
+    // The 🤖's bill lines of this file's lots (they name the author, who stays).
+    for (const lotId of lotIds) await db.execute(sql`DELETE FROM ai_calc_passes WHERE kind = 'tnved' AND lot_id = ${lotId}::uuid`);
     await db.delete(attachments).where(inArray(attachments.entityId, lotIds));
     await db.delete(lotCompositions).where(inArray(lotCompositions.lotId, lotIds));
     await db.delete(boxMovements).where(inArray(boxMovements.boxId, boxIds));
