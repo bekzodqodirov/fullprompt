@@ -22,6 +22,7 @@ export function AttachmentsPanel({
   entityId,
   initial,
   editable,
+  removableIds,
   onAdd,
   onRemove,
 }: {
@@ -29,6 +30,12 @@ export function AttachmentsPanel({
   entityId: string;
   initial: AttachmentItem[];
   editable: boolean;
+  /**
+   * Files that carry a ✕ even for a reader who may not edit — their OWN
+   * uploads (0145). The delete door decides again; this only draws what it
+   * will allow. Anything uploaded in this session is the reader's too.
+   */
+  removableIds?: string[];
   /** Called after each successful upload so a caller can persist the list (e.g. into a draft). */
   onAdd?: (item: AttachmentItem) => void;
   /**
@@ -44,6 +51,8 @@ export function AttachmentsPanel({
   const [items, setItems] = useState(initial ?? []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mine, setMine] = useState<string[]>(removableIds ?? []);
+  const removable = (id: string) => editable || mine.includes(id);
 
   async function remove(id: string) {
     setError(null);
@@ -74,6 +83,7 @@ export function AttachmentsPanel({
         const res = await uploadAttachmentFile(file, entityType, entityId);
         if (res.ok) {
           setItems((prev) => [...prev, res.item]);
+          setMine((prev) => [...prev, res.item.id]);
           onAdd?.(res.item);
         } else {
           setError(
@@ -100,7 +110,7 @@ export function AttachmentsPanel({
               attachmentId={item.id}
               alt={item.fileName}
               className="h-16 w-16 rounded object-cover"
-              onDelete={editable ? () => remove(item.id) : undefined}
+              onDelete={removable(item.id) ? () => remove(item.id) : undefined}
             />
           ) : (
             <span key={item.id} className="relative inline-block">
@@ -114,7 +124,7 @@ export function AttachmentsPanel({
                 📄
                 <span className="max-w-full truncate text-[10px] text-ink-700">{item.fileName}</span>
               </a>
-              {editable && (
+              {removable(item.id) && (
                 <button
                   type="button"
                   aria-label="✕"

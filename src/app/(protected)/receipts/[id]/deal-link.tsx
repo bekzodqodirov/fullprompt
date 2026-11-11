@@ -29,12 +29,20 @@ export function DealLink({
   current,
   options,
   hasCompensation = false,
+  newDealHref = null,
 }: {
   receiptId: string;
   current: { id: string; code: string } | null;
   options: { id: string; code: string; title: string | null; cargo: string }[];
   /** 0105: a live compensation names this prixod — it follows the cargo. */
   hasCompensation?: boolean;
+  /**
+   * «+ Yangi bitim ochish» (0145): the deal form with this prixod's client
+   * preset AND this prixod riding along, so the new deal is born with the
+   * cargo on it. Null for a reader who may not open a deal (the VED), and
+   * for a prixod that already has one.
+   */
+  newDealHref?: string | null;
 }) {
   const t = useTranslations('receipts');
   const td = useTranslations('deals');
@@ -45,7 +53,15 @@ export function DealLink({
   const [pending, startTransition] = useTransition();
 
   return (
-    <div className="card space-y-2 !p-3">
+    // `id` = RECEIPT_DEAL_ANCHOR: the seller's «🔗 Bitim biriktirish» button
+    // (Telegram, «Prixod keldi») opens the card HERE, not at the top of a
+    // long page; the scroll margin clears the sticky app bar and the ring
+    // says which block was meant.
+    <div
+      id="bitim"
+      data-testid="receipt-deal-block"
+      className="card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500"
+    >
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-semibold">{t('deal')}: </span>
         {current ? (
@@ -90,6 +106,11 @@ export function DealLink({
           {pending ? tc('loading') : tc('save')}
         </button>
       </div>
+      {newDealHref && (
+        <Link href={newDealHref} className="inline-block text-sm font-semibold text-brand-700 underline" data-testid="receipt-deal-new">
+          + {t('dealNew')}
+        </Link>
+      )}
       {/* Said BEFORE the press (0105): re-filing the cargo re-files the money
           paid back for its lost cartons with it (`followCompensationDealTx`). */}
       {hasCompensation && (

@@ -8,7 +8,7 @@ import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
 import { endBurst } from './burst-wait';
-import { endReceiptFiles } from './receipt-files';
+import { closeReceiptFiles } from './receipt-files';
 import { foldPendingInvoice } from './file-goods';
 import { __forgetKeptLast } from './kept-last';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
@@ -327,7 +327,7 @@ export function startIntake(
   endBurst(chatId);
   // …and a prixod's file collection (docs/PRIXOD-XABARI.md §C.5): its files
   // are on the prixod already, and the next file must not go there.
-  endReceiptFiles(chatId);
+  closeReceiptFiles(chatId);
   return state;
 }
 

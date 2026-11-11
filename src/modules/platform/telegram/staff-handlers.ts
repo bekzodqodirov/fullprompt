@@ -142,8 +142,15 @@ import {
 import { sendNote } from './note-send';
 import { buttonLabel, splitMessage } from './limits';
 import { activeDraft, lingerFor } from './task-draft';
-import { endReceiptFiles } from './receipt-files';
-import { doneReceiptFilesPress, openReceiptFilesPress, receiptFileArrives } from './receipt-files-door';
+import { closeReceiptFiles } from './receipt-files';
+import {
+  cancelReceiptFilesPress,
+  doneReceiptFilesPress,
+  openReceiptFilesPress,
+  receiptFileArrives,
+  receiptFilesRefuseOther,
+  receiptFilesTextAnswer,
+} from './receipt-files-door';
 import {
   BUSY_INTAKE,
   REPLY_SENTENCES,
@@ -540,7 +547,11 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
     if (parsed.kind === 'receipt_files_done') {
-      await doneReceiptFilesPress(ctx, chatId);
+      await doneReceiptFilesPress(ctx, chatId, parsed.receiptId);
+      return;
+    }
+    if (parsed.kind === 'receipt_files_cancel') {
+      await cancelReceiptFilesPress(ctx, chatId, parsed.receiptId);
       return;
     }
 
@@ -746,9 +757,12 @@ export function registerStaffBot(bot: Bot): void {
         // did the calc collection and the zametka above. Asked BEFORE
         // `draftMedia`, whose Door B would offer «📌 Topshiriq qilamizmi?» for
         // every forward — and «forward qiling» is half of what the prompt
-        // asks for. Never a backlog file (Q5 a).
-        const draftTakes = activeDraft(chatId) !== null || lingerFor(chatId, ctx.message.media_group_id) !== null;
-        if (!late && !draftTakes && (await receiptFileArrives(ctx, chatId))) return;
+        // asks for. A backlog file IS taken, unlike every collector above:
+        // updates are handled in order, so a file handled after the press was
+        // sent after it, and nothing here is unsaved work — it lands on the
+        // prixod and is said, with «↩️ Bekor qilish» under it.
+        const draftTakes = !late && (activeDraft(chatId) !== null || lingerFor(chatId, ctx.message.media_group_id) !== null);
+        if (!draftTakes && (await receiptFileArrives(ctx, chatId))) return;
         // Third: a task draft takes it, or Door B offers to make one of a
         // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
         // cabinet's.
@@ -895,6 +909,11 @@ export function registerStaffBot(bot: Bot): void {
         return;
       }
       if (!late && activeCapture(chatId)) return next();
+      // A prixod's file collection keeps photos and files only
+      // (docs/PRIXOD-XABARI.md §C.5): said in words, BEFORE Door B offers to
+      // make a task of a forwarded video — or the cabinet answers a staff
+      // chat with nothing.
+      if (await receiptFilesRefuseOther(ctx, chatId)) return;
       if (await draftMedia(ctx, chatId)) return;
       // A voice note as a REPLY to a thread or task ping (E10 a, text first) —
       // after the draft declined it, so a live draft's part still joins it.
@@ -1343,6 +1362,15 @@ export async function answerStaffText(
     } else {
       await ctx.reply(orphan.text);
     }
+    return;
+  }
+  // A prixod's file collection is live and no free lookup answered: the text
+  // is told it is not kept — never handed to the paid assistant as a question
+  // it would answer about something else (docs/PRIXOD-XABARI.md §C.5). Door
+  // B's «🔍» is an asked-for search and goes on.
+  const filesSay = opts.once ? null : receiptFilesTextAnswer(chatId);
+  if (filesSay) {
+    await ctx.reply(filesSay);
     return;
   }
   // Door B's «🔍 Qidirish» runs once per offer message: two taps, one model call.
@@ -2153,7 +2181,7 @@ async function handleNoteCallback(
     // A capture opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1) — and
     // a prixod's file collection (docs/PRIXOD-XABARI.md §C.5).
     endBurst(chatId);
-    endReceiptFiles(chatId);
+    closeReceiptFiles(chatId);
     startCapture(chatId, uuidv4());
     await ctx.reply('Zametkaga nom bering (masalan: «Xitoy sklad manzili»):');
     return;

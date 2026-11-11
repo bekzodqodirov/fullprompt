@@ -26,6 +26,7 @@ import { JOB_PROCESS_EVENTS, enqueue } from '@/modules/platform/jobs/boss';
 import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { ftlDoorFor } from '@/modules/wms/ftl/door';
 import { isLoadMode } from '@/modules/wms/ftl/sql';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 
 export interface DealFormState {
   ok?: boolean;
@@ -135,9 +136,31 @@ export async function createDealAction(
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
   let id: string | null = null;
+  // A deal opened FOR a prixod (the card's «+ Yangi bitim ochish», 0145) is
+  // born with it: linked through the one link door — client match, the FTL
+  // door, the audit — right after the deal exists. A link that is refused
+  // must not un-create the deal or show an error over a form whose next
+  // press would mint a second one: the deal's own card opens instead, where
+  // «Prixod biriktirish» says what stood in the way.
+  const posted = String(form.get('receiptId') ?? '');
+  const receiptId = isUuidShaped(posted) ? posted : null;
+  let linked = false as boolean;
   const state = await run('terms', async (ctx, actor) => {
     id = await createDeal({ ...parsed.data, load: readLoad(form, actor) }, ctx);
+    if (receiptId && id) {
+      try {
+        await linkReceipt(receiptId, id, ctx, ftlDoorFor(actor));
+        linked = true;
+      } catch (err) {
+        if (!(err instanceof DealError)) throw err;
+      }
+    }
   });
+  if (state.ok && id && receiptId && linked) {
+    revalidatePath(`/receipts/${receiptId}`);
+    // Back to the cargo the deal was opened for, at its deal block.
+    redirect(`/receipts/${receiptId}#bitim`);
+  }
   // Straight to the card: a deal that was just created is a deal somebody is
   // about to price, and the list is one more tap in the way.
   if (state.ok && id) redirect(`/bitimlar/${id}`);

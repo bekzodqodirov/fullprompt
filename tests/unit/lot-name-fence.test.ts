@@ -93,6 +93,10 @@ const NAMES: Record<string, Kind> = {
   'src/app/(protected)/inventory/qrless-print-list.tsx': 'own',
   'src/app/api/pricing/similar/[lotId]/route.ts': 'own',
   'src/modules/platform/notifications/service.ts': 'own',
+  // «Prixod keldi» (0145): the seller's message at the moment of the confirm —
+  // the fact as received, before any tarkib exists; the same payload the
+  // service's own cases print.
+  'src/modules/platform/notifications/receipt-arrival.ts': 'own',
   'src/modules/wms/documents/agent-xlsx.ts': 'own',
   'src/modules/wms/documents/packing-photos-xlsx.ts': 'own',
   'src/modules/wms/documents/ved-xlsx.ts': 'own',

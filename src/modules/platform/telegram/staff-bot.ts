@@ -401,11 +401,15 @@ export type BotCallback =
   | { kind: 'agent'; op: AgentOp; id: string; digest?: string }
   /**
    * «📎 Fayl qo‘shish» under a prixod's message — `pf:<receipt>` — and the
-   * collection's own «✅ Bo‘ldi», `pf:ok` (0145, docs/PRIXOD-XABARI.md §C.5).
-   * `pf:` collides with nothing: the cabinet's `ph:` is its own two letters.
+   * collection's own «✅ Bo‘ldi» and «↩️ Bekor qilish», `pf:ok:<receipt>` /
+   * `pf:no:<receipt>` (0145, docs/PRIXOD-XABARI.md §C.5). Both carry their
+   * prixod: a press under an EARLIER prixod's message must never close the
+   * one that is open now. `pf:` collides with nothing: the cabinet's `ph:`
+   * is its own two letters.
    */
   | { kind: 'receipt_files'; receiptId: string }
-  | { kind: 'receipt_files_done' };
+  | { kind: 'receipt_files_done'; receiptId: string }
+  | { kind: 'receipt_files_cancel'; receiptId: string };
 
 /** ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed · ↩ not that client · 📌 general · 👤 own · ✖ skip. */
 export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z'] as const;
@@ -460,10 +464,11 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // card, redelivered or tapped twice into a bot that was down, only asks.
   agent: 'cas',
   // Opening a prixod's file collection only ASKS (a second press re-sends the
-  // prompt and keeps the count); «✅ Bo‘ldi» ends it once — a second press
-  // finds nothing open and says so.
+  // prompt and keeps what it took); «✅ Bo‘ldi» and «↩️ Bekor qilish» end it
+  // once — a second press finds nothing of that prixod's open and says so.
   receipt_files: 'prompt',
   receipt_files_done: 'cas',
+  receipt_files_cancel: 'cas',
 };
 
 /** ⏰'s four answers. */
@@ -792,9 +797,11 @@ export function parseCallback(data: string): BotCallback | null {
   }
   // A prixod's file collection (0145). Lowercase hex only — the row is drawn
   // lowercased (`buttonsFor`), so nothing drawn is refused here (#939).
-  if (data === 'pf:ok') return { kind: 'receipt_files_done' };
-  const files = /^pf:([0-9a-f-]{36})$/.exec(data);
-  if (files) return { kind: 'receipt_files', receiptId: files[1]! };
+  const files = /^pf:(?:(ok|no):)?([0-9a-f-]{36})$/.exec(data);
+  if (files) {
+    const kind = files[1] === 'ok' ? 'receipt_files_done' : files[1] === 'no' ? 'receipt_files_cancel' : 'receipt_files';
+    return { kind, receiptId: files[2]! };
+  }
   const approval = /^a:([01]):([0-9a-f-]{36})$/.exec(data);
   if (approval) {
     return {

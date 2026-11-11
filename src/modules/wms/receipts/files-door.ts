@@ -71,8 +71,10 @@ export async function receiptFilesDoor(
  * The History's line for a file the bot attached. `saveAttachment` writes no
  * audit row (the web's panel never has), but a file that arrives from a
  * chat has no screen behind it: without this line nobody could say who put
- * an invoice on the prixod, or when. One row per file; the History's own
- * grouping folds a burst from one person into one entry.
+ * an invoice on the prixod, or when. One row per file, each under its own
+ * key, so the History's grouping folds a burst from one person into one
+ * entry that still names every file. (A file uploaded on the SITE still
+ * writes no row — «no line» does not mean «nobody added it».)
  *
  * Never throws: the file IS stored, and a History that cannot be written
  * must not tell the seller it was not.
@@ -80,6 +82,8 @@ export async function receiptFilesDoor(
 export async function recordReceiptFile(input: {
   actorId: string;
   receipt: Pick<ReceiptFilesTarget, 'id' | 'warehouseId'>;
+  /** What tells this file from the next one in the same burst — its Telegram message. */
+  item: string;
   fileName: string;
 }): Promise<void> {
   try {
@@ -91,7 +95,10 @@ export async function recordReceiptFile(input: {
         entityId: input.receipt.id,
         action: 'update',
         before: null,
-        after: { fileAdded: `${input.fileName.slice(0, 200)} · Telegram` },
+        // A per-file key (`fileAdded:<message>`): the History nets a run of
+        // one person's edits PER KEY, so a shared key folded an album of
+        // three into one line naming the last (audit/fields.ts's own rule).
+        after: { [`fileAdded:${input.item}`]: `${input.fileName.slice(0, 200)} · Telegram` },
       },
     );
   } catch (err) {

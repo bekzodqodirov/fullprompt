@@ -160,6 +160,15 @@ export async function saveAttachment(
      * mints a second one. Default: the column's own uuid.
      */
     id?: string;
+    /**
+     * Store a picture as a FILE (`kind: 'file'`), not as a photo: a PAPER a
+     * seller photographed — an invoice, a packing list — sent to a prixod
+     * through the bot (0145). A prixod's `kind = 'photo'` attachments are its
+     * CARTON photos: the loader's list, the stock table and the Ostatka Excel
+     * draw the first of them where the cargo should be, and an invoice must
+     * never stand there. Type and size limits are the picture's own.
+     */
+    asPaper?: boolean;
   } = {},
 ): Promise<{ id: string }> {
   if (opts.keyName !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(opts.keyName)) {
@@ -195,7 +204,7 @@ export async function saveAttachment(
       ...(opts.id !== undefined ? { id: opts.id } : {}),
       entityType: input.entityType,
       entityId: input.entityId,
-      kind: isPhoto ? 'photo' : 'file',
+      kind: isPhoto && !opts.asPaper ? 'photo' : 'file',
       storageKey,
       fileName: input.fileName,
       contentType,

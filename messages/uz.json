@@ -892,7 +892,8 @@
       "freightMode": "Yuk turi (LTL/FTL)",
       "released": "Raqami qaytarildi",
       "number": "Raqam",
-      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)"
+      "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)",
+      "fileAdded": "Fayl qo'shildi"
     }
   },
   "profile": {
@@ -1096,7 +1097,8 @@
     "assignHasCompensation": "Bu prixod bo‘yicha mijozga kompensatsiya yozilgan — mijozni almashtirishdan oldin buxgalter uni bekor qilsin va to‘g‘ri mijozga qayta yozsin.",
     "dealLinkCompensation": "Bu prixod bo‘yicha kompensatsiya yozilgan — u ham yangi bitimga o‘tadi.",
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
-    "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi"
+    "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
+    "dealNew": "Yangi bitim ochish"
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -3480,7 +3482,8 @@
     "profitCompensation": "− kompensatsiya (yo‘qolgan yuk)",
     "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
     "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi.",
-    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q."
+    "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q.",
+    "newDealForReceipt": "Prixod {number} shu bitimga biriktiriladi."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

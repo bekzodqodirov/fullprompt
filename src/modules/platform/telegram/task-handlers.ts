@@ -28,7 +28,7 @@ import {
   type BurstPart,
   type BurstPayload,
 } from './burst-wait';
-import { endReceiptFiles } from './receipt-files';
+import { closeReceiptFiles } from './receipt-files';
 import {
   acceptTaskFromBot,
   answerFromBot,
@@ -165,7 +165,7 @@ export async function startTaskDraft(
   // A draft opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1) — and a
   // prixod's file collection (docs/PRIXOD-XABARI.md §C.5).
   endBurst(chatId);
-  endReceiptFiles(chatId);
+  closeReceiptFiles(chatId);
   const draft = startDraft(chatId, seed);
   await promptFor(head ? headedSay(sayIn(ctx), head) : sayIn(ctx), chatId, draft, staff.id);
   return true;

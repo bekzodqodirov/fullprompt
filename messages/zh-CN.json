@@ -892,7 +892,8 @@
       "freightMode": "货物类型（LTL/FTL）",
       "released": "编号已收回",
       "number": "编号",
-      "destBeforeDeparture": "收货仓库（出发前）"
+      "destBeforeDeparture": "收货仓库（出发前）",
+      "fileAdded": "已添加文件"
     }
   },
   "profile": {
@@ -1096,7 +1097,8 @@
     "assignHasCompensation": "此入库单有赔偿记录——更换客户前，请会计作废并记到正确的客户。",
     "dealLinkCompensation": "此入库单有赔偿——将一并转到新交易。",
     "dealLinkUpsalePaid": "该交易的销售员提成已支付 — 移动入库前请会计撤销该笔支付",
-    "attachInUse": "此单据已附在批次组成上 — 从组成中移除前无法删除"
+    "attachInUse": "此单据已附在批次组成上 — 从组成中移除前无法删除",
+    "dealNew": "新建交易"
   },
   "stock": {
     "title": "库存",
@@ -3480,7 +3482,8 @@
     "profitCompensation": "− 赔偿（丢失货物）",
     "profitNetRevenue": "收入（扣除赔偿后）",
     "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。",
-    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。"
+    "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。",
+    "newDealForReceipt": "入库单 {number} 将关联到此交易。"
   },
   "automation": {
     "title": "自动化规则",

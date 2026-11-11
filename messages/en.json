@@ -892,7 +892,8 @@
       "freightMode": "Load type (LTL/FTL)",
       "released": "Number given back",
       "number": "Number",
-      "destBeforeDeparture": "Receiving warehouse (before departure)"
+      "destBeforeDeparture": "Receiving warehouse (before departure)",
+      "fileAdded": "File added"
     }
   },
   "profile": {
@@ -1096,7 +1097,8 @@
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
-    "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them"
+    "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them",
+    "dealNew": "Open a new deal"
   },
   "stock": {
     "title": "Warehouse stock",
@@ -3480,7 +3482,8 @@
     "profitCompensation": "− compensation (lost cargo)",
     "profitNetRevenue": "Revenue (after compensation)",
     "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method».",
-    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue."
+    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue.",
+    "newDealForReceipt": "Receipt {number} will be attached to this deal."
   },
   "automation": {
     "title": "Automation rules",

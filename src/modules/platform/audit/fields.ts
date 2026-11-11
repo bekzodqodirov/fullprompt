@@ -130,6 +130,9 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // The CLIENT's own ✅ / ❌ in Telegram (0144, per lot — `clientConfirm:A`),
   // a dispute a person closed, and the question a person sent from the card.
   clientConfirm: 'clientConfirm',
+  // A file a person sent to the prixod through the staff bot (0145, per file
+  // — `fileAdded:<message>`).
+  fileAdded: 'fileAdded',
   clientAsk: 'clientAsk',
   // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
   // released, handed back, answered with a price, re-opened for a correction

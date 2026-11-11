@@ -42,8 +42,11 @@ export function DealForm({
   quoteLocked,
   quoteCalcHref,
   load,
+  receipt = null,
 }: {
   dealId?: string;
+  /** A NEW deal opened for one prixod (0145): it is born with that cargo on it. */
+  receipt?: { id: string; number: string } | null;
   stages: DealStageOption[];
   managers: { id: string; fullName: string }[];
   initial: DealInitial;
@@ -69,6 +72,14 @@ export function DealForm({
   return (
     <form action={formAction} className="space-y-3" data-testid="deal-form">
       <input type="hidden" name="clientId" value={initial.clientId} />
+      {receipt && !dealId && (
+        <>
+          <input type="hidden" name="receiptId" value={receipt.id} />
+          <p className="rounded-lg bg-surface-sunken px-3 py-2 text-sm" data-testid="deal-form-receipt">
+            📦 {t('newDealForReceipt', { number: receipt.number })}
+          </p>
+        </>
+      )}
 
       <label className="block">
         <span className="label">{t('dealTitle')}</span>

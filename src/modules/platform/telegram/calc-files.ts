@@ -1359,6 +1359,8 @@ export async function saveBotFile(
     namePrefix: string;
     id?: string;
     keyName?: string;
+    /** A paper, never a carton photo — `saveAttachment`'s own option (0145). */
+    asPaper?: boolean;
   },
   file: BotFile | null = fileOf(ctx.message ?? {}),
 ): Promise<SavedBotFile | BotFileRefusal> {
@@ -1399,6 +1401,7 @@ export async function saveBotFile(
         thumbnails: 'skip',
         ...(target.id !== undefined ? { id: target.id } : {}),
         ...(target.keyName !== undefined ? { keyName: target.keyName } : {}),
+        ...(target.asPaper ? { asPaper: true } : {}),
       },
     ));
   } catch (err) {

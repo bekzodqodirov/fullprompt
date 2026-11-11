@@ -3,7 +3,8 @@ import { getTranslations } from 'next-intl/server';
 import { asc, eq } from 'drizzle-orm';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
-import { clients, leads } from '@/modules/platform/db/schema';
+import { clients, leads, receipts } from '@/modules/platform/db/schema';
+import { isUuidShaped } from '@/modules/platform/audit/fields';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listStages } from '@/modules/wms/deals/service';
@@ -25,7 +26,7 @@ import { ClientPicker } from './client-picker';
 export default async function NewDealPage({
   searchParams,
 }: {
-  searchParams: Promise<{ client?: string; lead?: string }>;
+  searchParams: Promise<{ client?: string; lead?: string; prixod?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
@@ -55,6 +56,24 @@ export default async function NewDealPage({
   // LTL / FTL (0135): a won lead's FTL is offered on its deal too (his 1a);
   // null = the server is one migration behind (no choice drawn).
   const leadMode = quote ? await leadLoadMode(quote.id) : (await ftlReady()) ? 'ltl' : null;
+
+  // Arrived from a prixod card's «+ Yangi bitim ochish» (0145): the deal is
+  // being opened FOR that cargo, so it is born with the prixod on it — the
+  // seller who pressed «🔗 Bitim biriktirish» must not land on a new deal
+  // with the prixod still on none. Only a live prixod of THIS client that has
+  // no deal yet: a `prixod=` in the URL is a forged post until proven (#514),
+  // and the create action asks the link's own door again.
+  const forReceipt =
+    preset && params.prixod && isUuidShaped(params.prixod)
+      ? await db.query.receipts.findFirst({
+          columns: { id: true, number: true, clientId: true, dealId: true, status: true },
+          where: eq(receipts.id, params.prixod),
+        })
+      : null;
+  const receipt =
+    forReceipt && preset && forReceipt.clientId === preset.id && !forReceipt.dealId && forReceipt.status === 'confirmed'
+      ? { id: forReceipt.id, number: forReceipt.number ?? '' }
+      : null;
 
   if (!preset) {
     const list = await db
@@ -90,6 +109,7 @@ export default async function NewDealPage({
       <DealForm
         stages={formStages(stages, null)}
         managers={managers}
+        receipt={receipt}
         load={leadMode ? { initial: quote ? leadMode : 'ltl', office: mayRevertFtl(actor), creating: true } : null}
         initial={{
           clientId: preset.id,

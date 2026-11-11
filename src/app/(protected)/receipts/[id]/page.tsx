@@ -46,6 +46,7 @@ import { calcControlScopeFor } from '@/modules/wms/calc/control-scope';
 import { MoveReceipt } from './move-receipt';
 import { ReturnToSender } from './return-to-sender';
 import { canWriteDeal, openDealsForClient, withCargo } from '@/modules/wms/deals/service';
+import { mayEditDealTerms } from '@/modules/wms/deals/door';
 import { BackLink } from '@/components/back-link';
 import { CustomFieldsPanel } from '@/components/custom-fields-panel';
 import { PrintLabels } from '@/components/print-labels';
@@ -190,6 +191,10 @@ export default async function ReceiptDetailPage({
     contentType,
     kind,
   }));
+  // The reader's OWN uploads carry a ✕ whoever they are (0145): the delete
+  // door has always let an uploader take their file back, and a seller who
+  // sent the wrong invoice through the bot must not need the logist for it.
+  const ownFileIds = receiptFileRows.filter((f) => f.uploadedBy === actor.id).map((f) => f.id);
 
   // Lot tarkibi (docs/LOT-TARKIBI.md §8): the paper compositions, the trucks
   // whose papers already went, and who may state one. The page has already
@@ -589,6 +594,11 @@ export default async function ReceiptDetailPage({
           current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
           options={dealChoices}
           hasCompensation={hasCompensation}
+          newDealHref={
+            !linkedDeal && mayEditDealTerms(actor.permissions)
+              ? `/bitimlar/new?client=${receipt.clientId}&prixod=${id}`
+              : null
+          }
         />
       )}
 
@@ -839,6 +849,7 @@ export default async function ReceiptDetailPage({
             entityId={id}
             initial={receiptFiles}
             editable={canEdit}
+            removableIds={ownFileIds}
           />
         </div>
         {costMeta ? (
