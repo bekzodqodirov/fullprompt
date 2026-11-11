@@ -3405,9 +3405,10 @@ proven = ≥ 50 decided and ≥ 0.80 (45/50). **Auto-send is DESIGNED (§18.3), 
 `prompt.ts` must keep `recent` exactly the old window — `tests/unit/agent-context-window.test.ts` holds the old loop
 verbatim as its oracle.
 
-**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1629-#1649 — renumbered from #1622-#1642 on two merges, the
-THIRTY-SECOND and THIRTY-THIRD collisions: main's AI sotuvchi «100 ta xabar» round took #1622-#1627 first, then its
-`m0-smoke` locator fix (PR #144) took #1628 while the merged tree was being verified; migration 0143
+**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1630-#1650 — renumbered from #1622-#1642 on three merges, the
+THIRTY-SECOND, THIRTY-THIRD and THIRTY-FOURTH collisions: main's AI sotuvchi «100 ta xabar» round took #1622-#1627
+first, then its `m0-smoke` locator fix (PR #144) took #1628 while the merged tree was being verified, then the driver
+app's «HTTP 400» hotfix (PR #142) took #1629 the day after the push; migration 0143
 `tarkib_document_optional`, `when` …122 — ledger must reach 144; minted as 0142 and renumbered on the first merge, the
 THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9
 and every «As built» block binding).** His
@@ -3444,10 +3445,10 @@ shown, so a stale answer names nothing); never across a customs scope, never «�
 «Маркировка» after «№» (client code / marking + lot letter), RED where one lot's tarkib stands on several positions.
 **Every reader of the invoice sheet reads by HEADER** (`tests/fixtures/invoice-sheet.ts`). Found on the way: the
 client-history XLSX answered 500 for every client since it shipped (exceljs refuses a sheet named «History»); the
-document guard 404s a malformed id. Reviewed as built (#1647-#1648: ten findings, none refuted, all fixed and
+document guard 404s a malformed id. Reviewed as built (#1648-#1649: ten findings, none refuted, all fixed and
 red-proven — the skeptics died on the usage limit, so each was reproduced by a failing test first). LOOKED AT at 360
-and 1280 with a 60-character first good (#1646): on a phone the stock and truck tables scroll sideways (fixed
-min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1649): a red proof that turns
+and 1280 with a 60-character first good (#1647): on a phone the stock and truck tables scroll sideways (fixed
+min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1650): a red proof that turns
 a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
 `scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
 findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144) before the

@@ -332,7 +332,7 @@ Built:
 - The editor's root carries `data-tnved-unsaved` (typed and not saved, product rows and
   lines) — the invoice button reads it (§6.4).
 - **The editor re-seeds by MERGE, never by remount** (the review of the built round, five
-  findings — DECISIONS #1648). `editor-state.ts` (pure): `reseedRows` keeps a code that is
+  findings — DECISIONS #1649). `editor-state.ts` (pure): `reseedRows` keeps a code that is
   typed or suggested and not saved on its row when the server's rows come back, and takes the
   server's row everywhere else; the page's `key` built from the line revisions is gone. The
   save is not stopped by one refusal (`saveLineCodesAction` → `refused`, `saveTnvedAction` →

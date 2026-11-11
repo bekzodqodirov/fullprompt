@@ -7604,14 +7604,14 @@ mounted first: green in CI on the same commit, green on a re-run. Both of the sp
 `<main>`, where every form's refusal renders. It passed 9 of 9 (`--repeat-each 3`). No other spec uses the bare
 locator.
 
-## Tarkib tuzatishlari — the document optional, the name every screen shows, a row per good, 🤖 on a line, the invoice as positions (2026-11-10; migration 0143 `tarkib_document_optional`, `when` …122, ledger 144; numbered #1629-#1649 — minted as #1622-#1642 and renumbered twice: by six on the second merge, the THIRTY-SECOND collision (main's AI sotuvchi round «100 ta xabar» took #1622-#1627 first), and by one more on the third, the THIRTY-THIRD (main's `m0-smoke` locator fix, PR #144, took #1628 while this round's merged tree was being verified); the migration was minted as 0142 and renumbered on the first merge — the THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 with the same `when` first)
+## Tarkib tuzatishlari — the document optional, the name every screen shows, a row per good, 🤖 on a line, the invoice as positions (2026-11-10; migration 0143 `tarkib_document_optional`, `when` …122, ledger 144; numbered #1630-#1650 — minted as #1622-#1642 and renumbered three times: by six on the second merge, the THIRTY-SECOND collision (main's AI sotuvchi round «100 ta xabar» took #1622-#1627 first), by one more on the third, the THIRTY-THIRD (main's `m0-smoke` locator fix, PR #144, took #1628 while this round's merged tree was being verified), and by one more on the fourth, the THIRTY-FOURTH (the driver app's «HTTP 400» hotfix, PR #142, took #1629 the day after the push); the migration was minted as 0142 and renumbered on the first merge — the THIRTY-FIRST collision: main's «✅ Yuborish chiqmadi» took 0142 with the same `when` first)
 
 His six items after using the lot tarkibi for six weeks («togirlash kerak bolgan ishlar bor … savollarin
 takliflarin bolsa ber»). Spec, binding where it says so: `docs/TARKIB-TUZATISH.md` (§9 = what the last maps and
 the papers judge changed). Built with the ⭐ of every question that could wait for him — the questions went out
 with the result.
 
-**#1629 — The client's document is OPTIONAL (his item 1; the recorded reversal of rule 3 of 2026-10-01).** «tarkib
+**#1630 — The client's document is OPTIONAL (his item 1; the recorded reversal of rule 3 of 2026-10-01).** «tarkib
 qoshganda tasdiq sorash rasim file» was read as: the save must stop demanding a file. 0143 drops NOT NULL on
 `lot_compositions.attachment_id` and nothing else; a file that IS cited is checked exactly as before
 (`document_not_on_receipt`, `document_is_photo`, the FK's NO ACTION → `in_use`), so the reason the rule existed —
@@ -7624,7 +7624,7 @@ every failure (`void addDocument(…)` with a try/finally and no catch) — a HE
 nothing; it says `upload_failed` and the attachments panel's own words now. ASKED of him: optional for every
 tarkib (built), or mandatory again when the tarkib names several goods.
 
-**#1630 — The Russian name a lot is SHOWN under is DERIVED from its tarkib, never written (his items 3-4).** One
+**#1631 — The Russian name a lot is SHOWN under is DERIVED from its tarkib, never written (his items 3-4).** One
 line → its name; several → the first line's name and how many more («Клавиатура +2» for three goods — the house's
 «first +N»; his «yonida + nechta tarkibligi» could also mean the total, and that is asked). The first design wrote
 the label into `receipt_lots.product_name_ru` at the save; the map of that column killed it: 72 files read it and
@@ -7638,17 +7638,17 @@ and its SQL twins `lotRuShownSql` / `lotGoodsShownSql` / `lotGoodsKindsSql` / `t
 `lotRuShownFor`, pinned against each other at 0 / 1 / 3 / 20 lines. Measured: 2.3 µs per lot row as a scalar
 subquery, legal in a grouped select.
 
-**#1631 — A one-line tarkib named as the lot's CHINESE name gives no label.** «Bitta tovar» pre-fills the line
+**#1632 — A one-line tarkib named as the lot's CHINESE name gives no label.** «Bitta tovar» pre-fills the line
 with the Russian name ELSE the Chinese one, and most lots are typed in Chinese only — so the commonest one-line
 tarkib made every list print «键盘 (键盘)». `tarkibLabel(lines, lotZh)` takes the Chinese name as a REQUIRED
 argument (an optional one is forgotten at the one caller that matters) and the SQL twin restates it in its HAVING.
 
-**#1632 — «+N» survives a cut.** A truncating cell cut the count off, and the count is the one thing that says
+**#1633 — «+N» survives a cut.** A truncating cell cut the count off, and the count is the one thing that says
 there is more in the carton than the name. `platform/text/label-count.ts` (`splitLabelCount`, `clipKeepingCount`,
 `withoutLabelCount` for a search needle someone copied off the screen) and `components/lot-goods-name.tsx` (the
 count in its own `shrink-0` span) — every truncating cell and every clip goes through one of the two.
 
-**#1633 — Any STANDING tarkib makes the lot ✅ (the recorded reversal of his 8.6), and the person's ✅ is for the
+**#1634 — Any STANDING tarkib makes the lot ✅ (the recorded reversal of his 8.6), and the person's ✅ is for the
 name the card SHOWS.** 8.6 withheld the ✅ from a one-line tarkib naming another good because the warehouse screens
 went on printing the lot's own name beside it; the screens print the tarkib's name now, so what the ✅ stands
 beside IS what a person stated. The other half was found by walking it: with the STORED name in the snapshot, a
@@ -7659,7 +7659,7 @@ for the label it was pressed under. THE TRAP: reading the shown name inside the 
 `lotRuShownFor(…, tx)` turned `tx-pool.test.ts` red on every caller of `lockLot` (a function that calls a pooled
 name is pooled) — the tick reads it with the pure SQL builder on its own handle.
 
-**#1634 — The agent file prints a row per good (his item 2; reverses the «one row, contents in the cell» of
+**#1635 — The agent file prints a row per good (his item 2; reverses the «one row, contents in the cell» of
 #1263-2a).** «Yuklama» is in no UI string; exactly one surface matched his description — the plan's «Agent uchun
 Excel», whose composed lot was one row with «Состав лота: …» inside the product cell. Now each block (here by
 arrival, «В пути», «Не пришло») prints one row per good, grouped by LOT ID (labels are not unique: 27 of 605 on
@@ -7670,7 +7670,7 @@ per group; the Chinese name never leaves the one sheet read Chinese-first («Н�
 when no line is the lot's own good). TEST LESSON: the road twins held with the slicing broken, because a split of
 TWO goods is always «lucky» (`seatsPrefix`) — three goods made eight proofs red.
 
-**#1635 — The invoice draft is built from POSITIONS (his item 6).** `documents/invoice-rows.ts`, pure: source rows
+**#1636 — The invoice draft is built from POSITIONS (his item 6).** `documents/invoice-rows.ts`, pure: source rows
 (one per lot or tarkib line, each knowing its lot's label and its customs scope) → positions. Merged BY ITSELF:
 the same code AND the same name (`nameKey`) AND the same unit inside one customs scope — his «tnved kod 1 xil
 bo'lsa nomi ham 1 xil bo'lsa qo'shib yuborsin». ASKED: one code, different names («alohida oyna ochilsin … 
@@ -7682,7 +7682,7 @@ ADDRESS (`?merge=<code>.<sig>,…` or `all.<fp>`): `sig` is a hash of the scope,
 shown with, so an answer given about yesterday's names names nothing today — a bare address, a bookmark and a
 stale link all print every asked group apart. No table, nothing stored.
 
-**#1636 — «Маркировка» after «№», and red where a carton may hold another good.** Every position names the lots
+**#1637 — «Маркировка» after «№», and red where a carton may hold another good.** Every position names the lots
 behind it — client code (or the unclaimed marking, both when both exist) and the lot letter: «GS777-A». A lot
 whose tarkib stands on two or more positions is printed RED and bold on each of them: opening a carton of that
 sticker may show any of those goods — his «shu orqali men bilaman». A lot wholly inside one position (a merged
@@ -7691,7 +7691,7 @@ three lots said nothing about which. THE COLUMN MOVED EVERY READER: nine tests a
 position; all read by HEADER now through one fixture (`tests/fixtures/invoice-sheet.ts`), and the fence's rule
 on the invoice is re-anchored on `invoiceSourceRows` + `invoiceModel`.
 
-**#1637 — «Invoys» is a button that asks, and the file still comes through a signed link.** A link with an
+**#1638 — «Invoys» is a button that asks, and the file still comes through a signed link.** A link with an
 onClick would have been taken by the layout's capture-phase download listener before React heard it — on a phone
 the file would come unmerged AND the dialog would open. `followDownload` (components/download-url.ts) is the
 button's door to the same signed link, so Telegram's in-app browser gets the merged file too; the groups route
@@ -7701,11 +7701,11 @@ is made from the SAVED codes. Found by the browser run: for the third of a secon
 refreshed page the editor still counted the saved code as unsaved (it compared against the rows it was handed),
 so the dialog warned about a code already written — the editor keeps what a save wrote until the refresh lands.
 
-**#1638 — The document guard answers 404 to an id that is not an id.** Bound into the query a malformed uuid is a
+**#1639 — The document guard answers 404 to an id that is not an id.** Bound into the query a malformed uuid is a
 22P02 — a 500 on all four document routes and the new one. The fence first named the predicate only and held
 with the refusal switched off (`isUuidShaped(batchId) && false`); it names the refusing statement now.
 
-**#1639 — A tarkib line has its 🤖 (his item 5; the recorded reversal of «a line row has no 🤖»).** A truck of
+**#1640 — A tarkib line has its 🤖 (his item 5; the recorded reversal of «a line row has no 🤖»).** A truck of
 composed lots had no AI at all, and nothing on the screen said why (`tnved.lineNoAi` sat in four bundles and was
 referenced nowhere) — he met a missing button. The old rule was about the PHOTOGRAPH (a keyboard carton steering
 the mouse's code), so that is what the new one answers: `lineQuestion` (pure) asks about the line's own name;
@@ -7718,13 +7718,13 @@ confirmed): the model is never paid for a code that could not be saved. It write
 editor's until «Saqlash», on the line and never in the memory. ASKED: photo for lots of several goods (⭐ no);
 a daily limit (⭐ none, like the lot's 🤖).
 
-**#1640 — The model call had 2048 tokens and no voice.** The analyst model thinks INSIDE `max_tokens`: on a hard
+**#1641 — The model call had 2048 tokens and no voice.** The analyst model thinks INSIDE `max_tokens`: on a hard
 good the JSON had no room, `JSON.parse('')` threw, and the person read «AI javob bermadi» about a model that had
 answered (`intake-ai.ts` met this at 4096). 16000 now, a cut-off answer named in the log, the tokens of every
 press logged (this button has no ledger), and the catch that turned a timeout, a burned key and an unreadable
 answer into one silent `ai_failed` writes the cause down.
 
-**#1641 — «🤖 AI taklif (N)» counts lines, never overwrites a typed code, and stops at a shut door.** N is every
+**#1642 — «🤖 AI taklif (N)» counts lines, never overwrites a typed code, and stops at a shut door.** N is every
 empty code the 🤖 can fill. The walk fills a line that has a 💡 (a code a person stated for that name) without
 asking; asks the rest one at a time; keeps ONE answer per line name (two asks can return two codes for one good,
 and the invoice merges same-named goods only when their codes are equal); writes through `fillEmpty`, whose
@@ -7732,11 +7732,11 @@ emptiness check is inside the state updater — so a code typed while the model 
 by an answer arriving late; and ends at any refusal that is not the model's own failure, or two of those in a
 row — it used to press a dead button once per row. Progress and «To'xtatish» on the button itself.
 
-**#1642 — «Saqlash» posts only the codes that changed.** Every coded product row was posted on every save, so
+**#1643 — «Saqlash» posts only the codes that changed.** Every coded product row was posted on every save, so
 one product a colleague had composed meanwhile (its row is a tarkib's lines now) refused the whole save
 `not_on_truck`, and the reload that cures it drops every answer typed or suggested and not yet saved.
 
-**#1643 — The warehouse screens and the searches print the tarkib's name (package P2a).** /stock (table, lot and
+**#1644 — The warehouse screens and the searches print the tarkib's name (package P2a).** /stock (table, lot and
 client drill-downs) and the Ostatka XLSX, the plan editor's two lists and the plan view, the truck card's contents,
 the cost grid and the «Narx» tab, the count panels and their alarm texts, the unload's missing-lot lines, box and
 crate pages, the crate builder and the handover screen, the staff bot, the client card's «Yuklar», the map's popup,
@@ -7751,7 +7751,7 @@ line is mice, and a label copied off a card finds its lot. Platform reaches the 
 alarms' stored payloads carry the label because the payload IS the text; a labelled name is QUOTED there — «GS777-A
 · «Клавиатура +2»: +3» — since «+2: +3» read as two figures of one sum.
 
-**#1644 — The office lists and the customer's surfaces (package P2b).** The deal pickers' cargo label and the
+**#1645 — The office lists and the customer's surfaces (package P2b).** The deal pickers' cargo label and the
 uncollected list already printed «first +N» over SEVERAL lots; fed the lot's label they would read «Клавиатура +2
 +1», so they unnest the goods KINDS (`lotGoodsKindsSql`) and keep ONE number (`UncollectedRow.moreLots` →
 `moreKinds`: its meaning changed, so its name did, and the compiler named every consumer). The lenta, the freight
@@ -7767,7 +7767,7 @@ truck's recompute). **FOUND by the package's own test, and not about names at al
 answered 500 for every client since it shipped** — exceljs refuses a worksheet named «History». Renamed; the file
 downloads for the first time.
 
-**#1645 — The fence (`tests/unit/lot-name-fence.test.ts`), derived.** A list written tomorrow with the stored
+**#1646 — The fence (`tests/unit/lot-name-fence.test.ts`), derived.** A list written tomorrow with the stored
 column in its select would print the warehouse's word beside forty lists printing the tarkib's, and nothing would
 fail. (1) Every `receiptLots.productNameRu` and raw `product_name_ru` is counted per file against a list with EXACT
 counts and the reason (the probe-off branches, the search arms, identity); zero anywhere else, a stale entry red
@@ -7776,7 +7776,7 @@ red until somebody decides. (3) The label's « +N» is concatenated in SQL in th
 +N» lists read goods kinds. Blind spot, stated in the file: a `shown` file that starts reading a whole row's own
 name — the per-package tests read a tarkib back through each reader and are what goes red there.
 
-**#1646 — Looked at, at 360 px, with a 60-character first good.** Fifteen screens photographed with a fixture
+**#1647 — Looked at, at 360 px, with a 60-character first good.** Fifteen screens photographed with a fixture
 whose first line is sixty characters; document width equal to the viewport on all, every «+N» inside its cell.
 Three things only the pictures showed. The cost grid's lot line was ONE clamped line — and a clamp cuts the END,
 i.e. the label's count and the carton figure («耳机 · Наушники беспроводные с…»): the name clamps now, what follows
@@ -7787,7 +7787,7 @@ cell's end always has. The tweak was withdrawn and this is told to him. And the 
 nobody chases it: `scrollIntoView` on a node inside a truncating box scrolls the BOX, and the Chinese name at its
 start «vanished» from four crops.
 
-**#1647 — Reviewed as built: four lenses over the lead's halves, every finding reproduced before it was fixed.**
+**#1648 — Reviewed as built: four lenses over the lead's halves, every finding reproduced before it was fixed.**
 Ten findings, none refuted. The skeptics that were to verify them died on the usage limit (as did five of the six
 design judges before the build), so each was reproduced the way a skeptic would have — a failing test first, or the
 finder's own repro — and red-proven after the fix (21 proofs by string edit). **Agent file**: a good's row was 20 pt whatever it
@@ -7812,7 +7812,7 @@ counted in characters and Telegram's limit in UTF-16 units, so an emoji in the n
 platform's own `buttonLabel` could cut an emoji in half (a lone surrogate — Telegram refuses the button and with
 it the whole message), for every caller since it shipped.
 
-**#1648 — The Bojxona editor re-seeds by MERGE, never by remount (five of the ten).** The page keyed the editor on
+**#1649 — The Bojxona editor re-seeds by MERGE, never by remount (five of the ten).** The page keyed the editor on
 every line's revision, so it re-seeded by REMOUNT: one lot's tarkib moving, or one line code saved, threw away
 every unsaved code on the screen — in real use model answers already paid for — and a product-only save did not
 re-seed at all, so a row nobody had touched read as «changed» when the shared memory moved under it and the next
@@ -7827,7 +7827,7 @@ the editor (an unmount used to leave it asking the model for every remaining row
 same-named line already coded on the screen IS the answer and costs no call. Browser proof in `m9zzx`: a
 colleague's code and a bumped revision written by SQL, the tab re-read, the typed code still on its row.
 
-**#1649 — PROCESS.** (1) **The usage limit ended three workflows mid-run** (the design judge after one lens of six,
+**#1650 — PROCESS.** (1) **The usage limit ended three workflows mid-run** (the design judge after one lens of six,
 the review's seven skeptics, the first names review): work that depends on an agent's VERDICT must be able to go
 on without it — every finding here carried its own repro, which is what made that possible; a finder that returns
 nothing because it died is not a clean bill, and the workflow's result says which it was. (2) **A red proof that
@@ -7847,5 +7847,8 @@ the merged tree (880 files / 14,817 tests, 491 browser tests; a container restar
 build, and the two last gates resumed on the database vitest had left). While THAT ran, main took PR #144 (one
 e2e locator and #1628): the numbers moved by one more — the thirty-third — and this time the gates re-run were
 the ones the delta can reach (typecheck, lint, the changed spec), because the delta is one spec file this round
-never touched. RULE, twice in one day: fetch main immediately before the report, not only before the push. (6) `eslint .` lints
+never touched. And the morning after the push main took #1629 (PR #142, the driver app's hotfix) — the
+thirty-fourth: one more shift, done before the follow-up round wrote a single number. RULE, twice in one day:
+fetch main immediately before the report, not only before the push — and again before the first number of the
+next round is minted. (6) `eslint .` lints
 `.claude/worktrees/**`: remove merged worktrees before the whole-repo lint.
