@@ -752,6 +752,9 @@
       "salary_expense_category_id": "工资类别：「员工」页面据其月度模板显示工资及支付状态。",
       "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）",
       "price_history_ai_daily_limit": "「以往价格」的 🤖 按钮每天可调用 AI 的次数（与计算额度分开）",
+      "tnved_ai_daily_limit": "「报关」页的 🤖 按钮每天可调用 AI 的次数——全公司合计（0 表示关闭）",
+      "tarkib_ai_daily_limit": "「📄 从文件填写」每天可让 AI 读取 PDF 或照片的次数（Excel 不经 AI 读取，不计入；0 表示关闭 AI 读取）",
+      "client_confirm_on_receipt": "发给客户的「货物已入库」消息下是否显示 ✅ / ❌ 按钮（关闭后消息照旧发送；卡片上的「询问客户」仍可使用）",
       "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
       "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。"
     },
@@ -1935,7 +1938,12 @@
     "aiNameOnly": "无照片，仅按名称",
     "aiSameName": "同名另一行的答案",
     "suggestProgress": "AI 查询中：{done} / {n}",
-    "suggestStop": "停止"
+    "suggestStop": "停止",
+    "aiLimit": "今天的 AI 额度已用完。明天恢复；现在请手动输入编码，或请管理员在设置中提高额度。",
+    "aiOff": "AI 按钮已关闭（设置中的额度为 0）。请手动输入编码，或请管理员设置额度。",
+    "aiToday": "今日 AI：{used} / {limit} 次",
+    "aiTodayUsd": "≈ ${usd}",
+    "aiMonthUsd": "30 天 ≈ ${usd}"
   },
   "finance": {
     "title": "财务",

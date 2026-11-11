@@ -20,6 +20,8 @@ import { BatchCard, batchTabMetadata } from '../batch-card';
 import { CustomsCleared } from '../customs-cleared';
 import { CustomsFirm } from '../customs-firm';
 import { CustomsPerReceipt } from '../customs-per-receipt';
+import { pressToday } from '@/modules/wms/calc/ai-press';
+import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { TnvedEditor } from './tnved-editor';
 import { InvoiceDownload } from './invoice-download';
 
@@ -98,6 +100,11 @@ export default async function BatchTnvedPage({
     })
     .from(attachments)
     .where(and(eq(attachments.entityType, 'batch'), eq(attachments.entityId, id)));
+
+  // Today's 🤖 count for the line beside the buttons — the dollars only for a
+  // reader of the company's money. Unreadable (a server one migration behind)
+  // is «no line», never a tab that will not open.
+  const aiToday = await pressToday('tnved', companyMoneySight(actor)).catch(() => null);
 
   // The editor's rows — the list the header counts «TNVED kodsiz» from.
   const products = await batchTnvedProducts(id, batch.departedAt !== null);
@@ -292,7 +299,11 @@ export default async function BatchTnvedPage({
           took 32 px off a 360 px phone the editor's buttons needed. */}
       <section className="space-y-2">
         <h2 className="text-lg font-bold">🏷 {ttn('title')}</h2>
-        {rows.length === 0 ? <p className="text-sm text-ink-500">{ttn('empty')}</p> : <TnvedEditor batchId={id} rows={rows} />}
+        {rows.length === 0 ? (
+          <p className="text-sm text-ink-500">{ttn('empty')}</p>
+        ) : (
+          <TnvedEditor batchId={id} rows={rows} aiToday={aiToday} />
+        )}
       </section>
     </BatchCard>
   );

@@ -223,6 +223,23 @@ describe('what the truck door cannot see — the other id in the same post', () 
     for (const spend of ['firstLotPhoto(lotId)', 'suggestTnved({']) {
       expect(text.indexOf(spend), spend).toBeGreaterThan(member);
     }
+    // 0144 (docs/TARKIB-TAKLIFLAR.md §2): the press is COUNTED after the last
+    // door and before anything is spent — a keyless server writes no ledger
+    // row, a press over the day's limit reads no photograph — and BILLED
+    // after the model, on the answer and on the refusal alike.
+    const counted = ['aiConfigured()', "reservePress({ kind: 'tnved', staffId: actor.id, lotId, batchId })", 'firstLotPhoto(lotId)', 'suggestTnved({'];
+    let at = member;
+    for (const step of counted) {
+      const next = text.indexOf(step);
+      expect(next, step).toBeGreaterThan(at);
+      at = next;
+    }
+    expect(text).toContain("if (!pass.ok) return { ok: false, error: pass.error, today: await aiToday(actor) };");
+    expect(text.lastIndexOf('settlePress(pass.id, { outcome, usage })')).toBeGreaterThan(text.indexOf('suggestTnved({'));
+    // An answer that was no good was paid for; no answer at all was not.
+    expect(text).toContain("outcome = err.usage ? 'failed' : 'no_answer';");
+    // The ledger is written through its two doors and nothing else.
+    expect(text).not.toMatch(/\.insert\(|\.update\(|db\.execute|ai_calc_passes/);
   });
 
   it('TNVED: the photograph has ONE reader, and no action touches the bytes itself', () => {
@@ -255,8 +272,12 @@ describe('what the truck door cannot see — the other id in the same post', () 
       'l.id === lineId',
       'compositionDoor(actor, lotId, { requireConfirmed: true })',
       'lineQuestion({',
+      // Counted before the photograph, billed after the model (0144, §2).
+      'aiConfigured()',
+      "reservePress({ kind: 'tnved', staffId: actor.id, lotId, batchId })",
       'firstLotPhoto(lotId)',
       'suggestTnved({',
+      'settlePress(pass.id, { outcome, usage })',
     ];
     let at = -1;
     for (const step of order) {
@@ -268,8 +289,9 @@ describe('what the truck door cannot see — the other id in the same post', () 
     // The photograph only when the QUESTION wants it (one good in the lot) —
     // a rule of `lineQuestion`, never one restated in the action.
     expect(text).toContain('question.wantsPhoto ? await firstLotPhoto(lotId) : null');
-    // …and it writes nothing: the code is the editor's until «Saqlash».
-    expect(text).not.toMatch(/setLineCodes|saveTnved\(|\.insert\(|\.update\(|writeAudit/);
+    // …and it writes nothing about the CODE: that is the editor's until
+    // «Saqlash». Its one write is its own bill line, through `ai-press.ts`.
+    expect(text).not.toMatch(/setLineCodes|saveTnved\(|\.insert\(|\.update\(|writeAudit|db\.execute|ai_calc_passes/);
   });
 
   it('TNVED: the editor sends the truck with every 🤖, and the page hands it the truck', () => {
@@ -277,9 +299,14 @@ describe('what the truck door cannot see — the other id in the same post', () 
     expect(editor).toContain('suggestTnvedForLotAction(batchId, row.lotId)');
     // A line is asked about by its lot and its line ID, on the same truck.
     expect(editor).toContain('suggestTnvedForLineAction(batchId, row.line.lotId, row.line.lineId!)');
-    expect(editor).toMatch(/export function TnvedEditor\(\{ batchId, rows: initial \}: \{ batchId: string;/);
+    // (The editor gained `aiToday` in 0144 — today's 🤖 count, read by the page.)
+    expect(editor).toMatch(/export function TnvedEditor\(\{\s*batchId,\s*rows: initial,\s*aiToday,\s*\}: \{\s*batchId: string;/);
     // A refusal is not «AI did not answer — try later».
     expect(editor).toMatch(/case 'forbidden':\s*return tc\('forbidden'\);/);
+    // …and neither is a spent day or a switched-off button: «try later»
+    // would invite a press at a door that stays shut until midnight.
+    expect(editor).toMatch(/case 'ai_limit':\s*return t\('aiLimit'\);/);
+    expect(editor).toMatch(/case 'ai_off':\s*return t\('aiOff'\);/);
     expect(read(TNVED_PAGE)).toMatch(/<TnvedEditor\s[^>]*\bbatchId=\{/);
   });
 
@@ -332,7 +359,9 @@ describe('what the truck door cannot see — the other id in the same post', () 
       /if \(seed !== initial\) \{\s*const baseOf = \(key: string\) => written\[key\] \?\? seed\.find\(\(r\) => rowKey\(r\) === key\)\?\.code \?\? '';\s*setRows\(reseedRows\(rows, baseOf, initial\)\);\s*setSeed\(initial\);\s*setWritten\(\{\}\);\s*\}/,
     );
     const page = read(TNVED_PAGE);
-    expect(page).toContain('<TnvedEditor batchId={id} rows={rows} />');
+    expect(page).toContain('<TnvedEditor batchId={id} rows={rows} aiToday={aiToday} />');
+    // Today's count is read where the tab cannot be taken down by it.
+    expect(page).toContain("const aiToday = await pressToday('tnved', companyMoneySight(actor)).catch(() => null);");
     expect(page).not.toMatch(/<TnvedEditor[^>]*\bkey=/);
   });
 

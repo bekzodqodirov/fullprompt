@@ -284,7 +284,7 @@ export async function suggestTnved(input: {
   photo?: { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' } | null;
   /** Hint lines for a tarkib line's question (`lineQuestion`); absent on a product row. */
   context?: readonly string[];
-}): Promise<TnvedSuggestion> {
+}): Promise<TnvedSuggestion & { usage?: AiUsage }> {
   if (!aiConfigured()) throw new TnvedError('ai_not_configured');
   // The same deadline `proposeGoodsGrouping` twenty lines below already
   // carries, and for the same reason: the SDK's default is no timeout and two
@@ -305,6 +305,11 @@ export async function suggestTnved(input: {
   }
   content.push({ type: 'text', text: tnvedQuestionText(input) });
 
+  // What the call cost, once the model has ANSWERED (0144): it rides beside
+  // the suggestion and on every failure after an answer, so the press is
+  // billed whether or not its answer was any good (`calc/ai-press.ts`).
+  // Beside the answer and never through a callback — `prefill-ai.ts` says why.
+  let usage: AiUsage | undefined;
   try {
     const response = await client.messages.create({
       model: ANALYST_MODEL,
@@ -329,30 +334,33 @@ export async function suggestTnved(input: {
       messages: [{ role: 'user', content }],
     });
     const spent = { in: response.usage?.input_tokens ?? 0, out: response.usage?.output_tokens ?? 0 };
-    // What one press costs, in the log: this button has no ledger row and no
-    // daily limit (asked of the owner), so the log is the only place it shows.
+    usage = { model: response.model ?? ANALYST_MODEL, inputTokens: spent.in, outputTokens: spent.out };
+    // What one press costs, in the log as well as in the ledger: a line per
+    // press is what a person greps when a day's count looks wrong.
     logger.info({ ...spent, stop: response.stop_reason, photo: Boolean(input.photo) }, '[tnved] suggestion');
-    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed');
+    if (response.stop_reason === 'refusal') throw new TnvedError('ai_failed', usage);
     // A cut-off answer is NAMED — half a JSON document is «unreadable» below
     // too, but the cause belongs in the log in its own words.
     if (response.stop_reason === 'max_tokens') {
       logger.warn(spent, '[tnved] suggestion cut at max_tokens');
-      throw new TnvedError('ai_failed');
+      throw new TnvedError('ai_failed', usage);
     }
     const text = response.content.find((b) => b.type === 'text')?.text ?? '';
     const parsed = suggestionSchema.parse(JSON.parse(text));
     if (!isValidTnved(parsed.tnved_code)) {
       logger.warn({ code: parsed.tnved_code }, '[tnved] suggestion carried no valid code');
-      throw new TnvedError('ai_failed');
+      throw new TnvedError('ai_failed', usage);
     }
-    return parsed;
+    return { ...parsed, usage };
   } catch (err) {
     if (err instanceof TnvedError) throw err;
     // Every failure used to leave here as «ai_failed» with nothing written
     // down — a timeout, a 401 on a burned key and an unreadable answer were
-    // one sentence on the screen and no line in the log.
+    // one sentence on the screen and no line in the log. `usage` is set only
+    // when the model answered (an unreadable answer was still paid for); a
+    // timeout or a refused key carries none and is not counted against the day.
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, '[tnved] suggestion failed');
-    throw new TnvedError('ai_failed');
+    throw new TnvedError('ai_failed', usage);
   }
 }
 

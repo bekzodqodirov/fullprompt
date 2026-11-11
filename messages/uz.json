@@ -752,6 +752,9 @@
       "salary_expense_category_id": "Oyliklar xarajat turi: «Hodimlar» sahifasi oylik va uning to‘lanishini shu turdagi shablonlardan ko‘rsatadi.",
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
       "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)",
+      "tnved_ai_daily_limit": "Bojxona bo‘limidagi 🤖 tugmasi kuniga necha marta AI so‘rashi mumkin — butun kompaniya bo‘yicha (0 — o‘chirilgan)",
+      "tarkib_ai_daily_limit": "«📄 Fayldan to‘ldirish» kuniga necha marta AI ga PDF yoki rasm o‘qitishi mumkin (Excel AIsiz o‘qiladi va sanalmaydi; 0 — AI o‘qishi o‘chirilgan)",
+      "client_confirm_on_receipt": "Mijozga boradigan «yukingiz qabul qilindi» xabarida ✅ / ❌ tugmalari chiqsinmi (o‘chirilsa, xabar avvalgidek boradi; kartadagi «Mijozdan so‘rash» ishlayveradi)",
       "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
       "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
     },
@@ -1935,7 +1938,12 @@
     "aiNameOnly": "rasmsiz, faqat nomga qarab",
     "aiSameName": "shu nomdagi boshqa qatorning javobi",
     "suggestProgress": "AI so'rayapti: {done} / {n}",
-    "suggestStop": "To'xtatish"
+    "suggestStop": "To'xtatish",
+    "aiLimit": "AI bugungi limiti tugadi. Ertaga yana ishlaydi; hozir kodni qo‘lda yozing yoki admin Sozlamalarda limitni oshirsin.",
+    "aiOff": "AI tugmasi o‘chirilgan (Sozlamalarda limit 0). Kodni qo‘lda yozing yoki admin limit qo‘ysin.",
+    "aiToday": "Bugun AI: {used} / {limit} marta",
+    "aiTodayUsd": "≈ ${usd}",
+    "aiMonthUsd": "30 kun ≈ ${usd}"
   },
   "finance": {
     "title": "Moliya",

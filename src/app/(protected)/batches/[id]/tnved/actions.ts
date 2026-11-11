@@ -15,9 +15,13 @@ import {
   saveTnved,
   suggestTnved,
   TnvedError,
+  type AiUsage,
   type TnvedSuggestion,
 } from '@/modules/wms/tnved/service';
 import { batchTnvedProducts } from '@/modules/wms/tnved/batch-lots';
+import { aiConfigured } from '@/modules/platform/ai/model';
+import { pressToday, reservePress, settlePress, type PressOutcome, type PressToday } from '@/modules/wms/calc/ai-press';
+import { companyMoneySight } from '@/modules/wms/finance/scope';
 import { isBusyError, isServerBehind } from '@/modules/platform/db/errors';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
 import {
@@ -35,6 +39,20 @@ async function vedActor() {
 }
 
 type ModelPhoto = { data: Buffer; mediaType: 'image/jpeg' | 'image/png' | 'image/webp' };
+
+type VedActor = NonNullable<Awaited<ReturnType<typeof vedActor>>>;
+
+/**
+ * Today's 🤖 count for the line beside the buttons — and, only for a reader
+ * of the company's money, what the answered calls cost. Undefined when the
+ * ledger cannot be read (a server one migration behind): no line is drawn.
+ */
+async function aiToday(actor: VedActor): Promise<PressToday | undefined> {
+  return pressToday('tnved', companyMoneySight(actor)).catch(() => undefined);
+}
+
+/** What a 🤖 press answers: the suggestion or a refusal's code, and today's count after it. */
+type Suggested = { ok: boolean; suggestion?: TnvedSuggestion; error?: string; today?: PressToday };
 
 /**
  * The first photograph of a lot, smaller variant preferred — enough for the
@@ -84,7 +102,7 @@ async function firstLotPhoto(lotId: string): Promise<ModelPhoto | null> {
 export async function suggestTnvedForLotAction(
   batchId: string,
   lotId: string,
-): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; error?: string }> {
+): Promise<Suggested> {
   const actor = await vedActor();
   if (!actor) return { ok: false, error: 'forbidden' };
   // A malformed id is a forged post: «forbidden», never a 22P02 error page.
@@ -103,18 +121,38 @@ export async function suggestTnvedForLotAction(
     .limit(1);
   if (!aboard) return { ok: false, error: 'forbidden' };
 
-  const photo = await firstLotPhoto(lotId);
+  // Counted BEFORE anything is spent (docs/TARKIB-TAKLIFLAR.md §2): a keyless
+  // server writes no ledger row, and a press over the day's limit reads no
+  // photograph and asks no model.
+  if (!aiConfigured()) return { ok: false, error: 'ai_not_configured' };
+  const pass = await reservePress({ kind: 'tnved', staffId: actor.id, lotId, batchId });
+  if (!pass.ok) return { ok: false, error: pass.error, today: await aiToday(actor) };
+
+  let answer: Suggested;
+  let usage: AiUsage | undefined;
+  let outcome: PressOutcome = 'no_answer';
   try {
-    const suggestion = await suggestTnved({
+    const photo = await firstLotPhoto(lotId);
+    const { usage: spent, ...suggestion } = await suggestTnved({
       nameZh: lot.productNameZh,
       nameRu: lot.productNameRu,
       photo,
     });
-    return { ok: true, suggestion };
+    usage = spent;
+    outcome = 'ok';
+    answer = { ok: true, suggestion };
   } catch (err) {
-    if (err instanceof TnvedError) return { ok: false, error: err.code };
-    throw err;
+    if (!(err instanceof TnvedError)) {
+      await settlePress(pass.id, { outcome: 'no_answer' });
+      throw err;
+    }
+    // An answer that was no good was still paid for; no answer at all was not.
+    usage = err.usage;
+    outcome = err.usage ? 'failed' : 'no_answer';
+    answer = { ok: false, error: err.code };
   }
+  await settlePress(pass.id, { outcome, usage });
+  return { ...answer, today: await aiToday(actor) };
 }
 
 /**
@@ -132,9 +170,11 @@ export async function suggestTnvedForLotAction(
  * could not be saved: the tab's audience and the composition's writer, the
  * truck's card door, a carton of the lot riding this truck, a live (not
  * frozen) composition that still holds the line, then the save's own door
- * (`compositionDoor` — the prixod readable and confirmed). It writes
- * nothing: the code is the editor's state until «Saqlash», which posts it
- * through `saveLineCodesAction` — onto the line, never into the memory.
+ * (`compositionDoor` — the prixod readable and confirmed) — and only then is
+ * the press counted against the day (`reservePress`). It writes nothing
+ * about the CODE: that is the editor's state until «Saqlash», which posts it
+ * through `saveLineCodesAction` — onto the line, never into the memory. The
+ * one thing it writes is its own bill line, through `calc/ai-press.ts`.
  *
  * `photo` tells the editor whether the answer came from the name alone.
  */
@@ -142,7 +182,7 @@ export async function suggestTnvedForLineAction(
   batchId: string,
   lotId: string,
   lineId: string,
-): Promise<{ ok: boolean; suggestion?: TnvedSuggestion; photo?: boolean; error?: string }> {
+): Promise<Suggested & { photo?: boolean }> {
   const actor = await vedActor();
   if (!actor || !mayWriteComposition(actor.permissions)) return { ok: false, error: 'forbidden' };
   if (!isUuidShaped(batchId) || !isUuidShaped(lotId) || !isUuidShaped(lineId)) {
@@ -183,19 +223,36 @@ export async function suggestTnvedForLineAction(
       .sort((a, b) => a.seq - b.seq)
       .map((l) => l.name),
   });
-  const photo = question.wantsPhoto ? await firstLotPhoto(lotId) : null;
+  // Counted before the photograph is read, as on the lot row (§2).
+  if (!aiConfigured()) return { ok: false, error: 'ai_not_configured' };
+  const pass = await reservePress({ kind: 'tnved', staffId: actor.id, lotId, batchId });
+  if (!pass.ok) return { ok: false, error: pass.error, today: await aiToday(actor) };
+
+  let answer: Suggested & { photo?: boolean };
+  let usage: AiUsage | undefined;
+  let outcome: PressOutcome = 'no_answer';
   try {
-    const suggestion = await suggestTnved({
+    const photo = question.wantsPhoto ? await firstLotPhoto(lotId) : null;
+    const { usage: spent, ...suggestion } = await suggestTnved({
       nameZh: question.nameZh,
       nameRu: question.nameRu,
       photo,
       context: question.context,
     });
-    return { ok: true, suggestion, photo: photo !== null };
+    usage = spent;
+    outcome = 'ok';
+    answer = { ok: true, suggestion, photo: photo !== null };
   } catch (err) {
-    if (err instanceof TnvedError) return { ok: false, error: err.code };
-    throw err;
+    if (!(err instanceof TnvedError)) {
+      await settlePress(pass.id, { outcome: 'no_answer' });
+      throw err;
+    }
+    usage = err.usage;
+    outcome = err.usage ? 'failed' : 'no_answer';
+    answer = { ok: false, error: err.code };
   }
+  await settlePress(pass.id, { outcome, usage });
+  return { ...answer, today: await aiToday(actor) };
 }
 
 /**

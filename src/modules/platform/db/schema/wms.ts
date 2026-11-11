@@ -402,6 +402,49 @@ export const lotChecks = pgTable(
   ],
 );
 
+/**
+ * What the CLIENT answered about a lot in Telegram — ✅ or ❌ — and what they
+ * were SHOWN when they answered (0144, docs/TARKIB-TAKLIFLAR.md §4).
+ *
+ * The staff tick's twin, and deliberately not a `lot_checks` row: that table
+ * is «a colleague vouched», this one is «the owner of the cargo said so
+ * themselves», and both can stand on one lot. Like the tick it is a snapshot
+ * every reader COMPARES with the lot (`wms/receipts/lot-check-sql.ts`): a
+ * rename, a count correction, a new owner or a tarkib written afterwards make
+ * it stop matching, and nothing has to clear it. A `yes` that still matches
+ * reads ✅; a `no` that still matches takes the ✅ away until the data is
+ * corrected, the client answers again, or a person closes the dispute.
+ * `wms/receipts/client-confirm.ts` is its one writer.
+ */
+export const lotClientConfirms = pgTable(
+  'lot_client_confirms',
+  {
+    lotId: uuid('lot_id')
+      .primaryKey()
+      .references(() => receiptLots.id, { onDelete: 'cascade' }),
+    /** 'yes' | 'no' — the client's LATEST answer. */
+    verdict: text('verdict').notNull(),
+    shownZh: text('shown_zh').notNull(),
+    /** The Russian name as the message showed it; NULL, never ''. */
+    shownRu: text('shown_ru'),
+    shownCount: integer('shown_count').notNull(),
+    /** A remembered value compared with `receipts.client_id` — deliberately no FK. */
+    shownClientId: uuid('shown_client_id').notNull(),
+    /** The tarkib's rev token the question was drawn from; NULL = none was written. */
+    shownTarkibRev: bigint('shown_tarkib_rev', { mode: 'number' }),
+    /** The Telegram chat that pressed. */
+    chatId: bigint('chat_id', { mode: 'bigint' }).notNull(),
+    /** Who pressed «Mijozdan so'rash»; NULL = the receipt's own push asked. No FK: a remembered value. */
+    askedBy: uuid('asked_by'),
+    answeredAt: timestamp('answered_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('lot_client_confirms_verdict_check', sql`${t.verdict} IN ('yes', 'no')`),
+    check('lot_client_confirms_count_check', sql`${t.shownCount} > 0`),
+    check('lot_client_confirms_ru_check', sql`${t.shownRu} IS NULL OR ${t.shownRu} <> ''`),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Boxes — the atomic tracked unit — and their movement history
 // ---------------------------------------------------------------------------
@@ -3979,7 +4022,18 @@ export const aiCalcPasses = pgTable(
     /** NULL only for kind 'similar' (0119): «Oldingi narx» asks about a LOT. */
     requestId: uuid('request_id').references(() => calcRequests.id, { onDelete: 'cascade' }),
     staffId: uuid('staff_id').references(() => users.id),
-    /** 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar'. */
+    /**
+     * 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar' — and, since 0144,
+     * the two PRESSED kinds 'tnved' (the Bojxona 🤖) and 'tarkib' (a tarkib read
+     * from the client's file), which stand on a lot and no request.
+     *
+     * Their three columns — `lot_id`, `batch_id`, `outcome` — exist in the
+     * table and are NOT declared here, on purpose: `recordAiPass` inserts
+     * through this object and swallows its own failure, so a declared column
+     * would be named by every calc bill and lose them all, silently, on a
+     * server one migration behind (#472). `wms/calc/ai-press.ts` reads and
+     * writes them in SQL; tests/unit/takliflar-sql-only.test.ts keeps it so.
+     */
     kind: text('kind').notNull(),
     /**
      * A collection's model reading is billed when the model answers, before
@@ -3994,24 +4048,29 @@ export const aiCalcPasses = pgTable(
   },
   (t) => [
     index('ai_calc_passes_day_idx').on(t.createdAt),
+    index('ai_calc_passes_kind_day_idx').on(t.kind, t.createdAt),
     index('ai_calc_passes_intake_note_idx')
       .on(t.intakeNoteId)
       .where(sql`${t.intakeNoteId} IS NOT NULL`),
     check(
       'ai_calc_passes_kind_check',
-      sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar')`,
+      sql`${t.kind} IN ('intake', 'grouping', 'pick', 'invoice', 'similar', 'tnved', 'tarkib')`,
     ),
     // One anchor per kind (0119's two rules, 0139's third: an intake reading
-    // may stand on its note alone until the landing). Safe beside the FK:
-    // CASCADE, not SET NULL (#809).
+    // may stand on its note alone until the landing; 0144's two pressed kinds
+    // stand on a lot). Safe beside the FK: CASCADE, not SET NULL (#809).
+    // `lot_id` is written raw — the column is SQL-only (see `kind` above).
     check(
       'ai_calc_passes_anchor_check',
       sql`CASE ${t.kind}
         WHEN 'similar' THEN ${t.requestId} IS NULL AND ${t.intakeNoteId} IS NULL
         WHEN 'intake' THEN ${t.requestId} IS NOT NULL OR ${t.intakeNoteId} IS NOT NULL
+        WHEN 'tnved' THEN "lot_id" IS NOT NULL AND ${t.requestId} IS NULL AND ${t.intakeNoteId} IS NULL
+        WHEN 'tarkib' THEN "lot_id" IS NOT NULL AND ${t.requestId} IS NULL AND ${t.intakeNoteId} IS NULL
         ELSE ${t.requestId} IS NOT NULL AND ${t.intakeNoteId} IS NULL
       END`,
     ),
+    check('ai_calc_passes_outcome_check', sql`"outcome" IS NULL OR "outcome" IN ('reserved', 'ok', 'failed', 'no_answer')`),
     check(
       'ai_calc_passes_tokens_check',
       sql`${t.inputTokens} >= 0 AND ${t.outputTokens} >= 0`,

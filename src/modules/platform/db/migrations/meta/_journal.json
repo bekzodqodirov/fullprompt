@@ -1009,6 +1009,13 @@
       "when": 1785190000122,
       "tag": "0143_tarkib_document_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1785190000123,
+      "tag": "0144_tarkib_takliflar",
+      "breakpoints": true
     }
   ]
 }

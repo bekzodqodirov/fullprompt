@@ -13,6 +13,7 @@ import {
 } from './actions';
 // The row, its key (`rowKey(` — never the lot's id: two lines of one lot
 // share it) and the decisions that are not React live in the pure module.
+import type { PressToday } from '@/modules/wms/calc/ai-press';
 import { reseedRows, rowKey, sameNameCode, walkStep, type TnvedRow } from './editor-state';
 
 /**
@@ -45,12 +46,23 @@ import { reseedRows, rowKey, sameNameCode, walkStep, type TnvedRow } from './edi
  * saved, threw away every unsaved code on the screen (the review of the
  * built round; every answer of the 🤖 is paid for).
  */
-export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows: TnvedRow[] }) {
+export function TnvedEditor({
+  batchId,
+  rows: initial,
+  aiToday,
+}: {
+  batchId: string;
+  rows: TnvedRow[];
+  /** Today's 🤖 count as the page read it; null = the ledger could not be read (no line is drawn). */
+  aiToday: PressToday | null;
+}) {
   const t = useTranslations('tnved');
   const tk = useTranslations('tarkib');
   const tc = useTranslations('common');
   const router = useRouter();
   const [rows, setRows] = useState(initial);
+  /** The count beside the buttons: the page's reading, then each press's own answer. */
+  const [today, setToday] = useState(aiToday);
   /**
    * What a save has just written, until the refresh brings the rows back.
    * «Changed» is «differs from what the server holds», and for the moment
@@ -142,6 +154,12 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     switch (code) {
       case 'ai_not_configured':
         return t('aiNotConfigured');
+      // Today's presses are spent, or the button is switched off in settings:
+      // «try later» would invite a press at a door that stays shut until midnight.
+      case 'ai_limit':
+        return t('aiLimit');
+      case 'ai_off':
+        return t('aiOff');
       case 'forbidden':
         return tc('forbidden');
       case 'composition_changed':
@@ -173,6 +191,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
     setStale(false);
     try {
       const res = await ask(row);
+      if (res.today) setToday(res.today);
       if (res.ok && res.suggestion) {
         setCode(key, res.suggestion.tnved_code, 'ai');
         setReasonings((prev) => ({ ...prev, [key]: noteOf(row, res) }));
@@ -245,6 +264,7 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
             setBusy(key);
             const res = await ask(target);
             setBusy(null);
+            if (res.today) setToday(res.today);
             if (res.ok && res.suggestion) {
               failed = 0;
               const note = noteOf(target, res);
@@ -439,6 +459,17 @@ export function TnvedEditor({ batchId, rows: initial }: { batchId: string; rows:
           💾 {saving ? tc('loading') : changedProducts.length > 0 ? t('saveAll') : t('saveLines')}
         </button>
       </div>
+      {today && (
+        // What the 🤖 has cost the company today (docs/TARKIB-TAKLIFLAR.md §2).
+        // The count is for everyone behind this tab's door — it is why a press
+        // is refused; the dollars are only in `today` for a reader of the
+        // company's money (`pressToday`'s sight).
+        <p className="text-xs text-ink-500" data-testid="tnved-ai-today">
+          {today.limit > 0 ? t('aiToday', { used: today.used, limit: today.limit }) : t('aiOff')}
+          {today.usd !== null && <> · {t('aiTodayUsd', { usd: today.usd.toFixed(2) })}</>}
+          {today.usd30 !== null && <> · {t('aiMonthUsd', { usd: today.usd30.toFixed(2) })}</>}
+        </p>
+      )}
       {message && (
         <p className="rounded-lg bg-good/10 p-2 text-sm font-semibold text-good" data-testid="tnved-saved">
           {message}

@@ -22,6 +22,11 @@ import { logger } from '../../platform/logger';
  * table lock on the path that must never hold one (#714).
  */
 
+/**
+ * The kinds THIS module writes. The ledger holds two more since 0144 —
+ * 'tnved' and 'tarkib', a person's press on a lot — and they are
+ * `ai-press.ts`'s alone: reserved before the call, never written here.
+ */
 export type AiPassKind = 'intake' | 'grouping' | 'pick' | 'invoice' | 'similar';
 
 /**
@@ -122,7 +127,12 @@ const BUDGET_SETTING = {
 export async function aiCalcBudgetLeft(budget: AiBudget = 'calc'): Promise<number> {
   const configured = Number(await getSetting(BUDGET_SETTING[budget]));
   if (!Number.isFinite(configured) || configured <= 0) return Number.POSITIVE_INFINITY;
-  const kind = budget === 'similar' ? sql`kind = 'similar'` : sql`kind <> 'similar'`;
+  // The calculation half is a POSITIVE list. It used to be «everything but
+  // similar», and 0144's two pressed kinds (`ai-press.ts` — the Bojxona 🤖,
+  // the tarkib's file reading) would have been counted into it: an afternoon
+  // of 🤖 presses stopping the VED's Telegram estimates until midnight, the
+  // very thing 0119 split `similar` off to prevent.
+  const kind = budget === 'similar' ? sql`kind = 'similar'` : sql`kind IN ('intake', 'grouping', 'pick', 'invoice')`;
   const [row] = await db.execute<{ used: string }>(sql`
     SELECT count(*)::text AS used
       FROM ai_calc_passes

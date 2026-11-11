@@ -114,7 +114,9 @@ describe('what a 🤖 refusal means for the walk', () => {
   it('the model’s own failure may pass; a fact about one lot leaves that lot alone; a shut door ends it', () => {
     expect(walkStep('ai_failed')).toBe('failed');
     for (const code of ['composition_changed', 'receipt_not_confirmed', 'not_found']) expect(walkStep(code), code).toBe('skip-lot');
-    for (const code of ['forbidden', 'ai_not_configured', 'frozen', 'server_behind', 'busy', undefined, 'anything-new']) {
+    // 'ai_limit' / 'ai_off' (0144): today's presses are spent, or the button is
+    // switched off — the next row would meet the same shut door, and pay nothing.
+    for (const code of ['forbidden', 'ai_not_configured', 'ai_limit', 'ai_off', 'frozen', 'server_behind', 'busy', undefined, 'anything-new']) {
       expect(walkStep(code), String(code)).toBe('stop');
     }
   });

@@ -752,6 +752,9 @@
       "salary_expense_category_id": "Salary category: the «Staff» page shows each salary and whether it was paid from its monthly templates.",
       "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
       "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)",
+      "tnved_ai_daily_limit": "How many times a day the 🤖 button on the Customs tab may ask the AI — the whole company together (0 — switched off)",
+      "tarkib_ai_daily_limit": "How many times a day «📄 Fill from file» may have the AI read a PDF or a photo (a spreadsheet is read without AI and is not counted; 0 — AI reading off)",
+      "client_confirm_on_receipt": "Whether the customer's «your cargo was received» message carries the ✅ / ❌ buttons (off: the message goes out as before; «Ask the client» on the card still works)",
       "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
       "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page."
     },
@@ -1935,7 +1938,12 @@
     "aiNameOnly": "no photo, by the name alone",
     "aiSameName": "the answer of another row with the same name",
     "suggestProgress": "Asking AI: {done} / {n}",
-    "suggestStop": "Stop"
+    "suggestStop": "Stop",
+    "aiLimit": "Today's AI limit is used up. It works again tomorrow; type the code by hand for now, or ask an admin to raise the limit in Settings.",
+    "aiOff": "The AI button is switched off (the limit in Settings is 0). Type the code by hand, or ask an admin to set a limit.",
+    "aiToday": "AI today: {used} / {limit}",
+    "aiTodayUsd": "≈ ${usd}",
+    "aiMonthUsd": "30 days ≈ ${usd}"
   },
   "finance": {
     "title": "Finance",

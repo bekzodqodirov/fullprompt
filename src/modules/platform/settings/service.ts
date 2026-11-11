@@ -122,6 +122,29 @@ export const SETTING_DEFAULTS = {
    */
   price_history_ai_daily_limit: 50,
   /**
+   * How many times a day the Bojxona tab's 🤖 may ask the model — the whole
+   * company's presses together (0144, docs/TARKIB-TAKLIFLAR.md §2). One press
+   * of «🤖 AI taklif (N)» is up to N calls, and before this the button had no
+   * ledger row and no ceiling at all. Its own count, never
+   * `ai_calc_daily_limit`'s. **0 switches the button off** — a cap on a bill
+   * must not read «no cap» (the calc limit's 0 does, and is not copied).
+   */
+  tnved_ai_daily_limit: 300,
+  /**
+   * How many times a day «📄 Fayldan to'ldirish» may ask the model to read a
+   * PDF or a photograph, or to put a spreadsheet's names into Russian (0144,
+   * §3). A spreadsheet's FIGURES are read with no model and are never counted.
+   * 0 switches the model reading off; the spreadsheet reading stays.
+   */
+  tarkib_ai_daily_limit: 50,
+  /**
+   * The ✅ / ❌ row under the customer's «yukingiz qabul qilindi» push (0144,
+   * §4 — his 5b). A switch because it is the one thing in that round that
+   * writes to CUSTOMERS by itself: off, the push goes out exactly as before,
+   * and «Mijozdan so'rash» on the prixod card still asks on a person's press.
+   */
+  client_confirm_on_receipt: true,
+  /**
    * Write the AI-VED's estimate onto the card's lenta as well as into the
    * seller's chat (his answer 2a). A switch because it is the only thing on
    * this path that writes where OTHER people read.
