@@ -116,6 +116,42 @@ describe('every customer button is answered', () => {
   });
 });
 
+describe('the card’s clock, its mounted block, and words that follow their constant (lens 3)', () => {
+  const page = read('src/app/(protected)/receipts/[id]/page.tsx');
+  const askPanel = read('src/app/(protected)/receipts/[id]/client-ask-panel.tsx');
+  const lotPanel = read('src/app/(protected)/receipts/[id]/lot-check-panel.tsx');
+
+  it('who vouched and when is printed on the OFFICE clock, like the History under the card — never the warehouse’s zone (L3-2)', () => {
+    // The two days of the lot panel and the question's «sent at».
+    expect(page).toContain('day: tashkentDay(view.person.at),');
+    expect(page).toContain('day: tashkentDay(view.client.at),');
+    expect(page).not.toMatch(/dayIn\(view\.(person|client)\.at/);
+    const when = page.slice(page.indexOf('when: askCard.status.deliveredAt'), page.indexOf('by: askCard.status.askedBy'));
+    expect(when).toContain("format.dateTime(askCard.status.deliveredAt, { dateStyle: 'short', timeStyle: 'short' })");
+    expect(when).not.toContain('timeZone');
+  });
+
+  it('the ask block is MOUNTED wherever the client’s side exists — it keeps its own «✅ yopildi» when the face empties (L3-6)', () => {
+    expect(page).toContain('{askFace && <ClientAskPanel receiptId={id} face={askFace} show={askShow} />}');
+    expect(page).toMatch(/const askFace = askCard\n\s+\? \{/);
+    expect(askPanel).toContain('if (!show && !said && !error) return null;');
+    // «Queued» is the status line's to say once it is there — never both.
+    expect(askPanel).toContain("const said = done === 'closed' || (done === 'asked' && !status) ? done : null;");
+  });
+
+  it('«✅ Saqlandi» is never drawn under a veto (L3-6)', () => {
+    expect(lotPanel).toContain('{done && !vetoed && (');
+  });
+
+  it('the «too soon» sentence names the cool-down the service really keeps', async () => {
+    const { ASK_COOLDOWN_MINUTES } = await import('@/modules/wms/receipts/client-confirm');
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { lotCheck: { askErrors: Record<string, string> } };
+      expect(bundle.lotCheck.askErrors.too_soon, locale).toContain(String(ASK_COOLDOWN_MINUTES));
+    }
+  });
+});
+
 describe('the press handler', () => {
   const cabinet = read('src/modules/platform/telegram/client-cabinet.ts');
   const start = cabinet.indexOf('bot.callbackQuery(/^yt:/, async (ctx) => {');

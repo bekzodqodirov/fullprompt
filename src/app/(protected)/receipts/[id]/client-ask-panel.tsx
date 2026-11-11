@@ -27,6 +27,14 @@ export interface ClientAskFace {
     when: string | null;
     by: string | null;
     failure: 'no_chat' | 'client_changed' | 'too_long' | 'receipt_changed' | 'blocked' | 'telegram' | null;
+    /**
+     * A question that has not gone yet, judged by the PAGE's clock: `soon` =
+     * due now; `later` = Telegram asked us to hold it (`waitAt` = when it will
+     * go); `stuck` = it has been due for minutes and is still here (`waitAt` =
+     * since when) — the sweep cannot send at all (no token, a refused token).
+     */
+    wait: 'soon' | 'later' | 'stuck';
+    waitAt: string | null;
   } | null;
   /** This owner's ❌ rows on the prixod's lots, with the token each card line drew. */
   disputes: { lotId: string; token: string }[];
@@ -49,7 +57,21 @@ const KNOWN = [
 const errorKey = (code: string): (typeof KNOWN)[number] | 'other' =>
   (KNOWN as readonly string[]).includes(code) ? (code as (typeof KNOWN)[number]) : 'other';
 
-export function ClientAskPanel({ receiptId, face }: { receiptId: string; face: ClientAskFace }) {
+export function ClientAskPanel({
+  receiptId,
+  face,
+  show,
+}: {
+  receiptId: string;
+  face: ClientAskFace;
+  /**
+   * Whether the face has anything to draw. The block is MOUNTED either way
+   * (the page mounts it wherever the client's side exists): «E'tirozlarni
+   * yopish» on cargo that has left China empties the face, and a block that
+   * unmounted with it took its own «✅ yopildi» away before anybody saw it.
+   */
+  show: boolean;
+}) {
   const t = useTranslations('lotCheck');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,15 +94,37 @@ export function ClientAskPanel({ receiptId, face }: { receiptId: string; face: C
 
   const status = face.status;
   const waiting = status?.state === 'pending' || status?.state === 'sending';
+  // «Queued» is said by the status line once the action's own revalidation
+  // has brought it — the two together said it twice.
+  const said = done === 'closed' || (done === 'asked' && !status) ? done : null;
+  if (!show && !said && !error) return null;
 
   return (
     <div className="mt-3 space-y-1.5 rounded-lg border border-line p-2 text-sm" data-testid="client-ask">
       <p className="font-semibold text-ink-700">📨 {t('askTitle')}</p>
-      <p className="text-xs text-ink-500">{t('askHint')}</p>
+      {/* What WILL be sent — said only beside the button that sends it. */}
+      {face.canAsk && (
+        <p className="text-xs text-ink-500" data-testid="client-ask-hint">
+          {t('askHint')}
+        </p>
+      )}
 
-      {status && waiting && (
-        <p className="text-xs text-ink-700" data-testid="client-ask-status" data-state={status.state}>
+      {/* A wait is worded by how long it has lasted: «a minute or two» about
+          a question the sweep cannot send at all (no bot token, a refused
+          one) was read for hours with nothing to press. */}
+      {status && waiting && status.wait === 'soon' && (
+        <p className="text-xs text-ink-700" data-testid="client-ask-status" data-state={status.state} data-wait="soon">
           ⏳ {t('askWaiting')}
+        </p>
+      )}
+      {status && waiting && status.wait === 'later' && (
+        <p className="text-xs text-ink-700" data-testid="client-ask-status" data-state={status.state} data-wait="later">
+          ⏳ {t('askLater', { when: status.waitAt ?? '—' })}
+        </p>
+      )}
+      {status && waiting && status.wait === 'stuck' && (
+        <p className="text-xs font-semibold text-warn [overflow-wrap:anywhere]" data-testid="client-ask-status" data-state={status.state} data-wait="stuck">
+          ⚠️ {t('askStuck', { since: status.waitAt ?? '—' })}
         </p>
       )}
       {status?.state === 'sent' && (
@@ -128,9 +172,9 @@ export function ClientAskPanel({ receiptId, face }: { receiptId: string; face: C
         </button>
       )}
 
-      {done && (
+      {said && (
         <p className="text-xs font-semibold text-good" role="status" data-testid="client-ask-done">
-          {done === 'asked' ? t('askQueued') : t('disputeClosed')}
+          {said === 'asked' ? t('askQueued') : t('disputeClosed')}
         </p>
       )}
       {error && (

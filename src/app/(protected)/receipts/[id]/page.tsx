@@ -61,7 +61,7 @@ import { costEntriesFor } from '@/modules/wms/costing/service';
 import { lotQrState } from '@/modules/wms/labels/qrless';
 import { canEditReceipt, mayCorrectReceived, mayEditReceiptAt, mayFlipQrSkip, qrSwitchPlaces } from '@/modules/wms/receipts/edit';
 import { QrSkipToggle } from './qr-skip-toggle';
-import { dayIn } from '@/modules/platform/time/tashkent';
+import { dayIn, tashkentDay } from '@/modules/platform/time/tashkent';
 import { isBackdated, receivedDayBounds } from '@/modules/wms/receipts/received-day';
 import { palletDoorsFor } from '@/modules/wms/crates/service';
 import { ReceivedEditForm } from './received-edit-form';
@@ -80,6 +80,14 @@ import { receiptLoadView } from '@/modules/wms/ftl/read';
 import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { LoadModeBlock } from './load-mode-block';
 import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
+
+/**
+ * How a question that has not gone yet is worded (`ClientAskPanel`): due more
+ * than two minutes AHEAD = Telegram asked us to hold it; due five minutes
+ * ago and still waiting = the sweep cannot send at all.
+ */
+const ASK_STUCK_MS = 5 * 60_000;
+const ASK_LATER_MS = 2 * 60_000;
 
 export default async function ReceiptDetailPage({
   params,
@@ -235,24 +243,37 @@ export default async function ReceiptDetailPage({
     .filter((row) => row.answer?.verdict === 'no' && row.answer.ofOwner)
     .map((row) => ({ lotId: row.lotId, token: row.answer!.token }));
   const anyAskable = lots.some((lot) => lotChecks.get(lot.id)?.askable === true);
-  const askFace =
-    askCard && (anyAskable || askCard.status !== null || askDisputes.length > 1)
-      ? {
-          canAsk: askCard.hasChat && anyAskable,
-          noChat: !askCard.hasChat && anyAskable,
-          status: askCard.status
-            ? {
-                state: askCard.status.status,
-                when: askCard.status.deliveredAt
-                  ? format.dateTime(askCard.status.deliveredAt, { dateStyle: 'short', timeStyle: 'short', timeZone: warehouse.timezone })
-                  : null,
-                by: askCard.status.askedBy,
-                failure: askCard.status.failure,
-              }
-            : null,
-          disputes: askDisputes,
-        }
-      : null;
+  // A question still waiting, judged against NOW: due more than two minutes
+  // ahead = Telegram asked us to hold it; due five minutes ago and still here
+  // = the sweep cannot send (no bot token, a refused one).
+  const askDue = askCard?.status?.dueAt ?? null;
+  const askLag = askDue ? Date.now() - askDue.getTime() : 0;
+  const askWait: 'soon' | 'later' | 'stuck' = askLag > ASK_STUCK_MS ? 'stuck' : askLag < -ASK_LATER_MS ? 'later' : 'soon';
+  // The block is mounted wherever the client's side exists; `askShow` says
+  // whether it has anything to draw (it keeps its own «✅ yopildi» otherwise).
+  const askShow = Boolean(askCard) && (anyAskable || askCard!.status !== null || askDisputes.length > 1);
+  const askFace = askCard
+    ? {
+        canAsk: askCard.hasChat && anyAskable,
+        noChat: !askCard.hasChat && anyAskable,
+        status: askCard.status
+          ? {
+              state: askCard.status.status,
+              // The OFFICE clock — the page's default, and the History tab's
+              // under this block. In the warehouse's zone a question that
+              // went out at 14:05 Tashkent read 17:05 on a Chinese prixod: a
+              // time in the reader's future, and the one the ten-minute
+              // «too soon» is judged by.
+              when: askCard.status.deliveredAt ? format.dateTime(askCard.status.deliveredAt, { dateStyle: 'short', timeStyle: 'short' }) : null,
+              by: askCard.status.askedBy,
+              failure: askCard.status.failure,
+              wait: askWait,
+              waitAt: askDue && askWait !== 'soon' ? format.dateTime(askDue, { timeStyle: 'short' }) : null,
+            }
+          : null,
+        disputes: askDisputes,
+      }
+    : null;
   // The client's phones, for the person who rings: this reader has passed
   // `mayReadReceipt`, which is the staff bot's own «cargo in reach» rule for
   // showing a phone (bot/lookup.ts `maySeePhones`).
@@ -609,7 +630,7 @@ export default async function ReceiptDetailPage({
       )}
 
       <section className="space-y-3">
-        {askFace && <ClientAskPanel receiptId={id} face={askFace} />}
+        {askFace && <ClientAskPanel receiptId={id} face={askFace} show={askShow} />}
         {lots.map((lot) => (
           <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
@@ -652,7 +673,12 @@ export default async function ReceiptDetailPage({
                     person: view.person
                       ? {
                           by: view.person.by,
-                          day: dayIn(view.person.at, warehouse.timezone),
+                          // The OFFICE day, as the History under the card
+                          // prints it: who vouched and when is the office's
+                          // record, not a warehouse event. In the warehouse's
+                          // zone a customer's evening press (after 21:00
+                          // Tashkent) was dated tomorrow on a Chinese prixod.
+                          day: tashkentDay(view.person.at),
                           token: view.person.token,
                           note: view.person.note,
                           holds: view.person.holds,
@@ -662,7 +688,7 @@ export default async function ReceiptDetailPage({
                     client: view.client
                       ? {
                           verdict: view.client.verdict,
-                          day: dayIn(view.client.at, warehouse.timezone),
+                          day: tashkentDay(view.client.at),
                           token: view.client.token,
                           holds: view.client.holds,
                           vetoes: view.client.vetoes,

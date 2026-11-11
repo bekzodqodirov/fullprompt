@@ -283,7 +283,8 @@ test('a refused reading is a sentence with the day’s count beside it — and t
   expect((await widths(page)).scroll).toBeLessThanOrEqual(360);
   await page.screenshot({ path: `${SHOTS}/tarkib-read-refused-360.png`, fullPage: true });
 
-  // A code this build has never heard of is still a sentence, never a blank box.
+  // A refusal that never reached the ledger carries no count — and prints none: each code has its own
+  // sentence, and two different refusals never read the same.
   answer = { ok: false, error: 'read_too_large' };
   await button.click();
   await expect(error).toBeVisible();

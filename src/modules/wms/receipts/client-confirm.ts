@@ -307,7 +307,9 @@ function staffText(facts: ClientAskFacts, verdict: ClientVerdict): string {
           facts.lots.length > 1
             ? `Mijoz Telegram’da «Xato bor» ni bosdi — bitta tugma, shuning uchun belgi yuqoridagi ${facts.lots.length} ta lotning hammasiga qo‘yildi. Qaysi biri noto‘g‘riligini aniqlang.`
             : 'Mijoz Telegram’da «Xato bor» ni bosdi. Nima noto‘g‘riligini aniqlang.',
-          'Lot ❓ bo‘lib turadi: ma’lumot tuzatilguncha, yoki kartada «✅ To‘g‘ri» / «E’tirozni yopish» bosilguncha.',
+          // What really ends a ❌ (§7.3): a correction alone lifts nothing on a
+          // lot without a tarkib — somebody still has to tick or close it.
+          'Lot ❓ bo‘lib turadi — kartada «✅ To‘g‘ri» yoki «E’tirozni yopish» bosilguncha (yoki mijoz qayta ✅ deguncha). Ma’lumot xato bo‘lsa, avval uni tuzating.',
         ]
       : [];
   return [...head, ...lots, ...tail, ...(link ? [link] : [])].join('\n');
@@ -626,6 +628,12 @@ export interface ClientAskStatus {
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
   /** When the question went out to the client's Telegram; null while it waits or when it never went. */
   deliveredAt: Date | null;
+  /**
+   * When a question that has NOT gone yet is due (`send_after`): now for one
+   * just asked, later for one Telegram asked us to hold. The card words the
+   * wait by it — a question due long ago and still here cannot be sent at all.
+   */
+  dueAt: Date | null;
   /** The row's own `last_error` — for the log and the tests; the card reads `failure`. */
   reason: string | null;
   failure: AskFailure | null;
@@ -639,18 +647,26 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
   // question to report on, and the card must still draw.
   if (!(await clientConfirmsReady())) return null;
   const rows = (await db.execute(sql`
-    SELECT n.status, n.sent_at, n.last_error, u.full_name AS asked_by
+    SELECT n.status, n.sent_at, n.send_after, n.last_error, u.full_name AS asked_by
       FROM client_notices n
       JOIN receipts r ON r.id = n.ref_id AND r.client_id = n.client_id
       LEFT JOIN users u ON u.id = n.asked_by
      WHERE n.kind = ${NOTICE_LOT_ASK} AND n.ref_type = 'receipt' AND n.ref_id = ${receiptId}::uuid
      LIMIT 1
-  `)) as unknown as { status: ClientAskStatus['status']; sent_at: string | Date | null; last_error: string | null; asked_by: string | null }[];
+  `)) as unknown as {
+    status: ClientAskStatus['status'];
+    sent_at: string | Date | null;
+    send_after: string | Date | null;
+    last_error: string | null;
+    asked_by: string | null;
+  }[];
   const row = rows[0];
   if (!row) return null;
+  const waiting = row.status === 'pending' || row.status === 'sending';
   return {
     status: row.status,
     deliveredAt: row.sent_at ? new Date(row.sent_at) : null,
+    dueAt: waiting && row.send_after ? new Date(row.send_after) : null,
     reason: row.last_error,
     failure: askFailureOf(row.status, row.last_error),
     askedBy: row.asked_by,

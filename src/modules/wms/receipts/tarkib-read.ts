@@ -40,7 +40,10 @@ import { readTarkibDocument, type ReadResult } from './tarkib-read-ai';
  *   6. the bytes, and the file made ready for the model — a workbook that is
  *      empty, encrypted or broken spends nothing;
  *   7. one of the day's readings (`reservePress`) — then the model — then the
- *      row is settled, whatever happened (`finally`).
+ *      row is settled, whatever happened: with what the model said, or
+ *      «no answer» when something of ours threw before it could (the reader
+ *      itself never throws, and `settlePress` never does either — a ledger
+ *      that cannot be written must not cost the reading it was measuring).
  */
 
 /**

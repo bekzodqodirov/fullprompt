@@ -8223,3 +8223,26 @@ the page; while it is true the ❌ leads in the bad colour and every ✅ line un
 the dismissal are drawn wherever the cargo stands — a dispute raised in China must not vanish from the card when
 the truck unloads.
 
+
+**#1677 — T1 as built: ONE reader, and it is never a writer.** The design had two paths — a spreadsheet read
+«exactly, with no model» and a PDF or photo read by the model — and the judge took the first one apart: it had
+three different answers to «does it count against the day», stood on a parser another session was rewriting
+that week, and its eight families of edge cases (thousands written as text, two sheets tied for «the» goods
+sheet, merged figures, a carton-NUMBER column read as a count) are a model's ordinary reading. So there is one
+reader for every file kind, and a spreadsheet reaches it as TEXT through one adapter (`receipts/tarkib-file.ts`)
+over the readers' low-level exports — `goods-file.ts` and `xls.ts` are imported, never edited. Every reading is
+one row of the pressed-AI ledger (#1665), whatever the file. **Every door before any spend**, each a refusal in
+its own words and each before the one that costs more: the save's own door (a reading nobody could save is not
+paid for), the file is a paper of the LOT's prixod, kind and size from the attachment's ROW (a video is never
+loaded), a key on the server, the document not cooling, the bytes, the day's limit — and only then the model.
+**It writes nothing but its own bill line**: the answer is a proposal, the dialog puts ticked rows into the
+editor's DRAFT, and the editor's «Saqlash» — its parse, its exact sums — is still the only writer of a tarkib.
+A figure the reading did not give is an empty cell, never 0; the lot's own good keeps the lot's own name, never
+the model's translation; where the paper prints its own total and the rows do not add up to it, that is SAID
+per measure and never corrected. **The proposal does not depend on the lot** (the builder's own decision, and
+the right one): kept in the browser by its DOCUMENT for thirty minutes, so the second lot of a prixod ticks its
+rows from the reading the first one paid for. **Cooling** is ten minutes on a document whose reading ran out of
+time or of room — pressing again would spend another of the day's readings on the same pages. One deadline of
+150 s lies over the SDK's own retry (150 s twice would outlive the browser's 165 s). STATED: two tabs on one
+document are two paid readings; cooling is per process and a deploy forgets it; the model's wire has never met
+the real API from this container — the first real press is watched in the log (`[tarkib-read]`).

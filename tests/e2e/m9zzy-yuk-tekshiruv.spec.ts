@@ -183,14 +183,38 @@ test('«Mijozdan so‘rash»: no Telegram — a sentence; linked — the button 
   await expect(block.getByTestId('client-ask-nochat')).toHaveCount(0);
   page.once('dialog', (dialog) => void dialog.accept());
   await block.getByTestId('client-ask-send').click();
-  await expect(block.getByTestId('client-ask-done')).toBeVisible();
-  // The test server has no bot token, so the question waits in the queue — and the card says exactly that.
-  await expect(block.getByTestId('client-ask-status')).toHaveAttribute('data-state', /pending|sending/);
+  // The test server has no bot token, so the question waits in the queue — and the card says exactly that,
+  // ONCE: the status line the action's own revalidation brings is the «queued» (said twice before).
+  const status = block.getByTestId('client-ask-status');
+  await expect(status).toHaveAttribute('data-state', /pending|sending/);
+  await expect(status).toHaveAttribute('data-wait', 'soon');
+  await expect(block.getByTestId('client-ask-done')).toHaveCount(0);
   await expect(block.getByTestId('client-ask-send')).toBeDisabled();
   // A second press while it waits is refused in words, never a second message.
   const w = await widths(page);
   expect(w.scroll).toBeLessThanOrEqual(w.client);
   await page.screenshot({ path: `${SHOTS}/yuk-tekshiruv-mijozdan-sorash.png`, fullPage: true });
+
+  // A question that has been due for half an hour and is still here cannot be sent at all (this very
+  // server: no token) — «a minute or two» was read for hours with nothing to press.
+  const later = database();
+  try {
+    await later`UPDATE client_notices SET send_after = now() - interval '30 minutes' WHERE kind = 'lot_ask' AND ref_id = ${minted!.receiptId}`;
+    await page.reload();
+    await expect(status).toHaveAttribute('data-wait', 'stuck');
+    await expect(status).toHaveClass(/text-warn/);
+    // …and one that went out is dated on the OFFICE clock, like the History under it: the prixod stands
+    // in a Chinese warehouse (three hours ahead), where 14:05 Tashkent used to read 17:05.
+    await later`
+      UPDATE client_notices SET status = 'sent', attempts = 1, sent_at = '2026-11-11 09:05:00+00'
+       WHERE kind = 'lot_ask' AND ref_id = ${minted!.receiptId}`;
+    await page.reload();
+    await expect(status).toHaveAttribute('data-state', 'sent');
+    await expect(status).toContainText('14:05');
+    await expect(status).not.toContainText('17:05');
+  } finally {
+    await later.end();
+  }
 });
 
 test('the client’s ❌ leads in red and leaves NO green line; «E’tirozni yopish» brings the colleague’s tick back; the client’s ✅ is green by itself', async ({ page }) => {

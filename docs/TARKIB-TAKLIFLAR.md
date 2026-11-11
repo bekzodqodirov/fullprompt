@@ -345,6 +345,56 @@ to'liq emas», which would be wrong for every one of these). i18n namespace `tar
 
 ---
 
+### As built (T1) — overrides §3.1-§3.7 where they differ
+
+- **ONE reader — the model — for every file kind, and it is never a writer**: `POST /api/tarkib/read`
+  (`{ lotId, attachmentId }`, `Cache-Control: private, no-store`, 401 without a session, every other refusal a
+  200 with a code) answers a PROPOSAL; the dialog puts the ticked rows into the editor's draft; the editor's own
+  «Saqlash» (its parse, its sums) is still the only thing that stores a tarkib. A figure the reading did not
+  give is an EMPTY cell, never 0. No composition, no TNVED memory, no audit row is written by a reading.
+- **The file is decided from the attachment's ROW before a byte is loaded** (`receipts/tarkib-file.ts`, the one
+  adapter over the spreadsheet readers' low-level exports — `goods-file.ts` / `xls.ts` are imported, never
+  edited): a PDF whole (≤ 10 MB), a photo reduced to 2000 px JPEG (≤ 15 MB in, ≤ 4.5 MB out), a spreadsheet
+  (xlsx / xls / csv, ≤ 15 MB, cell XML ≤ 40 MB) written out as TEXT under one budget — 15 000 characters, 400
+  rows, whole lines, a cell at most 300 characters, columns kept in place, merged-down cells marked `↑`, only
+  visible sheets. What did not fit is a warning on the proposal (`rows_cut` / `text_cut` / `cells_cut`).
+- **Every door before any spend, in this order**: the save's own door (`compositionDoor`, confirmed prixod) →
+  the file is a paper of the LOT's prixod and not a receive-time carton photo → kind and size from the row →
+  a key on the server (`ai_not_configured`, no ledger row) → not cooling → the bytes (20 s) and the file made
+  ready → `reservePress('tarkib')` → the model (the analyst model by constant, one 150 s deadline over the
+  SDK's own retry) → `settlePress`. **Every reading — PDF, photo, spreadsheet — is one ledger row.** A refusal,
+  a cut-off answer, garbage and OUR timeout are `failed` (counted, billed when tokens were reported); a request
+  the provider would not take (400 / 413 / 422) and a call that never answered are `no_answer` (not counted).
+- **Cooling**: ten minutes after a reading that ran out of time or of room, that DOCUMENT is not read again
+  (`cooling`) — the same pages would spend another of the day's readings for the same result. In memory, per
+  process; a deploy forgets it.
+- **The proposal** (`receipts/tarkib-proposal.ts`, pure, client-safe): at most 40 rows; kg 3 decimals and m³ 4,
+  half-up in BigInt from the decimal the model wrote; counts whole or empty; a TNVED cell only for exactly ten
+  digits; gross weight only when EVERY row has it, else net, else none; notes and warnings travel as
+  `{code, params}` and are worded in the browser. The misread detector: where the paper prints its own total
+  and every listed row states that measure, a sum that differs is SAID (`totals_differ`, per measure) and
+  never corrected.
+- **The proposal does not depend on the lot**: it is kept in the browser by its DOCUMENT for 30 minutes
+  (sessionStorage), so a second lot of the prixod ticks its own rows from the reading the first one paid for;
+  the cache is cleared on Save only when the prixod has one lot. The name rule (the lot's own good keeps the
+  lot's own name — its Chinese one when it has no Russian — never the model's translation) is applied in the
+  dialog with the editor's lot.
+- **The dialog**: ticked to begin only when the prixod has one lot and the reading is ≤ 20 rows; the Σ of the
+  ticked rows stands beside the lot's own figures (coloured where they differ) and the paper's totals;
+  «Qo'shish» / «Almashtirish» when the editor already holds rows; two ticked rows of one name and more than
+  twenty are refused in words; a backdrop tap or Escape does not close a paid reading; «Qayta o'qish» asks
+  first — a new reading is a new bill line. The browser waits 165 s (`read_deadline`), longer than the server.
+- **26 codes, each with its own sentence in four locales** (`tarkib-read-wire.test.ts` holds the lists against
+  each other): the service's 23 (`TARKIB_READ_ERRORS`), the route's `unauthorized`, the browser's
+  `read_deadline` / `read_offline`. `today` (the count, and ≈ dollars for a reader of the company's money)
+  rides only on answers that reached the ledger.
+- **The editor's document upload** compresses a photographed packing list at document grade (1 MB, 2000 px) so
+  the model can read it; every other uploader is unchanged.
+- Not built: a server-side in-flight guard (two tabs on one document are two paid readings); HEIC is read only
+  where the image's `sharp` decodes it.
+- Proven: 62 of the builder's 63 red proofs went red on their first run; the one that stayed green (the
+  misread detector's cartons half had no test) got its test, and the m³ half with it.
+
 ## §4 T2 — the client's own ✅/❌ in Telegram
 
 His words: «Tarkibni mijozning o'zi Telegram'da tasdiqlasin (✅/❌) — ilgari kelishilgan, hali qilinmagan band.»

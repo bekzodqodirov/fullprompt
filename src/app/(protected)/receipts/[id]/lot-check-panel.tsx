@@ -89,8 +89,15 @@ export function LotCheckPanel({
   const [done, setDone] = useState(false);
 
   const person = face.person;
-  // A previous owner's answer is nobody's: the sentence ignores it, so does the card.
+  // A previous owner's answer is nobody's: it is neither this client's ✅ nor
+  // a dispute to close.
   const client = face.client?.ofOwner ? face.client : null;
+  // …but their ✅ is still WHY the lot reads «o'zgardi»: the client is one of
+  // the facts a ✅ is about (as it is for a colleague's tick), so the sentence
+  // calls such a lot stale and the worklist links it here. Dropped without a
+  // word, the card drew nothing at all — no line, no tick, no phones (the
+  // as-built review, L3-1).
+  const formerYes = face.client && !face.client.ofOwner && face.client.verdict === 'yes' ? face.client : null;
   const vetoed = client?.vetoes === true;
   const checked = face.state === 'checked';
   /** «Ask again» is said only where the lot is still asked about. */
@@ -232,6 +239,19 @@ export function LotCheckPanel({
       </p>,
     );
   }
+  if (formerYes) {
+    lines.push(
+      asking ? (
+        <p key="former-owner" className="font-semibold text-warn [overflow-wrap:anywhere]" data-testid="lot-check-face-former-owner">
+          ⚠️ {t('formerOwnerStale', { day: formerYes.day })}
+        </p>
+      ) : (
+        <p key="former-owner-old" className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="lot-check-face-former-owner-old">
+          {t('formerOwnerOld', { day: formerYes.day })}
+        </p>
+      ),
+    );
+  }
   if (person && !person.holds) {
     lines.push(
       asking ? (
@@ -280,8 +300,10 @@ export function LotCheckPanel({
   // that vetoes, and one a later tick or a changed tarkib has outranked (it
   // would veto again the day that basis goes stale).
   const offerClose = canWrite && client?.verdict === 'no';
-  // Cargo already in Uzbekistan that nobody checked says nothing (his 4a).
-  if (lines.length === 0 && !offerUndo && !offerClose && !done && !error) return null;
+  // Cargo already in Uzbekistan that nobody checked says nothing (his 4a) —
+  // but never while the tick is OFFERED: a state with no line of its own must
+  // still draw the button that cures it.
+  if (lines.length === 0 && !offerConfirm && !offerUndo && !offerClose && !done && !error) return null;
 
   return (
     <div
@@ -316,16 +338,23 @@ export function LotCheckPanel({
               ))}
             </p>
           )}
+          {/* ONE note field for whichever of the two is pressed: the tick's
+              «how I know», or why the dispute is closed. It was drawn under
+              the tick alone, so on cargo that had left China — where every
+              unresolved ❌ ends up — a dispute could only be closed without a
+              word. */}
+          {(offerConfirm || offerClose) && (
+            <input
+              className="input"
+              data-testid="lot-check-note"
+              maxLength={500}
+              value={note}
+              placeholder={t('notePlaceholder')}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          )}
           {offerConfirm && (
             <>
-              <input
-                className="input"
-                data-testid="lot-check-note"
-                maxLength={500}
-                value={note}
-                placeholder={t('notePlaceholder')}
-                onChange={(e) => setNote(e.target.value)}
-              />
               <button
                 type="button"
                 className="btn-primary w-full"
@@ -351,9 +380,11 @@ export function LotCheckPanel({
           )}
           {offerClose && (
             <>
+              {/* The hint names only the buttons this panel draws: with the
+                  cargo out of China there is no tick to press. */}
               {vetoed && (
                 <p className="text-xs text-ink-500" data-testid="lot-check-dispute-hint">
-                  {t('disputeHint')}
+                  {offerConfirm ? t('disputeHint') : t('disputeHintGone')}
                 </p>
               )}
               <button
@@ -381,7 +412,10 @@ export function LotCheckPanel({
         </div>
       )}
 
-      {done && (
+      {/* Never under a veto: `done` is this panel's own state and outlives the
+          press, so a ❌ that a later render of the page brings in would
+          otherwise stand above a green «saved» line. */}
+      {done && !vetoed && (
         <p className="text-xs font-semibold text-good" role="status" data-testid="lot-check-done">
           {t('done')}
         </p>
