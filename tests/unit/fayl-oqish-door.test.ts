@@ -55,6 +55,23 @@ import {
   vedQueuedText,
 } from '@/modules/platform/telegram/calc-dialog';
 import { handleCalcCallback } from '@/modules/platform/telegram/staff-handlers';
+import { readIntakeFile } from '@/modules/platform/telegram/calc-files';
+
+/**
+ * A file refused AT ARRIVAL, as the file door itself writes it (as-built
+ * review MODEL-9, the way e6e922e re-anchored the restart test): a fixture
+ * typing the reason by hand pinned «Word fayl o‘qilmaydi.» — a doubled «not
+ * read» no door has written since the reasons became noun phrases.
+ */
+let doorSeq = 0;
+async function doorRefusal(name: string): Promise<{ name: string; why: string }> {
+  const chatId = BigInt(-9_344_000_000) - BigInt(++doorSeq);
+  startIntake(chatId, 'rastamojka', { staffId: 'staff-door-refusal', ai: true });
+  const live = updateIntake(chatId, { stage: 'material' })!;
+  const answer = await readIntakeFile({ isPhoto: false, body: Buffer.from('PK\u0003\u0004'), attachmentId: `r-${name}` }, name, null, live);
+  endIntake(chatId);
+  return answer.patch.refusedFiles![0]!;
+}
 import { deliverStoredReply, noticeKindOf, READING_NOTICE, runIntakeRead, settleAnalysis } from '@/modules/platform/telegram/calc-read';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { markIntakesHydrated } from '@/modules/platform/telegram/calc-store';
@@ -301,12 +318,12 @@ describe('a whole AI table keeps today’s words (§1.2, critic-pins)', () => {
       fileCount: 1,
       invoiceGoods: TWO,
       aiUsed: true,
-      refusedFiles: [{ name: 'shartnoma.docx', why: 'Word fayl o‘qilmaydi.' }],
+      refusedFiles: [await doorRefusal('shartnoma.docx')],
       facts: { ...FULL, goods: TWO },
     });
     const table = await drawn(chatId);
     expect(data(table)).toContain('c:save');
-    expect(table.text).toContain('«shartnoma.docx» o‘qilmadi (Word fayl o‘qilmaydi) — undagi tovarlar hisobga kirmaydi.');
+    expect(table.text).toContain('«shartnoma.docx» o‘qilmadi (Word fayl) — undagi tovarlar hisobga kirmaydi.');
     expect(table.text.split('\n').at(-1)).toBe(AI_TABLE_COMPLETE);
   });
 
@@ -600,33 +617,30 @@ describe('«Bo‘ldi» with every file refused at arrival (§2.3)', () => {
   it('names each with its reason and starts no reading', async () => {
     const { chatId } = collection({
       stage: 'material',
-      refusedFiles: [
-        { name: 'a.docx', why: 'Word fayl o‘qilmaydi.' },
-        { name: 'b.zip', why: 'Arxiv o‘qilmaydi' },
-      ],
+      refusedFiles: [await doorRefusal('a.docx'), await doorRefusal('b.zip')],
     });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(ctx.replies.at(-1)!.text).toBe('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi; b.zip — Arxiv o‘qilmaydi.');
+    expect(ctx.replies.at(-1)!.text).toBe('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl; b.zip — arxiv.');
     expect(activeIntake(chatId)!.analysing).toBeNull();
     expect(model.analyze).not.toHaveBeenCalled();
   });
 
   it('judged by what was ACCEPTED, never by the count — the file door counts the refused files too (door-break-2)', async () => {
-    const { chatId } = collection({ stage: 'material', fileCount: 2, refusedFiles: [{ name: 'a.docx', why: 'Word fayl o‘qilmaydi.' }] });
+    const { chatId } = collection({ stage: 'material', fileCount: 2, refusedFiles: [await doorRefusal('a.docx')] });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'done');
-    expect(ctx.replies.map((r) => r.text)).toEqual(['Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi.']);
+    expect(ctx.replies.map((r) => r.text)).toEqual(['Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl.']);
     expect(activeIntake(chatId)!.analysing).toBeNull();
     expect(readingsEnqueued(chatId)).toEqual([]);
   });
 
   it('a refused file beside something accepted is a reading as before', async () => {
-    const { chatId } = collection({ stage: 'material', fileCount: 2, material: ['Kurtka 300 dona'], refusedFiles: [{ name: 'a.docx', why: 'Word fayl o‘qilmaydi.' }] });
+    const { chatId } = collection({ stage: 'material', fileCount: 2, material: ['Kurtka 300 dona'], refusedFiles: [await doorRefusal('a.docx')] });
     const ctx = fakeCtx();
     await handleCalcCallback(ctx, chatId, 'done');
     expect(activeIntake(chatId)!.analysing).not.toBeNull();
-    expect(ctx.replies.map((r) => r.text)).not.toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl o‘qilmaydi.');
+    expect(ctx.replies.map((r) => r.text)).not.toContain('Yuborilgan fayllarning birortasi ham o‘qiladigan emas: a.docx — Word fayl.');
   });
 });
 

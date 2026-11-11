@@ -966,7 +966,7 @@ async function takeParts(
       // (`refusedFiles`), and the part is TAKEN with its text: a caption's
       // typed goods are not lost with the file. Never counted as a file.
       const permanent = isFileRefusal(saved)
-        ? permanentRefusal(live, saved.refused, { name: part.name, isPhoto: part.file.isPhoto })
+        ? permanentRefusal(live, saved.refused, { name: part.name, isPhoto: part.file.isPhoto, mime: part.mime })
         : null;
       if (permanent) {
         const patch: Partial<IntakeState> = {
@@ -1261,6 +1261,7 @@ export async function openAmendFromMedia(
         const permanent = permanentRefusal(live, saved.refused, {
           name: message.document?.file_name ?? '',
           isPhoto: Boolean(message.photo),
+          mime: message.document?.mime_type ?? null,
         });
         if (permanent) live = updateIntake(chatId, { ...permanent.patch, ...(caption ? { ...unread, ...withCaption } : {}) }) ?? live;
         await sp.reply(permanent?.say ?? 'Faylni saqlab bo‘lmadi — matn bilan yozib yuboring.');

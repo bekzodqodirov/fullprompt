@@ -35,7 +35,12 @@ import {
   type CalcSection,
   type IntakeState,
 } from '@/modules/platform/telegram/calc-intake';
-import { readIntakeFile } from '@/modules/platform/telegram/calc-files';
+import { permanentRefusal, promptFileLines, readIntakeFile, saveBotFile } from '@/modules/platform/telegram/calc-files';
+import { RESTART_HOLD } from '@/modules/platform/telegram/calc-dialog';
+import { __setTelegramTransport } from '@/modules/platform/telegram/send';
+import { isStorableType, resolveContentType } from '@/modules/platform/files/service';
+import { readGoodsFile } from '@/modules/wms/deals/goods-file';
+import { readFileSync } from 'node:fs';
 import * as B from '../fixtures/fayl-books';
 
 const BILL = { model: 'm', inputTokens: 1, outputTokens: 1, at: 0 };
@@ -236,5 +241,138 @@ describe('a cut answer keeps the goods the seller typed (OWNER-2)', () => {
     model.analyze.mockResolvedValueOnce({ ok: true, facts: { goods: seven }, steps: [], usage: BILL, answered: [BILL] });
     const whole = await analyzeCollected(activeIntake(chatId)!);
     expect(whole.facts.goods).toHaveLength(7);
+  });
+});
+
+describe('a picture document past storage’s photo ceiling is refused for good, in its own words (MODEL-3)', () => {
+  const JPEG_16MB = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16 * 1024 * 1024)]);
+  afterEach(() => {
+    __setTelegramTransport(null);
+    vi.unstubAllGlobals();
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  });
+
+  it('a 16 MB JPEG sent as a file: storage refuses it, and the door hears a refusal no re-send heals', async () => {
+    process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
+    __setTelegramTransport(async () => new Response(JSON.stringify({ ok: true, result: { file_path: 'documents/scan.jpg' } }), { status: 200 }));
+    vi.stubGlobal('fetch', async () => new Response(JPEG_16MB, { status: 200 }));
+    const saved = await saveBotFile(
+      {},
+      { entityType: 'crm_activity', entityId: '00000000-0000-4000-8000-000000000099', uploadedBy: 'staff', namePrefix: 'hisob' },
+      { fileId: 'f-1', isPhoto: false, fileName: 'scan.jpg', mime: 'image/jpeg', size: JPEG_16MB.length },
+    );
+    expect(saved).toEqual({ refused: 'too_large' });
+  });
+
+  it('said, named on the table, its caption read — never TOO_BIG_SAY’s «Telegram uni botga bermaydi»', () => {
+    const chatId = collection('rastamojka');
+    const answer = permanentRefusal(activeIntake(chatId)!, 'too_large', { name: 'scan.jpg', isPhoto: false });
+    expect(answer).toEqual({
+      patch: { refusedFiles: [{ name: 'scan.jpg', why: '15 MB dan katta rasm' }] },
+      say: '🖼 «scan.jpg» — rasm 15 MB dan katta, saqlanmadi. Kichikroq qilib (yoki PDF) yuboring.',
+    });
+  });
+});
+
+describe('a macro workbook is stored and read; an HTML or XML table is refused in words that work (OWNER-10, MODEL-4, REGRESSION-5)', () => {
+  const XLSM = 'application/vnd.ms-excel.sheet.macroEnabled.12';
+  // Saved by LibreOffice as «Excel 2007-365 (macro-enabled)».
+  const xlsm = () => readFileSync('tests/fixtures/invoice-macro.xlsm');
+
+  it('storage keeps a .xlsm — by its mime and by its name', () => {
+    expect(isStorableType(XLSM)).toBe(true);
+    expect(resolveContentType('invoice.xlsm', 'application/octet-stream')).toBe(XLSM);
+  });
+
+  it('the reader reads a real .xlsm, and the file door takes its rows', async () => {
+    const read = await readGoodsFile(xlsm(), XLSM);
+    expect(read?.kind).toBe('goods');
+    const chatId = collection('rastamojka');
+    await forward(chatId, xlsm(), 'invoice.xlsm', XLSM);
+    const live = activeIntake(chatId)!;
+    expect((live.invoiceGoods ?? []).map((g) => g.name)).toEqual(['Куртка женская', 'Брюки мужские']);
+    expect(live.refusedFiles ?? []).toEqual([]);
+  });
+
+  it('an HTML or XML table is told to be saved as .xlsx, and named as what it is', () => {
+    const chatId = collection('rastamojka');
+    const s = activeIntake(chatId)!;
+    expect(permanentRefusal(s, 'unsupported', { name: 'export.html', isPhoto: false, mime: 'text/html' })).toEqual({
+      patch: { refusedFiles: [{ name: 'export.html', why: 'HTML jadval' }] },
+      say: '📎 «export.html» kartada saqlanmadi: HTML jadval o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.',
+    });
+    expect(permanentRefusal(s, 'unsupported', { name: '', isPhoto: false, mime: 'application/xml' })!.patch.refusedFiles).toEqual([
+      { name: 'fayl', why: 'XML jadval' },
+    ]);
+    // …and an unknown drawing keeps today's words.
+    expect(permanentRefusal(s, 'unsupported', { name: 'chizma.dwg', isPhoto: false })!.say).toContain('rasm, PDF va Excel/CSV yuboring');
+  });
+});
+
+describe('a refused file sent again and taken leaves the named tier (MODEL-5)', () => {
+  const pdfBody = (bytes: number) => Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(bytes)]);
+
+  it('refused at 11 MB, accepted at 3 MB under the same name: named nowhere', async () => {
+    const chatId = collection('rastamojka');
+    await forward(chatId, pdfBody(11 * 1024 * 1024), 'CI-2611.pdf', 'application/pdf');
+    expect(activeIntake(chatId)!.refusedFiles).toEqual([{ name: 'CI-2611.pdf', why: 'PDF 10 MB dan katta' }]);
+    await forward(chatId, pdfBody(3 * 1024 * 1024), 'CI-2611.pdf', 'application/pdf');
+    const live = activeIntake(chatId)!;
+    expect(live.pdfs.map((p) => p.name)).toEqual(['CI-2611.pdf']);
+    expect(live.refusedFiles).toEqual([]);
+  });
+
+  it('another file’s refusal stands, and a second refusal of the same name is kept', async () => {
+    const chatId = collection('rastamojka');
+    await forward(chatId, pdfBody(11 * 1024 * 1024), 'big.pdf', 'application/pdf');
+    await forward(chatId, pdfBody(1024), 'other.pdf', 'application/pdf');
+    await forward(chatId, pdfBody(11 * 1024 * 1024), 'big.pdf', 'application/pdf');
+    expect(activeIntake(chatId)!.refusedFiles).toEqual([
+      { name: 'big.pdf', why: 'PDF 10 MB dan katta' },
+      { name: 'big.pdf', why: 'PDF 10 MB dan katta' },
+    ]);
+  });
+});
+
+describe('the prompt never promises a reading for a PDF the API refused (WORDS-5)', () => {
+  it('«AI bu faylni qabul qilmadi», the table’s words, until the next reading moves it', () => {
+    const lines = promptFileLines(
+      {
+        pdfs: [
+          { attachmentId: 'p1', name: 'scan.pdf', bytes: 10 },
+          { attachmentId: 'p2', name: 'invoice.pdf', bytes: 10 },
+        ],
+        unreadPdfs: ['p1'],
+        sheetTexts: [],
+        invoiceTexts: [],
+      },
+      () => ({ kept: [], total: [] }),
+    );
+    expect(lines).toEqual(['📄 «scan.pdf» — AI bu faylni qabul qilmadi.', '📄 «invoice.pdf» — AI o‘qiydi.']);
+  });
+});
+
+describe('the restart hold is true at every door (WORDS-10)', () => {
+  it('it asks for what was SENT again, never for a file a typed line never was', () => {
+    expect(RESTART_HOLD).toBe(
+      '⏸ Avval yuqoridagi savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Yuborganingizni javobdan keyin qayta yuboring.',
+    );
+  });
+});
+
+describe('a picture-only workbook is named once as not read (OWNER-11, MODEL-7)', () => {
+  it('«pics.xlsx o‘qilmadi (ichida faqat rasm, jadval yo‘q)» — «not read» said once', async () => {
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const book = await B.bookOf((wb) => {
+      const ws = wb.addWorksheet('Rasm');
+      const id = wb.addImage({ buffer: png as unknown as ArrayBuffer, extension: 'png' });
+      ws.addImage(id, { tl: { col: 0, row: 0 }, ext: { width: 40, height: 40 } });
+    });
+    const chatId = collection('rastamojka');
+    await forward(chatId, book, 'pics.xlsx');
+    expect(activeIntake(chatId)!.refusedFiles).toEqual([{ name: 'pics.xlsx', why: 'ichida faqat rasm, jadval yo‘q' }]);
   });
 });

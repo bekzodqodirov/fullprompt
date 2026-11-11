@@ -2041,9 +2041,14 @@ type DrawCtx = CollectorReply & { api?: EditApi };
  */
 export const RESTART_HOLD_MS = 30 * 60_000;
 
-/** §2.4's words, kept last, under every material the question refuses. */
+/**
+ * §2.4's words, kept last, under every material the question refuses — a
+ * file, a forward, a typed line alike: «Faylni … qayta yuboring» told a seller
+ * who had typed «3-qator 50 kg» to re-send a file he never sent (as-built
+ * review WORDS-10).
+ */
 export const RESTART_HOLD =
-  '⏸ Avval yuqoridagi savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Faylni javobdan keyin qayta yuboring.';
+  '⏸ Avval yuqoridagi savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Yuborganingizni javobdan keyin qayta yuboring.';
 
 /** The hold's message per chat — memory only: a process that lost it sends a fresh copy below. */
 const restartHolds = new Map<string, number>();

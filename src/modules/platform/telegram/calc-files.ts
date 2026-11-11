@@ -96,6 +96,32 @@ export const TOO_BIG_SAY = 'Fayl 20 MB dan katta — Telegram uni botga bermaydi
 export const TOO_BIG_WHY = '20 MB dan katta';
 /** A type storage keeps no attachment of — `readIntakeFile`'s «not read» refusal's reason too. */
 export const UNKNOWN_TYPE_WHY = 'noma’lum fayl turi';
+/**
+ * A picture DOCUMENT past storage's photo ceiling (as-built review MODEL-3):
+ * between storage's 15 MB and Telegram's 20 MB a JPEG sent as a file
+ * downloads and is then refused, and read as a failed download it dropped the
+ * caption and named nothing — every re-send failing the same way. Never
+ * `TOO_BIG_SAY`, whose «Telegram uni botga bermaydi» is false here.
+ */
+export const TOO_LARGE_PHOTO_WHY = '15 MB dan katta rasm';
+/**
+ * A table saved as HTML or XML, or a macro or binary workbook — what an ERP
+ * exports — is a type storage keeps no attachment of (as-built review
+ * OWNER-10, REGRESSION-5): «Excel/CSV yuboring» told a seller who sent a table
+ * to send a table, and «noma’lum fayl turi» called it unknown. Its own words,
+ * with the one cure that works: save it as .xlsx. By the name, else the mime.
+ */
+const TABLE_EXPORT_WHY: [RegExp, RegExp, string][] = [
+  [/\.x?html?$/iu, /^(text\/html|application\/xhtml\+xml)$/iu, 'HTML jadval'],
+  [/\.xml$/iu, /^(text|application)\/xml$/iu, 'XML jadval'],
+  [/\.xlsb$/iu, /^application\/vnd\.ms-excel\.sheet\.binary\.macroenabled\.12$/iu, 'Excel binary (.xlsb)'],
+];
+function tableExportWhy(file: { name: string; mime?: string | null }): string | null {
+  for (const [ext, mime, why] of TABLE_EXPORT_WHY) {
+    if (ext.test(file.name) || (file.mime ? mime.test(file.mime) : false)) return why;
+  }
+  return null;
+}
 
 /**
  * What a collection's door does with a file it could not STORE (docs/
@@ -113,14 +139,28 @@ export const UNKNOWN_TYPE_WHY = 'noma’lum fayl turi';
 export function permanentRefusal(
   state: Pick<IntakeState, 'refusedFiles'>,
   refused: BotFileRefusal['refused'],
-  file: { name: string; isPhoto: boolean },
+  file: { name: string; isPhoto: boolean; mime?: string | null },
 ): { patch: Pick<IntakeState, 'refusedFiles'>; say: string } | null {
   const name = file.name || (file.isPhoto ? 'rasm' : 'fayl');
+  const label = file.name ? `«${file.name}»` : 'Fayl';
   if (refused === 'too_big') return { patch: refusedFilePatch(state, name, TOO_BIG_WHY), say: TOO_BIG_SAY };
+  if (refused === 'too_large') {
+    return {
+      patch: refusedFilePatch(state, name, TOO_LARGE_PHOTO_WHY),
+      say: `🖼 ${label} — rasm 15 MB dan katta, saqlanmadi. Kichikroq qilib (yoki PDF) yuboring.`,
+    };
+  }
+  const table = refused === 'unsupported' ? tableExportWhy(file) : null;
+  if (table) {
+    return {
+      patch: refusedFilePatch(state, name, table),
+      say: `📎 ${label} kartada saqlanmadi: ${table} o‘qilmaydi — Excel’da .xlsx qilib saqlab yuboring.`,
+    };
+  }
   if (refused === 'unsupported') {
     return {
       patch: refusedFilePatch(state, name, UNKNOWN_TYPE_WHY),
-      say: `📎 ${file.name ? `«${file.name}»` : 'Fayl'} kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.`,
+      say: `📎 ${label} kartada saqlanmadi: faylning bu turi o‘qilmaydi — rasm, PDF va Excel/CSV yuboring.`,
     };
   }
   return null;
@@ -166,15 +206,17 @@ export const SHEET_REFUSAL: Record<SheetRefusalReason, (label: string) => string
   pictures: (label) => `📄 ${label} — jadval bo‘sh. ${PICTURES_LINE}`,
 };
 
-/** The same refusals as a table's reason (`refusedFiles`); null = nothing of it was lost. */
-const SHEET_REFUSAL_WHY: Record<SheetRefusalReason, string | null> = {
+/** The same refusals as a table's reason (`refusedFiles`); null = nothing of it was lost. A NOUN phrase each (`refusedFilePatch`). */
+export const SHEET_REFUSAL_WHY: Record<SheetRefusalReason, string | null> = {
   old_format: 'Excel 95 yoki undan eski format',
   encrypted: 'parol bilan himoyalangan',
   broken: 'Excel fayl buzilgan',
   empty: null,
   // A workbook whose only content is pictures (§4.4): the goods it shows were
   // never read, so the table names it as a file the AI did not see.
-  pictures: 'Excel ichidagi rasm o‘qilmaydi',
+  // A noun phrase (as-built review OWNER-11, MODEL-7): «X o‘qilmadi (Excel
+  // ichidagi rasm o‘qilmaydi)» said «not read» twice.
+  pictures: 'ichida faqat rasm, jadval yo‘q',
 };
 
 /**
@@ -328,10 +370,20 @@ export function receivePdf(
  * workbook's other sheets the shared budget squeezed. Pure; `fit` is
  * `fitSheetRows` at the reader's cap (what `receiveSheetText` asks).
  */
-export function promptFileLines(state: Pick<IntakeState, 'pdfs' | 'sheetTexts' | 'invoiceTexts'>, fit: SheetFit): string[] {
+export function promptFileLines(
+  state: Pick<IntakeState, 'pdfs' | 'sheetTexts' | 'invoiceTexts' | 'unreadPdfs'>,
+  fit: SheetFit,
+): string[] {
   const all = [...state.sheetTexts, ...state.invoiceTexts];
   const fitted = all.length > 0 ? fit(all.map((s) => s.text.trim())) : { kept: [], total: [] };
-  const pdfs = state.pdfs.map((p) => `📄 «${p.name}» — AI o‘qiydi.`);
+  // A PDF the API refused stays in `pdfs` until the NEXT reading moves it to
+  // the named refusals, and the reading sends it no more (`loadIntakeFiles`):
+  // «AI o‘qiydi» under the seller's next file promised what the table above
+  // had just said did not happen (as-built review WORDS-5). The table's words.
+  const refused = new Set(state.unreadPdfs ?? []);
+  const pdfs = state.pdfs.map((p) =>
+    refused.has(p.attachmentId) ? `📄 «${p.name}» — AI bu faylni qabul qilmadi.` : `📄 «${p.name}» — AI o‘qiydi.`,
+  );
   const sheets = state.sheetTexts.map((s, i) =>
     sheetTextLine(s.label ?? 'Jadval', { kept: fitted.kept[i] ?? 0, total: fitted.total[i] ?? 0 }, s.cut, s),
   );
@@ -897,6 +949,45 @@ export async function readIntakeFile(
   mime: string | null,
   state: IntakeState,
 ): Promise<FileAnswer> {
+  const answer = await answerIntakeFile(saved, fileName, mime, state);
+  return { ...answer, patch: { ...answer.patch, ...resentAccepted(state, answer.patch, fileName) } };
+}
+
+/**
+ * A file ACCEPTED under the name of one refused before (as-built review
+ * MODEL-5): the bot's own refusal asks for exactly this re-send — «kichikroq
+ * qilib yuboring», «parolsiz saqlab yuboring» — and `refusedFiles` only ever
+ * grew, so the ✅ table and the card's note went on saying «CI-2611.pdf
+ * o‘qilmadi» beside the goods that very file gave. The entries of that name
+ * leave the named tier when a copy is TAKEN (a PDF, a photo, a sheet's rows or
+ * text); never under a name the bot made up («rasm», «fayl», «N ta rasm»),
+ * which is any unnamed photo's. Nothing = no change.
+ */
+function resentAccepted(state: IntakeState, patch: Partial<IntakeState>, fileName: string): Pick<IntakeState, 'refusedFiles'> | Record<string, never> {
+  const name = fileName.trim();
+  const list = patch.refusedFiles ?? state.refusedFiles ?? [];
+  if (!name || name === 'rasm' || name === 'fayl' || /^\d+ ta rasm$/u.test(name)) return {};
+  if (!list.some((f) => f.name === name)) return {};
+  const grew = (now: readonly unknown[] | undefined, was: readonly unknown[]) => now !== undefined && now.length > was.length;
+  const taken =
+    grew(patch.pdfs, state.pdfs) ||
+    grew(patch.images, state.images) ||
+    grew(patch.sheetTexts, state.sheetTexts) ||
+    grew(patch.invoiceTexts, state.invoiceTexts) ||
+    patch.invoiceGoods !== undefined;
+  // …and taken in THIS answer: a refusal it wrote of the same name stands.
+  const fresh = (patch.refusedFiles ?? []).slice((state.refusedFiles ?? []).length).some((f) => f.name === name);
+  if (!taken || fresh) return {};
+  return { refusedFiles: list.filter((f) => f.name !== name) };
+}
+
+/** `readIntakeFile`'s answer before the re-send rule (`resentAccepted`). */
+async function answerIntakeFile(
+  saved: { isPhoto: boolean; body: Buffer; attachmentId: string },
+  fileName: string,
+  mime: string | null,
+  state: IntakeState,
+): Promise<FileAnswer> {
   const label = fileName ? `«${fileName}»` : 'Fayl';
   const kind = intakeFileKind(saved.body, saved.isPhoto, fileName, mime);
   if (kind === 'image' || kind === 'isomedia') {
@@ -1189,7 +1280,7 @@ export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: strin
  * threw, read as a failed download, and was asked for again); `download_failed`
  * is everything else, which a re-send may heal.
  */
-export type BotFileRefusal = { refused: 'too_big' | 'unsupported' | 'download_failed' };
+export type BotFileRefusal = { refused: 'too_big' | 'too_large' | 'unsupported' | 'download_failed' };
 
 /** Is this a refusal rather than a stored file? */
 export const isFileRefusal = (saved: SavedBotFile | BotFileRefusal): saved is BotFileRefusal => 'refused' in saved;
@@ -1263,6 +1354,9 @@ export async function saveBotFile(
     // A type storage will not keep — no re-send stores it, so it is a refusal
     // with its own words, never the «saqlab bo‘lmadi» a blip gets.
     if (err instanceof FileValidationError && err.code === 'unsupported_type') return { refused: 'unsupported' };
+    // …and a picture past storage's photo ceiling (MODEL-3): no re-send of
+    // the same bytes stores it either.
+    if (err instanceof FileValidationError && err.code === 'too_large') return { refused: 'too_large' };
     throw err;
   }
   await generateThumbnails(id).catch(() => {});

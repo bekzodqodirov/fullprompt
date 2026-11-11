@@ -7,9 +7,10 @@ import {
   permanentRefusal,
   readIntakeFile,
   receivePdf,
+  SHEET_REFUSAL_WHY,
   TOO_BIG_SAY,
 } from '@/modules/platform/telegram/calc-files';
-import { analyzeCollected, endIntake, MAX_INTAKE_IMAGES, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
+import { analyzeCollected, endIntake, MAX_INTAKE_IMAGES, PDF_REFUSED_WHY, startIntake, updateIntake } from '@/modules/platform/telegram/calc-intake';
 
 /**
  * Package P-model of docs/FAYL-OQISH.md (§3): the reading finishes, or keeps
@@ -416,6 +417,19 @@ describe('what is refused at arrival is named (§1.1, §3.4)', () => {
       ...(await readIntakeFile(saved(Buffer.from('PK\u0003\u0004')), 'b.docx', null, s)).patch.refusedFiles!,
       permanentRefusal(s, 'too_big', { name: 'big.pdf', isPhoto: false })!.patch.refusedFiles![0]!,
       permanentRefusal(s, 'unsupported', { name: 'c.dwg', isPhoto: false })!.patch.refusedFiles![0]!,
+      // …and every other writer of the tier (as-built review MODEL-7): a
+      // spreadsheet's refusal, the PDF the API refused, the PDF caps, a picture
+      // past storage's ceiling, a table export — the picture-only workbook's
+      // «Excel ichidagi rasm o‘qilmaydi» stayed green here because the fence
+      // never read SHEET_REFUSAL_WHY.
+      ...Object.values(SHEET_REFUSAL_WHY).flatMap((why) => (why ? [{ name: 'x.xlsx', why }] : [])),
+      { name: 'x.pdf', why: PDF_REFUSED_WHY },
+      ...receivePdf(s, { attachmentId: 'h', name: 'h.pdf', bytes: 11 * 1024 * 1024 }, '«h.pdf»').patch.refusedFiles!,
+      ...receivePdf({ ...s, pdfs: [1, 2, 3].map((i) => ({ attachmentId: `p${i}`, name: `p${i}.pdf`, bytes: 1 })) }, { attachmentId: 'p4', name: 'p4.pdf', bytes: 1 }, '«p4.pdf»').patch.refusedFiles!,
+      ...receivePdf({ ...s, pdfs: [1, 2].map((i) => ({ attachmentId: `p${i}`, name: `p${i}.pdf`, bytes: 5 * 1024 * 1024 })) }, { attachmentId: 'p3', name: 'big.pdf', bytes: 5 * 1024 * 1024 }, '«big.pdf»').patch.refusedFiles!,
+      permanentRefusal(s, 'too_large', { name: 'scan.jpg', isPhoto: false })!.patch.refusedFiles![0]!,
+      permanentRefusal(s, 'unsupported', { name: 'export.html', isPhoto: false })!.patch.refusedFiles![0]!,
+      permanentRefusal(s, 'unsupported', { name: 'sheet.xml', isPhoto: false })!.patch.refusedFiles![0]!,
     ].map((f) => f.why);
     expect(heic.patch.refusedFiles).toEqual([{ name: 'a.heic', why: 'HEIC rasm' }]);
     expect(unknown.patch.refusedFiles).toEqual([{ name: 'chizma.dwg', why: 'noma’lum fayl turi' }]);

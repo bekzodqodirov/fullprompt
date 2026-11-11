@@ -16,6 +16,10 @@ const DOC_TYPES = new Set([
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
+  // A macro-enabled workbook is an ordinary OOXML zip the goods reader opens
+  // (as-built review OWNER-10, MODEL-4): refused here, a supplier's .xlsm was
+  // told «send Excel». Served as a download only, like every non-image document.
+  'application/vnd.ms-excel.sheet.macroEnabled.12',
   'application/msword',
   'text/plain',
   'text/csv',
@@ -63,6 +67,7 @@ const EXT_TYPES: Record<string, string> = {
   pdf: 'application/pdf',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   xls: 'application/vnd.ms-excel',
+  xlsm: 'application/vnd.ms-excel.sheet.macroEnabled.12',
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   doc: 'application/msword',
   txt: 'text/plain',

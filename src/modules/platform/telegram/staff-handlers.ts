@@ -803,7 +803,11 @@ export function registerStaffBot(bot: Bot): void {
       // received — and its CAPTION is read (docs/FAYL-OQISH.md §3.4): goods
       // typed under it were lost with the file. A failed download takes
       // nothing: the same message re-sent brings both (`permanentRefusal`).
-      const permanent = permanentRefusal(state, saved.refused, { name: fileName, isPhoto: Boolean(ctx.message.photo) });
+      const permanent = permanentRefusal(state, saved.refused, {
+        name: fileName,
+        isPhoto: Boolean(ctx.message.photo),
+        mime: ctx.message.document?.mime_type ?? null,
+      });
       if (permanent) {
         updateIntake(chatId, {
           ...permanent.patch,
