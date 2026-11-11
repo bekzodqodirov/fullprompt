@@ -3404,6 +3404,16 @@ proven = ≥ 50 decided and ≥ 0.80 (45/50). **Auto-send is DESIGNED (§18.3), 
 `prompt.ts` must keep `recent` exactly the old window — `tests/unit/agent-context-window.test.ts` holds the old loop
 verbatim as its oracle.
 
+**Hotfix — haydovchi ilovasi «HTTP 400» (2026-11-10; DECISIONS #1629 — renumbered from #1622 on the merge, the THIRTY-FIRST collision: main's «kontekst 100» took #1622-#1628 first; NO migration, ledger 143).** His «faqat
+boshida joylashuvini jonatyabti keyin uzilib qolyabti». The app's queue is sent OLDEST FIRST and deleted only on a
+2xx, so a batch the server refused for ONE fix (a GPS speed spike over 400 km/h, a cell guess over 100 km) jammed the
+trip's tracking for good. `/api/track/positions` now says 400 only about a body that is not a batch (logged
+`[track] 400 …`); every fix is read by `readPosition` (tracking/devices.ts): no place or time → dropped alone; a bad
+speed → cleared; a bad accuracy → the COARSEST (`POSITION_BOUNDS.accuracyM`), **never null — a null accuracy reads as
+a GOOD fix everywhere** (`COARSE_FIX_M`'s `IS NULL OR`). Answer `{accepted, dropped}`, always 2xx; nothing readable
+leaves `last_seen_at` alone. No APK needed — jammed queues flush on the next cycle. The `[track] device …` log line
+names the cause on his server. Owed to an app release: accuracy ≥ 9 999 m is sent as «none».
+
 **Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
 it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before
