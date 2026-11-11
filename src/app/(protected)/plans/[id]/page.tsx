@@ -1,20 +1,10 @@
 import Link from 'next/link';
-import { asc, desc, eq, sql } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { aliasedTable } from 'drizzle-orm';
 import { notFound, redirect } from 'next/navigation';
 import { getFormatter, getTranslations } from 'next-intl/server';
 import { db } from '@/modules/platform/db/client';
-import {
-  batches,
-  clients,
-  crates,
-  loadPlanLines,
-  loadPlans,
-  loadPlanVersions,
-  receiptLots,
-  receipts,
-  warehouses,
-} from '@/modules/platform/db/schema';
+import { batches, loadPlans, loadPlanVersions, warehouses } from '@/modules/platform/db/schema';
 import { getActor } from '@/modules/platform/rbac/authorize';
 import { VerdictForm } from './verdict-form';
 import { CancelPlan } from './cancel-plan';
@@ -25,7 +15,7 @@ import { TasksPanel } from '@/components/tasks-panel';
 import { inScope } from '@/modules/platform/rbac/scope';
 import { codeIdentity } from '@/modules/wms/labels/code-identity';
 import { planRoadReady, roadOfVersion } from '@/modules/wms/planning/road';
-import { lotRuShownSql } from '@/modules/wms/receipts/lot-name';
+import { planLinesView } from '@/modules/wms/planning/plan-lines';
 import { LotGoodsName } from '@/components/lot-goods-name';
 
 export default async function PlanDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -70,26 +60,9 @@ export default async function PlanDetailPage({ params }: { params: Promise<{ id:
     .orderBy(desc(loadPlanVersions.versionNo));
   const current = versions[0];
 
-  const lines = current
-    ? await db
-        .select({
-          line: loadPlanLines,
-          lot: receiptLots,
-          // The Russian name as the lists show it (lot-name.ts): a standing
-          // tarkib's «first +N», else the lot's own.
-          shownNameRu: sql<string | null>`${lotRuShownSql(sql`${receiptLots}`)}`,
-          clientCode: clients.clientCode,
-          marking: receipts.unclaimedMarking,
-          crateCode: crates.code,
-        })
-        .from(loadPlanLines)
-        .innerJoin(receiptLots, eq(loadPlanLines.lotId, receiptLots.id))
-        .innerJoin(receipts, eq(receiptLots.receiptId, receipts.id))
-        .leftJoin(clients, eq(receipts.clientId, clients.id))
-        .leftJoin(crates, eq(loadPlanLines.crateId, crates.id))
-        .where(eq(loadPlanLines.versionId, current.id))
-        .orderBy(asc(loadPlanLines.id))
-    : [];
+  // One row per plan line — a lot, never a good (planning/plan-lines.ts; his
+  // answer of 2026-11-11: only the agent's FILE prints a row per good).
+  const lines = current ? await planLinesView(current.id) : [];
   // «Qaysi partiyada kelgan» — the agent sheet's rule from its one home, so
   // the logist reviewing on screen reads the same answer the XLSX groups by.
   const arrivals = await arrivalsForLots(

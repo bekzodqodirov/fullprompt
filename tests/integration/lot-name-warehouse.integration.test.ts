@@ -55,6 +55,9 @@ import {
   boxes,
   clientTelegramLinks,
   clients,
+  loadPlanLines,
+  loadPlans,
+  loadPlanVersions,
   lotCompositionLines,
   lotCompositions,
   receiptLots,
@@ -70,6 +73,7 @@ import { batchLots } from '@/modules/wms/batches/lots';
 import { botLookup, type BotActor } from '@/modules/wms/bot/lookup';
 import { clientCargoRows } from '@/modules/wms/inventory/client-cargo-now';
 import { stockTextWhere } from '@/modules/wms/inventory/stock-filter';
+import { planLinesView } from '@/modules/wms/planning/plan-lines';
 import { plannableStock, roadStock } from '@/modules/wms/planning/stock';
 import { reportLabels } from '@/modules/wms/reports/labels';
 import { countAcceptPanel } from '@/modules/wms/scanning/count-accept';
@@ -97,6 +101,8 @@ let receiptId = '';
 const wh = { origin: '', dest: '' };
 const truck = { loading: '', road: '' };
 const lot = { K: '', P: '' };
+/** A plan holding both lots — what /plans/<id> lists (his answer 3a: the screen stays one row per lot). */
+const plan = { id: '', versionId: '' };
 
 const person = () => ({
   id: actorId,
@@ -249,9 +255,37 @@ beforeAll(async () => {
   await db
     .insert(lotCompositionLines)
     .values(LINES.map((name, i) => ({ lotId: lot.K, seq: i + 1, name, weightKg: '20.000', volumeM3: '0.2000' })));
+
+  // A plan out of the origin with a line for each lot's shelf cartons.
+  const [p] = await db
+    .insert(loadPlans)
+    .values({
+      originWarehouseId: wh.origin,
+      destWarehouseId: wh.dest,
+      createdBy: actorId,
+      status: 'pending_agent',
+      currentVersionNo: 1,
+    })
+    .returning({ id: loadPlans.id });
+  plan.id = p!.id;
+  const [v] = await db
+    .insert(loadPlanVersions)
+    .values({ planId: plan.id, versionNo: 1, submittedBy: actorId, totalBoxes: 4, totalKg: '40', totalM3: '0.4' })
+    .returning({ id: loadPlanVersions.id });
+  plan.versionId = v!.id;
+  await db.insert(loadPlanLines).values([
+    { versionId: plan.versionId, lotId: lot.K, crateId: null, plannedBoxCount: 2, plannedKg: '20.000', plannedM3: '0.2000' },
+    { versionId: plan.versionId, lotId: lot.P, crateId: null, plannedBoxCount: 2, plannedKg: '20.000', plannedM3: '0.2000' },
+  ]);
 });
 
 afterAll(async () => {
+  // The plan goes first — lines, versions, plan: none of its foreign keys cascades.
+  if (plan.versionId) await db.delete(loadPlanLines).where(eq(loadPlanLines.versionId, plan.versionId));
+  if (plan.id) {
+    await db.delete(loadPlanVersions).where(eq(loadPlanVersions.planId, plan.id));
+    await db.delete(loadPlans).where(eq(loadPlans.id, plan.id));
+  }
   const lotIds = Object.values(lot).filter(Boolean);
   if (lotIds.length > 0) {
     await db.delete(lotCompositions).where(inArray(lotCompositions.lotId, lotIds));
@@ -277,6 +311,21 @@ describe('the lists print the tarkib’s name; a lot with no tarkib keeps its ow
     expect(of(shelf.lots, 'lotId', lot.P)).toMatchObject({ productNameZh: ZH_P, productNameRu: OWN_P, available: 2 });
     const road = await roadStock(wh.dest);
     expect(of(road.lots, 'lotId', lot.K)).toMatchObject({ productNameRu: LABEL });
+  });
+
+  it('the plan’s own screen (/plans/<id>) lists a lot ONCE whatever its tarkib holds — only the agent’s file prints a row per good (his 3a)', async () => {
+    const rows = await planLinesView(plan.versionId);
+    // Two plan lines, two rows: a three-good tarkib does not make three.
+    expect(rows).toHaveLength(2);
+    const composed = rows.filter((row) => row.line.lotId === lot.K);
+    expect(composed).toHaveLength(1);
+    expect(composed[0]).toMatchObject({ shownNameRu: LABEL, clientCode: CODE, marking: null, crateCode: null });
+    expect(composed[0]!.lot.productNameZh).toBe(ZH_K);
+    expect(composed[0]!.line.plannedBoxCount).toBe(2);
+    // …and a lot with no tarkib keeps the warehouse's own word.
+    const plain = rows.filter((row) => row.line.lotId === lot.P);
+    expect(plain).toHaveLength(1);
+    expect(plain[0]).toMatchObject({ shownNameRu: OWN_P });
   });
 
   it('the truck card, the cost grid and the «Narx» tab (batchLots): a SECOND field — the stored name stays the price history’s needle', async () => {
