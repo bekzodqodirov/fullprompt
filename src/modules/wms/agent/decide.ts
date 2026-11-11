@@ -24,7 +24,7 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
-import { afterPressOf, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
+import { afterPressOf, autoChatTakenInTx, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
 import { cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
 import { agentAutoReady, agentRunning, readAgentConfig } from './config';
@@ -96,7 +96,9 @@ export type DecideRefusal =
    * The machine's press lost INSIDE its own approval (fix pass A, C2/C5): a stop
    * moved its verdict first (⏸, a person's own decision, a disarm) —
    * `auto_stopped` — or the layer was no longer armed, or the account no longer a
-   * work number — `auto_disarmed`. Nothing is written: the approval rolls back.
+   * work number — `auto_disarmed` — or the chat was his (🙋) — `taken_over`, the
+   * same word a person's press meets on a chat he took (the final check). Nothing
+   * is written: the approval rolls back.
    */
   | AutoPressLoss
   /**
@@ -1056,6 +1058,9 @@ export async function decideDraft(
     if (!held || held.status !== d.status || held.finalBody !== d.finalBody || cardDigest(digestBody(held), held.actions as ComposedAction[]) !== cardDigest(body, actions)) {
       return false;
     }
+    // The chat still the machine's to answer (the final check): his 🙋, read under the draft's lock — the
+    // human path keeps a card in a chat he took waiting for him; the machine never presses it.
+    if (opts.auto && (await autoChatTakenInTx(tx, d.managerUserId, d.peerId))) throw new AutoPressLost('taken_over');
     const [row] = await tx
       .update(agentDrafts)
       .set({

@@ -5,7 +5,7 @@ import { logger } from '../../platform/logger';
 import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../../platform/notifications/staff';
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
 import { autoPayload } from './auto-card';
-import { recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
+import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
 import { cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
@@ -23,7 +23,10 @@ import type { ComposeReply } from './run';
  * SUPERSEDES the pending one and its card is re-pointed at the new draft and
  * edited in place, so his chat with the bot holds one card per customer, not
  * a scroll of stale ones (fit-9). An 'editing' draft is never superseded —
- * he is typing an answer to it.
+ * he is typing an answer to it. One exception: a reply that counts down to
+ * «o'zi yuborish» never rides a copy that rang more than one hold ago (an edit
+ * rings nothing) — it gets a card of its own, and the old copy is closed
+ * (auto-send `countdownMayRide`).
  */
 
 export function customerLabel(ctx: AgentContext): string {
@@ -49,7 +52,7 @@ function cardMemory(ctx: AgentContext): CardMemory {
 
 async function cardRowFor(tx: Tx, draftId: string) {
   const [row] = await tx
-    .select({ id: notifications.id, payload: notifications.payload, status: notifications.status })
+    .select({ id: notifications.id, payload: notifications.payload, status: notifications.status, sentAt: notifications.sentAt })
     .from(notifications)
     .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`))
     .orderBy(sql`${notifications.createdAt} DESC`)
@@ -102,6 +105,8 @@ const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'comp
  */
 export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
   let superseded = null as string | null;
+  // The superseded draft's own copy, left naming it because the new reply counts down and may not ride it.
+  let closeOld = false as boolean;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
       .select({ id: agentDrafts.id, status: agentDrafts.status })
@@ -163,7 +168,12 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       auto: autoPayload(auto, row, sendable),
     });
     const old = live ? await cardRowFor(tx, live.id) : null;
-    if (old) {
+    // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
+    // `countdownMayRide`): an edit rings nothing, so on an older copy it gets a card of its own — a push — and
+    // the old copy is closed after the commit, naming the draft it showed.
+    const ride = !old || auto?.state !== 'waiting' || !n.autoPlan || countdownMayRide(old, n.autoPlan);
+    if (old && !ride) closeOld = true;
+    if (old && ride) {
       // The old card becomes the new one: its row now names the new draft,
       // and a copy already in Telegram is edited after the commit.
       await tx
@@ -182,6 +192,11 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       await settleSupersededAuto(superseded).catch((err: unknown) => logger.warn({ err, draftId: superseded }, '[agent] superseded auto not settled'));
     }
     await kickTelegramDrain();
+    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`).
+    if (closeOld && superseded) {
+      const { refreshAgentCard } = await import('./card-io');
+      await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
+    }
     if (out.retargeted) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(out.draftId).catch((err: unknown) => logger.warn({ err }, '[agent] card not edited'));

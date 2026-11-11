@@ -6,6 +6,7 @@ import {
   agentAutoConfig,
   agentAutoVerdicts,
   agentConfig,
+  agentConversations,
   agentDrafts,
   agentOutbox,
   agentRuns,
@@ -268,6 +269,12 @@ export async function autoFactsFor(
     .select({ offUntil: agentAutoChats.offUntil })
     .from(agentAutoChats)
     .where(and(eq(agentAutoChats.managerUserId, d.managerUserId), eq(agentAutoChats.peerId, d.peerId)));
+  // His 🙋 and a mute, read NOW (final check): the run read them before its model call, and a 🙋 pressed during
+  // that call — on the chat's previous card — reaches the reply it writes only here.
+  const [conv] = await db
+    .select({ humanUntil: agentConversations.humanUntil, mutedAt: agentConversations.mutedAt })
+    .from(agentConversations)
+    .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
   return {
     config: {
       armed: auto?.armed === true,
@@ -299,6 +306,8 @@ export async function autoFactsFor(
       hasOwner: d.clientId !== null || d.leadId !== null,
       prospect: (await sendWindowFor(d)) === 'agent_lead',
       offUntil: off?.offUntil ?? null,
+      humanUntil: conv?.humanUntil ?? null,
+      muted: conv?.mutedAt != null,
     },
     workAccount: acc?.work === true,
     at: opts.at,
@@ -322,6 +331,8 @@ export interface AutoPlan {
   /** `cardDigest` of the body and actions — the press passes it, so an edited card refuses. */
   digest: string;
   dueAt: Date | null;
+  /** The hold it was scheduled with (`hold_sec`) — what `countdownMayRide` measures an old card copy by. */
+  holdSec: number;
 }
 
 /**
@@ -372,6 +383,7 @@ export async function autoPlanFor(input: { draft: AutoDraftShape; tools: readonl
       confidence: confidenceOf(draft.confidence),
       digest: cardDigest(digestBody(draft), Array.isArray(draft.actions) ? draft.actions : []),
       dueAt: verdict.eligible ? dueAt : null,
+      holdSec: config.holdSec,
     };
   } catch (err) {
     logger.error({ err, peer: String(input.draft.peerId) }, '[agent] auto plan not computed');
@@ -421,6 +433,22 @@ export async function autoCardStatesFor(draftIds: readonly string[]): Promise<Ma
     if (state) out.set(row.draftId, state);
   }
   return out;
+}
+
+/**
+ * May a reply that counts down ride this copy of the chat's card — re-pointed at it and edited in place (the
+ * final check)? Telegram rings for a message and never for an edit, and the hold is his time to read the card: a
+ * copy that rang hours ago sits far up his bot chat, and an edit of it would start a countdown nothing told him of.
+ * So only a copy not yet sent (its send rings — the drain's own) or one that rang within one hold before the reply
+ * was written; anything else — an older copy, a send of no known time, one that never reached him — gives the reply
+ * a card of its own (`createDraft`), and the old copy is closed. A reply that does not count down rides any copy,
+ * as every card always has (one card per customer, fit-9).
+ */
+export function countdownMayRide(copy: { status: string; sentAt: Date | null }, plan: Pick<AutoPlan, 'dueAt' | 'holdSec'>): boolean {
+  if (copy.status === 'pending' || copy.status === 'sending') return true;
+  if (copy.status !== 'sent' || copy.sentAt === null || plan.dueAt === null) return false;
+  const writtenAt = plan.dueAt.getTime() - plan.holdSec * 1000;
+  return copy.sentAt.getTime() >= writtenAt - plan.holdSec * 1000;
 }
 
 /**
@@ -685,8 +713,11 @@ export async function pressDueAutos(now: Date = new Date()): Promise<number> {
   return pressed;
 }
 
-/** Why the machine's press lost INSIDE its own approval (decide `auto`, fix pass A, C2/C5). */
-export type AutoPressLoss = 'auto_stopped' | 'auto_disarmed';
+/**
+ * Why the machine's press lost INSIDE its own approval (decide `auto`, fix pass A, C2/C5): a stop, a disarm — or
+ * his 🙋 on the chat (`taken_over`, the final check: `autoChatTakenInTx`).
+ */
+export type AutoPressLoss = 'auto_stopped' | 'auto_disarmed' | 'taken_over';
 
 /**
  * The machine's ✅, checked as the FIRST statements of its approval transaction
@@ -703,6 +734,24 @@ export async function autoPressStandsInTx(tx: Tx, managerUserId: string): Promis
   if (!config?.armedAt) return 'auto_disarmed';
   const [acc] = await tx.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, managerUserId));
   return acc?.work === true ? null : 'auto_disarmed';
+}
+
+/**
+ * His 🙋 on the chat, read INSIDE the machine's approval (the final check) — after the draft's own row is locked
+ * FOR UPDATE, the conversation's row FOR SHARE, alone (#1585). `takeChatInTx` retires the chat's live drafts
+ * BEFORE it upserts this row, so a 🙋 that retires this draft has taken the draft's lock first and this press
+ * finds the draft moved; one that comes after waits on the draft and finds the reply queued (its withdrawal takes
+ * it back). What only this read catches is a takeover written beside a draft it never retired — the gate read the
+ * chat a moment before, the approval reads it now. The draft before the conversation, as `takeChatInTx` locks
+ * them: never the reverse, or the two wait on each other.
+ */
+export async function autoChatTakenInTx(tx: Tx, managerUserId: string, peerId: bigint, now: Date = new Date()): Promise<boolean> {
+  const [conv] = await tx
+    .select({ humanUntil: agentConversations.humanUntil })
+    .from(agentConversations)
+    .where(and(eq(agentConversations.managerUserId, managerUserId), eq(agentConversations.peerId, peerId)))
+    .for('share');
+  return conv?.humanUntil != null && conv.humanUntil.getTime() > now.getTime();
 }
 
 /**

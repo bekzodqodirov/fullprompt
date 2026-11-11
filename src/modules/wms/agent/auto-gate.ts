@@ -48,6 +48,8 @@ export const AUTO_REFUSALS = [
   'stranger',
   'prospect',
   'chat_off',
+  'human_active',
+  'chat_muted',
   'not_work_account',
   'night',
   'streak',
@@ -80,6 +82,8 @@ export const AUTO_REFUSAL_WORDS: Record<AutoRefusal, string> = {
   stranger: 'chat mijoz yoki lidga bog‘lanmagan',
   prospect: 'bu lidni mijoz topuvchi agent topgan',
   chat_off: 'bu chatda o‘zi yuborish vaqtincha o‘chirilgan',
+  human_active: 'suhbatni 🙋 bilan o‘zingiz oldingiz',
+  chat_muted: 'bu suhbatda AI o‘chirilgan',
   not_work_account: 'raqam «Ish raqami» deb belgilanmagan',
   night: 'tun — ertalab o‘zingiz qaror qilasiz',
   streak: 'bu chatga ketma-ket 2 ta javob o‘zi ketdi',
@@ -151,6 +155,14 @@ export interface AutoGateInput {
     prospect: boolean;
     /** agent_auto_chats' `off_until`, or null. */
     offUntil: Date | null;
+    /**
+     * His 🙋 «Suhbat meniki» on this chat (`agent_conversations.human_until`), or null (final check): the chat is
+     * his while it runs. The run reads it once, before its model call — a 🙋 pressed during that call reaches
+     * only this fact, at the scheduling and again at the press.
+     */
+    humanUntil: Date | null;
+    /** The AI was switched off in this chat (`agent_conversations.muted_at` — the customer's own wish, a block). */
+    muted: boolean;
   };
   /** tg_accounts.work_account of the holder — «Ish raqami». */
   workAccount: boolean;
@@ -208,6 +220,9 @@ export function autoVerdict(input: AutoGateInput): AutoVerdict {
   if (!input.chat.hasOwner) hit.add('stranger');
   if (input.chat.prospect) hit.add('prospect');
   if (input.chat.offUntil !== null && input.chat.offUntil.getTime() > input.now.getTime()) hit.add('chat_off');
+  // The chat is his (🙋), or no AI's at all: the human path would keep the card waiting for him — the machine never presses it.
+  if (input.chat.humanUntil !== null && input.chat.humanUntil.getTime() > input.now.getTime()) hit.add('human_active');
+  if (input.chat.muted) hit.add('chat_muted');
   if (!input.workAccount) hit.add('not_work_account');
   // The pump's own night (send-step `isTashkentNight`, AGENT_LIMITS' hours): the card waits for the morning (his Q4 ⭐).
   if (isTashkentNight(input.at)) hit.add('night');

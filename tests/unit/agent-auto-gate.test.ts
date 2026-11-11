@@ -47,7 +47,7 @@ function eligible(): AutoGateInput {
     },
     tools: [],
     burstMedia: false,
-    chat: { hasOwner: true, prospect: false, offUntil: null },
+    chat: { hasOwner: true, prospect: false, offUntil: null, humanUntil: null, muted: false },
     workAccount: true,
     at: NOON,
     now: NOON,
@@ -80,6 +80,9 @@ const ONE_CHANGE: Record<AutoRefusal, (i: AutoGateInput) => void> = {
   stranger: (i) => (i.chat.hasOwner = false),
   prospect: (i) => (i.chat.prospect = true),
   chat_off: (i) => (i.chat.offUntil = new Date(NOON.getTime() + 60_000)),
+  // His 🙋 «Suhbat meniki» and a chat the AI was muted in (final check): the chat is not the machine's to answer.
+  human_active: (i) => (i.chat.humanUntil = new Date(NOON.getTime() + 60_000)),
+  chat_muted: (i) => (i.chat.muted = true),
   not_work_account: (i) => (i.workAccount = false),
   night: (i) => (i.at = NIGHT),
   streak: (i) => (i.streak = 2),
@@ -131,6 +134,14 @@ describe('the gate', () => {
       expect(AUTO_REFUSAL_WORDS[code].length).toBeGreaterThan(5);
       expect(AUTO_REFUSAL_WORDS[code]).not.toMatch(/^[a-z_]+$/u);
     }
+  });
+
+  it('a 🙋 that has run out is no refusal — the chat is the layer’s again; one still running refuses at any press', () => {
+    const input = eligible();
+    input.chat.humanUntil = new Date(NOON.getTime() - 60_000);
+    expect(autoVerdict(input)).toEqual({ eligible: true, reasons: [] });
+    input.chat.humanUntil = new Date(NOON.getTime() + 23 * 3_600_000);
+    expect(autoVerdict(input).reasons).toEqual(['human_active']);
   });
 
   it('his own words on the card are never the machine’s to send — a pending draft he wrote for is not pending for auto', () => {

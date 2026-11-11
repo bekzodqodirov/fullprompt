@@ -221,15 +221,16 @@ let cardMessageSeq = 900;
 
 /**
  * His Telegram shows this draft's card since `at` — what the staff drain writes on the card's row when it sends it
- * (`tg` and `shown`), and a successful edit when the row is re-pointed at a newer draft (fix pass A, C4): the
- * machine presses only a card that reached him, `hold` after it did.
+ * (`sent_at`, `tg` and `shown`), and a successful edit when the row is re-pointed at a newer draft (fix pass A, C4):
+ * the machine presses only a card that reached him, `hold` after it did. `sent_at` is when the copy rang — an edit
+ * after it rings nothing (the final check: a countdown never rides an old copy).
  */
 async function shownAt(draftId: string, at: Date) {
   cardMessageSeq += 1;
   const merge = { tg: { chatId: CARD_CHAT, messageId: cardMessageSeq }, shown: { draftId, at: at.toISOString() } };
   await db
     .update(notifications)
-    .set({ status: 'sent', payload: sql`${notifications.payload} || ${JSON.stringify(merge)}::jsonb` })
+    .set({ status: 'sent', sentAt: at, payload: sql`${notifications.payload} || ${JSON.stringify(merge)}::jsonb` })
     .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`));
 }
 
@@ -1679,7 +1680,7 @@ describe('fix pass B — the tests the review found missing (TESTS-1…6)', () =
       const d = await drafted();
       await db.delete(agentAutoVerdicts).where(eq(agentAutoVerdicts.draftId, d.id));
       await db.transaction(async (tx) => {
-        const out = await recordAutoVerdictInTx(tx, d, { eligible: true, reasons: [], category: 'faq', confidence: 5, digest: 'x', dueAt: DUE });
+        const out = await recordAutoVerdictInTx(tx, d, { eligible: true, reasons: [], category: 'faq', confidence: 5, digest: 'x', dueAt: DUE, holdSec: HOLD_MS / 1000 });
         expect(out).toBeNull();
         // The transaction is still usable: a refused INSERT outside a savepoint would abort it here.
         const [row] = await tx.select({ id: agentDrafts.id }).from(agentDrafts).where(eq(agentDrafts.id, d.id));
@@ -1917,5 +1918,132 @@ describe('fix pass C — a person against the machine’s press, and 🙋 after 
         expect(words, `${locale} ${key}`).not.toMatch(/tasdiqla|одобр|approv|批准/iu);
       }
     }
+  });
+});
+
+/**
+ * The final check of fix passes A-C: a 🙋 pressed while the chat's NEXT reply was being drafted (the run read the
+ * takeover before its model call and nothing after it, so the reply was born counting down into the chat he had
+ * just taken), and a countdown riding a silent in-place edit of an hours-old card (Telegram rings nothing for an
+ * edit, so the ⏸ window was his for a message far up his bot chat). Each test was red on 54dc8082 before its fix.
+ */
+describe('the final check — the chat he took, and the card that never rang', () => {
+  async function conversation(patch: { humanUntil?: Date; mutedAt?: Date; muteReason?: string }) {
+    await db
+      .insert(agentConversations)
+      .values({ managerUserId: ownerId, peerId: PEER, ...patch })
+      .onConflictDoUpdate({ target: [agentConversations.managerUserId, agentConversations.peerId], set: { ...patch, updatedAt: new Date() } });
+  }
+
+  it('🙋 pressed while the next reply is being drafted: that reply never counts down — an ordinary card, nothing pressed', async () => {
+    const a = await drafted();
+    expect(await verdictOf(a.id)).toMatchObject({ state: 'waiting' });
+    const t1 = new Date(T0.getTime() + 10_000);
+    const anchor = await inbound('Urumchidan ham olib kelasizmi?', PEER, t1);
+    let toast = '';
+    const inner = scripted([compose()]);
+    // He presses 🙋 on A's card while the model writes the next reply — inside the model's own call.
+    const model = (async (req: ModelRequest): Promise<ModelResponse> => {
+      if (!toast) toast = (await agentPress(ownerId, 'h', a.id, undefined)).toast;
+      return inner(req);
+    }) as CallModel;
+    const out = await handleInbound(job(anchor), { callModel: model, now: () => t1 });
+    expect(toast).toMatch(/^🙋 Suhbat 24 soat sizniki/u);
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const c = (out as { draftId: string }).draftId;
+    await shownAt(c, t1);
+    // Refused at the scheduling: the chat is his — the card is ordinary from its first second.
+    expect(await verdictOf(c)).toMatchObject({ eligible: false, state: null, dueAt: null, reasons: ['human_active'] });
+    const p = await payloadOf(c);
+    expect(p.autoAt ?? null).toBeNull();
+    expect(keys(p).flat()).not.toContain('⏸ To‘xtat');
+    expect(await pressDueAutos(new Date(t1.getTime() + HOLD_MS + 1_000))).toBe(0);
+    expect(await outboxOf(c)).toBeNull();
+    expect(await draftStatus(c)).toBe('pending');
+  });
+
+  it('a takeover or a mute written after the scheduling: the press is refused afresh, in words — nothing queued', async () => {
+    const a = await drafted();
+    await conversation({ humanUntil: new Date(Date.now() + 24 * 3_600_000) });
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await verdictOf(a.id)).toMatchObject({ state: 'refused', reasons: ['human_active'] });
+    expect(String((await payloadOf(a.id)).text)).toContain('⏱ O‘zi ketmadi: suhbatni 🙋 bilan o‘zingiz oldingiz');
+    expect(await outboxOf(a.id)).toBeNull();
+    await clearChats();
+    const b = await drafted();
+    await conversation({ mutedAt: new Date(), muteReason: 'test' });
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await verdictOf(b.id)).toMatchObject({ state: 'refused', reasons: ['chat_muted'] });
+    expect(await outboxOf(b.id)).toBeNull();
+    expect(await draftStatus(b.id)).toBe('pending');
+  });
+
+  it('the approval re-reads the chat: a takeover committed under the press makes it lose — nothing queued', async () => {
+    const d = await drafted();
+    // Written by hand between the press's gate and its approval (no draft retired, no verdict stopped): the gate
+    // read the chat as the machine's, the approval reads it now.
+    seam.hook = { skip: 1, run: async () => void (await conversation({ humanUntil: new Date(Date.now() + 24 * 3_600_000) })) };
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await verdictOf(d.id)).toMatchObject({ state: 'refused', outcome: 'taken_over' });
+    expect(await outboxOf(d.id)).toBeNull();
+    expect(await draftStatus(d.id)).toBe('pending');
+  });
+
+  it('a reply that counts down never rides a silent edit of an old card: it gets its own card (a push), the old one is closed', async () => {
+    // A: an ordinary card (a price question — never the machine's), sent to his Telegram five hours earlier and
+    // left undecided.
+    const early = new Date(T0.getTime() - 5 * 3_600_000);
+    const a = await drafted({ now: early, steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    expect(await verdictOf(a.id)).toMatchObject({ eligible: false });
+    expect((await verdictOf(a.id))!.reasons).toContain('category');
+    process.env.TELEGRAM_BOT_TOKEN = 'TEST:TOKEN';
+    const calls: { method: string; body: string }[] = [];
+    __setTelegramTransport(async (url, init) => {
+      calls.push({ method: url.slice(url.lastIndexOf('/') + 1), body: String(init?.body ?? '') });
+      return new Response(JSON.stringify({ ok: true, result: true }), { status: 200 });
+    });
+    // C: the customer writes again; the reply counts down.
+    const c = await drafted({ shown: null });
+    expect(await verdictOf(c.id)).toMatchObject({ state: 'waiting' });
+    expect(await draftStatus(a.id)).toBe('superseded');
+    // C's card is a NEW row — queued for the drain, which rings — and A's old copy still names A, closed.
+    const rows = await db
+      .select({ payload: notifications.payload, status: notifications.status })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'AgentDraft'), eq(notifications.userId, ownerId)));
+    const ofC = rows.filter((r) => (r.payload as { draftId?: string }).draftId === c.id);
+    const ofA = rows.filter((r) => (r.payload as { draftId?: string }).draftId === a.id);
+    expect(ofC).toHaveLength(1);
+    expect(ofC[0]!.status).toBe('pending');
+    expect((ofC[0]!.payload as { tg?: unknown }).tg).toBeUndefined();
+    expect(ofA).toHaveLength(1);
+    expect(String((ofA[0]!.payload as { text: string }).text)).toContain('↪️ Mijoz yana yozdi');
+    expect(keys(ofA[0]!.payload as Record<string, unknown>).flat().filter((t) => /^(✅|⏸|✏️)/u.test(t))).toEqual([]);
+    // No edit carried C's words onto A's five-hour-old message.
+    expect(calls.filter((x) => x.method === 'editMessageText' && x.body.includes('Qanday yuk'))).toEqual([]);
+    // Due — and C's own card has not rung yet: nothing is pressed.
+    const shownC = (await payloadOf(c.id)).shown as { draftId?: string } | undefined;
+    expect(shownC?.draftId).not.toBe(c.id);
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect(await verdictOf(c.id)).toMatchObject({ state: 'waiting', outcome: 'unseen' });
+    expect(await outboxOf(c.id)).toBeNull();
+    // The drain sends C's card (a push): the hold runs from there.
+    const rang = new Date(DUE.getTime() + 30_000);
+    await shownAt(c.id, rang);
+    expect(await pressDueAutos(new Date(rang.getTime() + HOLD_MS + 1_000))).toBe(1);
+    expect(await outboxOf(c.id)).toMatchObject({ status: 'agent' });
+  });
+
+  it('a copy that rang within the hold is still edited in place — one card per customer (fit-9)', async () => {
+    const a = await drafted({ steps: [compose('Narxni tekshirib aytaman.', { category: 'price' })] });
+    const c = await drafted({ now: new Date(T0.getTime() + 30_000), shown: null });
+    expect(await verdictOf(c.id)).toMatchObject({ state: 'waiting' });
+    const rows = await db
+      .select({ payload: notifications.payload })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'AgentDraft'), eq(notifications.userId, ownerId)));
+    expect(rows).toHaveLength(1);
+    expect((rows[0]!.payload as { draftId: string }).draftId).toBe(c.id);
+    expect(await draftStatus(a.id)).toBe('superseded');
   });
 });
