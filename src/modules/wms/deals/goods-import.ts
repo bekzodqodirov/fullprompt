@@ -483,6 +483,14 @@ const TOTAL_QUALIFIERS = new Set([
   'dollar', 'dollars', 'rmb', 'cny', 'eur', 'uzs', 'rub', 'say', 'of', 'the', 'in', 'all', 'invoice', 'payable', 'due',
   'incl', 'including', 'excl', 'excluding', 'vat', 'tax', 'with', 'without', 'page', 'section', 'group', 'fob', 'cif',
   'exw', 'cfr', 'ddp', 'dap', 'fca', 'cpt', 'cip',
+  // …what a Chinese packing list totals beside the goods: the page, the
+  // shipment, its container and pallets («TOTAL 1X40'HQ», «TOTAL 2 PALLETS»,
+  // «Total for this page», «Total goods»). The English mirror of the Russian
+  // «по странице / товаров / позиций / заказу» below — missing, each of these
+  // closing rows read as a GOOD at the Σ and doubled the quantity, brutto and
+  // cube (the as-built check's check-b-total-container-label-kept).
+  'for', 'this', 'these', 'goods', 'item', 'items', 'order', 'shipment', 'container', 'containers', 'cntr', 'pallet',
+  'pallets', 'plt', 'plts', 'one', 'two', 'three', 'four', 'five',
   // …as a Russian invoice does
   'по', 'счету', 'счёту', 'накладной', 'документу', 'разделу', 'разделам', 'группе', 'листу', 'странице', 'сумма', 'сумме',
   'к', 'оплате', 'оплаты', 'с', 'без', 'ндс', 'учетом', 'учётом', 'вес', 'веса', 'брутто', 'нетто', 'кол', 'во',
@@ -495,8 +503,8 @@ const TOTAL_QUALIFIERS = new Set([
 /**
  * An Incoterm names the PLACE after it — «TOTAL FOB NINGBO», «TOTAL CIF
  * TASHKENT» — and a place is no product word (review break-named-total):
- * only a label of nothing but total words and qualifiers reaches the
- * Incoterm, so «TOTAL key fob» stays a good.
+ * only after a total word, and only in a label of nothing but total words
+ * and qualifiers up to it — «TOTAL key fob» and «FOB key TOTAL» stay goods.
  */
 const INCOTERMS = new Set(['fob', 'cif', 'exw', 'cfr', 'ddp', 'dap', 'fca', 'cpt', 'cip']);
 /**
@@ -506,6 +514,12 @@ const INCOTERMS = new Set(['fob', 'cif', 'exw', 'cfr', 'ddp', 'dap', 'fca', 'cpt
  * «G.W.» and made the oil a label-only total (review break-qualifier-letters).
  */
 const GLUED_UNITS = new Set(['kg', 'kgs', 'ctn', 'ctns', 'pc', 'pcs', 'cbm', 'm3', 'м3', 'шт', 'кг', 'ta', 'set', 'sets', 'pairs']);
+/**
+ * A container is a qualifier too — «2X40HQ», «1X40'HQ», «40'HC», «20GP»: the
+ * shipment's box, never a model number (an oil's «10W» is not one of these
+ * letters).
+ */
+const CONTAINER_TOKEN = /^(?:\d+[x*×])?\d{2}'?(?:gp|hq|hc|dc|ot|fr|rf)$/;
 /**
  * The words a SUBTOTAL may open with and still be one by the Σ (§5.4 (c)):
  * 1C's «Итого по разделу Одежда», «Всего по группе …», «Jami kiyimlar»,
@@ -573,8 +587,13 @@ function totalLabel(text: string): TotalLabel | null {
       // …or a qualifier word glued to its number («15мест», «15CARTONS»),
       // never a single letter: the «W» of «10W» is a model number's.
       const glued = word.replace(/^\d+/, '');
-      if (!GLUED_UNITS.has(glued) && !(glued.length > 1 && TOTAL_QUALIFIERS.has(glued))) only = false;
-    } else if (INCOTERMS.has(word)) {
+      if (!CONTAINER_TOKEN.test(word) && !GLUED_UNITS.has(glued) && !(glued.length > 1 && TOTAL_QUALIFIERS.has(glued))) {
+        only = false;
+      }
+    } else if (INCOTERMS.has(word) && total) {
+      // The place after an Incoterm only once a total word has been seen:
+      // «FOB key TOTAL» is a key fob (the as-built check's
+      // check-b-incoterm-first-swallows-name), «TOTAL FOB NINGBO» a total.
       place = true;
     } else if (!place && !TOTAL_PREFIX.has(word) && !TOTAL_QUALIFIERS.has(word)) only = false;
   }
@@ -2219,9 +2238,10 @@ export type ParsedGoods = { goods: GoodsRow[]; headerRow: number | null; dropped
 export interface SheetHints {
   comma?: Comma | null;
   /**
-   * Keep the tail §5.5 trims as goods. The VED's paste promises every line
-   * it was given lands (his B-round answer, send-rows.ts): a line he
-   * selected and pasted is his, figures or none — never a footer to drop.
+   * Keep the tail §5.5 trims as goods. The VED's paste (his B-round answer,
+   * send-rows.ts): a line he selected and pasted is his, figures or none —
+   * never a footer to drop. Only the footer trim: a total row (`totalRowOf`)
+   * is still no good, pasted or not.
    */
   keepTail?: boolean;
 }

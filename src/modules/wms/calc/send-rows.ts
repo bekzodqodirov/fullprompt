@@ -367,8 +367,10 @@ export function pasteItems(text: string): PasteItem[] {
   if (lines.some((l) => l.includes('\t'))) {
     const cells: Cell[][] = lines.map((l) => l.split('\t').map((c) => c.trim()));
     if (detectColumns(cells)) {
-      // Every pasted line lands (his B-round answer): a figure-less last
-      // line the file reader would take for a footer is a line he pasted.
+      // A figure-less last line the file reader would take for a footer is
+      // a line he pasted (his B-round answer), so the tail is kept. Not every
+      // line: a total label, or a figure-less line with a core total word in
+      // it, still leaves the paste — as before this round (FAYL-OQISH §5.5).
       return parseGoods(cells, null, { keepTail: true }).goods.map((g) =>
         doorRow({
           name: g.description,

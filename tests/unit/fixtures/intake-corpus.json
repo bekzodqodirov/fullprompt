@@ -44212,6 +44212,791 @@
    "why": "review break-empty-name-total (said only with figures)",
    "source": "fayl-oqish P-reader-B fix",
    "weight": "pinned"
+  },
+  {
+   "id": "c3160",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL 2X40HQ",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL 2X40HQ | 150 | 600",
+      "name": "TOTAL 2X40HQ",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 2X40HQ» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3161",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL 1X40'HQ",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL 1X40'HQ | 150 | 600",
+      "name": "TOTAL 1X40'HQ",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 1X40'HQ» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3162",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL 1*40HQ",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL 1*40HQ | 150 | 600",
+      "name": "TOTAL 1*40HQ",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 1*40HQ» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3163",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL (1X40HQ)",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL (1X40HQ) | 150 | 600",
+      "name": "TOTAL (1X40HQ)",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL (1X40HQ)» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3164",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL 20GP",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL 20GP | 150 | 600",
+      "name": "TOTAL 20GP",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 20GP» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3165",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL ONE 40'HQ",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL ONE 40'HQ | 150 | 600",
+      "name": "TOTAL ONE 40'HQ",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL ONE 40'HQ» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3166",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL PALLETS",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL PALLETS | 150 | 600",
+      "name": "TOTAL PALLETS",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL PALLETS» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3167",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL 2 PALLETS",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL 2 PALLETS | 150 | 600",
+      "name": "TOTAL 2 PALLETS",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL 2 PALLETS» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3168",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL SHIPMENT",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL SHIPMENT | 150 | 600",
+      "name": "TOTAL SHIPMENT",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL SHIPMENT» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3169",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "TOTAL CONTAINER",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "TOTAL CONTAINER | 150 | 600",
+      "name": "TOTAL CONTAINER",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«TOTAL CONTAINER» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3170",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "Total for this page",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "Total for this page | 150 | 600",
+      "name": "Total for this page",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Total for this page» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3171",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "Total goods",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "Total goods | 150 | 600",
+      "name": "Total goods",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Total goods» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3172",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "Total items",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "Total items | 150 | 600",
+      "name": "Total items",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Total items» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3173",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "Total order",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "Total order | 150 | 600",
+      "name": "Total order",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Total order» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3174",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)"
+    ],
+    [
+     "Jacket",
+     100,
+     400
+    ],
+    [
+     "Pants",
+     50,
+     200
+    ],
+    [
+     "Total this invoice",
+     150,
+     600
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket"
+      },
+      {
+       "name": "Pants"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 600,
+    "dropped": [
+     {
+      "text": "Total this invoice | 150 | 600",
+      "name": "Total this invoice",
+      "why": "total"
+     }
+    ]
+   },
+   "said": "«Total this invoice» closes a Chinese packing list: the shipment's container, pallets, page or goods — a label, never a good; as a good at the Σ it doubled the quantity, brutto and cube",
+   "why": "as-built check check-b-total-container-label-kept (a regression against production)",
+   "source": "fayl-oqish merge fix",
+   "weight": "defect"
+  },
+  {
+   "id": "c3175",
+   "input": [
+    [
+     "Description",
+     "Qty"
+    ],
+    [
+     "Keychain",
+     100
+    ],
+    [
+     "FOB key TOTAL",
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Keychain"
+      },
+      {
+       "name": "FOB key TOTAL"
+      }
+     ],
+     "count": 2
+    },
+    "dropped": []
+   },
+   "said": "an Incoterm FIRST names no place: «FOB key TOTAL» is a key fob, kept",
+   "why": "as-built check check-b-incoterm-first-swallows-name",
+   "source": "fayl-oqish merge fix",
+   "weight": "nit"
   }
  ],
  "parseGoodsLineCases": [

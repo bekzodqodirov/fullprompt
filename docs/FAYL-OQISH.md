@@ -676,7 +676,10 @@ or the trim does not apply there.
   on the AI door do the rows join `invoiceTexts` (the model's context); the plain door asks no model of a lone
   Excel and a footer does not start one. A label-only «TOTAL» is said to nobody and handed to no model.
 - The deal card's import shows every non-label-only dropped row under the draft, each with «＋».
-- The VED paste keeps the tail (`SheetHints.keepTail`): every pasted line lands.
+- The VED paste keeps the tail (`SheetHints.keepTail`): a figure-less pasted line is not trimmed as a footer.
+  It is NOT every line (the as-built check's check-b-paste-claim-overstated): a label-only total (rule a) and a
+  figure-less line with a CORE total word (rule b, «Total station Leica» with no figures) still leave the paste
+  unsaid — the same as on main before this round, stated and not changed.
 - (c) drops a row only in a subtotal's shape: the last word a subtotal word (never umumiy/умумий/sum); or
   the first word Итого/Всего/Jami/Жами/Подытог/Subtotal (1C's «Итого по разделу …»), a leading 合计/小计…,
   or «Grand/Sub/Общий» + a total word — never the Latin «TOTAL …» alone (a brand); or an empty name. A blank figure adds
