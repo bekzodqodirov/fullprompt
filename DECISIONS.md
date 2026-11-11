@@ -7594,3 +7594,44 @@ STATED, not changed:
   it. Pre-existing.
 - A run that throws records none of its tokens, so `daily_token_cap` never counts a failed run. Pre-existing; the
   breakpoint makes such a run's later rounds cheaper, not dearer.
+
+1628. **The round's own ritual found a flaky locator, not a defect.** On a fresh `gsr_ci` in CI's order, the round
+gave tsc 0, eslint 0, migrate 0, seed 0, ledger 143, vitest 866 files / 14 633 tests and build 0. Playwright gave 489
+passed, 1 skipped and 1 failed: `m0-smoke`'s «admin creates warehouse + client». Its `getByRole('alert')` met TWO
+elements, the form's refusal and Next's own route announcer (`#__next-route-announcer__`, an empty role=alert on
+`<body>` that mounts after hydration). Strict mode refuses that, so the result depends on whether the announcer
+mounted first: green in CI on the same commit, green on a re-run. Both of the spec's alert checks now look inside
+`<main>`, where every form's refusal renders. It passed 9 of 9 (`--repeat-each 3`). No other spec uses the bare
+locator.
+
+1629. **One unreadable fix stopped a truck's tracking for the rest of the trip (2026-11-10).** His «driverlar mobile
+appida muammo bor faqat boshida joylashuvini jonatyabti keyin uzilib qolyabti — https 400 hatolik chiqazdi». The
+driver app (`Uploader.drain`) sends its SQLite queue OLDEST FIRST, 200 fixes a batch, and deletes a batch only on a
+2xx; any other status keeps the queue and stops the cycle. `/api/track/positions` validated the WHOLE batch with one
+zod schema, so a single fix it refused answered the batch 400 — and the same fix headed the next batch every cycle,
+for ever: the first point landed, nothing after it ever did, and the driver's screen said only «HTTP 400». Read
+against what `Api.kt` actually builds (Locale.US seconds + `Z`, lat/lon straight from the fix, accuracy/speed only when
+positive, ≤ 200), the old schema could refuse exactly one thing from a healthy phone: **`speedKmh` over 400** — a GPS
+chip's speed spike, `fix.speed × 3.6` — plus, on the job's fallback path (`TrackJob`, last known location, accuracy NOT
+capped at 9 999 the way the service caps it), an accuracy over 100 km from a cell-tower guess. Not reproduced on his
+phone: the `[track]` log line below is what will name it on the server. **The envelope is the only thing a 400 is said
+about now** (`positionBatchSchema` = `positions: unknown[]` 1..500, a body that is not JSON or not that shape, each
+logged `[track] 400 …` with an excerpt); every fix is read on its own by `readPosition` (devices.ts). A fix with no
+readable place or time is DROPPED alone (`bad_coords` / `bad_time` / `not_a_fix`), and the time bound is the one
+postgres can bind — past year 9999 it refuses the parameter (measured: «time zone displacement out of range»), which
+would have been a 500 and the same jam one layer down. A fix WITH a place and a time is KEPT and its nonsense
+measurement TRIMMED, and the two trims are deliberately not alike: a speed no truck reaches is cleared (nothing reads
+`speed_kmh`), while an accuracy it cannot believe becomes the COARSEST one, `POSITION_BOUNDS.accuracyM`, never null —
+because every reader takes `accuracy_m IS NULL` as a GOOD fix (`COARSE_FIX_M`'s `IS NULL OR`). My first cut cleared it
+to null and would have promoted a 4,800 km guess into the truck's placed position; the integration test that posts one
+after a good fix and asks `latestPositions` caught it (red-proven by putting the null back). The answer is
+`{accepted, dropped}`, always 2xx for a real batch (the shipped app reads the status alone, so no APK is needed: the
+jammed queues flush on the next cycle or on «Hozir yuborish», all of it — `drain` loops until empty). A batch with
+nothing readable still answers 2xx and does NOT move `last_seen_at`, so the silent-truck alarm keeps telling the
+logist he has no truck. One `[track] device … batch … {received, dropped, trimmed} sample: …` line per request that
+dropped or trimmed anything is the only place the cause can be read. Six red proofs by string edit (the old
+all-or-nothing refusal at the route → three red; `Z`-only times → the two offset tests; a trimmed fix dropped; an
+unreadable batch moving `last_seen_at`; the time bound stripped; accuracy nulled → two red). STATED, not changed — the
+app needs a release for each: `TrackingService` maps any accuracy ≥ 9 999 m to 0 and `Api.kt` omits 0, so a real
+12 km fix arrives as «no accuracy» and is trusted as a good one (the server cannot tell it from a fix with none); and
+the app shows the bare status code, never the server's word.
