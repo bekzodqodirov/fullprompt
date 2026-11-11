@@ -6,6 +6,7 @@ import {
   analyzeCollected,
   answeredRoute,
   codeCollectedGoods,
+  collectionDoor,
   mergeTotalsAnswer,
   placeByName,
   readingFileMoves,
@@ -285,14 +286,33 @@ export async function pressAnalyse(ctx: CollectorReply, chatId: bigint, state: I
     await ctx.reply('Hali hech narsa yuborilmadi.');
     return;
   }
-  // A reading is a press too: the restart question it stood under is over (§2.4).
-  clearRestartAsked(chatId, state);
-  const token = randomUUID();
-  const jobId = randomUUID();
   // «🔄» after a CLOCK cut is offered once per material mark (§1.2,
   // model-reread-and-codes): a re-read of the same material is that once; new
   // material earns it again.
   const fresh = !nothingNewToRead(state);
+  // …and the PRESS obeys it, not only the table (as-built review WORDS-8): the
+  // older table keeps its «🔄» one message up, and an older prompt its
+  // «Bo‘ldi», and either started the same paid reading against the same wall,
+  // every press. Nothing new sent, a cut reading, and no retry left — a size
+  // cut, or a clock cut already re-read, with no stored file to load again —
+  // is answered in words, and the table drawn again. The AI door's first or
+  // seeded collection only, where «🔄» is drawn; elsewhere today's.
+  if (!fresh && state.aiCut && collectionDoor(state) === 'ai' && !state.amend) {
+    const { notWholeRetry } = await import('../../wms/calc/intake');
+    if (!notWholeRetry(state)) {
+      const how = state.aiCut.why === 'size' ? 'kamroq sahifa yoki Excel qilib' : 'faylni kichikroq (yoki Excel) qilib';
+      await ctx.reply(
+        `⚠️ AI bu materialni yana o‘qisa ham shu yerda to‘xtaydi — «👤 VED hisoblasin» ni bosing, yoki «✖️ Bekor qilish» ni bosib, ${how} qaytadan yuboring.`,
+      );
+      const back = updateIntake(chatId, { stage: 'review' }) ?? { ...state, stage: 'review' as const };
+      await deliverNextStep(ctx, chatId, back);
+      return;
+    }
+  }
+  // A reading is a press too: the restart question it stood under is over (§2.4).
+  clearRestartAsked(chatId, state);
+  const token = randomUUID();
+  const jobId = randomUUID();
   const cutRetry = fresh ? { aiCutRetried: false } : state.aiCut && state.aiCut.why !== 'size' ? { aiCutRetried: true } : {};
   // A seller's press (it slides the clock). A reply an earlier reading stored
   // and never got out is dropped: this reading answers for the same material

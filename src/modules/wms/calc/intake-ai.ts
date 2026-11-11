@@ -1339,7 +1339,10 @@ const NETTO_ONLY: Record<CalcSection, string> = {
  * (`fromModel` — `loneFileTotals` reads the goods file, never its
  * neighbours), so «no other material, codes only» told it to drop both
  * (review model-break-closing-context-sheets). The coding text is not one of
- * them: that file's own totals outrank the model's (`loneFileTotals`).
+ * them: the bot hands it over only while it is the collection's ONE goods file
+ * holding every row (`loneGoodsFile`), whose own totals outrank the model's
+ * (`loneFileTotals`) — beside a folded sheet it would be one factory's TOTAL
+ * under this heading, and nothing would outrank it (as-built review OWNER-1).
  */
 function intakeContent(
   section: CalcSection,

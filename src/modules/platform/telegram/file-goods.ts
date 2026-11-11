@@ -868,11 +868,42 @@ export function packingOfHeld(
   packing: GoodsList,
   packingKind: WeightKind,
 ): boolean {
-  if (held.length === 0 || packing.length === 0) return false;
+  const meets = packingMeets(held, heldKinds, packing, packingKind);
+  return meets.samePieces || meets.met * 2 > packing.length;
+}
+
+/**
+ * Does a packing list of the held goods answer for the WHOLE held list — its
+ * totals the shipment's? `packingOfHeld` asks only that most of the PACKING
+ * list's rows meet held rows; once a fold has added another factory's goods
+ * to the list (a sheet folded in, a second factory's file), factory A's own
+ * packing list still passes it, and its Σ was written and announced as the
+ * shipment's brutto and cube with factory B's cargo in the list and out of
+ * both (as-built review SHEETS-3). It covers when the lists count the same
+ * pieces, or when every held row is met by a row of its own. Pure.
+ */
+export function packingCoversHeld(
+  held: GoodsList,
+  heldKinds: readonly WeightKind[],
+  packing: GoodsList,
+  packingKind: WeightKind,
+): boolean {
+  const meets = packingMeets(held, heldKinds, packing, packingKind);
+  return meets.samePieces || (held.length > 0 && meets.met === held.length);
+}
+
+/** How a packing list answers to the held rows: the same Σ pieces, and how many held rows a row of it meets. */
+function packingMeets(
+  held: GoodsList,
+  heldKinds: readonly WeightKind[],
+  packing: GoodsList,
+  packingKind: WeightKind,
+): { samePieces: boolean; met: number } {
+  if (held.length === 0 || packing.length === 0) return { samePieces: false, met: 0 };
   const total = (rows: GoodsList) =>
     rows.every((g) => figureOf(g, 'quantity') !== null) ? rows.reduce((n, g) => n + g.quantity!, 0) : null;
   const heldPieces = total(held);
-  if (heldPieces !== null && heldPieces > 0 && heldPieces === total(packing)) return true;
+  if (heldPieces !== null && heldPieces > 0 && heldPieces === total(packing)) return { samePieces: true, met: 0 };
   const claimed = new Set<number>();
   let met = 0;
   // A held row meets by name, or — names apart — by an equal count (a twin by
@@ -893,7 +924,7 @@ export function packingOfHeld(
     claimed.add(at);
     met += 1;
   }
-  return met * 2 > packing.length;
+  return { samePieces: false, met };
 }
 
 /** The letter scripts a key writes — han, cyrillic, latin (numbers and other scripts are none of them). */

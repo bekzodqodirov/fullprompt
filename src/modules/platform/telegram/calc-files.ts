@@ -22,6 +22,7 @@ import {
   notedTotalsNote,
   packingFills,
   packingNote,
+  packingCoversHeld,
   packingOfHeld,
   packingTotals,
   positionalFills,
@@ -683,6 +684,21 @@ export function receiveGoodsSheet(
   );
 }
 
+/**
+ * A packing list of SOME of the held goods, beside another factory's folded in
+ * (as-built review SHEETS-3): its netto gaps are filled, its totals are not the
+ * shipment's and are not taken.
+ */
+function partOfHeldNote(label: string, filled: number): string {
+  const fills = filled > 0 ? ` ${fillsWords(filled)}` : '';
+  return `📄 ${label} — ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk uchun olinmadi.${fills}`;
+}
+
+/** Totals a packing list gave before another factory's goods were folded in — no longer the shipment's (SHEETS-3). */
+function staleTotalsNote(label: string): string {
+  return `📄 ${label} — undan olingan umumiy brutto va kub endi butun yukniki emas: ro‘yxatga boshqa tovarlar qo‘shildi, shuning uchun olinmadi.`;
+}
+
 /** A sheet's name as the seller's words carry it — capped, it is anybody's text. */
 const sheetName = (name: string) => `«${name.length > 60 ? `${clipUnits(name, 59)}…` : name}»`;
 
@@ -743,6 +759,24 @@ function receiveFurtherSheet(
   const topUp = state.amend !== null || state.seed !== null;
   if (m.shape === 'packing') {
     const ofHeld = packingOfHeld(held, kinds, goods, m.weightKind);
+    // Its totals are the shipment's only while it answers for the WHOLE held
+    // list (as-built review SHEETS-3): with another factory's goods already
+    // folded in (two goods files held), factory A's packing list still passes
+    // `packingOfHeld`, and its Σ was written — and announced — as the
+    // shipment's brutto and cube with factory B's cargo out of both. One goods
+    // file held keeps the loose rule a second file has always had. A top-up
+    // writes no totals anyway (its note carries the list's own).
+    const covers = ofHeld && (topUp || files.length <= 1 || packingCoversHeld(held, kinds, goods, m.weightKind));
+    if (ofHeld && !covers) {
+      const fill = packingFills(held, kinds, goods, m.weightKind);
+      // Its text goes nowhere: under the model's totals heading its Σ came
+      // back as the shipment's (seam 1's shape); its dropped rows still reach
+      // the model on the AI door (SHEETS-1).
+      return tools.answer(
+        { invoiceGoods: fill.goods, ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}) },
+        [partOfHeldNote(m.label, fill.filled), ...cutLines],
+      );
+    }
     // R1 only while the held list IS the goods sheet's rows, place for place:
     // with other goods held (a file before the workbook, a sheet folded in
     // before this one) the packing list's Σ is not the list's, and the same
@@ -753,8 +787,8 @@ function receiveFurtherSheet(
       held.length === further.goodsRows.length &&
       held.every((h, i) => goodsNameKey(h.name) === goodsNameKey(further.goodsRows[i]!.name)) &&
       samePositions(further.goodsRows, goods);
-    if (ofHeld || inLine) {
-      const fill = ofHeld ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
+    if (covers || inLine) {
+      const fill = covers ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
       const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled);
       // The text keeps the FILE's label: a later file that squeezes it names
       // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
@@ -769,16 +803,31 @@ function receiveFurtherSheet(
   }
   // The stored rows of a top-up fence the names only (`provenOther`'s `stored`).
   const kept = topUp ? (state.amend?.items ?? state.seed ?? []) : [];
-  const fold = provenOther(held, goods, kept)
-    ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ')
-    : null;
+  // Past the queue's limit the JUDGEMENT is not made either (as-built review
+  // REGRESSION-2): `provenOther` asks every row against every held row, and
+  // the held list grows with each fold — ten sheets of 500 cost 4 s and twenty
+  // two minutes of synchronous CPU on the one process the bot's poller awaits.
+  // A fold can only keep or add rows, so a list that would pass the limit
+  // whatever the answer is not asked; the sheet keeps today's reading.
+  const pastCap = further.itemCap !== undefined && held.length + goods.length > further.itemCap;
+  const fold =
+    !pastCap && provenOther(held, goods, kept)
+      ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ')
+      : null;
   // Another factory's goods past the queue's limit are not folded (as-built
   // review REGRESSION-1): one file was bounded at 500 rows and the queue
   // refuses a job over a thousand, and three sheets of 400 folded into a table
   // that invited «✅ Tasdiqlash» — whose press then ENDED the collection, every
   // file lost. The sheet keeps today's reading, and the seller is told.
-  const overCap = fold !== null && further.itemCap !== undefined && fold.goods.length > further.itemCap;
+  const overCap = pastCap || (fold !== null && further.itemCap !== undefined && fold.goods.length > further.itemCap);
   if (fold && !overCap) {
+    // Totals a packing list gave BEFORE this fold were the list's then, never
+    // with these new goods in it (as-built review SHEETS-3, the order «CI A,
+    // PL A, CI B»): kept, factory A's brutto and cube stood as the shipment's.
+    // Dropped and said — the brutto is asked, as beside any fold (§4.3). A
+    // packing list that happened to list B's goods too is lost with it; the
+    // seller answers one figure, and nothing is priced on half a truck.
+    const stale = !topUp && state.fileTotals ? state.fileTotals : null;
     return tools.answer(
       {
         invoiceGoods: fold.goods,
@@ -786,8 +835,12 @@ function receiveFurtherSheet(
         // A folded sheet's text goes nowhere (§4.2), so its dropped rows go to
         // the model here, on the AI door (SHEETS-1).
         ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
+        ...(stale ? { fileTotals: null } : {}),
       },
-      fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines,
+      [
+        ...(fold.notes.length > 0 ? [fold.notes[0]!, ...cutLines, ...fold.notes.slice(1)] : cutLines),
+        ...(stale ? [staleTotalsNote(stale.label)] : []),
+      ],
     );
   }
   // Today's reading, said (§4.2): the sheet's text for the totals — and when
@@ -797,7 +850,9 @@ function receiveFurtherSheet(
   if (overCap) {
     return tools.answer(
       { invoiceTexts: [...state.invoiceTexts, ...(own?.text ? [{ text: own.text, cut: own.cut, cellsCut: own.cellsCut, label }] : [])] },
-      [`📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; bu varaqni alohida so‘rov qilib yuboring.`, ...cut],
+      // Unjudged, it may be the same goods again (a translation, a packing
+      // list): the cure is conditional.
+      [`📄 ${sheetLabel} qo‘shilmadi — bitta so‘rovda ${further.itemCap} tadan ortiq tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.`, ...cut],
     );
   }
   return tools.answer(

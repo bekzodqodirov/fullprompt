@@ -131,7 +131,7 @@ describe('a workbook’s fold stops at the queue’s own limit (as-built review 
       const answer = await forward(chatId, await book(), 'zavodlar.xlsx');
       const live = activeIntake(chatId)!;
       expect(live.invoiceGoods).toHaveLength(800);
-      expect(answer.say).toContain('📄 «zavodlar.xlsx», «Zavod 3» varag‘i qo‘shilmadi — bitta so‘rovda 1000 tadan ortiq tovar bo‘lmaydi; bu varaqni alohida so‘rov qilib yuboring.');
+      expect(answer.say).toContain('📄 «zavodlar.xlsx», «Zavod 3» varag‘i qo‘shilmadi — bitta so‘rovda 1000 tadan ortiq tovar bo‘lmaydi; boshqa tovarlar bo‘lsa, bu varaqni alohida so‘rov qilib yuboring.');
       expect(live.fileNotes?.some((n) => n.includes('«Zavod 3» varag‘i qo‘shilmadi'))).toBe(true);
     });
   }

@@ -1200,6 +1200,12 @@ export function pickGoods(input: {
    * none.
    */
   otherMaterial?: boolean;
+  /**
+   * The model's answer was CUT (docs/FAYL-OQISH.md §3.3): its goods are the
+   * ones it closed before the clock, never the material's every good. Absent =
+   * a whole answer.
+   */
+  cut?: boolean;
 }): PickedGoods {
   if (input.invoice.length > 0) {
     const invoice = input.invoice.map((row) => ({ row, names: goodsNameKeys(row.name) }));
@@ -1310,6 +1316,22 @@ export function pickGoods(input: {
     return { goods: [...input.invoice, ...added], sameAsInvoice };
   }
   if (input.model === null) return { goods: input.typed, sameAsInvoice: [] };
+  // A CUT answer is the goods the model closed before the clock (§3.3), and
+  // «the model answered, so its goods are the list» was written for a whole
+  // one: every typed good it had not reached yet was dropped — the caption
+  // «Erkaklar shimi 50 dona» beside an unmapped Excel, and the goods the
+  // table's own remedy asks to be typed, lost again on the next cut (as-built
+  // review OWNER-2). So a typed line no model line names stays, after the
+  // model's, its figures as typed. Before the salvage a timeout kept nothing
+  // and the typed lines WERE the goods.
+  if (input.cut && input.model.length > 0) {
+    const read = input.model.map((g) => goodsNameKeys(g.name));
+    const typed = input.typed.filter((t) => {
+      const names = goodsNameKeys(t.name);
+      return names.whole !== '' && !read.some((m) => m.whole === names.whole || namesMeet(m, names));
+    });
+    return { goods: [...input.model, ...typed], sameAsInvoice: [] };
+  }
   return { goods: input.model.length > 0 ? input.model : input.typedLabelled, sameAsInvoice: [] };
 }
 
@@ -1554,8 +1576,15 @@ export async function analyzeCollected(
   // text`): beside the numbered list they let the model code a row by its
   // specs, under the totals heading (docs/FAYL-OQISH.md §3.7, sheets-04 (3)).
   // Read here, never stored in `invoiceTexts` — and not when a branch already
-  // put the very text there.
-  const goodsFile = state.goodsFiles?.[0] ?? null;
+  // put the very text there. Only while that file is the collection's ONE
+  // goods file and holds every row — `loneFileTotals`' own test, where the
+  // file's totals outrank the model's anyway (as-built review OWNER-1,
+  // MODEL-1, SHEETS-2, REGRESSION-3): after a fold (another factory's sheet,
+  // or a second factory's file) it is ONE factory's sheet with ONE factory's
+  // TOTAL row, under a heading that asks for the shipment's totals; nothing
+  // outranks the model's figure there, so factory A's brutto and cube landed
+  // as the shipment's under a ✅, and on podklyuch the road was priced on them.
+  const goodsFile = loneGoodsFile(state);
   const goodsSheetText =
     codeKnown && goodsFile?.text && !state.invoiceTexts.some((t) => t.text === goodsFile.text)
       ? { text: goodsFile.text, cut: goodsFile.textCut ?? false, cellsCut: goodsFile.textCellsCut ?? false }
@@ -1671,6 +1700,7 @@ export async function analyzeCollected(
     typedLabelled: readGoodsLines(text, { labelledOnly: true }),
     modelSawImages: files.images.length > 0,
     otherMaterial: text.trim() !== '' || state.invoiceTexts.some((t) => t.unmapped),
+    cut: Boolean(outcome.ok && outcome.cut),
   });
   // The lines left out because the Excel answers are SAID, in the bot's own
   // notes, so the summary shows them beside the model's three and the card
@@ -1716,6 +1746,28 @@ export async function analyzeCollected(
         { conflictOf, volumeIsLinesSum, parseManualFacts, totalWeightFrom },
       ),
       ...unread,
+    };
+  }
+  // A re-read of the SAME material (the «🔄» after a cut, `aiCutRetried`)
+  // that read LESS than the cut it replaces keeps the earlier reading (as-built
+  // review CRITIC-1): the clock moves with the load and the thinking, so a
+  // second cut earlier than the first is ordinary, and written over the first
+  // it turned «Tovarlar (7)» into two, or into none — the round's own remedy
+  // making its own salvage worse, in silence, and «👤 VED hisoblasin» then
+  // landed the two. A cut's goods are the file's order up to the clock, so the
+  // longer prefix is the better reading. A whole answer, or a cut that read as
+  // many, replaces it as before; new material is a new reading.
+  const earlierCut = state.aiCutRetried === true ? (state.aiCut ?? null) : null;
+  const readNow = outcome.ok ? (outcome.cut ? outcome.cut.goods : Number.POSITIVE_INFINITY) : 0;
+  if (earlierCut && readNow < earlierCut.goods) {
+    logger.info({ earlier: earlierCut.goods, now: outcome.ok ? readNow : outcome.failure }, 'calc intake re-read kept the earlier reading');
+    return {
+      ...state,
+      ...unread,
+      aiCut: earlierCut,
+      notes: [...state.notes, `⚠️ Qayta o‘qishda AI avvalgidan kam o‘qidi — avvalgi o‘qishdagi ${earlierCut.goods} ta tovar qoldi.`],
+      stage: 'review',
+      answered: outcome.answered ?? [],
     };
   }
   // A route the seller answered in the table goes above everything a reading
@@ -1829,10 +1881,9 @@ export function loneFileTotals(
   state: Pick<IntakeState, 'fileTotals' | 'goodsFiles' | 'invoiceGoods' | 'amend' | 'seed'>,
 ): IntakeState['fileTotals'] {
   if (state.fileTotals || state.amend || state.seed !== null) return null;
-  const files = state.goodsFiles ?? [];
   const rows = state.invoiceGoods ?? [];
-  const only = files.length === 1 ? files[0]! : null;
-  if (!only || only.capped || rows.length === 0 || only.rows !== rows.length) return null;
+  const only = loneGoodsFile(state);
+  if (!only) return null;
   const totals =
     only.shape === 'packing'
       ? packingTotals(only, rows)
@@ -1847,6 +1898,22 @@ export function loneFileTotals(
     // seller is not doubted by it (PF-ADV-9). Unknown = before everything.
     at: only.at ?? { material: 0, files: 0 },
   };
+}
+
+/**
+ * The collection's ONE goods file when it holds every row the collection has —
+ * uncapped, a single entry, its row count the list's — or null. Its totals
+ * are the shipment's (`loneFileTotals`), and only then may its own text sit
+ * under the model's totals heading (`analyzeCollected`): beside a fold it is
+ * one factory's (as-built review OWNER-1). Pure.
+ */
+export function loneGoodsFile(
+  state: Pick<IntakeState, 'goodsFiles' | 'invoiceGoods'>,
+): NonNullable<IntakeState['goodsFiles']>[number] | null {
+  const files = state.goodsFiles ?? [];
+  const rows = state.invoiceGoods ?? [];
+  const only = files.length === 1 ? files[0]! : null;
+  return only && !only.capped && rows.length > 0 && only.rows === rows.length ? only : null;
 }
 
 /**
