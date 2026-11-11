@@ -7446,7 +7446,165 @@ into `site-estimate.ts` stops on 2026-12-31 and the AI quotes no yo'lkira after 
 14-day ramp counts his STORED sends on that number; nothing ends a 🙋 early or un-mutes a chat; /suhbatlar/ai does not
 refresh by itself.
 
-1622. **One unreadable fix stopped a truck's tracking for the rest of the trip (2026-11-10).** His «driverlar mobile
+## «Kontekst 100» va avtonom sotuv menejerining yo'li — the model reads a hundred messages, «80 %» becomes a number (2026-11-10; NO migration, ledger 143; spec `docs/AI-SOTUVCHI.md` §18)
+
+His message, verbatim: «kopi bn 30 ta emas 100 tagacha oshirish kerak. va ozi yozsin hammaga agarda 80foiz shu javob
+bolishiga togri kelishiga ishonchi bolsa javobni yozish huquqini ber va sotuv manageri bolsin u iloji bolsa keyinchalik
+quramiz toliq avtanom sotuv manageriga aylantiramiz shuni arxetekturangga yozib ol». Mapped, designed three ways and
+judged by a workflow before code (context consumers · cost · the autonomy plumbing → risk-first, measurement-first,
+owner-first designs → a judge), built, then reviewed as built.
+
+1622. **Two windows over one read of the chat.** Raising `contextMessages` alone was mostly a no-op. The 8 000-character
+total already stopped a chat of real 300-700-character replies before 30 messages. Raising both limits would have
+widened ONE window that ~20 rule readers share with the model, and moved the policy both ways with no test able to
+see it (every agent unit test builds its context by hand):
+- an old «poyezd» drops every truck price;
+- an old «Qashqar» refuses every truck quote;
+- an old flight choice makes the chat avia-only;
+- `avia_maybe` is monotone over the window;
+- an old shipment's kilos vouch for a reply;
+- the checklist completes a VED job with stale figures.
+
+So `chatMessages` reads `historyMessages` (100) rows and the pure `chatWindows` cuts two windows:
+- `history`: ≤ 100 messages, ≤ `historyTotalChars` 24 000, refs #1..#N. The MODEL reads it.
+- `recent`: ≤ 30, ≤ 8 000, cut by the old rule exactly, as `history`'s tail — the same objects. It stays
+  `ctx.messages` and EVERY rule counts it: measures, sources, road/rail/avia guards, checklist, burst, card, script.
+  The #1619 corpora therefore keep their window by construction.
+- Only `chatBlock` and the citations read `history`: `validateActions` refs and `citedMessageIds` — a line the model
+  saw is a line it may cite. A job's figures still come only from the recent checklist.
+
+What the model is told:
+- The older part sits under `OLDER_CHAT_HEADING` («faqat tushunish uchun … eskirgan: javobda takrorlama, vositaga
+  berma»).
+- Rule 1 of the stable head says figures come from the «Suhbat» part only (a one-time cache rewrite).
+- `when()` prints the year when the line is from another Tashkent year than the newest message.
+- A chat that fits in 30 messages reads byte for byte as before.
+
+Pinned:
+- a differential against the pre-#1622 loop copied verbatim, over 1-150 messages of eight body sizes;
+- an integration chat of 44 messages whose old part asks rail, names Kashgar, states 500 kg and picks the flight,
+  with a truck question at the end: priced at 800 from the new w1/v1, no rail note, not avia, no 500 source, the
+  heading before the old lines.
+Red-proven three ways: the rules widened to `history`, recent cut by the history budget, the older part not shown.
+
+1623. **The human pause is asked of the chat, not of a window.** `eligibilityFacts` found «his last out message»
+inside the context window. Thirty-plus customer lines after his reply (an album of photos, one caption each) pushed
+it out, and the AI drafted while he was mid-conversation. That was a defect before this round, and the wider history
+would only have narrowed it.
+
+It is now one query: the newest live (`tg_message_flags.deleted_at IS NULL`) out row of the chat within
+`humanPauseMin` that no `agent_outbox` row sent (the same manager + Telegram id test the window used). Same meaning,
+no window. Red-proven both ways: through the window, his reply 35 lines back reads «not active»; without the
+outbox clause, the AI's own send 40 minutes ago pauses the AI.
+
+1624. **The chat is a cache breakpoint.** Every tool round of a run re-sends the opening chat block, and it was
+billed in full each round (typically 3, up to 6). A text `ModelBlock` may now carry `cache: true` →
+`cache_control: {type:'ephemeral'}` (`realCallModel`, the only mapping; an unmarked block goes out as it always did,
+so the staff assistant's requests do not change). `runLoop` marks the opening block:
+- round 1 writes it at 1.25×;
+- rounds 2..6 read it at 0.1×;
+- the daily token cap counts input + output + cache WRITE, not reads (today.ts), so it pays for the chat once per run.
+
+Estimated at 150 runs a day: 100 messages with the breakpoint ≈ $5.4-7.3 a day, without it $6.6-10.6, against
+≈ $5-6 before. The 3 000 000 cap stands. His `agent_runs` hold the real numbers; the estimate assumed 3.2
+characters per token. Red-proven by dropping the mapping.
+
+1625. **«80 %» is a number made of his presses.**
+- The model's `confidence` was a bare number with no meaning, clamped so that «85» stored as 1.00, and read by
+  nothing. It is now defined in the `compose_reply` description — «Bekzod shu matnni HECH O'ZGARTIRMAY yuborish
+  ehtimoli, 0-1 … shubha bo'lsa past qo'y» — beside one line per category.
+- It is stored as given (two places) or NULL (`confidenceOf`): a string, NaN, 85 or −0.1 is unknown, never a
+  confident number nobody gave.
+- It is never the gate alone. `calibration.ts` (pure) groups the drafts by category × confidence band × «clean»:
+  - «clean» (`cleanForAuto`) is what a stored row can answer of the auto-send conditions — an allowed category, not
+    blocked, not needs_owner, no warning, no note, no money, actions ⊆ follow-up;
+  - each group is counted by `agentStats` itself (the page's «O'zgarishsiz ketdi» — one rule, #513);
+  - each group gets the one-sided 95 % Wilson LOWER bound.
+- A category is PROVEN only with ≥ 50 decided and a lower bound ≥ 0.80 (45/50, 87/100, 170/200 — pinned as a
+  literal table). A raw 40/50 is as consistent with 70 %.
+- `scripts/agent-calibration.ts` (read-only, through `migrate`, not a package.json command, #1228) prints the table
+  and «would it open today?».
+- Drafts before this deploy carry the old confidence: shown, never a gate.
+
+1626. **Auto-send is designed, not built; the road to an autonomous sales manager is recorded** (spec §18.3-§18.7).
+- The judge kept a MACHINE PRESS of the same ✅ — through `decideDraft`, then the pump, so every check a human press
+  runs runs again — as a LAYER over shadow, never a new mode. `toConfig` maps any mode but 'shadow' to 'off', so a
+  tg-listen that was not rebuilt would cancel every approved reply. «Off» disarms the layer.
+- Rejected from the three designs:
+  - a raw ≥ 80 % over 50;
+  - a «thumb test» on the card's age (Telegram never says when he looked);
+  - a visible «nazorat» mark (it unblinds the holdback);
+  - a pg-boss timer in place of a claimed row.
+- Kept: a 1-in-5 blind holdback that alone supplies the positive labels; a 2-minute hold with ⏸; a bot ⏹ until the
+  read step; 👎 after; a daily AI line; side tables behind a ready probe; `stats.ts` counting auto sends apart (or
+  the gate grades itself).
+- Why not built now:
+  - nothing is proven on deploy day;
+  - his six answers (§18.7) decide the gate;
+  - the original §0 forbade AI sends from a personal session — his shadow permission did not cover sending by
+    itself, so auto-send is his explicit decision, with the risks stated (§18.6).
+- The roadmap — draft → wide memory and measuring → answers by itself → a sales manager's acts (each rehearsed, then
+  its own measured cell) → an AI seat owning leads on an official channel — and what stays his forever are §18.4-§18.5.
+
+1627. **Reviewed as built** (five lenses — the windows, the model's view, the pause, the cache, the corpora both ways —
+each finding put to two refuters). **The rules' window is the old one:** an integration proof imported the base tree's
+unmodified `chatMessages` beside the new one and compared 12 real chat shapes (30/31/100/101 rows, ties on `sent_at`,
+deleted rows, media with no body, clipped bodies) — identical. **The #1619 corpora both ways:** the 62-reply ordinary
+corpus 62/62 on base and head, the 303-case dangerous corpus 77/303 pass on both with 0 diffs (matching the recorded
+30-October run), the last verifier's sets v7-v10 0 diffs; agent unit 1994 and agent integration 390 green. **The
+cache:** two breakpoints (≤ 4), rounds 1 and 2 byte-identical up to the marked block, the staff assistant's request
+unchanged.
+
+Three defects survived and are fixed:
+- **The older part steered the model through words no guard reads.** The heading and rule 1 named only figures,
+  prices, sizes and addresses. So an old «avia bilan» (rule 9 withholds the China address), an old «poyezd»
+  (rule 10 asks him the rail question) or an old «podklyuch» or goods name (rule 11, calc_checklist) could still
+  drive the model toward the last shipment. The code's guards were blind to it, because they read only the recent
+  part.
+  - The heading now says the older part may be the previous shipment: its road, section and goods are not the
+    current request.
+  - Rule 1 scopes every «so'ralsa / jo'natmoqchi bo'lsa» of the rules below to «Suhbat».
+  - The tools' refusals say «"Suhbat" qismidagi xabarida yo'q (oldingi suhbatdagi son eskirgan)».
+  - The heading no longer calls the part «eskirgan». The cut is by count, so a long burst's own first lines can sit
+    there; «ask again» is right for both.
+  - Unverifiable without a real model; pinned as words.
+- **A calc_submit could cite an old shipment's line, and the VED read it undated beside today's.**
+  - Citations stay over history: the legitimate case is goods described forty messages back.
+  - `landCalc` now prefixes every cited line with its Tashkent date («10.11.2026: …»).
+  - Rule 11 says calc_submit cites only THIS shipment's messages.
+  - Red-proven.
+- **The account's robot paused the AI.** A Telegram Business greeting or away message (`tg_message_flags.auto_sent`)
+  counted as his reply. This was pre-existing inside the window. The new chat-wide query reached it over the whole
+  pause, so a greeting an hour back followed by an album of photos stood the AI down exactly while he was away.
+  - The pause skips `auto_sent` rows (#1568's «the account's robot is not a person»).
+  - Red-proven.
+
+Nits taken:
+- The pause's NOT EXISTS names `peer_id`, the outbox index's own three columns.
+- A document's name is cut at 80 characters in the prompt: no budget counts it, and a hundred lines may carry one
+  each.
+- A recent line from another year prints its year too. That is deliberate, and the only way a chat that fits 30
+  messages reads differently.
+
+STATED, not changed:
+- The other readers of «his own message» still count the robot: the ✅'s `chatMoved`, `retireOnHumanReply`, the sweep
+  and the outbox's `human_replied`. So do `lastOut` and the burst: a greeting right after the anchor leaves the burst
+  empty. This is #1544's owed round.
+- An AI send whose outbox row lost its Telegram id (an `unknown` recovered as sent) reads as his once catch-up stores
+  it. Pre-existing.
+- A run that throws records none of its tokens, so `daily_token_cap` never counts a failed run. Pre-existing; the
+  breakpoint makes such a run's later rounds cheaper, not dearer.
+
+1628. **The round's own ritual found a flaky locator, not a defect.** On a fresh `gsr_ci` in CI's order, the round
+gave tsc 0, eslint 0, migrate 0, seed 0, ledger 143, vitest 866 files / 14 633 tests and build 0. Playwright gave 489
+passed, 1 skipped and 1 failed: `m0-smoke`'s «admin creates warehouse + client». Its `getByRole('alert')` met TWO
+elements, the form's refusal and Next's own route announcer (`#__next-route-announcer__`, an empty role=alert on
+`<body>` that mounts after hydration). Strict mode refuses that, so the result depends on whether the announcer
+mounted first: green in CI on the same commit, green on a re-run. Both of the spec's alert checks now look inside
+`<main>`, where every form's refusal renders. It passed 9 of 9 (`--repeat-each 3`). No other spec uses the bare
+locator.
+
+1629. **One unreadable fix stopped a truck's tracking for the rest of the trip (2026-11-10).** His «driverlar mobile
 appida muammo bor faqat boshida joylashuvini jonatyabti keyin uzilib qolyabti — https 400 hatolik chiqazdi». The
 driver app (`Uploader.drain`) sends its SQLite queue OLDEST FIRST, 200 fixes a batch, and deletes a batch only on a
 2xx; any other status keeps the queue and stops the cycle. `/api/track/positions` validated the WHOLE batch with one

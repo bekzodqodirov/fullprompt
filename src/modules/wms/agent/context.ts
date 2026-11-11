@@ -88,7 +88,18 @@ export interface MeasureCandidate {
 export interface AgentContext {
   managerUserId: string;
   peerId: bigint;
+  /**
+   * The RECENT window — what every rule counts as said (#1622): the newest
+   * `contextMessages` under `contextTotalChars`, the tail of `history`.
+   */
   messages: ChatMessage[];
+  /**
+   * What the MODEL reads: the newest `historyMessages` under
+   * `historyTotalChars`, oldest first, refs #1..#N over it; `messages` is
+   * its tail (the same objects). Only the prompt and the citations read the
+   * older part — never a tool, a source or a guard.
+   */
+  history: ChatMessage[];
   anchor: ChatMessage | null;
   /** Inbound since our last out message, oldest first. */
   burst: ChatMessage[];
@@ -392,8 +403,46 @@ export function bindMoved(
   return now.leadId !== was.leadId;
 }
 
-/** The chat's live messages, newest `limit`, oldest first — deleted ones never (leak-8). */
-export async function chatMessages(managerUserId: string, peerId: bigint, limit: number = AGENT_LIMITS.contextMessages): Promise<ChatMessage[]> {
+/** How many of the newest messages one window keeps: at most `maxCount`, the newest always, then while the bodies fit (money-11). */
+function newestUnder(newestFirst: readonly ChatMessage[], maxCount: number, maxChars: number): number {
+  let total = 0;
+  let n = 0;
+  for (const m of newestFirst) {
+    if (n >= maxCount) break;
+    if (total + m.body.length > maxChars && n > 0) break;
+    total += m.body.length;
+    n++;
+  }
+  return n;
+}
+
+/**
+ * Pure: the two windows of one read, newest first in (#1622). `history` is
+ * what the model reads, `recent` what every rule counts — cut by the SAME
+ * rule the context always had (newest kept, the newest always, a body past
+ * the budget stops it), so `recent` is exactly the window #1619 measured.
+ * Recent never reaches past history (30 ≤ 100 messages, 8 000 ≤ 24 000
+ * characters, one monotone running total), so it is history's tail — the
+ * same objects, one numbering #1..#N over history.
+ */
+export function chatWindows(
+  newestFirst: readonly ChatMessage[],
+  limits: {
+    historyMessages: number;
+    historyTotalChars: number;
+    contextMessages: number;
+    contextTotalChars: number;
+  } = AGENT_LIMITS,
+): { history: ChatMessage[]; recent: ChatMessage[] } {
+  const h = newestUnder(newestFirst, limits.historyMessages, limits.historyTotalChars);
+  const r = Math.min(h, newestUnder(newestFirst, limits.contextMessages, limits.contextTotalChars));
+  const history = newestFirst.slice(0, h).reverse();
+  history.forEach((m, i) => (m.ref = `#${i + 1}`));
+  return { history, recent: history.slice(h - r) };
+}
+
+/** The chat's live messages, newest `historyMessages`, oldest first, in both windows — deleted ones never (leak-8). */
+export async function chatMessages(managerUserId: string, peerId: bigint): Promise<{ history: ChatMessage[]; recent: ChatMessage[] }> {
   const rows = await db
     .select({
       id: tgMessages.id,
@@ -415,8 +464,7 @@ export async function chatMessages(managerUserId: string, peerId: bigint, limit:
       ),
     )
     .orderBy(desc(tgMessages.sentAt), desc(tgMessages.tgMessageId))
-    .limit(limit);
-  rows.reverse();
+    .limit(AGENT_LIMITS.historyMessages);
   const ids = rows.filter((r) => r.hasMedia).map((r) => r.id);
   const files = ids.length
     ? await db
@@ -427,30 +475,24 @@ export async function chatMessages(managerUserId: string, peerId: bigint, limit:
     : [];
   const fileOf = new Map(files.map((f) => [f.entityId, f]));
 
-  let total = 0;
-  const out: ChatMessage[] = [];
-  // Newest kept when the history is longer than the budget (money-11).
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const r = rows[i]!;
-    const body = chatForm(r.body ?? '');
-    if (total + body.length > AGENT_LIMITS.contextTotalChars && out.length > 0) break;
-    total += body.length;
-    const f = fileOf.get(r.id);
-    out.unshift({
-      ref: '',
-      id: r.id,
-      tgMessageId: r.tgMessageId,
-      direction: r.direction === 'out' ? 'out' : 'in',
-      body,
-      media: r.hasMedia ? (mediaOf(f?.contentType ?? null, f?.fileName ?? null) ?? 'other') : null,
-      fileName: f?.fileName ?? null,
-      sentAt: r.sentAt,
-      autoSent: r.autoSent === true,
-      editedAt: r.editedAt,
-    });
-  }
-  out.forEach((m, i) => (m.ref = `#${i + 1}`));
-  return out;
+  // Newest first, as read: the windows keep the newest when the chat is longer than their budgets.
+  return chatWindows(
+    rows.map((r): ChatMessage => {
+      const f = fileOf.get(r.id);
+      return {
+        ref: '',
+        id: r.id,
+        tgMessageId: r.tgMessageId,
+        direction: r.direction === 'out' ? 'out' : 'in',
+        body: chatForm(r.body ?? ''),
+        media: r.hasMedia ? (mediaOf(f?.contentType ?? null, f?.fileName ?? null) ?? 'other') : null,
+        fileName: f?.fileName ?? null,
+        sentAt: r.sentAt,
+        autoSent: r.autoSent === true,
+        editedAt: r.editedAt,
+      };
+    }),
+  );
 }
 
 /** The figures a customer stated, each as a REFERENCE the yo'lkira tool can take (money-2). */
@@ -511,7 +553,9 @@ export async function lastQuoteFor(managerUserId: string, peerId: bigint): Promi
 }
 
 export async function loadContext(managerUserId: string, peerId: bigint, anchorTgMessageId: bigint | null): Promise<AgentContext> {
-  const [identity, messages] = await Promise.all([chatIdentity(managerUserId, peerId), chatMessages(managerUserId, peerId)]);
+  const [identity, windows] = await Promise.all([chatIdentity(managerUserId, peerId), chatMessages(managerUserId, peerId)]);
+  // Every rule below counts the RECENT window; only the prompt and the citations read `history` (#1622).
+  const { history, recent: messages } = windows;
   const lastOutIndex = messages.map((m) => m.direction).lastIndexOf('out');
   const lastOut = lastOutIndex >= 0 ? messages[lastOutIndex]! : null;
   const burst = messages.slice(lastOutIndex + 1).filter((m) => m.direction === 'in');
@@ -541,6 +585,7 @@ export async function loadContext(managerUserId: string, peerId: bigint, anchorT
     managerUserId,
     peerId,
     messages,
+    history,
     anchor,
     burst,
     lastOut,

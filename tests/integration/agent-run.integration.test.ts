@@ -16,6 +16,7 @@ import {
   tgAccountGuard,
   tgAccounts,
   tgChatRules,
+  tgMessageFlags,
   tgMessages,
   userRoles,
   users,
@@ -493,5 +494,144 @@ describe('a chat whose bind it does not prove reads none of the client’s own f
     } finally {
       await db.delete(tgChatRules).where(and(eq(tgChatRules.managerUserId, ownerId), eq(tgChatRules.peerId, PEER)));
     }
+  });
+});
+
+/**
+ * His «30 ta emas 100 tagacha» (2026-11-10, #1622): the model reads up to a
+ * hundred messages, and every rule keeps counting the newest thirty. A chat
+ * whose OLD part asked the rail price, named Kashgar, stated 500 kg and chose
+ * the flight — every one of which, in the rules' window, changes the draft —
+ * and whose newest message asks an ordinary truck price.
+ */
+describe('a long chat: the model reads it, the rules count the recent part (#1622)', () => {
+  async function at(direction: 'in' | 'out', body: string, agoMs: number): Promise<bigint> {
+    msgSeq += 1n;
+    await db.insert(tgMessages).values({
+      clientId,
+      managerUserId: ownerId,
+      peerId: PEER,
+      tgMessageId: msgSeq,
+      direction,
+      body,
+      sentAt: new Date(Date.now() - agoMs),
+    });
+    return msgSeq;
+  }
+
+  it('old rail, Kashgar, 500 kg and a flight are background: the truck is priced from the new figures, no guard fires', async () => {
+    const HOUR = 3_600_000;
+    let ago = 6 * HOUR;
+    const step = () => (ago -= 60_000);
+    await at('in', "Temir yo'l bilan qancha bo'ladi?", step());
+    await at('out', 'Aniqlab aytaman.', step());
+    await at('in', 'Qashqardan 500 kg yuk bor', step());
+    await at('out', "Xo'p.", step());
+    await at('in', "Avia bilan jo'nataman", step());
+    await at('out', 'Tushunarli.', step());
+    for (let i = 0; i < 36; i++) await at(i % 2 ? 'out' : 'in', i % 2 ? 'Arzimaydi' : 'Rahmat', step());
+    await at('out', "Yana savol bo'lsa yozing.", 3 * HOUR);
+    const anchor = await at('in', "Assalomu alaykum, Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", 60_000);
+
+    const model = scripted([
+      // w1/v1 are the NEW figures only when the old «500 kg» is not a measure.
+      { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
+      // It cites #1 — the chat's oldest line, in the part only the model reads: a citation reaches what it saw.
+      compose("Assalomu alaykum! Yo'lkira taxminan 800 $ bo'ladi (5 kub, 1000 kg). Boj va QQS alohida hisoblanadi.", {
+        cited_message_refs: ['#1'],
+      }),
+    ]);
+    const out = await handleInbound(job(anchor), { callModel: model });
+    expect(out).toMatchObject({ outcome: 'draft', blocked: false });
+
+    // The model read the old part, under the heading that says it is background, and the chat is a cache breakpoint.
+    const opening = model.requests[0]!.messages[0]!.content[0] as { type: 'text'; text: string; cache?: true };
+    expect(opening.cache).toBe(true);
+    const heading = opening.text.indexOf('Oldingi suhbat');
+    const suhbat = opening.text.indexOf('Suhbat (eski → yangi):');
+    expect(heading).toBeGreaterThan(-1);
+    const rail = opening.text.indexOf("Temir yo'l bilan qancha bo'ladi?");
+    expect(rail).toBeGreaterThan(heading);
+    expect(rail).toBeLessThan(suhbat);
+    expect(opening.text.slice(suhbat)).not.toContain('Qashqardan');
+
+    // The truck was priced from the new 5 kub / 1000 kg — not refused as Kashgar's, not 500 kg.
+    const toolResult = model.requests[1]!.messages
+      .flatMap((m) => m.content)
+      .find((b): b is { type: 'tool_result'; tool_use_id: string; content: string } => b.type === 'tool_result');
+    expect(toolResult?.content).toContain('800');
+
+    const d = await liveDraft();
+    expect(d?.needsOwner).toBe(false);
+    const [first] = await db
+      .select({ id: tgMessages.id })
+      .from(tgMessages)
+      .where(eq(tgMessages.peerId, PEER))
+      .orderBy(tgMessages.sentAt)
+      .limit(1);
+    expect(d!.citedMessageIds).toEqual([first!.id]);
+    const memory = (d!.policy as { memory: { sources: { value: number }[]; aviaOnly?: boolean; aviaMentioned?: boolean } }).memory;
+    expect(memory.aviaOnly ?? false).toBe(false);
+    expect(memory.aviaMentioned ?? false).toBe(false);
+    expect(memory.sources.some((s) => s.value === 500)).toBe(false);
+    const card = await cardOf(d!.id);
+    expect(String((card!.payload as Record<string, unknown>).text)).not.toContain("temir yo'l");
+  });
+
+  it('his own reply thirty-five messages back, inside the pause, still stands the AI down', async () => {
+    await at('in', 'Salom', 50 * 60_000);
+    await at('out', 'Ha, eshitaman', 40 * 60_000);
+    for (let i = 0; i < 35; i++) await at('in', `Rasm ${i + 1}`, (39 - i) * 60_000);
+    const a = await at('in', 'Shularni hisoblab bering', 5_000);
+    const out = await handleInbound(job(a), { callModel: scripted([compose('x')]) });
+    expect(out).toEqual({ outcome: 'refused', reason: 'human_active' });
+  });
+
+  it('the account’s robot is not his: a Business greeting an hour back, then thirty-five photos, still drafts (#1627)', async () => {
+    await at('in', 'Salom', 70 * 60_000);
+    const greeting = await at('out', 'Assalomu alaykum! Hozir band emasman, tez orada javob beraman.', 60 * 60_000);
+    const [row] = await db
+      .select({ id: tgMessages.id })
+      .from(tgMessages)
+      .where(and(eq(tgMessages.peerId, PEER), eq(tgMessages.tgMessageId, greeting)));
+    await db.insert(tgMessageFlags).values({ messageId: row!.id, autoSent: true });
+    for (let i = 0; i < 35; i++) await at('in', `Rasm ${i + 1}`, (39 - i) * 60_000);
+    const a = await at('in', 'Shularni hisoblab bering', 5_000);
+    const out = await handleInbound(job(a), { callModel: scripted([compose('Tekshirib aytaman.', { category: 'qualification' })]) });
+    expect(out).toMatchObject({ outcome: 'draft' });
+  });
+
+  it('an AI send in the window is not his: the pause does not hold for it', async () => {
+    await at('in', 'Salom', 50 * 60_000);
+    const sent = await at('out', 'Assalomu alaykum, eshitaman.', 40 * 60_000);
+    const [draft] = await db
+      .insert(agentDrafts)
+      .values({
+        managerUserId: ownerId,
+        peerId: PEER,
+        clientId,
+        anchorTgMessageId: sent - 1n,
+        status: 'approved',
+        proposedBody: 'Assalomu alaykum, eshitaman.',
+        decidedAt: new Date(Date.now() - 41 * 60_000),
+        decidedBy: ownerId,
+      })
+      .returning({ id: agentDrafts.id });
+    await db.insert(agentOutbox).values({
+      draftId: draft!.id,
+      managerUserId: ownerId,
+      peerId: PEER,
+      clientId,
+      body: 'Assalomu alaykum, eshitaman.',
+      randomId: BigInt(`8${SUFFIX}${msgSeq}`),
+      answersTgMessageId: sent - 1n,
+      queuedBy: ownerId,
+      status: 'sent',
+      tgMessageId: sent,
+      sentAt: new Date(Date.now() - 40 * 60_000),
+    });
+    const a = await at('in', 'Yukim qachon keladi?', 5_000);
+    const out = await handleInbound(job(a), { callModel: scripted([compose('Tekshirib aytaman.', { category: 'status' })]) });
+    expect(out).toMatchObject({ outcome: 'draft' });
   });
 });

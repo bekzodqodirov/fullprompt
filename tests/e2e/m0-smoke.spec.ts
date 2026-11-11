@@ -15,7 +15,9 @@ test('login rejects a wrong password', async ({ page }) => {
   await page.getByLabel(/телефон|telefon|电话/i).fill(ADMIN_PHONE);
   await page.locator('input[name="password"]').fill('wrong-password');
   await page.locator('main form button[type="submit"]').first().click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  // Inside <main>: Next's own route announcer is an (empty) role=alert on <body>, and once it mounts a bare
+  // getByRole('alert') matches two elements and strict mode refuses — a race that failed one local run (#1628).
+  await expect(page.locator('main').getByRole('alert')).toBeVisible();
 });
 
 test('admin creates warehouse + client, sees them in audit', async ({ page }) => {
@@ -75,7 +77,7 @@ test('admin creates warehouse + client, sees them in audit', async ({ page }) =>
   await page.locator('input[name="clientCode"]').fill('X');
   await page.locator('input[name="name"]').fill('Bad Code');
   await page.locator('main form button[type="submit"]').first().click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expect(page.locator('main').getByRole('alert')).toBeVisible();
 
   // Audit browser shows the creations
   await page.goto('/admin/audit');

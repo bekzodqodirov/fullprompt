@@ -22,7 +22,13 @@ export interface ModelToolSpec {
 }
 
 export type ModelBlock =
-  | { type: 'text'; text: string }
+  /**
+   * `cache`: a cache breakpoint after this block — everything before it, the
+   * system prompt included, is billed once and read at a tenth of the price
+   * by the next request that repeats it byte for byte. The AI sotuvchi marks
+   * its opening chat block (#1622): every tool round of one run re-sends it.
+   */
+  | { type: 'text'; text: string; cache?: true }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
   /**
@@ -115,7 +121,11 @@ export const realCallModel: CallModel = async (req) => {
     messages: req.messages.map((message) => ({
       role: message.role,
       content: message.content.map((block): Anthropic.ContentBlockParam => {
-        if (block.type === 'text') return { type: 'text', text: block.text };
+        if (block.type === 'text') {
+          return block.cache
+            ? { type: 'text', text: block.text, cache_control: { type: 'ephemeral' } }
+            : { type: 'text', text: block.text };
+        }
         if (block.type === 'tool_use') {
           return { type: 'tool_use', id: block.id, name: block.name, input: block.input };
         }
