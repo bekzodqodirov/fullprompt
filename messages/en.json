@@ -5818,7 +5818,7 @@
       "composition_changed": "Someone else changed the contents — reload",
       "composition_changed_self": "You already saved — reload",
       "busy": "It was busy — press again",
-      "server_behind": "The server is updating — try shortly",
+      "server_behind": "The server is not updated yet — tell the administrator",
       "validation": "The data is incomplete"
     },
     "shownName": "In the lists the lot will read: {name}",
@@ -5970,6 +5970,7 @@
     "formerOwnerOld": "The previous client confirmed it ({day}) — the receipt was later moved to another client",
     "disputeHint": "Talk to the client. If the data is wrong, correct it; if the lot still reads ❓ after that, or the data is right, press «✅ Correct — client confirmed». If the client pressed by mistake, close the objection.",
     "disputeHintGone": "The cargo has left China, so the objection can only be closed here. Talk to the client, correct the data if needed, and close the objection with a note.",
+    "disputeNotYours": "A logist or a customs (VED) colleague resolves this objection: after talking to the client they mark it on this card.",
     "disputeClose": "Close the objection",
     "disputeCloseConfirm": "Remove the client's «Something is wrong» mark? It stays in the history.",
     "disputeCloseAll": "Close the objections ({n} lots)",

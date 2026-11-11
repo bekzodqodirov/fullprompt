@@ -184,6 +184,15 @@ export function LotCheckPanel({
       </p>,
     );
   }
+  // For a reader who cannot tick — the client's SELLER above all, who is the
+  // ❌ alert's first recipient and opens this card from its link: who does.
+  if (client && vetoed && !canWrite) {
+    lines.push(
+      <p key="dispute-others" className="text-xs text-ink-500" data-testid="lot-check-dispute-others">
+        {t('disputeNotYours')}
+      </p>,
+    );
+  }
   if (face.byDocument) {
     lines.push(
       vetoed ? (

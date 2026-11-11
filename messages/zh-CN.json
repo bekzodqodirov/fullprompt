@@ -5818,7 +5818,7 @@
       "composition_changed": "其他员工已修改组成 — 请刷新",
       "composition_changed_self": "您已保存 — 请刷新",
       "busy": "系统繁忙 — 请再按一次",
-      "server_behind": "服务器更新中 — 请稍后",
+      "server_behind": "服务器尚未更新 — 请告知管理员",
       "validation": "数据不完整"
     },
     "shownName": "列表中该批次将显示为：{name}",
@@ -5970,6 +5970,7 @@
     "formerOwnerOld": "之前的客户已确认（{day}）— 之后入库单改到了另一位客户",
     "disputeHint": "请联系客户。数据有误就更正；更正后该批仍显示 ❓，或数据本来正确，请点“✅ 正确 — 客户已确认”。客户误点则关闭异议。",
     "disputeHintGone": "货物已离开中国，这里只能关闭异议。请联系客户，必要时更正数据，并填写备注后关闭异议。",
+    "disputeNotYours": "此异议由物流或报关（VED）同事处理：与客户沟通后在本卡片上标记。",
     "disputeClose": "关闭异议",
     "disputeCloseConfirm": "取消客户的“有错误”标记？记录会保留在历史中。",
     "disputeCloseAll": "关闭异议（{n} 个批次）",

@@ -142,6 +142,17 @@ describe('the dispute’s hint promises only what the panel draws (L3-5)', () =>
     expect(has(html, 'lot-check-note')).toBe(true);
   });
 
+  it('a reader who cannot tick — the client’s SELLER, the alert’s first recipient — is told who resolves it (L5-2)', () => {
+    const html = lotPanel(face({ state: 'none', client: veto }), false);
+    expect(has(html, 'lot-check-face-client-no')).toBe(true);
+    expect(has(html, 'lot-check-dispute-others')).toBe(true);
+    expect(html).toContain(esc(words.disputeNotYours!));
+    expect(has(html, 'lot-check-yes')).toBe(false);
+    expect(has(html, 'lot-check-dispute-close')).toBe(false);
+    // …and whoever CAN press is shown the buttons, not that sentence.
+    expect(has(lotPanel(face({ state: 'none', client: veto })), 'lot-check-dispute-others')).toBe(false);
+  });
+
   it('cargo in Uzbekistan that nobody ever checked still says nothing', () => {
     expect(lotPanel(face({ state: 'none', askable: false }))).toBe('');
   });

@@ -40,10 +40,16 @@ export function askText(facts: ClientAskFacts, locale?: string | null): string {
       }),
     ];
   });
+  // The question names what the answer is compared with: where a tarkib's
+  // goods are listed with their pieces, it asks about the pieces too.
+  const listsGoods = facts.lots.some((lot) => lot.goods.length > 0);
   return joinBlocks(
     [b(h(t.confirmAskTitle)), headerLine(facts.clientCode, facts.warehouseName, facts.receivedAt)],
     lots,
-    [h(t.confirmAskLine), facts.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(facts.receiptNumber))}` : ''],
+    [
+      h(listsGoods ? t.confirmAskLineGoods : t.confirmAskLine),
+      facts.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(facts.receiptNumber))}` : '',
+    ],
   );
 }
 

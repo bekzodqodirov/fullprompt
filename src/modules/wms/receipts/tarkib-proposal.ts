@@ -88,10 +88,12 @@ export type ProposalNote =
   | { code: 'dropped'; params: { field: ProposalField; value: string } }
   | { code: 'rounded'; params: { field: 'kg' | 'm3'; value: string } }
   | { code: 'gross_unused'; params: { value: string } }
-  | { code: 'seller_code'; params: { value: string } };
+  | { code: 'seller_code'; params: { value: string } }
+  | { code: 'paper_code'; params: { value: string } };
 
 export type ProposalWarning =
   | { code: 'rows_cut'; params: { shown: number; total: number } }
+  | { code: 'rows_full'; params: { shown: number } }
   | { code: 'text_cut' }
   | { code: 'cells_cut' }
   | { code: 'doc_invoice' }
@@ -115,6 +117,8 @@ export function isProposalWarning(value: unknown): value is ProposalWarning {
       return true;
     case 'rows_cut':
       return typeof params?.shown === 'number' && typeof params.total === 'number';
+    case 'rows_full':
+      return typeof params?.shown === 'number';
     case 'totals_differ':
       return (
         (params?.field === 'cartons' || params?.field === 'kg' || params?.field === 'm3') &&
@@ -156,9 +160,17 @@ export interface TarkibProposal {
   lotsOnReceipt: number;
 }
 
-/** A figure as a person writes it: 37.800000000000004 → «37.8». */
+/**
+ * A figure as a person writes it: 37.800000000000004 → «37.8» — and never an
+ * exponent («1e+21», «4e-7»): a note prints it to somebody comparing it with
+ * a paper.
+ */
 export function figureText(x: number): string {
-  return Number.isFinite(x) ? String(Number(x.toPrecision(12))) : String(x);
+  if (!Number.isFinite(x)) return String(x);
+  const short = Number(x.toPrecision(12));
+  const plain = String(short);
+  if (!/e/i.test(plain)) return plain;
+  return short.toLocaleString('en-US', { useGrouping: false, maximumFractionDigits: 20 });
 }
 
 /**
@@ -206,7 +218,11 @@ export function measureCell(x: number | null, scale: number): { cell: string; no
     units = exact.digits / d + (2n * rest >= d ? 1n : 0n);
     rounded = rest !== 0n;
   }
-  if (units <= 0n) return { cell: '', note: 'dropped' };
+  // The column's ceiling, judged on the units ABOUT to be written: the guard
+  // above looks at the raw figure, and twelve significant digits then round
+  // 999 999 999.9995 up across it. numeric(12, scale) holds twelve digits in
+  // all, at either scale.
+  if (units <= 0n || units >= 10n ** 12n) return { cell: '', note: 'dropped' };
   return { cell: fromUnits(Number(units), scale), note: rounded ? 'rounded' : null };
 }
 
@@ -244,12 +260,42 @@ function cutTo(text: string, max: number): { text: string; cut: boolean } {
  * heading and the rest is another country's tariff. Written into the cell it
  * would look like a code somebody chose — it goes into a note instead, where
  * it is what it is: a hint for whoever codes the line.
+ *
+ * …and ten digits are the document's too — a Chinese exporter's commodity
+ * code is ten digits long. The cell carries them (the person is told to
+ * compare every figure with the paper, and this one is ON the paper), with a
+ * note that says whose code it is; and for the lot's OWN good it is not
+ * carried at all (`draftLineOf`).
  */
 function codeCell(raw: string | null): { cell: string; note: ProposalNote | null } {
   const digits = String(raw ?? '').replace(/\D/g, '');
-  if (digits.length === 10) return { cell: digits, note: null };
+  if (digits.length === 10) return { cell: digits, note: { code: 'paper_code', params: { value: digits } } };
   if (digits.length >= 4) return { cell: '', note: { code: 'seller_code', params: { value: digits.slice(0, 20) } } };
   return { cell: '', note: null };
+}
+
+/**
+ * Do the paper's own figures add up to the paper's own total? Compared as
+ * EXACT decimals, before anything is rounded to the column — and «differs»
+ * only from one whole unit of the column up (0.001 kg, 0.0001 m³).
+ *
+ * The cells are each rounded half-up to the column, and so is the total: a
+ * packing list whose CBM is a formula (five or six decimals) adds up exactly
+ * on the paper and is off by one unit in the cells — 0.3175 + 0.1234 = 0.4409
+ * against 0.4410 — which is how a paper read correctly was told «AI may have
+ * misread a figure». Null = cannot tell (a figure missing or not a positive
+ * number): nothing is said.
+ */
+function differsFromTotal(figures: readonly (number | null)[], total: number | null, scale: number): boolean | null {
+  if (total === null || !Number.isFinite(total) || total <= 0) return null;
+  const whole = exactDecimal(total);
+  const parts = figures.map((f) => (f === null || !Number.isFinite(f) || f <= 0 ? null : exactDecimal(f)));
+  if (!whole || parts.some((part) => part === null)) return null;
+  const exp = Math.min(-scale, whole.exp, ...parts.map((part) => part!.exp));
+  const at = (d: { digits: bigint; exp: number }) => d.digits * 10n ** BigInt(d.exp - exp);
+  const sum = parts.reduce((acc, part) => acc + at(part!), 0n);
+  const gap = sum > at(whole) ? sum - at(whole) : at(whole) - sum;
+  return gap >= 10n ** BigInt(-scale - exp);
 }
 
 const sumUnits = (cells: readonly string[], scale: number): number | null => {
@@ -293,6 +339,12 @@ export function buildProposal(
   const listed = stated.slice(0, READ_MAX_ROWS);
   if (stated.length > listed.length) {
     warnings.push({ code: 'rows_cut', params: { shown: listed.length, total: stated.length } });
+  } else if (stated.length === READ_MAX_ROWS) {
+    // The prompt tells the model to return the FIRST forty rows of a longer
+    // paper — so exactly forty is what a cut list looks like. `rows_cut`
+    // cannot say it (its `total` would be the model's row count, not the
+    // document's): this one says the reading stopped, and may be short.
+    warnings.push({ code: 'rows_full', params: { shown: listed.length } });
   }
 
   const gross = listed.map((row) => measureCell(row.gross_kg, KG_SCALE));
@@ -304,11 +356,16 @@ export function buildProposal(
     const notes: ProposalNote[] = [];
     const paper = cutTo(oneLine(row.name), NAME_MAX);
     if (paper.cut) notes.push({ code: 'name_cut' });
-    if ([...paper.text].length < 2) notes.push({ code: 'name_short' });
     const russian = cutTo(oneLine(row.name_ru), NAME_MAX).text;
     // A translation of fewer than two characters is no name, and one that only
     // repeats the paper's is no second name.
     const nameRu = [...russian].length >= 2 && nameKey(russian) !== nameKey(paper.text) ? russian : null;
+    // «The name could not be read» is about the name the row is APPLIED under
+    // (`appliedName`: the Russian wording when there is one). A one-character
+    // Chinese name is an ordinary good — 鞋, 包, 灯 — and arrives with a usable
+    // wording; judged on the paper's name alone it was shown «Обувь» with a
+    // warning that the name could not be read.
+    if ([...paper.text].length < 2 && nameRu === null) notes.push({ code: 'name_short' });
 
     const pieces = countCell(row.pieces);
     if (pieces.note) notes.push({ code: 'dropped', params: { field: 'pieces', value: figureText(row.pieces!) } });
@@ -352,8 +409,11 @@ export function buildProposal(
   // The one cheap check that every digit was read: where the paper prints its
   // own total AND every listed row states that measure, the rows must add up
   // to it. Only when nothing was cut — a list cut at forty rows is short of
-  // its total by construction. Said, never corrected.
-  if (printed && !file.rowsCut && stated.length === listed.length && rows.length > 0) {
+  // its total by construction, and a reading that REACHED forty may be one
+  // (`rows_full`). Said, never corrected. The comparison is the paper's own
+  // figures (`differsFromTotal`); the sentence prints the cells' sum and the
+  // total as the dialog shows them.
+  if (printed && !file.rowsCut && stated.length === listed.length && listed.length < READ_MAX_ROWS && rows.length > 0) {
     if (printed.cartons && rows.every((r) => r.cartons !== '')) {
       const sum = rows.reduce((s, r) => s + (toCount(r.cartons) ?? 0), 0);
       if (String(sum) !== printed.cartons) {
@@ -362,13 +422,13 @@ export function buildProposal(
     }
     if (printed.kg && weightKind === 'gross') {
       const sum = sumUnits(rows.map((r) => r.kg), KG_SCALE);
-      if (sum !== null && sum !== storedUnits(printed.kg, KG_SCALE)) {
+      if (sum !== null && differsFromTotal(listed.map((row) => row.gross_kg), totals!.gross_kg, KG_SCALE) === true) {
         warnings.push({ code: 'totals_differ', params: { field: 'kg', sum: fromUnits(sum, KG_SCALE), total: printed.kg } });
       }
     }
     if (printed.m3) {
       const sum = sumUnits(rows.map((r) => r.m3), M3_SCALE);
-      if (sum !== null && sum !== storedUnits(printed.m3, M3_SCALE)) {
+      if (sum !== null && differsFromTotal(listed.map((row) => row.volume_m3), totals!.volume_m3, M3_SCALE) === true) {
         warnings.push({ code: 'totals_differ', params: { field: 'm3', sum: fromUnits(sum, M3_SCALE), total: printed.m3 } });
       }
     }
@@ -419,7 +479,23 @@ export function appliedName(
   return { name: row.nameRu ?? row.name, own: false };
 }
 
-/** The editor line a proposed row becomes — its cells as they are, its name by the rule. */
+/**
+ * The TNVED cell a proposed row is applied with: the paper's ten digits —
+ * except for the lot's OWN good, which takes none.
+ *
+ * The save's `tnved_would_vanish` guard (`refuseVanishingCode`) recognises a
+ * one-line tarkib of the lot's own good and refuses to let the code the
+ * memory holds for the lot vanish from the invoice — but it returns as soon
+ * as the line carries ANY code. With the exporter's ten digits in the cell
+ * the invoice printed THEIR code in place of the one the memory holds, and
+ * nobody was told. Left empty, the guard names the memory's code (or «Bitta
+ * tovar» fills it in).
+ */
+export function appliedCode(row: Pick<ProposalRow, 'name' | 'nameRu' | 'tnved'>, lot: ProposalLot): string {
+  return appliedName(row, lot).own ? '' : row.tnved;
+}
+
+/** The editor line a proposed row becomes — its cells as they are, its name and code by the rules. */
 export function draftLineOf(row: ProposalRow, lot: ProposalLot): DraftLine {
   return {
     name: appliedName(row, lot).name,
@@ -427,7 +503,7 @@ export function draftLineOf(row: ProposalRow, lot: ProposalLot): DraftLine {
     cartons: row.cartons,
     kg: row.kg,
     m3: row.m3,
-    tnved: row.tnved,
+    tnved: appliedCode(row, lot),
   };
 }
 

@@ -453,17 +453,29 @@ const DICT = {
     ru: '📋 Подтвердите данные о грузе',
     en: '📋 Please confirm your cargo details',
   },
+  // The same WORDS as the lines above it: the lots are counted in «коробок»
+  // (`boxOne/Few/Many`), so the question may not call them «мест»; and the
+  // English one names the NAME, as the other two do (the as-built review).
   confirmAskLine: {
     uz: '❓ Tovar nomi va quti soni to‘g‘rimi?',
-    ru: '❓ Наименование и количество мест указаны верно?',
-    en: '❓ Are the goods and the box count right?',
+    ru: '❓ Название товара и количество коробок указаны верно?',
+    en: '❓ Are the goods’ names and the box count correct?',
+  },
+  // …and the question a person sends from the card for a prixod with a
+  // tarkib lists every good WITH its pieces — the answer is compared with
+  // names AND pieces (`goods_key`), so the question must ask about both: a
+  // client who checks only what is asked would confirm wrong piece counts.
+  confirmAskLineGoods: {
+    uz: '❓ Tovarlar, ularning donasi va quti soni to‘g‘rimi?',
+    ru: '❓ Товары, их количество (шт) и число коробок указаны верно?',
+    en: '❓ Are the goods, their piece counts and the box count correct?',
   },
   confirmYes: { uz: '✅ To‘g‘ri', ru: '✅ Верно', en: '✅ Correct' },
   confirmNo: { uz: '❌ Xato bor', ru: '❌ Есть ошибка', en: '❌ Something is wrong' },
   confirmThanks: {
     uz: 'Rahmat! Tovar nomi va quti soni tasdiqlandi ✅',
-    ru: 'Спасибо! Наименование и количество мест подтверждены ✅',
-    en: 'Thank you! Goods and box count confirmed ✅',
+    ru: 'Спасибо! Название товара и количество коробок подтверждены ✅',
+    en: 'Thank you! Goods names and box count confirmed ✅',
   },
   // After ❌: the relay carries whatever they write or photograph next.
   confirmTellUs: {

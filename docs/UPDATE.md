@@ -376,11 +376,12 @@ Bitta migratsiya bor: **0144** — deploydan keyin son **145** bo‘ladi (repo�
 birga o‘tadi — son baribir **145**. Migratsiya faqat qo‘shadi: bitta yangi jadval (mijozning Telegramdagi
 javobi) va AI hisobiga to‘rtta ustun; mavjud ma’lumot o‘zgarmaydi.
 
-**Deploydan OLDIN biling:** shu deploydan keyingi birinchi prixoddan boshlab, Telegrami ulangan har bir
-mijozga boradigan «Yukingiz qabul qilindi» xabarining tagida **«✅ To‘g‘ri / ❌ Xato bor»** tugmalari chiqadi
-(yuk Xitoyda bo‘lsa, lotga tarkib yozilmagan bo‘lsa, lotlar 12 tadan oshmasa). Buni xohlamasangiz:
-Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo‘q». Shunda xabar avvalgidek boradi, kartadagi
-«📨 Mijozdan so‘rash» esa ishlayveradi.
+**Deploydan OLDIN biling:** deploy tugagan zahoti, Telegrami ulangan har bir mijozga boradigan «Yukingiz qabul
+qilindi» xabarining tagida **«✅ To‘g‘ri / ❌ Xato bor»** tugmalari chiqa boshlaydi (yuk Xitoyda yoki yo‘ldagi
+mashinada bo‘lsa, lotga tarkib yozilmagan bo‘lsa, lotlar 12 tadan oshmasa) — deploydan 10 daqiqa oldin qabul
+qilingan prixodlar uchun ham, ya’ni birinchi tugmali xabar 1-2 daqiqada ketishi mumkin. Sozlama
+(`client_confirm_on_receipt`) **faqat deploydan keyin** paydo bo‘ladi — oldindan o‘chirib bo‘lmaydi.
+Xohlamasangiz: deploydan oldin ayting (o‘chiq holda chiqariladi) yoki pastdagi **4a-qadam**ni darhol bajaring.
 
 1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
 2. `git pull`, keyin `docker compose build migrate`, so‘ng
@@ -389,13 +390,19 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo‘q». Shunda 
    ishlaydi va u bilan birga yangilanadi.)
 3. Sonni o‘qing — **145**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
 4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
-5. Ko‘zga ko‘rinadigan belgi: **Boshqaruv → Sozlamalar** → `tnved_ai_daily_limit` qutisi ostida «Bugun AI:
+4a. **Tugmalarni xohlamasangiz — hozir, kechiktirmay:** Boshqaruv → Sozlamalar → `client_confirm_on_receipt` →
+   «Yo‘q» → Saqlash. Shunda mijozga xabar avvalgidek (tugmasiz) boradi; kartadagi «📨 Mijozdan so‘rash»
+   ishlayveradi.
+5. Ko‘zga ko‘rinadigan belgi: **Boshqaruv → Sozlamalar** → `tnved_ai_daily_limit` qutisi ostida «Bugun:
    N / 300 marta» satri turadi (satr yo‘q bo‘lsa — migratsiya o‘tmagan); u yerda taxminiy dollar ham
-   ko‘rinadi. Xuddi shu satr mashinaning «Bojxona» bo‘limida ham bor — lekin faqat ichida yuki bor mashinada
-   (bo‘sh mashinada u chizilmaydi, shuning uchun belgini Sozlamalar’dan qarang).
+   ko‘rinadi. Mashinaning «Bojxona» bo‘limida ham shunday satr bor («Bugun AI: N / 300 marta») — lekin faqat
+   ichida yuki bor mashinada (bo‘sh mashinada u chizilmaydi, shuning uchun belgini Sozlamalar’dan qarang).
 6. Sinov (bitta prixodda, 10 daqiqa):
-   - Telegrami ulangan mijozga yangi prixod qiling — 10 daqiqadan keyin mijozga boradigan xabar tagida
-     «✅ To‘g‘ri / ❌ Xato bor» chiqishi kerak; «✅» bosilsa — «Sklad qoldig‘i»da shu lot ✅ bo‘ladi;
+   - Telegrami ulangan mijozga **Xitoy skladida** (Iu, Guanchjou, Xorgos…) yangi prixod qiling — 10 daqiqadan
+     keyin mijozga boradigan xabar tagida «✅ To‘g‘ri / ❌ Xato bor» chiqishi kerak; «✅» bosilsa — «Sklad
+     qoldig‘i»da shu lot ✅ bo‘ladi. (Toshkent yoki Andijonda qilingan prixodga tugma chiqmaydi — bu to‘g‘ri:
+     O‘zbekistondagi yuk haqida so‘ralmaydi.) O‘z Telegramingiz xodim sifatida ham ulangan bo‘lsa, «❌» dan
+     keyin «mas’ul xodimlarga xabar berildi» chiqadi («shu yerga yozing» emas) — bu ham to‘g‘ri;
    - prixod kartasida «📨 Mijozdan so‘rash» → mijozga lotlar ro‘yxati (tarkibi bilan) boradi; kartada
      «So‘rov yuborilgan: …» yoziladi; mijoz «❌» bossa — sotuvchi va logistlarga Telegram xabari keladi, kartada
      qizil «❌ Mijoz … «xato bor» dedi» turadi va «E’tirozni yopish» tugmasi chiqadi;

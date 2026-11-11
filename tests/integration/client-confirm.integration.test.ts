@@ -516,6 +516,8 @@ describe('a press', () => {
     expect(text).toContain(`B · Мышь ${RUN} +1 — 2 quti`);
     // One button answered three lots — the sentence says so, so nobody reads it as «all three are wrong».
     expect(text).toContain('3 ta lotning hammasiga');
+    // …and WHO ends it: the first reader is the client's seller, who has neither button (L5-2).
+    expect(text).toContain('logist yoki VED kartada');
     expect(text.split('\n').at(-1)).toContain(`/receipts/${receipt.main}`);
     await clearQueued();
   });
@@ -725,6 +727,17 @@ describe('a press', () => {
       code: 'check_changed',
     });
     expect((await rowsOfAnswers()).every((row) => row.verdict === 'yes')).toBe(true);
+    // The ✅ WITHDREW a ❌ the seller and the planners had been alarmed about: they hear the all-clear
+    // (L5-4) — a plain ✅ on a lot nobody disputed still tells nobody (the next press below).
+    const cleared = await queued();
+    const alarmed = [...new Set([sellerId, ...(await usersWithPermission('plans.manage'))])];
+    expect(cleared.map((row) => row.userId).sort()).toEqual([...alarmed].sort());
+    expect(cleared.every((row) => row.type === 'ClientLotConfirmed')).toBe(true);
+    expect(String((cleared[0]!.payload as { text: string }).text)).toContain('«Xato bor» javobi shu bilan bekor bo‘ldi');
+    await clearQueued();
+    // The same ✅ to a NEW question: written again (the asker hears it elsewhere), nobody else — no ❌ stood.
+    await db.execute(sql`UPDATE lot_client_confirms SET answered_at = now() - interval '1 hour' WHERE lot_id IN (${lot.K}::uuid, ${lot.T}::uuid, ${lot.S}::uuid)`);
+    expect((await press('yes', CHAT_A2)).outcome).toBe('already');
     expect(await queued()).toEqual([]);
   });
 

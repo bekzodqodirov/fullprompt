@@ -288,7 +288,7 @@ async function lastAsk(clientId: string, receiptId: string): Promise<{ askedBy: 
 }
 
 /** The staff's sentence about an answer — plain Uzbek, the card's link last (the drain makes it a button). */
-function staffText(facts: ClientAskFacts, verdict: ClientVerdict): string {
+function staffText(facts: ClientAskFacts, verdict: ClientVerdict, opts: { withdraws?: boolean } = {}): string {
   const lots = facts.lots
     .slice(0, 12)
     .map((lot) => `${lot.letter ? `${lot.letter} · ` : ''}${lot.ru ?? lot.zh} — ${lot.count} quti`);
@@ -309,8 +309,14 @@ function staffText(facts: ClientAskFacts, verdict: ClientVerdict): string {
             : 'Mijoz Telegram’da «Xato bor» ni bosdi. Nima noto‘g‘riligini aniqlang.',
           // What really ends a ❌ (§7.3): a correction alone lifts nothing on a
           // lot without a tarkib — somebody still has to tick or close it.
-          'Lot ❓ bo‘lib turadi — kartada «✅ To‘g‘ri» yoki «E’tirozni yopish» bosilguncha (yoki mijoz qayta ✅ deguncha). Ma’lumot xato bo‘lsa, avval uni tuzating.',
+          // …and WHO presses: the alert's first reader is the client's seller,
+          // who has neither button (they are `mayCheckLot`'s — the logist's and
+          // the VED's). «Bosilguncha» alone sent him to look for a button his
+          // card does not draw.
+          'Lot ❓ bo‘lib turadi — logist yoki VED kartada «✅ To‘g‘ri» yoki «E’tirozni yopish» ni bosguncha (yoki mijoz qayta ✅ deguncha). Ma’lumot xato bo‘lsa, avval uni tuzating.',
         ]
+      : opts.withdraws
+        ? ['Mijozning avvalgi «Xato bor» javobi shu bilan bekor bo‘ldi.']
       : [];
   return [...head, ...lots, ...tail, ...(link ? [link] : [])].join('\n');
 }
@@ -358,15 +364,17 @@ export async function answerClientAsk(input: {
   const askedAt = ask?.sentAt ? ask.sentAt.toISOString() : null;
 
   const [owner] = await db.select({ seller: clients.salesManagerId }).from(clients).where(eq(clients.id, facts.clientId));
-  // ❌ → the client's seller and the logists (the people who can correct the
-  // lot); ✅ on the receipt's own push tells nobody — the ❓ list shrinking is
-  // the news. The person who pressed «Mijozdan so'rash» hears either answer.
-  const others =
-    input.verdict === 'no'
-      ? [...new Set([owner?.seller, ...(await usersWithPermission('plans.manage'))].filter((id): id is string => Boolean(id)))].filter(
-          (id) => id !== askedBy,
-        )
-      : [];
+  // ❌ → the client's seller and everyone who plans (the logists and the
+  // admins — the people who can correct the lot, plus the one who knows the
+  // client). A plain ✅ on the receipt's own push tells nobody: the ❓ list
+  // shrinking is the news. But a ✅ that WITHDRAWS a ❌ those same people
+  // were alarmed about is told to them — or the seller goes on chasing a
+  // dispute the customer has already taken back (decided under the locks,
+  // below). The person who pressed «Mijozdan so'rash» hears either answer.
+  // Read here, on the pool, before the transaction (tx-pool).
+  const alarmed = [...new Set([owner?.seller, ...(await usersWithPermission('plans.manage'))].filter((id): id is string => Boolean(id)))].filter(
+    (id) => id !== askedBy,
+  );
   const mark = (verdict: string) => (verdict === 'yes' ? '✅' : '❌');
 
   let written: boolean;
@@ -490,7 +498,10 @@ export async function answerClientAsk(input: {
     // Queued in the SAME transaction as the answer: a crash between the two
     // would leave a redelivered press reading «already» and telling nobody.
     const type = input.verdict === 'no' ? 'ClientLotDisputed' : 'ClientLotConfirmed';
-    const text = staffText(facts, input.verdict);
+    // This ✅ takes back a ❌ of the same owner that stood on one of the lots.
+    const withdraws = input.verdict === 'yes' && held.some((row) => row.verdict === 'no' && row.shown_client_id === facts.clientId);
+    const others = input.verdict === 'no' || withdraws ? alarmed : [];
+    const text = staffText(facts, input.verdict, { withdraws });
     if (others.length > 0) await queueStaffTelegram(tx, { userIds: others, type, text });
     // The asker pressed a button and is waiting for this very answer: it goes
     // past their own mute, as the re-run a seller started does.

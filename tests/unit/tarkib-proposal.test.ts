@@ -103,18 +103,30 @@ describe('a measure the reading gave → the cell at the column’s scale', () =
   });
 
   it('every cell it writes is read back by the editor’s own parser as the same figure', () => {
-    for (const [x, scale] of [
-      [37.800000000000004, KG_SCALE],
-      [1234.5, KG_SCALE],
-      [0.001, KG_SCALE],
-      [12.3456, M3_SCALE],
-      [0.0001, M3_SCALE],
-      [999_999_999.999, KG_SCALE],
+    // LITERAL cells and units: compared with something made from the cell itself, a measureCell that
+    // wrote «1234.600» for 1234.5 stayed green (the T1 review, B12).
+    for (const [x, scale, cell, units] of [
+      [37.800000000000004, KG_SCALE, '37.800', 37_800],
+      [1234.5, KG_SCALE, '1234.500', 1_234_500],
+      [0.001, KG_SCALE, '0.001', 1],
+      [12.3456, M3_SCALE, '12.3456', 123_456],
+      [0.0001, M3_SCALE, '0.0001', 1],
+      [999_999_999.999, KG_SCALE, '999999999.999', 999_999_999_999],
     ] as const) {
-      const { cell } = measureCell(x, scale);
-      expect(cell, String(x)).not.toBe('');
-      expect(toUnits(cell, scale), cell).toBe(Math.round(Number(cell) * 10 ** scale));
+      expect(measureCell(x, scale), String(x)).toEqual({ cell, note: null });
+      expect(toUnits(cell, scale), cell).toBe(units);
     }
+  });
+
+  it('a figure that ROUNDS past the column is dropped too — the ceiling is judged after the rounding', () => {
+    // The guard looked at the raw value, and twelve significant digits then rounded it up across the
+    // boundary: «1000000000.000» in a numeric(12,3) cell (B7).
+    expect(measureCell(999_999_999.9995, KG_SCALE)).toEqual({ cell: '', note: 'dropped' });
+    expect(measureCell(99_999_999.99995, M3_SCALE)).toEqual({ cell: '', note: 'dropped' });
+    // …and a figure a note prints is never an exponent.
+    expect(figureText(1e21)).toBe('1000000000000000000000');
+    expect(figureText(4e-7)).toBe('0.0000004');
+    expect(figureText(37.800000000000004)).toBe('37.8');
   });
 });
 
@@ -182,6 +194,20 @@ describe('the supplier’s code column', () => {
     expect(p.rows[1]!.notes).toEqual([{ code: 'seller_code', params: { value: '847160' } }]);
     expect(p.rows[2]!.notes).toEqual([{ code: 'seller_code', params: { value: '84716070' } }]);
     expect(p.rows[3]!.notes).toEqual([]);
+    // A ten-digit code is still the DOCUMENT's — a Chinese exporter's commodity code is ten digits too
+    // — so the cell that carries it says so (B4).
+    expect(p.rows[0]!.notes).toEqual([{ code: 'paper_code', params: { value: '8471607000' } }]);
+  });
+
+  it('the lot’s OWN good never takes the paper’s code: the save’s guard must still be able to name the code the memory holds', () => {
+    // `refuseVanishingCode` returns as soon as the one line carries ANY code, so the exporter's ten
+    // digits replaced, on the invoice, the code the TNVED memory holds for the lot — unseen (B4).
+    const [own] = build([row({ name: '键盘', hs_code: '8471.6072.00' })]).rows;
+    expect(own!.tnved).toBe('8471607200');
+    expect(draftLineOf(own!, { zh: '键盘', ru: null }).tnved).toBe('');
+    expect(draftLineOf(own!, { zh: '键盘', ru: 'Клавиатура' })).toMatchObject({ name: 'Клавиатура', tnved: '' });
+    // Another good of the same paper keeps the cell (with its note).
+    expect(draftLineOf(own!, { zh: '鼠标', ru: null }).tnved).toBe('8471607200');
   });
 });
 
@@ -268,6 +294,39 @@ describe('the proposal as a whole', () => {
     ]);
   });
 
+  it('a reading that reached the forty-row ceiling is possibly CUT: no «totals differ», and it is said (B1)', () => {
+    // The prompt tells the model to return the first forty rows of a longer paper — so forty of forty is
+    // exactly what a cut list looks like, and it was neither called cut nor spared the detector: three
+    // «AI may have misread a figure» about a paper read correctly.
+    const forty = Array.from({ length: READ_MAX_ROWS }, (_, i) => row({ name: `Т ${i}`, cartons: 1, gross_kg: 10, volume_m3: 0.1 }));
+    const p = build(forty, { totals: { cartons: 55, gross_kg: 550, volume_m3: 5.5 }, notes: 'В документе 55 товаров' });
+    expect(p.warnings.filter((w) => w.code === 'totals_differ')).toEqual([]);
+    expect(p.warnings).toEqual([{ code: 'rows_full', params: { shown: READ_MAX_ROWS } }]);
+    // One row fewer is a whole list: the detector speaks, and nothing says «cut».
+    const short = build(forty.slice(1), { totals: { cartons: 55, gross_kg: 390, volume_m3: 3.9 } });
+    expect(short.warnings).toEqual([{ code: 'totals_differ', params: { field: 'cartons', sum: '39', total: '55' } }]);
+  });
+
+  it('the detector compares what the paper PRINTS — never the cells after their rounding (B2)', () => {
+    // CBM in an Excel packing list is a formula (L×W×H/10⁶ × cartons, five or six decimals). Each cell is
+    // rounded to the column and so is the total: 0.3175 + 0.1234 = 0.4409 ≠ 0.4410 — «AI may have misread
+    // a figure» about a paper whose rows add up exactly.
+    expect(
+      build([row({ name: 'Мышь', volume_m3: 0.31752 }), row({ name: 'Коврик', volume_m3: 0.12344 })], {
+        totals: { cartons: null, gross_kg: null, volume_m3: 0.44096 },
+      }).warnings,
+    ).toEqual([]);
+    expect(
+      build([1, 2, 3].map((i) => row({ name: `Т ${i}`, gross_kg: 10.0004 })), { totals: { cartons: null, gross_kg: 30.0012, volume_m3: null } }).warnings,
+    ).toEqual([]);
+    // A real difference of one unit of the column is still said — with the figures the dialog shows.
+    expect(
+      build([row({ name: 'Мышь', volume_m3: 0.31752 }), row({ name: 'Коврик', volume_m3: 0.12344 })], {
+        totals: { cartons: null, gross_kg: null, volume_m3: 0.44106 },
+      }).warnings,
+    ).toEqual([{ code: 'totals_differ', params: { field: 'm3', sum: '0.4409', total: '0.4411' } }]);
+  });
+
   it('…and it stays silent where it cannot know: a cut list, a measure some row lacks, net rows against a gross total', () => {
     const totals = { cartons: 100, gross_kg: 1240, volume_m3: 2.5 };
     const some = [row({ name: 'Мышь', cartons: 50, gross_kg: 600 }), row({ name: 'Коврик', net_kg: 400, volume_m3: 1 })];
@@ -284,6 +343,15 @@ describe('the proposal as a whole', () => {
     expect(p.rows[0]!.unsure).toBe('вес указан на 3 строки');
     expect([...p.notes!]).toHaveLength(600);
     expect(build([row({ unsure: '  ' })]).rows[0]!.unsure).toBeNull();
+  });
+});
+
+describe('«the name could not be read» is about the name the row is APPLIED under (B8)', () => {
+  it('a one-character Chinese name with its Russian wording is an ordinary good — 鞋, 包, 灯', () => {
+    expect(build([row({ name: '鞋', name_ru: 'Обувь', pieces: 10 })]).rows[0]!.notes).toEqual([]);
+    // With no second name there is nothing to apply: said.
+    expect(build([row({ name: '鞋', pieces: 10 })]).rows[0]!.notes).toEqual([{ code: 'name_short' }]);
+    expect(build([row({ name: '', pieces: 10 })]).rows[0]!.notes).toEqual([{ code: 'name_short' }]);
   });
 });
 

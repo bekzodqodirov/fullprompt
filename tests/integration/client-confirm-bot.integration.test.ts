@@ -378,7 +378,8 @@ describe('what the sweep sends', () => {
     expect(lines[0]).toBe(t.confirmAskTitle);
     expect(lines[1]).toContain(`AB${RUN}`);
     expect(lines.slice(2, 5)).toEqual([`📦 A — 2 quti`, `   • Мышь ${RUN} — 500 ${t.unitDona}`, `   • Коврик ${RUN}`]);
-    expect(lines).toContain(t.confirmAskLine);
+    // The goods are listed with their pieces — so the question asks about the pieces too.
+    expect(lines).toContain(t.confirmAskLineGoods);
     expect(ask.text).not.toMatch(/\bkg\b|m³/);
     const tag = await tagOf(receipt.tarkib);
     expect(ask.rows.at(-1)).toEqual([

@@ -5,26 +5,42 @@
 Sizning javobingiz: «Hammasi yulduzcha javob va taklifingni qoshamiz». Birinchi yarmi — o'nta savolning hammasi ⭐
 bo'yicha qoldi (tekshirdim: sakkiztasi allaqachon test bilan mahkamlangan edi, ikkitasini endi mahkamladim).
 Ikkinchi yarmini **uchala taklif ham** deb o'qidim va uchalasini qurdim. Agar faqat bittasini nazarda tutgan
-bo'lsangiz — ayting, ortiqchasini o'chirib qo'yish oson (pastda har birining o'chirgichi yozilgan).
+bo'lsangiz — ayting. O'chirgichlar: mijozga boradigan avtomatik tugmalar — Sozlamalarda
+`client_confirm_on_receipt`; «Fayldan to'ldirish» — `tarkib_ai_daily_limit` ni 0 qilish; Bojxonadagi 🤖 hisobining
+alohida o'chirgichi yo'q (limit 0 bo'lsa 🤖 tugmasining o'zi o'chadi — hisobni saqlab, cheklovni olib tashlash
+uchun limitni katta son qiling).
 
 Bitta migratsiya (**0144**). Deploydan keyin baza hisobi **145** bo'lishi kerak; `/api/version` bugungi vaqtni
 ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Tarkib takliflari (2026-11-11, 0144)».
 
-**⚠️ Deploydan oldin biling:** deploydan keyingi birinchi prixoddan boshlab, Telegrami ulangan mijozlarga boradigan
-«Yukingiz qabul qilindi» xabarining tagida «✅ To'g'ri / ❌ Xato bor» tugmalari chiqadi. Xohlamasangiz:
-Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
+**⚠️ Deploydan oldin biling:** deploy tugagan zahoti, Telegrami ulangan mijozlarga boradigan «Yukingiz qabul
+qilindi» xabarining tagida «✅ To'g'ri / ❌ Xato bor» tugmalari chiqa boshlaydi — deploydan 10 daqiqa oldin
+qabul qilingan prixodlar uchun ham (ularning xabari hali navbatda turadi), ya'ni birinchi tugmali xabar 1-2
+daqiqada ketishi mumkin. Bu sozlama **faqat deploydan keyin** paydo bo'ladi, oldindan o'chirib bo'lmaydi.
+Tugmalarni xohlamasangiz — ikki yo'l: (a) deploydan OLDIN menga ayting, o'chiq holda chiqaraman; yoki
+(b) deploy tugashi bilan darhol: Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q». Shunda xabar
+avvalgidek boradi, kartadagi «📨 Mijozdan so'rash» esa ishlayveradi.
 
 ### 1. Mijoz yuk ma'lumotini Telegramda o'zi tasdiqlaydi
 - **Xabardagi tugmalar.** Yuk Xitoy skladiga qabul qilinganda mijozga boradigan xabarda endi savol turadi:
   «Tovar nomi va quti soni to'g'rimi?» va ikki tugma — «✅ To'g'ri» / «❌ Xato bor». Mijoz «✅» bossa, lot
   ro'yxatlarda (Sklad qoldig'i, reja, prixod kartasi) ✅ bo'ladi — logistning telefon qilishi shart emas.
 - **«❌ Xato bor» — to'xtatuvchi belgi.** Mijoz «❌» bossa: lot ❓ ro'yxatiga qaytadi (avval xodim ✅ qo'ygan
-  bo'lsa ham), mijozning sotuvchisi va logistlarga Telegram xabari keladi, mijozga esa «nima xato ekanini shu
-  yerga yozing» deyiladi (yozgani menejerga boradi). Bu belgi **o'z-o'zidan yo'qolmaydi**. U faqat to'rt yo'l
-  bilan yopiladi: (1) tarkibdagi tovarlar tuzatilsa; (2) xodim mijoz bilan gaplashib, kartada «✅ To'g'ri —
-  mijoz tasdiqladi» ni bossa; (3) mijozning o'zi qayta «✅» bossa; (4) kartada «E'tirozni yopish» bosilsa.
+  bo'lsa ham), mijozning sotuvchisiga, logistlarga va adminlarga (sizga ham) Telegram xabari keladi, mijozga
+  esa «nima xato ekanini shu yerga yozing» deyiladi (yozgani menejerga boradi). Bu belgi **o'z-o'zidan
+  yo'qolmaydi**. U to'rt yo'l bilan yopiladi: (1) lotda tarkib bo'lsa — tarkibdagi tovarlar o'zgartirilsa
+  (tarkibsiz oddiy lotda nom yoki quti sonini tuzatishning o'zi belgini olib tashlamaydi — keyin 2 yoki 4
+  kerak); (2) logist yoki VED mijoz bilan gaplashib, kartada «✅ To'g'ri — mijoz tasdiqladi» ni bossa;
+  (3) mijozning o'zi qayta «✅» bossa — buning uchun unga «Mijozdan so'rash» bilan savol qayta yuboriladi
+  (birinchi xabardagi tugmalar bosilgach yo'qoladi); (4) kartada «E'tirozni yopish» bosilsa. Yukning hammasi
+  O'zbekistonga tushirilgach faqat 1 va 4 qoladi. «✅ To'g'ri» va «E'tirozni yopish» tugmalari logist va VED da
+  bor; sotuvchi kartada «buni logist yoki VED hal qiladi» degan satrni ko'radi.
+- **Mijoz «❌» dan keyin «✅» bossa** — e'tiroz haqida xabar olgan o'sha odamlarga «mijoz tasdiqladi, avvalgi
+  «Xato bor» bekor bo'ldi» degan xabar boradi. Oddiy «✅» (e'tiroz bo'lmagan lotda) hech kimga xabar bermaydi —
+  faqat savolni o'zi yuborgan xodimga.
 - **«📨 Mijozdan so'rash»** — prixod kartasida yangi tugma. Bosilsa, mijozga shu prixodning hamma lotlari
-  (tarkib yozilgan bo'lsa — har bir tovar va donasi bilan) va o'sha ikki tugma boradi. Tarkibni mijozga
+  (tarkib yozilgan bo'lsa — har bir tovar va donasi bilan; shunda savol ham «Tovarlar, ularning donasi va quti
+  soni to'g'rimi?» deb beriladi) va o'sha ikki tugma boradi. Tarkibni mijozga
   tasdiqlatishning yo'li shu. Kartada so'rov holati yoziladi: «navbatda», «yuborilgan: vaqt · kim» yoki
   «yetib bormadi» — sababi bilan o'zbekcha (mijoz botni bloklagan, Telegrami ulanmagan va h.k.). So'rov besh
   daqiqadan ortiq navbatda qolsa, karta «falon vaqtdan beri navbatda — bot hozir yubora olmayapti» deydi
@@ -40,7 +56,8 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
   «Tarix» bilan bir xil. (Xitoy skladidagi prixodda ilgari 3 soat oldinga ketib ko'rinar edi.)
 - **Kartada ko'rinishi.** Mijoz «❌» degan lotda qizil satr turadi, ostidagi eski ✅ lar kulrang «tarix» bo'lib
   qoladi — bahsli lotda yashil belgi ko'rinmaydi.
-- **Qachon tugma chiqmaydi:** yuk Xitoydan chiqib ketgan bo'lsa (hujjatlar tayyor bo'lgan — endi so'ralmaydi);
+- **Qachon tugma chiqmaydi:** yukning hammasi O'zbekistonga tushirilgan bo'lsa (hujjatlar tayyor bo'lgan — endi
+  so'ralmaydi; Xitoydan chiqqan, lekin hali yo'ldagi mashinada turgan yuk haqida so'raladi);
   lotga tarkib yozilgan bo'lsa (xabarda «Sichqoncha +1» deb chiqadi, ro'yxatni ko'rsata olmaydi — buning uchun
   «Mijozdan so'rash»); lot allaqachon ✅ bo'lsa; prixodda 12 tadan ko'p lot bo'lsa.
 - **Og'irlik va hajm javobga kirmaydi.** Mijoz faqat tovar nomi va quti sonini tasdiqlaydi — savolning o'zida
@@ -72,15 +89,17 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
 - Serverda `ANTHROPIC_API_KEY` bo'lishi kerak; bo'lmasa tugma «sozlanmagan» deydi.
 
 ### 3. Bojxonadagi 🤖 — hisob va kunlik limit
-- Har bir 🤖 bosilishi endi yozib boriladi: kim, qaysi lot, qaysi mashina, qancha sarflandi.
+- Har bir 🤖 so'rovi endi yozib boriladi: kim, qaysi lot, qaysi mashina, qancha sarflandi. **Har bir so'rov
+  bitta sanaladi:** «AI taklifi — bo'sh turganlarga (N)» tugmasi bir bosishda N tagacha sarflaydi (har bir
+  tovar uchun bittadan).
 - **Kunlik limit**: `tnved_ai_daily_limit` (300 marta, butun kompaniya bo'yicha). Limit tugasa tugma «bugungi
   limit tugadi» deydi. **0 — o'chirilgan** degani.
 - «Bojxona» bo'limida 🤖 yonida «Bugun AI: N / 300 marta» satri turadi. Taxminiy dollar (bugun va 30 kun)
   faqat kompaniya pulini ko'radiganlarga chiqadi — VED va logist faqat sonini ko'radi.
 - Xuddi shu hisob **Boshqaruv → Sozlamalar** da ikkala limit qutisi ostida ham turadi — limitni
   o'zgartiradigan odam xarajatni shu yerda ko'radi.
-- Limit qutisiga endi faqat butun son yoziladi: bo'sh qoldirish yoki «1 000» yozish rad etiladi (ilgari bo'sh
-  quti 0 ga aylanib, tugmani butun kompaniya uchun o'chirib qo'yishi mumkin edi).
+- Limit qutisiga faqat butun son yoziladi: bo'sh qoldirish yoki «1 000» yozish rad etiladi — bo'sh quti 0 deb
+  saqlanib, tugmani butun kompaniya uchun o'chirib qo'ymasligi uchun.
 - Javobsiz qolgan uzoq so'rov (bizning kutish vaqtimiz tugagan) ham limitga sanaladi — aks holda bitta og'ir
   tovar uchun cheksiz bosish mumkin edi.
 - Narx tiyinning ulushigacha saqlanadi: bitta kichik chaqiriq (yarim sentdan arzon) endi «$0» bo'lib
@@ -96,7 +115,8 @@ Boshqaruv → Sozlamalar → `client_confirm_on_receipt` → «Yo'q».
 1. «Yukingiz qabul qilindi» xabarida ✅/❌ tugmalari: ⭐ a) har bir mos prixodda o'zi chiqsin · b) o'chiq tursin,
    faqat xodim «Mijozdan so'rash» ni bosganda so'ralsin.
 2. Mijozning «❌»i: ⭐ a) xodim qo'ygan ✅ dan ustun (lot ❓ ga qaytadi) · b) faqat xabar kelsin, ✅ o'zgarmasin.
-3. Mijoz «❌» bosganda kimga xabar borsin: ⭐ a) mijozning sotuvchisi + logistlar · b) faqat sotuvchi · c) VED ham.
+3. Mijoz «❌» bosganda kimga xabar borsin: ⭐ a) mijozning sotuvchisi + logistlar + adminlar (siz ham) ·
+   b) faqat sotuvchi (sotuvchisi yo'q mijozda — logistlar) · c) VED ham.
 4. Mijoz tasdig'iga og'irlik/hajm ham kirsinmi: ⭐ a) yo'q, faqat nom va quti soni · b) ha (unda qayta
    tortilganda ✅ «o'zgardi» bo'ladi).
 5. Bir necha lotli prixodda «❌» bosilsa: ⭐ a) hamma lotga yozilsin · b) «qaysi lot?» deb yana so'rasin.

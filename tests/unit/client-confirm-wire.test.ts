@@ -116,6 +116,56 @@ describe('every customer button is answered', () => {
   });
 });
 
+describe('what the question lists is what it asks about (L5-7)', () => {
+  const base: ClientAskFacts = {
+    receiptId: RECEIPT,
+    receiptNumber: 'YW-0001',
+    clientId: 'c-1',
+    clientCode: 'GS777',
+    warehouseName: 'Yiwu',
+    receivedAt: null,
+    lots: [],
+    tag: 'a1b2c3d4',
+  };
+  const plain = { lotId: 'l-1', letter: 'A', zh: '键盘', ru: 'Клавиатура', count: 3, goodsKey: null, goods: [] };
+  const withGoods = { lotId: 'l-2', letter: 'B', zh: '杂货', ru: 'Мышь +1', count: 2, goodsKey: 'k', goods: [{ name: 'Мышь', pieces: 500 }, { name: 'Коврик', pieces: null }] };
+
+  it('a plain lot: «name and box count»', () => {
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      const text = htmlToPlain(askText({ ...base, lots: [plain] }, locale));
+      expect(text, locale).toContain(clientLabels(locale).confirmAskLine);
+      expect(text, locale).not.toContain(clientLabels(locale).confirmAskLineGoods);
+    }
+  });
+
+  it('a tarkib’s goods are listed WITH their pieces — and the answer is compared with names AND pieces — so the question asks about the pieces too', () => {
+    for (const locale of ['uz', 'ru', 'en'] as const) {
+      const text = htmlToPlain(askText({ ...base, lots: [plain, withGoods] }, locale));
+      expect(text, locale).toContain(clientLabels(locale).confirmAskLineGoods);
+      expect(text, locale).not.toContain(clientLabels(locale).confirmAskLine);
+      expect(text, locale).toContain('500');
+    }
+    expect(clientLabels('uz').confirmAskLineGoods).toContain('donasi');
+  });
+});
+
+describe('«the server is behind» is ONE sentence — it tells the admin, never «wait a little» (L5-6)', () => {
+  it('the tarkib’s own refusal says what the lot check’s does, in four languages', () => {
+    // «Server yangilanmoqda — birozdan keyin» sent the VED to wait for an update that is not running:
+    // the refusal means a migration did not land, and that ends only when somebody runs it.
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as {
+        tarkib: { errors: Record<string, string> };
+        lotCheck: { errors: Record<string, string> };
+      };
+      expect(bundle.tarkib.errors.server_behind, locale).toBe(bundle.lotCheck.errors.server_behind);
+    }
+    const uz = JSON.parse(readFileSync('messages/uz.json', 'utf8')) as { tarkib: { errors: Record<string, string> } };
+    expect(uz.tarkib.errors.server_behind).toContain('yangilanmagan');
+    expect(uz.tarkib.errors.server_behind).toContain('administrator');
+  });
+});
+
 describe('the card’s clock, its mounted block, and words that follow their constant (lens 3)', () => {
   const page = read('src/app/(protected)/receipts/[id]/page.tsx');
   const askPanel = read('src/app/(protected)/receipts/[id]/client-ask-panel.tsx');
@@ -362,7 +412,8 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
       `   • Мышь <USB> — ${groupDigits(1500)} ${t.unitDona}`,
       '   • Коврик',
     ]);
-    expect(lines).toContain(t.confirmAskLine);
+    // Goods are listed with their pieces, so the question asks about the pieces too (L5-7).
+    expect(lines).toContain(t.confirmAskLineGoods);
     expect(lines.at(-1)).toContain('YW-000123');
     expect(text).not.toMatch(/\bkg\b|\bкг\b|m³|м³/);
   });
@@ -379,7 +430,12 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
       expect(text).toContain(t.confirmAskLine);
     }
     expect(clientLabels('uz').confirmAskLine).toMatch(/nomi.*quti soni/);
-    expect(clientLabels('ru').confirmAskLine).toMatch(/[Нн]аименование.*количество мест/);
+    // The question counts in the SAME word as the lines above it («коробок», `boxMany`) — never «мест»
+    // — and every language names the NAME (L5-7).
+    expect(clientLabels('ru').confirmAskLine).toMatch(/[Нн]азвание товара.*количество коробок/);
+    expect(clientLabels('ru').confirmAskLine).not.toContain('мест');
+    expect(clientLabels('ru').confirmThanks).not.toContain('мест');
+    expect(clientLabels('en').confirmAskLine).toMatch(/names/);
     expect(clientLabels('en').confirmAskLine).toMatch(/goods.*box count/);
     // The ✅'s thanks repeat the subject — weight is not part of the answer.
     expect(clientLabels('uz').confirmThanks).toMatch(/nomi.*quti soni/);
