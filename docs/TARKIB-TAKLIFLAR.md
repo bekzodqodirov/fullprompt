@@ -4,7 +4,7 @@ His answer to the tarkib round's report (ten ⭐ questions, three suggestions), 
 
 > «Hammasi yulduzcha javob va taklifingni qoshamiz»
 
-The first half is recorded in `docs/TARKIB-TUZATISH.md` §7 and DECISIONS #1651 (every ⭐ stands; two were
+The first half is recorded in `docs/TARKIB-TUZATISH.md` §7 and DECISIONS #1663 (every ⭐ stands; two were
 pinned only now). This document is the second half — the three suggestions as they were sent to him:
 
 1. «Tarkibni mijozning packing-list fayli yoki rasmidan AI o'qib to'ldirsin — 10–20 qatorni qo'lda yozmaslik
@@ -16,9 +16,10 @@ pinned only now). This document is the second half — the three suggestions as 
 
 LEAD'S READING, stated to him at the top of the report: «taklifingni» = all three.
 
-Numbering: DECISIONS from **#1652** (re-read main's tail before writing each). Migration **0144**
-`tarkib_takliflar`, `when` 1785190000123 — ledger must reach **145**. Re-fetch main before minting: the other
-session's open PR #141 («Fayl o'qish») carries no migration but rewrites the file readers (§3.0).
+Numbering: DECISIONS from **#1664** — minted as #1652 and moved by twelve when the other session's «Fayl
+o'qish» (PR #141) merged first and took #1630-#1641 (the THIRTY-FIFTH collision; the pin of his ten ⭐ is #1663).
+Migration **0144** `tarkib_takliflar`, `when` 1785190000123 — ledger must reach **145**. PR #141 carried no
+migration and rewrote the file readers — which is why T1 reads through none of them (§7.4).
 
 **§7 is BINDING — «as judged and as built». It overrides §1-§6 wherever they differ**; those sections are the
 design as it stood BEFORE the judge and are kept for the reasoning, not for the rules. §8 is the deploy, §9 the
