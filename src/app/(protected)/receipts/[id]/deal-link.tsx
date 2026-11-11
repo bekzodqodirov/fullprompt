@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { dealOptionLabel } from '@/modules/wms/deals/cargo-label';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -53,12 +53,15 @@ export function DealLink({
   const [pending, startTransition] = useTransition();
   // Arrived from the new-deal form (`?bitim=1`): a server action's redirect
   // cannot carry `#bitim`, so the block brings itself into view and wears
-  // the same ring the anchor gives it.
-  const [arrived, setArrived] = useState(false);
+  // the same ring the anchor gives it. Done on the element, not through
+  // state: it is the page's scroll being synchronised, not something to render.
+  const block = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('bitim') !== '1') return;
-    setArrived(true);
-    document.getElementById('bitim')?.scrollIntoView({ block: 'start' });
+    const el = block.current;
+    if (!el) return;
+    el.classList.add('ring-2', 'ring-brand-500');
+    el.scrollIntoView({ block: 'start' });
   }, []);
 
   return (
@@ -67,9 +70,10 @@ export function DealLink({
     // long page; the scroll margin clears the sticky app bar and the ring
     // says which block was meant.
     <div
+      ref={block}
       id="bitim"
       data-testid="receipt-deal-block"
-      className={`card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500 ${arrived ? 'ring-2 ring-brand-500' : ''}`}
+      className="card scroll-mt-20 space-y-2 !p-3 target:ring-2 target:ring-brand-500"
     >
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-semibold">{t('deal')}: </span>
