@@ -53,6 +53,16 @@ ALTER TABLE "ai_calc_passes" ADD COLUMN "outcome" text;
 ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_outcome_check"
   CHECK ("outcome" IS NULL OR "outcome" IN ('reserved', 'ok', 'failed', 'no_answer'));
 --> statement-breakpoint
+-- What an answered call cost at list price, FROZEN on the row when the press
+-- is settled. A price computed at read time from a map keyed by today's
+-- model would re-price last month's rows the day the model changes — or lose
+-- their price altogether. NULL = no price known for that model (said on the
+-- screen as a count), or a press that got no answer.
+ALTER TABLE "ai_calc_passes" ADD COLUMN "cost_usd" numeric(12,6);
+--> statement-breakpoint
+ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_cost_check"
+  CHECK ("cost_usd" IS NULL OR "cost_usd" >= 0);
+--> statement-breakpoint
 ALTER TABLE "ai_calc_passes" DROP CONSTRAINT IF EXISTS "ai_calc_passes_kind_check";
 --> statement-breakpoint
 ALTER TABLE "ai_calc_passes" ADD CONSTRAINT "ai_calc_passes_kind_check"

@@ -175,11 +175,16 @@ describe('the day’s limit is a ceiling, not a hope', () => {
     // A server one migration behind: the columns this module names are not there.
     const behind = vi.spyOn(db, 'transaction').mockRejectedValueOnce(Object.assign(new Error('column "lot_id" does not exist'), { code: '42703' }));
     expect(await reservePress({ kind: 'tnved', staffId, lotId: LOT.a, batchId: null })).toEqual({ ok: false, error: 'server_behind' });
+    // A CHECK refusing the row is NOT «behind»: this writer names 0144's own
+    // columns, so an older schema fails on the column first — a 23514 here is
+    // a fault of ours (or a later migration that narrowed the kind list), and
+    // «server yangilanmoqda» would send the VED to wait for a deploy that is
+    // not coming.
     behind.mockRejectedValueOnce(
-      Object.assign(new Error('violates check constraint'), { code: '23514', constraint_name: 'ai_calc_passes_anchor_check' }),
+      Object.assign(new Error('violates check constraint'), { code: '23514', constraint_name: 'ai_calc_passes_kind_check' }),
     );
-    expect(await reservePress({ kind: 'tnved', staffId, lotId: LOT.a, batchId: null })).toEqual({ ok: false, error: 'server_behind' });
-    // Any other fault is not «behind» — and still spends nothing.
+    expect(await reservePress({ kind: 'tnved', staffId, lotId: LOT.a, batchId: null })).toEqual({ ok: false, error: 'failed' });
+    // Any other fault is not «behind» either — and still spends nothing.
     behind.mockRejectedValueOnce(new Error('connection reset'));
     expect(await reservePress({ kind: 'tnved', staffId, lotId: LOT.a, batchId: null })).toEqual({ ok: false, error: 'failed' });
     behind.mockRestore();
@@ -218,20 +223,36 @@ describe('what a day cost — shown only to a reader of the company’s money', 
     const after = await pressToday('tnved', sight);
     expect(Math.round((after.usd! - start.usd!) * 100)).toBe(1100);
     expect(Math.round((after.usd30! - start.usd30!) * 100)).toBe(1100);
-    // The 36-hour-old row of the test above is in the thirty days and not in today.
-    expect(after.usd30! - after.usd!).toBeGreaterThanOrEqual(5);
+    // The dollars are FROZEN on the row at settle — what the screen sums is the
+    // column, so a later change of model or price list re-prices nothing.
+    const frozen = (await db.execute(sql`
+      SELECT cost_usd::text AS cost FROM ai_calc_passes WHERE id IN (${one.id}::uuid, ${two.id}::uuid) ORDER BY cost_usd DESC
+    `)) as unknown as { cost: string }[];
+    expect(frozen.map((row) => row.cost)).toEqual(['10.000000', '1.000000']);
+    await db.execute(sql`UPDATE ai_calc_passes SET cost_usd = 3 WHERE id = ${one.id}::uuid`);
+    expect(Math.round(((await pressToday('tnved', sight)).usd! - start.usd!) * 100)).toBe(400);
+    await db.execute(sql`UPDATE ai_calc_passes SET cost_usd = 10 WHERE id = ${one.id}::uuid`);
   });
 
-  it('a model nobody has priced prints no dollars — never a guess', async () => {
+  it('a model nobody has priced is COUNTED as unpriced — never summed as $0, never a guess', async () => {
     const sight = companyMoneySight(reader as never);
-    await setLimit('tnved', (await used('tnved')) + 1);
+    const before = await pressToday('tnved', sight);
+    await setLimit('tnved', (await used('tnved')) + 2);
     const pass = await reservePress({ kind: 'tnved', staffId, lotId: LOT.money, batchId: null });
     if (!pass.ok) throw new Error('reservation refused');
     await settlePress(pass.id, { outcome: 'ok', usage: { model: 'a-model-with-no-price', inputTokens: 10, outputTokens: 10 } });
     const today = await pressToday('tnved', sight);
-    expect(today.usd).toBeNull();
-    expect(today.usd30).toBeNull();
-    expect(today.used).toBeGreaterThan(0);
+    expect(today.unpriced! - before.unpriced!).toBe(1);
+    expect(today.usd).toBe(before.usd);
+    expect(today.usd30).toBe(before.usd30);
+    expect(today.used - before.used).toBe(1);
+    // A press that got no answer at all has no price to be missing: not «unpriced».
+    const silent = await reservePress({ kind: 'tnved', staffId, lotId: LOT.money, batchId: null });
+    if (!silent.ok) throw new Error('reservation refused');
+    await settlePress(silent.id, { outcome: 'no_answer' });
+    expect((await pressToday('tnved', sight)).unpriced).toBe(today.unpriced);
+    // …and nobody without the sight learns even the count of them.
+    expect((await pressToday('tnved', companyMoneySight(ved as never))).unpriced).toBeNull();
   });
 });
 

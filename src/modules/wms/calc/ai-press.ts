@@ -1,6 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
-import { isServerBehind, violatedCheck } from '../../platform/db/errors';
+import { isServerBehind } from '../../platform/db/errors';
 import { ANALYST_MODEL, approxMicroUsd, microUsdToUsd, type ModelTokens } from '../../platform/ai/model';
 import { getSetting } from '../../platform/settings/service';
 import { logger } from '../../platform/logger';
@@ -28,16 +28,28 @@ import type { CompanyMoneySight } from '../finance/scope';
  * a limit of three.
  *
  * What counts against the day: a row that is `reserved`, `ok` or `failed`.
- * `failed` = the model ANSWERED and the answer was no good — it was paid
- * for. `no_answer` = no usage came back (a timeout, the network, a refused
- * key): recorded, never counted — a dead key must not spend the day. A row
+ * `failed` = the provider WORKED on the call and the answer was no good — a
+ * refusal, a cut-off, an unreadable one, or a TIMEOUT of ours after the
+ * request was sent (the dearest failure there is: a minute of generation
+ * abandoned; uncounted, the same file could be pressed again and again
+ * outside the cap this module exists to set). `no_answer` = nothing can have
+ * been generated — a refused key, a rate limit, a connection that never
+ * opened: recorded, never counted — a dead key must not spend the day. A row
  * left `reserved` by a killed process stays counted: a crash still spent
  * its slot.
  *
- * The three columns this module names (`lot_id`, `batch_id`, `outcome`) are
- * SQL-only — not on the drizzle table, see `schema/wms.ts` — so everything
- * here is raw SQL, and a server one migration behind answers `server_behind`
- * (no count, no spend) instead of a white page.
+ * The four columns this module names (`lot_id`, `batch_id`, `outcome`,
+ * `cost_usd`) are SQL-only — not on the drizzle table, see `schema/wms.ts` —
+ * so everything here is raw SQL, and a server one migration behind answers
+ * `server_behind` (no count, no spend) instead of a white page.
+ *
+ * THE DOLLARS ARE FROZEN ON THE ROW at settle (`cost_usd`), from the list
+ * price of the model the call was MADE with. Computed at read time from a
+ * map keyed by today's constants, a model change would re-price every old
+ * row at the new model's price — or, the old id gone from the map, show
+ * «30 kun ≈» as nothing for a month (the design judge). A row whose model has
+ * no known price keeps NULL and is COUNTED on the screen («N ta chaqiruv
+ * narxi noma'lum»), never summed as zero.
  */
 
 export type PressKind = 'tnved' | 'tarkib';
@@ -46,9 +58,6 @@ const LIMIT_SETTING = {
   tnved: 'tnved_ai_daily_limit',
   tarkib: 'tarkib_ai_daily_limit',
 } as const satisfies Record<PressKind, string>;
-
-/** The CHECKs 0144 re-made: a 23514 naming one of them is «the migration has not landed». */
-const WIDENED_CHECKS = new Set(['ai_calc_passes_kind_check', 'ai_calc_passes_anchor_check', 'ai_calc_passes_outcome_check']);
 
 /**
  * A typed limit as the number the cap uses: whole and not negative, or 0.
@@ -108,7 +117,12 @@ export async function reservePress(input: {
     });
     return id ? { ok: true, id } : { ok: false, error: 'ai_limit' };
   } catch (err) {
-    if (isServerBehind(err) || WIDENED_CHECKS.has(violatedCheck(err) ?? '')) return { ok: false, error: 'server_behind' };
+    // «Behind» is the missing column or table (42703 / 42P01) and nothing
+    // else: this INSERT names 0144's columns, so on an older schema it fails
+    // there before any CHECK is evaluated (tried against a pre-0144 copy). A
+    // 23514 is a fault of our own — or a later migration that re-made the
+    // kind CHECK without these kinds, which `ai-press.test.ts` fences.
+    if (isServerBehind(err)) return { ok: false, error: 'server_behind' };
     logger.error({ err, kind: input.kind }, '[ai-press] reservation failed');
     return { ok: false, error: 'failed' };
   }
@@ -123,12 +137,16 @@ export type PressOutcome = 'ok' | 'failed' | 'no_answer';
  */
 export async function settlePress(id: string, result: { outcome: PressOutcome; usage?: ModelTokens | null }): Promise<void> {
   try {
+    // Priced NOW, by the model the call was made with; null = no list price
+    // known for it, and the row then says so by being NULL.
+    const micro = result.usage ? approxMicroUsd([result.usage]) : null;
     await db.execute(sql`
       UPDATE ai_calc_passes
          SET outcome = ${result.outcome},
              model = ${result.usage?.model ?? ANALYST_MODEL},
              input_tokens = ${Math.max(0, Math.round(result.usage?.inputTokens ?? 0))},
-             output_tokens = ${Math.max(0, Math.round(result.usage?.outputTokens ?? 0))}
+             output_tokens = ${Math.max(0, Math.round(result.usage?.outputTokens ?? 0))},
+             cost_usd = ${micro === null ? null : microUsdToUsd(micro).toFixed(6)}::numeric
        WHERE id = ${id}::uuid AND outcome = 'reserved'
     `);
   } catch (err) {
@@ -144,6 +162,8 @@ export interface PressToday {
   /** ≈ dollars today and over the last 30 days — only for a reader of the company's money. */
   usd: number | null;
   usd30: number | null;
+  /** Answered calls of the last 30 days whose model had no known price — said, never summed as $0. */
+  unpriced: number | null;
 }
 
 /**
@@ -161,23 +181,15 @@ export async function pressToday(kind: PressKind, sight: CompanyMoneySight | nul
     SELECT count(*)::int AS used FROM ai_calc_passes WHERE ${pressCountedSql(kind)}
   `)) as unknown as { used: number }[];
   const used = Number(counted?.used ?? 0);
-  if (!sight) return { used, limit, usd: null, usd30: null };
-  const rows = (await db.execute(sql`
-    SELECT model,
-           (created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent') AS today,
-           sum(input_tokens)::bigint AS input_tokens,
-           sum(output_tokens)::bigint AS output_tokens
+  if (!sight) return { used, limit, usd: null, usd30: null, unpriced: null };
+  // The rows' own frozen dollars — never re-priced here.
+  const [money] = (await db.execute(sql`
+    SELECT coalesce(sum(cost_usd) FILTER (
+             WHERE created_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Tashkent') AT TIME ZONE 'Asia/Tashkent'), 0)::float8 AS usd,
+           coalesce(sum(cost_usd), 0)::float8 AS usd30,
+           count(*) FILTER (WHERE cost_usd IS NULL AND outcome IN ('ok', 'failed') AND input_tokens + output_tokens > 0)::int AS unpriced
       FROM ai_calc_passes
      WHERE kind = ${kind} AND created_at >= now() - interval '30 days'
-     GROUP BY 1, 2
-  `)) as unknown as { model: string; today: boolean; input_tokens: string; output_tokens: string }[];
-  const tokens = (only: boolean): ModelTokens[] =>
-    rows
-      .filter((row) => !only || row.today)
-      .map((row) => ({ model: row.model, inputTokens: Number(row.input_tokens), outputTokens: Number(row.output_tokens) }));
-  const dollars = (only: boolean): number | null => {
-    const micro = approxMicroUsd(tokens(only));
-    return micro === null ? null : microUsdToUsd(micro);
-  };
-  return { used, limit, usd: dollars(true), usd30: dollars(false) };
+  `)) as unknown as { usd: number; usd30: number; unpriced: number }[];
+  return { used, limit, usd: Number(money?.usd ?? 0), usd30: Number(money?.usd30 ?? 0), unpriced: Number(money?.unpriced ?? 0) };
 }

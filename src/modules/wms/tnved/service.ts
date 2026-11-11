@@ -106,6 +106,12 @@ export class TnvedError extends Error {
      * amount, and is not counted against the day's cap.
      */
     public usage?: AiUsage,
+    /**
+     * OUR deadline ran out after the request was sent (0144): the provider
+     * had been working, so the press counts against the day although no
+     * usage came back — unlike a refused key or a dead network.
+     */
+    public timedOut = false,
   ) {
     super(code);
   }
@@ -334,7 +340,10 @@ export async function suggestTnved(input: {
       messages: [{ role: 'user', content }],
     });
     const spent = { in: response.usage?.input_tokens ?? 0, out: response.usage?.output_tokens ?? 0 };
-    usage = { model: response.model ?? ANALYST_MODEL, inputTokens: spent.in, outputTokens: spent.out };
+    // Billed as the model the call was MADE with — the constant, never the
+    // id the provider echoes: the price map is keyed by the constants, and
+    // an echo that spelled the same model another way would bill at nothing.
+    usage = { model: ANALYST_MODEL, inputTokens: spent.in, outputTokens: spent.out };
     // What one press costs, in the log as well as in the ledger: a line per
     // press is what a person greps when a day's count looks wrong.
     logger.info({ ...spent, stop: response.stop_reason, photo: Boolean(input.photo) }, '[tnved] suggestion');
@@ -359,8 +368,9 @@ export async function suggestTnved(input: {
     // one sentence on the screen and no line in the log. `usage` is set only
     // when the model answered (an unreadable answer was still paid for); a
     // timeout or a refused key carries none and is not counted against the day.
-    logger.warn({ err: err instanceof Error ? err.message : String(err) }, '[tnved] suggestion failed');
-    throw new TnvedError('ai_failed', usage);
+    const timedOut = err instanceof Anthropic.APIConnectionTimeoutError;
+    logger.warn({ err: err instanceof Error ? err.message : String(err), timedOut }, '[tnved] suggestion failed');
+    throw new TnvedError('ai_failed', usage, timedOut);
   }
 }
 

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ANALYST_MODEL, MODEL_USD_PER_MTOK, STAFF_MODEL, approxMicroUsd, microUsdToUsd } from '@/modules/platform/ai/model';
 import { limitOf } from '@/modules/wms/calc/ai-press';
@@ -86,8 +86,85 @@ describe('the ledger’s shape', () => {
   it('the dollars are computed only behind the sight', () => {
     const today = press.slice(press.indexOf('export async function pressToday('));
     expect(today).toMatch(/pressToday\(kind: PressKind, sight: CompanyMoneySight \| null\)/);
-    expect(today.indexOf('if (!sight) return { used, limit, usd: null, usd30: null };')).toBeGreaterThan(0);
-    expect(today.indexOf('approxMicroUsd(')).toBeGreaterThan(today.indexOf('if (!sight) return'));
+    expect(today.indexOf('if (!sight) return { used, limit, usd: null, usd30: null, unpriced: null };')).toBeGreaterThan(0);
+    expect(today.indexOf('sum(cost_usd)')).toBeGreaterThan(today.indexOf('if (!sight) return'));
+  });
+
+  it('the dollars are frozen at SETTLE and only summed at read — a model change must not re-price last month', () => {
+    const settle = press.slice(press.indexOf('export async function settlePress('), press.indexOf('export interface PressToday'));
+    expect(settle).toContain('approxMicroUsd([result.usage])');
+    expect(settle).toContain('cost_usd = ${');
+    const today = press.slice(press.indexOf('export async function pressToday('));
+    expect(today).not.toContain('approxMicroUsd(');
+    expect(today).not.toContain('MODEL_USD_PER_MTOK');
+  });
+
+  it('«behind» is a missing column or table and nothing else — a CHECK that refuses the row is our own fault', () => {
+    const reserve = press.slice(press.indexOf('export async function reservePress('), press.indexOf('export type PressOutcome'));
+    expect(reserve).toContain("if (isServerBehind(err)) return { ok: false, error: 'server_behind' };");
+    expect(press).not.toContain('violatedCheck');
+  });
+});
+
+describe('a call our own deadline abandoned is told apart from one that never ran', () => {
+  const service = strip(readFileSync('src/modules/wms/tnved/service.ts', 'utf8'));
+  const actions = strip(readFileSync('src/app/(protected)/batches/[id]/tnved/actions.ts', 'utf8'));
+
+  it('the reader names the SDK’s typed timeout and carries it on its own error', () => {
+    expect(service).toContain('const timedOut = err instanceof Anthropic.APIConnectionTimeoutError;');
+    expect(service).toContain("throw new TnvedError('ai_failed', usage, timedOut);");
+  });
+
+  it('both actions count it: «failed», not «no_answer»', () => {
+    expect(actions.match(/outcome = err\.usage \|\| err\.timedOut \? 'failed' : 'no_answer';/g)).toHaveLength(2);
+    expect(actions).not.toMatch(/outcome = err\.usage \? 'failed' : 'no_answer'/);
+  });
+
+  it('the bill names the model the call was MADE with — the constant, never the provider’s echo', () => {
+    expect(service).toContain('usage = { model: ANALYST_MODEL, inputTokens: spent.in, outputTokens: spent.out };');
+    expect(service).not.toContain('response.model ?? ANALYST_MODEL');
+  });
+});
+
+/**
+ * The other session's next migration re-makes these two CHECKs for its own
+ * kinds (docs/SAKKIZ-R5.md §12). Written from its handoff as it stands, that
+ * file would re-make them WITHOUT the pressed kinds — passing on a fresh CI
+ * database and turning every press into a refused INSERT on production. A
+ * sentence in a handoff is not a fence; this is: whichever migration re-makes
+ * a CHECK last must carry every kind the ledger's writers use.
+ */
+describe('the LAST migration that re-makes the ledger’s CHECKs still knows every pressed kind', () => {
+  const dir = 'src/modules/platform/db/migrations';
+  const files = readdirSync(dir)
+    .filter((name) => /^\d{4}_.*\.sql$/.test(name))
+    .sort();
+  const lastWith = (constraint: string) => {
+    const hit = [...files].reverse().find((name) => new RegExp(`ADD CONSTRAINT "${constraint}"`).test(readFileSync(`${dir}/${name}`, 'utf8')));
+    expect(hit, constraint).toBeDefined();
+    const text = readFileSync(`${dir}/${hit!}`, 'utf8');
+    const at = text.lastIndexOf(`ADD CONSTRAINT "${constraint}"`);
+    return { file: hit!, body: text.slice(at, text.indexOf('--> statement-breakpoint', at) === -1 ? undefined : text.indexOf('--> statement-breakpoint', at)) };
+  };
+  const module = strip(readFileSync('src/modules/wms/calc/ai-press.ts', 'utf8'));
+  const kinds = [...module.matchAll(/^\s+(\w+): '(\w+_ai_daily_limit)',$/gm)].map((m) => m[1]!);
+
+  it('finds the pressed kinds in the module itself', () => {
+    expect(kinds.sort()).toEqual(['tarkib', 'tnved']);
+  });
+
+  it('the kind list', () => {
+    const { file, body } = lastWith('ai_calc_passes_kind_check');
+    for (const kind of kinds) expect(body, `${file} re-makes the kind CHECK without '${kind}'`).toContain(`'${kind}'`);
+    // …and the kinds that were there before it, so it never narrows either.
+    for (const kind of ['intake', 'grouping', 'pick', 'invoice', 'similar']) expect(body, `${file} · ${kind}`).toContain(`'${kind}'`);
+  });
+
+  it('the anchor: a pressed kind stands on a LOT', () => {
+    const { file, body } = lastWith('ai_calc_passes_anchor_check');
+    for (const kind of kinds) {
+      expect(body, `${file} re-makes the anchor CHECK without a '${kind}' arm`).toMatch(new RegExp(`WHEN '${kind}' THEN "lot_id" IS NOT NULL`));
+    }
   });
 });
 
@@ -107,7 +184,7 @@ describe('0144’s columns on old tables are SQL-only', () => {
 
   it('`ai_calc_passes` declares none of lot_id / batch_id / outcome (recordAiPass inserts through it and swallows its failure)', () => {
     const body = tableBody(schema, 'ai_calc_passes');
-    expect(body).not.toMatch(/uuid\('lot_id'\)|uuid\('batch_id'\)|text\('outcome'\)/);
+    expect(body).not.toMatch(/uuid\('lot_id'\)|uuid\('batch_id'\)|text\('outcome'\)|numeric\('cost_usd'/);
     expect(body).toContain("requestId: uuid('request_id')");
   });
 

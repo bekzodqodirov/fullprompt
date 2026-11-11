@@ -34,6 +34,8 @@ const model = vi.hoisted(() => ({
   failUsage: null as null | { model: string; inputTokens: number; outputTokens: number },
   /** What a good answer cost (0144: the press is billed). */
   usage: null as null | { model: string; inputTokens: number; outputTokens: number },
+  /** The failure was OUR deadline running out after the request was sent. */
+  timedOut: false,
   key: true,
 }));
 
@@ -70,7 +72,7 @@ vi.mock('@/modules/wms/tnved/service', async (original) => {
         photo: Boolean(input.photo),
         context: [...(input.context ?? [])],
       });
-      if (model.fail) throw new real.TnvedError(model.fail as 'ai_failed', model.failUsage ?? undefined);
+      if (model.fail) throw new real.TnvedError(model.fail as 'ai_failed', model.failUsage ?? undefined, model.timedOut);
       return {
         tnved_code: '8471607000',
         name_ru: 'Мышь',
@@ -405,7 +407,7 @@ describe('the 🤖 on a tarkib line — counted before, billed after', () => {
     expect(await countedToday()).toBe(before + 1);
   });
 
-  it('no answer at all — a timeout, a dead key — is written down and NOT counted against the day', async () => {
+  it('no answer at all — a dead key, a dead network — is written down and NOT counted against the day', async () => {
     override.actor = ved();
     const before = await countedToday();
     model.fail = 'ai_failed';
@@ -413,6 +415,24 @@ describe('the 🤖 on a tarkib line — counted before, billed after', () => {
     model.fail = null;
     expect((await billed('M')).map((row) => row.outcome)).toEqual(['failed', 'no_answer']);
     expect(await countedToday()).toBe(before);
+  });
+
+  it('…but OUR deadline running out after the request was sent IS counted: the provider had been working, and an uncounted timeout can be pressed for ever', async () => {
+    override.actor = ved();
+    const before = await countedToday();
+    model.fail = 'ai_failed';
+    model.timedOut = true;
+    try {
+      expect(await press('M', lineId.M2)).toMatchObject({ ok: false, error: 'ai_failed' });
+    } finally {
+      model.fail = null;
+      model.timedOut = false;
+    }
+    const rows = await billed('M');
+    expect(rows.map((row) => row.outcome)).toEqual(['failed', 'no_answer', 'failed']);
+    // No usage came back: the row carries no tokens — and still spends one of the day's.
+    expect([Number(rows.at(-1)!.input_tokens), Number(rows.at(-1)!.output_tokens)]).toEqual([0, 0]);
+    expect(await countedToday()).toBe(before + 1);
   });
 
   it('a door that refuses writes no bill line', async () => {

@@ -753,7 +753,7 @@
       "price_history_min_sim": "«Oldingi narx» o‘tgan prixod mashinasini ko‘rsatishi uchun tovar nomi o‘xshashligi darajasi (0..1)",
       "price_history_ai_daily_limit": "«Oldingi narx» 🤖 tugmasi kuniga necha marta AI so'rashi mumkin (hisoblash limitidan alohida)",
       "tnved_ai_daily_limit": "Bojxona bo‘limidagi 🤖 tugmasi kuniga necha marta AI so‘rashi mumkin — butun kompaniya bo‘yicha (0 — o‘chirilgan)",
-      "tarkib_ai_daily_limit": "«📄 Fayldan to‘ldirish» kuniga necha marta AI ga PDF yoki rasm o‘qitishi mumkin (Excel AIsiz o‘qiladi va sanalmaydi; 0 — AI o‘qishi o‘chirilgan)",
+      "tarkib_ai_daily_limit": "«🤖 Fayldan to‘ldirish» kuniga necha marta AI ga hujjat o‘qitishi mumkin — butun kompaniya bo‘yicha; PDF, rasm va Excel — har bir o‘qish bitta sanaladi (0 — o‘chirilgan)",
       "client_confirm_on_receipt": "Mijozga boradigan «yukingiz qabul qilindi» xabarida ✅ / ❌ tugmalari chiqsinmi (o‘chirilsa, xabar avvalgidek boradi; kartadagi «Mijozdan so‘rash» ishlayveradi)",
       "freight_tariff_cost_type_codes": "Mashina xarajatida «yo‘lkira tarifi bo‘yicha» o‘zi tanlanadigan xarajat turlari (kodlar ro‘yxati)",
       "staff_rating_goal_m3": "Jamoa guruhi uchun jamoaning haftalik maqsadi, kubda, faqat sborniy (LTL) yuk (0 — maqsad yo‘q). «Jamoa guruhi» sahifasida o‘zgartirish qulayroq."
@@ -761,7 +761,12 @@
     "driverApp": "Haydovchi ilovasi",
     "callsApp": "Qo'ng'iroq ilovasi",
     "badValue": "Qiymat noto‘g‘ri — sana (YYYY-MM-DD) yoki vaqt (YYYY-MM-DDTHH:MM+05:00) yozing; bo‘sh = o‘chiq. Hech narsa saqlanmadi.",
-    "badValueReasons": "Qiymat noto‘g‘ri — kamida bitta sabab yozing («;» bilan, har biri 80 belgidan oshmasin). Hech narsa saqlanmadi."
+    "badValueReasons": "Qiymat noto‘g‘ri — kamida bitta sabab yozing («;» bilan, har biri 80 belgidan oshmasin). Hech narsa saqlanmadi.",
+    "badValueWhole": "Qiymat noto‘g‘ri — butun son yozing (masalan 300); 0 — o‘chirilgan. Hech narsa saqlanmadi.",
+    "aiSpentToday": "Bugun: {used} / {limit} marta",
+    "aiSpentUsd": "≈ ${usd}",
+    "aiSpentMonth": "30 kun ≈ ${usd}",
+    "aiSpentUnpriced": "{n} ta chaqiruv narxi noma’lum"
   },
   "audit": {
     "title": "Audit jurnali",
@@ -867,6 +872,8 @@
       "lotCompositionCodes": "Tarkib TNVED kodlari",
       "lotCheck": "Yuk ma'lumoti tekshirildi",
       "lotCheckNote": "Tekshiruv izohi",
+      "clientConfirm": "Mijozning Telegramdagi javobi",
+      "clientAsk": "Mijozdan so'raldi",
       "calcRequested": "Hisoblatishga yuborildi",
       "calcRequest": "Hisob-kitob",
       "calcTakenBy": "Hisoblashni oldi",
@@ -1943,7 +1950,8 @@
     "aiOff": "AI tugmasi o‘chirilgan (Sozlamalarda limit 0). Kodni qo‘lda yozing yoki admin limit qo‘ysin.",
     "aiToday": "Bugun AI: {used} / {limit} marta",
     "aiTodayUsd": "≈ ${usd}",
-    "aiMonthUsd": "30 kun ≈ ${usd}"
+    "aiMonthUsd": "30 kun ≈ ${usd}",
+    "aiUnpriced": "{n} ta chaqiruv narxi noma'lum"
   },
   "finance": {
     "title": "Moliya",
@@ -5854,7 +5862,54 @@
     "personOld": "Avval mijoz tasdiqlagan: {by} · {day} — keyin o'zgargan: {what}",
     "documentOld": "Tarkib endi lotga mos emas — tarkibni tekshiring",
     "otherAnswersAskLogist": "Mijoz «boshqa tovar» desa — 🧩 lot tarkibini bitta qator qilib yozing: hujjatlar ham, ro'yxatlar ham shu nomni chiqaradi; stikerdagi va xitoycha nomni logist o'zgartiradi. «Aralash» desa — har bir tovarni alohida qator qiling.",
-    "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi"
+    "pruned": "{n} ta tanlangan yuk endi bu skladda yo'q — rejadan olib tashlandi",
+    "clientNo": "Mijoz Telegramda «xato bor» dedi",
+    "clientYes": "Mijozning o'zi Telegramda tasdiqladi",
+    "clientAskedBy": "so'ragan: {by}",
+    "clientViaPush": "«qabul qilindi» xabaridagi tugma orqali",
+    "clientMovedSince": "ma'lumot shundan keyin o'zgartirilgan",
+    "documentHeld": "Tarkib yozilgan — lekin mijoz aynan shu ro'yxatga e'tiroz bildirgan",
+    "personHeld": "Avval tasdiqlagan: {by} · {day} — mijozning e'tirozidan oldin",
+    "clientStale": "Mijoz tasdiqlaganidan ({day}) keyin ma'lumot o'zgardi — qayta so'rang",
+    "clientYesOld": "Avval mijozning o'zi tasdiqlagan ({day}) — keyin ma'lumot o'zgargan",
+    "clientNoOld": "Mijoz {day} da «xato bor» degan edi — keyin tuzatilgan yoki xodim tasdiqlagan",
+    "disputeHint": "Mijoz bilan gaplashing. Ma'lumot xato bo'lsa — tuzating; to'g'ri ekan — «✅ To'g'ri — mijoz tasdiqladi» ni bosing; mijoz adashib bosgan bo'lsa — e'tirozni yoping.",
+    "disputeClose": "E'tirozni yopish",
+    "disputeCloseConfirm": "Mijozning «xato bor» belgisi olib tashlansinmi? Tarixda yozuvi qoladi.",
+    "disputeCloseAll": "E'tirozlarni yopish ({n} lot)",
+    "disputeCloseAllConfirm": "{n} ta lotdagi «xato bor» belgisi olib tashlansinmi? Tarixda yozuvi qoladi.",
+    "disputeClosed": "✅ E'tiroz yopildi",
+    "askTitle": "Mijozning o'zidan so'rash (Telegram)",
+    "askHint": "Mijozga shu prixoddagi barcha lotlar (tarkibi bilan) va «✅ To'g'ri / ❌ Xato bor» tugmalari yuboriladi. Og'irlik va hajm so'ralmaydi.",
+    "askWaiting": "So'rov navbatda — bir-ikki daqiqada yuboriladi",
+    "askSent": "So'rov yuborilgan: {when} · {by}",
+    "askFailed": {
+      "no_chat": "So'rov yetib bormadi: mijozning Telegrami ulanmagan",
+      "client_changed": "So'rov yuborilmadi: prixod egasi o'zgargan",
+      "too_long": "So'rov yuborilmadi: ro'yxat bitta xabarga sig'madi",
+      "receipt_changed": "So'rov yuborilmadi: prixod holati o'zgargan",
+      "blocked": "So'rov yetib bormadi: mijoz botni bloklagan yoki chatni o'chirgan",
+      "telegram": "So'rov yetib bormadi: Telegram xatosi — keyinroq qayta so'rang"
+    },
+    "askNoChat": "Mijozning Telegrami ulanmagan — Telegram orqali so'rab bo'lmaydi (telefon qiling).",
+    "askConfirm": "Mijozga Telegram orqali savol yuborilsinmi?",
+    "askSend": "Mijozdan so'rash",
+    "askQueued": "✅ So'rov navbatga qo'yildi",
+    "askErrors": {
+      "forbidden": "Bu prixod bo'yicha so'rashga ruxsatingiz yo'q",
+      "receipt_not_confirmed": "Prixod tasdiqlanmagan",
+      "no_client": "Avval mijozni biriktiring",
+      "no_lots": "Prixodda lot yo'q",
+      "no_chat": "Mijozning Telegrami ulanmagan",
+      "not_askable": "Yuk Xitoydan chiqib ketgan — endi so'ralmaydi",
+      "too_long": "Ro'yxat juda uzun — bitta xabarga sig'maydi. Telefon orqali so'rang.",
+      "already_queued": "So'rov allaqachon navbatda",
+      "too_soon": "So'rov hozirgina yuborilgan — 10 daqiqadan keyin qayta so'rash mumkin",
+      "check_changed": "Mijoz qayta javob bergan yoki e'tiroz allaqachon yopilgan — hozirgi holat ko'rsatildi, qayta qarang",
+      "busy": "Prixod hozir band — bir ozdan keyin qayta bosing",
+      "server_behind": "Server hali yangilanmagan — administratorga ayting",
+      "other": "Bajarilmadi — qayta urinib ko'ring"
+    }
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Nega qarzga berilyapti? (masalan: ertaga to‘laydi)",

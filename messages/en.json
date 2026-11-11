@@ -753,7 +753,7 @@
       "price_history_min_sim": "How close a goods name must be to a past receipt before «Previous price» shows its truck (0..1)",
       "price_history_ai_daily_limit": "How many times a day the 🤖 button in «Previous price» may ask the AI (separate from the calculation limit)",
       "tnved_ai_daily_limit": "How many times a day the 🤖 button on the Customs tab may ask the AI — the whole company together (0 — switched off)",
-      "tarkib_ai_daily_limit": "How many times a day «📄 Fill from file» may have the AI read a PDF or a photo (a spreadsheet is read without AI and is not counted; 0 — AI reading off)",
+      "tarkib_ai_daily_limit": "How many times a day «🤖 Fill from file» may have the AI read a document — for the whole company; a PDF, a photo and a spreadsheet each count as one reading (0 — off)",
       "client_confirm_on_receipt": "Whether the customer's «your cargo was received» message carries the ✅ / ❌ buttons (off: the message goes out as before; «Ask the client» on the card still works)",
       "freight_tariff_cost_type_codes": "Truck cost types that preselect «by the freight tariff» (a list of codes)",
       "staff_rating_goal_m3": "The team’s weekly goal in m³ for the team group, groupage (LTL) cargo only (0 = no goal). Easier to change on the «Team group» page."
@@ -761,7 +761,12 @@
     "driverApp": "Driver app",
     "callsApp": "Calls app",
     "badValue": "Invalid value — enter a date (YYYY-MM-DD) or an instant (YYYY-MM-DDTHH:MM+05:00); empty = off. Nothing was saved.",
-    "badValueReasons": "Invalid value — enter at least one reason («;»-separated, each at most 80 characters). Nothing was saved."
+    "badValueReasons": "Invalid value — enter at least one reason («;»-separated, each at most 80 characters). Nothing was saved.",
+    "badValueWhole": "Invalid value — type a whole number (for example 300); 0 means off. Nothing was saved.",
+    "aiSpentToday": "Today: {used} / {limit}",
+    "aiSpentUsd": "≈ ${usd}",
+    "aiSpentMonth": "30 days ≈ ${usd}",
+    "aiSpentUnpriced": "{n} calls have no known price"
   },
   "audit": {
     "title": "Audit log",
@@ -867,6 +872,8 @@
       "lotCompositionCodes": "Contents HS codes",
       "lotCheck": "Cargo info checked",
       "lotCheckNote": "Check note",
+      "clientConfirm": "Client's answer in Telegram",
+      "clientAsk": "Client asked",
       "calcRequested": "Sent for calculation",
       "calcRequest": "Calculation",
       "calcTakenBy": "Calculation taken by",
@@ -1943,7 +1950,8 @@
     "aiOff": "The AI button is switched off (the limit in Settings is 0). Type the code by hand, or ask an admin to set a limit.",
     "aiToday": "AI today: {used} / {limit}",
     "aiTodayUsd": "≈ ${usd}",
-    "aiMonthUsd": "30 days ≈ ${usd}"
+    "aiMonthUsd": "30 days ≈ ${usd}",
+    "aiUnpriced": "{n} calls have no known price"
   },
   "finance": {
     "title": "Finance",
@@ -5854,7 +5862,54 @@
     "personOld": "Earlier confirmed by the client: {by} · {day} — changed since: {what}",
     "documentOld": "The contents no longer match the lot — check the contents",
     "otherAnswersAskLogist": "If the client says «other goods» — fill in the 🧩 lot contents as one line: the papers and the lists both print that name; the name on the sticker and the Chinese name are the logist's to change. If «mixed» — one line per good.",
-    "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan"
+    "pruned": "{n} selected rows are no longer at this warehouse — removed from the plan",
+    "clientNo": "The client pressed «Something is wrong» in Telegram",
+    "clientYes": "The client confirmed it themselves in Telegram",
+    "clientAskedBy": "asked by: {by}",
+    "clientViaPush": "with the button under the «cargo received» message",
+    "clientMovedSince": "the data has been changed since",
+    "documentHeld": "A composition is written — but the client objected to exactly this list",
+    "personHeld": "Confirmed earlier: {by} · {day} — before the client's objection",
+    "clientStale": "The data changed after the client confirmed ({day}) — ask again",
+    "clientYesOld": "The client confirmed earlier ({day}) — the data changed afterwards",
+    "clientNoOld": "The client pressed «Something is wrong» on {day} — corrected or confirmed by staff since",
+    "disputeHint": "Talk to the client. If the data is wrong, correct it; if it is right, press «✅ Correct — the client confirmed»; if the client pressed by mistake, close the objection.",
+    "disputeClose": "Close the objection",
+    "disputeCloseConfirm": "Remove the client's «Something is wrong» mark? It stays in the history.",
+    "disputeCloseAll": "Close the objections ({n} lots)",
+    "disputeCloseAllConfirm": "Remove the «Something is wrong» mark from {n} lots? It stays in the history.",
+    "disputeClosed": "✅ Objection closed",
+    "askTitle": "Ask the client themselves (Telegram)",
+    "askHint": "The client gets every lot of this receipt (with its composition) and the «✅ Correct / ❌ Something is wrong» buttons. Weight and volume are not asked.",
+    "askWaiting": "The question is queued — it goes out in a minute or two",
+    "askSent": "Question sent: {when} · {by}",
+    "askFailed": {
+      "no_chat": "Not delivered: the client's Telegram is not linked",
+      "client_changed": "Not sent: the receipt's owner changed",
+      "too_long": "Not sent: the list did not fit one message",
+      "receipt_changed": "Not sent: the receipt's state changed",
+      "blocked": "Not delivered: the client blocked the bot or deleted the chat",
+      "telegram": "Not delivered: a Telegram error — ask again later"
+    },
+    "askNoChat": "The client's Telegram is not linked — they cannot be asked there (call them).",
+    "askConfirm": "Send the client a question in Telegram?",
+    "askSend": "Ask the client",
+    "askQueued": "✅ Question queued",
+    "askErrors": {
+      "forbidden": "You may not ask about this receipt",
+      "receipt_not_confirmed": "The receipt is not confirmed",
+      "no_client": "Assign the client first",
+      "no_lots": "The receipt has no lots",
+      "no_chat": "The client's Telegram is not linked",
+      "not_askable": "The cargo has left China — it is no longer asked about",
+      "too_long": "The list is too long for one message. Ask by phone.",
+      "already_queued": "The question is already queued",
+      "too_soon": "The question was just sent — it can be repeated in 10 minutes",
+      "check_changed": "The client answered again or the objection was already closed — the current state is shown, look again",
+      "busy": "The receipt is busy right now — press again in a moment",
+      "server_behind": "The server is not updated yet — tell the administrator",
+      "other": "Not done — try again"
+    }
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Why on debt? (e.g. pays tomorrow)",

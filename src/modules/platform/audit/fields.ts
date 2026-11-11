@@ -127,6 +127,10 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // client, and the note they left.
   lotCheck: 'lotCheck',
   lotCheckNote: 'lotCheckNote',
+  // The CLIENT's own ✅ / ❌ in Telegram (0144, per lot — `clientConfirm:A`),
+  // a dispute a person closed, and the question a person sent from the card.
+  clientConfirm: 'clientConfirm',
+  clientAsk: 'clientAsk',
   // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
   // released, handed back, answered with a price, re-opened for a correction
   // (docs/VED-TARIX.md). Each value is the request's id — printed raw, which

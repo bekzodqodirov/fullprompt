@@ -69,6 +69,8 @@ import { canLogInSql } from '@/modules/platform/users/login';
 import { lotCheckViewsFor, mayCheckLot, type LotCheckView } from '@/modules/wms/receipts/lot-check';
 import { telegramPhoneUrl } from '@/modules/platform/telegram/map-link';
 import { LotCheckPanel } from './lot-check-panel';
+import { clientAskCardFor } from '@/modules/wms/receipts/client-confirm';
+import { ClientAskPanel } from './client-ask-panel';
 import { isServerBehind } from '@/modules/platform/db/errors';
 import { mayReadThread } from '@/modules/wms/crm/thread-door';
 import { threadReadMarks } from '@/modules/wms/crm/thread';
@@ -221,6 +223,36 @@ export default async function ReceiptDetailPage({
     return new Map<string, LotCheckView>();
   });
   const mayCheck = mayCheckLot(actor.permissions) && receipt.status === 'confirmed';
+  // «📨 Mijozdan so'rash» (0144): ONE block for the prixod — the question is
+  // one message about every lot. Null on a server whose 0144 has not landed,
+  // for a reader who may not tick, and for cargo with no client: nothing of
+  // it is drawn then. The button needs a linked chat and a lot still worth
+  // asking about (his 4a); the last question's fate and a multi-lot dispute
+  // are shown wherever the cargo stands.
+  const askCard = mayCheck ? await clientAskCardFor(id, receipt.clientId) : null;
+  const askDisputes = lots
+    .map((lot) => ({ lotId: lot.id, answer: lotChecks.get(lot.id)?.client ?? null }))
+    .filter((row) => row.answer?.verdict === 'no' && row.answer.ofOwner)
+    .map((row) => ({ lotId: row.lotId, token: row.answer!.token }));
+  const anyAskable = lots.some((lot) => lotChecks.get(lot.id)?.askable === true);
+  const askFace =
+    askCard && (anyAskable || askCard.status !== null || askDisputes.length > 1)
+      ? {
+          canAsk: askCard.hasChat && anyAskable,
+          noChat: !askCard.hasChat && anyAskable,
+          status: askCard.status
+            ? {
+                state: askCard.status.status,
+                when: askCard.status.sentAt
+                  ? format.dateTime(askCard.status.sentAt, { dateStyle: 'short', timeStyle: 'short', timeZone: warehouse.timezone })
+                  : null,
+                by: askCard.status.askedBy,
+                failure: askCard.status.failure,
+              }
+            : null,
+          disputes: askDisputes,
+        }
+      : null;
   // The client's phones, for the person who rings: this reader has passed
   // `mayReadReceipt`, which is the staff bot's own «cargo in reach» rule for
   // showing a phone (bot/lookup.ts `maySeePhones`).
@@ -577,6 +609,7 @@ export default async function ReceiptDetailPage({
       )}
 
       <section className="space-y-3">
+        {askFace && <ClientAskPanel receiptId={id} face={askFace} />}
         {lots.map((lot) => (
           <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
             <div className="flex items-baseline gap-2">
@@ -607,6 +640,7 @@ export default async function ReceiptDetailPage({
             </p>
             {lotChecks.has(lot.id) && (
               <LotCheckPanel
+                receiptId={id}
                 lotId={lot.id}
                 face={(() => {
                   const view = lotChecks.get(lot.id)!;
@@ -623,6 +657,17 @@ export default async function ReceiptDetailPage({
                           note: view.person.note,
                           holds: view.person.holds,
                           moved: view.person.moved,
+                        }
+                      : null,
+                    client: view.client
+                      ? {
+                          verdict: view.client.verdict,
+                          day: dayIn(view.client.at, warehouse.timezone),
+                          token: view.client.token,
+                          holds: view.client.holds,
+                          vetoes: view.client.vetoes,
+                          ofOwner: view.client.ofOwner,
+                          askedBy: view.client.askedBy,
                         }
                       : null,
                   };

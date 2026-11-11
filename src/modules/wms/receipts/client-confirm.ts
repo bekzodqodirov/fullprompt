@@ -531,11 +531,42 @@ export async function askClientAboutReceipt(
   return { lots: facts.lots.length };
 }
 
+/**
+ * Why a question did not reach the client — a CLOSED list of words for the
+ * card, never the row's `last_error` (that is a Bot API sentence in English,
+ * «403 Forbidden: bot was blocked by the user», or one of our own codes).
+ */
+export type AskFailure = 'no_chat' | 'client_changed' | 'too_long' | 'receipt_changed' | 'blocked' | 'telegram';
+
+/** Every reason the sweep SKIPS a question for (`prepareLotAsk`, `deliverNotice`) → its word. */
+const SKIP_FAILURE: Record<ClientAskSkip | 'client_changed' | 'too_long' | 'no_linked_chat' | 'client_gone' | 'unknown_kind', AskFailure> = {
+  receipt_gone: 'receipt_changed',
+  voided: 'receipt_changed',
+  not_confirmed: 'receipt_changed',
+  no_client: 'receipt_changed',
+  no_lots: 'receipt_changed',
+  client_gone: 'receipt_changed',
+  client_changed: 'client_changed',
+  too_long: 'too_long',
+  no_linked_chat: 'no_chat',
+  unknown_kind: 'telegram',
+};
+
+/** The word for a question that was not delivered; null while it waits or once it went. */
+export function askFailureOf(status: string, reason: string | null): AskFailure | null {
+  if (status === 'skipped') return (SKIP_FAILURE as Record<string, AskFailure>)[reason ?? ''] ?? 'telegram';
+  if (status !== 'failed') return null;
+  // Every chat refused for good: the client blocked the bot, or the chat is gone.
+  return /blocked by the user|user is deactivated|chat not found/i.test(reason ?? '') ? 'blocked' : 'telegram';
+}
+
 /** The last question about a prixod, for its card: when it went, or why it has not. */
 export interface ClientAskStatus {
   status: 'pending' | 'sending' | 'sent' | 'failed' | 'skipped';
   sentAt: Date | null;
+  /** The row's own `last_error` — for the log and the tests; the card reads `failure`. */
   reason: string | null;
+  failure: AskFailure | null;
   askedBy: string | null;
 }
 
@@ -559,8 +590,30 @@ export async function clientAskStatusFor(receiptId: string): Promise<ClientAskSt
     status: row.status,
     sentAt: row.sent_at ? new Date(row.sent_at) : null,
     reason: row.last_error,
+    failure: askFailureOf(row.status, row.last_error),
     askedBy: row.asked_by,
   };
+}
+
+/**
+ * What the prixod card's «Mijozdan so'rash» block needs, in one call: is the
+ * client's side there at all (0144 — null when not, and the card draws
+ * nothing of it), can the client be reached, and the last question's fate.
+ * Never throws at the card: a block that cannot be read is a block not drawn.
+ */
+export async function clientAskCardFor(
+  receiptId: string,
+  clientId: string | null,
+): Promise<{ hasChat: boolean; status: ClientAskStatus | null } | null> {
+  if (!clientId) return null;
+  try {
+    if (!(await clientConfirmsReady())) return null;
+    const [chats, status] = await Promise.all([linkedChats(clientId), clientAskStatusFor(receiptId)]);
+    return { hasChat: chats.length > 0, status };
+  } catch (err) {
+    logger.warn({ err, receiptId }, '[client-confirm] the card could not read the last question');
+    return null;
+  }
 }
 
 export type ClientDisputeRefusal = 'forbidden' | 'receipt_not_confirmed' | 'check_changed' | 'server_behind';

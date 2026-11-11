@@ -237,7 +237,9 @@ describe('what the truck door cannot see — the other id in the same post', () 
     expect(text).toContain("if (!pass.ok) return { ok: false, error: pass.error, today: await aiToday(actor) };");
     expect(text.lastIndexOf('settlePress(pass.id, { outcome, usage })')).toBeGreaterThan(text.indexOf('suggestTnved({'));
     // An answer that was no good was paid for; no answer at all was not.
-    expect(text).toContain("outcome = err.usage ? 'failed' : 'no_answer';");
+    // …and so was a call our own deadline abandoned (the design judge: the
+    // provider had been working — uncounted, a timeout can be pressed for ever).
+    expect(text).toContain("outcome = err.usage || err.timedOut ? 'failed' : 'no_answer';");
     // The ledger is written through its two doors and nothing else.
     expect(text).not.toMatch(/\.insert\(|\.update\(|db\.execute|ai_calc_passes/);
   });

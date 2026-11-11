@@ -146,9 +146,11 @@ export async function suggestTnvedForLotAction(
       await settlePress(pass.id, { outcome: 'no_answer' });
       throw err;
     }
-    // An answer that was no good was still paid for; no answer at all was not.
+    // An answer that was no good was still paid for, and so was a call our
+    // own deadline abandoned (the provider had been working on it); a refused
+    // key or a dead network was not.
     usage = err.usage;
-    outcome = err.usage ? 'failed' : 'no_answer';
+    outcome = err.usage || err.timedOut ? 'failed' : 'no_answer';
     answer = { ok: false, error: err.code };
   }
   await settlePress(pass.id, { outcome, usage });
@@ -248,7 +250,7 @@ export async function suggestTnvedForLineAction(
       throw err;
     }
     usage = err.usage;
-    outcome = err.usage ? 'failed' : 'no_answer';
+    outcome = err.usage || err.timedOut ? 'failed' : 'no_answer';
     answer = { ok: false, error: err.code };
   }
   await settlePress(pass.id, { outcome, usage });

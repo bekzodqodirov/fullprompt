@@ -31,7 +31,8 @@ export async function updateSettingAction(formData: FormData): Promise<void> {
   let value: unknown = validator ? raw.trim() : raw;
   if (typeof defaultValue === 'boolean') value = raw === 'true' || raw === 'on';
   else if (typeof defaultValue === 'number') {
-    const parsed = Number(raw);
+    // Trimmed: a validated number («300 ») must not be refused by its own space.
+    const parsed = Number(raw.trim());
     if (Number.isNaN(parsed)) return;
     value = parsed;
   } else if (typeof defaultValue === 'object') {

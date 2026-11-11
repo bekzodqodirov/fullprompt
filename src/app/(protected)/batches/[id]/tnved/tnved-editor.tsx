@@ -468,6 +468,7 @@ export function TnvedEditor({
           {today.limit > 0 ? t('aiToday', { used: today.used, limit: today.limit }) : t('aiOff')}
           {today.usd !== null && <> · {t('aiTodayUsd', { usd: today.usd.toFixed(2) })}</>}
           {today.usd30 !== null && <> · {t('aiMonthUsd', { usd: today.usd30.toFixed(2) })}</>}
+          {today.unpriced !== null && today.unpriced > 0 && <> · {t('aiUnpriced', { n: today.unpriced })}</>}
         </p>
       )}
       {message && (

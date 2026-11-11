@@ -131,10 +131,12 @@ export const SETTING_DEFAULTS = {
    */
   tnved_ai_daily_limit: 300,
   /**
-   * How many times a day «📄 Fayldan to'ldirish» may ask the model to read a
-   * PDF or a photograph, or to put a spreadsheet's names into Russian (0144,
-   * §3). A spreadsheet's FIGURES are read with no model and are never counted.
-   * 0 switches the model reading off; the spreadsheet reading stays.
+   * How many times a day «🤖 Fayldan to'ldirish» may ask the model to read a
+   * client's document into a tarkib (0144, §3) — the whole company's
+   * readings together. EVERY reading is one: a PDF, a photograph and a
+   * spreadsheet alike (the spreadsheet goes to the model as text; the design
+   * judge struck the «Excel is read with no model» path, which had three
+   * answers to «does it count»). 0 switches the reading off.
    */
   tarkib_ai_daily_limit: 50,
   /**
@@ -351,7 +353,18 @@ export const SETTING_VALIDATORS: Partial<Record<SettingKey, (raw: string) => boo
   unpriced_gate_since: (raw) => parseDayOrInstant(raw) !== null,
   lead_assign_origins: originsSettingValid,
   agent_no_contact_reasons: reasonListValid,
+  // The two pressed-AI ceilings (0144): 0 is «switched off for the whole
+  // company», so the door must not let a typo BECOME 0 — an empty box is
+  // `Number('') === 0`, «1 000» stored nothing and said nothing, «-5» and
+  // «3.7» were stored as typed while the cap enforced something else.
+  tnved_ai_daily_limit: wholeNumberSettingValid,
+  tarkib_ai_daily_limit: wholeNumberSettingValid,
 };
+
+/** A whole number, typed as digits and nothing else — «0» is allowed and means off. */
+export function wholeNumberSettingValid(raw: string): boolean {
+  return /^\d{1,6}$/.test(raw);
+}
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
   const row = await db.query.settings.findFirst({ where: eq(settings.key, key) });

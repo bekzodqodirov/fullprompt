@@ -753,7 +753,7 @@
       "price_history_min_sim": "货物名称与以往入库的相似度达到多少时，「以往价格」才显示其车次（0..1）",
       "price_history_ai_daily_limit": "「以往价格」的 🤖 按钮每天可调用 AI 的次数（与计算额度分开）",
       "tnved_ai_daily_limit": "「报关」页的 🤖 按钮每天可调用 AI 的次数——全公司合计（0 表示关闭）",
-      "tarkib_ai_daily_limit": "「📄 从文件填写」每天可让 AI 读取 PDF 或照片的次数（Excel 不经 AI 读取，不计入；0 表示关闭 AI 读取）",
+      "tarkib_ai_daily_limit": "“🤖 从文件填写”每天可让 AI 读取文件多少次 — 全公司合计；PDF、照片和 Excel 每次读取都算一次（0 — 关闭）",
       "client_confirm_on_receipt": "发给客户的「货物已入库」消息下是否显示 ✅ / ❌ 按钮（关闭后消息照旧发送；卡片上的「询问客户」仍可使用）",
       "freight_tariff_cost_type_codes": "车辆费用中自动选择「按运费价目表」的费用类型（代码列表）",
       "staff_rating_goal_m3": "团队群的每周团队目标（立方，仅拼车 LTL 货物，0 = 无目标）。在「团队群」页面修改更方便。"
@@ -761,7 +761,12 @@
     "driverApp": "司机应用",
     "callsApp": "通话应用",
     "badValue": "值无效——请输入日期（YYYY-MM-DD）或时间（YYYY-MM-DDTHH:MM+05:00）；留空 = 关闭。未保存任何内容。",
-    "badValueReasons": "值无效——请至少填写一个原因（用「;」分隔，每个不超过80个字符）。未保存任何内容。"
+    "badValueReasons": "值无效——请至少填写一个原因（用「;」分隔，每个不超过80个字符）。未保存任何内容。",
+    "badValueWhole": "值无效 — 请输入整数（例如 300）；0 表示关闭。未保存任何内容。",
+    "aiSpentToday": "今天：{used} / {limit} 次",
+    "aiSpentUsd": "≈ ${usd}",
+    "aiSpentMonth": "30 天 ≈ ${usd}",
+    "aiSpentUnpriced": "{n} 次调用价格未知"
   },
   "audit": {
     "title": "审计日志",
@@ -867,6 +872,8 @@
       "lotCompositionCodes": "组成海关编码",
       "lotCheck": "货物信息已核对",
       "lotCheckNote": "核对备注",
+      "clientConfirm": "客户在 Telegram 的回复",
+      "clientAsk": "已向客户询问",
       "calcRequested": "已提交计算",
       "calcRequest": "计算",
       "calcTakenBy": "接手计算",
@@ -1943,7 +1950,8 @@
     "aiOff": "AI 按钮已关闭（设置中的额度为 0）。请手动输入编码，或请管理员设置额度。",
     "aiToday": "今日 AI：{used} / {limit} 次",
     "aiTodayUsd": "≈ ${usd}",
-    "aiMonthUsd": "30 天 ≈ ${usd}"
+    "aiMonthUsd": "30 天 ≈ ${usd}",
+    "aiUnpriced": "{n} 次调用价格未知"
   },
   "finance": {
     "title": "财务",
@@ -5854,7 +5862,54 @@
     "personOld": "之前客户已确认：{by} · {day} — 之后已变更：{what}",
     "documentOld": "组成已与批次不符 — 请检查组成",
     "otherAnswersAskLogist": "客户说「其他货物」— 把 🧩 批次组成填为一行：单据和列表都显示该名称；标签上的名称和中文名称由物流员修改。说「混装」— 每种货物一行。",
-    "pruned": "{n} 个已选行已不在此仓库 — 已从计划中移除"
+    "pruned": "{n} 个已选行已不在此仓库 — 已从计划中移除",
+    "clientNo": "客户在 Telegram 点了“有错误”",
+    "clientYes": "客户本人已在 Telegram 确认",
+    "clientAskedBy": "询问人：{by}",
+    "clientViaPush": "通过“货物已接收”消息下的按钮",
+    "clientMovedSince": "此后数据已被修改",
+    "documentHeld": "已填写组成 — 但客户正是对这份清单提出异议",
+    "personHeld": "此前确认：{by} · {day} — 在客户提出异议之前",
+    "clientStale": "客户确认（{day}）后数据有变化 — 请重新询问",
+    "clientYesOld": "客户此前已确认（{day}）— 之后数据有变化",
+    "clientNoOld": "客户于 {day} 点了“有错误” — 之后已更正或由员工确认",
+    "disputeHint": "请联系客户。数据有误就更正；数据正确就点“✅ 正确 — 客户已确认”；客户误点则关闭异议。",
+    "disputeClose": "关闭异议",
+    "disputeCloseConfirm": "取消客户的“有错误”标记？记录会保留在历史中。",
+    "disputeCloseAll": "关闭异议（{n} 个批次）",
+    "disputeCloseAllConfirm": "取消 {n} 个批次的“有错误”标记？记录会保留在历史中。",
+    "disputeClosed": "✅ 异议已关闭",
+    "askTitle": "直接询问客户（Telegram）",
+    "askHint": "客户会收到本入库单的全部批次（含组成）以及“✅ 正确 / ❌ 有错误”按钮。不询问重量和体积。",
+    "askWaiting": "询问已排队 — 一两分钟内发送",
+    "askSent": "询问已发送：{when} · {by}",
+    "askFailed": {
+      "no_chat": "未送达：客户未绑定 Telegram",
+      "client_changed": "未发送：入库单的货主已变更",
+      "too_long": "未发送：清单一条消息放不下",
+      "receipt_changed": "未发送：入库单状态已变化",
+      "blocked": "未送达：客户屏蔽了机器人或删除了聊天",
+      "telegram": "未送达：Telegram 出错 — 请稍后再问"
+    },
+    "askNoChat": "客户未绑定 Telegram — 无法在 Telegram 询问（请打电话）。",
+    "askConfirm": "通过 Telegram 向客户发送询问？",
+    "askSend": "询问客户",
+    "askQueued": "✅ 询问已排队",
+    "askErrors": {
+      "forbidden": "您无权就此入库单询问",
+      "receipt_not_confirmed": "入库单未确认",
+      "no_client": "请先绑定客户",
+      "no_lots": "入库单没有批次",
+      "no_chat": "客户未绑定 Telegram",
+      "not_askable": "货物已离开中国 — 不再询问",
+      "too_long": "清单太长，一条消息放不下。请电话询问。",
+      "already_queued": "询问已在排队",
+      "too_soon": "询问刚刚发送 — 10 分钟后可再次询问",
+      "check_changed": "客户已重新回复或异议已关闭 — 已显示当前状态，请再看一遍",
+      "busy": "入库单正忙 — 请稍后再点",
+      "server_behind": "服务器尚未更新 — 请告知管理员",
+      "other": "未完成 — 请重试"
+    }
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "为什么赊账放行？（例如：明天付款）",
