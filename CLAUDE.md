@@ -3453,8 +3453,10 @@ a refusal into a success leaves what it wrote in the dev database; `eslint .` li
 findings». **14,740 unit/integration + 491 e2e** green on a fresh gsr_ci in CI's order (ledger 144) before the
 second merge; **on the MERGED tree (main's #143 inside): 880 files / 14,817 unit/integration + 491 e2e**, same order,
 fresh gsr_ci, ledger 144 — a container restart cut the run between vitest and the build, and the build + Playwright
-were resumed on the database the vitest run had left (postgres recovered it), which is CI's order. Pushed to
-`claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked), deploy not done.
+were resumed on the database the vitest run had left (postgres recovered it), which is CI's order. Main's #144 (one
+e2e locator, #1628) was merged after that run: typecheck, lint and the changed spec ×3 re-run green — the delta is one
+spec this round never touched. Pushed to `claude/focused-bardeen-9t1bij`, NO pull request opened (he was asked),
+deploy not done.
 
 **Latest migration: 0143** (`tarkib_document_optional`, `when` …122; ledger must reach **144**). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
