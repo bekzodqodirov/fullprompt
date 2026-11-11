@@ -7884,3 +7884,28 @@ thirty-fourth: one more shift, done before the follow-up round wrote a single nu
 fetch main immediately before the report, not only before the push — and again before the first number of the
 next round is minted. (6) `eslint .` lints
 `.claude/worktrees/**`: remove merged worktrees before the whole-repo lint.
+
+## Tarkib takliflari — his «hammasi yulduzcha» pinned, then the three suggestions (2026-11-11; spec `docs/TARKIB-TAKLIFLAR.md`)
+
+His answer to the tarkib round's ten questions and three suggestions: «Hammasi yulduzcha javob va taklifingni
+qoshamiz» — every ⭐ stands, and the suggestions are to be built.
+
+**#1651 — «Hammasi yulduzcha»: ten defaults read against the shipped code, two of them pinned only now.** A
+«standart» is checked against the code before it is called one (#1229). A read-only scout read every test body,
+the lead re-read its two doubts. EIGHT answers were already held by an assertion that goes red on the non-star
+option (1a `lot-composition.integration` «2c»; 2a `lot-check.integration` 11/12d; 4a `tarkib-label`; 5a
+`lot-name-office.integration`'s customer block; 6a and 7a `invoice-merge.integration` + `invoice-rows`; 9a
+`invoice-rows`; 10a `tnved-line-ai.integration`). TWO were half held. **3a** — the plan's own screen
+(`/plans/<id>`) queried inline in the page, so «the screen keeps a lot whole» was true by reading only: the query
+is `planLinesView` (`wms/planning/plan-lines.ts`, NAMES through `lot-name.ts`, never the tarkib's lines — the
+folder is on the composition fence's DENY list) and `lot-name-warehouse.integration` asks it (two plan lines, two
+rows, the composed lot «Клавиатура +2»). Red twice: a join onto the tarkib's lines (four rows), the stored name
+in place of the shown one. **8a** — «this device, never stored for everyone» was held for ONE device in the
+browser and for nobody else: `invoice-merge.integration` now calls the two routes' own `GET` (merged address →
+five rows; the bare address after it → seven, and the list still asks, same keys, same fingerprint) with the
+document guard stood open (its gate is `document-route-gates`' subject), and `invoice-dialog-wire` pins where
+the memory lives — the browser's store keyed by truck, the dialog opened on every press that has a question, no
+server action, no route that names `db`, a setting or a cookie. Red twice: a route that remembers the last
+answer per truck; a press that follows the remembered answer without opening the dialog. And a nit under 9a:
+the dialog's mixed-units sentence, drawn by no test, is pinned source-shape. TEST NOTE: the plan fixture is
+deleted lines → versions → plan before its lots — none of the three foreign keys cascades.

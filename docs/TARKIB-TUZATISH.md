@@ -509,6 +509,30 @@ Sent with the round's report, in Uzbek, numbered:
 10. (band 5) Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi (rasmda
     qaysi tovar ekani noma'lum): ⭐ a) shunday · b) rasm ham yuborilsin.
 
+**His answer — 2026-11-11: «Hammasi yulduzcha javob va taklifingni qoshamiz».** All ten are the ⭐,
+i.e. the shipped default — nothing to rebuild. Each was checked against the SHIPPED code first
+(the rule of #1229: read a «standart» against the code before calling it one), by a read-only
+scout and then by the lead. Eight were already held by a test that goes red on the non-star
+option. Two were only half held and are pinned now, each red-proven by a reversible edit
+(DECISIONS #1651):
+
+- **3a** — «only the agent's FILE prints a row per good». The file half and the plan EDITOR's
+  list were pinned; the plan's own screen (`/plans/<id>`) had its query inline in the page, where
+  no test could ask it. It is `planLinesView` (`wms/planning/plan-lines.ts`) now, and
+  `lot-name-warehouse.integration` reads it: a lot with a three-good tarkib is ONE row named
+  «Клавиатура +2».
+- **8a** — «this device marks the last answer, the dialog opens every time». One device was held
+  in the browser spec; «nothing stored for everyone» was held by nothing. Now the routes
+  themselves are asked (`invoice-merge.integration`: after a merged download the bare address is
+  still the seven-row file and the list still asks) and `invoice-dialog-wire` pins where the
+  memory lives (the browser's own store, no server action, no route that reads or writes one).
+- **9a** (a nit) — the dialog's «dona va kg aralash» sentence was drawn by no test; pinned
+  source-shape in the same file.
+
+The second half of his sentence — «taklifingni qo'shamiz» — is the three suggestions sent with
+the report (a tarkib filled from the client's file, the client's own ✅/❌ in Telegram, the
+Bojxona 🤖's bill and daily limit). They are their own round: `docs/TARKIB-TAKLIFLAR.md`.
+
 Stated, not asked (each a one-line «aytib qo'yay»): the sticker keeps the warehouse's name;
 the scan screens print the Chinese name only; a plan's agent file gains rows when a tarkib is
 written; a sent truck's invoice still follows later TNVED/name changes of lots with no tarkib;
