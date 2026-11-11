@@ -42,6 +42,30 @@ async function login(page: Page, phone: string) {
   await expect(page).toHaveURL('/');
 }
 
+/**
+ * The card opened AT the deal block: the page SCROLLED, and the block's top
+ * sits just under the sticky bar (`scroll-mt-20` = 80 px).
+ *
+ * Not «the block is somewhere in the upper part of the screen»: for a seller
+ * the block is the fourth thing on the card and sits at ~295 px with no
+ * scrolling at all, so that assertion held with the anchor AND the scroll
+ * effect deleted (the as-built review, CARD-2 — the spec said «which is what
+ * is asserted» about a thing it did not assert).
+ */
+async function landsOnBlock(page: Page) {
+  const block = page.getByTestId('receipt-deal-block');
+  await expect(block).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  await expect
+    .poll(async () => {
+      const box = await block.boundingBox();
+      return box === null ? -1 : Math.round(box.y);
+    })
+    .toBeGreaterThanOrEqual(56);
+  const box = await block.boundingBox();
+  expect(box!.y).toBeLessThanOrEqual(110);
+}
+
 async function fits(page: Page) {
   const w = await page.evaluate(() => ({
     client: document.documentElement.clientWidth,
@@ -64,16 +88,7 @@ test('mint the client, its prixod and the two files', async () => {
 test('the button’s address opens the card AT the deal block, and offers a new deal to a client that has none', async ({ page }) => {
   await login(page, SELLER_PHONE);
   await page.goto(`/receipts/${receiptId}#bitim`);
-  const block = page.getByTestId('receipt-deal-block');
-  await expect(block).toBeVisible();
-  // ON the screen, below the sticky app bar — not somewhere down a long card.
-  await expect
-    .poll(async () => {
-      const box = await block.boundingBox();
-      const height = page.viewportSize()!.height;
-      return box !== null && box.y >= 40 && box.y < height * 0.6;
-    })
-    .toBe(true);
+  await landsOnBlock(page);
   await expect(page.getByTestId('receipt-deal-pick')).toBeVisible();
   await expect(page.getByTestId('receipt-deal-new')).toBeVisible();
   await fits(page);
@@ -92,12 +107,7 @@ test('«+ Yangi bitim ochish»: the deal is born with the prixod on it, and the 
   await expect(page).toHaveURL(new RegExp(`/receipts/${receiptId}\\?bitim=1$`));
   const block = page.getByTestId('receipt-deal-block');
   await expect(block.locator('a[href^="/bitimlar/"]').first()).toHaveText(/^B-\d+$/);
-  await expect
-    .poll(async () => {
-      const box = await block.boundingBox();
-      return box !== null && box.y >= 40 && box.y < page.viewportSize()!.height * 0.6;
-    })
-    .toBe(true);
+  await landsOnBlock(page);
   // A prixod that has its deal is not offered another.
   await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
   await fits(page);
@@ -144,6 +154,74 @@ test('the VED may re-file the cargo but not open a deal: the block, without the 
   await page.goto(`/receipts/${receiptId}#bitim`);
   await expect(page.getByTestId('receipt-deal-block')).toBeVisible();
   await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
+});
+
+test('a new-deal form OLDER than the prixod’s deal: the save is refused in words, and nothing is minted or moved', async ({ page }) => {
+  // 14:05 the seller opens «+ Yangi bitim ochish»; 14:06 a colleague files the
+  // prixod on the client's existing deal; 14:20 the seller presses «Saqlash».
+  // Before the fix the form's deal was created and the prixod MOVED onto it —
+  // off the deal somebody had just chosen, its confirmed calculation link
+  // erased — with nobody choosing that.
+  await login(page, SELLER_PHONE);
+  await page.goto(`/bitimlar/new?client=${clientId}&prixod=${receiptId}`);
+  await expect(page.getByTestId('deal-form-receipt')).toContainText(number);
+
+  const sql = database();
+  let chosen = '';
+  try {
+    const rows = await sql<{ id: string }[]>`SELECT id FROM deals WHERE client_id = ${clientId}`;
+    expect(rows).toHaveLength(1);
+    chosen = rows[0]!.id;
+    await sql`UPDATE receipts SET deal_id = ${chosen} WHERE id = ${receiptId}`;
+  } finally {
+    await sql.end();
+  }
+
+  await page.locator('input[name="title"]').fill(`Eskirgan forma ${run.marker}`);
+  await page.getByTestId('deal-form').locator('button[type="submit"]').click();
+  // Refused where the person is, in words — not a new deal's card, not an error page.
+  await expect(page.getByTestId('deal-form').getByRole('alert')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/bitimlar/new\\?client=${clientId}&prixod=${receiptId}$`));
+
+  const check = database();
+  try {
+    const deals = await check<{ id: string }[]>`SELECT id FROM deals WHERE client_id = ${clientId}`;
+    expect(deals.map((row) => row.id)).toEqual([chosen]);
+    const [row] = await check<{ deal_id: string | null }[]>`SELECT deal_id FROM receipts WHERE id = ${receiptId}`;
+    expect(row!.deal_id).toBe(chosen);
+    await check`UPDATE receipts SET deal_id = NULL WHERE id = ${receiptId}`;
+  } finally {
+    await check.end();
+  }
+});
+
+test('a VOIDED prixod: the block its button still opens says so itself, and offers no new deal', async ({ page }) => {
+  // A wrong prixod is voided and received again; the seller holds two
+  // messages, and «🔗 Bitim biriktirish» under the first opens THIS card at
+  // its deal block — with the status chip and the reason scrolled under the bar.
+  const sql = database();
+  try {
+    const [owner] = await sql<{ id: string }[]>`SELECT id FROM users WHERE phone = '+998900000001'`;
+    await sql`UPDATE receipts SET status = 'voided', voided_at = now(), voided_by = ${owner!.id}, void_reason = 'e2e', deal_id = NULL
+               WHERE id = ${receiptId}`;
+  } finally {
+    await sql.end();
+  }
+  try {
+    await login(page, SELLER_PHONE);
+    await page.goto(`/receipts/${receiptId}#bitim`);
+    await expect(page.getByTestId('receipt-deal-block')).toBeVisible();
+    await expect(page.getByTestId('receipt-deal-voided')).toBeVisible();
+    await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
+    await fits(page);
+  } finally {
+    const back = database();
+    try {
+      await back`UPDATE receipts SET status = 'confirmed', voided_at = NULL, voided_by = NULL, void_reason = NULL WHERE id = ${receiptId}`;
+    } finally {
+      await back.end();
+    }
+  }
 });
 
 test('a prixod a client correction left on ANOTHER client’s deal: the card does not call it linked, and a new deal replaces it', async ({ page }) => {

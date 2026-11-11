@@ -37,6 +37,7 @@ import {
 import { isStale, tarkibLabel } from '@/modules/wms/receipts/composition-math';
 import { MarkLostForm, type LostBoxOption } from './mark-lost-form';
 import { DealLink } from './deal-link';
+import { ownDealOf } from '@/modules/wms/finance/truck-deal';
 import { receiptHasCompensation } from '@/modules/wms/finance/compensation-follow';
 import { receiptPickupInfo, stopOptionsForWarehouse } from '@/modules/wms/pickups/service';
 import { ReceiptPickupControl } from '@/app/(protected)/zavod/pickup-forms';
@@ -383,7 +384,10 @@ export default async function ReceiptDetailPage({
   // — the rule the seller's «Prixod keldi» message reads the state by): a
   // client correction leaves `deal_id` on the old client's job, and the block
   // its «🔗 Bitim biriktirish» button opens must not print that job as linked.
-  const ownDeal = linkedDeal && linkedDeal.clientId === receipt.clientId ? linkedDeal : null;
+  const ownDeal =
+    linkedDeal && receipt.clientId && ownDealOf({ dealId: linkedDeal.id, dealClientId: linkedDeal.clientId }, receipt.clientId)
+      ? linkedDeal
+      : null;
   const foreignDeal = linkedDeal && !ownDeal ? linkedDeal : null;
   const dealOptions = canLinkDeal ? await openDealsForClient(receipt.clientId!) : [];
   // 0105: a compensation for this prixod's lost cargo follows it to another
@@ -604,8 +608,16 @@ export default async function ReceiptDetailPage({
           options={dealChoices}
           hasCompensation={hasCompensation}
           foreign={foreignDeal ? { code: foreignDeal.code } : null}
+          // The seller's «🔗 Bitim biriktirish» button outlives the prixod it
+          // was sent about: a wrong prixod is voided and received again, and
+          // the button under the FIRST message still opens this block — with
+          // the void's only marks (the status chip, the reason) scrolled
+          // under the sticky bar. So the block says it itself.
+          voided={receipt.status === 'voided'}
           newDealHref={
-            !ownDeal && mayEditDealTerms(actor.permissions)
+            // Only for a CONFIRMED prixod — the form refuses any other
+            // (`bornWithVerdict`), and a link to a refusal is a dead end.
+            !ownDeal && receipt.status === 'confirmed' && mayEditDealTerms(actor.permissions)
               ? `/bitimlar/new?client=${receipt.clientId}&prixod=${id}`
               : null
           }

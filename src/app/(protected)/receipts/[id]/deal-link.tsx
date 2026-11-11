@@ -31,7 +31,10 @@ export function DealLink({
   hasCompensation = false,
   newDealHref = null,
   foreign = null,
+  voided = false,
 }: {
+  /** The prixod is voided: said in the block's own first line (the button that opens it outlives the prixod). */
+  voided?: boolean;
   /**
    * The prixod still carries a deal of ANOTHER client (a client correction
    * leaves `deal_id` on the old client's job). It is no deal of this
@@ -97,6 +100,11 @@ export function DealLink({
           <span className="text-ink-500">{t('dealNone')}</span>
         )}
       </div>
+      {voided && (
+        <p className="text-sm font-semibold text-bad" data-testid="receipt-deal-voided">
+          {t('dealVoided')}
+        </p>
+      )}
       {foreign && (
         <p className="text-xs text-ink-500" data-testid="receipt-deal-foreign">
           {t('dealForeign', { code: foreign.code })}

@@ -893,7 +893,8 @@
       "released": "编号已收回",
       "number": "编号",
       "destBeforeDeparture": "收货仓库（出发前）",
-      "fileAdded": "已添加文件"
+      "fileAdded": "已添加文件",
+      "fileName": "文件已删除"
     }
   },
   "profile": {
@@ -1099,7 +1100,8 @@
     "dealLinkUpsalePaid": "该交易的销售员提成已支付 — 移动入库前请会计撤销该笔支付",
     "attachInUse": "此单据已附在批次组成上 — 从组成中移除前无法删除",
     "dealNew": "新建交易",
-    "dealForeign": "仍在其他客户的交易中：{code}。请选择该客户自己的交易，或新建一个。"
+    "dealForeign": "仍在其他客户的交易中：{code}。请选择该客户自己的交易，或新建一个。",
+    "dealVoided": "该入库单已作废——其货物不计入任何交易。"
   },
   "stock": {
     "title": "库存",
@@ -3437,7 +3439,10 @@
       "not_your_client": "此客户的延期由其销售、会计或管理员授予",
       "ftl_office_only": "只有管理员、物流员或会计可以把 FTL 改回 LTL（或更换 FTL 交易的负责人）。",
       "ftl_not_yours": "只能把自己的交易标为 FTL。",
-      "server_behind": "服务器未更新 — 管理员需要运行迁移。"
+      "server_behind": "服务器未更新 — 管理员需要运行迁移。",
+      "receipt_has_deal": "该入库单已关联交易——未新建交易。请重新打开入库单卡片。",
+      "receipt_not_confirmed": "该入库单未确认或已作废——未为其新建交易。",
+      "upsale_paid": "该入库单所在交易已向销售支付提成——需会计先撤回付款，再转移入库单。"
     },
     "discountTitle": "折扣（货损）",
     "discountAmount": "折扣金额",
@@ -3484,7 +3489,8 @@
     "profitNetRevenue": "收入（扣除赔偿后）",
     "profitFreightHeld": "装有本交易货物的 {count, plural, other {# 辆车}}上有 {usd} $ 运费尚未按运价分摊到货物——本交易应承担的部分不在上方成本中，因此利润可能显得偏高。修正批次或通过「分摊方式」后会分摊。",
     "profitOtherDeal": "{truck} 车上的价格（{amount} $）记入了交易 {code}——不在本交易的收入中。",
-    "newDealForReceipt": "入库单 {number} 将关联到此交易。"
+    "newDealForReceipt": "入库单 {number} 将关联到此交易。",
+    "receiptNotLinked": "交易已新建，但入库单未关联到它。请打开入库单卡片，在「交易」区块中选择此交易。"
   },
   "automation": {
     "title": "自动化规则",

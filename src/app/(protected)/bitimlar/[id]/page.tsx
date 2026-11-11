@@ -66,14 +66,14 @@ export default async function DealPage({
 }: {
   params: Promise<{ id: string }>;
   /** `hodim` = whose Telegram conversation to read in the panel (2026-08-07). */
-  searchParams: Promise<{ hodim?: string; chodim?: string; yangi?: string }>;
+  searchParams: Promise<{ hodim?: string; chodim?: string; yangi?: string; prixod?: string }>;
 }) {
   const actor = await getActor();
   if (!actor) redirect('/login');
   if (!canWriteDeal(actor.permissions)) redirect('/');
 
   const { id } = await params;
-  const { hodim, chodim, yangi } = await searchParams;
+  const { hodim, chodim, yangi, prixod } = await searchParams;
   const row = await dealById(id);
 
   if (!row) notFound();
@@ -143,6 +143,15 @@ export default async function DealPage({
           conversation, not a list to search (owner: "chat butun sistemadan
           kirsa bo'ladigan joyda"). */}
       <span data-dock-client={row.deal.clientId} hidden />
+      {/* Opened from a prixod's «+ Yangi bitim ochish», and the prixod did
+          not land on it (the create action, `?prixod=yoq`): said once, here —
+          the deal exists, and nothing else on this card would say why its
+          cargo is not on it. */}
+      {prixod === 'yoq' && (
+        <p role="alert" className="card !p-3 text-sm font-semibold text-warn" data-testid="deal-receipt-not-linked">
+          {t('receiptNotLinked')}
+        </p>
+      )}
       <PageHeader
         icon="handshake"
         back={{ href: '/bitimlar', label: t('title') }}

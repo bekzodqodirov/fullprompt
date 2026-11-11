@@ -893,7 +893,8 @@
       "released": "Raqami qaytarildi",
       "number": "Raqam",
       "destBeforeDeparture": "Qabul skladi (jo‘nashdan oldin)",
-      "fileAdded": "Fayl qo'shildi"
+      "fileAdded": "Fayl qo'shildi",
+      "fileName": "Fayl o'chirildi"
     }
   },
   "profile": {
@@ -1099,7 +1100,8 @@
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
     "dealNew": "Yangi bitim ochish",
-    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki yangisini oching."
+    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki yangisini oching.",
+    "dealVoided": "Bu prixod bekor qilingan — uning yuki hech qaysi bitimda hisobga olinmaydi."
   },
   "stock": {
     "title": "Sklad (qoldiqlar)",
@@ -3437,7 +3439,10 @@
       "not_your_client": "Bu mijozga muddatni uning sotuvchisi, buxgalter yoki admin beradi",
       "ftl_office_only": "FTL’ni LTL’ga faqat admin, logist yoki buxgalter qaytaradi (FTL bitimning egasini ham faqat ular almashtiradi).",
       "ftl_not_yours": "Faqat o‘z bitimingizni FTL qila olasiz.",
-      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin."
+      "server_behind": "Server yangilanmagan — administrator migratsiyani ishga tushirsin.",
+      "receipt_has_deal": "Bu prixod allaqachon bitimga biriktirilgan — yangi bitim ochilmadi. Prixod kartasini qayta oching.",
+      "receipt_not_confirmed": "Bu prixod tasdiqlanmagan yoki bekor qilingan — unga bitim ochilmadi.",
+      "upsale_paid": "Bu prixod turgan bitim bo‘yicha sotuvchiga ulush to‘langan — avval buxgalter to‘lovni qaytarsin, keyin prixod ko‘chiriladi."
     },
     "discountTitle": "Chegirma (shikast)",
     "discountAmount": "Chegirma summasi",
@@ -3484,7 +3489,8 @@
     "profitNetRevenue": "Tushum (kompensatsiyadan keyin)",
     "profitFreightHeld": "Bitim yuki ortilgan {count, plural, other {# ta mashinada}} {usd} $ yo‘lkira xarajati tarif bo‘yicha yukka bo‘linmagan — uning bu bitimga tegishli ulushi yuqoridagi tannarxda yo‘q, shuning uchun foyda haqiqiydan yuqori ko‘rinishi mumkin. Lot to‘g‘rilansa yoki «Bo‘lish usuli» bilan bo‘linadi.",
     "profitOtherDeal": "{truck} mashinasidagi narx ({amount} $) {code} bitimiga yozilgan — bu bitimning daromadida yo‘q.",
-    "newDealForReceipt": "Prixod {number} shu bitimga biriktiriladi."
+    "newDealForReceipt": "Prixod {number} shu bitimga biriktiriladi.",
+    "receiptNotLinked": "Bitim ochildi, lekin prixod unga biriktirilmadi. Prixod kartasini ochib, «Bitim» blokidan shu bitimni tanlang."
   },
   "automation": {
     "title": "Avtomatlashtirish qoidalari",

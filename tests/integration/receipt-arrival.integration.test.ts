@@ -30,7 +30,7 @@ import { emitEvent } from '@/modules/platform/events/service';
 import { FOUNDERS } from '@/modules/platform/notifications/mutes';
 import { processPendingEvents, renderTelegramText } from '@/modules/platform/notifications/service';
 import { buttonsFor } from '@/modules/platform/telegram/staff-bot';
-import { createDeal } from '@/modules/wms/deals/service';
+import { bornWithRefusal, createDeal, linkReceipt } from '@/modules/wms/deals/service';
 import { assignReceiptClient } from '@/modules/wms/receipts/edit';
 import { confirmReceipt } from '@/modules/wms/receipts/service';
 
@@ -493,19 +493,24 @@ describe('what the fold must not touch', () => {
     // `staff_group_posts` holds one claimed row per thing said (skipped when
     // no group is linked) — the claim door must write none.
     const fresh = await mintClient(sellers.plain.id);
-    const receiptId = await receive(null);
-    await processPendingEvents();
-    await assignReceiptClient(receiptId, fresh, ctx());
-    await processPendingEvents();
-    const posts = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${fresh}`}`);
-    expect(posts).toHaveLength(0);
-    // The control: the same client's own CONFIRMED prixod is one.
     const second = await mintClient(sellers.plain.id);
-    await receive(second);
-    await processPendingEvents();
-    const said = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${second}`}`);
-    expect(said).toHaveLength(1);
-    await db.execute(sql`DELETE FROM staff_group_posts WHERE dedupe_key IN (${`first_cargo:${fresh}`}, ${`first_cargo:${second}`})`);
+    try {
+      const receiptId = await receive(null);
+      await processPendingEvents();
+      await assignReceiptClient(receiptId, fresh, ctx());
+      await processPendingEvents();
+      const posts = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${fresh}`}`);
+      expect(posts).toHaveLength(0);
+      // The control: a client's own CONFIRMED prixod is one.
+      await receive(second);
+      await processPendingEvents();
+      const said = await db.execute(sql`SELECT 1 FROM staff_group_posts WHERE dedupe_key = ${`first_cargo:${second}`}`);
+      expect(said).toHaveLength(1);
+    } finally {
+      // In a `finally`: the red proof of this test WRITES the row it forbids,
+      // and an assertion that throws must not leave it for the next file (#523).
+      await db.execute(sql`DELETE FROM staff_group_posts WHERE dedupe_key IN (${`first_cargo:${fresh}`}, ${`first_cargo:${second}`})`);
+    }
   });
 
   it('the claim door for a client with no seller tells nobody, as it always did', async () => {
@@ -530,6 +535,73 @@ describe('what the fold must not touch', () => {
     expect(JSON.stringify(confirmed)).not.toContain(foreign.code);
     expect(ev('DealDeviation')).toHaveLength(0);
     expect(ev('UnlinkedCargo')).toHaveLength(1);
+  });
+});
+
+describe('a deal born WITH a prixod — what the new-deal form drew is re-proved when it is saved', () => {
+  // «+ Yangi bitim ochish» on the prixod card opens a form that says «Prixod N
+  // shu bitimga biriktiriladi». The page proved that at RENDER; the save may
+  // be twenty minutes and a colleague's press later. Asked twice more: before
+  // the deal exists (`bornWithRefusal`), and by the link under the prixod's
+  // row lock (`bornWith`) — which is the one called here, directly.
+  const dealOf = async (receiptId: string) =>
+    (await db.select({ dealId: receipts.dealId }).from(receipts).where(eq(receipts.id, receiptId)))[0]!.dealId;
+
+  it('a prixod with no deal: nothing stands in the way, and the link lands', async () => {
+    const clientId = await mintClient(sellers.plain.id);
+    const receiptId = await receive(clientId);
+    expect(await bornWithRefusal(receiptId, clientId)).toBeNull();
+    const fresh = await mintDeal(clientId, false);
+    await linkReceipt(receiptId, fresh.id, ctx(), null, { bornWith: true });
+    expect(await dealOf(receiptId)).toBe(fresh.id);
+  });
+
+  it('a prixod a colleague filed meanwhile is NOT moved by the stale form — and the card’s own picker still moves it', async () => {
+    const clientId = await mintClient(sellers.plain.id);
+    const chosen = await mintDeal(clientId, true);
+    const receiptId = await receive(clientId, chosen.id);
+    expect(await bornWithRefusal(receiptId, clientId)).toBe('receipt_has_deal');
+    const fresh = await mintDeal(clientId, false);
+    await expect(linkReceipt(receiptId, fresh.id, ctx(), null, { bornWith: true })).rejects.toMatchObject({
+      code: 'receipt_has_deal',
+    });
+    expect(await dealOf(receiptId)).toBe(chosen.id);
+    // The control: a person who CHOSE the move (the card's picker passes no
+    // `bornWith`) is not refused — the rule is the form's promise, not a lock.
+    await linkReceipt(receiptId, fresh.id, ctx(), null);
+    expect(await dealOf(receiptId)).toBe(fresh.id);
+  });
+
+  it('a deal of ANOTHER client left on the row is no deal of the prixod’s own: the new deal replaces it', async () => {
+    const previous = await mintDeal(sellers.plain.clientId, true);
+    const receiptId = await receive(sellers.plain.clientId, previous.id);
+    const corrected = await mintClient(sellers.plain.id);
+    await assignReceiptClient(receiptId, corrected, ctx());
+    expect(await dealOf(receiptId), 'the correction leaves the old client’s deal on the row').toBe(previous.id);
+    expect(await bornWithRefusal(receiptId, corrected)).toBeNull();
+    const fresh = await mintDeal(corrected, false);
+    await linkReceipt(receiptId, fresh.id, ctx(), null, { bornWith: true });
+    expect(await dealOf(receiptId)).toBe(fresh.id);
+  });
+
+  it('a voided prixod, and another client’s, are refused — each in its own word, at both asks', async () => {
+    const clientId = await mintClient(sellers.plain.id);
+    const receiptId = await receive(clientId);
+    const fresh = await mintDeal(clientId, false);
+    // Another client's deal: the link's oldest refusal, and the pre-check's.
+    const stranger = await mintClient(sellers.plain.id);
+    expect(await bornWithRefusal(receiptId, stranger)).toBe('client_mismatch');
+    // Voided since the form was drawn.
+    await db
+      .update(receipts)
+      .set({ status: 'voided', voidedAt: new Date(), voidedBy: actorId, voidReason: 'born-with test' })
+      .where(eq(receipts.id, receiptId));
+    expect(await bornWithRefusal(receiptId, clientId)).toBe('receipt_not_confirmed');
+    await expect(linkReceipt(receiptId, fresh.id, ctx(), null, { bornWith: true })).rejects.toMatchObject({
+      code: 'receipt_not_confirmed',
+    });
+    expect(await dealOf(receiptId)).toBeNull();
+    expect(await bornWithRefusal(crypto.randomUUID(), clientId)).toBe('receipt_not_found');
   });
 });
 

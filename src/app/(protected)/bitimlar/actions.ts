@@ -6,6 +6,7 @@ import { getActor, type Actor } from '@/modules/platform/rbac/authorize';
 import { requestMeta } from '@/modules/platform/auth/session';
 import {
   DealError,
+  bornWithRefusal,
   canWriteDeal,
   createDeal,
   deferPayment,
@@ -27,6 +28,7 @@ import { parseTypedMoney } from '@/modules/wms/calc/money-input';
 import { ftlDoorFor } from '@/modules/wms/ftl/door';
 import { isLoadMode } from '@/modules/wms/ftl/sql';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
+import { logger } from '@/modules/platform/logger';
 
 export interface DealFormState {
   ok?: boolean;
@@ -138,21 +140,35 @@ export async function createDealAction(
   let id: string | null = null;
   // A deal opened FOR a prixod (the card's «+ Yangi bitim ochish», 0145) is
   // born with it: linked through the one link door — client match, the FTL
-  // door, the audit — right after the deal exists. A link that is refused
-  // must not un-create the deal or show an error over a form whose next
-  // press would mint a second one: the deal's own card opens instead, where
-  // «Prixod biriktirish» says what stood in the way.
+  // door, the audit — right after the deal exists.
+  //
+  // The page proved «this client's confirmed prixod, on no deal of its own»
+  // when it DREW the form, which may be twenty minutes and a colleague's
+  // press ago. So the same rule is asked here BEFORE the deal exists — a
+  // form older than the prixod's deal is refused in words and mints nothing
+  // — and once more by the link under the prixod's row lock (`bornWith`).
+  // Without either, a stale form moved the prixod off the deal somebody had
+  // just chosen and erased its confirmed calculation link, silently.
   const posted = String(form.get('receiptId') ?? '');
   const receiptId = isUuidShaped(posted) ? posted : null;
   let linked = false as boolean;
   const state = await run('terms', async (ctx, actor) => {
+    if (receiptId) {
+      const refused = await bornWithRefusal(receiptId, parsed.data.clientId);
+      if (refused) throw new DealError(refused);
+    }
     id = await createDeal({ ...parsed.data, load: readLoad(form, actor) }, ctx);
     if (receiptId && id) {
+      // Past this line the deal EXISTS. Whatever stops the link — the rule
+      // losing a race inside the instant since the ask above, a dropped
+      // connection — must not become an error page over a form whose next
+      // press mints a second deal: the new deal's card opens and says the
+      // prixod is not on it.
       try {
-        await linkReceipt(receiptId, id, ctx, ftlDoorFor(actor));
+        await linkReceipt(receiptId, id, ctx, ftlDoorFor(actor), { bornWith: true });
         linked = true;
       } catch (err) {
-        if (!(err instanceof DealError)) throw err;
+        logger.error({ err, receiptId, dealId: id }, '[deal] opened for a prixod, and the link did not land');
       }
     }
   });
@@ -165,8 +181,9 @@ export async function createDealAction(
     redirect(`/receipts/${receiptId}?bitim=1`);
   }
   // Straight to the card: a deal that was just created is a deal somebody is
-  // about to price, and the list is one more tap in the way.
-  if (state.ok && id) redirect(`/bitimlar/${id}`);
+  // about to price, and the list is one more tap in the way. Opened for a
+  // prixod that did not land on it, the card says so (`?prixod=yoq`).
+  if (state.ok && id) redirect(receiptId ? `/bitimlar/${id}?prixod=yoq` : `/bitimlar/${id}`);
   return state;
 }
 

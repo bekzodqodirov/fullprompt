@@ -324,6 +324,14 @@ export interface SummaryFacts {
    * the bill could not be asked at all; the line is then left out.
    */
   ai: SummaryAi | null;
+  /**
+   * Monday only: the LAST 24 HOURS beside the week's line. On a Monday there
+   * is no daily message, so without this Monday's own working hours were in
+   * no «oxirgi 24 soat» line at all — a twenty-hour hole in the rolling
+   * series every week, reaching him seven days later inside a total (the
+   * as-built review, AI-1). Null on a daily message, where `ai` IS that day.
+   */
+  aiDay: SummaryAi | null;
   /** Monday only. */
   weeklyBlock: {
     payments: PaymentsDue;
@@ -473,6 +481,9 @@ export function ownerSummaryText(f: SummaryFacts, opts: { quietLine?: boolean } 
   }
   const ai = aiLine(f.ai, f.weekly);
   if (ai) lines.push(ai);
+  // Monday: the week above, and the last 24 hours under it.
+  const aiDay = f.weekly ? aiLine(f.aiDay, false) : null;
+  if (aiDay) lines.push(aiDay);
 
   if (f.attention.total > 0) {
     lines.push('');

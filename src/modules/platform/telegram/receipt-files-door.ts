@@ -337,7 +337,10 @@ export async function receiptFileArrives(ctx: FileCtx, chatId: bigint): Promise<
       actorId: actor.id,
       receipt: door.receipt,
       item: String(at.messageId),
-      fileName: file.isPhoto ? 'rasm' : (file.fileName ?? 'fayl'),
+      // The name the file is STORED under — the one its tile on the card
+      // reads. A photo used to be recorded as «rasm», which matched nothing
+      // on the screen the History sits under.
+      fileName: saved.fileName ?? (file.isPhoto ? 'rasm' : (file.fileName ?? 'fayl')),
     });
   }
   noteReceiptFile(chatId, at, id);

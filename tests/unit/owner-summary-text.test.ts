@@ -50,6 +50,7 @@ function facts(over: Partial<SummaryFacts> = {}): SummaryFacts {
     leads: { fresh: 4, won: 1, wonUsd: 500, wonOther: 0 },
     attention: { total: 0, top: [] },
     ai: null,
+    aiDay: null,
     weeklyBlock: null,
     link: LINK,
     ...over,

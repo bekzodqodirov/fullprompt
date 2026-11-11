@@ -31,6 +31,7 @@ import { leadDealMoveRefusal, type FtlDoor } from '../ftl/door';
 import type { LoadMode } from '../ftl/sql';
 import { takeKpiSellerLocks } from '../staff/kpi-lock';
 import { followCompensationDealTx } from '../finance/compensation-follow';
+import { bornWithVerdict } from '../receipts/deal-state';
 import { revenueUsdSql } from '../finance/ledger-sql';
 import { REVENUE_TYPES } from '../finance/ledger-kinds';
 import { marginPct } from '../accounting/margin';
@@ -568,6 +569,51 @@ export async function saveLines(
  * Refused across clients: a receipt for GS777 filed under GS102's deal would
  * make both clients' money wrong, and the mistake is invisible afterwards.
  */
+/**
+ * What would refuse a deal being BORN with this prixod — asked by the
+ * new-deal action BEFORE the deal exists, so a form older than the prixod's
+ * deal is refused in words and mints nothing. `linkReceipt(…, { bornWith })`
+ * asks the same rule again under the row lock; this read is the pool's, and
+ * the two can only disagree inside the instant between them.
+ */
+export async function bornWithRefusal(receiptId: string, clientId: string): Promise<string | null> {
+  const [row] = await db
+    .select({
+      status: receipts.status,
+      clientId: receipts.clientId,
+      dealId: receipts.dealId,
+      dealClientId: deals.clientId,
+    })
+    .from(receipts)
+    .leftJoin(deals, eq(deals.id, receipts.dealId))
+    .where(eq(receipts.id, receiptId))
+    .limit(1);
+  if (!row) return 'receipt_not_found';
+  const refused = bornWithVerdict(row, clientId);
+  if (refused) return refused;
+  // A deal of ANOTHER client still on the row (a client correction): the new
+  // deal replaces it — unless its cargo already paid a seller's upsale, which
+  // `linkReceipt` refuses for every door.
+  if (row.dealId && (await dealPaidUpsale(db, row.dealId))) return 'upsale_paid';
+  return null;
+}
+
+/**
+ * Has cargo on this deal already PAID a seller's upsale? One statement, on
+ * whichever handle the caller is on — `linkReceipt` asks it inside its
+ * transaction, the new-deal pre-check on the pool — so the two cannot come to
+ * read «paid» differently.
+ */
+async function dealPaidUpsale(on: Pick<typeof db, 'execute'>, dealId: string): Promise<boolean> {
+  const paid = (await on.execute(sql`
+    SELECT 1 AS ok FROM calc_offers o
+     WHERE o.entity_type = 'deal' AND o.entity_id = ${dealId}::uuid
+       AND o.payout_expense_id IS NOT NULL
+     LIMIT 1
+  `)) as unknown as { ok: number }[];
+  return paid.length > 0;
+}
+
 export async function linkReceipt(
   receiptId: string,
   dealId: string | null,
@@ -580,6 +626,15 @@ export async function linkReceipt(
    * out of that seller's KPI).
    */
   ftlDoor: FtlDoor | null,
+  opts: {
+    /**
+     * The new-deal form's link (0145): the deal was opened FOR this prixod.
+     * The link then holds only while the prixod is still what the form drew
+     * — confirmed, and on no deal of its own (`bornWithVerdict`) — re-read
+     * under its row lock. Every other caller CHOSE the move and passes nothing.
+     */
+    bornWith?: boolean;
+  } = {},
 ): Promise<void> {
   const receipt = await db.query.receipts.findFirst({ where: eq(receipts.id, receiptId) });
   if (!receipt) throw new DealError('receipt_not_found');
@@ -590,12 +645,14 @@ export async function linkReceipt(
   // standing request with `calc_link_notified_at` NULL — i.e. the VED asked
   // again, in Telegram, about a prixod they had already refused (0119).
   if (dealId !== null && dealId === receipt.dealId) return;
+  let dealClientId: string | null = null;
   if (dealId) {
     const deal = await db.query.deals.findFirst({ where: eq(deals.id, dealId) });
     if (!deal) throw new DealError('not_found');
     if (!receipt.clientId || receipt.clientId !== deal.clientId) {
       throw new DealError('client_mismatch');
     }
+    dealClientId = deal.clientId;
   }
   // LTL / FTL (0135): may the re-file carry the new deal's FTL? Pool probe
   // first (#714). A re-file to an LTL deal and a detach NEVER downgrade — the
@@ -612,20 +669,34 @@ export async function linkReceipt(
       await tx.execute(sql`SELECT 1 FROM deals WHERE id = ${dealId}::uuid FOR SHARE`);
       if (await dealIsFtl(tx, dealId)) ftlLocked = await takeKpiSellerLocks(tx, [receipt.salesManagerId]);
     }
+    // «Born with the prixod»: the row as it stands NOW, under its lock (after
+    // the deal and KPI locks — the function's one order). The row alone, then
+    // its deal: a lock over a JOIN re-uses the joined row it read before the
+    // wait (#1585).
+    let standingDealId = receipt.dealId;
+    if (opts.bornWith && dealId && dealClientId) {
+      const [now] = (await tx.execute(sql`
+        SELECT status, client_id, deal_id FROM receipts WHERE id = ${receiptId}::uuid FOR NO KEY UPDATE
+      `)) as unknown as { status: string; client_id: string | null; deal_id: string | null }[];
+      if (!now) throw new DealError('receipt_not_found');
+      const [standing] = now.deal_id
+        ? ((await tx.execute(sql`SELECT client_id FROM deals WHERE id = ${now.deal_id}::uuid`)) as unknown as {
+            client_id: string;
+          }[])
+        : [];
+      const refused = bornWithVerdict(
+        { status: now.status, clientId: now.client_id, dealId: now.deal_id, dealClientId: standing?.client_id ?? null },
+        dealClientId,
+      );
+      if (refused) throw new DealError(refused);
+      standingDealId = now.deal_id;
+    }
     // Cargo that has PAID a seller's upsale stays on the deal that paid it
     // (docs/UCH-BAND.md §7, judge money-2): with a new deal per request a
     // re-sent job is a second deal, and moving the prixod there after the
     // first payout would pay the same cargo twice. The accountant takes the
     // payout back first (/upsale), then the prixod moves.
-    if (receipt.dealId) {
-      const paid = (await tx.execute(sql`
-        SELECT 1 AS ok FROM calc_offers o
-         WHERE o.entity_type = 'deal' AND o.entity_id = ${receipt.dealId}::uuid
-           AND o.payout_expense_id IS NOT NULL
-         LIMIT 1
-      `)) as unknown as { ok: number }[];
-      if (paid.length > 0) throw new DealError('upsale_paid');
-    }
+    if (standingDealId && (await dealPaidUpsale(tx, standingDealId))) throw new DealError('upsale_paid');
     await tx
       .update(receipts)
       .set(
@@ -668,7 +739,7 @@ export async function linkReceipt(
       entityType: 'receipt',
       entityId: receiptId,
       action: 'update',
-      before: { deal: receipt.dealId },
+      before: { deal: standingDealId },
       after: { deal: dealId },
     });
   });

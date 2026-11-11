@@ -591,6 +591,11 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(full.basicTag).toBe('5a0ae98c');
     expect(askTag(full.clientId, full.lots)).toBe('5a0ae98c');
     expect(full.tag).not.toBe(full.basicTag);
+    // …and the FULL recipe is under every button sent from 0145 on, so it is a LITERAL too (computed
+    // from the function as it shipped): a later change to how the measures are spelled into the hash —
+    // `lotShownKgSql`, its `::text`, a `trim_scale` — would answer «eskirgan» under every full button
+    // already in customers' chats, with the relational assertions below all still green.
+    expect(full.tag).toBe('3795624c');
     // A re-weigh a customer would SEE moves the full tag and leaves the basic one alone…
     expect(facts([{ ...PLAIN, shownKg: '1000.01' }, TARKIB]).tag).not.toBe(full.tag);
     expect(facts([PLAIN, { ...TARKIB, shownM3: '3.201' }]).tag).not.toBe(full.tag);

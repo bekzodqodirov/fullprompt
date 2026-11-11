@@ -231,6 +231,13 @@ describe('the collection: press, send, «Bo‘ldi»', () => {
     expect(keys).toHaveLength(2);
     expect(new Set(keys).size).toBe(2);
     expect(keys.every((key) => key.startsWith('fileAdded:'))).toBe(true);
+    // …and by the name it is STORED under, the one its tile on the card
+    // reads: a photo used to be recorded as «rasm», which matched nothing on
+    // the screen the History sits under.
+    const named = audit.flatMap((row) => Object.values((row.after ?? {}) as Record<string, string>)).sort();
+    const tiles = (await filesOn(receipt.id)).map((f) => `${f.fileName} · Telegram`).sort();
+    expect(named).toEqual(tiles);
+    expect(named.join('\n')).not.toMatch(/^rasm · /m);
   });
 
   it('an album is acknowledged ONCE, after its last part', async () => {

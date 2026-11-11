@@ -194,32 +194,44 @@ export function clientMeasuresHoldSql(lot: SQL): SQL {
  * (the design judge measured 4.5 → 48 ms with it first).
  */
 export function clientHoldsSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
+  const { early, late } = clientFactTerms(refs);
+  return sql`(${early}
+    AND ${clientMeasuresHoldSql(refs.lot)}
+    AND ${late})`;
+}
+
+/**
+ * The five 0144 terms, written ONCE — in two halves, because the measures sit
+ * between them in the state's sentence and the term that costs a subquery
+ * must stay last. `clientHoldsSql` and `clientFactsHoldSql` are both built
+ * from these: they used to be two hand copies, and a sixth term added to one
+ * would have made the card and the state disagree with nothing red (#513;
+ * the as-built review of 0145, CA-2).
+ */
+function clientFactTerms(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): { early: SQL; late: SQL } {
   const { lot, receipt } = refs;
-  return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
+  return {
+    early: sql`${LOT_CLIENT}.lot_id IS NOT NULL
     AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
-    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id
-    AND ${clientMeasuresHoldSql(lot)}
-    AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key
+    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id`,
+    late: sql`${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key
     AND ${LOT_CLIENT}.shown_zh = ${lot}.product_name_zh
-    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`;
+    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, '')`,
+  };
 }
 
 /**
  * The 0144 half alone — the five things every question has printed — for
  * the CARD, which says WHY a ✅ stopped holding: «og'irlik yoki hajm
- * o'zgardi» only when these still stand and the measures are what moved.
- * The lists never ask it; the state is `clientHoldsSql`'s, which is this AND
- * `clientMeasuresHoldSql` term for term (pinned by the 96-cell table reading
- * both through the card's reader).
+ * o'zgardi» only when these still stand and the measures are what moved
+ * (pinned: a lot renamed AND re-weighed blames the name, never the weight).
+ * The lists never ask it; the state is `clientHoldsSql`'s — these same terms
+ * (`clientFactTerms`) AND `clientMeasuresHoldSql`.
  */
 export function clientFactsHoldSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL {
-  const { lot, receipt } = refs;
-  return sql`(${LOT_CLIENT}.lot_id IS NOT NULL
-    AND ${LOT_CLIENT}.shown_count = ${lot}.box_count
-    AND ${LOT_CLIENT}.shown_client_id IS NOT DISTINCT FROM ${receipt}.client_id
-    AND ${LOT_CLIENT}.shown_goods_key IS NOT DISTINCT FROM ${LOT_TARKIB}.goods_key
-    AND ${LOT_CLIENT}.shown_zh = ${lot}.product_name_zh
-    AND ${LOT_CLIENT}.shown_ru IS NOT DISTINCT FROM NULLIF(${lotRuShownSql(lot)}, ''))`;
+  const { early, late } = clientFactTerms(refs);
+  return sql`(${early}
+    AND ${late})`;
 }
 
 /**

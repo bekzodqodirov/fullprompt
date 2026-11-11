@@ -83,3 +83,29 @@ export async function receiptDealInTx(
   const openDealCodes = open.map((row) => row.code);
   return { state: openDealCodes.length > 0 ? 'attachable' : 'none', dealId: null, dealCode: null, openDealCodes };
 }
+
+/**
+ * Why a deal may not be BORN with this prixod — the three facts the new-deal
+ * form reads when it draws «📦 Prixod N shu bitimga biriktiriladi» (0145):
+ * the prixod is this client's, it is confirmed, and it stands on no deal of
+ * its OWN (`ownDealOf`: a deal a client correction left on the row is another
+ * client's, and the new deal replaces it).
+ *
+ * ONE rule, asked three times: by the form's page at render, by the create
+ * action before the deal exists, and by `linkReceipt` under the prixod's row
+ * lock. The page proved it minutes ago; a colleague may have filed the prixod
+ * since, and without the second and third ask a stale form MOVED it — off the
+ * deal somebody had just chosen, erasing a confirmed calculation link — with
+ * nobody choosing that (the as-built review, CARD-3).
+ */
+export type BornWithRefusal = 'client_mismatch' | 'receipt_not_confirmed' | 'receipt_has_deal';
+
+export function bornWithVerdict(
+  row: { status: string; clientId: string | null; dealId: string | null; dealClientId: string | null },
+  clientId: string,
+): BornWithRefusal | null {
+  if (!row.clientId || row.clientId !== clientId) return 'client_mismatch';
+  if (row.status !== 'confirmed') return 'receipt_not_confirmed';
+  if (ownDealOf({ dealId: row.dealId, dealClientId: row.dealClientId }, clientId)) return 'receipt_has_deal';
+  return null;
+}

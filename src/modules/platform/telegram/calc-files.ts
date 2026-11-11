@@ -1320,7 +1320,13 @@ async function filePathOf(fileId: string): Promise<string | BotFileRefusal> {
 }
 
 /** A stored bot file: its bytes (for the readers) and its attachment. */
-export type SavedBotFile = { isPhoto: boolean; body: Buffer; attachmentId: string };
+export type SavedBotFile = {
+  isPhoto: boolean;
+  body: Buffer;
+  attachmentId: string;
+  /** The name the file is STORED under — what its tile on a card reads (set by `saveBotFile`). */
+  fileName?: string;
+};
 
 /**
  * Why a file the bot was sent is not stored (docs/FAYL-OQISH.md §3.4) — a
@@ -1384,6 +1390,7 @@ export async function saveBotFile(
   if (body.length === 0) return { refused: 'download_failed' };
 
   const isPhoto = file.isPhoto;
+  const storedName = isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`);
   const { saveAttachment, FileValidationError } = await import('../files/service');
   const { generateThumbnails } = await import('../jobs/thumbnails');
   let id: string;
@@ -1392,7 +1399,7 @@ export async function saveBotFile(
       {
         entityType: target.entityType,
         entityId: target.entityId,
-        fileName: isPhoto ? `${target.namePrefix}_${Date.now()}.jpg` : (file.fileName ?? `fayl_${Date.now()}`),
+        fileName: storedName,
         contentType: isPhoto ? 'image/jpeg' : (file.mime ?? 'application/octet-stream'),
         body,
         uploadedBy: target.uploadedBy,
@@ -1414,7 +1421,7 @@ export async function saveBotFile(
     throw err;
   }
   await generateThumbnails(id).catch(() => {});
-  return { isPhoto, body, attachmentId: id };
+  return { isPhoto, body, attachmentId: id, fileName: storedName };
 }
 
 /**

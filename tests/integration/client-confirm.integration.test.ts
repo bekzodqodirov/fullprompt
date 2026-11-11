@@ -1293,6 +1293,36 @@ describe('the measures in the answer (0145)', () => {
     expect(await pressW('yes')).toEqual({ outcome: 'already', verdict: 'yes' });
   });
 
+  it('the card blames the weight ONLY while everything else the client was shown still stands: renamed AND re-weighed is not «og‘irlik o‘zgardi»', async () => {
+    // Held: the full ✅ of the test above. §G.A: `measuresMoved` is true only
+    // while the five 0144 facts still hold — or a renamed lot would read
+    // «og‘irlik yoki hajm o‘zgardi — qayta so‘rang» and send the reader to the
+    // scales for a change of NAME. Nothing asserted this: with the column
+    // reduced to «the measures differ» every test stayed green.
+    const [own] = await db
+      .select({ zh: receiptLots.productNameZh })
+      .from(receiptLots)
+      .where(eq(receiptLots.id, lot.W));
+    const rename = (zh: string) => db.update(receiptLots).set({ productNameZh: zh }).where(eq(receiptLots.id, lot.W));
+    try {
+      // The weight alone: blamed.
+      await weigh('44.000', '0.3500');
+      expect((await stateOf('W')).client).toMatchObject({ holds: false, measuresMoved: true });
+      // The name too: the ✅ is about goods that are no longer listed — the weight is not the news.
+      await rename(`${own!.zh}改`);
+      const view = await stateOf('W');
+      expect(view.state).toBe('stale');
+      expect(view.client).toMatchObject({ holds: false, measures: true, measuresMoved: false });
+      // The name alone, the weight back: still stale, still not the weight.
+      await weigh('40.000', '0.3500');
+      expect((await stateOf('W')).client).toMatchObject({ holds: false, measuresMoved: false });
+    } finally {
+      await rename(own!.zh);
+      await weigh('40.000', '0.3500');
+    }
+    expect((await stateOf('W')).client).toMatchObject({ holds: true, measuresMoved: false });
+  });
+
   it('…and a re-weigh after the message went makes its buttons «eskirgan» — a client cannot confirm a weight they were not shown', async () => {
     const sent = (await factsW()).tag;
     try {
@@ -1420,12 +1450,34 @@ describe('the measures in the answer (0145)', () => {
 
   it('a server whose 0145 has not landed: the press is the 0144 press — recorded, no measure column named by any statement, and the sentence reads as it did', async () => {
     ready.measures = false;
-    const sent: string[] = [];
+    // EVERY statement, the transaction's included. A spy on `pgClient.unsafe`
+    // alone records the pool: `sql.begin` hands its callback a scoped client
+    // with an `unsafe` of its OWN, so the two statements 0145 added to the
+    // press — both inside `db.transaction` — were invisible to this test, and
+    // it stayed green with the guard on them deleted (the as-built review,
+    // CA-1: on a server behind, every customer's ✅/❌ would then be a 42703).
+    const pool: string[] = [];
+    const inTx: string[] = [];
     const unsafe = pgClient.unsafe.bind(pgClient);
-    const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
-      sent.push(query);
+    const poolSpy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {
+      pool.push(query);
       return (unsafe as (...a: unknown[]) => unknown)(query, ...rest);
     }) as typeof pgClient.unsafe);
+    const begin = pgClient.begin.bind(pgClient) as (...a: unknown[]) => unknown;
+    const beginSpy = vi.spyOn(pgClient, 'begin').mockImplementation(((...args: unknown[]) => {
+      const body = args[args.length - 1] as (scoped: { unsafe: (...a: unknown[]) => unknown }) => unknown;
+      return begin(...args.slice(0, -1), (scoped: { unsafe: (...a: unknown[]) => unknown }) => {
+        const scopedUnsafe = scoped.unsafe.bind(scoped);
+        scoped.unsafe = (query: unknown, ...rest: unknown[]) => {
+          inTx.push(String(query));
+          return scopedUnsafe(query, ...rest);
+        };
+        return body(scoped);
+      });
+    }) as unknown as typeof pgClient.begin);
+    // The one place the names may stand on a server behind: the reader's
+    // constant aliases (`NULL::text AS shown_kg`). A COLUMN is anything else.
+    const namesColumn = (query: string) => /shown_kg|shown_m3/.test(query.replace(/NULL::text AS shown_(kg|m3)/g, ''));
     try {
       const f = await factsW();
       expect(f.scope).toBe('basic');
@@ -1435,10 +1487,13 @@ describe('the measures in the answer (0145)', () => {
       expect(view.state).toBe('checked');
       expect(view.client).toMatchObject({ holds: true, measures: false, measuresMoved: false });
       expect(await shelf()).toBe('checked');
-      expect(sent.filter((q) => /lot_client_confirms/.test(q)).length).toBeGreaterThan(0);
-      expect(sent.filter((q) => /shown_kg|shown_m3/.test(q))).toEqual([]);
+      // The control is an IN-TRANSACTION statement: the writer was recorded.
+      expect(inTx.filter((q) => /insert into "?lot_client_confirms"?/i.test(q)).length, 'the press’s own upsert was seen').toBeGreaterThan(0);
+      expect(pool.filter((q) => /lot_client_confirms/.test(q)).length).toBeGreaterThan(0);
+      expect([...pool, ...inTx].filter(namesColumn)).toEqual([]);
     } finally {
-      spy.mockRestore();
+      poolSpy.mockRestore();
+      beginSpy.mockRestore();
       ready.measures = true;
     }
     await forget();

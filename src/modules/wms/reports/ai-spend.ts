@@ -255,7 +255,10 @@ export async function aiSpend(from: Date, to: Date): Promise<AiSpend> {
  *
  * The Monday message is the closed week, like every other figure on it:
  * whole Tashkent days, `from`'s midnight to the midnight after `to`
- * (Tashkent keeps no summer time: +05:00 all year).
+ * (Tashkent keeps no summer time: +05:00 all year). It ALSO carries the
+ * last 24 hours on a second line (`aiDay`, the caller asks this function
+ * twice): on a Monday there is no daily message, and without that line
+ * Monday's own working hours were said on no evening at all.
  */
 export function aiSpendWindow(input: { weekly: boolean; from: string; to: string; now: Date }): { from: Date; to: Date } {
   if (!input.weekly) return { from: new Date(input.now.getTime() - 24 * 3_600_000), to: input.now };

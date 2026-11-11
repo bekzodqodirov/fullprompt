@@ -127,6 +127,7 @@ describe('in the message', () => {
     leads: { fresh: 4, won: 1, wonUsd: 500, wonOther: 0 },
     attention: { total: 0, top: [] },
     ai: { usd: 4.2, calls: 132, unpriced: 0, unread: [] },
+    aiDay: null,
     weeklyBlock: null,
     link: 'https://gsrwms.uz/dashboard?davr=bugun',
     ...over,
@@ -146,6 +147,19 @@ describe('in the message', () => {
     // an AI answering customers at night is not business movement.
     const quiet = facts({ leads: { fresh: 0, won: 0, wonUsd: 0, wonOther: 0 } });
     expect(summaryQuiet(quiet)).toBe(true);
-    expect(summaryQuiet({ ...quiet, ai: null })).toBe(true);
+  });
+
+  it('Monday: the week’s line, then the last 24 hours — and a daily message never prints the second', () => {
+    const day = { usd: 0.4, calls: 9, unpriced: 0, unread: [] };
+    const monday = plain(ownerSummaryText(facts({ weekly: true, from: '2026-11-02', to: '2026-11-08', aiDay: day })))
+      .split('\n')
+      .filter((line) => line.startsWith('🤖'));
+    expect(monday).toEqual(['🤖 AI (hafta): ≈ $4.20 · 132 murojaat', '🤖 AI (oxirgi 24 soat): ≈ $0.40 · 9 murojaat']);
+    // A Monday on which nothing was asked in the last 24 hours: the week alone.
+    const quietMonday = plain(ownerSummaryText(facts({ weekly: true, aiDay: { usd: 0, calls: 0, unpriced: 0, unread: [] } })));
+    expect(quietMonday.split('\n').filter((line) => line.startsWith('🤖'))).toHaveLength(1);
+    // On a daily message `ai` IS the last 24 hours; a stray `aiDay` prints nothing.
+    const daily = plain(ownerSummaryText(facts({ aiDay: day })));
+    expect(daily.split('\n').filter((line) => line.startsWith('🤖'))).toEqual(['🤖 AI (oxirgi 24 soat): ≈ $4.20 · 132 murojaat']);
   });
 });

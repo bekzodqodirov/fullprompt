@@ -306,8 +306,8 @@ const DICT = {
   },
   // `{name}` is the seller: no linked Telegram, or no longer on the staff.
   arrivalSellerUnreachable: {
-    ru: 'Продавец {name} не получит это сообщение (Telegram не подключён или не работает) — отправлено вам',
-    uz: 'Sotuvchi {name} bu xabarni ololmaydi (Telegrami ulanmagan yoki ishlamaydi) — sizga yuborildi',
+    ru: 'Продавец {name} не получит это сообщение (Telegram не подключён или сотрудник уволен) — отправлено вам',
+    uz: 'Sotuvchi {name} bu xabarni ololmaydi (Telegrami ulanmagan yoki ishdan ketgan) — sizga yuborildi',
     'zh-CN': '销售 {name} 收不到此消息（未连接 Telegram 或已离职）——已发给您',
     en: 'Seller {name} cannot receive this (no linked Telegram, or no longer on the staff) — sent to you',
   },

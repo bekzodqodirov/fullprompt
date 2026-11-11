@@ -133,6 +133,8 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // A file a person sent to the prixod through the staff bot (0145, per file
   // — `fileAdded:<message>`).
   fileAdded: 'fileAdded',
+  // A removed file's own line on its parent's History (`removedFile`, history.ts).
+  fileName: 'fileName',
   clientAsk: 'clientAsk',
   // The VED queue's lines on the CARD (lead or deal): a request opened, taken,
   // released, handed back, answered with a price, re-opened for a correction

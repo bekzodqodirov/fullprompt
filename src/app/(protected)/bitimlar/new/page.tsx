@@ -5,6 +5,7 @@ import { getActor } from '@/modules/platform/rbac/authorize';
 import { db } from '@/modules/platform/db/client';
 import { clients, deals, leads, receipts } from '@/modules/platform/db/schema';
 import { isUuidShaped } from '@/modules/platform/audit/fields';
+import { bornWithVerdict } from '@/modules/wms/receipts/deal-state';
 import { PageHeader } from '@/components/ui/page';
 import { salesManagerOptions } from '@/modules/platform/rbac/queries';
 import { listStages } from '@/modules/wms/deals/service';
@@ -61,8 +62,9 @@ export default async function NewDealPage({
   // being opened FOR that cargo, so it is born with the prixod on it — the
   // seller who pressed «🔗 Bitim biriktirish» must not land on a new deal
   // with the prixod still on none. Only a live prixod of THIS client that has
-  // no deal yet: a `prixod=` in the URL is a forged post until proven (#514),
-  // and the create action asks the link's own door again.
+  // no deal of its own yet (`bornWithVerdict`): a `prixod=` in the URL is a
+  // forged post until proven (#514), and the create action asks the SAME rule
+  // again — before the deal exists, and under the prixod's row lock.
   const forReceipt =
     preset && params.prixod && isUuidShaped(params.prixod)
       ? await db.query.receipts.findFirst({
@@ -78,9 +80,15 @@ export default async function NewDealPage({
   const receipt =
     forReceipt &&
     preset &&
-    forReceipt.clientId === preset.id &&
-    forReceipt.status === 'confirmed' &&
-    (!forReceipt.dealId || (standing != null && standing.clientId !== preset.id))
+    bornWithVerdict(
+      {
+        status: forReceipt.status,
+        clientId: forReceipt.clientId,
+        dealId: forReceipt.dealId,
+        dealClientId: standing?.clientId ?? null,
+      },
+      preset.id,
+    ) === null
       ? { id: forReceipt.id, number: forReceipt.number ?? '' }
       : null;
 

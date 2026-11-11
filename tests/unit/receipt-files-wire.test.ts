@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { groupHistory, removedFile } from '@/modules/platform/audit/history';
 import { RECEIPT_DEAL_ANCHOR } from '@/modules/platform/notifications/receipt-arrival';
+import { bornWithVerdict } from '@/modules/wms/receipts/deal-state';
 
 /**
  * «📎 Fayl qo‘shish» — where the collection is wired into a ladder it does
@@ -106,3 +108,114 @@ describe('the card', () => {
     expect(read('src/modules/platform/files/service.ts')).toMatch(/\n  receipt: 'shared',\n/);
   });
 });
+
+describe('a deal opened FOR a prixod (the card’s «+ Yangi bitim ochish»)', () => {
+  const OWN = 'client-1';
+  const row = (over: Partial<Parameters<typeof bornWithVerdict>[0]> = {}) => ({
+    status: 'confirmed',
+    clientId: OWN,
+    dealId: null,
+    dealClientId: null,
+    ...over,
+  });
+
+  it('ONE rule says «this prixod may still be born with a deal» — and a deal of another client on the row is not in its way', () => {
+    expect(bornWithVerdict(row(), OWN)).toBeNull();
+    // A client correction left the old client's deal on the row: no deal of this prixod's.
+    expect(bornWithVerdict(row({ dealId: 'd-1', dealClientId: 'client-0' }), OWN)).toBeNull();
+    // Its OWN deal — somebody filed it since the form was drawn.
+    expect(bornWithVerdict(row({ dealId: 'd-2', dealClientId: OWN }), OWN)).toBe('receipt_has_deal');
+    expect(bornWithVerdict(row({ status: 'voided' }), OWN)).toBe('receipt_not_confirmed');
+    expect(bornWithVerdict(row({ status: 'draft' }), OWN)).toBe('receipt_not_confirmed');
+    expect(bornWithVerdict(row({ clientId: 'client-2' }), OWN)).toBe('client_mismatch');
+    expect(bornWithVerdict(row({ clientId: null }), OWN)).toBe('client_mismatch');
+    // The order: whose it is, then whether it stands, then its deal.
+    expect(bornWithVerdict(row({ clientId: 'client-2', status: 'voided', dealId: 'd', dealClientId: 'client-2' }), OWN)).toBe(
+      'client_mismatch',
+    );
+  });
+
+  it('the rule is asked three times — the page, the action BEFORE the deal exists, the link under the row lock', () => {
+    // Source-shape: each of these «works» without the ask, and the failure is
+    // a prixod silently moved off the deal a colleague had just chosen.
+    const page = read('src/app/(protected)/bitimlar/new/page.tsx');
+    expect(page).toContain('bornWithVerdict(');
+    const actions = read('src/app/(protected)/bitimlar/actions.ts');
+    const create = actions.slice(actions.indexOf('export async function createDealAction'));
+    const body = create.slice(0, create.indexOf('\nexport ', 10));
+    const ask = body.indexOf('await bornWithRefusal(receiptId, parsed.data.clientId)');
+    const made = body.indexOf('id = await createDeal(');
+    expect(ask).toBeGreaterThan(-1);
+    expect(made).toBeGreaterThan(ask);
+    // …and the answer is OBEYED, not only asked for (the browser spec walks
+    // it: a stale form is refused where the person is, and no deal is minted).
+    expect(body).toMatch(
+      /const refused = await bornWithRefusal\(receiptId, parsed\.data\.clientId\);\s*if \(refused\) throw new DealError\(refused\);/,
+    );
+    expect(body).toContain('await linkReceipt(receiptId, id, ctx, ftlDoorFor(actor), { bornWith: true });');
+    const service = read('src/modules/wms/deals/service.ts');
+    const link = service.slice(service.indexOf('export async function linkReceipt('));
+    expect(link.slice(0, link.indexOf('\nexport ', 10))).toMatch(/if \(opts\.bornWith && dealId && dealClientId\) \{[\s\S]*?FOR NO KEY UPDATE[\s\S]*?bornWithVerdict\(/);
+  });
+
+  it('past the deal’s creation NOTHING becomes an error page: the link is caught whole, and the deal’s card says the prixod is not on it', () => {
+    const actions = read('src/app/(protected)/bitimlar/actions.ts');
+    const create = actions.slice(actions.indexOf('export async function createDealAction'));
+    const body = create.slice(0, create.indexOf('\nexport ', 10));
+    // No rethrow in the link's catch: the old `if (!(err instanceof DealError)) throw err;`
+    // put a dropped connection on an error page over a form whose next press
+    // minted a SECOND deal.
+    const from = body.indexOf('{ bornWith: true }');
+    const to = body.indexOf('if (state.ok && id && receiptId && linked)');
+    expect(from).toBeGreaterThan(-1);
+    expect(to).toBeGreaterThan(from);
+    const caught = body.slice(from, to);
+    expect(caught).toContain('} catch (err) {');
+    expect(caught).not.toContain('throw err');
+    expect(body).toContain('redirect(receiptId ? `/bitimlar/${id}?prixod=yoq` : `/bitimlar/${id}`);');
+    expect(read('src/app/(protected)/bitimlar/[id]/page.tsx')).toContain("prixod === 'yoq'");
+  });
+
+  it('the prixod card offers the link only where the form would take the prixod, and says «voided» in the block itself', () => {
+    const card = read('src/app/(protected)/receipts/[id]/page.tsx');
+    expect(card).toContain("!ownDeal && receipt.status === 'confirmed' && mayEditDealTerms(actor.permissions)");
+    expect(card).toContain("voided={receipt.status === 'voided'}");
+    // «The prixod's deal» on the card is the message's own rule.
+    expect(card).toContain('ownDealOf({ dealId: linkedDeal.id, dealClientId: linkedDeal.clientId }, receipt.clientId)');
+  });
+});
+
+describe('the History of a prixod’s files', () => {
+  it('a removed file names itself — a bare «o‘chirdi» on a prixod card reads as cargo data deleted', () => {
+    expect(removedFile({ action: 'delete', before: { attachmentId: 'a-1', fileName: 'invoice.pdf' } })).toEqual([
+      { key: 'fileName', before: 'invoice.pdf', after: null },
+    ]);
+    // Only a DELETE, only a file: nothing else of a delete row's `before` is this card's to print.
+    expect(removedFile({ action: 'update', before: { fileName: 'invoice.pdf' } })).toEqual([]);
+    expect(removedFile({ action: 'delete', before: { name: 'Lead', phone: '+998' } })).toEqual([]);
+    expect(removedFile({ action: 'delete', before: null })).toEqual([]);
+    expect(removedFile({ action: 'delete', before: { fileName: '' } })).toEqual([]);
+    // …and the History's own grouping prints it: the function existing is not the line being drawn.
+    const [group] = groupHistory([
+      {
+        id: '1',
+        actorId: 'u-1',
+        actorName: 'Dilnoza',
+        action: 'delete',
+        before: { attachmentId: 'a-1', fileName: 'invoice.pdf' },
+        after: null,
+        createdAt: new Date('2026-11-11T10:00:00Z'),
+      },
+    ]);
+    expect(group!.changes).toEqual([{ key: 'fileName', before: 'invoice.pdf', after: null }]);
+  });
+
+  it('a bot file is recorded under the name it is STORED under — the one its tile on the card reads', () => {
+    const door = read(`${T}/receipt-files-door.ts`);
+    expect(door).toContain("fileName: saved.fileName ?? (file.isPhoto ? 'rasm' : (file.fileName ?? 'fayl')),");
+    const saver = read(`${T}/calc-files.ts`);
+    expect(saver).toContain('fileName: storedName,');
+    expect(saver).toContain('return { isPhoto, body, attachmentId: id, fileName: storedName };');
+  });
+});
+
