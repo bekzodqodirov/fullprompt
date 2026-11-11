@@ -314,10 +314,11 @@ Built:
 
 **As built** (overrides the bullets above where they differ):
 
-- The walk's stop rule is simpler than (d): ANY refusal that is not the model's own failure
-  ends it (`forbidden`, `frozen`, `composition_changed`, `ai_not_configured`,
-  `receipt_not_confirmed`, a lot that is gone), and so do two `ai_failed` in a row. A shut
-  door is shut for the next row too, and one sentence on the screen is enough.
+- The walk's stop rule (`walkStep`, editor-state.ts): a door shut for EVERY row ends it
+  (`forbidden`, `frozen`, `ai_not_configured`, anything unknown), and so do two `ai_failed`
+  in a row — one sentence on the screen is enough. A fact about ONE lot
+  (`composition_changed`, `receipt_not_confirmed`, a lot that is gone) leaves that lot's
+  rows alone and the walk goes on; the lot is named at the end.
 - The walk's write is `fillEmpty` — the emptiness check is INSIDE the state updater, so «a
   code typed meanwhile is never overwritten» is a property of the write and not of a ref read
   a moment earlier; the ref (`rowsRef`) only saves the model a call for a row that got a code.
@@ -330,6 +331,18 @@ Built:
   system prompt gained one rule: «Контекст» is a hint, classify only «Товар».
 - The editor's root carries `data-tnved-unsaved` (typed and not saved, product rows and
   lines) — the invoice button reads it (§6.4).
+- **The editor re-seeds by MERGE, never by remount** (the review of the built round, five
+  findings — DECISIONS #1641). `editor-state.ts` (pure): `reseedRows` keeps a code that is
+  typed or suggested and not saved on its row when the server's rows come back, and takes the
+  server's row everywhere else; the page's `key` built from the line revisions is gone. The
+  save is not stopped by one refusal (`saveLineCodesAction` → `refused`, `saveTnvedAction` →
+  `gone`, every code validated before the first write); the walk ends with the editor
+  (unmount), `walkStep` replaces the stop rule above for ONE lot's refusal (that lot is left
+  alone, the walk goes on, the lot is named at the end), and `sameNameCode` takes a
+  same-named line's code off the screen before the model is asked. Pinned by
+  `tests/unit/tnved-editor-state.test.ts`, the save tests in `tnved-line-ai.integration` and
+  the browser proof in `m9zzx` (a colleague's code and revision written by SQL, the tab
+  re-read, the typed code still there). 12 more red proofs.
 - Pinned by `tests/unit/tnved-question.test.ts` (the question, pure),
   `tests/integration/tnved-line-ai.integration.test.ts` (every door with a model stand-in
   that records what it is asked — the card door proven ALONE by a prixod received at a third

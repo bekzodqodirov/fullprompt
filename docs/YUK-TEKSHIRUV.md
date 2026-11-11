@@ -1,5 +1,10 @@
 # Yuk ma'lumoti tekshiruvi — «✅ tekshirildi» belgisi
 
+> **Changed on 2026-11-10 (`docs/TARKIB-TUZATISH.md` §3.5, §9.3).** ANY standing lot tarkibi makes the lot ✅ — the
+> one-line «another good» exception (8.6) is withdrawn, because the lists print the tarkib's name now; and the
+> person's ✅ snapshots the Russian name the card SHOWS (the tarkib's label while one is written), so a tarkib
+> written, changed or cleared after a tick reads «o'zgardi».
+
 Agreed 2026-10-03. His request, verbatim: «yuk malumoti toldirildi degan znacok
 yani state kerak boladi logist klientga chiqib soradi 100 karobkangiz keldi
 undan klaviatura ekan togrimi agar togri bolsa check qoyadi va bu sklad

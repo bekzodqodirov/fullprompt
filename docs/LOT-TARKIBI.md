@@ -1,5 +1,11 @@
 # Lot tarkibi — one lot, several goods on the papers (2026-10-01)
 
+> **Changed on 2026-11-10 — read `docs/TARKIB-TUZATISH.md` beside this file.** Four rules below are REVERSED there,
+> on the owner's word: the client's document is optional (rule 3 demanded one); the Russian name the lists SHOW
+> follows the tarkib («the lot keeps its body» still holds for the stored name, the sticker and the scans); a
+> tarkib line has its 🤖 on the Bojxona tab (§5 said «no AI button on a line»); the plan's agent file prints a row
+> per good (§4 built one row with the contents in the cell). The invoice is built from positions there (§6).
+
 ## His case and his answers
 
 A lot of 100 cartons for GS777 was received. The warehouse opened ONE carton,

@@ -172,6 +172,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | **Mijoz topuvchi agent** (the separate client-finding service — NOT the AI sotuvchi, though both say «agent»): its webhook door, the belt, the unreminded clock, the suppression and outcomes feeds; an agent lead's AI reply waits for the agent's playbook window | `docs/AGENT-FEED.md` (DECISIONS #1545-#1570; the lead source `agent`, `/api/agent/*`, `crm/agent-feed.ts` — while `agent_*` tables, `/agent on` and `wms/agent/**` are the AI sotuvchi's) |
 | A client's many deals priced on one truck in ONE table; a cancelled truck's number comes back; the destination fixed before departure | `docs/NARX-VA-RAQAM.md` — agreed 2026-11-08 (his «1a 2a 3a 4a 5a 6a 7a 8a»), BUILT; §3 binding, §4 as built |
 | «🧮 Hisoblatish» and «🤖 AI rastamojka» as two doors — no question per file, the plain summary and the VED's money-free note, the AI table without echo, one prompt kept last, one question per burst | `docs/IKKI-ESHIK.md` — agreed 2026-11-08 (his «sen aytgandek bolsin» = 1a-6a, every ⭐), SHIPPED; its «As built» bullets override the sections they sit in |
+| The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
 
 ## State — 2026-08-23
 
@@ -3383,7 +3384,52 @@ replies, 303 dangerous) — keep them green on ANY policy change; G10's same-tex
 with no figure/phone/link; `listedCount` sources a count the reply enumerates; the stopping rule and the open
 phrasings are in #1619. Writing his usage guide (#1621) found and fixed three more: the page's «📌 Umumiy qoida» never saved (it now draws the arm's token, `WebDraft.kbArmToken`), «Bu chatni olmang» promised the old messages stay, and the restriction alarm named «Tekshirdim»; `m8-crm.desktop` waits for the move action before its reload. Deploy MUST rebuild tg-listen.
 
-**Latest migration: 0142** (`chat_rule_bound_via`, `when` …121; ledger must reach **143**). Before
+**Round — Tarkib tuzatishlari (2026-11-10; DECISIONS #1622-#1642; migration 0143 `tarkib_document_optional`, `when`
+…122 — ledger must reach 144; minted as 0142 and renumbered on the merge, the THIRTY-FIRST collision: main's «✅ Yuborish
+chiqmadi» took 0142 and its `when` first; spec `docs/TARKIB-TUZATISH.md`, §9 and every «As built» block binding).** His
+six items after six weeks of the lot tarkibi, built with every ⭐ (ten questions sent with the result — the CHANGELOG
+entry lists them). (1) The client's document is OPTIONAL (0143 drops NOT NULL on `lot_compositions.attachment_id`; a
+cited file is checked as before; the reader LEFT JOINs; `violatedNotNull` names the one-migration-behind refusal).
+(3-4) **The Russian name a lot is SHOWN under is DERIVED from its tarkib and has ONE home, `receipts/lot-name.ts`** — one
+good → its name, several → «first +N» (`tarkibLabel` pure ↔ `lotRuShownSql` / `lotGoodsShownSql` / `lotGoodsKindsSql` /
+`tarkibLineMatchSql` / `lotRuShownFor`); never written: the stored `product_name_ru` stays IDENTITY (sticker, customs
+papers, TNVED memory, price history, the ✏️ form). A one-line tarkib named as the lot's CHINESE name gives no label.
+«+N» survives every cut (`platform/text/label-count.ts`, `components/lot-goods-name.tsx`). ~45 readers swapped
+(warehouse + search = P2a, office + customer = P2b, built in worktrees); a row that is both display and identity gets
+a SECOND field (`BatchLot.shownNameRu`, `goodsKinds`); stored payloads keep the own name; searches OR the tarkib arm
+and strip a pasted «+N»; lists that already print «first +N» over several lots unnest goods KINDS. **Fence
+`tests/unit/lot-name-fence.test.ts`**: every direct read of the stored column is on a counted list with its reason and
+every file naming the property is classified shown/own/writer/both — a new list reading the stored name is red the day
+it is written. Any STANDING tarkib makes the lot ✅ (reverses 8.6) and the person's ✅ is for the name the card SHOWS
+(`lot-check-sql.ts` compares `lotRuShownSql`; inside the tick's tx the name is read with the pure builder — a pooled
+reader there turns `tx-pool` red). (2) The plan's «Agent uchun Excel» prints ONE ROW PER GOOD per block
+(`planContents` + `paperLinesByPart`: ONE fit sliced over here / «В пути» / «Не пришло», plan decimals kg 3 / m³ 4,
+grouped by lot id, photo once, every row wrapped and as tall as its text — `wrappedLines`; an approved plan whose
+truck holds none of the lot keeps the plan's own positions). (5) A tarkib line has its 🤖
+(`suggestTnvedForLineAction`, by line ID; `lineQuestion` pure: the line's own name, the photo only when the lot holds
+ONE good; every door before any spend; `max_tokens` 16000 + a named cut + logs). **The Bojxona editor re-seeds by
+MERGE, never by remount** (`tnved/editor-state.ts` pure: `reseedRows`, `walkStep`, `sameNameCode`; the page's `key` is
+gone): unsaved codes survive a save, the 🔄 and a colleague's change; «Saqlash» posts only changed codes and one
+refused name/lot does not stop the rest (`gone` / `refused`); the walk fills 💡 hints first, never overwrites a typed
+code (`fillEmpty`), leaves a stale lot alone, ends with the editor. (6) **The invoice draft is built from POSITIONS**
+(`documents/invoice-rows.ts`, pure): auto-merge = same scope + code + name + unit; one code under different names is
+ASKED in a dialog (`invoice-download.tsx` — a BUTTON, the file through the signed link; the list is read at the press
+and AGAIN at «Invoysni olish», and nothing is followed when it cannot be read, because a failed download REPLACES the
+screen); the answer travels in the address (`?merge=<code>.<sig>,…`, pairs whenever they fit; `sig` hashes the names
+shown, so a stale answer names nothing); never across a customs scope, never «шт» off the paper by itself. New column
+«Маркировка» after «№» (client code / marking + lot letter), RED where one lot's tarkib stands on several positions.
+**Every reader of the invoice sheet reads by HEADER** (`tests/fixtures/invoice-sheet.ts`). Found on the way: the
+client-history XLSX answered 500 for every client since it shipped (exceljs refuses a sheet named «History»); the
+document guard 404s a malformed id. Reviewed as built (#1640-#1641: ten findings, none refuted, all fixed and
+red-proven — the skeptics died on the usage limit, so each was reproduced by a failing test first). LOOKED AT at 360
+and 1280 with a 60-character first good (#1639): on a phone the stock and truck tables scroll sideways (fixed
+min-width), so a LONG name's «+N» is past the edge until swiped — stated to him. TRAPS (#1642): a red proof that turns
+a refusal into a success leaves what it wrote in the dev database; `eslint .` lints `.claude/worktrees/**`;
+`scrollIntoView` inside a truncating box scrolls the box (a screenshot artifact); a finder that died returns «no
+findings».
+
+**Latest migration: 0143** (`tarkib_document_optional`, `when` …122; ledger must reach **144**). Before
+it: 0142 (`chat_rule_bound_via`, `when` …121). Before
 it: 0141 (`intake_door`, `when` …120). Before
 it: 0140 (`truck_queue_alerts`, `when` …119). Before
 it: 0139 (`calc_intake_durable`, `when` …118). Before
@@ -3530,7 +3576,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **143** since 0142 (142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **144** since 0143 (143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read

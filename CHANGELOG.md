@@ -1,5 +1,128 @@
 # CHANGELOG
 
+## 2026-11-10 — Tarkib tuzatishlari: hujjat majburiy emas, nom tarkibdan, har tovar alohida qator, tarkibga AI, invoysda birlashtirish va qizil belgilar
+
+Sizning olti bandingiz («togirlash kerak bolgan ishlar bor…»). Bitta migratsiya (**0143**; avval 0142 edi, boshqa
+sessiyaning «✅ Yuborish chiqmadi» raundi shu raqamni oldin oldi). Deploydan keyin baza hisobi **144** bo'lishi kerak.
+Yangilangani shu son va `/api/version` bilan tekshiriladi. Savollarim pastda — javob bermaguningizcha ⭐ variant
+ishlaydi.
+
+### 1. Tarkib saqlashda hujjat so'ralmaydi
+- Tarkibni **hujjatsiz** saqlasa bo'ladi. «Mijozning hujjati (ixtiyoriy)» bo'limi endi qatorlardan pastda turadi:
+  xohlasangiz biriktirasiz, xohlasangiz yo'q. Biriktirilgan hujjatni olib tashlash ham mumkin.
+- Hujjat biriktirilsa, eski qoida joyida: u shu prixodning hujjati bo'lishi va qabul paytidagi karobka rasmi
+  bo'lmasligi kerak.
+- Yo'l-yo'lakay: hujjat yuklanmay qolsa (masalan, telefon HEIC rasm bersa yoki internet uzilsa) ekran jim turardi —
+  endi sababini aytadi.
+
+### 2. «Agent uchun Excel»da har bir tarkib alohida qator
+- Rejadan olinadigan «Agent uchun Excel»da tarkibli lot endi **bitta qator emas**: har bir tovar o'z qatorida,
+  o'z dona, karobka, kg va kubi bilan. Avval hammasi bitta qatorda, tovar nomi katagining ichida yozilgan edi.
+- Rasm har bir lot uchun bir marta (birinchi qatorida) turadi. Xitoycha nom yo'qolmaydi: tarkibdagi tovarlar lotning
+  o'z nomidan boshqa bo'lsa, birinchi qatorda «На коробке / On the carton: …» deb yoziladi.
+- Lot rejaga qisman kirgan bo'lsa (masalan, 100 karobkadan 40 tasi), qatorlardagi sonlar taxminiy bo'ladi va
+  rang bilan belgilanib, izohida «taxminiy» deb yoziladi — qaysi karobkada qaysi tovar borligini tizim bilmaydi.
+- Bloklar («shu yerda», «Yo'lda», «Kelmadi») ichidagi qatorlar yig'indisi blok sarlavhasidagi songa teng.
+- Uzun nom va uning yonidagi TNVED kodi endi katakda to'liq ko'rinadi (qator o'zi balandlashadi). Tekshiruvda
+  topildi: uzun nomda kodning oxirgi raqamlari qirqilib, 10 xonali kod 8 xonaliga o'xshab qolardi.
+
+### 3-4. Ro'yxatlarda lot nomi tarkibdan olinadi
+- Tarkibda **bitta tovar** bo'lsa — ruscha nom o'rnida shu tovarning nomi turadi.
+- **Bir nechta tovar** bo'lsa — birinchi tovarning nomi va yonida qolganlarining soni: uch tovarli lot
+  «Клавиатура +2» bo'lib ko'rinadi.
+- Bu nom ekranlar va ro'yxatlarda ko'rinadi: sklad qoldig'i va uning Excel'i, reja, partiya kartasi, xarajatlar va
+  narx sahifalari, prixod kartasi, karobka va yashik sahifalari, topshirish ekrani, qidiruv (⌘K), bot javobi,
+  mijoz kartasidagi «Yuklar», bitim tanlash ro'yxatlari, hisobotlar, xarita, mijoz kabineti va mijozga boradigan
+  xabarlar, topshirish akti.
+- Qidiruv ham tarkibni biladi: «мышь» deb yozsangiz, ikkinchi qatorida sichqoncha bo'lgan lot ham topiladi.
+- **Skladchi yozgan nom o'zgarmaydi** — u bazada qanday bo'lsa shunday qoladi. Tarkib o'chirilsa, ro'yxatlarda
+  o'sha eski nom qaytadi. Stiker (yorliq) va skanerlash ekranlari avvalgidek skladchi yozgan nomni ko'rsatadi.
+- Nom katakka sig'may qirqilsa ham «+2» qirqilmaydi.
+- ✅ «Yuk ma'lumoti tekshirildi» belgisi endi **ekranda ko'ringan nom** uchun qo'yiladi. Belgi qo'yilgandan keyin
+  tarkib yozilsa yoki o'zgarsa — «o'zgardi, qayta so'rang» bo'ladi. Tarkib yozilgan lot (bitta qatorli bo'lsa ham)
+  ✅ hisoblanadi.
+
+### 5. Bojxona bo'limida tarkib qatoriga ham AI
+- Mashina → «Bojxona»: tarkibning **har bir qatori yonida 🤖** tugmasi bor. «🤖 AI taklifi — bo'sh turganlarga (N)»
+  tugmasi ham endi tarkib qatorlarini sanaydi va ularni ham to'ldiradi. Avval tarkibga bo'lingan lotda AI umuman
+  yo'q edi.
+- AI har bir qatorni **o'z nomi** bo'yicha so'raydi. Rasmni faqat lotda bitta tovar bo'lganda ko'radi: bir nechta
+  tovarli lotning rasmida ulardan bittasi turadi va AI'ni adashtiradi. Bunday qatorda «rasmsiz, faqat nomga qarab»
+  deb yozib qo'yiladi.
+- «Hammasiga» tugmasi: avval shu nomga ilgari qo'yilgan kod bo'lsa (💡) o'shani qo'yadi va AI'dan so'ramaydi; bir
+  xil nomli qatorlarga bitta javobni qo'yadi; siz o'zingiz yozib qo'ygan kodni **hech qachon o'chirmaydi**;
+  to'xtatish tugmasi bor; AI ishlamayotgan bo'lsa birinchi qatordayoq to'xtaydi; boshqa sahifaga o'tsangiz ham
+  to'xtaydi.
+- AI javobi — taklif. «Saqlash»ni bosmaguningizcha hech narsa yozilmaydi. Tarkib qatorining kodi faqat shu lotda
+  saqlanadi.
+- **Saqlanmagan kodlar endi yo'qolmaydi.** Ilgari bitta lotning tarkibi o'zgarsa yoki bitta kod saqlansa, ekrandagi
+  boshqa saqlanmagan kodlar (AI javoblari ham) o'chib ketardi. Endi sahifa yangilansa ham ular joyida qoladi.
+  «Saqlash» ham bitta muammoli qator tufayli to'xtab qolmaydi: qolganlari saqlanadi, muammolisi nomi bilan aytiladi.
+- Yo'l-yo'lakay: AI ba'zan «javob bermadi» deyishining bir sababi topildi — javobga ajratilgan joy kam edi, murakkab
+  tovarda javob yarmida kesilardi. Kengaytirildi. «Saqlash» endi faqat o'zgargan kodlarni yuboradi.
+
+### 6. Invoys qoralamasi
+- **Kod ham, nom ham bir xil** bo'lsa — tizim o'zi qo'shib, bitta pozitsiya qiladi.
+- **Kod bir xil, nom har xil** bo'lsa — «Invoys» tugmasini bosganda **oyna ochiladi**: shunday holatlar ro'yxati,
+  har birida tovar nomlari, soni va qaysi lotlarga tegishli ekani. Har biriga «Qo'shish» yoki «Alohida» tanlaysiz,
+  keyin «Invoysni olish». Tanlovingiz shu qurilmada shu mashina uchun eslab qolinadi.
+- Fayldagi **«№» dan keyin yangi ustun — «Маркировка»**: har bir pozitsiya qaysi mijozning qaysi lotidan ekani
+  (mijoz kodi va lot harfi, masalan «GS777-A»; egasiz yukda markirovka).
+- **Qizil rang**: bitta lotning tarkibi invoysda bir necha qatorga bo'lingan bo'lsa, o'sha lotning belgisi har bir
+  qatorda qizil va qalin yoziladi. Ya'ni qizil «GS777-A» — bu karobkani ochsangiz ichidan shu qatorlardagi
+  tovarlardan istalgani chiqishi mumkin, degani. Lot butunicha bitta pozitsiyada bo'lsa — oddiy qora.
+- Ikki narsani tizim o'zi hech qachon qo'shmaydi: (1) mijoz **o'z firmasi bilan** rasmiylashtiradigan yukni biz
+  rasmiylashtiradigan yuk bilan; (2) biri «dona», biri «kg» bilan yozilgan qatorlarni — bunisini oynada so'raydi.
+- Oynada «N ta kod saqlanmagan» degan ogohlantirish chiqishi mumkin: invoys faqat **saqlangan** kodlardan tuziladi.
+- Internet yoki server uzilgan paytda tugma bosilsa, sahifa buzilmaydi: «ro'yxatni o'qib bo'lmadi, qayta bosing»
+  deydi. Oyna ochiq turgan paytda kimdir kod yoki tarkibni o'zgartirsa, «Invoysni olish» yangi ro'yxatni
+  ko'rsatib qayta so'raydi.
+
+### Yo'l-yo'lakay topilgan va tuzatilgan
+- **«Mijoz tarixi» hisobotining Excel'i hech qachon yuklanmagan ekan** (Hisobotlar → mijoz tarixi → ⬇️ XLSX xato
+  berardi). Endi yuklanadi.
+- Hujjat yuklab olish havolalari noto'g'ri (buzilgan) manzil bilan ochilsa, xato sahifasi o'rniga «topilmadi»
+  javobini beradi.
+
+### Aytib qo'yay
+- Rejaning «Agent uchun Excel»i tarkib yozilgandan keyin qayta olinsa, unda qatorlar ko'payadi (reja versiyasi
+  o'zgarmaydi).
+- «Hujjat agentga yuborildi» belgisi qo'yilgan mashinaning hujjatlari avvalgidek muzlatilgan: keyin yozilgan tarkib
+  unga ta'sir qilmaydi, uning tarkib qatorlarida 🤖 ham yo'q. Manifest va qayta chop etilgan topshirish akti esa
+  tarkibning hozirgi holatini ko'rsatadi.
+- Telefonda sklad qoldig'i va partiya jadvallari avvaldan yonga suriladi. Tovar nomi juda uzun bo'lsa, «+2» ni
+  ko'rish uchun jadvalni biroz surish kerak (kompyuterda to'liq ko'rinadi).
+- AI yordamchining «SQL» javoblari (admin uchun) skladchi yozgan nomni ko'rsatadi — u bazaning o'zini o'qiydi.
+- Bu tugmada AI uchun kunlik limit yo'q (lotdagi 🤖 da ham yo'q edi).
+
+### Deploy
+1. Zaxira oling (hajmi 0 emasligini tekshiring).
+2. Bu ish hozircha `claude/focused-bardeen-9t1bij` shoxida turibdi. Avval uni **main'ga qo'shing** (PR ochib merge
+   qilinadi — aytsangiz, PR'ni o'zim ochaman), keyin serverda: `git pull`, `docker compose build migrate`, so'ng
+   `docker compose --profile https --profile telegram up -d --build`.
+3. Baza hisobi **144** chiqishi kerak; `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
+4. Besh daqiqalik sinov `docs/UPDATE.md`da («Tarkib tuzatishlari»).
+
+### Sizdan javob kutayotgan savollar (javob bo'lmaguncha ⭐ ishlaydi)
+1. Tarkib yozganda hujjat: ⭐ a) so'ralmaydi, ixtiyoriy · b) majburiy qolsin, lekin skladchi qabulda olgan rasm ham
+   o'tsin · c) faqat ko'p tovarli tarkibda majburiy.
+2. Hujjatsiz yozilgan tarkib lotni «✅ tekshirilgan» qiladimi: ⭐ a) ha · b) yo'q, faqat hujjatli tarkib.
+3. «Yuklama» deganingiz — reja sahifasidagi «Agent uchun Excel»: ⭐ a) ha, faqat shu fayl · b) rejaning ekrandagi
+   ro'yxatida ham har tovar alohida qator bo'lsin · c) yo'q, boshqa joyni nazarda tutgan edim (qaysi?).
+4. Ko'p tovarli tarkibda nom: ⭐ a) «Клавиатура +2» (birinchisidan tashqari yana 2 ta) · b) «Клавиатура +3»
+   (jami 3 ta) · c) hammasi vergul bilan.
+5. Mijoz ko'radigan joylarda ham (kabinet, «yukingiz keldi» xabari, topshirish akti) tarkib nomi chiqsinmi:
+   ⭐ a) ha · b) yo'q, mijoz skladchi yozgan nomni ko'rsin.
+6. Bir xil kod + bir xil nom **har xil mijozlarning** yukida bo'lsa ham bitta pozitsiyaga qo'shilsinmi:
+   ⭐ a) ha · b) faqat bitta mijoz ichida.
+7. Kod bir xil, nom har xil, «Qo'shish» tanlandi — invoysda qaysi nom yozilsin: ⭐ a) hamma nomlar vergul bilan ·
+   b) oynada bittasini tanlayman · c) o'zim yozaman.
+8. Javob eslab qolinsinmi: ⭐ a) shu telefon/kompyuter oxirgi javobni belgilab turadi, oyna har safar chiqadi ·
+   b) mashina bo'yicha bir marta so'ralib, hamma uchun saqlansin.
+9. Biri «dona», biri «kg» bilan yozilgan qatorlar: ⭐ a) oynada so'raladi; «Qo'shish» desangiz kg bilan chiqadi,
+   donasi izohda qoladi · b) bunday qatorlar umuman qo'shilmasin.
+10. Ko'p tovarli lotda AI rasmga qaramaydi, faqat nom/son/vaznga qaraydi: ⭐ a) shunday · b) rasm ham yuborilsin.
+
 ## 2026-11-10 (29-oktabr kechqurun yozilgan) — «✅ Yuborish» oddiy javobda ham chiqadi; raqami yashirin mijoz ham lid bo'ladi
 
 Sizning so'zingiz: «oddiygina assalom aleykum deb yozgan klientga yuborish button chiqazmadi», javobingiz **«A»**
