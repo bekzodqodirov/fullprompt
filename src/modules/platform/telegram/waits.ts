@@ -34,7 +34,10 @@ export type WaitKind =
   // Files or forwards sent in a row while no collection, draft or capture is
   // open (0141, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
   // deploy. Its payload and its arming are the burst door's own.
-  | 'burst';
+  | 'burst'
+  // «📎 Fayl qo‘shish» under a prixod's message (0145, docs/PRIXOD-XABARI.md
+  // §C.5): which prixod the chat is feeding files to. receipt-files.ts's own.
+  | 'receipt_files';
 
 /** Unix SECONDS, Telegram's unit. */
 export interface WaitEntry<P> {

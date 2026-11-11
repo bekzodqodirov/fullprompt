@@ -280,6 +280,9 @@ export const DELETE_RULES = {
   crm_activity: 'shared',
   tg_message: 'shared',
   call_log: 'shared',
+  // A prixod's file sent through the staff bot («📎 Fayl qo‘shish», 0145):
+  // the web card's own rule — the uploader, or whoever may edit receipts.
+  receipt: 'shared',
 } as const satisfies Record<string, 'task_author' | 'own_screen' | 'shared'>;
 
 /**

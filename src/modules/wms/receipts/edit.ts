@@ -23,6 +23,8 @@ import { receiptHasCompensation } from '../finance/compensation-follow';
 import { claimReceivedNotice } from '../notices/client-claims';
 import { qrlessBoxSql } from '../labels/qrless-sql';
 import { computeLotTotals } from './math';
+import { receiptDealInTx } from './deal-state';
+import { arrivalTotals } from '../../platform/notifications/receipt-arrival';
 import { receivedAtFor, receivedDayRefusal, type ReceivedDayRefusal } from './received-day';
 import { checkReceiver, ReceiptError, receivedBySchema } from './service';
 import { mayCountMove } from '../scanning/count-door';
@@ -874,6 +876,17 @@ export async function assignReceiptClient(
       .from(receiptLots)
       .where(eq(receiptLots.receiptId, receiptId))
       .orderBy(asc(receiptLots.seq));
+    const lotSummaries = lots.map((lot) => ({
+      lotId: lot.id,
+      letter: lot.letter,
+      productNameZh: lot.productNameZh,
+      productNameRu: lot.productNameRu,
+      boxCount: lot.boxCount,
+      totalWeightKg: Number(lot.totalWeightKg),
+      totalVolumeM3: Number(lot.totalVolumeM3),
+    }));
+    const totals = arrivalTotals(lotSummaries);
+    const deal = await receiptDealInTx(tx, { clientId, dealId: receipt.dealId });
     await emitEvent(tx, {
       type: 'ReceiptConfirmed',
       payload: {
@@ -883,15 +896,22 @@ export async function assignReceiptClient(
         warehouseCode: warehouse.code,
         clientId,
         assignedFromUnclaimed: !receipt.clientId,
-        lots: lots.map((lot) => ({
-          lotId: lot.id,
-          letter: lot.letter,
-          productNameZh: lot.productNameZh,
-          productNameRu: lot.productNameRu,
-          boxCount: lot.boxCount,
-          totalWeightKg: Number(lot.totalWeightKg),
-          totalVolumeM3: Number(lot.totalVolumeM3),
-        })),
+        lots: lotSummaries,
+        // «Prixod mijozga biriktirildi» (receipt-arrival.ts): the new owner's
+        // seller gets the one-message shape and its two buttons too — the
+        // deal read by the same rule as the confirm's, so a deal the prixod
+        // carried under its PREVIOUS client is no deal here. `via` keeps this
+        // door out of the alarm: it has never run price control and emits no
+        // alert event, and cargo claimed weeks after it came must not start
+        // alarming the admins as «keldi».
+        via: 'assign',
+        dealState: deal.state,
+        dealCode: deal.dealCode,
+        dealLinked: deal.dealId !== null,
+        openDealCodes: deal.openDealCodes,
+        boxCount: totals.boxCount,
+        weightKg: totals.weightKg,
+        volumeM3: totals.volumeM3,
       },
       entityType: 'receipt',
       entityId: receiptId,

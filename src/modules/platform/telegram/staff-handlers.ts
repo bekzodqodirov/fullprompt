@@ -141,7 +141,9 @@ import {
 } from './note-capture';
 import { sendNote } from './note-send';
 import { buttonLabel, splitMessage } from './limits';
-import { activeDraft } from './task-draft';
+import { activeDraft, lingerFor } from './task-draft';
+import { endReceiptFiles } from './receipt-files';
+import { doneReceiptFilesPress, openReceiptFilesPress, receiptFileArrives } from './receipt-files-door';
 import {
   BUSY_INTAKE,
   REPLY_SENTENCES,
@@ -530,6 +532,18 @@ export function registerStaffBot(bot: Bot): void {
       return;
     }
 
+    // «📎 Fayl qo‘shish» under a prixod's message, and the collection's own
+    // «✅ Bo‘ldi» (0145, docs/PRIXOD-XABARI.md §C.5). BEFORE the approval guard
+    // (#939); the door is wms's, asked by dynamic import inside.
+    if (parsed.kind === 'receipt_files') {
+      await openReceiptFilesPress(ctx, chatId, parsed.receiptId);
+      return;
+    }
+    if (parsed.kind === 'receipt_files_done') {
+      await doneReceiptFilesPress(ctx, chatId);
+      return;
+    }
+
     // ✅/❌ on a calc↔prixod guess (0119). BEFORE the approval guard (#939),
     // the decision in wms by dynamic import, the settle off the poller (#706).
     if (parsed.kind === 'calc_link') {
@@ -726,6 +740,15 @@ export function registerStaffBot(bot: Bot): void {
       // is minutes of a seller's forwarding.
       const capture = activeCapture(chatId);
       if (!capture || late) {
+        // A prixod's file collection («📎 Fayl qo‘shish», docs/PRIXOD-XABARI.md
+        // §C.5) takes it — the LOWEST collector: a live task draft (or the
+        // album a just-made task is still receiving) keeps its part, and so
+        // did the calc collection and the zametka above. Asked BEFORE
+        // `draftMedia`, whose Door B would offer «📌 Topshiriq qilamizmi?» for
+        // every forward — and «forward qiling» is half of what the prompt
+        // asks for. Never a backlog file (Q5 a).
+        const draftTakes = activeDraft(chatId) !== null || lingerFor(chatId, ctx.message.media_group_id) !== null;
+        if (!late && !draftTakes && (await receiptFileArrives(ctx, chatId))) return;
         // Third: a task draft takes it, or Door B offers to make one of a
         // forward (docs/TELEGRAM-TOPSHIRIQ.md §3); anything else is the
         // cabinet's.
@@ -2127,8 +2150,10 @@ async function handleNoteCallback(
       return;
     }
     const { v4: uuidv4 } = await import('uuid');
-    // A capture opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1).
+    // A capture opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1) — and
+    // a prixod's file collection (docs/PRIXOD-XABARI.md §C.5).
     endBurst(chatId);
+    endReceiptFiles(chatId);
     startCapture(chatId, uuidv4());
     await ctx.reply('Zametkaga nom bering (masalan: «Xitoy sklad manzili»):');
     return;

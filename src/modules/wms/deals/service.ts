@@ -17,6 +17,7 @@ import {
 import type { Db, Tx } from '@/modules/platform/db/client';
 import { diffFields, writeAudit, type AuditContext } from '@/modules/platform/audit/service';
 import { emitEvent } from '@/modules/platform/events/service';
+import { alertOfDealState, type ReceiptDealState } from '@/modules/platform/notifications/receipt-arrival';
 import { getSetting } from '@/modules/platform/settings/service';
 import { logger } from '@/modules/platform/logger';
 import { bumpCounter } from '../codes';
@@ -1132,11 +1133,31 @@ export async function priceControlOnReceipt(
      * different jobs for the seller.
      */
     openDealCodes: string[];
+    /**
+     * The prixod's deal as the CALLER decided it, on the same transaction
+     * (`receiptDealInTx`, docs/PRIXOD-XABARI.md §C.2) — null for cargo with no
+     * owner. Handed over instead of derived a second time here, so the
+     * `ReceiptConfirmed` the caller wrote and the alarm below cannot disagree
+     * about the same prixod. `dealId` is the prixod's OWN deal: one that
+     * belongs to another client (a stale form, a client correction) is no
+     * deal of this prixod's, and is neither compared against nor named.
+     */
+    deal: { state: ReceiptDealState; dealId: string | null } | null;
+    /**
+     * True when the caller wrote, in this same transaction, the
+     * `ReceiptConfirmed` that carries the alarm to its people («Prixod
+     * keldi», receipt-arrival.ts). The alert event is then marked `folded`:
+     * still emitted — the owner's automation rules listen to it — and told to
+     * nobody a second time. An ARGUMENT, defaulting to false, because only
+     * the caller knows it did that: a later caller that emits no such event
+     * must get its alarm delivered.
+     */
+    folded?: boolean;
   },
   ctx: AuditContext,
 ): Promise<void> {
   try {
-    if (!input.clientId) return; // unknown cargo already has its own alert
+    if (!input.clientId || !input.deal) return; // unknown cargo already has its own alert
 
     const client = await tx.query.clients.findFirst({ where: eq(clients.id, input.clientId) });
     if (!client) return;
@@ -1144,8 +1165,8 @@ export async function priceControlOnReceipt(
     // The deal this receipt belongs to, if the receiving screen was told. The
     // link is set before confirm; nothing here guesses, because a wrong guess
     // would silence the alert that matters most.
-    const receipt = await tx.query.receipts.findFirst({ where: eq(receipts.id, input.receiptId) });
-    const dealId = receipt?.dealId ?? null;
+    const dealId = input.deal.dealId;
+    const folded = input.folded === true ? { folded: true } : {};
 
     if (!dealId) {
       // Case 1. The single biggest source of "it came out expensive"
@@ -1153,8 +1174,11 @@ export async function priceControlOnReceipt(
       // EXISTS and simply was not linked, where the honest ask is «attach
       // it», not «set a price» (the price already lives on the deal).
       await emitEvent(tx, {
-        type: input.openDealCodes.length > 0 ? 'UnlinkedCargo' : 'UnquotedCargo',
+        // The state's own alarm (`alertOfDealState`): «attach it» for a client
+        // with something to attach to, «price it» otherwise.
+        type: alertOfDealState(input.deal.state) ?? 'UnquotedCargo',
         payload: {
+          ...folded,
           openDealCodes: input.openDealCodes,
           receiptId: input.receiptId,
           number: input.receiptNumber,
@@ -1198,6 +1222,7 @@ export async function priceControlOnReceipt(
           // The deal it IS on, so the seller lands where the price goes rather
           // than on the receipt. `UnquotedCargo` renders no deal line today,
           // so this costs no locale word and the message is unchanged.
+          ...folded,
           openDealCodes: [deal.code],
           receiptId: input.receiptId,
           number: input.receiptNumber,

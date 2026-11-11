@@ -8,6 +8,7 @@ import type { AmendBase } from '../../wms/calc/amend-types';
 import type { CalcSection } from '../../wms/calc/intake';
 import type { IntakeState } from './calc-intake';
 import { endBurst } from './burst-wait';
+import { endReceiptFiles } from './receipt-files';
 import { foldPendingInvoice } from './file-goods';
 import { __forgetKeptLast } from './kept-last';
 import { bootedAtSec, currentUpdateId, isBacklog, lastDoneUpdateId } from './lifecycle';
@@ -324,6 +325,9 @@ export function startIntake(
   // A collection opening ends the chat's burst (docs/IKKI-ESHIK.md §4.1): what
   // comes next is this collection's, and the burst's message keeps its parts.
   endBurst(chatId);
+  // …and a prixod's file collection (docs/PRIXOD-XABARI.md §C.5): its files
+  // are on the prixod already, and the next file must not go there.
+  endReceiptFiles(chatId);
   return state;
 }
 
