@@ -241,16 +241,27 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
   // the row. Either way nothing is written and the button comes back.
   await expect(rows.getByTestId('tnved-tarkib-ai')).toHaveCount(2);
   await expect(page.getByTestId('tnved-ai-all')).toContainText('(2)');
+  // A line whose name a person coded before carries a 💡 — on a fresh
+  // database neither does; a long-lived one may hold «мышь» in the memory.
+  const hinted = await rows.getByTestId('tnved-tarkib-hint').count();
   await mouse.getByTestId('tnved-tarkib-ai').click();
   await expect(page.getByTestId('tnved-error').or(mouse.getByTestId('tnved-ai-note'))).toBeVisible();
   await expect(mouse.getByTestId('tnved-tarkib-ai')).toBeEnabled();
   if (await page.getByTestId('tnved-error').isVisible()) {
     await expect(mouse.getByTestId('tnved-tarkib-code')).toHaveValue('');
     await page.getByTestId('tnved-ai-all').click();
-    await expect(page.getByTestId('tnved-ai-all')).toBeEnabled();
-    await expect(page.getByTestId('tnved-ai-all')).toContainText('(2)');
-    await expect(keyboard.getByTestId('tnved-tarkib-code')).toHaveValue('');
+    // The walk fills a 💡 without the model, and stops at the shut door for
+    // the rest: the button comes back counting what is still empty.
+    if (hinted < 2) {
+      await expect(page.getByTestId('tnved-ai-all')).toBeEnabled();
+      await expect(page.getByTestId('tnved-ai-all')).toContainText(`(${2 - hinted})`);
+    } else {
+      await expect(page.getByTestId('tnved-ai-all')).toHaveCount(0);
+    }
   }
+  // Whatever the walk filled is this screen's draft: emptied, so what follows
+  // starts from two empty rows on any database.
+  for (const row of [keyboard, mouse]) await row.getByTestId('tnved-tarkib-code').fill('');
   // The invoice button beside the editor knows nothing is typed yet…
   await expect(page.locator('[data-tnved-unsaved]')).toHaveAttribute('data-tnved-unsaved', '0');
 
@@ -268,6 +279,37 @@ test('the Bojxona tab: two line rows, the mouse’s code never lands on the keyb
     '8471607000',
   );
   await expect(page.getByTestId('tnved-tarkib-row').filter({ hasText: 'Клавиатура' }).getByTestId('tnved-tarkib-code')).toHaveValue('');
+
+  // The editor re-seeds by MERGE, never by remount (the review of the built
+  // round). The keyboard's code is typed here and not saved; a colleague
+  // saves another code for the MOUSE on another screen (the line's code and
+  // the lot's revision move); then the tab re-reads its rows — any action of
+  // the tab does it, here «rastamojka tugadi», pressed and put back. The
+  // mouse's row takes the server's code; the keyboard's keeps the person's.
+  // Keyed on the revisions, the editor was remounted here and the typed code
+  // — in real use a model's answer, paid for — was gone.
+  await keyboard.getByTestId('tnved-tarkib-code').fill('8471300000');
+  const sql = database();
+  const cleared = page.getByTestId('customs-cleared');
+  try {
+    await sql`UPDATE lot_composition_lines SET tnved_code = '8471606000' WHERE lot_id = ${minted!.lotId} AND name = 'Мышь'`;
+    await sql`UPDATE lot_compositions SET rev = nextval('lot_composition_rev_seq') WHERE lot_id = ${minted!.lotId}`;
+    await page.getByTestId('batch-customs-panel').click();
+    await cleared.click();
+    await expect(cleared).toHaveText(/✅/, { timeout: 15_000 });
+    await expect(mouse.getByTestId('tnved-tarkib-code')).toHaveValue('8471606000');
+    await expect(keyboard.getByTestId('tnved-tarkib-code')).toHaveValue('8471300000');
+    await expect(page.locator('[data-tnved-unsaved]')).toHaveAttribute('data-tnved-unsaved', '1');
+  } finally {
+    // Put back: the mouse's saved code, the customs answer, the empty keyboard row.
+    await sql`UPDATE lot_composition_lines SET tnved_code = '8471607000' WHERE lot_id = ${minted!.lotId} AND name = 'Мышь'`;
+    await sql.end();
+  }
+  await keyboard.getByTestId('tnved-tarkib-code').fill('');
+  await cleared.click();
+  await expect(cleared).toHaveText(/🛃/, { timeout: 15_000 });
+  await expect(mouse.getByTestId('tnved-tarkib-code')).toHaveValue('8471607000');
+  await expect(page.locator('[data-tnved-unsaved]')).toHaveAttribute('data-tnved-unsaved', '0');
 
   // The prixod's own papers, folded, on the truck's tab.
   await page.getByTestId('receipt-docs').click();
