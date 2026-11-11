@@ -270,9 +270,13 @@ describe('every door before any spend — the order', () => {
       'isPaperDocument(file, door.receipt)',
       'kindOfAttachment(file)',
       'aiConfigured()',
+      // Switched off is said before a byte is loaded (A14)…
+      "pressLimit('tarkib')",
       'cooling.left(file.id)',
       'getStorage().get(file.storageKey)',
       'prepareFile(kind.kind, body, file)',
+      // …and nothing of ours stands between the model's answer and the person (A16).
+      '.from(receiptLots)',
       'reservePress(',
       'readTarkibDocument(',
       'settlePress(pass.id, { outcome, usage: read.usage })',
