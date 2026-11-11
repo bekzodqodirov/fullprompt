@@ -76,13 +76,24 @@ avvalgidek boradi, kartadagi «📨 Mijozdan so'rash» esa ishlayveradi.
   belgilang».
 - O'qilgan natija 30 daqiqa eslab qolinadi: oynani bexos yopsangiz, qayta o'qitish (va pul sarflash) shart
   emas; shu prixodning ikkinchi loti ham o'sha o'qishdan foydalanadi. «Qayta o'qish» bosilsa — avval so'raydi
-  (bu yangi xarajat).
-- Fayl turlari: Excel / CSV (15 MB gacha), PDF (10 MB gacha), rasm (15 MB gacha). Bir o'qishda 40 qatorgacha;
-  ortig'i bo'lsa oynada «ro'yxat kesildi» deb aytiladi.
+  (bu yangi xarajat). Oynani yopib hujjatga qarab kelsangiz, **qo'ygan belgilaringiz joyida turadi**.
+- O'qish 2-3 daqiqagacha cho'zilishi mumkin (tugma «O'qilmoqda…» deb turadi). Shu vaqt ichida o'sha hujjat
+  uchun tugmani qayta bossangiz ham ikkinchi marta o'qilmaydi — birinchisining javobi kutiladi.
+- Fayl turlari: Excel (.xlsx, .xlsm, .xls) / CSV (15 MB gacha; oddiy matnli CSV — 2 MB gacha), PDF (10 MB
+  gacha), rasm (15 MB gacha). Bir o'qishda 40 qatorgacha; ortig'i bo'lsa oynada «ro'yxat kesildi» deb aytiladi,
+  roppa-rosa 40 qator chiqsa — «ro'yxat to'liq bo'lmasligi mumkin, hujjat bilan solishtiring» deyiladi.
 - Qog'ozning o'zida «Jami» yozilgan bo'lsa va qatorlar yig'indisi unga teng chiqmasa — oynada ogohlantirish
-  chiqadi (AI biror raqamni noto'g'ri o'qigan bo'lishi mumkin). AI hech narsani o'zi «tuzatmaydi».
+  chiqadi (AI biror raqamni noto'g'ri o'qigan bo'lishi mumkin). AI hech narsani o'zi «tuzatmaydi». Solishtirish
+  qog'ozdagi raqamlarning o'zi bo'yicha qilinadi — yaxlitlash sababli bekorga ogohlantirmaydi.
 - Lotning o'z tovari (masalan lot «键盘», qog'ozda ham «键盘») tarjima qilinmaydi — lotning o'z nomi qoladi;
   boshqa qatorlar AI bergan ruscha nom bilan yoziladi.
+- Qog'ozda 10 xonali kod yozilgan bo'lsa, u TN VED katagiga tushadi, lekin yonida «bu qog'ozdagi (sotuvchining)
+  kodi — tekshiring» deb turadi. **Lotning o'z tovariga qog'ozdagi kod yozilmaydi** — xotiradagi o'z kodingiz
+  invoysda almashib qolmasligi uchun.
+- Qog'ozdagi og'irliklar NETTO bo'lsa — qatorlar ustida shunday deb yoziladi. Tarkib «aralash» rejimida
+  bo'lsa, qog'ozdagi karobka sonlari saqlanmasligi ham aytiladi.
+- AI narxi va bugungi hisob faqat yangi o'qilgan javobda ko'rinadi — eslab qolingan natijada ko'rsatilmaydi
+  (boshqa hodim shu brauzerda ochsa, pul raqamlarini ko'rib qolmasligi uchun).
 - Hujjat juda katta bo'lib AI vaqtida o'qiy olmasa, o'sha hujjat 10 daqiqa qayta o'qilmaydi (limit bekorga
   sarflanmasin) — kichikroq fayl yoki Excel bering.
 - Kunlik limit: `tarkib_ai_daily_limit` (50). Har bir o'qish bitta sanaladi.
@@ -109,6 +120,7 @@ avvalgidek boradi, kartadagi «📨 Mijozdan so'rash» esa ishlayveradi.
 - Bularning hech biri haqiqiy Telegram va haqiqiy AI kaliti bilan sinalmagan (bu yerda ikkalasi ham yo'q).
   Deploydan keyingi birinchi «✅/❌» bosilishi va birinchi «Fayldan to'ldirish» — haqiqiy sinov.
 - Mijoz hech qachon javob bermasa — eslatma yuborilmaydi. Ma'lumot o'zgarsa savol o'zi qayta yuborilmaydi.
+- Bitta hujjatni ikki xil oynada (yoki ikki hodim) bir vaqtda o'qitsa — ikki marta sanaladi.
 - Mini App'da bu haqda hech narsa ko'rinmaydi.
 
 ### Savollar (javob bermasangiz ⭐ ishlaydi)

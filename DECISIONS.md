@@ -8302,3 +8302,87 @@ harmless. The sentence's shown-name comparison is a correlated subquery per cart
 is recorded, not built. PROCESS: a source-shape test passed on a page that did not compile — a name imported
 twice is invisible to eslint and to vitest, and only `tsc` (or the build, twelve minutes later) says so:
 typecheck BEFORE the build, every time a file with imports is touched.
+
+**#1679 — The fifth lens read the round as HE will: what the deploy does before he can refuse it, and who is
+told to press what.** Eight findings, none in a formula. (1) **The switch he was offered cannot be touched
+before the deploy** (L5-1). `client_confirm_on_receipt` is listed by the RUNNING build's settings page, defaults
+ON when no row exists, and the offer is asked at SEND time — so the first «✅ / ❌» message can leave a minute
+or two after the deploy, for prixods confirmed up to ten minutes BEFORE it (their notice is still pending).
+Told to him in the CHANGELOG's ⚠️, as its own step 4a in `docs/UPDATE.md` («o'chirmoqchi bo'lsangiz — shu
+qadamda darhol»), and as a choice BEFORE the deploy: say so and it ships off. A default that reaches customers
+is announced where it can still be declined, not in the list of switches. (2) **The ❌ alert's first reader has
+neither button** (L5-2): it goes to the client's SELLER, and `mayCheckLot` is the logist's and the VED's. The
+alert now says who presses, the card draws one muted line for a reader who cannot («buni logist yoki VED hal
+qiladi», `lot-check-dispute-others`), and the CHANGELOG names the real audience — the seller plus everybody
+holding `plans.manage`, which is the logists, the admins and him. Whether the seller should get the buttons is
+his call and is not changed quietly. (3) **A ✅ that withdraws a ❌ tells everybody the ❌ told** (L5-4): the
+people who were alarmed heard nothing when the customer took it back, and the lot simply read ✅. A plain ✅
+still tells only whoever asked. (4) **The question asks about what it lists** (L5-7): a question that prints a
+tarkib's goods with their pieces — and whose answer is compared with names AND pieces — asked «tovar nomi va
+quti soni to'g'rimi?»; it has its own line now, the Russian question counts «коробок» like the lines above it,
+the English one says «names». (5) **One «server behind» sentence on the card** (L5-6): the Bojxona 🤖 printed
+the tarkib namespace's «server yangilanmoqda — birozdan keyin», the wording #1666 had already named as wrong
+for a migration that did not land; it is the lot check's sentence in four locales, held equal by a test.
+(6) Words only: «four ways out» of a ❌ said honestly (a corrected name alone lifts nothing on a lot without
+a tarkib; the customer can answer again only on a NEW question; once unloaded in Uzbekistan two ways remain),
+the limit counts CALLS (one press of «AI taklifi (N)» spends up to N; T3 has no off switch), and the deploy's
+test steps name a CHINESE warehouse and what his own staff-linked Telegram will answer (L5-3, L5-5, L5-8).
+STATED, not built: a push whose text comes within a line of Telegram's 1 024-character caption goes out
+without the question LINE while its keyboard keeps the two buttons (twelve lots with long names — L5-7 d).
+
+**#1680 — T1 reviewed as built: the model call was the one production had already proven wrong.** Two
+read-only lenses (the server and the file; the proposal and the screen), 28 findings, every one reproduced
+before it was fixed. **The headline (A3)**: the call was, parameter for parameter, the shape
+`docs/FAYL-OQISH.md` §0.3 names as the reason real readings came back EMPTY on his server — not streamed, the
+effort left at the provider's default, the thinking inside 16 000 tokens, a 150 s leash — and which PR #141
+replaced that same week in the other reader. T1 was written from the older idiom. It is the house's document
+call now: `messages.stream(…).finalMessage()`, 32 000 tokens, effort medium, no SDK retry, one deadline of our
+own. It cannot be verified here (no key), so the wire is at least exercised for real: the SDK itself against a
+local streaming stand-in (`tarkib-read-ai-wire.test.ts`, A12 — both older test files replaced
+`messages.create` itself, so nothing the SDK does had ever run in a T1 test). **What «a timeout» is (A1,
+both ways)**: the SDK calls any fetch failure whose text says «timed out» a timeout — a connection that never
+opened was counted against the day, cooled the document for ten minutes and told the person their paper was
+too large; and a deadline landing while the answer's body streamed threw a bare abort, read as «never
+answered» about a call the provider had billed. OUR deadline is `deadline.aborted` and nothing else.
+**No retry inside a leash (A2)**: on a 429 with `retry-after` the SDK sleeps the whole of it, deaf to the
+signal. A rate limit is `no_answer` at once; the person presses again. **A 400 is the file's fault only when
+a file was sent (A7)** — a spreadsheet goes as text, and a spend limit answers 400 too; a cut at the context
+window is a size cut (A13); the request's text is well-formed at the boundary (A15 — a lone surrogate is a
+400 that sinks the whole request). **The file door**: `.xlsm` (the person who attached an Excel was told to
+attach an Excel, A4); a transparent PNG flattened onto WHITE (sharp's default is black: a paid reading of a
+black rectangle, A5); a workbook is the zip's four-byte header, not «PK» — «PKG NO.» begins a CSV (A6); a
+text file weighed before it is split into lines on the one process (A9); a reader that throws on one cell (a
+barcode under a date format) is a code, never an error page no retry can cure (A10). **The budget (A8 =
+B10)**: the browser waited 165 s against a server that could take 20 + parse + 150 — a paid answer to nobody,
+and «press again» a second bill; storage is 10 s, the browser 190. Switched off is said before a byte is
+loaded (A14). **The dollars were kept with the reading (A11 = B3)**, under a key that names the document and
+not the viewer: after an account switch — which he does to test as another role — a VED read «≈ $… · 30 kun
+≈ $…». Only the proposal is kept. **The proposal**: a paper of more than forty goods read CORRECTLY returns
+exactly forty rows and its own total — and was told «AI may have misread a figure» (B1: `rows_full`, and no
+totals judgement at the ceiling); the detector compared cells after their rounding, so a list whose formula
+figures add up exactly was told the same (B2: exact decimals of what the paper prints); ten digits on a
+Chinese exporter's paper are THEIR code — carried, said to be the paper's, and never applied to the lot's own
+good, where it would silently replace the memory's code on the invoice (B4); the column's ceiling is judged
+after the rounding and a note never prints an exponent (B7); 鞋 with its Russian wording is a good, not «the
+name could not be read» (B8). **The screen**: the person's ticks were lost on «Yopish» — the only way to look
+at the document — and the list came back ticked from scratch (B5: held by the dialog, tied to the reading);
+«a reading is running» was one editor's state (B6: one request per document per tab); applied carton counts
+vanished in «aralash» and NET weights were not said (B9). 41 red proofs by string edit in the second worktree
+(6 for #1679, 35 here) and one in the browser (B5: the old behaviour rebuilt, the spec red at «3 / 20»); one
+stayed GREEN first — the name is cut by code points, which already keeps an emoji whole, so removing
+`toWellFormed()` proved nothing until a name that ARRIVES with half a pair was added. STATED: two tabs, or two
+people, on one document are still two paid readings (no server-side guard); cooling is per process.
+
+**#1681 — PROCESS.** (1) **A second caller of a model is written from the NEWEST caller's as-built block,
+not from memory of the idiom** — the call's shape has a home (`docs/FAYL-OQISH.md` §0.3) and T1 was drafted
+the week it changed. (2) **A path with `[id]` in it is a glob to eslint**: `pnpm exec eslint
+"src/app/(protected)/receipts/[id]"` lints nothing and exits 0 — the build then refused a clock read in a
+page's render (`react-hooks/purity`) twelve minutes later. Lint the project (`pnpm lint`), or quote the
+bracket as `[[]id]`. The wait's wording is judged in SQL for that reason, on the database's clock. (3) **A
+finished agent's worktree under `.claude/worktrees` doubles what `eslint .` reads** — exit 134, out of memory;
+remove it before the gates. (4) **A waiter that greps for a marker must grep the FRESH log**: one read
+`E2E_EXIT=0` from the previous run's file while the build it was waiting for was still running. New names, or
+delete first. (5) **Red proofs run in a second worktree** when reviewers are reading the tree and the lead is
+still editing it: the proof's edit can neither be read as a defect nor swept into a commit, and the harness
+restores from the text it read, never from git. (6) A red proof that stays green is evidence about the
+FIXTURE (#166, again): the answer was a case the fix is the only thing that handles.
