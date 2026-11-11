@@ -23,16 +23,20 @@ import {
   nothingNewToRead,
   updateIntake,
 } from './calc-store';
-import { promptFileLines } from './calc-files';
+import { promptFileLines, type SheetFit } from './calc-files';
 import {
   aiConfirmKeyboard,
+  certificateButton,
   CLIENT_QUESTION,
   confirmKeyboard,
   doneKeyboard,
+  notWholeKeyboard,
   pricedZonesNow,
   zoneKeyboard,
 } from './calc-keyboards';
 import { totalsAnswerShape } from './totals-shape';
+import { aiReadingWhole, TO_VED_LABEL, type ReadingWholeness } from './reading-whole';
+import { editMarkup } from './send';
 
 /**
  * The «Hisoblatish» dialogue — what the bot asks, how an answer lands on its
@@ -284,6 +288,13 @@ export interface TableContext {
    * complete closing promise the AI's work only while it holds (§3.1).
    */
   aiAvailable: boolean;
+  /**
+   * The reader's own fit of the sheet texts (`fitSheetRows` at its budget) —
+   * what names the sheet a not-whole table says the model was not shown whole
+   * (docs/FAYL-OQISH.md §1.2). Optional: a table drawn without it says the
+   * same thing without the name.
+   */
+  sheetFit?: SheetFit;
 }
 
 /**
@@ -348,12 +359,21 @@ export async function tableContext(
 ): Promise<TableContext> {
   const intake = await import('../../wms/calc/intake');
   const { nameWordFor } = await import('../../wms/calc/line-address');
+  const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+  const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
   const [laws, stale, aiAvailable] = await Promise.all([
     intakeLaws(state, extraCodes),
     staleTotalsOf(state),
     collectionDoor(state) === 'ai' ? aiAvailableNow() : Promise.resolve(false),
   ]);
-  return { intake, laws, stale, nameWord: nameWordFor, aiAvailable };
+  return {
+    intake,
+    laws,
+    stale,
+    nameWord: nameWordFor,
+    aiAvailable,
+    sheetFit: (texts: readonly string[]) => fitSheetRows(texts, SHEET_TEXT_BUDGET),
+  };
 }
 
 /**
@@ -365,6 +385,10 @@ export async function tableContext(
  */
 function readingFailure(state: IntakeState): import('../../wms/calc/intake').AiReadFailure | null {
   if (state.aiUsed) return null;
+  // «Nothing for the model to read» beside an Excel whose rows WERE read is no
+  // failure, on either door (docs/FAYL-OQISH.md §2.1, door-nothing-ai): «⚠️ AI
+  // ga o‘qish uchun … yo‘q edi» stood under «📄 … 3 ta tovar o‘qildi».
+  if (state.aiFailure === 'nothing_to_read' && (state.invoiceGoods ?? []).length > 0) return null;
   if (state.aiFailure) return state.aiFailure;
   return state.amend || state.seed ? null : 'not_configured';
 }
@@ -382,16 +406,145 @@ function tableTail(state: IntakeState, intake: Intake): string {
     state.notes.map((n) => `\n\n${n}`).join('') +
     // Why the model's reading is missing, in words (his 1.6 a) — and what WAS
     // read instead: with an Excel, its lines are the goods (round-4 S-a).
-    (failure
-      ? `\n\n⚠️ ${intake.AI_READ_FAILURE[failure].text}\n` +
-        ((state.invoiceGoods ?? []).length > 0 ? 'Faqat Excel va yozilganidan o‘qildi.' : 'Faqat yozilganidan o‘qildi.')
-      : aiStepsText(state.steps)) +
+    // What WAS read, by what was actually read (docs/FAYL-OQISH.md §2.2): the
+    // Excel and the typed text, either, or neither — «Faqat yozilganidan» was
+    // said when nothing was typed at all.
+    (failure ? failureBlock(state, failure, intake) : aiStepsText(state.steps)) +
     // A table that points down has no certificate button (§1.4): the line
     // states the answer and points at no press (review PC-SPEC-9).
     (state.ai && !state.amend
       ? `\n\n📄 Sertifikat: ${state.hasCertificate ? 'bor' : 'yo‘q'}${tableSuperseded(state) ? '' : ' (o‘zgartirish uchun tugmani bosing)'}`
       : '');
   return text.replace(/^\n/u, '');
+}
+
+/**
+ * A failure's sentence on the table. A stored file that did not load (§2.5)
+ * is said with its count and the press that heals it, once — the generic
+ * words would leave the seller a second remedy to read beside it.
+ */
+function failureWords(state: IntakeState, failure: import('../../wms/calc/intake').AiReadFailure, intake: Intake): string {
+  if (failure === 'files_missing' && intake.tailNamesRetry(state)) return intake.filesMissingRetryLine(state.filesMissing ?? 0);
+  return intake.AI_READ_FAILURE[failure].text;
+}
+
+/**
+ * The tail's failure block: the sentence and what WAS read instead — the
+ * sentence left out where the AI door's closing names the same refusal by its
+ * file (`failureSaidBelow`, as-built review OWNER-12).
+ */
+function failureBlock(state: IntakeState, failure: import('../../wms/calc/intake').AiReadFailure, intake: Intake): string {
+  if (aiDoorFirst(state) && intake.failureSaidBelow(state, failure)) {
+    const instead = readInstead(state, intake);
+    return instead ? `\n${instead}` : '';
+  }
+  return `\n\n⚠️ ${failureWords(state, failure, intake)}${readInstead(state, intake)}`;
+}
+
+/** The tail's «what WAS read» line under a failure, or nothing when the table's own rows already say it (§2.2). */
+function readInstead(state: IntakeState, intake: Intake): string {
+  const words = intake.readInsteadWords(state, (state.facts.goods ?? []).length);
+  return words ? `\n${words}` : '';
+}
+
+/**
+ * The AI door's FIRST or seeded collection (docs/FAYL-OQISH.md §1.0) — where
+ * «✅ Tasdiqlash» waits on the reading's wholeness. The door is
+ * `collectionDoor`'s, never the raw `ai` flag: a returned NULL-door request
+ * keeps today's keyboard, closing and landing (critic-door-predicate). An
+ * addition is §1.6's, with its own keyboard.
+ */
+export function aiDoorFirst(state: Pick<IntakeState, 'ai' | 'amend' | 'seed' | 'seedDoor'>): boolean {
+  return collectionDoor(state) === 'ai' && !state.amend;
+}
+
+/**
+ * The reading's wholeness over the LIVE state — the table's rows are the
+ * facts' goods, one to one (`tableRowsOf`).
+ *
+ * An ADDITION (§1.6) is judged by what its own collection read, never by the
+ * request it adds to (door-break-5): a table with no goods row is a fact of
+ * the STORED request — a pre-deploy «🤖» landing of zero goods, reachable
+ * through ➕ for a week — and an addition of the missing brutto alone, read
+ * whole, was told «Tovar o‘qilmadi» and saved with no re-pass, so the
+ * podklyuch's road priced from exactly those totals was never re-priced.
+ * ONE home, asked by the add table's closing and by its save.
+ */
+export function readingOf(state: IntakeState): ReadingWholeness {
+  const whole = aiReadingWhole(state, (state.facts.goods ?? []).length);
+  if (!state.amend) return whole;
+  const blocking = whole.blocking.filter((r) => r !== 'no_goods');
+  return { ...whole, blocking, whole: blocking.length === 0 };
+}
+
+/**
+ * The first sheet the model was not shown whole (§1.1 f, g): a mapped Excel
+ * past the reader's row ceiling, the reader's own stop, or the budget's fit —
+ * the fit the seller's receipt line and the model's note already use.
+ */
+function inputCutOf(state: IntakeState, sheetFit: SheetFit | undefined): import('../../wms/calc/intake').InputCut | null {
+  const capped = (state.goodsFiles ?? []).find((f) => f.capped === true);
+  if (capped) return { label: capped.label, kept: capped.rows, total: null };
+  if (!state.aiInputCut || !sheetFit) return null;
+  const all = [...state.sheetTexts, ...state.invoiceTexts];
+  if (all.length === 0) return null;
+  const fitted = sheetFit(all.map((t) => t.text.trim()));
+  for (let i = 0; i < all.length; i += 1) {
+    const kept = fitted.kept[i] ?? 0;
+    const total = fitted.total[i] ?? 0;
+    const label = all[i]!.label ?? 'Jadval';
+    if (all[i]!.cut) return { label, kept, total: null };
+    if (kept < total) return { label, kept, total };
+  }
+  return null;
+}
+
+/**
+ * `inputCutOf` with the reader's own fit loaded — for a caller with no table
+ * context (the landing's VED words, §1.3 a). A fit that cannot be loaded names
+ * no sheet; the words then say the same thing without the name.
+ */
+export async function inputCutOfState(state: IntakeState): Promise<import('../../wms/calc/intake').InputCut | null> {
+  try {
+    const { fitSheetRows } = await import('../../wms/calc/intake-ai');
+    const { SHEET_TEXT_BUDGET } = await import('../../wms/deals/goods-file');
+    return inputCutOf(state, (texts) => fitSheetRows(texts, SHEET_TEXT_BUDGET));
+  } catch (err) {
+    logger.warn({ err }, '[calc-intake] sheet fit not loaded — the cut is said without its sheet');
+    return inputCutOf(state, undefined);
+  }
+}
+
+/**
+ * The press that lands this collection, as every word and button names it
+ * (docs/FAYL-OQISH.md §1.2, door-closing-drawers): ONE function of the live
+ * state's wholeness — the closing, the nudge, the echo's confirm, the
+ * certificate's fallback, the failed landing's retry and the returned door's
+ * opening line all ask it, so none of them names a «✅ Tasdiqlash» the
+ * keyboard no longer draws.
+ */
+export interface LandingPress {
+  step: 'save' | 'to_ved';
+  label: string;
+  /** «…» quoted, as a sentence names a button. */
+  name: string;
+}
+
+export function landingPress(state: IntakeState): LandingPress {
+  const press = (step: LandingPress['step'], label: string): LandingPress => ({ step, label, name: `«${label}»` });
+  if (state.amend) return press('save', state.standingAtOpen === 'started' ? '📨 VED ga yuborish' : '✅ Qo‘shish');
+  if (aiDoorFirst(state) && !readingOf(state).whole) return press('to_ved', TO_VED_LABEL);
+  return press('save', '✅ Tasdiqlash');
+}
+
+/**
+ * «Saqlab bo‘lmadi — … ni qayta bosing» after a landing that failed — at the
+ * press and in the sweep's resume — naming the press that was made: a VED
+ * landing (`landAs`) is pressed again as «👤», never as a «✅» it never had.
+ */
+export function landingRetryWords(state: IntakeState): string {
+  const name = aiDoorFirst(state) && state.landAs === 'ved' ? `«${TO_VED_LABEL}»` : landingPress(state).name;
+  return `Saqlab bo‘lmadi — ${name} ni qayta bosing.`;
 }
 
 /** The table's input — the state as `intakeTableText` reads it. */
@@ -424,7 +577,20 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     plain: plainCollection(state),
     clash: state.fileTotals?.clash ?? [],
     marker: tableSuperseded(state) ? TABLE_SUPERSEDED : null,
-    ai: collectionDoor(state) === 'ai' ? { available: tc.aiAvailable, last: lastBlockOf(state, tc) } : null,
+    // A cut reading on the plain door is said on its summary (as-built review
+    // OWNER-3); the AI door says it through `reading`.
+    cut: state.aiCut ?? null,
+    ai:
+      collectionDoor(state) === 'ai'
+        ? {
+            available: tc.aiAvailable,
+            last: lastBlockOf(state, tc),
+            // What the reading read (docs/FAYL-OQISH.md §1.1): judged on the
+            // live state the table is drawn from, so the closing and the
+            // keyboard below it say the same thing.
+            reading: { state, whole: readingOf(state), inputCut: inputCutOf(state, tc.sheetFit) },
+          }
+        : null,
   };
 }
 
@@ -457,19 +623,29 @@ function tableWords(state: IntakeState, tc: TableContext): Pick<NextStep, 'text'
   // that used to carry it is gone.
   const undo = collectionDoor(state) === 'ai' ? undoRows(state) : [];
   if (tableSuperseded(state)) return { text, keyboard: { inline_keyboard: undo } };
+  const base = landingKeyboard(state, tc.intake);
+  return { text, keyboard: reviewKeyboard({ inline_keyboard: [...undo, ...base.rows] }, base.retry) };
+}
+
+/**
+ * The table's buttons below its ↩️, and whether «🔄» rides on top — ONE home
+ * for the table and the certificate's fallback reply (door-closing-drawers).
+ * Not whole on the AI door (docs/FAYL-OQISH.md §1.2): no «✅ Tasdiqlash», and
+ * «🔄» only where it can help (`notWholeRetry`); otherwise today's: the add
+ * keyboard, the AI door's confirm with its certificate, the plain confirm,
+ * each with «🔄» after a failure a retry heals.
+ */
+function landingKeyboard(state: IntakeState, intake: Intake): { rows: InlineKeyboard['inline_keyboard']; retry: boolean } {
+  if (!state.amend && aiDoorFirst(state) && !readingOf(state).whole) {
+    return { rows: notWholeKeyboard(state.hasCertificate).inline_keyboard, retry: intake.notWholeRetry(state) };
+  }
   const failure = readingFailure(state);
   const base = state.amend
     ? amendKeyboard(state.standingAtOpen === 'started')
     : state.ai
       ? aiConfirmKeyboard(state.hasCertificate)
       : confirmKeyboard;
-  return {
-    text,
-    keyboard: reviewKeyboard(
-      { inline_keyboard: [...undo, ...base.inline_keyboard] },
-      failure !== null && tc.intake.AI_READ_FAILURE[failure].retry,
-    ),
-  };
+  return { rows: base.inline_keyboard, retry: failure !== null && intake.AI_READ_FAILURE[failure].retry };
 }
 
 /** The newest answer not yet taken back — what the table's ↩️ undoes and its last block names (§3.4). */
@@ -508,7 +684,12 @@ export function intakeNextStep(
   state: IntakeState,
   laws: ReadonlyMap<string, NeedLaw>,
   intake: Intake,
-  opts: { stale?: readonly ('weightKg' | 'volumeM3')[]; nameWord: TableContext['nameWord']; aiAvailable?: boolean },
+  opts: {
+    stale?: readonly ('weightKg' | 'volumeM3')[];
+    nameWord: TableContext['nameWord'];
+    aiAvailable?: boolean;
+    sheetFit?: SheetFit;
+  },
 ): NextStep {
   // A new reading is a new table: what an earlier «↩️» took back is no longer
   // the last thing that happened on it (§3.4).
@@ -519,7 +700,14 @@ export function intakeNextStep(
     patch,
     ...tableWords(
       { ...state, ...patch },
-      { intake, laws, stale: opts.stale ?? [], nameWord: opts.nameWord, aiAvailable: opts.aiAvailable ?? false },
+      {
+        intake,
+        laws,
+        stale: opts.stale ?? [],
+        nameWord: opts.nameWord,
+        aiAvailable: opts.aiAvailable ?? false,
+        sheetFit: opts.sheetFit,
+      },
     ),
   };
 }
@@ -534,7 +722,12 @@ export function intakeNextStep(
  */
 export async function deliverNextStep(ctx: CollectorReply, chatId: bigint, state: IntakeState): Promise<void> {
   const tc = await tableContext(state);
-  const step = intakeNextStep(state, tc.laws, tc.intake, { stale: tc.stale, nameWord: tc.nameWord, aiAvailable: tc.aiAvailable });
+  const step = intakeNextStep(state, tc.laws, tc.intake, {
+    stale: tc.stale,
+    nameWord: tc.nameWord,
+    aiAvailable: tc.aiAvailable,
+    sheetFit: tc.sheetFit,
+  });
   const settled = updateIntake(chatId, step.patch);
   const words = settled ? tableWords(settled, tc) : step;
   const sent = await ctx.reply(words.text, words.keyboard ? { reply_markup: words.keyboard } : undefined);
@@ -989,17 +1182,17 @@ function answersEntry(text: string, segments: readonly TableSegment[]): string {
 
 /** The confirm under an echo that wrote something — the table it confirms is just above (§2.2). */
 function confirmRows(state: IntakeState): InlineKeyboard['inline_keyboard'] {
-  if (state.amend) {
-    return [[{ text: state.standingAtOpen === 'started' ? '📨 VED ga yuborish' : '✅ Qo‘shish', callback_data: 'c:save' }]];
-  }
+  const press = landingPress(state);
+  const confirm = [{ text: press.label, callback_data: `c:${press.step}` }];
+  if (state.amend) return [confirm];
   // On the AI door the certificate rides with the confirm (product-fit-20):
   // after a few answers the table that held its toggle is far up.
-  if (state.ai) return aiConfirmKeyboard(state.hasCertificate).inline_keyboard.slice(0, 2);
-  return [[{ text: '✅ Tasdiqlash', callback_data: 'c:save' }]];
+  if (state.ai) return [confirm, [certificateButton(state.hasCertificate)]];
+  return [confirm];
 }
 
-const confirmName = (state: IntakeState) =>
-  state.amend ? (state.standingAtOpen === 'started' ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
+/** The landing press in a sentence — `landingPress`'s, so no echo names a «✅» the table no longer draws. */
+const confirmName = (state: IntakeState) => landingPress(state).name;
 
 /**
  * What the table still owes after an answer (product-fit-2): «Hamma qator
@@ -1028,7 +1221,10 @@ function missingLines(state: IntakeState, tc: TableContext): string[] {
     return out;
   }
   out.push(`⚠️ Yana ${open.length} ta: ${tc.intake.openTargetsText(open)}. Bilmasangiz — ${confirmName(state)}, qolganini VED to‘ldiradi.`);
-  if (state.amend && state.standingAtOpen !== 'started') out.push('Qayta hisoblash uchun «✅ Qo‘shish» ni bosing.');
+  // Re-computed only when the addition's own reading is whole (§1.6): over a
+  // file it did not read, the press adds and nothing re-runs.
+  const addWhole = collectionDoor(state) !== 'ai' || readingOf(state).whole;
+  if (state.amend && state.standingAtOpen !== 'started' && addWhole) out.push('Qayta hisoblash uchun «✅ Qo‘shish» ni bosing.');
   return out;
 }
 
@@ -1352,9 +1548,11 @@ export function plainVerdict(
  */
 function plainNudge(state: IntakeState): string {
   if (state.stage !== 'review' && !nothingNewToRead(state)) return 'Yangi ma’lumot hali o‘qilmagan — avval «Bo‘ldi» ni bosing.';
-  return state.amend
-    ? `${confirmName(state)} ni bosing. Yana ma’lumot bo‘lsa — yuboring.`
-    : 'Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.';
+  const press = landingPress(state);
+  if (state.amend) return `${press.name} ni bosing. Yana ma’lumot bo‘lsa — yuboring.`;
+  // Not whole on the AI door (docs/FAYL-OQISH.md §1.2): the press that is drawn.
+  if (press.step === 'to_ved') return `VED ga yuborish uchun ${press.name} ni bosing. Yana ma’lumot bo‘lsa — yuboring.`;
+  return 'Tasdiqlash uchun «✅ Tasdiqlash» ni bosing. Yana ma’lumot bo‘lsa — yuboring.';
 }
 
 /**
@@ -1827,6 +2025,79 @@ function newestKnown(state: IntakeState): number | null {
 
 /** A ctx a kept-last draw speaks through. */
 type DrawCtx = CollectorReply & { api?: EditApi };
+
+/**
+ * The restart question's hold (docs/FAYL-OQISH.md §2.4, dialog-03,
+ * door-restart-hold). «Sizda tugallanmagan yig‘ish bor — boshqatdan
+ * boshlaymizmi?» used to stand while the OLD collection went on taking the
+ * files sent under it: «🔄 Ha» then wiped them with the rest, and «Bo‘ldi» on
+ * the redrawn old prompt read today's file under yesterday's customer. Holding
+ * the parts and carrying them over would need a burst model the question is
+ * no part of, so the material is refused in words and filed NOWHERE while the
+ * question stands — and the seller sends it again after his answer.
+ *
+ * A forgotten question never jams the chat: past `RESTART_HOLD_MS` it is let
+ * go at the next material, which is then taken as before.
+ */
+export const RESTART_HOLD_MS = 30 * 60_000;
+
+/**
+ * §2.4's words, kept last, under every material the question refuses — a
+ * file, a forward, a typed line alike: «Faylni … qayta yuboring» told a seller
+ * who had typed «3-qator 50 kg» to re-send a file he never sent (as-built
+ * review WORDS-10).
+ */
+export const RESTART_HOLD =
+  '⏸ Avval yuqoridagi savolga javob bering — «🔄 Ha, boshqatdan» yoki «▶️ Yo‘q, davom etaman». Yuborganingizni javobdan keyin qayta yuboring.';
+
+/** The hold's message per chat — memory only: a process that lost it sends a fresh copy below. */
+const restartHolds = new Map<string, number>();
+
+/** Does the restart question stand on this collection — asked, and inside its 30 minutes? */
+export function restartHolding(state: Pick<IntakeState, 'restartAsked'>, now: number = Date.now()): boolean {
+  const asked = state.restartAsked ?? null;
+  return asked !== null && now - asked.at < RESTART_HOLD_MS;
+}
+
+/**
+ * The question is over — answered («🔄 Ha», «▶️ Yo‘q»), or the collection was
+ * read, saved or cancelled, or the question outlived its 30 minutes: cleared
+ * on the collection it stood on (never a newer one), and its buttons stripped,
+ * best-effort, so an old «🔄 Ha» cannot wipe a table it was never about.
+ */
+export function clearRestartAsked(chatId: bigint, state: IntakeState | null = activeIntake(chatId)): void {
+  restartHolds.delete(String(chatId));
+  const asked = state?.restartAsked ?? null;
+  if (!state || !asked) return;
+  const live = activeIntake(chatId);
+  if (live && live.noteId === state.noteId && live.restartAsked) updateIntake(chatId, { restartAsked: null }, { quiet: true });
+  if (asked.messageId !== null) void editMarkup({ chatId, messageId: asked.messageId }).catch(() => {});
+}
+
+/**
+ * The guard the file door, the forward door and the text ladder ask FIRST,
+ * for a message the collection would take (§2.4): true = refused in words,
+ * kept last, and nothing filed. `incoming`: the message it came in, so the
+ * hold is redrawn below it.
+ */
+export async function refuseWhileRestartAsked(
+  ctx: DrawCtx,
+  chatId: bigint,
+  state: IntakeState,
+  incoming: number | null,
+): Promise<boolean> {
+  if (!state.restartAsked) return false;
+  if (!restartHolding(state)) {
+    clearRestartAsked(chatId, state);
+    return false;
+  }
+  const k = String(chatId);
+  const drawn = await drawKeptLast(ctx, chatId, restartHolds.get(k) ?? null, incoming, RESTART_HOLD);
+  restartHolds.set(k, drawn.messageId);
+  noteOwnMessage(chatId, drawn.messageId);
+  if (drawn.kept !== null) noteOwnMessage(chatId, drawn.kept);
+  return true;
+}
 
 /** The lead a queued prompt draw owes, per chat — taken by the run that draws it. */
 const pendingLeads = new Map<string, string>();
@@ -2505,7 +2776,7 @@ export async function pressCertificate(
   if (next && pressed !== null && ctx.api && (pressed === next.tableMessageId || said?.includes('📄 Sertifikat:'))) {
     if (pressed !== next.tableMessageId && said) {
       const word = hasCertificate ? 'bor' : 'yo‘q';
-      const toggle = aiConfirmKeyboard(hasCertificate).inline_keyboard[1]![0]!;
+      const toggle = certificateButton(hasCertificate);
       const keyboard = (message?.reply_markup?.inline_keyboard ?? []).map((row) =>
         row.map((b) => (b.callback_data === 'c:cert_y' || b.callback_data === 'c:cert_n' ? toggle : b)),
       );
@@ -2520,11 +2791,18 @@ export async function pressCertificate(
     editTableSoon(ctx, chatId);
     return;
   }
+  // The fallback reply carries the table's own buttons (door-closing-drawers):
+  // on a reading that is not whole, «👤 VED hisoblasin» — never a «✅» the
+  // table above no longer draws.
+  const intake = await import('../../wms/calc/intake');
+  const keys = next ? landingKeyboard(next, intake) : null;
   await ctx.reply(
     next?.hasCertificate
       ? '📄 Sertifikat BOR deb hisoblanadi — qo‘shimcha boj qo‘shilmaydi.'
       : '📄 Sertifikat YO‘Q deb hisoblanadi — qonun bo‘yicha qo‘shimcha boj qo‘shiladi.',
-    { reply_markup: aiConfirmKeyboard(next?.hasCertificate ?? true) },
+    {
+      reply_markup: keys ? reviewKeyboard({ inline_keyboard: keys.rows }, keys.retry) : aiConfirmKeyboard(true),
+    },
   );
   if (next) editTableSoon(ctx, chatId);
 }
@@ -2620,6 +2898,16 @@ export type LandedTarget = Parameters<typeof landedWords>[0] & {
   queued?: boolean;
   queueError?: string | null;
   replyQueued?: boolean;
+  /**
+   * The AI door's job landed for the VED alone (docs/FAYL-OQISH.md §1.3 b) —
+   * set by the landing only when the ROW it wrote says the «🧮» door, which is
+   * what the pass will do: silent toward the seller. `reason`: why the AI did
+   * not compute, in the seller's words.
+   */
+  /** `filesOnCard` false: nothing the seller sent was stored — a file past 20 MB — so the VED has no file to look at (as-built review WORDS-2). */
+  ved?: { reason: string; filesOnCard?: boolean } | null;
+  /** The landed request's item count as its row reads (`landedWordsOf`) — null when unread. */
+  items?: number | null;
 };
 
 /**
@@ -2635,6 +2923,15 @@ export const PLAIN_QUEUED = '🧮 VED navbatiga tushdi — VED xodimi hisoblab, 
  */
 export const AI_QUEUED =
   '🤖 AI hisoblayapti — taxminiy natija bir necha daqiqada shu yerga keladi. Rasmiy narxni VED xodimi beradi.';
+
+/**
+ * The ✅ after an AI-door job landed for the VED alone (docs/FAYL-OQISH.md
+ * §1.3 b): never `AI_QUEUED` — the AI does not compute, and the seller is told
+ * why in the same sentence.
+ */
+export function vedQueuedText(reason: string, filesOnCard = true): string {
+  return `🧮 VED navbatiga tushdi — AI hisoblamadi: ${reason}. VED xodimi ${filesOnCard ? 'fayllarni ko‘rib, ' : ''}javobni shu yerga yuboradi.`;
+}
 
 /** The ✅'s queue line before the doors (a NULL door keeps it, §0.2). */
 const LEGACY_QUEUED = '🧮 Hisoblash navbatiga tushdi — VED xodimi javob beradi.';
@@ -2675,7 +2972,12 @@ export function landingReplyText(
  */
 function queuedLine(target: LandedTarget, opts: { tariffFollows: boolean; door: 'plain' | 'ai' | null; aiAvailable: boolean }): string {
   if (opts.tariffFollows) return TARIFF_FOLLOWS;
+  // The press chose the VED, and the row says the «🧮» door (§1.3 b).
+  if (target.ved && opts.door === 'plain') return vedQueuedText(target.ved.reason, target.ved.filesOnCard !== false);
   if (opts.door === 'plain') return PLAIN_QUEUED;
+  // An «🤖» request with no goods on it: the pass has nothing to price, and
+  // the seller is never promised a figure that cannot come (zero-03).
+  if (opts.door === 'ai' && target.items === 0) return vedQueuedText('so‘rovda tovar yo‘q');
   if (opts.door === 'ai' && target.replyQueued === true && opts.aiAvailable) return AI_QUEUED;
   return LEGACY_QUEUED;
 }

@@ -306,6 +306,14 @@ export function startIntake(
     clientAskedWith: null,
     usages: [],
     aiFailure: null,
+    aiCut: null,
+    aiCutRetried: false,
+    aiInputCut: false,
+    filesMissing: 0,
+    unreadPdfs: [],
+    refusedFiles: [],
+    restartAsked: null,
+    landAs: null,
     analysing: null,
     answers: [],
     reaskedGroup: null,
@@ -1050,6 +1058,15 @@ export function migrateIntakeState(row: IntakeState): IntakeState {
     fileTotals: row.fileTotals ?? null,
     fileNotes: Array.isArray(row.fileNotes) ? row.fileNotes : [],
     goodsFiles: Array.isArray(row.goodsFiles) ? row.goodsFiles : [],
+    // docs/FAYL-OQISH.md §10: a row written before the round read nothing as unread.
+    aiCut: row.aiCut ?? null,
+    aiCutRetried: row.aiCutRetried ?? false,
+    aiInputCut: row.aiInputCut ?? false,
+    filesMissing: typeof row.filesMissing === 'number' ? row.filesMissing : 0,
+    unreadPdfs: Array.isArray(row.unreadPdfs) ? row.unreadPdfs : [],
+    refusedFiles: Array.isArray(row.refusedFiles) ? row.refusedFiles : [],
+    restartAsked: row.restartAsked ?? null,
+    landAs: row.landAs ?? null,
   };
   const resolved: IntakeState = base.pendingInvoice ? { ...base, ...foldPendingInvoice(base) } : base;
   return {

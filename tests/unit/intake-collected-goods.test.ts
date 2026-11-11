@@ -8,7 +8,12 @@ import type { CalcFacts } from '@/modules/wms/calc/intake';
  * the order of the sources is a test and not a reading of the code.
  */
 const model = vi.hoisted(() => ({ analyze: vi.fn() }));
-vi.mock('@/modules/wms/calc/intake-ai', () => ({ analyzeIntake: model.analyze }));
+// The rest of the module is the real one: the reading measures what the model
+// is shown with its `fitSheetRows` (docs/FAYL-OQISH.md §1.1 f).
+vi.mock('@/modules/wms/calc/intake-ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/modules/wms/calc/intake-ai')>()),
+  analyzeIntake: model.analyze,
+}));
 vi.mock('@/modules/wms/calc/ai-cost', () => ({ aiCalcBudgetLeft: async () => 100 }));
 
 import {

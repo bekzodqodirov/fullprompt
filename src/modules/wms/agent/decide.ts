@@ -573,6 +573,7 @@ async function requeueLanded(
   const { CalcError, openCalcRequest } = await import('../calc/service');
   try {
     const { landingItems } = await import('../calc/intake');
+    const items = landingItems(action.facts);
     const opened = await openCalcRequest(
       {
         entityType: note.entityType,
@@ -582,7 +583,7 @@ async function requeueLanded(
         toCity: action.facts.toCity ?? null,
         weightKg: action.facts.weightKg ?? null,
         volumeM3: action.facts.volumeM3 ?? null,
-        items: landingItems(action.facts),
+        items,
         noteId,
         source: 'bot',
         // The landing's own door, null (docs/IKKI-ESHIK.md §0.1): the re-queue
@@ -594,8 +595,15 @@ async function requeueLanded(
       },
       { actorId: actor.id },
     );
-    const { queueCalcPrefill } = await import('../calc/prefill-queue');
-    await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: action.section });
+    // The landing's own zero-item rule (docs/FAYL-OQISH.md §1.3 c,
+    // door-break-4): a rastamojka with no goods owes no pass, here as in both
+    // of `landIntake`'s queue calls — the re-queue is the agent's second path
+    // to the same request, and it called the pass unguarded.
+    const { landingOwesPass } = await import('../calc/intake-land');
+    if (landingOwesPass(action.section, items.length)) {
+      const { queueCalcPrefill } = await import('../calc/prefill-queue');
+      await queueCalcPrefill({ requestId: opened.id, staffId: actor.id, section: action.section });
+    }
     return { queued: true, requestId: opened.id, queueError: null };
   } catch (err) {
     logger.error({ err, noteId }, '[agent] calc re-queue failed');

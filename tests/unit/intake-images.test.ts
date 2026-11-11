@@ -35,7 +35,10 @@ describe('the analysis actually looks at the photographs', () => {
     // The text block travels WITH them — a content array, not a bare string
     // (built by `intakeContent` since 2026-10-21, one place for its order;
     // the spreadsheet's fit is measured first since the round-1 review).
-    expect(AI).toContain('content: intakeContent(');
+    // Streamed since docs/FAYL-OQISH.md §3.2: one attempt's content, built
+    // per attempt (a PDF-less re-read rebuilds it), handed to the stream.
+    expect(AI).toContain('const content = intakeContent(');
+    expect(AI).toContain("messages: [{ role: 'user', content }]");
     expect(AI).toMatch(/\): Anthropic\.ContentBlockParam\[\] \{\n(?: {2}.*\n)*? {2}return \[/);
   });
 
@@ -48,8 +51,14 @@ describe('the analysis actually looks at the photographs', () => {
     // text, and several PDFs — and an empty one is now SAID, not null.
     // Since the round-2 review the sheets are two inputs (goods files and a
     // workbook's other sheets), either of which is something to read.
-    expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets) {');
-    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => s.text.trim() !== '');");
+    // docs/FAYL-OQISH.md §3.7 (known-3): a numbered list whose codes are
+    // ASKED is something to read too — the AI door's lone Excel with no
+    // caption reached «nothing to read» and was never coded.
+    expect(AI).toContain('if (!material && images.length === 0 && pdfs.length === 0 && !hasSheets && !codesAsked) {');
+    expect(AI).toContain('const codesAsked = input.codeKnown === true && knownList.some((_, i) => ask(i));');
+    // …and the rows a reader dropped under a list are context, never a reason
+    // to call (as-built review MODEL-8).
+    expect(AI).toContain("const hasSheets = [...sheets, ...contextSheets].some((s) => !s.dropped && s.text.trim() !== '');");
     expect(AI).toContain("return { ok: false, failure: 'nothing_to_read' };");
   });
 

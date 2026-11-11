@@ -1,5 +1,90 @@
 # CHANGELOG
 
+## 2026-11-11 — «🤖 AI rastamojka»: fayl o'qilmaguncha «Tasdiqlash» chiqmaydi; fayldagi tovarlar yo'qolmaydi
+
+Sizning so'zingiz: «nega ai rastamojkaga malumotlar bergandan kegin ham tovar nomi topilmadi deyabti. 1 dona fileda
+kop tovarlar bolishi mumkun yokida 1 dona tovar bolishi mumkun. va fillarni qabul qil degandan keyin fillarni oldin
+korib chiqib togridan togri tasdiq deyabti?»
+
+**Migratsiya yo'q** — baza hisobi **143** bo'lib qoladi. Yangilangani `/api/version` bilan tekshiriladi (bugungi
+sana chiqishi kerak).
+
+### Nima bo'layotgan edi
+- **Eng ko'p ishlatiladigan yo'lda AI faylni umuman ko'rmagan.** Sotuvchi «🤖 AI rastamojka» → bo'lim → GS777 →
+  bitta Excel (izohsiz) → «Bo'ldi» desa, tizim Excelni o'zi o'qirdi, lekin AI ga hech narsa yubormasdi. Keyin
+  jadvalda «AI ga o'qish uchun matn yo'q edi» deb yozib, darhol «✅ Tasdiqlash» ni taklif qilardi.
+- **«Tovar nomi yozilmagan» ikki sababdan chiqardi:**
+  - katta invoysni AI vaqtida o'qib ulgurmasa, o'qiganini ham tashlab yuborardi;
+  - Excelda sarlavha 10-qatordan pastda bo'lsa, tovar ustuni «Product» yoki «Номенклатура» deb nomlangan bo'lsa,
+    yoki tovar nomida «TOTAL» so'zi bo'lsa, tizim tovarlarni ko'rmasdi.
+
+  Shunda ham bot sotuvchini ayblardi («tovarlarni yuboring») va bo'sh jadval ustida «Tasdiqlash» ni taklif qilardi.
+- **Bitta PDF AI qabul qilmasa, butun o'qish buzilardi** — yonidagi rasm va Excel ham o'qilmay qolardi.
+- **Bir Excel faylda bir nechta varaq bo'lsa,** faqat eng katta varaq olinardi, qolganlari e'tiborsiz qolardi.
+
+### Endi qanday
+- **«✅ Tasdiqlash» faqat AI siz yuborgan va bot qabul qilgan HAMMA narsani o'qiganda chiqadi** (savol 1 ⭐ a).
+  O'qilmagan narsa bo'lsa, jadval nima o'qilmaganini va nima uchunligini yozadi. O'rniga quyidagi tugmalar chiqadi:
+  - **«🔄 AI qayta o'qisin»** — qayta o'qish yordam beradigan holatda;
+  - **«➕ Yana ma'lumot»** — faylni Excel qilib yoki tovarlarni yozib yuborish uchun;
+  - **«👤 VED hisoblasin»** — so'rov VED xodimiga tushadi, u fayllarni o'zi ko'rib hisoblaydi. AI raqam
+    aytmaydi, sotuvchiga «VED navbatiga tushdi — AI hisoblamadi: (sabab)» deb yoziladi.
+- **AI endi o'qiganini darhol saqlab boradi:** vaqt tugasa ham oxirigacha o'qilgan tovarlar yo'qolmaydi, jadvalda
+  «AI faylni oxirigacha o'qib ulgurmadi — N ta tovar o'qildi, qolgani o'qilmadi» deb yoziladi. «🔄» faylni boshidan
+  bir marta qayta o'qitadi (davomidan emas); qayta o'qish kamroq o'qisa, avvalgisi qoladi.
+- **AI qabul qilmagan PDF alohida aytiladi**, qolgan fayllar baribir o'qiladi. Bot qabul qilmagan fayllar (Word,
+  20 MB dan katta, ortiqcha rasmlar) jadvalda nomi va sababi bilan yoziladi — «undagi tovarlar hisobga kirmaydi».
+- **Excel o'qish yaxshilandi:**
+  - sarlavha pastda bo'lsa ham topiladi (blank, logotip, firma rekvizitlaridan keyin);
+  - «Product», «Commodity», «Номенклатура», «货名» kabi ustunlar tovar nomi deb o'qiladi;
+  - «TOTAL», «Итого», «Jami» qatorlari tovar deb olinmaydi, lekin nomida «Total» so'zi bor tovar tashlab
+    yuborilmaydi;
+  - bitta tovarli «Nomi: … / Soni: …» ko'rinishidagi fayl ham o'qiladi;
+  - «1,500» kabi matn qilib yozilgan sonlar, «CTN QTY», «Всего шт», ikki tilli ikki qatorli sarlavha va o'zbekcha
+    sarlavhalar to'g'ri o'qiladi.
+- **Bir Excel ichida bir nechta varaq** (savol 2 ⭐ a): boshqa varaqda boshqa tovarlar ekani aniq ko'rinsa, ular
+  ham qo'shiladi va bot buni aytadi. Packing list varag'i bo'lsa, undan og'irlik va kub olinadi. Aniqlab bo'lmasa,
+  avvalgidek eng katta varaq olinadi va bot buni ham aytadi. Faqat rasmdan iborat Excel «rasm o'qilmaydi» deb
+  aytiladi.
+- **«🧮 Hisoblatish» (oddiy eshik) tugmalari o'zgarmadi.** Excelni yaxshiroq o'qishi u yerda ham ishlaydi.
+
+### Tekshiruvdan keyin tuzatilganlar
+Kod uch marta tekshirildi (yig'ilgan kod, tuzatishlar, tuzatishlarning tuzatishlari). Topilgan muhimlari:
+- **Ikki zavodning yuki bitta so'rovda bo'lsa** (bir Excelda ikki varaq yoki ikki alohida fayl), tizim birinchi zavod
+  packing listidagi umumiy brutto va kubni BUTUN yuk deb olardi va «✅ Ma'lumot to'liq» derdi — podklyuchda yo'lkira
+  yarim yukka hisoblanardi. Endi bunday holda umumiy brutto so'raladi, kub esa qatorlar yig'indisidan olinadi.
+  Butun yuk uchun bitta packing list bo'lsa, uning raqamlari avvalgidek olinadi.
+- Packing list oxiridagi «TOTAL 1X40'HQ», «TOTAL PALLETS», «Total for this page» kabi qatorlar tovar bo'lib
+  qolmaydi (miqdor va kub ikki barobar bo'lib ketmaydi). «TOTAL» brendli tovarlar (masalan «TOTAL cordless drill»)
+  esa tovar bo'lib qoladi.
+- **«🧮 Hisoblatish» eshigida** AI faylni oxirigacha o'qimagan bo'lsa, endi jadvalda ham, VED kartasida ham
+  «ro'yxat to'liq emas» deb yoziladi (ilgari indamasdi).
+- AI o'qishni yarmida to'xtatsa, sotuvchi yozgan tovarlar endi yo'qolmaydi.
+- **Makrosli Excel (.xlsm) endi o'qiladi.** HTML/XML/.xlsb fayllar qabul qilinmaydi, lekin bot «.xlsx qilib saqlab
+  yuboring» deb aytadi.
+- Bir xil nomli fayl qayta yuborilsa, eskisi «avvalgi nusxa» deb alohida aytiladi.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. `docker compose --profile telegram up -d --build tg-listen`.
+6. Migratsiya yo'q — soni **143** bo'lib qolishi kerak. Shuning uchun asosiy tekshiruv:
+   `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+7. Bot bu yerda haqiqiy Telegram va haqiqiy AI kaliti bilan sinab ko'rilmadi. Deploydan keyin «🤖 AI rastamojka»
+   da bitta sinov qiling: bitta Excel (ko'p tovarli) → «Bo‘ldi» → jadval; keyin bitta PDF bilan.
+
+### Savollar (javobingizgacha ⭐ variant ishlaydi)
+1. Fayl o'qilmasa yoki AI oxirigacha o'qib ulgurmasa: a) ⭐ «Tasdiqlash» chiqmaydi, «🔄», «➕», «👤 VED hisoblasin»
+   chiqadi; b) «Tasdiqlash» qoladi, AI faqat o'qiganini hisoblaydi.
+2. Bir Excelda bir nechta varaq: a) ⭐ boshqa tovarlar aniq bo'lsa qo'shiladi, packing listdan og'irlik va kub
+   olinadi; b) hozirgidek faqat eng katta varaq.
+3. «AI rastamojka» bosishdan OLDIN yuborilgan fayllar: a) ⭐ hozirgidek qayta yuboriladi; b) bot «shu hisobga
+   olaymi?» deb so'raydi (bu yangi ish).
+
+Batafsil: `docs/FAYL-OQISH.md` §6, qarorlar DECISIONS #1630-#1641.
+
 ## 2026-11-10 — Tarkib tuzatishlari: hujjat majburiy emas, nom tarkibdan, har tovar alohida qator, tarkibga AI, invoysda birlashtirish va qizil belgilar
 
 Sizning olti bandingiz («togirlash kerak bolgan ishlar bor…»). Bitta migratsiya (**0143**; avval 0142 edi, boshqa

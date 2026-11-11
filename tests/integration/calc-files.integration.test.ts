@@ -7,7 +7,20 @@ import { attachments, users } from '@/modules/platform/db/schema';
 import { getStorage } from '@/modules/platform/files/storage';
 import { __setTelegramTransport } from '@/modules/platform/telegram/send';
 import { startIntake, endIntake } from '@/modules/platform/telegram/calc-store';
-import { fileOf, loadIntakeFiles, saveIntakeFile } from '@/modules/platform/telegram/calc-files';
+import {
+  fileOf,
+  isFileRefusal,
+  loadIntakeFiles,
+  saveIntakeFile,
+  type BotFileRefusal,
+  type SavedBotFile,
+} from '@/modules/platform/telegram/calc-files';
+
+/** A save that must have STORED the file — a typed refusal is this test's failure. */
+const stored = (saved: SavedBotFile | BotFileRefusal): SavedBotFile => {
+  if (isFileRefusal(saved)) throw new Error(`not stored: ${saved.refused}`);
+  return saved;
+};
 
 /**
  * The collector's files since K (docs/SAKKIZ-R3.md K4/K5): the collection
@@ -74,7 +87,9 @@ describe('fileOf — the file a message or an album part carries', () => {
     // a press and an album part key the attachment by it, not by the update.
     expect(fileOf({ message_id: 31, photo: [{ file_id: 'x' }] })).toEqual({ fileId: 'x', isPhoto: true, messageId: 31 });
     const part = { messageId: 5, kind: 'photo' as const, file: { fileId: 'p', name: null, mime: null, size: 1 } };
-    expect(fileOf(part)).toEqual({ fileId: 'p', isPhoto: true, fileName: undefined, mime: undefined, messageId: 5 });
+    // …and the size it arrived with (docs/FAYL-OQISH.md §3.4): the 20 MB
+    // refusal is decided before Telegram is asked anything.
+    expect(fileOf(part)).toEqual({ fileId: 'p', isPhoto: true, fileName: undefined, mime: undefined, messageId: 5, size: 1 });
     expect(fileOf({ ...part, kind: 'voice' })).toBeNull();
     expect(fileOf({ ...part, file: null })).toBeNull();
   });
@@ -91,18 +106,18 @@ describe('an intake file is the MESSAGE’s attachment (durability-1)', () => {
     notes.push(noteId);
     const ctx = { message: { message_id: 4242, photo: [{ file_id: 'AgAD-photo' }] } };
     getFileCalls = 0;
-    const first = await saveIntakeFile(ctx, noteId, staffId);
-    expect(first?.isPhoto).toBe(true);
+    const first = stored(await saveIntakeFile(ctx, noteId, staffId));
+    expect(first.isPhoto).toBe(true);
     expect(getFileCalls).toBe(1);
-    const again = await saveIntakeFile(ctx, noteId, staffId);
-    expect(again?.attachmentId).toBe(first?.attachmentId);
-    expect(again?.body.equals(body)).toBe(true);
+    const again = stored(await saveIntakeFile(ctx, noteId, staffId));
+    expect(again.attachmentId).toBe(first.attachmentId);
+    expect(again.body.equals(body)).toBe(true);
     expect(getFileCalls, 'a redone message downloads nothing').toBe(1);
     const rows = await db.select({ id: attachments.id }).from(attachments).where(eq(attachments.entityId, noteId));
-    expect(rows.map((r) => r.id)).toEqual([first!.attachmentId]);
+    expect(rows.map((r) => r.id)).toEqual([first.attachmentId]);
     // Another message of the same collection is another attachment.
-    const other = await saveIntakeFile({ message: { message_id: 4243, photo: [{ file_id: 'AgAD-2' }] } }, noteId, staffId);
-    expect(other?.attachmentId).not.toBe(first?.attachmentId);
+    const other = stored(await saveIntakeFile({ message: { message_id: 4243, photo: [{ file_id: 'AgAD-2' }] } }, noteId, staffId));
+    expect(other.attachmentId).not.toBe(first.attachmentId);
   });
 
   it('a PRESS saving the file it replies to, or an album part, keys by that file’s message — twice is one row', async () => {
@@ -120,16 +135,18 @@ describe('an intake file is the MESSAGE’s attachment (durability-1)', () => {
     const pressCtx = {};
     const part = { messageId: 777, kind: 'photo' as const, file: { fileId: 'AgAD-part', name: null, mime: null, size: 1 } };
     getFileCalls = 0;
-    const first = await saveIntakeFile(pressCtx, noteId, staffId, fileOf(part));
-    const again = await saveIntakeFile(pressCtx, noteId, staffId, fileOf(part));
-    expect(again?.attachmentId).toBe(first?.attachmentId);
+    const first = stored(await saveIntakeFile(pressCtx, noteId, staffId, fileOf(part)));
+    const again = stored(await saveIntakeFile(pressCtx, noteId, staffId, fileOf(part)));
+    expect(again.attachmentId).toBe(first.attachmentId);
     expect(getFileCalls, 'the re-run downloads nothing').toBe(1);
-    const replied = await saveIntakeFile(pressCtx, noteId, staffId, fileOf({ message_id: 778, document: { file_id: 'BQAD', file_name: 'a.xlsx' } }));
+    const replied = stored(
+      await saveIntakeFile(pressCtx, noteId, staffId, fileOf({ message_id: 778, document: { file_id: 'BQAD', file_name: 'a.xlsx' } })),
+    );
     const rows = await db.select({ id: attachments.id }).from(attachments).where(eq(attachments.entityId, noteId));
-    expect(rows.map((r) => r.id).sort()).toEqual([first!.attachmentId, replied!.attachmentId].sort());
+    expect(rows.map((r) => r.id).sort()).toEqual([first.attachmentId, replied.attachmentId].sort());
   });
 
-  it('a refused getFile is said in the log and stores nothing; a short 429 is waited out', async () => {
+  it('a refused getFile is said in the log and stores nothing — «file is too big» is the 20 MB refusal; a short 429 is waited out', async () => {
     const noteId = uuidv4();
     notes.push(noteId);
     const { logger } = await import('@/modules/platform/logger');
@@ -138,8 +155,11 @@ describe('an intake file is the MESSAGE’s attachment (durability-1)', () => {
       new Response(JSON.stringify({ ok: false, error_code: 400, description: 'Bad Request: file is too big' }), { status: 400 }),
     );
     try {
+      // Re-anchored (docs/FAYL-OQISH.md §3.4): Telegram's own «file is too
+      // big» — a message that did not say its size — is the typed 20 MB
+      // refusal, which the doors SAY, never a bare null read as «saqlab bo‘lmadi».
       const out = await saveIntakeFile({ message: { message_id: 5001, document: { file_id: 'big' } } }, noteId, staffId);
-      expect(out).toBeNull();
+      expect(out).toEqual({ refused: 'too_big' });
       expect(warn.mock.calls.some((c) => c[1] === '[bot-file] getFile refused')).toBe(true);
       // …and a 429 asking for a second is waited out, as grammy's briefRetry did.
       let calls = 0;
@@ -154,9 +174,9 @@ describe('an intake file is the MESSAGE’s attachment (durability-1)', () => {
           ? new Response(JSON.stringify({ ok: false, error_code: 429, description: 'Too Many Requests', parameters: { retry_after: 1 } }), { status: 429 })
           : new Response(JSON.stringify({ ok: true, result: { file_path: 'photos/file_2.jpg' } }), { status: 200 });
       });
-      const saved = await saveIntakeFile({ message: { message_id: 5002, photo: [{ file_id: 'AgAD-429' }] } }, noteId, staffId);
+      const saved = stored(await saveIntakeFile({ message: { message_id: 5002, photo: [{ file_id: 'AgAD-429' }] } }, noteId, staffId));
       expect(calls).toBe(2);
-      expect(saved?.isPhoto).toBe(true);
+      expect(saved.isPhoto).toBe(true);
     } finally {
       warn.mockRestore();
       __setTelegramTransport(async (url) => {
@@ -200,7 +220,8 @@ describe('the reading loads the bytes from storage (K5)', () => {
     );
     expect(files.images).toHaveLength(1);
     expect(files.images[0]!.mediaType).toBe('image/jpeg');
-    expect(files.pdfs).toEqual([{ data: pdfBody, name: 'B.pdf' }]);
+    // Each PDF carries its attachment, so a refusal names it (docs/FAYL-OQISH.md §3.4).
+    expect(files.pdfs).toEqual([{ data: pdfBody, name: 'B.pdf', attachmentId: pdf.id }]);
     expect(files.missing).toBe(2);
     // A collection of text alone reads nothing at all.
     expect(await loadIntakeFiles(state, { deadline: Date.now() })).toEqual({ images: [], pdfs: [], missing: 0 });
@@ -211,5 +232,52 @@ describe('the reading loads the bytes from storage (K5)', () => {
       { deadline: Date.now() - 1 },
     );
     expect(late).toEqual({ images: [], pdfs: [], missing: 2 });
+  });
+});
+
+describe('what Telegram will not hand over, and what the API refused (docs/FAYL-OQISH.md §3.4)', () => {
+  it('a file whose message says it is past 20 MB is refused before Telegram is asked anything', async () => {
+    const noteId = uuidv4();
+    notes.push(noteId);
+    getFileCalls = 0;
+    const big = { message: { message_id: 6001, document: { file_id: 'huge', file_name: 'CI.pdf', file_size: 25 * 1024 * 1024 } } };
+    expect(fileOf(big.message)).toMatchObject({ size: 25 * 1024 * 1024 });
+    expect(await saveIntakeFile(big, noteId, staffId)).toEqual({ refused: 'too_big' });
+    expect(getFileCalls, 'nothing asked of Telegram').toBe(0);
+    // An album part carries the size it arrived with, too.
+    const part = { messageId: 6002, kind: 'document' as const, file: { fileId: 'p', name: 'x.pdf', mime: null, size: 21 * 1024 * 1024 } };
+    expect(await saveIntakeFile({}, noteId, staffId, fileOf(part))).toEqual({ refused: 'too_big' });
+    expect(getFileCalls).toBe(0);
+  });
+
+  it('a PDF the API refused is not loaded again — neither read nor counted missing', async () => {
+    const noteId = uuidv4();
+    notes.push(noteId);
+    const { saveAttachment } = await import('@/modules/platform/files/service');
+    const body = Buffer.from('%PDF-1.4 refused');
+    const refused = await saveAttachment(
+      { entityType: 'crm_activity', entityId: noteId, fileName: 'R.pdf', contentType: 'application/pdf', body, uploadedBy: staffId },
+      { thumbnails: 'skip' },
+    );
+    const good = await saveAttachment(
+      { entityType: 'crm_activity', entityId: noteId, fileName: 'G.pdf', contentType: 'application/pdf', body, uploadedBy: staffId },
+      { thumbnails: 'skip' },
+    );
+    const chat = BigInt(-7_400_000_100) - BigInt(STAMP);
+    chats.push(chat);
+    const state = startIntake(chat, 'rastamojka', { staffId });
+    const files = await loadIntakeFiles(
+      {
+        ...state,
+        pdfs: [
+          { attachmentId: refused.id, name: 'R.pdf', bytes: body.length },
+          { attachmentId: good.id, name: 'G.pdf', bytes: body.length },
+        ],
+        unreadPdfs: [refused.id],
+      },
+      { deadline: Date.now() + 30_000 },
+    );
+    expect(files.pdfs.map((p) => p.name)).toEqual(['G.pdf']);
+    expect(files.missing).toBe(0);
   });
 });

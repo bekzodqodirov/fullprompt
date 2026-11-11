@@ -341,6 +341,9 @@ export const SMALL_ROAD_LINE = `⚠️ Juda kichik yuk (yo‘lkira $${SMALL_FREI
 
 export const money = (n: number) => `$${n.toFixed(2)}`;
 
+/** The customs half of a request with no goods (zero-03) — the chat's, the lenta's and the VED's note alike. */
+export const NO_GOODS_CUSTOMS = 'Rastamojka: so‘rovda tovar yo‘q — hisoblanadigan narsa yo‘q (VED xodimi so‘raydi).';
+
 /** The road's route as printed — with the guess said, in what was read. */
 export function routeWords(f: Extract<AiVedFreight, { ok: true }>): string {
   return f.zoneGuessed ? `${f.routeLabel} — zona «${f.zoneReadFrom ?? ''}»dan taxmin` : f.routeLabel;
@@ -610,10 +613,19 @@ export function aiVedReplyText(input: AiVedReplyInput): string {
   // belt here): a line the engine refused or a row nobody coded is part of
   // the declaration, so the single total is absent while either stands — a
   // caller that handed one in anyway still prints no figure.
+  // A request with NO goods (docs/FAYL-OQISH.md §1.3 c, zero-03): the
+  // customs half has nothing to price, and «hozircha hisoblab bo‘lmadi» said
+  // «the lines above say which» over no lines at all — nor is a sum of nothing
+  // a «Rastamojka jami». Only a podklyuch should reach here so: its road is
+  // priced from the totals; a rastamojka of no goods owes no pass
+  // (`landingOwesPass`).
+  const noGoods = input.lines.length === 0 && input.ungrouped.length === 0;
   const blocked = input.lines.some((l) => l.customsUsd === null) || input.ungrouped.length > 0;
-  const total = blocked ? null : input.totalUsd;
+  const total = blocked || noGoods ? null : input.totalUsd;
   const est = input.estimate;
-  if (total !== null) {
+  if (noGoods) {
+    tail.push(NO_GOODS_CUSTOMS);
+  } else if (total !== null) {
     tail.push(`Rastamojka jami: ≈ ${money(total)}`);
   } else if (!est || (est.taxminiyUsd === null && (est.exactRows === 0 || est.exactRows === est.rows))) {
     // `exactRows === rows` with no Taxminiy: every row priced and only the
