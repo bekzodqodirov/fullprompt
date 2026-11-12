@@ -218,3 +218,25 @@ describe('X5 — a column the TOTAL row shows to be ONE carton’s, landed (XLS-
     expect(items[0]!.note).toContain('vazn «15» — bitta karobkanikimi yoki qatornikimi, aniq emas');
   });
 });
+
+describe('X8 — the TOTAL row as the sheet’s total, landed (XLS-6; review JR-3)', () => {
+  it('the cube only in the TOTAL row: the request carries the TOTAL row’s 3.8 m³ and the lines’ 710 kg brutto', async () => {
+    const { items, request } = await landedItems(
+      'podklyuch',
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [
+        [1, 'Ladies jacket', 200, 10, 120, null],
+        [2, 'Kids toy plastic', 480, 20, 260, null],
+        [3, 'LED lamp 50W', 300, 30, 330, null],
+        ['TOTAL', null, 980, 60, 710, 3.8],
+      ],
+    );
+    // No line states a cube; 120 + 260 + 330 = 710 kg is the lines' gross and the TOTAL's.
+    expect(items.map((i) => [i.name, i.kg, i.m3])).toEqual([
+      ['Ladies jacket', 120, null],
+      ['Kids toy plastic', 260, null],
+      ['LED lamp 50W', 330, null],
+    ]);
+    expect([request.kg, request.m3]).toEqual([710, 3.8]);
+  });
+});

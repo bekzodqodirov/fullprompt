@@ -257,3 +257,31 @@ describe('X5 — a column the sheet’s own TOTAL row shows to be ONE carton’s
     expect(got.said[0]).toContain('⚠️ «pl.xlsx» — «G.W.(kg)» ustuni: jami qatorida 300 kg, qatorlar yig‘indisi 266 kg — umumiy brutto fayldan olinmadi.');
   });
 });
+
+describe('X8 — the TOTAL row and a summary line as the sheet’s totals, end to end (XLS-6; review JR-3)', () => {
+  it('S2 — the cube only in the TOTAL row of a packing list: the shipment’s 3.8 m³, the lines asking none', async () => {
+    const got = await collect('podklyuch', [
+      [await book([...HEAD, 'G.W.(KGS)', 'CBM'], [[...JACKET, 120, null], [...TOY, 260, null], [...LAMP, 330, null], [...TOTAL, 710, 3.8]]), 'pl.xlsx'],
+    ]);
+    // The brutto is the lines' 120 + 260 + 330 = 710; the cube no line states is the TOTAL row's 3.8.
+    expect(got.totals).toMatchObject({ weightKg: 710, volumeM3: 3.8 });
+    expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    expect(got.table).toContain('✅ Hajm: 3.8');
+    expect(got.table).not.toContain('umumiy hajmi (kub) — yozilmagan');
+  });
+
+  it('V1 — «TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM» under an invoice: its brutto is the shipment’s', async () => {
+    const got = await collect('rastamojka', [[await B.sheetsBook([['Sheet1', INVOICE_HEAD, [...INVOICE_ROWS, [], ['TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM']]]]), 'ci.xlsx']]);
+    expect(got.totals).toMatchObject({ weightKg: 710, weightNetto: false });
+    expect(got.table).not.toContain('umumiy brutto og‘irligi (kg, qadoq bilan) — yozilmagan');
+  });
+
+  it('a sectioned list with one blank weight: the sections added — never the last one’s 166 as the shipment', async () => {
+    const got = await collect('podklyuch', [
+      [await book(['Description', 'CTN', 'G.W.(kg)', 'CBM'], [['Kurtka', 10, 100, 1.0], ['TOTAL', 10, 100, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 5, 166, 1.1]]), 'pl.xlsx'],
+    ]);
+    // 100 + 166 = 266 kg; the cube is the lines' 1.0 + 1.1 = 2.1, which the sections say too.
+    expect(got.totals).toMatchObject({ weightKg: 266, volumeM3: 2.1 });
+    expect(got.table).toContain('✅ Og‘irlik (brutto): 266 kg');
+  });
+});

@@ -51329,9 +51329,10 @@
     },
     "notesInclude": [
      "⚠️ «G.W.» ustuni: qatorlardagi yig‘indi 33 kg, jami qatorida 530 kg"
-    ]
+    ],
+    "grossKg": 530
    },
-   "said": "JS-33 — a per-carton «G.W.» with one cell empty: the rows that HAVE the figure sum to 15 + 18 = 33 kg, under half the TOTAL’s 530 (265), while 20 × 15 + 10 × 18 = 480 kg is within 530 × 1.02 = 540.6 — the column is not taken as the lines’: their figures go to the note and the weight is asked",
+   "said": "JS-33 — a per-carton «G.W.» with one cell empty: the rows that HAVE the figure sum to 15 + 18 = 33 kg, under half the TOTAL’s 530 (265), while 20 × 15 + 10 × 18 = 480 kg is within 530 × 1.02 = 540.6 — the column is not taken as the lines’: their figures go to the note and the weight is asked; the brutto is then the TOTAL row’s 530 (X8: the Σ is null because the lines lack the figure)",
    "why": "JS-33: the belt also runs over the rows that HAVE the figure. Base: 15 / 18 kg landed as the lines’ (a 300 kg row priced on 15).",
    "source": "ai-soraydi P-excel X5 (XLS-1, XLS-2, DIM-8; JN-12, JR-11, JS-33, JN-13)",
    "weight": "blocker"
@@ -51690,6 +51691,1058 @@
    "why": "X5: the belt runs over the line-weight column too, not only the gross. Base: lines 11 / 12 kg netto.",
    "source": "ai-soraydi P-excel X5 (XLS-1, XLS-2, DIM-8; JN-12, JR-11, JS-33, JN-13)",
    "weight": "defect"
+  },
+  {
+   "id": "c3550",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     null
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     null
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     330,
+     null
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     710,
+     3.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": null
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": null
+      },
+      {
+       "name": "LED lamp 50W",
+       "volumeM3": null
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8,
+    "shape": "packing"
+   },
+   "said": "the cube only in the TOTAL row (probe S2): no line states one, so the sheet’s cube is the TOTAL row’s 3.8 m³; the brutto is the lines’ 120 + 260 + 330 = 710, which the TOTAL row says too",
+   "why": "XLS-6 / JR-3: when a figure’s Σ is null because a kept line lacks it, the one total row’s cell is the sheet’s total. Base: volumeM3 null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3551",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300,
+     10,
+     120,
+     null
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576,
+     20,
+     260,
+     null
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970,
+     30,
+     330,
+     null
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846,
+     60,
+     710,
+     3.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8,
+    "shape": "invoice"
+   },
+   "said": "an invoice whose cube stands only in its TOTAL row (probe S2b): 3.8 m³ is the sheet’s cube",
+   "why": "XLS-6 / JR-3. Base: volumeM3 null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3552",
+   "input": [
+    [
+     "Description",
+     "CTN",
+     "G.W.(kg)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     10,
+     100,
+     1
+    ],
+    [
+     "TOTAL",
+     10,
+     100,
+     1
+    ],
+    [
+     "Shim",
+     5,
+     null,
+     1.1
+    ],
+    [
+     "TOTAL",
+     5,
+     166,
+     1.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 100
+      },
+      {
+       "name": "Shim",
+       "weightKg": null
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 266,
+    "volumeM3": 2.1
+   },
+   "said": "a TOTAL under each section, none at the end, one line’s weight blank: the brutto is 100 + 166 = 266 — the two sections added — never the LAST section’s 166",
+   "why": "JR-3 (FR-SELL-3): several total rows, the last no sum of the earlier ones, every one stating the figure → their sum. Base: grossKg null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3553",
+   "input": [
+    [
+     "Description",
+     "CTN",
+     "G.W.(kg)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     10,
+     100,
+     1
+    ],
+    [
+     "TOTAL",
+     10,
+     100,
+     1
+    ],
+    [
+     "Shim",
+     5,
+     null,
+     1.1
+    ],
+    [
+     "TOTAL",
+     5,
+     166,
+     1.1
+    ],
+    [
+     "TOTAL",
+     15,
+     266,
+     2.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka"
+      },
+      {
+       "name": "Shim"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 266
+   },
+   "said": "sections and a grand TOTAL, one line’s weight blank: the last row (266) IS the sum of the earlier ones (100 + 166) — the grand total, 266",
+   "why": "JR-3: several → the last only when it equals the sum of the earlier ones. Base: grossKg null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3554",
+   "input": [
+    [
+     "Description",
+     "CTN",
+     "G.W.(kg)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     10,
+     100,
+     1
+    ],
+    [
+     "TOTAL",
+     10,
+     null,
+     1
+    ],
+    [
+     "Shim",
+     5,
+     null,
+     1.1
+    ],
+    [
+     "TOTAL",
+     5,
+     166,
+     1.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka"
+      },
+      {
+       "name": "Shim"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "sections whose first TOTAL states no weight: the last section’s 166 is not the shipment’s and nothing sums them — no brutto (asked)",
+   "why": "JR-3: «else null» — a sectioned list with one section silent must never offer its last section as the whole. Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3555",
+   "input": [
+    [
+     "Description",
+     "CTN",
+     "G.W.(kg)"
+    ],
+    [
+     "Kurtka",
+     "10",
+     "1200"
+    ],
+    [
+     "Shim",
+     "5",
+     null
+    ],
+    [
+     "TOTAL",
+     "15",
+     "1,650"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka"
+      },
+      {
+       "name": "Shim"
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "a TOTAL written «1,650» reads two ways (1650 or 1.65): it states nothing, and no brutto is taken from it",
+   "why": "JR-3: «a text total that reads two ways states nothing». Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3556",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [],
+    [
+     "TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8,
+    "shape": "invoice"
+   },
+   "said": "a summary line under an invoice (probe V1): «G.W. 710 KGS» is the brutto and «3.8 CBM» the cube; «60 CTNS» is no figure of either",
+   "why": "XLS-6 / X8: the summary line read in the trade’s words — units.ts’ unit and label vocabulary. Base: grossKg null, volumeM3 null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3557",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [],
+    [
+     "TOTAL G.W.:",
+     "710 KGS"
+    ],
+    [
+     "TOTAL CBM:",
+     3.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "label|value total lines (probe V3): «TOTAL G.W.: | 710 KGS» and «TOTAL CBM: | 3.8» — a cube label and a colon before a bare figure is a cube",
+   "why": "X8 with JN-21’s label-first rule. Base: grossKg null, volumeM3 null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3558",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 507,
+    "volumeM3": 5.92
+   },
+   "said": "both figures of «TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM»: 507 kg brutto, 5.92 m³",
+   "why": "X8 (T1’s own example line). Base: null, null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3559",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL N.W.: 480 KGS"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": null
+   },
+   "said": "a summary that states only the NETTO: no brutto is read from it",
+   "why": "X8: the shipment’s brutto is a gross figure only. Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3560",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "N.W.",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     200,
+     150,
+     160
+    ],
+    [
+     "Toy",
+     480,
+     250,
+     null
+    ],
+    [
+     "TOTAL",
+     680,
+     400,
+     300
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "weightKg": 150
+      },
+      {
+       "name": "Toy",
+       "weightKg": 250
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "the TOTAL row’s G.W. (300) is lighter than the lines’ own netto (150 + 250 = 400): no brutto — a column read wrong is no figure to land, from the lines or the TOTAL",
+   "why": "JR-3: X8’s figure goes through the brutto-under-netto check like any Σ. Base: grossKg null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3561",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Toy",
+     480,
+     20,
+     null,
+     1.2
+    ],
+    [
+     "TOTAL",
+     680,
+     30,
+     380,
+     1.7
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "weightKg": 120
+      },
+      {
+       "name": "Toy",
+       "weightKg": null
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7
+   },
+   "said": "one line’s G.W. blank, the TOTAL row 380: the brutto is the TOTAL row’s; the cube is the lines’ 0.5 + 1.2 = 1.7, what the TOTAL says",
+   "why": "XLS-6 / JR-3. Base: grossKg null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3562",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "合计: 毛重 507kg 体积 5.92立方"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 507,
+    "volumeM3": 5.92
+   },
+   "said": "a Chinese summary line «合计: 毛重 507kg 体积 5.92立方»: 507 kg brutto, 5.92 m³",
+   "why": "X8 in Han: «合计» the total word, «毛重» a gross label, «立方» a unit of cubic metres. Base: null, null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3563",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL: G.W. 15 KGS/CTN"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": null
+   },
+   "said": "«G.W. 15 KGS/CTN» is ONE carton’s weight, never the shipment’s",
+   "why": "X8 with the kernel’s per-package tail (PER_PACKAGE_TAIL). Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3564",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL G.W. 1 136.5 KGS"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": null
+   },
+   "said": "«1 136.5 KGS» is 1136.5 or a «1» beside 136.5 — nobody can say: no figure, never 136.5 kg",
+   "why": "X8 with T0’s rule: a digit group before another figure is not welded into it, nor dropped from it — the figure is not read. Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3565",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "TOTAL G.W.: 1,136.5 KGS"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 1136.5
+   },
+   "said": "«1,136.5 KGS»: a comma group AND a decimal point is ONE number — 1136.5 kg",
+   "why": "X8 (T14’s second half: the packing-list way of writing a weight). Base: null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3567",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     6.5,
+     1300
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     1.2,
+     576
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     9.9,
+     2970
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     null,
+     4846
+    ],
+    [
+     "毛重 507kg 体积 5.92立方"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": null,
+    "volumeM3": null
+   },
+   "said": "the same figures with NO total word: a line under the table that does not call itself a total is not read as the shipment’s (it is said to the model as a dropped row, as before)",
+   "why": "X8 reads total rows only (`totalRows`, the belt’s own): a label line under an invoice may be one carton’s spec as often. Base: the same.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
@@ -87020,6 +88073,81 @@
    "why": "JN-12: «one ⚠️ names both sums». Base: the Σ refused in silence.",
    "source": "ai-soraydi P-excel X5 (JN-12, JR-11)",
    "weight": "defect"
+  },
+  {
+   "id": "c3566",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Invoice",
+      "rows": [
+       [
+        "No.",
+        "Description",
+        "QTY(PCS)",
+        "Unit price (USD)",
+        "Amount (USD)"
+       ],
+       [
+        1,
+        "Ladies jacket",
+        200,
+        6.5,
+        1300
+       ],
+       [
+        2,
+        "Kids toy plastic",
+        480,
+        1.2,
+        576
+       ],
+       [
+        3,
+        "LED lamp 50W",
+        300,
+        9.9,
+        2970
+       ],
+       [
+        "TOTAL",
+        null,
+        980,
+        null,
+        4846
+       ],
+       [],
+       [
+        "TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket"
+      },
+      {
+       "name": "Kids toy plastic"
+      },
+      {
+       "name": "LED lamp 50W"
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "the V1 invoice as a workbook: the summary line in column A gives the sheet’s brutto 710 kg and cube 3.8 m³",
+   "why": "X8 through the file door. Base: grossKg null, volumeM3 null.",
+   "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
+   "weight": "blocker"
   }
  ],
  "isArticleNumberCases": [

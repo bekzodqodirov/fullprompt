@@ -270,3 +270,130 @@ describe('X5 — the rows that HAVE the figure (review JS-33)', () => {
     ]);
   });
 });
+
+describe('X8 — the TOTAL row as the sheet’s total, where a kept line LACKS the figure (XLS-6, review JR-3)', () => {
+  const H: Cell[] = ['Description', 'CTN', 'G.W.(kg)', 'CBM'];
+  const totals = (...rows: Cell[][]) => {
+    const read = parseGoods(rows);
+    return [read.grossKg, read.volumeM3];
+  };
+
+  it('one total row and a line without the figure: the row’s cell — and with every line stating it, the lines’ Σ as before', () => {
+    // The cube: no line states one, the TOTAL row says 3.8; the weight: 100 + 166 = 266 = its TOTAL.
+    expect(totals(H, ['Kurtka', 10, 100, null], ['Shim', 5, 166, null], ['TOTAL', 15, 266, 3.8])).toEqual([266, 3.8]);
+    // 1.0 + 1.1 = 2.1 from the lines, the TOTAL row agreeing to its printed place («2.1»).
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['Shim', 5, 166, 1.1], ['TOTAL', 15, 266, 2.1])).toEqual([266, 2.1]);
+  });
+
+  it('sections: their totals ADDED when nothing closes them — never the last section’s alone', () => {
+    // 100 + 166 = 266, the Shim line's weight blank.
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['TOTAL', 10, 100, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 5, 166, 1.1])[0]).toBe(266);
+    // …a closing grand total that is their sum: 266 (100 + 166).
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['TOTAL', 10, 100, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 5, 166, 1.1], ['TOTAL', 15, 266, 2.1])[0]).toBe(266);
+    // …a section TOTAL that states no weight: nothing adds up to the shipment.
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['TOTAL', 10, null, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 5, 166, 1.1])[0]).toBeNull();
+  });
+
+  it('only total rows that CLOSE the list: a section below the last of them is covered by none', () => {
+    // «MEN» has no TOTAL of its own: 150 kg / 1.2 m³ are the women's alone — the shipment is 150 + 120 = 270 kg
+    // and 1.2 + 1 = 2.2 m³ — and the headings' blank cells are what leaves the Σ null (the corpus' c3083).
+    const read = parseGoods([
+      ['Description', 'Qty', 'G.W. (kg)', 'CBM'],
+      ['WOMEN', null, null, null],
+      ['Ladies jacket', 300, 150, 1.2],
+      ['TOTAL', 300, 150, 1.2],
+      ['MEN', null, null, null],
+      ['Men jacket', 200, 120, 1],
+    ]);
+    expect([read.grossKg, read.volumeM3]).toEqual([null, null]);
+  });
+
+  it('a «SAY TOTAL» words line under the TOTAL row is no section of it', () => {
+    // One line lacks its weight; the TOTAL row says 266; the words line states no figure of any column.
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['Shim', 5, null, 1.1], ['TOTAL', 15, 266, 2.1], ['SAY TOTAL: US DOLLARS ONE THOUSAND ONLY'])[0]).toBe(266);
+  });
+
+  it('never where the belt REFUSED a Σ — the pallet sheet keeps no brutto', () => {
+    // 100 + 166 = 266 against 300: refused, and the TOTAL does not then stand for it.
+    expect(totals(H, ['Kurtka', 10, 100, 1.0], ['Shim', 5, 166, 1.1], ['TOTAL', 15, 300, 2.1])).toEqual([null, 2.1]);
+  });
+
+  it('never where the KERNEL corrected the lines — their Σ is a sum of single cartons, and the TOTAL is not offered in its place', () => {
+    // «G.W.» 12 equals «G.W./CTN» 12 beside 10 cartons: the door replaces it by 120, and the sheet's gross Σ is no total.
+    const read = parseGoods([['Description', 'CTNS', 'G.W./CTN', 'G.W.'], ['Jacket', 10, 12, 12], ['TOTAL', 10, null, 120]]);
+    expect(read.grossKg).toBeNull();
+  });
+
+  it('never on a list stopped at the reader’s ceiling', () => {
+    const lines: Cell[][] = Array.from({ length: MAX_GOODS_ROWS + 1 }, (_, k): Cell[] => [`Item ${k + 1}`, 1, null, 0.1]);
+    const read = parseGoods([H, ...lines, ['TOTAL', 501, 5010, 50.1]]);
+    expect(read.stoppedShort).toBe(true);
+    expect([read.grossKg, read.volumeM3]).toEqual([null, null]);
+  });
+
+  it('the TOTAL row’s brutto lighter than the lines’ own netto is no brutto either', () => {
+    // N.W. 150 + 250 = 400 kg; the TOTAL row's G.W. 300 < 400.
+    expect(parseGoods([['Description', 'QTY', 'N.W.', 'G.W.'], ['Jacket', 200, 150, 160], ['Toy', 480, 250, null], ['TOTAL', 680, 400, 300]]).grossKg).toBeNull();
+  });
+
+  it('a TOTAL cell that reads two ways states nothing', () => {
+    expect(totals(['Description', 'CTN', 'G.W.(kg)'], ['Kurtka', '10', '1200'], ['Shim', '5', null], ['TOTAL', '15', '1,650'])[0]).toBeNull();
+  });
+});
+
+describe('X8 — a summary line read in the trade’s words (units.ts’ vocabulary)', () => {
+  const HEAD: Cell[] = ['No.', 'Description', 'QTY(PCS)', 'Unit price (USD)', 'Amount (USD)'];
+  const ROWS: Cell[][] = [[1, 'Ladies jacket', 200, 6.5, 1300], [2, 'Kids toy plastic', 480, 1.2, 576], ['TOTAL', null, 680, null, 1876]];
+  const under = (...lines: Cell[][]) => {
+    const read = parseGoods([HEAD, ...ROWS, ...lines]);
+    return [read.grossKg, read.volumeM3];
+  };
+
+  it('«TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM»: the brutto after its label, the cube by its unit', () => {
+    expect(under(['TOTAL: 60 CTNS / G.W. 710 KGS / 3.8 CBM'])).toEqual([710, 3.8]);
+    expect(under(['TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM'])).toEqual([507, 5.92]);
+    expect(under(['合计: 毛重 507kg 体积 5.92立方'])).toEqual([507, 5.92]);
+  });
+
+  it('label | value cells: a bare figure after a cube label and a colon is the cube', () => {
+    expect(under(['TOTAL G.W.:', '710 KGS'], ['TOTAL CBM:', 3.8])).toEqual([710, 3.8]);
+  });
+
+  it('…and a bare figure with no colon, kilos with no gross label, a netto — none is the brutto', () => {
+    expect(under(['TOTAL CBM 3.8'])[1]).toBeNull();
+    expect(under(['TOTAL: 60 CTNS / 710 KGS'])[0]).toBeNull();
+    expect(under(['TOTAL N.W.: 480 KGS'])[0]).toBeNull();
+  });
+
+  it('one carton’s figure, a figure that reads two ways, half of a spaced group, two different figures: nothing', () => {
+    expect(under(['TOTAL: G.W. 15 KGS/CTN'])[0]).toBeNull();
+    expect(under(['TOTAL: G.W. 1,650 KGS'])[0]).toBeNull();
+    expect(under(['TOTAL G.W. 1 136.5 KGS'])[0]).toBeNull();
+    expect(under(['TOTAL: G.W. 710 KGS / G.W. 720 KGS'])[0]).toBeNull();
+    // …while a comma group AND a decimal point is ONE number: 1136.5.
+    expect(under(['TOTAL G.W.: 1,136.5 KGS'])[0]).toBe(1136.5);
+  });
+
+  it('two summary lines: the same figure is said twice, two sections are added', () => {
+    expect(under(['TOTAL: G.W. 710 KGS'], ['TOTAL: G.W. 710 KGS'])[0]).toBe(710);
+    // 100 + 166 = 266.
+    expect(under(['TOTAL: G.W. 100 KGS'], ['TOTAL: G.W. 166 KGS'])[0]).toBe(266);
+  });
+
+  it('a line with no total word is not read (it may be one carton’s spec)', () => {
+    expect(under(['毛重 507kg 体积 5.92立方'])).toEqual([null, null]);
+  });
+
+  it('the column’s own TOTAL cell outranks a summary line beside it', () => {
+    const read = parseGoods([
+      ['Description', 'CTN', 'G.W.(kg)', 'CBM'],
+      ['Kurtka', 10, 100, null],
+      ['Shim', 5, null, null],
+      ['TOTAL', 15, 266, 2.1],
+      ['TOTAL: G.W. 270 KGS / 2.2 CBM'],
+    ]);
+    // The column reading: the TOTAL row's 266 and 2.1 (the summary row states no figure of a column, so it is
+    // not a section of them); the summary line is read only where the columns say nothing.
+    expect([read.grossKg, read.volumeM3]).toEqual([266, 2.1]);
+  });
+});

@@ -1,6 +1,6 @@
 import { clipUnits } from '../../platform/text/clip';
 import { readNumberCell } from '../calc/number-cell';
-import { FIELD_LABELS as SPEC_LABELS, normalizeTnved, unitOf } from '../calc/units';
+import { FIELD_LABELS as SPEC_LABELS, normalizeTnved, PER_PACKAGE_TAIL, PER_PIECE_TAIL, tailAt, unitOf, unitPattern, VOLUME_LABELS, WEIGHT_LABELS } from '../calc/units';
 import {
   applyPacking,
   emptyPacking,
@@ -2783,6 +2783,72 @@ function combineTotals(stated: readonly ({ value: number; half: number } | null)
 }
 
 /**
+ * A SUMMARY line's figure (docs/AI-SORAYDI.md §3.2 X8; XLS-6): a total row
+ * that writes its figures as words in one cell — «TOTAL: 60 CTNS / G.W. 710
+ * KGS / 3.8 CBM» under an invoice, «TOTAL G.W.: | 710 KGS», «毛重 507kg 体积
+ * 5.92立方» — read in the trade's words, the kernel's ONE vocabulary
+ * (units.ts `unitPattern`, `WEIGHT_LABELS`, `VOLUME_LABELS`,
+ * `PER_PACKAGE_TAIL`), the way §3.1 T1 reads a typed totals line:
+ *  - the BRUTTO only after a gross label — «G.W. 710 KGS», «G.W.: 507»,
+ *    «毛重 507kg»: kilos with no label, or after a net one, are nobody's
+ *    brutto;
+ *  - the cube by its unit — «3.8 CBM», «5.92立方» — or after a cube label and
+ *    a colon — «TOTAL CBM: 3.8» (review JN-21: a bare figure is a cube only
+ *    after its label and «:» / «=»);
+ *  - never a figure with a per-package tail («15 KGS/CTN»), never one that
+ *    reads two ways («1,650»), never the half of a spaced group («1 136.5»:
+ *    1136.5, or a «1» beside 136.5 — T0's rule; it states nothing).
+ * Two different figures of one kind in one row state nothing either. Null =
+ * the row states none.
+ */
+const GROSS_TEXT_LABELS = WEIGHT_LABELS.filter((label) => GROSS_HEADER.test(label));
+const labelAlternation = (labels: readonly string[]) =>
+  [...labels]
+    .sort((a, b) => b.length - a.length)
+    .map((label) => label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&').replace(/\\\./g, '\\.?').replace(/ /g, '\\s*'))
+    .join('|');
+const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
+const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)`;
+const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
+const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
+const SUMMARY_READERS: Record<'gross' | 'volume', RegExp[]> = {
+  gross: [
+    new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}[:：=]\s*${TEXT_NUMBER}(?:\s*${TEXT_UNIT_OF(unitPattern('kg'))})?`, 'giu'),
+    new RegExp(String.raw`${TEXT_LABEL(GROSS_TEXT_LABELS)}${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('kg'))}`, 'giu'),
+  ],
+  volume: [
+    new RegExp(String.raw`${TEXT_NUMBER}\s*${TEXT_UNIT_OF(unitPattern('m3'))}(?!\d)`, 'giu'),
+    new RegExp(String.raw`${TEXT_LABEL(VOLUME_LABELS)}[:：=]\s*${TEXT_NUMBER}`, 'giu'),
+  ],
+};
+function summaryFigure(text: string, kind: 'gross' | 'volume'): number | null {
+  const seen = new Set<number>();
+  for (const reader of SUMMARY_READERS[kind]) {
+    for (const m of text.matchAll(reader)) {
+      const end = m.index + m[0].length;
+      if (tailAt(text, end, PER_PACKAGE_TAIL) > 0 || tailAt(text, end, PER_PIECE_TAIL) > 0) continue;
+      const raw = m[1]!;
+      if (/^[1-9]\d{0,2}[.,]\d{3}$/.test(raw)) return null;
+      const value = Number(raw.includes('.') ? raw.replace(/,/g, '') : raw.replace(',', '.'));
+      if (Number.isFinite(value) && value > 0) seen.add(Number(value.toFixed(6)));
+    }
+  }
+  return seen.size === 1 ? [...seen][0]! : null;
+}
+/** The sheet's TOTAL of a kind as its summary lines write it, over its total rows — `combineTotals`' rule over the rows that state one. */
+function summaryTotalOf(rows: readonly Cell[][], kind: 'gross' | 'volume', step: number): number | null {
+  const stated = rows.flatMap((row) => {
+    const text = row
+      .map((cell) => (cell === null ? '' : typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell))
+      .join(' ')
+      .slice(0, 400);
+    const value = summaryFigure(text, kind);
+    return value === null ? [] : [{ value, half: 0 }];
+  });
+  return combineTotals(stated, step);
+}
+
+/**
  * What the sheet's own total rows say of ONE figure column (docs/AI-SORAYDI.md
  * §3.2 X5; review JN-12, JR-11, JS-33):
  *  - `lines` — nothing contradicts the column (or nothing can): its figures
@@ -3485,6 +3551,31 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           refused.volume = true;
           notes.push(noteOf(columns.volume, 'm3', v, 'umumiy hajm fayldan olinmadi'));
         }
+      }
+    }
+    // (X8; XLS-6, review JR-3) …and the sheet's own TOTAL as its total — ONLY
+    // where the Σ is null because a kept line LACKS the figure (or no column
+    // holds it, and a summary line writes it), never where the belt or the
+    // kernel REFUSED a Σ, never on a list stopped short: a sectioned list with
+    // one blank weight takes its sections added, never its last section's.
+    // A per-carton-looking column the belt took off the rows (JS-33) leaves
+    // the TOTAL row standing for the shipment, as the rows lacking it do. The
+    // brutto check below reads the figure like any Σ.
+    // …and only total rows that CLOSE the list: a line standing below the last
+    // of them is covered by no total (a section with none of its own, c3083),
+    // and the rows above would stand for a smaller shipment.
+    const closing = stated.length > 0 && stated.at(-1)!.d > (keptLanded.at(-1)?.d ?? -1);
+    if (!stoppedShort && kept.length > 0 && closing) {
+      // The total rows that state SOME figure of the sheet's own columns — a
+      // «SAY TOTAL: US DOLLARS …» line under the table is no total of a
+      // column, and with it counted no section list could ever sum.
+      const columnTotals = totals.filter((row) => [...figureCols, ...packCols].some((i) => i !== null && figureCell(row[i] ?? null)));
+      if (grossKg === null && !refused.gross) {
+        grossKg = (columns.gross === null ? null : sheetTotalOf(columnTotals, columns.gross, 'kg', 1)) ?? summaryTotalOf(totals, 'gross', 1);
+      }
+      if (volumeM3 === null && !refused.volume) {
+        volumeM3 =
+          (columns.volume === null ? null : sheetTotalOf(columnTotals, columns.volume, 'm3', 0.01, columns.volumeDivisor)) ?? summaryTotalOf(totals, 'volume', 0.01);
       }
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
