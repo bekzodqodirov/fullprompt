@@ -1,11 +1,14 @@
 # AI so‘raydi va to‘ldiradi — the AI door names goods from a picture, reads «cbm», derives the cube from carton sizes, and asks for what is missing
 
-**Status: DESIGN v3** (2026-11-12) — v1 plus the pass-after (PA), mixed-pile (MP) and prompt-audit (PR) traces
-and the completeness critic (CR); to be judged before the packages are built. The kernel of §2 is WRITTEN and
-committed (`carton-math.ts`, the unit vocabulary in `units.ts`, the reading's contract in `intake-ai.ts`) — §2
-describes it as built. Numbering starts at DECISIONS #1697 (main holds
-#1683-#1696). **No migration** (ledger stays 146): everything new lives in the collection's JSON state, the
-model's answer and the note of a landed row.
+**Status: DESIGN v4 — JUDGED** (2026-11-12). v3 was judged by four lenses before any package was built: 104
+objections (22 blockers), none refuted. **docs/AI-SORAYDI-REVIEW.md holds every one with the lead's ruling, and a
+ruling there is BINDING: it overrides the item of this document it names.** Read the two together — an item
+below is what was designed, its rulings are what is built. Numbering starts at DECISIONS #1697. **No migration**
+(ledger stays 146): what would have needed one (a plain-text wait after the AI's answer) left the round.
+
+The round is THREE RELEASES, each shippable alone (§3): **1a** the readers and the words of the AI's answer,
+**1b** the table and the pictures, **2** the writes after the pass. The kernel of §2 is the lead's and is
+committed before any package.
 
 ## 0. His report and his answers
 
@@ -27,7 +30,16 @@ Four questions were put to him with ⭐ defaults; he answered **«1 d / Qolgani 
    the table is filled, and when all is there it calculates.
 
 Answer 4 REVERSES docs/IKKI-ESHIK.md §3.5 (his 4a/5a of 2026-11-08, «Tasdiqlash is the last question») **for the AI
-door only**; the plain door («🧮 Hisoblatish») keeps it.
+door only**; the plain door («🧮 Hisoblatish») keeps it, and a NULL-door request (the card form, the thread, the
+AI sotuvchi, anything from before 0141) keeps today's words exactly (JR-13).
+
+**Two more earlier answers are touched, and both are said to him rather than built in silence** (JS-5, JS-20):
+- docs/SAKKIZ-R3.md §0.1(2), his ⭐ of its Question 3 — «the add door never writes a price, a rate, a zone or a
+  certificate». Letting the seller change the CERTIFICATE after the calculation (A7) moves the additional duty;
+  it is question 9 of §7 and is **not built before his answer**. A seller's words appended to a stored row's
+  note (A5) is question 10.
+- docs/IKKI-ESHIK.md 1a of 2026-11-08 — «no question per file». A photo's good that an Excel does not list is
+  offered with ONE question for the whole reading (M1), the single exception, said in question 3.
 
 ## 1. What the diagnosis found
 
@@ -241,14 +253,42 @@ asserts every kg and m³ word of `WORDS` is read as a shipment total by `parseMa
 
 ## 3. The packages
 
-Built in worktrees on the kernel commit, two at a time. Each change to a reader runs the WHOLE intake corpus
-first (`tests/unit/intake-corpus.test.ts`) and adds its new cases to it; a case that must change is changed with
-its reason in `intake-corpus-known.ts`'s style, never deleted.
+**The rulings of docs/AI-SORAYDI-REVIEW.md override the items below.** A builder reads its package's items
+here AND every ruling that names them (the review's ids are cited per release beneath); where the two differ,
+the ruling is what is built.
 
-**Order of work inside every package.** *First* — what puts a WRONG NUMBER under ✅ (T0, T4, X1, X5, A3's
-address rule) and what his four sentences name (T1, T6, T9, X2-X4, M1-M4, A1-A2). *Second* — everything else
-marked in its item. An item a package could not finish is HANDED BACK in its report with the reason; it is never
-half-built behind a green test.
+### 3.0 Three releases, seven packages (JB-15)
+
+| Release | Packages (two at a time, each in its own worktree on the previous merge) | What it closes |
+|---|---|---|
+| **K** | the lead: `carton-math.ts`, `units.ts`, the contract and its freeze, the note renderer at the landing, the asks interface and its minimal draw, the state fields | every «K» ruling |
+| **1a** | **P-typed-A** «readers» (T0-T4 reader halves, T6's masking and owner rule, T8, T12, T14, T16) ∥ **P-excel** (X0-X8, X10's data flag); then **P-ask-A** «words» (A1-A3, A6, A9, A10, A12) | «cbm»; the welded thousands; per-package figures as totals; «PKGS» as kilos; shifted columns; per-carton columns; the AI door asks again after «✅», by the row's own number |
+| **1b** | **P-typed-B** «table answers» (T5-T7 applied, T9-T11, T13, T15) ∥ **P-pictures** (M8-M15, M17); then **P-model-A** «table» (M1-M5, M7, M16, M18, X9-X11's asks, the buttons) | a product photo's rows corrected and answered at the table; the model's questions with buttons; the pictures' plumbing |
+| **2** | **P-ask-B** «writes» (A4, A5, A8, A11; A7 only on his answer) | the one-step reply; a file filling an empty cell |
+
+Release 1a's table is the KERNEL's minimal draw: a computed figure carries its mark and a legend line, a doubt
+of the arithmetic is a ⚠️ line that withholds «Ma’lumot to‘liq» and is answered by typing the figure, a
+picture-named row is marked 📷, the model's questions are listed by the good's NAME with no writing control.
+Buttons, offers and the row grammar are 1b's.
+
+**The corpus, up front** (JR-20). Cases that MOVE, each with its reason in `intake-corpus-known.ts`'s style:
+c1935 (L|W|H under «MEAS (CM)» + CTNS — the cube is computed), c3101 / c2469 / c2470 (a carton column pinned
+as quantity + unit → `packing.cartons`), c1357 (a code beside goods at the customer question — 1b). **Decided
+by the lead: c0649 («Kurtka 45 karobka») stays no row** — a carton count with no other figure and no size
+names nothing a table can price, and #24's rule stands. Guards that MUST stay green through T0 / T3 / T4 / T7
+/ X5: c0298, c0302, c0731, c0732, c0958, c0962, c0986, c1548-c1551, c1556, c0715, c0718, c0957, c0961, c0982,
+c1557 (spaced TNVED and phone digits); c0690-c0693, c0695, c0696, c0872, c0926, c0927, c1529, c2071, c2073,
+c2804, c2806 (box words as products); c0873, c0874 («Total» the brand); c3072 (the belt). New case ids:
+c3000+ typed, c3400+ sheets, c3700+ model, c4000+ ask.
+
+**Gates every package runs before it reports** (JB-19): `pnpm typecheck` (exit code read, never through a
+pipe) and lint on its files; the whole intake corpus; the kernel's tests (carton-math, unit-vocabulary,
+intake-schema-budget, intake-contract-fallback, intake-contract-frozen); intake-holds-wire, press-fence,
+tx-pool, ai-advisory, intake-items-wire; plus its own list in its task. **The plain door's guard files are
+FROZEN** (JB-17): `git diff <base>..HEAD -- tests/unit/calc-plain-door.test.ts
+tests/integration/calc-plain-door.integration.test.ts` is empty at every merge. Each report lists every pin it
+re-anchored and why. Only the merged tree proves: CI's order on a fresh database, the diagnosis's traces end to
+end, the ledger.
 
 ### 3.1 P-typed — typed text and table answers (`intake-manual.ts`, `units.ts`, `line-address.ts`, `totals-shape.ts`, the refusal words in `calc-dialog.ts`)
 
@@ -659,6 +699,12 @@ branch that NAMES the cut (A6's words) and `stop_details` in the log; the pick's
 - Photos past the twelfth are named, not read.
 - The web card's «Hisoblatish» form and the thread door gain the typed readers' fixes (they share the kernel) but
   no questions loop.
+- **`known_figures`** (M6 — figures a photo states for rows an Excel already holds) left the round (JN-19,
+  JR-18): its entry had no per-carton home and no weight kind, so one carton's G.W. would have landed as a row's
+  customs weight. The contract is frozen without it.
+- **A plain text typed after the AI's answer** (A4's second half) needs a new kind of durable wait, which is a
+  migration (JR-14, JB-5): it left the round. A swipe-reply is the door.
+- **The seller changing the certificate after the calculation** (A7) waits on his answer to question 9.
 - **Material dropped into the bot BEFORE a door is pressed** (MP-9): a photo or a PDF outside a collection gets
   no answer, a typed goods line goes to the question-answering assistant. An offer «[🤖 AI rastamojka]
   [🧮 Hisoblatish]» on such a burst is his question 5.
@@ -669,23 +715,36 @@ branch that NAMES the cut (A6's words) and `stop_details` in the log; the pick's
   boshqa o‘lchovda») — a rule of 0094; his question 7.
 - No frame is taken from a video and no voice note is transcribed (M13 keeps their captions).
 
-## 7. Questions for him (the ⭐ is built until he answers)
+## 7. Questions for him (sent in Uzbek, as below — JS-26, JS-27, JS-28)
 
-1. A carton's size with NO unit written («60x40x50»): a) ⭐ centimetres are assumed when every side is 5…300, and
-   the line says «sm deb olindi»; b) the unit is always asked.
-2. On «Faqat rastamojka», the shipment's brutto and cube: a) ⭐ shown as ℹ️ («upsale hisobi uchun»), taken from the
-   rows when they add up, not holding «Ma’lumot to‘liq»; b) asked with ⚠️ as today.
-3. A photo's good beside an Excel that does not list it: a) ⭐ offered with a button «➕ qo‘shish»; b) added by
-   itself and marked 📷.
-4. After the AI's answer, a reply «1: 150 kg»: a) ⭐ written and recalculated at once (only into an empty cell of
-   a row the AI asked about; anything else still shows the table first); b) a table to confirm first, always.
-5. A photo or a file sent to the bot with NO door pressed: a) ⭐ (not built yet) the bot offers «🤖 AI rastamojka /
-   🧮 Hisoblatish» and takes what was sent; b) nothing, as today.
-6. The supplier's own «HS CODE» in a Chinese invoice, when it is not a line of our book: a) ⭐ (not built yet) the
-   AI completes it to our line and says «fayldagi kod … → … (AI taklifi)»; b) it stays as written, the VED fixes it.
-7. A good the law prices per kg (a floor «kamida $0.4/kg») while the customs file holds only per-piece
-   declarations, the row stating both figures: a) (not built) the 📊 estimate uses the per-piece median and says
-   so; b) ⭐ as today — «VED xodimi qo‘yadi».
-8. An answer to the table's own question typed AFTER the 30-minute pause (a supplier answers in hours): a) ⭐
-   (not built yet) applied at once when it reads as an answer to an open row; b) as today — «⏸ to‘xtab turibdi»,
-   press ▶️ and type it again.
+The ⭐ is what is built until he answers; «hali yo‘q» marks an option that is not built and will be only on
+his «ha».
+
+1. Karobka o‘lchami birliksiz yozilsa («60x40x50»): a) ⭐ santimetr deb olaman va yoniga «sm deb olindi» deb
+   yozaman (faqat ishonchli bo‘lsa — aks holda so‘rayman); b) har safar «sm mi, mm mi?» deb so‘rayman.
+2. «Faqat rastamojka»da umumiy brutto va kub: a) ⭐ majburiy emas — yozilmasa ham «Ma’lumot to‘liq» chiqadi;
+   b) hozirgidek ⚠️.
+   2-b. Brutto yozilmasa, qatorlardagi NETTO yig‘indisini uning o‘rniga qo‘yaymi: a) ⭐ yo‘q, bo‘sh qolsin
+   (sotuvchi ulushi shu raqamga bog‘liq); b) ha.
+3. Rasmda Excel’da yo‘q tovar ko‘rinsa: a) ⭐ bitta savol — «qo‘shaymi?»; b) so‘ramay qo‘shaman
+   (8-noyabrda «fayl uchun so‘ramasin» degansiz — bu yagona istisno).
+4. AI javobiga «1: 150 kg» deb reply qilinsa: a) ⭐ darhol yozaman va qayta hisoblayman (faqat AI so‘ragan
+   bo‘sh joyga); b) avval jadval, «✅ Qo‘shish»dan keyin.
+5. Eshik bosilmasdan botga rasm yoki fayl tashlansa: a) ⭐ bot «🤖 AI rastamojka / 🧮 Hisoblatish» deb so‘raydi
+   va yuborilganini oladi (hali yo‘q); b) hozirgidek javob bermaydi.
+6. Xitoy invoysidagi «HS CODE» bizning TN VED’da bo‘lmasa (faqat birinchi 6 raqami mos): a) ⭐ AI bizdagi eng
+   yaqin kodga to‘g‘rilaydi va «fayldagi kod … → … (AI taklifi)» deb yozadi (hali yo‘q); b) kod o‘zgarmaydi,
+   VED to‘g‘rilaydi.
+7. Boj kg bo‘yicha («kamida $0.4/kg»), bojxona bazasida esa shu tovar faqat DONA narxida bo‘lsa: a) AI taxminni
+   dona narxidan chiqaradi va shuni yozadi (hali yo‘q); b) ⭐ hozirgidek — taxmin yo‘q, «VED xodimi qo‘yadi».
+8. Sotuvchi savolga 30 daqiqadan KEYIN javob yozsa (zavod bir necha soatda javob beradi): a) ⭐ javob darhol
+   olinadi (hali yo‘q); b) hozirgidek — ▶️ bosib, qayta yozadi.
+9. Hisobdan keyin sotuvchi «sertifikat yo‘q» deb yozsa: a) o‘zi o‘zgartiradi, AI qayta hisoblaydi (qo‘shimcha
+   boj qo‘shiladi) (hali yo‘q); b) ⭐ faqat VED o‘zgartiradi (oktyabrdagi javobingiz).
+10. Hisobdan keyin sotuvchi qatorga izoh yozsa («2: metall, tormoz kolodkasi»): a) ⭐ izoh qatorga yoziladi, AI
+    kodni qayta qo‘yadi; b) faqat VED ga xabar.
+11. AI rasmdan qo‘ygan nomni sotuvchi tasdiqlashdan OLDIN o‘zgartirishi yoki qatorni o‘chirishi: a) ⭐ ha;
+    b) faqat VED.
+
+Said to him without a question: a photo sent as a FILE is read at about twice the cost and more exactly; the
+AI sotuvchi now reads a customer's «…60x40x50 300kg» as 300 kg and hears «cbm / kgs».
