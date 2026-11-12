@@ -39,8 +39,15 @@ const WORDS: Record<SellerUnit, readonly string[]> = {
     'pieces', 'ед', 'единиц', 'единица', 'adet', '个', '只', 'компл', 'комплект', 'комплекта',
     'komplekt', 'set', 'sets', '套', 'nabor', 'набор',
   ],
-  kg: ['kg', 'кг', 'kilo', 'kilogramm', 'kilogram', 'килограмм', 'килограм', 'kgs', '公斤', '千克'],
-  m3: ['m3', 'm³', 'м3', 'м³', 'kub', 'куб', 'кубм', 'cbm', 'kubm', '立方米', '立方', '方'],
+  kg: [
+    'kg', 'кг', 'kilo', 'кило', 'kilogramm', 'kilogram', 'килограмм', 'килограм', 'килограмма',
+    'килограммов', 'kgs', '公斤', '千克',
+  ],
+  m3: [
+    'm3', 'm³', 'м3', 'м³', 'kub', 'куб', 'куба', 'кубов', 'kubov', 'кубм', 'кбм', 'cbm', 'kubm',
+    'kubometr', 'кубометр', 'кубометра', 'кубометров', 'cum', 'cu.m', 'cubicmeter', 'cubicmeters',
+    'cubicmetre', 'cubicmetres', '立方米', '立方', '方',
+  ],
   m2: [
     'm2', 'm²', 'м2', 'м²', 'квм', 'кв', 'kvm', 'kv', 'sqm', 'sq', 'кв.м', '平方米', '平米',
     'metrkvadrat',
@@ -61,6 +68,96 @@ for (const [unit, words] of Object.entries(WORDS) as [SellerUnit, readonly strin
 
 function normalizeWord(word: string): string {
   return word.toLowerCase().replace(/[.\s ]/g, '');
+}
+
+/**
+ * The words of ONE unit, as written (docs/AI-SORAYDI.md §2.4). Every reader
+ * of a shipment's total, a table answer or a totals-shaped message asks HERE
+ * — three private lists were the reason «5 kub» was an answer and «5 cbm»
+ * (the word on every Chinese packing list) was «jadvalda bunday qator yo‘q».
+ */
+export function unitWords(unit: SellerUnit): readonly string[] {
+  return WORDS[unit];
+}
+
+const escapeRe = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * A regex alternation of a unit's words, longest first (so «kgs» is not read
+ * «kg» + a stray «s», «кубов» not «куб» + «ов»), a dot inside a word optional
+ * («cu.m» and «cum»). The SOURCE of a group — the caller adds its own
+ * boundaries, as the readers differ in what may stand on either side.
+ */
+export function unitPattern(unit: SellerUnit): string {
+  return [...WORDS[unit]]
+    .sort((a, b) => b.length - a.length)
+    .map((w) => escapeRe(w).replace(/\\\./g, '\\.?'))
+    .join('|');
+}
+
+/**
+ * The LABELS of a totals line and of a supplier's spec block, in the scripts
+ * they arrive in (§2.4). Lower-case; a reader folds what it compares.
+ *  - a weight label says the figure after it is kilos even with no unit
+ *    («G.W.: 507»); a NET label says which weight it is;
+ *  - a volume label says cubic metres («CBM: 5.92», «MEAS: 5.92»);
+ *  - a field label opens a line of a spec block («品名 折叠椅», «尺寸 60*40*50»)
+ *    — such a line is never a goods line of its own (MP-3).
+ * «件数» is a CARTON label only beside a piece label («数量»): alone it is as
+ * ambiguous as «件» itself, and stays out.
+ */
+export const WEIGHT_LABELS: readonly string[] = [
+  'g.w.', 'g.w', 'gw', 'g/w', 'gross weight', 'gross', 'brutto', 'брутто', 'вес брутто', 'og‘irlik',
+  "og'irlik", 'ogirlik', 'vazn', 'вес', 'масса', 'total weight', 't.w.', '毛重', '总毛重', '总重',
+];
+export const NET_LABELS: readonly string[] = [
+  'n.w.', 'n.w', 'nw', 'n/w', 'net weight', 'net', 'netto', 'нетто', 'вес нетто', 'sof og‘irlik',
+  "sof og'irlik", '净重', '总净重',
+];
+export const VOLUME_LABELS: readonly string[] = [
+  'cbm', 'meas.', 'meas', 'measurement', 'volume', 'vol.', 'vol', 'cube', 'cubage', 'hajmi', 'hajm',
+  'kub', 'объём', 'объем', 'куб', '体积', '总体积', '方数', '总方数',
+];
+export const FIELD_LABELS = {
+  name: [
+    '品名', '货名', '名称', '产品', 'product', 'item', 'description', 'goods', 'наименование', 'товар',
+    'название', 'nomi', 'tovar', 'mahsulot',
+  ],
+  count: ['数量', 'qty', 'quantity', 'кол-во', 'количество', 'soni', 'miqdori'],
+  cartons: ['箱数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'karobka soni', 'joy soni'],
+  size: [
+    '外箱尺寸', '尺寸', '箱规', 'carton size', 'ctn size', 'size', 'dimensions', 'dims', 'размер коробки',
+    'размер', 'габариты', 'o‘lchami', "o'lchami", 'olchami',
+  ],
+} as const satisfies Record<string, readonly string[]>;
+
+/**
+ * What marks a figure as ONE PACKAGE's / ONE PIECE's, written right after it
+ * («15 kg/箱», «0.12 cbm/ctn», «4.5 kg/шт»). The slash is part of the mark: a
+ * bare «ctn» after a number is a carton COUNT, not a tail.
+ */
+export const PER_PACKAGE_TAIL: readonly string[] = [
+  '/箱', '/件', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
+  '/quti', '/joy',
+];
+export const PER_PIECE_TAIL: readonly string[] = ['/pc', '/pcs', '/piece', '/шт', '/штука', '/dona', '/ta', '/个', '/只'];
+
+/** Does `text`, from `at`, open with one of `tails` (spaces around the slash allowed)? The matched length, or 0. */
+export function tailAt(text: string, at: number, tails: readonly string[]): number {
+  const rest = text.slice(at);
+  const lead = /^\s*\/\s*/u.exec(rest);
+  if (!lead) return 0;
+  const after = rest.slice(lead[0].length).toLowerCase();
+  let best = 0;
+  for (const tail of tails) {
+    const word = tail.slice(1);
+    if (!after.startsWith(word)) continue;
+    // A Latin/Cyrillic tail must END there («/ctn» is not «/ctnr»); a Han tail needs no boundary.
+    const next = after.charAt(word.length);
+    if (/[\p{Script=Latin}\p{Script=Cyrillic}]/u.test(word.slice(-1)) && /[\p{L}\d]/u.test(next)) continue;
+    best = Math.max(best, lead[0].length + word.length);
+  }
+  return best;
 }
 
 /** The unit a word names, or null when it names none this file knows. An
