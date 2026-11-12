@@ -551,6 +551,14 @@ describe('X2 — the carton count is the row’s packing, never its pieces (XLS-
     // «Вес мест, кг» names the packages and is a WEIGHT: the 7 is kilos, and no carton count.
     const weight = first(['Description', 'QTY', 'Вес мест, кг', 'CBM'], ['Chair', 100, 7, 0.5]);
     expect([weight.weightKg, weight.packing]).toEqual([7, undefined]);
+    // A bare package header is the carton column only when its cells ARE counts: a «Carton» column of SIZES is
+    // none, and no row says «karobka soni «60x40x50» — aniq emas» about a size (the cells above hold no figure,
+    // so they could not tell the guard from its absence; these can).
+    const sizes = sheet(['Description', 'QTY', 'Carton', 'G.W.'], ['Chair', 100, '60x40x50', 50], ['Table', 50, '50x40x30', 30]).goods;
+    expect(sizes.map((g) => [g.quantity, g.packing, g.note])).toEqual([
+      [100, undefined, null],
+      [50, undefined, null],
+    ]);
   });
 
   it('the cell: a glued carton word and a thousands comma are read; a count that is no whole carton is SAID, never rounded', () => {

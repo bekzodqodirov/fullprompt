@@ -47899,7 +47899,7 @@
     }
    },
    "said": "a «Packages» column of «CARTON» / «PALLET» says HOW the goods are packed: no count, no packing, no note",
-   "why": "X2's guard: a bare package header is the carton column only when its cells are counts.",
+   "why": "X2: a «Packages» header counts packages by its word, and its cells say none — nothing is a count, and a cell with no figure is no unread count either (the guard that a bare header is the carton column only when its cells ARE counts is pinned by c3491, whose cells carry figures).",
    "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
    "weight": "pinned"
   },
@@ -49688,6 +49688,52 @@
    "why": "X4 (XLS-4, DIM-7).",
    "source": "ai-soraydi P-excel X4 (DIM-8)",
    "weight": "defect"
+  },
+  {
+   "id": "c3491",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Carton",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     200,
+     "60x40x50",
+     120
+    ],
+    [
+     "Toy",
+     480,
+     "50x40x30",
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "quantity": 200,
+       "packing": null,
+       "note": null
+      },
+      {
+       "name": "Toy",
+       "quantity": 480,
+       "packing": null,
+       "note": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «Carton» column whose cells are SIZES is no carton count: no packing, and no «karobka soni «60x40x50» — aniq emas» on the row — a size is not an unreadable count",
+   "why": "X2's guard, re-anchored: stripped, c3461 stayed GREEN (its cells hold no figure, so nothing was said either way). A bare package header is the carton column only when most of its cells read as counts; without that «Carton | 60x40x50» claimed the column as the carton count and called every size an unread number of cartons.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
