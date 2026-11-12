@@ -1204,6 +1204,8 @@ function setAsidePairs(text: string): { text: string; aside: string[] } {
     if (s.word === null || unitOrScaled(s.word) !== null || !pairWord(s.word)) continue;
     // «Мест: 20 Вес брутто: 15 кг/место» — the word is the next field's label.
     if (fieldAt(text, s.start + s.number.length)) continue;
+    // «1/2 dyuym» — the number is a fraction's, and the pair no pair at all.
+    if (/\d[ \t]*\/[ \t]*$/u.test(text.slice(Math.max(0, s.start - 8), s.start))) continue;
     edits.push({ start: s.start, end: s.end });
     aside.push(text.slice(s.start, s.end).replace(/\s+/gu, ' ').trim());
   }
@@ -1298,13 +1300,18 @@ function figureTail(tail: string): { text: string; perOne: boolean; sized: boole
  */
 function unitFigures(tail: string, opts: { measured: boolean } = { measured: true }): boolean {
   const read = figureTail(tail);
-  const tokens = read.text.split(TAIL_SPLIT).filter(Boolean);
+  // A fraction is ONE token — «1/2 dyuym» is a size, never a «2 dyuym» pair.
+  const tokens = read.text.replace(FRACTION, FRACTION_MARK).split(TAIL_SPLIT).filter(Boolean);
   let measured = read.perOne;
   let cartons = false;
   let afterNumber = false;
   for (const token of tokens) {
     // What a set-aside label leaves behind — its «:», its «=» (`lineFields`).
     if (/^[:：=]+$/u.test(token)) continue;
+    if (token === FRACTION_MARK) {
+      afterNumber = false;
+      continue;
+    }
     const number = /^\d[\d.,'’ʼʻ]*$/u.test(token);
     const wasAfterNumber = afterNumber;
     afterNumber = number;
@@ -1331,6 +1338,10 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
   }
   return measured || (read.sized && cartons) || !opts.measured;
 }
+
+/** «1/2», «3/4» — two numbers a slash makes one, read as one token by the figure test. */
+const FRACTION = /(?<![\d.,])\d+[ \t]*\/[ \t]*\d+(?![\d.,])/gu;
+const FRACTION_MARK = '\u2044';
 
 /** The word of a number-and-word pair: letters only, no currency, no times sign or code word. */
 const pairWord = (word: string) => /^\p{L}[\p{L}'’ʻ‘`-]*$/u.test(word) && !NOT_A_PAIR_WORD.test(word) && !CURRENCY.test(word);
@@ -1389,7 +1400,7 @@ const tidyName = (name: string) =>
   name
     // What the reader set aside (a label, a separator — `lineFields`) is no part of the name.
     .replace(/\uE000+/gu, ' ')
-    .replace(/^[\s:：\-–—.,•·*]+|[\s:：\-–—.,•·*]+$/gu, '')
+    .replace(/^[\s:：\-–—.,•·*|]+|[\s:：\-–—.,•·*|/]+$/gu, '')
     .replace(/\s+/gu, ' ')
     .trim();
 
