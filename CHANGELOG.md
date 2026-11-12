@@ -134,8 +134,8 @@ qo'shganlari (bitim bloki, o'zi yuborgan faylni o'chirish ✕, mijoz javobidagi 
   havolasi: sahifa kerakli joyga tushib, bir lahzadan keyin yana tepaga qaytardi (bo'limlar qatori shunday
   qilardi). Tuzatildi — endi tushgan joyida qoladi. Bu eski xato edi, faqat kompyuterda.
 - **Mijoz tuzatilib, prixod eski mijozning bitimida qolib ketsa** — karta endi o'sha bitimni prixodniki deb
-  ko'rsatmaydi, «Boshqa mijozning bitimida qolgan: B-…» deb yozadi. «Uzish»ni tanlab «Saqlash» bossangiz,
-  prixod o'sha bitimdan chiqadi — mijozni shu kartaning o'zida tuzatgan zahoti ham.
+  ko'rsatmaydi, «Boshqa mijozning bitimida qolgan: B-…» deb yozadi. Tanlovda «Uzish» turadi — «Saqlash»ni
+  bossangiz, prixod o'sha bitimdan chiqadi; mijozni shu kartaning o'zida tuzatgan zahoti ham shunday.
 - **«Hisob» katagi** faqat prixodning **o'z** bitimidagi hisob-kitoblarni taklif qiladi. Avval yuqoridagi holatda
   eski mijozning hisob-kitoblari taklif qilinardi va ularni bu yukka bog'lab tasdiqlash mumkin edi (bir mijozning
   yuki boshqa mijozning narxi bilan solishtirilardi). Endi bunday bog'lash va tasdiqlash qabul qilinmaydi;
