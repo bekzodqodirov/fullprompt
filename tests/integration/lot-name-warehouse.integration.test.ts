@@ -52,6 +52,9 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // 0144's second answer (the client's own ✅/❌ table): there whenever the first is.
   lotClientConfirmsReady: () => ready.on,
   clientConfirmsReady: async () => ready.on,
+  // …and 0146's third (the answer's kilos and cubic metres), the same.
+  lotClientMeasuresReady: () => ready.on,
+  clientMeasuresReady: async () => ready.on,
 }));
 
 import { db, pgClient } from '@/modules/platform/db/client';
@@ -516,6 +519,11 @@ describe('a server whose migration has not landed (#472)', () => {
     // server without those tables the subquery would be a 42P01 on the two
     // screens the warehouse lives on.
     ready.on = false;
+    // NOTE on this recorder: it sees the POOL's statements only. A drizzle
+    // transaction runs through `sql.begin`, whose scoped client has an
+    // `unsafe` of its own — nothing sent inside `db.transaction` is recorded
+    // here. Right for these READERS (they run on the pool); a test about a
+    // WRITER must wrap `begin` too (client-confirm.integration.test.ts does).
     const sent: string[] = [];
     const unsafe = pgClient.unsafe.bind(pgClient);
     const spy = vi.spyOn(pgClient, 'unsafe').mockImplementation(((query: string, ...rest: unknown[]) => {

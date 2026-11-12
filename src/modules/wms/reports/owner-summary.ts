@@ -16,6 +16,7 @@ import { intakeByDay } from './business';
 import { loadLeadFlow, scopeKeyOf, unkey } from './dashboard';
 import { attentionLive, dashboardWindows, pnlParts, rankAttention } from './dashboard-math';
 import { truckMoves } from './overview';
+import { aiSpend, aiSpendWindow } from './ai-spend';
 import { ownerSummarySight, type OwnerSummaryActor } from './owner-summary-door';
 import {
   ownerSummaryText,
@@ -25,6 +26,7 @@ import {
   summaryWindow,
   type DuePartner,
   type DueUnratedCost,
+  type SummaryAi,
   type SummaryFacts,
   type SummaryWindowKey,
 } from './owner-summary-text';
@@ -104,6 +106,13 @@ async function partnersUnrated(today: string): Promise<DueUnratedCost[]> {
   return rows.map((row) => ({ ...row, amount: Number(row.amount) }));
 }
 
+/** A read bill as the message's facts; null = it could not be asked at all (the line is left out). */
+function aiFacts(read: Awaited<ReturnType<typeof aiSpend>> | null): SummaryAi | null {
+  return read
+    ? { usd: read.total.usd, calls: read.total.calls, unpriced: read.total.unpriced, unread: read.unread }
+    : null;
+}
+
 /**
  * Everything the message says, read ONCE. The `sight` is REQUIRED and can only
  * come from `companyMoneySight` / `ownerSummarySight` — a caller cannot reach
@@ -113,6 +122,7 @@ async function partnersUnrated(today: string): Promise<DueUnratedCost[]> {
  * key so a scoped actor with no warehouse reads NOTHING, judge 9); money has
  * no per-warehouse figure and is the company's, as on the dashboard.
  */
+
 export async function composeOwnerSummary(
   actor: SummaryActor,
   sight: CompanyMoneySight,
@@ -140,7 +150,11 @@ export async function composeOwnerSummary(
   const { upsaleLiabilityForNet } = await import('../calc/upsale-service');
   const balanceP = companyBalanceParts();
   const trucksP = trucksOnRoad(ids, { limit: 0, now });
-  const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, weeklyReads] = await Promise.all([
+  const aiWindow = aiSpendWindow({ weekly, from: period.from, to: period.to, now });
+  // Monday's message is the week — and Monday's own hours would then be in no
+  // «oxirgi 24 soat» line of any evening. So it carries that line too.
+  const aiDayWindow = weekly ? aiSpendWindow({ weekly: false, from: period.from, to: period.to, now }) : null;
+  const [pnl, flow, collected, intake, moves, trucks, balance, leads, sources, ai, aiDay, weeklyReads] = await Promise.all([
     profitAndLoss(period.from, period.to),
     cashFlow(period.from, period.to),
     clientMoneyInPeriod(period.from, period.to),
@@ -150,6 +164,11 @@ export async function composeOwnerSummary(
     balanceP,
     seesOutcome ? loadLeadFlow(period.from, period.to) : null,
     readAttentionSources(gates, scopeKey, now, actor, { balance: balanceP, trucks: trucksP }),
+    // The machine's own bill (his «8 ha»): never a throw — a ledger that
+    // cannot be read is named on the line, and one that cannot be asked at
+    // all leaves the line out rather than the message.
+    aiSpend(aiWindow.from, aiWindow.to).catch(() => null),
+    aiDayWindow ? aiSpend(aiDayWindow.from, aiDayWindow.to).catch(() => null) : null,
     weekly
       ? Promise.all([
           recurringDue(today),
@@ -231,6 +250,8 @@ export async function composeOwnerSummary(
       ? { fresh: leads.fresh, won: leads.won, wonUsd: leads.wonUsd, wonOther: leads.wonOther }
       : null,
     attention: { total: ranked.visibleCount, top: ranked.visible },
+    ai: aiFacts(ai),
+    aiDay: aiFacts(aiDay),
     weeklyBlock,
     link: `${process.env.APP_URL ?? ''}/dashboard?davr=${key}`,
   };

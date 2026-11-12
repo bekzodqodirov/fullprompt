@@ -6,6 +6,7 @@ import zh from '../../messages/zh-CN.json';
 import {
   AUDIT_FIELD_LABELS,
   AUDIT_FIELD_REFS,
+  auditFieldLabel,
   collectAuditRefs,
   formatAuditValue,
   isUuidShaped,
@@ -150,5 +151,26 @@ describe('a recorded value as the History tab prints it (review ui-4)', () => {
     // a letter beside it the shape is somebody else's, and it keeps its JSON.
     expect(formatAuditValue([{ boxes: 5, batchId: 'x' }])).toBe('[{"boxes":5,"batchId":"x"}]');
     expect(formatAuditValue([{ zh: '夹克', boxes: '5' }])).toBe('[{"zh":"夹克","boxes":"5"}]');
+  });
+});
+
+describe('a per-item key prints its item only when the item means something to a reader', () => {
+  it('a per-lot key names its lot', () => {
+    // The control: `lotCheck:A` is «Tekshiruv · A» — the letter is the fact.
+    expect(auditFieldLabel('lotCheck:A')).toEqual({ label: 'lotCheck', item: 'A' });
+  });
+
+  it('a file sent through Telegram is keyed by its message id — which the History does not print', () => {
+    // `fileAdded:<chat message id>` keeps one file's line from netting into
+    // the next inside a merged history entry. Printed, it would be a bare
+    // number beside the file's name — a code of the kind he asked to have out
+    // of the History (round 100, item 4).
+    expect(auditFieldLabel('fileAdded:913742')).toEqual({ label: 'fileAdded', item: null });
+    // …and two files stay two KEYS, which is what the id is there for.
+    expect(auditFieldLabel('fileAdded:913743').label).toBe('fileAdded');
+  });
+
+  it('an unknown column still prints its own name', () => {
+    expect(auditFieldLabel('neverHeardOf:1')).toEqual({ label: null, item: null });
   });
 });

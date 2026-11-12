@@ -21,6 +21,8 @@ import { buttonsFor, type BotButton } from '../telegram/staff-bot';
 import { approvalVerdictLine, fillCount, notificationLabels, textLocaleOf } from './labels';
 import { isTelegramMuted } from './mutes';
 import { sendsSilently } from './night';
+import { arrivalAlertOf, arrivalOpensDealPicker, isReceiptArrival, receiptArrivalText } from './receipt-arrival';
+import { reachOf } from './staff';
 import { groupDigits, h, visibleLength } from '../telegram/format';
 import { splitLabelCount } from '../text/label-count';
 import {
@@ -51,7 +53,34 @@ const MAX_TELEGRAM_ATTEMPTS = 6;
 interface RecipientNotification {
   userId: string;
   type: string;
+  /**
+   * A second type this ONE row also stands for — the folded «Prixod keldi»
+   * is the prixod AND its deal alarm (receipt-arrival.ts). Read where the
+   * mute is read (`rowTypeFor`): the person is silenced only when they muted
+   * BOTH, and the row is written under the type they still hear.
+   */
+  alsoType?: string;
   payload: Record<string, unknown>;
+}
+
+/**
+ * The type a recipient's rows are written under, and whether Telegram stays
+ * silent — the ONE place a mute is read when a row is born.
+ *
+ * A row with `alsoType` carries two messages' worth, so nobody loses what
+ * they hear today: who ticked «Operatsiya xabarlari» and kept
+ * «Ogohlantirishlar» still hears the prixod that has a deal problem (typed as
+ * the alarm it is), who ticked «Ogohlantirishlar» still hears every prixod,
+ * and only a person who ticked both hears nothing.
+ */
+export function rowTypeFor(
+  muted: unknown,
+  recipient: { type: string; alsoType?: string },
+): { type: string; muted: boolean } {
+  const ownMuted = isTelegramMuted(muted, recipient.type);
+  if (!recipient.alsoType) return { type: recipient.type, muted: ownMuted };
+  const alsoMuted = isTelegramMuted(muted, recipient.alsoType);
+  return { type: ownMuted && !alsoMuted ? recipient.alsoType : recipient.type, muted: ownMuted && alsoMuted };
 }
 
 export async function usersWithRoles(roleCodes: string[]): Promise<string[]> {
@@ -319,14 +348,41 @@ async function buildRecipients(event: {
       const clientId = event.payload.clientId as string | null;
       if (!clientId) return [];
       const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
-      if (!client?.salesManagerId) return [];
-      return [
-        {
-          userId: client.salesManagerId,
-          type: 'ReceiptConfirmed',
-          payload: { ...event.payload, clientCode: client.clientCode, clientName: client.name },
-        },
-      ];
+      if (!client) return [];
+      const seller = client.salesManagerId;
+      // The client's code and name ride on EVERY copy — the admins' one too:
+      // the event's own payload carries neither.
+      const payload = { ...event.payload, clientCode: client.clientCode, clientName: client.name };
+      // The deal alarm this prixod stands for (receipt-arrival.ts) — null for
+      // an event written before the fold, a priced prixod and the claim door,
+      // which all go to the seller alone exactly as they always did.
+      const alert = arrivalAlertOf(event.payload);
+      if (!alert) return seller ? [{ userId: seller, type: 'ReceiptConfirmed', payload }] : [];
+      // ONE row for the seller where there used to be the prixod and then its
+      // alarm. And the alarm's own promise is kept: it «is worth nothing
+      // unless it reaches somebody who can act on it WHILE the cargo is still
+      // in China», so when nobody is there to hear it — no seller, one who no
+      // longer works here, one whose Telegram was never linked — the admins
+      // hear it, typed as the alarm it is. A MUTE is the person's own choice
+      // and never falls back.
+      const rows: RecipientNotification[] = seller
+        ? [{ userId: seller, type: 'ReceiptConfirmed', alsoType: alert, payload }]
+        : [];
+      const heard = seller ? (await reachOf([seller], 'ReceiptConfirmed')).get(seller) !== 'no_chat' : false;
+      if (!heard) {
+        const admins = await usersWithRoles(['admin', 'super_admin']);
+        // WHY it came to them, on their copy alone. Before the fold an admin
+        // received this alarm only for a seller-less client, so «this one is
+        // mine» was implied by its arrival; now it also comes for a client
+        // whose card names a seller — and an admin who opens the client, sees
+        // a seller and assumes that seller was told leaves the cargo unpriced.
+        const [named] = seller
+          ? await db.select({ fullName: users.fullName }).from(users).where(eq(users.id, seller)).limit(1)
+          : [];
+        const theirs = { ...payload, sellerReach: seller ? 'no_chat' : 'none', sellerName: named?.fullName ?? null };
+        for (const userId of admins) if (userId !== seller) rows.push({ userId, type: alert, payload: theirs });
+      }
+      return rows;
     }
     // Price control (docs/DEALS.md). The alert is worth nothing unless it
     // reaches somebody who can act on it WHILE the cargo is still in China, so
@@ -340,6 +396,13 @@ async function buildRecipients(event: {
     case 'UnquotedCargo':
     case 'DealDeviation':
     case 'DealDeferralEnded': {
+      // Folded into the prixod's own row (receipt-arrival.ts): the event is
+      // still written — the owner's rules hear it — and tells nobody twice.
+      // Only an event that SAYS so; one queued from before the fold, and the
+      // two deal alarms that are no prixod's, go out as they always did.
+      if (event.payload.folded === true && event.type !== 'DealDeviation' && event.type !== 'DealDeferralEnded') {
+        return [];
+      }
       const clientId = event.payload.clientId as string | null;
       if (!clientId) return [];
       const client = await db.query.clients.findFirst({ where: eq(clients.id, clientId) });
@@ -542,6 +605,12 @@ export function renderTelegramText(
    */
   const preRendered = typeof payload.text === 'string' ? payload.text.trim() : '';
   if (preRendered) return preRendered;
+
+  // «Prixod keldi» — the one message of a prixod, under whichever of its
+  // three types the row was written (receipt-arrival.ts). Keyed on the
+  // payload's `dealState` and nothing else, so every row written before the
+  // fold falls through to the cases below and reads as it always did.
+  if (isReceiptArrival(type, payload)) return receiptArrivalText(payload, L, appUrl);
 
   switch (type) {
     case 'ReceiptConfirmed': {
@@ -923,12 +992,19 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
       payload: event.payload as Record<string, unknown>,
     });
     for (const recipient of recipients) {
+      const user = await db.query.users.findFirst({
+        columns: { mutedNotificationTypes: true },
+        where: eq(users.id, recipient.userId),
+      });
+      // Both rows under ONE type — the one this person still hears.
+      const row = rowTypeFor(user?.mutedNotificationTypes, recipient);
+      const userMuted = row.muted;
       // In-app bell row
       await db.insert(notifications).values({
         userId: recipient.userId,
         eventId: event.id,
         channel: 'in_app',
-        type: recipient.type,
+        type: row.type,
         payload: recipient.payload,
         status: 'sent',
         sentAt: new Date(),
@@ -940,16 +1016,11 @@ async function processEventBatch(): Promise<{ created: number; full: boolean }> 
           eq(telegramLinks.status, 'linked'),
         ),
       });
-      const user = await db.query.users.findFirst({
-        columns: { mutedNotificationTypes: true },
-        where: eq(users.id, recipient.userId),
-      });
-      const userMuted = isTelegramMuted(user?.mutedNotificationTypes, recipient.type);
       await db.insert(notifications).values({
         userId: recipient.userId,
         eventId: event.id,
         channel: 'telegram',
-        type: recipient.type,
+        type: row.type,
         payload: recipient.payload,
         status: link && !userMuted ? 'pending' : 'muted',
         error: userMuted ? 'muted by user' : link ? null : 'telegram not linked',
@@ -1088,9 +1159,12 @@ export function composeStaffMessage(
   locale?: string | null,
 ): StaffMessage {
   const preRendered = typeof payload.text === 'string' && payload.text.trim() !== '';
+  const L = notificationLabels(preRendered ? textLocaleOf(payload) : locale);
   return composeStaffHtml(type, renderTelegramText(type, payload, locale), {
     appUrl: process.env.APP_URL,
-    openLabel: notificationLabels(preRendered ? textLocaleOf(payload) : locale).openInApp,
+    // «Prixod keldi» with no deal on the prixod: the link opens the card AT
+    // its deal picker, and the button says what it is for.
+    openLabel: !preRendered && arrivalOpensDealPicker(type, payload) ? L.attachDealButton : L.openInApp,
   });
 }
 

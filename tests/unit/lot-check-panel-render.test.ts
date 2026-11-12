@@ -44,6 +44,8 @@ const answer = (over: Partial<NonNullable<LotCheckFace['client']>>): NonNullable
   vetoes: false,
   ofOwner: true,
   askedBy: null,
+  measures: false,
+  measuresMoved: false,
   ...over,
 });
 const face = (over: Partial<LotCheckFace>): LotCheckFace => ({
@@ -160,7 +162,7 @@ describe('the dispute’s hint promises only what the panel draws (L3-5)', () =>
 
 describe('«Mijozdan so‘rash» says what is true of the question NOW', () => {
   const ask = (over: Partial<ClientAskFace>, show = true) =>
-    wrap(h(ClientAskPanel, { receiptId: 'r-1', show, face: { canAsk: true, noChat: false, status: null, disputes: [], ...over } }));
+    wrap(h(ClientAskPanel, { receiptId: 'r-1', show, face: { canAsk: true, full: false, noChat: false, status: null, disputes: [], ...over } }));
   const waitingStatus = (wait: 'soon' | 'later' | 'stuck', at: string | null) => ({
     state: 'pending' as const,
     when: null,
@@ -201,5 +203,57 @@ describe('«Mijozdan so‘rash» says what is true of the question NOW', () => {
 
   it('with nothing to show and nothing just done, the block is not drawn at all', () => {
     expect(ask({ canAsk: false }, false)).toBe('');
+  });
+});
+
+describe('what the client’s ✅ covered — name and count, or the kilos and cubic metres too (0146)', () => {
+  // His «4 ha … og'irlik va hajmga urg'u berilsin»: an answer given to a
+  // question that asked the weight and the volume vouches for them, and the
+  // card must say which kind of answer it is looking at — a re-weigh after
+  // one reads «o'zgardi», and after the other changes nothing.
+  it('a full answer says so; an older one says what it did NOT cover', () => {
+    const full = lotPanel(face({ state: 'checked', client: answer({ holds: true, measures: true }) }));
+    expect(full).toContain(esc(words.clientYesFull!));
+    expect(full).not.toContain(esc(words.clientYesBasicNote!));
+
+    const basic = lotPanel(face({ state: 'checked', client: answer({ holds: true }) }));
+    expect(basic).toContain(esc(words.clientYes!));
+    expect(basic).not.toContain(esc(words.clientYesFull!));
+    expect(basic).toContain(esc(words.clientYesBasicNote!));
+  });
+
+  it('a re-weigh after a full ✅: the card names the weight or the volume, not «the data»', () => {
+    const moved = lotPanel(face({ state: 'stale', client: answer({ holds: false, measures: true, measuresMoved: true }) }));
+    expect(has(moved, 'lot-check-face-client-stale')).toBe(true);
+    expect(moved).toContain(esc(words.clientStaleMeasures!.replace('{day}', '2026-11-11')));
+    expect(moved).not.toContain(esc(words.clientStale!.replace('{day}', '2026-11-11')));
+
+    // The name or the count moved (with or without the measures): the general sentence.
+    const renamed = lotPanel(face({ state: 'stale', client: answer({ holds: false, measures: true }) }));
+    expect(renamed).toContain(esc(words.clientStale!.replace('{day}', '2026-11-11')));
+
+    // Off the Chinese shelf it is history, drawn muted, in the same words' other form.
+    const gone = lotPanel(face({ state: 'stale', askable: false, client: answer({ holds: false, measures: true, measuresMoved: true }) }));
+    expect(has(gone, 'lot-check-face-client-old')).toBe(true);
+    expect(gone).toContain(esc(words.clientYesOldMeasures!.replace('{day}', '2026-11-11')));
+  });
+
+  it('«Mijozdan so‘rash» says what the question sent NOW will ask', () => {
+    const ask = (full: boolean) =>
+      wrap(h(ClientAskPanel, { receiptId: 'r-1', show: true, face: { canAsk: true, full, noChat: false, status: null, disputes: [] } }));
+    expect(ask(true)).toContain(esc(words.askHintFull!));
+    expect(ask(true)).not.toContain(esc(words.askHint!));
+    expect(ask(false)).toContain(esc(words.askHint!));
+  });
+
+  it('the five new sentences exist in all four bundles (#163)', () => {
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(readFileSync(`messages/${locale}.json`, 'utf8')) as { lotCheck: Record<string, string> };
+      for (const key of ['clientYesFull', 'clientYesBasicNote', 'clientStaleMeasures', 'clientYesOldMeasures', 'askHintFull']) {
+        expect(typeof bundle.lotCheck[key], `${locale}: ${key}`).toBe('string');
+      }
+      expect(bundle.lotCheck.clientStaleMeasures).toContain('{day}');
+      expect(bundle.lotCheck.clientYesOldMeasures).toContain('{day}');
+    }
   });
 });

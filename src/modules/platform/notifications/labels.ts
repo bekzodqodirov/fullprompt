@@ -268,6 +268,56 @@ const DICT = {
     'zh-CN': '没有交易——请定价',
     en: 'No deal — set a price',
   },
+  // «Prixod keldi» (docs/PRIXOD-XABARI.md §C, the owner 2026-11-11): the ONE
+  // message a prixod's seller gets, where there used to be the prixod and
+  // then its deal alarm. The words of receipt-arrival.ts.
+  receiptArrived: { ru: 'Приход поступил', uz: 'Prixod keldi', 'zh-CN': '货物已入库', en: 'Receipt arrived' },
+  // The claim door's header: cargo given its owner may have come weeks ago,
+  // so it is never «keldi».
+  receiptAssigned: {
+    ru: 'Приход закреплён за клиентом',
+    uz: 'Prixod mijozga biriktirildi',
+    'zh-CN': '入库单已归属客户',
+    en: 'Receipt assigned to the client',
+  },
+  // «No deal» means no deal worth attaching to — a client made since round
+  // 111 always has an EMPTY one, and the card's picker offers it.
+  arrivalNoDeal: {
+    ru: 'Нет сделки с ценой — назначьте цену',
+    uz: 'Narxlangan bitimi yo‘q — narxlatib qo‘ying',
+    'zh-CN': '没有已报价的交易——请定价',
+    en: 'No priced deal — set a price',
+  },
+  // `{code}` is the deal's code.
+  arrivalUnpriced: {
+    ru: 'В сделке {code} нет цены — назначьте цену',
+    uz: '{code} bitimida narx yo‘q — narx qo‘ying',
+    'zh-CN': '交易 {code} 未报价——请定价',
+    en: 'Deal {code} has no price — set one',
+  },
+  arrivalDeal: { ru: 'Сделка: {code}', uz: 'Bitim: {code}', 'zh-CN': '交易：{code}', en: 'Deal: {code}' },
+  totalWord: { ru: 'Итого', uz: 'Jami', 'zh-CN': '合计', en: 'Total' },
+  // On an ADMIN's copy only: why the seller's message came to them instead.
+  arrivalNoSeller: {
+    ru: 'У клиента нет продавца — отправлено вам',
+    uz: 'Mijozning sotuvchisi yo‘q — sizga yuborildi',
+    'zh-CN': '该客户没有销售——已发给您',
+    en: 'The client has no seller — sent to you',
+  },
+  // `{name}` is the seller: no linked Telegram, or no longer on the staff.
+  arrivalSellerUnreachable: {
+    ru: 'Продавец {name} не получит это сообщение (Telegram не подключён или сотрудник уволен) — отправлено вам',
+    uz: 'Sotuvchi {name} bu xabarni ololmaydi (Telegrami ulanmagan yoki ishdan ketgan) — sizga yuborildi',
+    'zh-CN': '销售 {name} 收不到此消息（未连接 Telegram 或已离职）——已发给您',
+    en: 'Seller {name} cannot receive this (no linked Telegram, or no longer on the staff) — sent to you',
+  },
+  // The card link's own words when it opens the prixod AT its deal picker.
+  attachDealButton: {
+    ru: '🔗 Привязать сделку',
+    uz: '🔗 Bitim biriktirish',
+    'zh-CN': '🔗 关联交易',
+    en: '🔗 Attach deal',
+  },
   dealDeviation: {
     ru: 'Груз не совпал с расчётом',
     uz: 'Yuk hisob-kitobga to‘g‘ri kelmadi',

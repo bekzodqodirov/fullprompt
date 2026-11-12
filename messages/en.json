@@ -893,7 +893,9 @@
       "freightMode": "Load type (LTL/FTL)",
       "released": "Number given back",
       "number": "Number",
-      "destBeforeDeparture": "Receiving warehouse (before departure)"
+      "destBeforeDeparture": "Receiving warehouse (before departure)",
+      "fileAdded": "File added",
+      "fileName": "File removed"
     }
   },
   "profile": {
@@ -1101,7 +1103,11 @@
     "assignHasCompensation": "A compensation names this receipt — before changing the client, the accountant voids it and records it on the right client.",
     "dealLinkCompensation": "A compensation names this receipt — it moves to the new deal too.",
     "dealLinkUpsalePaid": "The seller's share on this deal is paid — the accountant reverses the payout before the prixod can move",
-    "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them"
+    "attachInUse": "This document is attached to a lot's contents — it cannot be deleted until it is taken off them",
+    "dealNew": "Open a new deal",
+    "dealForeign": "Still on another client's deal: {code}. Pick this client's own deal, open a new one, or save «Unlink» to take it off that deal.",
+    "dealForeignPick": "Still on another client's deal: {code}. Pick this client's own deal, or save «Unlink» to take it off that deal.",
+    "dealVoided": "This receipt is voided — its cargo counts on no deal."
   },
   "stock": {
     "title": "Warehouse stock",
@@ -3439,7 +3445,10 @@
       "not_your_client": "A deferral for this client is granted by his seller, the accountant or an admin",
       "ftl_office_only": "Only an admin, logist or accountant can turn FTL back to LTL (or change who owns an FTL deal).",
       "ftl_not_yours": "You can mark FTL only on your own deal.",
-      "server_behind": "The server is behind — an administrator must run the migrations."
+      "server_behind": "The server is behind — an administrator must run the migrations.",
+      "receipt_has_deal": "This receipt is already on a deal — no new deal was opened. Open the receipt card again.",
+      "receipt_not_confirmed": "This receipt is not confirmed, or was voided — no deal was opened for it.",
+      "upsale_paid": "A seller’s share was already paid on the deal this receipt stands on — the accountant takes the payout back first, then the receipt moves."
     },
     "discountTitle": "Discount (damage)",
     "discountAmount": "Discount amount",
@@ -3485,7 +3494,9 @@
     "profitCompensation": "− compensation (lost cargo)",
     "profitNetRevenue": "Revenue (after compensation)",
     "profitFreightHeld": "On {count, plural, one {# truck} other {# trucks}} that carried this deal's cargo, {usd} $ of freight was not split over the cargo by the tariff — this deal's share of it is not in the cost above, so the profit may read higher than it is. It splits once the lot is fixed or through «Split method».",
-    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue."
+    "profitOtherDeal": "The price on truck {truck} ({amount} $) is written to deal {code} — it is not in this deal’s revenue.",
+    "newDealForReceipt": "Receipt {number} will be attached to this deal.",
+    "receiptNotLinked": "The deal was opened, but the receipt was not put on it. Open the receipt card and pick this deal in its «Deal» block."
   },
   "automation": {
     "title": "Automation rules",
@@ -4015,6 +4026,7 @@
     "linkedReceipts": "Linked receipts",
     "linkPick": "Calculation",
     "linkNoneOnCard": "This receipt is not linked to a calculation",
+    "linkCurrentElsewhere": "current calculation — not in the list",
     "quoted": "Quoted",
     "measured": "Measured",
     "accuracy": "Customs: quote versus reality",
@@ -6019,7 +6031,12 @@
       "busy": "The receipt is busy right now — press again in a moment",
       "server_behind": "The server is not updated yet — tell the administrator",
       "other": "Not done — try again"
-    }
+    },
+    "clientYesFull": "The client confirmed in Telegram — name, box count, weight and volume",
+    "clientYesBasicNote": "name and box count only (weight and volume were not asked)",
+    "clientStaleMeasures": "The weight or the volume changed after the client confirmed ({day}) — ask again",
+    "clientYesOldMeasures": "The client had confirmed ({day}) — the weight or the volume changed afterwards",
+    "askHintFull": "The client receives every lot of this receipt (with its contents, weight and volume) and the «✅ Correct / ❌ Something is wrong» buttons. They confirm the name, the box count, the weight and the volume."
   },
   "qarzIzoh": {
     "debtNotePlaceholder": "Why on debt? (e.g. pays tomorrow)",
