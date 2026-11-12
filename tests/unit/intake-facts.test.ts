@@ -278,7 +278,12 @@ describe('a derived weight is SAID, and a stated one is never overwritten (judge
     const [item] = itemFacts({ weightKg: 250, goods: [{ name: 'Chexol', note: 'qora' }] });
     expect(item!.weightKg).toBe(250);
     expect(item!.weightFromTotal).toBe(true);
-    expect(item!.note).toBe(`qora · ${LONE_WEIGHT_NOTE}`);
+    // Re-anchored (docs/AI-SORAYDI-REVIEW.md JR-9, JB-2): the sentence CODE
+    // reads back (`weightFromTotalNote`) stands FIRST in the landed note. At
+    // the tail, a long provenance («📦 20 karobka × … hisoblangan: …») pushed
+    // it past the door's 500-character cut and the row forgot where its
+    // weight came from.
+    expect(item!.note).toBe(`${LONE_WEIGHT_NOTE} · qora`);
   });
 
   it('weightFromTotalNote recognises the lone copy in the note itemFacts writes (K15)', () => {

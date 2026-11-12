@@ -281,6 +281,7 @@ export function startIntake(
     fileCount: 0,
     facts: {},
     steps: [],
+    aiQuestions: [],
     notes: [],
     fileNotes: [],
     aiUsed: false,
@@ -1067,6 +1068,8 @@ export function migrateIntakeState(row: IntakeState): IntakeState {
     refusedFiles: Array.isArray(row.refusedFiles) ? row.refusedFiles : [],
     restartAsked: row.restartAsked ?? null,
     landAs: row.landAs ?? null,
+    // docs/AI-SORAYDI.md: a row written before the round asked nothing.
+    aiQuestions: Array.isArray(row.aiQuestions) ? row.aiQuestions : [],
   };
   const resolved: IntakeState = base.pendingInvoice ? { ...base, ...foldPendingInvoice(base) } : base;
   return {

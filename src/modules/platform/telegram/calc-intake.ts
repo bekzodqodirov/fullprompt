@@ -1,10 +1,10 @@
 import { logger } from '../logger';
 import { staffForChat } from './staff-bot';
 import type { AmendBase } from '../../wms/calc/amend-types';
-import type { CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
+import type { AskedQuestion, CalcGoodsFact, CalcFacts, TotalDoubt } from '../../wms/calc/intake';
 import type { TableTarget } from '../../wms/calc/line-address';
 import type { CodedRow, CodingLookups, CodingRow } from '../../wms/calc/row-coding';
-import type { KnownCode } from '../../wms/calc/intake-ai';
+import type { AiQuestion, KnownCode } from '../../wms/calc/intake-ai';
 import type { IntakeFiles } from './calc-files';
 import {
   goodsNameKey,
@@ -247,6 +247,14 @@ export interface IntakeState {
   facts: import('../../wms/calc/intake').CalcFacts;
   /** The model's own notes on what it did — the summary shows three. */
   steps: string[];
+  /**
+   * What the model ASKED at the last reading (docs/AI-SORAYDI.md §3.3 M4) —
+   * each kept by the NAME of the good it is about, never by the model's row
+   * number (review JR-2: the merge renumbers the table). Written by every
+   * reading, as `steps` is: a reading that asked nothing, or failed, leaves
+   * []. A row written before it reads [] (`migrateIntakeState`).
+   */
+  aiQuestions: AskedQuestion[];
   /**
    * The BOT's own sentences about the reading — the lines left out because an
    * Excel answered for them (`sameAsInvoiceNote`, `typedLeftOutNote`). Kept
@@ -732,6 +740,11 @@ export function mergeTotalsAnswer(
 
 /** At most this many buttons answer one question — two readings × three units. */
 export const MAX_OFFERS = 6;
+
+/** The reading's questions as the collection keeps them: by the good's NAME (review JR-2). */
+export function askedOf(questions: readonly AiQuestion[] | undefined): AskedQuestion[] {
+  return (questions ?? []).map((q) => ({ about: q.about ?? null, kind: q.kind, text: q.text }));
+}
 
 /**
  * Where each of the seller's per-line answers stands on a (re-)read goods
@@ -1931,6 +1944,7 @@ export async function analyzeCollected(
     ...state,
     facts,
     steps: ai?.steps ?? [],
+    aiQuestions: askedOf(ai?.questions),
     notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : outcome.failure,
@@ -2229,7 +2243,7 @@ function addReading(
     kept: readonly GoodsList[number][];
     picked: PickedGoods;
     manual: ReturnType<typeof import('../../wms/calc/intake-manual').parseManualFacts>;
-    ai: { facts: import('../../wms/calc/intake').CalcFacts; steps: string[] } | null;
+    ai: { facts: import('../../wms/calc/intake').CalcFacts; steps: string[]; questions?: AiQuestion[] } | null;
     outcome: { ok: boolean; failure?: import('../../wms/calc/intake').AiReadFailure; answered?: import('../../wms/calc/intake-ai').AnsweredUsage[] };
     notes: string[];
     text: string;
@@ -2343,6 +2357,7 @@ function addReading(
     facts,
     conflicts,
     steps: ai?.steps ?? [],
+    aiQuestions: askedOf(ai?.questions),
     notes,
     aiUsed: Boolean(ai),
     aiFailure: outcome.ok ? null : (outcome.failure ?? 'network'),

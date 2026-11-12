@@ -580,6 +580,8 @@ function tableInputOf(state: IntakeState, tc: TableContext): import('../../wms/c
     // A cut reading on the plain door is said on its summary (as-built review
     // OWNER-3); the AI door says it through `reading`.
     cut: state.aiCut ?? null,
+    // What the model asked at the last reading (docs/AI-SORAYDI.md §3.3 M4).
+    aiQuestions: state.aiQuestions ?? [],
     ai:
       collectionDoor(state) === 'ai'
         ? {
@@ -949,7 +951,9 @@ function planWrites(
       (before as Record<string, unknown>)[key] = g[key] ?? null;
     }
     if (opts.kept) before.tnvedCode = g.tnvedCode ?? null;
-    goods()[row.index] = { ...g, ...patch };
+    // A figure he typed is HIS on a row the bot computes (review JN-15, JB-1):
+    // marked so, and the packing's arithmetic re-runs over what he said.
+    goods()[row.index] = intake.answeredRow({ ...g, ...patch }, patch);
     // Keyed by the stored row's id when it has one, else by where the line
     // is placed NOW — an entry placed nowhere this reading (-1) is never
     // matched by index, so this answer cannot delete another line's kept
@@ -2610,7 +2614,11 @@ function undoEcho(
     for (const k of fields) {
       if (!keptCode(line, k, (line.patch as Record<string, unknown>)[k])) restore[k] = (line.before as Record<string, unknown>)[k];
     }
-    goods[at] = restore as typeof row;
+    // What the answer wrote is no longer his (review JN-15): a figure the
+    // bot had computed there is its own again, with its mark.
+    const restored: Record<string, unknown> = {};
+    for (const k of fields) if (!keptCode(line, k, (line.patch as Record<string, unknown>)[k])) restored[k] = restore[k];
+    goods[at] = tc.intake.unansweredRow(restore as typeof row, restored);
     if (entry) revert(entry, line, fields);
     for (const c of conflicts) {
       if (c.itemId === line.itemId && c.choice !== null && fields.includes(c.field)) c.choice = priorChoice(c);
@@ -2618,7 +2626,8 @@ function undoEcho(
     done.push(`${no}-qator «${rowLabel(line.name)}» — ${figures}`);
   }
 
-  let facts: IntakeState['facts'] = { ...state.facts, goods };
+  // An OLDER answer's figure that came back is still the seller's.
+  let facts: IntakeState['facts'] = { ...state.facts, goods: tc.intake.answersStated(goods, lineAnswers) };
   let totalsAnswer = state.totalsAnswer;
   let ambiguousTotals = state.ambiguousTotals;
   let routeAnswer = state.routeAnswer;

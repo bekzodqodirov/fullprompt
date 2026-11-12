@@ -78,6 +78,52 @@ on this path):
 
 ## 2. The kernel (written by the lead first; BINDING for every package)
 
+**As built — kernel K2 (2026-11-12), after the judge.** The sections below are the design; where a ruling
+changed it, this is what the code does, and what a package builds against:
+
+- **`carton-math.ts` is re-written to the rulings** (JN-1, JN-2, JN-4, JN-10/JR-1, JN-15/JB-1, JN-24, JN-25,
+  JN-26, JR-5, JS-31, JS-32). A size's unit is read case-insensitively, bracketed and in Han; a foreign unit
+  word gives `unit: 'other'` and no cube; four joined numbers are no size; centimetres are ASSUMED only inside
+  5…300 a side AND a believable package (`ASSUMED_PACKAGE_MAX_M3`, the density band pinned to
+  `FREIGHT_LIGHT_BELOW`). Only a PACKAGE's size multiplies. **The model's own figure is never corrected against
+  the model's own packing**: for `from: 'ai'` a «one carton's figure standing as the row's» is a `one_or_all`
+  DOUBT; only a file's or a typed line's is replaced, and the original is kept (`derived.replaced`). A computed
+  figure is recognised BY ITS VALUE (`derived.computed`): a figure anybody changed afterwards is stated. A
+  PERSON's figure (`setStated`, `derived.person`) is never filled over, replaced or doubted. The per-carton count
+  has a unit (`Packing.perCartonUnit` — pairs, m², litres land in `measureQty`). `grossKg` only for a weight SAID
+  gross. `mergePacking` is per factor.
+- **`row-answer.ts`** — `answeredRow` / `answersStated` / `unansweredRow`: the ONE place a seller's figure is
+  marked his, shared by the table's write (`calc-dialog` `writeLine`), the undo (`undoEcho`) and the re-read's
+  placement (`calc-read` after `settleAnalysis`); reached through `tc.intake` (platform never imports wms). A row
+  with no packing is returned as the same object — no behaviour of an existing table moves.
+- **`table-asks.ts` + `TableAsk` / `TableInput.asks` / `tableAsksOf`** (JB-6, JS-7, JN-3): what the table asks
+  beyond a missing figure is built in pure files and drawn by `intakeTableText` in ONE place — under its row
+  («↳ ❓ …», the row ⚠️), or above the closing. `holds` takes the «✅ Ma’lumot to‘liq» LINE away and leaves the
+  button. The kernel's own asks: the arithmetic's doubts (`packingAsks` — `differs`, `one_or_all`, an open size
+  unit / size owner hold; a clash that merely leaves a figure empty does not), and the model's questions
+  (`aiQuestionAsks`, «🤖 AI so‘raydi:» — each by its good's NAME; only `what_goods` holds). A computed figure
+  carries «*» with ONE legend line; a REPLACED figure, an assumed «sm», an unsaid netto/brutto and a 📷 name each
+  get one fixed line under the rows, never cut. The plain «🧮» summary asks nothing. `tableOpenOf` /
+  `TableTarget` are unchanged (an ask is no target of an unaddressed answer).
+- **`IntakeState.aiQuestions`** (`AskedQuestion { about, kind, text }`) — written by every reading, as `steps`
+  is (the first collection, an add reading, AND `settleAnalysis`, whose `...live` would otherwise keep the old
+  list); `[]` in the factory and in `migrateIntakeState` (JR-19).
+- **The contract gained two things and is FROZEN** (JB-12; `tests/unit/intake-contract-frozen.test.ts` pins the
+  hash of the prompt and of the schema, both contracts): `questions[].list: 'goods' | 'known'` (JR-2, JS-3 —
+  `questionsOf` keeps a known row's question by the caller's index and every question's `about`), and
+  `known_codes[].name` (JS-9 — `knownNamesOf`, `AiIntakeResult.knownNames`). Three prompt lines: the goods the
+  photo is OF (JS-34), no row number inside a question's words, per-carton pairs / m² / litres (JR-1). The legacy
+  latch is on `globalThis` (JB-14). The legacy pair is byte-identical to what production ran.
+- **The landed note** (JB-2, JR-9, JS-11): `provenanceNote` is `itemFacts`' note for every door — machine-read
+  sentences FIRST (the lone-weight copy), the source's note, the marks, the packing as stated, each computed
+  figure; over `LANDED_NOTE_BUDGET` (440 < the door's 500) the arithmetic shrinks to one clause, then the
+  source's note is clipped. Pairs with readers for the pass: `aiAskedNote` / `aiAskedOf`, `unsureCodeIn`,
+  `photoNameIn`; `SellerAsk` (law-asks.ts) is the committed shape of A2's list (JB-18).
+- **`units.ts`**: «/件» left `PER_PACKAGE_TAIL` (JN-8); `FIELD_LABELS.size` is split into `packageSize` and the
+  owner-unknown `size` (JN-11).
+- **Deferred to the 1b kernel step, on purpose**: the reserved callback family (JB-7 — release 1a draws no
+  button), and taking a doubted figure OFF the row at the landing (JN-3's second half).
+
 ### 2.1 The structured-output budget — why the new fields carry no `null`
 
 The reading's answer is a strict JSON schema (`output_config.format`). The API allows **at most 16 parameters

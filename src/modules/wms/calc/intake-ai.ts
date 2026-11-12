@@ -223,7 +223,9 @@ const SYSTEM = `Ты — помощник карго-компании GSR LOGIST
 и весе одной штуки ничего не написано. Иначе ОДИН объект (несколько — только когда позиция едет
 в коробках разных размеров: тогда бот не умножает, а спросит):
   · cartons — число коробок (мест) ЭТОЙ позиции: CTNS, 箱数, «мест», 件数 рядом со штуками;
-  · pieces_per_carton — штук в одной коробке (PCS/CTN, 装箱数, «по 24 шт»);
+  · pieces_per_carton — штук в одной коробке (PCS/CTN, 装箱数, «по 24 шт»). Если в коробке
+    считают ПАРЫ, м² или литры («12 пар/кор», «1.44 м²/кор») — пиши это число сюда же, unit
+    позиции поставь "juft" / "m2" / "litr", а measure_qty оставь null: бот умножит;
   · carton_weight_kg — вес ОДНОЙ коробки; carton_weight_kind — "gross" (G.W./CTN, 毛重/箱),
     "net" (N.W./CTN, 净重/箱) или "unknown";
   · carton_volume_m3 — объём ОДНОЙ коробки (CBM/CTN, 单箱体积);
@@ -265,12 +267,15 @@ null и code_sure false.
 2) САМ ТОВАР или коробки. Его РАССМОТРИ: назови каждый РАЗНЫЙ товар, который видно, —
    конкретно («Стул офисный на колёсах», а не «мебель»); в note коротко (до 100 знаков)
    напиши, из чего он сделан и для чего, если это видно; name_source = "picture".
-   Количество, вес и объём по фото не угадывай. Закрытые коробки без надписей — не товар:
+   Количество, вес и объём по фото не угадывай. Называй товар, РАДИ которого снято фото: фон,
+   мебель, упаковка и люди вокруг — не товар. Закрытые коробки без надписей — не товар:
    вопрос kind "what_goods".
 photo — номер фото, на котором товар виден или написан; 0 — не с фото.
 
 questions — чего тебе НЕ ХВАТИЛО и что сотрудник ответит в двух словах: не больше пяти, самые
-важные первыми. n — номер товара в твоём списке goods (с 1), 0 — про всю отправку. kind:
+важные первыми. list — к какому списку относится n: "goods" — твой список goods, "known" —
+пронумерованный список «уже взятых» товаров. n — номер строки в этом списке (с 1), 0 — про
+всю отправку. В самом тексте вопроса номер строки НЕ пиши: бот поставит его сам. kind:
   · "what_goods" — товар нельзя назвать;
   · "material" — из чего сделан, для кого, для чего — когда от этого зависит код;
   · "size_unit" — в каких единицах размер;
@@ -300,9 +305,11 @@ steps — короткие строки на узбекском о том, ЧТ�
 нигде не написан и не виден на фото. Если факта нет — null (в упаковке — 0). Лучше вопрос в
 questions, чем придуманный факт.
 
-known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров: коды ТН ВЭД
-строк этого списка, где ты уверен (n — номер строки в списке, tnved_code — код). Сами эти
-строки в goods не повторяй. Нет такого списка или не уверен — пустой массив.`;
+known_codes — только если ниже дан ПРОНУМЕРОВАННЫЙ список «уже взятых» товаров: по номеру
+строки (n) — код ТН ВЭД, где ты уверен (tnved_code; не уверен — ""), и name — русское
+название товара, ТОЛЬКО если в списке вместо названия стоит артикул или код («XJ-200») и по
+фото или документу видно, что это за товар (иначе ""). Сами эти строки в goods не повторяй.
+Нет такого списка — пустой массив.`;
 
 /**
  * A code the model proposed for a row of the «already taken» list, by the
@@ -317,6 +324,16 @@ export interface KnownCode {
 }
 
 /**
+ * A NAME the model gave a row of the «already taken» list — a row the sheet
+ * calls «XJ-200» and a picture shows to be a chair (review JS-9, CR-3). By
+ * the caller's index, re-checked like a code (`knownNamesOf`).
+ */
+export interface KnownName {
+  index: number;
+  name: string;
+}
+
+/**
  * One question of the model's to the seller (docs/AI-SORAYDI.md §2.2):
  * `row` is the INDEX into the reading's own `goods` (the answer's `n` less
  * one), null for the shipment. Re-checked by `questionsOf` — a number past
@@ -324,10 +341,26 @@ export interface KnownCode {
  * that does not exist.
  */
 export interface AiQuestion {
+  /**
+   * Which list `row` indexes: the reading's own `goods`, or the «already
+   * taken» rows it was shown (`known` — the caller's index, as a known code's
+   * is). The TABLE numbers its rows after a merge, so neither is a table row:
+   * the settle re-keys every question through the placement its good ended at
+   * (review JR-2, JS-3) — until then a question carries no address a writer
+   * may act on.
+   */
+  list: 'goods' | 'known';
   row: number | null;
   /** What is being asked — each kind has ONE consumer (§3.3 M4); an unknown word reads `other`. */
   kind: AiQuestionKind;
   text: string;
+  /**
+   * The NAME of the good it asks about, as its own list has it — what the
+   * question is kept by (review JR-2): the table draws «❓ Стул офисный: …»,
+   * and no index of the model's survives into a table the merge renumbered.
+   * Absent = about the shipment, or the name is not known here.
+   */
+  about?: string;
 }
 
 export const AI_QUESTION_KINDS = ['what_goods', 'material', 'size_unit', 'size_of', 'per_or_total', 'which_row', 'other'] as const;
@@ -337,23 +370,58 @@ const QUESTION_KIND_SET: ReadonlySet<string> = new Set(AI_QUESTION_KINDS);
 export const AI_QUESTIONS_MAX = 5;
 const AI_QUESTION_CHARS = 200;
 
-/** The model's questions, entry by entry: an odd one is dropped, never the reading. */
-export function questionsOf(raw: unknown, goodsCount: number): AiQuestion[] {
+/**
+ * The model's questions, entry by entry: an odd one is dropped, never the
+ * reading. `shown` — the numbers the «already taken» list was shown with
+ * (`knownCodesOf`'s map): a question about one of THOSE rows is kept with the
+ * caller's index, one about a number the model was not shown is the
+ * shipment's. `goods` — the reading's goods (their names are what a question
+ * is kept by), or just how many there are; `knownNames` — the caller's
+ * «already taken» names, by the caller's index.
+ */
+export function questionsOf(
+  raw: unknown,
+  goods: number | readonly { name: string }[],
+  shown: readonly number[] = [],
+  knownNames: readonly string[] = [],
+): AiQuestion[] {
   if (!Array.isArray(raw)) return [];
+  const goodsCount = typeof goods === 'number' ? goods : goods.length;
+  const nameOf = (list: AiQuestion['list'], row: number | null): string | null => {
+    if (row === null) return null;
+    const name = list === 'known' ? knownNames[row] : typeof goods === 'number' ? null : goods[row]?.name;
+    return name?.replace(/\s+/g, ' ').trim() || null;
+  };
   const out: AiQuestion[] = [];
   for (const entry of raw) {
     if (out.length >= AI_QUESTIONS_MAX) break;
     if (!entry || typeof entry !== 'object') continue;
-    const { n, kind, text } = entry as { n?: unknown; kind?: unknown; text?: unknown };
+    const { n, kind, text, list: listed } = entry as { n?: unknown; kind?: unknown; text?: unknown; list?: unknown };
     if (typeof text !== 'string') continue;
-    const said = text.replace(/\s+/g, ' ').trim();
+    // The bot numbers the rows itself: a number the model wrote into its words
+    // is the model's own list's, and would name another row of the table.
+    // Only a LABEL is cut («2-qator: …», «2) …») — never a number that is part
+    // of the sentence («0.12 kub …», «3-qatordagi …» stays as the model wrote it).
+    const said = text
+      .replace(/\s+/g, ' ')
+      .replace(/^\s*(?:\d+\s*[-‑]?\s*(?:qator|қатор|строка|стр\.?)\s*[:.,—–-]\s*|\d+\s*[:)]\s+|\d+\.\s+(?=\p{L}))/iu, '')
+      .trim();
     if (!said) continue;
-    const row = typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= goodsCount ? n - 1 : null;
+    const list = typeof listed === 'string' && listed.trim().toLowerCase() === 'known' ? ('known' as const) : ('goods' as const);
+    const whole = typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : null;
+    const row = whole === null ? null : list === 'known' ? (whole <= shown.length ? shown[whole - 1]! : null) : whole <= goodsCount ? whole - 1 : null;
     // A number past the goods the model listed is asked of the shipment — and
     // said in the log, since the question's own words usually name the row.
     if (row === null && typeof n === 'number' && n !== 0) logger.warn({ n, goodsCount }, '[calc intake] a question names a row the answer does not have');
     const word = typeof kind === 'string' ? kind.trim().toLowerCase() : '';
-    out.push({ row, kind: QUESTION_KIND_SET.has(word) ? (word as AiQuestionKind) : 'other', text: clipUnits(said, AI_QUESTION_CHARS) });
+    const about = nameOf(list, row);
+    out.push({
+      list,
+      row,
+      kind: QUESTION_KIND_SET.has(word) ? (word as AiQuestionKind) : 'other',
+      text: clipUnits(said, AI_QUESTION_CHARS),
+      ...(about ? { about: clipUnits(about, 80) } : {}),
+    });
   }
   return out;
 }
@@ -364,6 +432,8 @@ export interface AiIntakeResult {
   steps: string[];
   /** The model's codes for the Excel's rows (`codeKnown`); absent = none. */
   knownCodes?: KnownCode[];
+  /** Names the model gave rows the sheet calls by an article; absent = none. */
+  knownNames?: KnownName[];
   /** What the model could not read and asks the seller (§2.2); absent = nothing. */
   questions?: AiQuestion[];
   /**
@@ -844,6 +914,24 @@ export function knownCodesOf(raw: unknown, shown: readonly number[]): KnownCode[
   return [...byIndex].flatMap(([index, code]) => (code ? [{ index, code }] : []));
 }
 
+/** The names of `known_codes`, re-checked as its codes are: a number the model was not shown is dropped; two names for one row is no answer. Pure. */
+export function knownNamesOf(raw: unknown, shown: readonly number[]): KnownName[] {
+  if (!Array.isArray(raw)) return [];
+  const byIndex = new Map<number, string | null>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { n, name } = entry as { n?: unknown; name?: unknown };
+    if (typeof n !== 'number' || !Number.isInteger(n) || n < 1 || n > shown.length) continue;
+    if (typeof name !== 'string') continue;
+    const said = clipUnits(name.replace(/\s+/g, ' ').trim(), 120);
+    if (!said) continue;
+    const index = shown[n - 1]!;
+    const before = byIndex.get(index);
+    byIndex.set(index, before === undefined || before === said ? said : null);
+  }
+  return [...byIndex].flatMap(([index, name]) => (name ? [{ index, name }] : []));
+}
+
 /**
  * What a cut answer COMPLETED (docs/FAYL-OQISH.md §3.3, judge
  * model-salvage-scanner) — pure, over the text the stream delivered.
@@ -1317,8 +1405,8 @@ export async function analyzeIntake(input: {
       // The API refused the SCHEMA (docs/AI-SORAYDI.md §2.1): asked once more
       // under the legacy contract, which stays for the process — before the
       // PDF branch below, or a schema's refusal would be blamed on the PDFs.
-      if (!legacyContract && isSchemaRefusal(run.err)) {
-        legacyContract = true;
+      if (!latch.__gsrIntakeLegacyContract && isSchemaRefusal(run.err)) {
+        latch.__gsrIntakeLegacyContract = true;
         logger.error({ err: run.err }, '[calc intake] schema refused — legacy contract');
         counted -= 1;
         continue;
@@ -1376,7 +1464,7 @@ export async function analyzeIntake(input: {
     // the reading is the refusal, named and billed.
     if (probeOnly) return withUnread({ ok: false, failure: 'rejected', answered });
     if (run.kind === 'answered') {
-      const read = readIntakeResponse(run.message, shown);
+      const read = readIntakeResponse(run.message, shown, input.knownGoods ?? []);
       if (read.ok) return withUnread(withBill(read));
       if (read.failure === 'truncated') {
         // Cut at a size (`SIZE_STOPS`): what it completed is the reading.
@@ -1442,7 +1530,7 @@ const textOf = (message: { content: { type: string; text?: string }[] }): string
  */
 function keptOf(text: string, why: AiReadingCut['why']): ({ ok: true; cut?: AiReadingCut } & AiIntakeResult) | null {
   const cut = salvageCut(text);
-  const questions = questionsOf(cut.questions, cut.goods.length);
+  const questions = questionsOf(cut.questions, cut.goods);
   const read = {
     facts: factsOf({ ...cut.totals, goods: cut.goods }),
     steps: cut.steps.slice(0, 20),
@@ -1468,6 +1556,8 @@ export function readIntakeResponse(
   },
   /** The numbers the «already taken» list was shown with (`knownCodesOf`); none = no codes asked. */
   shown: readonly number[] = [],
+  /** The caller's «already taken» names, by the caller's index — what a question about one of them is kept by. */
+  takenNames: readonly string[] = [],
 ): AiIntakeRead {
   const usage = {
     model: ANALYST_MODEL,
@@ -1490,7 +1580,8 @@ export function readIntakeResponse(
     return { ok: false, failure: 'unreadable', usage };
   }
   const knownCodes = knownCodesOf(parsed.known_codes ?? [], shown);
-  const questions = questionsOf(parsed.questions ?? [], parsed.goods.length);
+  const knownNames = knownNamesOf(parsed.known_codes ?? [], shown);
+  const questions = questionsOf(parsed.questions ?? [], parsed.goods, shown, takenNames);
   // What the reading held, for the one who reads the server's log after a
   // «nothing was read» report (docs/AI-SORAYDI.md §3.3 M9): how many goods,
   // how many named from a picture, how many carry a packing, how many
@@ -1512,6 +1603,7 @@ export function readIntakeResponse(
     facts: factsOf(parsed),
     steps: parsed.steps.slice(0, 20),
     ...(knownCodes.length > 0 ? { knownCodes } : {}),
+    ...(knownNames.length > 0 ? { knownNames } : {}),
     ...(questions.length > 0 ? { questions } : {}),
   };
 }
@@ -1685,16 +1777,32 @@ const FACTS_JSON_SCHEMA = {
       items: {
         type: 'object',
         properties: {
-          n: { type: 'integer', description: 'номер товара в goods (с 1); 0 — про всю отправку' },
+          list: { type: 'string', enum: ['goods', 'known'], description: 'к какому списку относится n' },
+          n: { type: 'integer', description: 'номер строки в этом списке (с 1); 0 — про всю отправку' },
           kind: { type: 'string', enum: [...AI_QUESTION_KINDS] },
           text: { type: 'string', description: 'один короткий вопрос по-узбекски (латиницей)' },
         },
-        required: ['n', 'kind', 'text'],
+        required: ['list', 'n', 'kind', 'text'],
         additionalProperties: false,
       },
     },
     steps: FACTS_JSON_SCHEMA_V1.properties.steps,
-    known_codes: FACTS_JSON_SCHEMA_V1.properties.known_codes,
+    // The legacy list, each entry also able to NAME its row — a quotation
+    // whose «goods» are pictures beside an article number (review JS-9, CR-3).
+    known_codes: {
+      type: 'array',
+      description: 'По номеру строки списка «уже взятых» товаров: код и/или название; нет списка — пустой массив.',
+      items: {
+        type: 'object',
+        properties: {
+          n: { type: 'integer', description: 'номер строки в списке' },
+          tnved_code: { type: 'string', description: 'код ТН ВЭД, если уверен; иначе пустая строка' },
+          name: { type: 'string', description: 'название, если в списке вместо него артикул; иначе пустая строка' },
+        },
+        required: ['n', 'tnved_code', 'name'],
+        additionalProperties: false,
+      },
+    },
   },
   required: ['from_city', 'to_city', 'weight_kg', 'weight_netto', 'volume_m3', 'goods', 'questions', 'steps', 'known_codes'],
   additionalProperties: false,
@@ -1719,12 +1827,17 @@ export const INTAKE_CONTRACTS: Record<IntakeContract['name'], IntakeContract> = 
  * is no key in the place this is written, so the first real request is made
  * in production — and a schema the API will not compile would otherwise fail
  * every reading until the next deploy. Falling back is today's reading.
+ *
+ * On `globalThis`, as boss.ts keeps its own state: Next bundles the worker's
+ * entry apart from the routes, so a module-level flag latched by the reading
+ * worker would not cover the thread door's copy of this file (review JB-14).
  */
-let legacyContract = false;
-export const intakeContract = (): IntakeContract => (legacyContract ? INTAKE_CONTRACTS.legacy : INTAKE_CONTRACTS.packing);
+const latch = globalThis as typeof globalThis & { __gsrIntakeLegacyContract?: boolean };
+export const intakeContract = (): IntakeContract =>
+  latch.__gsrIntakeLegacyContract ? INTAKE_CONTRACTS.legacy : INTAKE_CONTRACTS.packing;
 /** Test seam: a process that latched the legacy contract must be able to forget it. */
 export function __resetIntakeContract(): void {
-  legacyContract = false;
+  latch.__gsrIntakeLegacyContract = false;
 }
 
 /**
@@ -1983,6 +2096,14 @@ export function aiGoodsLine(g: z.infer<typeof goodSchema>): CalcGoodsFact {
         if (routed.to === 'cartons' || routed.to === 'unknown' || routed.conflict) notes.push(routed.note);
       }
     }
+  }
+  // What ONE carton holds is counted in the row's own measure when the row
+  // has one and states no total (review JR-1): «12 пар/кор × 40 кор» is 480
+  // PAIRS — landed as pieces it would be priced under a per-piece law, and a
+  // per-pair law would read the row as missing its measure.
+  if (packing && packing.pcsPerCarton !== null && g.unit !== null && g.measure_qty === null) {
+    const per = unitOf(g.unit);
+    if (per === 'juft' || per === 'm2' || per === 'litr') packing = { ...packing, perCartonUnit: per };
   }
   const code = normalizeTnved(g.tnved_code);
   if (code && 'problem' in code) notes.push(`TNVED «${code.text}» — 9 xonali: boshida 0 tushib qolganmi?`);

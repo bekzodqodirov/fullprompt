@@ -125,10 +125,16 @@ export const FIELD_LABELS = {
   ],
   count: ['数量', 'qty', 'quantity', 'кол-во', 'количество', 'soni', 'miqdori'],
   cartons: ['箱数', 'ctns', 'cartons', 'packages', 'pkgs', 'мест', 'коробок', 'karobka soni', 'joy soni'],
-  size: [
-    '外箱尺寸', '尺寸', '箱规', 'carton size', 'ctn size', 'size', 'dimensions', 'dims', 'размер коробки',
-    'размер', 'габариты', 'o‘lchami', "o'lchami", 'olchami',
+  // WHOSE size a label names decides the arithmetic (review JN-11, PR-12):
+  // only a PACKAGE's size is multiplied by the packages. A label that says
+  // «carton» is the package's; a bare «size» says nobody's — the size is kept
+  // with `of: null`, and its owner is asked, never guessed.
+  packageSize: [
+    '外箱尺寸', '箱规', '纸箱尺寸', 'carton size', 'ctn size', 'carton dimensions', 'meas (cm)', 'meas(cm)',
+    'размер коробки', 'размер места', 'размер упаковки', 'karobka o‘lchami', "karobka o'lchami",
+    'karobka olchami', 'quti o‘lchami', "quti o'lchami",
   ],
+  size: ['尺寸', 'size', 'dimensions', 'dims', 'l*w*h', 'lxwxh', 'размер', 'габариты', 'o‘lchami', "o'lchami", 'olchami'],
 } as const satisfies Record<string, readonly string[]>;
 
 /**
@@ -137,7 +143,9 @@ export const FIELD_LABELS = {
  * bare «ctn» after a number is a carton COUNT, not a tail.
  */
 export const PER_PACKAGE_TAIL: readonly string[] = [
-  '/箱', '/件', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
+  // «/件» is NOT here (review JN-8): «件» is a piece as often as a package,
+  // and a tail that may be either marks nothing.
+  '/箱', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
   '/quti', '/joy',
 ];
 export const PER_PIECE_TAIL: readonly string[] = ['/pc', '/pcs', '/piece', '/шт', '/штука', '/dona', '/ta', '/个', '/只'];

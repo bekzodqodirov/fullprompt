@@ -30,7 +30,9 @@ import {
   type RowNeed,
 } from './needs';
 import type { GoodsRow } from '../deals/goods-import';
-import { applyPacking, derivedNotes, packingNote, type LineDerived, type Packing } from './carton-math';
+import { applyPacking, derivedBrief, derivedNotes, packingWords, type LineDerived, type PackedField, type Packing } from './carton-math';
+import { aiQuestionAsks, COMPUTED_MARK, computedFields, legendLines, packingAsks, packingLegend, PHOTO_MARK } from './table-asks';
+import type { AiQuestionKind } from './intake-ai';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
 import type { TableRow, TableTarget } from './line-address';
@@ -45,6 +47,9 @@ import { TO_VED_LABEL, type ReadingWholeness } from '../../platform/telegram/rea
 
 /** The bot's echo fits by the table's own 4096 rule — reached through this module, which the dialogue already imports. */
 export { fitTelegram };
+// The seller's answer on a row the bot computes (row-answer.ts): reached by
+// the collector through this module, which is the one it loads.
+export { answeredRow, answersStated, unansweredRow } from './row-answer';
 
 export type CalcSection = 'yolkira' | 'rastamojka' | 'podklyuch';
 
@@ -346,29 +351,101 @@ export const UNSURE_CODE_NOTE = 'TNVED kodi AI taxmini — aniq emas, tekshiring
 export const GROSS_WEIGHT_NOTE = 'og‘irlik brutto (netto yozilmagan)';
 
 /**
+ * The landed row's note is cut at 500 characters by the door (`doorRow`),
+ * from the TAIL, and the door may add sentences of its own after it — so the
+ * renderer below keeps itself under this by itself and never leaves the cut
+ * to chance.
+ */
+export const LANDED_NOTE_BUDGET = 440;
+
+const joinNote = (parts: readonly (string | null | undefined)[]): string =>
+  parts.filter((part): part is string => Boolean(part && part.trim())).join(' · ');
+
+/**
  * How a line's facts came to be, as ONE note for the landed row — rendered
  * from the line each time, never appended to it (a line passes through the
- * carton arithmetic again whenever a factor is added): the source's own
- * note, then «nomi rasmdan», the packing as stated, and what was computed
- * from it. The VED reads on the row which figures are the paper's and which
- * are cartons × a carton's.
+ * carton arithmetic again whenever a factor is added).
+ *
+ * In this ORDER, and the order is the safety (review JR-9, JS-11):
+ *  1. `first` — sentences CODE reads back by `includes` (the lone-weight
+ *     copy's «og‘irlik umumiy (brutto)dan olindi», `weightFromTotalNote`).
+ *     They stand first and are never cut: at the tail a long provenance pushed
+ *     them past the door's cut and the row forgot where its weight came from;
+ *  2. the source's own note — the seller's words, a file's, the model's;
+ *  3. the marks: «nomi rasmdan», an unsure code, a gross row weight;
+ *  4. the packing as stated;
+ *  5. every computed figure with its arithmetic.
+ * Over the budget it gives way from the BACK: the arithmetic shrinks to one
+ * clause (`derivedBrief` — which figures are computed, and any original a
+ * replacement stood in for), then the source's note is clipped with «…». The
+ * machine-read sentences, the marks and the packing line are never cut: the
+ * VED must be able to redo the arithmetic from what is left.
  */
 export function provenanceNote(
   line: Pick<
     CalcGoodsFact,
-    'note' | 'nameFrom' | 'photoNo' | 'tnvedCode' | 'tnvedSure' | 'weightKind' | 'packing' | 'derived' | 'quantity' | 'weightKg' | 'volumeM3'
+    | 'note'
+    | 'nameFrom'
+    | 'photoNo'
+    | 'tnvedCode'
+    | 'tnvedSure'
+    | 'weightKind'
+    | 'packing'
+    | 'derived'
+    | 'quantity'
+    | 'weightKg'
+    | 'volumeM3'
+    | 'measureUnit'
+    | 'measureQty'
   >,
+  opts: { first?: readonly (string | null)[]; budget?: number } = {},
 ): string | null {
-  const parts = [
-    line.note?.trim() || null,
+  const budget = opts.budget ?? LANDED_NOTE_BUDGET;
+  const first = joinNote(opts.first ?? []);
+  const own = line.note?.trim() ?? '';
+  const marks = joinNote([
     line.nameFrom === 'photo' ? `${PHOTO_NAME_NOTE}${line.photoNo ? `, ${line.photoNo}-rasm` : ''}` : null,
     line.tnvedCode && line.tnvedSure === false ? UNSURE_CODE_NOTE : null,
     // A weight computed from the cartons says «brutto» in its own words (`derivedNotes`).
-    line.weightKind === 'gross' && line.weightKg != null && !line.derived?.weightKg ? GROSS_WEIGHT_NOTE : null,
-    packingNote(line.packing),
-    ...derivedNotes(line),
-  ].filter((part): part is string => Boolean(part));
-  return parts.length > 0 ? parts.join(' · ') : null;
+    line.weightKind === 'gross' && line.weightKg != null && !line.derived?.weightKg && !line.derived?.weightIsGross
+      ? GROSS_WEIGHT_NOTE
+      : null,
+  ]);
+  const packed = packingWords(line.packing);
+  const full = joinNote([first, own, marks, packed, ...derivedNotes(line)]);
+  if (full.length <= budget) return full || null;
+  // The arithmetic gives way first…
+  const brief = joinNote([first, own, marks, packed, derivedBrief(line)]);
+  if (brief.length <= budget) return brief;
+  // …then the source's own words, clipped to what is left for them.
+  const fixed = joinNote([first, marks, packed, derivedBrief(line)]);
+  const room = budget - fixed.length - 3; // the « · » that joins it
+  // By code points, with its own «…» (`clipText`): a slice can halve an emoji.
+  const clipped = room >= 12 ? clipText(own, room) : null;
+  return joinNote([first, clipped, marks, packed, derivedBrief(line)]) || null;
+}
+
+/**
+ * The marks a landed row's note carries, read back — each the twin of a
+ * sentence `provenanceNote` writes (`includes`, like `weightFromTotalNote`
+ * and `carriesAiCode`): there is no column for «the name is a photo's guess»
+ * or «the model doubted its own code», so after the landing the note is where
+ * the pass and the add door learn it.
+ */
+export const photoNameIn = (note: string | null): boolean => (note ?? '').includes(PHOTO_NAME_NOTE);
+export const unsureCodeIn = (note: string | null): boolean => (note ?? '').includes(UNSURE_CODE_NOTE);
+
+/** What the AI asked about a row and nobody answered before «✅» — one fixed-prefix clause on the row's note. */
+export const AI_ASKED_PREFIX = '🤖 AI so‘radi: ';
+const AI_ASKED_CHARS = 120;
+export const aiAskedNote = (text: string): string =>
+  `${AI_ASKED_PREFIX}${clipText(text.replace(/\s+/g, ' ').replace(/ · /g, ' — ').trim(), AI_ASKED_CHARS)}`;
+/** The question standing on a row's note, or null. */
+export function aiAskedOf(note: string | null): string | null {
+  for (const part of (note ?? '').split(' · ')) {
+    if (part.startsWith(AI_ASKED_PREFIX)) return part.slice(AI_ASKED_PREFIX.length).trim() || null;
+  }
+  return null;
 }
 
 /** One line as the rest of the system should read it. */
@@ -481,10 +558,10 @@ export function itemFacts(facts: CalcFacts): CalcItemFact[] {
       amount: typedFigure(g.amount),
       tnvedCode: g.tnvedCode?.trim() || null,
       ...(g.tnvedSource && g.tnvedCode?.trim() ? { tnvedSource: g.tnvedSource } : {}),
-      note:
-        [g.note?.trim() || null, fromTotal ? (facts.weightNetto ? LONE_NETTO_NOTE : LONE_WEIGHT_NOTE) : null]
-          .filter(Boolean)
-          .join(' · ') || null,
+      // The row's whole provenance (docs/AI-SORAYDI.md §2.3, review JB-2): a
+      // figure the bot computed and a name it took from a photo land SAYING
+      // so — and the lone-weight sentence stands FIRST, where no cut reaches.
+      note: provenanceNote(g, { first: [fromTotal ? (facts.weightNetto ? LONE_NETTO_NOTE : LONE_WEIGHT_NOTE) : null] }),
       bazaBasis: g.bazaBasis ?? null,
       law: g.law,
     };
@@ -725,20 +802,24 @@ const fmt = (n: number) => String(Math.round(n * 1000) / 1000);
  * line read as «120 m²» never prints as «120 dona» (the shape every door used
  * to land: the number in the piece column and the unit as display text).
  */
-export function lineFiguresText(g: CalcItemFact): string {
+export function lineFiguresText(g: CalcItemFact, computed: ReadonlySet<PackedField> = NO_FIELDS): string {
+  // A figure the BOT multiplied carries its mark (his 3a; review JS-7): one
+  // «*» on the figure, explained once under the rows.
+  const mark = (field: PackedField) => (computed.has(field) ? COMPUTED_MARK : '');
   return [
-    g.quantity !== null ? `${fmt(g.quantity)} ${needShortUz('dona')}` : null,
+    g.quantity !== null ? `${fmt(g.quantity)} ${needShortUz('dona')}${mark('quantity')}` : null,
     g.weightKg !== null
-      ? `${fmt(g.weightKg)} ${needShortUz('kg')}${g.weightFromTotal ? ' (umumiydan)' : ''}`
+      ? `${fmt(g.weightKg)} ${needShortUz('kg')}${mark('weightKg')}${g.weightFromTotal ? ' (umumiydan)' : ''}`
       : null,
     g.measureQty !== null && g.measureUnit !== null
-      ? `${fmt(g.measureQty)} ${needShortUz(g.measureUnit)}`
+      ? `${fmt(g.measureQty)} ${needShortUz(g.measureUnit)}${mark('measureQty')}`
       : null,
-    g.volumeM3 !== null ? `${fmt(g.volumeM3)} ${needShortUz('m3')}` : null,
+    g.volumeM3 !== null ? `${fmt(g.volumeM3)} ${needShortUz('m3')}${mark('volumeM3')}` : null,
   ]
     .filter(Boolean)
     .join(' · ');
 }
+const NO_FIELDS: ReadonlySet<PackedField> = new Set();
 
 /**
  * One line's missing figure in the bot's Uzbek — the kernel's own words
@@ -835,6 +916,41 @@ export interface TableAmend {
 }
 
 /** What the table is drawn from — everything a row, a total and the closing need. */
+/**
+ * A question the model asked at the last reading, as the collection keeps it
+ * (docs/AI-SORAYDI.md §3.3 M4): by the NAME of the good it is about — the
+ * model's row number names a row of ITS list, and the merge renumbers the
+ * table (review JR-2). `about` null = the shipment.
+ */
+export interface AskedQuestion {
+  about: string | null;
+  kind: AiQuestionKind;
+  text: string;
+}
+
+/**
+ * One thing the table ASKS beyond a row's missing figure (review JB-6): a
+ * doubt of the carton arithmetic, a question of the model's, and — from
+ * release 1b — an offer with two buttons. Packages BUILD asks in pure files
+ * of their own; `intakeTableText` draws them in ONE place (under its row, or
+ * above the closing) and is the one that decides what «to‘liq» means:
+ * `holds` takes the «✅ Ma’lumot to‘liq» LINE away and leaves the ✅ button —
+ * only a table with no goods changes the keyboard.
+ */
+export interface TableAsk {
+  /** Stable within a draw — «pk:3:volumeM3», «ai:0». */
+  id: string;
+  /** The table row's NUMBER (`TableRow.no`) it stands under; null = above the closing. */
+  row: number | null;
+  /** One line as the seller reads it — no mark and no address: the draw adds both. */
+  text: string;
+  holds: boolean;
+  /** How a typed answer looks — «1: 2.49 kub»; taught when nothing else in the table is. */
+  example?: string;
+  /** Release 1b: one pair of buttons, by position (`ask_N_a` / `ask_N_b`). */
+  buttons?: [string, string];
+}
+
 export interface TableInput {
   section: CalcSection;
   facts: CalcFacts;
@@ -895,6 +1011,14 @@ export interface TableInput {
    * request from before the doors, §0.2). Ignored under `plain`.
    */
   ai?: TableAi | null;
+  /**
+   * What the model asked at the last reading (`IntakeState.aiQuestions`) —
+   * drawn «🤖 AI so‘raydi» above the closing, each by its good's name. Never
+   * under `plain`: the plain summary asks nothing (docs/IKKI-ESHIK.md §2.1).
+   */
+  aiQuestions?: readonly AskedQuestion[];
+  /** Asks a package built in a pure file of its own (review JB-6) — drawn with the table's own. */
+  asks?: readonly TableAsk[];
 }
 
 /** The AI door's part of the table — what the dialogue reads for it (§3.1, §3.4). */
@@ -1105,6 +1229,8 @@ interface TableEntry {
    */
   proposed: boolean;
   conflicts: string[];
+  /** What the table asks about this row beyond a need (`TableAsk`, review JB-6) — its own ↳ lines, never grouped, never folded. */
+  asks: string[];
 }
 
 const entryText = (e: TableEntry, need: boolean, code = true) =>
@@ -1113,10 +1239,39 @@ const entryText = (e: TableEntry, need: boolean, code = true) =>
     ...(need && e.need ? [`   ↳ ${e.need}`] : []),
     ...(code && e.code ? [`   ↳ ${e.code}`] : []),
     ...e.conflicts.map((c) => `   ↳ ${c}`),
+    ...e.asks.map((a) => `   ↳ ❓ ${a}`),
   ].join('\n');
 
-/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, and (AI door) a code nobody has to check. */
-const entryOk = (e: TableEntry) => !e.warn && !e.code && !e.proposed;
+/** A row the table may fold into «✅ yana N ta qator to‘liq»: nothing owed — no figure, no question, and (AI door) a code nobody has to check. */
+const entryOk = (e: TableEntry) => !e.warn && !e.code && !e.proposed && e.asks.length === 0;
+
+/**
+ * Every ask of a table (review JB-6) — the arithmetic's doubts, the model's
+ * questions, a package's own — in the ONE order they are drawn. The plain
+ * summary asks nothing (docs/IKKI-ESHIK.md §2.1): there is none.
+ */
+export function tableAsksOf(input: Pick<TableInput, 'section' | 'facts' | 'laws' | 'amend' | 'plain' | 'aiQuestions' | 'asks'>): TableAsk[] {
+  if (input.plain === true) return [];
+  const rows = tableRowsOf(input);
+  return [...packingAsks(rows, input.facts.goods ?? []), ...aiQuestionAsks(input.aiQuestions ?? []), ...(input.asks ?? [])];
+}
+
+/**
+ * The asks that stand under no row, as the block above the closing: a
+ * package's own first, then the model's under its heading — with the one way
+ * release 1a has to answer words (the model reads them on the next «Bo‘ldi»).
+ */
+function looseAskLines(asks: readonly TableAsk[]): string[] {
+  if (asks.length === 0) return [];
+  const model = asks.filter((a) => a.id.startsWith('ai:'));
+  const other = asks.filter((a) => !a.id.startsWith('ai:'));
+  return [
+    ...other.map((a) => `❓ ${a.text}`),
+    ...(model.length > 0
+      ? ['🤖 AI so‘raydi:', ...model.map((a) => `❓ ${a.text}`), 'Javobini «➕ Yana ma’lumot» bilan yozib yuboring — AI qayta o‘qiydi.']
+      : []),
+  ];
+}
 
 /** A table with no goods row: what to send, on every door that asks. */
 const NO_GOODS_CLOSING = '⚠️ Tovar nomi yozilmagan — tovarlarni «➕ Yana ma’lumot» bilan yuboring.';
@@ -1607,6 +1762,17 @@ export function intakeTableText(input: TableInput): string {
   if (input.fileCount) head.push(`Fayllar: ${input.fileCount}`);
   head.push('', input.amend ? `So‘rovdagi qatorlar (${input.amend.storedCount}):` : `Tovarlar (${rows.length}):`);
 
+  // What the table asks beyond a need (review JB-6), drawn HERE and nowhere
+  // else: under its row, or — an ask about no row, or about a row this table
+  // does not draw — above the closing.
+  const asks = tableAsksOf(input);
+  const rowNos = new Set(rows.map((r) => r.no));
+  const rowAsks = (no: number) => asks.filter((a) => a.row === no);
+  const looseAsks = asks.filter((a) => a.row === null || !rowNos.has(a.row));
+  const held = asks.filter((a) => a.holds);
+  // The rows' marks, explained once each under the rows and never cut (JS-7).
+  const legend = legendLines(packingLegend(rows, goods), numberRanges);
+
   const entries: TableEntry[] = rows.map((r) => {
     const item = items[r.index]!;
     const need = needs.find((l) => l.index === r.index);
@@ -1621,17 +1787,22 @@ export function intakeTableText(input: TableInput): string {
     // nobody checked never reads like one the file stated — and the row is
     // ℹ️ like a row with none, never ✅ on the proposal alone.
     const proposed = Boolean(ai) && Boolean(item.tnvedCode?.trim()) && item.tnvedSource === 'model';
-    const mark = freightOnly ? '·' : warn ? gapMark : code || proposed ? 'ℹ️' : '✅';
+    const asked = rowAsks(r.no);
+    // A row whose figure is in doubt is never ✅, whatever its section.
+    const mark = asked.some((a) => a.holds) ? '⚠️' : freightOnly ? '·' : warn ? gapMark : code || proposed ? 'ℹ️' : '✅';
     const fresh = input.amend && r.seq === null ? '🆕 ' : '';
-    const figures = lineFiguresText(item);
+    const figures = lineFiguresText(item, computedFields(goods[r.index]));
+    // A name the model gave a PICTURE is its guess (his 2a) — marked on the row.
+    const photo = goods[r.index]?.nameFrom === 'photo' ? `${PHOTO_MARK} ` : '';
     return {
       no: r.no,
       warn,
-      line: `${mark} ${fresh}${r.no}. ${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed ? ` ${AI_CODE_MARK}` : ''}` : ''}`,
+      line: `${mark} ${fresh}${r.no}. ${photo}${clipText(item.name, 40)}${figures ? ` — ${figures}` : ''}${item.tnvedCode ? ` · ${item.tnvedCode}${proposed ? ` ${AI_CODE_MARK}` : ''}` : ''}`,
       need: !freightOnly && need ? (plain ? plainNeedWhat(need) : lineNeedWhat(need)) : null,
       code,
       proposed,
       conflicts: own.map(conflictText),
+      asks: asked.map((a) => a.text),
     };
   });
 
@@ -1697,16 +1868,27 @@ export function intakeTableText(input: TableInput): string {
   const doubts = plain ? [] : input.ambiguous.map((a) => `⚠️ ${ambiguousTotalText(a)}`);
 
   const warnRows = entries.filter((e) => e.warn);
-  // Complete = the SELLER's part (§3.2): a row with no code is not his to fill.
-  const complete = warnRows.length === 0 && !totalsWarn;
+  // Something is MISSING (a row's figure, a total) — apart from a question
+  // that merely holds the «to‘liq» line (review JB-6): each has its own words.
+  const lacking = warnRows.length > 0 || totalsWarn;
+  // Complete = the SELLER's part (§3.2): a row with no code is not his to
+  // fill. A holding ask takes the «to‘liq» LINE away and leaves the ✅ button.
+  const complete = !lacking && held.length === 0;
   const confirm = input.amend ? (input.amend.started ? '«📨 VED ga yuborish»' : '«✅ Qo‘shish»') : '«✅ Tasdiqlash»';
   const vedLine = `Bilmagan qatoringizni VED to‘ldiradi — ${confirm} ni hozir ham bosishingiz mumkin.`;
-  const shortage =
-    warnRows.length > 0 && totalsWarn
+  const shortage = !lacking
+    ? `❓ ${held.length} ta savol javobsiz — javobini yozing.`
+    : warnRows.length > 0 && totalsWarn
       ? `⚠️ ${warnRows.length} ta qatorda va umumiyda ma’lumot yetishmayapti.`
       : warnRows.length > 0
         ? `⚠️ ${warnRows.length} ta qatorda ma’lumot yetishmayapti.`
         : '⚠️ Umumiyda ma’lumot yetishmayapti.';
+  // How to answer: built from what is MISSING — and when nothing is, from the
+  // question itself (its own example), never «Yiwu → Toshkent» on a job whose
+  // route nobody asked (JB-6).
+  const heldExample = held.find((a) => a.example)?.example ?? null;
+  const how = (): string[] =>
+    lacking ? answerHow(input, rows, missing, stale) : heldExample ? [`✍️ Javobni shunday yozing: «${heldExample}».`] : [];
   const closing: string[] = [];
   if (plain) {
     // His 2a: the job lands as it is, and the VED asks for what is missing —
@@ -1751,7 +1933,7 @@ export function intakeTableText(input: TableInput): string {
       const line = amendNotWholeLine(unreadWhat(unread.state, unread.whole, unread.inputCut) ?? 'fayl', confirm);
       if (rows.length > 0 && !complete) {
         closing.push(openLine());
-        if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, line);
+        if (!collecting) closing.push(...how(), ...named, line);
       } else if (!collecting) closing.push(...named, line);
     } else if (unread) {
       const first = notWholeClosing(unread.state, unread.whole, rows.length, unread.inputCut);
@@ -1761,7 +1943,7 @@ export function intakeTableText(input: TableInput): string {
       if (rows.length > 0 && !complete) {
         if (!collecting) closing.push(...said);
         closing.push(openLine());
-        if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, remedy);
+        if (!collecting) closing.push(...how(), ...named, remedy);
       } else if (!collecting) closing.push(...said, ...named, remedy);
     } else if (rows.length === 0) {
       if (!collecting) closing.push(...named, NO_GOODS_CLOSING, vedLine);
@@ -1769,14 +1951,14 @@ export function intakeTableText(input: TableInput): string {
       if (!collecting) closing.push(...named, aiCompleteLine(input.amend, ai.available));
     } else {
       closing.push(openLine());
-      if (!collecting) closing.push(...answerHow(input, rows, missing, stale), ...named, vedLine);
+      if (!collecting) closing.push(...how(), ...named, vedLine);
     }
   } else if (rows.length === 0) {
     closing.push(NO_GOODS_CLOSING, vedLine);
   } else if (complete) {
     closing.push('✅ Ma’lumot to‘liq. Tasdiqlaysizmi?');
   } else {
-    closing.push(shortage, ...answerHow(input, rows, missing, stale), vedLine);
+    closing.push(shortage, ...how(), vedLine);
   }
 
   const marker = input.marker ? ['', input.marker] : [];
@@ -1785,14 +1967,20 @@ export function intakeTableText(input: TableInput): string {
   // under what the last answer did. The table from before the doors keeps its
   // closing above them, as it was.
   const notes = input.tail ? input.tail.split('\n') : [];
-  const last = ai ? [...ai.last, ...closing] : closing;
+  // The asks that stand under no row (review JB-6) — the model's questions,
+  // each by its good's name — right above the closing, never cut. Collecting
+  // again (the marker) the table asks nothing: «Bo‘ldi» re-reads everything.
+  const asked = input.marker ? [] : looseAskLines(looseAsks);
+  const closed = asked.length > 0 ? [...asked, ...(closing.length > 0 ? ['', ...closing] : [])] : closing;
+  const last = ai ? [...ai.last, ...(ai.last.length > 0 && asked.length > 0 ? [''] : []), ...closed] : closed;
   const tail = plain || ai ? [...notes, ...(last.length > 0 ? ['', ...last] : []), ...marker] : [...notes, ...marker];
   const fixed = (cut: boolean) => [
+    ...legend,
     '',
     'Umumiy:',
     ...totalsRows,
     ...doubts,
-    ...(plain || ai ? [] : ['', ...closing]),
+    ...(plain || ai ? [] : ['', ...closed]),
     ...(cut ? ['Qatorlar ko‘p — sonlar bor Excel yoki packing listni «➕ Yana ma’lumot» bilan yuboring.'] : []),
   ];
   // No rows after a FILE on the AI door: the file was not read — «tovar

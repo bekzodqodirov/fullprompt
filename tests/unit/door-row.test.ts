@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { doorRow } from '@/modules/wms/calc/door-row';
 import { aiGoodsLine } from '@/modules/wms/calc/intake-ai';
 import { provenanceNote } from '@/modules/wms/calc/intake';
+import { applyPacking } from '@/modules/wms/calc/carton-math';
 
 /**
  * ONE normalisation at the door (P1.2, judge S7/MR-18): the card form, the
@@ -210,10 +211,14 @@ describe('the AI’s reading knows units (P1.5)', () => {
     expect(g({ quantity: null, weight_kg: null, packing: [pack({ piece_weight_kg: 4.5 })] }).weightKg).toBeNull();
   });
 
-  it('ONE carton’s cube written into the row’s volume is replaced by the product (dg2-5)', () => {
+  it('ONE carton’s cube in the row’s volume, by the MODEL’s own word: asked, never multiplied over its figure (dg2-5, JN-2)', () => {
+    // The model gave BOTH numbers. Whether 0.083 is one carton's or the row's
+    // is the model's own contradiction — multiplying would be the bot
+    // correcting the model against the model (2.49 m³ nobody wrote).
     const line = g({ volume_m3: 0.083, packing: [pack({ cartons: 30, carton_volume_m3: 0.083 })] });
-    expect(line.volumeM3).toBe(2.49);
-    expect(line.derived).toEqual({ volumeM3: '30 × 0.083 m³', replaced: { volumeM3: 0.083 } });
+    expect(line.volumeM3).toBe(0.083);
+    expect(line.derived).toBeUndefined();
+    expect(applyPacking(line).doubts).toMatchObject([{ kind: 'one_or_all', field: 'volumeM3', stated: 0.083, derived: { value: 2.49 } }]);
   });
 
   it('WHOSE size it is decides the arithmetic (PR-12): a product’s own size and an unknown owner multiply nothing', () => {

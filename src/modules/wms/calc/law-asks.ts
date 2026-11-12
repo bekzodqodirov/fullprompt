@@ -19,7 +19,7 @@
  * `storedRequestFacts`, ≤ 4 statements).
  */
 import { lineNeeds, type CalcFacts, type CalcGoodsFact, type CalcSection } from './intake';
-import { needLawOf, type NeedLaw, type RowNeed } from './needs';
+import { needLawOf, type NeedLaw, type NeedUnit, type RowNeed } from './needs';
 import type { storedRequestFacts } from './service';
 import type { Workspace } from './workspace';
 
@@ -30,6 +30,31 @@ export interface LawAsk {
   name: string;
   /** The figures the law pins and the row does not state, each unit once. */
   needs: RowNeed[];
+}
+
+/**
+ * ONE thing the AI's answer asks the SELLER (docs/AI-SORAYDI.md §3.4 A2;
+ * review JB-18) — the shape `sellerAsksOf` returns, committed with the kernel
+ * so the pass's ❓ block, the one-step reply's fence (A4: an answer writes at
+ * once only into an EMPTY cell of a row the answer ASKED about) and the
+ * notification's payload are built against one thing:
+ *  - `law`         — a figure the row's LAW pins (`lawAsksOf`, as today);
+ *  - `measure`     — a row with neither a count nor a weight;
+ *  - `what`        — an uncoded row: what is it, what is it made of;
+ *  - `ai`          — a question the reading asked that nobody answered
+ *                    (`aiAskedOf(row.note)`, intake.ts — a row's question only:
+ *                    one about the shipment goes to the card note, never here);
+ *  - `total`       — the shipment's brutto / cube, when freight needs it;
+ *  - `certificate` — nobody touched the toggle.
+ * `itemId` / `seq` are null for the two that are about no row. `needs` — the
+ * units a figure answer may fill; empty where the answer is words.
+ */
+export interface SellerAsk {
+  itemId: string | null;
+  seq: number | null;
+  kind: 'law' | 'measure' | 'what' | 'ai' | 'total' | 'certificate';
+  text: string;
+  needs: NeedUnit[];
 }
 
 export interface LawAsksInput {

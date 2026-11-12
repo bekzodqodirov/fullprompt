@@ -61,7 +61,13 @@ describe('the labels of a totals line and of a supplier’s spec block', () => {
     expect(NET_LABELS).toEqual(expect.arrayContaining(['n.w.', 'netto', 'нетто', '净重']));
     expect(VOLUME_LABELS).toEqual(expect.arrayContaining(['cbm', 'meas', 'volume', 'hajm', 'объём', '体积']));
     expect(FIELD_LABELS.name).toEqual(expect.arrayContaining(['品名', 'product', 'наименование', 'nomi']));
-    expect(FIELD_LABELS.size).toEqual(expect.arrayContaining(['尺寸', 'carton size', 'размер']));
+    // WHOSE size a label names is two lists (review JN-11): only a package's is multiplied.
+    expect(FIELD_LABELS.packageSize).toEqual(expect.arrayContaining(['外箱尺寸', '箱规', 'carton size', 'ctn size', 'размер коробки']));
+    expect(FIELD_LABELS.size).toEqual(expect.arrayContaining(['尺寸', 'size', 'dimensions', 'размер', 'габариты']));
+    for (const label of FIELD_LABELS.packageSize) expect(FIELD_LABELS.size as readonly string[], label).not.toContain(label);
+    // «/件» marks nothing: «件» is a piece as often as a package (JN-8).
+    expect(PER_PACKAGE_TAIL).not.toContain('/件');
+    expect(tailAt('15kg/件', 4, PER_PACKAGE_TAIL)).toBe(0);
     expect(FIELD_LABELS.cartons).toEqual(expect.arrayContaining(['箱数', 'ctns', 'мест']));
   });
 
