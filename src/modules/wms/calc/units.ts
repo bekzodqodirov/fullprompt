@@ -1014,8 +1014,12 @@ const PER_TRAIL = new RegExp(String.raw`^\s+(?:per|pr)\s+(${COUNT_NOUN})(?![\p{L
 const IN_EACH_TRAIL = new RegExp(String.raw`^\s+в\s+(?:1|одн(?:ой|ом)|кажд(?:ой|ом))\s+(?:${PACKAGE_NOUN})(?![\p{L}])`, 'iu');
 /** «15 kg dan» — «each» in Uzbek, beside a count (review JN-8 (a)). */
 const DAN_TRAIL = /^\s*[-–]?\s*(?:dan|дан)(?![\p{L}\d])/iu;
-/** …and never before what makes it «from» or «than»: «500 kg dan ortiq», «5 kubdan kam», «100 kg dan boshlab». */
-const DAN_NOT = /^\s*(?:ortiq\p{L}*|kam\p{L}*|ko[‘'’ʻ`]?p\p{L}*|oshiq\p{L}*|gacha|boshlab|yuqori\p{L}*|ортиқ\p{L}*|кам\p{L}*|кўп\p{L}*|ошиқ\p{L}*|гача|бошлаб)(?![\p{L}])/iu;
+/**
+ * …and never before what makes it «from» or «than»: «500 kg dan ortiq», «100
+ * kg dan boshlab», «20 kg dan 30 kg gacha» (a range's own «from»).
+ */
+const DAN_NOT =
+  /^\s*(?:\d[\d.,]*\s*[\p{L}²³]*\s+)?(?:ortiq\p{L}*|kam\p{L}*|ko[‘'’ʻ`]?p\p{L}*|oshiq\p{L}*|gacha|boshlab|yuqori\p{L}*|ортиқ\p{L}*|кам\p{L}*|кўп\p{L}*|ошиқ\p{L}*|гача|бошлаб)(?![\p{L}])/iu;
 /**
  * «15 kg/kor», «150 kg/m3», «180 gr/m2» — a kilo or a cube glued to a slash
  * and a word no tail knows: a rate or a density, never a total (review JN-8
@@ -1102,6 +1106,13 @@ interface Mark {
   /** Fixed by the mark — or null, to be bound to a count (`each`, `dan`). */
   owner: PerOneOwner | null;
   bind: boolean;
+  /**
+   * The mark says what a CONTAINER holds — «har birida», «har bir karobkada»,
+   * «в каждой коробке»: a count after it is one package's even with no carton
+   * count on the line. «har biri 300 dona» (each one IS) is not: beside no
+   * carton count it is the line's own count, as it always was.
+   */
+  container?: true;
   kind: PerOneFigure['kind'];
   inName: boolean;
   spans: [number, number][];
@@ -1197,6 +1208,13 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     const spans: [number, number][] = [[times[2] !== undefined ? joiner : at, joiner + 1]];
     return fixed(noun ?? 'package', spans, times[2] === undefined ? { noted: true } : {});
   }
+  const each = EACH_LEAD.exec(before);
+  if (each) {
+    const noun = each[1] ?? each[2] ?? each[3] ?? each[4];
+    const owner = nounOwner(noun);
+    const container = /(?:ida|да)(?![\p{L}])|(?:da|да)\s*[\s,:：–-]*$/iu.test(each[0]) || owner === 'package';
+    return { ...fixed(owner, [markSpan(each[0], from + each.index)]), bind: noun === undefined, clause: true, ...(container ? { container: true as const } : {}) };
+  }
   const one = ONE_LEAD.exec(before);
   if (one) {
     const at = from + one.index;
@@ -1216,12 +1234,6 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
       const at = from + po.index + po[0].lastIndexOf('по');
       return fixed(owner, [[at, at + 2]], { clause: owner === 'package' });
     }
-  }
-  const each = EACH_LEAD.exec(before);
-  if (each) {
-    const noun = each[1] ?? each[2] ?? each[3] ?? each[4];
-    const owner = nounOwner(noun);
-    return { ...fixed(owner, [markSpan(each[0], from + each.index)]), bind: noun === undefined, clause: true };
   }
   const dan = DAN_TRAIL.exec(after);
   if (dan && !DAN_NOT.test(after.slice(dan[0].length))) {
@@ -1258,6 +1270,13 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
   marks.forEach((m, i) => {
     if (m?.cond !== 'dan') return;
     if (cartonCounts.length === 0 && !unmarkedPieces.some((p) => p !== i)) marks[i] = null;
+  });
+  // An each-COUNT beside no carton count holds nothing — «Kurtka va shim, har
+  // biri 300 dona» is each product's 300 — unless its mark names a container.
+  marks.forEach((m, i) => {
+    const unit = hits[i]!.unit;
+    if (!m?.bind || unit === 'kg' || unit === 'm3' || m.container || cartonCounts.length > 0) return;
+    marks[i] = null;
   });
   const pieceCounts = hits.flatMap((h, i) => (h.unit === 'dona' && marks[i] === null ? [i] : []));
   const counts = [
