@@ -237,6 +237,10 @@ describe('X5 — the rows that HAVE the figure (review JS-33)', () => {
     // 150 + 180 = 330 ≥ 265: the lines stand.
     const read = sheet(H, ['Kurtka', 200, 20, 150], ['Shim', 100, 10, 180], ['Sumka', 50, 5, null], ['TOTAL', 350, 35, 530]);
     expect(read.goods.map((g) => g.weightKg)).toEqual([150, 180, null]);
+    // …at exactly half too, where the product alone would call the column one carton's: 130 + 135 = 265 =
+    // 530 / 2, and 2 × 130 + 2 × 135 = 530 ≤ 540.6.
+    const half = sheet(H, ['Kurtka', 200, 2, 130], ['Shim', 100, 2, 135], ['Sumka', 50, 5, null], ['TOTAL', 350, 9, 530]);
+    expect(half.goods.map((g) => g.weightKg)).toEqual([130, 135, null]);
   });
 
   it('…not when the product passes the TOTAL by more than 2 %', () => {
