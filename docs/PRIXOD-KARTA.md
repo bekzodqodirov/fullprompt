@@ -410,7 +410,7 @@ admin, operator, VED and seller, the ❌ state included.
 **Asked of him** (⭐ = as built): the ties below the lots on a phone; the void inside the fold; the long QR-less
 label kept whole.
 
-**After the merge with «Prixod xabari»** (2026-11-12; DECISIONS #1738-#1742, and `docs/PRIXOD-XABARI.md` §G.H).
+**After the merge with «Prixod xabari»** (2026-11-12; DECISIONS #1738-#1743, and `docs/PRIXOD-XABARI.md` §G.H).
 That round added to this card while this one rearranged it; the order above stands, and its additions were
 seated in it:
 
@@ -421,6 +421,9 @@ seated in it:
   → the control row → «still on another client's deal» → «+ Yangi bitim ochish» (a second door, for whoever may
   open a deal) → the compensation hint → the refusal. «Saqlash» also stands while another client's deal does,
   so that «— uzish» can take the prixod off it.
+- The left stack's two cells are keyed on the facts they draw, so a correction made in «Boshqa amallar» —
+  which revalidates without a remount — starts them again from what is stored; «Hisob» offers the calculations
+  of the prixod's OWN deal only.
 - The «Fayllar» card goes when a reader who cannot attach removes the last file (`refreshWhenEmpty`).
 - The workspace tab strip no longer scrolls the window: on a desktop it had pulled `#lot-<id>` and `#ichki`
   landings back to the top as well as `#bitim`.

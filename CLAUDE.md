@@ -135,9 +135,10 @@ pnpm build && pnpm e2e  # 44 e2e
 - **Layout chrome never calls `scrollIntoView`.** It scrolls every scrollable
   ancestor, the window included, so a strip or bar mounted in the layout pulls a
   page opened at `#anchor` back to the top a frame after the browser landed —
-  the workspace strip did it to every anchored address on a desktop for six
-  weeks (#1739). Move the element's own `scrollLeft`/`scrollTop`; fenced by
-  `tests/unit/anchor-landing.test.ts`.
+  the workspace strip did it on a desktop for six weeks, to every anchored
+  address whose page lights a tab in the reader's strip (#1739). Move the
+  element's own `scrollLeft`/`scrollTop`; fenced by
+  `tests/unit/anchor-landing.test.ts` (the layout's whole import closure).
 - **`next build` needs more than V8's ~2 GB default heap** since the 2026-10-29
   merge: run it as `NODE_OPTIONS=--max-old-space-size=3072 pnpm build`, the
   image's own heap (Dockerfile) and CI's (#1543). Without it the build dies
@@ -3655,10 +3656,11 @@ the card, the Russian width measure and typecheck were re-run here, and the full
 OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
 label) — CHANGELOG 2026-11-12.
 
-**Round — Prixod xabari (2026-11-11 evening → 11-12; DECISIONS #1707-#1742 — renumbered twice: from #1683-#1712 on
+**Round — Prixod xabari (2026-11-11 evening → 11-12; DECISIONS #1707-#1743 — renumbered twice: from #1683-#1712 on
 the first merge, the THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 —
-with this round's own `when` …124 — first; then by ten on the second, the THIRTY-EIGHTH: main's «Prixod kartasi»
-(PR #146) took #1697-#1706 and rewrote the card this round adds to; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
+with this round's own `when` …124 — first; then by ten on the second, the THIRTY-EIGHTH by this round's count
+(main's «Prixod kartasi» called its own PR #147 collision the thirty-seventh too): that round (PR #146) took
+#1697-#1706 and rewrote the card this round adds to; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
 `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
 message with the 145 confirmation: «4 ha … og'irlik va hajmga urg'u berilsin … 8 ha … prixod kelganda … 2 marta sms
 boryapti … prixod keldi desin sotuvchiga … ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa
@@ -3743,11 +3745,20 @@ end» (`tests/e2e/prixod-xabari-landing.ts`, #1740). The review of the merged ca
 a deal of ANOTHER client could never be taken off the prixod (`ownDealOf` made «current» null, the select opened
 on «— uzish», so «Saqlash» never drew — «Saqlash» stands while a foreign deal does now), the foreign sentence
 sits under the control row (it had pushed «Bitim»'s select off «Zavod reysi»'s line), and the «Fayllar» card
-leaves with a non-editor's last file (`refreshWhenEmpty`) — #1741; spec §G.H.
-**16,219 unit/integration (921 files) + 508 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at the merged
-head 218b017, ledger 147. Before the merge the round alone was green twice: 15,993 + 504 as first built (b9a43fd) and
-16,025 + 507 after the review (5dd0b69). Pushed to `claude/focused-bardeen-9t1bij`; NO pull request opened (he
-was asked) and the deploy is not done. OWED to him:
+leaves with a non-editor's last file (`refreshWhenEmpty`) — #1741; spec §G.H. **Then those fixes were reviewed
+again (#1743)** and three states only the card's own actions make were wrong: the deal cell kept the deal it had
+chosen BEFORE a client correction made in «Boshqa amallar» (a revalidation is not a remount — «Saqlash» over
+«— Uzish» sent the old deal back and nothing moved; both cells of the stack are keyed on the stored facts now),
+«Hisob» offered the OLD client's calculations (it, the seal's guess, `setCalcLink`, the ✓ and the bot's ✅ ask
+`ownDealOf`; «—» and ❌ — taking a link off — are never refused), and two quick ✕ beat the «Fayllar» refresh (an
+effect over the list the deletes leave). LESSON: **a state whose only origin is an action on the same screen is
+reached in a spec by pressing that action** — SQL plus a fresh `goto` remounts everything.
+**16,233 unit/integration (923 files) + 524 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 7bfdb4a,
+after the second merge, ledger 147 — and GitHub's check on that head; after #1743, typecheck, lint, the 24
+integration files that drive the calc link doors (388 tests) and the 34 browser tests of both card rounds and the
+strip walk re-ran green. Earlier: 16,219 + 508 at the first merge's head 218b017; the round alone 15,993 + 504 as
+first built (b9a43fd) and 16,025 + 507 after the review (5dd0b69). Opened as PR #149 (his «merge qildinmi»), merged
+into `main` once GitHub's check on its final head was green; the deploy is not done. OWED to him:
 the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the staff tick and kg · a ✅ after the
 cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
 admins on a claim for a seller-less client).

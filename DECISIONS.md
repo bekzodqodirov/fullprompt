@@ -8826,7 +8826,7 @@ everything that opens opened — 360 px for admin, operator, VED and seller, wit
 **«fits by a few pixels» is a failure that has not happened yet; widen the text and measure again before
 believing a row of fixed things.**
 
-## Prixod xabari — one message to the seller with two buttons, the client's ✅ covers kilos and cubic metres, the AI's bill on the evening summary (2026-11-11 evening; migration 0146 `prixod_xabari`, `when` …125, ledger 147; numbered #1707-#1736 — minted as #1683-#1712 with migration 0145 and renumbered on the merge, the THIRTY-SEVENTH collision: main's AI sotuvchi «o'zi yuborish» (PR #147) took #1683-#1696 and 0145 `agent_auto`, with this round's own `when` …124, first; spec `docs/PRIXOD-XABARI.md`, §G binding)
+## Prixod xabari — one message to the seller with two buttons, the client's ✅ covers kilos and cubic metres, the AI's bill on the evening summary (2026-11-11 evening → 11-12; migration 0146 `prixod_xabari`, `when` …125, ledger 147; numbered #1707-#1743 — minted as #1683-#1712 with migration 0145 and renumbered twice: by fourteen on the first merge, the THIRTY-SEVENTH collision (main's AI sotuvchi «o'zi yuborish», PR #147, took #1683-#1696 and 0145 `agent_auto`, with this round's own `when` …124, first — #1737), and by ten on the second, the THIRTY-EIGHTH by this round's count (main's «Prixod kartasi», PR #146, took #1697-#1706 — #1738; that round counted its own PR #147 collision as the thirty-seventh too, so the record holds two thirty-sevenths); spec `docs/PRIXOD-XABARI.md`, §G binding)
 
 His message after confirming the 0144 deploy («deploy qildim 145 chiqdi»): «4 ha tovar nomi, karobka soni,
 ogirlik va hajimga urgu berilsin tekshirib olsin klient va tasdiqlasin togriligini. 8 ha. prixod kelganda bitim
@@ -9095,7 +9095,7 @@ said «every hour is said exactly once across the evenings». Monday's message c
 and the last 24 hours under it; one more read). Every other figure treats a Monday the same way and is left as
 it is — those are day-bucketed and the weekly message contains them; this line alone is a rolling window.
 
-**#1735 — Seven tests that could not see their subject — three of them written during this very review.**
+**#1735 — Eight tests that could not see their subject — three of them written during this very review.**
 (1) The «0146 has not landed» press test spied on `pgClient.unsafe`. A drizzle transaction runs through
 `sql.begin`, which hands its callback a scoped client with an `unsafe` of its OWN: the two statements 0146 added
 to the press, both inside `db.transaction`, were invisible, the positive control was satisfied by the POOL's
@@ -9154,13 +9154,14 @@ main's own entry (which says 146) and this round's both say so. THE LESSON, whic
 **fetch main before the last gate, not after it** — the collision cost a second full run (fifty minutes) that
 a `git fetch` before the first would have folded into one.
 
-### The second merge with main — the thirty-eighth collision, and what the merged card showed (2026-11-12; NO migration — ledger 147)
+### The second merge with main — the thirty-eighth collision (by this round's count; main's «Prixod kartasi» also called its own PR #147 collision the thirty-seventh), and what the merged card showed (2026-11-12; NO migration — ledger 147)
 
 **#1738 — Main had rewritten the card this round adds to, under the decision numbers this round had just taken.**
 Answering his «merge qildinmi», the fetch showed PR #146 («Prixod kartasi», no migration) on main with
 #1697-#1706 — and its subject was `/receipts/[id]`, the card this round's deal block, file ✕ and kg/m³ answer
-live on. Renumbered FIRST, on this branch, by ten (#1707-#1737; this round's DECISIONS section and CLAUDE.md
-paragraph only; the two sentences that report history keep their numbers), then merged. Conflicts: the card
+live on. Renumbered FIRST, on this branch, by ten (#1707-#1737; this round's DECISIONS section, its CLAUDE.md
+paragraph and the one citation in docs/PRIXOD-XABARI.md §G.G; the two sentences that report history keep their
+numbers), then merged. Conflicts: the card
 page, the deal cell, and the three documents both rounds append to. **The page was taken WHOLE from main** — its
 §7 is binding and is the newer decision about that screen — and this round's nine edits re-applied: six merged
 by themselves (the two imports, `ownFileIds`, `askFace.full`, `ownDeal` / `foreignDeal`, `dealChoices`), three by
@@ -9169,23 +9170,25 @@ main's anatomy** (label → one value line → control row; «Saqlash» only onc
 anchor, sentences and door. **The landing frame became an OUTLINE with an offset**: the cell has no card of its
 own any more, and a ring on a bare cell sits on its letters; `?bitim=1` adds the same four classes, written out,
 because Tailwind compiles only what it can read. Main's root testid `receipt-deal` had no reader in either
-round and gave way to `receipt-deal-block` (this round's spec reads it six times). Main's 22 source-shape
+round and gave way to `receipt-deal-block` (this round's phone spec and its landing helper read it). Main's 22 source-shape
 fences over the card stayed green unedited.
 
 **#1739 — The workspace tab strip scrolled the WINDOW, and every anchored address opened at the top on a
 desktop.** Found by measuring the merged landing at 1280 instead of reading it: scrollY 322 at the browser's
 landing, 63 fifty milliseconds later. `ws-tabs.tsx` brought its lit tab into view with
 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`, which scrolls EVERY scrollable ancestor — and on a
-desktop the row cannot scroll sideways at all (`md:overflow-hidden`; the fold takes what does not fit), so the
-call's only effect there was to pull the page up to the strip one frame after hydration. `#bitim`, `#lot-<id>`
+desktop the row is `md:overflow-hidden` and the fold's re-render puts its own scroll back at the start, so the
+only thing the call left visible there was the window's jump: the page pulled up to the strip one frame after
+hydration. `#bitim`, `#lot-<id>`
 and `#ichki` all landed at the top for whoever's strip lights a tab on that page, since the strip shipped
-(2026-09-27, #1071). A phone was spared only because it draws no strip on a card. The effect now moves the
+(2026-09-27, #1074). A phone was spared only because it draws no strip on a card. The effect now moves the
 row's own `scrollLeft` from the two boxes. RULE: **chrome that lives in the layout never calls
 `scrollIntoView`** — it runs on every page, after the browser has landed on the address. Fenced by
 `tests/unit/anchor-landing.test.ts` (the strip names no `scrollIntoView` and still moves its row; nothing the
-protected layout imports from components/ calls it) and `m9zzzi-prixod-xabari.desktop` — signed in as the
+protected layout mounts calls it — its imports followed transitively since #1743) and `m9zzzi-prixod-xabari.desktop` — signed in as the
 OWNER, whose strip lights «Prixodlar» there: the first draft, signed in as the seller, was green on the defect,
-because a seller's strip lights nothing on a prixod. Red: «block at 395, scrolled 63 of 1206».
+because a seller's strip lights nothing on a prixod. Red: «block at 395, scrolled 63 of 1206»; the fence red-proven
+twice by vitest.
 
 **#1740 — On a phone the deal block now sits under the cargo, and the landing has two honest outcomes.** The
 card round orders the ties after the lots under `md`; on the fixture's short prixod (1,088 px, the block at 580)
@@ -9201,7 +9204,7 @@ tab bar's box as the floor only when the bar is drawn: it is in the DOM at every
 seller's 1280×900 landing, «block at 300, scrolled 57 of 57» refused).
 
 **#1741 — The merged card reviewed as built: eight findings from the two lenses that came back, each checked
-against the code before it was accepted, each fixed and red-proven.** (a) **A deal of ANOTHER client could be
+against the code before it was accepted, each fixed; the code findings red-proven (the specs are (d)).** (a) **A deal of ANOTHER client could be
 replaced but never taken off the prixod** (KARTA-1 / XC-3): «current» is the prixod's OWN deal — null there —
 and the select opens on «— uzish», so main's «Saqlash only once the answer differs» never drew the button for
 the one answer that needs no deal. Before the merge this round drew it disabled: the same dead state, made by
@@ -9228,3 +9231,42 @@ because the renumbering came BEFORE the merge, while every #1697-#1727 on the br
 the build: read `pg_isready` before reading a red e2e. (3) A red proof for a TEST HELPER needs no product build
 and runs in the main checkout by string edit; a red proof for product code takes one build per strip in the
 second worktree, so the main tree's build stays the one under test.
+
+### The merged card's fixes, reviewed again (2026-11-12; NO migration — ledger 147)
+
+**#1743 — The deal cell held the deal it had chosen BEFORE a client correction, «Hisob» still offered the other
+client's calculations, and two quick ✕ beat the refresh — three defects in #1741's fixes, all in states a spec
+built by SQL and a fresh load cannot reach.** A second review (seven lenses, read-only, over fce43da…7bfdb4a;
+23 findings with the documents') found them. (a) **XF-1, the blocker.** The foreign state has ONE origin — a
+client correction through this card's own «Boshqa amallar» — and that action revalidates without remounting
+the cell, whose `useState` still held the old own deal: after the refresh the select SHOWED «— Uzish» (React
+selects the first option when the controlled value matches none) while «Saqlash» sent the old deal back,
+`linkReceipt` returned early on «already there», and the card said nothing; the reverse correction drew an
+unprompted detach. #1741(a)'s «the press sends what the select holds» was true on a fresh load only. Both
+cells of the stack are keyed on the stored facts they draw (`deal:<client>:<deal>`, `calc:<own deal>:<link>`).
+(b) **XF-2.** «Hisob» listed the RAW deal's calculations, so on a prixod left on another customer's deal the VED
+or the accountant could person-confirm that customer's quote as this cargo's — the kind `measurableLinkSql`
+scores. The cell lists the prixod's OWN deal's (`ownDeal`), stays drawn while a link stands so a left-over one
+is cleared with «—», and a link the list does not hold is an option of its own, disabled and selected —
+otherwise the select shows «—» while holding the link, and «—» changes nothing. `calc/link.ts` asks the same
+`ownDealOf` at every door that MAKES or BLESSES a link: the seal no longer guesses a corrected prixod onto the
+old deal's calculation, `setCalcLink` answers `no_deal`, the ✓ and the bot's ✅ `request_foreign`. Taking one
+OFF — «—», and now the bot's ❌ too — is never refused: it is the true answer about another customer's cargo,
+and refusing the ❌ left the guess in «Tasdiqlash kerak» with nothing in Telegram to clear it. (c) **XF-3.**
+`AttachmentsPanel` decided «was that the last?» from the list the PRESS's render held, so two ✕ pressed inside
+one slow delete each saw the other file and nobody asked the page again; it is an effect over the state the
+deletes leave now. **The tests the review called weak** (T1-T3): `hydrated()` claimed «its effects have run» and
+waited for a render-phase marker (React writes the fiber key in completeWork; Next hydrates in a transition) — it
+now says what it waits for and also waits for the scroll to hold ten frames, and the desktop owner waits for the
+strip's own visit POST, sent from the effect React runs after the lit tab's in the same commit; the anchor
+fence follows the layout's imports TRANSITIVELY (25 modules — the first version read the 12 direct ones) and
+pins the two focus calls, both inside panels a person opens, as a closed list; the wire pins read
+comment-stripped source (#725). Red proofs: 12 by vitest and 2 in a browser (the correction on the mounted
+card, two ✕ inside one 1.5 s delete), each red in the test it names. Documents (D1-D4, N1-N8, XF-4-6): the
+CHANGELOG told him unlinking from another client's deal had been impossible — in production it never was, only
+in this round's unreleased builds; main's entry still said 146; this section's heading explained one of its two
+renumberings; §G.F filed the unit fence as integration; the Russian «приход» is masculine; #1735 counted seven
+of its eight; #1739 cited the workspaces decision for the strip and gave a false reason for the window being the
+only visible effect. THE LESSON: **a state whose only origin is an action on the same screen is reached in a
+spec by pressing that action** — building it by SQL and a fresh `goto` gives every component a fresh mount,
+which is the one thing the person who made the state never gets.

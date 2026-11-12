@@ -783,17 +783,36 @@ The card's ORDER is that round's; what this round put on the card was re-seated 
 Pinned: `receipt-files-wire` (the save condition, the cell's order, the sentence's offer in four bundles, the
 outline, `refreshWhenEmpty`), `anchor-landing`, the phone spec (the scroll margin at 360×420, the save in the
 foreign state, the VED taking the prixod off a foreign deal, the last file) and `m9zzzi-prixod-xabari.desktop`.
-Red proofs: 6 by vitest, 4 in a browser (the save while foreign, the last file, the window pull-back, the
-desktop floor) — each red in the test it names.
+Red proofs: 8 by vitest (six for #1741's findings, two for the strip's fence), 4 in a browser (the save while
+foreign, the last file, the window pull-back, the desktop floor) — each red in the test it names.
+
+**After the second review of the merged card** (DECISIONS #1743) — three states only the card's own actions make:
+
+- **Both cells of the left stack are keyed on what is STORED** (`deal:<client>:<deal>`, `calc:<own deal>:<link>`):
+  a client correction through «Boshqa amallar» revalidates without remounting them, and the deal cell used to
+  keep the deal it had chosen before — «Saqlash» over «— Uzish» sent the old deal back and nothing moved.
+- **«Hisob» is about the prixod's OWN deal**: it lists that deal's calculations, stays drawn while a link
+  stands (so «—» clears a left-over one), and shows a link its list does not hold as a disabled, selected
+  option of its own. `calc/link.ts` asks `ownDealOf` at the seal's guess, `setCalcLink`, the ✓ and the bot's ✅;
+  «—» and the bot's ❌ — taking a link off — are never refused.
+- **«Fayllar» leaves with the last file however fast the ✕ are pressed**: decided in an effect over the list the
+  deletes leave, not from the render a press closed over.
+
+Pinned: `receipt-files-wire` (the keys, the options' deal, the row's condition, the effect — comment-stripped),
+`calc-link-render`, `anchor-landing` (now the layout's whole import closure), `calc-link-ask`, and two browser
+tests in the phone spec (the correction on the mounted card; two ✕ inside one slow delete). Red proofs: 12 by
+vitest, 2 in a browser.
 
 ### G.F Tests
 
 Unit: `receipt-arrival` (the message, the predicate, the alarm, `rowTypeFor`, the buttons, the wait kind's
 three homes), `receipt-files-wire` (the ladder's order, the three collector openings, the leaf, the anchor),
-`ai-spend`, `lot-check-ready`, `lot-check-panel-render`, `client-confirm-wire`. Integration:
+`ai-spend`, `lot-check-ready`, `lot-check-panel-render`, `client-confirm-wire`, `anchor-landing`,
+`calc-link-render`. Integration:
 `receipt-arrival` (who is told, per person and mute list; the claim door; a foreign deal; R6),
 `receipt-files-bot` (the whole handler chain), `ai-spend` (the three ledgers' real rows, the assistant's
-usage), `client-confirm` (96 combinations; the measures), `client-confirm-bot`, `anchor-landing`. Browser:
+usage), `client-confirm` (96 combinations; the measures), `client-confirm-bot`, `calc-link-ask` (a prixod
+left on another client's deal). Browser:
 `m9zzzi-prixod-xabari` and `m9zzzi-prixod-xabari.desktop`, over `prixod-xabari-fixture.ts` and
 `prixod-xabari-landing.ts`. Not verifiable here: real Telegram — the first real «Prixod keldi», the first press
 of each button and the first file are the proof.

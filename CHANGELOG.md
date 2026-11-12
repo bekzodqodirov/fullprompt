@@ -133,10 +133,15 @@ qo'shganlari (bitim bloki, o'zi yuborgan faylni o'chirish ✕, mijoz javobidagi 
 - **Kompyuterda manzili bilan ochilgan sahifa tepaga sakrab ketardi** — `#bitim`, lot manzili, «Savol-javob»
   havolasi: sahifa kerakli joyga tushib, bir lahzadan keyin yana tepaga qaytardi (bo'limlar qatori shunday
   qilardi). Tuzatildi — endi tushgan joyida qoladi. Bu eski xato edi, faqat kompyuterda.
-- **Boshqa mijozning bitimida qolib ketgan prixodni endi uzsa bo'ladi.** Mijoz tuzatilganda prixod eski
-  mijozning bitimida qolib ketishi mumkin; kartada «Uzish»ni tanlab «Saqlash» bosilsa — o'sha bitimdan
-  chiqadi. Avval bu holatda «Saqlash» tugmasi chiqmasdi (VED uchun bosiladigan hech narsa qolmasdi).
-- Sotuvchi o'zi yuborgan **oxirgi** faylni o'chirsa, bo'sh «Fayllar» sarlavhasi ham kartadan ketadi.
+- **Mijoz tuzatilib, prixod eski mijozning bitimida qolib ketsa** — karta endi o'sha bitimni prixodniki deb
+  ko'rsatmaydi, «Boshqa mijozning bitimida qolgan: B-…» deb yozadi. «Uzish»ni tanlab «Saqlash» bossangiz,
+  prixod o'sha bitimdan chiqadi — mijozni shu kartaning o'zida tuzatgan zahoti ham.
+- **«Hisob» katagi** faqat prixodning **o'z** bitimidagi hisob-kitoblarni taklif qiladi. Avval yuqoridagi holatda
+  eski mijozning hisob-kitoblari taklif qilinardi va ularni bu yukka bog'lab tasdiqlash mumkin edi (bir mijozning
+  yuki boshqa mijozning narxi bilan solishtirilardi). Endi bunday bog'lash va tasdiqlash qabul qilinmaydi;
+  qolib ketgan bog'lanishni «—» yoki Telegramdagi «❌» bilan olib tashlash mumkin.
+- Sotuvchi o'zi yuborgan **oxirgi** faylni o'chirsa, bo'sh «Fayllar» sarlavhasi ham kartadan ketadi — ikki
+  faylni sekin internetda ketma-ket tez o'chirsa ham.
 
 ### Qanday tekshirildi
 - Qurishdan **oldin** rejani uch mustaqil tekshiruvchi o'qidi (35 e'tiroz, uchtasi «xabar jim yo'qoladi»
@@ -145,10 +150,15 @@ qo'shganlari (bitim bloki, o'zi yuborgan faylni o'chirish ✕, mijoz javobidagi 
   xabarga javob qilib yuborilgan fayl, eskirgan «Yangi bitim» formasi, bekor qilingan prixod, dushanba kungi
   AI qatori va boshqalar). «Nuqson» deb atalgan 6 tasini yana bir tekshiruvchi rad etishga urinib ko'rdi —
   oltovi ham tasdiqlandi.
-- Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 69 ta shunday isbot (5 tasi
+- Birlashtirilgan kartani **yana ikki marta** tekshirtirdim. Ikkinchisi uchta nuqson topdi — uchchalasi
+  yuqoridagi 7-bandda (mijoz kartada tuzatilgandan keyingi «Saqlash», «Hisob» katagi, ikki faylni tez
+  o'chirish); hammasi tuzatildi.
+- Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 95 ta shunday isbot (11 tasi
   brauzerda).
-- To'liq sinov toza bazada, serverdagi tartibda — `main`dagi «o'zi yuborish» raundi bilan birlashtirilgan
-  holatda: 16 219 ta test va brauzerda 508 ta sinov — hammasi yashil; baza hisobi 147.
+- To'liq sinov toza bazada, serverdagi tartibda — `main`dagi ikkala raund bilan birlashtirilgan holatda:
+  16 233 ta test va brauzerda 524 ta sinov — hammasi yashil; baza hisobi 147. Oxirgi tuzatishlardan keyin
+  o'zgargan qismlarning testlari va prixod kartasining 34 ta brauzer sinovi qayta o'tdi; `main`ga qo'shishdan
+  oldin GitHub butun to'plamni yana bir bor ishlatdi.
 
 ### Bu yerda tekshirib bo'lmagani
 Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy «Prixod keldi» xabari, ikki tugmaning birinchi
@@ -179,7 +189,8 @@ unga tegmadim. Agar aynan «Qabul» ekranini nazarda tutgan bo'lsangiz — aytin
 **Bu faqat joylashuv ishi.** Hech kimning huquqi o'zgarmadi, hech qaysi tugma yo'qolmadi, hisob-kitobga tegilmadi.
 Kim nimani ko'rgan va bosa olgan bo'lsa — hozir ham shuni ko'radi va bosa oladi, faqat joyi tartibli.
 
-Migratsiya **yo'q**. Baza hisobi o'zgarmaydi (boshqa ish bilan birga chiqsa — 146). Bu deployni baza hisobi bilan
+Migratsiya **yo'q**. Baza hisobi o'zgarmaydi (boshqa ish bilan birga chiqsa — 146; yuqoridagi «Prixod xabari»
+raundi bilan birga — **147**). Bu deployni baza hisobi bilan
 emas, **`curl -s https://gsrwms.uz/api/version`** bilan tekshiring: bugungi vaqtni ko'rsatishi kerak.
 
 ### Avval qanday edi (o'lchadim)
