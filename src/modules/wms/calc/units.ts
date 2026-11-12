@@ -1066,8 +1066,12 @@ export interface PerOneFigure {
   start: number;
   end: number;
   unit: 'dona' | 'kg' | 'm3' | 'juft' | 'm2' | 'litr';
-  /** In the unit's own scale — a tonne's figure in kilos. */
-  value: number;
+  /**
+   * In the unit's own scale — a tonne's figure in kilos. Null: a number with
+   * two readings («har biri 1,200 kg») — one package's all the same, so no
+   * total and no column takes it; nobody multiplies a figure nobody can read.
+   */
+  value: number | null;
   /** Whose one — null: nobody's said, nothing is multiplied from it. */
   owner: PerOneOwner | null;
   /** A per-package weight's kind, when its label said. */
@@ -1108,7 +1112,7 @@ interface FigureHit {
   start: number;
   end: number;
   unit: PerOneFigure['unit'] | 'karobka';
-  value: number;
+  value: number | null;
   word: string;
 }
 
@@ -1171,8 +1175,9 @@ function figureHits(text: string, scan: string, scaled: boolean): FigureHit[] {
     const unit = unitOf(word) ?? (scale && !scale.lone ? 'kg' : null);
     if (unit === null || !TRACKED.has(unit)) continue;
     const read = readAmountText(hit[1]!);
-    if (read.state !== 'ok') continue;
-    const value = unitOf(word) === null && scale ? scaledKgValue(read.value, scale.factor) : read.value;
+    if (read.state === 'bad') continue;
+    const own = read.state === 'ok' ? read.value : null;
+    const value = own !== null && unitOf(word) === null && scale ? scaledKgValue(own, scale.factor) : own;
     out.push({ start: hit.index, end, unit: unit as FigureHit['unit'], value, word });
   }
   return out;
@@ -1518,7 +1523,7 @@ export function typedPacking(read: PackingRead): { packing: Packing | null; asid
   for (const f of read.figures) {
     if (f.inName) continue;
     if (f.noted) aside.push(f.text);
-    if (f.owner === null) {
+    if (f.owner === null || f.value === null) {
       aside.push(f.text);
     } else if (f.unit === 'kg') {
       if (f.owner === 'package') {

@@ -171,6 +171,16 @@ describe('T4 — the typed goods row: the figure goes onto its packing, the cart
     expect(row('Stul 20 karobka x 15 kg')).toMatchObject({ weightKg: 300 });
   });
 
+  it('a per-carton figure with two readings is asked of nobody as a total, and multiplied by nobody — kept on the note', () => {
+    // «1,200» is 1.2 or 1200 (T0): one carton's either way, so no total asks it.
+    expect(totals('Stul 20 karobka, har biri 1,200 kg')).toEqual(none);
+    const r = row('Stul 20 karobka, har biri 1,200 kg');
+    expect(r).toMatchObject({ weightKg: null, note: 'sotuvchi: har biri 1,200 kg' });
+    expect(r.packing ?? null).toBeNull();
+    // A space-grouped one after the mark is whole: 20 × 1 200 = 24 000 kg.
+    expect(row('Stul 20 karobka har biri 1 200 kg')).toMatchObject({ weightKg: 24000 });
+  });
+
   it('a tonne or a gram of one piece: 2000 × 0.5 kg = 1000 kg (T14 with T4)', () => {
     const r = row('Choy 2000 dona, har biri 500 gr');
     expect(r).toMatchObject({ name: 'Choy', quantity: 2000, weightKg: 1000 });
