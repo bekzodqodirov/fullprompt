@@ -459,6 +459,19 @@ const MEASURE_LABELS = [...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg,
   (label) => !label.includes(' '),
 );
 const MEASURE_LABEL_TOKEN = new RegExp(`^(?:${labelPattern(MEASURE_LABELS)})$`, 'iu');
+/**
+ * The brutto's and the cube's own labels that are no unit — «G.W.», «gross
+ * weight», «MEAS», «毛重», «体积» — anywhere in a segment: the words a
+ * forwarder's shipment line sets its figures off with (T2). Never the netto's
+ * (a netto is a ROW's weight — `NETTO_FIRST`), and never «cbm», which is the
+ * cube's unit and says nothing of whose cube it is.
+ */
+const SHIPMENT_LABEL = new RegExp(
+  `(?<![\\p{L}])(?:${labelPattern(
+    [...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.volumeM3].filter((label) => unitOf(label) === null),
+  )})(?![\\p{L}])`,
+  'iu',
+);
 /** A Han label is written glued to its figure («毛重507kg»): taken out of the text, longest first («总毛重» before «毛重»). */
 const HAN_LABELS = [...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS]
   .filter((label) => /^\p{Script=Han}+$/u.test(label))
@@ -798,6 +811,14 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
       return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), ...plain };
     }
     const target = targetFor(answer, table, NETTO_FIRST.test(raw));
+    // A brutto's or a cube's label says the shipment's line no row takes —
+    // «G.W. 480 kg CBM 3.66» read as 480 kg and a COUNT of 3.66, and was
+    // «Qaysi qatorga?» with the labelled kilos dropped (T2, dg2-10): the
+    // totals take what they can, and the rest is named.
+    if (target === null && SHIPMENT_LABEL.test(raw)) {
+      const typed = readTotals(raw, null, table.open);
+      if (typed.totals !== null) return totalsSegment(raw, typed, plain);
+    }
     if (target === null) return { ...refused(raw, 'no_address', raw, { answer }), ...plain };
     if (target === 'both' || 'totals' in target) {
       const read = totalsSegment(raw, readTotals(raw, target === 'both' ? null : target.totals, table.open), plain);
@@ -813,7 +834,10 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   if (met.length === 0) {
     const unit = unitAsked(raw, parts);
     const none = refused(raw, 'name_none', parts.typed || raw, { answer });
-    return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), explicit: false, namedNone: true };
+    // A unit asked about names no goods at all: it is no evidence of a typed
+    // goods list (rule 3), so «5.9 kubik⏎507 kilogr» is asked twice, never
+    // filed as material and re-read as two products (T3, dg3-04).
+    return { ...none, ...(unit ? { refused: { ...none.refused!, unit } } : {}), explicit: false, namedNone: unit === null };
   }
   const kept = met.filter((r) => holdsModel(parts, nameOf(r)));
   if (kept.length === 0) {
