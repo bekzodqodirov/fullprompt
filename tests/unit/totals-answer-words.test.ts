@@ -254,3 +254,50 @@ describe('T3 — the plain door files a typed text as it always did', () => {
     expect(activeIntake(chatId)!.material.at(-1)).toBe('5.9 kubik');
   });
 });
+
+describe('T14 — tonnes, grams and the packing-list number at the table (AI door)', () => {
+  const SEMENT = { name: 'Sement' };
+
+  it('the brutto in tonnes is written in kilos, with no word: 2 t × 1000 = 2000 kg', async () => {
+    const spelled = await answer(atTable([KURTKA]), 'jami 2 tonna');
+    expect(spelled.kg).toBe(2000);
+    expect(spelled.replies).toEqual([]);
+    // In an answer about the totals a lone letter is its unit.
+    const lone = await answer(atTable([KURTKA]), 'jami 2 t');
+    expect(lone.kg).toBe(2000);
+    expect(lone.replies).toEqual([]);
+  });
+
+  it('a row’s weight: «1: 1.5 t» is 1500 kg on the row — never «“t” — bu birlikni bilmayman»', async () => {
+    const out = await answer(atTable([SEMENT]), '1: 1.5 t');
+    expect(out.goods[0]).toMatchObject({ weightKg: 1500 });
+    expect(out.replies).toEqual([]);
+    const grams = await answer(atTable([SEMENT]), '1: 500 g');
+    expect(grams.goods[0]).toMatchObject({ weightKg: 0.5 });
+  });
+
+  it('«1,136.5 kg» is written as it stands — never offered as «1.136 mi yoki 1136 mi?»', async () => {
+    const total = await answer(atTable([KURTKA]), 'jami 1,136.5 kg');
+    expect(total.kg).toBe(1136.5);
+    expect(total.replies).toEqual([]);
+    const row = await answer(atTable([SEMENT]), '1: 1,136.5 kg');
+    expect(row.goods[0]).toMatchObject({ weightKg: 1136.5 });
+    expect(row.replies).toEqual([]);
+    // «1,200» alone still has two readings, and is still asked.
+    const asked = await answer(atTable([KURTKA]), 'jami 1,200 kg');
+    expect(asked.kg).toBeNull();
+    expect(asked.replies.join('\n')).toContain('1.2 mi yoki 1200 mi?');
+  });
+
+  it('a letter glued to its digits is asked as the tonne it would be, with the spelling the bot reads', async () => {
+    const out = await answer(atTable([KURTKA]), 'jami 2T');
+    expect(out.kg).toBeNull();
+    expect(out.replies[0]).toContain('⚠️ «T» — tonnami? «jami 2 tonna» deb yozing.');
+  });
+
+  it('two different weights, one in tonnes: the example is the seller’s own figure', async () => {
+    const out = await answer(atTable([KURTKA]), 'jami 2 tonna 1500 kg');
+    expect(out.kg).toBeNull();
+    expect(out.replies[0]).toContain('⚠️ «2 tonna», «1500 kg» — ikki xil og‘irlik: bittasini yozing, masalan «jami 2 tonna».');
+  });
+});

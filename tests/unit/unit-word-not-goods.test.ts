@@ -212,7 +212,7 @@ describe('the shipment’s own line, typed at the table without «jami»', () =>
     const segments = read('G.W.: 507 KGS N.W.: 480 KGS MEAS: 5.92 CBM');
     expect(segments).toHaveLength(2);
     expect(segments[0]!.totals).toEqual({ weightKg: 507, volumeM3: 5.92, ambiguous: [] });
-    expect(segments[1]!.refused?.left).toEqual([{ why: 'netto', text: 'N.W. 480 KGS', number: '480' }]);
+    expect(segments[1]!.refused?.left).toEqual([{ why: 'netto', text: 'N.W. 480 KGS', figure: '480 KGS', number: '480' }]);
   });
 
   it('the same on three lines, as it is pasted', () => {

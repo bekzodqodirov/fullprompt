@@ -129,7 +129,7 @@ describe('a figure a total cannot take is NAMED — and the totals beside it are
     expect(segments[1]!.refused).toEqual({
       reason: 'totals_unit',
       detail: '5.9 kubik',
-      left: [{ why: 'unit', text: '5.9 kubik', number: '5.9', word: 'kubik', near: 'm3' }],
+      left: [{ why: 'unit', text: '5.9 kubik', figure: '5.9 kubik', number: '5.9', word: 'kubik', near: 'm3' }],
     });
     const alone = read('jami 5.9 kubik');
     expect(alone).toHaveLength(1);

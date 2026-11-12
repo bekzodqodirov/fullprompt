@@ -6487,6 +6487,15 @@
    "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
    "source": "ai-soraydi typed-A T0",
    "weight": "defect"
+  },
+  {
+   "id": "c3359",
+   "input": "Sement 2 tonna",
+   "expected": true,
+   "said": "true — material, never the customer",
+   "why": "A goods line stating its weight in tonnes stated nothing to the customer question (the unit was unknown), and became the lead's NAME.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
   }
  ],
  "readGoodsLinesCases": [
@@ -14825,6 +14834,106 @@
    "why": "«cubic» joined the not-goods words (T3's list); the rule is EVERY word of the name, so a product that only contains it stays a product.",
    "source": "ai-soraydi typed-A T3",
    "weight": "pinned"
+  },
+  {
+   "id": "c3348",
+   "input": "Sement 2 tonna 12 kub",
+   "expected": {
+    "rows": [
+     {
+      "name": "Sement",
+      "weightKg": 2000,
+      "volumeM3": 12
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Sement» — 2000 kg · 12 m³",
+   "why": "CR-7 (dg2/critic-readers.json): with the model silent the line was no row at all («tonna» in its tail was an unknown word), and its cube was taken as the shipment's.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3349",
+   "input": "Цемент 20 тонн",
+   "expected": {
+    "rows": [
+     {
+      "name": "Цемент",
+      "weightKg": 20000
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Цемент» — 20000 kg",
+   "why": "CR-7 (dg2/critic-readers.json): «Tovarlar (0)» for cement stated in tonnes.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3350",
+   "input": "Арматура 2,5 тн 3 куб",
+   "expected": {
+    "rows": [
+     {
+      "name": "Арматура",
+      "weightKg": 2500,
+      "volumeM3": 3
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Арматура» — 2500 kg · 3 m³",
+   "why": "CR-7 (dg2/critic-readers.json): «тн» with a decimal comma: 2,5 × 1000.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3351",
+   "input": "Kurtka 1,136.5 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "weightKg": 1136.5
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Kurtka» — 1136.5 kg",
+   "why": "CR-7 (dg2/critic-readers.json): the line was dropped: «1,136» read as two readings and «.5 kg» stayed in the name.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3352",
+   "input": "jami 2 tonna 300 dona",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "[] — a totals line",
+   "why": "T14 + T3: a tonne figure left in a name beside a piece count is no word of it — «jami 2 tonna» is named by «jami» alone, never a product.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "regression"
+  },
+  {
+   "id": "c3353",
+   "input": "Zafaron 500 gr",
+   "expected": {
+    "rows": [
+     {
+      "name": "Zafaron",
+      "weightKg": 0.5
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Zafaron» — 0.5 kg",
+   "why": "CR-7 (dg2/critic-readers.json): a gram is a thousandth of a kilo; with no piece count on the line it is the line's weight.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -46571,6 +46680,79 @@
    "why": "Review JN-22: «cubic meter(s)» stood in the list as one glued word: «5.92 cubic meters» → unknown_unit:cubic.",
    "source": "ai-soraydi typed-A T1",
    "weight": "defect"
+  },
+  {
+   "id": "c3354",
+   "input": "Sement 2 tonna 12 kub",
+   "expected": {
+    "name": "Sement 2 tonna",
+    "weightKg": null,
+    "volumeM3": 12,
+    "problemCount": 0
+   },
+   "said": "name «Sement 2 tonna», 12 m³, no weight — unchanged",
+   "why": "Review JR-22: the scaled words are read by the bot's typed readers ONLY. The kernel called bare — the card form, the VED's paste box, a sheet's unit cells — reads what it read.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3355",
+   "input": "Kurtka 1,136.5 kg",
+   "expected": {
+    "name": "Kurtka",
+    "weightKg": 1136.5,
+    "problemCount": 0
+   },
+   "said": "1136.5 kg, nothing asked",
+   "why": "CR-7 (dg2/critic-readers.json): the number grammar is every door's: «1,136.5» is one number on the card form too.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3356",
+   "input": "Router 5G 100 dona",
+   "expected": {
+    "name": "Router 5G",
+    "quantity": 100,
+    "weightKg": null,
+    "problemCount": 0
+   },
+   "said": "«Router 5G» × 100, no weight — unchanged",
+   "why": "Review JN-9: one of the ruling's five lines: a generation is no 0.005 kg.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3357",
+   "input": "Модель 2024 г 300 кг",
+   "expected": {
+    "name": "Модель 2024 г",
+    "weightKg": 300,
+    "problemCount": 0
+   },
+   "said": "«Модель 2024 г», 300 kg — unchanged",
+   "why": "Review JN-9: one of the ruling's five lines: «2024 г» is a year, never 2.024 kg.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3358",
+   "input": "Kurtka 1,200 dona",
+   "expected": {
+    "name": "Kurtka",
+    "quantity": null,
+    "twoReadings": [
+     {
+      "text": "1,200",
+      "short": 1.2,
+      "long": 1200
+     }
+    ]
+   },
+   "said": "asked «1.2 mi yoki 1200 mi?» — unchanged",
+   "why": "The guard of T14's number rule on the row kernel: one comma group, no decimal — two readings.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
   }
  ],
  "parseManualFactsCases": [
@@ -48694,6 +48876,197 @@
    "source": "ai-soraydi typed-A T3",
    "weight": "defect",
    "severity": "common"
+  },
+  {
+   "id": "c3335",
+   "input": "yuk 2 tonna 12 kub",
+   "expected": {
+    "weightKg": 2000,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "weightKg 2000 (2 t × 1000), volumeM3 12",
+   "why": "CR-7 (dg2/critic-readers.json): a tonne was no unit to any reader — the cube landed and the weight was nobody's. Also the AI sotuvchi's only figure for a customer's «yuk 2 tonna 12 kub» (critic-agent.json).",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3336",
+   "input": "jami 2 tonna 12 kub",
+   "expected": {
+    "weightKg": 2000,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "weightKg 2000, volumeM3 12",
+   "why": "CR-7 (dg2/critic-readers.json): the same, as a totals line.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3337",
+   "input": "毛重 2吨 体积 12立方",
+   "expected": {
+    "weightKg": 2000,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "weightKg 2000 (2吨), volumeM3 12",
+   "why": "CR-7 (dg2/critic-readers.json): the Chinese line: no weight and no cube was read.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3338",
+   "input": "G.W. 1,136.5 kg, 7.19 CBM",
+   "expected": {
+    "weightKg": 1136.5,
+    "volumeM3": 7.19,
+    "ambiguous": []
+   },
+   "said": "weightKg 1136.5, volumeM3 7.19 — «1,136.5» is one number",
+   "why": "CR-7 (dg2/critic-readers.json): a weight written the packing-list way (comma groups AND a decimal point) was cut at the comma: no figure at all for the agent, «1.136 mi yoki 1136 mi?» at the table — it is neither.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3339",
+   "input": "jami 12,500.00 kg",
+   "expected": {
+    "weightKg": 12500,
+    "ambiguous": []
+   },
+   "said": "weightKg 12500",
+   "why": "CR-7 (dg2/critic-readers.json): «12,500.00» — the decimal point says the comma groups thousands.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3340",
+   "input": "jami 1'200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200 — an apostrophe between digit groups is a separator",
+   "why": "CR-7 (dg2/critic-readers.json): «jami 1'200 kg» read 200 kg: the apostrophe ended the number.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "defect"
+  },
+  {
+   "id": "c3341",
+   "input": "jami 12,500 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "12,500",
+      "decimal": 12.5,
+      "thousands": 12500
+     }
+    ]
+   },
+   "said": "weightKg null, asked «12,500 kg — 12.5 mi yoki 12500 mi?»",
+   "why": "The guard of T14's number rule: ONE comma group with no decimal still has two readings in somebody's Russian, and is still asked.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3342",
+   "input": "Sement 2 tonna 2000 kg",
+   "expected": {
+    "weightKg": 2000,
+    "ambiguous": []
+   },
+   "said": "weightKg 2000 — one weight said in two scales",
+   "why": "T14: «2 tonna» and «2000 kg» are one statement, not two figures.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "regression"
+  },
+  {
+   "id": "c3343",
+   "input": "jami 2 tonna 1500 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — two different weights answer nothing",
+   "why": "The one-distinct-figure rule holds across scales: 2000 kg and 1500 kg are two numbers.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "regression"
+  },
+  {
+   "id": "c3344",
+   "input": "Domkrat 5 tonna 20 dona",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "Domkrat 5 tonna",
+       "quantity": 20,
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no weight — «5 tonna» is what ONE jack lifts; one line «Domkrat 5 tonna» × 20",
+   "why": "Review JN-9: a capacity is no weight. The ruling names the lone letters («Domkrat 5T», «5 t»); spelled out beside a piece count the tonne is the same fact — 5000 kg for twenty jacks would be priced per kg.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3345",
+   "input": "chay 500 gr 2000 dona",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [],
+    "goods": {
+     "rows": [
+      {
+       "name": "chay 500 gr",
+       "quantity": 2000,
+       "weightKg": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no weight — 500 gr is one pack; one line «chay 500 gr» × 2000",
+   "why": "Review JN-9: beside a piece count a gram figure is what one piece is: read as the line's, two thousand packs weighed 0.5 kg.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3346",
+   "input": "jami 2 t",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — a lone «t» is not read in free material; the weight is asked",
+   "why": "Review JN-9: the single letters are capacities and generations far more often than weights. Read only in the ANSWER to the bot's own totals question (the table reads «jami 2 t» as 2000 kg there).",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3347",
+   "input": "Mato 180 gr/m2 500 kg",
+   "expected": {
+    "weightKg": 500,
+    "ambiguous": []
+   },
+   "said": "weightKg 500 — «180 gr/m2» is a density",
+   "why": "Review JN-9: never before «/» — a figure followed by a slash is a rate, not a weight.",
+   "source": "ai-soraydi typed-A T14",
+   "weight": "regression"
   }
  ],
  "intakeClientLabelCases": [

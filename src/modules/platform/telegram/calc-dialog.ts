@@ -887,7 +887,7 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
   }
   const netto = of('netto');
   if (netto.length > 0) {
-    out.push(`${quoted(netto)} — umumiy og‘irlik brutto (qadoq bilan) yoziladi, netto umumiyga yozilmadi.${onRow(`${netto[0]!.number} kg`)}`);
+    out.push(`${quoted(netto)} — umumiy og‘irlik brutto (qadoq bilan) yoziladi, netto umumiyga yozilmadi.${onRow(netto[0]!.figure)}`);
   }
   for (const [why, what] of [
     ['weight', 'og‘irlik'],
@@ -898,12 +898,12 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
     // The example is the seller's own figure, in his own unit («jami 2 tonna»).
     out.push(
       items.length > 1
-        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.text}».`
-        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.text}» deb qayta yozing.`,
+        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.figure}».`
+        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.figure}» deb qayta yozing.`,
     );
   }
   const row = of('row');
-  if (row.length > 0) out.push(`${quoted(row)} — umumiyga yozilmaydi (umumiyda faqat og‘irlik va hajm).${onRow(row[0]!.text)}`);
+  if (row.length > 0) out.push(`${quoted(row)} — umumiyga yozilmaydi (umumiyda faqat og‘irlik va hajm).${onRow(row[0]!.figure)}`);
   return out.join(' ');
 }
 

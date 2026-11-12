@@ -106,18 +106,15 @@ const SCALED_FIGURE = new RegExp(
  * …and the lone letters — «2 t», «2.5 MT», «500 g» — which are capacities and
  * generations far more often than weights («Fleshka 128G», «Domkrat 5 t»,
  * «2024 г»). Never glued to the digits (a space is REQUIRED), never before a
- * slash, and read only where the figure IS a weight: after a weight's label
- * on its line, or in the answer to the bot's own question about the totals
- * (`loneWeight` below).
+ * slash, and read ONLY in the answer to the bot's own question about the
+ * totals (`TypedTotalsOpts.totalsAnswer`), where nothing names goods. In
+ * free material they are not read at all — not even after a weight's label,
+ * which review JN-9 would allow: «G.W.: 2.5 MT» there stays unread and the
+ * weight is asked (the corpus pins it so, c3275).
  */
 const LONE_SCALED_FIGURE = new RegExp(
   String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})[ \t\u00a0\u202f]+(${scaledPattern('lone')})(?![\p{L}\d])(?!${GAP}/)`,
   'giu',
-);
-/** A weight's label — brutto or netto — closing the words before a figure: «G.W.: », «vazni », «Вес брутто — ». */
-const WEIGHT_LABEL_BEFORE = new RegExp(
-  String.raw`(?:^|[^\p{L}\d])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})${GAP}[:：=–—-]?${GAP}$`,
-  'iu',
 );
 
 /**
@@ -544,11 +541,6 @@ export function readTypedTotals(
     const [a, b] = lineAround(scan, at);
     return PIECES_FIGURE.test(scan.slice(a, b));
   };
-  const loneWeight = (at: number) => {
-    if (opts.totalsAnswer) return true;
-    const [a] = lineAround(text, at);
-    return WEIGHT_LABEL_BEFORE.test(text.slice(a, at));
-  };
   // …unless the line itself speaks of the whole shipment: «jami 2 tonna 300 dona».
   const ofShipment = (at: number) => {
     const [a, b] = lineAround(text, at);
@@ -556,7 +548,7 @@ export function readTypedTotals(
   };
   const tonnes: ScaledReader[] = [
     { figure: SCALED_FIGURE, when: (at) => opts.totalsAnswer === true || !besidePieces(at) || ofShipment(at) },
-    { figure: LONE_SCALED_FIGURE, when: loneWeight },
+    { figure: LONE_SCALED_FIGURE, when: () => opts.totalsAnswer === true },
   ];
   const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b), tonnes);
   // Customs-only: the netto stands for the total when nothing else is stated.

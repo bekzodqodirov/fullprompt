@@ -99,7 +99,9 @@ export interface TotalsLeft {
   why: 'row' | 'netto' | 'weight' | 'volume' | 'bare' | 'unit';
   /** As the seller wrote it — «300 dona», «netto 480 kg», «5.9 kubik», «7.19». */
   text: string;
-  /** The number alone, as written — what the refusal's example is built from. */
+  /** The figure without its label — «480 kg» of «netto 480 kg» — what an example is built from. */
+  figure: string;
+  /** The number alone, as written. */
   number: string;
   word?: string;
   near?: UnitAsk['near'];
@@ -355,20 +357,24 @@ function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLef
     if (unit === 'karobka') continue;
     const { number } = amount;
     if (amount.word === null || (unit === null && LABEL_WORD.test(amount.word))) {
-      out.push({ why: 'bare', text: number, number });
+      out.push({ why: 'bare', text: number, figure: number, number });
       continue;
     }
     const text = remainder.slice(amount.start, amount.end).replace(/\s+/gu, ' ').trim();
-    if (unit === null && scaledKg(amount.word)?.lone !== false) {
-      out.push({ why: 'unit', text, number, word: amount.word, near: nearOf(amount.word) });
-    } else if (unit === 'kg' || unit === null) {
-      // A kilo — or a tonne, a gram spelled out — the reading did not take.
+    // A tonne or a gram is a KILO figure here — the answer's reader reads the
+    // spelled word and the lone letter alike (`totalsAnswer`). Only a lone
+    // letter GLUED to its digits («2T») is read by nobody, and is asked.
+    const scale = unit === null ? scaledKg(amount.word) : null;
+    const kilos = unit === 'kg' || (scale !== null && !(scale.lone && !/\s/u.test(text)));
+    if (unit === null && !kilos) {
+      out.push({ why: 'unit', text, figure: text, number, word: amount.word, near: nearOf(amount.word) });
+    } else if (kilos) {
       const label =
         NETTO_LABEL_BEFORE.exec(remainder.slice(Math.max(0, amount.start - 24), amount.start))?.[1] ??
         NETTO_LABEL_AFTER.exec(remainder.slice(amount.end, amount.end + 16))?.[1];
-      out.push(label ? { why: 'netto', text: `${label} ${text}`, number } : { why: 'weight', text, number });
+      out.push(label ? { why: 'netto', text: `${label} ${text}`, figure: text, number } : { why: 'weight', text, figure: text, number });
     } else {
-      out.push({ why: unit === 'm3' ? 'volume' : 'row', text, number });
+      out.push({ why: unit === 'm3' ? 'volume' : 'row', text, figure: text, number });
     }
   }
   return out;
@@ -488,6 +494,9 @@ function nameParts(raw: string): NameParts {
     .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
     // «1'200 dona»: the apostrophe sets a digit group off — one figure, never a model «1200» of the name (T14).
     .replace(/(?<=\d)['’ʼʻ](?=\d{3}(?!\d))/gu, '')
+    // …and a comma between two digits is the number's own — «2,5 kg», «1,136.5 kg»: the tokens
+    // below are cut at commas, and «Kurtka 2,5 kg» was «2» of the NAME and a «5 kg» of another row.
+    .replace(/(?<=\d),(?=\d)/gu, '.')
     // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
     // `parseLineAnswer` reads it — never a model number of «Sumka».
     .replace(/(\p{L})[-–—](\d[\d.,]*)(?=\s*([\p{L}²³]+))/gu, (m, letter: string, digits: string, unit: string) =>
