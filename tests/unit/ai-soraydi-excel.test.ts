@@ -564,6 +564,17 @@ describe('X2 — the carton count is the row’s packing, never its pieces (XLS-
     }
   });
 
+  it('a cell of thousands of characters is no package header, however many package words it holds', () => {
+    // A merged master repeated across a sheet (the corpus’ c1306, c1879) is text, not a header: asked of every such
+    // cell the packing’s tests cost seconds (fayl-oqish-reader’s long-strings sheet: 2.9 s before them, 5 s with).
+    const master = `CTNS CBM/CTN Carton size ${'x'.repeat(30_000)}`;
+    const row = first(['Description', 'QTY', master, 'CBM'], ['Chair', 100, 10, 0.5]);
+    expect([row.quantity, row.volumeM3, row.packing]).toEqual([100, 0.5, undefined]);
+    // The longest header a real list writes is far inside the bound, and is read.
+    const bilingual = first(['Description', 'QTY', 'Количество мест / Number of packages / 箱数', 'CBM'], ['Chair', 100, 10, 0.5]);
+    expect([bilingual.quantity, bilingual.packing]).toEqual([100, packed({ cartons: 10 })]);
+  });
+
   it('cartons stated once over two lines (a merged cell) stay on the line that states them', () => {
     // «Chair red 60 | 10 CTNS | 0.05» then «Chair blue 40» with both cells empty: ten cartons hold both colours.
     const rows = landed(['Description', 'QTY', 'CTNS', 'CBM/CTN'], ['Chair red', 60, 10, 0.05], ['Chair blue', 40, '', '']);

@@ -715,6 +715,16 @@ const BARE_PACKAGES =
   /(?<![\p{L}])(?:ctns?|cartons?|pkgs?|packages?|короб\p{L}*|мест(?:[аоу]|ами)?|mesta|korobka\p{L}*|karobka\p{L}*|karopka\p{L}*|quti\p{L}*|қути\p{L}*)(?![\p{L}])|箱数|包数/iu;
 const NUMBER_OF = /(?<![\p{L}])(?:nos?|num|number|qty|quantity)\.?\s+of(?![\p{L}])/iu;
 const NUMBER_LABEL = /(?<![\p{L}])(?:nos?|num|number|nr|номер\p{L}*|raqam\p{L}*)(?![\p{L}])|[№#]|箱号|件号|编号/iu;
+/**
+ * The longest header the PACKING's tests read (X2-X4). A header that names a
+ * package, a side or a size is a few words — the longest real ones are a
+ * bilingual «Количество мест / Number of packages / 箱数» — while a cell of
+ * thousands of characters is a merged master repeated across the sheet
+ * (c1306, c1879): it names none of them, and asked of every such cell these
+ * tests cost the one app process seconds (the long-strings sheet of
+ * `fayl-oqish-reader.test.ts` read in 2.9 s before them and 5 s with them).
+ */
+const PACK_HEADER_MAX = 200;
 /** The carton word a package header counts in — its own («мест», «ctns», «karobka», «箱»), else «karobka». */
 function cartonWordOf(text: string): string {
   for (const word of foldKey(text).split(/[^\p{L}]+/u)) if (unitOf(word) === 'karobka') return word;
@@ -1988,7 +1998,8 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // vocabulary (`countsPackages`), whatever stands beside it. «Karobka soni»,
   // «Joy soni», «Кол-во мест, шт» alone landed ten cartons as ten pieces; so
   // did «CTN QTY» beside a «Price/pcs», which ranks below every count.
-  const packageCount = (c: (typeof counts)[number]) => (c.unit === null || c.unit === 'dona') && countsPackages(c.text);
+  const packageCount = (c: (typeof counts)[number]) =>
+    (c.unit === null || c.unit === 'dona') && c.text.length <= PACK_HEADER_MAX && countsPackages(c.text);
   if (chosen && packageCount(chosen)) {
     // A LONE «CTN QTY» counts cartons: the door's carton rule sends it to the
     // note, never into pieces. Never by «件数» / «总件数»: alone, that is the
@@ -2076,9 +2087,14 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     const cells = split === null ? sampled(i) : columnCells(rows, r, i, new Set([...skip, split]));
     return cells.length > 0 && cells.filter(test).length * 2 > cells.length;
   };
+  /** The header as the packing's tests read it: one past `PACK_HEADER_MAX` names nothing of theirs. */
+  const packHead = (i: number): string => {
+    const text = head(i);
+    return text.length > PACK_HEADER_MAX ? '' : text;
+  };
   const sidesAt = new Map<Side, { i: number; lead: string }>();
   header.forEach((_, i) => {
-    const side = taken.has(i) ? null : dimensionOf(head(i));
+    const side = taken.has(i) ? null : dimensionOf(packHead(i));
     if (side && !sidesAt.has(side.side) && mostly(i, (cell) => parseNumber(cell) !== null || SIDE_CELL.test(cellText(cell)))) {
       sidesAt.set(side.side, { i, lead: side.lead });
     }
@@ -2093,7 +2109,11 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
       of: three.map((side) => sizeOwnerOf(side.lead)).find((owner) => owner !== null) ?? null,
     };
   } else {
-    const at = findWhere(header, taken, (text, i) => namesSize(text) && mostly(i, (cell) => typeof cell === 'string' && parseSize(cell)?.size != null));
+    const at = findWhere(
+      header,
+      taken,
+      (text, i) => text.length <= PACK_HEADER_MAX && namesSize(text) && mostly(i, (cell) => typeof cell === 'string' && parseSize(cell)?.size != null),
+    );
     if (at !== null) size = { cols: [at], unit: sizeUnitOfHeader(head(at)), of: sizeOwnerOf(head(at)) };
   }
   if (size) for (const i of size.cols) taken.add(i);
@@ -2237,7 +2257,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // takes only what was nobody's — the columns passed over as one carton's
   // («CBM/CTN», «G.W./CTN», «PCS/CTN»), and the carton count itself.
   const perCarton = (i: number) => {
-    const text = head(i);
+    const text = packHead(i);
     return !taken.has(i) && PER_CARTON.test(text) && !MONEY_HEADER.test(text) && !moneyTotal(text) && !volumetricWeight(text);
   };
   const cubic = (text: string) => namesVolume(text) || VOLUME_WORD.test(text);
@@ -2269,8 +2289,8 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // unit before its package («PRS/CTN», «пар/кор», «m²/ctn») and «装箱数»,
   // which no quantity key names. The leftmost; its unit is the header's own.
   const holdsCount = (i: number) => {
-    const text = head(i);
-    if (taken.has(i) || MONEY_HEADER.test(text)) return false;
+    const text = packHead(i);
+    if (text === '' || taken.has(i) || MONEY_HEADER.test(text)) return false;
     if (packedCounts.includes(i) || PACKED_COUNT_HAN.test(text)) return true;
     const led = UNIT_PER_CARTON.exec(text)?.[1] ?? null;
     return led !== null && (led === '件' || ['dona', 'juft', 'm2', 'litr'].includes(unitOf(led) ?? ''));
@@ -2293,7 +2313,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     !namesSize(text);
   const cartonsAt =
     (packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null) ??
-    findWhere(header, taken, (text, i) => bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null));
+    findWhere(header, taken, (text, i) => text.length <= PACK_HEADER_MAX && bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null));
   return {
     name,
     tnved,
