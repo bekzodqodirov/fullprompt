@@ -16,15 +16,18 @@ import {
   type SheetText,
 } from './calc-intake';
 import {
+  carriedWords,
   fillsWords,
   foldInvoice,
   goodsNameKey,
   notedTotalsNote,
   packingFills,
   packingNote,
+  packingCarries,
   packingCoversHeld,
   packingOfHeld,
   packingTotals,
+  positionalCarries,
   positionalFills,
   provenOther,
   rowKindsOf,
@@ -35,6 +38,7 @@ import {
   totalsClashNote,
   withFileTotals,
   type GoodsFileMeta,
+  type Repack,
 } from './file-goods';
 import type { ForwardPart } from './task-draft';
 import { MAX_TELEGRAM_DOWNLOAD_BYTES } from './limits';
@@ -560,6 +564,14 @@ export function receiveGoodsSheet(
      * book, and a count kept twice would be read twice. Absent = none.
      */
     pictures?: number;
+    /**
+     * The kernel's carton arithmetic (`applyPacking`), for the packages a
+     * packing list or a duplicate row states for a goods row that has none
+     * (`packingCarries`, docs/AI-SORAYDI.md §3.2 X4 — the seam). The door
+     * that reads a file always hands it in (`answerIntakeFile`); absent — a
+     * caller from before — carries nothing, today's reading.
+     */
+    repack?: Repack;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
@@ -634,19 +646,23 @@ export function receiveGoodsSheet(
     say: lines.join('\n'),
   });
   // A packing list's totals: the collection's, or — in a top-up — the note's.
-  const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number) => {
+  const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number, carried = 0) => {
     const totals = packingTotals(m, rows);
     if (topUp) {
       return {
         patch: {},
-        lines: [notedTotalsNote(m.label, totals), ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : [])],
+        lines: [
+          notedTotalsNote(m.label, totals),
+          ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : []),
+          ...(carried > 0 ? [`📄 ${m.label} — ${carriedWords(carried)}`] : []),
+        ],
       };
     }
     const kept = withFileTotals(state.fileTotals ?? null, { ...totals, label: m.label, at: m.at ?? at });
     return {
       patch: { fileTotals: kept.fileTotals },
       lines: [
-        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled),
+        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried),
         ...(kept.clash && state.fileTotals ? [totalsClashNote(m.label, state.fileTotals.label)] : []),
       ],
     };
@@ -690,9 +706,12 @@ export function receiveGoodsSheet(
   }
   const kinds = rowKindsOf(files, held.length);
   if (packing && packingOfHeld(held, kinds, goods, meta.weightKind)) {
-    // The same goods again: totals and the netto gaps, never a row.
-    const fill = packingFills(held, kinds, goods, meta.weightKind);
-    const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled);
+    // The same goods again: totals, the packages each row states, and the
+    // netto gaps — never a row. The packages first (`packingCarries`): a
+    // weight a carried netto computes is the bot's, never a «filled» one.
+    const carry = packingCarries(held, kinds, goods, meta.weightKind, sheet.repack);
+    const fill = packingFills(carry.goods, kinds, goods, meta.weightKind);
+    const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled, carry.carried);
     return answer(
       {
         invoiceGoods: fill.goods,
@@ -731,8 +750,11 @@ export function receiveGoodsSheet(
     // The packing list came first: this invoice takes the goods role, and the
     // packing list's rows become its totals and its netto gap fills — under
     // the packing list's own receipt mark (PF-ADV-9).
-    const fill = packingFills(goods, Array.from({ length: goods.length }, () => meta.weightKind), held, first.weightKind);
-    const totals = totalsOf(first, held, `${label} dan`, fill.filled);
+    const invoiceKinds = Array.from({ length: goods.length }, () => meta.weightKind);
+    // …and its rows take the packing list's packages, as they would the other way round.
+    const carry = packingCarries(goods, invoiceKinds, held, first.weightKind, sheet.repack);
+    const fill = packingFills(carry.goods, invoiceKinds, held, first.weightKind);
+    const totals = totalsOf(first, held, `${label} dan`, fill.filled, carry.carried);
     return answer(
       {
         invoiceGoods: fill.goods,
@@ -746,7 +768,7 @@ export function receiveGoodsSheet(
   // Anything else is compared row by row — an invoice, and a packing-shaped
   // list whose rows are not the held goods: another factory's own list, whose
   // goods are new goods and whose totals are not the shipment's (PF-ADV-5).
-  const fold = foldInvoice(held, kinds, goods, meta.weightKind, label);
+  const fold = foldInvoice(held, kinds, goods, meta.weightKind, label, ' — ', sheet.repack);
   return answer(
     {
       invoiceGoods: fold.goods,
@@ -766,8 +788,8 @@ export function receiveGoodsSheet(
  * (as-built review SHEETS-3): its netto gaps are filled, its totals are not the
  * shipment's and are not taken.
  */
-function partOfHeldNote(label: string, filled: number): string {
-  const fills = filled > 0 ? ` ${fillsWords(filled)}` : '';
+function partOfHeldNote(label: string, filled: number, carried = 0): string {
+  const fills = `${filled > 0 ? ` ${fillsWords(filled)}` : ''}${carried > 0 ? ` ${carriedWords(carried)}` : ''}`;
   return `📄 ${label} — ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk uchun olinmadi.${fills}`;
 }
 
@@ -846,6 +868,7 @@ function receiveFurtherSheet(
       rows: NonNullable<IntakeState['invoiceGoods']>,
       rowsFrom: string,
       filled: number,
+      carried?: number,
     ) => { patch: Partial<IntakeState>; lines: string[] };
     ownText: (m: GoodsFileMeta) => SheetText[];
   },
@@ -868,7 +891,9 @@ function receiveFurtherSheet(
     // writes no totals anyway (its note carries the list's own).
     const covers = ofHeld && (topUp || files.length <= 1 || packingCoversHeld(held, kinds, goods, m.weightKind));
     if (ofHeld && !covers) {
-      const fill = packingFills(held, kinds, goods, m.weightKind);
+      // A part's packages are its rows' own still (`packingCarries`); only its totals are not the list's.
+      const carry = packingCarries(held, kinds, goods, m.weightKind, sheet.repack);
+      const fill = packingFills(carry.goods, kinds, goods, m.weightKind);
       // Totals a packing list gave BEFORE the fold that made this list a part
       // (review of the fixes RF-TOTALS-1, «[CI A, PL A] then [CI B, PL B]»):
       // factory B's invoice folds on the main path, which drops nothing, so
@@ -886,7 +911,7 @@ function receiveFurtherSheet(
           ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
           ...(stale ? { fileTotals: null } : {}),
         },
-        [partOfHeldNote(m.label, fill.filled), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
+        [partOfHeldNote(m.label, fill.filled, carry.carried), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
       );
     }
     // R1 only while the held list IS the goods sheet's rows, place for place:
@@ -900,8 +925,9 @@ function receiveFurtherSheet(
       held.every((h, i) => goodsNameKey(h.name) === goodsNameKey(further.goodsRows[i]!.name)) &&
       samePositions(further.goodsRows, goods);
     if (covers || inLine) {
-      const fill = covers ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
-      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled);
+      const carry = covers ? packingCarries(held, kinds, goods, m.weightKind, sheet.repack) : positionalCarries(held, goods, sheet.repack);
+      const fill = covers ? packingFills(carry.goods, kinds, goods, m.weightKind) : positionalFills(carry.goods, goods, m.weightKind);
+      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled, carry.carried);
       // The text keeps the FILE's label: a later file that squeezes it names
       // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
       // name is the text's first line for the model.
@@ -924,7 +950,7 @@ function receiveFurtherSheet(
   const pastCap = further.itemCap !== undefined && held.length + goods.length > further.itemCap;
   const fold =
     !pastCap && provenOther(held, goods, kept)
-      ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ')
+      ? foldInvoice(held, kinds, goods, m.weightKind, `${label}, ${sheetName(further.sheet)} varag‘idan`, ' ', sheet.repack)
       : null;
   // Another factory's goods past the queue's limit are not folded (as-built
   // review REGRESSION-1): one file was bounded at 500 rows and the queue
@@ -1151,6 +1177,10 @@ async function answerIntakeFile(
   // Everything the file states reaches the landing (2026-10-09, P1.6) —
   // through the one mapping the landing's own test reads.
   const { invoiceFacts } = await import('../../wms/calc/intake');
+  const { applyPacking } = await import('../../wms/calc/carton-math');
+  // The kernel for the packages one file states for another's rows (the seam,
+  // docs/AI-SORAYDI.md §3.2 X4): every step of this file is handed it.
+  const repack: Repack = (row) => applyPacking(row).line;
   const { MAX_GOODS_ROWS } = await import('../../wms/deals/goods-import');
   const { MAX_CALC_ITEMS } = await import('../../wms/calc/service');
   // The reader stops at its ceiling and says so (`stoppedShort`, as-built
@@ -1194,6 +1224,7 @@ async function answerIntakeFile(
     columns: sheet.notes,
     // …and how many pictures the workbook carries (X10).
     pictures: sheet.pictures,
+    repack,
     ...capOf(sheet.stoppedShort),
   };
   if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);
@@ -1226,6 +1257,7 @@ async function answerIntakeFile(
         rows: m.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
       },
       columns: m.notes,
+      repack,
       ...capOf(m.stoppedShort),
       further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, itemCap: MAX_CALC_ITEMS },
     })),
