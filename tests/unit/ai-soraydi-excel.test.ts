@@ -338,3 +338,51 @@ describe('X0 — a sheet handed to the model keeps its columns (CR-1, review JN-
     });
   });
 });
+
+describe('X1 — «PKGS» is not kilos: the unit is a word, never a substring (XLS-3)', () => {
+  /** The line of a sheet whose third column is headed `header`, beside a gross-weight column. */
+  const beside = (header: string) => first(['Description', 'Qty', header, 'G.W. (KG)'], ['Chair', 100, 10, 120]);
+
+  it('a header with «kg» INSIDE a word is no weight: the gross column beside it is the line’s', () => {
+    for (const header of ['PKGS', 'PKG', 'Pkgs.', 'NO. OF PKGS', 'Total PKGS', 'PKGS QTY', 'BKG NO', 'Background']) {
+      // 120 is «G.W. (KG)»; 10 stood in the column the «kg» inside the word used to claim.
+      expect(beside(header).weightKg, header).toBe(120);
+    }
+  });
+
+  it('…and alone it gives the line no weight at all — the weight is asked, never 10 «kg»', () => {
+    const row = first(['Description', 'Qty', 'PKGS'], ['Chair', 100, 10]);
+    expect([row.quantity, row.weightKg]).toEqual([100, null]);
+  });
+
+  it('kilos as a WORD stay the weight, however a sheet spells them', () => {
+    for (const header of ['KG', 'KGS', 'Kg', 'kgs.', 'кг', 'Кг.', 'KGM', 'Weight(KGS)', 'WEIGHT/KG', '重量KG', '总KG', 'Jami kg', '25 KG NET']) {
+      const row = first(['Description', 'Qty', header], ['Chair', 100, 150]);
+      expect(row.weightKg, header).toBe(150);
+    }
+  });
+
+  it('a package count that names its package’s size is still a count, never a weight candidate', () => {
+    for (const header of ['BAGS (25KG)', 'PKGS (KG)', 'CTNS 25KG', 'Мест (кг)', 'Мешков по 50 кг', 'Qoplar (50 kg)', 'Коробок, кг', '袋 (25KG)']) {
+      expect(beside(header).weightKg, header).toBe(120);
+      expect(first(['Description', 'Qty', header], ['Chair', 100, 10]).weightKg, header).toBeNull();
+    }
+  });
+
+  it('…while a WEIGHT that mentions its packages stays one', () => {
+    for (const header of ['Вес мест, кг', 'Gross weight of packages (kg)', 'Bag weight, kg', 'Weight of cartons', 'Karobkalar vazni']) {
+      expect(first(['Description', 'Qty', header], ['Chair', 100, 150]).weightKg, header).toBe(150);
+    }
+  });
+
+  it('«TOTAL PKGS» is not the line’s money either, and the sheet is still a packing list', () => {
+    const read = sheet(['Description', 'TOTAL QTY', 'TOTAL PKGS', 'TOTAL G.W.'], ['Chair', 100, 10, 120]);
+    expect([read.goods[0]!.amount, read.goods[0]!.weightKg, read.shape]).toEqual([null, 120, 'packing']);
+  });
+
+  it('a net column named by «NET» and the unit word is still the net weight (S6)', () => {
+    const read = sheet(['Description', 'Qty', 'GROSS (KG)', 'NET (KG)'], ['Chair', 100, 120, 110]);
+    // The line's weight is the netto 110; the sheet's brutto the 120 beside it.
+    expect([read.goods[0]!.weightKg, read.weightKind, read.grossKg]).toEqual([110, 'net', 120]);
+  });
+});

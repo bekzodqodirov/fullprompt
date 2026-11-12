@@ -45559,6 +45559,520 @@
    "why": "JN-13: as the heaviest «plain» weight column the chargeable kilos became the line's weight (a plain column outranks a gross one). Base: weightKg 400 / 200.",
    "source": "ai-soraydi P-excel X6 follow-up (JN-13)",
    "weight": "defect"
+  },
+  {
+   "id": "c3422",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "PKGS",
+     "G.W.(KGS)",
+     "MEAS.(CBM)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ],
+    [
+     3,
+     "Men shoes",
+     300,
+     30,
+     330,
+     2.1
+    ],
+    [
+     null,
+     "TOTAL",
+     980,
+     60,
+     710,
+     3.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Men shoes",
+       "weightKg": 330,
+       "volumeM3": 2.1
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8,
+    "shape": "packing"
+   },
+   "said": "«PKGS» counts packages: the line weights are the G.W. column's 120 / 260 / 330 kg (Σ 710), never the 10 / 20 / 30 packages",
+   "why": "XLS-3: «kg» is inside «pkgs», header keys match as substrings, and a «plain» weight column outranks a gross one — per-kg customs was computed on 60 kg for a 710 kg shipment. Base: weightKg 10 / 20 / 30.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3423",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "PKG",
+     "G.W. (KG)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7
+   },
+   "said": "«PKG» is the package count too: 120 / 260 kg from «G.W. (KG)» (Σ 380)",
+   "why": "XLS-3, the singular. Base: weightKg 10 / 20.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3424",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "NO. OF PKGS",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7
+   },
+   "said": "«NO. OF PKGS» is a count of packages, never kilos",
+   "why": "XLS-3. Base: weightKg 10 / 20.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3425",
+   "input": [
+    [
+     "Description",
+     "TOTAL QTY",
+     "TOTAL PKGS",
+     "TOTAL G.W.",
+     "TOTAL CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 200,
+       "weightKg": 120,
+       "volumeM3": 0.5,
+       "amount": null
+      },
+      {
+       "name": "Kids toy plastic",
+       "quantity": 480,
+       "weightKg": 260,
+       "volumeM3": 1.2,
+       "amount": null
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7,
+    "shape": "packing"
+   },
+   "said": "«TOTAL PKGS» is neither the line's weight nor its money: 120 / 260 kg from «TOTAL G.W.», no amount, a packing list",
+   "why": "XLS-3 under a «TOTAL» prefix: the «kg» inside «pkgs» also kept the header from reading as a money total. Base: weightKg 10 / 20.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3426",
+   "input": [
+    [
+     "BKG NO",
+     "Description",
+     "QTY",
+     "G.W. (KG)"
+    ],
+    [
+     20261101,
+     "Ladies jacket",
+     200,
+     120
+    ],
+    [
+     20261102,
+     "Kids toy plastic",
+     480,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380
+   },
+   "said": "a booking number («BKG NO») is no weight: 120 / 260 kg",
+   "why": "XLS-3: «kg» inside «BKG». Base: weightKg 20261101 / 20261102 — the booking numbers as kilos.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3427",
+   "input": [
+    [
+     "Description",
+     "BAGS (25KG)",
+     "G.W. (KG)"
+    ],
+    [
+     "Rice",
+     40,
+     1010
+    ],
+    [
+     "Sugar",
+     20,
+     505
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Rice",
+       "weightKg": 1010
+      },
+      {
+       "name": "Sugar",
+       "weightKg": 505
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 1515
+   },
+   "said": "a package header that names the bag's size — «BAGS (25KG)» — counts bags: the weights are 1010 / 505 kg (Σ 1515), never 40 / 20",
+   "why": "X1: a package-count header is never a weight candidate. Base: weightKg 40 / 20.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3428",
+   "input": [
+    [
+     "Наименование",
+     "Мест (кг)",
+     "Вес брутто, кг"
+    ],
+    [
+     "Рис",
+     40,
+     1010
+    ],
+    [
+     "Сахар",
+     20,
+     505
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Рис",
+       "weightKg": 1010
+      },
+      {
+       "name": "Сахар",
+       "weightKg": 505
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 1515
+   },
+   "said": "«Мест (кг)» counts places; the weight is «Вес брутто, кг»",
+   "why": "X1, the Russian header. Base: weightKg 40 / 20.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3429",
+   "input": [
+    [
+     "Description",
+     "PCS",
+     "KGS",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     120,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a bare «KGS» column is the weight",
+   "why": "X1's guard: the unit as a whole word.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3430",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "总KG",
+     "体积"
+    ],
+    [
+     "折叠椅",
+     480,
+     300,
+     2.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«总KG» — the unit glued to a Chinese word — is still kilos",
+   "why": "X1's guard: a Han character beside «KG» is no letter of its word.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3431",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес (кг.)",
+     "Объем"
+    ],
+    [
+     "Куртка",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Вес (кг.)» is the weight",
+   "why": "X1's guard.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3432",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Gross, kg",
+     "Net, kg"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     120,
+     110
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 110
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 120
+   },
+   "said": "«Gross, kg | Net, kg»: the line's weight is the net 110, the brutto 120",
+   "why": "X1's guard on S6's rule («net» as a word beside a weight word).",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3433",
+   "input": [
+    [
+     "Tovar",
+     "Soni",
+     "Kg",
+     "Kub"
+    ],
+    [
+     "Kurtka",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Kg» alone is the weight",
+   "why": "X1's guard.",
+   "source": "ai-soraydi P-excel X1 (XLS-3)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [
