@@ -1,6 +1,10 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
+import { foldInvoice, packingFills, packingTotals, positionalFills } from '@/modules/platform/telegram/file-goods';
+import { applyPacking, emptyPacking, type Packing } from '@/modules/wms/calc/carton-math';
+import { invoiceFacts, landingItems } from '@/modules/wms/calc/intake';
 import { fitSheetRows } from '@/modules/wms/calc/intake-ai';
+import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { SHEET_TEXT_BUDGET, readGoodsFile, sheetsAsText } from '@/modules/wms/deals/goods-file';
 import { CoverMask, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 import { readGoodsFileCases } from './fixtures/intake-corpus';
@@ -473,5 +477,528 @@ describe('X7 — the cube and weight headers nobody mapped (XLS-7, XLS-8)', () =
       const row = under(header);
       expect([row.volumeM3, row.weightKg], header).toEqual([null, null]);
     }
+  });
+});
+
+/** A packing as the reader writes it: every figure empty but the ones the sheet states. */
+const packed = (figures: Partial<Packing>): Packing => ({ ...emptyPacking('file'), ...figures });
+/** The rows as the calc door lands them — the kernel's arithmetic done — each with the note the VED reads on the card. */
+const landed = (header: Cell[], ...rows: Cell[][]) => {
+  const facts = invoiceFacts(sheet(header, ...rows).goods);
+  const items = landingItems({ goods: facts });
+  return facts.map((g, i) => ({ ...g, landedNote: items[i]!.note }));
+};
+
+describe('X2 — the carton count is the row’s packing, never its pieces (XLS-9)', () => {
+  it('a bare package header beside a piece column: the pieces stay the count, the cartons go to the packing', () => {
+    // «QTY 100 | <header> 10 | G.W. 50»: 100 pieces in 10 cartons weighing 50 kg — nothing multiplied here.
+    for (const header of ['CTNS', 'CTN', 'Cartons', 'PKGS', 'Packages', 'NO. OF CTNS', '箱数', '总箱数', 'Мест', 'Мест (кор)', 'Mesta', 'Korobka', 'Karobka', 'Quti', 'Коробок']) {
+      const row = first(['Description', 'QTY', header, 'G.W.'], ['Chair', 100, 10, 50]);
+      expect([row.quantity, row.unit, row.weightKg, row.packing], header).toEqual([100, null, 50, packed({ cartons: 10 })]);
+    }
+  });
+
+  it('a COUNT header that counts packages is the packing’s too — and «件数» only beside a piece column', () => {
+    for (const header of ['Кол-во мест', 'Количество коробок', 'Karobka soni', 'Joy soni', 'QTY (CTNS)', 'Qty of cartons', '件数']) {
+      const row = first(['Description', 'QTY', header, 'G.W.'], ['Chair', 100, 10, 50]);
+      expect([row.quantity, row.unit, row.packing], header).toEqual([100, null, packed({ cartons: 10 })]);
+    }
+    // «数量 | 件数»: the other column is the pieces, so 件 counts the packages here…
+    const han = first(['品名', '数量', '件数', '毛重'], ['椅子', 100, 10, 50]);
+    expect([han.quantity, han.packing]).toEqual([100, packed({ cartons: 10 })]);
+    // …and alone it is the PIECES, as it always was (the corpus’ c1778, c2453): no packing at all.
+    const alone = first(['Description', '件数', 'G.W.'], ['Chair', 10, 50]);
+    expect([alone.quantity, alone.unit, alone.packing]).toEqual([10, null, undefined]);
+  });
+
+  it('the lone-column rule is the rank’s vocabulary: a package count standing alone lands as cartons, never as pieces', () => {
+    // The reader keeps the count under the header’s own carton word (the deal import and the VED’s paste read
+    // that); the calc door lands NO piece count and says the cartons once, as the packing.
+    for (const [header, word] of [
+      ['Karobka soni', 'karobka'],
+      ['Joy soni', 'joy'],
+      ['Кол-во мест', 'мест'],
+      ['Количество коробок', 'коробок'],
+      ['QTY (CTNS)', 'ctns'],
+    ] as const) {
+      const row = first(['Description', header, 'G.W.'], ['Chair', 10, 50]);
+      expect([row.quantity, row.unit, row.packing], header).toEqual([10, word, packed({ cartons: 10 })]);
+      const [fact] = landed(['Description', header, 'G.W.'], ['Chair', 10, 50]);
+      expect([fact!.quantity, fact!.unit, fact!.weightKg, fact!.landedNote], header).toEqual([null, null, 50, '📦 10 karobka — fayldan']);
+    }
+    // A bare header carries no quantity key: it never was a count, and its number stood on no row at all.
+    for (const header of ['CTNS', 'Мест', '箱数']) {
+      const row = first(['Description', header, 'G.W.'], ['Chair', 10, 50]);
+      expect([row.quantity, row.unit, row.packing], header).toEqual([null, null, packed({ cartons: 10 })]);
+      expect(landed(['Description', header, 'G.W.'], ['Chair', 10, 50])[0]!.landedNote, header).toBe('📦 10 karobka — fayldan');
+    }
+  });
+
+  it('a carton’s NUMBER, a column of words and a word that merely holds «мест» count no cartons', () => {
+    for (const [header, cell] of [
+      ['CTN NO.', 7],
+      ['Carton No.', 7],
+      ['箱号', 7],
+      ['№ места', 7],
+      ['Packages', 'wooden case'],
+      ['Вместимость', 7],
+      ['Упаковка', 7],
+      ['Packing', 'carton'],
+    ] as [string, Cell][]) {
+      const row = first(['Description', 'QTY', header, 'CBM'], ['Chair', 100, cell, 0.5]);
+      expect([row.quantity, row.volumeM3, row.packing], header).toEqual([100, 0.5, undefined]);
+    }
+    // «Вес мест, кг» names the packages and is a WEIGHT: the 7 is kilos, and no carton count.
+    const weight = first(['Description', 'QTY', 'Вес мест, кг', 'CBM'], ['Chair', 100, 7, 0.5]);
+    expect([weight.weightKg, weight.packing]).toEqual([7, undefined]);
+  });
+
+  it('the cell: a glued carton word and a thousands comma are read; a count that is no whole carton is SAID, never rounded', () => {
+    const cell = (value: Cell) => first(['Description', 'QTY', 'CTNS', 'CBM'], ['Chair', 100, value, 0.5], ['Table', 50, 5, 0.25], ['Desk', 20, 2, 0.1]);
+    for (const value of ['10 CTNS', '10ctns', '10 кор', '10箱']) expect(cell(value).packing, value).toEqual(packed({ cartons: 10 }));
+    // A count is whole, so «1,500» under a carton header is fifteen hundred.
+    expect(cell('1,500').packing).toEqual(packed({ cartons: 1500 }));
+    for (const value of [2.5, 0, -3, '10 pcs', '10/12', '3 pallets'] as Cell[]) {
+      const row = cell(value);
+      expect([row.packing, row.note, row.quantity], String(value)).toEqual([undefined, `karobka soni «${value}» — aniq emas`, 100]);
+    }
+  });
+
+  it('cartons stated once over two lines (a merged cell) stay on the line that states them', () => {
+    // «Chair red 60 | 10 CTNS | 0.05» then «Chair blue 40» with both cells empty: ten cartons hold both colours.
+    const rows = landed(['Description', 'QTY', 'CTNS', 'CBM/CTN'], ['Chair red', 60, 10, 0.05], ['Chair blue', 40, '', '']);
+    // 10 × 0.05 = 0.5 m³, said once; the second line gains nothing — 0.5 m³ in all, never 1.
+    expect(rows.map((g) => [g.quantity, g.volumeM3, g.packing?.cartons ?? null])).toEqual([
+      [60, 0.5, 10],
+      [40, null, null],
+    ]);
+  });
+});
+
+describe('X2 — what ONE carton measures, weighs and holds (XLS-4, DIM-7; review JR-1)', () => {
+  const beside = (header: string, value: Cell = 0.05) => sheet(['Description', 'QTY', 'CTNS', header], ['Chair', 100, 10, value]);
+
+  it('one carton’s cube is copied, the line’s own cube stays empty: the reader multiplies nothing', () => {
+    for (const header of ['CBM/CTN', 'MEAS./CTN (CBM)', '单箱体积', '每箱体积', '体积/箱', 'Объем 1 места', 'Объём на 1 кор', 'CBM per carton']) {
+      const row = beside(header).goods[0]!;
+      expect([row.volumeM3, row.packing], header).toEqual([null, packed({ cartons: 10, m3PerCarton: 0.05 })]);
+    }
+    // The header’s own unit (X6): 50 000 cm³ ÷ 1 000 000 = 0.05 m³ a carton.
+    expect(beside('Volume/ctn (cm3)', 50000).goods[0]!.packing).toEqual(packed({ cartons: 10, m3PerCarton: 0.05 }));
+  });
+
+  it('a PIECE’s cube, or a mark that may be either, is nobody’s: the cartons are kept and nothing is multiplied', () => {
+    for (const header of ['CBM/PCS', 'CBM each', '单件体积', '体积/件']) {
+      const row = beside(header).goods[0]!;
+      expect([row.volumeM3, row.packing], header).toEqual([null, packed({ cartons: 10 })]);
+      expect(landed(['Description', 'QTY', 'CTNS', header], ['Chair', 100, 10, 0.05])[0]!.volumeM3, header).toBeNull();
+    }
+  });
+
+  it('one carton’s weight keeps the KIND its header names — and the sheet’s weight is of that kind', () => {
+    const kinds: [string, 'gross' | 'net' | null, 'gross' | 'net' | 'plain'][] = [
+      ['G.W./CTN', 'gross', 'gross'],
+      ['毛重/箱', 'gross', 'gross'],
+      ['单箱毛重', 'gross', 'gross'],
+      ['Вес брутто 1 места', 'gross', 'gross'],
+      ['G.W. per carton', 'gross', 'gross'],
+      ['N.W./CTN', 'net', 'net'],
+      ['净重/箱', 'net', 'net'],
+      ['单箱净重', 'net', 'net'],
+      ['Вес нетто 1 места', 'net', 'net'],
+      ['KGS/CTN', null, 'plain'],
+      ['Вес 1 места', null, 'plain'],
+      ['Weight/ctn', null, 'plain'],
+    ];
+    for (const [header, kind, sheetKind] of kinds) {
+      const parsed = beside(header, 12.5);
+      expect([parsed.goods[0]!.weightKg, parsed.goods[0]!.packing, parsed.weightKind], header).toEqual([
+        null,
+        packed({ cartons: 10, kgPerCarton: 12.5, kgPerCartonKind: kind }),
+        sheetKind,
+      ]);
+    }
+    // One PIECE’s weight is no carton’s: no weight in the packing, and the sheet has no weight column at all.
+    for (const header of ['G.W./PCS', '单重', '毛重/件']) {
+      const parsed = beside(header, 12.5);
+      expect([parsed.goods[0]!.packing, parsed.weightKind], header).toEqual([packed({ cartons: 10 }), null]);
+    }
+  });
+
+  it('with both on the sheet the NET one is the packing’s; the gross is said on the note only where no line gross stands', () => {
+    const both = first(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'G.W./CTN'], ['Chair', 100, 10, 11, 12.5]);
+    expect([both.packing, both.note]).toEqual([packed({ cartons: 10, kgPerCarton: 11, kgPerCartonKind: 'net' }), '«G.W./CTN»: 12.5']);
+    // Beside the lines’ own «N.W.» and «G.W.» the per-carton gross is noise: the note stays empty.
+    const totals = first(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'G.W./CTN', 'N.W.', 'G.W.'], ['Chair', 100, 10, 11, 12.5, 110, 125]);
+    expect([totals.weightKg, totals.note, totals.packing?.kgPerCartonKind]).toEqual([110, null, 'net']);
+  });
+
+  it('what one carton HOLDS is counted in the unit its header names (JR-1) — a pair is never a piece', () => {
+    const holds: [string, Packing['perCartonUnit']][] = [
+      ['PCS/CTN', undefined],
+      ['QTY/CTN', undefined],
+      ['шт в коробке', undefined],
+      ['装箱数', undefined],
+      ['入数', undefined],
+      ['PRS/CTN', 'juft'],
+      ['пар/кор', 'juft'],
+      ['pairs per carton', 'juft'],
+      ['Кол-во в коробке, пар', 'juft'],
+      ['Soni (juft) har biri', 'juft'],
+      ['双/箱', 'juft'],
+      ['每箱双数', 'juft'],
+      ['m²/ctn', 'm2'],
+      ['m2/box', 'm2'],
+      ['L/CTN', 'litr'],
+    ];
+    for (const [header, unit] of holds) {
+      const row = first(['Description', 'CTNS', header, 'G.W.'], ['Shoes', 10, 12, 80]);
+      expect([row.quantity, row.packing], header).toEqual([null, packed({ cartons: 10, pcsPerCarton: 12, ...(unit ? { perCartonUnit: unit } : {}) })]);
+      // The door: 10 cartons × 12 = 120 — PIECES under a piece header, and the law’s measure under any other.
+      const [fact] = landed(['Description', 'CTNS', header, 'G.W.'], ['Shoes', 10, 12, 80]);
+      expect([fact!.quantity, fact!.measureUnit ?? null, fact!.measureQty ?? null], header).toEqual(unit ? [null, unit, 120] : [120, null, null]);
+    }
+  });
+
+  it('a header naming no unit counts what the ROW counts in: «Unit: pairs» beside «QTY/CTN» is pairs a carton', () => {
+    const header = ['Description', 'Unit', 'CTNS', 'QTY/CTN', 'G.W.'];
+    expect(first(header, ['Shoes', 'pairs', 10, 12, 80]).packing).toEqual(packed({ cartons: 10, pcsPerCarton: 12, perCartonUnit: 'juft' }));
+    // …and a row counting pieces keeps pieces.
+    expect(first(header, ['Shoes', 'pcs', 10, 12, 80]).packing).toEqual(packed({ cartons: 10, pcsPerCarton: 12 }));
+  });
+
+  it('«QTY/CTNS» still counts the cartons themselves (FR-REGR-6) — and now multiplies the «PCS/CTN» beside it', () => {
+    const header = ['Description', 'QTY/CTNS', 'PCS/CTN', 'G.W.'];
+    const row = first(header, ['Shoes', 10, 12, 80]);
+    expect([row.quantity, row.unit, row.packing]).toEqual([10, 'ctns', packed({ cartons: 10, pcsPerCarton: 12 })]);
+    // 10 × 12 = 120 pieces: the carton count never lands as the pieces, the product does.
+    const [fact] = landed(header, ['Shoes', 10, 12, 80]);
+    expect([fact!.quantity, fact!.unit, fact!.landedNote]).toEqual([120, null, '📦 10 karobka · 12 dona/karobka — fayldan · soni hisoblangan: 10 × 12 = 120 dona']);
+  });
+
+  it('a per-carton cell the reader cannot use is said on the row, and nothing is multiplied from it', () => {
+    const noted = (header: string, value: Cell, good: Cell) => sheet(['Description', 'QTY', 'CTNS', header], ['Chair', 100, 10, value], ['Table', 50, 5, good]).goods[0]!;
+    // Litres under a cubic-metre header, a weight in pounds, a count in another unit, a zero: each kept as written.
+    expect(noted('CBM/CTN', '50 l', 0.12).note).toBe('1 karobka hajmi «50 l» — aniq emas');
+    expect(noted('CBM/CTN', 0, 0.12).note).toBe('1 karobka hajmi «0» — aniq emas');
+    expect(noted('G.W./CTN', '12.5 lbs', 30).note).toBe('1 karobka og‘irligi «12.5 lbs» — aniq emas');
+    expect(noted('PCS/CTN', '12 prs', 6).note).toBe('1 karobkadagi soni «12 prs» — aniq emas');
+    for (const [header, value, good] of [['CBM/CTN', '50 l', 0.12], ['G.W./CTN', '12.5 lbs', 30], ['PCS/CTN', '12 prs', 6]] as const) {
+      expect(noted(header, value, good).packing, header).toEqual(packed({ cartons: 10 }));
+    }
+    // A unit the cell glues on in the header’s own unit is read: «0.05 m3», «12.5 kg», a decimal comma.
+    expect(noted('CBM/CTN', '0.05 m3', 0.12).packing).toEqual(packed({ cartons: 10, m3PerCarton: 0.05 }));
+    expect(noted('CBM/CTN', '0,05', 0.12).packing).toEqual(packed({ cartons: 10, m3PerCarton: 0.05 }));
+    expect(noted('G.W./CTN', '12.5 kg', 30).packing).toEqual(packed({ cartons: 10, kgPerCarton: 12.5, kgPerCartonKind: 'gross' }));
+  });
+});
+
+describe('X3 — the size column, and whose size it is (XLS-5, DIM-6; review JN-11)', () => {
+  const sized = (header: string, value: Cell = '60*40*50') => first(['Description', 'QTY', 'CTNS', header], ['Chair', 100, 10, value]);
+  const size = (of: 'package' | 'product' | null, unit: 'cm' | 'mm' | 'm' | 'other' | null = null, sides: [number, number, number] = [60, 40, 50]) => ({
+    l: sides[0],
+    w: sides[1],
+    h: sides[2],
+    unit,
+    of,
+  });
+
+  it('a header that names the PACKAGE gives the package’s size', () => {
+    for (const header of ['Carton size', 'CTN SIZE', 'MEAS.', '外箱尺寸', '箱规', '包装尺寸', 'Размер коробки', 'Габариты коробки', 'Karobka o‘lchami', 'Box size', 'Packing size']) {
+      const row = sized(header);
+      expect([row.packing?.size, row.volumeM3], header).toEqual([size('package'), null]);
+    }
+  });
+
+  it('a bare «size» says NOBODY’s — kept, never multiplied (a sofa’s «220×95×85» beside 30 cartons is no cube)', () => {
+    for (const header of ['Size', 'Dimensions', 'Dimension', 'L*W*H', '尺寸', 'Размер', 'Габариты', 'O‘lchami']) {
+      expect(sized(header).packing?.size, header).toEqual(size(null));
+    }
+    // The door computes nothing from it and the kernel’s doubt asks whose it is.
+    const [sofa] = landed(['Description', 'QTY', 'CTNS', 'Size (cm)'], ['Sofa', 10, 30, '220*95*85']);
+    expect([sofa!.volumeM3, sofa!.landedNote]).toEqual([null, '📦 30 karobka · o‘lcham (kimniki — aniq emas) 220×95×85 sm — fayldan']);
+    const doubts = applyPacking({ quantity: 10, weightKg: null, volumeM3: null, packing: packed({ cartons: 30, size: size(null, 'cm', [220, 95, 85]) }) }).doubts;
+    expect(doubts.map((d) => d.kind)).toEqual(['size_owner']);
+  });
+
+  it('a header that names the GOODS gives the product’s size: said on the card, multiplied by nothing', () => {
+    for (const header of ['Product size', 'Размер товара', '产品尺寸']) expect(sized(header).packing?.size, header).toEqual(size('product'));
+    expect(sized('Item size (cm)').packing?.size).toEqual(size('product', 'cm'));
+    const [sofa] = landed(['Description', 'QTY', 'CTNS', 'Product size (cm)'], ['Sofa', 10, 30, '220*95*85']);
+    expect([sofa!.volumeM3, sofa!.landedNote]).toEqual([null, '📦 30 karobka · tovar o‘lchami 220×95×85 sm — fayldan']);
+  });
+
+  it('the unit is the header’s, in any of its spellings — and one nobody converts stays «other»', () => {
+    for (const [header, unit] of [
+      ['CTN SIZE (CM)', 'cm'],
+      ['MEAS (CM)', 'cm'],
+      ['Размер коробки, см', 'cm'],
+      ['CTN SIZE CM', 'cm'],
+      ['Carton size (mm)', 'mm'],
+      ['Carton size, м', 'm'],
+      ['Carton size (inch)', 'other'],
+    ] as const) {
+      expect(sized(header).packing?.size, header).toEqual(size('package', unit));
+    }
+    expect(sized('L×W×H (cm)').packing?.size).toEqual(size(null, 'cm'));
+  });
+
+  it('…or the cell’s own, which outranks the header’s', () => {
+    const cells: [string, ReturnType<typeof size>][] = [
+      ['60*40*50', size('package')],
+      ['60×40×50', size('package')],
+      ['60X40X50', size('package')],
+      ['60х40х50', size('package')], // a Cyrillic «х»
+      ['L60 W40 H50', size('package')],
+      ['60 x 40 x 50 cm', size('package', 'cm')],
+      ['60*40*50 CM', size('package', 'cm')],
+      ['600*400*500mm', size('package', 'mm', [600, 400, 500])],
+      ['0.6*0.4*0.5m', size('package', 'm', [0.6, 0.4, 0.5])],
+      ['60*40*50 inch', size('package', 'other')],
+    ];
+    for (const [value, expected] of cells) expect(sized('Carton size', value).packing?.size, value).toEqual(expected);
+    // The header says millimetres, the cell says centimetres: the cell is what the row wrote.
+    expect(sized('Carton size (mm)', '60*40*50cm').packing?.size).toEqual(size('package', 'cm'));
+  });
+
+  it('a cell that is no carton’s size — two sides, four, two sizes, inches in quotes, a word — is SAID and multiplies nothing', () => {
+    for (const value of ['60*40', '60*40*50*2', '60*40*50cm / 62*42*52cm', '24"x16"x20"', '60-40-50', 'XL', 42] as Cell[]) {
+      const [row] = landed(['Description', 'QTY', 'CTNS', 'Carton size'], ['Chair', 100, 10, value], ['Table', 50, 5, '60*40*50'], ['Desk', 20, 2, '80*60*40']);
+      expect([row!.packing, row!.volumeM3, row!.landedNote], String(value)).toEqual([
+        packed({ cartons: 10 }),
+        null,
+        `o‘lcham «${value}» — aniq emas · 📦 10 karobka — fayldan`,
+      ]);
+    }
+  });
+
+  it('a «Size» whose cells are no three sides is no size column: S / M / L and a tile’s «600x600» stay what they were', () => {
+    const letters = sheet(['Description', 'Size', 'QTY', 'CTNS'], ['T-shirt', 'XL', 100, 10], ['T-shirt', 'M', 50, 5], ['Shoes', 42, 30, 3]);
+    expect(letters.goods.map((g) => [g.packing?.size ?? null, g.note])).toEqual([
+      [null, null],
+      [null, null],
+      [null, null],
+    ]);
+    const tiles = sheet(['Description', 'Size', 'QTY'], ['Tile', '600x600', 100], ['Tile', '300x600', 50]);
+    expect(tiles.goods.map((g) => [g.packing, g.note])).toEqual([
+      [undefined, null],
+      [undefined, null],
+    ]);
+  });
+
+  it('«MEAS.» whose cells are sizes is a size column, not a cube — and whose cells are cubes stays the cube', () => {
+    const sizes = sheet(['Description', 'QTY', 'CTNS', 'MEAS.'], ['Chair', 100, 10, '60*40*50'], ['Table', 50, 5, '50x40x30']);
+    expect(sizes.goods.map((g) => [g.volumeM3, g.packing?.size, g.note])).toEqual([
+      [null, size('package'), null],
+      [null, size('package', null, [50, 40, 30]), null],
+    ]);
+    const cubes = sheet(['Description', 'QTY', 'CTNS', 'MEAS.'], ['Chair', 100, 10, 0.5], ['Table', 50, 5, 0.25]);
+    expect(cubes.goods.map((g) => [g.volumeM3, g.packing])).toEqual([
+      [0.5, packed({ cartons: 10 })],
+      [0.25, packed({ cartons: 5 })],
+    ]);
+    expect(cubes.volumeM3).toBe(0.75);
+  });
+
+  it('an L | W | H triplet is one size — in any order, in three languages, under the label that says whose', () => {
+    const triplet = (header: Cell[], ...rows: Cell[][]) => sheet(header, ...rows).goods[0]!.packing?.size;
+    // Bare sides say nobody’s; the unit is the headers’.
+    expect(triplet(['Description', 'QTY', 'CTNS', 'L', 'W', 'H'], ['Chair', 100, 10, 60, 40, 50])).toEqual(size(null));
+    expect(triplet(['Description', 'QTY', 'CTNS', 'L (cm)', 'W (cm)', 'H (cm)'], ['Chair', 100, 10, 60, 40, 50])).toEqual(size(null, 'cm'));
+    expect(triplet(['Наименование', 'Кол-во', 'Мест', 'Длина, см', 'Ширина, см', 'Высота, см'], ['Стул', 100, 10, 60, 40, 50])).toEqual(size(null, 'cm'));
+    // H | L | W: each side lands under its own letter, whatever the order.
+    expect(triplet(['Description', 'QTY', 'CTNS', 'H (cm)', 'L (cm)', 'W (cm)'], ['Chair', 100, 10, 50, 60, 40])).toEqual(size(null, 'cm'));
+    // «外箱长 / 宽 / 高»: the OUTER CARTON’s sides.
+    expect(triplet(['品名', '数量', '箱数', '外箱长', '外箱宽', '外箱高'], ['椅子', 100, 10, 60, 40, 50])).toEqual(size('package'));
+    // A two-row header: the label above says whose the three are.
+    expect(triplet(['Description', 'QTY', 'CTNS', 'Carton size (cm)', '', ''], ['', '', '', 'L', 'W', 'H'], ['Chair', 100, 10, 60, 40, 50])).toEqual(size('package', 'cm'));
+    expect(triplet(['Description', 'QTY', 'CTNS', 'Product size (cm)', '', ''], ['', '', '', 'L', 'W', 'H'], ['Chair', 100, 10, 60, 40, 50])).toEqual(size('product', 'cm'));
+  });
+
+  it('«N.W.» and «G.W.» end in a W and are no carton’s width; two sides of three are no size', () => {
+    const weights = sheet(['Description', 'QTY', 'CTNS', 'N.W.', 'G.W.'], ['Chair', 100, 10, 45, 50]);
+    expect([weights.goods[0]!.weightKg, weights.grossKg, weights.weightKind, weights.goods[0]!.packing]).toEqual([45, 50, 'net', packed({ cartons: 10 })]);
+    expect(first(['Description', 'QTY', 'CTNS', 'L (cm)', 'W (cm)'], ['Chair', 100, 10, 60, 40]).packing).toEqual(packed({ cartons: 10 }));
+  });
+
+  it('a triplet with a side left empty is no size on that row: said as written, the other rows keep theirs', () => {
+    const rows = sheet(['Description', 'QTY', 'CTNS', 'L (cm)', 'W (cm)', 'H (cm)'], ['Chair', 100, 10, 60, '', 50], ['Table', 50, 5, 60, 40, 50]).goods;
+    expect(rows.map((g) => [g.packing?.size ?? null, g.note])).toEqual([
+      [null, 'o‘lcham «60 x 50» — aniq emas'],
+      [size(null, 'cm'), null],
+    ]);
+  });
+});
+
+describe('X4 — the arithmetic is the kernel’s: a per-carton figure fills only what the line left empty', () => {
+  it('cartons × one carton’s cube and weight: the line’s empty cells are filled, and the card says how', () => {
+    const rows = landed(['Description', 'QTY', 'CTNS', 'CBM/CTN', 'G.W./CTN'], ['Chair', 100, 10, 0.05, 12.5], ['Table', 50, 5, 0.12, 30]);
+    // 10 × 0.05 = 0.5 m³ and 10 × 12.5 = 125 kg; 5 × 0.12 = 0.6 m³ and 5 × 30 = 150 kg.
+    expect(rows.map((g) => [g.quantity, g.volumeM3, g.weightKg])).toEqual([
+      [100, 0.5, 125],
+      [50, 0.6, 150],
+    ]);
+    expect(rows[0]!.landedNote).toBe(
+      '📦 10 karobka · 0.05 m³/karobka · 12.5 kg/karobka (brutto) — fayldan · hajm hisoblangan: 10 × 0.05 m³ = 0.5 m³ · og‘irlik hisoblangan: 10 × 12.5 kg = 125 kg · og‘irlik brutto (karobka og‘irligidan)',
+    );
+    // A weight made of the cartons’ GROSS is marked: no later rule takes it for the line’s netto.
+    expect(rows.map((g) => g.derived?.weightIsGross)).toEqual([true, true]);
+  });
+
+  it('cartons × the PACKAGE’s size: 10 × 60×40×50 cm = 1.2 m³', () => {
+    // 0.6 × 0.4 × 0.5 = 0.12 m³ a carton; × 10 = 1.2 m³.
+    const [row] = landed(['Description', 'QTY', 'CTNS', 'Carton size (cm)'], ['Chair', 100, 10, '60*40*50']);
+    expect([row!.volumeM3, row!.landedNote]).toEqual([1.2, '📦 10 karobka · 60×40×50 sm — fayldan · hajm hisoblangan: 10 × 60×40×50 sm = 1.2 m³']);
+    // No unit anywhere: centimetres are assumed, and the card says so.
+    const [assumed] = landed(['品名', '数量', '箱数', '外箱长', '外箱宽', '外箱高'], ['椅子', 100, 10, 60, 40, 50]);
+    expect([assumed!.volumeM3, assumed!.landedNote]).toEqual([1.2, '📦 10 karobka · 60×40×50 sm — fayldan · hajm hisoblangan: 10 × 60×40×50 sm = 1.2 m³, sm deb olindi']);
+  });
+
+  it('the line’s own figure STANDS: agreeing it is only annotated, disagreeing it is kept and doubted — never overwritten', () => {
+    const header = ['Description', 'QTY', 'CTNS', 'CBM/CTN', 'CBM'];
+    // 10 × 0.05 = 0.5 = the line’s own 0.5: nothing computed, nothing asked.
+    const [agrees] = landed(header, ['Chair', 100, 10, 0.05, 0.5]);
+    expect([agrees!.volumeM3, agrees!.derived, agrees!.landedNote]).toEqual([0.5, undefined, '📦 10 karobka · 0.05 m³/karobka — fayldan']);
+    // The line says 0.7, the cartons 0.5: the LINE’s 0.7 lands, and the doubt carries both.
+    const differs = sheet(header, ['Chair', 100, 10, 0.05, 0.7]);
+    const [fact] = invoiceFacts(differs.goods);
+    expect([fact!.volumeM3, differs.volumeM3]).toEqual([0.7, 0.7]);
+    const row = differs.goods[0]!;
+    const { doubts } = applyPacking({ quantity: row.quantity, weightKg: row.weightKg, volumeM3: row.volumeM3, packing: row.packing! });
+    expect(doubts).toEqual([{ kind: 'differs', field: 'volumeM3', stated: 0.7, derived: { value: 0.5, how: '10 × 0.05 m³' } }]);
+  });
+
+  it('a line figure that is ONE carton’s (a sheet’s unmarked «CBM» beside its size) is replaced — and the sheet’s Σ of it is no total', () => {
+    const header = ['Description', 'QTY', 'CTNS', 'Carton size (cm)', 'CBM'];
+    const parsed = sheet(header, ['Chair', 100, 10, '60*40*50', 0.12], ['Table', 50, 5, '100*60*40', 0.24], ['TOTAL', 150, 15, '', 0.36]);
+    // 60×40×50 cm = 0.12 m³ and 100×60×40 cm = 0.24 m³: each «CBM» cell is exactly its carton’s — the lines are
+    // 10 × 0.12 = 1.2 and 5 × 0.24 = 1.2 m³. The reader keeps what the file wrote…
+    expect(parsed.goods.map((g) => g.volumeM3)).toEqual([0.12, 0.24]);
+    // …and refuses the column’s Σ (0.36, one carton of each) as the shipment’s cube: 2.4 m³ is the rows’.
+    expect(parsed.volumeM3).toBeNull();
+    const rows = landed(header, ['Chair', 100, 10, '60*40*50', 0.12], ['Table', 50, 5, '100*60*40', 0.24], ['TOTAL', 150, 15, '', 0.36]);
+    expect(rows.map((g) => [g.volumeM3, g.derived?.replaced])).toEqual([
+      [1.2, { volumeM3: 0.12 }],
+      [1.2, { volumeM3: 0.24 }],
+    ]);
+    expect(rows[0]!.landedNote).toBe('📦 10 karobka · 60×40×50 sm — fayldan · hajm bitta karobkaniki edi (0.12): 10 × 60×40×50 sm = 1.2 m³');
+  });
+
+  it('…the weight alike: a «G.W.» cell equal to «G.W./CTN» is one carton’s, and the gross Σ beside it is refused', () => {
+    const parsed = sheet(['Description', 'QTY', 'CTNS', 'G.W./CTN', 'G.W.'], ['Chair', 100, 10, 12.5, 12.5], ['Table', 50, 5, 30, 30]);
+    // Σ of the column = 12.5 + 30 = 42.5 kg — one carton of each; the lines are 10 × 12.5 = 125 and 5 × 30 = 150.
+    expect([parsed.grossKg, parsed.weightKind]).toEqual([null, 'gross']);
+    expect(invoiceFacts(parsed.goods).map((g) => g.weightKg)).toEqual([125, 150]);
+    // A gross column of its OWN beside a replaced netto is untouched: 125 is what the sheet says the order weighs.
+    const separate = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'N.W.', 'G.W.'], ['Chair', 100, 10, 11, 11, 125]);
+    expect([separate.grossKg, invoiceFacts(separate.goods)[0]!.weightKg]).toEqual([125, 110]);
+  });
+
+  it('the line’s GROSS weight is never compared with its cartons’ NET: the row carries which weight its own is (JN-4)', () => {
+    // «N.W./CTN 11 | G.W. 125»: 10 × 11 = 110 kg netto and 125 kg brutto are two facts, not a disagreement.
+    const gross = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'G.W.'], ['Chair', 100, 10, 11, 125]).goods[0]!;
+    expect(gross.weightKind).toBe('gross');
+    expect(applyPacking({ quantity: gross.quantity, weightKg: gross.weightKg, volumeM3: gross.volumeM3, packing: gross.packing!, weightKind: gross.weightKind! }).doubts).toEqual([]);
+    // The control: under a plain «Weight» nobody can say which it is, and 125 against 110 IS asked.
+    const plain = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'Weight'], ['Chair', 100, 10, 11, 125]).goods[0]!;
+    expect(plain.weightKind).toBeUndefined();
+    expect(applyPacking({ quantity: plain.quantity, weightKg: plain.weightKg, volumeM3: plain.volumeM3, packing: plain.packing! }).doubts).toEqual([
+      { kind: 'differs', field: 'weightKg', stated: 125, derived: { value: 110, how: '10 × 11 kg' } },
+    ]);
+  });
+
+  it('no carton count, no arithmetic: one carton’s figures alone are kept on the card and multiply nothing', () => {
+    const [perCarton] = landed(['Description', 'QTY', 'CBM/CTN', 'G.W./CTN'], ['Chair', 100, 0.05, 12.5]);
+    expect([perCarton!.volumeM3, perCarton!.weightKg, perCarton!.landedNote]).toEqual([null, null, '📦 0.05 m³/karobka · 12.5 kg/karobka (brutto) — fayldan']);
+    const [sizeOnly] = landed(['Description', 'QTY', 'Carton size (cm)'], ['Chair', 100, '60*40*50']);
+    expect([sizeOnly!.volumeM3, sizeOnly!.landedNote]).toEqual([null, '📦 60×40×50 sm — fayldan']);
+  });
+
+  it('a piece count equal to ONE carton’s is replaced; a differing one stands and is doubted', () => {
+    const header = ['Description', 'QTY', 'CTNS', 'PCS/CTN'];
+    // «QTY 12 | CTNS 10 | PCS/CTN 12»: the 12 is one carton’s — 10 × 12 = 120 pieces.
+    const [one] = landed(header, ['Chair', 12, 10, 12]);
+    expect([one!.quantity, one!.landedNote]).toEqual([120, '📦 10 karobka · 12 dona/karobka — fayldan · soni bitta karobkaniki edi (12): 10 × 12 = 120 dona']);
+    const [agrees] = landed(header, ['Chair', 120, 10, 12]);
+    expect([agrees!.quantity, agrees!.derived]).toEqual([120, undefined]);
+    // 100 stated against 10 × 12 = 120: the sheet’s 100 lands.
+    expect(landed(header, ['Chair', 100, 10, 12])[0]!.quantity).toBe(100);
+  });
+
+  it('a row with no packing is not touched: the door’s row is the reader’s', () => {
+    const [row] = landed(['Description', 'QTY', 'G.W.', 'CBM'], ['Chair', 100, 50, 0.5]);
+    expect([row!.quantity, row!.weightKg, row!.volumeM3, row!.packing, row!.derived, row!.landedNote]).toEqual([100, 50, 0.5, undefined, undefined, null]);
+  });
+});
+
+describe('X4 — a weight made of the cartons’ gross beside another file (file-goods.ts)', () => {
+  // A packing list whose lines state a NETTO, and one line only its cartons’ gross: «Table» is 5 × 30 = 150 kg
+  // BRUTTO while the sheet’s weight column — and so the file’s kind — is net.
+  const list = sheet(['Description', 'QTY', 'CTNS', 'N.W.', 'G.W./CTN'], ['Chair', 100, 10, 110, 12.5], ['Table', 50, 5, '', 30]);
+  const listRows = invoiceFacts(list.goods);
+  const invoice = () => invoiceFacts(sheet(['Description', 'QTY', 'Unit price', 'Amount'], ['Chair', 100, 5, 500], ['Table', 50, 9, 450]).goods);
+
+  it('the fixture is what the comment says', () => {
+    expect([list.shape, list.weightKind, list.grossKg]).toEqual(['packing', 'net', null]);
+    expect(listRows.map((g) => [g.name, g.weightKg, g.derived?.weightIsGross ?? false])).toEqual([
+      ['Chair', 110, false],
+      ['Table', 150, true],
+    ]);
+  });
+
+  it('a goods row with no weight takes the list’s NETTO — never a brutto the cartons made', () => {
+    const filled = packingFills(invoice(), [null, null], listRows, 'net');
+    expect([filled.filled, filled.goods.map((g) => g.weightKg)]).toEqual([1, [110, null]]);
+  });
+
+  it('…by position too (a Chinese list beside an English invoice)', () => {
+    const han = invoiceFacts(sheet(['品名', '数量', '箱数', '净重', '毛重/箱'], ['椅子', 100, 10, 110, 12.5], ['桌子', 50, 5, '', 30]).goods);
+    const filled = positionalFills(invoice(), han, 'net');
+    expect([filled.filled, filled.goods.map((g) => g.weightKg)]).toEqual([1, [110, null]]);
+  });
+
+  it('the list’s netto Σ is offered only when every line’s weight IS a netto', () => {
+    // 110 + 150 = 260 would add a brutto to a netto: no weight total at all.
+    expect(packingTotals({ weightKind: list.weightKind, grossKg: list.grossKg, volumeM3: list.volumeM3, capped: false }, listRows)).toEqual({
+      weightKg: null,
+      weightNetto: false,
+      volumeM3: null,
+    });
+    // A list of «N.W./CTN» alone: 10 × 11 = 110 and 5 × 28 = 140 are netto lines, Σ 250 kg, offered as a netto.
+    const net = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN'], ['Chair', 100, 10, 11], ['Table', 50, 5, 28]);
+    const netRows = invoiceFacts(net.goods);
+    expect(packingTotals({ weightKind: net.weightKind, grossKg: net.grossKg, volumeM3: net.volumeM3, capped: false }, netRows)).toEqual({
+      weightKg: 250,
+      weightNetto: true,
+      volumeM3: null,
+    });
+    // …and those netto lines do fill an invoice’s empty weights.
+    expect(packingFills(invoice(), [null, null], netRows, net.weightKind).goods.map((g) => g.weightKg)).toEqual([110, 140]);
+  });
+
+  it('the same row again in a second file, stating its GROSS: one order, landed once', () => {
+    // File B writes «Table | G.W. 150» with no count: the only figure the two rows share is the weight, and it is
+    // the same brutto — 5 × 30 = 150 here, 150 there.
+    const second = invoiceFacts(sheet(['Description', 'G.W.', 'Unit price', 'Amount'], ['Table', 150, 9, 450]).goods);
+    const folded = foldInvoice([listRows[1]!], ['net'], second, 'gross', 'b.xlsx');
+    expect([folded.added, folded.goods.length, folded.notes]).toEqual([0, 1, ['📄 b.xlsx — 1 tasi ro‘yxatda bor edi, yangi tovar qo‘shilmadi.']]);
+    // A different brutto is another line, kept and named for the VED.
+    const other = invoiceFacts(sheet(['Description', 'G.W.', 'Unit price', 'Amount'], ['Table', 170, 9, 450]).goods);
+    expect(foldInvoice([listRows[1]!], ['net'], other, 'gross', 'b.xlsx').added).toBe(1);
+  });
+});
+
+describe('the doors that keep no packing: the reader’s own row stays whole for them', () => {
+  it('the VED’s paste: a carton-only table still says the cartons in words — and «Karobka soni» is no piece count there either', () => {
+    const [ctns] = pasteItems('Description\tQTY IN CTNS\tG.W.(KG)\tCBM\nKurtka\t10\t100\t1');
+    expect([ctns!.quantity, ctns!.weightKg, ctns!.volumeM3, ctns!.note]).toEqual([null, 100, 1, 'sotuvchi: 10 ctns']);
+    // Before X2 this lone column was the PIECES: ten cartons pasted as ten jackets.
+    const [karobka] = pasteItems('Tovar nomi\tKarobka soni\tOg‘irligi (kg)\nKurtka\t10\t100');
+    expect([karobka!.quantity, karobka!.weightKg, karobka!.note]).toEqual([null, 100, 'sotuvchi: 10 karobka']);
+  });
+
+  it('the VED’s paste computes nothing from a packing: the pieces stay, the per-carton cube is not multiplied there', () => {
+    const [row] = pasteItems('Description\tQTY\tCTNS\tCBM/CTN\nKurtka\t100\t10\t0.05');
+    expect([row!.quantity, row!.volumeM3, row!.note]).toEqual([100, null, null]);
   });
 });
