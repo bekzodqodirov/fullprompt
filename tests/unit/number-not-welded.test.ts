@@ -286,6 +286,10 @@ describe('the rule itself (units.ts)', () => {
     expect(blankNonAmounts('XJ-200 300 kg')).toBe(`XJ-${BLANK.repeat(3)} 300 kg`);
     expect(blankNonAmounts('XJ-200 kg')).toBe('XJ-200 kg');
     expect(blankNonAmounts('Sumka-50 dona')).toBe('Sumka-50 dona');
+    // A code is one to four letters, or a token with a digit in it; a WORD
+    // before the dash is a name, and its figure is asked instead.
+    expect(blankNonAmounts('A54-200 300 kg')).toBe(`A54-${BLANK.repeat(3)} 300 kg`);
+    expect(blankNonAmounts('Kurtka-200 300 kg')).toBe('Kurtka-200 300 kg');
   });
 
   it('groupedReading: where a grouped number is whole, and where it is asked', () => {
@@ -299,5 +303,13 @@ describe('the rule itself (units.ts)', () => {
     // The caller's own labels widen it — never the default.
     expect(groupedReading('faktik 1 200 kg', 7)).toBe('ask');
     expect(groupedReading('faktik 1 200 kg', 7, (w) => w === 'faktik')).toBe('thousands');
+    // Only the last words before the number are read (a long line is not
+    // re-split per figure) — and a long run of spaces opens nothing.
+    const far = `Kurtka${' '.repeat(300)}1 200 kg`;
+    expect(groupedReading(far, far.indexOf('1 200'))).toBe('ask');
+    const long = `${'so‘z '.repeat(200)}jami 1 200 kg`;
+    expect(groupedReading(long, long.indexOf('1 200'))).toBe('thousands');
+    const longName = `${'so‘z '.repeat(200)}kurtka 1 200 kg`;
+    expect(groupedReading(longName, longName.indexOf('1 200'))).toBe('ask');
   });
 });

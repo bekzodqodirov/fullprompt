@@ -123,8 +123,10 @@ const CURRENCY = /[$€¥₽£]|(?<![\p{L}])(?:usd|eur|rmb|cny|uzs|yuan|dollar\p
  * when another number does. The next label of the same line may follow.
  */
 function standsAlone(text: string, end: number): boolean {
-  const stop = text.indexOf('\n', end);
-  const rest = text.slice(end, stop < 0 ? text.length : stop).trimStart();
+  // The next word is within a label's length of the figure; no more is read.
+  const near = text.slice(end, end + 48);
+  const stop = near.indexOf('\n');
+  const rest = (stop < 0 ? near : near.slice(0, stop)).trimStart();
   if (rest === '' || /^[,;.)\]|/]/u.test(rest)) return true;
   return LABEL_NEXT.test(rest);
 }
@@ -146,7 +148,7 @@ function labelStands(scan: string, labelAt: number): boolean {
   const [from] = lineAround(scan, labelAt);
   const before = scan.slice(from, labelAt);
   // A figure before the label is the previous label's («G.W.: 507 MEAS: …»).
-  if (/\d[\d.,]*\s*$/u.test(before)) return true;
+  if (/\d[.,]?\s*$/u.test(before.slice(-8))) return true;
   return groupedReading(before, before.length, (w) => figureLabel(w) || CARGO_WORD.test(w)) === 'thousands';
 }
 
@@ -244,12 +246,18 @@ function readNumber(
     }
     take(hit[1]!, hit.index, false);
   }
+  // A line's currency is asked once per line, however many labels it holds.
+  const money = new Map<number, boolean>();
+  const hasCurrency = (at: number) => {
+    const [from, to] = lineAround(text, at);
+    if (!money.has(from)) money.set(from, CURRENCY.test(text.slice(from, to)));
+    return money.get(from)!;
+  };
   for (const hit of scan.matchAll(labelled)) {
     const end = hit.index + hit[0].length;
     const at = end - hit[1]!.length;
     if (skip(at, end) || !standsAlone(text, end) || !labelStands(scan, hit.index)) continue;
-    const [from, to] = lineAround(text, at);
-    if (CURRENCY.test(text.slice(from, to))) continue;
+    if (hasCurrency(at)) continue;
     take(hit[1]!, at, true);
   }
   if (ambiguous) return { value: null, ambiguous };

@@ -124,16 +124,20 @@ const PHRASES = (Object.values(WORDS) as (readonly string[])[])
   .sort((a, b) => b.length - a.length)
   .map((w) => escapeRe(w).replace(/ /g, '\\s+'))
   .join('|');
-/** After a number only: «Cubic meter gauge» is a product's name, «5.9 cubic meters» a figure. */
-const UNIT_PHRASE = new RegExp(`(?<=\\d\\s*)(?:${PHRASES})(?![\\p{L}])`, 'giu');
+const UNIT_PHRASE = new RegExp(`(?<![\\p{L}])(?:${PHRASES})(?![\\p{L}])`, 'giu');
 
 /**
  * A text with the unit phrase after a number written as one word — «5.9 cubic
  * meters» → «5.9 cubicmeters» — for a reader that splits on spaces (the
- * table's name address): `unitOf` reads both spellings.
+ * table's name address): `unitOf` reads both spellings. After a NUMBER only:
+ * «Cubic meter gauge» is a product's name. (The number is looked for in the
+ * few characters before the phrase, in code — a look-behind over `\s*` is
+ * walked from every position of a long run of spaces.)
  */
 export function joinUnitPhrases(text: string): string {
-  return text.replace(UNIT_PHRASE, (m) => m.replace(/\s+/gu, ''));
+  return text.replace(UNIT_PHRASE, (m, at: number) =>
+    /\d\s{0,3}$/u.test(text.slice(Math.max(0, at - 4), at)) ? m.replace(/\s+/gu, '') : m,
+  );
 }
 
 /**
@@ -683,9 +687,14 @@ export function blankSizes(line: string): string {
  * figure after a name.
  */
 const CODE_DIGITS = new RegExp(
-  String.raw`(?:[№#_]|(?<![\p{L}\d])(?:\p{L}{1,4}|[\p{L}\d]*\d[\p{L}\d]*)[-–/])(\d{1,3})(?=${GROUP_GAP}\d{3}(?!\d))`,
+  // The token before the dash is BOUNDED (no code is longer), and judged in
+  // code below: two open-ended runs around a digit are quadratic on a long
+  // pasted token.
+  String.raw`(?:[№#_]|(?<![\p{L}\d])([\p{L}\d]{1,24})[-–/])(\d{1,3})(?=${GROUP_GAP}\d{3}(?!\d))`,
   'gu',
 );
+/** One to four letters («XJ», «YW»), or a token that already holds a digit («A54», «2024»). */
+const CODE_TOKEN = /^(?:\p{L}{1,4}|.*\d.*)$/u;
 
 /**
  * A phone as it is typed in groups — «90 123 45 67», «+998 90 123 45 67», «8
@@ -705,8 +714,9 @@ export function blankNonAmounts(line: string): string {
   let out = blankSizes(line);
   for (const hit of out.matchAll(PHONE_SHAPE)) out = blankSpan(out, hit.index, hit.index + hit[0].length);
   for (const hit of out.matchAll(CODE_DIGITS)) {
+    if (hit[1] !== undefined && !CODE_TOKEN.test(hit[1])) continue;
     const end = hit.index + hit[0].length;
-    out = blankSpan(out, end - hit[1]!.length, end);
+    out = blankSpan(out, end - hit[2]!.length, end);
   }
   return out;
 }
@@ -737,6 +747,9 @@ const LOOSE_DASH = /(?:^|\s)[-/]$/u;
 
 export type GroupedReading = 'thousands' | 'ask';
 
+/** How far back `groupedReading` looks: a label of three words, or a counter and a unit with their number. */
+const LOOK_BACK = 120;
+
 /**
  * Is the space-grouped number starting at `at` of `line` ONE number — or may
  * its first group be another fact's (rule 2-3 above)? `line` is the text the
@@ -745,7 +758,12 @@ export type GroupedReading = 'thousands' | 'ask';
  * own label words (the totals reader's «jami», «faktik», «taxminan»).
  */
 export function groupedReading(line: string, at: number, isLabel: (word: string) => boolean = () => false): GroupedReading {
-  const before = line.slice(0, at).replace(/\s+$/u, '');
+  // What stands right before the number, the spaces between them set aside —
+  // and only the last few words of it: nothing further back is asked, and a
+  // whole line re-split per figure is quadratic on a long one.
+  let end = Math.min(at, line.length);
+  while (end > 0 && /\s/u.test(line.charAt(end - 1))) end -= 1;
+  const before = line.slice(Math.max(0, end - LOOK_BACK), end);
   if (before === '' || OPENS_SEGMENT.test(before) || LOOSE_DASH.test(before)) return 'thousands';
   const tokens = before.split(/\s+/u);
   const clean = (token: string) => token.replace(/^[("'«“[]+|[)"'»”\].,;:!?/-]+$/gu, '');
