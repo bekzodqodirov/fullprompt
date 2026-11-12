@@ -51,6 +51,13 @@ import {
  */
 
 /**
+ * The space between a number and its unit, a label and its figure — on ONE
+ * line. `\s*` crossed the line break: «G.W.: 507⏎CBM: 5.92» stated a cube of
+ * 507, once «cbm» was a word this reader knew.
+ */
+const GAP = String.raw`[ \t  ]*`;
+
+/**
  * Never a number glued to a letter on its left (review JN-5): the 777 of
  * «GS777» and the 3 of «5 m3» are no amounts, so neither can be the thousands
  * of the figure after it — «5 m3 200 kg» was 3 200 kg. A Han character is
@@ -74,28 +81,31 @@ const NOT_GLUED = String.raw`(?<![\d.,])(?<!(?!\p{Script=Han})\p{L})`;
  * office writes it. (Caught by the test, not by reading the regex.)
  */
 const figureOf = (unit: 'kg' | 'm3' | 'dona') =>
-  new RegExp(String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})\s*(${unitPattern(unit)})(?![\p{L}\d])`, 'giu');
+  new RegExp(String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})${GAP}(${unitPattern(unit)})(?![\p{L}\d])`, 'giu');
 const KG_FIGURE = figureOf('kg');
 const M3_FIGURE = figureOf('m3');
 /** A piece count on the line — what keeps a counted cube («4 кубов») in the name (review JN-22). */
 const PIECES_FIGURE = new RegExp(figureOf('dona').source, 'iu');
 
 /**
- * A figure written LABEL FIRST with no unit — «G.W.: 507», «CBM: 5.92»,
- * «毛重：507», «Hajmi (m3): 12» (§3.1 T1). Only after a label that can name
- * nothing but that measure (units.ts `UNIT_FREE_LABELS`, review JN-21:
- * «Gross: 12 500» heads a money line and «Manga Vol 3» is a book), and only
- * with a «:» or «=» — or the unit itself — between the two: «G.W. 507» with
- * neither is not read. A bare «5.92» is no cube. Group 1 is the number, and
- * the match ENDS with it.
+ * A figure written LABEL FIRST — «G.W.: 507», «CBM: 5.92», «毛重：507»,
+ * «Hajmi (m3): 12», «Вес, кг: 150» (§3.1 T1). With NO unit, only after a
+ * label that can name nothing but that measure (units.ts `UNIT_FREE_LABELS`,
+ * review JN-21: «Gross: 12 500» heads a money line and «Manga Vol 3» is a
+ * book) and only with a «:» or «=» between the two — «G.W. 507» with neither
+ * is not read, and a bare «5.92» is no cube. With the UNIT written between
+ * them, after any label of the measure («вес», «gross», «vol» need the unit —
+ * and there it is). Group 1 is the number, and the match ENDS with it.
  */
-const labelFirst = (labels: readonly string[], unit: 'kg' | 'm3') =>
-  new RegExp(
-    String.raw`(?<![\d])(?<!(?!\p{Script=Han})\p{L})(?:${labelPattern(labels)})(?:\s*[(（\[]?\s*(?:${unitPattern(unit)})(?![\p{L}\d])\s*[)）\]]?\s*[:：=]?|\s*[:：=])\s*(${AMOUNT_NUMBER})(?![\d.,]*\d)`,
+const labelFirst = (free: readonly string[], all: readonly string[], unit: 'kg' | 'm3') => {
+  const unitWritten = String.raw`${GAP}[,(（\[]?${GAP}(?:${unitPattern(unit)})(?![\p{L}\d])${GAP}[)）\]]?${GAP}[:：=]?`;
+  return new RegExp(
+    String.raw`(?<![\d])(?<!(?!\p{Script=Han})\p{L})(?:(?:${labelPattern(free)})(?:${unitWritten}|${GAP}[:：=])|(?:${labelPattern(all)})${unitWritten})${GAP}(${AMOUNT_NUMBER})(?![\d.,]*\d)`,
     'giu',
   );
-const KG_LABELLED = labelFirst([...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg], 'kg');
-const M3_LABELLED = labelFirst(UNIT_FREE_LABELS.volumeM3, 'm3');
+};
+const KG_LABELLED = labelFirst([...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg], [...WEIGHT_LABELS, ...NET_LABELS], 'kg');
+const M3_LABELLED = labelFirst(UNIT_FREE_LABELS.volumeM3, VOLUME_LABELS, 'm3');
 
 /** A label of a totals line opening what follows a label-first figure — «G.W.: 507 MEAS: 5.92». */
 const LABEL_NEXT = new RegExp(
@@ -653,12 +663,18 @@ const MEASURE_FIELDS = new Set([
 /**
  * A word after which a space-grouped number is ONE number (units.ts
  * `groupedReading`, review JN-6): a measure field or a totals word — «vazni 1
- * 200 kg», «jami 1 200 kg», «faktik 1 200 kg» — or a word that only modifies
- * the figure («taxminan»). After any other word the first group may be that
- * word's count or model («stul 20 300 kg»), and both readings are asked.
+ * 200 kg», «jami 1 200 kg», «faktik 1 200 kg» — the cargo itself («yuk 1 200
+ * kg», `SHIPMENT_HEAD`), or a word that only modifies the figure
+ * («taxminan»). After any other word the first group may be that word's
+ * count or model («stul 20 300 kg»), and both readings are asked.
  */
 function figureLabel(word: string): boolean {
-  return MEASURE_FIELDS.has(fieldKey(word)) || SHIPMENT_WORD.test(word) || APPROX_WORD.test(word);
+  return (
+    MEASURE_FIELDS.has(fieldKey(word)) ||
+    SHIPMENT_WORD.test(word) ||
+    SHIPMENT_HEAD.has(word.toLowerCase()) ||
+    APPROX_WORD.test(word)
+  );
 }
 
 /**

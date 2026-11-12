@@ -6469,6 +6469,24 @@
    "source": "r6-probe typed",
    "weight": "regression",
    "severity": "rare"
+  },
+  {
+   "id": "c3316",
+   "input": "Kurtka 1 200 dona",
+   "expected": true,
+   "said": "true — material, never the customer",
+   "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3318",
+   "input": "stul 20 300 kg",
+   "expected": true,
+   "said": "true — material, never the customer",
+   "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
   }
  ],
  "readGoodsLinesCases": [
@@ -14606,6 +14624,103 @@
    "weight": "regression",
    "realistic": "«Total: jacket cartons 45, 1200 kg, 12 kub» on one line.",
    "severity": "rare"
+  },
+  {
+   "id": "c3309",
+   "input": "Kurtka 1 200 dona 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": null,
+      "weightKg": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «Kurtka» — 300 kg, the count empty (the table asks the row for it)",
+   "why": "Review JN-6, the typed reader's half: a grouped number that is ASKED leaves the row standing without that figure — dropping the line took the product with it.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3310",
+   "input": "stul 20 300 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "stul",
+      "quantity": null,
+      "weightKg": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "one line «stul» with no figure — never 20300 kg",
+   "why": "Review JN-6, the typed reader's half: a grouped number that is ASKED leaves the row standing without that figure — dropping the line took the product with it. Was «stul» 20300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3311",
+   "input": "Kurtka 300 dona 1 200 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": 1200
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Kurtka» × 300, 1200 kg",
+   "why": "docs/AI-SORAYDI.md T0 «untouched».",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3312",
+   "input": "GS 777 300 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no line — a client code and the shipment's weight name no product",
+   "why": "MP-1: was a product «GS» of 777 300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3313",
+   "input": "Ali aka 90 123 45 67 300 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no line — a contact and a weight",
+   "why": "Review JN-6: was a row «Ali aka 90 123» × 45 with 67300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3314",
+   "input": "Набор 4 кубов 20 шт",
+   "expected": {
+    "rows": [
+     {
+      "name": "Набор 4 кубов",
+      "quantity": 20,
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "«Набор 4 кубов» × 20, no volume",
+   "why": "Review JN-22.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
   }
  ],
  "parseGoodsCases": [
@@ -45948,6 +46063,410 @@
    "weight": "regression",
    "realistic": "Product, count, then the carton total in the same message line.",
    "severity": "rare"
+  },
+  {
+   "id": "c3284",
+   "input": "stul 20 karobka 60*40*50 300 kg",
+   "expected": {
+    "name": "stul 60*40*50",
+    "quantity": null,
+    "weightKg": 300,
+    "cartons": 20,
+    "problemCount": 0
+   },
+   "said": "weightKg 300, 20 cartons, no count; the size stays in the name",
+   "why": "MP-1 / DIM-3, the row kernel: a size joined by «*» or «×» was three bare amounts — the last side the thousands of the weight, the middle one the count. Was q 40, kg 50300.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3285",
+   "input": "stul 20 karobka 60×40×50 300 kg",
+   "expected": {
+    "name": "stul 60×40×50",
+    "quantity": null,
+    "weightKg": 300,
+    "cartons": 20,
+    "problemCount": 0
+   },
+   "said": "weightKg 300, 20 cartons, no count",
+   "why": "MP-1 / DIM-3, the row kernel: a size joined by «*» or «×» was three bare amounts — the last side the thousands of the weight, the middle one the count.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3286",
+   "input": "60*40*50 15 kg",
+   "expected": {
+    "name": "60*40*50",
+    "quantity": null,
+    "weightKg": 15,
+    "problemCount": 0
+   },
+   "said": "weightKg 15 and NO count — a dimension is never pieces",
+   "why": "DIM-3: «1: 60*40*50 15 kg» wrote 50 dona.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3287",
+   "input": "Kafel 600*600 120 m2",
+   "expected": {
+    "name": "Kafel 600*600",
+    "quantity": null,
+    "measureUnit": "m2",
+    "measureQty": 120,
+    "problemCount": 0
+   },
+   "said": "120 m² and no count; the tile's size stays in the name",
+   "why": "DIM-3: «1: 600*600 120 m2» wrote 600 dona · 600120 m².",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3288",
+   "input": "stul 20 300 kg",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "unitWords": [
+     "kg"
+    ],
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "20 300",
+      "short": 300,
+      "long": 20300
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no figure; asked 300 or 20300; the unit word is still stated",
+   "why": "Review JN-6: after a name word a space-grouped number is asked with both readings — the same rule for kg, dona, kub, juft. («box» with no number before it is a word of the name.)",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3289",
+   "input": "iPhone 15 128 kg",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "unitWords": [
+     "kg"
+    ],
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "15 128",
+      "short": 128,
+      "long": 15128
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no figure; asked 128 or 15128; the unit word is still stated",
+   "why": "Review JN-6: after a name word a space-grouped number is asked with both readings — the same rule for kg, dona, kub, juft. («box» with no number before it is a word of the name.)",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3290",
+   "input": "Stanok 1 500 kg",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "unitWords": [
+     "kg"
+    ],
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "1 500",
+      "short": 500,
+      "long": 1500
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no figure; asked 500 or 1500; the unit word is still stated",
+   "why": "Review JN-6: after a name word a space-grouped number is asked with both readings — the same rule for kg, dona, kub, juft. («box» with no number before it is a word of the name.)",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3291",
+   "input": "Manga Vol 3 200 dona",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "unitWords": [
+     "dona"
+    ],
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "3 200",
+      "short": 200,
+      "long": 3200
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no figure; asked 200 or 3200; the unit word is still stated",
+   "why": "Review JN-6: after a name word a space-grouped number is asked with both readings — the same rule for kg, dona, kub, juft. («box» with no number before it is a word of the name.)",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3292",
+   "input": "Lunch box 1 200 dona",
+   "expected": {
+    "quantity": null,
+    "weightKg": null,
+    "unitWords": [
+     "dona"
+    ],
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "1 200",
+      "short": 200,
+      "long": 1200
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no figure; asked 200 or 1200; the unit word is still stated",
+   "why": "Review JN-6: after a name word a space-grouped number is asked with both readings — the same rule for kg, dona, kub, juft. («box» with no number before it is a word of the name.)",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3293",
+   "input": "Stul 20 300",
+   "expected": {
+    "quantity": null,
+    "problems": [
+     "ambiguous"
+    ],
+    "twoReadings": [
+     {
+      "text": "20 300",
+      "short": 300,
+      "long": 20300
+     }
+    ],
+    "problemCount": 1
+   },
+   "said": "no count; asked 300 or 20300 — the bare count is welded the same way",
+   "why": "Review JN-6: «nomi, soni» took 20 300 for the count.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3294",
+   "input": "XJ-200 300 kg",
+   "expected": {
+    "name": "XJ-200",
+    "quantity": null,
+    "weightKg": 300,
+    "problemCount": 0
+   },
+   "said": "weightKg 300; the article keeps its number",
+   "why": "Review JN-6: «XJ-200 300 kg» → kg 200300.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3295",
+   "input": "Kurtka №15 300 kg",
+   "expected": {
+    "name": "Kurtka №15",
+    "quantity": null,
+    "weightKg": 300,
+    "problemCount": 0
+   },
+   "said": "weightKg 300",
+   "why": "Review JN-6: «Kurtka №15 300 kg» → 15300.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3296",
+   "input": "Kurtka 300 dona 1 200 kg",
+   "expected": {
+    "quantity": 300,
+    "weightKg": 1200,
+    "problemCount": 0
+   },
+   "said": "300 dona and 1200 kg — after a figure with its unit",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3297",
+   "input": "Kurtka, 1 200 kg",
+   "expected": {
+    "name": "Kurtka",
+    "weightKg": 1200,
+    "problemCount": 0
+   },
+   "said": "1200 kg — the comma opens a segment",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3298",
+   "input": "1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "problemCount": 0
+   },
+   "said": "1200 kg — it opens the line",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3299",
+   "input": "jami 1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "problemCount": 0
+   },
+   "said": "1200 kg — after a totals word",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3300",
+   "input": "Samsung A54 1 200 dona",
+   "expected": {
+    "name": "Samsung A54",
+    "quantity": 1200,
+    "problemCount": 0
+   },
+   "said": "1200 dona — after a model its number is whole (JS-24)",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3301",
+   "input": "Sumka-50 dona",
+   "expected": {
+    "quantity": 50,
+    "problemCount": 0
+   },
+   "said": "50 dona — a figure glued to its name by a dash is still the figure",
+   "why": "docs/AI-SORAYDI.md T0 «untouched», the kernel's half: where nothing of another fact can stand before it, a grouped number is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3302",
+   "input": "Сигары Куба: 5",
+   "expected": {
+    "name": "Сигары Куба",
+    "quantity": 5,
+    "volumeM3": null,
+    "problemCount": 0
+   },
+   "said": "5 pieces of «Сигары Куба» — after a word of the name «Куба» is the name",
+   "why": "Review JN-22: «куба» joined the m³ words and the field form made it 5 m³ of cigars.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3303",
+   "input": "Куба: 50",
+   "expected": {
+    "volumeM3": 50,
+    "quantity": null
+   },
+   "said": "volumeM3 50 — the word opens its clause, so it is a field",
+   "why": "Review JN-22: the carton nouns' test: a field where it opens its clause.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3304",
+   "input": "Kurtka, kub: 5",
+   "expected": {
+    "name": "Kurtka",
+    "volumeM3": 5,
+    "quantity": null
+   },
+   "said": "volumeM3 5 — after the comma the word opens its clause",
+   "why": "Review JN-22: a field after a comma, a figure, a unit or a total word.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3305",
+   "input": "Jami kg: 150",
+   "expected": {
+    "weightKg": 150,
+    "quantity": null
+   },
+   "said": "weightKg 150 — after a total word",
+   "why": "Review JN-22: a field after a total word.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3306",
+   "input": "Набор 4 кубов 20 шт",
+   "expected": {
+    "name": "Набор 4 кубов",
+    "quantity": 20,
+    "volumeM3": null,
+    "problemCount": 0
+   },
+   "said": "20 pieces of «Набор 4 кубов» and no volume",
+   "why": "Review JN-22: «N кубов» is how a toy states its cubes: beside a piece count it stays in the name.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3307",
+   "input": "Игра 12 кубов",
+   "expected": {
+    "name": "Игра",
+    "volumeM3": 12,
+    "quantity": null
+   },
+   "said": "volumeM3 12 — with no piece count on the line «12 кубов» is m³",
+   "why": "Review JN-22: «alone or on a totals line it is m³».",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3308",
+   "input": "5.92 cubic meters",
+   "expected": {
+    "volumeM3": 5.92,
+    "problemCount": 0
+   },
+   "said": "volumeM3 5.92 — the two words are one unit",
+   "why": "Review JN-22: «cubic meter(s)» stood in the list as one glued word: «5.92 cubic meters» → unknown_unit:cubic.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
   }
  ],
  "parseManualFactsCases": [
@@ -46798,6 +47317,1155 @@
    "weight": "regression",
    "realistic": "A seller lists the lines, then the total underneath.",
    "severity": "common"
+  },
+  {
+   "id": "c3200",
+   "input": "GS777 stul 20 karobka 60x40x50 300kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the carton's 60×40×50 is a size, never the thousands of the weight; nothing is asked (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3201",
+   "input": "stul 20 karobka 60x40x50 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the carton's 60×40×50 is a size, never the thousands of the weight; nothing is asked (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3202",
+   "input": "stul 20 karobka 60х40х50 300кг",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the carton's 60×40×50 is a size, never the thousands of the weight; nothing is asked (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3203",
+   "input": "stul 20 karobka 60*40*50 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the carton's 60×40×50 is a size, never the thousands of the weight; nothing is asked (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3204",
+   "input": "stul 20 karobka 60×40×50 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the carton's 60×40×50 is a size, never the thousands of the weight; nothing is asked (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3205",
+   "input": "stul 20 karobka 60x40x50sm 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3206",
+   "input": "stul 20 karobka 60x40x50 sm 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3207",
+   "input": "stul 20 karobka 60x40x50, 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3208",
+   "input": "stul 20 karobka 300 kg 60x40x50",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3209",
+   "input": "stul 60x40x50 80 kg",
+   "expected": {
+    "weightKg": 80,
+    "ambiguous": []
+   },
+   "said": "weightKg 80 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3210",
+   "input": "stul 60x40x50 1200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200 — read right before the round, and still (untouched)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the spellings the weld did not reach: a unit after the size, a comma, a weight of two or four digits.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3211",
+   "input": "stul 60x40x50 120.5 kg",
+   "expected": {
+    "weightKg": 120.5,
+    "ambiguous": []
+   },
+   "said": "weightKg 120.5",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 50120.5 — the decimal weight welded onto the size's last side too.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3212",
+   "input": "razmer 60 40 50 300 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "50 300",
+      "decimal": 300,
+      "thousands": 50300
+     }
+    ]
+   },
+   "said": "weightKg null, asked «50 300 kg — 300 mi yoki 50300 mi?» — a size written with spaces is three bare numbers, and a bare number before a three-digit weight is asked (JN-6)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 50300 with no doubt.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3213",
+   "input": "GS777 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — GS777 is the client's code",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the code's digits were the thousands: 777 300 kg, «✅ Ma’lumot to‘liq», ≈ $535 606 of customs.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3214",
+   "input": "GS777 300 kg 2 kub",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 2,
+    "ambiguous": []
+   },
+   "said": "weightKg 300, volumeM3 2",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the code's digits were the thousands: 777 300 kg, «✅ Ma’lumot to‘liq», ≈ $535 606 of customs.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3215",
+   "input": "GS777 300kg stul",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the code's digits were the thousands: 777 300 kg, «✅ Ma’lumot to‘liq», ≈ $535 606 of customs.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3216",
+   "input": "GS 777 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — «GS 777» is the same code written apart",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the code's digits were the thousands: 777 300 kg, «✅ Ma’lumot to‘liq», ≈ $535 606 of customs.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3217",
+   "input": "mijoz 777 300 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "777 300",
+      "decimal": 300,
+      "thousands": 777300
+     }
+    ]
+   },
+   "said": "weightKg null, asked 300 or 777300 — a bare number after a word, before a three-digit weight",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 777300.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3218",
+   "input": "stul 20 300 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "20 300",
+      "decimal": 300,
+      "thousands": 20300
+     }
+    ]
+   },
+   "said": "weightKg null, asked «20 300 kg — 300 mi yoki 20300 mi?» (JN-6, JS-24: the one doubt the rule raises)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 20300 — twenty chairs and 300 kg read as 20.3 tonnes.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c3219",
+   "input": "Kurtka 300 dona 150 kg",
+   "expected": {
+    "weightKg": 150,
+    "ambiguous": []
+   },
+   "said": "weightKg 150",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): controls: a figure after a figure WITH its unit is never doubted.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3220",
+   "input": "stul 20 ta 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the count carries its unit",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): controls: a figure after a figure WITH its unit is never doubted.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3221",
+   "input": "stul 20 karobka 2.4 kub 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "volumeM3": 2.4,
+    "ambiguous": []
+   },
+   "said": "weightKg 300, volumeM3 2.4",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): controls: a figure after a figure WITH its unit is never doubted.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3222",
+   "input": "20 karobka 60x40x50 2 400 kub",
+   "expected": {
+    "volumeM3": 2400,
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 2400, nothing asked — after a size the number is read plainly, grouped thousands included (JS-24)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): unchanged: what he typed, and after a size there is no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3223",
+   "input": "stul 15 kg 20 300 kub",
+   "expected": {
+    "weightKg": 15,
+    "volumeM3": 20300,
+    "ambiguous": []
+   },
+   "said": "weightKg 15, volumeM3 20300 — «20 300» follows a figure with its unit, where a grouped number is thousands (JN-6)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): unchanged.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3224",
+   "input": "model A54 128 kg",
+   "expected": {
+    "weightKg": 128,
+    "ambiguous": []
+   },
+   "said": "weightKg 128 — the 54 is the model's",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 54128: digits glued to a letter opened a grouped number (JN-5: the look-behind gains the letter).",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3225",
+   "input": "iPhone 15 128 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "15 128",
+      "decimal": 128,
+      "thousands": 15128
+     }
+    ]
+   },
+   "said": "weightKg null, asked 128 or 15128 — «iPhone 15» and «stul 20» are one shape (JN-6)",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 15128.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression",
+   "severity": "common"
+  },
+  {
+   "id": "c3226",
+   "input": "Redmi 13 256 kg 3 kub",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": 3,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "13 256",
+      "decimal": 256,
+      "thousands": 13256
+     }
+    ]
+   },
+   "said": "weightKg null and asked (256 or 13256); volumeM3 3",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 13256.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3227",
+   "input": "60x40x50 300kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3228",
+   "input": "1: 60x40x50 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): the size's last side was read as the thousands of the weight after it — 50 300 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3229",
+   "input": "stul 50 300 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "50 300",
+      "decimal": 300,
+      "thousands": 50300
+     }
+    ]
+   },
+   "said": "weightKg null, asked 300 or 50300",
+   "why": "MP-1 (dg2/_dg8-glue.txt, the thirty spellings): was 50300.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3230",
+   "input": "5 m3 200 kg",
+   "expected": {
+    "weightKg": 200,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "weightKg 200, volumeM3 5 — never asked",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3231",
+   "input": "jami 5 m3 200 kg",
+   "expected": {
+    "weightKg": 200,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "weightKg 200, volumeM3 5 — never asked",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3232",
+   "input": "2 м3 500 кг",
+   "expected": {
+    "weightKg": 500,
+    "volumeM3": 2,
+    "ambiguous": []
+   },
+   "said": "weightKg 500, volumeM3 2 — never asked",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3233",
+   "input": "12 m3 1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, volumeM3 12 — never asked",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3234",
+   "input": "Kafel 120 m2 500 kg",
+   "expected": {
+    "weightKg": 500,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 500 — the 2 / 3 is the unit's",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3235",
+   "input": "Lak 50 sm3 100 kg",
+   "expected": {
+    "weightKg": 100,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 100 — the 2 / 3 is the unit's",
+   "why": "Review JN-5: the commonest weld was not on T0's list — a unit that ENDS in a digit; «5 m3 200 kg» was 3 200 kg under ✅.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3236",
+   "input": "Stanok 1 500 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "1 500",
+      "decimal": 500,
+      "thousands": 1500
+     }
+    ]
+   },
+   "said": "weightKg null, asked 500 or 1500 — after a name word the first group may be its count or model",
+   "why": "Review JN-6: «stul 20 300 kg», «iPhone 15 128 kg», «Stanok 1 500 kg», «Kurtka 300 1 200 kg» are ONE shape and are asked alike.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect",
+   "severity": "common"
+  },
+  {
+   "id": "c3237",
+   "input": "Kurtka 300 1 200 kg",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": [
+     {
+      "field": "weightKg",
+      "text": "1 200",
+      "decimal": 200,
+      "thousands": 1200
+     }
+    ]
+   },
+   "said": "weightKg null, asked 200 or 1200 — after a bare number",
+   "why": "Review JN-6: the candidates are the number without its first group and the whole.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3238",
+   "input": "Ali aka 90 123 45 67 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the phone is no amount",
+   "why": "Review JN-6: a phone's last pair was the thousands: 67 300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3239",
+   "input": "GS-777 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the code's third spelling",
+   "why": "Review JN-6: 777 300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3240",
+   "input": "Kurtka №15 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — «№15» is a number of something, never thousands",
+   "why": "Review JN-6: 15 300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3241",
+   "input": "XJ-200 300 kg",
+   "expected": {
+    "weightKg": 300,
+    "ambiguous": []
+   },
+   "said": "weightKg 300 — the article's 200 is its own",
+   "why": "Review JN-6: the row kernel read 200 300 kg.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "regression"
+  },
+  {
+   "id": "c3242",
+   "input": "GS777 1 200 kg 5 kub",
+   "expected": {
+    "weightKg": 1200,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, volumeM3 5, nothing asked",
+   "why": "Review JS-24: after a size or a code the number is read plainly, and the commonest caption form expects ZERO questions.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3243",
+   "input": "1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3244",
+   "input": "12 500 kg",
+   "expected": {
+    "weightKg": 12500,
+    "ambiguous": []
+   },
+   "said": "weightKg 12500, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3245",
+   "input": "jami 1 200 kg 5 kub",
+   "expected": {
+    "weightKg": 1200,
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3246",
+   "input": "Kurtka 300 dona 1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3247",
+   "input": "vazni 1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3248",
+   "input": "Kurtka, 1 200 kg",
+   "expected": {
+    "weightKg": 1200,
+    "ambiguous": []
+   },
+   "said": "weightKg 1200, nothing asked",
+   "why": "docs/AI-SORAYDI.md T0, «untouched»: a grouped number at the opening of a line, after a totals label or after a figure with its unit is thousands with no question.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "pinned",
+   "severity": "common"
+  },
+  {
+   "id": "c3249",
+   "input": "5 cbm",
+   "expected": {
+    "volumeM3": 5,
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3250",
+   "input": "5.92 CBM",
+   "expected": {
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5.92",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3251",
+   "input": "5,9 cbm",
+   "expected": {
+    "volumeM3": 5.9,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5.9",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3252",
+   "input": "5.9cbm",
+   "expected": {
+    "volumeM3": 5.9,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5.9",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3253",
+   "input": "MEAS: 5.92 CBM",
+   "expected": {
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5.92",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3254",
+   "input": "hajmi 5 cbm",
+   "expected": {
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3255",
+   "input": "5 кбм",
+   "expected": {
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3256",
+   "input": "5 куба",
+   "expected": {
+    "volumeM3": 5,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3257",
+   "input": "12 кубов",
+   "expected": {
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "volumeM3 12",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3258",
+   "input": "507 kgs",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3259",
+   "input": "507kgs",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3260",
+   "input": "G.W. 507 KGS",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3261",
+   "input": "gross 507 kg",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3262",
+   "input": "毛重 507kg 体积 5.92立方",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "weightKg 507, volumeM3 5.92 — the cube was lost",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3263",
+   "input": "TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "both figures of the forwarder's totals line",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3264",
+   "input": "jami 507 kgs 5.9 cbm",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.9,
+    "ambiguous": []
+   },
+   "said": "weightKg 507, volumeM3 5.9",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3265",
+   "input": "15箱 507KG 5.92CBM",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "weightKg 507, volumeM3 5.92",
+   "why": "dg3-02 / dg3-06 («\"cbm\" degan yozuvni o‘qiy olmayapti»): the totals reader kept its own unit lists — kub/куб/m3 and kg/кг/kilo/килограмм — and read none of the trade's words.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3266",
+   "input": "CBM: 5.92",
+   "expected": {
+    "volumeM3": 5.92,
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 5.92",
+   "why": "docs/AI-SORAYDI.md T1 with review JN-21: a figure written label-first with no unit is read only after a label that names nothing but that measure, with «:» or «=» between them.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3267",
+   "input": "G.W.: 507",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "docs/AI-SORAYDI.md T1 with review JN-21: a figure written label-first with no unit is read only after a label that names nothing but that measure, with «:» or «=» between them.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3268",
+   "input": "G.W.: 507\nCBM: 5.92",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "weightKg 507, volumeM3 5.92 — each line its own figure: the 507 is no cube because «CBM» opens the next line",
+   "why": "docs/AI-SORAYDI.md T1 with review JN-21: a figure written label-first with no unit is read only after a label that names nothing but that measure, with «:» or «=» between them.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3269",
+   "input": "毛重：507",
+   "expected": {
+    "weightKg": 507,
+    "ambiguous": []
+   },
+   "said": "weightKg 507",
+   "why": "docs/AI-SORAYDI.md T1 with review JN-21: a figure written label-first with no unit is read only after a label that names nothing but that measure, with «:» or «=» between them.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3270",
+   "input": "Hajmi (m3): 12",
+   "expected": {
+    "volumeM3": 12,
+    "ambiguous": []
+   },
+   "said": "volumeM3 12 — the unit written between the label and the figure",
+   "why": "docs/AI-SORAYDI.md T1 with review JN-21: a figure written label-first with no unit is read only after a label that names nothing but that measure, with «:» or «=» between them.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3271",
+   "input": "5.92",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — a bare «5.92» is no cube",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3272",
+   "input": "G.W. 507",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — neither a colon nor a unit",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3273",
+   "input": "Gross: 12 500",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — «gross» heads a money line; after it the unit must be written",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3274",
+   "input": "Brutto: 12 500 $",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — a currency on the line",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3275",
+   "input": "G.W.: 2.5 MT",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — the figure has a unit of its own, and it is not kilos",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3276",
+   "input": "Vol: 3",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — «Manga Vol 3» is a book",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3277",
+   "input": "Вес: 507",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "no total — «вес» says a weight without saying which; the unit must be written",
+   "why": "Review JN-21: «gross», «net», «vol», «cube», «вес», «масса» read label-first with no unit became the shipment's kilos or cubes — money, a book's volume, a weight nobody called brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3278",
+   "input": "N.W. 480 KGS",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null when no section is named — a figure labelled netto never answers the brutto question (PF-1 stands)",
+   "why": "docs/AI-SORAYDI.md T1 «netto, by its label»: «KGS» became a kilo word, and the netto label keeps the figure out of the brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3279",
+   "input": "N/W 480 KGS",
+   "expected": {
+    "weightKg": null,
+    "ambiguous": []
+   },
+   "said": "weightKg null — «N/W» is a netto label too",
+   "why": "The netto labels are read through the one vocabulary (NET_LABELS): «N/W» was on no list of the typed reader, and with «KGS» readable it would have answered the brutto.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3280",
+   "input": "Stul 20 dona\n15 CTNS 507 KGS 5.92 CBM, 34kg/ctn",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": 5.92,
+    "ambiguous": []
+   },
+   "said": "weightKg null — the text states two weights (507 and one carton's 34), so the typed reader answers nothing and the model's 507 stands; volumeM3 5.92",
+   "why": "dg3-01: the per-carton «34kg» was the ONLY weight this reader saw, and typed beats read — 34 kg landed under ✅ over the model's 507.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "blocker",
+   "severity": "common"
+  },
+  {
+   "id": "c3281",
+   "input": "taxminan 6 kub\nMEAS: 5.92 CBM",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 null — two different cubes are stated; the model, which reads all of it, answers",
+   "why": "dg3-01: «taxminan 6 kub» beside «MEAS: 5.92 CBM» landed 6.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3282",
+   "input": "jami 5 kub 6 m3",
+   "expected": {
+    "volumeM3": null,
+    "ambiguous": []
+   },
+   "said": "volumeM3 null — every spelling of the unit is one statement: 5 and 6 are two numbers",
+   "why": "The reader stopped at the first spelling of its list that answered, so «5 kub» beside «6 m3» was 5.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
+  },
+  {
+   "id": "c3283",
+   "input": "Набор 4 кубов 20 шт",
+   "expected": {
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Набор 4 кубов",
+       "quantity": 20,
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "volumeM3 null, one line «Набор 4 кубов» × 20 — the toy's own cubes stay in the name",
+   "why": "Review JN-22: «кубов» joined the vocabulary and «Набор 4 кубов 20 шт» carried a volume of 4 m³.",
+   "source": "ai-soraydi typed-A T1",
+   "weight": "defect"
   }
  ],
  "intakeClientLabelCases": [
@@ -80820,6 +82488,24 @@
    "why": "with the false code gone the line no longer states goods",
    "source": "T-r1 ND8",
    "weight": "close-variant"
+  },
+  {
+   "id": "c3315",
+   "input": "Kurtka 1 200 dona",
+   "expected": true,
+   "said": "true — a unit word after a figure",
+   "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
+  },
+  {
+   "id": "c3317",
+   "input": "stul 20 300 kg",
+   "expected": true,
+   "said": "true — a unit word after a figure",
+   "why": "A line whose number is ASKED still states its unit: read as «states nothing», a goods line sent at the customer question became the lead's NAME.",
+   "source": "ai-soraydi typed-A T0",
+   "weight": "defect"
   }
  ],
  "threadAiAdviceCases": [

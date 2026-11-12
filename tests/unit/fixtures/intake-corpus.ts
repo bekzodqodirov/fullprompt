@@ -217,11 +217,18 @@ export interface GoodsLineExpect {
   quantity?: number | null;
   weightKg?: number | null;
   volumeM3?: number | null;
+  measureUnit?: string | null;
+  measureQty?: number | null;
+  cartons?: number | null;
   unitWords?: string[];
   /** Problem kinds the answer carries (at least these). */
   problems?: string[];
   /** The `text` of each problem of that kind. */
   problemTexts?: string[];
+  /** The answer carries exactly this many problems (0 = it is settled). */
+  problemCount?: number;
+  /** A number with two readings, both named: `short` is the one without its first group or the decimal one, `long` the whole (`decimal` / `thousands`). */
+  twoReadings?: { text: string; short: number; long: number }[];
   /** The name does not contain this. */
   nameExcludes?: string[];
   /** quantity is not this number. */
@@ -232,6 +239,8 @@ export interface ManualFactsExpect {
   goods?: GoodsExpect;
   weightKg?: number | null;
   volumeM3?: number | null;
+  /** The totals the text states two ways, exactly and in order (`facts.ambiguous`); `[]` = nothing is asked. */
+  ambiguous?: { field: 'weightKg' | 'volumeM3'; text: string; decimal: number; thousands: number }[];
   fromCity?: string | null;
   toCity?: string | null;
   /** landingItems(facts) as a goods list. */

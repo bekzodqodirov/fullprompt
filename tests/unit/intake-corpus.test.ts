@@ -321,8 +321,14 @@ describe('parseGoodsLine', () => {
     const read = parseGoodsLine(c.input);
     const e = c.expected;
     const shown = JSON.stringify(read);
-    for (const key of ['name', 'tnvedCode', 'quantity', 'weightKg', 'volumeM3', 'unitWords'] as const) {
+    for (const key of ['name', 'tnvedCode', 'quantity', 'weightKg', 'volumeM3', 'measureUnit', 'measureQty', 'cartons', 'unitWords'] as const) {
       if (e[key] !== undefined) expect(read[key], `${key} of ${shown}`).toEqual(e[key]);
+    }
+    if (e.problemCount !== undefined) expect(read.problems, shown).toHaveLength(e.problemCount);
+    for (const two of e.twoReadings ?? []) {
+      expect(read.problems, shown).toContainEqual(
+        expect.objectContaining({ kind: 'ambiguous', text: two.text, decimal: two.short, thousands: two.long }),
+      );
     }
     if (e.problems) {
       const kinds = read.problems.map((p) => p.kind);
@@ -347,6 +353,7 @@ describe('parseManualFacts → landingItems / missingFields / lineNeeds', () => 
     for (const key of ['weightKg', 'volumeM3', 'fromCity', 'toCity'] as const) {
       if (e[key] !== undefined) expect(facts[key], key).toEqual(e[key]);
     }
+    if (e.ambiguous !== undefined) expect(facts.ambiguous, 'ambiguous').toEqual(e.ambiguous);
     const landing = landingItems(facts);
     if (e.landing) expect(goodsProblems(landing as unknown as Line[], e.landing)).toEqual([]);
     for (const note of e.landingNoteIncludes ?? []) expect(landing[note.index]?.note ?? '').toContain(note.text);

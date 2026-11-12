@@ -50,10 +50,30 @@ describe('parseGoodsLine — a number lands in the column its unit names', () =>
   });
 
   it('grouped thousands are read whole; a comma or dot thousand is ASKED', () => {
-    expect(read('Stul 1 250 kg')).toMatchObject({ kg: 1250 });
-    expect(read('Paypoq 1 200 juft')).toMatchObject({ pair: '1200 juft' });
+    // Whole where nothing of another fact can stand before the number: a
+    // column, the opening of the line, a figure with its unit (§3.1 T0).
+    expect(read('Stul, 1 250 kg')).toMatchObject({ name: 'Stul', kg: 1250, problems: [] });
+    expect(read('1 250 kg')).toMatchObject({ kg: 1250, problems: [] });
+    expect(read('Stul 20 dona 1 250 kg')).toMatchObject({ dona: 20, kg: 1250, problems: [] });
+    expect(read('Paypoq; 1 200; juft')).toMatchObject({ pair: '1200 juft', problems: [] });
     expect(read('Stul 1,200 kg')).toMatchObject({ kg: null, problems: ['ambiguous'] });
     expect(read('Stul 1.200 kg')).toMatchObject({ kg: null, problems: ['ambiguous'] });
+  });
+
+  it('…but after a name word the first group may be the name’s — both readings are ASKED (review JN-6)', () => {
+    // Re-anchored: «Stul 1 250 kg» and «Paypoq 1 200 juft» were pinned as 1250
+    // and 1200 here. They are the shape of «stul 20 300 kg» (twenty chairs,
+    // 300 kg — read 20 300 kg under ✅) and «iPhone 15 128 kg»: nothing tells
+    // a count or a model from the thousands, so neither is guessed.
+    expect(parseGoodsLine('Stul 1 250 kg')).toMatchObject({
+      weightKg: null,
+      unitWords: ['kg'],
+      problems: [{ kind: 'ambiguous', text: '1 250', decimal: 250, thousands: 1250, grouped: true }],
+    });
+    expect(parseGoodsLine('Paypoq 1 200 juft')).toMatchObject({
+      measureQty: null,
+      problems: [{ kind: 'ambiguous', text: '1 200', decimal: 200, thousands: 1200, grouped: true }],
+    });
   });
 
   it('a carton count is not pieces — it lands nowhere a price reads', () => {

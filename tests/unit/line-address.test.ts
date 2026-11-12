@@ -321,10 +321,21 @@ describe('the review’s answers the parser refused (spec-3, -5, -11, adv-1, -2,
     expect(one('3 50 dona').refused?.reason).toBe('address_unclear');
   });
 
-  it('«Sumka 1 200 dona» and «3: Sumka 1 200 dona» name Sumka — the «1» is the figure’s, not a model number', () => {
+  it('«Sumka 1 200 dona» and «3: Sumka 1 200 dona» name Sumka — the «1» is no model number; whose it is, is ASKED', () => {
+    // Re-anchored (docs/AI-SORAYDI.md §3.1 T0, review JN-6): spec-3 read 1200
+    // here. «Sumka 1 200 dona» and «iPhone 15 128 dona» are ONE shape — a
+    // name word, a short group, three digits — and the second was 15128
+    // pieces written onto the row. So the kernel offers both readings; what
+    // spec-3 fixed stands: the row is Sumka, the «1» never names a model.
     for (const text of ['Sumka 1 200 dona', '3: Sumka 1 200 dona']) {
       const seg = one(text);
       expect(seg.refused, text).toBeNull();
+      expect(seg.at, text).toEqual({ line: 3 });
+      expect(seg.answer, text).toEqual({ kind: 'ambiguous', decimal: 200, thousands: 1200, unit: 'dona' });
+    }
+    // Set off from the name — a comma, the number address alone — the figure is whole.
+    for (const text of ['Sumka, 1 200 dona', '3: 1 200 dona']) {
+      const seg = one(text);
       expect(seg.at, text).toEqual({ line: 3 });
       expect(figures(seg)?.quantity, text).toBe(1200);
     }

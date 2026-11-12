@@ -128,7 +128,7 @@ const VOLUME_SET = new Set(TOTALS_LEAD_LABELS.volumeM3.map(totalsKey));
  * nothing and so is handed it). Matched over a lower-cased text; a word,
  * never a part of one («kubik»).
  */
-const TOTALS_UNIT_WORDS = new RegExp(
+export const TOTALS_UNIT_WORDS = new RegExp(
   `(?<![\\p{L}])(?:${unitPattern('kg')}|${unitPattern('m3')}|${labelPattern([
     ...TOTALS_LEAD_LABELS.weightKg,
     ...TOTALS_LEAD_LABELS.volumeM3,
