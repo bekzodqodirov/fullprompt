@@ -369,6 +369,10 @@ describe('X8 — a summary line read in the trade’s words (units.ts’ vocabul
     expect(under(['TOTAL: G.W. 15 KGS/CTN'])[0]).toBeNull();
     expect(under(['TOTAL: G.W. 1,650 KGS'])[0]).toBeNull();
     expect(under(['TOTAL G.W. 1 136.5 KGS'])[0]).toBeNull();
+    // …after a colon too, where the figure may stand with no unit: never the «1» alone.
+    expect(under(['TOTAL G.W.: 1 136.5 KGS'])[0]).toBeNull();
+    // …and a cube after a bare number: «60 3.8 CBM» is no 3.8 m³ (nor 603.8).
+    expect(under(['TOTAL: 60 3.8 CBM'])[1]).toBeNull();
     expect(under(['TOTAL: G.W. 710 KGS / G.W. 720 KGS'])[0]).toBeNull();
     // …while a comma group AND a decimal point is ONE number: 1136.5.
     expect(under(['TOTAL G.W.: 1,136.5 KGS'])[0]).toBe(1136.5);

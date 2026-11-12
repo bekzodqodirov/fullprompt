@@ -2808,7 +2808,10 @@ const labelAlternation = (labels: readonly string[]) =>
     .map((label) => label.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&').replace(/\\\./g, '\\.?').replace(/ /g, '\\s*'))
     .join('|');
 const TEXT_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
-const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)`;
+// A figure, never one of a spaced group: no digit (or a digit and one space)
+// before it, none after it (T0's rule — «1 136.5» is 1136.5 or a «1» beside
+// 136.5, and nobody can say which).
+const TEXT_NUMBER = String.raw`(?<!\d\s?)(?<![.,])(\d{1,3}(?:,\d{3})+\.\d+|\d+(?:[.,]\d+)?)(?![.,]?\d)(?!\s\d)`;
 const TEXT_UNIT_OF = (words: string) => String.raw`(?:${words})(?!${TEXT_EDGE})`;
 const TEXT_LABEL = (labels: readonly string[]) => String.raw`(?<!${TEXT_EDGE})(?:${labelAlternation(labels)})(?!${TEXT_EDGE})\s*(?:[(（][^()（）]{0,12}[)）]\s*)?`;
 const SUMMARY_READERS: Record<'gross' | 'volume', RegExp[]> = {
