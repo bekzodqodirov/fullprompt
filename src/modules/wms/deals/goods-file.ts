@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { clipUnits } from '../../platform/text/clip';
-import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type DroppedRow, type GoodsRow, type SheetShape } from './goods-import';
+import { CoverMask, parseGoods, readsAsFigure, type Cell, type Covered, type DroppedRow, type GoodsRow, type SheetNote, type SheetShape } from './goods-import';
 import {
   MAX_COLS,
   MAX_MARKUP_CHARS,
@@ -289,6 +289,8 @@ export interface MappedSheet extends SheetShape {
   dropped: DroppedRow[];
   /** The reader stopped at its ceiling with rows left unread (`ParsedGoods.stoppedShort`). */
   stoppedShort: boolean;
+  /** What the reader says of THIS sheet's columns (`ParsedGoods.notes`, docs/AI-SORAYDI.md §3.2 X5). */
+  notes: SheetNote[];
 }
 
 /** What the bot learns from a spreadsheet the seller forwarded. */
@@ -338,6 +340,12 @@ export type GoodsFileRead =
        * an invoice.
        */
       ownText: { text: string; cut: boolean; cellsCut: boolean } | null;
+      /**
+       * What the reader says of the goods sheet's COLUMNS (docs/AI-SORAYDI.md
+       * §3.2 X5): a column it read as ONE carton's, and one the sheet's own
+       * TOTAL row disowns — said on the file's receipt (`receiveGoodsSheet`).
+       */
+      notes: SheetNote[];
     } & SheetShape)
   /**
    * A table with no header the reader knows — handed to the model as text.
@@ -691,7 +699,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
   if (best) {
-    const { goods, dropped, stoppedShort, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
+    const { goods, dropped, stoppedShort, notes, shape, weightKind, grossKg, grossColumn, volumeM3 } = best.parsed;
     // The further mapped sheets' texts share ONE budget among themselves, in
     // workbook order; a sheet the budget did not reach says so in its own
     // `cut`. The bound is stated, not the old one (review
@@ -720,6 +728,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
           ownText,
           dropped: p.parsed.dropped,
           stoppedShort: p.parsed.stoppedShort,
+          notes: p.parsed.notes,
         };
       });
     return {
@@ -727,6 +736,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       goods,
       dropped,
       stoppedShort,
+      notes,
       sheet: best.sheet.name,
       sheets: filled.length,
       text: others.text,

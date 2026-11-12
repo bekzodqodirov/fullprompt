@@ -544,6 +544,14 @@ export function receiveGoodsSheet(
      * saying) and the text of each row it names.
      */
     dropped?: { line: string | null; rows: readonly string[] };
+    /**
+     * What the reader says of the sheet's COLUMNS (`ParsedGoods.notes`,
+     * docs/AI-SORAYDI.md §3.2 X5): a column it read as ONE carton's — the
+     * rows computed from it — and one the sheet's own TOTAL row disowns.
+     * Said on the receipt and kept as the file's note, so the VED reads on
+     * the card why a figure is the bot's product, or why none was taken.
+     */
+    columns?: readonly { warn: boolean; text: string }[];
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
@@ -595,6 +603,7 @@ export function receiveGoodsSheet(
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
   const cutLines = [
+    ...(sheet.columns ?? []).map((n) => `${n.warn ? '⚠️' : '📄'} ${ownLabel} — ${n.text}`),
     ...(sheet.dropped?.line ? [`📄 ${ownLabel} — ${sheet.dropped.line}.`] : []),
     ...(sheet.capped
       ? [`⚠️ Bitta fayldan ko‘pi bilan ${sheet.capped} ta tovar qatori o‘qiladi — fayl uzunroq bo‘lsa, qolganini VED fayldan ko‘radi.`]
@@ -1172,6 +1181,8 @@ async function answerIntakeFile(
       line: droppedRowsLine(sheet.dropped),
       rows: sheet.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
     },
+    // …and what it read of the sheet's columns (X5).
+    columns: sheet.notes,
     ...capOf(sheet.stoppedShort),
   };
   if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);
@@ -1203,6 +1214,7 @@ async function answerIntakeFile(
         line: droppedRowsLine(m.dropped),
         rows: m.dropped.filter((row) => row.why !== 'total').map((row) => row.text),
       },
+      columns: m.notes,
       ...capOf(m.stoppedShort),
       further: { sheet: m.sheet, goodsSheet: sheet.sheet, goodsRows: goods, goodsShape: sheet.shape, itemCap: MAX_CALC_ITEMS },
     })),

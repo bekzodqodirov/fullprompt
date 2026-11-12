@@ -110,6 +110,11 @@ export interface ParseGoodsExpect {
   shape?: 'invoice' | 'packing';
   /** The rows the reader did not take as goods, in order, exactly (`ParsedGoods.dropped`, FAYL-OQISH §5.4-§5.5). */
   dropped?: { text: string; why: string }[];
+  /**
+   * What the reader says of the SHEET's columns (`ParsedGoods.notes`, docs/AI-SORAYDI.md
+   * §3.2 X5): each string is contained in one of them, rendered «⚠️ …» when it warns.
+   */
+  notesInclude?: string[];
 }
 
 /** A spreadsheet the test builds, then hands to `readGoodsFile`. */

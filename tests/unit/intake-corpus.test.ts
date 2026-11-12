@@ -316,6 +316,8 @@ describe('parseGoods', () => {
       if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);
     }
     if (c.expected.dropped !== undefined) expect(parsed.dropped, 'dropped').toEqual(c.expected.dropped);
+    const notes = parsed.notes.map((n) => `${n.warn ? '⚠️ ' : ''}${n.text}`);
+    for (const said of c.expected.notesInclude ?? []) expect(notes.some((n) => n.includes(said)), `notes ${JSON.stringify(notes)}`).toBe(true);
   });
 });
 
