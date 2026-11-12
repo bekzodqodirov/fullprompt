@@ -52743,6 +52743,194 @@
    "why": "X8 reads total rows only (`totalRows`, the belt’s own): a label line under an invoice may be one carton’s spec as often. Base: the same.",
    "source": "ai-soraydi P-excel X8 (XLS-6; JR-3)",
    "weight": "pinned"
+  },
+  {
+   "id": "c3568",
+   "input": [
+    [
+     "Picture",
+     "Item No.",
+     "QTY",
+     "CTNS",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     null,
+     "XJ-200",
+     300,
+     15,
+     150,
+     1.2
+    ],
+    [
+     null,
+     "XJ-350",
+     100,
+     5,
+     60,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "XJ-200",
+       "nameIsArticle": true,
+       "quantity": 300,
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "XJ-350",
+       "nameIsArticle": true,
+       "quantity": 100
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the commonest Chinese quotation: an empty picture column and «Item No.» — each row's only name is its article number, and the row says so (`nameIsArticle`); the name and the figures read as before",
+   "why": "X10 first half, its DATA flag only: what the table asks of such a row («bu nima?») and the rename that clears it are release 1b's. Base: the same rows, unmarked.",
+   "source": "ai-soraydi P-excel X10 (CR-3; review JS-9)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3569",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "G.W."
+    ],
+    [
+     "Office chair",
+     40,
+     300
+    ],
+    [
+     "XJ-200",
+     300,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "nameIsArticle": null
+      },
+      {
+       "name": "XJ-200",
+       "nameIsArticle": true
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "the mark is per ROW: in one list, a good named in words stays unmarked beside one named by its number",
+   "why": "X10: the test is the reader's own `isWordCell` on the row's name cell. Base: no row marked.",
+   "source": "ai-soraydi P-excel X10 (CR-3; review JS-9)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3570",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг"
+    ],
+    [
+     "Труба 32",
+     100,
+     50
+    ],
+    [
+     "LED lamp 50W",
+     300,
+     120
+    ],
+    [
+     "Kafel 600x600",
+     20,
+     400
+    ],
+    [
+     "Кран 1/2",
+     50,
+     10
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Труба 32",
+       "nameIsArticle": null
+      },
+      {
+       "name": "LED lamp 50W",
+       "nameIsArticle": null
+      },
+      {
+       "name": "Kafel 600x600",
+       "nameIsArticle": null
+      },
+      {
+       "name": "Кран 1/2",
+       "nameIsArticle": null
+      }
+     ],
+     "count": 4
+    }
+   },
+   "said": "a number inside a name is still a name: «Труба 32», «LED lamp 50W», «Kafel 600x600», «Кран 1/2» are never marked as article numbers",
+   "why": "X10 guard: ARTICLE_NUMBER's own names (its comment) stay words — a 1b question «bu nima?» over them would be asked of goods the seller already named.",
+   "source": "ai-soraydi P-excel X10 (CR-3; review JS-9)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3571",
+   "input": [
+    [
+     "Product Name",
+     "Brand name",
+     "Qty"
+    ],
+    [
+     "RTX-4090",
+     "NVIDIA",
+     2
+    ],
+    [
+     "GTX-1660",
+     "NVIDIA",
+     3
+    ]
+   ],
+   "expected": {
+    "headerRow": 0,
+    "goods": {
+     "rows": [
+      {
+       "name": "RTX-4090",
+       "nameIsArticle": true
+      },
+      {
+       "name": "GTX-1660",
+       "nameIsArticle": true
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "c2615's sheet: the model numbers stay the products' names (never the brand), and the cells are marked as what they are — numbers, not words",
+   "why": "X10: the flag states the CELL's shape and changes no name; whether a model number is asked about is release 1b's to decide (said under the package's «open»). Base: the same names, unmarked.",
+   "source": "ai-soraydi P-excel X10 (CR-3; review JS-9)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
