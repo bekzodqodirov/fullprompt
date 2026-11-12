@@ -2,6 +2,7 @@ import { clipUnits } from '../../platform/text/clip';
 import { readNumberCell } from '../calc/number-cell';
 import { FIELD_LABELS as SPEC_LABELS, normalizeTnved, unitOf } from '../calc/units';
 import {
+  applyPacking,
   emptyPacking,
   packingStated,
   parseSize,
@@ -2063,8 +2064,12 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // sides are a package. The reader copies it into the row's packing with the
   // unit the header names and WHOSE size the header says it is (review JN-11);
   // the kernel multiplies — a package's size only.
+  // …judged over the DATA: under a two-row header the row below is the split
+  // («L | W | H», «PER CTN | TOTAL»), and its words are no cell of the column
+  // — on a one-line sheet they were half of it, and the size was not found.
+  const split = header === rows[r] ? null : r + 1;
   const mostly = (i: number, test: (cell: Cell) => boolean) => {
-    const cells = sampled(i);
+    const cells = split === null ? sampled(i) : columnCells(rows, r, i, new Set([...skip, split]));
     return cells.length > 0 && cells.filter(test).length * 2 > cells.length;
   };
   const sidesAt = new Map<Side, { i: number; lead: string }>();
@@ -2270,7 +2275,8 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const cartonPieces = cartonPiecesAt < 0 ? null : { index: cartonPiecesAt, unit: perCartonUnitOf(head(cartonPiecesAt)) };
   if (cartonPieces) taken.add(cartonPieces.index);
   // The carton COUNT: the column the count ranking found (while nothing since
-  // has claimed it), else a bare package header whose cells are whole counts.
+  // has claimed it), else a bare package header whose cells are counts — a
+  // «Packages» column of «CARTON» / «PALLET» says how the goods are packed.
   const bare = (text: string) =>
     BARE_PACKAGES.test(text) &&
     (NUMBER_OF.test(text) || !NUMBER_LABEL.test(text)) &&
@@ -2281,10 +2287,9 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     !WEIGHT_ABBREV.test(text) &&
     !cubic(text) &&
     !namesSize(text);
-  const wholeCount = (cell: Cell) => wholeCartons(parseMeasure(cell, 'karobka')) !== null;
   const cartonsAt =
     (packCol && (packCol.index === quantity || !taken.has(packCol.index)) ? packCol.index : null) ??
-    findWhere(header, taken, (text, i) => bare(text) && mostly(i, wholeCount));
+    findWhere(header, taken, (text, i) => bare(text) && mostly(i, (cell) => parseMeasure(cell, 'karobka') !== null));
   return {
     name,
     tnved,
@@ -2920,6 +2925,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       }
       return matched > 0;
     };
+    // (X4) A figure the row states that its own packing shows to be ONE
+    // carton's is replaced by the product at the calc door (`applyPacking`,
+    // DIM-8: «CBM» 0.12 beside twenty cartons of 60×40×50). The sheet's Σ of
+    // that column is then a sum of single cartons, and no total: it is not
+    // offered, and the lines' own sum stands for it.
+    const corrected = { volume: false, weight: false };
     let r = dataFrom;
     for (; r < rows.length && goods.length < MAX_GOODS_ROWS; r++) {
       const row = rows[r]!;
@@ -3034,6 +3045,12 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         size: sized?.size ?? null,
         ...(pcsPerCarton !== null && piecesUnit !== 'dona' ? { perCartonUnit: piecesUnit } : {}),
       };
+      const rowWeightKind = kgPerCarton !== null && weightKg !== null && (columns.weightKind === 'gross' || columns.weightKind === 'net') ? columns.weightKind : null;
+      if (packingStated(packing) && (rowVolume !== null || weightKg !== null)) {
+        const applied = applyPacking({ quantity, weightKg, volumeM3: rowVolume, packing, ...(rowWeightKind ? { weightKind: rowWeightKind } : {}) }).line;
+        if (rowVolume !== null && applied.volumeM3 !== rowVolume) corrected.volume = true;
+        if (weightKg !== null && applied.weightKg !== weightKg) corrected.weight = true;
+      }
       const unreadPack = [
         ...packFigures.filter(([, cell, value]) => value === null && /\d/.test(cellText(cell))).map(([what, cell]) => `${what} «${cellText(cell).slice(0, 40)}» — aniq emas`),
         ...(sized && sized.size === null && sized.text !== '' ? [`o‘lcham «${sized.text.slice(0, 40)}» — aniq emas`] : []),
@@ -3056,9 +3073,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           note: [codeNote, ...unread, ...unreadPack, ...also].filter(Boolean).join(' · ') || null,
           ...(packingStated(packing) ? { packing } : {}),
           // Which weight the row's own is, where the carton arithmetic asks (JN-4).
-          ...(kgPerCarton !== null && weightKg !== null && (columns.weightKind === 'gross' || columns.weightKind === 'net')
-            ? { weightKind: columns.weightKind }
-            : {}),
+          ...(rowWeightKind ? { weightKind: rowWeightKind } : {}),
         },
         r,
         { figures: hasFigures || coveredFigure, sum },
@@ -3143,8 +3158,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
       }
       return total;
     };
-    let grossKg = sumOf(columns.gross, (l) => l.gross);
-    let volumeM3 = sumOf(columns.volume, (l) => l.volume);
+    let grossKg = corrected.weight && columns.gross === columns.weight ? null : sumOf(columns.gross, (l) => l.gross);
+    let volumeM3 = corrected.volume ? null : sumOf(columns.volume, (l) => l.volume);
     // …and a Σ the sheet's OWN grand total contradicts is no total (as-built
     // review CRITIC-1, the belt): whatever header shape the reader misread,
     // the file's «TOTAL» row says what the column adds up to, and a Σ of
