@@ -60,60 +60,60 @@ export function MarkLostForm({
         ⚠️ {t('markLostShort')}
       </button>
       {open && (
-      <div ref={panel} className="order-last basis-full space-y-2 rounded-lg bg-surface-sunken p-3" data-testid="mark-lost-panel">
-        <p className="text-sm font-semibold text-ink-700">⚠️ {t('markLostTitle')}</p>
-        <select
-          aria-label={t('markLostBox')}
-          data-testid="mark-lost-box"
-          className="input"
-          value={boxId}
-          onChange={(e) => setBoxId(e.target.value)}
-        >
-          <option value="">{t('markLostBox')}</option>
-          {options.map((o) => (
-            <option key={o.boxId} value={o.boxId}>
-              {o.shortCode}
-            </option>
-          ))}
-        </select>
-        <input
-          data-testid="mark-lost-reason"
-          className="input"
-          placeholder={t('markLostReason')}
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-        />
-        <button
-          type="button"
-          data-testid="mark-lost-submit"
-          className="btn-danger disabled:opacity-50"
-          disabled={pending || !boxId || reason.trim().length < 3}
-          onClick={() =>
-            start(async () => {
-              const res = await markBoxLostAction({ boxId, receiptId, reason });
-              setResult(res);
-              if (res.ok) {
-                setBoxId('');
-                setReason('');
-              }
-            })
-          }
-        >
-          {pending ? tc('loading') : `❌ ${t('markLostBtn')}`}
-        </button>
-        {result?.ok && (
-          <p className="text-sm font-semibold text-good" data-testid="mark-lost-done">
-            ✅ {t('markLostDone', { code: result.shortCode ?? '' })}
-          </p>
-        )}
-        {result && !result.ok && (
-          <p role="alert" className="text-sm font-semibold text-bad">
-            {KNOWN.includes(result.error ?? '')
-              ? t(`markLostErrors.${result.error}` as 'markLostErrors.box_not_here')
-              : (result.error ?? '')}
-          </p>
-        )}
-      </div>
+        <div ref={panel} className="order-last basis-full space-y-2 rounded-lg bg-surface-sunken p-3" data-testid="mark-lost-panel">
+          <p className="text-sm font-semibold text-ink-700">⚠️ {t('markLostTitle')}</p>
+          <select
+            aria-label={t('markLostBox')}
+            data-testid="mark-lost-box"
+            className="input"
+            value={boxId}
+            onChange={(e) => setBoxId(e.target.value)}
+          >
+            <option value="">{t('markLostBox')}</option>
+            {options.map((o) => (
+              <option key={o.boxId} value={o.boxId}>
+                {o.shortCode}
+              </option>
+            ))}
+          </select>
+          <input
+            data-testid="mark-lost-reason"
+            className="input"
+            placeholder={t('markLostReason')}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button
+            type="button"
+            data-testid="mark-lost-submit"
+            className="btn-danger disabled:opacity-50"
+            disabled={pending || !boxId || reason.trim().length < 3}
+            onClick={() =>
+              start(async () => {
+                const res = await markBoxLostAction({ boxId, receiptId, reason });
+                setResult(res);
+                if (res.ok) {
+                  setBoxId('');
+                  setReason('');
+                }
+              })
+            }
+          >
+            {pending ? tc('loading') : `❌ ${t('markLostBtn')}`}
+          </button>
+          {result?.ok && (
+            <p className="text-sm font-semibold text-good" data-testid="mark-lost-done">
+              ✅ {t('markLostDone', { code: result.shortCode ?? '' })}
+            </p>
+          )}
+          {result && !result.ok && (
+            <p role="alert" className="text-sm font-semibold text-bad">
+              {KNOWN.includes(result.error ?? '')
+                ? t(`markLostErrors.${result.error}` as 'markLostErrors.box_not_here')
+                : (result.error ?? '')}
+            </p>
+          )}
+        </div>
       )}
     </>
   );

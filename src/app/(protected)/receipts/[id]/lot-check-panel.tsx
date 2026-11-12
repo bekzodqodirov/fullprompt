@@ -357,38 +357,38 @@ export function LotCheckPanel({
               were three full-width red bars down a VED's laptop. On a phone
               they stack, full width, as before. */}
           {(offerConfirm || offerClose) && (
-          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
-            <input
-              className="input min-w-0 sm:flex-1"
-              data-testid="lot-check-note"
-              maxLength={500}
-              value={note}
-              placeholder={t('notePlaceholder')}
-              onChange={(e) => setNote(e.target.value)}
-            />
-            {offerConfirm && (
-              <button
-                type="button"
-                className="btn-primary sm:shrink-0"
-                data-testid="lot-check-yes"
-                disabled={busy}
-                onClick={confirm}
-              >
-                ✅ {t('confirm')}
-              </button>
-            )}
-            {offerClose && (
-              <button
-                type="button"
-                className="btn-secondary sm:shrink-0"
-                data-testid="lot-check-dispute-close"
-                disabled={busy}
-                onClick={closeDispute}
-              >
-                {t('disputeClose')}
-              </button>
-            )}
-          </div>
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center">
+              <input
+                className="input min-w-0 sm:flex-1"
+                data-testid="lot-check-note"
+                maxLength={500}
+                value={note}
+                placeholder={t('notePlaceholder')}
+                onChange={(e) => setNote(e.target.value)}
+              />
+              {offerConfirm && (
+                <button
+                  type="button"
+                  className="btn-primary sm:shrink-0"
+                  data-testid="lot-check-yes"
+                  disabled={busy}
+                  onClick={confirm}
+                >
+                  ✅ {t('confirm')}
+                </button>
+              )}
+              {offerClose && (
+                <button
+                  type="button"
+                  className="btn-secondary sm:shrink-0"
+                  data-testid="lot-check-dispute-close"
+                  disabled={busy}
+                  onClick={closeDispute}
+                >
+                  {t('disputeClose')}
+                </button>
+              )}
+            </div>
           )}
           {/* Where the two other answers go — the ✏️ form is drawn for
               `receipts.edit` alone, so the VED writes a one-line 🧩 for
