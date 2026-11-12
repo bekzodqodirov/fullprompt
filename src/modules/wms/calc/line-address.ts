@@ -16,6 +16,7 @@
 import { exampleFigure, type AmbiguousTotal } from './intake';
 import {
   looksLikeMaterial,
+  loneScaledAnswer,
   MATERIAL_ROW_ADDRESS,
   parseLineAnswer,
   parseManualFacts,
@@ -707,6 +708,20 @@ function unitAsked(text: string, parts: NameParts): UnitAsk | null {
   return [...parts.words, ...parts.han].every((w) => keys.has(w)) ? unknown[0]! : null;
 }
 
+/**
+ * A lone-letter weight — «1: 128 g», «1.5 t» — stands only where the bot
+ * asked that row's WEIGHT (review JN-9, «as the answer to the bot's own
+ * weight question»): to a row that owes no kilos the letter is a capacity as
+ * often as a gram — a flash drive's «128 g» — and the answer is what it was
+ * before the tonne was a word, a unit nobody knows, asked in the row answer's
+ * own words. Spelled out («1.5 tonna», «128 gr») it is read anywhere.
+ */
+function loneWeightAsked(row: TableRow | undefined, text: string, answer: LineAnswer): LineAnswer {
+  const lone = loneScaledAnswer(figureText(text));
+  if (lone === null || row === undefined || row.needs.includes('kg')) return answer;
+  return { kind: 'refused', reason: 'unknown_unit', detail: lone.word };
+}
+
 interface ReadSegment extends TableSegment {
   /** Addressed by a number, a sign or a totals word — what the material stage takes. */
   explicit: boolean;
@@ -767,7 +782,8 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
         };
       }
     }
-    return { raw, at: { line: row.no }, refused: null, answer, totals: null, route: null, explicit: true, namedNone: false };
+    const asked = loneWeightAsked(row, address.rest, answer);
+    return { raw, at: { line: row.no }, refused: null, answer: asked, totals: null, route: null, explicit: true, namedNone: false };
   }
 
   const lead = totalsLead(raw);
@@ -825,7 +841,8 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
       // A bare figure is the one total the table had open for it.
       return target === 'both' || read.refused ? read : { ...read, at: target };
     }
-    return { raw, at: target, refused: null, answer, totals: null, route: null, ...plain };
+    const asked = loneWeightAsked('line' in target ? table.rows.find((r) => r.no === target.line) : undefined, raw, answer);
+    return { raw, at: target, refused: null, answer: asked, totals: null, route: null, ...plain };
   }
 
   // Goods words: the NAME address, read before or after the figure («50 dona

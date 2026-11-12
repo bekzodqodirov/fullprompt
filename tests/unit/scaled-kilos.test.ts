@@ -265,6 +265,26 @@ describe('the answer to the bot’s own question', () => {
     expect(parseLineAnswer('5 t domkrat')).toEqual({ kind: 'refused', reason: 'unknown_unit', detail: 't' });
   });
 
+  it('…and only where the bot asked that row’s WEIGHT: to a row owing only its pieces «128 g» is a capacity as often (JN-9)', () => {
+    // A flash drive the table asks «soni?»: «1: 128 g» is not 0.128 kg on the
+    // row — it is the unit nobody knows it was before the tonne was a word.
+    const pieces = table([{ line: 1 }], ['dona']);
+    for (const [text, letter] of [
+      ['1: 128 g', 'g'],
+      ['1: 1.5 t', 't'],
+      // Un-addressed, to the one row open: the same rule.
+      ['128 g', 'g'],
+    ] as const) {
+      const seg = one(text, pieces);
+      expect(seg.at, text).toEqual({ line: 1 });
+      expect(seg.answer, text).toEqual({ kind: 'refused', reason: 'unknown_unit', detail: letter });
+    }
+    // Spelled out, a weight is a weight wherever it is typed: 128 gr × 0.001 = 0.128 kg.
+    expect(one('1: 128 gr', pieces).answer).toMatchObject({ kind: 'figures', figures: { weightKg: 0.128 } });
+    // A row that owes its weight takes the letter: 1.5 t × 1000 = 1500 kg.
+    expect(one('1: 1.5 t', table([{ line: 1 }], ['dona', 'kg'])).answer).toMatchObject({ kind: 'figures', figures: { weightKg: 1500 } });
+  });
+
   it('a name with its figure the house’s own way — a decimal comma — names its row', () => {
     // Found on the way: the name's tokens were cut at commas, so «2,5» was a
     // «2» of the NAME and the answer was refused as another product's.

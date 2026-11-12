@@ -1400,10 +1400,22 @@ function unitAfter(text: string, numberText: string): SellerUnit | null {
  */
 const LONE_ANSWER = new RegExp(String.raw`^(${AMOUNT_NUMBER})[ \t\u00a0\u202f]+(${scaledPattern('lone')})\.?$`, 'iu');
 function loneLetterSpelled(text: string): string {
-  const lone = LONE_ANSWER.exec(text);
+  const lone = loneScaledAnswer(text);
+  return lone ? `${lone.number} ${lone.factor > 1 ? 'tonna' : 'gr'}` : text;
+}
+
+/**
+ * A WHOLE line answer that is a figure and a lone \u00abt\u00bb / \u00abg\u00bb \u2014 \u00ab1.5 t\u00bb, \u00ab128
+ * g\u00bb \u2014 as `parseLineAnswer` reads it (number, letter, factor), or null. The
+ * table asks it because review JN-9 lets the letter be a weight only as the
+ * answer to the bot's own question about a WEIGHT: \u00ab1: 128 g\u00bb to a row the
+ * table asks only its pieces is a flash drive's gigabytes as often as grams
+ * (line-address.ts).
+ */
+export function loneScaledAnswer(raw: string): { number: string; word: string; factor: number } | null {
+  const lone = LONE_ANSWER.exec(raw.trim());
   const scale = lone ? scaledKg(lone[2]) : null;
-  if (!lone || !scale) return text;
-  return `${lone[1]} ${scale.factor > 1 ? 'tonna' : 'gr'}`;
+  return lone && scale ? { number: lone[1]!, word: lone[2]!, factor: scale.factor } : null;
 }
 
 export function parseLineAnswer(raw: string): LineAnswer {
