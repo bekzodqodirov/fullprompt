@@ -1,0 +1,421 @@
+# AI so‘raydi va to‘ldiradi — the AI door names goods from a picture, reads «cbm», derives the cube from carton sizes, and asks for what is missing
+
+**Status: DESIGN v1** (2026-11-12) — to be judged before code. Numbering starts at DECISIONS #1697 (main holds
+#1683-#1696). **No migration** (ledger stays 146): everything new lives in the collection's JSON state, the
+model's answer and the note of a landed row.
+
+## 0. His report and his answers
+
+His report, 2026-11-11, the evening he deployed «Fayl o‘qish» (docs/FAYL-OQISH.md):
+
+> «Yana o‘xshamadi. Ya’ni ma’lumotlarni tashlayapman, rasm misol uchun — unda nima tovar borligini bila
+> olmayapti, va "cbm" degan yozuvni o‘qiy olmayapti, razmerlari berilgan bo‘lsa hajmni o‘zi chiqara olmayapti.
+> AI barcha ma’lumotlarni olib rastamojkani hisoblab berishi kerak; buning uchun sistemada barcha kerakli
+> narsalar bor, yoki yetishmayotgan narsa bo‘lsa, AI rastamojka bilan hisoblatayotgan bo‘lsa, so‘rasin va
+> to‘ldirsin ma’lumotni.»
+
+Four questions were put to him with ⭐ defaults; he answered **«1 d / Qolgani sen aytganingdek»**:
+
+1. **d** — the picture may be anything: the goods themselves, a photographed document, a screenshot.
+2. **a** — goods on a picture: the AI names them from the picture, the row is marked «📷 rasmdan taxmin», and the
+   count and weight are asked of the seller.
+3. **a** — a carton's size and the carton count: the bot computes the cube itself and writes «hisoblangan».
+4. **a** — something missing for the calculation: the AI asks every question in ONE message, the seller writes,
+   the table is filled, and when all is there it calculates.
+
+Answer 4 REVERSES docs/IKKI-ESHIK.md §3.5 (his 4a/5a of 2026-11-08, «Tasdiqlash is the last question») **for the AI
+door only**; the plain door («🧮 Hisoblatish») keeps it.
+
+## 1. What the diagnosis found
+
+Nine scenarios traced through the real handler chain with a scripted model (no API key here), files under the
+session scratchpad `dg2/trace-*.json`: photo-goods (PG-1…10), photo-doc (dg2-1…12), typed-cbm (dg3-01…11),
+dims (DIM-1…11), excel-cbm (XLS-1…11), asks-before (AB-1…14), pass-after, mixed-pile, prompt-audit, and a critic.
+The ids below are theirs.
+
+The four sentences of his report, and what stands behind each:
+
+| His words | What happens | Ids |
+|---|---|---|
+| «rasm … nima tovar borligini bila olmayapti» | The model is told every picture is paperwork and «лучше пустой список, чем придуманный»: a product photo gives `goods: []` → «Tovarlar (0)», and the seller's typed answer naming the goods is refused («jadvalda bunday qator yo‘q») | PG-1, PG-2, PG-3, AB-5 |
+| «"cbm" degan yozuvni o‘qiy olmayapti» | THREE unit vocabularies: the row kernel (`units.ts`) knows cbm/kgs, the shipment-totals reader (`parseManualFacts`) knows only kub/куб/m3 and kg/кг, so «5.9 cbm» as the answer to the bot's own cube question is refused, a typed totals line is not read, and with the model silent it becomes a PRODUCT «MEAS — 5.92 m³» | dg2-1, dg3-02…06, DIM-5, AB-3, dg2-10 |
+| «razmerlari berilgan bo‘lsa hajmni o‘zi chiqara olmayapti» | No carton arithmetic exists anywhere; the prompt forbids it («null, не умножай»); the schema has no place for cartons, a size, a per-carton cube or weight; a size typed as an answer is refused — or WRITTEN INTO THE PIECE COLUMN («1: 60*40*50 15 kg» → 50 dona) | DIM-1…3, dg2-2, dg3-10, AB-4, XLS-4, XLS-5 |
+| «so‘rasin va to‘ldirsin» | After «✅ Tasdiqlash» the AI door asks nothing by design (`noAsk`): «… kiritilmagan — VED xodimi sizdan so‘raydi», «hozircha hisoblab bo‘lmadi». Before it, the unit the law wants is unknown until the row is coded, the model has no channel for its own questions, and a wrong row cannot be renamed or removed | PG-4, PG-5, PG-7, AB-6…9 |
+
+And beside them, WRONG NUMBERS landing under «✅ Ma’lumot to‘liq» today (none of them reported by him, all of them
+on this path):
+
+- a per-carton weight or cube typed in a caption («har biri 15 kg», «15 kg/ctn», «1 karobka 0.12 kub») becomes the
+  SHIPMENT's total and outranks the model's correct reading — dg2-4, dg3-01, DIM-4, AB-1;
+- «2: 20 karobka x 12 juft» writes 12 juft — AB-2;
+- Excel: «PKGS» is read as the line's WEIGHT (the `kg` inside the word) — XLS-3; an unmarked per-carton «CBM» /
+  «G.W.» column lands as the line's and Σ comes out 15-21× small — XLS-1, XLS-2, DIM-8; «Volume (cm3)» is read as
+  m³ — XLS-10; «Karobka soni» lands as pieces — XLS-9;
+- the model writing ONE carton's cube into the row's volume lands unchecked — dg2-5, DIM-9;
+- totals the AI read off a photo are dropped beside two Excel files while its own note states them — dg2-3, dg3-07.
+
+## 2. The kernel (written by the lead first; BINDING for every package)
+
+### 2.1 The structured-output budget — why the new fields carry no `null`
+
+The reading's answer is a strict JSON schema (`output_config.format`). The API allows **at most 16 parameters
+with a union type** across a request's strict schemas (a `["number","null"]` type array counts) and **24 optional
+parameters**; past either it answers **HTTP 400 «Schema is too complex for compilation»** — for EVERY reading.
+`FACTS_JSON_SCHEMA` already spends **12** unions (5 top-level, 7 on a good). So:
+
+- **every new field is non-nullable and required**: a number says «not stated» as `0`, a word as an enum member
+  (`'unknown'`), a list as `[]`. No new union, no optional parameter.
+- `tests/unit/intake-schema-budget.test.ts` walks the schema the request SENDS and asserts unions ≤ 16 and
+  optional = 0, so the next field somebody adds as `['number','null']` is red before it reaches production.
+- **A fallback, because no key exists here and the first real call is in production**: a 400 whose message
+  names the schema (`/schema/i` with `/complex|compil|invalid/i`) makes `streamAttempt` retry ONCE with the
+  LEGACY contract (today's schema and prompt, kept as `FACTS_JSON_SCHEMA_V1` / `SYSTEM_V1`) and latch it for the
+  process, logging `[calc intake] schema refused — legacy contract`. Production then degrades to today's
+  reading instead of failing every one. The zod reader accepts both answers (new keys `.optional()`).
+
+### 2.2 The model's contract (`wms/calc/intake-ai.ts`)
+
+New keys on a good, all required, none nullable, placed BEFORE `note`:
+
+| Key | Type | «not stated» | Meaning |
+|---|---|---|---|
+| `name_source` | enum `document` \| `picture` | — | `picture`: the name is what the model SEES on a photo of the goods — written nowhere |
+| `cartons` | number | 0 | packages of THIS line (коробок, мест, CTNS, 箱) |
+| `pieces_per_carton` | number | 0 | pieces in one package |
+| `carton_weight_kg` | number | 0 | ONE package's weight, as written |
+| `carton_weight_kind` | enum `gross` \| `net` \| `unknown` | `unknown` | which weight that is |
+| `carton_volume_m3` | number | 0 | ONE package's cube, as written (CBM/CTN) |
+| `carton_l`, `carton_w`, `carton_h` | number | 0 | ONE package's outer size, as written |
+| `carton_size_unit` | enum `cm` \| `mm` \| `m` \| `unknown` | `unknown` | the unit the size is written in |
+| `code_sure` | boolean | — | false: the code is the model's best guess |
+
+New top-level key `questions`: an array (≤ 5) of `{ n: integer, text: string }` — `n` the row's number in THIS
+answer's `goods` (1-based), `0` for the shipment; `text` one short question in Uzbek (Latin) the seller can answer
+in a few words.
+
+The prompt (Russian, as it is) changes in five places — the wording is the lead's, in `SYSTEM`:
+
+1. **Pictures are of two kinds.** A document (накладная, упаковочный лист, инвойс, наклейка, скриншот переписки
+   или карточки товара) is READ. A photo of the goods themselves, or of cartons, is LOOKED AT: name each distinct
+   good it shows (Russian name; what it is made of and what it is for into `note`, when visible), set
+   `name_source: "picture"`, and leave every figure the picture does not show at null/0. A picture of closed
+   cartons with no label: no good — a question instead.
+2. **The model copies, the bot multiplies.** A total written on the document goes where it always went
+   (`volume_m3`, `weight_kg`, `quantity`). What is written PER PACKAGE — the carton count, pieces per carton, one
+   carton's weight, one carton's cube, a carton's size — goes into the packing keys, **never multiplied**. The old
+   sentence «если дан только объём одной коробки — null, не умножай» stays true for `volume_m3` and gains its
+   other half: «…и запиши его в carton_volume_m3, а число коробок — в cartons».
+3. **CBM is cubic metres** — «CBM», «M3», «куб», «方», «立方», «MEAS», «Measurement», «Volume» name the cube;
+   «KGS», «G.W.», «N.W.», «毛重», «净重» the weight. (The model knows; the sentence stops it treating a column
+   headed «MEAS (CM)» as a cube: a size is a size.)
+4. **A code always, with its doubt.** `tnved_code`: the best 10-digit (or 4-6 digit heading) code the name and the
+   picture support; `code_sure: false` when it is a guess. (Replaces «только там, где уверен; иначе null»: an
+   uncoded row cannot be asked its law's unit before «✅», PG-5 / AB-8. The table already words a model's code
+   «AI taklifi» and nothing is ✅'d by it.) A good the model cannot name at all keeps `tnved_code: null`.
+5. **Ask.** `questions`: what the model needs and could not read — which of two goods a figure belongs to, what a
+   closed carton holds, the material that decides a code («erkaklarmi, ayollarmi; nimadan?»), a size's unit. Never
+   a question the answer already holds, never «send a clearer file» (the bot says that itself).
+
+«Ничего не выдумывай» stays, with its scope said: no FIGURE and no good that is neither written nor visible.
+
+`aiGoodsLine` maps the packing keys into `CalcGoodsFact.packing` (§2.3, `from: 'ai'`), `name_source: 'picture'`
+into `nameFrom: 'photo'`, `code_sure: false` into `tnvedSure: false`; `questions` rides `AiIntakeResult.questions`.
+The carton count no longer goes through `normalizeRowUnit` into a «sotuvchi: N karobka» note (dg2-12) — a `unit:
+"karobka"` + `measure_qty` answer (the legacy shape) is folded into `packing.cartons` when `cartons` is 0.
+
+### 2.3 Carton arithmetic — ONE pure module, `wms/calc/carton-math.ts`
+
+No reader multiplies by itself. Every reader fills a `Packing` and calls the same function.
+
+```ts
+export type SizeUnit = 'cm' | 'mm' | 'm';
+export interface CartonSize { l: number; w: number; h: number; unit: SizeUnit | null }
+export interface Packing {
+  cartons: number | null;            // packages of THIS line — whole, 1…100 000
+  pcsPerCarton: number | null;
+  kgPerCarton: number | null;
+  kgPerCartonKind: 'gross' | 'net' | null;
+  m3PerCarton: number | null;
+  size: CartonSize | null;           // ONE package's outer size
+  from: 'ai' | 'file' | 'typed';     // who stated it — worded on the note
+}
+export interface Derived { value: number; how: string }   // how: «20 × 0.12 m³», «20 × 60×40×50 sm»
+```
+
+- `parseSize(text)` — a size token: 3 numbers (or 2, never used for a cube) joined by `x х × *` (Latin and
+  Cyrillic, either case), spaces allowed around the joiner, an optional unit after the last number or after each
+  («60x40x50 sm», «60*40*50см», «600×400×500 mm», «0.6 x 0.4 x 0.5 m», «L60 W40 H50 cm»). Returns the size and
+  the span it occupies. `/` is NOT a joiner (dates, fractions, «3000pcs/15ctns»).
+- `sizeCube(size)` — m³ of one package. Unit stated → exact. **Unit absent → `cm` is assumed only when every
+  side is within 5…300** (a carton written 60×40×50 is centimetres in this trade), and the result says
+  `assumed: true` so every surface prints «sm deb olindi»; otherwise `null` (the unit is asked).
+- `cartonFigures(p)` — `volumeM3 = cartons × (m3PerCarton ?? sizeCube)`, `weightKg = cartons × kgPerCarton`
+  (kind carried), `quantity = cartons × pcsPerCarton`; each a `Derived` or null. A per-carton cube that disagrees
+  with the size's by more than 5 % keeps the STATED cube and the note says both.
+- `judgeStated(stated, derived, perCarton, cartons)` → `'fill'` (nothing stated) · `'agrees'` (within 2 %) ·
+  `'one_carton'` (cartons > 1 and the stated figure equals ONE carton's within 2 %) · `'differs'`.
+- `applyPacking(good)` — the one door. For volume, weight and pieces in turn: `fill` → the derived figure is
+  written and `good.derived[field] = how`; `agrees` → nothing; `one_carton` → the stated figure is REPLACED by
+  the product and the note says so («hajm bitta karobkaniki edi: 0.12 × 20 = 2.4 m³»); `differs` → the stated
+  figure stays and a `doubt` is returned for the table to ask. Rounding: m³ and kg to 3 places, half-up, after the
+  multiplication.
+- **Weight kinds.** The ROW's weight is netto (customs). `kgPerCartonKind: 'net'` → the row's weight.
+  `'gross'` or unknown → the row's weight when it has none (noted «brutto», the reading's existing rule), and the
+  row's gross product is kept in `derived.grossKg` for the shipment's brutto: when EVERY row has one, their Σ is
+  offered as the shipment's brutto, labelled «(karobkalardan)».
+- **Where it is safe, and where it asks** (DIM-11): ONE size + ONE whole carton count on the same row/segment,
+  the size being the PACKAGE's (said so by a word — karobka/ctn/carton/quti/коробка/место/箱/外箱/упаковка — by
+  its column header, by a model's packing key, or because the text is an answer to the bot's cube question).
+  NOT safe → no figure, a question: a size with no unit outside 5…300; a carton range («C/NO 1-20»); two sizes or
+  two counts on one row; a size inside a product NAME with no carton count («Stol 120x80x100 sm 5 dona», «Kafel
+  600x600») — that stays in the name, as today.
+
+`CalcGoodsFact` gains `packing?: Packing | null`, `derived?: { volumeM3?: string; weightKg?: string; quantity?:
+string; grossKg?: Derived } | null`, `nameFrom?: 'photo' | null`, `tnvedSure?: boolean`. They live in the
+collection's JSON state and on the model's facts; **the landing writes figures into the columns that exist and
+the arithmetic into the row's `note`** («📦 20 karobka × 60×40×50 sm = 2.4 m³ (hisoblangan)», «📷 nomi rasmdan
+(AI taxmini)») — no column, no migration, and the VED reads on the row how each figure came to be.
+
+### 2.4 ONE unit vocabulary
+
+`units.ts` `WORDS` is the list. It gains the forms people answered with and no reader knew: m³ — «кбм», «куба»,
+«кубов», «кубометр», «кубометра», «кубометров», «kubometr», «kubov», «cum», «cu.m», «cubic meter(s)»; kg —
+«кило», «килограмма», «килограммов», «kilogramm» (already), «kgs» (already), «公斤» (already). It exports
+`unitPattern(unit)` (a regex alternation, longest first, dots and spaces tolerated) and the label words of a
+totals line: `WEIGHT_LABELS` («g.w.», «gw», «g/w», «gross», «gross weight», «brutto», «брутто», «вес брутто»,
+«og‘irlik», «вес», «毛重», «总毛重»), `NET_LABELS` («n.w.», «nw», «n/w», «net», «netto», «нетто», «净重»),
+`VOLUME_LABELS` («cbm», «meas», «meas.», «measurement», «volume», «vol», «cube», «hajm», «hajmi», «kub», «объём»,
+«объем», «体积», «总体积», «方数»). `parseManualFacts`, `readTotals` (line-address.ts) and `TOTALS_UNIT`
+(totals-shape.ts) read through them — their own lists are DELETED. Fence: `tests/unit/unit-vocabulary.test.ts`
+asserts every kg and m³ word of `WORDS` is read as a shipment total by `parseManualFacts` and as an answer by
+`parseTableAnswer`.
+
+## 3. The packages
+
+Built in worktrees on the kernel commit, two at a time. Each change to a reader runs the WHOLE intake corpus
+first (`tests/unit/intake-corpus.test.ts`) and adds its new cases to it; a case that must change is changed with
+its reason in `intake-corpus-known.ts`'s style, never deleted.
+
+### 3.1 P-typed — typed text and table answers (`intake-manual.ts`, `units.ts`, `line-address.ts`, `totals-shape.ts`, the refusal words in `calc-dialog.ts`)
+
+**T1. Totals in the trade's words.** `parseManualFacts` reads, as the shipment's: «5 cbm», «5.92 CBM», «5,9
+cbm», «5.9cbm», «CBM: 5.92», «MEAS: 5.92 CBM», «hajmi 5 cbm», «5 кбм», «5 куба», «12 кубов», «507 kgs»,
+«507kgs», «G.W. 507 KGS», «G.W.: 507», «gross 507 kg», «N.W. 480 KGS» (netto, by its label), «毛重 507kg 体积
+5.92立方», and both figures of «TOTAL: 15 CTNS, G.W.: 507 KGS, MEAS: 5.92 CBM». Label-first forms («CBM: 5.92»,
+«G.W.: 507») are read only with a LABEL of §2.4 — a bare «5.92» is no cube. The existing rules stand: one
+distinct figure per field or it is ambiguous; a goods line's own figure is not the shipment's; netto never stands
+for a freight brutto.
+
+**T2. Both figures of one answer.** `readTotals` returns every field the segment states: «507 kg 5.9 cbm» writes
+both; a figure it could read and did not place is a refusal naming it, never a silent drop (dg3-03).
+
+**T3. A unit word is never a product.** A segment that is «number + a word» where the word is no unit and names
+no row is asked as a unit («“kubov” — kubmi? «5.9 kub» deb yozing») — never «jadvalda bunday qator yo‘q», never
+filed as material (dg3-04). `NOT_GOODS_WORDS` gains: meas, meas., measurement, vol, vol., volume, cube, cubic,
+cbm, kgs, pkgs, pkg, packages, package, ctns, g.w., n.w., gw, nw, gross, net, total, dim, dims, size — so with the
+model silent «MEAS: 5.92 CBM» and «G.W. 1136.5 kg CBM 7.19» are totals lines, not rows (dg3-05, dg2-10, DIM-10).
+
+**T4. Per-package figures are not totals** (DIM-4, AB-1, dg2-4, dg3-01). A weight, cube or count is PER PACKAGE
+when it is marked so: followed by «/ctn», «/karobka», «/кор», «/箱», «per ctn», «per carton», «dan» («15 kg
+dan»); preceded by «har biri», «har bir», «har birida», «har karobkada», «bitta karobka», «1 karobka», «one
+carton», «each», «каждая», «каждый», «в коробке», «1 место»; or written «N karobka × 15 kg» / «20 x 15 kg» /
+«20 * 24 dona». Such a figure never reaches `totalWeightFrom`, `loneWeightKg` or a row's own column. With a
+carton count on the same line it is a `Packing` (`from: 'typed'`) and `applyPacking` computes the product,
+labelled; without one the bot asks «nechta karobka?».
+
+**T5. Typed against read.** When the typed total and the model's (or a file's) total for the same field both
+exist and differ by more than 2 %, neither lands: the table asks «⚠️ Og‘irlik: siz 15 kg yozdingiz, AI hujjatdan
+300 kg o‘qidi — qaysi biri?» with one button per figure (the existing totals-doubt machinery, `asked(field)`).
+«Typed wins» stays only when the two agree or one is absent.
+
+**T6. Sizes.** `parseGoodsLine` and `readSegment` take a size token (§2.3 `parseSize`) OUT before the amount
+reader runs — a dimension is never a count (DIM-3: «1: 60*40*50 15 kg» wrote 50 dona; «1: 600*600 120 m2» wrote
+600 dona · 600120 m²). Then:
+- a size + a carton count in a typed GOODS line → that row's `Packing`;
+- as the answer to the open cube question, un-addressed: «60x40x50 sm 20 karobka» → the shipment's cube through
+  the carton math, echoed with its arithmetic («✍️ umumiy hajm — 2.4 m³ (20 × 60×40×50 sm)»), ↩️ as any answer;
+- addressed, «1: 60x40x50 sm 20 karobka» → row 1's packing, its cube computed;
+- a size with no carton count → «⚠️ 60×40×50 sm — nechta karobka? «60x40x50 sm 20 karobka» deb yozing»;
+- the ✍️ hint under an open cube gains «yoki karobka o‘lchami: «60x40x50 sm 20 karobka»».
+
+**T7. Cartons × per-carton in an answer** (AB-2, AB-9): «2: 20 karobka x 12 juft», «2: 20 karobka har birida 12
+juft», «1: 20x24 dona», «1: 20 karobka 24 dona dan» → the product, echoed «20 × 12 = 240 juft». The per-carton
+number is never written as the row's. «1: 20 karobka» alone on a row with no pieces: the carton count is kept on
+the row's packing and the bot asks «1-qator: bir karobkada nechta dona?».
+
+**T8. The typed goods reader keeps a line it half-understands** (dg3-09): `unitFigures` skips separators (` - `,
+`–`, `/` between figure groups) and field labels; a figure with «/ctn» goes to the packing, never to the line's
+own column; a line whose tail holds an unknown unit stays a NAMED row with a note, instead of vanishing and
+leaving its lone «kg» to be taken as the shipment's.
+
+**T9. A table with no row takes the goods** (PG-2, AB-5). On the AI door, while the table has zero rows, a typed
+text that is not a totals answer is read by the typed goods reader: rows found → written to the table at once
+(no model call), echoed with ↩️; nothing readable → filed as material and the reading re-queued, saying so. The
+«3: 50 dona» example is never printed on a table with no row; every example is built from the first open row
+(AB-13), and on a ONE-row table an un-addressed count/weight/code goes to that row.
+
+**T10. Correcting a row** (PG-7, AB-7): «N: nomi <name>» renames row N (on a `nameFrom: 'photo'` row any
+«N: <name> <figures>» does — the photo's guess is the seller's to overrule); «N: o‘chir» / «N: yo‘q» / «N: удали»
+removes it; «N: <words>» with no figure and no rename word appends the words to the row's note (material,
+purpose — what decides a code) and marks the row for re-coding at the pass. Words beside a figure never cost the
+figure. All three ride the echo and ↩️ the table has.
+
+**T11. Small.** «sertifikat bor / yo‘q» typed at the table flips the toggle (AB-12). A number with a currency
+word («2500 $», «5 usd», «so‘m», «¥») is never offered as pieces or kilos: «💵 narxni VED xodimi qo‘yadi —
+bojxona bazasi bo‘yicha hisoblanadi» (AB-10).
+
+### 3.2 P-excel — the column reader (`deals/goods-import.ts`, `goods-file.ts`, `telegram/file-goods.ts`)
+
+**X1. «PKGS» is not kilos** (XLS-3): `kg`/`кг` match as a unit WORD (`(?<![\p{L}])kgs?(?![\p{L}])`), never as a
+substring; a package-count header is never a weight candidate.
+
+**X2. The row keeps its packages.** `GoodsRow` gains `packing` (§2.3, `from: 'file'`): the carton count from a
+package column («CTNS», «CTN», «Cartons», «PKGS», «箱数», «件数» only beside a piece column, «Мест», «Mesta»,
+«Karobka soni», «Joy soni», «Korobka»), one vocabulary for the rank and the lone-column rule — a package header
+is never the PIECE column (XLS-9); per-carton cube and weight from the PER_PACKAGE columns that are today passed
+over («CBM/CTN», «单箱体积», «Объем 1 места», «G.W./CTN», «N.W./CTN», «毛重/箱», …), and per-carton pieces
+(«PCS/CTN», «装箱数», «шт/кор»).
+
+**X3. The size column** (XLS-5, DIM-6): a `cartonSize` column kind — headers «Carton size», «CTN SIZE», «Size
+(cm)» beside a package column, «MEAS (CM)», «Dimensions», «L*W*H», «外箱尺寸», «箱规», «尺寸», «Размер коробки»,
+«Габариты», «O‘lchami (sm)»; or an L | W | H triplet (Длина/Ширина/Высота, 长/宽/高); unit from the header or the
+cell. «MEAS.» whose cells are sizes is a size column, not a cube.
+
+**X4. The arithmetic is the kernel's**: every row with a packing goes through `applyPacking`. The line's own
+figure, when the sheet states it, stands; a per-carton figure fills only what is empty (XLS-4, DIM-7).
+
+**X5. An unmarked per-carton column** (XLS-1, XLS-2, DIM-8). The volume column is chosen as the weight is: among
+volume-keyed, non-per-package columns, the largest Σ (never the leftmost); the volume gets its own per-package
+words (ctn/carton before cbm, 外箱/箱 before 体积, коробк/кор./мест, quti/karobka + hajm/kub). The TOTAL-row belt
+runs over every volume- and weight-keyed column. When a column's Σ contradicts the sheet's own TOTAL row: if
+Σ(value × cartons) agrees with it (2 %), the column IS per carton — line = value × cartons through the kernel,
+said on the file's note; if nothing explains it, the LINE figures are nulled too (kept on the note), so no later
+Σ resurrects a refused number. `judgeStated`'s `one_carton` catches the same on a sheet with a size column.
+
+**X6. A header's own unit** (XLS-10): «Volume (cm3)», «体积(cm³)», «Объем, л», «Hajmi (litr)», «дм3» convert
+(cm³ ÷ 1e6, dm³/l ÷ 1000) on BOTH rungs; a unit the reader cannot convert refuses the column.
+
+**X7. Headers nobody mapped** (XLS-7, XLS-8): cube «方数», «总方数», «CUBE», «Cubic meter», «Cubage», «CU.M»,
+«CMB», «CUBM» (and a cube header is never money); weight «GW», «NW», «G/W», «N/W», «T.W», «Масса», «Massa»,
+«总重», «公斤» — GW/NW as whole words in the gross and net key lists.
+
+**X8. The TOTAL row as the total** (XLS-6): when a figure's Σ is null (a line lacks it) the grand-total row's
+cell in the mapped gross / volume column is the sheet's total; a summary line «TOTAL: 60 CTNS / G.W. 710 KGS /
+3.8 CBM» is read by the kernel's totals reader (§3.1 T1). An invoice-shaped lone sheet's text (with its total
+rows) is handed to the model under the totals heading, as a packing sheet's already is.
+
+**X9. The table says what the file gave** (XLS-11): computed figures are marked «(hisoblangan)»; when ONE factor
+is missing the question names it («1-qator: karobka o‘lchami 60×40×50 sm bor — nechta karobka?»).
+
+### 3.3 P-model — the reading's consumers (`intake-ai.ts` mapping, `calc-intake.ts` merge, the table in `intake.ts` / `calc-dialog.ts`, `calc-files.ts` images, `reading-whole.ts`)
+
+**M1. 📷 rows** (PG-1, PG-6). A `nameFrom: 'photo'` row is drawn «📷 1. Стул офисный — rasmdan (AI taxmini)» and
+owes its figures like any row (the law's unit when coded, else «soni (dona) yoki sof og‘irligi (kg)»). Its note
+on landing says «nomi rasmdan (AI taxmini)». Beside an Excel a photo's good the sheet does not carry is OFFERED
+as a row («➕ Rasmdagi «Обувь детская» ni qo‘shish» / «✖️ Kerak emas») instead of a note under «Ma’lumot to‘liq»
+(dg2-7); while the offer stands the closing is not «to‘liq».
+
+**M2. Zero rows from pictures** (PG-3): when only photos were accepted and no row came back, the table closes
+with the bot's own question — «❓ Rasmda nima tovar? Nomi, soni va og‘irligini yozing — masalan: «Stul 20 dona
+300 kg»» — and the model's `questions` under it; the keyboard keeps «➕ Yana ma’lumot» and «👤 VED hisoblasin».
+The answer is P-typed's T9.
+
+**M3. The packing reaches the rows.** `aiGoodsLine` → `packing` → `applyPacking` (§2.3). The table prints a
+derived figure with its arithmetic: «2.4 m³ (hisoblangan: 20 × 60×40×50 sm)», «300 kg (20 × 15 kg, brutto)»,
+«480 dona (20 × 24)», and the carton count itself («📦 20 karobka») — which is the model's, never «sotuvchi:»
+(dg2-12, AB-9). A `one_carton` replacement is said; a `differs` doubt is a ⚠️ question with two buttons. A
+density outside 20…1500 kg/m³ over the whole job (Σ kg ÷ Σ m³, both present) draws «⚠️ hajm yoki og‘irlik
+shubhali: 4 920 kg/m³ — bitta karobkaniki emasmi?» and holds «Ma’lumot to‘liq» until answered (dg2-5).
+
+**M4. The model's questions** (AB-6): drawn as a block «🤖 AI so‘raydi:» with addresses («❓1: Kurtka kimniki —
+erkaklarmi, ayollarmi? Nimadan?»), at most five, never cut to three as `steps` are. A free-text answer «1:
+erkaklar, paxta» is T10's note-append. `steps` stays what the model DID, on the lenta.
+
+**M5. Totals the AI read are asked, not dropped** (dg2-3, dg3-07). Where the fold gate (`foldNoTotals`) withholds
+the model's totals, and the model was shown something other than sheets (a photo, a PDF, typed text), the table
+shows them as a question: «🤖 AI o‘qidi: 1 136.5 kg · 7.19 m³ — butun yuk uchunmi?» [✅ Ha, butun yuk] [✍️ Yo‘q,
+o‘zim yozaman]. «Ha» writes them as the totals answer (the seller's statement, worded «AI o‘qidi, sotuvchi
+tasdiqladi»). Never the AI's own total as a note beside «yozilmagan».
+
+**M6. Figures for rows an Excel already holds** (dg2-6) — `known_figures` beside `known_codes`: `{ n, weight_kg,
+volume_m3, cartons }` with 0 = not stated, applied like `packingFills`: only into EMPTY cells of the numbered
+row, each marked «rasmdan». *(Second priority: built if the first five land clean; else stated in §6.)*
+
+**M7. Customs-only totals** (dg2-8, AB-14, dg3-11): on «Faqat rastamojka» the shipment's weight is the rows' Σ
+when every row has one, labelled «(qatorlardan)», as the cube already is; the two totals are drawn ℹ️ («upsale
+hisobi uchun») and no longer hold «✅ Ma’lumot to‘liq» — they are still asked, still landed when given.
+*(His call — question 2 of §7; ⭐ = as written here.)*
+
+**M8. The picture the model gets** (PG-9, dg2-9): `MODEL_IMAGE_PX` 1568 → **2576** (claude-opus-5's limit; a
+3.75 MP cap; JPEG quality 88; a JPEG that already fits passes untouched). One line in the «Qabul qilindi» prompt
+when a photo arrived as a Telegram photo (≤ 1280 px): «🔎 Mayda yozuvli hujjat bo‘lsa — FAYL qilib yuboring (📎 →
+Fayl), shunda AI aniqroq o‘qiydi». The 15 MB refusal stops advising the opposite.
+
+**M9. Small.** The settled prompt's «✅ Bo‘ldi» is taken off when the table is delivered, and a press with
+nothing new redraws the table instead of paying for the same reading (PG-10). The model-sized copy of a photo is
+accepted only when non-empty and ending in the JPEG end marker; the local storage driver writes through a temp
+name (dg2-11). `[calc intake]` logs the goods count, the picture-named count and the question count of every
+reading — the line his server's log could not answer this week.
+
+### 3.4 P-ask — after «✅ Tasdiqlash» (`prefill.ts`, `ai-reply.ts`, `tail-words.ts`, the reply door in `calc-amend.ts`)
+
+**A1. The AI door asks again.** `noAsk` becomes `door === 'plain'`. On door `'ai'` the answer carries the ❓ block
+(`lawAsksBlock`) for every row whose missing figure only the seller can give, and the seller's tails say what to
+do, not «VED xodimi sizdan so‘raydi».
+
+**A2. …and asks the one-measure rows too.** `lawAsksOf` covers law-pinned needs only; on the AI door a row with
+neither a count nor a weight («📊 taxmin yo‘q: 1-qator — qatorda soni ham, og‘irligi ham yo‘q») joins the block:
+«· 1-qator «Рюкзак школьный»: soni (dona) yoki sof og‘irligi (kg)».
+
+**A3. A reply fills and recalculates.** A swipe-reply to the AI's answer with «1: 150 kg» (any table answer of
+§3.1) is written to that request through the ONE writer (`amendRequest` → `saveTable`) and the pass re-runs past
+the mute — in one step, with the echo «✍️ 1-qator — 150 kg yozildi. 🤖 AI qayta hisoblayapti…»; no second table,
+no second «Tasdiqlash», when the reply is nothing but answers to rows that exist. Anything else (new goods, a
+file) opens the ➕ add collection as today.
+
+**A4. What only the VED can give is said as his**, unchanged: a baza, a rate, a code nobody found — «VED xodimi
+qo‘yadi».
+
+*(§3.4 is completed from the pass-after trace; the reply door's present steps are recorded there.)*
+
+## 4. What stays as it is
+
+- The plain door asks nothing and its pass is silent (IKKI-ESHIK §2).
+- «The model proposes words and can never reach a number»: a figure the model READ is a fact with its source; a
+  figure that is a PRODUCT is computed by `carton-math.ts` from fields the model read, and says so; no model
+  output becomes a rate or a baza. `tests/unit/ai-advisory.test.ts` stands.
+- One factory's Σ never stands as the shipment's (FAYL-OQISH §3.7) — M5 asks instead of landing.
+- A carton count is never pieces; a per-carton figure is never the line's — both rules stay, and gain the
+  multiplication that makes them useful.
+
+## 5. Fences and proofs
+
+- `intake-schema-budget.test.ts` (§2.1); `unit-vocabulary.test.ts` (§2.4); `carton-math.test.ts` (the safety
+  rules of §2.3, each with its refusal); the corpus gains every input of the nine traces with the answer this
+  document gives.
+- Each finding is reproduced as a failing test BEFORE its fix (the skeptics' stage of the diagnosis was cut by
+  the usage limit — the red proof is the verification), by string edit, restored by hash.
+- The real model cannot be called here. The contract is proven against the SSE stand-in
+  (`tests/fixtures/sse-anthropic.ts`) and the schema budget by a walk; the first real reading after the deploy is
+  the proof, and §2.1's fallback is what happens if the API refuses the schema.
+
+## 6. Stated, not built (v1)
+
+- An invoice VALUE is not asked and prices nothing (customs here is baza × measure) — T11 only stops a «$»
+  figure being offered as pieces.
+- The model's names stay Russian; an Uzbek name answer finds a row only by a cognate (AB-11) — the row NUMBER is
+  the address.
+- A voice message, a video, a link are refused as today.
+- The web card's «Hisoblatish» form and the thread door gain the typed readers' fixes (they share the kernel) but
+  no questions loop.
+
+## 7. Questions for him (the ⭐ is built until he answers)
+
+1. A carton's size with NO unit written («60x40x50»): a) ⭐ centimetres are assumed when every side is 5…300, and
+   the line says «sm deb olindi»; b) the unit is always asked.
+2. On «Faqat rastamojka», the shipment's brutto and cube: a) ⭐ shown as ℹ️ («upsale hisobi uchun»), taken from the
+   rows when they add up, not holding «Ma’lumot to‘liq»; b) asked with ⚠️ as today.
+3. A photo's good beside an Excel that does not list it: a) ⭐ offered with a button «➕ qo‘shish»; b) added by
+   itself and marked 📷.
+4. After the AI's answer, a reply «1: 150 kg»: a) ⭐ written and recalculated at once; b) a table to confirm
+   first, as «➕ Shu so‘rovga qo‘shish» works today.
