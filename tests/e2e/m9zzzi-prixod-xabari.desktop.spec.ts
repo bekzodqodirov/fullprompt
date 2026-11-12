@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { expect, test } from '@playwright/test';
-import { cleanupAll, database, mint, newRun } from './prixod-xabari-fixture';
+import { SELLER_PHONE, cleanupAll, database, mint, newRun } from './prixod-xabari-fixture';
 import { hydrated, landsOnBlock, login } from './prixod-xabari-landing';
 
 /**
@@ -59,6 +59,18 @@ test('the button’s address on a desktop: the page stays at the deal block once
   // …and it is still there a moment later: nothing scrolls it away after the verdict.
   await page.waitForTimeout(300);
   await landsOnBlock(page);
+});
+
+test('at an ordinary desktop window the short card scrolls to its end with the block whole on the screen', async ({ page }) => {
+  // The seller — the person the button is sent to. At 1280×900 this card is
+  // too short for its deal block to reach the bar, so the honest landing is
+  // «the page at its end, the block whole on the screen». The tab bar is in
+  // the DOM here too, hidden by CSS from `md`: read as a floor, its box of
+  // zeros made this landing a failure on every desktop (the review, XC-2).
+  await login(page, SELLER_PHONE);
+  await page.goto(`/receipts/${receiptId}#bitim`);
+  await hydrated(page);
+  await landsOnBlock(page, 'page end');
 });
 
 test('cleanup — nothing of this spec is left for the next one', async () => {

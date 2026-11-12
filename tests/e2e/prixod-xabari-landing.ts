@@ -58,7 +58,7 @@ export async function hydrated(page: Page) {
  * that happens to be in view on an unscrolled page held this helper green
  * with the anchor AND the effect deleted (the as-built review, CARD-2).
  */
-export async function landsOnBlock(page: Page, where: 'either' | 'under the bar' = 'either') {
+export async function landsOnBlock(page: Page, where: 'either' | 'under the bar' | 'page end' = 'either') {
   const block = page.getByTestId('receipt-deal-block');
   await expect(block).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
@@ -84,8 +84,8 @@ export async function landsOnBlock(page: Page, where: 'either' | 'under the bar'
         };
       });
       if (at.top >= 56 && at.top <= 110) return 'under the bar';
-      if (where === 'either' && at.y >= at.max - 1 && at.top > 110 && at.bottom <= at.floor) return 'page end';
+      if (at.y >= at.max - 1 && at.top > 110 && at.bottom <= at.floor) return 'page end';
       return `block at ${Math.round(at.top)}, scrolled ${Math.round(at.y)} of ${Math.round(at.max)}`;
     })
-    .toMatch(where === 'either' ? /^(under the bar|page end)$/ : /^under the bar$/);
+    .toMatch(where === 'either' ? /^(under the bar|page end)$/ : new RegExp(`^${where}$`));
 }
