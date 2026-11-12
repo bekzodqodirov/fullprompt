@@ -77,7 +77,10 @@ describe('X6 — a volume header’s own unit (review JN-13)', () => {
   });
 
   it('volumetric kilos and a density are neither the cube nor the weight', () => {
-    for (const header of ['Объемный вес, кг', 'Объёмный вес', 'Volume weight (kg)', 'Volumetric weight', 'Chargeable weight (kg)', '体积重', 'Плотность, кг/м3']) {
+    const headers = ['Объемный вес, кг', 'Объёмный вес', 'Volume weight (kg)', 'Volumetric weight', 'Chargeable weight (kg)', '体积重', 'Плотность, кг/м3'];
+    // …the words the other way round, the abbreviation, and the two Chinese forwarders write.
+    headers.push('Вес объемный', 'Масса объёмная, кг', 'Vol. weight', 'VOL WT (KG)', '体积重量', '抛重 (kg)', '计费重量(KG)');
+    for (const header of headers) {
       const row = first(['Description', 'Qty', header, 'G.W. (kg)', 'CBM'], ['Jacket', 300, 200, 150, 1.2]);
       // 150 is the gross column's; 200 — the heavier «plain» candidate — is the carrier's.
       expect([row.weightKg, row.volumeM3], header).toEqual([150, 1.2]);

@@ -45461,6 +45461,104 @@
    "why": "X6: on BOTH rungs. Base: volumeM3 null (the rung refused every unit of its own but cubic metres spelled out).",
    "source": "ai-soraydi P-excel X6 (JN-13)",
    "weight": "defect"
+  },
+  {
+   "id": "c3420",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес объемный",
+     "Вес брутто, кг",
+     "Объем, м3"
+    ],
+    [
+     "Куртка",
+     300,
+     200,
+     150,
+     1.2
+    ],
+    [
+     "Брюки",
+     200,
+     120,
+     100,
+     0.72
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки",
+       "weightKg": 100,
+       "volumeM3": 0.72
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 250,
+    "volumeM3": 1.92
+   },
+   "said": "«Вес объемный» — the words the other way round, and no «кг» — is volumetric kilos all the same: never the line's cube, never its weight (150 / 100 kg from «Вес брутто», 1.2 / 0.72 m³ from «Объем, м3»; Σ 250 kg, 1.92 m³)",
+   "why": "JN-13: a header naming a WEIGHT is never a volume candidate. X6 read «объёмный вес» in that order only. Base and X6: volumeM3 200 / 120 (the leftmost «объем»).",
+   "source": "ai-soraydi P-excel X6 follow-up (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3421",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "计费重量(KG)",
+     "毛重(KG)",
+     "体积(CBM)"
+    ],
+    [
+     "折叠椅",
+     480,
+     400,
+     300,
+     2.4
+    ],
+    [
+     "办公椅",
+     120,
+     200,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      },
+      {
+       "name": "办公椅",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 450,
+    "volumeM3": 3.6
+   },
+   "said": "«计费重量» is the carrier's chargeable weight: the line's weight is the 毛重 beside it (300 / 150, Σ 450), never the heavier chargeable figure",
+   "why": "JN-13: as the heaviest «plain» weight column the chargeable kilos became the line's weight (a plain column outranks a gross one). Base: weightKg 400 / 200.",
+   "source": "ai-soraydi P-excel X6 follow-up (JN-13)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [

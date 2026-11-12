@@ -431,13 +431,14 @@ const FOREIGN_VOLUME_UNIT =
   /(?<![\p{L}])(?:ml|мл|mm|мм|cm|см|sm|m|м|inch(?:es)?|ft|feet|foot|cu\.?\s*ft|cuft|cft|gal(?:lon)?s?|oz|yd|kgs?|кг)\.?\s*[23²³]?(?![\p{L}\d])|毫升|厘米|毫米|英尺|英寸|公斤|千克/iu;
 /**
  * A header that names a WEIGHT in a volume's words (review JN-13):
- * «Объёмный вес, кг», «Volume weight», «Volumetric», «Chargeable weight»,
- * «体积重» — the carrier's volumetric kilos — and any volume key beside
- * kilos («Плотность, кг/м3»). Its «объем» / «volume» / «м3» made it the
- * line's cubic metres; it is neither the cube nor the line's weight.
+ * «Объёмный вес, кг» and «Вес объемный», «Volume weight», «Vol. wt»,
+ * «Volumetric», «Chargeable weight», «体积重», «抛重» — the carrier's
+ * volumetric kilos — and any volume key beside kilos («Плотность, кг/м3»).
+ * Its «объем» / «volume» / «м3» made it the line's cubic metres; it is
+ * neither the cube nor the line's weight.
  */
 const VOLUMETRIC_WEIGHT =
-  /объ[её]мн\p{L}*\s+(?:вес|масс)|volum(?:e|etric)\s*(?:weight|wt)(?![\p{L}])|(?<![\p{L}])(?:volumetric|chargeable|dimensional)(?![\p{L}])|体积重|材积重|计费重/iu;
+  /объ[её]мн\p{L}*\s+(?:вес|масс)|(?:вес|масса)\s+объ[её]мн|(?<![\p{L}])vol(?:ume|umetric|\.)?\s*(?:weight|wt)(?![\p{L}])|(?<![\p{L}])(?:volumetric|chargeable|dimensional)(?![\p{L}])|体积重|材积重|计费重|抛重/iu;
 /** Kilos as a unit WORD — never the «kg» inside «PKGS» or «BKG NO» (X1, XLS-3). */
 const KG_WORD = /(?<![\p{L}])(?:kgs?|кг)(?![\p{L}])/iu;
 const volumetricWeight = (text: string): boolean =>
