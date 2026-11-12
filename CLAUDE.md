@@ -3600,7 +3600,7 @@ self-refresh, the 20:00 line. NOT provable here: real Telegram and the real mode
 merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
 job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
 
-**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1697-#1727 — renumbered from #1683-#1712 on the merge, the
+**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1707-#1737 — renumbered from #1683-#1712 on the merge, the
 THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 — with this round's
 own `when` …124 — first; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
 `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
@@ -3651,7 +3651,7 @@ TRAPS: typecheck is not lint (a `setState` in an effect passed tsc and failed th
 edit); a red proof that stays green found two weak tests (`redelivery-lookup`, `keeps`). DEPLOY: ledger 147 and
 `/api/version`; customers' question changes within minutes (weight and volume asked), sellers get ONE message.
 No Telegram here: the first real «Prixod keldi», each button's first press and the first file are the proof.
-**Then reviewed as built (#1717-#1726)** — four lenses reading the frozen main checkout while the fixes were made
+**Then reviewed as built (#1727-#1736)** — four lenses reading the frozen main checkout while the fixes were made
 in the second worktree: 21 findings, no blocker, all fixed or pinned, each fix red-proven. What it changed, by
 home: **the collection** — a file that swipe-REPLIES to another of the bot's messages is that message's
 (`repliesElsewhere`; said under the file when no door took it), a parked «Hisoblatish» that resumes closes the
@@ -3670,7 +3670,7 @@ transaction (`sql.begin` hands a scoped client with its own `unsafe` — wrap `b
 element already satisfied unscrolled (assert `scrollY`); the FULL tag recipe is a literal now (`3795624c`); the
 five 0144 facts are written once in SQL (`clientFactTerms`). A serial browser spec needs ONE BUILD PER STRIP for
 its red proofs, and a strip must typecheck.
-**The merge (#1727)**: found at the push — main's PR #147 held this round's migration number, its `when` and its
+**The merge (#1737)**: found at the push — main's PR #147 held this round's migration number, its `when` and its
 first fourteen decision numbers. Renumbered on this branch FIRST (every «0145» here was still this round's own),
 then merged; main's 0145 re-makes no constraint 0146 re-makes; a fresh database takes both and reads 147; every
 local database was rebuilt (a long-lived one holds …124 as THIS round's and would skip main's 0145 — #1040).

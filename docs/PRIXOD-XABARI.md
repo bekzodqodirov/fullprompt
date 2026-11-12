@@ -743,7 +743,7 @@ born-with rule at both asks), `receipt-files-wire`, `audit-fields`, `ai-spend` (
 `client-confirm` (integration and wire), `client-push-text`, and the browser spec's four new walks (the
 scroll, a stale form, a voided prixod, a foreign deal). Red proofs by string edit, in the second worktree:
 37 for the review's fixes — 32 by vitest, 5 in a browser (the spec is serial, so one build per strip) — all
-red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1725).
+red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1735).
 
 ### G.F Tests
 
