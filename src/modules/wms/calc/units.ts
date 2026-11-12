@@ -1022,6 +1022,40 @@ const LABEL_LEAD = new RegExp(
 /** A label that says WHICH weight — a netto's, or a brutto's. */
 const NET_LABEL_WORD = new RegExp(`^(?:${labelPattern(NET_LABELS)})$`, 'iu');
 const GROSS_LABEL_WORD = /^(?:g\.?\s?w\.?|gross(?:\s*weight)?|brutto|брутто|вес\s*брутто|毛重|总毛重)$/iu;
+
+/** WHICH weight a weight label names — a netto's, a brutto's, or it does not say («вес», «og‘irlik»). */
+export function weightLabelKind(label: string): 'gross' | 'net' | null {
+  const word = label.replace(/\s+/gu, ' ').trim();
+  if (NET_LABEL_WORD.test(word)) return 'net';
+  return GROSS_LABEL_WORD.test(word) ? 'gross' : null;
+}
+
+/**
+ * A measure's label closing the text right before a figure — «G.W.:»,
+ * «毛重», «Вес брутто:», «MEAS» — none of them a unit word of its own (a
+ * «cbm» before a figure is the unit reader's). A Han label may follow a Han
+ * name with no space: no product's name is spelled into one.
+ */
+const LABEL_RIGHT_BEFORE = new RegExp(
+  String.raw`(?<!(?!\p{Script=Han})\p{L})(${labelPattern(
+    [...WEIGHT_LABELS, ...NET_LABELS, ...VOLUME_LABELS].filter((w) => unitOf(w) === null),
+  )})\s*[.)]?\s*[:：=]?\s*$`,
+  'iu',
+);
+
+/**
+ * The label of a figure a TAIL marks one package's or one piece's — «G.W.: 15
+ * kg/ctn», «毛重 15kg/箱», «Вес брутто: 15 кг/место» (§3.1 T12, MP-2, MP-3):
+ * the tail says whose the figure is, the label which weight. Both leave the
+ * name — a spec block read as one line was the product «折叠椅 毛重» with a
+ * brutto nobody marked. `spaced` is the line as the marks read it.
+ */
+function labelBeforeTail(spaced: string, at: number): { spans: [number, number][]; kind: PerOneFigure['kind'] } {
+  const from = Math.max(0, at - 32);
+  const label = LABEL_RIGHT_BEFORE.exec(spaced.slice(from, at));
+  if (!label) return { spans: [], kind: null };
+  return { spans: [markSpan(label[0], from + label.index)], kind: weightLabelKind(label[1]!) };
+}
 /**
  * «20 karobka x 15 kg», «20 x 15 kg», «20*24 dona» — A of something times B
  * (group 1: A; 2: A's noun). With a carton word A is the carton count; a bare
@@ -1203,11 +1237,15 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     clause: false,
     ...extra,
   });
-  // A tail after the figure says whose — the strongest mark there is.
+  // A tail after the figure says whose — the strongest mark there is. The
+  // measure's label right before such a figure says which weight, and is no
+  // word of the name (`labelBeforeTail`).
   const pkg = tailAt(after, 0, PER_PACKAGE_TAIL);
-  if (pkg > 0) return fixed('package', [[hit.end, hit.end + pkg]]);
-  const piece = tailAt(after, 0, PER_PIECE_TAIL);
-  if (piece > 0) return fixed('piece', [[hit.end, hit.end + piece]]);
+  const piece = pkg > 0 ? 0 : tailAt(after, 0, PER_PIECE_TAIL);
+  if (pkg > 0 || piece > 0) {
+    const label = labelBeforeTail(spaced, hit.start);
+    return fixed(pkg > 0 ? 'package' : 'piece', [[hit.end, hit.end + pkg + piece], ...label.spans], { kind: label.kind });
+  }
   const per = PER_TRAIL.exec(after);
   if (per) return fixed(nounOwner(per[1]), [[hit.end, hit.end + per[0].length]]);
   const inEach = IN_EACH_TRAIL.exec(after);
@@ -1451,6 +1489,11 @@ function packageSize(
 
   const packageLabel = PACKAGE_SIZE_BEFORE.exec(before);
   if (packageLabel) return taken('package', [labelSpan(packageLabel[0], from + packageLabel.index)]);
+  // A size word that names nobody's size — «尺寸», «Size:», «Размер», «o‘lchami»
+  // — says so even right beside the carton count (review JN-11): a spec
+  // block's «尺寸 60*40*50cm 20箱» may be the folding chair's own, and is asked.
+  const sizeLabel = SIZE_LABEL_BEFORE.exec(before);
+  if (sizeLabel) return taken(null, [labelSpan(sizeLabel[0], from + sizeLabel.index)]);
   // Right beside the carton count, with nothing but spaces between («20
   // karobka 60x40x50», «60x40x50 sm 20 ta karobka»).
   const beside = cartonCounts.some((i) => {
@@ -1475,8 +1518,6 @@ function packageSize(
   // …or after a package's clause of the same segment: «20 karobka, har biri 15 kg 60x40x50».
   const stop = text.slice(0, token.start).search(/[,;\n][^,;\n]*$/u);
   if (figures.some((f) => f.clause && f.end <= token.start && f.end > stop)) return taken('package');
-  const sizeLabel = SIZE_LABEL_BEFORE.exec(before);
-  if (sizeLabel) return taken(null, [labelSpan(sizeLabel[0], from + sizeLabel.index)]);
   return taken(null);
 }
 

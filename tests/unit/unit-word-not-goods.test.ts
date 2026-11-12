@@ -57,7 +57,11 @@ describe('with the model silent, a totals line in the forwarder’s words is no 
 
   it('the supplier’s mark block: no row called «Measurement», and the brutto is the G.W. — not lost to the N.W. under it', () => {
     const block = 'Description: LED lamp\nQuantity: 3000 PCS\nPackages: 15 CTNS\nG.W.: 507 KGS\nN.W.: 480 KGS\nMeasurement: 5.92 CBM';
-    expect(names(block)).toEqual([]);
+    // Re-anchored (§3.1 T12, built after this pin): a name label opens a spec
+    // block, and the field lines under it are ITS — one good «LED lamp», and
+    // still no row called «Measurement» or «G.W.». Pinned [] while T3 stood
+    // alone and every line was judged on its own.
+    expect(names(block)).toEqual(['LED lamp']);
     // A freight section asks the brutto: 507. The netto 480 answers nothing there.
     expect(totals(block, 'podklyuch')).toEqual({ kg: 507, m3: 5.92, netto: false });
     // Customs-only: the brutto is stated, so the netto does not stand in for it.

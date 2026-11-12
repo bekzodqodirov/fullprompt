@@ -95,8 +95,12 @@ describe('a bare trailing number is never a goods line (review #24)', () => {
   });
 
   it('a supplier’s «Кол-во» / «Мест» lines are fields of the product, and cartons are never pieces', () => {
+    // Re-anchored (docs/AI-SORAYDI.md §3.1 T12): the block is ONE good, so
+    // its «Кол-во: 300 шт» is the jacket's count — it was pinned null when
+    // every line was read alone and a field line could only be dropped. The
+    // 45 places are still no pieces: the count is 300, never 45.
     expect(readGoodsLines('Наименование: куртка женская\nКол-во: 300 шт\nМест: 45')).toEqual([
-      expect.objectContaining({ name: 'куртка женская', quantity: null }),
+      expect.objectContaining({ name: 'куртка женская', quantity: 300 }),
     ]);
     // The round-1 fixture, restored by R3-T2 (round 2 had re-anchored it to
     // «Tovar nomi:»), with its Russian twin.

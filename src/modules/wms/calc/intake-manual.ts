@@ -17,6 +17,7 @@ import { applyPacking } from './carton-math';
 import type { MeasureUnit } from './pricing';
 import {
   AMOUNT_NUMBER,
+  amountsIn,
   BLANK,
   blankNonAmounts,
   blankSizes,
@@ -41,6 +42,7 @@ import {
   unitPattern,
   VOLUME_LABELS,
   WEIGHT_LABELS,
+  weightLabelKind,
   withoutFirstGroup,
   type GoodsLine,
   type GoodsLineProblem,
@@ -525,7 +527,7 @@ export function readTypedTotals(
   const typed = typedGoods(text, { prefix: opts.prefix });
   const spans = lineSpans(text);
   const onGoodsLine = (start: number) => {
-    if (!opts.goodsBeside && typed.lines.size < 2) return false;
+    if (!opts.goodsBeside && typed.figured < 2) return false;
     const line = spans.findIndex(([a, b]) => start >= a && start <= b);
     const lineText = line >= 0 ? text.slice(spans[line]![0], spans[line]![1]) : '';
     if (opts.goodsBeside && line >= 0 && MATERIAL_ROW_ADDRESS.test(lineText)) return true;
@@ -533,7 +535,7 @@ export function readTypedTotals(
     // Two goods lines keep PF-2's rule. A LONE one is the line's only beside
     // held rows — and never when it speaks of the whole shipment (FR-REGR-1):
     // there the goods reader's «goods name» is a totals line misread.
-    return typed.lines.size >= 2 || !shipmentLine(lineText);
+    return typed.figured >= 2 || !shipmentLine(lineText);
   };
   // A figure that is not the shipment's: a goods line's own, one written
   // before the part of the text being read — or ONE package's or ONE piece's
@@ -978,6 +980,245 @@ const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
  */
 const typedLine = (text: string) => parseGoodsLine(text, { scaled: true, packing: true });
 
+// ── a supplier's line as the typed reader reads it (§3.1 T8, T12) ──────────
+//
+// A forwarder writes the goods as the trade does — «Stol - 10ctn - 150kg -
+// 1.2cbm», «LED lamp 3000pcs/15ctns/507kgs/5.92cbm», «Stul 20 ctns G.W. 300
+// kgs», «Kurtka 300 dona 150 kg 5 meshok». The goods test wanted every token
+// after the first figure to be a figure or a unit word it knew, so a dash, a
+// label or one unknown word dropped the whole line — «Tovarlar (0)» — and its
+// lone «150 kg» was then taken for the shipment's (dg3-09). The line is read
+// instead for what it holds, and what it holds and nobody can read is kept on
+// the row's note, never lost and never guessed:
+//
+//  1. a field label standing before its figure — «G.W.», «N.W.:», «Qty:»,
+//     «MEAS», «箱数», «Кол-во:» — labels the figure and is no word of the name;
+//     a weight's label says which weight. A figure the label alone would give
+//     a unit to is read only where review JN-21 lets a total be (an
+//     unambiguous label and a «:» or «=»); otherwise it is set aside;
+//  2. a dash, a bar or a slash between two figure groups separates them;
+//  3. a number and one word no vocabulary knows, AFTER the line's first figure
+//     with a unit — «5 meshok», «2 xil» — is kept aside for the note. BEFORE
+//     it the pair is the name's, as the kernel reads it — «iPhone 15 Pro 300
+//     dona», «Samsung A54 128 GB 50 dona».
+//
+// And a supplier's SPEC BLOCK is ONE good (T12): a NAME label opens it, and
+// the field lines under it — until a blank line, the next name or a line that
+// is no field — are its figures, read as one line with the name first.
+
+type FieldKind = 'weight' | 'volume' | 'cartons' | 'count';
+
+/**
+ * The field labels of units.ts §2.4 that a figure follows: a weight's, a
+ * cube's, a package count's, a piece count's. A size's labels are the
+ * kernel's — `packingRead` decides by them whose a size is, and takes them
+ * out of the name itself.
+ */
+const FIELD_KIND_LABELS: readonly [FieldKind, readonly string[]][] = [
+  ['weight', [...WEIGHT_LABELS, ...NET_LABELS]],
+  ['volume', VOLUME_LABELS],
+  ['cartons', FIELD_LABELS.cartons],
+  ['count', FIELD_LABELS.count],
+];
+const FIELD_KIND_EXACT = FIELD_KIND_LABELS.map(([kind, labels]) => [kind, new RegExp(`^(?:${labelPattern(labels)})$`, 'iu')] as const);
+/** The labels a figure needs no unit after — when a «:» or «=» stands between (review JN-21). */
+const UNIT_FREE_EXACT = {
+  weight: new RegExp(`^(?:${labelPattern([...UNIT_FREE_LABELS.weightKg, ...UNIT_FREE_LABELS.netKg])})$`, 'iu'),
+  volume: new RegExp(`^(?:${labelPattern(UNIT_FREE_LABELS.volumeM3)})$`, 'iu'),
+};
+
+/**
+ * A field label right before a figure. Never glued to a digit or a letter on
+ * its left — a Han label may follow a Han name, as no name is spelled into
+ * one. Group 1: the label; 2: the «:» / «=» between, if any.
+ */
+const FIELD_BEFORE_FIGURE = new RegExp(
+  String.raw`(?<!\d)(?<!(?!\p{Script=Han})\p{L})(${labelPattern(FIELD_KIND_LABELS.flatMap(([, l]) => l))})${GAP}[.)]?${GAP}([:：=])?${GAP}(?=\d)`,
+  'giu',
+);
+/** The figure after a label: its number, and the word after it. */
+const FIGURE_AT = new RegExp(String.raw`^(${AMOUNT_NUMBER})(?!\d)(?:${GAP}([\p{L}²³][\p{L}\d²³.]*))?`, 'iu');
+/** `FIELD_BEFORE_FIGURE` at one place: the next field of a spec line, its label and its own figure. */
+const FIELD_HERE = new RegExp(String.raw`${GAP}(?:${FIELD_BEFORE_FIGURE.source})`, 'iuy');
+
+/**
+ * Does the next FIELD of a spec line start at `at` — a label with a figure of
+ * its own («20 G.W.: 15 kg», «20 毛重 15kg/箱»)? Then the word there is no unit
+ * of the figure before it: «Cartons: 20 G.W.: 15» is twenty cartons.
+ */
+function fieldAt(text: string, at: number): boolean {
+  FIELD_HERE.lastIndex = at;
+  return FIELD_HERE.test(text);
+}
+/** A figure followed by a slash and a word, or by «per …»: ONE package's or ONE piece's — the kernel's mark to read. */
+const PER_ONE_AFTER = /^\s*\/\s*\p{L}|^\s+(?:per|pr)\s/iu;
+
+/** What a weight or cube word is, in this reader's terms: a unit `SellerUnit`, a tonne or gram as `kg`, else null. */
+const unitOrScaled = (word: string | undefined): string | null => {
+  if (!word) return null;
+  return unitOf(word) ?? (scaledKg(word)?.lone === false ? 'kg' : null);
+};
+
+const FIELD_FITS: Record<FieldKind, (unit: string) => boolean> = {
+  weight: (u) => u === 'kg',
+  volume: (u) => u === 'm3',
+  cartons: (u) => u === 'karobka',
+  count: (u) => u !== 'kg' && u !== 'm3',
+};
+/** The unit a bare figure takes from its label, written after it for the kernel to read. */
+const FIELD_UNIT: Record<FieldKind, string> = { weight: 'kg', volume: 'm3', cartons: 'karobka', count: 'dona' };
+
+interface LineFields {
+  /** The line for the kernel: labels blanked, a label's unit written after its bare figure. */
+  text: string;
+  /** What the line states and nobody reads — as written, for the row's note. */
+  aside: string[];
+  /** WHICH weight the line's own weight is, when its label said. */
+  weightKind: 'gross' | 'net' | null;
+}
+
+interface Edit {
+  start: number;
+  end: number;
+  /** Replacement — a blank of the span's length unless said. */
+  with?: string;
+}
+
+/** `text` with non-overlapping edits applied, each span blanked unless it says what replaces it. */
+function applyEdits(text: string, edits: readonly Edit[]): string {
+  const parts: string[] = [];
+  let at = 0;
+  for (const e of [...edits].sort((a, b) => a.start - b.start)) {
+    if (e.start < at) continue;
+    parts.push(text.slice(at, e.start), e.with ?? BLANK.repeat(e.end - e.start));
+    at = e.end;
+  }
+  parts.push(text.slice(at));
+  return parts.join('');
+}
+
+/**
+ * Step 1: the field labels before their figures (above). `fields`: where a
+ * spec block's field lines start in `text` — a label opening its own line is
+ * a field however it is written («Soni 300»).
+ */
+function readFieldLabels(text: string, fields: readonly number[] = []): LineFields {
+  const edits: Edit[] = [];
+  const aside: string[] = [];
+  const weights: { kind: 'gross' | 'net' | null; label: Edit; figure: Edit; written: string }[] = [];
+  const money = CURRENCY.test(text);
+  // Before the line's first figure a label is the NAME's word, as it always
+  // was («Kurtka umumiy vazni 150 kg», «Qop soni 20 ta» — a places count) —
+  // unless it is written as a field, with its «:» or «=» («Qty: 200 pcs»).
+  const head = firstFigure(text);
+  for (const hit of text.matchAll(FIELD_BEFORE_FIGURE)) {
+    const label = hit[1]!;
+    const labelStart = hit.index;
+    const figureStart = labelStart + hit[0].length;
+    const colon = hit[2] !== undefined;
+    if (figureStart <= head && !colon && !fields.includes(labelStart)) continue;
+    const read = FIGURE_AT.exec(text.slice(figureStart));
+    if (!read) continue;
+    const numberEnd = figureStart + read[1]!.length;
+    // The word after the figure is the next field's label, not the figure's unit.
+    const bare = read[2] !== undefined && fieldAt(text, numberEnd);
+    const word = bare ? undefined : read[2];
+    const figureEnd = bare ? numberEnd : figureStart + read[0].length;
+    const unit = unitOrScaled(word);
+    const labelEdit: Edit = { start: labelStart, end: figureStart };
+    const written = text.slice(labelStart, figureEnd).replace(/\s+/gu, ' ').trim();
+    // A label that is a unit word of its own — «CBM: 5.92», «Cartons: 20», «Мест: 20».
+    const own = unitOf(label);
+    if (own !== null) {
+      if (word !== undefined) continue;
+      // Written after its figure — «5.92 CBM», «20 Cartons» — the way the
+      // kernel reads every unit: as a field before it, «200 pcs Cartons: 20»
+      // was read as 200 cartons by the counter-then-unit rule («120 ta juft»).
+      if (colon || own === 'karobka') {
+        edits.push(labelEdit, { start: numberEnd, end: numberEnd, with: ` ${label}` });
+      } else {
+        // «CBM 2.5»: no «:», so no cube (JN-21) — kept aside.
+        edits.push({ start: labelStart, end: figureEnd });
+        aside.push(written);
+      }
+      continue;
+    }
+    const kind = FIELD_KIND_EXACT.find(([, exact]) => exact.test(label.replace(/\s+/gu, ' ').trim()))?.[0];
+    if (kind === undefined) continue;
+    // A figure the kernel marks one package's or one piece's keeps its label: the mark reads it.
+    if (unit !== null && PER_ONE_AFTER.test(text.slice(figureEnd, figureEnd + 32))) continue;
+    if (unit !== null && !FIELD_FITS[kind](unit)) continue;
+    if (unit === null && word !== undefined) continue;
+    if (unit === null) {
+      const unitFree = (kind === 'weight' || kind === 'volume') && UNIT_FREE_EXACT[kind].test(label.replace(/\s+/gu, ' ').trim());
+      const takesUnit = kind === 'cartons' || kind === 'count' || (unitFree && colon && !money);
+      if (!takesUnit) {
+        edits.push({ start: labelStart, end: figureEnd });
+        aside.push(written);
+        continue;
+      }
+      edits.push(labelEdit, { start: numberEnd, end: numberEnd, with: ` ${FIELD_UNIT[kind]}` });
+    } else {
+      edits.push(labelEdit);
+    }
+    if (kind === 'weight') {
+      weights.push({ kind: weightLabelKind(label), label: labelEdit, figure: { start: figureStart, end: figureEnd }, written });
+    }
+  }
+  // A brutto beside a netto: the row's weight is the netto (customs), and the
+  // brutto is set aside for the note — both on one line were two weights of
+  // ONE unit, and the line was dropped as two lines welded into one.
+  let weightKind: LineFields['weightKind'] = null;
+  const kinds = new Set(weights.map((w) => w.kind));
+  if (weights.length === 1) weightKind = weights[0]!.kind;
+  else if (weights.length === 2 && kinds.has('gross') && kinds.has('net')) {
+    const gross = weights.find((w) => w.kind === 'gross')!;
+    const at = edits.indexOf(gross.label);
+    if (at >= 0) edits.splice(at, 1);
+    edits.push({ start: gross.label.start, end: gross.figure.end });
+    aside.push(gross.written);
+    weightKind = 'net';
+  }
+  return { text: applyEdits(text, edits), aside, weightKind };
+}
+
+/**
+ * Step 2: a dash, a bar or a slash between two figure groups — after a unit
+ * word, before the next number: «10ctn - 150kg», «3000pcs/15ctns». A hyphen
+ * only with a space on each side («XJ-200» is a model), a slash only before a
+ * digit («15 kg/ctn» is one carton's, «1/2» a fraction).
+ */
+const FIGURE_SEPARATOR = /(?<=[\p{L}²³.])(?:[ \t]*[–—|][ \t]*|[ \t]+-[ \t]+|[ \t]*\/[ \t]*)(?=\d)/gu;
+
+/** A word that is no unit and no name either: a times sign, a code's word. */
+const NOT_A_PAIR_WORD = /^(?:[xх×*]|kod|код|tnved|тнвэд|hs)$/iu;
+
+/** Step 3: the number-and-word pairs after the first figure with a unit — kept aside, out of the row. */
+function setAsidePairs(text: string): { text: string; aside: string[] } {
+  const spans = amountsIn(text);
+  const first = spans.findIndex((s) => unitOrScaled(s.word ?? undefined) !== null);
+  if (first < 0) return { text, aside: [] };
+  const edits: Edit[] = [];
+  const aside: string[] = [];
+  for (const s of spans.slice(first + 1)) {
+    if (s.word === null || unitOrScaled(s.word) !== null || !pairWord(s.word)) continue;
+    // «Мест: 20 Вес брутто: 15 кг/место» — the word is the next field's label.
+    if (fieldAt(text, s.start + s.number.length)) continue;
+    edits.push({ start: s.start, end: s.end });
+    aside.push(text.slice(s.start, s.end).replace(/\s+/gu, ' ').trim());
+  }
+  return { text: applyEdits(text, edits), aside };
+}
+
+/** A typed line as the goods reader reads it — steps 1-3 above, the first figure's position deciding where step 2 starts. */
+function lineFields(body: string, fields: readonly number[] = []): LineFields {
+  const labelled = readFieldLabels(body, fields);
+  const at = firstFigure(labelled.text);
+  const separated = at < 0 ? labelled.text : labelled.text.slice(0, at) + labelled.text.slice(at).replace(FIGURE_SEPARATOR, (m) => BLANK.repeat(m.length));
+  const pairs = setAsidePairs(separated);
+  return { text: pairs.text, aside: [...labelled.aside, ...pairs.aside], weightKind: labelled.weightKind };
+}
+
 /**
  * The note a typed row carries for what it states per one and nobody can
  * place — «har biri 2 kg» beside a piece AND a carton count with neither
@@ -994,7 +1235,7 @@ const asideNote = (aside: readonly string[] | undefined): string | null =>
  * nothing, and the row asks for what it lacks (T4: the question is the
  * table's, release 1b).
  */
-function typedRow(name: string, parsed: GoodsLine): TypedGoods {
+function typedRow(name: string, parsed: GoodsLine, fields?: Pick<LineFields, 'aside' | 'weightKind'>): TypedGoods {
   const row: TypedGoods = {
     ...figureless(name),
     quantity: parsed.quantity,
@@ -1003,7 +1244,10 @@ function typedRow(name: string, parsed: GoodsLine): TypedGoods {
     measureUnit: parsed.measureUnit,
     measureQty: parsed.measureQty,
     tnvedCode: parsed.tnvedCode,
-    note: asideNote(parsed.aside),
+    // What the line holds and nobody reads (T8) beside what it states per one and nobody can place.
+    note: asideNote([...(fields?.aside ?? []), ...(parsed.aside ?? [])]),
+    // «G.W. 300 kgs»: the label said which weight the row's own is (customs wants netto).
+    ...(fields?.weightKind && parsed.weightKg !== null ? { weightKind: fields.weightKind } : {}),
   };
   return parsed.packing ? applyPacking({ ...row, packing: parsed.packing }).line : row;
 }
@@ -1057,8 +1301,14 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
   const tokens = read.text.split(TAIL_SPLIT).filter(Boolean);
   let measured = read.perOne;
   let cartons = false;
+  let afterNumber = false;
   for (const token of tokens) {
-    if (/^\d[\d.,'’ʼʻ]*$/u.test(token)) continue;
+    // What a set-aside label leaves behind — its «:», its «=» (`lineFields`).
+    if (/^[:：=]+$/u.test(token)) continue;
+    const number = /^\d[\d.,'’ʼʻ]*$/u.test(token);
+    const wasAfterNumber = afterNumber;
+    afterNumber = number;
+    if (number) continue;
     const glued = /^(\d[\d.,]*)([\p{L}²³]+\.?)$/u.exec(token);
     const unit = unitOf(token) ?? (glued ? unitOf(glued[2]!) : null);
     if (unit !== null) {
@@ -1072,10 +1322,18 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
       continue;
     }
     if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
+    // A number and ONE word no vocabulary knows (T8) — «15 Pro», «128GB», «2
+    // xil» — a model's or a variety's, the name's as the kernel reads it; one
+    // after the figures was set aside for the note (`lineFields`). Never a
+    // currency (a price is no word of a name) and never a second word.
+    if ((wasAfterNumber || glued) && pairWord(glued ? glued[2]! : token)) continue;
     return false;
   }
   return measured || (read.sized && cartons) || !opts.measured;
 }
+
+/** The word of a number-and-word pair: letters only, no currency, no times sign or code word. */
+const pairWord = (word: string) => /^\p{L}[\p{L}'’ʻ‘`-]*$/u.test(word) && !NOT_A_PAIR_WORD.test(word) && !CURRENCY.test(word);
 
 /** Where the first figure starts its OWN token: «iPhone15 300 dona»'s is «300». */
 const firstFigure = (body: string) => body.search(/(?<![\p{L}\p{N}])\d/u);
@@ -1129,6 +1387,8 @@ const unsettled = (p: GoodsLineProblem) => PROBLEM_KINDS.has(p.kind) && !(p.kind
 /** A name's edges trimmed — «：» too, the full-width colon a Chinese list writes (R3-T8), and a list's bullet. */
 const tidyName = (name: string) =>
   name
+    // What the reader set aside (a label, a separator — `lineFields`) is no part of the name.
+    .replace(/\uE000+/gu, ' ')
     .replace(/^[\s:：\-–—.,•·*]+|[\s:：\-–—.,•·*]+$/gu, '')
     .replace(/\s+/gu, ' ')
     .trim();
@@ -1321,89 +1581,252 @@ export function readGoodsLines(
 function typedGoods(
   text: string,
   opts?: { labelledOnly?: boolean } & ClientHintOpts,
-): { goods: NonNullable<CalcFacts['goods']>; lines: Set<number> } {
+): { goods: NonNullable<CalcFacts['goods']>; lines: Set<number>; figured: number } {
   const prefix = clientCodePrefix(opts);
-  const out: { goods: TypedGoods; labelled: boolean; line: number | null }[] = [];
+  const out: { goods: TypedGoods; labelled: boolean; lines: readonly number[] }[] = [];
   const rawLines = text.split(/\r?\n/);
-  for (let at = 0; at < rawLines.length; at += 1) {
-    const raw = rawLines[at]!;
-    if (out.length >= 50) break;
-    const line = raw.trim().replace(LIST_MARKER, '');
-    if (!line || !/\p{L}/u.test(line)) continue;
-    if (readRoute(line).fromCity !== null) continue;
-    if (CLIENT_CODE_LINE.test(line)) continue;
-    // «Tovar keldimi?» — a question about the goods is not a goods line.
-    if (/[?？]$/u.test(line)) continue;
-    const label = GOODS_LABEL.exec(line);
-    if (opts?.labelledOnly && !label) continue;
-    const naming = Boolean(label?.[1]);
-    const separated = Boolean(label?.[2]);
-    const body = label ? line.slice(label[0].length) : line;
-    const figured = nameThenFigures(body);
-    const coded = !figured && nameThenCode(body);
-    // A list under a plural label is split before anything reads it whole:
-    // «Tovarlar: shim, kurtka 300 dona» is two products, and as one «name then
-    // figures» line it was «shim kurtka» × 300 (round 4, T-r2 t7).
-    const listed = separated && !naming && PLURAL_LABEL.test(label![0]) && LIST_BODY.test(body);
-    if (listed || (!figured && !coded)) {
-      if (label && separated) {
-        // A bare name carries no figure of the line's own to set apart.
-        for (const goods of bareGoods(body, label[0], naming, prefix)) {
-          if (out.length < 50) out.push({ goods, labelled: true, line: null });
-        }
-      }
+  const entries = specEntries(rawLines, prefix);
+  for (let e = 0; e < entries.length && out.length < 50; e += 1) {
+    const entry = entries[e]!;
+    const read = readEntry(entry, rawLines, opts, prefix);
+    if (read === null) {
+      // A spec block no figure of which reads (T12) is read line by line, as it always was.
+      if (entry.block) entries.splice(e + 1, 0, ...entry.lines.map((at) => ({ lines: [at], block: null })));
       continue;
     }
-    const parsed = typedLine(body);
-    const name = tidyName(parsed.name);
-    // A tonne or gram figure left in the name (it stands beside a piece count)
-    // is no WORD of it: «jami 2 tonna 300 dona» is named by «jami» alone — a
-    // totals line, never a product called «jami 2 tonna». Nor is a size (T6):
-    // «Dims 60x40x50 cm 300 kg» is named by «Dims», a forwarder's label.
-    const words = nameWords(name.replace(SCALED_IN_NAME, ' '));
-    if (words.length === 0) continue;
-    const counted = parsed.quantity !== null || parsed.measureQty !== null;
-    // «Tovar: vazni 150 kg» is the goods' weight under a label (round 3,
-    // R3-T1's optional half): the list skip a label earns (T6, «Tovar: Total
-    // 200 litr» is a motor oil) stops at a name made only of a measure FIELD.
-    if (separated && words.every((w) => MEASURE_FIELDS.has(w.replace(/[’ʻʼ‘`´']/gu, '')))) continue;
-    if (!separated) {
-      const glued = gluedCodeLetters(body);
-      // The company's prefix standing apart from its digits — «GS 777 300
-      // kg» — is the client code's letters, never a product called «GS».
-      const prefixLetters = (w: string) => prefix !== null && w === prefix.toLowerCase();
-      if (words.every((w) => notGoodsWord(w) || codeWord(w, prefix, counted) || glued.has(w) || prefixLetters(w))) continue;
-      const cartonish = words.every((w) => CARTON_NOUNS.has(w) || notGoodsWord(w));
-      if (cartonish && (FIELD_SHAPED.test(line) || words.some(notGoodsWord))) continue;
-      // A chat line about the shipment states no count, pair or code (R3-T8):
-      // «Salom aka, 12 kub», «Bugun 5 kub», «Toshkent shahriga 12 kub» (`chatLine`).
-      if (!counted && parsed.tnvedCode === null && chatLine(words)) continue;
-    }
-    // Ten digits on a line with no unit are a number when a field names them.
-    if (coded && words.some((w) => NUMBER_FIELD_WORDS.has(w.replace(/[’ʻʼ‘`´']/gu, '')))) continue;
-    const bare = coded ? bareTenDigits(body) : null;
-    if (bare !== null && !bareCodeOk(bare, words)) continue;
-    if ((name.match(/\p{L}/gu) ?? []).length < 2) continue;
-    if (!separated && parsed.quantity === null && parsed.measureQty === null && DASH_ROUTE.test(name)) continue;
-    // An answer the parser could not settle («1,200 kg») is not a figure, and
-    // a unit stated twice («300 dona …, 200 dona») is two lines welded into
-    // one — splitting them is the model's job.
-    if (parsed.problems.some(unsettled)) continue;
-    out.push({
-      goods: typedRow(name, parsed),
-      // A label with no separator is read as an unlabelled line (R3-T1), and
-      // gives way as one too.
-      labelled: separated,
-      line: at,
-    });
+    for (const item of read) if (out.length < 50) out.push(item);
   }
   const cartonOnly = (g: TypedGoods) => wordsOf(g.name).every((w) => CARTON_NOUNS.has(w));
   const another = out.some((o) => !cartonOnly(o.goods));
   const kept = out.filter((o) => !another || o.labelled || !cartonOnly(o.goods));
+  const figured = kept.filter((o) => o.lines.length > 0);
   return {
     goods: kept.map((o) => o.goods),
-    lines: new Set(kept.map((o) => o.line).filter((l): l is number => l !== null)),
+    lines: new Set(figured.flatMap((o) => o.lines)),
+    // A spec block is ONE good on several text lines: «one goods line is the
+    // shipment» counts goods, not the lines they stand on.
+    figured: figured.length,
   };
+}
+
+/** What the typed reader reads as one line: a text line, or a spec block's (T12). */
+interface TypedEntry {
+  /** The text lines it stands on, by index. */
+  lines: readonly number[];
+  /** A spec block: its name said by a label, its field lines' text with the name first, and where each field line starts in it. */
+  block: { name: string; text: string; fields: readonly number[] } | null;
+}
+
+/**
+ * A NAME label opening a line beside the goods labels («Tovar:», «Наименование
+ * товара:», «品名» — `GOODS_LABEL`): the spec block's own of units.ts §2.4
+ * («Item:», «Description:», «货名», «名称»). A Latin or Cyrillic one ends its word.
+ */
+const NAME_FIELD = new RegExp(
+  String.raw`^\s*(?:${labelPattern(FIELD_LABELS.name)})(?:(?<=\p{Script=Han})|(?![\p{L}\p{N}]))${GAP}[:：=]?${GAP}`,
+  'iu',
+);
+
+/** A field line of a spec block: a field label of §2.4 — a size's included — and its figure or size. */
+const FIELD_LINE = new RegExp(
+  String.raw`^(?:${labelPattern([
+    ...FIELD_KIND_LABELS.flatMap(([, l]) => l),
+    ...FIELD_LABELS.size,
+    ...FIELD_LABELS.packageSize,
+  ])})${GAP}[.)]?${GAP}[:：=]?${GAP}(?=\p{L}?\d)`,
+  'iu',
+);
+
+/**
+ * The name a line opens with under a name label, or null — never a list, never
+ * a figure first, never what a customer says ABOUT the goods («Tovar:
+ * tayyor», `statusBody`).
+ */
+function nameLineOf(line: string, prefix: string | null): string | null {
+  const m = GOODS_LABEL.exec(line) ?? NAME_FIELD.exec(line);
+  const name = m ? line.slice(m[0].length).trim() : '';
+  if (!nameOk(name) || LIST_BODY.test(name) || /^\d/u.test(name) || statusBody(name, prefix)) return null;
+  return name;
+}
+
+/** Is a text line one of a spec block's fields — «Qty: 200 pcs», «毛重 15kg/箱», «20箱», «Carton size: 60*40*50cm»? */
+function specFieldLine(line: string, prefix: string | null): boolean {
+  const text = line.trim().replace(LIST_MARKER, '');
+  if (!text || nameLineOf(text, prefix) !== null) return false;
+  if (FIELD_LINE.test(text)) return true;
+  // A line of nothing but figures — «20箱», «200 pcs», «20 ctns 300 kg».
+  return firstFigure(text) === 0 && unitFigures(text, { measured: false });
+}
+
+/**
+ * The text lines as the reader reads them (T12): a NAME line and the field
+ * lines right under it — until a blank line, the next name, or a line that is
+ * no field — are ONE entry, the block; every other line is its own.
+ */
+function specEntries(rawLines: readonly string[], prefix: string | null): TypedEntry[] {
+  const out: TypedEntry[] = [];
+  for (let at = 0; at < rawLines.length; at += 1) {
+    const line = rawLines[at]!.trim().replace(LIST_MARKER, '');
+    const name = nameLineOf(line, prefix);
+    let end = at + 1;
+    while (name !== null && end < rawLines.length && specFieldLine(rawLines[end]!, prefix)) end += 1;
+    if (name === null || end === at + 1) {
+      out.push({ lines: [at], block: null });
+      continue;
+    }
+    let text = name;
+    const fields: number[] = [];
+    for (const field of rawLines.slice(at + 1, end).map((l) => l.trim().replace(LIST_MARKER, ''))) {
+      text += ' ';
+      fields.push(text.length);
+      text += field;
+    }
+    out.push({ lines: Array.from({ length: end - at }, (_, i) => at + i), block: { name, text, fields } });
+    at = end - 1;
+  }
+  return out;
+}
+
+/**
+ * A supplier's ONE-line spec with its name label AFTER the figures — «尺寸
+ * 60*40*50cm 20箱 毛重 15kg/箱 品名 折叠椅», a forwarded line (MP-2): the
+ * name is moved to the front, its label blanked where it stood, and the line
+ * reads as any spec line. Only where nothing before the first figure is a
+ * name's word — a label alone, or nothing.
+ */
+const NAME_LABEL_INSIDE = new RegExp(
+  String.raw`(?<!(?!\p{Script=Han})\p{L})(?:${labelPattern(FIELD_LABELS.name)})(?:(?<=\p{Script=Han})|(?![\p{L}\p{N}]))${GAP}[:：=]?${GAP}`,
+  'giu',
+);
+/** Every field label of a spec line — a measure's, a count's, a size's. */
+const FIELD_LABEL_ALL = labelPattern([...FIELD_KIND_LABELS.flatMap(([, l]) => l), ...FIELD_LABELS.size, ...FIELD_LABELS.packageSize]);
+const FIELD_LABEL_WORDS = new RegExp(`(?:${FIELD_LABEL_ALL})`, 'giu');
+/** Where a moved name ends: the next figure, or the next field label. */
+const NAME_STOP = new RegExp(String.raw`\d|(?<!(?!\p{Script=Han})\p{L})(?:${FIELD_LABEL_ALL})(?:(?<=\p{Script=Han})|(?![\p{L}]))`, 'iu');
+function nameToFront(line: string, prefix: string | null): string | null {
+  const at = firstFigure(line);
+  if (at < 0) return null;
+  if (/\p{L}/u.test(line.slice(0, at).replace(FIELD_LABEL_WORDS, ' '))) return null;
+  for (const hit of line.slice(at).matchAll(NAME_LABEL_INSIDE)) {
+    const start = at + hit.index;
+    const from = start + hit[0].length;
+    const rest = line.slice(from);
+    const stop = rest.search(NAME_STOP);
+    const name = tidyName(stop < 0 ? rest : rest.slice(0, stop));
+    if (!nameOk(name) || statusBody(name, prefix)) continue;
+    const end = from + (stop < 0 ? rest.length : stop);
+    return `${name} ${line.slice(0, start)}${BLANK.repeat(end - start)}${line.slice(end)}`;
+  }
+  return null;
+}
+
+/**
+ * One entry as goods — the rules of `readGoodsLines` above — or null when a
+ * spec block's joined text reads as no figured product (its lines are then
+ * read one by one).
+ */
+function readEntry(
+  entry: TypedEntry,
+  rawLines: readonly string[],
+  opts: ({ labelledOnly?: boolean } & ClientHintOpts) | undefined,
+  prefix: string | null,
+): { goods: TypedGoods; labelled: boolean; lines: readonly number[] }[] | null {
+  const out: { goods: TypedGoods; labelled: boolean; lines: readonly number[] }[] = [];
+  const at = entry.lines[0]!;
+  const block = entry.block;
+  const own = rawLines[at]!.trim().replace(LIST_MARKER, '');
+  const moved = block ? null : nameToFront(own, prefix);
+  const line = block ? block.text : (moved ?? own);
+  if (!line || !/\p{L}/u.test(line)) return out;
+  if (readRoute(line).fromCity !== null) return out;
+  if (CLIENT_CODE_LINE.test(line)) return out;
+  // «Tovar keldimi?» — a question about the goods is not a goods line.
+  if (/[?？]$/u.test(line)) return out;
+  // A spec block, or a spec line whose name label stood after its figures,
+  // NAMES its goods: labelled, the name said (T12).
+  const spec = block !== null || moved !== null;
+  const label = spec ? null : GOODS_LABEL.exec(line);
+  if (opts?.labelledOnly && !label && !spec) return out;
+  const naming = spec || Boolean(label?.[1]);
+  const separated = spec || Boolean(label?.[2]);
+  const said = label ? line.slice(label[0].length) : line;
+  const fields = lineFields(said, block?.fields ?? []);
+  const body = fields.text;
+  const figured = nameThenFigures(body);
+  const coded = !figured && nameThenCode(body);
+  if (block && !figured) return null;
+  // A list under a plural label is split before anything reads it whole:
+  // «Tovarlar: shim, kurtka 300 dona» is two products, and as one «name then
+  // figures» line it was «shim kurtka» × 300 (round 4, T-r2 t7).
+  const listed = separated && !naming && PLURAL_LABEL.test(label![0]) && LIST_BODY.test(said);
+  if (listed || (!figured && !coded)) {
+    if (label && separated) {
+      // A bare name carries no figure of the line's own to set apart.
+      for (const goods of bareGoods(said, label[0], naming, prefix)) out.push({ goods, labelled: true, lines: [] });
+    }
+    return out;
+  }
+  const parsed = typedLine(body);
+  const name = tidyName(parsed.name);
+  // A tonne or gram figure left in the name (it stands beside a piece count)
+  // is no WORD of it: «jami 2 tonna 300 dona» is named by «jami» alone — a
+  // totals line, never a product called «jami 2 tonna». Nor is a size (T6):
+  // «Dims 60x40x50 cm 300 kg» is named by «Dims», a forwarder's label.
+  const words = nameWords(name.replace(SCALED_IN_NAME, ' '));
+  if (words.length === 0) return out;
+  // The name's words are JUDGED without a number-and-word pair the kernel
+  // left in it (T8): «iPhone 15 Pro» is judged by «iPhone», «Yuk 3 mashina 36
+  // kub» by «Yuk» — the shipment's words, never a product.
+  const judged = withoutPairs(words);
+  if (judged.length === 0) return out;
+  const counted = parsed.quantity !== null || parsed.measureQty !== null;
+  // «Tovar: vazni 150 kg» is the goods' weight under a label (round 3,
+  // R3-T1's optional half): the list skip a label earns (T6, «Tovar: Total
+  // 200 litr» is a motor oil) stops at a name made only of a measure FIELD.
+  if (separated && judged.every((w) => MEASURE_FIELDS.has(w.replace(/[’ʻʼ‘`´']/gu, '')))) return out;
+  if (!separated) {
+    const glued = gluedCodeLetters(body);
+    // The company's prefix standing apart from its digits — «GS 777 300
+    // kg» — is the client code's letters, never a product called «GS».
+    const prefixLetters = (w: string) => prefix !== null && w === prefix.toLowerCase();
+    if (judged.every((w) => notGoodsWord(w) || codeWord(w, prefix, counted) || glued.has(w) || prefixLetters(w))) return out;
+    const cartonish = judged.every((w) => CARTON_NOUNS.has(w) || notGoodsWord(w));
+    if (cartonish && (FIELD_SHAPED.test(line) || judged.some(notGoodsWord))) return out;
+    // A chat line about the shipment states no count, pair or code (R3-T8):
+    // «Salom aka, 12 kub», «Bugun 5 kub», «Toshkent shahriga 12 kub» (`chatLine`).
+    if (!counted && parsed.tnvedCode === null && chatLine(judged)) return out;
+  }
+  // Ten digits on a line with no unit are a number when a field names them.
+  if (coded && words.some((w) => NUMBER_FIELD_WORDS.has(w.replace(/[’ʻʼ‘`´']/gu, '')))) return out;
+  const bare = coded ? bareTenDigits(body) : null;
+  if (bare !== null && !bareCodeOk(bare, words)) return out;
+  if ((name.match(/\p{L}/gu) ?? []).length < 2) return out;
+  if (!separated && parsed.quantity === null && parsed.measureQty === null && DASH_ROUTE.test(name)) return out;
+  // An answer the parser could not settle («1,200 kg») is not a figure, and
+  // a unit stated twice («300 dona …, 200 dona») is two lines welded into
+  // one — splitting them is the model's job.
+  if (parsed.problems.some(unsettled)) return block ? null : out;
+  out.push({
+    goods: typedRow(name, parsed, fields),
+    // A label with no separator is read as an unlabelled line (R3-T1), and
+    // gives way as one too.
+    labelled: separated,
+    lines: entry.lines,
+  });
+  return out;
+}
+
+/** A name's words without a number and the one word after it — `readEntry`'s judging (T8). */
+function withoutPairs(words: readonly string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < words.length; i += 1) {
+    if (/^\d[\d.,]*$/u.test(words[i]!) && i + 1 < words.length && pairWord(words[i + 1]!)) {
+      i += 1;
+      continue;
+    }
+    out.push(words[i]!);
+  }
+  return out;
 }
 
 /**
