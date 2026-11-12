@@ -115,6 +115,11 @@ interface ColumnMap {
   unit: number | null;
   weight: number | null;
   volume: number | null;
+  /**
+   * What the volume column's figures are divided by to be cubic metres — 1,
+   * or 1 000 000 / 1000 under a header that names cm³ / dm³ or litres (X6).
+   */
+  volumeDivisor: number;
   amount: number | null;
   /**
    * The money column is a UNIT price (no line total in the file). A price
@@ -125,7 +130,10 @@ interface ColumnMap {
   /**
    * The count headers the ranking passed over that count in ANOTHER unit —
    * «Кол-во, м2», «Кол-во, пар» beside the chosen «Кол-во, шт» (§5.10): the
-   * row's figure there is said on its note for the VED, never dropped.
+   * row's figure there is said on its note for the VED, never dropped. And,
+   * said the same way (X6, review JN-13): a volume column in a unit nobody
+   * converts («Volume (ft3)»), the figure of a CONVERTED one as the file
+   * wrote it («Volume (cm3)»: 120000), and a volumetric weight.
    */
   alsoCounts: { index: number; header: string }[];
   /**
@@ -392,6 +400,68 @@ const VOLUME_WORD = /\b(?:meas(?:urement)?s?|vol)\b/i;
 const OWN_UNIT = /[(（,]/;
 /** Cubic metres written out — «cu.m», «cu m», «cubic metre(s)», «CU.MTS» — never «cu.ft» or «cu.cm». */
 const CUBIC_METRE = /\bcu(?:bic)?\.?\s*m(?:et(?:er|re)s?|trs?|ts?)?\b/i;
+/**
+ * A volume header's OWN unit, when it is not cubic metres (docs/AI-SORAYDI.md
+ * §3.2 X6, review JN-13; XLS-10). «m3» is inside «cm3» and «м3» inside «дм3»,
+ * and header keys match as substrings: «Volume (cm3)» 120000 landed as
+ * 120 000 m³ on the line. Cubic centimetres and decimetres are named by their
+ * own spelling wherever they stand; a LITRE by its word anywhere («Hajmi
+ * (litr)», «Объём в литрах») and by its letter only where a header puts its
+ * unit — in brackets, after a comma or a slash — since a bare «L» is as often
+ * a length («L*W*H»).
+ */
+const CUBIC_CM = /(?<![\p{L}])(?:cm|см|sm)\s*[3³]|куб\.?\s*см|(?<![\p{L}])cu(?:bic)?\.?\s*(?:cm|centimet(?:er|re)s?)(?![\p{L}])|立方厘米/iu;
+const CUBIC_DM = /(?<![\p{L}])(?:dm|дм)\s*[3³]|куб\.?\s*дм|(?<![\p{L}])cu(?:bic)?\.?\s*(?:dm|decimet(?:er|re)s?)(?![\p{L}])|立方分米/iu;
+const LITRE_WORD = /(?<![\p{L}])(?:lit(?:er|re)s?|litr\p{L}*|литр\p{L}*|ltrs?)(?![\p{L}])|升/iu;
+const LITRE_LETTER = /^(?:l|л)\.?$/iu;
+/** Where a header writes its unit: in brackets, or after its last comma or slash. */
+const UNIT_PARTS = /[(（\[]([^()（）\[\]]*)[)）\]]|[,，/／]\s*([^,，/／()（）\[\]]*)$/gu;
+function unitParts(text: string): string[] {
+  return [...text.matchAll(UNIT_PARTS)].map((m) => (m[1] ?? m[2] ?? '').trim()).filter(Boolean);
+}
+/** Cubic metres as a header's unit part writes them — «m3», «м³», «CBM», «куб.м», «立方米». */
+const CUBIC_METRE_UNIT = /(?<![\p{L}])(?:m|м)\s*[3³]|cbm|куб|kub|立方|方/iu;
+/**
+ * A unit a volume header's unit part names that nobody converts here: a
+ * length («CBM (cm)» is a carton's side), cubic feet and inches, millilitres
+ * (a bottle's — «Vol, ml»), a weight. Read only INSIDE the unit part, and
+ * only where it names no cubic metre («Volume (m3/total)»).
+ */
+const FOREIGN_VOLUME_UNIT =
+  /(?<![\p{L}])(?:ml|мл|mm|мм|cm|см|sm|m|м|inch(?:es)?|ft|feet|foot|cu\.?\s*ft|cuft|cft|gal(?:lon)?s?|oz|yd|kgs?|кг)\.?\s*[23²³]?(?![\p{L}\d])|毫升|厘米|毫米|英尺|英寸|公斤|千克/iu;
+/**
+ * A header that names a WEIGHT in a volume's words (review JN-13):
+ * «Объёмный вес, кг», «Volume weight», «Volumetric», «Chargeable weight»,
+ * «体积重» — the carrier's volumetric kilos — and any volume key beside
+ * kilos («Плотность, кг/м3»). Its «объем» / «volume» / «м3» made it the
+ * line's cubic metres; it is neither the cube nor the line's weight.
+ */
+const VOLUMETRIC_WEIGHT =
+  /объ[её]мн\p{L}*\s+(?:вес|масс)|volum(?:e|etric)\s*(?:weight|wt)(?![\p{L}])|(?<![\p{L}])(?:volumetric|chargeable|dimensional)(?![\p{L}])|体积重|材积重|计费重/iu;
+/** Kilos as a unit WORD — never the «kg» inside «PKGS» or «BKG NO» (X1, XLS-3). */
+const KG_WORD = /(?<![\p{L}])(?:kgs?|кг)(?![\p{L}])/iu;
+const volumetricWeight = (text: string): boolean =>
+  VOLUMETRIC_WEIGHT.test(text) || (matchKey(text, VOLUME_KEYS) && KG_WORD.test(text));
+/**
+ * What a volume column's figures are divided by to be cubic metres — or
+ * `null`: its header names a unit nobody converts, and the column is no
+ * volume (the cube is asked, the figure said on the line's note).
+ *  - cm³ ÷ 1 000 000 and dm³ ÷ 1000 on both rungs;
+ *  - litres ÷ 1000 on the KEY rung («Объем, л», «Hajmi (litr)», «Volume (L)»).
+ *    On the abbreviation rung («Vol (L)», «Vol, ml») a litre is a bottle's
+ *    own — the corpus' c1936, c1937 — and stays refused, as every unit of its
+ *    own does there unless it spells cubic metres out.
+ * A DIVISOR, never a factor: 120000 / 1e6 is 0.12, 120000 × 1e-6 is not.
+ */
+function volumeDivisor(text: string, keyed: boolean): number | null {
+  if (CUBIC_CM.test(text)) return 1_000_000;
+  if (CUBIC_DM.test(text)) return 1000;
+  if (!keyed) return !OWN_UNIT.test(text) || CUBIC_METRE.test(text) ? 1 : null;
+  const parts = unitParts(text);
+  if (LITRE_WORD.test(text) || parts.some((part) => LITRE_LETTER.test(part))) return 1000;
+  if (parts.some((part) => FOREIGN_VOLUME_UNIT.test(part) && !CUBIC_METRE_UNIT.test(part) && !CUBIC_METRE.test(part))) return null;
+  return 1;
+}
 const WEIGHT_ABBREV = /\bwt\b/i;
 // Totals first: a file carrying both «цена» (per unit) and «сумма» (the line
 // total) must land on the total — profit and customs both read line money.
@@ -1626,23 +1696,50 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const unit = claim(UNIT_KEYS, (i) => !MONEY_HEADER.test(cellText(header[i]!)));
   // Volume before weight: «вес, кг» must not be eaten by a stray m3 match,
   // and the volume keys are the more specific set.
-  const claimWhere = (test: (text: string) => boolean): number | null => {
-    const idx = findWhere(header, taken, test);
-    if (idx !== null) taken.add(idx);
-    return idx;
-  };
   // ONE carton's volume is not the line's (his 2.7 b, probe P1: a
   // «CBM/CTN» standing before «TOTAL CBM» on a Chinese packing list was
   // read as the line and landed 14× short — the weight's PER_PACKAGE rule,
   // which the volume never learned). The same test on the abbreviation
   // rung: «MEAS./CTN» is one carton's too.
-  const volume =
-    volumeFromQty ??
-    claimWhere((text) => matchKey(text, VOLUME_KEYS) && !PER_PACKAGE.test(text)) ??
-    claimWhere(
-      (text) =>
-        VOLUME_WORD.test(text) && !PER_PACKAGE.test(text) && (!OWN_UNIT.test(text) || CUBIC_METRE.test(text)),
-    );
+  //
+  // …and a header's OWN unit decides what its figures are (X6, review JN-13):
+  // a column in cubic metres — or naming no unit — is taken before one in
+  // cm³, dm³ or litres whichever stands first («Volume (cm3) | CBM»: the CBM
+  // is the line's), a foreign-unit column is CONVERTED when it is all the
+  // sheet has, and one in a unit nobody converts is no volume at all: its
+  // figure goes on the line's note (`alsoCounts`) and the cube is asked.
+  //
+  // A header naming a WEIGHT in a volume's words — «Объёмный вес, кг»,
+  // «Volume weight», a density «кг/м3» — is nobody's column (JN-13): taken out
+  // before the volume and the weight are chosen (as the heaviest plain weight
+  // column it became the line's kilos), and said on the note.
+  const volumetric = header.flatMap((cell, i) => {
+    const text = cellText(cell);
+    return !taken.has(i) && volumetricWeight(text) ? [{ index: i, header: clipUnits(text, 30) }] : [];
+  });
+  for (const c of volumetric) taken.add(c.index);
+  let volumeDivisorOf = 1;
+  const volumeHeads = (keyed: boolean): { i: number; divisor: number | null }[] =>
+    header.flatMap((cell, i) => {
+      const text = cellText(cell);
+      const named = keyed ? matchKey(text, VOLUME_KEYS) : VOLUME_WORD.test(text) && !matchKey(text, VOLUME_KEYS);
+      if (taken.has(i) || !named || PER_PACKAGE.test(text) || volumetricWeight(text)) return [];
+      return [{ i, divisor: volumeDivisor(text, keyed) }];
+    });
+  const volumeCandidates = volumeFromQty === null ? [...volumeHeads(true), ...volumeHeads(false)] : [];
+  const volumeHead = volumeCandidates.find((c) => c.divisor === 1) ?? volumeCandidates.find((c) => c.divisor !== null) ?? null;
+  if (volumeHead) {
+    taken.add(volumeHead.i);
+    volumeDivisorOf = volumeHead.divisor!;
+  }
+  const volume = volumeFromQty ?? volumeHead?.i ?? null;
+  // A KEYED header in a unit nobody converts («Volume (ft3)», «CBM (cm)»)
+  // used to land as cubic metres: it is said, where the abbreviation rung's
+  // own refusals («MEAS (CM)», «Vol (L)») stay unsaid, as they always were.
+  const unreadVolumes = volumeHeads(true)
+    .filter((c) => c.divisor === null)
+    .map((c) => ({ index: c.i, header: clipUnits(cellText(header[c.i]!), 30) }));
+  for (const c of unreadVolumes) taken.add(c.index);
   const invoiced = invoiceHeader(header.map(cellText));
   const moneyTotal = (text: string) => invoiced && namesMoneyTotal(text);
   // What a weight column's figures add up to, over the data rows (a merged
@@ -1763,12 +1860,18 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     quantityUnit,
     unit,
     volume,
+    volumeDivisor: volumeDivisorOf,
     weight,
     amount,
     amountIsPrice,
     // A claim made after the count may have taken one (a unit column); then
     // it is that column's, said there.
-    alsoCounts: alsoCounts.filter((c) => !taken.has(c.index)),
+    alsoCounts: [
+      ...alsoCounts.filter((c) => !taken.has(c.index)),
+      ...(volumeHead && volumeHead.divisor !== 1 ? [{ index: volumeHead.i, header: clipUnits(cellText(header[volumeHead.i]!), 30) }] : []),
+      ...unreadVolumes,
+      ...volumetric,
+    ],
     gross,
     // A carton column is any header that counts packages — «Кол-во
     // мест», and a bare «Cartons», «CTNS», «Мест», «Packages» the
@@ -2081,11 +2184,11 @@ function totalRows(rows: Cell[][], from: number, covered: Covered | null): { d: 
  * or a decimal, nobody can say which: it states nothing (the kernel's
  * `readNumberCell` asks that very cell), and so contradicts nothing.
  */
-function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3'): { value: number; half: number } | null {
+function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3' | null): { value: number; half: number } | null {
   if (cell === null || cell === undefined) return null;
   const text = typeof cell === 'number' ? String(Number(cell.toPrecision(12))) : cell.trim().replace(/\s+/gu, '');
   if (typeof cell === 'string' && /^[1-9]\d{0,2}[.,]\d{3}(?![\d.,])/u.test(text)) return null;
-  const value = parseMeasure(cell, unit);
+  const value = unit === null ? parseNumber(cell) : parseMeasure(cell, unit);
   if (value === null || value <= 0) return null;
   const decimals = /[.,](\d+)(?!.*[.,]\d)/u.exec(text)?.[1]?.length ?? 0;
   return { value, half: 0.5 * 10 ** -decimals };
@@ -2100,8 +2203,13 @@ function statedFigure(cell: Cell | undefined, unit: 'kg' | 'm3'): { value: numbe
  * over sections is the Σ itself. Only a Σ that NO reading agrees with is
  * refused: a pallet in the total, one carton's column read for the line's.
  */
-function contradicts(sum: number, rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number): boolean {
-  const stated = rows.map((row) => statedFigure(row[column], unit));
+function contradicts(sum: number, rows: readonly Cell[][], column: number, unit: 'kg' | 'm3', step: number, divisor = 1): boolean {
+  // A total row states its figure in the column's OWN unit (X6): cm³ under
+  // «Volume (cm3)», converted here as the lines were.
+  const stated = rows.map((row) => {
+    const figure = statedFigure(row[column], divisor === 1 ? unit : null);
+    return figure && divisor !== 1 ? { value: figure.value / divisor, half: figure.half / divisor } : figure;
+  });
   const readings: { value: number; half: number }[] = [];
   const last = stated.at(-1);
   if (last) readings.push(last);
@@ -2219,6 +2327,9 @@ function readFigure(cell: Cell, accept: 'dona' | 'kg' | 'm3' | null, comma: Colu
   }
   return accept ? parseMeasure(cell, accept) : parseNumber(cell);
 }
+
+/** A volume column's figure as cubic metres (`ColumnMap.volumeDivisor`). */
+const cubicMetres = (value: number | null, divisor: number): number | null => (value === null || divisor === 1 ? value : value / divisor);
 
 /**
  * A cell that states a figure — a number, or a short text that reads as one
@@ -2387,7 +2498,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         // another unit («Кол-во, м2») keeps the plain number, as before.
         ['soni', qtyCell, readFigure(qtyCell, columns.quantityUnit ? null : 'dona', commaOf(columns.quantity), pieces)],
         ['vazn', weightCell, readFigure(weightCell, 'kg', commaOf(columns.weight))],
-        ['hajm', volumeCell, readFigure(volumeCell, 'm3', commaOf(columns.volume))],
+        // A column in cm³, dm³ or litres holds plain numbers of that unit (X6).
+        ['hajm', volumeCell, cubicMetres(readFigure(volumeCell, columns.volumeDivisor === 1 ? 'm3' : null, commaOf(columns.volume)), columns.volumeDivisor)],
         ['summa', amountCell, readFigure(amountCell, null, commaOf(columns.amount))],
       ];
       const [quantity, weightKg, rowVolume, amount] = figures.map(([, , value]) => value) as [number | null, number | null, number | null, number | null];
@@ -2534,7 +2646,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
     if (stated.length > 0) {
       const totals = stated.map((t) => t.row);
       if (grossKg !== null && columns.gross !== null && contradicts(grossKg, totals, columns.gross, 'kg', 1)) grossKg = null;
-      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, totals, columns.volume, 'm3', 0.01)) volumeM3 = null;
+      if (volumeM3 !== null && columns.volume !== null && contradicts(volumeM3, totals, columns.volume, 'm3', 0.01, columns.volumeDivisor)) volumeM3 = null;
     }
     // …and a brutto lighter than the lines' own netto is no brutto: a column
     // read wrong, never a figure to land.

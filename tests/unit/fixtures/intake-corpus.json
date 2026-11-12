@@ -44997,6 +44997,470 @@
    "why": "as-built check check-b-incoterm-first-swallows-name",
    "source": "fayl-oqish merge fix",
    "weight": "nit"
+  },
+  {
+   "id": "c3400",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W.(KGS)",
+     "Volume (cm3)"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     120000
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     60000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 0.12
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": 0.06
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 0.18
+   },
+   "said": "«Volume (cm3)» is cubic CENTIMETRES: 120000 cm³ is 0.12 m³ (÷ 1 000 000), 60000 is 0.06, Σ 0.18 — never 120000 m³ on the line",
+   "why": "XLS-10: the key rung had no own-unit guard and «m3» is inside «cm3». Base: volumeM3 120000 / 60000, Σ 180000.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3401",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "毛重",
+     "体积(cm³)"
+    ],
+    [
+     "折叠椅",
+     480,
+     300,
+     500000
+    ],
+    [
+     "办公椅",
+     120,
+     150,
+     250000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "volumeM3": 0.5
+      },
+      {
+       "name": "办公椅",
+       "volumeM3": 0.25
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 0.75
+   },
+   "said": "«体积(cm³)»: 500000 cm³ is 0.5 m³, 250000 is 0.25, Σ 0.75",
+   "why": "XLS-10, the Chinese header with the superscript. Base: 500000 / 250000 m³.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3402",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес, кг",
+     "Объем, л"
+    ],
+    [
+     "Бак пластиковый",
+     10,
+     40,
+     250
+    ],
+    [
+     "Канистра",
+     100,
+     60,
+     500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Бак пластиковый",
+       "volumeM3": 0.25
+      },
+      {
+       "name": "Канистра",
+       "volumeM3": 0.5
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 0.75
+   },
+   "said": "«Объем, л» is LITRES: 250 l is 0.25 m³ (÷ 1000), 500 l is 0.5, Σ 0.75",
+   "why": "X6 as ruled (JN-13): a keyed volume header in litres converts. Base: 250 / 500 m³.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3403",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Vazni",
+     "Hajmi (litr)"
+    ],
+    [
+     "Plastik idish",
+     20,
+     30,
+     1500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Plastik idish",
+       "volumeM3": 1.5
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 1.5
+   },
+   "said": "«Hajmi (litr)»: 1500 litr is 1.5 m³",
+   "why": "X6 as ruled (JN-13), the Uzbek header. Base: 1500 m³.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3404",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Вес брутто",
+     "Объем, дм3"
+    ],
+    [
+     "Шкаф",
+     5,
+     200,
+     800
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Шкаф",
+       "volumeM3": 0.8
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 0.8
+   },
+   "said": "«Объем, дм3»: 800 dm³ is 0.8 m³ (÷ 1000)",
+   "why": "XLS-10: «м3» is inside «дм3». Base: 800 m³.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3405",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W. (kg)",
+     "Volume (ft3)"
+    ],
+    [
+     "Sofa",
+     10,
+     400,
+     42
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sofa",
+       "quantity": 10,
+       "weightKg": 400,
+       "volumeM3": null,
+       "note": "«Volume (ft3)»: 42"
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": null
+   },
+   "said": "cubic FEET are a unit the reader does not convert: the column is no volume — the cube is asked — and its figure is said on the line's note, never 42 m³",
+   "why": "X6: a unit the reader cannot convert refuses the column. Base: volumeM3 42.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3406",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Volume (cm3)",
+     "CBM"
+    ],
+    [
+     "Office chair",
+     100,
+     120000,
+     1.2
+    ],
+    [
+     "Bar stool",
+     60,
+     70000,
+     0.35
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Bar stool",
+       "volumeM3": 0.35
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 1.55
+   },
+   "said": "beside a column in cubic metres the foreign-unit column is never the line's volume: «CBM» is chosen though «Volume (cm3)» stands to its left",
+   "why": "JN-13's sheet test «CBM + Volume (cm3) — the CBM column is chosen». Base: the leftmost, 120000 / 70000 m³.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3407",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Объемный вес, кг",
+     "Вес брутто, кг",
+     "Объем, м3"
+    ],
+    [
+     "Куртка",
+     300,
+     200,
+     150,
+     1.2
+    ],
+    [
+     "Брюки",
+     200,
+     120,
+     100,
+     0.72
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки",
+       "weightKg": 100,
+       "volumeM3": 0.72
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 250,
+    "volumeM3": 1.92
+   },
+   "said": "«Объемный вес, кг» is volumetric KILOS: never the line's volume (its «объем» is a volume key) and never its weight — the weight is «Вес брутто» 150 / 100, the cube «Объем, м3»",
+   "why": "JN-13: a header naming a WEIGHT is never a volume candidate. Base: volumeM3 200 / 120 (the volumetric kilos as cubic metres).",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3408",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Volume weight (kg)",
+     "G.W. (kg)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     200,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    },
+    "grossKg": 150,
+    "volumeM3": 1.2
+   },
+   "said": "«Volume weight (kg)» is neither the cube nor the line's weight: 150 kg and 1.2 m³ stand",
+   "why": "JN-13's sheet test «CBM + volume weight — the CBM column is chosen». Base: volumeM3 200.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3409",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "MEAS (cm3)"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     90000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 0.09
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 0.09
+   },
+   "said": "«MEAS (cm3)» 90000 is 0.09 m³ — cubic centimetres under the packing list's own abbreviation",
+   "why": "X6. Base: volumeM3 90000 («m3» inside «cm3» made it a keyed volume header).",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3410",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Плотность, кг/м3",
+     "Вес, кг"
+    ],
+    [
+     "Сталь листовая",
+     10,
+     7850,
+     500
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Сталь листовая",
+       "quantity": 10,
+       "weightKg": 500,
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": null
+   },
+   "said": "a density «кг/м3» is neither the cube nor the weight: 500 kg, no volume",
+   "why": "JN-13: a volume key beside kg is never a volume candidate. Base: volumeM3 7850.",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3411",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "Vol (cu.cm)"
+    ],
+    [
+     "Ladies jacket",
+     300,
+     150,
+     90000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 0.09
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 0.09
+   },
+   "said": "the abbreviation rung converts too: «Vol (cu.cm)» 90000 is 0.09 m³",
+   "why": "X6: on BOTH rungs. Base: volumeM3 null (the rung refused every unit of its own but cubic metres spelled out).",
+   "source": "ai-soraydi P-excel X6 (JN-13)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
