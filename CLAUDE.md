@@ -3600,7 +3600,7 @@ self-refresh, the 20:00 line. NOT provable here: real Telegram and the real mode
 merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
 job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
 
-**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1697-#1726 — renumbered from #1683-#1712 on the merge, the
+**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1697-#1727 — renumbered from #1683-#1712 on the merge, the
 THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 — with this round's
 own `when` …124 — first; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
 `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
@@ -3670,9 +3670,15 @@ transaction (`sql.begin` hands a scoped client with its own `unsafe` — wrap `b
 element already satisfied unscrolled (assert `scrollY`); the FULL tag recipe is a literal now (`3795624c`); the
 five 0144 facts are written once in SQL (`clientFactTerms`). A serial browser spec needs ONE BUILD PER STRIP for
 its red proofs, and a strip must typecheck.
-**16,025 unit/integration (918 files) + 507 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 5dd0b69,
-ledger 146 (the round as first built was green before the review too, at b9a43fd: 15,993 + 504). Pushed to
-`claude/focused-bardeen-9t1bij`; NO pull request opened (he was asked) and the deploy is not done. OWED to him:
+**The merge (#1727)**: found at the push — main's PR #147 held this round's migration number, its `when` and its
+first fourteen decision numbers. Renumbered on this branch FIRST (every «0145» here was still this round's own),
+then merged; main's 0145 re-makes no constraint 0146 re-makes; a fresh database takes both and reads 147; every
+local database was rebuilt (a long-lived one holds …124 as THIS round's and would skip main's 0145 — #1040).
+Fetch main BEFORE the last gate.
+**16,219 unit/integration (921 files) + 508 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at the merged
+head 218b017, ledger 147. Before the merge the round alone was green twice: 15,993 + 504 as first built (b9a43fd) and
+16,025 + 507 after the review (5dd0b69). Pushed to `claude/focused-bardeen-9t1bij`; NO pull request opened (he
+was asked) and the deploy is not done. OWED to him:
 the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the staff tick and kg · a ✅ after the
 cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
 admins on a claim for a seller-less client).

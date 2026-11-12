@@ -129,8 +129,8 @@ ruscha nom beradi; limitlar 300 va 50.
   oltovi ham tasdiqlandi.
 - Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 69 ta shunday isbot (5 tasi
   brauzerda).
-- To'liq sinov toza bazada, serverdagi tartibda: 16 025 ta test va brauzerda 507 ta sinov — hammasi yashil;
-  baza hisobi 147.
+- To'liq sinov toza bazada, serverdagi tartibda — `main`dagi «o'zi yuborish» raundi bilan birlashtirilgan
+  holatda: 16 219 ta test va brauzerda 508 ta sinov — hammasi yashil; baza hisobi 147.
 
 ### Bu yerda tekshirib bo'lmagani
 Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy «Prixod keldi» xabari, ikki tugmaning birinchi

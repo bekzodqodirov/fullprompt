@@ -8984,3 +8984,28 @@ the last hour added: the whole unit suite, run once before the CI order, caught 
 had moved — `ftl-wire` pins that the FTL door is the link's REQUIRED parameter by anchoring on the end of the
 signature, and `bornWith` now follows it (the fence states both); and `tsc` (a 4 GB heap), `eslint` and the unit
 suite started together took the worker down with exit 137 and postgres with it — heavy gates run one at a time.
+
+### The merge with main — the thirty-seventh collision (2026-11-12; migration renumbered 0145 → 0146, ledger 147)
+
+**#1727 — Found at the PUSH, not before it: main had taken this round's migration number, its `when`, and the
+first fourteen of its decision numbers.** The final run was green and the branch was about to be pushed when the
+fetch showed PR #147 on main — the AI sotuvchi's «o'zi yuborish», merged while the as-built review was running —
+with `0145_agent_auto` at `when` …124 and DECISIONS #1683-#1696: exactly what this round had minted
+(`0145_prixod_xabari`, …124, #1683-#1712). Renumbered FIRST, on this branch, in a commit of its own
+(`0146_prixod_xabari`, `when` …125, #1697-#1726 — 147 mentions of the migration in comments, tests and documents,
+36 decision references), and only then merged: on this branch every «0145» and every «#1683-#1712» was still
+this round's own, so a mechanical replace was safe; after the merge half of them would have been main's. Two
+false positives were kept out by hand (the font file's bytes, and a corpus case named `c0145`). The merge then
+conflicted only where both rounds APPEND — the journal, DECISIONS, the CHANGELOG, CLAUDE.md's round paragraphs
+and its «Latest migration» and deploy-note lines — and the two source files both rounds touched
+(`staff-bot.ts`, `notifications/service.ts`) merged by themselves, in different functions; they were read
+anyway. What was checked beyond the text: main's 0145 creates three tables of its own and re-makes NO
+constraint this round's migration re-makes (the wait-kind CHECK was the one to fear — a second migration
+re-making it from an older list drops the other's kind in silence, 0138/0141's lesson); a fresh database takes
+both in order and reads 147. **A long-lived local database cannot be carried across this**: it holds this
+round's migration under `when` …124, which is now main's — drizzle would skip main's 0145 as «already applied»
+and run 0146 a second time (#1040). Every database used after the merge was rebuilt from nothing. For the
+owner the consequence is one number: a deploy from main now carries BOTH migrations, so the count is 147, and
+main's own entry (which says 146) and this round's both say so. THE LESSON, which is #1229's and #605's again:
+**fetch main before the last gate, not after it** — the collision cost a second full run (fifty minutes) that
+a `git fetch` before the first would have folded into one.
