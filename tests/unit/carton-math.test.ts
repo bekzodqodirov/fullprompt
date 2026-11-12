@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyPacking,
   cartonFigures,
+  derivedNotes,
   derivedText,
   emptyPacking,
   grossFromLines,
@@ -174,10 +175,16 @@ describe('applyPacking — the one door every reader calls', () => {
       volumeM3: '20 × 60×40×50 sm',
       quantity: '20 × 24',
       weightKg: '20 × 15 kg',
+      weightIsGross: true,
       grossKg: { value: 300, how: '20 × 15 kg' },
     });
-    expect(out.said).toEqual(['og‘irlik brutto (karobka og‘irligidan)']);
     expect(out.doubts).toEqual([]);
+    expect(derivedNotes(out.line)).toEqual([
+      'hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³',
+      'og‘irlik hisoblangan: 20 × 15 kg = 300 kg',
+      'soni hisoblangan: 20 × 24 = 480 dona',
+      'og‘irlik brutto (karobka og‘irligidan)',
+    ]);
   });
 
   it('a stated total stands: the packing fills only what is empty', () => {
@@ -190,44 +197,66 @@ describe('applyPacking — the one door every reader calls', () => {
     expect(out.line).toMatchObject({ quantity: 600, weightKg: 450.5, volumeM3: 2.48 });
     expect(out.line.derived).toBeUndefined();
     expect(out.doubts).toEqual([]);
+    expect(derivedNotes(out.line)).toEqual([]);
   });
 
-  it('ONE carton’s cube read as the line’s is replaced by the product, and said (dg2-5, DIM-8)', () => {
+  it('ONE carton’s cube read as the line’s is replaced by the product, the original kept (dg2-5, DIM-8)', () => {
     const out = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm' } }) });
     expect(out.line.volumeM3).toBe(2.4);
-    expect(out.said).toEqual(['hajm bitta karobkaniki edi: 20 × 60×40×50 sm = 2.4 m³']);
+    expect(out.line.derived).toEqual({ volumeM3: '20 × 60×40×50 sm', replaced: { volumeM3: 0.12 } });
+    expect(derivedNotes(out.line)).toEqual(['hajm bitta karobkaniki edi (0.12): 20 × 60×40×50 sm = 2.4 m³']);
   });
 
   it('a figure the packing does not explain stays, and is a doubt for the table to ask', () => {
     const out = applyPacking({ volumeM3: 1.7, packing: packing({ cartons: 20, m3PerCarton: 0.12 }) });
     expect(out.line.volumeM3).toBe(1.7);
     expect(out.doubts).toEqual([{ field: 'volumeM3', stated: 1.7, derived: { value: 2.4, how: '20 × 0.12 m³' } }]);
+    expect(out.line.derived).toBeUndefined();
   });
 
   it('a NET per-carton weight is the row’s own and lends no brutto', () => {
     const out = applyPacking({ weightKg: null, packing: packing({ cartons: 20, kgPerCarton: 14, kgPerCartonKind: 'net' }) });
     expect(out.line.weightKg).toBe(280);
     expect(out.line.derived).toEqual({ weightKg: '20 × 14 kg' });
-    expect(out.said).toEqual([]);
   });
 
   it('a gross per-carton weight beside a stated row weight: the row keeps its netto, the brutto is kept apart', () => {
     const out = applyPacking({ weightKg: 280, packing: packing({ cartons: 20, kgPerCarton: 15, kgPerCartonKind: 'gross' }) });
-    // 280 against 300: a netto beside a brutto — the doubt is there for the table.
     expect(out.line.weightKg).toBe(280);
-    expect(out.line.derived?.grossKg).toEqual({ value: 300, how: '20 × 15 kg' });
+    expect(out.line.derived).toEqual({ grossKg: { value: 300, how: '20 × 15 kg' } });
+    // 280 kg netto under 300 kg brutto is a row, not a question.
+    expect(out.doubts).toEqual([]);
   });
 
-  it('centimetres assumed for the cube are marked on the line', () => {
+  it('…but a row weight ABOVE its packages’ brutto is asked, and a NET per-carton weight is judged as a twin', () => {
+    const over = applyPacking({ weightKg: 340, packing: packing({ cartons: 20, kgPerCarton: 15, kgPerCartonKind: 'gross' }) });
+    expect(over.doubts).toEqual([{ field: 'weightKg', stated: 340, derived: { value: 300, how: '20 × 15 kg' } }]);
+    const net = applyPacking({ weightKg: 250, packing: packing({ cartons: 20, kgPerCarton: 14, kgPerCartonKind: 'net' }) });
+    expect(net.doubts).toEqual([{ field: 'weightKg', stated: 250, derived: { value: 280, how: '20 × 14 kg' } }]);
+  });
+
+  it('one carton’s GROSS weight standing as the row’s is replaced, and the row says its weight is brutto', () => {
+    const out = applyPacking({ weightKg: 15, packing: packing({ cartons: 20, kgPerCarton: 15, kgPerCartonKind: 'gross' }) });
+    expect(out.line.weightKg).toBe(300);
+    expect(out.line.derived).toEqual({
+      weightKg: '20 × 15 kg',
+      replaced: { weightKg: 15 },
+      weightIsGross: true,
+      grossKg: { value: 300, how: '20 × 15 kg' },
+    });
+  });
+
+  it('centimetres assumed for the cube are marked on the line and said in its note', () => {
     const out = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: null } }) });
     expect(out.line.volumeM3).toBe(2.4);
     expect(out.line.derived).toEqual({ volumeM3: '20 × 60×40×50 sm', assumedCm: true });
+    expect(derivedNotes(out.line)).toEqual(['hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³, sm deb olindi']);
     expect(derivedText(out.line.derived!.volumeM3!, true)).toBe('hisoblangan: 20 × 60×40×50 sm, sm deb olindi');
   });
 
   it('a line with no packing passes through untouched', () => {
     const line = { quantity: 5, weightKg: 10, volumeM3: null };
-    expect(applyPacking(line)).toEqual({ line, said: [], doubts: [] });
+    expect(applyPacking(line)).toEqual({ line, doubts: [] });
     expect(applyPacking({ ...line, packing: emptyPacking('ai') }).line.derived).toBeUndefined();
     expect(packingStated(emptyPacking('ai'))).toBe(false);
   });
@@ -236,6 +265,39 @@ describe('applyPacking — the one door every reader calls', () => {
     const out = applyPacking({ quantity: null, packing: packing({ cartons: 20 }) });
     expect(out.line.quantity).toBeNull();
     expect(out.line.derived).toBeUndefined();
+  });
+
+  it('called again with the same packing it changes nothing — the note is not said twice', () => {
+    const first = applyPacking({ volumeM3: 0.12, packing: packing({ cartons: 20, size: { l: 60, w: 40, h: 50, unit: 'cm' } }) });
+    const second = applyPacking(first.line);
+    expect(second.line).toEqual(first.line);
+    expect(second.doubts).toEqual([]);
+    expect(derivedNotes(second.line)).toEqual(['hajm bitta karobkaniki edi (0.12): 20 × 60×40×50 sm = 2.4 m³']);
+  });
+
+  it('a computed figure follows its packing: «20 karobka» corrected to «25» moves the cube', () => {
+    const first = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, m3PerCarton: 0.12 }) });
+    expect(first.line.volumeM3).toBe(2.4);
+    const second = applyPacking({ ...first.line, packing: packing({ cartons: 25, m3PerCarton: 0.12 }) });
+    expect(second.line.volumeM3).toBe(3);
+    expect(second.line.derived).toEqual({ volumeM3: '25 × 0.12 m³' });
+    expect(second.doubts).toEqual([]);
+  });
+
+  it('…and a computed figure whose packing no longer multiplies out is taken back, never left as a fact', () => {
+    const first = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, m3PerCarton: 0.12 }) });
+    const second = applyPacking({ ...first.line, packing: packing({ cartons: null, m3PerCarton: 0.12 }) });
+    expect(second.line.volumeM3).toBeNull();
+    expect(second.line.derived).toBeUndefined();
+  });
+
+  it('a figure a PERSON typed over a computed one stands once its derived mark is cleared', () => {
+    const first = applyPacking({ volumeM3: null, packing: packing({ cartons: 20, m3PerCarton: 0.12 }) });
+    // The writer's contract: clear the field's mark, then write the figure.
+    const typed = { ...first.line, volumeM3: 2.5, derived: {} };
+    const out = applyPacking(typed);
+    expect(out.line.volumeM3).toBe(2.5);
+    expect(out.doubts).toEqual([{ field: 'volumeM3', stated: 2.5, derived: { value: 2.4, how: '20 × 0.12 m³' } }]);
   });
 });
 

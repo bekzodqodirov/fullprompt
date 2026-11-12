@@ -319,15 +319,27 @@ export interface PackedLine {
   derived?: LineDerived | null;
 }
 
-/** How each computed figure of a line was made — printed beside it. */
+/**
+ * What this file did to a line — everything a surface needs to word it, kept
+ * as DATA so the note is rendered from the row and never appended to it
+ * (`derivedNotes`): a row passes through here again each time the seller
+ * adds a factor, and a sentence baked into `note` would be said twice.
+ */
 export interface LineDerived {
+  /** The arithmetic of a COMPUTED figure, per field — its presence is «this figure is derived». */
   volumeM3?: string;
   weightKg?: string;
   quantity?: string;
+  /** A stated figure that was ONE carton's, replaced by the product — the original, per field. */
+  replaced?: Partial<Record<PackedField, number>>;
+  /** The row's computed weight is the packages' GROSS (the source gave no netto). */
+  weightIsGross?: boolean;
   /** The line's GROSS weight from its packages, for the shipment's brutto. */
   grossKg?: Derived;
   /** The size carried no unit and centimetres were taken. */
   assumedCm?: boolean;
+  /** A stated per-carton cube the size does not agree with — both, for the note. */
+  cubeClash?: { stated: number; fromSize: number };
 }
 
 export interface CartonDoubt {
@@ -338,73 +350,123 @@ export interface CartonDoubt {
 
 export interface PackingOutcome<T extends PackedLine> {
   line: T;
-  /** What was done, for the row's note — Uzbek, one clause each. */
-  said: string[];
   /** A stated figure that neither agrees with the packing nor is one carton's. */
   doubts: CartonDoubt[];
 }
 
 const UNIT_OF: Record<PackedField, string> = { volumeM3: 'm³', weightKg: 'kg', quantity: 'dona' };
 const WORD_OF: Record<PackedField, string> = { volumeM3: 'hajm', weightKg: 'og‘irlik', quantity: 'soni' };
+const FIELDS: readonly PackedField[] = ['volumeM3', 'weightKg', 'quantity'];
 
 /**
- * Fill a line from its packing — the ONE function every reader calls.
+ * Fill a line from its packing — the ONE function every reader calls, and
+ * safe to call again whenever the packing changes.
  *
  * Per field: nothing stated → the product is written and `derived` says how;
  * the same figure → untouched; ONE carton's figure standing as the line's →
- * replaced by the product, said; anything else → the stated figure stays and
- * a doubt is returned for the table to ask. A line's weight is netto, so a
- * GROSS per-package weight fills an empty row weight (noted, the reading's
- * old rule for «only brutto is written») and is also kept apart as
- * `derived.grossKg`, the piece the shipment's brutto is summed from.
+ * replaced by the product, the original kept in `derived.replaced`; anything
+ * else → the stated figure stays and a doubt is returned for the table to
+ * ask. A figure this function computed earlier is not «stated»: it is
+ * recomputed from the packing as it stands now (a seller who corrects «20
+ * karobka» to «25» moves the cube with it), and dropped again when the
+ * packing no longer multiplies out. A WRITER that takes a figure from a
+ * person must clear that field's `derived` mark first — then it is stated.
+ *
+ * A line's weight is netto, so a GROSS per-package weight fills an empty row
+ * weight (marked `weightIsGross`, the reading's old rule for «only brutto is
+ * written») and is also kept apart as `derived.grossKg`, the piece the
+ * shipment's brutto is summed from.
  */
 export function applyPacking<T extends PackedLine>(input: T): PackingOutcome<T> {
   const p = input.packing;
-  if (!packingStated(p)) return { line: input, said: [], doubts: [] };
-  const figures = cartonFigures(p);
-  const cartons = wholeCartons(p.cartons);
+  const before = input.derived ?? {};
   const line: T = { ...input };
-  const derived: LineDerived = { ...(input.derived ?? {}) };
-  const said: string[] = [];
+  // A figure computed on an earlier pass goes back to «not stated».
+  for (const field of FIELDS) if (before[field] !== undefined) line[field] = null;
+  const derived: LineDerived = {};
   const doubts: CartonDoubt[] = [];
+  if (before.replaced) derived.replaced = { ...before.replaced };
 
-  const settle = (field: PackedField, product: Derived | null, perCarton: number | null) => {
-    const stated = line[field] ?? null;
-    const verdict = judgeStated(stated, product, perCarton, cartons);
-    if (!verdict || !product) return;
-    if (verdict === 'fill') {
-      line[field] = product.value;
-      derived[field] = product.how;
-    } else if (verdict === 'one_carton') {
-      line[field] = product.value;
-      derived[field] = product.how;
-      said.push(
-        `${WORD_OF[field]} bitta karobkaniki edi: ${product.how} = ${fmtFigure(product.value)} ${UNIT_OF[field]}`,
-      );
-    } else if (verdict === 'differs') {
-      doubts.push({ field, stated: stated as number, derived: product });
+  if (packingStated(p)) {
+    const figures = cartonFigures(p);
+    const cartons = wholeCartons(p.cartons);
+    const settle = (
+      field: PackedField,
+      product: Derived | null,
+      perCarton: number | null,
+      /** The product is a CEILING for the stated figure, not its twin (a netto under a brutto). */
+      ceiling = false,
+    ) => {
+      const stated = line[field] ?? null;
+      const verdict = judgeStated(stated, product, perCarton, cartons);
+      if (!verdict || !product) return;
+      // A row's netto under its packages' brutto is a row, not a question.
+      if (verdict === 'differs' && ceiling && (stated as number) <= product.value) return;
+      if (verdict === 'fill') {
+        line[field] = product.value;
+        derived[field] = product.how;
+      } else if (verdict === 'one_carton') {
+        derived.replaced = { ...(derived.replaced ?? {}), [field]: stated as number };
+        line[field] = product.value;
+        derived[field] = product.how;
+      } else if (verdict === 'differs') {
+        doubts.push({ field, stated: stated as number, derived: product });
+      }
+    };
+
+    settle('volumeM3', figures.volumeM3, positive(p.m3PerCarton) ? p.m3PerCarton : (sizeCube(p.size)?.m3 ?? null));
+    settle('quantity', figures.quantity, p.pcsPerCarton);
+    if (figures.weightKg) {
+      const { kind, ...product } = figures.weightKg;
+      settle('weightKg', product, p.kgPerCarton, kind !== 'net');
+      if (kind !== 'net') {
+        derived.grossKg = product;
+        if (derived.weightKg !== undefined) derived.weightIsGross = true;
+      }
     }
-  };
+    if (figures.assumedCm && derived.volumeM3 !== undefined) derived.assumedCm = true;
+    if (figures.cubeClash) derived.cubeClash = figures.cubeClash;
+  }
 
-  settle('volumeM3', figures.volumeM3, positive(p.m3PerCarton) ? p.m3PerCarton : (sizeCube(p.size)?.m3 ?? null));
-  settle('quantity', figures.quantity, p.pcsPerCarton);
-  if (figures.weightKg) {
-    const { kind, ...product } = figures.weightKg;
-    settle('weightKg', product, p.kgPerCarton);
-    if (kind !== 'net') {
-      derived.grossKg = product;
-      if (derived.weightKg !== undefined) said.push('og‘irlik brutto (karobka og‘irligidan)');
+  // An original kept for a field that is no longer computed says nothing true.
+  if (derived.replaced) {
+    for (const field of FIELDS) if (derived[field] === undefined) delete derived.replaced[field];
+    if (Object.keys(derived.replaced).length === 0) delete derived.replaced;
+  }
+  if (Object.keys(derived).length > 0) line.derived = derived;
+  else delete line.derived;
+  return { line, doubts };
+}
+
+/**
+ * What `applyPacking` did, in words, for the row's note — rendered from the
+ * row each time, never stored: «hajm bitta karobkaniki edi (0.12): 20 ×
+ * 60×40×50 sm = 2.4 m³», «og‘irlik brutto (karobka og‘irligidan)».
+ */
+export function derivedNotes(line: PackedLine): string[] {
+  const d = line.derived;
+  if (!d) return [];
+  const out: string[] = [];
+  for (const field of FIELDS) {
+    const how = d[field];
+    if (how === undefined) continue;
+    const value = line[field];
+    const figure = typeof value === 'number' ? ` = ${fmtFigure(value)} ${UNIT_OF[field]}` : '';
+    const was = d.replaced?.[field];
+    if (was !== undefined) {
+      out.push(`${WORD_OF[field]} bitta karobkaniki edi (${fmtFigure(was)}): ${how}${figure}`);
+    } else {
+      const cm = field === 'volumeM3' && d.assumedCm ? ', sm deb olindi' : '';
+      out.push(`${WORD_OF[field]} hisoblangan: ${how}${figure}${cm}`);
     }
   }
-  if (figures.assumedCm && derived.volumeM3 !== undefined) derived.assumedCm = true;
-  if (figures.cubeClash) {
-    said.push(
-      `karobka hajmi ${fmtFigure(figures.cubeClash.stated)} m³ yozilgan, o‘lchamidan ${fmtFigure(figures.cubeClash.fromSize)} m³ chiqadi`,
+  if (d.weightIsGross) out.push('og‘irlik brutto (karobka og‘irligidan)');
+  if (d.cubeClash) {
+    out.push(
+      `karobka hajmi ${fmtFigure(d.cubeClash.stated)} m³ yozilgan, o‘lchamidan ${fmtFigure(d.cubeClash.fromSize)} m³ chiqadi`,
     );
   }
-
-  if (Object.keys(derived).length > 0) line.derived = derived;
-  return { line, said, doubts };
+  return out;
 }
 
 /**
