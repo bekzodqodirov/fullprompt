@@ -350,6 +350,30 @@ describe('X0 — a sheet handed to the model keeps its columns (CR-1, review JN-
       expect(before - now).toBeGreaterThanOrEqual(0);
       expect(before - now).toBeLessThanOrEqual(2);
     });
+
+    it('…and a SPARSE size-run quotation pays for every slot: shown whole before, cut at 240 of 300 lines now (review excel-break-8)', () => {
+      // The commonest Chinese shoe and clothing quotation, which no header the reader maps (it goes to the
+      // model as text): «Article | Color | 35 … 46 | Total», three of the twelve sizes filled.
+      const header: Cell[] = ['Article', 'Color', ...Array.from({ length: 12 }, (_, i) => String(35 + i)), 'Total'];
+      const rows: Cell[][] = [header, ...Array.from({ length: 300 }, (_, i): Cell[] => [`XJ-${200 + i}`, 'Black', 10, 15, 20, ...Array<Cell>(9).fill(null), 45])];
+      const now = textOf(rows);
+      const whole = textOf(rows, null, undefined, Number.MAX_SAFE_INTEGER).text;
+      // By hand. A goods line before X0: «XJ-200 | Black | 10 | 15 | 20 | 45» = 6 + 5 + 4 × 2 + 5 × 3 = 34.
+      // Now: 15 cells, 14 separators — 6 + 5 + 4 × 2 + 14 × 3 = 61. The header: 7 + 5 + 12 × 2 + 5 + 14 × 3 = 83.
+      // Whole: «[S]» (3) + 301 lines and their 301 newlines: 3 + 301 + 83 + 300 × 61 = 18,687 — before X0,
+      // 3 + 301 + 83 + 300 × 34 = 10,587, under the 15,000 the model is shown.
+      expect(whole.length).toBe(18_687);
+      expect(squeezed(whole).length).toBe(10_587);
+      expect(squeezed(whole).length).toBeLessThan(SHEET_TEXT_BUDGET);
+      // At the budget: 3 + 1 + 83 = 87 for the heading and the header, then 62 a goods line —
+      // 87 + 240 × 62 = 14,967 fits, a 241st makes 15,029. The text says rows were cut, and on the AI door a
+      // goods sheet the model was not shown whole holds «✅» (`aiInputCut`). JN-14 binds the slots; the
+      // budget — or a compact empty slot the header line explains — is the lead's call (stated under «open»).
+      expect(now.rowsCut).toBe(true);
+      expect(now.text.length).toBe(14_967);
+      expect(linesOf(now.text)).toHaveLength(1 + 240);
+      expect(linesOf(now.text).every((line) => cellsOf(line).length === 15)).toBe(true);
+    });
   });
 });
 
