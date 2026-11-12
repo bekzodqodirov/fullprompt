@@ -180,6 +180,8 @@ test('t7: cleanup — the prixod is voided and the client deactivated', async ({
   expect(receiptUrl, 't2 made the prixod').not.toBe('');
   await login(page, LOGIST);
   await page.goto(receiptUrl);
+  // The void lives in the card's «Boshqa amallar» fold (docs/PRIXOD-KARTA.md §7.1).
+  await page.getByTestId('receipt-more').click();
   await page.locator('#void-reason').fill(`e2e olib ${runId}`);
   await page.locator('form:has(#void-reason) button[type="submit"]').click();
   await expect(page.getByTestId('void-error')).toHaveCount(0);

@@ -1,13 +1,36 @@
-import { KG_SCALE, M3_SCALE, fromUnits, storedUnits } from './composition-math';
-
 /**
- * The prixod card's own arithmetic (docs/PRIXOD-KARTA.md §2.2, §3) — pure,
- * and client-safe like the file it borrows from.
+ * The prixod card's own arithmetic (docs/PRIXOD-KARTA.md §7.1, §7.3) — pure,
+ * client-safe, and importing NOTHING: `lot-composition-fence.test.ts` lists
+ * who may learn that a lot has a composition, and a card total is not one of
+ * them. So the few lines of exact arithmetic it needs are its own.
  *
  * The card printed a lot's figures as the columns spell them, «250.000 kg ·
  * 1.2500 m³», and said nowhere how much the whole prixod holds: three lots
  * were three sums in the reader's head. Both answers live here.
  */
+
+/** `receipt_lots.total_weight_kg` is numeric(…,3); `total_volume_m3` numeric(…,4). */
+const KG_SCALE = 3;
+const M3_SCALE = 4;
+
+/**
+ * A stored decimal → integer units at `scale`, by STRING arithmetic. Anything
+ * that is not a plain non-negative decimal of at most `scale` places reads as
+ * zero: a total must never be poisoned by one unreadable row.
+ */
+function units(raw: string | number | null | undefined, scale: number): bigint {
+  const match = /^(\d+)(?:\.(\d+))?$/.exec(String(raw ?? '').trim());
+  if (!match) return 0n;
+  const frac = match[2] ?? '';
+  if (frac.length > scale) return 0n;
+  return BigInt(match[1]!) * 10n ** BigInt(scale) + BigInt(frac.padEnd(scale, '0') || '0');
+}
+
+/** Units → the column's own spelling: 600000 at scale 3 → '600.000'. */
+function spell(value: bigint, scale: number): string {
+  const base = 10n ** BigInt(scale);
+  return `${value / base}.${(value % base).toString().padStart(scale, '0')}`;
+}
 
 /**
  * A stored measure without its trailing zeros: '250.000' → '250',
@@ -51,17 +74,17 @@ export interface CardTotals {
  */
 export function receiptTotals(lots: readonly CardLot[]): CardTotals {
   let boxes = 0;
-  let kg = 0;
-  let m3 = 0;
+  let kg = 0n;
+  let m3 = 0n;
   for (const lot of lots) {
     boxes += lot.boxCount;
-    kg += storedUnits(lot.totalWeightKg, KG_SCALE);
-    m3 += storedUnits(lot.totalVolumeM3, M3_SCALE);
+    kg += units(lot.totalWeightKg, KG_SCALE);
+    m3 += units(lot.totalVolumeM3, M3_SCALE);
   }
   return {
     lots: lots.length,
     boxes,
-    kg: trimMeasure(fromUnits(kg, KG_SCALE)),
-    m3: trimMeasure(fromUnits(m3, M3_SCALE)),
+    kg: trimMeasure(spell(kg, KG_SCALE)),
+    m3: trimMeasure(spell(m3, M3_SCALE)),
   };
 }

@@ -139,6 +139,9 @@ test.describe.serial('QR-siz lot: marked at the door, printed later, never writt
     expect(receiptHref).not.toBe('');
     await login(page, MANAGER);
     await page.goto(receiptHref);
+    // The void lives in the card's «Boshqa amallar» fold (docs/PRIXOD-KARTA.md
+    // §7.1) — a native <details>, so the press needs no hydration.
+    await page.getByTestId('receipt-more').click();
     await page.getByTestId('void-receipt-reason').fill('e2e QR-siz test');
     await page.getByTestId('void-receipt-btn').click();
     await expect(page.getByTestId('void-receipt-btn')).toHaveCount(0, { timeout: 15_000 });

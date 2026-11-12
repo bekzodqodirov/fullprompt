@@ -807,6 +807,7 @@
     "changeCount": "changes: {n}",
     "entryCount": "entries: {n}",
     "fields": {
+      "lots": "Goods",
       "active": "Active",
       "amount": "Amount",
       "boxCount": "Boxes",
@@ -1081,6 +1082,10 @@
     "voidHasCosts": "Void this receipt's costs first — a money record is finance's decision, not the warehouse's.",
     "voidBoxGone": "Cannot void: at least one box has already left the shelf.",
     "markLostTitle": "Write off a box (damaged/lost)",
+    "markLostShort": "Write off a carton",
+    "total": "Total",
+    "lotsCount": "{n, plural, one {# product} other {# products}}",
+    "more": "Other actions",
     "markLostBox": "Pick a box",
     "markLostReason": "Reason (required)",
     "markLostBtn": "Write off",
@@ -5944,7 +5949,8 @@
     "confirm": "Correct — client confirmed",
     "undo": "Remove the client's confirmation",
     "undoConfirm": "Remove the check mark?",
-    "otherAnswers": "If the client says «other goods» — fix the name with ✏️ below; if «mixed» — fill in the 🧩 lot contents.",
+    "otherAnswers": "If the client says «other goods» — fix the name with this lot's ✏️ button; if «mixed» — fill in the 🧩 lot contents.",
+    "vetoChip": "Client objected",
     "done": "✅ Saved",
     "errors": {
       "forbidden": "You may not mark this receipt",

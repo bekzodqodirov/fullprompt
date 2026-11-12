@@ -21,7 +21,14 @@ interface ClientHit {
   name: string;
 }
 
-/** Assign / change the receipt's client (unclaimed resolution + mistake fix). */
+/**
+ * Assign / change the receipt's client (unclaimed resolution + mistake fix).
+ *
+ * It draws no frame of its own: on an ownerless prixod it is the «whose is
+ * this» block at the top of the card, and on a claimed one a correction
+ * inside «Boshqa amallar» — each of which is already a card
+ * (docs/PRIXOD-KARTA.md §7.1).
+ */
 export function AssignClient({ receiptId, current }: { receiptId: string; current: string | null }) {
   const t = useTranslations('receipts');
   const [query, setQuery] = useState('');
@@ -43,8 +50,8 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
   }, [query]);
 
   return (
-    <div className="card space-y-2 !p-3">
-      <p className="font-semibold">{current ? t('changeClient') : t('assignClient')}</p>
+    <div className="space-y-2" data-testid="receipt-assign">
+      <p className="text-sm font-semibold">{current ? t('changeClient') : t('assignClient')}</p>
       {state.error === 'boxes_crated' && (
         <p className="text-sm font-semibold text-bad">{t('assignCrated')}</p>
       )}
@@ -54,11 +61,11 @@ export function AssignClient({ receiptId, current }: { receiptId: string; curren
         <p className="text-sm font-semibold text-bad">{t('assignHasCompensation')}</p>
       )}
       {selected ? (
-        <form action={formAction} className="flex items-center gap-2">
+        <form action={formAction} className="flex flex-wrap items-center gap-2">
           <input type="hidden" name="receiptId" value={receiptId} />
           <input type="hidden" name="clientId" value={selected.id} />
           <span className="font-mono font-extrabold text-brand-700">{selected.clientCode}</span>
-          <span className="truncate text-sm">{selected.name}</span>
+          <span className="min-w-0 truncate text-sm">{selected.name}</span>
           <ConfirmButton label={t('assignConfirm')} />
           <button type="button" className="btn-secondary" onClick={() => setSelected(null)}>
             ✕

@@ -193,6 +193,19 @@ h3 {
 .btn-icon {
   @apply btn min-h-11 w-11 !px-0;
 }
+/* Compact: one of SEVERAL actions on one record — a lot's row of buttons, a
+   tie's «Saqlash» (docs/PRIXOD-KARTA.md §7.2). 36 px: the size the cards
+   spelled by hand as `!min-h-9 px-2 text-sm`, where the bare `px-2` and
+   `text-sm` silently lost to `.btn` above. Used BESIDE a variant
+   (`btn-secondary btn-sm`) and declared after all of them, so it wins on
+   source order with no `!`.
+   It carries no `nowrap` and no `shrink-0` on purpose: the longest label on
+   the prixod card is 292 px of the 302 px a phone's card has, and it must
+   WRAP there rather than widen the page (#400) — hence the vertical padding.
+   Never for the one primary action of a screen: that keeps its 48 px. */
+.btn-sm {
+  @apply min-h-9 rounded-lg px-2.5 py-1.5 text-sm;
+}
 
 /* ---------------------------------------------------------------------------
    Fields

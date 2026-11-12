@@ -23,6 +23,7 @@ import {
   type DraftRefusal,
   type LotTotals,
 } from '@/modules/wms/receipts/composition-math';
+import { trimMeasure } from '@/modules/wms/receipts/card-totals';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
 import { isProposalWarning, type ProposalWarning } from '@/modules/wms/receipts/tarkib-proposal';
 import {
@@ -348,8 +349,11 @@ export function CompositionPanel({
                 {[
                   l.cartons !== null ? `${l.cartons} ${t('cartonsShort')}` : t('mixedCartons'),
                   l.pieces !== null ? `${l.pieces} ${t('piecesShort')}` : null,
-                  `${l.kg} kg`,
-                  `${l.m3} m³`,
+                  // What the card PRINTS is trimmed like the lot's own
+                  // line above it; the editor's boxes and its remainder bar
+                  // keep the column's spelling (docs/PRIXOD-KARTA.md §7.3).
+                  `${trimMeasure(l.kg)} kg`,
+                  `${trimMeasure(l.m3)} m³`,
                   l.tnvedCode,
                 ]
                   .filter(Boolean)
@@ -380,8 +384,8 @@ export function CompositionPanel({
         <p className="text-xs font-semibold text-warn" data-testid="tarkib-stale">
           ⚠{' '}
           {t('stale', {
-            stated: `${composition.seenBoxCount} ${t('cartonsShort')} · ${statedKg} kg · ${statedM3} m³`,
-            current: `${lot.boxCount} ${t('cartonsShort')} · ${lot.kg} kg · ${lot.m3} m³`,
+            stated: `${composition.seenBoxCount} ${t('cartonsShort')} · ${trimMeasure(statedKg)} kg · ${trimMeasure(statedM3)} m³`,
+            current: `${lot.boxCount} ${t('cartonsShort')} · ${trimMeasure(lot.kg)} kg · ${trimMeasure(lot.m3)} m³`,
           })}
         </p>
       )}
@@ -407,7 +411,7 @@ export function CompositionPanel({
       {canWrite && !open && (
         <button
           type="button"
-          className="btn-secondary !min-h-9 whitespace-normal px-2 text-sm"
+          className="btn-secondary btn-sm"
           data-testid="lot-tarkib-open"
           onClick={() => {
             setSaved(null);

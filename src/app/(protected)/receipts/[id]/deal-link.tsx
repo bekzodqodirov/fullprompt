@@ -44,10 +44,15 @@ export function DealLink({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // One cell of the card's «ties» (docs/PRIXOD-KARTA.md §7.1) — the anatomy
+  // all four share: a small label, ONE line saying what it is tied to now,
+  // one row to change it. «Saqlash» is drawn only once the answer differs
+  // (#422): four always-drawn primary buttons in one card were four things
+  // asking to be pressed.
   return (
-    <div className="card space-y-2 !p-3">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-semibold">{t('deal')}: </span>
+    <div className="space-y-1.5" data-testid="receipt-deal">
+      <p className="section-title">{t('deal')}</p>
+      <p className="text-sm [overflow-wrap:anywhere]">
         {current ? (
           <Link
             href={`/bitimlar/${current.id}`}
@@ -58,14 +63,14 @@ export function DealLink({
         ) : (
           <span className="text-ink-500">{t('dealNone')}</span>
         )}
-      </div>
+      </p>
       <div className="flex gap-2">
         <select
           value={dealId}
           onChange={(event) => setDealId(event.target.value)}
           aria-label={t('deal')}
           data-testid="receipt-deal-pick"
-          className="input min-w-0 flex-1"
+          className="input-sm min-w-0 flex-1"
         >
           <option value="">— {td('unlink')}</option>
           {options.map((deal) => (
@@ -74,21 +79,23 @@ export function DealLink({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          disabled={pending || dealId === (current?.id ?? '')}
-          data-testid="receipt-deal-save"
-          className="btn-primary shrink-0 disabled:opacity-50"
-          onClick={() =>
-            startTransition(async () => {
-              const result = await linkReceiptAction(receiptId, dealId || null);
-              setError(result.ok ? null : (result.error ?? 'error'));
-              if (result.ok) router.refresh();
-            })
-          }
-        >
-          {pending ? tc('loading') : tc('save')}
-        </button>
+        {dealId !== (current?.id ?? '') && (
+          <button
+            type="button"
+            disabled={pending}
+            data-testid="receipt-deal-save"
+            className="btn-primary btn-sm shrink-0 disabled:opacity-50"
+            onClick={() =>
+              startTransition(async () => {
+                const result = await linkReceiptAction(receiptId, dealId || null);
+                setError(result.ok ? null : (result.error ?? 'error'));
+                if (result.ok) router.refresh();
+              })
+            }
+          >
+            {pending ? tc('loading') : tc('save')}
+          </button>
+        )}
       </div>
       {/* Said BEFORE the press (0105): re-filing the cargo re-files the money
           paid back for its lost cartons with it (`followCompensationDealTx`). */}

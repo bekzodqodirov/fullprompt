@@ -227,3 +227,116 @@ button as today.
 2. Is folding the void form one tap too many for a warehouse manager?
 3. Should «Bog'lanishlar» sit above the lots (as drawn) or below them on a
    phone, where the operator opens the card for the cargo?
+
+## 7. As judged — BINDING, overrides §2-§5 where they differ
+
+Five lenses were sent before any code. Two came back whole — the phone
+(operator, seller) and the desktop (VED, office): 14 defects and 13 nits,
+each measured in the running app. The regression, CSS and house-consistency
+lenses and all three refuters died on the account's weekly limit, so those
+three were done by the builder against the built card (§8), and no objection
+below was refuted by an independent reader — each was checked against the
+code before it was accepted.
+
+The drawings above are shorthand: no label, date format or number spelling
+changes except those listed here.
+
+**Their answers to §6.** (1) Before the papers — both; the phone adds
+«before the photographs». (2) Fold it — both, provided the fold's closed
+line names what is inside. (3) Split: the phone measured the seller's first
+lot at y≈725 of a 741 px screen with the ties above; the desktop wants one
+order. Resolved below by `order` under `md` — one DOM, one class.
+
+### 7.1 The page
+
+- **Order.** DOM: back · header · summary · owner · ties · lots · files |
+  costs · thread | folds · history. Under `md` the ties and everything after
+  the lots carry `max-md:order-1`, so a phone reads summary → lots → ties →
+  the rest. (Phone-7; the operator gets no tie row but a factory trip's.)
+- **Pairs switch at `lg`, never `md`.** The sidebar takes 224 px from `md`,
+  so at a 768 px window each half of an `md` pair was 248 px — narrower than
+  a phone (measured). Summary columns, the ties' two stacks, files | costs
+  and thread | folds all turn on at `lg` (content ≥ 768 px). (Desktop-1.)
+- **A half with no sibling spans the row** — one wrapper whose class
+  switches, children in fixed slots, `lg:items-start`. No files card for a
+  reader who cannot attach when there is nothing to list; no costs card
+  under today's own condition. (Desktop-2.)
+- **Summary.** Inline «label: value» lines on a phone (today's 87 px card
+  plus one «Jami» line — the stacked draft measured 206 px and pushed the
+  first lot's controls off the first screen); from `lg` three columns with
+  the label above. Cells `min-w-0`; the client line and the marking chip
+  wrap anywhere — a 30-character unbroken marking makes TODAY's card 424 px
+  wide at 360. The marking takes the `warn` tokens (it was raw orange).
+  `ReceivedEditForm` sits in the «Qabul» column. (Phone-1, -6; Desktop-7.)
+- **Ties** (`receipt-links`, no title — every cell names itself). Two
+  independent stacks, never a 2×2 row grid: left «Bitim → Hisob» (the
+  calculation's options ARE the linked deal's), right «Yuk turi → Zavod
+  reysi». One cell anatomy: `section-title` label → one value line → one
+  control row. One save idiom — the button appears when the value differs
+  (the pickup's, #422). The pickup's value line, which repeated its
+  select's empty option word for word, is a dash: gone entirely, the two
+  selects of a VED's card («Bitim» | «Zavod reysi») started 26 px apart.
+  Controls are `input-sm` / `btn-sm`. (Desktop-3.)
+- **«Boshqa amallar»** (`receipt-more`). Its closed line lists what this
+  reader's fold holds, each word under its own condition. The forms inside
+  lose their own `card`. Slot A (thread | the «elsewhere» sentence | nothing)
+  and slot B (the folds) keep their positions whichever is drawn.
+
+### 7.2 The lot
+
+```
+A  name (ru)                         [❌ veto chip]        [🖨 A]
+figures (trimmed)
+📝 note · lot-qrless
+lot-actions:  [✏️] [⚠️ write-off] [🏷 QR] [🏷 remark] [🖨 YW: n] [🧱 …]
+              (an opened panel: its own full-width line under the row)
+photos
+lot-check
+lot-tarkib
+```
+
+- **The lot's print stays in the head**, 112×48, where it is today: in the
+  row it measured 46×36 with a neighbour 8 px away, and a missed tap there
+  loads a document and opens the print dialog. (Phone-2.)
+- **The row sits before the photographs**, next to the `lot-qrless`
+  sentence that explains its QR buttons. (Phone-1.)
+- **Nothing in the row moves when something opens.** Every opener is always
+  drawn (`aria-expanded`); its panel, its «✅ saqlandi · 🖨 … · 🗑 …» line
+  and every refusal are siblings with `order-last basis-full`, scrolled into
+  view (`block: 'nearest'`) on open. `LotEditForm`, `QrSkipToggle` and
+  `MarkLostForm` return fragments; `MarkLostForm` is a button and state, not
+  a `<details>`. (Phone-3; Desktop-6.)
+- **The order**: the two corrections first («✏️ Tahrirlash», «⚠️ Hisobdan
+  chiqarish» — 285 of a phone's 302 px, so they share a line), then the
+  stickers, then the pallets. As first built, with the write-off last, a
+  manager's lot was five lines of buttons on a phone; it is four.
+- **Fixed slots**, one `{cond && <X/>}` per member in one order, the two
+  mapped lists each ONE slot with its own key prefix (`qr:` / `pallet:` —
+  the sibling-keys fence). «Empty» is decided from the members' own
+  conditions, including the write-off's offerable cartons. (Phone-4.)
+- **`btn-sm`** never carries `nowrap` or `shrink-0`: the longest label is
+  292 px of the 302 px a phone's card has, and wraps.
+- **A client's ❌** that vetoes puts a red chip beside the lot's name
+  (`lot-veto`), because the check block now comes after the row and the
+  photographs. (Phone nit.)
+- **`lot-check`**: one row from `sm` — the note, then whichever of «✅» and
+  «E'tirozni yopish» is offered; both hints under the row. Every label
+  whole. (Desktop nit.)
+- **Words that change** — the only ones in a layout round:
+  `lotCheck.otherAnswers` loses its direction («pastdagi ✏️» / «✏️ ниже» —
+  the ✏️ is above now) in all four bundles.
+
+### 7.3 One spelling for a measure
+
+What the card PRINTS is trimmed — the lot's figures, «Jami», the tarkib's
+read face and its stale sentence. What an EDITOR holds — the tarkib's boxes,
+its remainder bar, the AI reading's sums, the lot form's inputs — keeps the
+column's spelling, because it sits beside boxes that hold exactly that.
+(Desktop-5: the mix was never to ship unstated.)
+
+### 7.4 Corrected
+
+§2.1's mechanism was wrong and its conclusion stands: in a narrow column the
+tarkib editor does not stack, it OVERFLOWS — `xl:` is the viewport's 1280
+px, not the container's. At a 1280 px viewport a lot card must stay ≥ ~712
+px wide and must not be wrapped in anything padded.

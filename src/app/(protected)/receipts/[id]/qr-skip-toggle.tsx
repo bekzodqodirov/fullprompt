@@ -51,14 +51,18 @@ export function QrSkipToggle({
     });
   }
 
+  // A member of the lot's row of actions (docs/PRIXOD-KARTA.md §7.2): a
+  // FRAGMENT, so each button is a flex item of that row beside its
+  // neighbours, and the refusal takes a line of its own under the row
+  // instead of breaking it in the middle.
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-2">
+    <>
       <button
         type="button"
         disabled={pending}
         onClick={() => press(!marked)}
         data-testid="lot-qr-toggle"
-        className="btn-secondary !min-h-9 px-3 disabled:opacity-60"
+        className="btn-secondary btn-sm disabled:opacity-60"
       >
         {marked ? t('unmark') : t('mark')}
       </button>
@@ -68,16 +72,16 @@ export function QrSkipToggle({
           disabled={pending}
           onClick={() => press(true)}
           data-testid="lot-qr-remark"
-          className="btn-secondary !min-h-9 px-3 disabled:opacity-60"
+          className="btn-secondary btn-sm disabled:opacity-60"
         >
           {t('remark')}
         </button>
       )}
       {error && (
-        <p role="alert" data-testid="lot-qr-error" className="w-full text-sm font-semibold text-bad">
+        <p role="alert" data-testid="lot-qr-error" className="order-last basis-full text-sm font-semibold text-bad">
           {error}
         </p>
       )}
-    </div>
+    </>
   );
 }
