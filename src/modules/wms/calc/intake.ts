@@ -30,6 +30,7 @@ import {
   type RowNeed,
 } from './needs';
 import type { GoodsRow } from '../deals/goods-import';
+import { applyPacking, derivedNotes, packingNote, type LineDerived, type Packing } from './carton-math';
 import { doorRow } from './door-row';
 import { linesVolumeM3 } from './line-totals';
 import type { TableRow, TableTarget } from './line-address';
@@ -288,6 +289,28 @@ export interface CalcGoodsFact {
    * before that function, and every stored row).
    */
   tnvedSource?: 'row' | 'memory' | 'book' | 'model';
+  /**
+   * The model called its own code a GUESS (`code_sure: false`,
+   * docs/AI-SORAYDI.md §2.2). Absent = not said. Only ever false beside
+   * `tnvedSource: 'model'`.
+   */
+  tnvedSure?: boolean;
+  /**
+   * The NAME is what the model saw on a photo of the goods — written nowhere
+   * (his 2a, docs/AI-SORAYDI.md §2.2). The table marks the row «📷 rasmdan
+   * (AI taxmini)» and the landed row's note says so. Absent = read or typed.
+   */
+  nameFrom?: 'photo' | null;
+  /**
+   * What the source stated PER PACKAGE — a carton count, a carton's size,
+   * cube, weight, pieces (docs/AI-SORAYDI.md §2.3). No reader multiplies:
+   * `applyPacking` (carton-math.ts) does, and `derived` says how each
+   * computed figure of this line was made. Both live in the collection's
+   * state and are worded into the landed row's note (`provenanceNote`) —
+   * there is no column for either.
+   */
+  packing?: Packing | null;
+  derived?: LineDerived | null;
   note?: string | null;
   /** A chosen baza basis (stored rows): the VED's choice pins its unit too. */
   bazaBasis?: BazaBasis | null;
@@ -303,6 +326,30 @@ export interface CalcGoodsFact {
    * that was only read, never stored. */
   itemId?: string | null;
   seq?: number;
+}
+
+/** A name the model took from a photo of the goods — the words on the table and on the landed row. */
+export const PHOTO_NAME_MARK = '📷';
+export const PHOTO_NAME_NOTE = 'nomi rasmdan (AI taxmini)';
+
+/**
+ * How a line's facts came to be, as ONE note for the landed row — rendered
+ * from the line each time, never appended to it (a line passes through the
+ * carton arithmetic again whenever a factor is added): the source's own
+ * note, then «nomi rasmdan», the packing as stated, and what was computed
+ * from it. The VED reads on the row which figures are the paper's and which
+ * are cartons × a carton's.
+ */
+export function provenanceNote(
+  line: Pick<CalcGoodsFact, 'note' | 'nameFrom' | 'packing' | 'derived' | 'quantity' | 'weightKg' | 'volumeM3'>,
+): string | null {
+  const parts = [
+    line.note?.trim() || null,
+    line.nameFrom === 'photo' ? PHOTO_NAME_NOTE : null,
+    packingNote(line.packing),
+    ...derivedNotes(line),
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0 ? parts.join(' · ') : null;
 }
 
 /** One line as the rest of the system should read it. */
@@ -485,12 +532,13 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
       tnvedCode: g.tnvedCode,
       note: g.note,
     };
-    if (!routed.moved) return row;
-    return {
-      ...row,
-      ...routed.patch,
-      note: [g.note, routed.note].filter(Boolean).join(' · ') || null,
-    };
+    const routedRow = routed.moved
+      ? { ...row, ...routed.patch, note: [g.note, routed.note].filter(Boolean).join(' · ') || null }
+      : row;
+    // What the sheet states PER PACKAGE (docs/AI-SORAYDI.md §2.3): the row's
+    // packing goes through the one carton arithmetic here, where every reader
+    // of the row — the table, the comparison, the landing — takes it from.
+    return g.packing ? applyPacking({ ...routedRow, packing: g.packing }).line : routedRow;
   });
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { doorRow } from '@/modules/wms/calc/door-row';
 import { aiGoodsLine } from '@/modules/wms/calc/intake-ai';
+import { provenanceNote } from '@/modules/wms/calc/intake';
 
 /**
  * ONE normalisation at the door (P1.2, judge S7/MR-18): the card form, the
@@ -133,10 +134,62 @@ describe('the AI’s reading knows units (P1.5)', () => {
     expect(g({ unit: 'juft', measure_qty: 40 })).toMatchObject({ measureUnit: 'juft', measureQty: 40 });
   });
 
-  it('a carton count the model read is noted, never pieces', () => {
+  it('a carton count the model read is the row’s packing — never pieces, and never the SELLER’s words', () => {
+    // docs/AI-SORAYDI.md §2.2 (dg2-12): it used to land as the note
+    // «sotuvchi: 20 karobka» — the seller's unit-word rule wording a figure
+    // nobody typed, in a note the table does not draw.
     const line = g({ quantity: 600, unit: 'karobka', measure_qty: 20 });
     expect(line.quantity).toBe(600);
-    expect(line.note).toBe('sotuvchi: 20 karobka');
+    expect(line.note).toBeNull();
+    expect(line.packing).toMatchObject({ cartons: 20, from: 'ai' });
+    expect(provenanceNote(line)).toBe('📦 20 karobka — AI o‘qidi');
+  });
+
+  it('the packing keys are copied and the BOT multiplies (§2.3): a carton’s size, weight and pieces', () => {
+    const line = g({
+      name_source: 'picture',
+      cartons: 20,
+      pieces_per_carton: 24,
+      carton_weight_kg: 15,
+      carton_weight_kind: 'gross',
+      carton_volume_m3: 0,
+      carton_l: 60,
+      carton_w: 40,
+      carton_h: 50,
+      carton_size_unit: 'cm',
+      tnved_code: '9401310000',
+      code_sure: false,
+    });
+    // 20 × 60×40×50 sm = 2.4 m³; 20 × 15 = 300 kg; 20 × 24 = 480 — by hand.
+    expect(line).toMatchObject({ quantity: 480, weightKg: 300, volumeM3: 2.4, nameFrom: 'photo', tnvedSure: false });
+    expect(line.derived).toMatchObject({ volumeM3: '20 × 60×40×50 sm', weightKg: '20 × 15 kg', quantity: '20 × 24' });
+    expect(provenanceNote(line)).toBe(
+      'nomi rasmdan (AI taxmini) · 📦 20 karobka · 60×40×50 sm · 15 kg/karobka (brutto) · 24 dona/karobka — AI o‘qidi · ' +
+        'hajm hisoblangan: 20 × 60×40×50 sm = 2.4 m³ · og‘irlik hisoblangan: 20 × 15 kg = 300 kg · ' +
+        'soni hisoblangan: 20 × 24 = 480 dona · og‘irlik brutto (karobka og‘irligidan)',
+    );
+  });
+
+  it('«not stated» is 0 / "unknown" in the answer and NOTHING on the row — and a stated total is not overwritten', () => {
+    const bare = g({ cartons: 0, pieces_per_carton: 0, carton_weight_kg: 0, carton_weight_kind: 'unknown', carton_volume_m3: 0, carton_l: 0, carton_w: 0, carton_h: 0, carton_size_unit: 'unknown', name_source: 'document', code_sure: true });
+    expect(bare.packing).toBeUndefined();
+    expect(bare.derived).toBeUndefined();
+    expect(bare.nameFrom).toBeUndefined();
+    expect(bare.tnvedSure).toBeUndefined();
+    const total = g({ volume_m3: 2.48, cartons: 30, carton_volume_m3: 0.0827 });
+    expect(total.volumeM3).toBe(2.48);
+    expect(total.derived).toBeUndefined();
+  });
+
+  it('ONE carton’s cube written into the row’s volume is replaced by the product (dg2-5)', () => {
+    const line = g({ volume_m3: 0.083, cartons: 30, carton_volume_m3: 0.083 });
+    expect(line.volumeM3).toBe(2.49);
+    expect(line.derived).toEqual({ volumeM3: '30 × 0.083 m³', replaced: { volumeM3: 0.083 } });
+  });
+
+  it('a doubt about a code is recorded only where there is a code', () => {
+    expect(g({ tnved_code: null, code_sure: false }).tnvedSure).toBeUndefined();
+    expect(g({ tnved_code: '6403', code_sure: true }).tnvedSure).toBeUndefined();
   });
 
   it('a dotted or heading code is kept — it used to be ten bare digits or nothing', () => {

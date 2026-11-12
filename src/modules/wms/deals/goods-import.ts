@@ -1,6 +1,7 @@
 import { clipUnits } from '../../platform/text/clip';
 import { readNumberCell } from '../calc/number-cell';
 import { normalizeTnved, unitOf } from '../calc/units';
+import type { Packing } from '../calc/carton-math';
 
 /**
  * The client's "50 goods" spreadsheet (DEALS.md answer 6): parse whatever
@@ -95,6 +96,13 @@ export interface GoodsRow {
   /** What the reader could not use and will not drop: a code cell that is
    * not a code, said in words for the VED. */
   note: string | null;
+  /**
+   * What the sheet states PER PACKAGE — its carton count, a carton's size,
+   * cube, weight, pieces (docs/AI-SORAYDI.md §2.3, §3.2 X2-X3). The reader
+   * COPIES; the calc door multiplies (`invoiceFacts` → `applyPacking`). A deal
+   * line's import ignores it. Absent = the sheet stated none.
+   */
+  packing?: Packing | null;
 }
 
 interface ColumnMap {
