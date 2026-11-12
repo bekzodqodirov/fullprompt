@@ -22,7 +22,7 @@ import { db } from '../../platform/db/client';
  * `lotClientConfirmsReady()` — a sync read of what the same probe remembered
  * — and speaks its two-source form while that is «no».
  *
- * THREE answers since 0145 (docs/PRIXOD-XABARI.md §A.6): the client's answer
+ * THREE answers since 0146 (docs/PRIXOD-XABARI.md §A.6): the client's answer
  * may also remember the lot's kilos and cubic metres (`shown_kg`,
  * `shown_m3`), and the sentence compares them — by NAME, under this third
  * flag. Not the house's `to_jsonb(row)->>'col'` idiom, which needs no flag:
@@ -34,7 +34,7 @@ import { db } from '../../platform/db/client';
  * runs on every reader call).
  *
  * The early return below is ALL THREE answers: with only the first two in
- * it, a process that was asked once while 0145 had not landed would never
+ * it, a process that was asked once while 0146 had not landed would never
  * ask again — and after `docker compose run --rm migrate` (the repair that
  * restarts nothing) one bundle's copy of these flags would go on speaking the
  * 0144 sentence beside another that had learned the new one.
@@ -82,7 +82,7 @@ export async function clientConfirmsReady(): Promise<boolean> {
 }
 
 /**
- * Can the client's answer remember kilos and cubic metres (0145)? What the
+ * Can the client's answer remember kilos and cubic metres (0146)? What the
  * last probe remembered — SYNC, for the sentence (`clientHoldsSql`), under
  * the same rule as `lotClientConfirmsReady()`: every reader awaits the probe
  * before it builds a statement.

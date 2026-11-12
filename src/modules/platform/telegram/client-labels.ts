@@ -445,12 +445,12 @@ const DICT = {
   pushMoreLots: { uz: '… yana {n} ta tovar', ru: '… ещё {n} поз.', en: '… {n} more items' },
   // --- P-A extra (only P-A adds keys here) ---
   // The client's own ✅ / ❌ about their cargo (0144, docs/TARKIB-TAKLIFLAR.md
-  // §4). The QUESTION names what is being confirmed. Two scopes since 0145
+  // §4). The QUESTION names what is being confirmed. Two scopes since 0146
   // (docs/PRIXOD-XABARI.md §A, the owner's «4 ha»): a question asked from now
   // on is about the name, the box count, the WEIGHT and the VOLUME (`…Full`
   // below); the three keys right here are the 0144 question, which named the
   // name and the count only — still the words of a server one migration
-  // behind, and of the thanks for a press on a message sent before 0145.
+  // behind, and of the thanks for a press on a message sent before 0146.
   confirmAskTitle: {
     uz: '📋 Yuk ma’lumotini tasdiqlang',
     ru: '📋 Подтвердите данные о грузе',

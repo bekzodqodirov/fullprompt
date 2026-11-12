@@ -30,7 +30,7 @@ export {
  *    vouched count reads checked again by itself, which a clear-on-write
  *    could never do. kg/m³ are deliberately not compared HERE: a re-weigh is
  *    the warehouse's correction, not «what is it» (the CLIENT's own answer
- *    does compare them since 0145 — below). The Russian name compared is
+ *    does compare them since 0146 — below). The Russian name compared is
  *    the one the screens SHOW (`lotRuShownSql` — the tarkib's label while one
  *    is written, standing or not): a person confirms what the card printed,
  *    so a tarkib written, changed or cleared after the tick makes it «stale»,
@@ -53,7 +53,7 @@ export {
  *    `lot_client_confirms` row: the ✅ or ❌ the client pressed in Telegram,
  *    with what the message SHOWED them. A ✅ is the same kind of snapshot,
  *    compared the same way, plus the tarkib's goods as printed
- *    (`goods_key`) and — when the question asked about them (0145, the
+ *    (`goods_key`) and — when the question asked about them (0146, the
  *    owner's «4 ha»: «og'irlik va hajmga urg'u berilsin») — the lot's kilos
  *    and cubic metres as the customer reads them: while it matches the lot
  *    reads «checked» and nobody has to telephone. A ❌ is a VETO, and it
@@ -89,7 +89,7 @@ export const LOT_TARKIB = sql.raw('lot_tarkib');
  * ✅ would read «eskirgan» after routine coding and a ❌ would be lifted by
  * it — the design judge's blocker. A LINE's kg, m³, cartons and codes are not
  * in it: the client is not shown them. (The LOT's own kilos and cubic metres
- * are shown, and since 0145 they are part of the answer — as two figures of
+ * are shown, and since 0146 they are part of the answer — as two figures of
  * their own, `shown_kg` / `shown_m3`, never inside this digest: arm 1 below
  * asks whether a ❌ was given on the very GOODS a tarkib still lists, and a
  * re-weigh must not answer that.)
@@ -169,8 +169,8 @@ export function lotShownM3Sql(lot: SQL): SQL {
 }
 
 /**
- * The measures the client confirmed still stand (0145). NULL = the question
- * did not ask about them — every answer given before 0145 and every press on
+ * The measures the client confirmed still stand (0146). NULL = the question
+ * did not ask about them — every answer given before 0146 and every press on
  * a button sent before it — and such an answer holds on the five 0144 terms
  * alone. Named columns, so only where they exist (`lotClientMeasuresReady()`;
  * `lot-check-ready.ts` says why not `to_jsonb`).
@@ -185,7 +185,7 @@ export function clientMeasuresHoldSql(lot: SQL): SQL {
  * The client's answer is about what the lists still show (0144): the five
  * things the question printed — the carton count, the owner, the tarkib's
  * goods (`goods_key`; NULL on both sides = no tarkib then, none now) and
- * both name spellings — and, for a question that asked about them (0145),
+ * both name spellings — and, for a question that asked about them (0146),
  * the lot's kilos and cubic metres. A rename, a count correction, a new
  * owner, a tarkib written, changed or cleared afterwards, a re-weigh a
  * customer would see — and a ✅ is about data that no longer exists. The
@@ -206,7 +206,7 @@ export function clientHoldsSql(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): SQL
  * must stay last. `clientHoldsSql` and `clientFactsHoldSql` are both built
  * from these: they used to be two hand copies, and a sixth term added to one
  * would have made the card and the state disagree with nothing red (#513;
- * the as-built review of 0145, CA-2).
+ * the as-built review of 0146, CA-2).
  */
 function clientFactTerms(refs: Pick<LotCheckRefs, 'lot' | 'receipt'>): { early: SQL; late: SQL } {
   const { lot, receipt } = refs;
@@ -267,7 +267,7 @@ export function clientDisputeSql(refs: Pick<LotCheckRefs, 'receipt'>): SQL {
  * colleague ticks after it, the client answers again, or «E'tirozni yopish».
  * kg and m³ lift no ❌ — a complaint about a weight is closed by a person;
  * they are compared in ONE place, arm 4: a ✅ given to a question that asked
- * about them (0145) stops vouching once they move.
+ * about them (0146) stops vouching once they move.
  *
  * On a server whose 0144 has not landed (`lotClientConfirmsReady()`, #472)
  * this is the two-source sentence that shipped with 0123, word for word.

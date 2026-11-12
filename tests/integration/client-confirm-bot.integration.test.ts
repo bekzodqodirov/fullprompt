@@ -259,7 +259,7 @@ describe('what the sweep sends', () => {
     const t = clientLabels('uz');
     expect(push.text).toContain(t.arrivedTitle);
     expect(push.text).toContain(`Клавиатура ${RUN}`);
-    // Named: what is being confirmed — since 0145 the name, the count AND the kilos and cubic metres
+    // Named: what is being confirmed — since 0146 the name, the count AND the kilos and cubic metres
     // the lines above print (the owner's «og'irlik va hajmga urg'u berilsin»).
     expect(push.text.trimEnd().split('\n').at(-1)).toBe(t.confirmAskLineFull);
     expect(push.text).toMatch(/3 quti · 100 kg · 1 m³/);
@@ -362,7 +362,7 @@ describe('what the sweep sends', () => {
     await sendDueArrivalNotices(SWEEP_AT);
     const push = sentSince(mark).filter((call) => call.chatId === CHAT_A)[0]!;
     // Its ✅ will be recorded as «the weight and the volume too» (the FULL tag), so the client must
-    // have been ASKED that: the push is a text message, and its last line is the question (0145 —
+    // have been ASKED that: the push is a text message, and its last line is the question (0146 —
     // under 0144 the photograph stayed and the buttons carried the question alone).
     expect(push.method).toBe('sendMessage');
     expect(push.text.trimEnd().split('\n').at(-1)).toBe(clientLabels('uz').confirmAskLineFull);
@@ -386,7 +386,7 @@ describe('what the sweep sends', () => {
     expect(lines[0]).toBe(t.confirmAskTitle);
     expect(lines[1]).toContain(`AB${RUN}`);
     expect(lines.slice(2, 5)).toEqual([`📦 A — 2 quti · 100 kg · 1 m³`, `   • Мышь ${RUN} — 500 ${t.unitDona}`, `   • Коврик ${RUN}`]);
-    // The goods are listed with their pieces — so the question asks about the pieces too, and (0145)
+    // The goods are listed with their pieces — so the question asks about the pieces too, and (0146)
     // about the lot's weight and volume, which its own line prints.
     expect(lines).toContain(t.confirmAskLineGoodsFull);
     const tag = await tagOf(receipt.tarkib);

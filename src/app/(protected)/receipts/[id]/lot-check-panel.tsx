@@ -58,7 +58,7 @@ export interface LotCheckFace {
     /** The prixod's CURRENT owner's answer — a previous owner's is drawn nowhere. */
     ofOwner: boolean;
     askedBy: string | null;
-    /** The answer covered the kilos and the cubic metres too (0145). */
+    /** The answer covered the kilos and the cubic metres too (0146). */
     measures: boolean;
     /** …and it is THEY that moved since, while everything else still holds. */
     measuresMoved: boolean;
@@ -227,7 +227,7 @@ export function LotCheckPanel({
   if (client?.verdict === 'yes' && client.holds) {
     lines.push(
       <p key="client-yes" className="font-semibold text-good [overflow-wrap:anywhere]" data-testid="lot-check-face-client-yes">
-        {/* What the answer COVERED (0145): a «full» one vouches for the kilos
+        {/* What the answer COVERED (0146): a «full» one vouches for the kilos
             and the cubic metres too; an older one — or a press on a button
             sent before the fold — for the name and the count alone. */}
         ✅ {t(client.measures ? 'clientYesFull' : 'clientYes')} · {client.day}

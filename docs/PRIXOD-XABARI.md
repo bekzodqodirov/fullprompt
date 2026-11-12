@@ -26,7 +26,7 @@ What that binds (the numbers are the eight questions sent with `docs/TARKIB-TAKL
 | R6 | «mijozdan tasdix bosmasa xam skladga yuk kelgan zahoti borsin» | The seller's message never waits for the client's ✅: the warehouse's confirm sends it (as today), and a test now says so. |
 | R7 | «qolgan savollaringa … taklifing boyicha» | Q1, Q2, Q3, Q5, Q6, Q7 = ⭐ — checked against the shipped code and pinned (§D). |
 
-Migration **0145** `prixod_xabari` (ledger 146). Sections: §A the client's confirmation, §B the summary's AI
+Migration **0146** `prixod_xabari` (ledger 147; minted as 0145 — see §E). Sections: §A the client's confirmation, §B the summary's AI
 line, §C the one message and its two buttons, §D the pins, §E deploy, §F stated-not-built and questions,
 **§G as built — BINDING**.
 
@@ -47,7 +47,7 @@ ask, the tag under its buttons, what the answer remembers and what the sentence 
 
 - `basic` — name + cartons (+ a tarkib's goods). Every question sent before this release.
 - `full` — the same, plus the lot's total weight and total volume. Every question sent from now on, on a
-  server whose 0145 has landed (`lotClientMeasuresReady()`, the probe's third answer — §A.6).
+  server whose 0146 has landed (`lotClientMeasuresReady()`, the probe's third answer — §A.6).
 
 One flag, never re-derived: `ClientAskFacts.scope`, minted by `clientAskFacts`.
 
@@ -68,12 +68,12 @@ One flag, never re-derived: `ClientAskFacts.scope`, minted by `clientAskFacts`.
 - The figures are the lot's `total_weight_kg` / `total_volume_m3` — what the push has always printed
   (`receivedFacts`), through the cabinet's own rounding (`kgText` / `m3Text`).
 
-### A.3 What is remembered (0145)
+### A.3 What is remembered (0146)
 
 `lot_client_confirms.shown_kg numeric(12,2)`, `shown_m3 numeric(12,3)` — the lot's two totals AT THE
 PRECISION THE CUSTOMER READS THEM (kilos to two places, cubic metres to three — `roundKg` / `roundM3`'s
 places), as they stood when the client answered a `full` question; NULL on a `basic` answer (every row
-written before 0145, and every press on a button sent before it). A pair CHECK (both or neither), `>= 0`
+written before 0146, and every press on a button sent before it). A pair CHECK (both or neither), `>= 0`
 and not NaN.
 
 Rounded by the DATABASE — `round(total_weight_kg, 2)`, `round(total_volume_m3, 3)` — in the one statement
@@ -88,7 +88,7 @@ and a correction that does not move what any list shows them has not unsettled w
 
 SQL-only columns (not on the drizzle table): the upsert stays the drizzle statement it is, and the two
 figures are written by a raw `UPDATE` in the same transaction, under the same locks — only for a `full`
-answer, which only a server with 0145 can be asked (§A.1). So the press itself names no new column on a
+answer, which only a server with 0146 can be asked (§A.1). So the press itself names no new column on a
 server one migration behind.
 
 ### A.4 The tag
@@ -108,7 +108,7 @@ weight the client was not shown.
 ### A.5 The comparison
 
 `clientHoldsSql` gains one term — `(shown_kg IS NULL OR (shown_kg = round(lot.total_weight_kg, 2) AND
-shown_m3 = round(lot.total_volume_m3, 3)))` — on a server with 0145; the 0144 sentence word for word on one
+shown_m3 = round(lot.total_volume_m3, 3)))` — on a server with 0146; the 0144 sentence word for word on one
 without. Placed with the cheap terms, before the shown-name subquery.
 
 - A `full` ✅ stops holding when the lot's weight or volume moves by something a list would show: the ✏️
@@ -144,10 +144,10 @@ async probe-then-read the question's own doors ask themselves (`clientAskFacts`:
 never a flag another screen remembered — the as-built lesson of 0144).
 
 «No» = scope `basic` everywhere: the 0144 question, the 0144 tag, the 0144 sentence. Nothing that is live
-today is switched off by a 0145 that did not land.
+today is switched off by a 0146 that did not land.
 
 Why a probe and not the house's `to_jsonb(row)->>'col'` idiom, which needs none: MEASURED (200,000
-evaluations on a 0145 copy) — the comparison over the named columns costs 0.17 µs a row (45 ms against an
+evaluations on a 0146 copy) — the comparison over the named columns costs 0.17 µs a row (45 ms against an
 11 ms baseline), over `to_jsonb(lot_client)` 12.5 µs a row (2,500 ms). The sentence runs once per carton on
 the stock table and the plan editor; once most cargo in China carries a client's answer that is a quarter
 of a second on every render.
@@ -192,7 +192,7 @@ must say which part it could not price instead of printing a smaller number as i
   models in use — the only duration the code writes, `cache_control: { type: 'ephemeral' }`), and
   `approxMicroUsd` prices all four token counts. Rows with no cache counts price exactly as before.
 - `ai_questions` gets `model`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`
-  (0145, SQL-only): the assistant's loop already receives each call's usage and now sums it; the settle
+  (0146, SQL-only): the assistant's loop already receives each call's usage and now sums it; the settle
   writes it in a statement of its own, caught — a ledger that cannot be written must not cost the answer
   (`ai-cost.ts`'s rule), and a server one migration behind answers exactly as today.
 - `wms/reports/ai-spend.ts` `aiSpend(from, to)` — ONE reader, three grouped statements (one per ledger),
@@ -346,7 +346,7 @@ a timeout or a forgotten «Bo‘ldi» loses NOTHING — the files are already on
 shape — hold the files aside, bind them at «Bo‘ldi» — needs a cleanup for every abandoned collection and
 loses the seller's forwards on a deploy.)
 
-- **State**: one durable wait per chat, kind `receipt_files` (`telegram_chat_waits`, widened by 0145):
+- **State**: one durable wait per chat, kind `receipt_files` (`telegram_chat_waits`, widened by 0146):
   `{ receiptId, number, clientCode, count }`, 30 minutes, re-armed by every file. Memory is the reader, the
   table survives a deploy (`waits.ts`'s own rule), so a collection opened before a restart still takes the
   files sent during it (a backlog file dated inside the wait's window answers it — `waitVerdict`).
@@ -421,9 +421,11 @@ it is called answered (#1229), and pinned by a test that names it where only rea
 | 6 | a Chinese name on the paper gets the AI's Russian name | `tarkib-proposal.ts` |
 | 7 | 300 Bojxona 🤖 presses and 50 file readings a day | the two settings' defaults |
 
-## §E. Migration 0145 and the deploy
+## §E. Migration 0146 and the deploy
 
-`0145_prixod_xabari.sql`, `when` …124, ledger **146**. Additive only:
+`0146_prixod_xabari.sql`, `when` …125, ledger **147**. Minted as 0145 (`when` …124) and renumbered on the
+merge with main, whose AI-sotuvchi «o‘zi yuborish» round (PR #147, `0145_agent_auto`) took that number and
+that `when` first — every «0146» in this document read «0145» until then. Additive only:
 
 1. `lot_client_confirms` + `shown_kg numeric(12,2)`, `shown_m3 numeric(12,3)` — the precision a customer
    reads (§A.3) — and their pair / range CHECK.
@@ -437,7 +439,7 @@ The staff bot must be restarted with the app (it is the same container) — the 
 parsed by the new code only; a press on a new button reaching an OLD bot is answered by nobody, which is
 why the buttons are drawn by the same deploy that parses them. No listener change (`tg-listen` untouched).
 
-Deploy check: the count (146) and `/api/version`.
+Deploy check: the count (147) and `/api/version`.
 
 ## §F. Stated, not built — and the questions that go to him
 
@@ -502,19 +504,19 @@ Questions (⭐ = built):
 ### G.A The client's confirmation
 
 - **A narrower answer never replaces a wider one of the same verdict.** `answerClientAsk`: a `basic` ✅ (a
-  press on a message sent before 0145 — only the PRESSED message ever loses its buttons, so those stay live
+  press on a message sent before 0146 — only the PRESSED message ever loses its buttons, so those stay live
   for ever) on a lot whose row is this owner's ✅ WITH measures is not written (`keeps`) and answers
   «allaqachon»; the lot then still reads «o‘zgardi» after a re-weigh. `same()` compares the measures only
   when the press is `full`. A ❌ is always written.
-- **On a 0145 server the two columns are written for EVERY answer** — the figures for `full`, NULL for
+- **On a 0146 server the two columns are written for EVERY answer** — the figures for `full`, NULL for
   `basic` — by the raw `UPDATE` in the same transaction (`measuresHere`). So a `basic` ❌ over a `full` ✅
   takes the kilos away with the answer that held them. (§A.3's «only for a full answer» is superseded.)
 - **`recorded` carries the ANSWER's scope**, and the toast, the staff alert and the History line read it —
-  never `facts.scope`. A `basic` answer on a 0145 server is said in words: «bu javob faqat tovar nomi va quti
+  never `facts.scope`. A `basic` answer on a 0146 server is said in words: «bu javob faqat tovar nomi va quti
   soniga tegishli — og‘irlik va hajm so‘ralmagan».
 - **The probe's early return is all three flags** (`ready && clientReady && measuresReady`), and the third
   answer is read off `pg_attribute` (0.36 ms warm against `information_schema.columns`' 2.8 ms; it runs on
-  every reader call of a server behind). With the first two alone, a process that had seen 0144 and not 0145
+  every reader call of a server behind). With the first two alone, a process that had seen 0144 and not 0146
   never asked again: a repaired migration switched nothing on until a restart, with the ledger and the build
   stamp both right. Pinned by `tests/unit/lot-check-ready.test.ts` (a faked `db.execute`) and the reader
   fence in `client-confirm-wire.test.ts` (the columns are named in four files; the remembered flag is read
@@ -544,7 +546,7 @@ Questions (⭐ = built):
   settled press (`ok` / `failed`; never `reserved` / `no_answer`); an agent RUN that spent tokens, or one
   that ended `error` with none recorded (it may have reached the model — counted, unpriced; `refused`,
   `notice`, `capped`, `stood_down` and `reserved` never called anything); an assistant QUESTION with tokens,
-  or an answer with none (asked before 0145).
+  or an answer with none (asked before 0146).
 - **Unpriced** = no list price for its model, or usage never recorded — counted and said, never a $0. A
   settled press with neither a frozen cost nor tokens is a request with nothing to price (`pressToday`'s own
   reading, so the Bojxona tab and the summary agree about one press).
@@ -722,8 +724,8 @@ Four lenses read the built round (fold · collector · confirm + AI line · the 
 
 **Tests that could not see their subject, re-anchored** (each shown red with its subject stripped)
 
-- The «0145 has not landed» press test spied on the POOL's `unsafe`; a drizzle transaction runs on a
-  scoped client with an `unsafe` of its own, so the two statements 0145 added to the press were invisible
+- The «0146 has not landed» press test spied on the POOL's `unsafe`; a drizzle transaction runs on a
+  scoped client with an `unsafe` of its own, so the two statements 0146 added to the press were invisible
   and the test held with their guard deleted. It records the transaction's statements now, and its control
   is the press's own upsert.
 - The browser spec's «opens AT the deal block» held with the anchor and the scroll effect deleted (for a
@@ -741,7 +743,7 @@ born-with rule at both asks), `receipt-files-wire`, `audit-fields`, `ai-spend` (
 `client-confirm` (integration and wire), `client-push-text`, and the browser spec's four new walks (the
 scroll, a stale form, a voided prixod, a foreign deal). Red proofs by string edit, in the second worktree:
 37 for the review's fixes — 32 by vitest, 5 in a browser (the spec is serial, so one build per strip) — all
-red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1711).
+red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1725).
 
 ### G.F Tests
 

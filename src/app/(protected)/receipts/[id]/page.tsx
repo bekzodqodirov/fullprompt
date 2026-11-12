@@ -192,7 +192,7 @@ export default async function ReceiptDetailPage({
     contentType,
     kind,
   }));
-  // The reader's OWN uploads carry a ✕ whoever they are (0145): the delete
+  // The reader's OWN uploads carry a ✕ whoever they are (0146): the delete
   // door has always let an uploader take their file back, and a seller who
   // sent the wrong invoice through the bot must not need the logist for it.
   const ownFileIds = receiptFileRows.filter((f) => f.uploadedBy === actor.id).map((f) => f.id);
@@ -252,7 +252,7 @@ export default async function ReceiptDetailPage({
     ? {
         canAsk: askCard.hasChat && anyAskable,
         noChat: !askCard.hasChat && anyAskable,
-        // What a question sent NOW would ask (0145): the kilos and cubic
+        // What a question sent NOW would ask (0146): the kilos and cubic
         // metres too, once the columns that remember them exist.
         full: askCard.full,
         status: askCard.status

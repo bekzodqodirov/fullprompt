@@ -429,9 +429,9 @@ export interface LotCheckView {
     /** The answer is the prixod's CURRENT owner's — a previous owner's is nobody's. */
     ofOwner: boolean;
     /**
-     * The question asked about the lot's kilos and cubic metres too (0145 —
+     * The question asked about the lot's kilos and cubic metres too (0146 —
      * the owner's «4 ha»), and the answer remembers them. False = it was
-     * about the name and the count: every answer from before 0145.
+     * about the name and the count: every answer from before 0146.
      */
     measures: boolean;
     /**
@@ -461,7 +461,7 @@ export async function lotCheckViewsFor(lotIds: string[], exec: Db | Tx = db): Pr
   // The client's answers only where their table exists (0144, #472): one
   // migration behind, the card draws the two bases it has always drawn.
   const withClient = lotClientConfirmsReady();
-  // …and their two measures only where THOSE columns exist (0145).
+  // …and their two measures only where THOSE columns exist (0146).
   const measureColumns =
     withClient && lotClientMeasuresReady()
       ? sql`(lot_client.shown_kg IS NOT NULL) AS client_measures,

@@ -32,7 +32,7 @@ export function AttachmentsPanel({
   editable: boolean;
   /**
    * Files that carry a ✕ even for a reader who may not edit — their OWN
-   * uploads (0145). The delete door decides again; this only draws what it
+   * uploads (0146). The delete door decides again; this only draws what it
    * will allow. Anything uploaded in this session is the reader's too.
    */
   removableIds?: string[];

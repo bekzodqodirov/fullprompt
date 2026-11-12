@@ -87,10 +87,10 @@ describe('three ledgers, one figure', () => {
              (${userId}::uuid, 5, 'style', 'reserved', ${at('23:34')}::timestamptz)`);
 
     // --- the staff assistant ---------------------------------------------
-    // A question with its usage (0145): 50k in + 5k out on Sonnet = $0.10 + $0.05.
+    // A question with its usage (0146): 50k in + 5k out on Sonnet = $0.10 + $0.05.
     await db.execute(sql`INSERT INTO ai_questions (user_id, surface, question, answer, ok, model, input_tokens, output_tokens, created_at)
       VALUES (${userId}::uuid, 'bot', 'q1', 'a', true, ${STAFF_MODEL}, 50000, 5000, ${at('12:00')}::timestamptz)`);
-    // Answered before 0145 held any tokens: a request, unpriced.
+    // Answered before 0146 held any tokens: a request, unpriced.
     await db.execute(sql`INSERT INTO ai_questions (user_id, surface, question, answer, ok, created_at)
       VALUES (${userId}::uuid, 'web', 'q2', 'a', true, ${at('12:01')}::timestamptz)`);
     // Reserved and never answered, with no usage: the model was not reached.
@@ -214,7 +214,7 @@ describe('what cannot be read or written is SAID — never a smaller bill in sil
     }
   });
 
-  it('the assistant’s ledger names NO 0145 column: every one is read through the row’s json', async () => {
+  it('the assistant’s ledger names NO 0146 column: every one is read through the row’s json', async () => {
     // A server one migration behind has no `model` / token columns on
     // `ai_questions`. Named directly, the statement is a 42703 there and the
     // line reads «⚠ o‘qilmadi: yordamchi AI» instead of counting the
@@ -237,7 +237,7 @@ describe('what cannot be read or written is SAID — never a smaller bill in sil
   });
 
   it('a server that refuses the usage write still ANSWERS: the bill is not the question', async () => {
-    // The usage UPDATE names 0145's columns. One migration behind it is a
+    // The usage UPDATE names 0146's columns. One migration behind it is a
     // 42703 — and uncaught it lands in the question's own failure branch,
     // which writes `answer = NULL, ok = false` over the answer just stored:
     // every question to the assistant would fail on such a server.

@@ -223,7 +223,7 @@ describe('the push prints kilos the way the app it opens does (round C review)',
       // The client card's «Yuklar» tab: the office reads the kilos the client
       // is reading in the Mini App on the phone, to the digit.
       ['src/modules/wms/inventory/client-cargo-fold.ts', THROUGH_FORMAT],
-      // 0145: the «Mijozdan so‘rash» question prints a lot's kilos and cubic
+      // 0146: the «Mijozdan so‘rash» question prints a lot's kilos and cubic
       // metres — the figures the client is asked to CONFIRM, so they must be
       // the push's own (`kgText` / `m3Text`, client-text.ts, which round
       // through the one helper). The spec promised this line (§A.7) and the

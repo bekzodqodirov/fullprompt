@@ -1208,7 +1208,7 @@ export function registerClientCabinet(bot: Bot): void {
     let outcome: ConfirmOutcome = 'stale';
     /** Whose prixod the press was about — known only when it is this chat's. */
     let about: { clientId: string; receiptId: string } | null = null;
-    /** What the pressed message asked (0145): its thanks name exactly that. */
+    /** What the pressed message asked (0146): its thanks name exactly that. */
     let full = false;
     try {
       locale = chatLocale(await clientsForChat(BigInt(chatId)));
@@ -1227,7 +1227,7 @@ export function registerClientCabinet(bot: Bot): void {
     const t = clientLabels(locale);
     const toastOf: Record<ConfirmOutcome, string | undefined> = {
       // A ✅ to a question that asked about the kilos and cubic metres is
-      // thanked for them too; a press on a message sent before 0145 for what
+      // thanked for them too; a press on a message sent before 0146 for what
       // THAT message asked.
       yes: full ? t.confirmThanksFull : t.confirmThanks,
       no: undefined,

@@ -16,7 +16,7 @@ import { logger } from '../../platform/logger';
  *    dollars on the row (`cost_usd`, 0144) and are never re-priced here; the
  *    rest carry tokens and their model and are priced at today's list;
  *  · `agent_runs` — the AI sotuvchi, with its cache tokens;
- *  · `ai_questions` — the staff AI yordamchi. It held NO tokens until 0145;
+ *  · `ai_questions` — the staff AI yordamchi. It held NO tokens until 0146;
  *    a question answered before that is counted and cannot be priced.
  *
  * «A request» (murojaat), per ledger — what reached the model, and nothing
@@ -29,7 +29,7 @@ import { logger } from '../../platform/logger';
  *    and its usage was lost with the error. A run that was `refused`, sent a
  *    `notice`, was `capped` or stood down never called anything;
  *  · assistant: one QUESTION (up to six model rounds) that has tokens, or an
- *    answer with none (asked before 0145).
+ *    answer with none (asked before 0146).
  *
  * «Unpriced» = a request no dollar figure can be made for: its model has no
  * list price, or its usage was never recorded. Those are COUNTED and said,
@@ -190,7 +190,7 @@ async function agentPart(from: Date, to: Date): Promise<AiSpendPart> {
 }
 
 async function assistantPart(from: Date, to: Date): Promise<AiSpendPart> {
-  // The token columns are 0145's: read through the row's json, so a server
+  // The token columns are 0146's: read through the row's json, so a server
   // one migration behind reads NULL — «no tokens» — and never a 42703.
   const tokens = (name: string) => sql`coalesce((to_jsonb(q)->>${name})::bigint, 0)`;
   const spent = sql`(${tokens('input_tokens')} + ${tokens('output_tokens')} + ${tokens('cache_read_tokens')} + ${tokens('cache_write_tokens')})`;

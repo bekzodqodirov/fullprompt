@@ -258,7 +258,7 @@ export function receivedText(
       summary.receiptNumber ? `${h(t.pushReceiptNo)}: ${code(h(summary.receiptNumber))}` : '',
     ],
     // The client's own ✅ / ❌ (0144): the question is the LAST line, right
-    // above its buttons, and it names what is being confirmed. `full` (0145,
+    // above its buttons, and it names what is being confirmed. `full` (0146,
     // the owner's «og'irlik va hajmga urg'u berilsin»): the kilos and cubic
     // metres the lines above print ARE confirmed, and the line is bold;
     // `basic`: they are not, and the 0144 words say so by naming only the

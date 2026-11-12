@@ -138,7 +138,7 @@ export async function createDealAction(
   const parsed = readDeal(form);
   if (!parsed.success) return { error: 'validation' };
   let id: string | null = null;
-  // A deal opened FOR a prixod (the card's «+ Yangi bitim ochish», 0145) is
+  // A deal opened FOR a prixod (the card's «+ Yangi bitim ochish», 0146) is
   // born with it: linked through the one link door — client match, the FTL
   // door, the audit — right after the deal exists.
   //

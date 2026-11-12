@@ -122,18 +122,18 @@ async function prepareReceived(notice: NoticeRow, client: ClientRow): Promise<Pr
     render: (locale) => {
       const plain = receivedText(summary, locale);
       if (!confirm) return { text: plain, caption: plain };
-      // The question's words follow its SCOPE (0145): `full` asks about the
+      // The question's words follow its SCOPE (0146): `full` asks about the
       // kilos and cubic metres the lines above print, and its tag covers them.
       const asking = receivedText(summary, locale, { ask: confirm.scope });
       const fits = visibleLength(asking) <= MAX_CAPTION_CHARS;
-      // A FULL question (0145) is never sent without its words: its ✅ is
+      // A FULL question (0146) is never sent without its words: its ✅ is
       // recorded as «the weight and the volume too», and a client must have
       // been ASKED that — the owner's «urg'u berilsin, tekshirib olsin». So
       // where the caption cannot carry the ask line, the PHOTOGRAPH yields:
       // the push goes as text, lines, question and buttons together (the
       // design judge, A3 — the picture is one tap away in the Mini App).
       if (confirm.scope === 'full') return { text: asking, caption: fits ? asking : null };
-      // A BASIC question (a server without 0145) keeps 0144's trade: the
+      // A BASIC question (a server without 0146) keeps 0144's trade: the
       // question never costs the photograph — a caption the extra line would
       // push past Telegram's limit goes without it, and the buttons carry
       // the question alone.

@@ -541,7 +541,7 @@ export function registerStaffBot(bot: Bot): void {
     }
 
     // «📎 Fayl qo‘shish» under a prixod's message, and the collection's own
-    // «✅ Bo‘ldi» (0145, docs/PRIXOD-XABARI.md §C.5). BEFORE the approval guard
+    // «✅ Bo‘ldi» (0146, docs/PRIXOD-XABARI.md §C.5). BEFORE the approval guard
     // (#939); the door is wms's, asked by dynamic import inside.
     if (parsed.kind === 'receipt_files') {
       await openReceiptFilesPress(ctx, chatId, parsed.receiptId);

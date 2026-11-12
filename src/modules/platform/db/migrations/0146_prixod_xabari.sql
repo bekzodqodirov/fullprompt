@@ -1,4 +1,4 @@
--- Prixod xabari (docs/PRIXOD-XABARI.md §E), migration 0145 — after 0144_tarkib_takliflar.
+-- Prixod xabari (docs/PRIXOD-XABARI.md §E), migration 0146 — after 0144_tarkib_takliflar.
 -- The owner, 2026-11-11, after the 0144 deploy: «4 ha tovar nomi, karobka soni, ogirlik va hajimga urgu
 -- berilsin tekshirib olsin klient va tasdiqlasin togriligini. 8 ha. … prixod keldi desin sotuvchiga …
 -- ikta button bolsin file qoshish va bitim biriktirish».

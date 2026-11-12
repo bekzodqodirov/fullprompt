@@ -402,7 +402,7 @@ export type BotCallback =
   /**
    * «📎 Fayl qo‘shish» under a prixod's message — `pf:<receipt>` — and the
    * collection's own «✅ Bo‘ldi» and «↩️ Bekor qilish», `pf:ok:<receipt>` /
-   * `pf:no:<receipt>` (0145, docs/PRIXOD-XABARI.md §C.5). Both carry their
+   * `pf:no:<receipt>` (0146, docs/PRIXOD-XABARI.md §C.5). Both carry their
    * prixod: a press under an EARLIER prixod's message must never close the
    * one that is open now. `pf:` collides with nothing: the cabinet's `ph:`
    * is its own two letters.
@@ -795,7 +795,7 @@ export function parseCallback(data: string): BotCallback | null {
       ...(agent[3] ? { digest: agent[3] } : {}),
     };
   }
-  // A prixod's file collection (0145). Lowercase hex only — the row is drawn
+  // A prixod's file collection (0146). Lowercase hex only — the row is drawn
   // lowercased (`buttonsFor`), so nothing drawn is refused here (#939).
   const files = /^pf:(?:(ok|no):)?([0-9a-f-]{36})$/.exec(data);
   if (files) {
@@ -893,7 +893,7 @@ export function buttonsFor(type: string, payload: Record<string, unknown>): BotB
   if (type === 'CalcPrefilled' && payload.add === true && typeof payload.requestId === 'string' && UUID.test(payload.requestId)) {
     return [[{ text: '➕ Shu so‘rovga qo‘shish', callback_data: `ca:${payload.requestId.toLowerCase()}` }]];
   }
-  // «Prixod keldi» (0145, receipt-arrival.ts): the first of its two buttons —
+  // «Prixod keldi» (0146, receipt-arrival.ts): the first of its two buttons —
   // the second is the card link the drain lifts into «🔗 Bitim biriktirish».
   // Keyed on the row being the NEW message (`dealState`), so a prixod message
   // written before the fold keeps the keyboard it never had; lowercased,

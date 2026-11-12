@@ -523,7 +523,7 @@ describe('a deploy in the middle', () => {
       const prompt = await open(sellerChat, receipt.id);
       await flushWaitWrites();
       const rows = await db.execute(sql`SELECT kind FROM telegram_chat_waits WHERE chat_id = ${String(sellerChat)}::bigint`);
-      // Red if 0145 did not widen the CHECK: the write is refused in silence
+      // Red if 0146 did not widen the CHECK: the write is refused in silence
       // and memory goes on answering until the next restart.
       expect(rows.map((r) => r.kind)).toContain('receipt_files');
       __forgetWaitMemory();

@@ -107,7 +107,7 @@ function netChanges(run: HistoryRow[]): HistoryChange[] {
  * `before: { attachmentId, fileName }` and no `after`, and the History reads
  * `after` — so the parent's card printed a bare «o‘chirdi», which on a prixod
  * reads as cargo data deleted, and three of them after a «↩️ Bekor qilish»
- * said nothing about what went (the as-built review of 0145, CARD-5: the
+ * said nothing about what went (the as-built review of 0146, CARD-5: the
  * round added that row's two commonest producers — the bot's cancel and the
  * seller's own ✕).
  *

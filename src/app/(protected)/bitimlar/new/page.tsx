@@ -58,7 +58,7 @@ export default async function NewDealPage({
   // null = the server is one migration behind (no choice drawn).
   const leadMode = quote ? await leadLoadMode(quote.id) : (await ftlReady()) ? 'ltl' : null;
 
-  // Arrived from a prixod card's «+ Yangi bitim ochish» (0145): the deal is
+  // Arrived from a prixod card's «+ Yangi bitim ochish» (0146): the deal is
   // being opened FOR that cargo, so it is born with the prixod on it — the
   // seller who pressed «🔗 Bitim biriktirish» must not land on a new deal
   // with the prixod still on none. Only a live prixod of THIS client that has

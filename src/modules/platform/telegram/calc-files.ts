@@ -1365,7 +1365,7 @@ export async function saveBotFile(
     namePrefix: string;
     id?: string;
     keyName?: string;
-    /** A paper, never a carton photo — `saveAttachment`'s own option (0145). */
+    /** A paper, never a carton photo — `saveAttachment`'s own option (0146). */
     asPaper?: boolean;
   },
   file: BotFile | null = fileOf(ctx.message ?? {}),

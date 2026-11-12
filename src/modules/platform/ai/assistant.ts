@@ -160,7 +160,7 @@ export async function askAssistant(
   ];
 
   const startedAt = Date.now();
-  // What the question cost, summed over its rounds (0145): the evening
+  // What the question cost, summed over its rounds (0146): the evening
   // summary's «🤖 AI» line could count this ledger and price none of it.
   const model = isAnalyst(input.actor) ? ANALYST_MODEL : STAFF_MODEL;
   const spent: QuestionUsage = { model, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
@@ -260,7 +260,7 @@ async function finishQuestion(
     SET answer = ${answer}, ok = ${ok}, tool_log = ${JSON.stringify(toolLog)}::jsonb
     WHERE id = ${id}
   `);
-  // The usage is 0145's columns and is written APART, and caught: on a server
+  // The usage is 0146's columns and is written APART, and caught: on a server
   // one migration behind the statement is refused (42703), and the answer
   // above must already be the person's — a bill that cannot be written is
   // not a question that failed. Only when the model reported any.

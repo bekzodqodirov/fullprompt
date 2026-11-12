@@ -188,7 +188,7 @@ export async function celebrateFirstCargo(event: { payload: Record<string, unkno
   // The CLAIM door emits the same event (a marking given its client, a client
   // correction): cargo that came weeks ago, and not this seller's catch —
   // «is not this event and is not celebrated» has stood above since 0134 and
-  // nothing here asked. `via` is 0145's marker; `assignedFromUnclaimed` is on
+  // nothing here asked. `via` is 0146's marker; `assignedFromUnclaimed` is on
   // every claim event written before it.
   if (event.payload.via === 'assign' || 'assignedFromUnclaimed' in event.payload) return;
   try {

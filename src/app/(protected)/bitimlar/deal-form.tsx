@@ -45,7 +45,7 @@ export function DealForm({
   receipt = null,
 }: {
   dealId?: string;
-  /** A NEW deal opened for one prixod (0145): it is born with that cargo on it. */
+  /** A NEW deal opened for one prixod (0146): it is born with that cargo on it. */
   receipt?: { id: string; number: string } | null;
   stages: DealStageOption[];
   managers: { id: string; fullName: string }[];

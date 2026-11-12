@@ -130,7 +130,7 @@ export const AUDIT_FIELD_LABELS: Record<string, string> = {
   // The CLIENT's own ✅ / ❌ in Telegram (0144, per lot — `clientConfirm:A`),
   // a dispute a person closed, and the question a person sent from the card.
   clientConfirm: 'clientConfirm',
-  // A file a person sent to the prixod through the staff bot (0145, per file
+  // A file a person sent to the prixod through the staff bot (0146, per file
   // — `fileAdded:<message>`).
   fileAdded: 'fileAdded',
   // A removed file's own line on its parent's History (`removedFile`, history.ts).

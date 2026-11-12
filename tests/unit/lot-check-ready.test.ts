@@ -2,12 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * The probe that tells every list which migrations have landed — three
- * answers from ONE statement (0122/0123, 0144, 0145).
+ * answers from ONE statement (0122/0123, 0144, 0146).
  *
  * It remembers a «yes» and asks a «no» again every time, so the screens come
  * back the moment a repaired migration lands, with no restart. The trap the
  * third answer walked into: the early return read the first two flags only,
- * so a process that had seen 0144 and not 0145 NEVER asked again — after
+ * so a process that had seen 0144 and not 0146 NEVER asked again — after
  * `docker compose run --rm migrate` the customers went on being asked the
  * old question for ever, with the ledger and the build stamp both right.
  * No integration test can see it: each file mocks this module, or starts on
@@ -45,7 +45,7 @@ describe('the three answers', () => {
     expect(asked).toBe(1);
   });
 
-  it('0145 missing: «no» is asked again on every call — and the answer flips the moment the migration lands', async () => {
+  it('0146 missing: «no» is asked again on every call — and the answer flips the moment the migration lands', async () => {
     answers.push({ ok: true, client: true, measures: false }, { ok: true, client: true, measures: false }, { ok: true, client: true, measures: true });
     const probe = await load();
     expect(await probe.lotChecksReady()).toBe(true);

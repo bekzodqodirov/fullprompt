@@ -43,12 +43,12 @@ import { mayReadReceipt } from './read-door';
  * «eskirgan» — a client cannot confirm what they were not shown, the staff
  * tick's `lot_changed` in the customer's hands.
  *
- * THE SCOPE (0145, docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik
+ * THE SCOPE (0146, docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik
  * va hajmga urg'u berilsin, tekshirib olsin klient va tasdiqlasin»): a
  * question asked from now on is `full` — it also asks about the lot's kilos
  * and cubic metres, its tag covers them, and its answer remembers them
  * (`shown_kg` / `shown_m3`, at the precision a customer reads). A question
- * sent before 0145 was `basic`; its buttons still carry the 0144 tag, and a
+ * sent before 0146 was `basic`; its buttons still carry the 0144 tag, and a
  * press on one is judged against that recipe (`basicTag`) and recorded as
  * what THAT message asked — so no button a customer already holds dies at
  * the deploy, and none is taken for more than it said.
@@ -120,11 +120,11 @@ export interface ClientAskFacts {
   warehouseName: string;
   receivedAt: Date | null;
   lots: ClientAskLot[];
-  /** `full` on a server whose 0145 has landed (`clientMeasuresReady()`), `basic` otherwise. */
+  /** `full` on a server whose 0146 has landed (`clientMeasuresReady()`), `basic` otherwise. */
   scope: AskScope;
   /** The tag of exactly what a question of this scope prints. */
   tag: string;
-  /** The 0144 recipe over the same facts — what a button sent before 0145 carries. */
+  /** The 0144 recipe over the same facts — what a button sent before 0146 carries. */
   basicTag: string;
 }
 
@@ -379,7 +379,7 @@ function staffText(
   const full = opts.scope === 'full';
   // An answer that covered the name and the count only, on a server whose
   // questions ask about the weight too: a button under a message sent before
-  // 0145 was pressed. Said in words — the lots below print no kilos, and a
+  // 0146 was pressed. Said in words — the lots below print no kilos, and a
   // reader must not take that for «the weight was confirmed and is not shown».
   const narrower =
     opts.scope === 'basic' && facts.scope === 'full'
@@ -445,7 +445,7 @@ export async function answerClientAsk(input: {
   if (ownerId === null || !linked.some((client) => client.id === ownerId)) return { outcome: 'unknown' };
   if ('skip' in facts) return { outcome: 'stale', clientId: ownerId };
   // What the pressed MESSAGE asked: the tag of today's question, or — on a
-  // message sent before 0145 — the 0144 recipe over the same facts. Anything
+  // message sent before 0146 — the 0144 recipe over the same facts. Anything
   // else is about data that has since moved.
   const scope: AskScope | null =
     input.tag === facts.tag ? facts.scope : facts.scope === 'full' && input.tag === facts.basicTag ? 'basic' : null;
@@ -553,7 +553,7 @@ export async function answerClientAsk(input: {
     /**
      * A NARROWER ✅ never replaces a WIDER one (the design judge, A1): the
      * lot holds this owner's ✅ to a question that asked about the kilos and
-     * cubic metres, and the press is on a message sent before 0145, which
+     * cubic metres, and the press is on a message sent before 0146, which
      * did not. Written, it would strip the figures — and where the lot has
      * been re-weighed since, turn «o'zgardi» back into ✅ by a button under
      * a message that printed the OLD weight. Such a lot is left exactly as it
@@ -639,7 +639,7 @@ export async function answerClientAsk(input: {
           answeredAt: sql`clock_timestamp()`,
         },
       });
-    // The two measures (0145) — SQL-only columns, so a statement of their own
+    // The two measures (0146) — SQL-only columns, so a statement of their own
     // beside the upsert, in the same transaction and under the same locks.
     // ALWAYS written where the columns exist: a `basic` answer that replaces
     // a `full` one must not keep the old kilos (the upsert's SET does not

@@ -319,7 +319,7 @@ export interface SummaryFacts {
   /** The ranked attention rows, top first — already the owner's own list. */
   attention: { total: number; top: readonly AttentionFact[] };
   /**
-   * What the machine cost (0145, his «8 ha») — the last 24 hours on the
+   * What the machine cost (0146, his «8 ha») — the last 24 hours on the
    * daily message, the closed week on Monday's (`aiSpendWindow`). Null when
    * the bill could not be asked at all; the line is then left out.
    */

@@ -19,7 +19,7 @@ import { askClientAction, dismissDisputesAction } from './client-ask-actions';
 export interface ClientAskFace {
   /** A linked chat AND a lot still worth asking about (cargo in China). */
   canAsk: boolean;
-  /** A question sent now asks the kilos and the cubic metres too (0145). */
+  /** A question sent now asks the kilos and the cubic metres too (0146). */
   full: boolean;
   /** The client has no Telegram linked — said in words instead of a button. */
   noChat: boolean;

@@ -628,7 +628,7 @@ export async function linkReceipt(
   ftlDoor: FtlDoor | null,
   opts: {
     /**
-     * The new-deal form's link (0145): the deal was opened FOR this prixod.
+     * The new-deal form's link (0146): the deal was opened FOR this prixod.
      * The link then holds only while the prixod is still what the form drew
      * — confirmed, and on no deal of its own (`bornWithVerdict`) — re-read
      * under its row lock. Every other caller CHOSE the move and passes nothing.

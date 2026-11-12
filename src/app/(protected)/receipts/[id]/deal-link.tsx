@@ -49,7 +49,7 @@ export function DealLink({
   /** 0105: a live compensation names this prixod — it follows the cargo. */
   hasCompensation?: boolean;
   /**
-   * «+ Yangi bitim ochish» (0145): the deal form with this prixod's client
+   * «+ Yangi bitim ochish» (0146): the deal form with this prixod's client
    * preset AND this prixod riding along, so the new deal is born with the
    * cargo on it. Null for a reader who may not open a deal (the VED), and
    * for a prixod that already has one.

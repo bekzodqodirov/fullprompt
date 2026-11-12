@@ -3564,8 +3564,8 @@ questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
 the tarkib tuzatishlari round (0143) it sits on — **MERGED (`6b617d9`) and DEPLOYED: he confirmed «deploy qildim
 145 chiqdi» on 2026-11-11**, so everything through #1682 is live.
 
-**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1683-#1712; migration 0145 `prixod_xabari`, `when` …124
-— ledger must reach 146; spec `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
+**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1697-#1726; migration 0146 `prixod_xabari`, `when` …125
+— ledger must reach 147; spec `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
 message with the 145 confirmation: «4 ha … og'irlik va hajmga urg'u berilsin … 8 ha … prixod kelganda … 2 marta sms
 boryapti … prixod keldi desin sotuvchiga … ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa
 javob o'zing bergan taklifing bo'yicha» + «mijozdan tasdiq bosmasa ham skladga yuk kelgan zahoti borsin». Designed,
@@ -3610,10 +3610,10 @@ Tashkent day would never show 20:00-24:00); Monday carries TWO lines — the clo
 under it (`SummaryFacts.aiDay`; with the week alone Monday's own hours were on no evening's line); the assistant
 now records its own usage (a second, caught UPDATE); the price map carries the cache's two prices.
 TRAPS: typecheck is not lint (a `setState` in an effect passed tsc and failed the BUILD — run both after every
-edit); a red proof that stays green found two weak tests (`redelivery-lookup`, `keeps`). DEPLOY: ledger 146 and
+edit); a red proof that stays green found two weak tests (`redelivery-lookup`, `keeps`). DEPLOY: ledger 147 and
 `/api/version`; customers' question changes within minutes (weight and volume asked), sellers get ONE message.
 No Telegram here: the first real «Prixod keldi», each button's first press and the first file are the proof.
-**Then reviewed as built (#1703-#1712)** — four lenses reading the frozen main checkout while the fixes were made
+**Then reviewed as built (#1717-#1726)** — four lenses reading the frozen main checkout while the fixes were made
 in the second worktree: 21 findings, no blocker, all fixed or pinned, each fix red-proven. What it changed, by
 home: **the collection** — a file that swipe-REPLIES to another of the bot's messages is that message's
 (`repliesElsewhere`; said under the file when no door took it), a parked «Hisoblatish» that resumes closes the
@@ -3639,7 +3639,7 @@ the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the s
 cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
 admins on a claim for a seller-less client).
 
-**Latest migration: 0145** (`prixod_xabari`, `when` …124; ledger must reach **146**). Before
+**Latest migration: 0146** (`prixod_xabari`, `when` …125; ledger must reach **147**). Before
 it: 0144 (`tarkib_takliflar`, `when` …123). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
@@ -3789,7 +3789,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **146** since 0145 (145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **146** since 0146 (145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3809,7 +3809,7 @@ a migration did not land — read the `migrate` container's own output).
 the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
 must read **137**, and the yo'ldagi-yuk round (0137) **138**.
 **Then he CONFIRMED 145** («deploy qildim 145 chiqdi», 2026-11-11, after PR #145 — the two tarkib rounds), so
-everything through #1682 is LIVE; the prixod-xabari round (0145) must read **146**.
+everything through #1682 is LIVE; the prixod-xabari round (0146) must read **147**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the

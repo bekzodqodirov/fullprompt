@@ -52,7 +52,7 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // 0144's second answer (the client's own ✅/❌ table): there whenever the first is.
   lotClientConfirmsReady: () => ready.on,
   clientConfirmsReady: async () => ready.on,
-  // …and 0145's third (the answer's kilos and cubic metres), the same.
+  // …and 0146's third (the answer's kilos and cubic metres), the same.
   lotClientMeasuresReady: () => ready.on,
   clientMeasuresReady: async () => ready.on,
 }));

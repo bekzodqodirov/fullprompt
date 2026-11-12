@@ -35,7 +35,7 @@ export type WaitKind =
   // open (0141, docs/IKKI-ESHIK.md §4.1): ONE offer per burst, kept across a
   // deploy. Its payload and its arming are the burst door's own.
   | 'burst'
-  // «📎 Fayl qo‘shish» under a prixod's message (0145, docs/PRIXOD-XABARI.md
+  // «📎 Fayl qo‘shish» under a prixod's message (0146, docs/PRIXOD-XABARI.md
   // §C.5): which prixod the chat is feeding files to. receipt-files.ts's own.
   | 'receipt_files';
 

@@ -8,8 +8,8 @@ karobka soni, tovar nomlari, kg, kub; ikkita button bo'lsin — fayl qo'shish va
 savollarimga javob o'zing bergan taklifing bo'yicha» va «mijoz tasdiq bosmasa ham, skladga yuk kelgan zahoti
 borsin xabar».
 
-Bitta migratsiya (**0145**). Deploydan keyin baza hisobi **146** bo'lishi kerak; `/api/version` bugungi vaqtni
-ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0145)».
+Bitta migratsiya (**0146**). Deploydan keyin baza hisobi **147** bo'lishi kerak; `/api/version` bugungi vaqtni
+ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0146)».
 
 ### 1. Sotuvchiga bitta «Prixod keldi» xabari, ikki tugma bilan
 - **Avval ikkita xabar borardi** («📥 Prixod …» va alohida «💰❓ Narxi kelishilmagan yuk» yoki «📎 Bitimga
@@ -125,7 +125,7 @@ ruscha nom beradi; limitlar 300 va 50.
 - Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 69 ta shunday isbot (5 tasi
   brauzerda).
 - To'liq sinov toza bazada, serverdagi tartibda: 16 025 ta test va brauzerda 507 ta sinov — hammasi yashil;
-  baza hisobi 146.
+  baza hisobi 147.
 
 ### Bu yerda tekshirib bo'lmagani
 Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy «Prixod keldi» xabari, ikki tugmaning birinchi

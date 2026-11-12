@@ -27,8 +27,8 @@ vi.mock('@/modules/wms/receipts/lot-check-ready', () => ({
   // a deploy whose 0144 did not land while 0122/0123 are live.)
   lotClientConfirmsReady: () => ready.on && ready.client,
   clientConfirmsReady: async () => ready.on && ready.client,
-  // …and its THIRD (0145): can an answer remember kilos and cubic metres?
-  // (`ready.measures = false` = a deploy whose 0145 did not land.)
+  // …and its THIRD (0146): can an answer remember kilos and cubic metres?
+  // (`ready.measures = false` = a deploy whose 0146 did not land.)
   lotClientMeasuresReady: () => ready.on && ready.client && ready.measures,
   clientMeasuresReady: async () => ready.on && ready.client && ready.measures,
 }));
@@ -134,7 +134,7 @@ const rowsOfAnswers = async () =>
   (await db.select().from(lotClientConfirms).where(inArray(lotClientConfirms.lotId, [lot.K, lot.T, lot.S]))).sort((a, b) =>
     a.lotId < b.lotId ? -1 : 1,
   );
-/** The two measures each answer remembers (0145 — SQL-only columns), in the lots' own order; null = not asked. */
+/** The two measures each answer remembers (0146 — SQL-only columns), in the lots' own order; null = not asked. */
 const measuresOfAnswers = async (): Promise<[string | null, string | null][]> =>
   (
     (await db.execute(sql`
@@ -222,7 +222,7 @@ beforeAll(async () => {
   await mintLot('U', receipt.uz, 1, 'A', `茶${RUN}`, `Чай ${RUN}`, 1, wh.uz);
   // M: the matrix's one lot, on a prixod of its own — every combination is arranged on it by hand.
   await mintLot('M', receipt.matrix, 1, 'A', MATRIX_ZH, MATRIX_RU, 2, wh.cn);
-  // W: one plain lot on a prixod of its own, with figures that ROUND (0145's measures): 40 kg, 0.35 m³.
+  // W: one plain lot on a prixod of its own, with figures that ROUND (0146's measures): 40 kg, 0.35 m³.
   await mintLot('W', receipt.weigh, 1, 'A', `秤${RUN}`, `Tarozi ${RUN}`, 2, wh.cn);
   await db.update(receiptLots).set({ totalWeightKg: '40.000', totalVolumeM3: '0.3500' }).where(eq(receiptLots.id, lot.W));
   // T: a tarkib of two goods that STANDS (two cartons, the lot's own totals).
@@ -278,7 +278,7 @@ describe('what a question shows, and its tag', () => {
     ]);
     expect(f.lots.map((l) => l.goodsKey === null)).toEqual([true, false, true]);
     expect(f.tag).toMatch(/^[0-9a-f]{8}$/);
-    // A question asked on a 0145 server is FULL: its tag covers the measures, and the 0144 recipe
+    // A question asked on a 0146 server is FULL: its tag covers the measures, and the 0144 recipe
     // over the same facts rides beside it for the buttons already in customers' chats.
     expect(f.scope).toBe('full');
     expect(f.tag).toBe(askTag(f.clientId, f.lots, 'full'));
@@ -294,7 +294,7 @@ describe('what a question shows, and its tag', () => {
     expect((await facts()).tag).toBe(f.tag);
   });
 
-  it('a FULL tag moves with a re-weigh a customer would SEE — and stays through one they would not (0145)', async () => {
+  it('a FULL tag moves with a re-weigh a customer would SEE — and stays through one they would not (0146)', async () => {
     const base = await facts();
     const setLot = (set: Partial<typeof receiptLots.$inferInsert>) => db.update(receiptLots).set(set).where(eq(receiptLots.id, lot.K));
     try {
@@ -314,7 +314,7 @@ describe('what a question shows, and its tag', () => {
     expect((await facts()).tag).toBe(base.tag);
   });
 
-  it('on a server whose 0145 has not landed the question is the 0144 one: basic scope, the 0144 tag', async () => {
+  it('on a server whose 0146 has not landed the question is the 0144 one: basic scope, the 0144 tag', async () => {
     ready.measures = false;
     try {
       const f = await facts();
@@ -431,11 +431,11 @@ describe('the ✅ / ❌ row under «yukingiz qabul qilindi» — offered only wh
       const f = await facts();
       const lines = f.lots.map((l) => ({ lotId: l.lotId, name: pushLotName(l.ru, l.zh), boxCount: l.count, weightKg: l.kg, volumeM3: l.m3 }));
       expect(await clientAskOffer(receipt.main, client.A, lines, pushLotName)).toEqual({ receiptId: receipt.main, tag: f.tag, scope: 'full' });
-      // 0145: the same fence for the kilos and the cubic metres — a re-weigh landing between the
+      // 0146: the same fence for the kilos and the cubic metres — a re-weigh landing between the
       // push's text and the tag costs the buttons, never records a ✅ for a weight nobody was shown.
       expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 0 ? { ...l, weightKg: l.weightKg + 5 } : l)), pushLotName)).toBeNull();
       expect(await clientAskOffer(receipt.main, client.A, lines.map((l, i) => (i === 2 ? { ...l, volumeM3: l.volumeM3 + 0.2 } : l)), pushLotName)).toBeNull();
-      // …and a BASIC question (a server without 0145) never asked about them: its buttons do not depend on them.
+      // …and a BASIC question (a server without 0146) never asked about them: its buttons do not depend on them.
       ready.measures = false;
       try {
         const basic = await clientAskOffer(receipt.main, client.A, lines.map((l) => ({ ...l, weightKg: 1, volumeM3: 1 })), pushLotName);
@@ -521,7 +521,7 @@ describe('a press', () => {
     expect(Object.keys(audit!.after as object).sort()).toEqual(['clientConfirm:A', 'clientConfirm:B', 'clientConfirm:C']);
     // A FULL answer's History value names what it covered: the count AND the lot's kilos and cubic metres.
     expect((audit!.after as Record<string, string>)['clientConfirm:A']).toBe(`✅ Telegram · 键盘${RUN} (Клавиатура ${RUN}) × 3 · 100 kg · 1 m³`);
-    // …and the row remembers them, at the precision a customer reads (0145).
+    // …and the row remembers them, at the precision a customer reads (0146).
     expect(await measuresOfAnswers()).toEqual([
       ['100.00', '1.000'],
       ['100.00', '1.000'],
@@ -1143,15 +1143,15 @@ describe('the sentence, combination by combination — against literal states', 
   type Tick = 'none' | 'old' | 'new' | 'stale';
   /**
    * The client's answer, given an hour ago: none · ✅ that matches · ✅ about a count since changed · ❌ on
-   * the goods now listed · ❌ on OTHER goods · a previous owner's ❌ — and 0145's two: a FULL ✅ whose kilos
+   * the goods now listed · ❌ on OTHER goods · a previous owner's ❌ — and 0146's two: a FULL ✅ whose kilos
    * and cubic metres still match · a FULL ✅ about a weight since changed. (The first six carry no
-   * measures: they are answers to the 0144 question, which is what every row written before 0145 is.)
+   * measures: they are answers to the 0144 question, which is what every row written before 0146 is.)
    */
   const CLIENT = ['none', 'yes', 'yesMoved', 'no', 'noOtherGoods', 'noOtherOwner', 'yesFull', 'yesReweighed'] as const;
   type Answer = (typeof CLIENT)[number];
   // c = ✅ checked · n = ❓ none · s = ⚠ stale — one letter per CLIENT case, in that order.
   // Tick: «old» holds and was pressed two hours ago (before the answer); «new» holds and was pressed now (after it).
-  // The last two letters are 0145's: a full ✅ that matches vouches exactly where a 0144 ✅ does, and one
+  // The last two letters are 0146's: a full ✅ that matches vouches exactly where a 0144 ✅ does, and one
   // about a weight since changed reads exactly as one about a count since changed — «o'zgardi» where
   // nothing else vouches, and ✅ where a standing tarkib or a holding tick still does (the arms' order).
   const EXPECTED: Record<Tarkib, Record<Tick, string>> = {
@@ -1198,7 +1198,7 @@ describe('the sentence, combination by combination — against literal states', 
   }
   const read = async () => (await lotCheckViewsFor([lot.M])).get(lot.M)!;
 
-  it('96 combinations of tarkib × tick × the client’s answer (0144’s 72 and the two full-scope answers of 0145)', async () => {
+  it('96 combinations of tarkib × tick × the client’s answer (0144’s 72 and the two full-scope answers of 0146)', async () => {
     const wrong: string[] = [];
     for (const tarkib of Object.keys(EXPECTED) as Tarkib[]) {
       for (const tick of Object.keys(EXPECTED[tarkib]) as Tick[]) {
@@ -1236,12 +1236,12 @@ describe('the sentence, combination by combination — against literal states', 
 });
 
 /**
- * 0145 (docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik va hajmga urg'u
+ * 0146 (docs/PRIXOD-XABARI.md §A — the owner's «4 ha … og'irlik va hajmga urg'u
  * berilsin, tekshirib olsin klient va tasdiqlasin»): the answer covers the
  * lot's kilos and cubic metres. On a prixod of its own — lot W, 2 cartons,
  * 40 kg, 0.35 m³ — so nothing above is read differently.
  */
-describe('the measures in the answer (0145)', () => {
+describe('the measures in the answer (0146)', () => {
   const factsW = async (): Promise<ClientAskFacts> => {
     const answer = await clientAskFacts(receipt.weigh);
     if ('skip' in answer) throw new Error(`facts skipped: ${answer.skip}`);
@@ -1334,7 +1334,7 @@ describe('the measures in the answer (0145)', () => {
     expect(await measuresW()).toEqual(['40.00', '0.350']);
   });
 
-  it('a press on a message sent BEFORE 0145 — the 0144 tag — is a BASIC answer: no measures remembered, and a re-weigh does not unsettle it', async () => {
+  it('a press on a message sent BEFORE 0146 — the 0144 tag — is a BASIC answer: no measures remembered, and a re-weigh does not unsettle it', async () => {
     await forget();
     const f = await factsW();
     const answer = await pressW('yes', f.basicTag);
@@ -1346,7 +1346,7 @@ describe('the measures in the answer (0145)', () => {
     try {
       await weigh('55.000', '0.9000');
       view = await stateOf('W');
-      // It was asked about the name and the count — exactly what a ✅ given before 0145 means.
+      // It was asked about the name and the count — exactly what a ✅ given before 0146 means.
       expect(view.state).toBe('checked');
       expect(view.client).toMatchObject({ holds: true, measures: false, measuresMoved: false });
     } finally {
@@ -1367,7 +1367,7 @@ describe('the measures in the answer (0145)', () => {
 
   it('a re-weigh after a FULL ✅ is not papered over by an old message’s ✅: the narrower answer is not written, and the lot still reads «o‘zgardi»', async () => {
     // Held: the full ✅ of the test above (40.00 kg, 0.350 m³). A message sent
-    // BEFORE 0145 is still in the customer's chat with live buttons (only the
+    // BEFORE 0146 is still in the customer's chat with live buttons (only the
     // pressed message ever loses its row) and its tag knows no weight.
     const old = (await factsW()).basicTag;
     try {
@@ -1448,11 +1448,11 @@ describe('the measures in the answer (0145)', () => {
     await forget();
   });
 
-  it('a server whose 0145 has not landed: the press is the 0144 press — recorded, no measure column named by any statement, and the sentence reads as it did', async () => {
+  it('a server whose 0146 has not landed: the press is the 0144 press — recorded, no measure column named by any statement, and the sentence reads as it did', async () => {
     ready.measures = false;
     // EVERY statement, the transaction's included. A spy on `pgClient.unsafe`
     // alone records the pool: `sql.begin` hands its callback a scoped client
-    // with an `unsafe` of its OWN, so the two statements 0145 added to the
+    // with an `unsafe` of its OWN, so the two statements 0146 added to the
     // press — both inside `db.transaction` — were invisible to this test, and
     // it stayed green with the guard on them deleted (the as-built review,
     // CA-1: on a server behind, every customer's ✅/❌ would then be a 42703).

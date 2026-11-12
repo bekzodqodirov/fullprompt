@@ -23,7 +23,7 @@ import { ASK_MAX_CHARS, type ClientAskFacts } from './client-confirm';
  * It prints exactly what the ✅ / ❌ is ABOUT, and nothing else: per lot the
  * goods and the carton count — a tarkib's goods one per line with their
  * pieces, a plain lot's name on the lot's own line — and, for a `full`
- * question (0145, docs/PRIXOD-XABARI.md §A — the owner's «4 ha»), the lot's
+ * question (0146, docs/PRIXOD-XABARI.md §A — the owner's «4 ha»), the lot's
  * kilos and cubic metres on its line and a total under a prixod of several
  * lots, through the cabinet's own rounding. A `basic` question (a server one
  * migration behind) prints no measures, as 0144 did: they are not part of

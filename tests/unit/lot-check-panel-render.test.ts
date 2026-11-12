@@ -206,7 +206,7 @@ describe('«Mijozdan so‘rash» says what is true of the question NOW', () => {
   });
 });
 
-describe('what the client’s ✅ covered — name and count, or the kilos and cubic metres too (0145)', () => {
+describe('what the client’s ✅ covered — name and count, or the kilos and cubic metres too (0146)', () => {
   // His «4 ha … og'irlik va hajmga urg'u berilsin»: an answer given to a
   // question that asked the weight and the volume vouches for them, and the
   // card must say which kind of answer it is looking at — a re-weigh after

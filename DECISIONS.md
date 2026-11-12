@@ -8404,7 +8404,7 @@ its two people by their seeded phones — what it always got on a fresh database
 time: **a test that writes a SEEDED row has changed the database for every unordered read after it, whatever it
 restores** — mint the person, or read the seed by a key.
 
-## Prixod xabari — one message to the seller with two buttons, the client's ✅ covers kilos and cubic metres, the AI's bill on the evening summary (2026-11-11 evening; migration 0145 `prixod_xabari`, `when` …124, ledger 146; spec `docs/PRIXOD-XABARI.md`, §G binding)
+## Prixod xabari — one message to the seller with two buttons, the client's ✅ covers kilos and cubic metres, the AI's bill on the evening summary (2026-11-11 evening; migration 0146 `prixod_xabari`, `when` …125, ledger 147; numbered #1697-#1726 — minted as #1683-#1712 with migration 0145 and renumbered on the merge, the THIRTY-SEVENTH collision: main's AI sotuvchi «o'zi yuborish» (PR #147) took #1683-#1696 and 0145 `agent_auto`, with this round's own `when` …124, first; spec `docs/PRIXOD-XABARI.md`, §G binding)
 
 His message after confirming the 0144 deploy («deploy qildim 145 chiqdi»): «4 ha tovar nomi, karobka soni,
 ogirlik va hajimga urgu berilsin tekshirib olsin klient va tasdiqlasin togriligini. 8 ha. prixod kelganda bitim
@@ -8412,7 +8412,7 @@ tuzilmagan va prizod keldi deb 2 marta sms boryabti us yerga prixod keldi desin 
 tovar nomlari kg kub shunda ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa javob
 ozing bergan taklifing boyicha», then «va mijozdan tasdix bosmasa xam skladga yuk kelgan zahoti borsin habar».
 
-**#1683 — Seven readings of one message, and which of them changed the system.** R1 «4 ha» = the client's
+**#1697 — Seven readings of one message, and which of them changed the system.** R1 «4 ha» = the client's
 answer covers the weight and the volume (the one sentence of 0144 he reversed). R2 «8 ha» = the AI's spending is
 a line of the 20:00 summary. R3-R5 = ONE message to the seller per prixod with «📎 Fayl qo‘shish» and «🔗 Bitim
 biriktirish». R6 = the seller's message never waits for the customer — it never did (the event drain follows the
@@ -8421,7 +8421,7 @@ each was read against the code on the server before being called answered (#1229
 `tests/unit/prixod-xabari-answers.test.ts` names all eight — the two built ones by what they changed, the six by
 the default or the test that holds it (a deleted pin turns the file red with the answer's number).
 
-**#1684 — The answer has a SCOPE, and the figures are remembered at the precision a customer reads.**
+**#1698 — The answer has a SCOPE, and the figures are remembered at the precision a customer reads.**
 `AskScope = 'basic' | 'full'`, minted once by `clientAskFacts`; a `full` answer stores `shown_kg numeric(12,2)` /
 `shown_m3 numeric(12,3)` — kilos to two places, cubic metres to three, **rounded by the DATABASE on both sides**
 (`round(total_weight_kg, 2)` in the statement that reads the facts and in the comparison). Never JS on one side
@@ -8430,50 +8430,50 @@ match. Display precision and not the stored three and four places because the cl
 and a correction no list shows them has not unsettled what they said (40.004 kg after «40 kg» is still ✅ — in
 the test). The columns are SQL-only, so no whole-row read of the table names them one migration behind.
 
-**#1685 — The sentence names the columns under a THIRD probe answer, and `to_jsonb` was measured and refused.**
+**#1699 — The sentence names the columns under a THIRD probe answer, and `to_jsonb` was measured and refused.**
 The house idiom for a column that may not exist is `to_jsonb(row)->>'col'`, which needs no probe. Measured over
-200,000 evaluations on a 0145 copy: the comparison on named columns costs 0.17 µs a row, through `to_jsonb(row)`
+200,000 evaluations on a 0146 copy: the comparison on named columns costs 0.17 µs a row, through `to_jsonb(row)`
 12.5 µs — and the sentence runs once per carton on the stock table and the plan editor (the judge measured
 45-60 ms against 206-353 ms on an 18,000-carton query). So `lot-check-ready.ts` gained a third answer, read off
 `pg_attribute` (0.36 ms warm; `information_schema.columns` is 2.8 ms and it runs on every reader call of a server
 behind): `lotClientMeasuresReady()` for the sentence, `clientMeasuresReady()` for the question's own doors.
 
-**#1686 — The probe's early return forgot its own third flag, and no integration test could see it.** Built as
-`if (ready && clientReady) return true;`. A process that had seen 0144 and not 0145 would never ask again: after
+**#1700 — The probe's early return forgot its own third flag, and no integration test could see it.** Built as
+`if (ready && clientReady) return true;`. A process that had seen 0144 and not 0146 would never ask again: after
 `docker compose run --rm migrate` — the documented repair, no restart — every bundle copy asked during the gap
-stays on «no». The worker's copy → every question goes out `basic` for ever with ledger 146 and `/api/version`
+stays on «no». The worker's copy → every question goes out `basic` for ever with ledger 147 and `/api/version`
 both right; the stock page's copy → it reads full answers with the 0144 sentence while the home page reads them
-with 0145's, and the two disagree about one lot. Found by the confirm judge BEFORE the code shipped; every
+with 0146's, and the two disagree about one lot. Found by the confirm judge BEFORE the code shipped; every
 integration file mocks the probe or starts on a complete database. `tests/unit/lot-check-ready.test.ts` fakes
 `db.execute` (no → no → yes: asked three times, remembered only then). RULE: **a remembered «yes» with N parts
 is remembered only when all N are yes**.
 
-**#1687 — A narrower answer never replaces a wider one of the same verdict.** Only the PRESSED message loses its
+**#1701 — A narrower answer never replaces a wider one of the same verdict.** Only the PRESSED message loses its
 ✅/❌ row, so every push sent since the 0144 deploy keeps live buttons whose tag knows no weight. After a full
 ✅ and a re-weigh, a press on such a message would have been WRITTEN — fresh `answered_at`, the old 40.00 kept,
 the card saying «the data moved after the client confirmed» about a press that came after the move; or, built to
 the spec's own words (NULL on a basic answer), the lot would turn ✅ again and hide the re-weigh. `keeps`: a
 `basic` ✅ over this owner's ✅ WITH measures is not written and answers «allaqachon»; `same()` compares measures
-only for a full press; a ❌ is always written; on a 0145 server the two columns are written for EVERY answer
+only for a full press; a ❌ is always written; on a 0146 server the two columns are written for EVERY answer
 (NULL for basic). The first test of it was green with `keeps` deleted — `same()` already answered «already» when
 the five facts held — and the case only `keeps` handles (the NAME moved back to what the old message printed)
 was found by that red proof staying green (#166).
 
-**#1688 — A full question never goes out without its words.** A push with a photograph carries its text as the
+**#1702 — A full question never goes out without its words.** A push with a photograph carries its text as the
 caption, and when the caption could not hold the ask line the 0144 code sent the plain text with the buttons all
 the same. The new ask line is 87-109 characters against 36-53: an eight-lot prixod's customer would get a photo,
 the lots, NO question and a ✅ recorded as weight-and-volume. For a `full` question the photograph yields and the
 message goes as text.
 
-**#1689 — The AI line is the LAST 24 HOURS, not «today».** The design read whole Tashkent days like every other
+**#1703 — The AI line is the LAST 24 HOURS, not «today».** The design read whole Tashkent days like every other
 figure of the message. The message goes out at 20:00, so 20:00-24:00 — the hours the AI sotuvchi answers
 customers in — would have been in no daily message, ever (the second judge's finding; money rows carry a day and
 have the same hole, but they are typed by people who have gone home). Rolling, every hour is said exactly once
 across the evenings; the pull («📊 Holat») reads the same window at any hour; Monday reads the closed week.
 
-**#1690 — «A request» is defined per ledger, and what cannot be priced is never a $0.** Three ledgers know three
+**#1704 — «A request» is defined per ledger, and what cannot be priced is never a $0.** Three ledgers know three
 things: `ai_calc_passes` freezes dollars on pressed rows and holds tokens on the rest; `agent_runs` holds cache
-tokens; `ai_questions` held NOTHING until 0145 (the assistant now sums its rounds' usage and writes it by a
+tokens; `ai_questions` held NOTHING until 0146 (the assistant now sums its rounds' usage and writes it by a
 second, caught UPDATE — the answer is already the person's when it runs). An errored agent run with no usage is
 counted and unpriced (it may have reached the model); `refused` / `notice` / `capped` / `stood_down` never called
 anything and are not requests; a settled press with neither cost nor tokens is a request with nothing to price —
@@ -8482,7 +8482,7 @@ figure when nothing could be priced, names a ledger it could not read, and is ab
 Stated on the line's own header: the deal card's goods-file import writes no usage row, and a purged chat's runs
 are gone.
 
-**#1691 — The fold: the alert EVENTS are still emitted, the ROWS are one.** `UnquotedCargo` / `UnlinkedCargo`
+**#1705 — The fold: the alert EVENTS are still emitted, the ROWS are one.** `UnquotedCargo` / `UnlinkedCargo`
 are offered automation triggers and the rules hear the event, so price control goes on emitting them — marked
 `folded: true` — and `buildRecipients` writes nothing for a marked one; the `ReceiptConfirmed` row carries
 `alsoType`. `folded` is an ARGUMENT of `priceControlOnReceipt` (default false), never a constant inside it: its
@@ -8490,7 +8490,7 @@ next caller (attaching a prixod LATER to an unpriced deal raises no alarm today)
 `ReceiptConfirmed` beside it — told to nobody, in silence. An event pair queued from before the fold still tells
 the seller twice, exactly as it was written.
 
-**#1692 — ONE predicate says «this row is the new message»: `payload.dealState` is one of the four strings.**
+**#1706 — ONE predicate says «this row is the new message»: `payload.dealState` is one of the four strings.**
 The design had three marks (`lots` present, `folded`, `dealState`) and each failed somewhere: an existing unit
 test renders `UnlinkedCargo` WITH `lots` and expects the old words; `folded` is on the alert event, which writes
 no rows, so a label or a button keyed on it would never draw on the admins' copy. `isReceiptArrival` is asked by
@@ -8498,14 +8498,14 @@ the recipients, the renderer, the open button's label and `buttonsFor`; the stat
 the states in a leaf (`receipt-arrival.ts`) — a `case 'none':` inside `buildRecipients` would have failed the
 mutes fence, which reads every `case` there as a notification type.
 
-**#1693 — The deal state is decided once, by `ownDealOf`'s rule, and handed to price control.**
+**#1707 — The deal state is decided once, by `ownDealOf`'s rule, and handed to price control.**
 `receiptDealInTx` (wms/receipts/deal-state.ts) on the confirm's own transaction; the event carries it and
 `priceControlOnReceipt` takes `{ state, dealId }` instead of reading the prixod again. «The prixod's deal» is the
 client's OWN: a deal left on the row by a client correction — `assignReceiptClient` moves the client and leaves
 `deal_id`, pinned as known behaviour — or posted by a stale form used to be compared against a stranger's quote
 and would have been NAMED to another client's seller. Now it is no deal: «attach it» or «price it».
 
-**#1694 — Nobody loses what they hear today, and the alarm still reaches somebody who can act.** `rowTypeFor` is
+**#1708 — Nobody loses what they hear today, and the alarm still reaches somebody who can act.** `rowTypeFor` is
 the one place a mute is read when a row is born: a row with `alsoType` is silenced only by somebody who muted
 BOTH groups and is written under the type they still hear (in-app and Telegram alike). The admins hear a deal
 problem when nobody is there to hear it — no seller, one who can no longer log in, or one whose Telegram was
@@ -8514,20 +8514,20 @@ outside every problem count, and the admins had stopped hearing the alarm the da
 never falls back: it is the person's choice. The admins' copy carries the client's code and name — the event's
 payload has neither, and the old fallback handed it on raw.
 
-**#1695 — The claim door says «biriktirildi», tells the new owner's seller alone and alarms nobody.** Giving
+**#1709 — The claim door says «biriktirildi», tells the new owner's seller alone and alarms nobody.** Giving
 unclaimed cargo its owner emits `ReceiptConfirmed` too, has never run price control and emits no alert event.
 Under a fold keyed on `dealState` alone it would have started telling every admin «Prixod keldi — bitimi yo‘q»
 about cargo that came weeks ago, once per claim, for the 83 % of clients that have no seller. `via: 'assign'`:
 its own header, the deal line and the two buttons, recipients as before, `arrivalAlertOf` null.
 
-**#1696 — «Bo‘ldi bosganda biriktirilsin» was built as «attached as they arrive», and the reason is the deploy.**
+**#1710 — «Bo‘ldi bosganda biriktirilsin» was built as «attached as they arrive», and the reason is the deploy.**
 His words describe a draft that is committed at the press. Bound on arrival, a restart, a quiet half-hour or a
 forgotten «Bo‘ldi» loses nothing — the owner restarts the bot's container on every deploy. What that costs is the
 way back, so it was built too: «↩️ Bekor qilish» removes exactly what the collection stored (the ids ride in the
 wait's payload), and the card draws ✕ on the reader's OWN upload (the delete door always allowed it; only the
 button was missing). Said to him in the result, in those words.
 
-**#1697 — A collection never ends in silence (the collector judge's blocker).** As designed, thirty quiet minutes
+**#1711 — A collection never ends in silence (the collector judge's blocker).** As designed, thirty quiet minutes
 and another collector's opening both ended it without a word, under a prompt that still said «shu yerga
 yuboring»: the next file was stored nowhere and answered by nobody — or by «➕ so‘rovga qo‘shamizmi?» about
 another client's request. Now both CLOSE it (`closeReceiptFiles` beside each of the three `endBurst(chatId)`
@@ -8535,14 +8535,14 @@ lines), the entry stays, and the first file that meets it is told once that it w
 that opens the collection again. Both of the collection's own buttons carry their prixod (`pf:ok:<id>` /
 `pf:no:<id>`): a stale «✅ Bo‘ldi» under an earlier prixod's message closed the open one.
 
-**#1698 — A backlog file IS taken, against the house rule, and the house rule's own reason says why.** «No
+**#1712 — A backlog file IS taken, against the house rule, and the house rule's own reason says why.** «No
 collector opened by this process takes a backlog file» exists because a text written before a prompt cannot be
 its answer. Updates are handled in order: a file handled after the press was SENT after the press — the press
 simply could not be answered until the bot came back. Kept out, three files sent into a deploy met one generic
 sentence about «Hisoblatish» and two silences under a fresh «shu yerga yuboring». The re-arm uses the file's own
 date, never the processing clock.
 
-**#1699 — A picture sent through the bot is a PAPER, stored as a file.** `saveAttachment` gained `asPaper`
+**#1713 — A picture sent through the bot is a PAPER, stored as a file.** `saveAttachment` gained `asPaper`
 (`kind: 'file'` whatever the bytes). A prixod's `kind = 'photo'` attachments are its carton photos: the loader's
 list draws the first of them BEFORE the lot's own goods photo (his 2026-09-14 «tovarni tashqi rasmi turishi
 kerak»), the stock table beside each lot, the Ostatka Excel on every row — and the wizard does not require one.
@@ -8550,7 +8550,7 @@ A seller's phone photo of an invoice on such a prixod would have stood where the
 Fixed at the WRITER rather than in four readers: a date bound there would have dropped a carton photo the
 warehouse adds after the confirm.
 
-**#1700 — The ladder position is one line, and three fences were already watching it.** The collection takes a
+**#1714 — The ladder position is one line, and three fences were already watching it.** The collection takes a
 file after a taking «Hisoblatish», a zametka and a live task draft declined it — it is the lowest collector, it
 holds no unsaved work — and BEFORE `draftMedia`, which is «a live draft takes it» and Door B's «📌 Topshiriq
 qilamizmi?» in one call (placed after it, every forward is offered as a task; and «forward qiling» is half of the
@@ -8560,7 +8560,7 @@ questions and a line on that evening's AI figure. The History names every file u
 (`fileAdded:<message>`): the grouping nets a run per key, and a shared key folded an album of three into one line
 about the last (measured by the judge).
 
-**#1701 — «🔗 Bitim biriktirish» lands on the picker, and the new deal is born with the prixod.** `DealLink` is
+**#1715 — «🔗 Bitim biriktirish» lands on the picker, and the new deal is born with the prixod.** `DealLink` is
 `id="bitim"`. For a client with no deal the card offers «+ Yangi bitim ochish» — carrying the prixod, because
 the form's own redirect leaves the seller on the NEW deal's card with the prixod still on none, and the message
 that sent them there was the only reminder. Drawn under `mayEditDealTerms` (the VED may re-file cargo but not
@@ -8570,17 +8570,17 @@ reads and scrolls itself into view by; then the BUILD refused my first version o
 effect — `react-hooks/set-state-in-effect`), which typecheck had passed: I had run typecheck and not lint after
 the edit, #803's trap a third time. The ring is put on the element.
 
-**#1702 — Process.** Three judges read the spec against the code before any of it was built (confirm, fold +
+**#1716 — Process.** Three judges read the spec against the code before any of it was built (confirm, fold +
 summary, collector: 9 + 13 + 13 objections, none refuted, three of them blockers of silence) while the build
 went on in a second worktree so they read a tree that did not move; the as-built review ran in the main checkout
 while red proofs ran in that worktree for the same reason (#1681's rule 5). 32 red proofs by reversible string
 edit: 30 red at once; `redelivery-lookup` stayed GREEN (the test counted rows and did not look at what was SAID
 — without the look-up the fixed id is a primary-key violation that reads as a failed download: «Faylni saqlab
-bo‘lmadi» under a file that is on the prixod) and `keeps` stayed green (#1687) — both re-anchored and red.
+bo‘lmadi» under a file that is on the prixod) and `keeps` stayed green (#1701) — both re-anchored and red.
 
-### The round reviewed as built (2026-11-11 night; NO migration of its own — ledger 146 with 0145)
+### The round reviewed as built (2026-11-11 night; NO migration of its own — ledger 147 with 0146)
 
-**#1703 — Four lenses over the built round; no blocker, and the confirm/AI half had no production defect at
+**#1717 — Four lenses over the built round; no blocker, and the confirm/AI half had no production defect at
 all.** Fold (who is told): four nits. Collector (the bot's file collection): two defects, four nits. Card (the web
 side and access): three defects — one of them a test — and three nits. Confirm + AI line: one defect — a test —
 and four nits. Twenty-one findings; one of them reached by two lenses independently from opposite ends (FOLD-1 /
@@ -8589,7 +8589,7 @@ kind of agreement that needs no skeptic. Every one is fixed or pinned below; not
 read the main checkout, frozen at `b9a43fd`, while the fixes were made in the second worktree — so no finding is
 about a tree that moved under its reader (#1681's rule 5, kept).
 
-**#1704 — A file that swipe-replies to another message is that message's, not the open collection's.** The
+**#1718 — A file that swipe-replies to another message is that message's, not the open collection's.** The
 collection never read the reply target: with GS777's collection open, a packing list sent as a REPLY to GS812's
 «Prixod keldi» was stored on GS777 — and a file replying to an AI answer, which the «➕ Shu so‘rovga qo‘shish»
 door had always opened on, was taken before that door could see it (a door that worked before the round).
@@ -8602,7 +8602,7 @@ starts to hold again closes the collection** — «another collector opened» ha
 neighbours) and the fourth door into holding was `updateIntake` itself («▶️ Davom etamiz», a press on a parked
 table, a reply to it).
 
-**#1705 — A closed collection speaks once more for two hours, not for as long as the process lives; and a file
+**#1719 — A closed collection speaks once more for two hours, not for as long as the process lives; and a file
 taken late is said.** `standingReceiptFiles` returned «closed» for any entry memory still held: a forgotten
 «Bo‘ldi» on Monday met Tuesday's unrelated photo with «bu fayl biriktirilmadi» and a button inviting it onto
 Monday's prixod, and Monday's «↩️ Bekor qilish» still deleted the papers the VED had worked from since.
@@ -8614,7 +8614,7 @@ biriktirildi» as the collection's last word when it finds the collection closed
 entry in place: my first version of that fix ENDED the entry, which took the «⌛ … biriktirilmadi» sentence away
 from the next file — an existing test caught it.
 
-**#1706 — The admins' copy says why it came to them; the claim door is no «first cargo».** Before the fold an
+**#1720 — The admins' copy says why it came to them; the claim door is no «first cargo».** Before the fold an
 admin received `UnquotedCargo` only for a client with no seller, so «this one is mine» was implied by its arrival.
 The fold widened the fallback to a seller who cannot be reached (no linked chat, or gone) — and an admin who opens
 that client's card sees a seller named on it and assumes the seller was told. One line, on the admins' rows only
@@ -8626,7 +8626,7 @@ cargo that came three weeks ago and was given its code today was announced to th
 client's first prixod. `docs/JAMOA-GURUHI.md` had said «is not this event and is not celebrated» since 0134 and
 nothing in the function asked. It returns for `via: 'assign'` and for the older `assignedFromUnclaimed` payloads.
 
-**#1707 — «The prixod's deal» on the card is the message's own rule (#513 between a message and the screen its
+**#1721 — «The prixod's deal» on the card is the message's own rule (#513 between a message and the screen its
 button opens).** The message decides by `ownDealOf` — a deal a client correction left on `deal_id` is another
 client's, and the seller is told «no deal». The card read the raw column: the button «🔗 Bitim biriktirish» landed
 on a block reading «Bitim: B-000040» — the OLD client's job, as a link — with the picker preselected on it and no
@@ -8635,7 +8635,7 @@ round's own integration test built exactly this row and pinned the message half 
 own deal now, the foreign one is one muted line, the picker offers this client's deals, and the new-deal page
 accepts such a prixod.
 
-**#1708 — «Born with the prixod» was a promise made at RENDER and kept by nobody at the save.** The new-deal
+**#1722 — «Born with the prixod» was a promise made at RENDER and kept by nobody at the save.** The new-deal
 page checked three facts when it drew «📦 Prixod N shu bitimga biriktiriladi» and its comment said «the create
 action asks the link's own door again»; the action re-asked the id's SHAPE, and the link door checks existence
 and client — never «no deal yet», never the status. So a form opened at 14:05 and saved at 14:20, after a
@@ -8655,7 +8655,7 @@ and received again, and the button under the first message opens the voided card
 are scrolled above). The «paid upsale» question, which the pre-check would have copied, is one statement for both
 callers (`dealPaidUpsale`, on whichever handle the caller is on).
 
-**#1709 — The History of a prixod's files: a removed file names itself, an added one wears the name on its
+**#1723 — The History of a prixod's files: a removed file names itself, an added one wears the name on its
 tile.** `deleteAttachment` audits on the file's PARENT with `before` only, and the History reads `after`: the
 card printed a bare «o‘chirdi», which on a prixod reads as cargo data deleted. That row's shape predates the
 round; the round added its two commonest producers (the seller's own ✕, and every file of a «↩️ Bekor qilish»)
@@ -8665,7 +8665,7 @@ and printing them on every card that carries one is a change nobody reviewed. On
 after «Fayl qo‘shildi» was the Telegram message id (there for uniqueness alone — `ITEM_NOT_PRINTED`), and a
 photo was recorded as «rasm» while its tile reads `YW-000123_1_17….jpg`: the saver hands back the name it stored.
 
-**#1710 — Monday had a twenty-hour hole in «oxirgi 24 soat».** The design moved the AI line off the Tashkent day
+**#1724 — Monday had a twenty-hour hole in «oxirgi 24 soat».** The design moved the AI line off the Tashkent day
 because a day window «would never have shown 20:00-24:00 in any daily message»; as built, on a Monday there IS no
 daily message (the weekly one replaces it), so Monday 00:00-20:00 was on no evening's line and reached him a week
 later inside a total — one working day a week not shown, instead of four evening hours a day. And `ai-spend.ts`
@@ -8673,9 +8673,9 @@ said «every hour is said exactly once across the evenings». Monday's message c
 and the last 24 hours under it; one more read). Every other figure treats a Monday the same way and is left as
 it is — those are day-bucketed and the weekly message contains them; this line alone is a rolling window.
 
-**#1711 — Seven tests that could not see their subject — three of them written during this very review.**
-(1) The «0145 has not landed» press test spied on `pgClient.unsafe`. A drizzle transaction runs through
-`sql.begin`, which hands its callback a scoped client with an `unsafe` of its OWN: the two statements 0145 added
+**#1725 — Seven tests that could not see their subject — three of them written during this very review.**
+(1) The «0146 has not landed» press test spied on `pgClient.unsafe`. A drizzle transaction runs through
+`sql.begin`, which hands its callback a scoped client with an `unsafe` of its OWN: the two statements 0146 added
 to the press, both inside `db.transaction`, were invisible, the positive control was satisfied by the POOL's
 readers, and the test held with the guard deleted — on a server one migration behind every customer's ✅/❌ would
 then be a 42703 and a toast, with the suite green. It wraps `begin` now and its control is the press's own
@@ -8692,7 +8692,7 @@ unit test that called the new function directly while the proof deleted its only
 under their red proof and were re-anchored. **A red proof is the only reviewer a test has, and it has to be run
 on the test one has just written.**
 
-**#1712 — Process.** 37 red proofs for the review's fixes, by reversible string edit in the second worktree
+**#1726 — Process.** 37 red proofs for the review's fixes, by reversible string edit in the second worktree
 (32 by vitest, 5 in a browser); with the round's own 32 that is 69. The six findings the lenses called defects
 were each sent to a verifier told to refute it — six confirmed, none refuted; the nits went straight to a
 failing test. The browser spec is serial, so a strip

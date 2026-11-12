@@ -86,7 +86,7 @@ export async function receiptDealInTx(
 
 /**
  * Why a deal may not be BORN with this prixod — the three facts the new-deal
- * form reads when it draws «📦 Prixod N shu bitimga biriktiriladi» (0145):
+ * form reads when it draws «📦 Prixod N shu bitimga biriktiriladi» (0146):
  * the prixod is this client's, it is confirmed, and it stands on no deal of
  * its OWN (`ownDealOf`: a deal a client correction left on the row is another
  * client's, and the new deal replaces it).

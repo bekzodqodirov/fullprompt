@@ -369,9 +369,9 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 5. Sinov: CRM’da bitta lidni mavjud mijoz kodiga «Yutildi» qiling — «bu kodda lid
    bor» demasligi va yangi bitim ochishi kerak.
 
-## Prixod xabari (2026-11-11, 0145) — tekshiruv tartibi
+## Prixod xabari (2026-11-11, 0146) — tekshiruv tartibi
 
-Bitta migratsiya bor: **0145** — deploydan keyin son **146** bo‘ladi (repo’dagi fayllar soni:
+Bitta migratsiya bor: **0146** — deploydan keyin son **147** bo‘ladi (repo’dagi fayllar soni:
 `ls src/modules/platform/db/migrations/*.sql | wc -l`). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
 ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (model va tokenlar) va botning
 «kutish» jadvalidagi ruxsat etilgan turlar ro‘yxatiga bitta yangi tur. Mavjud ma’lumot o‘zgarmaydi.
@@ -390,8 +390,8 @@ ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (mo
    `docker compose --profile https --profile telegram up -d --build`.
    (Bot `app` ichida ishlaydi va u bilan birga yangilanadi. Bu raundda **tg-listen** o‘zgarmagan — lekin
    buyruq uni ham qayta quradi, zarari yo‘q.)
-3. Sonni o‘qing — **146**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
-   (Son 145 bo‘lib qolsa ham tizim ishlaydi — faqat savol eski ko‘rinishda, og‘irliksiz boradi; migratsiya
+3. Sonni o‘qing — **147**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
+   (Son 146 bo‘lib qolsa ham tizim ishlaydi — faqat savol eski ko‘rinishda, og‘irliksiz boradi; migratsiya
    o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
 4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
 5. Sinov (bitta prixodda, 10 daqiqa):

@@ -503,7 +503,7 @@ export const telegramChatWaits = pgTable(
   (t) => [
     primaryKey({ columns: [t.chatId, t.kind] }),
     // Widened by 0141 with 'burst' — the files sent in a row outside a collection (docs/IKKI-ESHIK.md §4.1) —
-    // and by 0145 with 'receipt_files', a prixod's file collection (docs/PRIXOD-XABARI.md §C.5).
+    // and by 0146 with 'receipt_files', a prixod's file collection (docs/PRIXOD-XABARI.md §C.5).
     check('telegram_chat_waits_kind_check', sql`${t.kind} IN ('task', 'staff_entry', 'ad_visit', 'cabinet_link', 'agent_edit', 'agent_price', 'agent_code', 'burst', 'receipt_files')`),
     check('telegram_chat_waits_window_check', sql`${t.expiresAt} > ${t.armedAt}`),
     check('telegram_chat_waits_payload_check', sql`jsonb_typeof(${t.payload}) = 'object'`),

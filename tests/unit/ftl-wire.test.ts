@@ -70,7 +70,7 @@ describe('a prixod that gets a deal carries the deal’s FTL (1a)', () => {
     const signature = deals.slice(deals.indexOf('export async function linkReceipt('), deals.indexOf('): Promise<void> {', deals.indexOf('export async function linkReceipt(')));
     expect(signature).toMatch(/\n  ftlDoor: FtlDoor \| null,\n/);
     expect(signature).not.toMatch(/ftlDoor\?:|ftlDoor: FtlDoor \| null =/);
-    // The ONE parameter after it is the new-deal form's option (0145,
+    // The ONE parameter after it is the new-deal form's option (0146,
     // `bornWith`) — optional by design: its absence means «a person chose
     // this move», which is every caller but that form. Nothing else may
     // follow the door, and the door itself stays required.

@@ -141,7 +141,7 @@ describe('what the question lists is what it asks about (L5-7)', () => {
     }
   });
 
-  it('a FULL question (0145) asks about the weight and the volume too — in the words of ITS scope, never the 0144 ones', () => {
+  it('a FULL question (0146) asks about the weight and the volume too — in the words of ITS scope, never the 0144 ones', () => {
     for (const locale of ['uz', 'ru', 'en'] as const) {
       const t = clientLabels(locale);
       const one = htmlToPlain(askText({ ...base, scope: 'full', lots: [plain] }, locale));
@@ -318,19 +318,19 @@ describe('one writer, one probe, and columns that stay SQL-only', () => {
     expect(state.indexOf('if (!lotClientConfirmsReady())')).toBeLessThan(state.indexOf('clientDisputeSql(refs)'));
   });
 
-  it('0145: the probe gives a THIRD answer — the measure columns — and remembers it only when all three are yes', () => {
+  it('0146: the probe gives a THIRD answer — the measure columns — and remembers it only when all three are yes', () => {
     const ready = read('src/modules/wms/receipts/lot-check-ready.ts');
     // The columns, asked of the catalogue (a table that exists says nothing
     // about a column added to it later).
     expect(ready).toContain("AND attname IN ('shown_kg', 'shown_m3') AND NOT attisdropped) AS measures");
     // The early return reads ALL THREE flags: with the first two alone, a
-    // process that had seen 0144 and not 0145 never asked again, and the
+    // process that had seen 0144 and not 0146 never asked again, and the
     // repaired migration switched nothing on until a restart.
     expect(ready).toContain('if (ready && clientReady && measuresReady) return true;');
     expect(ready).not.toContain('if (ready && clientReady) return true;');
   });
 
-  it('0145: the measure columns are named in four files and nowhere else, and the remembered third answer is read only by the sentence and the card', () => {
+  it('0146: the measure columns are named in four files and nowhere else, and the remembered third answer is read only by the sentence and the card', () => {
     // SQL-only columns (a drizzle column would be named in every whole-row
     // read of the table, one migration behind): each file that names them
     // either asked the third answer first or IS the probe / the migration.
@@ -504,7 +504,7 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(text).toContain(`100 quti · ${groupDigits(1000)} kg · 2.5 m³`);
   });
 
-  it('a BASIC question (a server without 0145) prints what ITS ✅ is about and nothing else: no kilos, no cubic metres, the 0144 words', () => {
+  it('a BASIC question (a server without 0146) prints what ITS ✅ is about and nothing else: no kilos, no cubic metres, the 0144 words', () => {
     const text = htmlToPlain(askText(facts([PLAIN, TARKIB], 'basic'), 'uz'));
     const t = clientLabels('uz');
     const lines = text.split('\n').filter((line) => line.trim() !== '');
@@ -535,7 +535,7 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
       expect(text).toContain(t.confirmAskLine);
     }
     // Under the FULL scope the same subjects come first, in the same order, then the two measures
-    // and the ask to CHECK — the owner's «tekshirib olsin klient va tasdiqlasin» (0145).
+    // and the ask to CHECK — the owner's «tekshirib olsin klient va tasdiqlasin» (0146).
     for (const locale of ['uz', 'ru', 'en'] as const) {
       expect(htmlToPlain(askText(facts([PLAIN], 'basic'), locale))).not.toContain(clientLabels(locale).confirmAskLineFull);
     }
@@ -556,7 +556,7 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(clientLabels('ru').confirmThanks).not.toContain('мест');
     expect(clientLabels('en').confirmAskLine).toMatch(/names/);
     expect(clientLabels('en').confirmAskLine).toMatch(/goods.*box count/);
-    // The BASIC ✅'s thanks repeat ITS subject — a press on a message sent before 0145 confirmed no weight.
+    // The BASIC ✅'s thanks repeat ITS subject — a press on a message sent before 0146 confirmed no weight.
     expect(clientLabels('uz').confirmThanks).toMatch(/nomi.*quti soni/);
     expect(clientLabels('uz').confirmThanks).not.toMatch(/og‘irli|hajm/);
   });
@@ -584,14 +584,14 @@ describe('the question a person sends («Mijozdan so‘rash»)', () => {
     expect(facts([PLAIN, { ...TARKIB, goods: [] }]).tag).toBe(base);
   });
 
-  it('a FULL tag covers the two measures as the customer reads them; the BASIC tag is the 0144 recipe byte for byte (0145)', () => {
+  it('a FULL tag covers the two measures as the customer reads them; the BASIC tag is the 0144 recipe byte for byte (0146)', () => {
     const full = facts([PLAIN, TARKIB]);
     // The recipe every button already in a customer's chat was hashed with — a LITERAL, computed from
     // the 0144 function before it was touched: a changed basic recipe kills every such button at deploy.
     expect(full.basicTag).toBe('5a0ae98c');
     expect(askTag(full.clientId, full.lots)).toBe('5a0ae98c');
     expect(full.tag).not.toBe(full.basicTag);
-    // …and the FULL recipe is under every button sent from 0145 on, so it is a LITERAL too (computed
+    // …and the FULL recipe is under every button sent from 0146 on, so it is a LITERAL too (computed
     // from the function as it shipped): a later change to how the measures are spelled into the hash —
     // `lotShownKgSql`, its `::text`, a `trim_scale` — would answer «eskirgan» under every full button
     // already in customers' chats, with the relational assertions below all still green.
@@ -628,7 +628,7 @@ describe('«yukingiz qabul qilindi» with the question', () => {
     }
   });
 
-  it('a FULL question (0145) asks about the kilos and cubic metres the lines above it print — in bold, still the LAST block', () => {
+  it('a FULL question (0146) asks about the kilos and cubic metres the lines above it print — in bold, still the LAST block', () => {
     for (const locale of ['uz', 'ru', 'en'] as const) {
       const t = clientLabels(locale);
       const plain = receivedText(summary, locale);
