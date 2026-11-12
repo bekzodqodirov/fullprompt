@@ -628,13 +628,21 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
       tnvedCode: g.tnvedCode,
       note: g.note,
     };
+    // A carton count the row's PACKING holds is said there, once (§3.2 X2): a
+    // sheet whose only count column counts cartons still writes «15 ctn» as
+    // its count for the doors that keep no packing, and «sotuvchi: 15 ctn»
+    // beside «📦 15 karobka — fayldan» would state one fact twice.
+    const packed = routed.moved && routed.to === 'cartons' && g.packing?.cartons === g.quantity;
     const routedRow = routed.moved
-      ? { ...row, ...routed.patch, note: [g.note, routed.note].filter(Boolean).join(' · ') || null }
+      ? { ...row, ...routed.patch, note: [g.note, packed ? null : routed.note].filter(Boolean).join(' · ') || null }
       : row;
     // What the sheet states PER PACKAGE (docs/AI-SORAYDI.md §2.3): the row's
     // packing goes through the one carton arithmetic here, where every reader
     // of the row — the table, the comparison, the landing — takes it from.
-    return g.packing ? applyPacking({ ...routedRow, packing: g.packing }).line : routedRow;
+    // Which weight the row's own is travels with it (review JN-4).
+    return g.packing
+      ? applyPacking({ ...routedRow, packing: g.packing, ...(g.weightKind ? { weightKind: g.weightKind } : {}) }).line
+      : routedRow;
   });
 }
 
