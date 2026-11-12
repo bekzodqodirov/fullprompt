@@ -25556,13 +25556,56 @@
        "name": "Office chair",
        "quantity": 100,
        "weightKg": 150,
-       "volumeM3": null
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 45,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
       },
       {
        "name": "Writing desk",
        "quantity": 20,
        "weightKg": 200,
-       "volumeM3": null
+       "volumeM3": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 120,
+         "w": 60,
+         "h": 15,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "volumeM3": 1.08
+      },
+      {
+       "name": "Writing desk",
+       "volumeM3": 0.432
       }
      ],
      "count": 2
@@ -25572,7 +25615,8 @@
    "said": "E — `VOLUME_WORD` claims «Meas» / «Vol» as the line volume whatever unit the header names: a packing list whose «MEAS (CM)» holds the carton's L/W/H in sub-columns and no CBM column. Base: volumeM3 null. New: volumeM3 60 and 120 — the carton LENGTH in cm as cubic metres.",
    "why": "Base: volumeM3 null. New: volumeM3 60 and 120 — the carton LENGTH in cm as cubic metres.",
    "source": "r4-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X3-X4 (review JR-20, 2026-11-12): the pin MOVES. «MEAS (CM)» over «L | W | H» is the carton's size, read into the row's packing beside its «CTNS», and the calc door computes the cube — 10 × (60×40×45 cm = 0.108 m³) = 1.08 and 4 × (120×60×15 cm = 0.108 m³) = 0.432 m³ (`facts`). The round-4 answer stands where it was given: the READER's own volumeM3 is still null — never the carton's length as cubic metres."
   },
   {
    "id": "c1936",
@@ -29501,12 +29545,65 @@
       {
        "name": "Kurtka",
        "quantity": 10,
-       "unit": "ctns"
+       "unit": "ctns",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
       },
       {
        "name": "Shim",
        "quantity": 4,
-       "unit": "ctns"
+       "unit": "ctns",
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": null,
+       "unit": null,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": null,
+       "unit": null,
+       "note": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
       }
      ],
      "count": 2
@@ -29515,7 +29612,8 @@
    "said": "no carton count at all — the VED lost the row's «sotuvchi: 10 ctns»",
    "why": "a PLURAL package after «in» counts the cartons: the carton column, as before FILES-1 (FR-REGR-6)",
    "source": "fix review (Ikki eshik) FR-REGR-6",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X2 (review JR-20, 2026-11-12): the pin MOVES at the calc door. The carton count is the row's PACKING now (`packing.cartons`): there the door reads it, the piece column stays empty and the old «sotuvchi: N ctns» note is gone — the landed row says «📦 N karobka — fayldan» once (`facts`). The reader's own row still writes the count under its carton word, for the doors that keep no packing (the deal's import, the VED's paste): the answer the reviewer asked for — a carton count, never pieces, never lost — stands on every door."
   },
   {
    "id": "c2470",
@@ -29545,12 +29643,65 @@
       {
        "name": "Куртка",
        "quantity": 10,
-       "unit": "мест"
+       "unit": "мест",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
       },
       {
        "name": "Брюки",
        "quantity": 4,
-       "unit": "мест"
+       "unit": "мест",
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": null,
+       "unit": null,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Брюки",
+       "quantity": null,
+       "unit": null,
+       "note": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
       }
      ],
      "count": 2
@@ -29559,7 +29710,8 @@
    "said": "no carton count at all",
    "why": "«/мест» (plural) is the carton column; only «/место» is one place's (FR-REGR-6)",
    "source": "fix review (Ikki eshik) FR-REGR-6",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X2 (review JR-20, 2026-11-12): the pin MOVES at the calc door. The carton count is the row's PACKING now (`packing.cartons`): there the door reads it, the piece column stays empty and the old «sotuvchi: N мест» note is gone — the landed row says «📦 N karobka — fayldan» once (`facts`). The reader's own row still writes the count under its carton word, for the doors that keep no packing (the deal's import, the VED's paste): the answer the reviewer asked for — a carton count, never pieces, never lost — stands on every door."
   },
   {
    "id": "c2601",
@@ -42160,7 +42312,36 @@
       {
        "name": "Ladies jacket",
        "quantity": 15,
-       "unit": "ctn"
+       "unit": "ctn",
+       "packing": {
+        "cartons": 15,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": null,
+       "unit": null,
+       "note": null,
+       "packing": {
+        "cartons": 15,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
       }
      ],
      "count": 1
@@ -42169,7 +42350,8 @@
    "said": "a LONE «CTN QTY» counts cartons: the line says so («ctn»), and the door routes it to the note, never into pieces",
    "why": "reader-5.10-jianshu: a lone candidate is a carton column only by a Latin or Cyrillic package word",
    "source": "fayl-oqish P-reader-B",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "AI-SORAYDI §3.2 X2 (review JR-20, 2026-11-12): the pin MOVES at the calc door. The carton count is the row's PACKING now (`packing.cartons`): there the door reads it, the piece column stays empty and the old «sotuvchi: N ctn» note is gone — the landed row says «📦 N karobka — fayldan» once (`facts`). The reader's own row still writes the count under its carton word, for the doors that keep no packing (the deal's import, the VED's paste): the answer the reviewer asked for — a carton count, never pieces, never lost — stands on every door."
   },
   {
    "id": "c3102",
@@ -46757,6 +46939,2755 @@
    "why": "X7's guard on R3-S8: the new whole-word GW / NW readers do not touch «gross» / «net» written out.",
    "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
    "weight": "pinned"
+  },
+  {
+   "id": "c3449",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "G.W.(KGS)",
+     "CBM/CTN"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.05
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     0.06
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     330,
+     0.07
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     710,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 200,
+       "weightKg": 120,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Kids toy plastic",
+       "quantity": 480,
+       "weightKg": 260,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.06,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "LED lamp 50W",
+       "quantity": 300,
+       "weightKg": 330,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 30,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.07,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 3
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "LED lamp 50W",
+       "volumeM3": 2.1
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710,
+    "shape": "packing"
+   },
+   "said": "«CBM/CTN» beside «CTNS»: the reader keeps both on the row, and the calc door multiplies — 10 × 0.05 = 0.5, 20 × 0.06 = 1.2, 30 × 0.07 = 2.1 m³ (Σ 3.8, what a person reads off the sheet)",
+   "why": "XLS-4: one carton's cube was passed over and the carton count stood on no row, so nothing could multiply — «umumiy hajmi (kub) — yozilmagan». Base: no packing, the door's volumeM3 null on every line.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3450",
+   "input": [
+    [
+     "Description",
+     "Qty(pcs)",
+     "CTNS",
+     "CBM/CTN",
+     "N.W./CTN",
+     "G.W./CTN"
+    ],
+    [
+     "Women jacket",
+     300,
+     20,
+     0.12,
+     14,
+     15
+    ],
+    [
+     "Men pants",
+     200,
+     10,
+     0.126,
+     12,
+     13
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "quantity": 300,
+       "weightKg": null,
+       "volumeM3": null,
+       "note": "«G.W./CTN»: 15",
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": 14,
+        "kgPerCartonKind": "net",
+        "m3PerCarton": 0.12,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Men pants",
+       "quantity": 200,
+       "weightKg": null,
+       "volumeM3": null,
+       "note": "«G.W./CTN»: 13",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": 12,
+        "kgPerCartonKind": "net",
+        "m3PerCarton": 0.126,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "weightKg": 280,
+       "volumeM3": 2.4
+      },
+      {
+       "name": "Men pants",
+       "weightKg": 120,
+       "volumeM3": 1.26
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "only per-carton columns beside «CTNS»: the line's NETTO is cartons × «N.W./CTN» — 20 × 14 = 280, 10 × 12 = 120 kg — and its cube cartons × «CBM/CTN» — 20 × 0.12 = 2.4, 10 × 0.126 = 1.26 m³; the gross per carton, which the packing has no second place for, is said on the note",
+   "why": "DIM-7: «ℹ️ Women jacket — 300 dona», no weight and no cube on any row, both totals asked. Base: no packing, note null, the door's weightKg and volumeM3 null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3451",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W./CTN"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     12
+    ],
+    [
+     "Kids toy",
+     480,
+     20,
+     13
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 200,
+       "weightKg": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": 12,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Kids toy",
+       "quantity": 480,
+       "weightKg": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": 13,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120
+      },
+      {
+       "name": "Kids toy",
+       "weightKg": 260
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«G.W./CTN» is one carton's GROSS: kept as such (kind gross), and with no line weight of its own the row takes cartons × it — 10 × 12 = 120, 20 × 13 = 260 kg, said brutto",
+   "why": "XLS-4 / DIM-7. Base: no packing, the door's weightKg null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3452",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "箱数",
+     "单箱毛重",
+     "单箱体积",
+     "装箱数"
+    ],
+    [
+     "女士夹克",
+     200,
+     10,
+     12,
+     0.05,
+     20
+    ],
+    [
+     "儿童玩具",
+     480,
+     20,
+     13,
+     0.06,
+     24
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 200,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": 20,
+        "kgPerCarton": 12,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "儿童玩具",
+       "quantity": 480,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": 24,
+        "kgPerCarton": 13,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.06,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 200,
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "儿童玩具",
+       "quantity": 480,
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a Chinese packing list's per-carton columns — 单箱毛重, 单箱体积, 装箱数 — beside 箱数: 10 × 12 = 120 kg and 10 × 0.05 = 0.5 m³; 20 × 13 = 260 kg and 20 × 0.06 = 1.2 m³; the stated 200 and 480 pieces stand (10 × 20 and 20 × 24 say the same)",
+   "why": "XLS-4; «装箱数» carries no quantity key and was no column at all. Base: no packing, the door's weightKg and volumeM3 null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3453",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Мест",
+     "Вес брутто 1 места",
+     "Объем 1 места"
+    ],
+    [
+     "Куртка",
+     200,
+     10,
+     12,
+     0.05
+    ],
+    [
+     "Игрушка",
+     480,
+     20,
+     13,
+     0.06
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 200,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": 12,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Игрушка",
+       "quantity": 480,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": 13,
+        "kgPerCartonKind": "gross",
+        "m3PerCarton": 0.06,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Игрушка",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Вес брутто 1 места» and «Объем 1 места» beside «Мест»: 10 × 12 = 120 kg, 10 × 0.05 = 0.5 m³; 20 × 13 = 260 kg, 20 × 0.06 = 1.2 m³",
+   "why": "XLS-4. Base: no packing, the door's weightKg and volumeM3 null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3454",
+   "input": [
+    [
+     "Tovar nomi",
+     "Karobka soni",
+     "Og‘irligi (kg)",
+     "Kubi"
+    ],
+    [
+     "Ayollar kurtkasi",
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Bolalar o‘yinchog‘i",
+     20,
+     260,
+     1.2
+    ],
+    [
+     "Jami",
+     30,
+     380,
+     1.7
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": 10,
+       "unit": "karobka",
+       "weightKg": 120,
+       "volumeM3": 0.5,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Bolalar o‘yinchog‘i",
+       "quantity": 20,
+       "unit": "karobka",
+       "weightKg": 260,
+       "volumeM3": 1.2,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ayollar kurtkasi",
+       "quantity": null,
+       "unit": null,
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Bolalar o‘yinchog‘i",
+       "quantity": null,
+       "unit": null,
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Karobka soni» counts CARTONS: the row says so («10 karobka») and its packing holds the count — never ten pieces; at the calc door the piece column is empty",
+   "why": "XLS-9: the rank read «Karobka soni» as packages and the lone-column rule did not (LATIN words only) — «1. Ayollar kurtkasi — 10 dona». Base: quantity 10 / 20 with unit null, no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3455",
+   "input": [
+    [
+     "Tovar nomi",
+     "Joy soni",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     10,
+     120
+    ],
+    [
+     "Shim",
+     4,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 10,
+       "unit": "joy",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 4,
+       "unit": "joy",
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": null
+      },
+      {
+       "name": "Shim",
+       "quantity": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Joy soni» counts places: 10 and 4 cartons, never pieces",
+   "why": "XLS-9. Base: quantity 10 / 4 with unit null, no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3456",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во мест, шт",
+     "Вес"
+    ],
+    [
+     "Куртка",
+     10,
+     120
+    ],
+    [
+     "Брюки",
+     4,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 10,
+       "unit": "мест",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Брюки",
+       "quantity": 4,
+       "unit": "мест",
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": null
+      },
+      {
+       "name": "Брюки",
+       "quantity": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Кол-во мест, шт» ALONE counts places — its «шт» is the places' (the rank's own ruling, break-qty-rank): 10 and 4 cartons",
+   "why": "XLS-9: beside a «Кол-во» the rank passed it over as packages; alone it was the pieces. Base: quantity 10 / 4 with unit null, no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3457",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W."
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120
+    ],
+    [
+     "Kids toy",
+     480,
+     20,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 200,
+       "unit": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Kids toy",
+       "quantity": 480,
+       "unit": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "quantity": 200
+      },
+      {
+       "name": "Kids toy",
+       "quantity": 480
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a bare «CTNS» beside «QTY»: the pieces stay 200 / 480 and the row keeps its 10 / 20 cartons",
+   "why": "XLS-9: a bare package header carries no quantity key — it was a flag (`cartons`), and its number stood on no row and no note. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3458",
+   "input": [
+    [
+     "Tovar",
+     "Soni",
+     "Mesta",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     200,
+     10,
+     120
+    ],
+    [
+     "Shim",
+     100,
+     4,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Mesta» is the carton column: 10 and 4",
+   "why": "XLS-9 «cartons_not_recognised»: no list held the word. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3459",
+   "input": [
+    [
+     "Tovar",
+     "Soni",
+     "Korobka",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     200,
+     10,
+     120
+    ],
+    [
+     "Shim",
+     100,
+     4,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Korobka» is the carton column: 10 and 4",
+   "why": "XLS-9 «cartons_not_recognised». Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3460",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTN NO.",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     200,
+     1,
+     120
+    ],
+    [
+     "Toy",
+     480,
+     2,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "quantity": 200,
+       "packing": null
+      },
+      {
+       "name": "Toy",
+       "quantity": 480,
+       "packing": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«CTN NO.» LABELS a carton (1, 2, 3 …): it counts none, and no row takes a carton count from it",
+   "why": "X2's guard: a bare package header beside a number word is the carton's number — read as a count, a numbered list would be 1, 2, 3 cartons.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3461",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Packages",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     200,
+     "CARTON",
+     120
+    ],
+    [
+     "Toy",
+     480,
+     "PALLET",
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "quantity": 200,
+       "packing": null,
+       "note": null
+      },
+      {
+       "name": "Toy",
+       "quantity": 480,
+       "packing": null,
+       "note": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «Packages» column of «CARTON» / «PALLET» says HOW the goods are packed: no count, no packing, no note",
+   "why": "X2's guard: a bare package header is the carton column only when its cells are counts.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3462",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "件数",
+     "毛重"
+    ],
+    [
+     "女士夹克",
+     200,
+     10,
+     120
+    ],
+    [
+     "儿童玩具",
+     480,
+     20,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 200,
+       "unit": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "儿童玩具",
+       "quantity": 480,
+       "unit": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "beside «数量» the «件数» are the PACKAGES: 200 / 480 pieces, 10 / 20 cartons",
+   "why": "X2: «件数» only beside a piece column — the rank already passed it over there, and its number was dropped. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3463",
+   "input": [
+    [
+     "品名",
+     "件数",
+     "毛重"
+    ],
+    [
+     "女士夹克",
+     200,
+     120
+    ],
+    [
+     "儿童玩具",
+     480,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "quantity": 200,
+       "unit": null,
+       "packing": null
+      },
+      {
+       "name": "儿童玩具",
+       "quantity": 480,
+       "unit": null,
+       "packing": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a LONE «件数» is the pieces (the corpus' c1778): 200 and 480, no carton count",
+   "why": "X2's guard on 件数: 件 is a piece on one list and a package on the next — alone, nothing says package.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3464",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W."
+    ],
+    [
+     "Jacket",
+     200,
+     "10 CTNS",
+     120
+    ],
+    [
+     "Toy",
+     480,
+     "20ctns",
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "quantity": 200,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       },
+       "note": null
+      },
+      {
+       "name": "Toy",
+       "quantity": 480,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       },
+       "note": null
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a carton cell with its unit glued on — «10 CTNS», «20ctns» — is 10 and 20 cartons",
+   "why": "X2: the cell's own carton word is read as the weight's «120KGS» is. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3465",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "PRS/CTN",
+     "G.W."
+    ],
+    [
+     "Sneakers",
+     20,
+     12,
+     260
+    ],
+    [
+     "Boots",
+     10,
+     6,
+     150
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sneakers",
+       "quantity": null,
+       "weightKg": 260,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": 12,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file",
+        "perCartonUnit": "juft"
+       }
+      },
+      {
+       "name": "Boots",
+       "quantity": null,
+       "weightKg": 150,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": 6,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file",
+        "perCartonUnit": "juft"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Sneakers",
+       "quantity": null,
+       "measureUnit": "juft",
+       "measureQty": 240
+      },
+      {
+       "name": "Boots",
+       "quantity": null,
+       "measureUnit": "juft",
+       "measureQty": 60
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«PRS/CTN» is PAIRS a carton: 20 × 12 = 240 juft and 10 × 6 = 60 juft, in the row's pair measure — never 240 and 60 pieces",
+   "why": "Review JR-1: a per-carton count with no unit of its own lands as pieces — the calculator round's root defect. «PRS/CTN» names no quantity key and was no column. Base: no packing, the door's measureQty null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3466",
+   "input": [
+    [
+     "Наименование",
+     "Мест",
+     "пар/кор",
+     "Вес брутто"
+    ],
+    [
+     "Кроссовки",
+     20,
+     12,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Кроссовки",
+       "quantity": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": 12,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file",
+        "perCartonUnit": "juft"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Кроссовки",
+       "quantity": null,
+       "measureUnit": "juft",
+       "measureQty": 240
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«пар/кор» beside «Мест»: 20 × 12 = 240 juft",
+   "why": "Review JR-1. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3467",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "m²/ctn",
+     "G.W."
+    ],
+    [
+     "Tile 600x600",
+     40,
+     1.44,
+     1200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Tile 600x600",
+       "quantity": null,
+       "packing": {
+        "cartons": 40,
+        "pcsPerCarton": 1.44,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file",
+        "perCartonUnit": "m2"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Tile 600x600",
+       "quantity": null,
+       "measureUnit": "m2",
+       "measureQty": 57.6
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«m²/ctn»: 40 cartons × 1.44 m² = 57.6 m², the row's m² measure",
+   "why": "Review JR-1. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3468",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit",
+     "CTNS",
+     "PCS/CTN",
+     "G.W."
+    ],
+    [
+     "Sneakers",
+     240,
+     "PRS",
+     20,
+     12,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sneakers",
+       "quantity": 240,
+       "unit": "PRS",
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": 12,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file",
+        "perCartonUnit": "juft"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Sneakers",
+       "quantity": null,
+       "measureUnit": "juft",
+       "measureQty": 240
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a row that counts in PAIRS (its unit cell says «PRS») holds pairs in its cartons, whatever the header's «PCS» stands for: 20 × 12 = 240 juft agrees with the stated 240 pairs — never 240 pieces beside 240 pairs",
+   "why": "Review JR-1: read as pieces, the cartons' product would fill the empty piece column with a second count of the same shoes.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3469",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "SETS/CTN",
+     "G.W."
+    ],
+    [
+     "Cookware set",
+     25,
+     4,
+     300
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Cookware set",
+       "quantity": null,
+       "packing": {
+        "cartons": 25,
+        "pcsPerCarton": 4,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Cookware set",
+       "quantity": 100
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«SETS/CTN» beside «CTNS» and no quantity column: 25 × 4 = 100 pieces, computed",
+   "why": "X2: a unit before its package is what one carton holds. Base: no packing, the door's quantity null.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3470",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "CARTON SIZE (CM)",
+     "G.W.(KGS)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     "60*40*50",
+     120
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     "50*40*30",
+     260
+    ],
+    [
+     3,
+     "LED lamp 50W",
+     300,
+     30,
+     "70x50x20cm",
+     330
+    ],
+    [
+     "TOTAL",
+     null,
+     980,
+     60,
+     null,
+     710
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 50,
+         "w": 40,
+         "h": 30,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      },
+      {
+       "name": "LED lamp 50W",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 30,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 70,
+         "w": 50,
+         "h": 20,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 3
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "LED lamp 50W",
+       "volumeM3": 2.1
+      }
+     ],
+     "count": 3
+    },
+    "grossKg": 710
+   },
+   "said": "«CARTON SIZE (CM)» beside «CTNS»: 60×40×50 cm is 0.12 m³ × 10 = 1.2; 50×40×30 is 0.06 × 20 = 1.2; 70×50×20 is 0.07 × 30 = 2.1 m³ (Σ 4.5)",
+   "why": "XLS-5 / DIM-6: no reader for a size existed — the column was dropped with no note and the cube asked. Base: no packing, the door's volumeM3 null.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3471",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "MEAS.",
+     "G.W.(KGS)"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     200,
+     10,
+     "60*40*50",
+     120
+    ],
+    [
+     2,
+     "Kids toy plastic",
+     480,
+     20,
+     "50x40x30",
+     260
+    ],
+    [
+     "TOTAL",
+     null,
+     680,
+     30,
+     null,
+     380
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": null,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": null,
+         "of": "package"
+        },
+        "from": "file"
+       }
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": null,
+       "note": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 50,
+         "w": 40,
+         "h": 30,
+         "unit": null,
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Kids toy plastic",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«MEAS.» whose cells are sizes is a SIZE column, not a cube: the cartons' measurement, no unit written — taken as centimetres (a 12 kg carton of 0.12 m³ is 100 kg/m³, cargo) — 10 × 0.12 = 1.2 and 20 × 0.06 = 1.2 m³",
+   "why": "XLS-5: «MEAS.» was the volume column and its cells read «hajm «60*40*50» — aniq emas», a note the table does not draw. Base: note «hajm «60*40*50» — aniq emas», no packing, the door's volumeM3 null.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3472",
+   "input": [
+    [
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "Size (cm)",
+     "G.W."
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     "60*40*50",
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": null
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a bare «Size (cm)» says nobody's size: kept on the row with NO owner — nothing is multiplied, the owner is asked",
+   "why": "Review JN-11 (binding): only a size SAID to be the package's is multiplied by the packages.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3473",
+   "input": [
+    [
+     "Description",
+     "Size",
+     "QTY",
+     "CTNS"
+    ],
+    [
+     "Sofa",
+     "220×95×85 cm",
+     10,
+     30
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sofa",
+       "quantity": 10,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 30,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 220,
+         "w": 95,
+         "h": 85,
+         "unit": "cm",
+         "of": null
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Sofa",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the judge's sofa: «Size 220×95×85 cm» is the PRODUCT's as often — three cartons a sofa — so 30 cartons × 1.7765 m³ = 53.3 m³ is never computed; the size is kept, owner unknown",
+   "why": "Review JN-11's own example.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3474",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "箱数",
+     "外箱尺寸(CM)",
+     "毛重"
+    ],
+    [
+     "女士夹克",
+     200,
+     10,
+     "60*40*50",
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«外箱尺寸(CM)» is the outer carton's size: 10 × 0.12 = 1.2 m³",
+   "why": "XLS-5. Base: no packing.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3475",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Мест",
+     "Размер коробки, см",
+     "Вес брутто"
+    ],
+    [
+     "Куртка",
+     200,
+     10,
+     "60х40х50",
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Размер коробки, см» with the Cyrillic «х» between the sides: 10 × 0.12 = 1.2 m³",
+   "why": "XLS-5. Base: no packing.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3476",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Мест",
+     "Габариты (ДхШхВ), мм",
+     "Вес брутто"
+    ],
+    [
+     "Куртка",
+     200,
+     10,
+     "600х400х500",
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 600,
+         "w": 400,
+         "h": 500,
+         "unit": "mm",
+         "of": null
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Габариты (ДхШхВ), мм»: the header's unit is millimetres and it names no owner — the size is kept as 600×400×500 mm, nothing multiplied",
+   "why": "Review JN-11: «Габариты» is on the owner-unknown list.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3477",
+   "input": [
+    [
+     "Tovar nomi",
+     "Soni",
+     "Karobka soni",
+     "Karobka o‘lchami",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     200,
+     10,
+     "60x40x50 sm",
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Karobka o‘lchami» is the carton's size, «sm» in the cell: 10 × 0.12 = 1.2 m³; the pieces stay 200 beside «Karobka soni»'s 10 cartons",
+   "why": "XLS-5. Base: no packing.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3478",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "L(cm)",
+     "W(cm)",
+     "H(cm)"
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     60,
+     40,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": null
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "a bare «L | W | H» triplet names no owner: the three sides are kept as one size, nothing multiplied",
+   "why": "Review JN-11: a triplet is the package's only under a package-size header.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3479",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "箱数",
+     "外箱长",
+     "外箱宽",
+     "外箱高",
+     "毛重"
+    ],
+    [
+     "女士夹克",
+     200,
+     10,
+     60,
+     40,
+     50,
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": null,
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "女士夹克",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«外箱长 | 外箱宽 | 外箱高»: the outer carton's three sides, no unit — taken as centimetres (12 kg in 0.12 m³), 10 × 0.12 = 1.2 m³",
+   "why": "XLS-5 «长|宽|高». Base: no packing.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3480",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "Carton size (cm)",
+     null,
+     null,
+     "G.W."
+    ],
+    [
+     null,
+     null,
+     null,
+     "L",
+     "W",
+     "H",
+     null
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     60,
+     40,
+     50,
+     120
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "quantity": 200,
+       "weightKg": 120,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    },
+    "headerRow": 0
+   },
+   "said": "«Carton size (cm)» merged over «L | W | H», ONE goods line under it: 10 × 0.12 = 1.2 m³",
+   "why": "X3: on a one-line sheet the split's own words were half of each side's column — the «L» beside one 60 — and the triplet was not found.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3481",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "CTN SIZE"
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     "600*400*500"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 600,
+         "w": 400,
+         "h": 500,
+         "unit": null,
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«CTN SIZE» 600*400*500 with no unit anywhere: a side past 300 is not assumed to be centimetres (10 × 120 m³ = 1200 m³) — the size is kept, the cube asked",
+   "why": "Kernel JN-25 through the sheet: the unit is the header's or the cell's, never guessed past what is plausible.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3482",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "CTN SIZE (inch)"
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     "23.6x15.7x19.7"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 23.6,
+         "w": 15.7,
+         "h": 19.7,
+         "unit": "other",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«CTN SIZE (inch)»: a unit nobody converts here — the size is kept with it, never read as centimetres (16× small)",
+   "why": "Kernel JN-1 through the sheet's header unit.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3483",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "CTN SIZE (cm)"
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     "60x40x50 / 30x20x10"
+    ],
+    [
+     "Toy",
+     480,
+     20,
+     "50x40x30"
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null,
+       "note": "o‘lcham «60x40x50 / 30x20x10» — aniq emas",
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Toy",
+       "volumeM3": null,
+       "note": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 50,
+         "w": 40,
+         "h": 30,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": null
+      },
+      {
+       "name": "Toy",
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "TWO sizes in one cell are mixed cartons: no size is taken (the text is said on the note), and the row beside it still computes 20 × 0.06 = 1.2 m³",
+   "why": "DIM-11: two sizes on one row is not safe — asked, never multiplied.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3484",
+   "input": [
+    [
+     "Description",
+     "Size",
+     "QTY",
+     "CTNS"
+    ],
+    [
+     "Tile",
+     "600x600",
+     100,
+     10
+    ],
+    [
+     "Tile B",
+     "800x800",
+     50,
+     5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Tile",
+       "quantity": 100,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Tile B",
+       "quantity": 50,
+       "note": null,
+       "packing": {
+        "cartons": 5,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «Size» of two sides — a tile's «600x600» — is no carton's size: the column is not a size column, the rows keep only their cartons",
+   "why": "X3's guard: a size column is one by its header AND its cells (three sides).",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3485",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "CTNS",
+     "Carton size(cm)",
+     "CBM",
+     "N.W.",
+     "G.W."
+    ],
+    [
+     "Women jacket",
+     300,
+     20,
+     "60*40*50",
+     0.12,
+     280,
+     300
+    ],
+    [
+     "Men pants",
+     200,
+     10,
+     "70*60*30",
+     0.126,
+     120,
+     130
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "weightKg": 280,
+       "volumeM3": 0.12,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      },
+      {
+       "name": "Men pants",
+       "weightKg": 120,
+       "volumeM3": 0.126,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 70,
+         "w": 60,
+         "h": 30,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "volumeM3": 2.4
+      },
+      {
+       "name": "Men pants",
+       "volumeM3": 1.26
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": null,
+    "grossKg": 430
+   },
+   "said": "an unmarked «CBM» that IS one carton's — 0.12 = 60×40×50 cm, 0.126 = 70×60×30 cm — beside 20 and 10 cartons: the size says so, and the line is 20 × 0.12 = 2.4 and 10 × 0.126 = 1.26 m³; the sheet's own Σ of that column (0.246, a sum of two single cartons) is no total",
+   "why": "DIM-8: «✅ Hajm: 0.246 kub» under «Ma’lumot to‘liq» for a 3.66 m³ shipment. Base: no packing, the door's volumeM3 0.12 / 0.126, the sheet's volumeM3 0.246.",
+   "source": "ai-soraydi P-excel X4 (DIM-8)",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3486",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "CTNS",
+     "Carton size(cm)",
+     "CBM"
+    ],
+    [
+     "Women jacket",
+     300,
+     20,
+     "60*40*50",
+     2.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "volumeM3": 2.4,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 2.4
+   },
+   "said": "the line's own «CBM» 2.4 IS 20 × 0.12: it stands, and so does the sheet's Σ",
+   "why": "X4: the sheet's own figure stands where the cartons say the same.",
+   "source": "ai-soraydi P-excel X4 (DIM-8)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3487",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "CTNS",
+     "Carton size(cm)",
+     "CBM"
+    ],
+    [
+     "Women jacket",
+     300,
+     20,
+     "60*40*50",
+     3.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "volumeM3": 3.1,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 50,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 1
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Women jacket",
+       "volumeM3": 3.1
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": 3.1
+   },
+   "said": "a stated 3.1 m³ that is neither 20 × 0.12 = 2.4 nor one carton's 0.12: the line's own figure STANDS — the table asks, the reader corrects nothing",
+   "why": "X4 / kernel `differs`: a doubt is returned, never resolved by the reader.",
+   "source": "ai-soraydi P-excel X4 (DIM-8)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3488",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "N.W./CTN",
+     "N.W."
+    ],
+    [
+     "Jacket",
+     200,
+     10,
+     14,
+     140
+    ],
+    [
+     "Pants",
+     100,
+     5,
+     12,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "weightKg": 140,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": 14,
+        "kgPerCartonKind": "net",
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Pants",
+       "weightKg": null,
+       "packing": {
+        "cartons": 5,
+        "pcsPerCarton": null,
+        "kgPerCarton": 12,
+        "kgPerCartonKind": "net",
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "weightKg": 140
+      },
+      {
+       "name": "Pants",
+       "weightKg": 60
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a per-carton figure fills only what is EMPTY: the stated 140 kg stands (10 × 14 says the same), and the line with no weight of its own takes 5 × 12 = 60 kg",
+   "why": "X4 (XLS-4, DIM-7).",
+   "source": "ai-soraydi P-excel X4 (DIM-8)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
@@ -81742,6 +84673,172 @@
    "said": "an ERP export's empty <td> keeps its slot: «XJ-200 |  | 300»",
    "why": "CR-1 on the HTML door. Base: «XJ-200 | 300» — the weight under 数量.",
    "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3489",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Packing",
+      "rows": [
+       [
+        "Description",
+        "Qty (pcs)",
+        "CTNS",
+        "N.W. (kg)",
+        "G.W. (kg)",
+        "MEAS (CM)",
+        null,
+        null
+       ],
+       [
+        null,
+        null,
+        null,
+        null,
+        null,
+        "L",
+        "W",
+        "H"
+       ],
+       [
+        "Office chair",
+        100,
+        10,
+        150,
+        160,
+        60,
+        40,
+        45
+       ],
+       [
+        "Writing desk",
+        20,
+        4,
+        200,
+        210,
+        120,
+        60,
+        15
+       ]
+      ],
+      "merges": [
+       "A1:A2",
+       "B1:B2",
+       "C1:C2",
+       "D1:D2",
+       "E1:E2",
+       "F1:H1"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Office chair",
+       "quantity": 100,
+       "weightKg": 150,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 60,
+         "w": 40,
+         "h": 45,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      },
+      {
+       "name": "Writing desk",
+       "quantity": 20,
+       "weightKg": 200,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": {
+         "l": 120,
+         "w": 60,
+         "h": 15,
+         "unit": "cm",
+         "of": "package"
+        },
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 370
+   },
+   "said": "a real workbook's two-row header — «MEAS (CM)» merged ACROSS «L | W | H», every other header merged DOWN over the split — reads the three sides as the carton's size beside «CTNS» (the calc door then computes 10 × 0.108 = 1.08 and 4 × 0.108 = 0.432 m³); the gross Σ is 160 + 210 = 370",
+   "why": "X3 on the file reader's own merges (the corpus' c1935 as an .xlsx): a cell merged down repeats its master's text into the split's row, and a cell merged across leaves its covered cells empty. Base: no packing.",
+   "source": "ai-soraydi P-excel X3 (XLS-5, DIM-6; JN-11)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3490",
+   "input": {
+    "kind": "csv",
+    "text": "Наименование;Кол-во;Мест;Объем 1 места;Вес брутто\nКуртка;200;10;0,05;120\nИгрушка;480;20;0,06;260\n",
+    "contentType": "text/csv"
+   },
+   "expected": {
+    "kind": "goods",
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "quantity": 200,
+       "weightKg": 120,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.05,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Игрушка",
+       "quantity": 480,
+       "weightKg": 260,
+       "volumeM3": null,
+       "packing": {
+        "cartons": 20,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": 0.06,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "a «;» CSV with decimal commas: «Объем 1 места» 0,05 and 0,06 are one place's cube, read with the column's comma — 0.05 and 0.06 m³ a carton beside 10 and 20 places (the calc door: 0.5 and 1.2 m³)",
+   "why": "X2 through the file reader: a packing column's figures are read as the line's are. Base: no packing.",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
    "weight": "defect"
   }
  ],

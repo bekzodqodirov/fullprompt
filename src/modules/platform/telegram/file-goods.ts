@@ -366,6 +366,18 @@ const UNKNOWN_KINDS: RowKinds = { held: null, read: null };
 const grossOnly = (k: WeightKind) => k === 'gross';
 
 /**
+ * A row's weight computed from its cartons' GROSS — «G.W./CTN» × «CTNS», the
+ * row's own column empty (docs/AI-SORAYDI.md §3.2 X4; `derived.weightIsGross`,
+ * carton-math.ts) — is a brutto whatever column its FILE's line weights came
+ * from: such a sheet has no line-weight column at all, so its kind reads
+ * unknown, and compared as «the line's own» the brutto disagreed with the
+ * same row's netto in the next file — one order, landed twice. Nor is it a
+ * netto a packing list may write into a goods row, or sum as one.
+ */
+const cartonsGross = (g: GoodsList[number]): boolean => g.derived?.weightIsGross === true;
+const kindOf = (g: GoodsList[number], fileKind: WeightKind): WeightKind => (cartonsGross(g) ? 'gross' : fileKind);
+
+/**
  * The same-unit figures two rows of two files BOTH state: a count with a
  * count (a carton count never reaches `quantity` — the door routes it into
  * the note), a weight with a weight of the same kind (never a gross with a
@@ -377,7 +389,7 @@ function sharedFigures(held: GoodsList[number], read: GoodsList[number], kinds: 
   return LINE_FIGURES.filter((f) => {
     if (f.field === 'amount') return false;
     if (figureOf(held, f.field) === null || figureOf(read, f.field) === null) return false;
-    if (f.field === 'weightKg') return grossOnly(kinds.held) === grossOnly(kinds.read);
+    if (f.field === 'weightKg') return grossOnly(kindOf(held, kinds.held)) === grossOnly(kindOf(read, kinds.read));
     if (f.field === 'measureQty') return held.measureUnit != null && held.measureUnit === read.measureUnit;
     return true;
   });
@@ -833,7 +845,7 @@ export function packingTotals(
   // A list the reader stopped short of its end gives no totals (PF-ADV-2).
   if (meta.capped) return { weightKg: null, weightNetto: false, volumeM3: null };
   if (meta.grossKg !== null) return { weightKg: meta.grossKg, weightNetto: false, volumeM3: meta.volumeM3 };
-  if (meta.weightKind === 'net' && rows.length > 0 && rows.every((g) => figureOf(g, 'weightKg') !== null && g.weightKg! > 0)) {
+  if (meta.weightKind === 'net' && rows.length > 0 && rows.every((g) => figureOf(g, 'weightKg') !== null && g.weightKg! > 0 && !cartonsGross(g))) {
     const sum = rows.reduce((n, g) => n + g.weightKg!, 0);
     return { weightKg: Number(sum.toFixed(3)), weightNetto: true, volumeM3: meta.volumeM3 };
   }
@@ -1018,7 +1030,7 @@ export function positionalFills(held: GoodsList, packing: GoodsList, packingKind
   let filled = 0;
   const goods = held.map((h, i) => {
     const p = packing[i];
-    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || countsDisagree(h, p)) return h;
+    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || cartonsGross(p) || countsDisagree(h, p)) return h;
     filled += 1;
     return { ...h, weightKg: p.weightKg! };
   });
@@ -1052,6 +1064,7 @@ export function packingFills(
           !claimed.has(j) &&
           figureOf(packing[j]!, 'weightKg') !== null &&
           packing[j]!.weightKg! > 0 &&
+          !cartonsGross(packing[j]!) &&
           sameRowAgain(h, packing[j]!, { held: heldKinds[i] ?? null, read: packingKind }),
       );
     if (at === undefined) return h;

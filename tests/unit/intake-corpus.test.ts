@@ -66,6 +66,7 @@ vi.mock('@/modules/wms/calc/prefill-queue', async (importOriginal) => ({
 
 import {
   AI_READ_FAILURE,
+  invoiceFacts,
   landingItems,
   lineNeeds,
   missingFields,
@@ -308,6 +309,8 @@ describe('parseGoods', () => {
     const rows = Array.isArray(c.input) ? c.input : csvRows(c.input.csv);
     const parsed = parseGoods(rows);
     if (c.expected.goods) expect(goodsProblems(parsed.goods as unknown as Line[], c.expected.goods)).toEqual([]);
+    // …and as the calc door takes them: what the sheet states per package, multiplied by the kernel.
+    if (c.expected.facts) expect(goodsProblems(invoiceFacts(parsed.goods) as unknown as Line[], c.expected.facts), 'facts').toEqual([]);
     if (c.expected.headerRow !== undefined) expect(parsed.headerRow, 'headerRow').toBe(c.expected.headerRow);
     for (const key of ['grossKg', 'volumeM3', 'shape'] as const) {
       if (c.expected[key] !== undefined) expect(parsed[key], key).toBe(c.expected[key]);

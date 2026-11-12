@@ -95,6 +95,14 @@ export interface HintExpect {
 
 export interface ParseGoodsExpect {
   goods?: GoodsExpect;
+  /**
+   * The same rows as the CALC DOOR takes them (`invoiceFacts`): the reader
+   * copies what a sheet states per package into the row's `packing`, and the
+   * door multiplies (docs/AI-SORAYDI.md §3.2 X2-X4) — so a figure computed
+   * from the cartons, and a carton count that left the row's count, are
+   * pinned here, beside the reader's own rows.
+   */
+  facts?: GoodsExpect;
   headerRow?: number | null;
   /** The sheet's own sums and shape (`SheetShape`), where the reviewer named them. */
   grossKg?: number | null;

@@ -489,8 +489,12 @@ const UNIT_PER_CARTON = new RegExp(
   String.raw`(?<![\p{L}\d])([\p{L}][\p{L}\d²³.]*?)\.?\s*(?:[/／]\s*|\s+(?:in|per|в|на)\s+(?:(?:1|a|one|одн\p{L}*)\s+)?)(?:ctns?|cartons?|box(?:es)?|pkgs?|packs?|bags?|кор\p{L}*\.?|мест\p{L}*|ящ\p{L}*|упаков\p{L}*|箱|包)(?![\p{L}])`,
   'iu',
 );
-/** What one carton holds, as a Chinese packing list heads it with no «每»: «装箱数», «装箱量», «入数». */
-const PACKED_COUNT_HAN = /装箱数|装箱量|入数/u;
+/**
+ * What one carton holds, as a Chinese packing list heads it where no quantity
+ * key stands: «装箱数», «装箱量», «入数», and «每箱…数» with the unit between
+ * («每箱双数», pairs a carton).
+ */
+const PACKED_COUNT_HAN = /装箱数|装箱量|入数|每箱\p{Script=Han}{0,2}数/u;
 /**
  * The unit a header says one carton holds a count of — the word before the
  * package mark, else a pair / m² / litre word anywhere in it («Кол-во в
@@ -2322,7 +2326,11 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
         const text = cellText(cell);
         return i !== name && PACKAGE_COUNT.test(text) && !MONEY_HEADER.test(text);
       }),
-    weightKind,
+    // A sheet with no line-weight column whose rows are weighed by their
+    // cartons («CTNS» × «N.W./CTN») has its line weights from THAT column, and
+    // of its kind: a netto the next file's rows may be compared with and take,
+    // a brutto they may not (`file-goods.ts`).
+    weightKind: weight === null && cartonWeight && cartonsAt !== null ? (cartonWeight.kind ?? 'plain') : weightKind,
     pack: { cartons: cartonsAt, pieces: cartonPieces, weight: cartonWeight, volume: cartonCube, size },
   };
 }
@@ -2781,8 +2789,8 @@ const cubicMetres = (value: number | null, divisor: number): number | null => (v
 function readSize(cells: readonly Cell[], unit: CartonSize['unit'], of: SizeOwner | null): { size: CartonSize | null; text: string } {
   const texts = cells.map(cellText);
   if (texts.every((text) => text === '')) return { size: null, text: '' };
-  const text = texts.length === 1 ? texts[0]! : texts.join(' x ');
-  // A side left empty is no size: joined, «60 x  x 45» would read as two sides.
+  const text = texts.filter((side) => side !== '').join(' x ');
+  // A side left empty is no size: «60 x 45» is two sides of three.
   const token = texts.some((side) => side === '') ? null : parseSize(text);
   const size = token?.size ?? null;
   if (!token || !size || parseSize(text.slice(token.end)) !== null) return { size: null, text };
