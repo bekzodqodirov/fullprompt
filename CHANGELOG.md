@@ -115,6 +115,18 @@ mahkamladim: tugmalar «qabul qilindi» xabarida o'zi chiqadi; mijozning «❌»
 sotuvchi, logistlar va adminlar xabar oladi; ko'p lotli prixodda «❌» hamma lotga yoziladi; xitoycha nomga AI
 ruscha nom beradi; limitlar 300 va 50.
 
+### Qanday tekshirildi
+- Qurishdan **oldin** rejani uch mustaqil tekshiruvchi o'qidi (35 e'tiroz, uchtasi «xabar jim yo'qoladi»
+  turidagi jiddiy) — hammasi rejaga kiritildi. Qurilgandan **keyin** to'rt tekshiruvchi tayyor kodni o'qidi:
+  jiddiy xato topilmadi, 21 ta kamchilik topildi — hammasi tuzatildi (yuqoridagi bandlarda aytilgan: boshqa
+  xabarga javob qilib yuborilgan fayl, eskirgan «Yangi bitim» formasi, bekor qilingan prixod, dushanba kungi
+  AI qatori va boshqalar). «Nuqson» deb atalgan 6 tasini yana bir tekshiruvchi rad etishga urinib ko'rdi —
+  oltovi ham tasdiqlandi.
+- Har bir tuzatish uchun test avval «tuzatishsiz qizaradi»mi — tekshirildi: 69 ta shunday isbot (5 tasi
+  brauzerda).
+- To'liq sinov toza bazada, serverdagi tartibda: 16 025 ta test va brauzerda 507 ta sinov — hammasi yashil;
+  baza hisobi 146.
+
 ### Bu yerda tekshirib bo'lmagani
 Haqiqiy Telegram bu konteynerda yo'q. Birinchi haqiqiy «Prixod keldi» xabari, ikki tugmaning birinchi
 bosilishi va birinchi yuborilgan fayl — haqiqiy sinov. G'alati narsa chiqsa — skrinshot yuboring.

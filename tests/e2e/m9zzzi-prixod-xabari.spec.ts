@@ -56,14 +56,14 @@ async function landsOnBlock(page: Page) {
   const block = page.getByTestId('receipt-deal-block');
   await expect(block).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+  // ONE poll for the whole range: a position read between two scroll steps
+  // (the route's own scroll, then the block's) must not decide it either way.
   await expect
     .poll(async () => {
       const box = await block.boundingBox();
-      return box === null ? -1 : Math.round(box.y);
+      return box !== null && box.y >= 56 && box.y <= 110;
     })
-    .toBeGreaterThanOrEqual(56);
-  const box = await block.boundingBox();
-  expect(box!.y).toBeLessThanOrEqual(110);
+    .toBe(true);
 }
 
 async function fits(page: Page) {

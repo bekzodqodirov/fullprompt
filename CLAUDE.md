@@ -175,6 +175,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
 | The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
+| The seller's ONE «Prixod keldi» message and its two buttons («📎 Fayl qo'shish» — the file collection in the staff bot, «🔗 Bitim biriktirish» — the card at its deal block), the client's ✅/❌ covering kilos and cubic metres, the AI's bill on the evening summary | `docs/PRIXOD-XABARI.md` — his message of 2026-11-11 («4 ha … 8 ha … prixod keldi desin sotuvchiga … ikta button»), BUILT; **§G is binding** (as judged and as built; **§G.G = after the as-built review, overrides G.C-G.E**), §F stated-not-built and the seven questions out |
 
 ## State — 2026-08-23
 
@@ -3560,9 +3561,86 @@ after it** (`docs/UPDATE.md` step 4a — or he says so first and it ships off); 
 server; no Telegram and no key here, so the first real press of each is the proof. OWED to him: the eight ⭐
 questions in the CHANGELOG entry. **15,880 unit/integration (910 files) +
 498 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 2ee5b70, ledger 145; opened as PR #145 together with
-the tarkib tuzatishlari round (0143) it sits on.
+the tarkib tuzatishlari round (0143) it sits on — **MERGED (`6b617d9`) and DEPLOYED: he confirmed «deploy qildim
+145 chiqdi» on 2026-11-11**, so everything through #1682 is live.
 
-**Latest migration: 0144** (`tarkib_takliflar`, `when` …123; ledger must reach **145**). Before
+**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1683-#1712; migration 0145 `prixod_xabari`, `when` …124
+— ledger must reach 146; spec `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
+message with the 145 confirmation: «4 ha … og'irlik va hajmga urg'u berilsin … 8 ha … prixod kelganda … 2 marta sms
+boryapti … prixod keldi desin sotuvchiga … ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa
+javob o'zing bergan taklifing bo'yicha» + «mijozdan tasdiq bosmasa ham skladga yuk kelgan zahoti borsin». Designed,
+judged by three lenses BEFORE code (35 objections, none refuted, three silent-loss blockers), built solo in a second
+worktree while the judges read a still tree, reviewed as built.
+**(C) ONE message.** `platform/notifications/receipt-arrival.ts` (a leaf) is the home of «this row is the new
+message»: `isReceiptArrival(type, payload)` = one of `ReceiptConfirmed | UnquotedCargo | UnlinkedCargo` AND
+`payload.dealState ∈ none | attachable | unpriced | priced` — asked by the recipients, the renderer, the open
+button's label and `buttonsFor`; a row from before the fold has no `dealState` and reads exactly as it did. The state
+is decided ONCE on the confirm's transaction (`wms/receipts/deal-state.ts` `receiptDealInTx`, «the prixod's deal» =
+`ownDealOf` — a deal of another client is no deal), written on the event and HANDED to `priceControlOnReceipt`
+(`deal`, and `folded` — an ARGUMENT, default false). The alert EVENTS are still emitted (automation rules hear
+them) marked `folded: true` and write no rows; the seller's row carries `alsoType`, and `rowTypeFor` (the one place a
+mute is read at a row's birth) silences only somebody who muted BOTH groups and writes the row under the type they
+still hear. The admins hear the deal problem when nobody is there to: no seller, one who cannot log in, or one with
+no linked chat (`reachOf … 'no_chat'`); a mute never falls back. The claim door (`assignReceiptClient`) carries
+`via: 'assign'`: «📥 Prixod mijozga biriktirildi», the seller alone, no alarm. Words: lot lines at kg 2 / m³ 3, «Jami»
+= the printed lines' sum (`arrivalTotals`), `none` = «Narxlangan bitimi yo'q». Buttons: `pf:<receipt>` («📎 Fayl
+qo'shish», lowercased) + the lifted card link as «🔗 Bitim biriktirish» → `/receipts/<id>#bitim` for none/attachable.
+**(D) The collection** (`platform/telegram/receipt-files.ts` leaf = state + words; `receipt-files-door.ts` = the
+doors; the door of WHO is wms's `receipts/files-door.ts`, the web upload route's own rule): files are stored AS THEY
+ARRIVE on the prixod (`saveBotFile … asPaper` → `kind 'file'`, never a carton photo; id = uuidv5(prixod:chat:message),
+looked up first), one durable wait kind `receipt_files` (30 min, payload `files: [{m, a}]`), ONE kept-last
+acknowledgement per burst. **It never ends in silence**: thirty quiet minutes or another collector opening
+(`closeReceiptFiles` beside each `endBurst(chatId)`) CLOSE it and the next file is told once, with a reopen button.
+`pf:ok:<id>` / `pf:no:<id>` carry their prixod; «↩️ Bekor qilish» deletes exactly what the collection stored. In the
+media ladder it sits after the calc collection / zametka / live draft and BEFORE `draftMedia` (Door B); a backlog
+file IS taken (updates come in order); a video is answered in words; a typed text is told it is not kept BEFORE the
+paid assistant. History: one row per file under `fileAdded:<message>`. Card: ✕ on one's own upload
+(`AttachmentsPanel removableIds`), `DealLink id="bitim"`, «+ Yangi bitim ochish» carries `prixod=` and the deal is
+born with it — returning by `?bitim=1`, because **a server action's `redirect()` drops the `#fragment`** (found by
+the browser spec only).
+**(A) kg and m³ in the client's ✅.** `AskScope basic|full`; `lot_client_confirms.shown_kg/shown_m3` (SQL-only,
+display precision, rounded by the DATABASE on both sides); two tags (`tag`, `basicTag` — old buttons keep working as
+`basic`); a narrower answer never replaces a wider one (`keeps`); the probe has a THIRD answer read off
+`pg_attribute` and remembers «yes» only when all three are yes; a full question never goes without its words (the
+photograph yields). The lists compare named columns under that flag — `to_jsonb` was measured (12.5 µs a row
+against 0.17) and refused.
+**(B) The AI line** (`wms/reports/ai-spend.ts`): three ledgers, «murojaat» defined per ledger, unpriced counted and
+never a $0, a ledger that cannot be read NAMED; window = the LAST 24 HOURS on the daily message and the pull (a
+Tashkent day would never show 20:00-24:00); Monday carries TWO lines — the closed week, and the last 24 hours
+under it (`SummaryFacts.aiDay`; with the week alone Monday's own hours were on no evening's line); the assistant
+now records its own usage (a second, caught UPDATE); the price map carries the cache's two prices.
+TRAPS: typecheck is not lint (a `setState` in an effect passed tsc and failed the BUILD — run both after every
+edit); a red proof that stays green found two weak tests (`redelivery-lookup`, `keeps`). DEPLOY: ledger 146 and
+`/api/version`; customers' question changes within minutes (weight and volume asked), sellers get ONE message.
+No Telegram here: the first real «Prixod keldi», each button's first press and the first file are the proof.
+**Then reviewed as built (#1703-#1712)** — four lenses reading the frozen main checkout while the fixes were made
+in the second worktree: 21 findings, no blocker, all fixed or pinned, each fix red-proven. What it changed, by
+home: **the collection** — a file that swipe-REPLIES to another of the bot's messages is that message's
+(`repliesElsewhere`; said under the file when no door took it), a parked «Hisoblatish» that resumes closes the
+collection (`updateIntake`), a closed collection answers for two hours and no longer (`RECEIPT_FILES_TOLD_S`), a
+file taken by its own date after the window is SAID. **The fold** — the admins' copy says why it came to them
+(`payload.sellerReach`), and `celebrateFirstCargo` no longer fires on the claim door (pre-existing since 0134).
+**The card** — «the prixod's deal» is `ownDealOf` on the card as in the message (a foreign deal is one muted line,
+never «linked»); **«born with the prixod» is ONE rule asked three times** — `bornWithVerdict`
+(`wms/receipts/deal-state.ts`) by the new-deal page, by `createDealAction` BEFORE the deal exists
+(`bornWithRefusal`, refused in words, nothing minted) and by `linkReceipt(…, { bornWith: true })` under the
+prixod's row lock — a stale form used to MOVE the prixod off the deal a colleague had chosen; past the deal's
+creation nothing rethrows (`?prixod=yoq` on the deal card); the link is drawn only for a confirmed prixod and a
+voided one's block says so; the History prints a removed file's name (`removedFile`) and a bot file's stored
+name. **Tests that could not see their subject**: a spy on `pgClient.unsafe` records NO statement of a drizzle
+transaction (`sql.begin` hands a scoped client with its own `unsafe` — wrap `begin`); an e2e region assertion the
+element already satisfied unscrolled (assert `scrollY`); the FULL tag recipe is a literal now (`3795624c`); the
+five 0144 facts are written once in SQL (`clientFactTerms`). A serial browser spec needs ONE BUILD PER STRIP for
+its red proofs, and a strip must typecheck.
+**16,025 unit/integration (918 files) + 507 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at 5dd0b69,
+ledger 146 (the round as first built was green before the review too, at b9a43fd: 15,993 + 504). Pushed to
+`claude/focused-bardeen-9t1bij`; NO pull request opened (he was asked) and the deploy is not done. OWED to him:
+the seven ⭐ questions in the CHANGELOG entry (re-ask after a re-weigh · the staff tick and kg · a ✅ after the
+cargo left China · seller uploads on the site · a notice on a file · folding `DealDeviation` / `ArrivalDiff` ·
+admins on a claim for a seller-less client).
+
+**Latest migration: 0145** (`prixod_xabari`, `when` …124; ledger must reach **146**). Before
+it: 0144 (`tarkib_takliflar`, `when` …123). Before
 it: 0143 (`tarkib_document_optional`, `when` …122). Before
 it: 0142 (`chat_rule_bound_via`, `when` …121). Before
 it: 0141 (`intake_door`, `when` …120). Before
@@ -3711,7 +3789,7 @@ subscribed, app published, permanent token (`expires_at: 0`) in the server
 are `docs/ADS.md` §3 and DECISIONS #659.
 
 **Deploy note, still true for the next one:** migrations must reach the journal
-length — **145** since 0144 (144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
+length — **146** since 0145 (145 since 0144, 144 since 0143, 143 since 0142, 142 since 0141, 141 since 0140, 140 since 0139, 139 since 0138, 138 since 0137, 137 since 0136, 136 since 0135, 135 since 0134, 134 since 0133, 133 since 0132, 132 since 0131, 131 since 0130, 130 since 0129, 129 since 0128, 128 since 0127, 127 since 0126, 126 since 0125, 125 since 0124, 124 since 0123, 123 since 0122, 122 since 0121, 121 since 0120, 117 since 0116). His server CONFIRMED **113** («deploy qildim
 113 chiqdi», 2026-09-28, after PR #98 — the truck card and «Pul»), then took
 0113-0119 on 2026-09-29 («Ishladi yahwi hammasi» — working, count not quoted),
 and PRs #103-#105 on 2026-09-30 («deploy qildim ishladi»; `/api/version` read
@@ -3730,6 +3808,8 @@ a migration did not land — read the `migrate` container's own output).
 **Then he CONFIRMED 136** («deploy qildim 136 chiqdi», 2026-10-27), so everything through
 the LTL/FTL round and «Yo'lda» in two columns (#1454) is LIVE; the uch-band round (0136)
 must read **137**, and the yo'ldagi-yuk round (0137) **138**.
+**Then he CONFIRMED 145** («deploy qildim 145 chiqdi», 2026-11-11, after PR #145 — the two tarkib rounds), so
+everything through #1682 is LIVE; the prixod-xabari round (0145) must read **146**.
 Never carry this number over from a previous session: read it
 (`ls src/modules/platform/db/migrations/*.sql | wc -l`) before writing the
 owner a step list, because the count is the only check that separates «the
