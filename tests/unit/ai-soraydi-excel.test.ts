@@ -819,6 +819,9 @@ describe('X3 — the size column, and whose size it is (XLS-5, DIM-6; review JN-
     const weights = sheet(['Description', 'QTY', 'CTNS', 'N.W.', 'G.W.'], ['Chair', 100, 10, 45, 50]);
     expect([weights.goods[0]!.weightKg, weights.grossKg, weights.weightKind, weights.goods[0]!.packing]).toEqual([45, 50, 'net', packed({ cartons: 10 })]);
     expect(first(['Description', 'QTY', 'CTNS', 'L (cm)', 'W (cm)'], ['Chair', 100, 10, 60, 40]).packing).toEqual(packed({ cartons: 10 }));
+    // «N.W.» standing BEFORE the real «W» does not take the width’s place (the corpus’ c1935: a 150 kg carton side).
+    const mixed = first(['Description', 'QTY', 'CTNS', 'N.W.', 'L', 'W', 'H'], ['Chair', 100, 10, 45, 60, 40, 50]);
+    expect([mixed.weightKg, mixed.packing]).toEqual([45, packed({ cartons: 10, size: size(null) })]);
   });
 
   it('a triplet with a side left empty is no size on that row: said as written, the other rows keep theirs', () => {
@@ -827,6 +830,9 @@ describe('X3 — the size column, and whose size it is (XLS-5, DIM-6; review JN-
       [null, 'o‘lcham «60 x 50» — aniq emas'],
       [size(null, 'cm'), null],
     ]);
+    // …even when the two cells left happen to hold three numbers: «60*40 | (empty) | 50» is not 60×40×50.
+    const glued = sheet(['Description', 'QTY', 'CTNS', 'L (cm)', 'W (cm)', 'H (cm)'], ['Chair', 100, 10, '60*40', '', 50], ['Table', 50, 5, 60, 40, 50], ['Desk', 20, 2, 80, 60, 40]).goods[0]!;
+    expect([glued.packing?.size ?? null, glued.note]).toEqual([null, 'o‘lcham «60*40 x 50» — aniq emas']);
   });
 });
 
@@ -898,6 +904,9 @@ describe('X4 — the arithmetic is the kernel’s: a per-carton figure fills onl
     // «N.W./CTN 11 | G.W. 125»: 10 × 11 = 110 kg netto and 125 kg brutto are two facts, not a disagreement.
     const gross = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'G.W.'], ['Chair', 100, 10, 11, 125]).goods[0]!;
     expect(gross.weightKind).toBe('gross');
+    // The door hands the kernel the same word: the line’s 125 kg lands, and the card says which weight it is.
+    const [fact] = landed(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'G.W.'], ['Chair', 100, 10, 11, 125]);
+    expect([fact!.weightKg, fact!.weightKind, fact!.landedNote]).toEqual([125, 'gross', 'og‘irlik brutto (netto yozilmagan) · 📦 10 karobka · 11 kg/karobka (netto) — fayldan']);
     expect(applyPacking({ quantity: gross.quantity, weightKg: gross.weightKg, volumeM3: gross.volumeM3, packing: gross.packing!, weightKind: gross.weightKind! }).doubts).toEqual([]);
     // The control: under a plain «Weight» nobody can say which it is, and 125 against 110 IS asked.
     const plain = sheet(['Description', 'QTY', 'CTNS', 'N.W./CTN', 'Weight'], ['Chair', 100, 10, 11, 125]).goods[0]!;
