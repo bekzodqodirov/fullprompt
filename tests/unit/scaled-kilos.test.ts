@@ -115,6 +115,10 @@ describe('a tonne and a gram are kilos in another scale — for the bot’s type
     expect(rows('Арматура 2,5 тн 3 куб')).toEqual([{ name: 'Арматура', q: null, kg: 2500, m3: 3 }]);
     expect(rows('Zafaron 500 gr')).toEqual([{ name: 'Zafaron', q: null, kg: 0.5, m3: null }]);
     expect(rows('Sement 20тонн')).toEqual([{ name: 'Sement', q: null, kg: 20000, m3: null }]);
+    // Under a label too: the tonne is one of the line's figures, not a word of its name…
+    expect(rows('Tovar: sement 2 tonna 12 kub')).toEqual([{ name: 'sement', q: null, kg: 2000, m3: 12 }]);
+    // …and with the figures FIRST it does not split their run in two («2 tonna 12 kub» is one run).
+    expect(rows('Tovar nomi: 2 tonna 12 kub sement')).toEqual([{ name: 'sement', q: null, kg: 2000, m3: 12 }]);
     expect(rows('Un 2 tonna\nShakar 1 tonna')).toEqual([
       { name: 'Un', q: null, kg: 2000, m3: null },
       { name: 'Shakar', q: null, kg: 1000, m3: null },
