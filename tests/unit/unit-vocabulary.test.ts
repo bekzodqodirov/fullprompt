@@ -4,8 +4,12 @@ import {
   NET_LABELS,
   PER_PACKAGE_TAIL,
   PER_PIECE_TAIL,
+  SCALED_KG,
   VOLUME_LABELS,
   WEIGHT_LABELS,
+  routeAmount,
+  scaledKg,
+  scaledKgValue,
   tailAt,
   unitOf,
   unitPattern,
@@ -117,6 +121,40 @@ describe('every kg and m³ word is read by the totals readers', () => {
     const seg = answered('507 kgs 5.9 cbm');
     expect(seg.refused).toBeNull();
     expect(seg.totals).toEqual({ weightKg: 507, volumeM3: 5.9, ambiguous: [] });
+  });
+});
+
+/**
+ * The tonne and the gram (§3.1 T14, review JN-9, JR-22) — the VOCABULARY
+ * only: the words and their factors are declared, no reader asks them yet.
+ */
+describe('the scaled kilo words', () => {
+  it('a tonne is a thousand kilos and a gram a thousandth — in the spellings that can be nothing else', () => {
+    for (const word of ['tonna', 'ton', 'tons', 'тн', 'тонн', 'тонна', 'тонны', '吨']) expect(scaledKg(word), word).toEqual({ factor: 1000, lone: false });
+    for (const word of ['gr', 'gramm', 'гр', 'грамм', 'граммов', '克']) expect(scaledKg(word), word).toEqual({ factor: 0.001, lone: false });
+    expect(scaledKg('TONNA')).toEqual({ factor: 1000, lone: false });
+    // 2.5 × 1000 and 20 × 0.001, by hand: no 0.020000000000000004.
+    expect(scaledKgValue(2.5, 1000)).toBe(2500);
+    expect(scaledKgValue(20, 0.001)).toBe(0.02);
+    expect(scaledKgValue(500, 0.001)).toBe(0.5);
+  });
+
+  it('the single letters are marked `lone` — «128G», «5T» and «2024 г» are no weights', () => {
+    for (const word of ['t', 'т', 'mt']) expect(scaledKg(word), word).toEqual({ factor: 1000, lone: true });
+    for (const word of ['g', 'г']) expect(scaledKg(word), word).toEqual({ factor: 0.001, lone: true });
+  });
+
+  it('a scaled word is never a unit of its own: every other door reads what it read', () => {
+    for (const { words, lone } of SCALED_KG) {
+      for (const word of [...words, ...lone]) {
+        expect(unitOf(word), word).toBeNull();
+        expect(routeAmount(2, word), word).toEqual({ unknownUnit: word, value: 2 });
+      }
+    }
+    expect(scaledKg('kg')).toBeNull();
+    expect(scaledKg('kub')).toBeNull();
+    // Until T14 wires it, «2 tonna» states no weight to any reader.
+    expect(parseManualFacts('jami 2 tonna 12 kub')).toMatchObject({ weightKg: null, volumeM3: 12 });
   });
 });
 
