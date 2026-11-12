@@ -380,7 +380,12 @@ export interface CartonDoubt {
 }
 
 export interface PackingOutcome<T extends PackedLine> {
-  line: T;
+  /**
+   * The line as it came, with what the packing computed. Typed as a
+   * `PackedLine` over `T`: a caller's literal («{ volumeM3: null, packing }»)
+   * has no `derived` key in its own type, and the line that comes back does.
+   */
+  line: T & Pick<PackedLine, 'derived'>;
   /** A stated figure that neither agrees with the packing nor is one carton's. */
   doubts: CartonDoubt[];
 }
