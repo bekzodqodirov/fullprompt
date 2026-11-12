@@ -73802,12 +73802,13 @@
    },
    "expected": {
     "kind": "text",
-    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | $1,200.00\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | $1,200.00\nGS777 | Ofis kreslosi oq | 10 |\nGS777 | Ofis kreslosi kulrang | 10 |"
    },
    "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): one sum «$1,200.00» merged over three lines. Base: written once. New: written three times — a model summing the column reads $3,600.",
    "why": "Base: written once. New: written three times — a model summing the column reads $3,600.",
    "source": "r4-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): a merge's covered FIGURE is still said once — its slot on the covered lines is now written EMPTY («… | 10 |») where the cell was left out («… | 10»), so every line has the header's four cells. Re-anchored for the trailing «|» alone; the reviewer's answer (the merged sum never repeated) stands."
   },
   {
    "id": "c1939",
@@ -73850,12 +73851,13 @@
    },
    "expected": {
     "kind": "text",
-    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 1 200 000 сўм\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 1 200 000 сўм\nGS777 | Ofis kreslosi oq | 10 |\nGS777 | Ofis kreslosi kulrang | 10 |"
    },
    "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): Uzbek sum «1 200 000 сўм» merged over three lines. Base: once. New: three times.",
    "why": "Base: once. New: three times.",
    "source": "r4-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): a merge's covered FIGURE is still said once — its slot on the covered lines is now written EMPTY («… | 10 |») where the cell was left out («… | 10»), so every line has the header's four cells. Re-anchored for the trailing «|» alone; the reviewer's answer (the merged sum never repeated) stands."
   },
   {
    "id": "c1940",
@@ -73898,12 +73900,13 @@
    },
    "expected": {
     "kind": "text",
-    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 3600元\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 3600元\nGS777 | Ofis kreslosi oq | 10 |\nGS777 | Ofis kreslosi kulrang | 10 |"
    },
    "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): a Chinese PI's «3600元» merged over three lines. Base: once. New: three times.",
    "why": "Base: once. New: three times.",
    "source": "r4-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): a merge's covered FIGURE is still said once — its slot on the covered lines is now written EMPTY («… | 10 |») where the cell was left out («… | 10»), so every line has the header's four cells. Re-anchored for the trailing «|» alone; the reviewer's answer (the merged sum never repeated) stands."
   },
   {
    "id": "c1941",
@@ -73946,12 +73949,13 @@
    },
    "expected": {
     "kind": "text",
-    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 120KG/CTN\nGS777 | Ofis kreslosi oq | 10\nGS777 | Ofis kreslosi kulrang | 10"
+    "text": "[PL]\nMarka | Tavar | Dona | Pul\nGS777 | Ofis kreslosi qora | 10 | 120KG/CTN\nGS777 | Ofis kreslosi oq | 10 |\nGS777 | Ofis kreslosi kulrang | 10 |"
    },
    "said": "F — `rowLine` now repeats a covered cell whose master `readsAsFigure` does not recognise; money and weights written with a currency or a «/CTN» are not «figures» to it, so the model text repeats one merged sum on every covered line (R3-S3: a merged figure is said once): a carton weight «120KG/CTN» merged over the three lines packed in it. Base: once. New: three times (the model sums 360 kg).",
    "why": "Base: once. New: three times (the model sums 360 kg).",
    "source": "r4-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): a merge's covered FIGURE is still said once — its slot on the covered lines is now written EMPTY («… | 10 |») where the cell was left out («… | 10»), so every line has the header's four cells. Re-anchored for the trailing «|» alone; the reviewer's answer (the merged sum never repeated) stands."
   },
   {
    "id": "c1942",
@@ -80110,6 +80114,339 @@
    "why": "review break-covered-total-name-footer",
    "source": "fayl-oqish P-reader-B fix",
    "weight": "nit"
+  },
+  {
+   "id": "c3412",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "型号",
+        "数量",
+        "箱数",
+        "毛重(KG)",
+        "体积(CBM)"
+       ],
+       [
+        "XJ-200",
+        480,
+        20,
+        300,
+        2.4
+       ],
+       [
+        "XJ-350",
+        120,
+        null,
+        150,
+        1.2
+       ],
+       [
+        "A-17",
+        60,
+        5,
+        null,
+        0.9
+       ],
+       [
+        "B-9",
+        null,
+        8,
+        96,
+        null
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[Sheet1]\n型号 | 数量 | 箱数 | 毛重(KG) | 体积(CBM)\nXJ-200 | 480 | 20 | 300 | 2.4\nXJ-350 | 120 |  | 150 | 1.2\nA-17 | 60 | 5 |  | 0.9\nB-9 |  | 8 | 96 |",
+    "textCut": false,
+    "cellsCut": false
+   },
+   "said": "an EMPTY cell keeps its slot in the text the model reads: «XJ-350 | 120 |  | 150 | 1.2» — 150 stays under 毛重 and 1.2 under 体积, every line has the header's five cells",
+   "why": "CR-1: rowLine joined only the non-empty cells, so every later figure slid one header to the left. Base: «XJ-350 | 120 | 150 | 1.2», «A-17 | 60 | 5 | 0.9», «B-9 | 8 | 96» — the cube under 毛重, the weight under 箱数.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3413",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "Sheet1",
+      "rows": [
+       [
+        "图片",
+        "型号",
+        "数量",
+        "箱数",
+        "毛重(KG)",
+        "体积(CBM)"
+       ],
+       [
+        null,
+        "XJ-200",
+        480,
+        20,
+        300,
+        2.4
+       ],
+       [
+        null,
+        "XJ-350",
+        120,
+        10,
+        150,
+        1.2
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[Sheet1]\n型号 | 数量 | 箱数 | 毛重(KG) | 体积(CBM)\nXJ-200 | 480 | 20 | 300 | 2.4\nXJ-350 | 120 | 10 | 150 | 1.2"
+   },
+   "said": "a column that is empty in every row under its header — the pictures' — is dropped from the header line too: header and rows have the same five cells",
+   "why": "CR-1 (critic S4, S10): pictures are no cell values, so «图片» headed a column no row had and EVERY row read one header to the left. Base: header «图片 | 型号 | 数量 | 箱数 | 毛重(KG) | 体积(CBM)» (six cells) over five-cell rows.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3414",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "S",
+      "rows": [
+       [
+        "厂家",
+        "序号",
+        "型号",
+        "数量",
+        "箱数",
+        "毛重(KG)",
+        "体积(CBM)"
+       ],
+       [
+        "义乌一厂",
+        1,
+        "XJ-200",
+        480,
+        20,
+        300,
+        2.4
+       ],
+       [
+        null,
+        2,
+        "XJ-350",
+        120,
+        10,
+        150,
+        1.2
+       ],
+       [
+        null,
+        3,
+        "A-17",
+        60,
+        5,
+        80,
+        0.9
+       ],
+       [
+        null,
+        null,
+        "A-17B",
+        30,
+        null,
+        40,
+        null
+       ],
+       [
+        null,
+        "合计",
+        null,
+        690,
+        35,
+        570,
+        4.5
+       ]
+      ],
+      "merges": [
+       "A2:A4"
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[S]\n厂家 | 序号 | 型号 | 数量 | 箱数 | 毛重(KG) | 体积(CBM)\n义乌一厂 | 1 | XJ-200 | 480 | 20 | 300 | 2.4\n义乌一厂 | 2 | XJ-350 | 120 | 10 | 150 | 1.2\n义乌一厂 | 3 | A-17 | 60 | 5 | 80 | 0.9\n|  | A-17B | 30 |  | 40 |\n| 合计 |  | 690 | 35 | 570 | 4.5"
+   },
+   "said": "every kept column is written for every row — leading, interior and trailing empties alike: the continuation row «|  | A-17B | 30 |  | 40 |» and the total «| 合计 |  | 690 | 35 | 570 | 4.5» each have the header's seven cells; a NAME merged down three rows is still repeated on each",
+   "why": "JN-14's fixture: «between the first and last filled cell» would still slide a row whose FIRST cell is blank. Base: «A-17B | 30 | 40» and «合计 | 690 | 35 | 570 | 4.5» — the total's pieces under 型号, its cube under 毛重.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3415",
+   "input": {
+    "kind": "csv",
+    "text": "1;Kurtka;300;PCS;120;0.5\n2;Shim;200;PCS;80;0.3\n;TOTAL;;;200;0.8"
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[CSV]\n1 | Kurtka | 300 | PCS | 120 | 0.5\n2 | Shim | 200 | PCS | 80 | 0.3\n| TOTAL |  |  | 200 | 0.8"
+   },
+   "said": "a CSV's «;TOTAL;;;200;0.8» keeps its six cells: 200 under the weights, 0.8 under the cubes",
+   "why": "CR-1 on the CSV door. Base: «TOTAL | 200 | 0.8» — 200 under the names, 0.8 under the counts.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3416",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "S",
+      "rows": [
+       [
+        "义乌贸易有限公司"
+       ],
+       [
+        "装箱单"
+       ],
+       [
+        "型号",
+        "数量",
+        "毛重(KG)"
+       ],
+       [
+        "XJ-200",
+        480,
+        300
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[S]\n义乌贸易有限公司 |  |\n装箱单 |  |\n型号 | 数量 | 毛重(KG)\nXJ-200 | 480 | 300"
+   },
+   "said": "a title line above the table is a row like any other: it is written to the sheet's three kept columns",
+   "why": "JN-14 as ruled («every kept column is emitted for every row»). Base: «义乌贸易有限公司», «装箱单» as one-cell lines.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3417",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "S",
+      "rows": [
+       [
+        "型号",
+        "数量",
+        "毛重(KG)"
+       ],
+       [
+        "XJ-200",
+        480,
+        300
+       ],
+       [
+        "XJ-350",
+        120,
+        150,
+        "易碎"
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[S]\n型号 | 数量 | 毛重(KG) |\nXJ-200 | 480 | 300 |\nXJ-350 | 120 | 150 | 易碎"
+   },
+   "said": "a remark standing alone in its column beside a row's figures is kept, and every line is written to the four columns",
+   "why": "X0's guard: only a HEADER's cell over a column no row fills is dropped — a lone cell on a line with figures is that line's. Base: the same text without the two trailing «|».",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3418",
+   "input": {
+    "kind": "xlsx",
+    "sheets": [
+     {
+      "name": "S",
+      "rows": [
+       [
+        "卖方:",
+        "义乌贸易",
+        "买方:",
+        "GSR LOGISTICS"
+       ],
+       [
+        "型号",
+        "数量",
+        "毛重(KG)"
+       ],
+       [
+        "XJ-200",
+        480,
+        300
+       ],
+       [
+        "XJ-350",
+        120,
+        150
+       ]
+      ]
+     }
+    ]
+   },
+   "expected": {
+    "kind": "text",
+    "text": "[S]\n卖方: | 义乌贸易 | 买方: | GSR LOGISTICS\n型号 | 数量 | 毛重(KG) |\nXJ-200 | 480 | 300 |\nXJ-350 | 120 | 150 |"
+   },
+   "said": "a letterhead line «卖方: | … | 买方: | GSR LOGISTICS» is no table header — the buyer, alone in its column, is kept",
+   "why": "X0's guard: the header-only rule asks for a row of words directly over a row of figures. Base: the same lines without the trailing «|».",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3419",
+   "input": {
+    "kind": "html",
+    "text": "<html><body><table><tr><td>型号</td><td>数量</td><td>毛重(KG)</td></tr><tr><td>XJ-200</td><td></td><td>300</td></tr><tr><td>XJ-350</td><td>120</td><td>150</td></tr></table></body></html>"
+   },
+   "expected": {
+    "kind": "text",
+    "textIncludes": [
+     "XJ-200 |  | 300",
+     "XJ-350 | 120 | 150"
+    ],
+    "textExcludes": [
+     "XJ-200 | 300"
+    ]
+   },
+   "said": "an ERP export's empty <td> keeps its slot: «XJ-200 |  | 300»",
+   "why": "CR-1 on the HTML door. Base: «XJ-200 | 300» — the weight under 数量.",
+   "source": "ai-soraydi P-excel X0 (CR-1, JN-14)",
+   "weight": "defect"
   }
  ],
  "isArticleNumberCases": [
@@ -83430,7 +83767,8 @@
    "said": "the seller hears nothing about missing rows; the prompt carries «длинные ячейки сокращены, все строки показаны» (or no note) — never «показаны первые 22 строк, файл длиннее… не считай итоги»; the TOTAL row is visible",
    "why": "R3-C2: a complete CSV with one long description cell.",
    "source": "r3 collector rv1 newDefect 1 + lead R3-C2",
-   "weight": "defect"
+   "weight": "defect",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): the prompt's line for «;TOTAL;;;;1234;5.6» is «| TOTAL |  |  |  | 1234 | 5.6» — every kept column written for every row; re-anchored from «TOTAL | 1234 | 5.6» (CR-1: the figures slid under the wrong headers). The TOTAL row stays visible, as the reviewer asked."
   },
   {
    "id": "c1342",
@@ -83755,7 +84093,8 @@
    "said": "same as longcell, and the TOTAL line stays visible to the model",
    "why": "R3-C2",
    "source": "C-r1 perItem R3-C2",
-   "weight": "pinned"
+   "weight": "pinned",
+   "pick": "AI-SORAYDI §3.2 X0 (review JN-14, 2026-11-12): the prompt's line for «;TOTAL;;;;1234;5.6» is «| TOTAL |  |  |  | 1234 | 5.6» — every kept column written for every row; re-anchored from «TOTAL | 1234 | 5.6» (CR-1: the figures slid under the wrong headers). The TOTAL row stays visible, as the reviewer asked."
   },
   {
    "id": "c1884",

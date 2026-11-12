@@ -440,30 +440,41 @@ export function droppedRowsLine(dropped: readonly DroppedRow[]): string | null {
  * (R3-S9: «Стол 5 шт» and «Стул 3 шт» typed one per line in one cell were one
  * run-on line), so a line here is always one row and its items still show.
  *
- * A position a merge DOWN covers is EMPTY here when its master is a FIGURE
- * (R3-S3, `readsAsFigure`): the readers repeat the master's value there, and
- * a carton's weight merged over three lines, written three times or as «〃»
- * («the same again»), is a weight a model sums three times — on the
+ * EVERY kept column is written for EVERY row (docs/AI-SORAYDI.md §3.2 X0,
+ * review JN-14; the critic's CR-1): leading, interior and trailing empties
+ * alike, so a line has as many cells as the header over it. The cells were
+ * joined NON-EMPTY ones only, and an empty cell gave up its place — a TOTAL
+ * row whose N.W. is blank was sent «TOTAL | 660 | 35 | 530 | 3.6», the cube
+ * under «G.W.» and nothing under «CBM»; a quotation with its pictures in
+ * column A read one header to the left in every row. Which columns are kept
+ * is `keptColumns`' word.
+ *
+ * A position a merge DOWN covers is an EMPTY slot here when its master is a
+ * FIGURE (R3-S3, `readsAsFigure`): the readers repeat the master's value
+ * there, and a carton's weight merged over three lines, written three times
+ * or as «〃» («the same again»), is a weight a model sums three times — on the
  * packing-list sheets the model reads the shipment's totals from. An empty
  * cell under a merged figure is also exactly what Excel's own CSV export
- * writes, the shape the model has seen most. A merged TEXT — a name, a spec
- * — is repeated on every line it covers (the fourth review): left empty, the
- * covered line reached the model with no identity and its figures shifted
- * into the name's place («2 | 120 | 60» for «2 | 女士夹克 黑色 | 120 | 60»), and
- * a sheet with no header the reader knows has no other reader of its names.
+ * writes («,,»), the shape the model has seen most. A merged TEXT — a name,
+ * a spec — is repeated on every line it covers (the fourth review): left
+ * empty, the covered line reached the model with no identity, and a sheet
+ * with no header the reader knows has no other reader of its names.
  *
  * `rowsCut` is a row the budget did not reach, or one the sheet's reader left
  * out past its bound; `cellsCut` a cell or a row's tail shortened while the
  * row itself is there, here or by the reader (R3-S6, `SheetRows.rowsLeftOut`).
+ * Exported for the test; the door is `readGoodsFile`.
  */
-function sheetsAsText(sheets: SheetRows[], budget = SHEET_TEXT_BUDGET): { text: string; rowsCut: boolean; cellsCut: boolean } {
+export function sheetsAsText(sheets: readonly SheetToText[], budget = SHEET_TEXT_BUDGET): { text: string; rowsCut: boolean; cellsCut: boolean } {
   let text = '';
-  let rowsCut = sheets.some((sheet) => sheet.rowsLeftOut);
-  let cellsCut = sheets.some((sheet) => sheet.colsLeftOut);
-  each: for (const sheet of sheets) {
+  let rowsCut = sheets.some(({ sheet }) => sheet.rowsLeftOut);
+  let cellsCut = sheets.some(({ sheet }) => sheet.colsLeftOut);
+  each: for (const { sheet, headerRow } of sheets) {
     let opened = false;
+    const covered = sheet.covered ?? null;
+    const columns = keptColumns(sheet.rows, covered, headerRow);
     for (const [r, row] of sheet.rows.entries()) {
-      const read = rowLine(row, r, sheet.covered ?? null);
+      const read = rowLine(row, r, covered, columns);
       if (!read.line) continue;
       const head = opened ? '\n' : `${text ? '\n\n' : ''}[${sheet.name.slice(0, 100)}]\n`;
       if (text.length + head.length + read.line.length > budget) {
@@ -478,31 +489,134 @@ function sheetsAsText(sheets: SheetRows[], budget = SHEET_TEXT_BUDGET): { text: 
   return { text, rowsCut, cellsCut };
 }
 
-/** One row as one line: its cells, each cut at `CELL_TEXT_CHARS`, while they fit `LINE_TEXT_CHARS`. */
-function rowLine(row: Cell[], r: number, covered: Covered | null): { line: string; cut: boolean } {
+/** A sheet to write as text, and the header row the column reader found on it (null: none). */
+export interface SheetToText {
+  sheet: SheetRows;
+  headerRow: number | null;
+}
+
+/** A cell the text writes nothing for: empty, blank, or a merge's covered FIGURE (`sheetsAsText`). */
+const blankInText = (cell: Cell | undefined, r: number, c: number, covered: Covered | null): boolean =>
+  cell === null || cell === undefined || (typeof cell === 'string' && !/\S/.test(cell)) || ((covered?.has(r, c) ?? false) && readsAsFigure(cell));
+
+/** A header's own cell is a short label — never a paragraph, never «Buyer:». */
+const HEADER_CELL_CHARS = 60;
+
+/**
+ * The header of a PICTURE column, whole — «图片», «产品图片», «Picture»,
+ * «Photo», «Фото», «Rasm». The one header `keptColumns` takes for a column's
+ * heading on a sheet whose header row nobody found: a quotation's pictures
+ * are no cell values, so the column under it is empty in every row.
+ */
+const PICTURE_HEADER =
+  /^(?:(?:产品|商品|实物|样品|货物)?(?:图片|圖片|图像|照片|图)|(?:product\s+|item\s+)?(?:pictures?|pics?|photos?|images?|img)\.?|фото\p{L}*(?:\s+товара)?|изображени\p{L}*|картинк\p{L}*|rasm\p{L}*|surat\p{L}*|foto)$/iu;
+
+/**
+ * The columns a sheet's text keeps (X0): every column SOME row writes
+ * something in — one empty in every row costs each line a separator and says
+ * nothing — and never a column only its HEADER names. «Picture», «图片»,
+ * «产品图片» head the pictures of a Chinese quotation, which are no cell
+ * values: the column is empty in every row, and its header cell goes with it,
+ * or the header alone would be one cell longer than every line under it.
+ *
+ * «Only its header» is one cell of the column's own (a merge's repeats of it
+ * are not another) standing in the header row. On a sheet the column reader
+ * mapped that row is KNOWN (`headerRow`), and whatever it heads over nothing
+ * goes. On a sheet it could not map — every sheet whose goods the model
+ * lists — nobody knows the header, and a cell alone in its column is as
+ * often content: a remark beside one line's figures, «买方: | GSR LOGISTICS»
+ * in a letterhead, the one description of a names-only list. There only a
+ * PICTURE header goes, and only from a row that reads as a header
+ * (`headsFigures`); any other column keeps its heading and its empty slots,
+ * which costs a separator a line and loses nothing.
+ */
+function keptColumns(rows: readonly Cell[][], covered: Covered | null, headerRow: number | null): number[] {
+  const written: boolean[] = [];
+  const own: number[] = [];
+  const first: number[] = [];
+  for (const [r, row] of rows.entries()) {
+    for (let c = 0; c < row.length; c += 1) {
+      if (blankInText(row[c], r, c, covered)) continue;
+      written[c] = true;
+      if (covered?.has(r, c)) continue;
+      own[c] = (own[c] ?? 0) + 1;
+      if (own[c] === 1) first[c] = r;
+    }
+  }
+  const heads = new Map<number, boolean>();
+  const headsOnly = (c: number): boolean => {
+    const r = first[c]!;
+    if (r === headerRow) return true;
+    if (!PICTURE_HEADER.test(String(rows[r]![c]).trim())) return false;
+    let known = heads.get(r);
+    if (known === undefined) heads.set(r, (known = headsFigures(rows, r, covered)));
+    return known;
+  };
+  const kept: number[] = [];
+  for (let c = 0; c < written.length; c += 1) {
+    if (written[c] && !(own[c] === 1 && headsOnly(c))) kept.push(c);
+  }
+  return kept;
+}
+
+/** Does row `r` read as a table's header — short words, directly over a row with figures under two of them? */
+function headsFigures(rows: readonly Cell[][], r: number, covered: Covered | null): boolean {
+  const row = rows[r] ?? [];
+  const words: number[] = [];
+  for (let c = 0; c < row.length; c += 1) {
+    const cell = row[c];
+    if (blankInText(cell, r, c, covered) || covered?.has(r, c)) continue;
+    if (typeof cell !== 'string' || cell.length > HEADER_CELL_CHARS || readsAsFigure(cell) || /[:：]\s*$/.test(cell)) return false;
+    words.push(c);
+  }
+  if (words.length < 3) return false;
+  for (let d = r + 1; d < rows.length; d += 1) {
+    const below = rows[d]!;
+    if (below.every((cell, c) => blankInText(cell, d, c, covered))) continue;
+    return words.filter((c) => !blankInText(below[c], d, c, covered) && readsAsFigure(below[c] ?? null)).length >= 2;
+  }
+  return false;
+}
+
+/**
+ * One row as one line: a cell per kept column, each cut at `CELL_TEXT_CHARS`,
+ * while they fit `LINE_TEXT_CHARS`; an empty cell is an empty slot between
+ * its separators, and a row with nothing in any of them is no line. Neither
+ * end carries white space — a slot empty at an edge is its «|» alone — so a
+ * caller's `trim()` of the whole text changes no line.
+ */
+function rowLine(row: Cell[], r: number, covered: Covered | null, columns: readonly number[]): { line: string; cut: boolean } {
   let line = '';
   let cut = false;
-  for (const [c, cell] of row.entries()) {
-    if (cell === null || (covered?.has(r, c) && readsAsFigure(cell))) continue;
-    const raw = String(cell);
-    // Only the head of a long cell is read: a cell is never the length of
-    // the text it lands in (the 30,000-character shared string, #8). Both
-    // cuts keep an emoji whole (`clipUnits`, docs/FAYL-OQISH.md §3.8,
-    // apireq-1): a UTF-16 `slice` through one left a lone half in the text,
-    // and the Messages API refuses the whole request over it.
-    const window = clipUnits(raw, CELL_TEXT_CHARS * 4);
-    const flat = window
-      .trim()
-      .replace(/\s*[\r\n]+\s*/g, ' / ')
-      .replace(/\s+/g, ' ');
-    if (!flat) continue;
-    const kept = clipUnits(flat, CELL_TEXT_CHARS);
-    if (kept.length < flat.length || /\S/.test(raw.slice(window.length))) cut = true;
-    const piece = line ? ` | ${kept}` : kept;
-    if (line.length + piece.length > LINE_TEXT_CHARS) return { line, cut: true };
+  let stated = false;
+  for (const [k, c] of columns.entries()) {
+    const cell = row[c];
+    let kept = '';
+    if (!blankInText(cell, r, c, covered)) {
+      const raw = String(cell);
+      // Only the head of a long cell is read: a cell is never the length of
+      // the text it lands in (the 30,000-character shared string, #8). Both
+      // cuts keep an emoji whole (`clipUnits`, docs/FAYL-OQISH.md §3.8,
+      // apireq-1): a UTF-16 `slice` through one left a lone half in the text,
+      // and the Messages API refuses the whole request over it.
+      const window = clipUnits(raw, CELL_TEXT_CHARS * 4);
+      const flat = window
+        .trim()
+        .replace(/\s*[\r\n]+\s*/g, ' / ')
+        .replace(/\s+/g, ' ');
+      kept = clipUnits(flat, CELL_TEXT_CHARS);
+      if (kept.length < flat.length || /\S/.test(raw.slice(window.length))) cut = true;
+    }
+    const piece = k > 0 ? ` | ${kept}` : kept;
+    if (line.length + piece.length > LINE_TEXT_CHARS) {
+      // The row's tail does not fit: said only when it held something.
+      const lost = columns.slice(k).some((rest) => !blankInText(row[rest], r, rest, covered));
+      return { line: stated ? line.trim() : '', cut: cut || lost };
+    }
     line += piece;
+    if (kept) stated = true;
   }
-  return { line, cut };
+  return { line: stated ? line.trim() : '', cut };
 }
 
 /**
@@ -562,9 +676,13 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
   // the text sat under the model's «for totals only» heading, and its Σ came
   // back as the shipment's.
   const unmapped = parsed.filter((p) => p !== best && !mapped.includes(p));
-  const others = sheetsAsText(unmapped.map((p) => p.sheet));
-  const ownSheetText = (sheet: SheetRows, budget = SHEET_TEXT_BUDGET) => {
-    const own = sheetsAsText([sheet], budget);
+  // Each sheet is written with the header row the column reader found on it
+  // (`keptColumns`): on a mapped sheet, and on one whose header maps over no
+  // goods row.
+  const toText = (p: (typeof parsed)[number]): SheetToText => ({ sheet: p.sheet, headerRow: p.parsed.headerRow });
+  const others = sheetsAsText(unmapped.map(toText));
+  const ownSheetText = (p: (typeof parsed)[number], budget = SHEET_TEXT_BUDGET) => {
+    const own = sheetsAsText([toText(p)], budget);
     return { text: own.text, cut: own.rowsCut, cellsCut: own.cellsCut };
   };
   const cut = { textCut: others.rowsCut, cellsCut: others.cellsCut };
@@ -585,7 +703,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
     const moreSheets: MappedSheet[] = mapped
       .filter((p) => p !== best)
       .map((p) => {
-        const ownText = ownSheetText(p.sheet, room);
+        const ownText = ownSheetText(p, room);
         room = Math.max(0, room - ownText.text.length);
         return {
           sheet: p.sheet.name,
@@ -615,7 +733,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       grossKg,
       grossColumn,
       volumeM3,
-      ownText: shape === 'packing' ? ownSheetText(best.sheet) : null,
+      ownText: shape === 'packing' ? ownSheetText(best) : null,
     };
   }
   if (others.text) {

@@ -524,22 +524,43 @@ describe('the customer question (clientAnswer)', () => {
 // The spreadsheet door
 // ---------------------------------------------------------------------------
 
-/** A source row as the reader writes it in its text (`rowLine` in goods-file.ts): whole cells, « | ». */
-function renderRow(row: readonly Cell[]): string {
+/** A cell as the reader's text writes it (`rowLine` in goods-file.ts) — '' for an empty one. */
+function renderCell(cell: Cell | undefined): string {
+  if (cell === null || cell === undefined) return '';
+  return String(cell)
+    .slice(0, 1200)
+    .trim()
+    .replace(/\s*[\r\n]+\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .slice(0, 300);
+}
+/** The columns a sheet's text keeps (`keptColumns` in goods-file.ts): every column some row writes in. */
+function keptOf(rows: readonly (readonly Cell[])[]): number[] {
+  const width = Math.max(0, ...rows.map((row) => row.length));
+  return Array.from({ length: width }, (_, c) => c).filter((c) => rows.some((row) => renderCell(row[c]) !== ''));
+}
+/**
+ * A source row as the reader writes it in its text (`rowLine` in
+ * goods-file.ts): a cell per kept column of its sheet, « | », an empty cell
+ * an empty slot, no white space at either end (docs/AI-SORAYDI.md §3.2 X0,
+ * review JN-14). Re-anchored from «the non-empty cells, joined»: that WAS the
+ * defect — an empty cell gave up its place and every later figure slid left.
+ */
+function renderRow(row: readonly Cell[], columns: readonly number[]): string {
   let out = '';
-  for (const cell of row) {
-    if (cell === null || cell === undefined) continue;
-    const flat = String(cell)
-      .slice(0, 1200)
-      .trim()
-      .replace(/\s*[\r\n]+\s*/g, ' / ')
-      .replace(/\s+/g, ' ');
-    if (!flat) continue;
-    const piece = out ? ` | ${flat.slice(0, 300)}` : flat.slice(0, 300);
+  let stated = false;
+  for (const [k, c] of columns.entries()) {
+    const flat = renderCell(row[c]);
+    const piece = k > 0 ? ` | ${flat}` : flat;
     if (out.length + piece.length > 2000) break;
     out += piece;
+    if (flat) stated = true;
   }
-  return out;
+  return stated ? out.trim() : '';
+}
+/** Every whole row of a spec's sheets, each written to its own sheet's columns. */
+function wholeRowsOf(sheets: readonly (readonly (readonly Cell[])[])[]): Set<string> {
+  return new Set(sheets.flatMap((rows) => rows.map((row) => renderRow(row, keptOf(rows)))).filter(Boolean));
 }
 const isHeading = (l: string) => /^\[[^\]\n]*\]$/.test(l.trim());
 const bodyLines = (text: string) => text.split('\n').filter((l) => l.trim() && !isHeading(l));
@@ -621,8 +642,9 @@ async function fileProblems(
     if (long) out.push(`a cell of ${long.length} chars, want ≤ ${want.cellMaxLength}`);
   }
   if (want.wholeRows) {
-    const rows = sourceRows(spec, csvRows);
-    const whole = new Set((rows ?? []).map(renderRow).filter(Boolean));
+    const sheets =
+      spec.kind === 'xlsx' ? spec.sheets.map((sheet) => (typeof sheet.rows === 'function' ? sheet.rows() : (sheet.rows ?? []))) : [sourceRows(spec, csvRows) ?? []];
+    const whole = wholeRowsOf(sheets);
     const broken = bodyLines(text).find((l) => !whole.has(l));
     if (broken !== undefined) out.push(`a line is not a whole row: ${JSON.stringify(broken.slice(0, 200))}`);
   }
@@ -1933,7 +1955,7 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const prompt = sheetsPromptText(activeIntake(chatId)!.sheetTexts, [], BUDGET);
     expect(prompt).toContain('[Таблица обрезана: показаны первые 213 строк, файл длиннее');
     const shown = prompt.slice(0, prompt.indexOf('\n[Таблица обрезана')).split('\n').at(-1)!;
-    expect(new Set(csvRows(csv300()).map(renderRow)).has(shown), shown).toBe(true);
+    expect(wholeRowsOf([csvRows(csv300())]).has(shown), shown).toBe(true);
   },
   c1339: async () => {
     const text = () => Array.from({ length: 300 }, (_, i) => `${i + 1};Куртка женская модель YW-${i} (女士夹克);${300 + i};PCS;${i}.5;${i}.9;0.${i}`).join('\n');
@@ -1962,7 +1984,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const prompt = sheetsPromptText(activeIntake(chatId)!.sheetTexts, [], BUDGET);
     expect(prompt).not.toContain('файл длиннее');
     expect(prompt).not.toContain('не считай итоги');
-    expect(prompt).toContain('TOTAL | 1234 | 5.6');
+    // «;TOTAL;;;;1234;5.6»: seven cells, the first and the three in the middle empty (X0, review JN-14).
+    expect(prompt).toContain('| TOTAL |  |  |  | 1234 | 5.6');
   },
   c1342: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });
@@ -2084,7 +2107,8 @@ const SCENARIOS: Record<string, () => Promise<void>> = {
     const prompt = sheetsPromptText(activeIntake(chatId)!.sheetTexts, [], BUDGET);
     expect(prompt).toContain(CELLS_NOTE);
     expect(prompt).not.toContain('не считай итоги');
-    expect(prompt).toContain('TOTAL | 1234 | 5.6');
+    // «;TOTAL;;;;1234;5.6»: seven cells, the first and the three in the middle empty (X0, review JN-14).
+    expect(prompt).toContain('| TOTAL |  |  |  | 1234 | 5.6');
   },
   c1884: async () => {
     const { chatId } = collection({ stage: 'material', material: ['x'] });

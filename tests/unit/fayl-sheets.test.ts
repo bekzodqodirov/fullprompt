@@ -106,7 +106,9 @@ describe('the reader hands every mapped sheet over (§4.1, sheets-07)', () => {
     expect(read.moreSheets[0]!.ownText.text).toContain('[Zavod B]');
     // The mapped «Zavod B» left the text: left there, it sat under the model's
     // «for totals» heading and its Σ came back as the shipment's.
-    expect(read.text).toBe('[Note]\nShipping mark: GS777\nTOTAL G.W. | 1592 KGS');
+    // Every row is written to the sheet's two columns (docs/AI-SORAYDI.md §3.2
+    // X0, review JN-14): the one-cell line keeps its empty second slot.
+    expect(read.text).toBe('[Note]\nShipping mark: GS777 |\nTOTAL G.W. | 1592 KGS');
     expect(read.text).not.toContain('Zavod B');
   });
 
