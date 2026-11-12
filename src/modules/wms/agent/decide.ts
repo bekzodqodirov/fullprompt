@@ -3,8 +3,9 @@ import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, or, sql } from 
 import { v5 as uuidv5 } from 'uuid';
 import { aiConfigured } from '../../platform/ai/model';
 import { writeAudit, type AuditContext } from '../../platform/audit/service';
-import { db } from '../../platform/db/client';
+import { db, type Tx } from '../../platform/db/client';
 import {
+  agentAutoVerdicts,
   agentCalcLinks,
   agentConversations,
   agentDrafts,
@@ -23,13 +24,15 @@ import { logger } from '../../platform/logger';
 import { getSetting } from '../../platform/settings/service';
 import { tashkentDay, tashkentDayStart } from '../../platform/time/tashkent';
 import { listenerIsCurrent, readGuard } from '../crm/account-guard';
+import { afterPressOf, autoChatTakenInTx, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
 import { cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
-import { agentRunning, readAgentConfig } from './config';
+import { agentAutoReady, agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
-import { keptFileSql } from './outbox-store';
+import { AFTER_AUTO, keptFileSql } from './outbox-store';
+import { CANCELLED_BY_HOLDER } from './web-thread';
 import { AGENT_LIMITS } from './limits';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
@@ -83,6 +86,31 @@ export type DecideRefusal =
    * nothing is queued (a ✅ on Saturday evening; Sunday is no window).
    */
   | 'window_closed'
+  /**
+   * «O'zi yuborish»'s press (§18.3) found a WARNING on the fresh policy re-run:
+   * a person may press past a warning he has read, the machine may not. Nothing
+   * is written — the card stays an ordinary card he can press.
+   */
+  | 'auto_warning'
+  /**
+   * The machine's press lost INSIDE its own approval (fix pass A, C2/C5): a stop
+   * moved its verdict first (⏸, a person's own decision, a disarm) —
+   * `auto_stopped` — or the layer was no longer armed, or the account no longer a
+   * work number — `auto_disarmed` — or the chat was his (🙋) — `taken_over`, the
+   * same word a person's press meets on a chat he took (the final check). Nothing
+   * is written: the approval rolls back.
+   */
+  | AutoPressLoss
+  /**
+   * A PERSON's press on a reply the MACHINE already approved (fix pass A, C3):
+   * ✅ and ✏️ (and ❌, once it cannot be taken back) are «kech» — the reply can
+   * still be taken back with ❌ «Bekor qilish» (`auto_pressed`), is being sent
+   * (`auto_sending`), or went (`auto_sent`). A person's own ✅ before is not
+   * this: his ❌ and 🙋 after it answer `not_live` as they always did.
+   */
+  | 'auto_pressed'
+  | 'auto_sending'
+  | 'auto_sent'
   | 'empty';
 
 export type DecideResult =
@@ -109,6 +137,12 @@ export type DecideResult =
        * «the chat is mine» to take back.
        */
       withdrawn?: { total: number; own: number };
+      /**
+       * 🙋 on a reply the MACHINE approved that could no longer be taken back
+       * (fix pass A, C3): the chat is his all the same, and the press says
+       * the machine's reply is being sent, or went.
+       */
+      autoReply?: 'sending' | 'sent';
     }
   | { ok: false; code: DecideRefusal; detail?: string };
 
@@ -611,24 +645,221 @@ async function requeueLanded(
   }
 }
 
+/**
+ * 🙋 «Suhbat meniki» in the caller's transaction: the chat is his for
+ * `HUMAN_TAKEOVER_HOURS`, and the replies he approved BEFORE it that are still
+ * waiting are withdrawn (final review K2) — night-held to 08:30, a flood, a
+ * cap: sent later, they would speak into the chat he has just taken over. By
+ * `agent_off`'s compare-and-set on 'agent' (withdrawTypedBind's): the send step
+ * claims by that status, so a row already claimed is the one in flight — and
+ * its next step reads the press (`human_until`, approved before it: send-step
+ * `approvedBeforePress`) and stands down. A reply he approves AFTER the press
+ * is his newer word and goes. His own words go with the machine's — the send
+ * step cannot tell them apart and must not — so the press SAYS how many it
+ * took (F10). ONE body for 🙋 on a live card and on a card the machine already
+ * approved (fix pass A, C3).
+ *
+ * The press is about the CHAT, so the chat's live reply is his too (fix pass
+ * C, FIX-SEND-1): retired as his 🙋 on its own card would retire it
+ * (`taken_over`, decided by him — the press the send step dates a later ✅
+ * by, outbox-store `human_pressed_ms`), and its countdown stopped as his
+ * (`owner_human`), FIRST — a machine press in flight on it then loses inside
+ * its approval (the draft's own compare-and-set, the verdict's), and one that
+ * committed while this waited on the draft is a queued reply the withdrawal
+ * below reads afresh and takes back. The draft before its verdict, as the
+ * machine's approval locks them. On a live card the decided draft IS the
+ * chat's live reply (one per chat, 0138's `agent_drafts_live_unique`), already
+ * retired by the caller: nothing more is written. `autoReady` is asked BEFORE
+ * the transaction — a statement on a missing table would abort it.
+ */
+async function takeChatInTx(
+  tx: Tx,
+  d: typeof agentDrafts.$inferSelect,
+  actorId: string,
+  autoReady: boolean,
+): Promise<{ held: string[]; own: number; retired: string[] }> {
+  const now = new Date();
+  const until = new Date(Date.now() + HUMAN_TAKEOVER_HOURS * 3_600_000);
+  const retired = (
+    await tx
+      .update(agentDrafts)
+      .set({ status: 'taken_over', decidedBy: actorId, decidedAt: now, updatedAt: now })
+      .where(and(eq(agentDrafts.managerUserId, d.managerUserId), eq(agentDrafts.peerId, d.peerId), inArray(agentDrafts.status, ['pending', 'editing'])))
+      .returning({ id: agentDrafts.id })
+  ).map((r) => r.id);
+  if (autoReady && retired.length > 0) {
+    await tx
+      .update(agentAutoVerdicts)
+      .set({ state: 'stopped', outcome: 'owner_human', stoppedAt: now, stoppedBy: actorId })
+      .where(and(inArray(agentAutoVerdicts.draftId, retired), inArray(agentAutoVerdicts.state, ['waiting', 'pressing'])));
+  }
+  await tx
+    .insert(agentConversations)
+    .values({ managerUserId: d.managerUserId, peerId: d.peerId, humanUntil: until })
+    .onConflictDoUpdate({
+      target: [agentConversations.managerUserId, agentConversations.peerId],
+      set: { humanUntil: until, updatedAt: now },
+    });
+  const cancelled = await tx
+    .update(agentOutbox)
+    .set({ status: 'cancelled', lastError: 'taken_over: 🙋 he took the chat over for 24 hours' })
+    .where(and(eq(agentOutbox.managerUserId, d.managerUserId), eq(agentOutbox.peerId, d.peerId), eq(agentOutbox.status, 'agent')))
+    .returning({ draftId: agentOutbox.draftId });
+  const held = cancelled.map((o) => o.draftId);
+  let own = 0;
+  if (held.length > 0) {
+    const mine = await tx
+      .select({ id: agentDrafts.id })
+      .from(agentDrafts)
+      .where(and(inArray(agentDrafts.id, held), or(isNotNull(agentDrafts.finalBody), eq(agentDrafts.kind, 'price'))));
+    own = mine.length;
+  }
+  return { held, own, retired };
+}
+
+/** The machine's press lost inside its approval transaction — thrown to roll the approval back. */
+class AutoPressLost extends Error {
+  constructor(public readonly code: AutoPressLoss) {
+    super(code);
+  }
+}
+
+/**
+ * A PERSON's press on a card whose reply the MACHINE approved (fix pass A, C3)
+ * — a card still drawn with its countdown buttons (the page is not refreshed,
+ * the bot's edit did not land) or the pressed card's own ❌ and 🙋. Null when the
+ * machine did not approve it: the press answers as it always did.
+ *  - 🙋: the chat is his — the takeover written and the chat's waiting replies
+ *    withdrawn in one transaction, as on a live card — and the press says
+ *    whether the machine's reply was among them or already on its way;
+ *  - ❌: that reply taken back, by the web cancel's own compare-and-set (still
+ *    'agent' and not yet read), audited; too late — «kech», in words;
+ *  - ✅, ✏️: «kech», naming ❌ «Bekor qilish» while it can still be taken back.
+ */
+async function afterMachinePress(
+  d: typeof agentDrafts.$inferSelect,
+  decision: DraftDecision,
+  actorId: string,
+  ctx: AuditContext,
+): Promise<DecideResult | null> {
+  const pressed = await machinePressedReply(d.id);
+  if (!pressed) return null;
+  const o = pressed.outbox;
+  const place = afterPressOf(o);
+  const kech = (p: NonNullable<typeof place>): DecideResult => ({ ok: false, code: p === 'pressed' ? 'auto_pressed' : p === 'sending' ? 'auto_sending' : 'auto_sent' });
+  if (decision === 'send' || decision === 'edit') return place ? kech(place) : { ok: false, code: 'not_live', detail: d.status };
+  if (decision === 'reject') {
+    if (!o || place !== 'pressed') return place ? kech(place) : { ok: false, code: 'not_live', detail: d.status };
+    const taken = await db.transaction(async (tx) => {
+      const [hit] = await tx
+        .update(agentOutbox)
+        .set({ status: 'cancelled', lastError: CANCELLED_BY_HOLDER })
+        .where(and(eq(agentOutbox.id, o.id), eq(agentOutbox.status, 'agent'), eq(agentOutbox.readDone, false)))
+        .returning({ id: agentOutbox.id });
+      if (!hit) return false;
+      await writeAudit(tx, ctx, {
+        entityType: 'agent_outbox',
+        entityId: o.id,
+        action: 'status_change',
+        before: { status: 'agent' },
+        after: { status: 'cancelled', draftId: d.id, via: AFTER_AUTO },
+      });
+      return true;
+    });
+    if (!taken) {
+      // The listener took it between the read and the cancel: say where it is now.
+      const again = await machinePressedReply(d.id);
+      const now = afterPressOf(again?.outbox ?? null);
+      return now && now !== 'pressed' ? kech(now) : { ok: false, code: 'not_live', detail: d.status };
+    }
+    await refreshDraftCard(d.id);
+    return { ok: true, status: 'cancelled' };
+  }
+  // 🙋 — the chat is his whatever became of the reply: the takeover is about the chat, not the card. Its audit row
+  // is the press's record (fix pass C, FIX-SEND-1): no draft of the chat becomes his `taken_over` when none is
+  // live, and the send step dates a ✅ he gives after the press by this row (outbox-store `human_pressed_ms`).
+  const autoReady = await agentAutoReady();
+  const changed = await db.transaction(async (tx) => {
+    const out = await takeChatInTx(tx, d, actorId, autoReady);
+    await writeAudit(tx, ctx, {
+      entityType: 'agent_draft',
+      entityId: d.id,
+      action: 'update',
+      before: { status: d.status },
+      after: {
+        takenOver: true,
+        via: AFTER_AUTO,
+        ...(out.held.length > 0 ? { cancelledWaiting: out.held.length } : {}),
+        ...(out.retired.length > 0 ? { retiredLive: out.retired.length } : {}),
+      },
+    });
+    return out;
+  });
+  await refreshDraftCard(d.id);
+  for (const id of new Set([...changed.held, ...changed.retired])) if (id !== d.id) await refreshDraftCard(id);
+  const gone = changed.held.includes(d.id) ? null : place === 'sending' || place === 'sent' ? place : null;
+  return {
+    ok: true,
+    status: d.status,
+    withdrawn: { total: changed.held.length, own: changed.own },
+    ...(gone ? { autoReply: gone } : {}),
+  };
+}
+
+/**
+ * `auto`: «o'zi yuborish»'s machine press (§18.3, auto-send `pressDueAutos`) —
+ * the same ✅, stricter: only 'send', only a strictly 'pending' machine reply
+ * (never 'editing', never his words, never a price), only with the digest the
+ * verdict was scheduled on, and refused on ANY warning of the fresh policy
+ * re-run. Its approval's audit row says `via: 'auto'`; `decided_by` is the
+ * holder the press speaks for. Every other call is a PERSON on the card, and
+ * stops the draft's waiting auto first (`stopAutoForPerson`).
+ */
 export async function decideDraft(
   actor: DeciderActor,
   draftId: string,
   decision: DraftDecision,
-  opts: { digest?: string | null },
+  opts: {
+    digest?: string | null;
+    auto?: boolean;
+    /** The machine's press: its moment, stamped as the verdict's `pressed_at` (the sweep's own clock). */
+    autoAt?: Date;
+  },
   ctx: AuditContext,
 ): Promise<DecideResult> {
-  const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+  const [read] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+  if (!read) return { ok: false, code: 'not_found' };
+  if (read.managerUserId !== actor.id) return { ok: false, code: 'not_account_holder' };
+  // His own press on the card is his decision: the machine's waiting press stands down before anything else
+  // (a row already being pressed is the draft's compare-and-set's to decide). A stop that found nothing to stop
+  // may have lost to the machine's own ✅ committing between the read above and the stop (fix pass C,
+  // FIX-SEND-2): the card is read again, so a reply the machine approved a moment ago is answered as one —
+  // «kech», ❌ takes it back, 🙋 takes the chat — and never «faol emas» while it goes.
+  const stopped = opts.auto ? false : await stopAutoForPerson(draftId, actor.id, `owner_${decision}`);
+  const [d] =
+    !opts.auto && !stopped && (read.status === 'pending' || read.status === 'editing')
+      ? await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId))
+      : [read];
   if (!d) return { ok: false, code: 'not_found' };
-  if (d.managerUserId !== actor.id) return { ok: false, code: 'not_account_holder' };
   const config = await readAgentConfig();
   if (decision !== 'reject' && decision !== 'human' && (!agentRunning(config) || config.ownerUserId !== d.managerUserId)) {
     return { ok: false, code: 'agent_off' };
   }
+  // A reply the MACHINE approved (fix pass A, C3): his 🙋 and ❌ still mean something, and ✅/✏️ say «kech».
+  if (!opts.auto && d.status === 'approved') {
+    const after = await afterMachinePress(d, decision, actor.id, ctx);
+    if (after) return after;
+  }
   if (d.status !== 'pending' && d.status !== 'editing') return { ok: false, code: 'not_live', detail: d.status };
+  // The machine presses a pending machine reply and nothing else: never a draft he opened ✏️ on, never his words.
+  if (opts.auto && (decision !== 'send' || d.status !== 'pending' || d.finalBody !== null || d.kind !== 'reply')) {
+    return { ok: false, code: 'not_live', detail: d.status };
+  }
+  if (opts.auto && !opts.digest) return { ok: false, code: 'stale_card' };
 
   if (decision === 'reject' || decision === 'human' || decision === 'edit') {
     const status = decision === 'reject' ? 'rejected' : decision === 'human' ? 'taken_over' : 'editing';
+    const autoReady = decision === 'human' && (await agentAutoReady());
     const changed = await db.transaction(async (tx): Promise<{ held: string[]; own: number } | null> => {
       const [row] = await tx
         .update(agentDrafts)
@@ -640,42 +871,8 @@ export async function decideDraft(
         .where(and(eq(agentDrafts.id, draftId), inArray(agentDrafts.status, ['pending', 'editing'])))
         .returning({ id: agentDrafts.id });
       if (!row) return null;
-      let held: string[] = [];
-      let own = 0;
-      if (decision === 'human') {
-        const until = new Date(Date.now() + HUMAN_TAKEOVER_HOURS * 3_600_000);
-        await tx
-          .insert(agentConversations)
-          .values({ managerUserId: d.managerUserId, peerId: d.peerId, humanUntil: until })
-          .onConflictDoUpdate({
-            target: [agentConversations.managerUserId, agentConversations.peerId],
-            set: { humanUntil: until, updatedAt: new Date() },
-          });
-        // 🙋 «the chat is mine for 24 h» covers the replies he approved BEFORE
-        // it and that are still waiting (final review K2) — night-held to
-        // 08:30, a flood, a cap: sent later, they would speak into the chat he
-        // has just taken over. In this same transaction, by `agent_off`'s
-        // compare-and-set on 'agent' (withdrawTypedBind's): the send step
-        // claims by that status, so a row already claimed is the one in flight
-        // — and its next step reads the press (`human_until`, approved before
-        // it: send-step `approvedBeforePress`) and stands down. A reply he
-        // approves AFTER the press is his newer word and goes. His own words
-        // go with the machine's — the send step cannot tell them apart and
-        // must not — so the press SAYS how many it took (F10).
-        const cancelled = await tx
-          .update(agentOutbox)
-          .set({ status: 'cancelled', lastError: 'taken_over: 🙋 he took the chat over for 24 hours' })
-          .where(and(eq(agentOutbox.managerUserId, d.managerUserId), eq(agentOutbox.peerId, d.peerId), eq(agentOutbox.status, 'agent')))
-          .returning({ draftId: agentOutbox.draftId });
-        held = cancelled.map((o) => o.draftId);
-        if (held.length > 0) {
-          const mine = await tx
-            .select({ id: agentDrafts.id })
-            .from(agentDrafts)
-            .where(and(inArray(agentDrafts.id, held), or(isNotNull(agentDrafts.finalBody), eq(agentDrafts.kind, 'price'))));
-          own = mine.length;
-        }
-      }
+      // 🙋 «the chat is mine for 24 h» — and the replies still waiting in it withdrawn (`takeChatInTx`).
+      const { held, own } = decision === 'human' ? await takeChatInTx(tx, d, actor.id, autoReady) : { held: [] as string[], own: 0 };
       if (decision !== 'edit') {
         await writeAudit(tx, ctx, {
           entityType: 'agent_draft',
@@ -751,6 +948,10 @@ export async function decideDraft(
       .where(eq(agentDrafts.id, draftId));
     await refreshDraftCard(draftId);
     return { ok: false, code: 'policy_block', detail: blocks.map((b) => b.code).join(',') };
+  }
+  // A person presses past a warning he has read on the card; the machine never does — and writes nothing.
+  if (opts.auto && policy.warnings.length > 0) {
+    return { ok: false, code: 'auto_warning', detail: policy.warnings.map((w) => w.code).join(',') };
   }
 
   const moved = await chatMoved(d);
@@ -834,7 +1035,16 @@ export async function decideDraft(
     requestId = landed.requestId;
   }
 
-  const approved = await db.transaction(async (tx) => {
+  // The approval — one transaction. The machine's press (fix pass A, C2/C5) takes the layer's row FOR SHARE
+  // as its FIRST statement and requires it armed and the account a work number (`autoPressStandsInTx`), and
+  // moves its verdict 'pressing' → 'pressed' as its LAST (`settleAutoPressInTx`): a ⏸, a person's own
+  // decision, a disarm or «Shaxsiy raqam» that lands first makes it lose — thrown, so the whole approval
+  // rolls back — and one that comes after finds the verdict 'pressed'. A person's press reads neither.
+  const approved: boolean | AutoPressLoss = await db.transaction(async (tx) => {
+    if (opts.auto) {
+      const lost = await autoPressStandsInTx(tx, d.managerUserId);
+      if (lost) throw new AutoPressLost(lost);
+    }
     // The row as it is approved, locked, must still be the card he pressed: the status read at the
     // top (`editing` included, with no words of his) and the digest's own inputs — his words, the
     // machine's, the actions — exactly as the press checked them (review: a second text of his
@@ -848,6 +1058,9 @@ export async function decideDraft(
     if (!held || held.status !== d.status || held.finalBody !== d.finalBody || cardDigest(digestBody(held), held.actions as ComposedAction[]) !== cardDigest(body, actions)) {
       return false;
     }
+    // The chat still the machine's to answer (the final check): his 🙋, read under the draft's lock — the
+    // human path keeps a card in a chat he took waiting for him; the machine never presses it.
+    if (opts.auto && (await autoChatTakenInTx(tx, d.managerUserId, d.peerId))) throw new AutoPressLost('taken_over');
     const [row] = await tx
       .update(agentDrafts)
       .set({
@@ -889,10 +1102,15 @@ export async function decideDraft(
       entityId: draftId,
       action: 'status_change',
       before: { status: d.status },
-      after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId },
+      after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
     });
+    if (opts.auto && !(await settleAutoPressInTx(tx, draftId, opts.autoAt ?? now))) throw new AutoPressLost('auto_stopped');
     return true;
+  }).catch((err: unknown) => {
+    if (err instanceof AutoPressLost) return err.code;
+    throw err;
   });
+  if (approved !== true && approved !== false) return { ok: false, code: approved };
   if (!approved) {
     // The row moved under the press — his own words landed on it between the read and here (the
     // lock's check above): the draft is live, the card is a different one, and «faol emas» is false —
@@ -965,9 +1183,26 @@ export async function submitOwnText(actor: DeciderActor, draftId: string, text: 
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d) return { ok: false, code: 'not_found' };
   if (d.managerUserId !== actor.id) return { ok: false, code: 'not_account_holder' };
+  // His words for a reply the MACHINE already approved (a stale page's ✏️ box): «kech», as ✏️ says (fix pass A, C3).
+  if (d.status === 'approved') {
+    const after = await afterMachinePress(d, 'edit', actor.id, ctx);
+    if (after) return after;
+  }
   if (d.status !== 'editing' && d.status !== 'pending') return { ok: false, code: 'not_live', detail: d.status };
   const body = text.trim();
   if (!body) return { ok: false, code: 'empty' };
+  // His words on the card are his decision — a waiting machine press stands down. The page's ✏️ is a box, no
+  // `edit`: it stopped the countdown already, before the box opened (auto-send `stopAutoForEdit`, fix pass B, C1);
+  // this is the net for words that reach here any other way. Nothing stopped: the machine's ✅ may have
+  // committed since the read above (fix pass C, FIX-SEND-2) — then «kech», and his words are not dropped
+  // behind a «faol emas» while the AI's own text goes.
+  if (!(await stopAutoForPerson(draftId, actor.id, 'owner_edit'))) {
+    const [fresh] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    if (fresh?.status === 'approved') {
+      const after = await afterMachinePress(fresh, 'edit', actor.id, ctx);
+      if (after) return after;
+    }
+  }
   const p = (d.policy ?? {}) as Partial<DraftPolicyJson>;
   // His words pass the owner subset; the same-text count is only a warning on his card (K3).
   const policy = await ownerPolicyFor(body, p.memory?.ownCodes ?? [], {

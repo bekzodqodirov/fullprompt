@@ -450,3 +450,67 @@ describe('an agent card closed while its copy was in flight is corrected after t
     expect(edits()).toHaveLength(0);
   });
 });
+
+/**
+ * «O'zi yuborish» presses only a card that reached him, a hold after it did (fix pass A, C4) — so the drain, the
+ * one writer that knows a copy reached Telegram, records WHICH draft that copy carried and since when (`shown`),
+ * beside `tg`; the after-send correction and a later successful edit move it to the draft they put on screen.
+ */
+describe('an AI draft card that reaches him records which draft his screen shows, and since when', () => {
+  const DRAFT_A = '0193f0aa-0000-7000-8000-00000000000a';
+  const DRAFT_B = '0193f0aa-0000-7000-8000-00000000000b';
+  const card = (draftId: string) => ({
+    draftId,
+    digest: 'a1b2c3d4',
+    live: true,
+    blocked: false,
+    kind: 'reply',
+    autoAt: null,
+    autoSent: false,
+    autoBad: false,
+    text: `🤖 Javob qoralamasi\nMijoz: «salom» ${STAMP} ${draftId.slice(-1)}`,
+  });
+
+  it('the send writes `shown` beside `tg` — the draft the copy carried, at the send', async () => {
+    const id = await queue(staffId, 'AgentDraft', card(DRAFT_A));
+    const before = Date.now();
+    await drain();
+    const row = await rowOf(id);
+    expect(row.status).toBe('sent');
+    const shown = (row.payload as { shown?: { draftId: string; at: string } }).shown;
+    expect(shown?.draftId).toBe(DRAFT_A);
+    expect(new Date(shown!.at).getTime()).toBeGreaterThanOrEqual(before - 1_000);
+    // No other message carries it.
+    const other = await queue(staffId, 'AgentStranger', { ruleId: '0193f0aa-0000-7000-8000-0000000000cc', text: `🆕 ${STAMP}` });
+    await drain();
+    expect((await rowOf(other)).payload).not.toHaveProperty('shown');
+  });
+
+  it('a row re-pointed at a newer draft while its copy was in flight: the correction’s edit moves `shown` — a failed one does not', async () => {
+    const id = await queue(staffId, 'AgentDraft', card(DRAFT_A));
+    duringSend = async () => {
+      await db
+        .update(notifications)
+        .set({ payload: sql`${notifications.payload} || ${JSON.stringify(card(DRAFT_B))}::jsonb` })
+        .where(eq(notifications.id, id));
+    };
+    // The send answers ok; the correction's edit is refused: his screen still shows A.
+    answers = [
+      { status: 200, json: { ok: true, result: { message_id: (nextMessageId += 1) } } },
+      { status: 400, json: { ok: false, error_code: 400, description: 'Bad Request: something' } },
+    ];
+    await drain();
+    expect(((await rowOf(id)).payload as { shown?: { draftId: string } }).shown?.draftId).toBe(DRAFT_A);
+    // The same again, the edit landing this time: his screen shows B from now.
+    duringSend = null;
+    const id2 = await queue(staffId, 'AgentDraft', card(DRAFT_A));
+    duringSend = async () => {
+      await db
+        .update(notifications)
+        .set({ payload: sql`${notifications.payload} || ${JSON.stringify(card(DRAFT_B))}::jsonb` })
+        .where(eq(notifications.id, id2));
+    };
+    await drain();
+    expect(((await rowOf(id2)).payload as { shown?: { draftId: string } }).shown?.draftId).toBe(DRAFT_B);
+  });
+});

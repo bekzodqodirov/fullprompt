@@ -286,16 +286,47 @@ export function cardDrawsSend(d: { blocked: boolean; status: string; ownText: bo
 }
 
 /**
- * The payload a card's notification row carries — the bot draws buttons from
- * it. `blocked` is «no ✅»: every writer passes `!cardDrawsSend(…)`.
+ * What a card's payload says of «o'zi yuborish» (auto-card `autoPayload`) —
+ * plain fields, because the bot draws the keyboard in platform, which never
+ * imports wms: `autoAt` (ISO) while the machine's press counts down (⏸ and
+ * «✅ Hozir yubor»), `autoSent` once it pressed and `autoBad` once he said
+ * «👎 Xato edi» (the closed card's one button, then none), and `autoCancel`
+ * while the reply it approved can still be taken back (❌ «Bekor qilish» and
+ * 🙋, fix pass A, C3).
  */
-export function cardExtra(draft: { id: string; body: string; actions: unknown[]; blocked: boolean; live: boolean; kind: string }) {
+export interface CardAutoPayload {
+  autoAt: string | null;
+  autoSent: boolean;
+  autoBad: boolean;
+  autoCancel: boolean;
+}
+
+/**
+ * The payload a card's notification row carries — the bot draws buttons from
+ * it. `blocked` is «no ✅»: every writer passes `!cardDrawsSend(…)`. The auto
+ * keys are ALWAYS written, null and false when there is nothing to say: a
+ * refresh merges the payload (`||`), so a key left out would keep the last
+ * card's ⏸ under a card his press already stopped.
+ */
+export function cardExtra(draft: {
+  id: string;
+  body: string;
+  actions: unknown[];
+  blocked: boolean;
+  live: boolean;
+  kind: string;
+  auto?: CardAutoPayload | null;
+}) {
   return {
     draftId: draft.id,
     digest: cardDigest(draft.body, draft.actions),
     blocked: draft.blocked,
     live: draft.live,
     kind: draft.kind,
+    autoAt: draft.auto?.autoAt ?? null,
+    autoSent: draft.auto?.autoSent === true,
+    autoBad: draft.auto?.autoBad === true,
+    autoCancel: draft.auto?.autoCancel === true,
   };
 }
 

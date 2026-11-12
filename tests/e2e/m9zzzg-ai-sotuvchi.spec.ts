@@ -13,8 +13,14 @@ import postgres from 'postgres';
  *     retired through the page's own buttons;
  *  3. the account holder (the demo seller, configured as the agent's owner —
  *     a door that is a fact in agent_config, not a role) is offered the tab,
- *     sees the ✅, is told in words that the agent is off, and ❌ retires
- *     the draft;
+ *     sees the ✅, is told in words that the agent is off, opens ✏️ (it asks
+ *     the server first — fix pass B, C1 — and this card never counted down,
+ *     so the box opens as always) and ❌ retires the draft; on the settings
+ *     tab «🤖 O‘zi yuborish» (0145) offers HIM the four kinds and says, BEFORE
+ *     any press, why it cannot be switched on — the agent off, the number not
+ *     «Ish raqami» — with the switch not offered (fix pass B, C9): nothing
+ *     written, so nothing to put back; the owner (not the holder) is shown
+ *     the same panel with neither;
  *  4. cleanup, a FINAL TEST (#183): agent_config is a singleton
  *     CONFIGURATION row every later spec and the app's sweep read — it is put
  *     back exactly, and the fixture rows are deleted. The same restore runs
@@ -116,6 +122,14 @@ test('the owner is offered the page, reads the card and is given no ✅ on a col
   // Not his account: he may switch it off, never on.
   await expect(page.getByTestId('agent-on-holder-only')).toBeVisible();
   await expect(page.getByTestId('agent-mode-on')).toHaveCount(0);
+  // «O‘zi yuborish» (0145): read, never armed by him — the kinds are shown and cannot be changed.
+  const auto = page.getByTestId('agent-auto');
+  await expect(auto).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-today')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-holder-only')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-arm')).toHaveCount(0);
+  await expect(auto.getByTestId('agent-auto-category-faq')).toBeDisabled();
+  await expect(auto.getByTestId('agent-auto-categories-save')).toHaveCount(0);
   await fitsThePhone(page);
 });
 
@@ -152,6 +166,15 @@ test('the account holder is offered the page by its door, gets the ✅, and is t
   await expect(card.getByTestId('agent-error')).toBeVisible();
   await fitsThePhone(page);
 
+  // ✏️ asks the server before its box opens (fix pass B, C1): this card never counted down, so it opens as always,
+  // and a second press closes it.
+  await card.getByTestId('agent-edit').click();
+  await expect(card.getByTestId('agent-edit-box')).toBeVisible();
+  await expect(card.getByTestId('agent-own-text')).toHaveValue(body);
+  await fitsThePhone(page);
+  await card.getByTestId('agent-edit').click();
+  await expect(card.getByTestId('agent-edit-box')).toHaveCount(0);
+
   await card.getByTestId('agent-reject').click();
   await expect(page.locator(`[data-testid="agent-draft"][data-draft-id="${draftId}"]`)).toHaveCount(0);
   const sql = database();
@@ -160,6 +183,27 @@ test('the account holder is offered the page by its door, gets the ✅, and is t
       SELECT status, decided_by FROM agent_drafts WHERE id = ${draftId}`;
     expect(row!.status).toBe('rejected');
     expect(row!.decided_by).not.toBeNull();
+  } finally {
+    await sql.end();
+  }
+});
+
+test('the holder is offered «O‘zi yuborish», and is told BEFORE any press why it cannot be switched on — nothing written', async ({ page }) => {
+  await login(page, SELLER);
+  await page.goto('/suhbatlar/ai?bolim=sozlamalar');
+  const auto = page.getByTestId('agent-auto');
+  await expect(auto).toBeVisible();
+  // DELIBERATE EDIT (fix pass B, C9): the agent is off and the seller's number is no «Ish raqami» — both said
+  // above the switch, which is not offered (no confirm about a switch that cannot move).
+  await expect(auto.getByTestId('agent-auto-needs-running')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-needs-work')).toBeVisible();
+  await expect(auto.getByTestId('agent-auto-arm')).toBeDisabled();
+  await expect(auto.getByTestId('agent-auto-category-faq')).toBeEnabled();
+  await fitsThePhone(page);
+  const sql = database();
+  try {
+    const [row] = await sql<{ armed_at: Date | null }[]>`SELECT armed_at FROM agent_auto_config WHERE id = 1`;
+    expect(row!.armed_at).toBeNull();
   } finally {
     await sql.end();
   }

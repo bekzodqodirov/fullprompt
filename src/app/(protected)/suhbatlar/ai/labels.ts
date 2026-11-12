@@ -1,3 +1,6 @@
+import type { AutoDisarmKind } from '@/modules/wms/agent/auto-card';
+import { forcedKindOf } from '@/modules/wms/agent/forced-off';
+import type { AutoConfigRefusal, AutoFeedbackRefusal, StopAutoRefusal } from '@/modules/wms/agent/auto-send';
 import type { PriceRefusal } from '@/modules/wms/agent/calc-loop';
 import type { AgentConfigRefusal } from '@/modules/wms/agent/config';
 import type { DecideRefusal } from '@/modules/wms/agent/decide';
@@ -46,6 +49,11 @@ export type AgentErrorCode =
   | 'superseded_edited_no_draft'
   | 'superseded_edited_capped'
   | 'superseded_answered'
+  // «O'zi yuborish»'s doors (web-actions `agentAuto…`): their OWN codes, because the services share
+  // words like `not_found` with the draft decisions and a switch is not a draft.
+  | `auto_${AutoConfigRefusal}`
+  | `auto_stop_${Exclude<StopAutoRefusal, 'not_ready'>}`
+  | `auto_fb_${Exclude<AutoFeedbackRefusal, 'not_ready'>}`
   | 'unknown';
 
 export const ERROR_KEYS: Record<AgentErrorCode, string> = {
@@ -72,6 +80,12 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   calc_in_flight: 'errors.calc_in_flight',
   identity_changed: 'errors.identity_changed',
   window_closed: 'errors.window_closed',
+  auto_warning: 'errors.auto_warning',
+  auto_stopped: 'errors.auto_stopped',
+  auto_disarmed: 'errors.auto_disarmed',
+  auto_pressed: 'errors.auto_pressed',
+  auto_sending: 'errors.auto_sending',
+  auto_sent: 'errors.auto_sent',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
@@ -100,6 +114,23 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   editing_open: 'errors.editing_open',
   no_anchor: 'errors.no_anchor',
   recalculated: 'errors.recalculated',
+  // «O'zi yuborish» (web-actions `agentAuto…`)
+  auto_not_ready: 'errors.auto_not_ready',
+  auto_forbidden: 'errors.auto_forbidden',
+  auto_not_account_holder: 'errors.auto_not_account_holder',
+  auto_agent_off: 'errors.auto_agent_off',
+  auto_not_work_account: 'errors.auto_not_work_account',
+  auto_bad_value: 'errors.auto_bad_value',
+  auto_stop_not_found: 'errors.auto_stop_not_found',
+  auto_stop_not_account_holder: 'errors.auto_stop_not_account_holder',
+  auto_stop_pressed: 'errors.auto_stop_pressed',
+  auto_stop_sending: 'errors.auto_stop_sending',
+  auto_stop_sent: 'errors.auto_stop_sent',
+  auto_stop_not_waiting: 'errors.auto_stop_not_waiting',
+  auto_fb_not_found: 'errors.auto_fb_not_found',
+  auto_fb_not_account_holder: 'errors.auto_fb_not_account_holder',
+  auto_fb_not_sent: 'errors.auto_fb_not_sent',
+  auto_fb_already: 'errors.auto_fb_already',
   unknown: 'errors.unknown',
 };
 
@@ -147,4 +178,33 @@ export const SOURCE_KEYS: Record<'owner' | 'site' | 'seed' | 'manual', string> =
 
 export function sourceKey(source: string): string {
   return (SOURCE_KEYS as Record<string, string>)[source] ?? SOURCE_KEYS.manual;
+}
+
+/**
+ * Why «o'zi yuborish» was last switched off (config `AutoDisarmReason`, the
+ * stored `disarm_reason`) — `forced: blocks` is its own kind, each forced
+ * reason worded apart (fix pass B, C10), and a tail no list knows is plain
+ * `forced`. Restated here and not imported: this file is read by the page's
+ * client buttons, and auto-card's value side reaches the database modules
+ * (forced-off is pure, and is the one list both read).
+ */
+export const AUTO_DISARM_KEYS: Record<AutoDisarmKind, string> = {
+  manual: 'autoOff.manual',
+  agent_off: 'autoOff.agent_off',
+  owner_changed: 'autoOff.owner_changed',
+  feedback: 'autoOff.feedback',
+  blocked: 'autoOff.blocked',
+  bot_question: 'autoOff.bot_question',
+  forced_account_paused: 'autoOff.forced_account_paused',
+  forced_flood_repeat: 'autoOff.forced_flood_repeat',
+  forced_blocks: 'autoOff.forced_blocks',
+  forced_telegram_notice: 'autoOff.forced_telegram_notice',
+  forced: 'autoOff.forced',
+  not_work_account: 'autoOff.not_work_account',
+};
+
+export function autoDisarmKey(reason: string | null): string | null {
+  if (!reason) return null;
+  if (reason.startsWith('forced:')) return AUTO_DISARM_KEYS[forcedKindOf(reason)];
+  return (AUTO_DISARM_KEYS as Record<string, string>)[reason] ?? 'autoOff.unknown';
 }
