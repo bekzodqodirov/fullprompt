@@ -175,6 +175,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The lot tarkibi's six fixes — the document optional, the name every list shows (`receipts/lot-name.ts`), a row per good in the agent file, 🤖 on a tarkib line and the editor that re-seeds by merge, the invoice as positions with the asked merge, «Маркировка» and the red stickers | `docs/TARKIB-TUZATISH.md` — his message of 2026-11-10, built with every ⭐ (ten questions out); §9 and every «As built» block override the sections they sit in |
 | The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
+| The prixod CARD in one order — summary with «Jami», one «ties» card, one anatomy and one row of actions per lot, files \| costs, thread \| folds, «Boshqa amallar», the phone's order | `docs/PRIXOD-KARTA.md` — his sentence of 2026-11-11, BUILT; a layout round (no door, action, read or URL changed); **§7 is binding** (as judged by the two lenses that came back) |
 
 ## State — 2026-08-23
 
@@ -3597,6 +3598,45 @@ self-refresh, the 20:00 line. NOT provable here: real Telegram and the real mode
 **16,074 unit/integration (913 files) + 499 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at f74f4df (the
 merge with PR #145), ledger 146. MERGED ON THE LOCAL RITUAL ALONE: GitHub's CI run for PR #147 sat «queued» with no
 job for 45 minutes (PR #146's too) and he had asked for speed — main's own CI run is the check still owed.
+
+**Round — Prixod kartasi (2026-11-11 → 11-12; DECISIONS #1697-#1705 — numbered past main's #1683-#1696, the
+THIRTY-SEVENTH collision: the other session's «O'zi yuborish» (PR #147, 0145) merged while the first full run was
+starting; NO migration, ledger 146; spec `docs/PRIXOD-KARTA.md`, §7 binding).** His «Prixodning interfaceini
+togirlab qoy … hamma narsa har hil joyda bolib ketgan», read as the CARD (`/receipts/[id]`) and said so — the
+receive wizard was looked at and is untouched. **A layout round**: no door, action, service, read or URL changed,
+every `data-testid` kept. The card was one column of fourteen blocks (admin: 4,223 px at 360, 3,754 at 1280 for
+three lots). Now, in DOM order: header · **summary** (`receipt-summary`: client · «Jami» — NEW, from the lots
+already read, `receipts/card-totals.ts`, integer units, imports NOTHING or `lot-composition-fence` goes red · date)
+· the **owner block** on an ownerless prixod (`receipt-owner`: assign + return, open, at the top) · **ties**
+(`receipt-links`: ONE card, two independent stacks «Bitim → Hisob» | «Yuk turi → Zavod reysi», one cell anatomy
+label → value → control, «Saqlash» only once an answer differs) · **lots** (`receipt-lots`) · files | costs ·
+thread | folds (`TasksPanel`, `CustomFieldsPanel`, **«Boshqa amallar»** `receipt-more` — change-client, move, void /
+annul, its closed line naming what THIS reader's fold holds) · history. **The page root is a flex column and the
+ties plus everything after the lots carry `max-md:order-1`** — a phone reads summary → cargo → the rest. **Pairs
+switch at `lg`, never `md`** (the sidebar takes 224 px from `md`: at 768 an `md` pair gave each half 248 px), and a
+half with no sibling takes the row through ONE wrapper whose class switches (fixed slots: the thread's slot and the
+folds' slot never trade places, so an opened fold and the answer inside it survive the revalidation). **`CardCols`
+was refused here by measurement** (#1698): a 24 rem rail leaves the lots ~500 px and the tarkib editor (`xl:grid`,
+a VIEWPORT breakpoint) overflows — at a 1280 viewport a lot card stays ≥ ~712 px. **The lot**: head (letter, name,
+`lot-veto` chip on a client's ❌, the print — it STAYS in the head at 112×48) → `lot-figures` (trimmed, never
+rounded) → note · `lot-qrless` → **`lot-actions`**: one `flex-wrap` row of `btn-secondary btn-sm` in FIXED slots
+(corrections, stickers, pallets; mapped lists keyed `qr:` / `pallet:`) → photos → `lot-check` → `lot-tarkib`.
+**Every opener is always drawn and its panel is a sibling with `order-last basis-full`** — `LotEditForm`,
+`QrSkipToggle`, `MarkLostForm` return FRAGMENTS (the write-off is a button + state, `mark-lost-open` /
+`mark-lost-panel`, no longer a `<details>`). **`.btn-sm`** (globals.css, after every variant; no `nowrap`, no
+`shrink-0`) is the one compact button. **One spelling for a measure** (#1703): what the card PRINTS is trimmed
+(`trimMeasure` — the lot's line, «Jami», the tarkib's read face and stale sentence); what an EDITOR holds keeps the
+column's spelling (the tarkib's boxes and remainder, the AI reading's sums, the lot form). Words that changed:
+`lotCheck.otherAnswers` lost its direction ×4; the list says «3 tovar» (`receipts.lotsCount`, plural-shaped in all
+four); History reads a prixod's `lots` as cargo (`formatAuditValue`). Fixed on the way: an ownerless marking of
+thirty unbroken characters made the OLD card 424 px wide at 360. **Judged by TWO of five lenses** (phone, desktop:
+14 defects + 13 nits, all measured, all absorbed); the other three and every refuter died on the account's weekly
+limit, so regression / CSS / house were done by the builder against the built card (22 source-shape fences green
+unedited; 360 / 768 / 1280 as five roles on eleven cards). 8 red proofs by paired string edit. TEST RULES (#1705):
+two `boundingBox()` calls are two frames — positions that are compared are read in ONE `evaluate`; before folding a
+control grep its testid AND its `id` (`#void-reason` reached the void form in two specs a testid grep missed).
+OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
+label) — CHANGELOG 2026-11-12.
 
 **Latest migration: 0145** (`agent_auto`, `when` …124; ledger must reach **146**). Before
 it: 0144 (`tarkib_takliflar`, `when` …123). Before

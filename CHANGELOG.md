@@ -1,5 +1,85 @@
 # CHANGELOG
 
+## 2026-11-12 — Prixod kartasi tartibga keltirildi: hamma narsa o'z joyida
+
+Sizning gapingiz: «Prixodning interfeysini to'g'irlab qo'y, UI/UX dizaynini — hamma narsa har xil joyda bo'lib
+ketgan». Men buni **prixodning kartasi** (Sklad → Prixodlar → bitta prixodni ochganda chiqadigan sahifa) deb
+o'qidim. Yuk qabul qilish ekranini («Qabul») ham ko'rib chiqdim — u tartibli (uch qadam, har biri bitta ish),
+unga tegmadim. Agar aynan «Qabul» ekranini nazarda tutgan bo'lsangiz — ayting.
+
+**Bu faqat joylashuv ishi.** Hech kimning huquqi o'zgarmadi, hech qaysi tugma yo'qolmadi, hisob-kitobga tegilmadi.
+Kim nimani ko'rgan va bosa olgan bo'lsa — hozir ham shuni ko'radi va bosa oladi, faqat joyi tartibli.
+
+Migratsiya **yo'q**. Baza hisobi o'zgarmaydi (boshqa ish bilan birga chiqsa — 146). Bu deployni baza hisobi bilan
+emas, **`curl -s https://gsrwms.uz/api/version`** bilan tekshiring: bugungi vaqtni ko'rsatishi kerak.
+
+### Avval qanday edi (o'lchadim)
+Uch tovarli bitta prixod admin telefonida **4 223 piksel** uzunlikda edi (kompyuterda 3 754). Sahifa — ikki yil
+davomida qo'shilgan 14 ta blokning ketma-ket ro'yxati: mijoz, alohida «Zavod reysi» kartasi, alohida «Bitim»,
+alohida «Yuk turi», alohida «Hisob», keyin tovarlar, keyin doim ochiq turgan «Mijozni o'zgartirish» qidiruvi,
+«Boshqa skladga ko'chirish» tugmasi, fayllar va xarajatlar bitta kartada, doim ochiq «Bekor qilish» formasi…
+Har bir tovarning ichida tugmalar olti xil ko'rinishda, olti joyda turardi. Prixodda jami qancha yuk borligi
+hech qayerda yozilmagan edi.
+
+### Endi qanday (tepadan pastga)
+1. **Umumiy ma'lumot — bitta karta.** Mijoz · **Jami** (yangi: «3 tovar · 100 📦 · 2070 kg · 5.2938 m³») ·
+   qabul qilingan sana va sklad. Izoh va bekor qilish sababi shu kartaning tagida.
+2. **Egasi aniqlanmagan yukda** — «Mijozga biriktirish» va «Jo'natuvchiga qaytarish» eng tepada, ochiq turadi:
+   bunday prixodda birinchi ish — egasini topish. Egasi bor prixodda «Mijozni o'zgartirish» — kamdan-kam
+   kerak bo'ladigan tuzatish, u «Boshqa amallar» ichiga o'tdi.
+3. **Bog'lanishlar — to'rtta karta o'rniga bitta.** Chapda «Bitim» va uning tagida «Hisob» (hisob-kitob shu
+   bitimniki), o'ngda «Yuk turi» (LTL/FTL) va «Zavod reysi». «Saqlash» tugmasi faqat siz nimanidir
+   o'zgartirganingizda chiqadi — avval har birida doim turardi.
+4. **Tovarlar.** Har bir tovar bir xil tartibda:
+   - nomi va o'ngda «🖨» (stiker) — joyi va kattaligi avvalgidek;
+   - soni · kg · kub — endi «250 kg · 1.25 m³» (avval «250.000 kg · 1.2500 m³» edi; qiymat o'zgarmadi,
+     faqat ortiqcha nollar yo'q);
+   - **bitta qatorda hamma amal**: «✏️ Tahrirlash», «⚠️ Hisobdan chiqarish», QR-siz belgisi va uning
+     stikerlari, «🧱 Palet qilish». Tugma bosilganda forma shu qatorning tagida ochiladi — qatordagi tugmalar
+     joyidan siljimaydi (avval «Tahrirlash» bosilsa, uning o'rniga boshqa tugma kelib qolardi);
+   - rasmlar; keyin «Ma'lumot tekshirildi» va «Tarkib».
+   Mijoz Telegramda «❌ Xato bor» degan tovarning nomi yonida qizil belgi turadi.
+5. **Fayllar va Xarajatlar** — yonma-yon ikki karta (telefonda ustma-ust).
+6. **Savol-javob** (xodimlar yozishmasi) — uning yonida «Vazifalar», «Qo'shimcha maydonlar» va
+   **«⚙️ Boshqa amallar»**: mijozni o'zgartirish, boshqa skladga ko'chirish, bekor qilish (sizda —
+   «Anulirovka»). Bu bo'lim yopiq turadi va ichida nima borligini sarlavhasining tagida yozib turadi;
+   bir marta bosilsa ochiladi.
+7. **Tarix** — eng pastda. Prixod yaratilgandagi tovarlar endi «A 化妆品 × 10 📦 · B 键盘 × 50 📦» deb
+   yoziladi (avval «lots: [{"zh":…}]» degan kod chiqardi).
+
+### Telefonda
+- Tartib: umumiy ma'lumot → **tovarlar** → bog'lanishlar → qolganlari. Skladchi kartani ochganda birinchi
+  ekranda birinchi tovar, uning stiker tugmasi, «Tahrirlash» va «Palet qilish» ko'rinadi.
+- Uzunlik (uch tovarli prixod): admin 4 223 → 3 804, skladchi 2 420 → 2 402, VED 2 656 → 2 472,
+  sotuvchi 1 858 → 1 690 piksel. Kompyuterda admin: 3 754 → **2 658**.
+- Avvaldan bor bo'lgan xato tuzatildi: egasiz yukning markirovkasi uzun va bo'shliqsiz bo'lsa (masalan,
+  zavodning 30 belgili kodi), butun sahifa telefonda kichrayib ketardi (424 piksel 360 lik ekranda). Endi
+  markirovka qatorga sig'ib, keyingi qatorga o'tadi.
+
+### Yana
+- «Prixodlar» ro'yxatida «3 tovarlar» o'rniga «3 tovar» (kartadagi «Jami» bilan bir xil so'z).
+- «Ma'lumot tekshirildi» blokidagi maslahatda «pastdagi ✏️» degan so'z bor edi — endi ✏️ tepada, shuning uchun
+  «shu lotning ✏️ tugmasi orqali» deb o'zgartirildi (to'rt tilda).
+
+### Qanday tekshirildi — ochiq aytaman
+- Loyihani kod yozishdan oldin besh tomondan tekshirtirmoqchi edim. **Ikkitasi to'liq javob berdi** (telefon —
+  skladchi/sotuvchi; kompyuter — VED/ofis): 14 ta kamchilik va 13 ta mayda izoh, hammasi ishlab turgan tizimda
+  o'lchab topilgan, hammasi loyihaga kiritildi. **Qolgan uchtasi** (buzilishi mumkin bo'lgan testlar, joylashuv,
+  boshqa kartalarga moslik) hisobning haftalik limitiga urilib to'xtadi — ularni o'zim bajardim: kartani 360,
+  768 va 1280 kenglikda, besh rol (admin, skladchi, VED, sotuvchi, logist) va 11 xil prixodda suratga olib
+  ko'rdim; hamma joyda sahifa eni ekran eniga teng.
+- Yangi testlar: telefonda tartib va «Jami»; tugma bosilganda qator siljimasligi; «Boshqa amallar» yopiqligi;
+  egasiz yuk va 50 belgili markirovka; kompyuterda juftliklar. Har bir qoidani ataylab buzib ko'rdim —
+  sakkiztasi ham testda qizardi.
+
+### Sizdan so'raladigan savollar (yulduzcha — hozir qurilgani)
+1. Telefonda «Bog'lanishlar» (bitim, yuk turi, zavod reysi) tovarlardan **keyin** turadi. — a) ⭐ shunday
+   qolsin; b) telefonda ham tovarlardan oldin tursin.
+2. «Bekor qilish» formasi endi «Boshqa amallar» ichida (bir marta bosib ochiladi). — a) ⭐ shunday qolsin;
+   b) avvalgidek doim ochiq tursin.
+3. Tovar qatoridagi «QR yopishtirilmadi deb belgilash» tugmasi uzun, telefonda butun qatorni egallaydi. —
+   a) ⭐ so'zi to'liq qolsin (kamdan-kam bosiladi, aniq bo'lgani yaxshi); b) qisqartirilsin: «🏷 QR-siz».
+
 ## 2026-11-11 — AI sotuvchi oddiy javobni o'zi yuboradi («🤖 O'zi yuborish»)
 
 Sizning so'zingiz: «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan tasdiq kop

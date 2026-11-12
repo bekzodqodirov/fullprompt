@@ -340,3 +340,63 @@ column's spelling, because it sits beside boxes that hold exactly that.
 tarkib editor does not stack, it OVERFLOWS — `xl:` is the viewport's 1280
 px, not the container's. At a 1280 px viewport a lot card must stay ≥ ~712
 px wide and must not be wrapped in anything padded.
+
+## 8. As built
+
+Built to §7. What the build added to it, and what it measured.
+
+**Sizes** (the same three-lot prixod; before → after): admin 4,223 → 3,804 px at 360 and 3,754 → 2,658 at 1280;
+YW operator 2,420 → 2,402; VED 2,656 → 2,472; seller 1,858 → 1,690. The operator's card is barely shorter and
+that is the point of §7.1: his whole first lot — print, «✏️», the pallet door — is on the first screen, which the
+first draft had pushed off it. Document width equals the viewport on every card looked at: 360, 768 and 1280, as
+admin, operator, VED, seller and logist, on eleven prixods (claimed, ownerless, on a deal, off a factory trip,
+QR-less, voided, with costs).
+
+**The three lenses that did not come back** were done against the built card:
+
+- *Regression.* Twenty-two source-shape unit fences that read this page or its components are green UNEDITED —
+  the calls they pin did not change. One was red and right: `lot-composition-fence` refused `card-totals.ts`
+  importing `composition-math`; the file keeps its own fifteen lines of arithmetic. `locales.test` wanted the
+  plural shape in all four bundles. Three e2e specs open the fold before the void form (`m9zzq-1`, and `m9zzq-4` /
+  `m9zzs`, which reach it as `#void-reason` — a testid grep had missed them).
+- *CSS.* `.btn-sm` is declared after every `.btn-*` variant and wins on source order; nothing on the card carries
+  a bare utility that `.btn` or `.input` would beat (`style-cascade`, `tokens` green). Only tokens for colour —
+  the marking's raw orange became `warn`.
+- *House.* The words are the ones the rest of the system says: «Tovarlar», «Jami», «Fayllar», «Xarajatlar»,
+  «Tarix»; `Panel` for the folds; `section-title` for a zone's caption. What is deliberately NOT the house
+  pattern is `CardCols` (§2.1, §7.4).
+
+**Decided while building**
+
+- The row's order is corrections, stickers, pallets (§7.2): seen on a phone screenshot, a manager's lot was five
+  lines of buttons with the write-off last, and «✏️» + «⚠️» fit one line.
+- The pickup's value line is a dash, not gone (§7.1): seen on the VED's desktop screenshot, the two selects of
+  «Bitim» | «Zavod reysi» started 26 px apart without it.
+- A client's name is no longer set in the code's monospace: «GS777» is, «— Alisher aka» is not.
+- `ClientAskPanel` is a card like the lots it heads, its button as wide as its words from `sm`.
+- History's `lots` line (`formatAuditValue`) and the list's «3 tovar» — the two places off the card that printed
+  the card's own facts worse than it does.
+
+**Tests**
+
+- `tests/unit/receipt-card-totals.test.ts` — literals a person can add on paper; the float case.
+- `tests/unit/audit-fields.test.ts` — a prixod's lots as cargo; a record that merely has `boxes` keeps its JSON.
+- `tests/e2e/m9zzzi-prixod-karta.spec.ts` (phone) and `.desktop.spec.ts`, over `prixod-karta-fixture.ts` (two
+  prixods by SQL, removed by a final TEST): «Jami» as literals AND against the lots' own lines; the phone's order;
+  the first lot above the tab bar; the row unmoved when «✏️» and «⚠️» open (positions read in ONE frame); the fold
+  closed and naming its contents; the ownerless card and a fifty-character marking at 360 and at 1280; the ties
+  above the cargo and a select at most half the card; files | costs side by side at 1280 and stacked at 768.
+- Eight red proofs by paired string edit (DECISIONS #1705).
+
+**Not done, and why**
+
+- `CompositionPanel` and the tarkib-read dialog are untouched inside, except two printed strings (§7.3) and the
+  open button's class. Their editor is the most tested component on the card and a layout round is not the
+  place to move it.
+- The check block's status line is not lifted into the lot's head: it would mean splitting a client component
+  that holds state. The ❌ chip covers the one state that must lead.
+- The History tab is still an open list, last. Folding it was not asked and specs read it without opening
+  anything.
+
+**Asked of him** (⭐ = as built): the ties below the lots on a phone; the void inside the fold; the long QR-less
+label kept whole.
