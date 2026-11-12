@@ -400,8 +400,9 @@ card draws its ✕ only for `receipts.edit` today, so in practice the logist rem
 
 ### C.7 «🔗 Bitim biriktirish» — the prixod card
 
-- The `DealLink` block gets `id="bitim"` (with a scroll margin for the sticky bar) and a `:target` ring, so
-  the button lands on the picker, not on the top of a long card.
+- The `DealLink` block gets `id="bitim"` (with a scroll margin for the sticky bar) and a `:target` frame (a
+  ring as first built, an outline since the merge with the card round — §G.H), so the button lands on the
+  picker, not on the top of a long card.
 - The picker today offers the client's open deals. When there are none and the prixod has no deal, the
   block says so and links «+ Yangi bitim ochish» → `/bitimlar/new?client=<id>` (the deal form with the
   client preset; the new deal's own card then offers this prixod in its «Prixod biriktirish» picker).
@@ -632,7 +633,8 @@ Questions (⭐ = built):
 
 ### G.E «🔗 Bitim biriktirish» on the card
 
-- `DealLink` is `id="bitim"` (`RECEIPT_DEAL_ANCHOR`), with a scroll margin and a `:target` ring.
+- `DealLink` is `id="bitim"` (`RECEIPT_DEAL_ANCHOR`), with a scroll margin and a `:target` frame (an outline
+  with an offset since the merge with the card round — §G.H).
 - «+ Yangi bitim ochish» is drawn for a prixod with no deal, for whoever may open one (`mayEditDealTerms` —
   never the VED), and **carries the prixod**: `/bitimlar/new?client=<id>&prixod=<receipt>` → the form says
   «Prixod N shu bitimga biriktiriladi» → the create action links it through `linkReceipt` right after the
@@ -729,7 +731,8 @@ Four lenses read the built round (fold · collector · confirm + AI line · the 
   and the test held with their guard deleted. It records the transaction's statements now, and its control
   is the press's own upsert.
 - The browser spec's «opens AT the deal block» held with the anchor and the scroll effect deleted (for a
-  seller the block sits at ~295 px with no scrolling). It asserts the scroll (`landsOnBlock`).
+  seller the block sat at ~295 px with no scrolling — on the card as it stood before the merge with the card
+  round). It asserts the scroll (`landsOnBlock`; its two outcomes since that merge: §G.H).
 - `measuresMoved` with the name AND the weight moved; the FULL tag recipe as a literal (`3795624c`, beside
   the basic `5a0ae98c`); `client-confirm-text.ts` on the rounding fence (§A.7 promised it).
 - The AI line's wire through `composeOwnerSummary` (daily and Monday), an unreadable ledger NAMED on the
@@ -745,6 +748,44 @@ scroll, a stale form, a voided prixod, a foreign deal). Red proofs by string edi
 37 for the review's fixes — 32 by vitest, 5 in a browser (the spec is serial, so one build per strip) — all
 red; three of the review's own new tests first stayed green and were re-anchored (DECISIONS #1735).
 
+### G.H After the merge with «Prixod kartasi» — BINDING (overrides G.E and G.G where they differ)
+
+Main's PR #146 rewrote `/receipts/[id]` while this round added to it (`docs/PRIXOD-KARTA.md`, its §7 binding).
+The card's ORDER is that round's; what this round put on the card was re-seated in it (DECISIONS #1738-#1742).
+
+- **The deal block is the «Bitim» cell of the ties card** (`receipt-links`): label → one value line → the
+  control row, «Saqlash» only once the answer differs, no card of its own. Its root keeps `id="bitim"` and
+  `data-testid="receipt-deal-block"` (main's root testid `receipt-deal` had no reader and gave way).
+- **The landing frame is an OUTLINE with a 4 px offset** (`target:outline…`): a ring on a bare cell sits on its
+  letters. `?bitim=1` adds the same four classes, written out — Tailwind compiles only what it can read.
+- **On a phone the ties card follows the cargo** (`max-md:order-1`), so on a short prixod the block is low on
+  the page and the browser cannot bring it under the bar. The landing has TWO honest outcomes —
+  `landsOnBlock` (`tests/e2e/prixod-xabari-landing.ts`, one home for the phone and desktop files): «under the
+  bar» (top within 56-110 px), or «page end» (scrolled as far as the page goes, the block WHOLE between the
+  app bar and the tab bar) — always behind `scrollY > 0`. The scroll margin itself is asserted at 360×420,
+  where the page is long enough to show it; «page end» on a desktop at 1280×900 (the seller).
+- **Layout chrome never scrolls the window**: the workspace tab strip brought its lit tab into view with
+  `scrollIntoView`, which pulled every anchored address (`#bitim`, `#lot-…`, `#ichki`) back to the top a frame
+  after the browser landed — on a desktop, for whoever's strip lights a tab on the page (322 → 63 px at
+  1280). It moves its own row's `scrollLeft` now (#1739; `tests/unit/anchor-landing.test.ts`,
+  `m9zzzi-prixod-xabari.desktop`).
+- **A deal of ANOTHER client**: its sentence sits UNDER the control row (between the value line and the select
+  it pushed «Bitim»'s select below «Zavod reysi»'s on a VED's desktop card), and «Saqlash» stands while it
+  does, whatever the select holds — the empty option «— uzish» takes the prixod off that deal, which before had
+  no door at all (the select opened on it, so it never «differed»). For a reader with no new-deal door the
+  sentence offers only pick or unlink (`receipts.dealForeignPick`). The VOID line stays ABOVE the row: on a
+  voided prixod there is no factory-trip select to stand level with (`canLinkPickup` asks a confirmed prixod),
+  and it is what the landing must show first.
+- **The «Fayllar» card leaves with a non-editor's last file**: main draws it only while there is something to
+  list or to attach; `AttachmentsPanel refreshWhenEmpty` (the prixod card alone passes it) asks the page again
+  when a reader who cannot attach removes the last file (the delete is a plain fetch that revalidates nothing).
+
+Pinned: `receipt-files-wire` (the save condition, the cell's order, the sentence's offer in four bundles, the
+outline, `refreshWhenEmpty`), `anchor-landing`, the phone spec (the scroll margin at 360×420, the save in the
+foreign state, the VED taking the prixod off a foreign deal, the last file) and `m9zzzi-prixod-xabari.desktop`.
+Red proofs: 6 by vitest, 4 in a browser (the save while foreign, the last file, the window pull-back, the
+desktop floor) — each red in the test it names.
+
 ### G.F Tests
 
 Unit: `receipt-arrival` (the message, the predicate, the alarm, `rowTypeFor`, the buttons, the wait kind's
@@ -752,6 +793,7 @@ three homes), `receipt-files-wire` (the ladder's order, the three collector open
 `ai-spend`, `lot-check-ready`, `lot-check-panel-render`, `client-confirm-wire`. Integration:
 `receipt-arrival` (who is told, per person and mute list; the claim door; a foreign deal; R6),
 `receipt-files-bot` (the whole handler chain), `ai-spend` (the three ledgers' real rows, the assistant's
-usage), `client-confirm` (96 combinations; the measures), `client-confirm-bot`. Browser:
-`m9zzzi-prixod-xabari`. Not verifiable here: real Telegram — the first real «Prixod keldi», the first press
+usage), `client-confirm` (96 combinations; the measures), `client-confirm-bot`, `anchor-landing`. Browser:
+`m9zzzi-prixod-xabari` and `m9zzzi-prixod-xabari.desktop`, over `prixod-xabari-fixture.ts` and
+`prixod-xabari-landing.ts`. Not verifiable here: real Telegram — the first real «Prixod keldi», the first press
 of each button and the first file are the proof.

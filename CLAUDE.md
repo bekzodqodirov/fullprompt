@@ -132,6 +132,12 @@ pnpm build && pnpm e2e  # 44 e2e
   Dockerfile stage that runs `pnpm` must descend from the deps stage (where the
   install downloaded it), or each code change re-fetches it and a deploy dies
   on npm's schedule (#1228). Fenced by `tests/unit/dockerfile-offline.test.ts`.
+- **Layout chrome never calls `scrollIntoView`.** It scrolls every scrollable
+  ancestor, the window included, so a strip or bar mounted in the layout pulls a
+  page opened at `#anchor` back to the top a frame after the browser landed —
+  the workspace strip did it to every anchored address on a desktop for six
+  weeks (#1739). Move the element's own `scrollLeft`/`scrollTop`; fenced by
+  `tests/unit/anchor-landing.test.ts`.
 - **`next build` needs more than V8's ~2 GB default heap** since the 2026-10-29
   merge: run it as `NODE_OPTIONS=--max-old-space-size=3072 pnpm build`, the
   image's own heap (Dockerfile) and CI's (#1543). Without it the build dies
@@ -176,7 +182,7 @@ pnpm build && pnpm e2e  # 44 e2e
 | The three suggestions after it — the tarkib filled from the client's file by AI («🤖 Fayldan to'ldirish»), the client's own ✅/❌ in Telegram (the push's third row, «📨 Mijozdan so'rash», the ❌ as a veto, «E'tirozni yopish»), the pressed-AI ledger and its daily limits | `docs/TARKIB-TAKLIFLAR.md` — his «Hammasi yulduzcha javob va taklifingni qoshamiz» (2026-11-11), BUILT; **§7 is binding** (as judged and as built), §8 the deploy, §10 stated-not-built |
 | «🤖 AI rastamojka» reads every file before «Tasdiqlash» — the wholeness predicate, «👤 VED hisoblasin», the streamed reading that keeps a cut, every sheet of a workbook judged, the column reader (deep headers, cards, total and footer rows named) | `docs/FAYL-OQISH.md` — his report of 2026-11-10, §6's three questions built as ⭐ (answer awaited), SHIPPED; its «As built» bullets (A/B, after the review of the fixes, after the check) override the sections they sit in |
 | The prixod CARD in one order — summary with «Jami», one «ties» card, one anatomy and one row of actions per lot, files \| costs, thread \| folds, «Boshqa amallar», the phone's order | `docs/PRIXOD-KARTA.md` — his sentence of 2026-11-11, BUILT; a layout round (no door, action, read or URL changed); **§7 is binding** (as judged by the two lenses that came back) |
-| The seller's ONE «Prixod keldi» message and its two buttons («📎 Fayl qo'shish» — the file collection in the staff bot, «🔗 Bitim biriktirish» — the card at its deal block), the client's ✅/❌ covering kilos and cubic metres, the AI's bill on the evening summary | `docs/PRIXOD-XABARI.md` — his message of 2026-11-11 («4 ha … 8 ha … prixod keldi desin sotuvchiga … ikta button»), BUILT; **§G is binding** (as judged and as built; **§G.G = after the as-built review, overrides G.C-G.E**), §F stated-not-built and the seven questions out |
+| The seller's ONE «Prixod keldi» message and its two buttons («📎 Fayl qo'shish» — the file collection in the staff bot, «🔗 Bitim biriktirish» — the card at its deal block), the client's ✅/❌ covering kilos and cubic metres, the AI's bill on the evening summary | `docs/PRIXOD-XABARI.md` — his message of 2026-11-11 («4 ha … 8 ha … prixod keldi desin sotuvchiga … ikta button»), BUILT; **§G is binding** (as judged and as built; **§G.G = after the as-built review, overrides G.C-G.E**; **§G.H = after the merge with the card round**), §F stated-not-built and the seven questions out |
 
 ## State — 2026-08-23
 
@@ -3649,9 +3655,10 @@ the card, the Russian width measure and typecheck were re-run here, and the full
 OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
 label) — CHANGELOG 2026-11-12.
 
-**Round — Prixod xabari (2026-11-11 evening; DECISIONS #1707-#1737 — renumbered from #1683-#1712 on the merge, the
-THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 — with this round's
-own `when` …124 — first; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
+**Round — Prixod xabari (2026-11-11 evening → 11-12; DECISIONS #1707-#1742 — renumbered twice: from #1683-#1712 on
+the first merge, the THIRTY-SEVENTH collision: main's «o'zi yuborish» (PR #147) took #1683-#1696 and migration 0145 —
+with this round's own `when` …124 — first; then by ten on the second, the THIRTY-EIGHTH: main's «Prixod kartasi»
+(PR #146) took #1697-#1706 and rewrote the card this round adds to; migration 0146 `prixod_xabari`, `when` …125 (minted as 0145) — ledger must reach 147; spec
 `docs/PRIXOD-XABARI.md`, **§G binding**, §F stated + the seven questions out).** His
 message with the 145 confirmation: «4 ha … og'irlik va hajmga urg'u berilsin … 8 ha … prixod kelganda … 2 marta sms
 boryapti … prixod keldi desin sotuvchiga … ikta button bolsin file qoshish va bitim biriktirish … qolgan savollaringa
@@ -3724,6 +3731,19 @@ first fourteen decision numbers. Renumbered on this branch FIRST (every «0145»
 then merged; main's 0145 re-makes no constraint 0146 re-makes; a fresh database takes both and reads 147; every
 local database was rebuilt (a long-lived one holds …124 as THIS round's and would skip main's 0145 — #1040).
 Fetch main BEFORE the last gate.
+**The second merge (#1738-#1742)**: answering his «merge qildinmi», the fetch showed main's PR #146 «Prixod
+kartasi» — no migration, #1697-#1706, and a rewrite of `/receipts/[id]`. Renumbered by ten FIRST, then merged:
+the card page is MAIN's whole (its §7 binds) with this round's nine edits re-seated; the deal cell keeps main's
+anatomy plus this round's anchor, sentences and door, and its landing frame is an OUTLINE (a ring on a bare cell
+sits on its letters). **The workspace tab strip scrolled the WINDOW** (`scrollIntoView` on its lit tab, in the
+layout): every anchored address (`#bitim`, `#lot-…`, `#ichki`) opened at the top on a desktop for whoever's strip
+lights a tab — measured 322 → 63 px; the row moves its own `scrollLeft` now (#1739, `anchor-landing.test.ts`). On
+a phone the deal cell sits after the cargo, so the landing has two honest outcomes, «under the bar» or «page
+end» (`tests/e2e/prixod-xabari-landing.ts`, #1740). The review of the merged card (two of four lenses came back):
+a deal of ANOTHER client could never be taken off the prixod (`ownDealOf` made «current» null, the select opened
+on «— uzish», so «Saqlash» never drew — «Saqlash» stands while a foreign deal does now), the foreign sentence
+sits under the control row (it had pushed «Bitim»'s select off «Zavod reysi»'s line), and the «Fayllar» card
+leaves with a non-editor's last file (`refreshWhenEmpty`) — #1741; spec §G.H.
 **16,219 unit/integration (921 files) + 508 e2e** (1 skipped) green on a fresh gsr_ci in CI's order at the merged
 head 218b017, ledger 147. Before the merge the round alone was green twice: 15,993 + 504 as first built (b9a43fd) and
 16,025 + 507 after the review (5dd0b69). Pushed to `claude/focused-bardeen-9t1bij`; NO pull request opened (he

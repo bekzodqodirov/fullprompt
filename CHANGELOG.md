@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## 2026-11-11 (kechqurun) — Prixod xabari: sotuvchiga bitta xabar va ikki tugma; mijoz og'irlik va hajmni ham tasdiqlaydi; AI xarajati kechki xulosada
+## 2026-11-11 kechqurun → 11-12 — Prixod xabari: sotuvchiga bitta xabar va ikki tugma; mijoz og'irlik va hajmni ham tasdiqlaydi; AI xarajati kechki xulosada
 
 Sizning xabaringiz: «4 ha — tovar nomi, karobka soni, og'irlik va hajmga urg'u berilsin, tekshirib olsin klient va
 tasdiqlasin. 8 ha. Prixod kelganda … 2 marta sms boryapti — u yerga "prixod keldi" desin sotuvchiga: klient,
@@ -15,6 +15,9 @@ ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0
 agar uni hali deploy qilmagan bo'lsangiz — shuning uchun son 146 emas, **147**. O'sha raundning o'z
 ogohlantirishini ham o'qing: unda **tg-listen qayta qurilishi shart**. (Ikkala raund ham bir xil 0145 raqamini
 olgan edi; u birinchi bo'lib `main`ga kirgani uchun bu raundning migratsiyasi 0146 ga ko'chirildi.)
+
+**Pastdagi «Prixod kartasi» raundi ham** (migratsiyasiz) shu deploy bilan keladi — prixod kartasining
+ko'rinishi o'zgaradi; bu raundning kartadagi qismi o'sha yangi tartibga joylangan (7-band).
 
 ### 1. Sotuvchiga bitta «Prixod keldi» xabari, ikki tugma bilan
 - **Avval ikkita xabar borardi** («📥 Prixod …» va alohida «💰❓ Narxi kelishilmagan yuk» yoki «📎 Bitimga
@@ -119,6 +122,21 @@ Olti savol (1, 2, 3, 5, 6, 7) ⭐ bo'yicha qoldi; har birini ishlab turgan kodga
 mahkamladim: tugmalar «qabul qilindi» xabarida o'zi chiqadi; mijozning «❌»i xodim ✅ idan ustun; «❌» haqida
 sotuvchi, logistlar va adminlar xabar oladi; ko'p lotli prixodda «❌» hamma lotga yoziladi; xitoycha nomga AI
 ruscha nom beradi; limitlar 300 va 50.
+
+### 7. `main`dagi «Prixod kartasi» raundi bilan birlashtirildi (2026-11-12)
+Shu kunlari boshqa sessiya prixod kartasini qayta tartibga keltirdi («hamma narsa o'z joyida»). Ikkala raund
+bitta kartani o'zgartirgani uchun ularni birlashtirdim: kartaning yangi tartibi — o'sha raundniki, bu raundning
+qo'shganlari (bitim bloki, o'zi yuborgan faylni o'chirish ✕, mijoz javobidagi kg/kub) yangi tartibga joylandi.
+- **«🔗 Bitim biriktirish» tugmasi** endi kartadagi «Bog'lanishlar» kartochkasining «Bitim» qatoriga olib
+  boradi va uni ramka bilan belgilaydi. Telefonda bu kartochka tovarlardan **keyin** turadi: qisqa prixodda
+  sahifa oxirigacha suriladi va «Bitim» qatori ekranda to'liq ko'rinadi.
+- **Kompyuterda manzili bilan ochilgan sahifa tepaga sakrab ketardi** — `#bitim`, lot manzili, «Savol-javob»
+  havolasi: sahifa kerakli joyga tushib, bir lahzadan keyin yana tepaga qaytardi (bo'limlar qatori shunday
+  qilardi). Tuzatildi — endi tushgan joyida qoladi. Bu eski xato edi, faqat kompyuterda.
+- **Boshqa mijozning bitimida qolib ketgan prixodni endi uzsa bo'ladi.** Mijoz tuzatilganda prixod eski
+  mijozning bitimida qolib ketishi mumkin; kartada «Uzish»ni tanlab «Saqlash» bosilsa — o'sha bitimdan
+  chiqadi. Avval bu holatda «Saqlash» tugmasi chiqmasdi (VED uchun bosiladigan hech narsa qolmasdi).
+- Sotuvchi o'zi yuborgan **oxirgi** faylni o'chirsa, bo'sh «Fayllar» sarlavhasi ham kartadan ketadi.
 
 ### Qanday tekshirildi
 - Qurishdan **oldin** rejani uch mustaqil tekshiruvchi o'qidi (35 e'tiroz, uchtasi «xabar jim yo'qoladi»

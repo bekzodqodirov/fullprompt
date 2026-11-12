@@ -374,7 +374,8 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 Bitta migratsiya bor: **0146** — deploydan keyin son **147** bo‘ladi (repo’dagi fayllar soni:
 `ls src/modules/platform/db/migrations/*.sql | wc -l`). **147 — ikki raund bilan:** `main`da bu raunddan oldin
 AI sotuvchining «o‘zi yuborish» raundi (migratsiya **0145**) turibdi; u hali deploy qilinmagan bo‘lsa, shu
-deployda birga o‘tadi (uning o‘z bo‘limi va ogohlantirishi — CHANGELOG’da, shu yozuvdan keyingisi). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
+deployda birga o‘tadi (uning o‘z bo‘limi va ogohlantirishi — CHANGELOG’da). Shu deploy `main`dagi «Prixod
+kartasi» raundini ham olib keladi (migratsiyasiz — prixod kartasining ko‘rinishi o‘zgaradi). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
 ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (model va tokenlar) va botning
 «kutish» jadvalidagi ruxsat etilgan turlar ro‘yxatiga bitta yangi tur. Mavjud ma’lumot o‘zgarmaydi.
 

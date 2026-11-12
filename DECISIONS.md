@@ -9153,3 +9153,78 @@ owner the consequence is one number: a deploy from main now carries BOTH migrati
 main's own entry (which says 146) and this round's both say so. THE LESSON, which is #1229's and #605's again:
 **fetch main before the last gate, not after it** — the collision cost a second full run (fifty minutes) that
 a `git fetch` before the first would have folded into one.
+
+### The second merge with main — the thirty-eighth collision, and what the merged card showed (2026-11-12; NO migration — ledger 147)
+
+**#1738 — Main had rewritten the card this round adds to, under the decision numbers this round had just taken.**
+Answering his «merge qildinmi», the fetch showed PR #146 («Prixod kartasi», no migration) on main with
+#1697-#1706 — and its subject was `/receipts/[id]`, the card this round's deal block, file ✕ and kg/m³ answer
+live on. Renumbered FIRST, on this branch, by ten (#1707-#1737; this round's DECISIONS section and CLAUDE.md
+paragraph only; the two sentences that report history keep their numbers), then merged. Conflicts: the card
+page, the deal cell, and the three documents both rounds append to. **The page was taken WHOLE from main** — its
+§7 is binding and is the newer decision about that screen — and this round's nine edits re-applied: six merged
+by themselves (the two imports, `ownFileIds`, `askFace.full`, `ownDeal` / `foreignDeal`, `dealChoices`), three by
+hand (the cell's props, `measures` / `measuresMoved` on the client's answer, `removableIds`). **The cell keeps
+main's anatomy** (label → one value line → control row; «Saqlash» only once the answer differs) and this round's
+anchor, sentences and door. **The landing frame became an OUTLINE with an offset**: the cell has no card of its
+own any more, and a ring on a bare cell sits on its letters; `?bitim=1` adds the same four classes, written out,
+because Tailwind compiles only what it can read. Main's root testid `receipt-deal` had no reader in either
+round and gave way to `receipt-deal-block` (this round's spec reads it six times). Main's 22 source-shape
+fences over the card stayed green unedited.
+
+**#1739 — The workspace tab strip scrolled the WINDOW, and every anchored address opened at the top on a
+desktop.** Found by measuring the merged landing at 1280 instead of reading it: scrollY 322 at the browser's
+landing, 63 fifty milliseconds later. `ws-tabs.tsx` brought its lit tab into view with
+`scrollIntoView({ block: 'nearest', inline: 'nearest' })`, which scrolls EVERY scrollable ancestor — and on a
+desktop the row cannot scroll sideways at all (`md:overflow-hidden`; the fold takes what does not fit), so the
+call's only effect there was to pull the page up to the strip one frame after hydration. `#bitim`, `#lot-<id>`
+and `#ichki` all landed at the top for whoever's strip lights a tab on that page, since the strip shipped
+(2026-09-27, #1071). A phone was spared only because it draws no strip on a card. The effect now moves the
+row's own `scrollLeft` from the two boxes. RULE: **chrome that lives in the layout never calls
+`scrollIntoView`** — it runs on every page, after the browser has landed on the address. Fenced by
+`tests/unit/anchor-landing.test.ts` (the strip names no `scrollIntoView` and still moves its row; nothing the
+protected layout imports from components/ calls it) and `m9zzzi-prixod-xabari.desktop` — signed in as the
+OWNER, whose strip lights «Prixodlar» there: the first draft, signed in as the seller, was green on the defect,
+because a seller's strip lights nothing on a prixod. Red: «block at 395, scrolled 63 of 1206».
+
+**#1740 — On a phone the deal block now sits under the cargo, and the landing has two honest outcomes.** The
+card round orders the ties after the lots under `md`; on the fixture's short prixod (1,088 px, the block at 580)
+an 800 px screen can bring the block only to 292 — the browser was right and the spec that demanded «just
+under the sticky bar» was red for a landing that was. `landsOnBlock` (`tests/e2e/prixod-xabari-landing.ts`,
+one home for the phone and desktop files) answers «under the bar» or «page end» (scrolled as far as the page
+goes, the block WHOLE between the app bar and the tab bar), still behind `scrollY > 0` — #1735's lesson, a
+block already in view on an unscrolled page held the old helper green with the anchor and the effect deleted.
+The scroll margin itself is asserted where the page is long enough to show it (360×420, «under the bar»
+exactly). The helper reads the block and the scroll in ONE evaluate (the card round's own rule), and takes the
+tab bar's box as the floor only when the bar is drawn: it is in the DOM at every width and hidden by CSS from
+`md`, and its box of zeros made «page end» unreachable on every desktop (the review's XC-2; red-proven on the
+seller's 1280×900 landing, «block at 300, scrolled 57 of 57» refused).
+
+**#1741 — The merged card reviewed as built: eight findings from the two lenses that came back, each checked
+against the code before it was accepted, each fixed and red-proven.** (a) **A deal of ANOTHER client could be
+replaced but never taken off the prixod** (KARTA-1 / XC-3): «current» is the prixod's OWN deal — null there —
+and the select opens on «— uzish», so main's «Saqlash only once the answer differs» never drew the button for
+the one answer that needs no deal. Before the merge this round drew it disabled: the same dead state, made by
+this round's `ownDealOf`, not by the merge. For the VED, who is offered no new-deal door, the cell held nothing
+that did anything under a sentence telling them to pick or open a deal. «Saqlash» now stands while a foreign
+deal does; the press sends what the select holds and empty detaches (the action always took null).
+(b) **The foreign sentence moved under the control row** (KARTA-2): between the value line and the select it
+pushed «Bitim»'s select 22-38 px below «Zavod reysi»'s on a VED's desktop card — the gap the card round closed
+at 26 px. The VOID line stays above the row: on a voided prixod there is no factory-trip select to stand level
+with (`canLinkPickup` asks a confirmed prixod), and it is the first thing the landing must show. The sentence
+offers only what its reader is offered (`receipts.dealForeignPick` without the new-deal door) and names the
+empty option by its own label. (c) **A seller who took back the LAST file was left with «Fayllar» over
+nothing** until the next visit (KARTA-3): the ✕ for a non-editor is this round's, «no card with nothing to list»
+is the card round's; `AttachmentsPanel refreshWhenEmpty` (the prixod card alone passes it) asks the page again
+— the delete is a plain fetch that revalidates nothing. (d) **The two specs** (KARTA-4 / XC-1, KARTA-5):
+`docs/PRIXOD-XABARI.md` §G.H and `docs/PRIXOD-KARTA.md` §8 «After the merge» say all of this, and the card
+spec's §4 anchors gain `#bitim` / `?bitim=1`. Red proofs: 6 by vitest (the save condition, the cell's order,
+the sentence's offer, the outline, the page's and the panel's half of the refresh) and 2 in a browser (the save
+while foreign, the last file), beside #1739's and #1740's.
+
+**#1742 — PROCESS.** (1) Found the way #1737 was, by fetching at the start of an answer — and cheap this time
+because the renumbering came BEFORE the merge, while every #1697-#1727 on the branch was still this round's own.
+(2) `Timed out waiting 60000ms from config.webServer` was postgres having died between turns (footgun 1), not
+the build: read `pg_isready` before reading a red e2e. (3) A red proof for a TEST HELPER needs no product build
+and runs in the main checkout by string edit; a red proof for product code takes one build per strip in the
+second worktree, so the main tree's build stays the one under test.
