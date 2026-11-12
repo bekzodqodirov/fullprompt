@@ -26078,13 +26078,51 @@
      ],
      "count": 2
     },
-    "headerRow": 0
+    "headerRow": 0,
+    "facts": {
+     "rows": [
+      {
+       "name": "Куртки женские",
+       "quantity": null,
+       "note": null,
+       "weightKg": 160,
+       "volumeM3": 2.5,
+       "packing": {
+        "cartons": 15,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Брюки мужские",
+       "quantity": null,
+       "note": null,
+       "weightKg": 85,
+       "volumeM3": 1.2,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
    },
    "said": "«Наименование груза» (груз is not in NAMING_WORD) drops to rung 2 and «Описание» to its left becomes the name. Main: «Куртки женские» / «Брюки мужские». Worktree: «зимняя, синтепон» / «джинс».",
    "why": "Main: «Куртки женские» / «Брюки мужские». Worktree: «зимняя, синтепон» / «джинс».",
    "realistic": "«Наименование груза» is the logistics term (CMR / cargo manifest) a forwarder's Russian packing list uses; the material note sits in an «Описание» column.",
    "source": "r5-probe sheets",
-   "weight": "regression"
+   "weight": "regression",
+   "pick": "AI-SORAYDI §3.2 X2 (review excel-spec-6, 2026-11-12): the same move as c2469 / c2470, pinned at the calc door. «Кол-во мест» is the row's carton count, its PACKING now (`packing.cartons` 15 / 10): the door's «sotuvchi: 15 мест» note is gone — the landed row says «📦 15 karobka — fayldan» once — and the reader's own row still writes 15 under «мест» for the doors that keep no packing. The row's own brutto and cube stand (nothing per carton to multiply)."
   },
   {
    "id": "c2036",
