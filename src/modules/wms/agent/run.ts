@@ -22,7 +22,8 @@ import { capReached, dayRunCounts } from './today';
 import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPECS, TRUCK_SECTIONS, type ChecklistState, type ToolOutcome } from './tools';
 import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
-import { writeDraft, writeNotice, type ComposedAction } from './drafts';
+import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
+import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion } from './auto-send';
 import {
   airMentionIn,
   extractNumbers,
@@ -424,7 +425,12 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
   );
   if (!worthy.worthy) {
     if ('notice' in worthy) {
-      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) await writeNotice(ctx, worthy.reason);
+      if (await runLedgerRow(job, attempt, 'notice', worthy.reason)) {
+        await writeNotice(ctx, worthy.reason);
+        // «Botmisiz?» after an AUTO reply (§18.3 step-down): that chat leaves «o'zi yuborish» for 30 days,
+        // and a second such chat in a week disarms it. Once per anchor — the ledger row's own claim.
+        if (worthy.reason === 'bot_question') await autoStepDownOnBotQuestion(ctx.managerUserId, ctx.peerId, t);
+      }
       return { outcome: 'notice', reason: worthy.reason };
     }
     // A ledger row, so the sweep's deploy-gap pass does not ask again every minute.
@@ -491,15 +497,11 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const late = lateNote({ anchorSentAt: ctx.anchor.sentAt, waitingSince: ctx.burst[0]?.sentAt ?? null, writtenAt: now(), origin: job.origin });
     if (late) notes.unshift(late);
 
-    const written = await writeDraft({
-      runId,
-      ctx,
-      compose: c,
-      policy,
-      memory,
-      actions,
-      notes,
-    });
+    const input = { runId, ctx, compose: c, policy, memory, actions, notes };
+    // «O'zi yuborish» (§18.3) — the INBOUND run's alone: judged on the very row about to be written,
+    // after the policy and the actions, and written beside it in `createDraft`'s own transaction.
+    const autoPlan = await autoPlanFor({ draft: autoShapeOf(draftFromRun(input)), tools: loop.tools, now: now() });
+    const written = await writeDraft({ ...input, autoPlan });
     // The customer's language, remembered for the next «ok».
     const locale = detectLocale(ctx.anchor.body, ctx.storedLocale).locale ?? c.language;
     await db

@@ -6,8 +6,10 @@ import { composeStaffMessage } from '../../platform/notifications/service';
 import { keyboardOf, STAFF_TEXT_CAP } from '../../platform/notifications/staff-html';
 import { editText } from '../../platform/telegram/send';
 import { buttonsFor } from '../../platform/telegram/staff-bot';
+import { autoCountingDown, autoPayload, withAutoLine } from './auto-card';
+import type { AutoCardState } from './auto-send';
 import { agentCardText, BLOCK_REMEDY, cardDrawsSend, cardExtra, CardTooLong, digestBody, type CardInput } from './card';
-import { readAgentConfig } from './config';
+import { AUTO_OFF_CANCEL, readAgentConfig } from './config';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import type { ComposedAction, DraftPolicyJson } from './types';
 import { CANCELLED_BY_HOLDER } from './web-thread';
@@ -54,6 +56,11 @@ export interface CardRenderOptions {
   surface?: 'bot' | 'web';
   humanPauseMin?: number | null;
   humanWroteAt?: Date | null;
+  /**
+   * The draft's «o'zi yuborish» state (auto-send `autoCardStateFor`) — the
+   * seam the card's auto lines read. Absent or null: the ordinary card.
+   */
+  auto?: AutoCardState | null;
 }
 
 /** «2 soat» for whole hours, «90 daqiqa» otherwise — the config is minutes, he reads time. */
@@ -83,6 +90,8 @@ const CANCEL_WORDS: Record<string, string> = {
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',
+  // A disarm took back what the machine approved and had not yet sent (config `disarmAutoInTx`, fix pass A, C5).
+  [AUTO_OFF_CANCEL]: 'o‘zi yuborish o‘chirildi',
 };
 
 /** The `policy.stale` a ✅ writes when it finds the chat moved (decide `SUPERSEDED_AS`). */
@@ -355,7 +364,9 @@ export function renderDraftCardFull(
   const input = (sendable: boolean): CardInput => ({
     customerLabel: card.customerLabel,
     title: TITLES[d.kind] ?? TITLES.reply!,
-    statusLine: statusLine(d, o, opts, sendable),
+    // «O'zi yuborish» folded in (auto-card `withAutoLine`): the timer while it counts down, the reason it
+    // did not go, ⏸, the layer's «off», «🤖 O‘zi yuborildi» on the approved line and his 👎.
+    statusLine: withAutoLine(statusLine(d, o, opts, sendable), opts.auto, d, sendable, o?.status ?? null),
     blocks: live ? (p.blocks ?? []) : [],
     warnings: p.warnings ?? [],
     notes: [...(p.notes ?? []), ...extraNotes],
@@ -371,8 +382,11 @@ export function renderDraftCardFull(
   });
   const drawn = (tooLong: boolean) => cardDrawsSend({ blocked: d.blocked || tooLong, status: d.status, ownText: d.finalBody !== null });
   const first = fitCard(input(drawn(false)), live);
-  // The fit took the ✅ away: the editing line above it must not still offer one.
-  return first.tooLong && drawn(false) && d.status === 'editing' ? fitCard(input(false), live) : first;
+  // The fit took the ✅ away: the editing line above it must not still offer one — and a card counting
+  // down to the machine's press must not promise to send what it cannot show (auto-card `autoCountingDown`).
+  return first.tooLong && drawn(false) && (d.status === 'editing' || autoCountingDown(opts.auto, d, true))
+    ? fitCard(input(false), live)
+    : first;
 }
 
 /** The card's text alone — `renderDraftCardFull` for a reader that draws no buttons. */
@@ -410,8 +424,13 @@ async function humanReplyAt(d: DraftRow): Promise<Date | null> {
  * Re-render the draft's card and put it everywhere it is: the notification
  * row's payload (so an unsent copy goes out current) and the sent Telegram
  * message (edited, with the buttons `buttonsFor` draws for its new state).
+ *
+ * An edit Telegram took is what his screen now shows: the row's `shown` names
+ * this draft from `now` (kept, when it already did) — «o'zi yuborish» runs its
+ * hold from there (fix pass A, C4; auto-send `cardShownAt`). An edit that
+ * failed leaves `shown` on the draft his screen still carries.
  */
-export async function refreshAgentCard(draftId: string, extraNotes: string[] = []): Promise<void> {
+export async function refreshAgentCard(draftId: string, extraNotes: string[] = [], opts: { now?: Date } = {}): Promise<void> {
   const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
   if (!d) return;
   const [o] = await db.select().from(agentOutbox).where(eq(agentOutbox.draftId, draftId));
@@ -419,13 +438,24 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
   const ownReply = d.status === 'taken_over' && !d.decidedBy;
   const humanPauseMin = ownReply ? ((await readAgentConfig())?.humanPauseMin ?? null) : null;
   const humanWroteAt = ownReply ? await humanReplyAt(d) : null;
-  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt });
+  // «O'zi yuborish»'s state — every redraw keeps the timer, the reason or the 👎 (null one migration behind).
+  const { autoCardStateFor } = await import('./auto-send');
+  const auto = await autoCardStateFor(draftId);
+  const { text, tooLong } = renderDraftCardFull(d, o ?? null, extraNotes, { surface: 'bot', humanPauseMin, humanWroteAt, auto });
   const live = d.status === 'pending' || d.status === 'editing';
   const body = digestBody(d);
   const kb = ((d.policy ?? {}) as { kb?: string }).kb;
   const sendable = cardDrawsSend({ blocked: d.blocked || tooLong, status: d.status, ownText: d.finalBody !== null });
   const extra = {
-    ...cardExtra({ id: d.id, body, actions: (d.actions ?? []) as unknown[], blocked: !sendable, live, kind: d.kind }),
+    ...cardExtra({
+      id: d.id,
+      body,
+      actions: (d.actions ?? []) as unknown[],
+      blocked: !sendable,
+      live,
+      kind: d.kind,
+      auto: autoPayload(auto, d, sendable, o ?? null),
+    }),
     // After he answered the agent's question himself and it went out, the
     // card offers to REMEMBER the answer (spec §7.1.4) — once.
     kbAsk: d.status === 'approved' && d.needsOwner && d.finalBody !== null && kb !== 'saved' && kb !== 'skipped',
@@ -455,6 +485,20 @@ export async function refreshAgentCard(draftId: string, extraNotes: string[] = [
     if (!process.env.TELEGRAM_BOT_TOKEN || !Number.isFinite(chatId) || !Number.isInteger(messageId)) continue;
     const message = composeStaffMessage('AgentDraft', payload, row.locale);
     const res = await editText({ chatId, messageId, html: message.html, replyMarkup: keyboardOf(buttonsFor('AgentDraft', payload)) });
-    if (!res.ok) logger.warn({ draftId, description: res.description }, '[agent] card copy not edited');
+    if (!res.ok) {
+      logger.warn({ draftId, description: res.description }, '[agent] card copy not edited');
+      continue;
+    }
+    // His screen shows THIS draft now — only while the row still names it (a newer draft re-pointed it since
+    // stamps its own once ITS edit lands), and from the first time it did.
+    const at = (opts.now ?? new Date()).toISOString();
+    await db
+      .update(notifications)
+      .set({
+        payload: sql`${notifications.payload} || jsonb_build_object('shown', CASE
+            WHEN ${notifications.payload}->'shown'->>'draftId' = ${draftId} THEN ${notifications.payload}->'shown'
+            ELSE jsonb_build_object('draftId', ${draftId}::text, 'at', ${at}::text) END)`,
+      })
+      .where(and(eq(notifications.id, row.id), sql`${notifications.payload}->>'draftId' = ${draftId}`));
   }
 }

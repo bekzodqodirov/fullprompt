@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../../platform/db/client';
 import {
+  agentAutoVerdicts,
   agentDrafts,
   agentOutbox,
   calcRequests,
@@ -18,7 +19,9 @@ import { guardForUser } from '../crm/account-guard';
 import { seesAllTg } from '../crm/conversations';
 import { cardDigest, cardDrawsSend, digestBody } from './card';
 import { renderDraftCardFull } from './card-io';
-import { agentTablesReady, type AgentConfig } from './config';
+import { autoCountingDown } from './auto-card';
+import { autoCardStatesFor, readAutoConfig, type AutoCardState, type AutoConfig } from './auto-send';
+import { agentAutoReady, agentTablesReady, type AgentConfig } from './config';
 import { AGENT_LIMITS } from './limits';
 import { agentStats, type AgentStats } from './stats';
 import { dayRunCounts, sendsToday } from './today';
@@ -70,6 +73,11 @@ export interface WebDraft {
    * because a card the press retires is gone from the page with the note.
    */
   waitingInChat: number;
+  /**
+   * «O'zi yuborish» counts down on this card (auto-card `autoCountingDown`):
+   * the page draws ⏸ beside ✅, as the bot's keyboard does (payload `autoAt`).
+   */
+  autoWaiting: boolean;
 }
 
 type DraftRow = typeof agentDrafts.$inferSelect;
@@ -97,10 +105,11 @@ function chatHrefOf(d: Pick<DraftRow, 'clientId' | 'leadId'>): string | null {
   return null;
 }
 
-function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0): WebDraft {
+function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInChat = 0, auto: AutoCardState | null = null): WebDraft {
   const { kb, kbToken } = (d.policy ?? {}) as { kb?: string; kbToken?: string };
   // The page lists live and approved drafts only, so no line here names his own reply's pause.
-  const card = renderDraftCardFull(d, o, [], { surface: 'web' });
+  const card = renderDraftCardFull(d, o, [], { surface: 'web', auto });
+  const sendable = cardDrawsSend({ blocked: d.blocked || card.tooLong, status: d.status, ownText: d.finalBody !== null });
   return {
     id: d.id,
     managerUserId: d.managerUserId,
@@ -120,6 +129,7 @@ function toWeb(d: DraftRow, o: OutboxRow | null, holderName: string, waitingInCh
     kbArmed: kb === 'general_armed',
     kbArmToken: kb === 'general_armed' && typeof kbToken === 'string' ? kbToken : null,
     waitingInChat,
+    autoWaiting: autoCountingDown(auto, d, sendable),
   };
 }
 
@@ -223,12 +233,16 @@ export async function webDrafts(viewer: WebViewer, now = new Date()): Promise<{
         .groupBy(agentOutbox.managerUserId, agentOutbox.peerId)
     : [];
   const waitingIn = new Map(waitingCounts.map((w) => [`${w.managerUserId}:${String(w.peerId)}`, Number(w.n)]));
-  const live = liveRows.map((r) => toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0));
+  // Each card's «o'zi yuborish» state in one query — the bot's card and this one say the same line.
+  const autos = await autoCardStatesFor([...liveRows, ...waitingRows].map((r) => r.d.id));
+  const live = liveRows.map((r) =>
+    toWeb(r.d, r.o, r.holder, waitingIn.get(`${r.d.managerUserId}:${String(r.d.peerId)}`) ?? 0, autos.get(r.d.id) ?? null),
+  );
   return {
     pending: live.filter((d) => !d.needsOwner),
     questions: live.filter((d) => d.needsOwner),
     remember: rememberRows.map((r) => toWeb(r.d, r.o, r.holder)),
-    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder)),
+    waiting: waitingRows.map((r) => toWeb(r.d, r.o, r.holder, 0, autos.get(r.d.id) ?? null)),
   };
 }
 
@@ -388,6 +402,10 @@ export async function tariffMismatchSeen(now = new Date()): Promise<boolean> {
 /** The last 30 days of drafts, counted by `agentStats`. */
 export async function webStats(now = new Date()): Promise<AgentStats> {
   const since = new Date(now.getTime() - 30 * 86_400_000);
+  // The machine's own presses are counted apart (stats `autoSent`) — read only once 0145 is there.
+  const autoSent = (await agentAutoReady())
+    ? sql<boolean>`EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = ${agentDrafts}.id AND v.state = 'pressed')`
+    : sql<boolean>`false`;
   const rows = await db
     .select({
       status: agentDrafts.status,
@@ -395,11 +413,12 @@ export async function webStats(now = new Date()): Promise<AgentStats> {
       edited: sql<boolean>`${agentDrafts.finalBody} IS NOT NULL`,
       outboxStatus: agentOutbox.status,
       category: agentDrafts.category,
+      autoSent,
     })
     .from(agentDrafts)
     .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentDrafts.id))
     .where(gte(agentDrafts.createdAt, since));
-  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true })));
+  return agentStats(rows.map((r) => ({ ...r, edited: r.edited === true, autoSent: r.autoSent === true })));
 }
 
 export interface OwnerAccountState {
@@ -469,4 +488,143 @@ export async function userName(userId: string | null): Promise<string | null> {
   if (!userId) return null;
   const [row] = await db.select({ name: users.fullName }).from(users).where(eq(users.id, userId));
   return row?.name ?? null;
+}
+
+/**
+ * Where a reply the machine approved is (fix pass B, C6) — read from its outbox
+ * row, the card's own fact: Telegram took it ('sent'), still on its way
+ * ('going': with the pump, or being sent), or Telegram's answer was lost
+ * ('unclear': it may well be in the chat, and is never re-sent). A reply that
+ * never left — taken back, expired, refused — is not one of them: it is his.
+ */
+export type AutoDelivery = 'sent' | 'going' | 'unclear';
+
+/** One reply the machine approved by itself — the panel's list, each with where it is. */
+export interface AutoSentRow {
+  draftId: string;
+  managerUserId: string;
+  /** «GS777 · Ali Valiyev» — the card's own label for the customer. */
+  customerLabel: string;
+  pressedAt: Date;
+  /** The words it approved (`digestBody`). */
+  text: string;
+  delivery: AutoDelivery;
+  /** When Telegram took it — 'sent' only. */
+  sentAt: Date | null;
+  /** He said «👎 Xato edi» on it. */
+  bad: boolean;
+  /** Where the conversation is read. */
+  chatHref: string | null;
+}
+
+/** The «🤖 O‘zi yuborish» panel on the settings tab (§18.3, his answer of 2026-11-11). */
+export interface AutoPanel {
+  config: AutoConfig;
+  armedByName: string | null;
+  /**
+   * Is the agent's account marked «Ish raqami» (fix pass B, C9)? While it is
+   * not, nothing goes by itself whatever the switch says — the gate refuses
+   * every reply — and arming is refused: the panel says so BEFORE he presses.
+   */
+  workAccount: boolean;
+  /**
+   * Today (Tashkent) on the agent's account, by the reply drafts its runs wrote:
+   * approved by the machine and gone to the customer (`sent`), on its way
+   * (`going`), Telegram's answer lost (`unclear`), stopped by his ⏸, still
+   * counting down, and every other one — left to him (not eligible, refused
+   * at the press, decided by him before the timer, a machine-approved reply
+   * that never left). «O‘zi yubordi» counts only what went (fix pass B, C6).
+   */
+  today: { sent: number; going: number; unclear: number; paused: number; waiting: number; left: number };
+  sent: AutoSentRow[];
+}
+
+/** An outbox status as the panel's delivery — null: the reply never left (or, one migration behind, nothing). */
+function deliveryOf(status: string | null): AutoDelivery | null {
+  if (status === 'sent') return 'sent';
+  if (status === 'unknown') return 'unclear';
+  // No outbox row under a machine approval is a reply the ✅ queued and nobody has read since: on its way.
+  if (status === null || status === 'agent' || status === 'sending') return 'going';
+  return null;
+}
+
+const AUTO_SENT_SHOWN = 20;
+
+/**
+ * What the panel reads — null when 0145 has not landed (the page is then
+ * exactly today's). The counts are the AGENT's account's, the one the layer
+ * speaks from; the sent replies are listed only where the reader may read the
+ * chat (`draftsSeenBy`, K10).
+ */
+export async function autoPanel(viewer: WebViewer, ownerUserId: string | null, now = new Date()): Promise<AutoPanel | null> {
+  const config = await readAutoConfig();
+  if (!config) return null;
+  const dayStart = tashkentDayStart(tashkentDay(now));
+  // The machine's approvals by where their reply is (fix pass B, C6) — the outbox row is one per draft (its
+  // `draft_id` is unique), so the LEFT JOIN multiplies nothing. A reply that never left (❌ «Bekor qilish», 🙋, a
+  // disarm, Telegram's refusal — fix pass A) is his decision: counted with what was left to him, never listed.
+  const pressed = eq(agentAutoVerdicts.state, 'pressed');
+  const sent = sql`${pressed} AND ${agentOutbox.status} = 'sent'`;
+  const going = sql`${pressed} AND (${agentOutbox.status} IS NULL OR ${agentOutbox.status} IN ('agent', 'sending'))`;
+  const unclear = sql`${pressed} AND ${agentOutbox.status} = 'unknown'`;
+  const [counts, rows, armedByName, account] = await Promise.all([
+    ownerUserId
+      ? db
+          .select({
+            sent: sql<number>`count(*) FILTER (WHERE ${sent})::int`,
+            going: sql<number>`count(*) FILTER (WHERE ${going})::int`,
+            unclear: sql<number>`count(*) FILTER (WHERE ${unclear})::int`,
+            paused: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} = 'stopped' AND ${agentAutoVerdicts.outcome} = 'pause')::int`,
+            // Counting down means a LIVE reply: a row whose draft the chat retired waits only for the sweep to
+            // call it gone (auto-send `pressOne`), and is his already.
+            waiting: sql<number>`count(*) FILTER (WHERE ${agentAutoVerdicts.state} IN ('waiting', 'pressing') AND ${agentDrafts.status} = 'pending')::int`,
+            total: sql<number>`count(*)::int`,
+          })
+          .from(agentAutoVerdicts)
+          .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+          .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentAutoVerdicts.draftId))
+          .where(and(eq(agentAutoVerdicts.managerUserId, ownerUserId), gte(agentAutoVerdicts.createdAt, dayStart)))
+      : Promise.resolve([]),
+    db
+      .select({ v: agentAutoVerdicts, d: agentDrafts, status: agentOutbox.status, sentAt: agentOutbox.sentAt })
+      .from(agentAutoVerdicts)
+      .innerJoin(agentDrafts, eq(agentDrafts.id, agentAutoVerdicts.draftId))
+      .leftJoin(agentOutbox, eq(agentOutbox.draftId, agentAutoVerdicts.draftId))
+      .where(and(sql`(${sent} OR ${going} OR ${unclear})`, draftsSeenBy(viewer)))
+      .orderBy(desc(agentAutoVerdicts.pressedAt))
+      .limit(AUTO_SENT_SHOWN),
+    userName(config.armedBy),
+    ownerUserId
+      ? db.select({ work: tgAccounts.workAccount }).from(tgAccounts).where(eq(tgAccounts.managerUserId, ownerUserId))
+      : Promise.resolve([]),
+  ]);
+  const c = counts[0];
+  const n = (x: number | undefined) => Number(x ?? 0);
+  const today = { sent: n(c?.sent), going: n(c?.going), unclear: n(c?.unclear), paused: n(c?.paused), waiting: n(c?.waiting) };
+  return {
+    config,
+    armedByName,
+    workAccount: account[0]?.work === true,
+    today: {
+      ...today,
+      left: Math.max(0, n(c?.total) - today.sent - today.going - today.unclear - today.paused - today.waiting),
+    },
+    sent: rows.flatMap(({ v, d, status, sentAt }) => {
+      const delivery = deliveryOf(status);
+      if (!delivery) return [];
+      return [
+        {
+          draftId: d.id,
+          managerUserId: d.managerUserId,
+          customerLabel: ((d.policy ?? {}) as { card?: { customerLabel?: string } }).card?.customerLabel ?? '—',
+          pressedAt: v.pressedAt ?? v.createdAt,
+          text: digestBody(d),
+          delivery,
+          sentAt: delivery === 'sent' ? sentAt : null,
+          bad: v.feedback === 'bad',
+          chatHref: chatHrefOf(d),
+        },
+      ];
+    }),
+  };
 }

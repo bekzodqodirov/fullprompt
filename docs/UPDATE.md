@@ -372,7 +372,9 @@ Bu raundda migratsiya bor: **0136** — deploydan keyin son **137** bo‘ladi
 ## Prixod xabari (2026-11-11, 0146) — tekshiruv tartibi
 
 Bitta migratsiya bor: **0146** — deploydan keyin son **147** bo‘ladi (repo’dagi fayllar soni:
-`ls src/modules/platform/db/migrations/*.sql | wc -l`). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
+`ls src/modules/platform/db/migrations/*.sql | wc -l`). **147 — ikki raund bilan:** `main`da bu raunddan oldin
+AI sotuvchining «o‘zi yuborish» raundi (migratsiya **0145**) turibdi; u hali deploy qilinmagan bo‘lsa, shu
+deployda birga o‘tadi (uning o‘z bo‘limi va ogohlantirishi — CHANGELOG’da, shu yozuvdan keyingisi). Migratsiya faqat qo‘shadi: mijoz javobiga ikkita
 ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (model va tokenlar) va botning
 «kutish» jadvalidagi ruxsat etilgan turlar ro‘yxatiga bitta yangi tur. Mavjud ma’lumot o‘zgarmaydi.
 
@@ -388,10 +390,11 @@ ustun (tasdiqlangan og‘irlik va hajm), AI yordamchi daftariga beshta ustun (mo
 1. Zaxira (§1) — hajmi 0 emasligini tekshiring.
 2. `git pull`, keyin `docker compose build migrate`, so‘ng
    `docker compose --profile https --profile telegram up -d --build`.
-   (Bot `app` ichida ishlaydi va u bilan birga yangilanadi. Bu raundda **tg-listen** o‘zgarmagan — lekin
-   buyruq uni ham qayta quradi, zarari yo‘q.)
+   (Bot `app` ichida ishlaydi va u bilan birga yangilanadi. Bu raundning o‘zida **tg-listen** o‘zgarmagan,
+   lekin birga keladigan «o‘zi yuborish» raundi (0145) uni **talab qiladi** — bu buyruq uni ham qayta quradi.)
 3. Sonni o‘qing — **147**. Kam chiqsa, `docker compose run --rm migrate` ning o‘z chiqishini o‘qing.
-   (Son 146 bo‘lib qolsa ham tizim ishlaydi — faqat savol eski ko‘rinishda, og‘irliksiz boradi; migratsiya
+   (Son 146 bo‘lib qolsa — 0145 o‘tgan, 0146 o‘tmagan — tizim ishlaydi, faqat savol eski ko‘rinishda,
+   og‘irliksiz boradi; migratsiya
    o‘tgach, **qayta ishga tushirmasdan** o‘zi yangisiga o‘tadi.)
 4. `curl -s https://gsrwms.uz/api/version` — bugungi vaqt.
 5. Sinov (bitta prixodda, 10 daqiqa):

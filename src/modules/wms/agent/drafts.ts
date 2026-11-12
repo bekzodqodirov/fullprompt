@@ -4,6 +4,8 @@ import { agentDrafts, agentOutbox, calcOffers, calcRequests, notifications } fro
 import { logger } from '../../platform/logger';
 import { kickTelegramDrain, notifyStaffTelegram, queueStaffTelegram } from '../../platform/notifications/staff';
 import { offerStandsSql, releasedOfferWhere } from '../calc/workspace';
+import { autoPayload } from './auto-card';
+import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type AutoPlan } from './auto-send';
 import { cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
@@ -21,7 +23,10 @@ import type { ComposeReply } from './run';
  * SUPERSEDES the pending one and its card is re-pointed at the new draft and
  * edited in place, so his chat with the bot holds one card per customer, not
  * a scroll of stale ones (fit-9). An 'editing' draft is never superseded —
- * he is typing an answer to it.
+ * he is typing an answer to it. One exception: a reply that counts down to
+ * «o'zi yuborish» never rides a copy that rang more than one hold ago, or one
+ * the drain sent silently in the night (an edit rings nothing) — it gets a card
+ * of its own, and the old copy is closed (auto-send `countdownMayRide`).
  */
 
 export function customerLabel(ctx: AgentContext): string {
@@ -47,7 +52,7 @@ function cardMemory(ctx: AgentContext): CardMemory {
 
 async function cardRowFor(tx: Tx, draftId: string) {
   const [row] = await tx
-    .select({ id: notifications.id, payload: notifications.payload, status: notifications.status })
+    .select({ id: notifications.id, payload: notifications.payload, status: notifications.status, sentAt: notifications.sentAt })
     .from(notifications)
     .where(and(eq(notifications.type, 'AgentDraft'), sql`${notifications.payload}->>'draftId' = ${draftId}`))
     .orderBy(sql`${notifications.createdAt} DESC`)
@@ -81,6 +86,13 @@ export interface NewDraft {
   actions: ComposedAction[];
   citedMessageIds: string[];
   offerId: string | null;
+  /**
+   * «O'zi yuborish»'s plan (§18.3) — the INBOUND run's only (run `handleInbound`):
+   * its verdict row is written beside the draft in this same transaction, before
+   * the card is rendered, so the first card already carries the timer. Absent or
+   * null: no row (an owner-triggered draft, 0145 not landed, a plan that failed).
+   */
+  autoPlan?: AutoPlan | null;
 }
 
 const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'complaint', 'other'];
@@ -92,6 +104,9 @@ const CATEGORIES = ['greeting', 'status', 'faq', 'qualification', 'price', 'comp
  * is kicked — and a sent copy edited — only after the commit.
  */
 export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
+  let superseded = null as string | null;
+  // The superseded draft's own copy, left naming it because the new reply counts down and may not ride it.
+  let closeOld = false as boolean;
   const out = await db.transaction(async (tx): Promise<WriteDraftResult> => {
     const [live] = await tx
       .select({ id: agentDrafts.id, status: agentDrafts.status })
@@ -107,6 +122,7 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     if (live?.status === 'editing') return { kind: 'editing', draftId: live.id };
     if (live) {
       await tx.update(agentDrafts).set({ status: 'superseded', updatedAt: new Date() }).where(eq(agentDrafts.id, live.id));
+      superseded = live.id;
     }
     const [draft] = await tx
       .insert(agentDrafts)
@@ -136,12 +152,29 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
       })
       .returning();
     const row = draft as DraftRow;
+    // The auto verdict beside its draft, in a savepoint: a refused insert costs the plan, never the draft.
+    const auto = n.autoPlan ? await recordAutoVerdictInTx(tx, row, n.autoPlan) : null;
     // A card too long to show what ✅ approves draws no ✅ — the text says so, and the keyboard agrees (card-io).
-    const { text, tooLong } = renderDraftCardFull(row, null);
+    const { text, tooLong } = renderDraftCardFull(row, null, [], { auto });
     const sendable = cardDrawsSend({ blocked: row.blocked || tooLong, status: row.status, ownText: false });
-    const extra = cardExtra({ id: row.id, body: row.proposedBody ?? '', actions: n.actions, blocked: !sendable, live: true, kind: row.kind });
+    const extra = cardExtra({
+      id: row.id,
+      body: row.proposedBody ?? '',
+      actions: n.actions,
+      blocked: !sendable,
+      live: true,
+      kind: row.kind,
+      // The first card already carries the timer (⏸ and «✅ Hozir yubor»).
+      auto: autoPayload(auto, row, sendable),
+    });
     const old = live ? await cardRowFor(tx, live.id) : null;
-    if (old) {
+    // A reply that counts down rides only a copy that rang within one hold (the final check, auto-send
+    // `countdownMayRide`; a copy sent silently in the night never rang — the second check): an edit rings
+    // nothing, so on an older copy it gets a card of its own — a push — and the old copy is closed after the
+    // commit, naming the draft it showed.
+    const ride = !old || auto?.state !== 'waiting' || !n.autoPlan || countdownMayRide(old, n.autoPlan);
+    if (old && !ride) closeOld = true;
+    if (old && ride) {
       // The old card becomes the new one: its row now names the new draft,
       // and a copy already in Telegram is edited after the commit.
       await tx
@@ -154,7 +187,17 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
     return { kind: 'written', draftId: row.id, retargeted: false };
   });
   if (out.kind === 'written') {
+    // The superseded draft's «o'zi yuborish» row leaves the layer (fix pass A, C4) — after the commit: inside,
+    // it would take the verdict after the draft, the opposite of every disarm's order.
+    if (superseded) {
+      await settleSupersededAuto(superseded).catch((err: unknown) => logger.warn({ err, draftId: superseded }, '[agent] superseded auto not settled'));
+    }
     await kickTelegramDrain();
+    // The old copy, closed: «↪️ Mijoz yana yozdi — yangi qoralama», no live button (card-io `statusLine`).
+    if (closeOld && superseded) {
+      const { refreshAgentCard } = await import('./card-io');
+      await refreshAgentCard(superseded).catch((err: unknown) => logger.warn({ err }, '[agent] old card not closed'));
+    }
     if (out.retargeted) {
       const { refreshAgentCard } = await import('./card-io');
       await refreshAgentCard(out.draftId).catch((err: unknown) => logger.warn({ err }, '[agent] card not edited'));
@@ -163,8 +206,8 @@ export async function createDraft(n: NewDraft): Promise<WriteDraftResult> {
   return out;
 }
 
-/** The machine's reply to the chat, from a run. */
-export async function writeDraft(input: {
+/** What a run hands the draft writer. */
+export interface RunDraftInput {
   runId: string;
   ctx: AgentContext;
   compose: ComposeReply;
@@ -173,9 +216,16 @@ export async function writeDraft(input: {
   actions: ComposedAction[];
   notes: string[];
   kind?: 'reply' | 'hand_back';
-}): Promise<WriteDraftResult> {
+}
+
+/**
+ * The row a run's reply becomes — ONE builder for the writer and for the
+ * «o'zi yuborish» plan the inbound run computes before writing (auto-send
+ * `autoShapeOf`), so the gate judges the very draft that is stored.
+ */
+export function draftFromRun(input: RunDraftInput): NewDraft {
   const { ctx, compose, policy } = input;
-  return createDraft({
+  return {
     runId: input.runId,
     managerUserId: ctx.managerUserId,
     peerId: ctx.peerId,
@@ -207,7 +257,17 @@ export async function writeDraft(input: {
       .map((r) => ctx.history.find((m) => m.ref === r)?.id)
       .filter((x): x is string => typeof x === 'string'),
     offerId: null,
-  });
+  };
+}
+
+/** The machine's reply to the chat, from a run. */
+export async function writeDraft(
+  input: RunDraftInput & {
+    /** The inbound run's «o'zi yuborish» plan (auto-send `autoPlanFor`); never an owner-triggered run's. */
+    autoPlan?: AutoPlan | null;
+  },
+): Promise<WriteDraftResult> {
+  return createDraft({ ...draftFromRun(input), autoPlan: input.autoPlan ?? null });
 }
 
 export { cardMemory };

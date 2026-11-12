@@ -11,6 +11,11 @@ borsin xabar».
 Bitta migratsiya (**0146**). Deploydan keyin baza hisobi **147** bo'lishi kerak; `/api/version` bugungi vaqtni
 ko'rsatishi kerak. Qadamlar: `docs/UPDATE.md` → «Prixod xabari (2026-11-11, 0146)».
 
+**Bu deploy pastdagi «AI sotuvchi oddiy javobni o'zi yuboradi» raundini ham olib keladi** (migratsiya 0145),
+agar uni hali deploy qilmagan bo'lsangiz — shuning uchun son 146 emas, **147**. O'sha raundning o'z
+ogohlantirishini ham o'qing: unda **tg-listen qayta qurilishi shart**. (Ikkala raund ham bir xil 0145 raqamini
+olgan edi; u birinchi bo'lib `main`ga kirgani uchun bu raundning migratsiyasi 0146 ga ko'chirildi.)
+
 ### 1. Sotuvchiga bitta «Prixod keldi» xabari, ikki tugma bilan
 - **Avval ikkita xabar borardi** («📥 Prixod …» va alohida «💰❓ Narxi kelishilmagan yuk» yoki «📎 Bitimga
   biriktirilmagan»). Endi **bitta**: «📥 Prixod keldi — raqam», mijoz (kod va ism), bitim holati, sklad, har
@@ -145,6 +150,104 @@ bosilishi va birinchi yuborilgan fayl — haqiqiy sinov. G'alati narsa chiqsa �
    ham «Prixod keldi» xabariga qo'shilsinmi? ⭐ a) yo'q, alohida qolsin · b) ha.
 7. Egasiz yuk **sotuvchisi yo'q** mijozga biriktirilganda adminlarga xabar borsinmi? ⭐ a) yo'q, hozirgidek
    hech kimga · b) ha.
+
+## 2026-11-11 — AI sotuvchi oddiy javobni o'zi yuboradi («🤖 O'zi yuborish»)
+
+Sizning so'zingiz: «sen aytgandek bolsin faqat 50 talik test bolmasin ozi javob beraversin men bergan tasdiq kop
+kutib qolmasin».
+
+**Migratsiya bor: 0145.** Deploydan keyin baza hisobi **146** bo'lishi kerak (yuqoridagi «Prixod xabari»
+raundi bilan birga deploy qilinsa — **147**). **tg-listen ham qayta qurilishi
+shart**, chunki yuborish qadami o'zgardi.
+
+**Bu deploy pastdagi «Tarkib takliflari» va «Tarkib tuzatishlari» raundlarini ham olib keladi** (0143, 0144), agar
+ularni hali deploy qilmagan bo'lsangiz. Ularning ogohlantirishini o'qing: deploydan keyin Telegrami ulangan
+mijozlarga boradigan «Yukingiz qabul qilindi» xabarida «✅ To'g'ri / ❌ Xato bor» tugmalari chiqa boshlaydi.
+
+### Qanday ishlaydi
+- Sizni yoqmaguningizcha **hech narsa o'zgarmaydi**. Kartalar avvalgidek keladi, ✅ ni o'zingiz bosasiz.
+- Yoqilgandan keyin mos javobning kartasi Telegramingizga keladi va **2 daqiqa kutadi**. Kartada «⏱ 14:32 da o'zi
+  ketadi — to'xtatish uchun ⏸ bosing» deb yoziladi. 2 daqiqa ichida hech narsa bosmasangiz, javob o'zi ketadi.
+- **2 daqiqa karta sizga YETIB KELGAN paytdan sanaladi.** Karta kelmagan bo'lsa (bot ishlamasa), javob o'zi
+  ketmaydi.
+- Siz bosgan har qanday tugma (⏸, ✅, ✏️, ❌, 🙋) yoki o'zingiz yozgan xabar uni to'xtatadi. Mijoz yana yozsa, eski
+  javob o'rniga yangisi tayyorlanadi.
+- Javob ketgandan keyin kartada «🤖 O'zi yuborildi (AI)» va [👎 Xato edi] tugmasi chiqadi. Javob mijoz o'qimaguncha
+  [❌ Bekor qilish] bilan qaytarib olsa bo'ladi.
+
+### Qaysi javoblar o'zi ketadi (hammasi bajarilishi kerak)
+- **Javob turi:** salomlashish, aniqlashtiruvchi savol, standart ma'lumot (manzil, ish vaqti) yoki «yukim qayerda»
+  (bunda tizim yukni haqiqatan tekshirgan bo'lishi kerak).
+- **Narx yo'q:** javobda narx, balans yoki taxminiy hisob bo'lmasligi kerak.
+- **Mijozning xabari:** rasm, ovozli xabar yoki fayl bilan kelmagan; mijoz o'zbek yoki rus tilida yozgan.
+- **Javobning o'zi:** 400 belgidan qisqa; kartada hech qanday ogohlantirish yoki izoh yo'q; AI ishonchi kamida 80 %.
+- **Mijoz:** mijoz kodi yoki lidi bor. Mijoz topuvchi agent topgan lidlarga o'zi yozmaydi.
+- **Raqam:** raqam «Ish raqami» deb belgilangan.
+- **Vaqt:** kunduzi. Tunda karta ertalab sizni kutadi.
+- **Chegaralar:**
+  - bitta chatga ketma-ket 2 tadan ortiq o'zi ketmaydi;
+  - kuniga 30 tadan ortiq o'zi ketmaydi.
+
+Narx, shikoyat, hisoblatish (VED) va savol bilan chiqqan javoblar **hech qachon** o'zi ketmaydi.
+
+**Eslatma (sinov uchun):** AI hodim raqamiga umuman qoralama yozmaydi — hamkasbga mijoz ma'lumoti aytilib
+ketmasligi uchun. Sinovni hodim bo'lmagan raqamdan qiling.
+
+### Qanday yoqiladi
+1. «Telegram ulash» sahifasida raqamingizni **«Ish raqami»** deb belgilang. Diqqat: «Ish raqami»da notanish
+   raqamdan yozganlar avtomatik **lid** bo'lib ochiladi (patnisga tushmaydi). Mijozlar uchun alohida raqam
+   (+998902405077) ochganingiz uchun bu to'g'ri keladi.
+2. Botda **`/agent auto on`** yozing yoki «AI sotuvchi» sahifasidagi «🤖 O'zi yuborish» blokida «Yoqish» ni bosing.
+3. O'chirish: **`/agent auto off`** yoki sahifadagi «O'chirish». `/agent` buyrug'i holatni ko'rsatadi
+   («🤖 O'zi yuborish: yoqilgan (bugun 3/30)»).
+
+Sahifada qaysi turdagi javoblar o'zi ketishini belgilaysiz. U yerda bugungi hisob (o'zi yubordi, yuborilmoqda,
+to'xtatdingiz, kutmoqda, sizga qoldi) va oxirgi 20 ta o'zi ketgan javob ham ko'rinadi.
+
+### O'zi o'chib qoladi (sizga va super adminlarga xabar boradi, AI qoralama yozishda davom etadi)
+- 7 kun ichida 2 ta javobga «👎 Xato edi» bosilsa. Har bir 👎 o'sha chatda o'zi yozishni 30 kunga o'chiradi.
+- AI o'zi javob bergan mijoz akkauntni bloklasa.
+- AI o'zi javob bergan mijoz «botmisiz?» deb so'rasa, o'sha chatda 30 kun o'zi yozmaydi. 7 kun ichida ikkinchi
+  shunday mijoz bo'lsa, butunlay o'chadi.
+- AI sotuvchini o'chirsangiz, Telegram akkauntni cheklasa yoki raqamni «Shaxsiy» qilsangiz.
+
+Qayta yoqish har doim faqat sizning bosishingiz bilan bo'ladi.
+
+### Xavflar (yana bir bor)
+- Shaxsiy Telegram akkaunt o'zi yozsa, Telegram uni cheklashi mumkin. Shuning uchun kuniga 30 tagacha, tunda yo'q,
+  va xavf belgisi ko'rinsa o'zi o'chadi.
+- Ketgan xabarni qaytarib bo'lmaydi. Sizda 2 daqiqa ⏸ bor, keyin mijoz o'qimaguncha ❌ ishlaydi.
+- Xato javob sizning nomingizdan ketadi.
+- **50 talik sinov yo'q (sizning qaroringiz).** Shuning uchun AI qanchalik to'g'ri yozayotganini hech narsa
+  oldindan o'lchamaydi. Xatoni faqat siz (⏸, ❌, 👎) yoki mijoz (bloklash, «botmisiz?») ko'radi. Birinchi kunlarda
+  kartalarni kuzatib turing.
+
+### Tekshirildi
+- Kod besh marta tekshirildi: qurilgan kod, tuzatishlar, tuzatishlarning tuzatishi va yana ikki mustaqil tekshiruv.
+- Topilgan 23 ta kamchilik tuzatildi. Eng muhimlari:
+  - ⏸ ni AI bosish bilan bir vaqtda bossangiz, endi ⏸ yutadi yoki «kech» deydi — «to'xtatildi» deb yolg'on
+    aytmaydi;
+  - AI tasdiqlagandan keyin ham ❌ javobni qaytarib oladi, 🙋 esa chatni sizga oladi;
+  - sahifadagi ✏️ ni bosganingizda vaqt to'xtaydi;
+  - karta yetib kelmasa javob o'zi ketmaydi;
+  - karta ovozsiz kelgan bo'lsa (tunda yoki eski kartaning jimgina tahriri), uning ustida vaqt sanalmaydi — javob
+    sizga qoladi yoki yangi, ovozli karta keladi;
+  - 🙋 bosganingizdan keyin o'sha chatga 24 soat AI o'zi yozmaydi, hatto javob o'sha paytda tayyorlanayotgan
+    bo'lsa ham;
+  - «yuborildi» faqat haqiqatan yuborilganda yoziladi.
+
+### Deploy (tartib bilan)
+1. Avval zaxira oling va hajmi noldan katta ekanini tekshiring.
+2. `git pull`.
+3. `docker compose build migrate`.
+4. `docker compose --profile https up -d --build`.
+5. `docker compose --profile telegram up -d --build tg-listen`.
+6. Tekshiring: baza hisobi **146** bo'lsin («Prixod xabari» raundi bilan birga — **147**) va
+   `curl -s https://gsrwms.uz/api/version` bugungi vaqtni ko'rsatsin.
+7. Haqiqiy Telegram va AI bilan bu yerda sinab bo'lmadi. Yoqqan birinchi kuningiz sahifadagi «🤖 O'zi yuborish»
+   blokini va kartalarni kuzatib turing.
+
+Batafsil: `docs/AI-SOTUVCHI.md` §18.3, qarorlar DECISIONS #1683-#1696.
 
 ## 2026-11-11 — Tarkib takliflari: tarkibni AI fayldan to'ldiradi, mijoz Telegramda o'zi tasdiqlaydi (✅/❌), Bojxonadagi 🤖 ga hisob va kunlik limit
 

@@ -34,6 +34,12 @@ async function main(): Promise<number> {
     }
   }
   const since = new Date(Date.now() - days * 86_400_000).toISOString();
+  // «O'zi yuborish» (0145): a reply the machine pressed is nobody's decision — counted apart, never graded.
+  // A database one migration behind has no verdicts to read.
+  const [probe] = await db.execute<{ ok: boolean }>(sql`SELECT to_regclass('public.agent_auto_verdicts') IS NOT NULL AS ok`);
+  const autoSent = probe?.ok === true
+    ? sql`EXISTS (SELECT 1 FROM agent_auto_verdicts v WHERE v.draft_id = d.id AND v.state = 'pressed')`
+    : sql`false`;
   const rows = await db.execute<{
     status: string;
     kind: string;
@@ -47,6 +53,7 @@ async function main(): Promise<number> {
     notes: number;
     money: boolean;
     actions: string[] | null;
+    auto_sent: boolean;
   }>(sql`
     SELECT d.status, d.kind, d.final_body IS NOT NULL AS edited, o.status AS outbox_status, d.category,
            d.confidence::float8 AS confidence, d.blocked, d.needs_owner,
@@ -55,7 +62,8 @@ async function main(): Promise<number> {
            (EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.policy->'ledger') = 'array' THEN d.policy->'ledger' ELSE '[]'::jsonb END) e
                      WHERE e->>'kind' = 'money')
             OR coalesce(d.policy->'memory'->>'hasEstimate', 'false') = 'true') AS money,
-           (SELECT array_agg(a->>'type') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.actions) = 'array' THEN d.actions ELSE '[]'::jsonb END) a) AS actions
+           (SELECT array_agg(a->>'type') FROM jsonb_array_elements(CASE WHEN jsonb_typeof(d.actions) = 'array' THEN d.actions ELSE '[]'::jsonb END) a) AS actions,
+           ${autoSent} AS auto_sent
       FROM agent_drafts d
       LEFT JOIN agent_outbox o ON o.draft_id = d.id
      WHERE d.created_at >= ${since}::timestamptz`);
@@ -72,9 +80,10 @@ async function main(): Promise<number> {
     notes: Number(r.notes),
     money: r.money === true,
     actions: (r.actions ?? []).filter((a): a is string => typeof a === 'string'),
+    autoSent: r.auto_sent === true,
   }));
 
-  console.log(`drafts in the last ${days} days: ${data.length}\n`);
+  console.log(`drafts in the last ${days} days: ${data.length} (sent by «o'zi yuborish», never graded: ${data.filter((r) => r.autoSent).length})\n`);
   console.log('category       confidence  clean  decided  unchanged    rate   lower95');
   for (const c of calibrationCells(data)) {
     console.log(

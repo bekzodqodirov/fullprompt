@@ -14,6 +14,7 @@ const row = (over: Partial<StatsDraftRow>): StatsDraftRow => ({
   edited: false,
   outboxStatus: 'sent',
   category: 'faq',
+  autoSent: false,
   ...over,
 });
 

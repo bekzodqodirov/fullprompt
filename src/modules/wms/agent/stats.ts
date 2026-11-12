@@ -30,6 +30,12 @@ export interface StatsDraftRow {
   /** The approved reply's outbox status, or null when there is none. */
   outboxStatus: string | null;
   category: string | null;
+  /**
+   * «O'zi yuborish» pressed it (0145 `agent_auto_verdicts.state = 'pressed'`):
+   * nobody DECIDED it, so it is counted apart and never in the rate — or the
+   * gate would grade itself (§18.3). REQUIRED: every reader says.
+   */
+  autoSent: boolean;
 }
 
 export interface StatsCounts {
@@ -54,6 +60,8 @@ export interface AgentStats extends StatsCounts {
   approvedNotSent: number;
   /** His typed prices, decided — never in the rate. */
   price: number;
+  /** Replies the machine pressed by itself («o'zi yuborish») — never in the rate, never decided. */
+  autoSent: number;
   byCategory: Record<string, StatsCounts>;
 }
 
@@ -79,6 +87,7 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
   let onTheWay = 0;
   let approvedNotSent = 0;
   let price = 0;
+  let autoSent = 0;
 
   const add = (row: StatsDraftRow, bucket: Bucket) => {
     total[bucket] += 1;
@@ -88,6 +97,11 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
   };
 
   for (const row of rows) {
+    // First: whatever became of it, the machine pressed it — no decision of his to count.
+    if (row.autoSent) {
+      autoSent += 1;
+      continue;
+    }
     if (row.status === 'pending' || row.status === 'editing') {
       live += 1;
       continue;
@@ -121,6 +135,7 @@ export function agentStats(rows: readonly StatsDraftRow[]): AgentStats {
     onTheWay,
     approvedNotSent,
     price,
+    autoSent,
     byCategory: Object.fromEntries(Object.entries(byCategory).map(([key, c]) => [key, finish(c)])),
   };
 }

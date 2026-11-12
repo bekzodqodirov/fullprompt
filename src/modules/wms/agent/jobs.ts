@@ -295,8 +295,19 @@ export async function retireOnHumanReply(managerUserId: string, peerId: bigint, 
 
 export async function agentSweep(
   now: Date = new Date(),
-): Promise<{ expired: number; retired: number; gap: number; retried: number; actions: number; reminded: number; interrupted: number }> {
-  if (!(await agentTablesReady())) return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0 };
+): Promise<{
+  expired: number;
+  retired: number;
+  gap: number;
+  retried: number;
+  actions: number;
+  reminded: number;
+  interrupted: number;
+  autoPressed: number;
+}> {
+  if (!(await agentTablesReady())) {
+    return { expired: 0, retired: 0, gap: 0, retried: 0, actions: 0, reminded: 0, interrupted: 0, autoPressed: 0 };
+  }
 
   // 1. A draft lives as long as its anchor's reply window (fit-3).
   const expired = await db.execute<{ id: string }>(sql`
@@ -443,7 +454,19 @@ export async function agentSweep(
       logger.warn({ err, draftId: s.id }, '[agent] stuck action still failing'),
     );
   }
-  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length };
+
+  // 7. «O'zi yuborish» (§18.3): the replies whose ⏸ window ran out, pressed by the machine through the
+  //    same ✅ a person presses — LAST, after the expiry and his own replies above have retired what they
+  //    retire, so a press never meets a draft this sweep already took away. Its own catch: a fault here
+  //    must not cost the sweep's other answers.
+  let autoPressed = 0;
+  try {
+    const { pressDueAutos } = await import('./auto-send');
+    autoPressed = await pressDueAutos(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] auto presses failed');
+  }
+  return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed };
 }
 
 /**
