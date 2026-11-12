@@ -12,11 +12,20 @@
  * house's separators, nothing else. Pure.
  */
 export function bareTotalsNumber(text: string): boolean {
-  return /^\s*\d[\d\s.,]*\s*$/u.test(text);
+  return /^\s*\d[\d\s.,'’ʼʻ]*\s*$/u.test(text);
 }
 
-/** One figure of a totals answer: «3 500» grouped by thousands, else «1,2» / «3500». */
-export const TOTALS_NUMBER = /\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
+/**
+ * One figure of a totals answer: «3 500» grouped by thousands, else «1,2» /
+ * «3500» — and, FIRST, the way a packing list writes a weight: «1,136.5»,
+ * «12,500.00» (comma groups AND a decimal point), its mirror «1.136,5», and
+ * «1'200» (docs/AI-SORAYDI.md §3.1 T14). Counted as two figures, a bare
+ * «1,136.5» answering the brutto question was refused as «two numbers».
+ * Zero imports here, so the grammar is restated — `tests/unit/
+ * scaled-kilos.test.ts` holds it to `calc/units.ts` `AMOUNT_NUMBER`.
+ */
+export const TOTALS_NUMBER =
+  /\d{1,3}(?:,\d{3})+\.\d+|\d{1,3}(?:\.\d{3})+,\d+|\d{1,3}(?:['’ʼʻ]\d{3})+(?:[.,]\d+)?|\d{1,3}(?:\s\d{3})+(?![\d.,])|\d+(?:[.,]\d+)?/gu;
 
 /**
  * The words a totals answer may be written in — kilos, cubes, «brutto» — as

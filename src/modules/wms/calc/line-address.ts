@@ -31,6 +31,8 @@ import {
   labelPattern,
   nearUnit,
   NET_LABELS,
+  scaledKg,
+  scaledPattern,
   TOTALS_LEAD_LABELS,
   UNIT_FREE_LABELS,
   unitOf,
@@ -100,7 +102,7 @@ export interface TotalsLeft {
   /** The number alone, as written — what the refusal's example is built from. */
   number: string;
   word?: string;
-  near?: 'kg' | 'm3' | null;
+  near?: UnitAsk['near'];
 }
 
 /**
@@ -114,7 +116,20 @@ export interface UnitAsk {
   word: string;
   /** The number as written — what the example is built from. */
   number: string;
-  near: 'kg' | 'm3' | null;
+  /**
+   * What the word most likely means: a kilo or a cube with an ending on it
+   * (`nearUnit`), or — for a lone «t» / «g» where nothing says it is a weight,
+   * and for one glued to its digits («2T») — the tonne or the gram it would
+   * be (T14, review JN-9): asked, never read.
+   */
+  near: 'kg' | 'm3' | 'tonna' | 'gr' | null;
+}
+
+/** `UnitAsk.near` of a word that is no unit. */
+function nearOf(word: string): UnitAsk['near'] {
+  const scale = scaledKg(word);
+  if (scale?.lone) return scale.factor > 1 ? 'tonna' : 'gr';
+  return nearUnit(word);
 }
 
 export interface TableSegment {
@@ -185,13 +200,14 @@ const VOLUME_SET = new Set(TOTALS_LEAD_LABELS.volumeM3.map(totalsKey));
 
 /**
  * The words a worded totals answer is written in — every kilo and cube word
- * of the vocabulary, and the labels a totals answer may carry («3500 kg
- * brutto») — for the platform's shape test (`totalsAnswerShape`, which imports
+ * of the vocabulary, the tonne and the gram in the spellings that can be
+ * nothing else («jami 2 tonna», T14), and the labels a totals answer may
+ * carry («3500 kg brutto») — for the platform's shape test (`totalsAnswerShape`, which imports
  * nothing and so is handed it). Matched over a lower-cased text; a word,
  * never a part of one («kubik»).
  */
 export const TOTALS_UNIT_WORDS = new RegExp(
-  `(?<![\\p{L}])(?:${unitPattern('kg')}|${unitPattern('m3')}|${labelPattern([
+  `(?<![\\p{L}])(?:${unitPattern('kg')}|${unitPattern('m3')}|${scaledPattern('words')}|${labelPattern([
     ...TOTALS_LEAD_LABELS.weightKg,
     ...TOTALS_LEAD_LABELS.volumeM3,
   ])})(?![\\p{L}\\d])`,
@@ -253,7 +269,9 @@ function readTotals(
   field: 'weightKg' | 'volumeM3' | null,
   open: readonly TableTarget[],
 ): TotalsReading {
-  const { facts: read, taken } = readTypedTotals(rest);
+  // The answer to the bot's own question about the totals: a lone «t» / «g»
+  // after a number is its unit there («jami 2 t» — T14, review JN-9).
+  const { facts: read, taken } = readTypedTotals(rest, undefined, { totalsAnswer: true });
   const left = totalsLeft(rest, taken);
   if (read.weightKg != null || read.volumeM3 != null || read.ambiguous.length > 0) {
     const totals = { weightKg: read.weightKg ?? null, volumeM3: read.volumeM3 ?? null, ambiguous: read.ambiguous };
@@ -311,8 +329,9 @@ const NETTO_LABEL_AFTER = new RegExp(`^\\s*[(\\[]?\\s*((?:${labelPattern(NET_LAB
  */
 function unknownUnits(text: string): UnitAsk[] {
   return amountsIn(text).flatMap((a) =>
-    a.word !== null && unitOf(a.word) === null && !LABEL_WORD.test(a.word)
-      ? [{ word: a.word, number: a.number, near: nearUnit(a.word) }]
+    // A tonne or a gram spelled out is READ; a lone «t» / «g» is a word nobody placed.
+    a.word !== null && unitOf(a.word) === null && scaledKg(a.word)?.lone !== false && !LABEL_WORD.test(a.word)
+      ? [{ word: a.word, number: a.number, near: nearOf(a.word) }]
       : [],
   );
 }
@@ -340,9 +359,10 @@ function totalsLeft(rest: string, taken: readonly [number, number][]): TotalsLef
       continue;
     }
     const text = remainder.slice(amount.start, amount.end).replace(/\s+/gu, ' ').trim();
-    if (unit === null) {
-      out.push({ why: 'unit', text, number, word: amount.word, near: nearUnit(amount.word) });
-    } else if (unit === 'kg') {
+    if (unit === null && scaledKg(amount.word)?.lone !== false) {
+      out.push({ why: 'unit', text, number, word: amount.word, near: nearOf(amount.word) });
+    } else if (unit === 'kg' || unit === null) {
+      // A kilo — or a tonne, a gram spelled out — the reading did not take.
       const label =
         NETTO_LABEL_BEFORE.exec(remainder.slice(Math.max(0, amount.start - 24), amount.start))?.[1] ??
         NETTO_LABEL_AFTER.exec(remainder.slice(amount.end, amount.end + 16))?.[1];
@@ -466,6 +486,8 @@ function nameParts(raw: string): NameParts {
     .replace(ENGINE_FIELD, ' ')
     .replace(HAN_MEASURE_LABEL, ' ')
     .replace(GROUPED, (_m, head: string, groups: string) => head + groups.replace(/\s/gu, ''))
+    // «1'200 dona»: the apostrophe sets a digit group off — one figure, never a model «1200» of the name (T14).
+    .replace(/(?<=\d)['’ʼʻ](?=\d{3}(?!\d))/gu, '')
     // A figure glued to a name by a dash («Sumka-50 dona») is the figure, as
     // `parseLineAnswer` reads it — never a model number of «Sumka».
     .replace(/(\p{L})[-–—](\d[\d.,]*)(?=\s*([\p{L}²³]+))/gu, (m, letter: string, digits: string, unit: string) =>
@@ -478,7 +500,9 @@ function nameParts(raw: string): NameParts {
   const typed: string[] = [];
   let carton = false;
   const tiers = tierWords(foldPlain(text));
-  const isUnit = (t: string) => unitOf(t) !== null || unitOf(foldName(t)) !== null;
+  // A tonne or a gram in a spelling that can be nothing else is the figure's unit too (T14) —
+  // never a lone «t» / «g», which names a model as often («5 t domkrat»).
+  const isUnit = (t: string) => unitOf(t) !== null || unitOf(foldName(t)) !== null || scaledKg(t)?.lone === false;
   tokens.forEach((token, i) => {
     if (unitOf(token) === 'karobka' || unitOf(foldName(token)) === 'karobka') {
       carton = true;
@@ -749,10 +773,12 @@ function readSegment(raw: string, table: TableRef, nameOf: NameOf): ReadSegment 
   if (!hasName(parts)) {
     // What the row kernel cannot read as ONE row's answer may still be the
     // shipment's own line: two kilos, a brutto and a netto («G.W.: 507 KGS
-    // N.W.: 480 KGS MEAS: 5.92 CBM»), or a Han label glued to its figure
-    // («毛重507kg» — no amount to a reader that never splits letters from
-    // digits). The totals reader takes what it can and names the rest (T2).
-    if (answer.kind === 'refused' && (answer.reason === 'repeated' || HAS_HAN_MEASURE_LABEL.test(raw))) {
+    // N.W.: 480 KGS MEAS: 5.92 CBM»), a weight in a lone letter after its
+    // label («G.W. 2.5 MT»), or a Han label glued to its figure («毛重507kg» —
+    // no amount to a reader that never splits letters from digits). The
+    // totals reader takes what it can and names the rest (T2).
+    const loneScaled = answer.kind === 'refused' && answer.reason === 'unknown_unit' && scaledKg(answer.detail) !== null;
+    if (answer.kind === 'refused' && (answer.reason === 'repeated' || loneScaled || HAS_HAN_MEASURE_LABEL.test(raw))) {
       const typed = readTotals(raw, null, table.open);
       if (typed.totals !== null || typed.left.length > 0) return totalsSegment(raw, typed, plain);
     }

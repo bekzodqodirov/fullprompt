@@ -225,8 +225,10 @@ export function labelPattern(labels: readonly string[]): string {
  * form, the VED's paste box and a sheet's unit cells read exactly what they
  * read before (review JR-22: only the bot's typed readers are to ask for it).
  *
- * THE VOCABULARY ONLY, so far: no reader asks it yet — T14 wires it, and
- * until then «2 tonna» is the unknown unit it always was.
+ * Read by the bot's typed readers alone — `routeAmount` and `parseGoodsLine`
+ * on request (`scaled`), the shipment-totals reader and the table's answers
+ * (intake-manual.ts, line-address.ts). To every other door «2 tonna» is the
+ * unknown unit it always was.
  *
  * Only spellings that can be nothing else are words (review JN-9). The single
  * letters «t», «т», «g», «г» and «mt» are capacities and generations far more
@@ -333,16 +335,27 @@ export function unitOf(word: string | null | undefined): SellerUnit | null {
  */
 export type Routed =
   | { quantity: number }
-  | { weightKg: number }
+  /** `scaled`: the kilos were written in tonnes or grams — «2 tonna» is `{ weightKg: 2000, scaled: { value: 2, word: 'tonna' } }`. */
+  | { weightKg: number; scaled?: { value: number; word: string } }
   | { volumeM3: number }
   | { measureUnit: MeasureUnit; measureQty: number }
   | { cartons: number }
   | { unknownUnit: string; value: number };
 
-export function routeAmount(value: number, unitWord: string | null | undefined): Routed {
+/**
+ * `opts.scaled` (docs/AI-SORAYDI.md §3.1 T14): read a TONNE or a GRAM as the
+ * kilos it is — the full spellings only (`SCALED_KG`'s `words`; a lone «t» or
+ * «g» is a capacity as often as a weight, review JN-9, and is the caller's to
+ * place). Asked for by the bot's typed readers ALONE (review JR-22): with no
+ * option the card form, the VED's paste box and a sheet's unit cells read
+ * «2 tonna» as the unknown unit it always was.
+ */
+export function routeAmount(value: number, unitWord: string | null | undefined, opts: { scaled?: boolean } = {}): Routed {
   const word = unitWord?.trim() ?? '';
   // No word at all: the convention every door has always had — «nomi, soni».
   if (!word) return { quantity: value };
+  const scale = opts.scaled ? scaledKg(word) : null;
+  if (scale && !scale.lone) return { weightKg: scaledKgValue(value, scale.factor), scaled: { value, word } };
   const unit = unitOf(word);
   switch (unit) {
     case 'dona':
@@ -376,11 +389,19 @@ export type Amount =
   | { state: 'bad' };
 
 const DOT_THOUSANDS = /^[1-9]\d{0,2}\.\d{3}$/;
+/** «1.136,5» — dot groups AND a decimal comma: the mirror of «1,136.5», and as little a question. */
+const DOT_GROUPS_COMMA = /^\d{1,3}(?:\.\d{3})+,\d+$/;
+/** The apostrophes a phone types between digit groups («1'200», «1’200») — the cell reader knows the plain one. */
+const GROUP_APOSTROPHES = /[’ʼʻ]/g;
 
 export function readAmountText(raw: string): Amount {
-  const text = raw.trim();
+  const text = raw.trim().replace(GROUP_APOSTROPHES, "'");
   if (DOT_THOUSANDS.test(text)) {
     return { state: 'ambiguous', decimal: Number(text), thousands: Number(text.replace('.', '')) };
+  }
+  if (DOT_GROUPS_COMMA.test(text)) {
+    const value = Number(text.replace(/\./g, '').replace(',', '.'));
+    return Number.isFinite(value) && value > 0 ? { state: 'ok', value } : { state: 'bad' };
   }
   const cell = readNumberCell(text);
   if (cell.state === 'ok') return cell.value > 0 ? cell : { state: 'bad' };
@@ -618,13 +639,32 @@ export type GoodsLineProblem =
 /** The gaps a grouped number is written with: a space, a no-break space, a narrow one. */
 const GROUP_GAP = String.raw`[ \u00a0\u202f]`;
 
+/** The apostrophes a digit group is set off with — «1'200», «1’200 000». */
+const GROUP_APOSTROPHE = String.raw`['’ʼʻ]`;
+
 /**
  * A number as free text writes it — a regex SOURCE: 1-3 digits and groups of
  * three after one gap each («1 200», «12 500 000»), or plain digits; a decimal
  * part after a dot or a comma. ONE grammar for the row kernel below and the
  * shipment-totals reader (intake-manual.ts), which kept a copy.
+ *
+ * And the way a packing list writes a weight (docs/AI-SORAYDI.md §3.1 T14,
+ * CR-7): «1,136.5», «12,500.00» — comma groups AND a decimal point — and its
+ * mirror «1.136,5». Neither can be read two ways, yet the grammar stopped at
+ * the first separator: «1,136.5 kg» was asked «1.136 mi yoki 1136 mi?» (it is
+ * neither) with a stray «.5 kg» left in the name. They stand FIRST: a regex
+ * takes the first alternative that matches, and the plain one matches their
+ * head. «1,200» alone — one comma group, no decimal — is still two readings,
+ * and still asked. An apostrophe between digit groups is a separator
+ * («1'200» was 200).
  */
-export const AMOUNT_NUMBER = String.raw`\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?`;
+export const AMOUNT_NUMBER = [
+  String.raw`\d{1,3}(?:,\d{3})+\.\d+`,
+  String.raw`\d{1,3}(?:\.\d{3})+,\d+`,
+  String.raw`\d{1,3}(?:${GROUP_APOSTROPHE}\d{3})+(?:[.,]\d+)?`,
+  String.raw`\d{1,3}(?:${GROUP_GAP}\d{3})+(?:[.,]\d+)?`,
+  String.raw`\d+(?:[.,]\d+)?`,
+].join('|');
 
 const GROUPED_NUMBER = new RegExp(String.raw`^\d{1,3}${GROUP_GAP}(\d{3}.*)$`, 'u');
 
@@ -965,7 +1005,17 @@ function isCodeCell(cell: string): string | null {
 
 const hasLetters = (s: string) => /\p{L}/u.test(s);
 
-export function parseGoodsLine(raw: string): GoodsLine {
+/**
+ * `opts.scaled` (§3.1 T14, review JN-9 / JR-22) — the bot's typed readers ask
+ * it, nobody else: a tonne or a gram, in a spelling that can be nothing else
+ * («2 tonna», «20 тонн», «500 gr», «2吨»), is the line's weight in kilos.
+ * NOT on a line that also states its pieces: there the figure is what ONE
+ * piece is — a jack's 5 tonnes, a pack's 500 grams («Domkrat 5 tonna 20
+ * dona», «chay 500 gr 2000 dona») — and it stays in the name, as «4 кубов»
+ * does beside a count; and never a figure before a slash («180 gr/m2» is a
+ * density). A lone «t» / «g» is never read here at all.
+ */
+export function parseGoodsLine(raw: string, opts: { scaled?: boolean } = {}): GoodsLine {
   const line: GoodsLine = {
     name: '',
     tnvedCode: null,
@@ -1034,6 +1084,8 @@ export function parseGoodsLine(raw: string): GoodsLine {
   let unknown: { word: string; value: number } | null = null;
   const bare: { value: number; cell: number }[] = [];
   const taken = new Set<SellerUnit>();
+  // The line's weight came from a tonne or a gram: «2 tonna 2000 kg» then says ONE weight in two scales.
+  let weightScaled = false;
   const nameParts: string[] = [];
   // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
   // pieces (review JN-22): the «N кубов» stays in the name, see below.
@@ -1074,11 +1126,16 @@ export function parseGoodsLine(raw: string): GoodsLine {
         }
       }
       const unit = word ? unitOf(word) : null;
+      // «2 tonna», «500 gr» — kilos in another scale (T14), for the readers
+      // that ask. Beside a piece count, or before a slash, the figure is the
+      // goods' own measure and stays where it is.
+      const scale = opts.scaled && word && unit === null ? scaledKg(word) : null;
+      const scaled = scale !== null && !scale.lone && !piecesStated && !/^\s*\//u.test(cellText.slice(end));
       // «iPhone 15 Pro», «Stul 2 xil» — a number followed by a word that is
       // not a unit belongs to the NAME. Remember it: on a line that states
       // nothing else, «Ткань 300 м» is an amount in a unit this file does not
       // price, and that is ASKED, not dropped.
-      if (word && unit === null) {
+      if (word && unit === null && !scaled) {
         const amount = readAmountText(number);
         if (amount.state === 'ok') unknown = { word, value: amount.value };
         continue;
@@ -1089,13 +1146,15 @@ export function parseGoodsLine(raw: string): GoodsLine {
       if (unit === 'm3' && piecesStated && COUNTED_CUBES.has(normalizeWord(word!))) continue;
       const amount = readAmountText(number);
       if (amount.state === 'bad') continue;
+      // Both readings of a doubted figure are in KILOS when its word scales it («1,200 тн»).
+      const kilos = (n: number) => (scaled ? scaledKgValue(n, scale!.factor) : n);
       if (amount.state === 'ambiguous') {
         consumed.push([start, end]);
-        line.problems.push({ kind: 'ambiguous', text: number, decimal: amount.decimal, thousands: amount.thousands });
+        line.problems.push({ kind: 'ambiguous', text: number, decimal: kilos(amount.decimal), thousands: kilos(amount.thousands) });
         continue;
       }
       const asked: GoodsLineProblem | null = welded
-        ? { kind: 'ambiguous', text: number, decimal: tail!, thousands: amount.value, grouped: true }
+        ? { kind: 'ambiguous', text: number, decimal: kilos(tail!), thousands: kilos(amount.value), grouped: true }
         : null;
       if (!word) {
         cellBare.push({ value: amount.value, start, end, asked });
@@ -1108,13 +1167,18 @@ export function parseGoodsLine(raw: string): GoodsLine {
         line.problems.push(asked);
         continue;
       }
-      const key = unit!;
+      const routed = routeAmount(amount.value, word, { scaled });
+      const key = scaled ? 'kg' : unit!;
       if (taken.has(key)) {
-        line.problems.push({ kind: 'repeated', unit: key });
+        // «2 tonna 2000 kg» is one weight in two scales; anything else said
+        // twice in one unit is asked, the same figure included (the kernel
+        // says the unit was repeated, not that the figures agree).
+        const sameInAnotherScale = 'weightKg' in routed && routed.weightKg === line.weightKg && scaled !== weightScaled;
+        if (!sameInAnotherScale) line.problems.push({ kind: 'repeated', unit: key });
         continue;
       }
       taken.add(key);
-      const routed = routeAmount(amount.value, word);
+      if (scaled) weightScaled = true;
       if ('quantity' in routed) line.quantity = routed.quantity;
       else if ('weightKg' in routed) line.weightKg = routed.weightKg;
       else if ('volumeM3' in routed) line.volumeM3 = routed.volumeM3;

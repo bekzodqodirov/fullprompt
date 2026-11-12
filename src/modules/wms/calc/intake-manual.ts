@@ -26,6 +26,9 @@ import {
   normalizeTnved,
   parseGoodsLine,
   readAmountText,
+  scaledKg,
+  scaledKgValue,
+  scaledPattern,
   UNIT_FREE_LABELS,
   unitOf,
   unitPattern,
@@ -86,6 +89,36 @@ const KG_FIGURE = figureOf('kg');
 const M3_FIGURE = figureOf('m3');
 /** A piece count on the line — what keeps a counted cube («4 кубов») in the name (review JN-22). */
 const PIECES_FIGURE = new RegExp(figureOf('dona').source, 'iu');
+
+/**
+ * A weight in TONNES or GRAMS (docs/AI-SORAYDI.md §3.1 T14, CR-7): «2 tonna»,
+ * «20 тонн», «2,5 тн», «2吨», «500 gr» — kilos in another scale, in the
+ * spellings that can be nothing else (units.ts `SCALED_KG`; review JN-9).
+ * «yuk 2 tonna 12 kub» stated a cube and no weight at all. Never a figure
+ * before a slash: «180 gr/m2» is a density. Group 1 is the number, group 2
+ * the word.
+ */
+const SCALED_FIGURE = new RegExp(
+  String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})${GAP}(${scaledPattern('words')})(?![\p{L}\d])(?!${GAP}/)`,
+  'giu',
+);
+/**
+ * …and the lone letters — «2 t», «2.5 MT», «500 g» — which are capacities and
+ * generations far more often than weights («Fleshka 128G», «Domkrat 5 t»,
+ * «2024 г»). Never glued to the digits (a space is REQUIRED), never before a
+ * slash, and read only where the figure IS a weight: after a weight's label
+ * on its line, or in the answer to the bot's own question about the totals
+ * (`loneWeight` below).
+ */
+const LONE_SCALED_FIGURE = new RegExp(
+  String.raw`${NOT_GLUED}(${AMOUNT_NUMBER})[ \t\u00a0\u202f]+(${scaledPattern('lone')})(?![\p{L}\d])(?!${GAP}/)`,
+  'giu',
+);
+/** A weight's label — brutto or netto — closing the words before a figure: «G.W.: », «vazni », «Вес брутто — ». */
+const WEIGHT_LABEL_BEFORE = new RegExp(
+  String.raw`(?:^|[^\p{L}\d])(?:${labelPattern([...WEIGHT_LABELS, ...NET_LABELS])})${GAP}[:：=–—-]?${GAP}$`,
+  'iu',
+);
 
 /**
  * A figure written LABEL FIRST — «G.W.: 507», «CBM: 5.92», «毛重：507»,
@@ -214,16 +247,20 @@ function readNumber(
   labelled: RegExp,
   /** A hit this reading does not count — a line's own figure, a netto label. */
   skip: (start: number, end: number) => boolean = () => false,
+  /** The same field written in another scale — tonnes and grams of the kilo (T14). */
+  scaled: readonly ScaledReader[] = [],
 ): TotalRead {
   const seen = new Set<number>();
   let ambiguous: { text: string; decimal: number; thousands: number } | null = null;
   // Where every figure this reading counted stands — `[start, end)`, its unit
   // or its label included — with the value it stated (null: a doubted one).
   const hits: { start: number; end: number; value: number | null }[] = [];
-  const take = (number: string, at: number, labelFirstHit: boolean, span: [number, number]) => {
+  const take = (number: string, at: number, labelFirstHit: boolean, span: [number, number], factor = 1) => {
+    // Every reading of a scaled figure is in the field's own unit: «1,200 тн» is 1200 kg or 1200000 kg.
+    const own = (n: number) => (factor === 1 ? n : scaledKgValue(n, factor));
     const read = readAmountText(number);
     if (read.state === 'ambiguous') {
-      ambiguous ??= { text: number, decimal: read.decimal, thousands: read.thousands };
+      ambiguous ??= { text: number, decimal: own(read.decimal), thousands: own(read.thousands) };
       hits.push({ start: span[0], end: span[1], value: null });
       return;
     }
@@ -234,13 +271,13 @@ function readNumber(
     if (tail !== null) {
       const [from] = lineAround(scan, at);
       if (groupedReading(scan.slice(from, at + number.length), at - from, figureLabel) === 'ask') {
-        ambiguous ??= { text: number, decimal: tail, thousands: read.value };
+        ambiguous ??= { text: number, decimal: own(tail), thousands: own(read.value) };
         hits.push({ start: span[0], end: span[1], value: null });
         return;
       }
     }
-    seen.add(read.value);
-    hits.push({ start: span[0], end: span[1], value: read.value });
+    seen.add(own(read.value));
+    hits.push({ start: span[0], end: span[1], value: own(read.value) });
   };
   for (const hit of scan.matchAll(figure)) {
     const end = hit.index + hit[0].length;
@@ -251,6 +288,14 @@ function readNumber(
       if (PIECES_FIGURE.test(scan.slice(from, to))) continue;
     }
     take(hit[1]!, hit.index, false, [hit.index, end]);
+  }
+  for (const reader of scaled) {
+    for (const hit of scan.matchAll(reader.figure)) {
+      const end = hit.index + hit[0].length;
+      const factor = scaledKg(hit[2])?.factor;
+      if (factor === undefined || skip(hit.index, end) || !reader.when(hit.index)) continue;
+      take(hit[1]!, hit.index, false, [hit.index, end], factor);
+    }
   }
   // A line's currency is asked once per line, however many labels it holds.
   const money = new Map<number, boolean>();
@@ -271,6 +316,12 @@ function readNumber(
   const value = seen.size === 1 ? [...seen][0]! : null;
   // Two different figures answer nothing, and neither was taken.
   return { value, ambiguous: null, taken: value === null ? [] : hits.map((h) => [h.start, h.end]) };
+}
+
+/** A figure of the field in another scale, and where it may be read at all (`at` — the figure's offset). */
+interface ScaledReader {
+  figure: RegExp;
+  when: (at: number) => boolean;
 }
 
 /** One field's reading: its value, or the doubt, and WHERE the figures it took stand in the text. */
@@ -433,10 +484,23 @@ export function parseManualFacts(
    *
    * `goodsBeside`: the collection already holds goods rows (above).
    */
-  opts: { from?: number; goodsBeside?: boolean } & ClientHintOpts = {},
+  opts: TypedTotalsOpts = {},
 ): CalcFacts & { ambiguous: AmbiguousTotal[] } {
   return readTypedTotals(text, section, opts).facts;
 }
+
+export type TypedTotalsOpts = {
+  from?: number;
+  goodsBeside?: boolean;
+  /**
+   * The text IS the answer to the bot's question about the totals (the
+   * table's «jami …», line-address.ts `readTotals`): a lone «t» or «g» after
+   * a number is then its unit («jami 2 t»), and a tonne beside a count is the
+   * shipment's weight, not what one piece is — nothing in an answer about the
+   * totals names goods (T14, review JN-9).
+   */
+  totalsAnswer?: boolean;
+} & ClientHintOpts;
 
 /**
  * `parseManualFacts`, with WHERE the figures it took as the two totals stand
@@ -450,7 +514,7 @@ export function parseManualFacts(
 export function readTypedTotals(
   text: string,
   section?: CalcSection,
-  opts: { from?: number; goodsBeside?: boolean } & ClientHintOpts = {},
+  opts: TypedTotalsOpts = {},
 ): { facts: CalcFacts & { ambiguous: AmbiguousTotal[] }; taken: [number, number][] } {
   const route = readRoute(text);
   const typed = typedGoods(text, { prefix: opts.prefix });
@@ -473,12 +537,33 @@ export function readTypedTotals(
   // What is no amount — a size, a code, a phone — is blanked before a figure
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
   const scan = blankForTotals(text, clientCodePrefix(opts));
-  const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b));
+  // Kilos written in tonnes or grams (T14). On a line that states its pieces
+  // such a figure is what ONE piece is — a jack's 5 tonnes, a pack's 500
+  // grams — exactly as the row kernel reads it (units.ts `parseGoodsLine`).
+  const besidePieces = (at: number) => {
+    const [a, b] = lineAround(scan, at);
+    return PIECES_FIGURE.test(scan.slice(a, b));
+  };
+  const loneWeight = (at: number) => {
+    if (opts.totalsAnswer) return true;
+    const [a] = lineAround(text, at);
+    return WEIGHT_LABEL_BEFORE.test(text.slice(a, at));
+  };
+  // …unless the line itself speaks of the whole shipment: «jami 2 tonna 300 dona».
+  const ofShipment = (at: number) => {
+    const [a, b] = lineAround(text, at);
+    return shipmentLine(text.slice(a, b));
+  };
+  const tonnes: ScaledReader[] = [
+    { figure: SCALED_FIGURE, when: (at) => opts.totalsAnswer === true || !besidePieces(at) || ofShipment(at) },
+    { figure: LONE_SCALED_FIGURE, when: loneWeight },
+  ];
+  const plain = readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || nettoLabelled(text, a, b), tonnes);
   // Customs-only: the netto stands for the total when nothing else is stated.
   const nettoStands = section !== undefined && !sectionHasFreight(section);
   const netto =
     nettoStands && plain.value === null && !plain.ambiguous
-      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b))
+      ? readNumber(text, scan, KG_FIGURE, KG_LABELLED, (a, b) => notTotal(a) || !nettoLabelled(text, a, b), tonnes)
       : { value: null, ambiguous: null, taken: [] };
   const weight = netto.value !== null || netto.ambiguous ? netto : plain;
   const volume = readNumber(text, scan, M3_FIGURE, M3_LABELLED, (a) => notTotal(a));
@@ -869,6 +954,19 @@ function gluedCodeLetters(text: string): Set<string> {
 const CLIENT_CODE_LINE = /^[A-Za-z]{1,4}\s*[-–]?\s*\d{1,8}$/;
 
 /**
+ * One line as the bot's TYPED readers read it: the row kernel, asked for the
+ * tonnes and grams too (units.ts `parseGoodsLine`'s `scaled`, §3.1 T14). The
+ * card form, the VED's paste box and a sheet's cells call the kernel bare and
+ * read what they always read (review JR-22).
+ */
+const typedLine = (text: string) => parseGoodsLine(text, { scaled: true });
+
+/** A tonne or a gram in a spelling that can be nothing else — a unit word to the typed readers. */
+const scaledWord = (word: string) => scaledKg(word)?.lone === false;
+/** Such a figure standing in a NAME — «Domkrat 5 tonna», «chay 500 gr» — number and word. */
+const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:${scaledPattern('words')})(?![\p{L}\d])`, 'giu');
+
+/**
  * The tail of an unlabelled line: every token a figure, a unit word or a code
  * word, and — when `measured` is asked — at least ONE unit that is not a
  * carton (review #24). A bare trailing number is not a goods line — «Tel 90
@@ -880,11 +978,16 @@ function unitFigures(tail: string, opts: { measured: boolean } = { measured: tru
   const tokens = tail.split(/[\s,;/+]+/u).filter(Boolean);
   let measured = false;
   for (const token of tokens) {
-    if (/^\d[\d.,]*$/u.test(token)) continue;
+    if (/^\d[\d.,'’ʼʻ]*$/u.test(token)) continue;
     const glued = /^(\d[\d.,]*)([\p{L}²³]+\.?)$/u.exec(token);
     const unit = unitOf(token) ?? (glued ? unitOf(glued[2]!) : null);
     if (unit !== null) {
       if (unit !== 'karobka') measured = true;
+      continue;
+    }
+    // «Sement 2 tonna», «Zafaron 500gr»: kilos in another scale (T14).
+    if (scaledWord(token) || (glued && scaledWord(glued[2]!))) {
+      measured = true;
       continue;
     }
     if (/^(?:kod|код|tnved|тнвэд|hs)$/iu.test(token)) continue;
@@ -916,7 +1019,7 @@ function nameThenFigures(body: string): boolean {
  */
 function nameThenCode(body: string): boolean {
   const at = firstFigure(body);
-  return at > 0 && unitFigures(body.slice(at), { measured: false }) && parseGoodsLine(body).tnvedCode !== null;
+  return at > 0 && unitFigures(body.slice(at), { measured: false }) && typedLine(body).tnvedCode !== null;
 }
 
 /**
@@ -1011,7 +1114,7 @@ function bareGoods(body: string, labelText: string, naming: boolean, prefix: str
     const pieces = text.split(LIST_SPLIT).map(tidyName).filter(Boolean).map(listPiece);
     return pieces.length > 0 && pieces.every((p) => p !== null) ? (pieces as TypedGoods[]) : [];
   }
-  const parsed = parseGoodsLine(text);
+  const parsed = typedLine(text);
   if (parsed.unitWords.length === 0 && parsed.tnvedCode === null) {
     // A number and ONE word is a count of something — «3 xil», «2 позиции»,
     // «1 контейнер» (round-4 probe, after a naming label) — where a name's
@@ -1059,8 +1162,8 @@ function kernelGoods(parsed: ReturnType<typeof parseGoodsLine>, fields: readonly
  */
 function listPiece(piece: string): TypedGoods | null {
   if (/^\d/u.test(piece)) return null;
-  if (nameThenFigures(piece)) return kernelGoods(parseGoodsLine(piece));
-  const parsed = parseGoodsLine(piece);
+  if (nameThenFigures(piece)) return kernelGoods(typedLine(piece));
+  const parsed = typedLine(piece);
   if (parsed.unitWords.length > 0 || parsed.tnvedCode !== null) return null;
   return nameOk(piece) ? figureless(piece) : null;
 }
@@ -1075,7 +1178,7 @@ function listPiece(piece: string): TypedGoods | null {
  */
 function figureRunLabels(text: string): string[] | null {
   const tokens = text.split(/[\s,;/+]+/u).filter(Boolean);
-  const figure = tokens.map((t) => /^\d/u.test(t) || unitOf(t) !== null);
+  const figure = tokens.map((t) => /^\d/u.test(t) || unitOf(t) !== null || scaledWord(t));
   const first = figure.indexOf(true);
   const last = figure.lastIndexOf(true);
   if (first < 0) return [];
@@ -1170,9 +1273,12 @@ function typedGoods(
       }
       continue;
     }
-    const parsed = parseGoodsLine(body);
+    const parsed = typedLine(body);
     const name = tidyName(parsed.name);
-    const words = wordsOf(name);
+    // A tonne or gram figure left in the name (it stands beside a piece count)
+    // is no WORD of it: «jami 2 tonna 300 dona» is named by «jami» alone — a
+    // totals line, never a product called «jami 2 tonna».
+    const words = wordsOf(name.replace(SCALED_IN_NAME, ' '));
     if (words.length === 0) continue;
     const counted = parsed.quantity !== null || parsed.measureQty !== null;
     // «Tovar: vazni 150 kg» is the goods' weight under a label (round 3,
@@ -1287,11 +1393,29 @@ function unitAfter(text: string, numberText: string): SellerUnit | null {
   const at = text.indexOf(numberText);
   if (at < 0) return null;
   const word = /^\s*([\p{L}²³][\p{L}\d²³.]*)/u.exec(text.slice(at + numberText.length));
-  return word ? unitOf(word[1]) : null;
+  if (!word) return null;
+  // «1,200 тн»: both readings are kilos already (`parseGoodsLine`'s `scaled`).
+  return unitOf(word[1]) ?? (scaledWord(word[1]!) ? 'kg' : null);
+}
+
+/**
+ * «1.5 t», «500 g», «0,5 т», «2.5 MT» as the WHOLE answer to the bot's
+ * question about one line: there the lone letter is the figure's unit, and it
+ * is written out in the spelling the readers know («1.5 tonna»). Never glued
+ * to the digits, and never beside anything else — in a longer answer a lone
+ * letter is a model's («128G», «5 t domkrat») and is asked, as before (review
+ * JN-9).
+ */
+const LONE_ANSWER = new RegExp(String.raw`^(${AMOUNT_NUMBER})[ \t\u00a0\u202f]+(${scaledPattern('lone')})\.?$`, 'iu');
+function loneLetterSpelled(text: string): string {
+  const lone = LONE_ANSWER.exec(text);
+  const scale = lone ? scaledKg(lone[2]) : null;
+  if (!lone || !scale) return text;
+  return `${lone[1]} ${scale.factor > 1 ? 'tonna' : 'gr'}`;
 }
 
 export function parseLineAnswer(raw: string): LineAnswer {
-  const text = raw.trim();
+  const text = loneLetterSpelled(raw.trim());
   if (!text) return { kind: 'refused', reason: 'nothing' };
   // A minus is not a quantity of anything; the kernel's amount grammar would
   // read «-5» as 5.
@@ -1304,7 +1428,7 @@ export function parseLineAnswer(raw: string): LineAnswer {
     if (code && 'problem' in code) return { kind: 'refused', reason: 'code_short', detail: code.text };
   }
 
-  const line = parseGoodsLine(text);
+  const line = typedLine(text);
   // Ten digits with a unit word after them are an AMOUNT no column can
   // hold, not a code: the kernel takes ten bare digits for a TNVED code
   // wherever they stand, so «2000000000 kg» would have answered the line
@@ -1462,7 +1586,7 @@ export function goodsEvidence(raw: string, opts?: ClientHintOpts): boolean {
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean)
-    .some((l) => labelledGoodsLine(l) || statesGoods(l) || readGoodsLines(l, labelled).length > 0);
+    .some((l) => labelledGoodsLine(l) || statesGoods(l) || typedLine(l).unitWords.length > 0 || readGoodsLines(l, labelled).length > 0);
 }
 
 /** A word and a ROW of bare figures with no phone's shape (`NUMBER_ROW`, `PHONE_GROUPS`) — material on the first send. */

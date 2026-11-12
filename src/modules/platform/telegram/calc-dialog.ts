@@ -70,6 +70,7 @@ type TableSegment = import('../../wms/calc/line-address').TableSegment;
 type TableTarget = import('../../wms/calc/line-address').TableTarget;
 type TableRefusal = import('../../wms/calc/line-address').TableRefusal;
 type TotalsLeft = import('../../wms/calc/line-address').TotalsLeft;
+type UnitAsk = import('../../wms/calc/line-address').UnitAsk;
 type LineAnswer = import('../../wms/calc/intake-manual').LineAnswer;
 type GoodsFact = NonNullable<IntakeState['facts']['goods']>[number];
 
@@ -888,16 +889,17 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
   if (netto.length > 0) {
     out.push(`${quoted(netto)} — umumiy og‘irlik brutto (qadoq bilan) yoziladi, netto umumiyga yozilmadi.${onRow(`${netto[0]!.number} kg`)}`);
   }
-  for (const [why, what, unit] of [
-    ['weight', 'og‘irlik', 'kg'],
-    ['volume', 'hajm', 'kub'],
+  for (const [why, what] of [
+    ['weight', 'og‘irlik'],
+    ['volume', 'hajm'],
   ] as const) {
     const items = of(why);
     if (items.length === 0) continue;
+    // The example is the seller's own figure, in his own unit («jami 2 tonna»).
     out.push(
       items.length > 1
-        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.number} ${unit}».`
-        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.number} ${unit}» deb qayta yozing.`,
+        ? `${quoted(items)} — ikki xil ${what}: bittasini yozing, masalan «jami ${items[0]!.text}».`
+        : `${quoted(items)} — umumiyga yozilmadi: «jami ${items[0]!.text}» deb qayta yozing.`,
     );
   }
   const row = of('row');
@@ -914,9 +916,13 @@ function totalsLeftWords(left: readonly TotalsLeft[], ref: TableRef): string {
  * row. A word that resembles nothing gets the units its place can take — a
  * total's two, or the row answer's own list (`LINE_REFUSAL.unknown_unit`).
  */
-function unitAskWords(word: string, number: string, near: 'kg' | 'm3' | null, where: 'total' | 'row', lead = ''): string {
+function unitAskWords(word: string, number: string, near: UnitAsk['near'], where: 'total' | 'row', lead = ''): string {
   if (near === 'm3') return `«${word}» — kubmi? «${lead}${number} kub» deb yozing.`;
   if (near === 'kg') return `«${word}» — kgmi? «${lead}${number} kg» deb yozing.`;
+  // A lone «t» / «g» is a model's letter as often as a weight («5T», «128G») —
+  // asked, with the spelling the bot reads (docs/AI-SORAYDI.md §3.1 T14).
+  if (near === 'tonna') return `«${word}» — tonnami? «${lead}${number} tonna» deb yozing.`;
+  if (near === 'gr') return `«${word}» — grammi? «${lead}${number} gr» deb yozing.`;
   if (where === 'total') return `«${word}» — bu birlikni bilmayman. Umumiy uchun kg yoki kubda yozing: «jami 3500 kg», «jami 12 kub».`;
   return LINE_REFUSAL.unknown_unit(word);
 }

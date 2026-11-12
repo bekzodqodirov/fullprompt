@@ -125,8 +125,9 @@ describe('every kg and m³ word is read by the totals readers', () => {
 });
 
 /**
- * The tonne and the gram (§3.1 T14, review JN-9, JR-22) — the VOCABULARY
- * only: the words and their factors are declared, no reader asks them yet.
+ * The tonne and the gram (§3.1 T14, review JN-9, JR-22) — the VOCABULARY:
+ * the words and their factors. Who reads them, and where, is
+ * tests/unit/scaled-kilos.test.ts.
  */
 describe('the scaled kilo words', () => {
   it('a tonne is a thousand kilos and a gram a thousandth — in the spellings that can be nothing else', () => {
@@ -153,8 +154,10 @@ describe('the scaled kilo words', () => {
     }
     expect(scaledKg('kg')).toBeNull();
     expect(scaledKg('kub')).toBeNull();
-    // Until T14 wires it, «2 tonna» states no weight to any reader.
-    expect(parseManualFacts('jami 2 tonna 12 kub')).toMatchObject({ weightKg: null, volumeM3: 12 });
+    // Re-anchored when T14 wired the words (this line read «Until T14 wires
+    // it, “2 tonna” states no weight to any reader» — weightKg: null): the
+    // bot's totals reader reads the tonne now. 2 × 1000 = 2000, by hand.
+    expect(parseManualFacts('jami 2 tonna 12 kub')).toMatchObject({ weightKg: 2000, volumeM3: 12 });
   });
 });
 
