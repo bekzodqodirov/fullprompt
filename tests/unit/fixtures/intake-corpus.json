@@ -15124,6 +15124,350 @@
    "why": "T14 with T4: a gram of ONE piece, marked so, is that piece’s weight.",
    "source": "ai-soraydi typed-A T4",
    "weight": "defect"
+  },
+  {
+   "id": "c3360",
+   "input": "Stol - 10ctn - 150kg - 1.2cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol",
+      "weightKg": 150,
+      "volumeM3": 1.2
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stol» — 150 kg, 1.2 m³",
+   "why": "dg3-09: a dash between the figure groups dropped the line («Tovarlar (0)»), and its 150 kg became the shipment's.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3361",
+   "input": "LED lamp 3000pcs/15ctns/507kgs/5.92cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "LED lamp",
+      "quantity": 3000,
+      "weightKg": 507,
+      "volumeM3": 5.92
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «LED lamp» — 3000 dona, 507 kg, 5.92 m³",
+   "why": "dg3-09: a slash before a figure is a separator; the product was named «LED lamp / / /».",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3362",
+   "input": "Stol – 10 ctn – 150 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol",
+      "weightKg": 150
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stol» — 150 kg",
+   "why": "T8: an en dash between the groups reads as the hyphen does.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "close-variant"
+  },
+  {
+   "id": "c3363",
+   "input": "Stol | 10 ctn | 150 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stol",
+      "weightKg": 150
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stol» — 150 kg; no bar in the name",
+   "why": "T8: a bar between the groups separates them and is no word of the name.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "close-variant"
+  },
+  {
+   "id": "c3364",
+   "input": "Stul 20 ctns G.W. 300 kgs",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 300,
+      "weightKind": "gross"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stul» — 300 kg, its brutto",
+   "why": "dg3-09's fix sketch: a field label in the tail dropped the line; the label now says which weight the row's is (customs wants netto).",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3365",
+   "input": "Stul 20 ctns N.W. 280 kgs G.W. 300 kgs 2.5 cbm",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "weightKg": 280,
+      "weightKind": "net",
+      "volumeM3": 2.5,
+      "note": "sotuvchi: G.W. 300 kgs"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stul» — the netto 280 kg, 2.5 m³; the brutto kept on its note",
+   "why": "T8: a brutto beside a netto was two weights of one unit — the line was dropped as two lines welded into one.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3366",
+   "input": "Kurtka 300 dona 150 kg 5 meshok",
+   "expected": {
+    "rows": [
+     {
+      "name": "Kurtka",
+      "quantity": 300,
+      "weightKg": 150,
+      "note": "sotuvchi: 5 meshok"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Kurtka» — 300 dona, 150 kg; «5 meshok» on its note",
+   "why": "T8: an unknown unit in the tail dropped the line and left its 150 kg to be taken as the shipment's.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3367",
+   "input": "iPhone 15 Pro 300 dona",
+   "expected": {
+    "rows": [
+     {
+      "name": "iPhone 15 Pro",
+      "quantity": 300
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «iPhone 15 Pro» — 300 dona",
+   "why": "T8: a number and a word BEFORE the figures are the name's (the kernel's rule); the line was dropped on «Pro».",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3368",
+   "input": "Samsung A54 128 GB 50 dona 10 kg",
+   "expected": {
+    "rows": [
+     {
+      "name": "Samsung A54 128 GB",
+      "quantity": 50,
+      "weightKg": 10
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Samsung A54 128 GB» — 50 dona, 10 kg",
+   "why": "T8: «128 GB» is the phone's capacity; the line was dropped and its 10 kg became the shipment's.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3369",
+   "input": "Yuk 3 mashina 36 kub",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no row — the cargo's own words, the cube the shipment's",
+   "why": "T8 guard: a pair before the figures is judged without it — «Yuk» names the cargo, never a product «Yuk 3 mashina».",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "regression"
+  },
+  {
+   "id": "c3370",
+   "input": "Truba 1/2 dyuym 100 dona",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no row, as before — a fraction is one token, never a «2 dyuym» pair",
+   "why": "T8 guard: the kernel cuts the fraction's «1» off the name («Truba /2 dyuym»); the pair rule must not let that line through.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "regression"
+  },
+  {
+   "id": "c3371",
+   "input": "Kurtka 300 dona 5 dollar",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no row, as before — a price is no pair",
+   "why": "T8 guard: a currency word is no unit and no word of a name; the price is release 1b's (T11).",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "regression"
+  },
+  {
+   "id": "c3372",
+   "input": "Stul 300 dona G.W. 15",
+   "expected": {
+    "rows": [
+     {
+      "name": "Stul",
+      "quantity": 300,
+      "weightKg": null,
+      "note": "sotuvchi: G.W. 15"
+     }
+    ],
+    "count": 1
+   },
+   "said": "one row «Stul» — 300 dona; «G.W. 15» on its note, the weight asked",
+   "why": "JN-21: a unit-free label gives its bare figure a unit only with «:» or «=»; without one the figure is never a count of 15.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "regression"
+  },
+  {
+   "id": "c3373",
+   "input": "品名 折叠椅\n尺寸 60*40*50cm\n20箱\n毛重 15kg/箱",
+   "expected": {
+    "rows": [
+     {
+      "name": "折叠椅",
+      "weightKg": 300,
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good «折叠椅» — 20 × 15 = 300 kg; no cube (尺寸 names nobody's size)",
+   "why": "MP-3: the weight line became a PRODUCT «毛重 /箱» of 15 kg and landed through «✅ Tasdiqlash»; JN-11: «尺寸» beside «20箱» is asked.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3374",
+   "input": "Product: folding chair\nQty: 200 pcs\nCartons: 20\nG.W.: 15 kg/ctn\nCarton size: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "folding chair",
+      "quantity": 200,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good «folding chair» — 200 dona, 20 × 15 = 300 kg, 20 × 0.12 = 2.4 m³",
+   "why": "MP-3: a figure-less «folding chair» beside a product «G.W. /ctn» of 15 kg.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "defect"
+  },
+  {
+   "id": "c3375",
+   "input": "Наименование: стул складной\nКол-во: 200 шт\nМест: 20\nВес брутто: 15 кг/место\nРазмер коробки: 60*40*50 см",
+   "expected": {
+    "rows": [
+     {
+      "name": "стул складной",
+      "quantity": 200,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good «стул складной» — 200 шт, 300 kg, 2.4 m³",
+   "why": "MP-3, the Russian block: «Вес брутто /место» was a product.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "defect"
+  },
+  {
+   "id": "c3376",
+   "input": "Product: folding chair Qty: 200 pcs Cartons: 20 G.W.: 15 kg/ctn Carton size: 60*40*50cm",
+   "expected": {
+    "rows": [
+     {
+      "name": "folding chair",
+      "quantity": 200,
+      "weightKg": 300,
+      "volumeM3": 2.4
+     }
+    ],
+    "count": 1
+   },
+   "said": "the block on ONE line reads the same way",
+   "why": "T12: «the same block on ONE line reads the same way»; it read no goods at all («200 pcs Cartons» was 200 cartons).",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "defect"
+  },
+  {
+   "id": "c3377",
+   "input": "尺寸 60*40*50cm 20箱 毛重 15kg/箱 品名 折叠椅",
+   "expected": {
+    "rows": [
+     {
+      "name": "折叠椅",
+      "weightKg": 300,
+      "volumeM3": null
+     }
+    ],
+    "count": 1
+   },
+   "said": "one good «折叠椅» — 300 kg; the name label after the figures",
+   "why": "MP-2's forward on one line: «Tovarlar (0): ⚠️ tovar nomi — yozilmagan», 15 kg the shipment's.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3378",
+   "input": "品名 折叠椅\n20箱\n毛重 15kg/箱\n\n品名 桌子\n10箱\n毛重 30kg/箱",
+   "expected": {
+    "rows": [
+     {
+      "name": "折叠椅",
+      "weightKg": 300
+     },
+     {
+      "name": "桌子",
+      "weightKg": 300
+     }
+    ],
+    "count": 2
+   },
+   "said": "two goods — 20 × 15 = 300 kg and 10 × 30 = 300 kg",
+   "why": "T12: a blank line and the next name label end a block.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "close-variant"
+  },
+  {
+   "id": "c3379",
+   "input": "Tovar: tayyor\nVazni: 150 kg",
+   "expected": {
+    "rows": [],
+    "count": 0
+   },
+   "said": "no row — a status opens no block",
+   "why": "T12 guard: what a customer says ABOUT the goods is no name (statusBody), and its field line no product.",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "regression"
   }
  ],
  "parseGoodsCases": [
@@ -49642,6 +49986,111 @@
    "why": "JS-2 with JN-7: «har bir dona» binds the size to one piece — only a package’s size is multiplied by the packages (PR-12).",
    "source": "ai-soraydi typed-A T6",
    "weight": "defect"
+  },
+  {
+   "id": "c3380",
+   "input": "Kurtka 300 dona 150 kg 5 meshok\nShim 200 dona 80 kg",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 150
+      },
+      {
+       "name": "Shim",
+       "weightKg": 80
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no total — 150 and 80 are the two lines' own",
+   "why": "dg3-09: the first line vanished, and its lone 150 kg was read for the shipment beside the other line's.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3381",
+   "input": "Stol - 10ctn - 150kg - 1.2cbm\nStul - 20ctn - 300kg - 2.4cbm",
+   "expected": {
+    "weightKg": null,
+    "volumeM3": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "Stol"
+      },
+      {
+       "name": "Stul"
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "no total — two rows, their figures their own (PF-2)",
+   "why": "dg3-09: neither line was goods, so 150/300 and 1.2/2.4 were two totals each.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "defect"
+  },
+  {
+   "id": "c3382",
+   "input": "品名 折叠椅\n尺寸 60*40*50cm\n20箱\n毛重 15kg/箱",
+   "expected": {
+    "weightKg": null,
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "no total — 15 kg is one carton's; the row's 300 kg is computed",
+   "why": "MP-2: one carton's 15 kg landed as the shipment's and the row's (customs ≈ $43 for a ≈ $239 job).",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "blocker"
+  },
+  {
+   "id": "c3383",
+   "input": "Description: LED lamp\nQuantity: 3000 PCS\nPackages: 15 CTNS\nG.W.: 507 KGS\nN.W.: 480 KGS\nMeasurement: 5.92 CBM",
+   "expected": {
+    "weightKg": 507,
+    "volumeM3": 5.92,
+    "goods": {
+     "rows": [
+      {
+       "name": "LED lamp",
+       "quantity": 3000,
+       "weightKg": 480,
+       "volumeM3": 5.92
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "the brutto 507, the cube 5.92; one good «LED lamp» — its netto 480",
+   "why": "T12: the mark block is ONE good; one good is the shipment, so its G.W. is the brutto and the N.W. the row's (customs).",
+   "source": "ai-soraydi typed-A T12",
+   "weight": "defect"
+  },
+  {
+   "id": "c3384",
+   "input": "Yuk 3 mashina 36 kub",
+   "expected": {
+    "volumeM3": 36,
+    "goods": {
+     "rows": [],
+     "count": 0
+    }
+   },
+   "said": "36 m³, the shipment's",
+   "why": "T8 guard: the pair rule must not turn the cargo's own line into a product and take its cube from the shipment.",
+   "source": "ai-soraydi typed-A T8",
+   "weight": "regression"
   }
  ],
  "intakeClientLabelCases": [
