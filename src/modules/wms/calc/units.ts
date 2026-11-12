@@ -714,6 +714,25 @@ export function blankSpan(text: string, start: number, end: number): string {
 }
 
 /**
+ * `text` with every span blanked in ONE pass — `blankSpan` in a loop copies
+ * the whole text per span, which a long pasted line with thousands of figures
+ * turns into seconds. Spans may overlap and come in any order.
+ */
+export function blankSpans(text: string, spans: readonly [number, number][]): string {
+  if (spans.length === 0) return text;
+  const parts: string[] = [];
+  let at = 0;
+  for (const [s, e] of [...spans].sort((a, b) => a[0] - b[0])) {
+    const from = Math.max(s, at);
+    if (e <= from) continue;
+    parts.push(text.slice(at, from), BLANK.repeat(e - from));
+    at = e;
+  }
+  parts.push(text.slice(at));
+  return parts.join('');
+}
+
+/**
  * Every size of a line blanked — «60x40x50 sm», «600*600», «L60 W40 H50» (the
  * kernel's `parseSize`). A dimension is never an amount: read as one, «1:
  * 60*40*50 15 kg» wrote 50 dona (DIM-3) and «…60*40*50 300 kg» 50 300 kg.
@@ -948,6 +967,8 @@ const PACKAGE_NOUN = String.raw`(?:karobk|karopk|korobk|коробк|qut|кут|
 const PIECE_NOUN = String.raw`(?:dona|дона)\p{L}*|шт\p{L}*|pcs?|pieces?|units?|единиц\p{L}*`;
 const COUNT_NOUN = `${PACKAGE_NOUN}|${PIECE_NOUN}`;
 const PACKAGE_NOUN_WORD = new RegExp(`^(?:${PACKAGE_NOUN})$`, 'iu');
+/** A package noun's stem anywhere in a lower-cased window — what `ONE_LEAD` needs before it is run. */
+const PACKAGE_STEM = /karobk|karopk|korobk|коробк|qut|кут|қут|qop|қоп|joy|жой|мест|упаковк|ctn|carton|box|кор|箱/u;
 const PIECE_NOUN_WORD = new RegExp(`^(?:${PIECE_NOUN})$`, 'iu');
 
 /** Whose one a noun names — null: it names neither. */
@@ -1188,7 +1209,11 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
 
   const from = Math.max(0, hit.start - PER_ONE_WINDOW);
   const before = spaced.slice(from, hit.start);
-  const label = LABEL_LEAD.exec(before);
+  // The marks' own words, looked for before their patterns are run: most
+  // figures have none, and a pattern anchored at the window's end is tried
+  // from every position of it.
+  const lower = before.toLowerCase();
+  const label = /[/]|per|pr|на|за|одного/u.test(lower) ? LABEL_LEAD.exec(before) : null;
   if (label) {
     const owner = label[2] !== undefined ? tailWordOwner(label[2]) : label[3] !== undefined ? nounOwner(label[3]) : 'package';
     const word = label[1]!.replace(/\s+/gu, ' ').trim();
@@ -1199,7 +1224,7 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   }
   // «20 x 15 kg» — read off the text as written: the joiner is blanked in the scan.
   const raw = text.slice(from, hit.start);
-  const times = TIMES_LEAD.exec(raw);
+  const times = /[xх×*]\s*$/iu.test(raw) ? TIMES_LEAD.exec(raw) : null;
   if (times) {
     const at = from + times.index;
     const joiner = at + times[0].lastIndexOf(times[3]!);
@@ -1208,14 +1233,14 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
     const spans: [number, number][] = [[times[2] !== undefined ? joiner : at, joiner + 1]];
     return fixed(noun ?? 'package', spans, times[2] === undefined ? { noted: true } : {});
   }
-  const each = EACH_LEAD.exec(before);
+  const each = /har|ҳар|хар|each|every|кажд/u.test(lower) ? EACH_LEAD.exec(before) : null;
   if (each) {
     const noun = each[1] ?? each[2] ?? each[3] ?? each[4];
     const owner = nounOwner(noun);
     const container = /(?:ida|да)(?![\p{L}])|(?:da|да)\s*[\s,:：–-]*$/iu.test(each[0]) || owner === 'package';
     return { ...fixed(owner, [markSpan(each[0], from + each.index)]), bind: noun === undefined, clause: true, ...(container ? { container: true as const } : {}) };
   }
-  const one = ONE_LEAD.exec(before);
+  const one = PACKAGE_STEM.test(lower) ? ONE_LEAD.exec(before) : null;
   if (one) {
     const at = from + one.index;
     const cartonHit = hits.findIndex((h) => h.unit === 'karobka' && h.start === at);
@@ -1224,9 +1249,9 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
       ...(one[1] !== undefined ? { cond: 'another_carton' as const, ...(cartonHit >= 0 ? { cartonHit } : {}) } : {}),
     });
   }
-  const box = IN_BOX_PO.exec(before);
+  const box = lower.includes('по') ? IN_BOX_PO.exec(before) : null;
   if (box) return fixed('package', [markSpan(box[0], from + box.index)], { clause: true });
-  const po = PO_LEAD.exec(before);
+  const po = lower.includes('по') ? PO_LEAD.exec(before) : null;
   if (po) {
     const unit = unitOf(po[2]);
     const owner = unit === 'karobka' ? 'package' : unit === 'dona' ? 'piece' : null;
@@ -1260,16 +1285,17 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
   // «1 karobka 15 kg» is a mark only beside ANOTHER carton count; alone it is the count.
   marks.forEach((m, i) => {
     if (m?.cond !== 'another_carton') return;
-    const others = cartonHits.filter((c) => c !== m.cartonHit);
-    if (others.length === 0) marks[i] = null;
+    const others = cartonHits.length - (m.cartonHit !== undefined ? 1 : 0);
+    if (others === 0) marks[i] = null;
   });
   const oneHits = new Set(marks.flatMap((m) => (m?.cartonHit !== undefined ? [m.cartonHit] : [])));
   const cartonCounts = cartonHits.filter((c) => !oneHits.has(c));
   const unmarkedPieces = hits.flatMap((h, i) => (h.unit === 'dona' && (marks[i] === null || marks[i]!.cond === 'dan') ? [i] : []));
   // «dan» marks only beside a count of the line — another than the figure itself.
+  const unmarked = new Set(unmarkedPieces);
   marks.forEach((m, i) => {
     if (m?.cond !== 'dan') return;
-    if (cartonCounts.length === 0 && !unmarkedPieces.some((p) => p !== i)) marks[i] = null;
+    if (cartonCounts.length === 0 && unmarked.size - (unmarked.has(i) ? 1 : 0) === 0) marks[i] = null;
   });
   // An each-COUNT beside no carton count holds nothing — «Kurtka va shim, har
   // biri 300 dona» is each product's 300 — unless its mark names a container.
@@ -1286,13 +1312,21 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
   const kinds = new Set(counts.map((c) => c.owner));
   /** The count an «each» at `at` stands with (rule 2). */
   const boundOwner = (at: number): PerOneOwner | null => {
-    const before = counts.filter((c) => c.at < at).at(-1);
+    // The last count before `at` — a binary search: a long pasted line holds thousands.
+    let lo = 0;
+    let hi = counts.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (counts[mid]!.at < at) lo = mid + 1;
+      else hi = mid;
+    }
+    const before = counts[lo - 1];
     if (before) return before.owner;
     if (kinds.size === 1) return [...kinds][0]!;
     return kinds.size === 0 ? 'package' : null;
   };
 
-  const figures: (PerOneFigure & { clause: boolean; mark: Mark })[] = [];
+  const figures: (PerOneFigure & { clause: boolean; mark: Mark; at: number })[] = [];
   hits.forEach((hit, i) => {
     const mark = marks[i];
     if (!mark) return;
@@ -1315,6 +1349,7 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
       ...(mark.noted ? { noted: true as const } : {}),
       clause: mark.clause && owner === 'package',
       mark,
+      at: i,
     });
   });
   // A clause bound to the cartons goes on over the next figures of its
@@ -1328,9 +1363,8 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
   };
   for (const clause of figures.filter((f) => f.clause)) {
     const stop = segmentEnd(clause.end);
-    for (let i = 0; i < hits.length; i += 1) {
+    for (let i = clause.at + 1; i < hits.length; i += 1) {
       const hit = hits[i]!;
-      if (hit.start < clause.end) continue;
       if (hit.start >= stop || hit.unit === 'karobka' || hit.unit === 'dona' || marks[i] !== null) break;
       figures.push({
         start: hit.start,
@@ -1344,6 +1378,7 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
         word: hit.word,
         clause: false,
         mark: { ...clause.mark, spans: [] },
+        at: i,
       });
       marks[i] = clause.mark;
     }
@@ -1358,7 +1393,7 @@ export function packingRead(text: string, opts: { scaled?: boolean } = {}): Pack
   const size = cartons !== null ? packageSize(text, hits, cartonCounts, figures, boundOwner) : null;
   if (size) consumed.push(...size.spans);
   return {
-    figures: figures.map(({ clause: _clause, mark: _mark, ...f }) => f),
+    figures: figures.map(({ clause: _clause, mark: _mark, at: _at, ...f }) => f),
     cartons,
     size: size?.size ?? null,
     consumed: mergeSpans(consumed),
@@ -1736,9 +1771,18 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
     offset += cell.length + CELL_JOIN.length;
   }
   const packed = opts.packing ? packingRead(kept.join(CELL_JOIN), { scaled: opts.scaled === true }) : null;
-  /** A span of the joined text inside cell `i`, as the cell's own offsets. */
-  const inCell = (spans: readonly [number, number][], i: number): [number, number][] =>
-    spans.flatMap(([s, e]) => (s >= cellAt[i]! && e <= cellAt[i]! + kept[i]!.length ? [[s - cellAt[i]!, e - cellAt[i]!] as [number, number]] : []));
+  /** The spans of the joined text inside each cell, as the cell's own offsets — one pass over spans in order. */
+  const byCell = (spans: readonly [number, number][]): [number, number][][] => {
+    const out: [number, number][][] = kept.map(() => []);
+    let cell = 0;
+    for (const [s, e] of [...spans].sort((a, b) => a[0] - b[0])) {
+      while (cell < kept.length - 1 && s >= cellAt[cell + 1]!) cell += 1;
+      if (s >= cellAt[cell]! && e <= cellAt[cell]! + kept[cell]!.length) out[cell]!.push([s - cellAt[cell]!, e - cellAt[cell]!]);
+    }
+    return out;
+  };
+  const consumedOf = packed ? byCell(packed.consumed) : null;
+  const unreadOf = packed ? byCell(packed.unread) : null;
 
   // «Набор 4 кубов 20 шт» — a toy's own cubes, on a line that states its
   // pieces (review JN-22): the «N кубов» stays in the name, see below. A count
@@ -1757,11 +1801,8 @@ export function parseGoodsLine(raw: string, opts: { scaled?: boolean; packing?: 
       // A per-one figure, its mark, a times multiplier, a packed size and its
       // label: read by no column below, and out of the name; a rate («180
       // gr/m2») is read by nothing and stays in the name.
-      for (const [s, e] of inCell(packed.consumed, cellIndex)) {
-        scan = blankSpan(scan, s, e);
-        consumed.push([s, e]);
-      }
-      for (const [s, e] of inCell(packed.unread, cellIndex)) scan = blankSpan(scan, s, e);
+      scan = blankSpans(scan, [...consumedOf![cellIndex]!, ...unreadOf![cellIndex]!]);
+      consumed.push(...consumedOf![cellIndex]!);
     }
     for (const hit of scan.matchAll(AMOUNT)) {
       const number = hit[1]!;

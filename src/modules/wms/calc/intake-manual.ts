@@ -21,6 +21,7 @@ import {
   blankNonAmounts,
   blankSizes,
   blankSpan,
+  blankSpans,
   codeIn,
   COUNTED_CUBES,
   groupedReading,
@@ -541,7 +542,18 @@ export function readTypedTotals(
   // shipment's, under ✅ and over the model's correct total (DIM-4, dg3-01).
   const from = opts.from ?? 0;
   const perOne = perOneSpans(text, { scaled: true });
-  const onePackage = (start: number) => perOne.some(([s, e]) => start >= s && start < e);
+  // In order of their starts, which never overlap: the last one starting at or before `start` is the only candidate.
+  const onePackage = (start: number) => {
+    let lo = 0;
+    let hi = perOne.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (perOne[mid]![0] <= start) lo = mid + 1;
+      else hi = mid;
+    }
+    const span = perOne[lo - 1];
+    return span !== undefined && start < span[1];
+  };
   const notTotal = (start: number) => start < from || onGoodsLine(start) || onePackage(start);
   // What is no amount — a size, a code, a phone — is blanked before a figure
   // is looked for (§3.1 T0): its digits were the thousands of the weight after.
@@ -1021,8 +1033,7 @@ const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
 
 function figureTail(tail: string): { text: string; perOne: boolean; sized: boolean } {
   const read = packingRead(tail, { scaled: true });
-  let text = tail;
-  for (const [s, e] of read.consumed) text = blankSpan(text, s, e);
+  const text = blankSpans(tail, read.consumed);
   const unsized = blankSizes(text);
   return {
     text: unsized.replace(SIZE_WORDS_BEFORE, (m) => ' '.repeat(m.length)),
