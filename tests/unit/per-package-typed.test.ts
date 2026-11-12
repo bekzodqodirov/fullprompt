@@ -134,6 +134,11 @@ describe('T4 — the typed goods row: the figure goes onto its packing, the cart
     expect(r.packing).toMatchObject({ cartons: 20, kgPerCarton: 15, m3PerCarton: 0.12 });
   });
 
+  it('a sack is a package: «Sement 20 qop, 50 kg/qop» — 20 × 50 = 1000 kg, and no total', () => {
+    expect(row('Sement 20 qop, 50 kg/qop')).toMatchObject({ name: 'Sement', weightKg: 1000 });
+    expect(totals('Sement 20 qop, 50 kg/qop').kg).toBeNull();
+  });
+
   it('a count per carton: 20 × 24 = 480 dona; pairs per carton: 20 × 12 = 240 juft in the measure (JR-1)', () => {
     expect(row('Ручка 20 коробок по 24 шт')).toMatchObject({ name: 'Ручка', quantity: 480 });
     expect(row('Krossovka 20 karobka x 12 juft')).toMatchObject({ name: 'Krossovka', quantity: null, measureUnit: 'juft', measureQty: 240 });

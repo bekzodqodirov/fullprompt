@@ -301,6 +301,8 @@ export const PER_PACKAGE_TAIL: readonly string[] = [
   // and a tail that may be either marks nothing.
   '/箱', '/ctn', '/ctns', '/carton', '/box', '/кор', '/коробка', '/коробку', '/место', '/karobka',
   '/quti', '/joy',
+  // A sack is a package of its own trade — cement, flour, granules: «50 kg/qop» (T4).
+  '/qop', '/bag', '/мешок',
 ];
 export const PER_PIECE_TAIL: readonly string[] = ['/pc', '/pcs', '/piece', '/шт', '/штука', '/dona', '/ta', '/个', '/只'];
 
