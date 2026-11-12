@@ -616,7 +616,7 @@ export type GoodsLineProblem =
 //     «stul 20 300 kg»: 300 or 20300? — never guessed.
 
 /** The gaps a grouped number is written with: a space, a no-break space, a narrow one. */
-const GROUP_GAP = String.raw`[   ]`;
+const GROUP_GAP = String.raw`[ \u00a0\u202f]`;
 
 /**
  * A number as free text writes it — a regex SOURCE: 1-3 digits and groups of
@@ -646,7 +646,7 @@ export function withoutFirstGroup(number: string): number | null {
  * or group across it — and one character per character, so every offset still
  * points into what the person wrote (the name is cut from THAT).
  */
-export const BLANK = '';
+export const BLANK = '\uE000';
 
 /** `text` with `[start, end)` blanked, its length kept. */
 export function blankSpan(text: string, start: number, end: number): string {

@@ -265,7 +265,7 @@ describe('the rule itself (units.ts)', () => {
     expect(withoutFirstGroup('1 200 000')).toBe(200000);
     expect(withoutFirstGroup('1 200,5')).toBe(200.5);
     // A no-break space groups too.
-    expect(withoutFirstGroup('1 200')).toBe(200);
+    expect(withoutFirstGroup('1\u00a0200')).toBe(200);
     // One piece: one reading.
     expect(withoutFirstGroup('1200')).toBeNull();
     expect(withoutFirstGroup('12.5')).toBeNull();

@@ -55,7 +55,7 @@ import {
  * line. `\s*` crossed the line break: «G.W.: 507⏎CBM: 5.92» stated a cube of
  * 507, once «cbm» was a word this reader knew.
  */
-const GAP = String.raw`[ \t  ]*`;
+const GAP = String.raw`[ \t\u00a0\u202f]*`;
 
 /**
  * Never a number glued to a letter on its left (review JN-5): the 777 of
