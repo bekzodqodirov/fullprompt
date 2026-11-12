@@ -346,6 +346,16 @@ export type GoodsFileRead =
        * TOTAL row disowns — said on the file's receipt (`receiveGoodsSheet`).
        */
       notes: SheetNote[];
+      /**
+       * How many pictures the WORKBOOK carries (`loadWorkbook` — every
+       * `xl/media` image, floating, WPS and in-cell alike; 0 for a CSV, an
+       * HTML table or an Excel 97 file). A mapped sheet keeps the count as a
+       * text sheet always did (docs/AI-SORAYDI.md §3.2 X10, review CR-3): a
+       * quotation whose goods are pictures beside an article number reads
+       * its rows here, and the pictures are where the goods are named. A
+       * count only — nothing here reads a picture (release 1b's).
+       */
+      pictures: number;
     } & SheetShape)
   /**
    * A table with no header the reader knows — handed to the model as text.
@@ -748,6 +758,7 @@ export async function readGoodsFile(body: Buffer, contentType: string | null): P
       grossColumn,
       volumeM3,
       ownText: shape === 'packing' ? ownSheetText(best) : null,
+      pictures,
     };
   }
   if (others.text) {

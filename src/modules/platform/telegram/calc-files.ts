@@ -552,6 +552,14 @@ export function receiveGoodsSheet(
      * the card why a figure is the bot's product, or why none was taken.
      */
     columns?: readonly { warn: boolean; text: string }[];
+    /**
+     * How many pictures the file's workbook carries (`GoodsFileRead.pictures`,
+     * docs/AI-SORAYDI.md §3.2 X10) — kept on the goods sheet's block, so a
+     * table whose rows are article numbers can say the goods are in pictures.
+     * The workbook's FIRST step only: a further sheet's block is of the same
+     * book, and a count kept twice would be read twice. Absent = none.
+     */
+    pictures?: number;
   },
 ): FileAnswer {
   const { goods, label, where } = sheet;
@@ -599,6 +607,7 @@ export function receiveGoodsSheet(
     ...(packing && sheet.ownText ? { textCut: sheet.ownText.cut, textCellsCut: sheet.ownText.cellsCut } : {}),
     at,
     ...(sheet.capped ? { capped: true } : {}),
+    ...(sheet.pictures ? { pictures: sheet.pictures } : {}),
   };
   const ownText = (m: GoodsFileMeta): SheetText[] =>
     m.text ? [{ text: m.text, cut: m.textCut ?? false, cellsCut: m.textCellsCut ?? false, label: m.label }] : [];
@@ -1183,6 +1192,8 @@ async function answerIntakeFile(
     },
     // …and what it read of the sheet's columns (X5).
     columns: sheet.notes,
+    // …and how many pictures the workbook carries (X10).
+    pictures: sheet.pictures,
     ...capOf(sheet.stoppedShort),
   };
   if (sheet.moreSheets.length === 0) return receiveGoodsSheet(state, first);

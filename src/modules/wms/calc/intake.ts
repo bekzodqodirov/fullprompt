@@ -309,6 +309,14 @@ export interface CalcGoodsFact {
   /** The picture the good was seen or written on — «Фото N» of the request (1-based). Absent = not from a picture. */
   photoNo?: number;
   /**
+   * A sheet named this row by an ARTICLE NUMBER, not a word — «XJ-200» under
+   * «Item No.» beside a picture column (docs/AI-SORAYDI.md §3.2 X10; the
+   * reader's `GoodsRow.nameIsArticle`). Release 1a carries it; what the table
+   * asks of it, and the rename that clears it, are release 1b's (review JS-9).
+   * Absent = a name in words.
+   */
+  nameIsArticle?: true;
+  /**
    * Which weight the row's own `weightKg` is, when its source SAID
    * (`weight_kind`, a sheet's «N.W.» / «G.W.» column). Customs wants netto;
    * a gross one is said on the row's note by CODE («og‘irlik brutto»), no
@@ -627,6 +635,8 @@ export function invoiceFacts(rows: readonly GoodsRow[]): CalcGoodsFact[] {
       amount: g.amount,
       tnvedCode: g.tnvedCode,
       note: g.note,
+      // The name is an article number, not a word (§3.2 X10): the reader's flag, kept.
+      ...(g.nameIsArticle ? { nameIsArticle: true as const } : {}),
     };
     // A carton count the row's PACKING holds is said there, once (§3.2 X2): a
     // sheet whose only count column counts cartons still writes «15 ctn» as

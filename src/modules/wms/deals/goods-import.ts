@@ -126,6 +126,15 @@ export interface GoodsRow {
    * not a question (review JN-4). Absent = not said.
    */
   weightKind?: 'gross' | 'net';
+  /**
+   * The row's NAME cell is no word but an article number or a code — «XJ-200»,
+   * «A17», «2301» (docs/AI-SORAYDI.md §3.2 X10, review CR-3): the commonest
+   * Chinese quotation shows its goods as PICTURES beside «Item No.», and the
+   * number is all the file names the good by. The same test that keeps such a
+   * column from outranking a wordy one (`isWordCell`). A DATA flag only: what
+   * the table asks of such a row is release 1b's. Absent = a name in words.
+   */
+  nameIsArticle?: true;
 }
 
 /**
@@ -3343,6 +3352,8 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
           ...(packingStated(packing) ? { packing } : {}),
           // Which weight the row's own is, where the carton arithmetic asks (JN-4).
           ...(rowWeightKind ? { weightKind: rowWeightKind } : {}),
+          // A name that is only an article number (X10): said, never guessed at.
+          ...(isWordCell(at(columns.name)) ? {} : { nameIsArticle: true as const }),
         },
         r,
         { figures: hasFigures || coveredFigure, sum },

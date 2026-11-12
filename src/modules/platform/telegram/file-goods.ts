@@ -346,6 +346,14 @@ export interface GoodsFileMeta {
    * the lines' netto.
    */
   capped?: boolean;
+  /**
+   * How many pictures the file's WORKBOOK carries (`GoodsFileRead.pictures`,
+   * docs/AI-SORAYDI.md §3.2 X10): its rows may be named by article numbers
+   * beside the pictures that show the goods (`nameIsArticle`). On the block
+   * of the workbook's goods sheet only — a count of the BOOK, said once.
+   * Absent = none, or a block written before the count.
+   */
+  pictures?: number;
 }
 
 /** Each held row's weight kind, from the file blocks — unknown when they do not add up. */
