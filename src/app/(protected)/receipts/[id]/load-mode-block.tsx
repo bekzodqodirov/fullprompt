@@ -62,8 +62,10 @@ export function LoadModeBlock({
               : t('source.default');
 
   return (
-    <section className="card space-y-2 !p-3" data-testid="receipt-load">
-      <p className="text-2xs uppercase text-ink-500">{t('label')}</p>
+    // One cell of the card's «ties» (docs/PRIXOD-KARTA.md §7.1): the label,
+    // what it is now, the buttons that change it — in the row's one shape.
+    <section className="space-y-1.5" data-testid="receipt-load">
+      <p className="section-title">{t('label')}</p>
       <p className="text-sm">
         <span className={`chip ${view.mode === 'ftl' ? 'chip-neutral font-semibold' : 'chip-neutral'}`} data-testid="receipt-load-mode">
           {view.mode === 'ftl' ? `🚛 ${t('ftlLong')}` : t('ltlLong')}
@@ -81,7 +83,7 @@ export function LoadModeBlock({
           {view.mode === 'ltl' ? (
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary btn-sm"
               disabled={pending}
               data-testid="receipt-load-ftl"
               onClick={() => run(() => setReceiptLoadAction(receiptId, 'ftl'), office ? undefined : t('sellerWarn'))}
@@ -91,7 +93,7 @@ export function LoadModeBlock({
           ) : office ? (
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary btn-sm"
               disabled={pending}
               data-testid="receipt-load-ltl"
               onClick={() => run(() => setReceiptLoadAction(receiptId, 'ltl'))}
@@ -111,7 +113,7 @@ export function LoadModeBlock({
             (view.notReached === 'linked' || view.notReached === 'no_seller' || view.notReached === 'other_seller') ? (
               <button
                 type="button"
-                className="btn-secondary"
+                className="btn-secondary btn-sm"
                 disabled={pending}
                 data-testid="receipt-load-deal-widen"
                 onClick={() => run(() => setLinkedDealLoadAction(receiptId, 'ftl'))}
@@ -121,7 +123,7 @@ export function LoadModeBlock({
             ) : null}
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary btn-sm"
               disabled={pending}
               data-testid="receipt-load-deal-ltl"
               onClick={() => run(() => setLinkedDealLoadAction(receiptId, 'ltl'))}

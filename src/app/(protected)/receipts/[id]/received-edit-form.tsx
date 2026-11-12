@@ -151,7 +151,7 @@ export function ReceivedEditForm({
         <button
           type="button"
           data-testid="receipt-received-edit"
-          className="btn-secondary !min-h-9 px-2 text-sm"
+          className="btn-secondary btn-sm"
           onClick={() => {
             setSaved(false);
             setOpen(true);

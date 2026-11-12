@@ -80,6 +80,8 @@ import { receiptLoadView } from '@/modules/wms/ftl/read';
 import { mayRevertFtl } from '@/modules/wms/ftl/door';
 import { LoadModeBlock } from './load-mode-block';
 import { calcWorkspaceHref } from '@/modules/wms/calc/card-door';
+import { Panel } from '@/components/panel';
+import { receiptTotals, trimMeasure } from '@/modules/wms/receipts/card-totals';
 
 export default async function ReceiptDetailPage({
   params,
@@ -437,13 +439,51 @@ export default async function ReceiptDetailPage({
   const readMarks = await threadReadMarks([...(cargoThread ? [cargoRef] : [])]);
   const tth = await getTranslations('threads');
 
+  // The card's layout (docs/PRIXOD-KARTA.md §7): what each zone holds for
+  // THIS reader. Every condition here is one a block has always had — the
+  // round moved blocks, it opened and closed no door.
+  const tl = await getTranslations('lotCheck');
+  const totals = receiptTotals(lots);
+  const showLoadRow = Boolean(loadView && (ftlOffice || (loadView.sellerId === actor.id && loadView.mode === 'ltl')));
+  const showCalcRow = mayLinkCalc && calcOptions.length > 0;
+  const showPickupRow = Boolean(pickupInfo || canLinkPickup);
+  // Two independent stacks, never a 2×2 grid: «Hisob» hangs under the
+  // «Bitim» whose calculations it lists, and a tall «Yuk turi» cannot open a
+  // hole beside a short neighbour.
+  const tiesLeft = canLinkDeal || showCalcRow;
+  const tiesRight = showLoadRow || showPickupRow;
+  // No card for a reader who cannot attach when there is nothing to list —
+  // it was a heading over nothing for every seller and VED.
+  const showFiles = canEdit || receiptFiles.length > 0;
+  const showCosts = costMeta !== null || costs.length > 0 || othersLine !== null;
+  // What «Boshqa amallar» holds for this reader, named on its closed line:
+  // a manager looking for «Bekor qilish» must not have to open a fold called
+  // «other» to find out whether it is in there.
+  const moreWords = [
+    ...(canAssign && client ? [t('changeClient')] : []),
+    ...(canVoid ? [t('moveReceipt')] : []),
+    ...(canVoid && !canAnnul ? [t('voidBtn')] : []),
+    ...(canAnnul && preview ? [ta('open')] : []),
+  ];
+  // A label that is inline on a phone («Mijoz: …», the 87 px card this
+  // summary replaces) and a small caption above its value from `lg`.
+  const factLabel =
+    'font-semibold lg:mb-0.5 lg:block lg:text-2xs lg:font-bold lg:uppercase lg:tracking-[0.08em] lg:text-ink-500';
+
   return (
-    <div className="space-y-6">
-      {backHref ? (
-        <BackLink href={backHref} label={tAny('stock.title')} />
-      ) : (
-        <BackLink href="/receipts" label={t('title')} />
-      )}
+    // A flex column so that ONE class can reorder it for a phone: under `md`
+    // the ties and everything after the lots carry `max-md:order-1`, and the
+    // card reads summary → cargo → the rest. With the ties above the lots a
+    // seller's first screen showed no cargo at all (measured: the first lot
+    // at y≈725 of 741). DOM order is the desktop's.
+    <div className="flex flex-col gap-4">
+      <div>
+        {backHref ? (
+          <BackLink href={backHref} label={tAny('stock.title')} />
+        ) : (
+          <BackLink href="/receipts" label={t('title')} />
+        )}
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <h1 className="text-xl font-bold">
           <span className="font-mono">{receipt.number}</span>
@@ -459,6 +499,15 @@ export default async function ReceiptDetailPage({
         >
           {t(`statuses.${receipt.status}`)}
         </span>
+        {/* LTL / FTL (0135): the «Yuk turi» row below for whoever the door
+            lets act — the office, or this prixod's own seller (FTL only, his
+            2a); a chip for everybody else when it is FTL, nothing when it is
+            LTL. The chip was a paragraph of its own between two cards. */}
+        {!showLoadRow && loadView?.mode === 'ftl' && (
+          <span className="chip chip-neutral" data-testid="receipt-ftl-chip">
+            🚛 {tf('ftlLong')}
+          </span>
+        )}
         {canPrint && receipt.status === 'confirmed' && anyPrintable && (
           <div className="ml-auto w-44">
             <PrintLabels href={`/print/receipts/${id}`} label={t('reprint')} />
@@ -466,529 +515,659 @@ export default async function ReceiptDetailPage({
         )}
       </div>
 
-      <div className="card !p-3 text-sm">
-        <p>
-          <span className="font-semibold">{t('client')}: </span>
-          {client ? (
-            <span className="font-mono font-extrabold text-brand-700">
-              {client.clientCode} — {client.name}
-            </span>
-          ) : (
-            <span className="font-bold text-orange-600">
-              ❓ {t('unclaimed')}
-              {receipt.unclaimedMarking && (
-                <span className="ml-2 rounded bg-orange-100 px-2 py-0.5 font-mono">
-                  {receipt.unclaimedMarking}
-                </span>
+      {/* 1. What it is: whose, how much, when and where. ONE card. */}
+      <section className="card !p-3 text-sm" data-testid="receipt-summary">
+        <div className="grid gap-x-6 gap-y-1 lg:grid-cols-3">
+          <div className="min-w-0">
+            <p className="[overflow-wrap:anywhere]">
+              <span className={factLabel}>
+                {t('client')}
+                <span className="lg:hidden">: </span>
+              </span>
+              {client ? (
+                <>
+                  <span className="font-mono font-extrabold text-brand-700">{client.clientCode}</span>
+                  <span className="font-semibold"> — {client.name}</span>
+                </>
+              ) : (
+                <>
+                  <span className="font-bold text-warn">❓ {t('unclaimed')}</span>
+                  {receipt.unclaimedMarking && (
+                    <>
+                      {' '}
+                      {/* A marking is up to fifty characters with no space in
+                          it (a factory's own code) — it must break, or it
+                          widens the page: 424 px at 360 with thirty. */}
+                      <span className="rounded bg-warn/10 px-2 py-0.5 font-mono font-bold text-warn [overflow-wrap:anywhere]">
+                        {receipt.unclaimedMarking}
+                      </span>
+                    </>
+                  )}
+                </>
               )}
-            </span>
-          )}
-        </p>
-        <p data-testid="receipt-received-date" data-day={receivedDay}>
-          <span className="font-semibold">{t('date')}: </span>
-          {/* A back-dated prixod carries a DAY: its noon is a filing
-              convention, printed in the warehouse's own zone. */}
-          {backdated
-            ? format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeZone: warehouse.timezone })
-            : format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeStyle: 'short' })}{' '}
-          · {warehouse.code}
-        </p>
-        {office && (
-          <>
-            <p data-testid="receipt-received-by">
-              👤 <span className="font-semibold">{to('receivedBy')}: </span>
-              {receipt.receivedByName ?? nameOf(receipt.receivedByUserId ?? receipt.createdBy)}
             </p>
-            <p data-testid="receipt-entered-by" className="text-xs text-ink-500">
-              ✍️ {to('enteredBy')}: {nameOf(receipt.createdBy)} ·{' '}
-              {format.dateTime(receipt.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
-            </p>
-          </>
-        )}
-        {canCorrectReceived && (
-          <div className="mt-2">
-            <ReceivedEditForm
-              receiptId={id}
-              day={receivedDay}
-              bounds={receivedDayBounds(receipt.createdAt, warehouse.timezone)}
-              receiver={
-                receipt.receivedByName
-                  ? { kind: 'name', name: receipt.receivedByName }
-                  : receipt.receivedByUserId
-                    ? { kind: 'user', userId: receipt.receivedByUserId }
-                    : null
-              }
-              me={{ id: actor.id, name: actor.fullName }}
-              receivers={warehouseReceivers}
-            />
           </div>
+          <div className="min-w-0">
+            {/* NEW on the card: three lots were three sums in the reader's
+                head. From the lots already read, in integer units. */}
+            <p data-testid="receipt-total" data-boxes={totals.boxes} data-kg={totals.kg} data-m3={totals.m3}>
+              <span className={factLabel}>
+                {t('total')}
+                <span className="lg:hidden">: </span>
+              </span>
+              <span className="font-semibold">
+                {t('lotsCount', { n: totals.lots })} · {totals.boxes} 📦 · {totals.kg} kg · {totals.m3} m³
+              </span>
+            </p>
+          </div>
+          <div className="min-w-0 space-y-0.5">
+            <p data-testid="receipt-received-date" data-day={receivedDay}>
+              <span className={factLabel}>
+                {t('date')}
+                <span className="lg:hidden">: </span>
+              </span>
+              {/* A back-dated prixod carries a DAY: its noon is a filing
+                  convention, printed in the warehouse's own zone. */}
+              {backdated
+                ? format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeZone: warehouse.timezone })
+                : format.dateTime(receipt.receivedAt, { dateStyle: 'medium', timeStyle: 'short' })}{' '}
+              · {warehouse.code}
+            </p>
+            {office && (
+              <>
+                <p data-testid="receipt-received-by" className="[overflow-wrap:anywhere]">
+                  👤 <span className="font-semibold">{to('receivedBy')}: </span>
+                  {receipt.receivedByName ?? nameOf(receipt.receivedByUserId ?? receipt.createdBy)}
+                </p>
+                <p data-testid="receipt-entered-by" className="text-xs text-ink-500 [overflow-wrap:anywhere]">
+                  ✍️ {to('enteredBy')}: {nameOf(receipt.createdBy)} ·{' '}
+                  {format.dateTime(receipt.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
+                </p>
+              </>
+            )}
+            {canCorrectReceived && (
+              <div className="pt-1">
+                <ReceivedEditForm
+                  receiptId={id}
+                  day={receivedDay}
+                  bounds={receivedDayBounds(receipt.createdAt, warehouse.timezone)}
+                  receiver={
+                    receipt.receivedByName
+                      ? { kind: 'name', name: receipt.receivedByName }
+                      : receipt.receivedByUserId
+                        ? { kind: 'user', userId: receipt.receivedByUserId }
+                        : null
+                  }
+                  me={{ id: actor.id, name: actor.fullName }}
+                  receivers={warehouseReceivers}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+        {receipt.sourceNote && (
+          <p className="mt-2 border-t border-line pt-2 text-ink-700 [overflow-wrap:anywhere]">📝 {receipt.sourceNote}</p>
         )}
-        {receipt.sourceNote && <p className="text-ink-700">{receipt.sourceNote}</p>}
         {receipt.voidReason && (
-          <p className="font-semibold text-bad">
+          <p className="mt-2 border-t border-line pt-2 font-semibold text-bad [overflow-wrap:anywhere]">
             {t('voidReason')}: {receipt.voidReason}
           </p>
         )}
-      </div>
+      </section>
 
-      {(pickupInfo || canLinkPickup) && (
-        <div className="card space-y-1 text-sm" data-testid="receipt-pickup">
-          <p className="font-semibold">🏭 {tp('title')}</p>
-          {pickupInfo ? (
-            <p>
-              <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
-                {pickupInfo.code}
-              </Link>{' '}
-              · {pickupInfo.seq}. {pickupInfo.factoryName}
-              {pickupInfo.factoryPhone && (
-                <>
-                  {' '}
-                  ·{' '}
-                  <a className="text-brand-700 underline" href={`tel:${pickupInfo.factoryPhone}`}>
-                    {pickupInfo.factoryPhone}
-                  </a>
-                </>
+      {/* 1a. Nobody's cargo: naming its owner is the one job this card has
+          (his 3.2a — the handover screen's «egasi aniqlanmagan yuk» row is a
+          door to exactly this), so it stays OPEN and sits at the top. On a
+          claimed prixod the same form is a correction and lives in «Boshqa
+          amallar». */}
+      {canAssign && !client && (
+        <section className="card space-y-3 border-warn/40 !p-3" data-testid="receipt-owner">
+          <AssignClient receiptId={id} current={null} />
+          <ReturnToSender receiptId={id} />
+        </section>
+      )}
+
+      {/* 2. What it is tied to — ONE card where there were four. */}
+      {(tiesLeft || tiesRight) && (
+        <section
+          className={`card grid gap-x-6 gap-y-3 !p-3 max-md:order-1 lg:items-start ${
+            tiesLeft && tiesRight ? 'lg:grid-cols-2' : ''
+          }`}
+          data-testid="receipt-links"
+        >
+          {tiesLeft && (
+            <div className="min-w-0 divide-y divide-line [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-3">
+              {canLinkDeal && (
+                <DealLink
+                  receiptId={id}
+                  current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
+                  options={dealChoices}
+                  hasCompensation={hasCompensation}
+                />
               )}
-              {pickupInfo.factoryWechat && ` · WeChat: ${pickupInfo.factoryWechat}`}
-            </p>
-          ) : (
-            <p className="text-xs text-ink-500">{tp('noPickup')}</p>
+              {showCalcRow && (
+                <CalcLink
+                  receiptId={id}
+                  currentId={receipt.calcRequestId}
+                  currentHref={calcWorkspaceHref(actor, receipt.calcRequestId)}
+                  confirmed={receipt.calcLinkConfirmedAt !== null}
+                  options={calcOptions.map((o) => ({
+                    requestId: o.requestId,
+                    section: o.section,
+                    sealedAt: o.sealedAt.toISOString().slice(0, 10),
+                    volumeM3: o.volumeM3,
+                    weightKg: o.weightKg,
+                  }))}
+                />
+              )}
+            </div>
           )}
-          {canLinkPickup && (
-            <ReceiptPickupControl
-              receiptId={id}
-              currentStopId={receipt.pickupStopId}
-              currentClosed={pickupInfo?.status === 'closed'}
-              options={[
-                ...(pickupInfo && !pickupOptions.some((o) => o.stopId === pickupInfo.stopId)
-                  ? [
-                      {
-                        stopId: pickupInfo.stopId,
-                        seq: pickupInfo.seq,
-                        code: pickupInfo.code,
-                        status: pickupInfo.status,
-                        factoryName: pickupInfo.factoryName,
-                      },
-                    ]
-                  : []),
-                ...pickupOptions,
-              ].map((o) => ({
-                stopId: o.stopId,
-                // A closed trip may be joined from here (a void-and-redo finds
-                // its truck again) — and says so.
-                label: `${o.status === 'closed' ? '🔒 ' : ''}${o.code} · ${o.seq}. ${o.factoryName}`,
-              }))}
-            />
-          )}
-        </div>
-      )}
-
-      {canLinkDeal && (
-        <DealLink
-          receiptId={id}
-          current={linkedDeal ? { id: linkedDeal.id, code: linkedDeal.code } : null}
-          options={dealChoices}
-          hasCompensation={hasCompensation}
-        />
-      )}
-
-      {/* LTL / FTL (0135): the block for whoever the door lets act — the
-          office, or this prixod's own seller (FTL only, his 2a); a chip for
-          everybody else when it is FTL, nothing when it is LTL. */}
-      {loadView && (ftlOffice || (loadView.sellerId === actor.id && loadView.mode === 'ltl')) ? (
-        <LoadModeBlock receiptId={id} view={loadView} office={ftlOffice} />
-      ) : loadView?.mode === 'ftl' ? (
-        <p className="text-sm" data-testid="receipt-ftl-chip">
-          <span className="chip chip-neutral">🚛 {tf('ftlLong')}</span>
-        </p>
-      ) : null}
-
-      {mayLinkCalc && calcOptions.length > 0 && (
-        <CalcLink
-          receiptId={id}
-          currentId={receipt.calcRequestId}
-          currentHref={calcWorkspaceHref(actor, receipt.calcRequestId)}
-          confirmed={receipt.calcLinkConfirmedAt !== null}
-          options={calcOptions.map((o) => ({
-            requestId: o.requestId,
-            section: o.section,
-            sealedAt: o.sealedAt.toISOString().slice(0, 10),
-            volumeM3: o.volumeM3,
-            weightKg: o.weightKg,
-          }))}
-        />
-      )}
-
-      <section className="space-y-3">
-        {askFace && <ClientAskPanel receiptId={id} face={askFace} show={askShow} />}
-        {lots.map((lot) => (
-          <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 !p-3">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-2xl font-extrabold text-brand-700">{lot.letter}</span>
-              <span className="font-semibold" data-testid="lot-name">
-                {lot.productNameZh}
-                {/* The Russian name SHOWN: the tarkib's, while one stands
-                    (items 3-4 — the pure twin of `lotRuShownSql`, off the
-                    compositions this page already holds); else the lot's own. */}
-                {(shownRu.get(lot.id) ?? lot.productNameRu) && (
-                  <span className="font-normal text-ink-700"> ({shownRu.get(lot.id) ?? lot.productNameRu})</span>
-                )}
-              </span>
-              {canPrint && receipt.status === 'confirmed' && (qrState.get(lot.id)?.printable ?? 0) > 0 && (
-                <div className="ml-auto w-28">
-                  <PrintLabels
-                    variant="secondary"
-                    href={`/print/receipts/${id}?lotId=${lot.id}`}
-                    label={lot.letter ?? ''}
-                  />
+          {tiesRight && (
+            <div
+              className={`min-w-0 divide-y divide-line [&>*:first-child]:pt-0 [&>*:last-child]:pb-0 [&>*]:py-3 ${
+                tiesLeft ? 'max-lg:border-t max-lg:border-line max-lg:pt-3' : ''
+              }`}
+            >
+              {showLoadRow && loadView && <LoadModeBlock receiptId={id} view={loadView} office={ftlOffice} />}
+              {showPickupRow && (
+                <div className="space-y-1.5 text-sm" data-testid="receipt-pickup">
+                  <p className="section-title">🏭 {tp('title')}</p>
+                  {pickupInfo ? (
+                    <p className="[overflow-wrap:anywhere]">
+                      <Link href={`/zavod/${pickupInfo.pickupId}`} className="font-mono text-brand-700 underline">
+                        {pickupInfo.code}
+                      </Link>{' '}
+                      · {pickupInfo.seq}. {pickupInfo.factoryName}
+                      {pickupInfo.factoryPhone && (
+                        <>
+                          {' '}
+                          ·{' '}
+                          <a className="text-brand-700 underline" href={`tel:${pickupInfo.factoryPhone}`}>
+                            {pickupInfo.factoryPhone}
+                          </a>
+                        </>
+                      )}
+                      {pickupInfo.factoryWechat && ` · WeChat: ${pickupInfo.factoryWechat}`}
+                    </p>
+                  ) : (
+                    // The cell's anatomy is label → value → control, so the
+                    // value line stays (the select beside «Bitim» must start
+                    // where this one does) — but as a dash: the row is drawn
+                    // without a trip only for whoever may tie one, and their
+                    // select already says «biriktirilmagan» in its empty option.
+                    <p className="text-ink-500">—</p>
+                  )}
+                  {canLinkPickup && (
+                    <ReceiptPickupControl
+                      receiptId={id}
+                      currentStopId={receipt.pickupStopId}
+                      currentClosed={pickupInfo?.status === 'closed'}
+                      options={[
+                        ...(pickupInfo && !pickupOptions.some((o) => o.stopId === pickupInfo.stopId)
+                          ? [
+                              {
+                                stopId: pickupInfo.stopId,
+                                seq: pickupInfo.seq,
+                                code: pickupInfo.code,
+                                status: pickupInfo.status,
+                                factoryName: pickupInfo.factoryName,
+                              },
+                            ]
+                          : []),
+                        ...pickupOptions,
+                      ].map((o) => ({
+                        stopId: o.stopId,
+                        // A closed trip may be joined from here (a void-and-redo finds
+                        // its truck again) — and says so.
+                        label: `${o.status === 'closed' ? '🔒 ' : ''}${o.code} · ${o.seq}. ${o.factoryName}`,
+                      }))}
+                    />
+                  )}
                 </div>
               )}
             </div>
-            <p className="mt-1 text-sm text-ink-700">
-              {lot.boxCount} 📦 · {lot.totalWeightKg} kg · {lot.totalVolumeM3} m³
-              {lot.dimsMode === 'uniform' &&
-                ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
-            </p>
-            {lotChecks.has(lot.id) && (
-              <LotCheckPanel
-                receiptId={id}
-                lotId={lot.id}
-                face={(() => {
-                  const view = lotChecks.get(lot.id)!;
-                  return {
-                    state: view.state,
-                    askable: view.askable,
-                    byDocument: view.byDocument,
-                    documentStale: view.documentStale,
-                    person: view.person
-                      ? {
-                          by: view.person.by,
-                          // The OFFICE day, as the History under the card
-                          // prints it: who vouched and when is the office's
-                          // record, not a warehouse event. In the warehouse's
-                          // zone a customer's evening press (after 21:00
-                          // Tashkent) was dated tomorrow on a Chinese prixod.
-                          day: tashkentDay(view.person.at),
-                          token: view.person.token,
-                          note: view.person.note,
-                          holds: view.person.holds,
-                          moved: view.person.moved,
-                        }
-                      : null,
-                    client: view.client
-                      ? {
-                          verdict: view.client.verdict,
-                          day: tashkentDay(view.client.at),
-                          token: view.client.token,
-                          holds: view.client.holds,
-                          vetoes: view.client.vetoes,
-                          ofOwner: view.client.ofOwner,
-                          askedBy: view.client.askedBy,
-                        }
-                      : null,
-                  };
-                })()}
-                seen={{
-                  nameZh: lot.productNameZh,
-                  // What the header above PRINTS — the tarkib's label while one
-                  // is written: a person confirms the name they saw (§9.3).
-                  nameRu: shownRu.get(lot.id) ?? lot.productNameRu ?? '',
-                  boxCount: lot.boxCount,
-                  clientId: receipt.clientId,
-                }}
-                canWrite={mayCheck}
-                canRename={canEdit}
-                phones={checkPhones}
-              />
-            )}
-            {lot.note && <p className="mt-1 text-sm italic text-ink-500">📝 {lot.note}</p>}
-            {lot.qrSkippedAt && (
-              <p className="mt-1 text-sm font-semibold text-warn" data-testid="lot-qrless">
-                {tq('since', { date: format.dateTime(lot.qrSkippedAt, { dateStyle: 'short' }) })}
-                {(qrState.get(lot.id)?.qrlessLive ?? 0) > 0 &&
-                  ` · ${tq('nowQrless', { n: qrState.get(lot.id)!.qrlessLive })}`}
-                {(qrState.get(lot.id)?.labelledLater ?? 0) > 0 &&
-                  ` · ${tq('labelledLater', { done: qrState.get(lot.id)!.labelledLater })}`}
-              </p>
-            )}
-            {canPrint && (qrState.get(lot.id)?.printableAt.length ?? 0) > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {qrState.get(lot.id)!.printableAt.map((at) => (
-                  <a
-                    key={at.warehouseId}
-                    href={`/print/qrsiz?warehouseId=${at.warehouseId}&lotId=${lot.id}`}
-                    data-testid="lot-qr-print"
-                    className="btn-secondary !min-h-9 px-3"
-                  >
-                    {tq('printAt', { wh: at.code, n: at.n })}
-                  </a>
-                ))}
+          )}
+        </section>
+      )}
+
+      {/* 3. The cargo. */}
+      <section className="space-y-3" data-testid="receipt-lots">
+        <h2 className="section-title">{t('lots')}</h2>
+        {askFace && <ClientAskPanel receiptId={id} face={askFace} show={askShow} />}
+        {lots.map((lot) => {
+          const lotQr = qrState.get(lot.id);
+          const shownName = shownRu.get(lot.id) ?? lot.productNameRu;
+          const qrPrints = canPrint ? (lotQr?.printableAt ?? []) : [];
+          const doors = palletDoors.filter((door) => door.lotId === lot.id);
+          const lostOptions = lostOptionsByLot.get(lot.id) ?? [];
+          // «Empty» from the members' own conditions — the write-off draws
+          // nothing by itself when no carton is offerable.
+          const hasActions =
+            canEdit ||
+            qrFlippable.has(lot.id) ||
+            qrPrints.length > 0 ||
+            doors.length > 0 ||
+            (canVoid && lostOptions.length > 0);
+          return (
+            // ONE anatomy for every lot (§7.2): what it is → what can be done
+            // to it → its two papers. `space-y-2` owns the spacing; the
+            // members bring no margins of their own.
+            <div key={lot.id} id={`lot-${lot.id}`} className="card scroll-mt-20 space-y-2 !p-3">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-2xl font-extrabold leading-7 text-brand-700">{lot.letter}</span>
+                <p className="min-w-0 flex-1 font-semibold [overflow-wrap:anywhere]">
+                  <span data-testid="lot-name">
+                    {lot.productNameZh}
+                    {/* The Russian name SHOWN: the tarkib's, while one stands
+                        (items 3-4 — the pure twin of `lotRuShownSql`, off the
+                        compositions this page already holds); else the lot's own. */}
+                    {shownName && <span className="font-normal text-ink-700"> ({shownName})</span>}
+                  </span>
+                </p>
+                {/* The lot's print keeps its place and its size: the
+                    operator's commonest press on a lot, and a missed tap on
+                    it loads a document and opens the print dialog. */}
+                {canPrint && receipt.status === 'confirmed' && (lotQr?.printable ?? 0) > 0 && (
+                  <div className="w-28 shrink-0">
+                    <PrintLabels
+                      variant="secondary"
+                      href={`/print/receipts/${id}?lotId=${lot.id}`}
+                      label={lot.letter ?? ''}
+                    />
+                  </div>
+                )}
               </div>
-            )}
-            {qrFlippable.has(lot.id) && (
-                <QrSkipToggle
+              {/* The client's ❌ that vetoes: the check block now follows
+                  the row and the photographs, and an objection must still
+                  lead the lot. On a line of its OWN, under the head: beside
+                  the name it was a third unshrinkable member of that row —
+                  letter, chip, print — and in Russian («Возражение клиента»)
+                  the three were 2 px wider than a phone's card (362 in 360,
+                  found by CI in the default locale; this container's demo
+                  staff read Uzbek, where the word is shorter). */}
+              {lotChecks.get(lot.id)?.client?.vetoes && (
+                <p>
+                  <span className="chip chip-bad" data-testid="lot-veto">
+                    ❌ {tl('vetoChip')}
+                  </span>
+                </p>
+              )}
+              {/* Trimmed, never rounded (`trimMeasure`): the tarkib must sum
+                  to these exactly, and «250.000» reads as a quarter of a
+                  million in the default locale. */}
+              <p className="text-sm text-ink-700" data-testid="lot-figures">
+                {lot.boxCount} 📦 · {trimMeasure(lot.totalWeightKg)} kg · {trimMeasure(lot.totalVolumeM3)} m³
+                {lot.dimsMode === 'uniform' &&
+                  ` · ${lot.boxLengthCm}×${lot.boxWidthCm}×${lot.boxHeightCm} cm`}
+              </p>
+              {lot.note && <p className="text-sm italic text-ink-500 [overflow-wrap:anywhere]">📝 {lot.note}</p>}
+              {lot.qrSkippedAt && (
+                <p className="text-sm font-semibold text-warn" data-testid="lot-qrless">
+                  {tq('since', { date: format.dateTime(lot.qrSkippedAt, { dateStyle: 'short' }) })}
+                  {(lotQr?.qrlessLive ?? 0) > 0 && ` · ${tq('nowQrless', { n: lotQr!.qrlessLive })}`}
+                  {(lotQr?.labelledLater ?? 0) > 0 && ` · ${tq('labelledLater', { done: lotQr!.labelledLater })}`}
+                </p>
+              )}
+              {/* Everything that can be done to the LOT, in one row of one
+                  button shape — it was six shapes in six places. FIXED
+                  slots: a member that appears or leaves as a result of a
+                  press (a pallet door emptied by a write-off) must not shift
+                  the others, or React remounts them and the answer they are
+                  holding is gone. Each opener is always drawn; what it opens
+                  takes a line of its own under the row. */}
+              {hasActions && (
+                <div className="flex flex-wrap items-center gap-2" data-testid="lot-actions">
+                  {canEdit && (
+                    <LotEditForm
+                      hasComposition={compositions.has(lot.id)}
+                      shownName={shownRu.get(lot.id) ?? null}
+                      lot={{
+                        lotId: lot.id,
+                        dimsMode: lot.dimsMode,
+                        productNameZh: lot.productNameZh,
+                        productNameRu: lot.productNameRu ?? '',
+                        boxCount: lot.boxCount,
+                        boxLengthCm: lot.boxLengthCm,
+                        boxWidthCm: lot.boxWidthCm,
+                        boxHeightCm: lot.boxHeightCm,
+                        boxWeightKg: lot.boxWeightKg,
+                        totalWeightKg: lot.totalWeightKg,
+                        totalVolumeM3: lot.totalVolumeM3,
+                        note: lot.note,
+                      }}
+                    />
+                  )}
+                  {/* Beside «✏️»: the two corrections share one line of a phone (285 of
+                      its 302 px); the stickers and the pallets follow. */}
+                  {canVoid && (
+                    <MarkLostForm receiptId={id} options={lostOptions} />
+                  )}
+                  {qrFlippable.has(lot.id) && (
+                    <QrSkipToggle
+                      lotId={lot.id}
+                      letter={lot.letter ?? ''}
+                      marked={lot.qrSkippedAt !== null}
+                      canRemark={(lotQr?.labelledLater ?? 0) > 0}
+                    />
+                  )}
+                  {qrPrints.length > 0 &&
+                    qrPrints.map((at) => (
+                      <a
+                        key={`qr:${at.warehouseId}`}
+                        href={`/print/qrsiz?warehouseId=${at.warehouseId}&lotId=${lot.id}`}
+                        data-testid="lot-qr-print"
+                        className="btn-secondary btn-sm"
+                      >
+                        {tq('printAt', { wh: at.code, n: at.n })}
+                      </a>
+                    ))}
+                  {doors.length > 0 &&
+                    doors.map((door) => (
+                      <Link
+                        key={`pallet:${door.warehouseId}`}
+                        data-testid="lot-make-pallet"
+                        href={door.href}
+                        className="btn-secondary btn-sm"
+                      >
+                        🧱 {to('makePallet')} · {door.warehouseCode} · {door.free} 📦
+                      </Link>
+                    ))}
+                </div>
+              )}
+              <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
+              {lotChecks.has(lot.id) && (
+                <LotCheckPanel
+                  receiptId={id}
                   lotId={lot.id}
-                  letter={lot.letter ?? ''}
-                  marked={lot.qrSkippedAt !== null}
-                  canRemark={(qrState.get(lot.id)?.labelledLater ?? 0) > 0}
+                  face={(() => {
+                    const view = lotChecks.get(lot.id)!;
+                    return {
+                      state: view.state,
+                      askable: view.askable,
+                      byDocument: view.byDocument,
+                      documentStale: view.documentStale,
+                      person: view.person
+                        ? {
+                            by: view.person.by,
+                            // The OFFICE day, as the History under the card
+                            // prints it: who vouched and when is the office's
+                            // record, not a warehouse event. In the warehouse's
+                            // zone a customer's evening press (after 21:00
+                            // Tashkent) was dated tomorrow on a Chinese prixod.
+                            day: tashkentDay(view.person.at),
+                            token: view.person.token,
+                            note: view.person.note,
+                            holds: view.person.holds,
+                            moved: view.person.moved,
+                          }
+                        : null,
+                      client: view.client
+                        ? {
+                            verdict: view.client.verdict,
+                            day: tashkentDay(view.client.at),
+                            token: view.client.token,
+                            holds: view.client.holds,
+                            vetoes: view.client.vetoes,
+                            ofOwner: view.client.ofOwner,
+                            askedBy: view.client.askedBy,
+                          }
+                        : null,
+                    };
+                  })()}
+                  seen={{
+                    nameZh: lot.productNameZh,
+                    // What the header above PRINTS — the tarkib's label while one
+                    // is written: a person confirms the name they saw (§9.3).
+                    nameRu: shownRu.get(lot.id) ?? lot.productNameRu ?? '',
+                    boxCount: lot.boxCount,
+                    clientId: receipt.clientId,
+                  }}
+                  canWrite={mayCheck}
+                  canRename={canEdit}
+                  phones={checkPhones}
                 />
               )}
-            {palletDoors.some((door) => door.lotId === lot.id) && (
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-sm">
-                {palletDoors
-                  .filter((door) => door.lotId === lot.id)
-                  .map((door) => (
-                    <Link
-                      key={door.warehouseId}
-                      data-testid="lot-make-pallet"
-                      href={door.href}
-                      className="btn-secondary !min-h-9 px-2 text-sm"
-                    >
-                      🧱 {to('makePallet')} · {door.warehouseCode} · {door.free} 📦
-                    </Link>
-                  ))}
-              </div>
-            )}
-            <div className="mt-2">
-              <PhotoGallery photos={photosByLot.get(lot.id) ?? []} deletable={canEdit} />
+              <CompositionPanel
+                lot={{
+                  id: lot.id,
+                  label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
+                  nameZh: lot.productNameZh,
+                  boxCount: lot.boxCount,
+                  kg: lot.totalWeightKg,
+                  m3: lot.totalVolumeM3,
+                }}
+                receiptId={id}
+                composition={(() => {
+                  const c = compositions.get(lot.id);
+                  return c
+                    ? {
+                        rev: c.rev,
+                        seenBoxCount: c.seenBoxCount,
+                        lines: c.lines,
+                        attachment: c.attachment,
+                        savedBy: c.savedBy,
+                        savedDay: tashkentDay(c.savedAt),
+                      }
+                    : null;
+                })()}
+                stale={(() => {
+                  const c = compositions.get(lot.id);
+                  return c
+                    ? isStale(c, { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 })
+                    : false;
+                })()}
+                canWrite={mayCompose && receipt.status === 'confirmed'}
+                canClearOnly={mayCompose && receipt.status !== 'confirmed'}
+                oneGood={oneGood.get(lot.id) ?? null}
+                documents={paperDocs}
+                frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.frozen).map((truck) => truck.code)}
+                openOnLoad={tarkibLot === lot.id}
+                from={fromTruck && tarkibLot === lot.id ? { batchId: fromTruck.batchId, code: fromTruck.code } : null}
+              />
             </div>
-            <CompositionPanel
-              lot={{
-                id: lot.id,
-                label: `${client?.clientCode ?? receipt.unclaimedMarking ?? '?'}-${lot.letter ?? ''}`,
-                nameZh: lot.productNameZh,
-                boxCount: lot.boxCount,
-                kg: lot.totalWeightKg,
-                m3: lot.totalVolumeM3,
-              }}
-              receiptId={id}
-              composition={(() => {
-                const c = compositions.get(lot.id);
-                return c
-                  ? {
-                      rev: c.rev,
-                      seenBoxCount: c.seenBoxCount,
-                      lines: c.lines,
-                      attachment: c.attachment,
-                      savedBy: c.savedBy,
-                      savedDay: tashkentDay(c.savedAt),
-                    }
-                  : null;
-              })()}
-              stale={(() => {
-                const c = compositions.get(lot.id);
-                return c
-                  ? isStale(c, { boxCount: lot.boxCount, kg: lot.totalWeightKg, m3: lot.totalVolumeM3 })
-                  : false;
-              })()}
-              canWrite={mayCompose && receipt.status === 'confirmed'}
-              canClearOnly={mayCompose && receipt.status !== 'confirmed'}
-              oneGood={oneGood.get(lot.id) ?? null}
-              documents={paperDocs}
-              frozenTrucks={(lotTrucks.get(lot.id) ?? []).filter((truck) => truck.frozen).map((truck) => truck.code)}
-              openOnLoad={tarkibLot === lot.id}
-              from={fromTruck && tarkibLot === lot.id ? { batchId: fromTruck.batchId, code: fromTruck.code } : null}
-            />
-            {canEdit && (
-              <div className="mt-2">
-                <LotEditForm
-                  hasComposition={compositions.has(lot.id)}
-                  shownName={shownRu.get(lot.id) ?? null}
-                  lot={{
-                    lotId: lot.id,
-                    dimsMode: lot.dimsMode,
-                    productNameZh: lot.productNameZh,
-                    productNameRu: lot.productNameRu ?? '',
-                    boxCount: lot.boxCount,
-                    boxLengthCm: lot.boxLengthCm,
-                    boxWidthCm: lot.boxWidthCm,
-                    boxHeightCm: lot.boxHeightCm,
-                    boxWeightKg: lot.boxWeightKg,
-                    totalWeightKg: lot.totalWeightKg,
-                    totalVolumeM3: lot.totalVolumeM3,
-                    note: lot.note,
-                  }}
-                />
-              </div>
-            )}
-            {canVoid && (
-              <MarkLostForm receiptId={id} options={lostOptionsByLot.get(lot.id) ?? []} />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </section>
 
-      {canAssign && <AssignClient receiptId={id} current={client?.clientCode ?? null} />}
-      {canAssign && !client && <ReturnToSender receiptId={id} />}
-      {canVoid && (
-        <MoveReceipt
-          receiptId={id}
-          currentWarehouseId={receipt.warehouseId}
-          warehouses={allWarehouses}
-        />
+      {/* 4. Its papers and its money — side by side from `lg`, and a card
+          with no sibling takes the row. */}
+      {(showFiles || showCosts) && (
+        <div
+          className={`grid gap-4 max-md:order-1 lg:items-start ${showFiles && showCosts ? 'lg:grid-cols-2' : ''}`}
+        >
+          {showFiles && (
+            <section className="card min-w-0 space-y-2 !p-3" data-testid="receipt-files">
+              <h2 className="text-base font-bold">{t('attachments')}</h2>
+              {/* Keyed on its files: a document uploaded from the lot tarkibi
+                  editor refreshes the page, and the panel re-seeds with it. */}
+              <AttachmentsPanel
+                key={receiptFiles.map((f) => f.id).join(',')}
+                entityType="receipt"
+                entityId={id}
+                initial={receiptFiles}
+                editable={canEdit}
+              />
+            </section>
+          )}
+          {showCosts && (
+            <section className="card min-w-0 space-y-2 !p-3" data-testid="receipt-costs">
+              <h2 className="text-base font-bold">{t('costs')}</h2>
+              {costMeta ? (
+                <CostPanel
+                  scope="receipt"
+                  freight={null}
+                  targetId={id}
+                  entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
+                    id: entry.id,
+                    typeName,
+                    amount: entry.amount,
+                    currency: entry.currency,
+                    amountUsd: entry.amountUsd,
+                    costDate: entry.costDate,
+                    allocationBasis: entry.allocationBasis,
+                    // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
+                    freight: null,
+                    rebasable: false,
+                    costTypeId: entry.costTypeId,
+                    // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
+                    unsplit: entry.amountUsd !== null && !hasShare,
+                    note: entry.note,
+                    ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
+                    ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
+                  }))}
+                  costTypes={costMeta.types}
+                  currencies={costMeta.currencies}
+                  clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
+                  defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
+                  canVoid={receipt.status === 'confirmed'}
+                  canAdd={receipt.status === 'confirmed'}
+                  today={tashkentDay()}
+                  canUnmerge={mayPickTill(actor.permissions)}
+                  tillOptions={await tillOptionsFor(actor.permissions)}
+                  partnerOptions={partnerOptions}
+                />
+              ) : (
+                <ul className="divide-y divide-line text-sm">
+                  {costs.map(({ entry, typeName }) => (
+                    <li key={entry.id} className="flex flex-wrap gap-2 py-2">
+                      <span>{typeName}</span>
+                      <span className="font-semibold">
+                        {entry.amount} {entry.currency}
+                      </span>
+                      {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {othersLine}
+            </section>
+          )}
+        </div>
       )}
 
-      <section className="card space-y-3">
-        <div>
-          <h2 className="mb-2 text-lg font-bold">{t('attachments')}</h2>
-          {/* Keyed on its files: a document uploaded from the lot tarkibi
-              editor refreshes the page, and the panel re-seeds with it. */}
-          <AttachmentsPanel
-            key={receiptFiles.map((f) => f.id).join(',')}
+      {/* 5. The staff's conversation about this cargo, beside the folds.
+          ONE wrapper whose class switches: the thread's slot and the folds'
+          slot keep their places in the tree whichever is drawn, so a fold a
+          person opened and the answer inside it («✅ ko'chirildi», the
+          annul's own) survive the revalidation that follows the press. */}
+      <div className={`grid gap-4 max-md:order-1 lg:items-start ${cargoThread ? 'lg:grid-cols-2' : ''}`}>
+        {cargoThread ? (
+          <CargoThread threadRef={cargoRef} viewer={actor} />
+        ) : actor.warehouseScoped ? (
+          // A SCOPED person the card admits and the thread does not: the
+          // receiving warehouse after the cargo left, a scoped logist on such a
+          // card — one sentence instead of a silently missing panel. An
+          // unscoped non-reader (seller, VED, accountant) sees nothing (E7 b).
+          <p className="text-xs text-ink-500" data-testid="cargo-thread-elsewhere">
+            {tth('cargo.elsewhere')}
+          </p>
+        ) : null}
+        <ThreadSeen refs={readMarks} />
+        <div className="min-w-0 space-y-4">
+          <TasksPanel
             entityType="receipt"
             entityId={id}
-            initial={receiptFiles}
-            editable={canEdit}
+            revalidate={`/receipts/${id}`}
           />
+
+          <CustomFieldsPanel
+            entityType="receipt"
+            entityId={id}
+            revalidate={`/receipts/${id}`}
+          />
+
+          {/* The rare and the irreversible, in ONE fold: a correction of the
+              owner, a move to another warehouse, the void. They stood open
+              between the lots and the files on every card. FIXED slots, for
+              the reason the wrapper gives. */}
+          {moreWords.length > 0 && (
+            <Panel
+              testId="receipt-more"
+              title={
+                <>
+                  ⚙️ {t('more')}
+                  <span className="mt-0.5 block text-xs font-normal text-ink-500">{moreWords.join(' · ')}</span>
+                </>
+              }
+            >
+              {canAssign && client && <AssignClient receiptId={id} current={client.clientCode} />}
+              {canVoid && (
+                <MoveReceipt
+                  receiptId={id}
+                  currentWarehouseId={receipt.warehouseId}
+                  warehouses={allWarehouses}
+                />
+              )}
+              {/* The cascade SUBSUMES the plain void (same terminal state, plus the
+                  money) — two forms with the same red vocabulary on one card would
+                  be a coin-flip; the plain one stays for everyone below the role. */}
+              {canVoid && !canAnnul && (
+                <VoidReceiptForm
+                  receiptId={id}
+                  labels={{
+                    reason: t('voidReason'),
+                    button: t('voidBtn'),
+                    errors: {
+                      box_not_in_stock: t('voidBoxGone'),
+                      receipt_has_costs: t('voidHasCosts'),
+                      receipt_has_compensation: t('voidHasCompensation'),
+                      busy_retry: tbusy('errors.busy_retry'),
+                    },
+                    // The slot is filled in the browser with the code the refusal
+                    // names; passed as a VALUE so next-intl leaves the braces alone.
+                    sharedCostOrphaned: t('voidSharedCost', { code: '{code}' }),
+                  }}
+                />
+              )}
+
+              {canAnnul && preview && (
+                <AnnulReceiptForm
+                  receiptId={id}
+                  preview={{
+                    boxLine: Object.entries(preview.boxesByStatus)
+                      .map(([status, n]) => `${ts(status)}: ${n}`)
+                      .join(' · '),
+                    costLine: `${preview.liveCostEntries} × ≈ $${preview.liveCostUsd.toFixed(2)}`,
+                    unconvertedCount: preview.unconvertedCostCount,
+                    batchLines: preview.affectedBatches,
+                    pendingPlanCount: preview.pendingPlanCount,
+                    clientLiveTxCount: preview.clientLiveTxCount,
+                    clientLedgerHref: receipt.clientId ? `/finance/${receipt.clientId}` : null,
+                  }}
+                  labels={{
+                    open: ta('open'),
+                    title: ta('title'),
+                    boxes: ta('boxes'),
+                    costs: ta('costs'),
+                    unconverted: ta('unconverted'),
+                    batches: ta('batches'),
+                    willRetire: ta('willRetire'),
+                    pendingPlans: ta('pendingPlans'),
+                    clientMoney: ta('clientMoney'),
+                    reason: t('voidReason'),
+                    button: ta('button'),
+                    confirm: ta('confirm'),
+                    done: ta('done'),
+                    errors: {
+                      annul_forbidden: ta('forbidden'),
+                      box_on_active_plan: ta('onActivePlan'),
+                      cost_paid_from_till: ta('paidFromTill'),
+                      cost_merged: ta('mergedCost'),
+                      receipt_has_compensation: ta('hasCompensation'),
+                      reason_required: ta('reasonRequired'),
+                      not_found: ta('notFound'),
+                      validation: ta('reasonRequired'),
+                      busy_retry: tbusy('errors.busy_retry'),
+                    },
+                  }}
+                />
+              )}
+            </Panel>
+          )}
         </div>
-        {costMeta ? (
-          <div className="border-t border-line pt-3">
-            <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
-            <CostPanel
-              scope="receipt"
-              freight={null}
-              targetId={id}
-              entries={costs.map(({ entry, hasShare, typeName, partnerName, partnerIsStaff, accountName }) => ({
-                id: entry.id,
-                typeName,
-                amount: entry.amount,
-                currency: entry.currency,
-                amountUsd: entry.amountUsd,
-                costDate: entry.costDate,
-                allocationBasis: entry.allocationBasis,
-                // Freight is a truck's own basis (docs/YOLKIRA-TAQSIMOT.md §4).
-                freight: null,
-                rebasable: false,
-                costTypeId: entry.costTypeId,
-                // Converted and on no box — any basis (`noShareSql`), the fact a truck's todo counts.
-                unsplit: entry.amountUsd !== null && !hasShare,
-                note: entry.note,
-                ...payerView(actor.permissions, { partnerName, partnerIsStaff }),
-                ...tillView(actor.permissions, { accountId: entry.accountId, accountName, mergedExpenseId: entry.mergedExpenseId }),
-              }))}
-              costTypes={costMeta.types}
-              currencies={costMeta.currencies}
-              clientOptions={client ? [{ id: client.id, clientCode: client.clientCode }] : []}
-              defaultCurrency={warehouse.country === 'CN' ? 'CNY' : 'USD'}
-              canVoid={receipt.status === 'confirmed'}
-              canAdd={receipt.status === 'confirmed'}
-              today={tashkentDay()}
-              canUnmerge={mayPickTill(actor.permissions)}
-              tillOptions={await tillOptionsFor(actor.permissions)}
-              partnerOptions={partnerOptions}
-            />
-            {othersLine}
-          </div>
-        ) : (costs.length > 0 || othersLine) && (
-          <div className="border-t border-line pt-3">
-            <h2 className="mb-2 text-lg font-bold">{t('costs')}</h2>
-            <ul className="divide-y divide-line text-sm">
-              {costs.map(({ entry, typeName }) => (
-                <li key={entry.id} className="flex flex-wrap gap-2 py-2">
-                  <span>{typeName}</span>
-                  <span className="font-semibold">
-                    {entry.amount} {entry.currency}
-                  </span>
-                  {entry.note && <span className="w-full text-xs text-ink-500">{entry.note}</span>}
-                </li>
-              ))}
-            </ul>
-            {othersLine}
-          </div>
-        )}
-      </section>
+      </div>
 
-      {/* The cascade SUBSUMES the plain void (same terminal state, plus the
-          money) — two forms with the same red vocabulary on one card would
-          be a coin-flip; the plain one stays for everyone below the role. */}
-      {canVoid && !canAnnul && (
-        <VoidReceiptForm
-          receiptId={id}
-          labels={{
-            reason: t('voidReason'),
-            button: t('voidBtn'),
-            errors: {
-              box_not_in_stock: t('voidBoxGone'),
-              receipt_has_costs: t('voidHasCosts'),
-              receipt_has_compensation: t('voidHasCompensation'),
-              busy_retry: tbusy('errors.busy_retry'),
-            },
-            // The slot is filled in the browser with the code the refusal
-            // names; passed as a VALUE so next-intl leaves the braces alone.
-            sharedCostOrphaned: t('voidSharedCost', { code: '{code}' }),
-          }}
-        />
-      )}
-
-      {canAnnul && preview && (
-        <AnnulReceiptForm
-          receiptId={id}
-          preview={{
-            boxLine: Object.entries(preview.boxesByStatus)
-              .map(([status, n]) => `${ts(status)}: ${n}`)
-              .join(' · '),
-            costLine: `${preview.liveCostEntries} × ≈ $${preview.liveCostUsd.toFixed(2)}`,
-            unconvertedCount: preview.unconvertedCostCount,
-            batchLines: preview.affectedBatches,
-            pendingPlanCount: preview.pendingPlanCount,
-            clientLiveTxCount: preview.clientLiveTxCount,
-            clientLedgerHref: receipt.clientId ? `/finance/${receipt.clientId}` : null,
-          }}
-          labels={{
-            open: ta('open'),
-            title: ta('title'),
-            boxes: ta('boxes'),
-            costs: ta('costs'),
-            unconverted: ta('unconverted'),
-            batches: ta('batches'),
-            willRetire: ta('willRetire'),
-            pendingPlans: ta('pendingPlans'),
-            clientMoney: ta('clientMoney'),
-            reason: t('voidReason'),
-            button: ta('button'),
-            confirm: ta('confirm'),
-            done: ta('done'),
-            errors: {
-              annul_forbidden: ta('forbidden'),
-              box_on_active_plan: ta('onActivePlan'),
-              cost_paid_from_till: ta('paidFromTill'),
-              cost_merged: ta('mergedCost'),
-              receipt_has_compensation: ta('hasCompensation'),
-              reason_required: ta('reasonRequired'),
-              not_found: ta('notFound'),
-              validation: ta('reasonRequired'),
-              busy_retry: tbusy('errors.busy_retry'),
-            },
-          }}
-        />
-      )}
-
-      {cargoThread ? (
-        <CargoThread threadRef={cargoRef} viewer={actor} />
-      ) : actor.warehouseScoped ? (
-        // A SCOPED person the card admits and the thread does not: the
-        // receiving warehouse after the cargo left, a scoped logist on such a
-        // card — one sentence instead of a silently missing panel. An
-        // unscoped non-reader (seller, VED, accountant) sees nothing (E7 b).
-        <p className="text-xs text-ink-500" data-testid="cargo-thread-elsewhere">
-          {tth('cargo.elsewhere')}
-        </p>
-      ) : null}
-      <ThreadSeen refs={readMarks} />
-
-      <TasksPanel
-        entityType="receipt"
-        entityId={id}
-        revalidate={`/receipts/${id}`}
-      />
-
-      <CustomFieldsPanel
-        entityType="receipt"
-        entityId={id}
-        revalidate={`/receipts/${id}`}
-      />
-
-      <section>
+      <section className="max-md:order-1" data-testid="receipt-history">
         <h2 className="mb-2 text-lg font-bold">{tc('history')}</h2>
         <HistoryTab entityType="receipt" entityId={id} />
       </section>

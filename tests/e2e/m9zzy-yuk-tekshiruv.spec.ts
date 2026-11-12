@@ -249,6 +249,11 @@ test('the client’s ❌ leads in red and leaves NO green line; «E’tirozni yo
   await page.goto(`/stock?q=${run.marker}&tek=yoq`);
   await expect(stockRow(page).getByTestId('lot-check-chip')).toHaveAttribute('data-state', 'none');
   await page.goto(`/receipts/${minted!.receiptId}`);
+  // The objection leads the lot: a red chip under its name (docs/PRIXOD-KARTA.md
+  // §7.2) — the check block itself now comes after the row and the photographs.
+  // It is this state, in the default (Russian) locale, that first made the
+  // card 362 px wide: the chip stood beside the name and the print.
+  await expect(page.getByTestId('lot-veto')).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/yuk-tekshiruv-mijoz-etiroz.png`, fullPage: true });
   const w = await widths(page);
   expect(w.scroll).toBeLessThanOrEqual(w.client);

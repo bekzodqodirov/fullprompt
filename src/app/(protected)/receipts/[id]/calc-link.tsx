@@ -48,10 +48,12 @@ export function CalcLink({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  // The ties' one cell anatomy (docs/PRIXOD-KARTA.md §7.1): label, what it
+  // is tied to now, one row to change it — «Saqlash» only once it differs.
   return (
-    <div className="card space-y-2 !p-3" data-testid="receipt-calc-link">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="font-semibold">{t('linkPick')}:</span>
+    <div className="space-y-1.5" data-testid="receipt-calc-link">
+      <p className="section-title">{t('linkPick')}</p>
+      <p className="flex flex-wrap items-center gap-2 text-sm">
         {currentId ? (
           <>
             {currentHref ? (
@@ -64,14 +66,14 @@ export function CalcLink({
         ) : (
           <span className="text-ink-500">{t('linkNoneOnCard')}</span>
         )}
-      </div>
+      </p>
       <div className="flex gap-2">
         <select
           value={requestId}
           onChange={(event) => setRequestId(event.target.value)}
           aria-label={t('linkPick')}
           data-testid="receipt-calc-pick"
-          className="input min-w-0 flex-1"
+          className="input-sm min-w-0 flex-1"
         >
           <option value="">—</option>
           {options.map((o) => (
@@ -82,21 +84,23 @@ export function CalcLink({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          disabled={pending || requestId === (currentId ?? '')}
-          data-testid="receipt-calc-save"
-          className="btn-primary shrink-0 disabled:opacity-50"
-          onClick={() =>
-            startTransition(async () => {
-              const result = await setCalcLinkAction(receiptId, requestId || null);
-              setError(result.ok ? null : (result.error ?? 'error'));
-              if (result.ok) router.refresh();
-            })
-          }
-        >
-          {pending ? tc('loading') : tc('save')}
-        </button>
+        {requestId !== (currentId ?? '') && (
+          <button
+            type="button"
+            disabled={pending}
+            data-testid="receipt-calc-save"
+            className="btn-primary btn-sm shrink-0 disabled:opacity-50"
+            onClick={() =>
+              startTransition(async () => {
+                const result = await setCalcLinkAction(receiptId, requestId || null);
+                setError(result.ok ? null : (result.error ?? 'error'));
+                if (result.ok) router.refresh();
+              })
+            }
+          >
+            {pending ? tc('loading') : tc('save')}
+          </button>
+        )}
       </div>
       {error && (
         <p className="text-sm font-semibold text-bad" role="alert">

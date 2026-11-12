@@ -53,7 +53,7 @@ export function AnnulReceiptForm({
 
   if (state.ok) {
     return (
-      <section className="card space-y-1 !p-4" data-testid="annul-done">
+      <section className="space-y-1 rounded-lg border border-good/30 bg-good/10 p-3" data-testid="annul-done">
         <p className="font-semibold text-good">
           ✓ {labels.done}
           {state.repaired ? ' (↻)' : ''}
@@ -80,7 +80,7 @@ export function AnnulReceiptForm({
   }
 
   return (
-    <section className="card space-y-3 border-bad/40 !p-4" data-testid="annul-panel">
+    <section className="space-y-3 rounded-lg border border-bad/40 p-3" data-testid="annul-panel">
       <h2 className="font-bold text-bad">{labels.title}</h2>
       <ul className="space-y-1 text-sm">
         <li data-testid="annul-preview-boxes">📦 {preview.boxLine}</li>
