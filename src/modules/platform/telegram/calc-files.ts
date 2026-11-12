@@ -646,7 +646,7 @@ export function receiveGoodsSheet(
     say: lines.join('\n'),
   });
   // A packing list's totals: the collection's, or — in a top-up — the note's.
-  const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number, carried = 0) => {
+  const totalsOf = (m: GoodsFileMeta, rows: NonNullable<IntakeState['invoiceGoods']>, rowsFrom: string, filled: number, carried = 0, unplaced = 0) => {
     const totals = packingTotals(m, rows);
     if (topUp) {
       return {
@@ -654,7 +654,7 @@ export function receiveGoodsSheet(
         lines: [
           notedTotalsNote(m.label, totals),
           ...(filled > 0 ? [`📄 ${m.label} — ${fillsWords(filled)}`] : []),
-          ...(carried > 0 ? [`📄 ${m.label} — ${carriedWords(carried)}`] : []),
+          ...(carried + unplaced > 0 ? [`📄 ${m.label} — ${carriedWords(carried, unplaced)}`] : []),
         ],
       };
     }
@@ -662,7 +662,7 @@ export function receiveGoodsSheet(
     return {
       patch: { fileTotals: kept.fileTotals },
       lines: [
-        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried),
+        packingNote(m.label, rowsFrom, totals, m.grossColumn, filled, carried, unplaced),
         ...(kept.clash && state.fileTotals ? [totalsClashNote(m.label, state.fileTotals.label)] : []),
       ],
     };
@@ -710,7 +710,7 @@ export function receiveGoodsSheet(
     // packages each row states (`packingCarries`) — never a row.
     const fill = packingFills(held, kinds, goods, meta.weightKind);
     const carry = packingCarries(fill.goods, kinds, goods, meta.weightKind, sheet.repack);
-    const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled, carry.carried);
+    const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled, carry.carried, carry.unplaced);
     return answer(
       {
         invoiceGoods: carry.goods,
@@ -753,7 +753,7 @@ export function receiveGoodsSheet(
     const fill = packingFills(goods, invoiceKinds, held, first.weightKind);
     // …and its rows take the packing list's packages, as they would the other way round.
     const carry = packingCarries(fill.goods, invoiceKinds, held, first.weightKind, sheet.repack);
-    const totals = totalsOf(first, held, `${label} dan`, fill.filled, carry.carried);
+    const totals = totalsOf(first, held, `${label} dan`, fill.filled, carry.carried, carry.unplaced);
     return answer(
       {
         invoiceGoods: carry.goods,
@@ -787,8 +787,9 @@ export function receiveGoodsSheet(
  * (as-built review SHEETS-3): its netto gaps are filled, its totals are not the
  * shipment's and are not taken.
  */
-function partOfHeldNote(label: string, filled: number, carried = 0): string {
-  const fills = `${filled > 0 ? ` ${fillsWords(filled)}` : ''}${carried > 0 ? ` ${carriedWords(carried)}` : ''}`;
+function partOfHeldNote(label: string, filled: number, carried = 0, unplaced = 0): string {
+  const carriedSaid = carriedWords(carried, unplaced);
+  const fills = `${filled > 0 ? ` ${fillsWords(filled)}` : ''}${carriedSaid ? ` ${carriedSaid}` : ''}`;
   return `📄 ${label} — ro‘yxatdagi tovarlarning bir qismi: boshqa tovarlar unda yo‘q, shuning uchun umumiy brutto va kub butun yuk uchun olinmadi.${fills}`;
 }
 
@@ -868,6 +869,7 @@ function receiveFurtherSheet(
       rowsFrom: string,
       filled: number,
       carried?: number,
+      unplaced?: number,
     ) => { patch: Partial<IntakeState>; lines: string[] };
     ownText: (m: GoodsFileMeta) => SheetText[];
   },
@@ -910,7 +912,7 @@ function receiveFurtherSheet(
           ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
           ...(stale ? { fileTotals: null } : {}),
         },
-        [partOfHeldNote(m.label, fill.filled, carry.carried), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
+        [partOfHeldNote(m.label, fill.filled, carry.carried, carry.unplaced), ...cutLines, ...(stale && tookFigures(stale) ? [staleTotalsNote(stale.label)] : [])],
       );
     }
     // R1 only while the held list IS the goods sheet's rows, place for place:
@@ -925,8 +927,8 @@ function receiveFurtherSheet(
       samePositions(further.goodsRows, goods);
     if (covers || inLine) {
       const fill = covers ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
-      const carry = covers ? packingCarries(fill.goods, kinds, goods, m.weightKind, sheet.repack) : positionalCarries(fill.goods, goods, sheet.repack);
-      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled, carry.carried);
+      const carry = covers ? packingCarries(fill.goods, kinds, goods, m.weightKind, sheet.repack) : positionalCarries(fill.goods, goods, sheet.repack, kinds);
+      const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled, carry.carried, carry.unplaced);
       // The text keeps the FILE's label: a later file that squeezes it names
       // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
       // name is the text's first line for the model.

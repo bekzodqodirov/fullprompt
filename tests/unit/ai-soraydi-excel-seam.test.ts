@@ -203,6 +203,75 @@ describe('an invoice and its packing list: the list’s packages reach the invoi
   });
 });
 
+describe('the packages go to the row the list NAMES, never to the first row with the same count (review excel-break-1)', () => {
+  const TWINS = () =>
+    book(['Description', 'QTY', 'Unit price (USD)', 'Amount (USD)'], [
+      ['Office chair', 40, 10, 400],
+      ['Desk', 40, 50, 2000],
+    ]);
+  const listOf = (desk: string, chair: string) =>
+    book(['Description', 'QTY', 'CTNS', 'CTN SIZE (CM)', 'N.W./CTN (KG)'], [
+      [desk, 40, 40, '120*60*10', 20],
+      [chair, 40, 20, '60*40*50', 6],
+    ]);
+
+  it('two rows of 40 and a list sorted the other way: each row takes ITS packages, by name', async () => {
+    const got = await collect('podklyuch', [
+      [await TWINS(), 'ci.xlsx'],
+      [await listOf('Desk', 'Office chair'), 'pl.xlsx'],
+    ]);
+    // By hand: the chair 20 × 0.6 × 0.4 × 0.5 = 20 × 0.12 = 2.4 m³ and 20 × 6 = 120 kg; the desk
+    // 40 × 1.2 × 0.6 × 0.1 = 40 × 0.072 = 2.88 m³ and 40 × 20 = 800 kg.
+    expect(got.goods.map((g) => [g.name, g.packing?.cartons ?? null, g.volumeM3, g.weightKg])).toEqual([
+      ['Office chair', 20, 2.4, 120],
+      ['Desk', 40, 2.88, 800],
+    ]);
+    expect(rowOf(got.table, 'Office chair')).toContain('2.4 m³*');
+    expect(rowOf(got.table, 'Desk')).toContain('2.88 m³*');
+    expect(got.said[1]).toContain('2 ta qatorga karobka ma’lumoti shu fayldan olindi.');
+  });
+
+  it('…the same list in Chinese, where no name meets: the count names neither row — nothing carried, said, the cubes asked', async () => {
+    const got = await collect('podklyuch', [
+      [await TWINS(), 'ci.xlsx'],
+      [await listOf('桌子', '办公椅'), 'pl.xlsx'],
+    ]);
+    expect(got.goods.map((g) => [g.name, g.packing ?? null, g.volumeM3 ?? null, g.weightKg ?? null])).toEqual([
+      ['Office chair', null, null, null],
+      ['Desk', null, null, null],
+    ]);
+    expect(got.said[1]).toContain('2 ta qatorniki olinmadi: nomi mos kelmadi, soni boshqa qatorniki bilan bir xil — qaysi qatorniki ekani aniq emas.');
+    expect(got.said[1]).not.toContain('qatorga karobka ma’lumoti shu fayldan olindi');
+    expect(got.table).not.toContain('m³*');
+  });
+
+  it('…while a Chinese list whose counts are each the only one of their value still carries: 40 and 10 name their rows', async () => {
+    const got = await collect('podklyuch', [
+      [await INVOICE(), 'ci.xlsx'],
+      [await book(['Description', 'QTY', 'CTNS', 'CTN SIZE (CM)', 'G.W./CTN (KG)'], [['办公椅', 40, 20, '60*40*50', 15], ['桌子', 10, 10, '120*60*20', 30]]), 'pl.xlsx'],
+    ]);
+    expect(got.goods.map((g) => g.volumeM3)).toEqual(CUBES);
+    expect(got.said[1]).toContain('2 ta qatorga karobka ma’lumoti shu fayldan olindi.');
+  });
+});
+
+describe('the goods row’s own weight KIND travels with the packages (review excel-break-2, JN-4)', () => {
+  it('a G.W. invoice beside an N.W./CTN list: 264 kg brutto over 20 × 12 = 240 kg netto is a row, not a question', async () => {
+    const got = await collect('rastamojka', [
+      [await book(['Description', 'QTY', 'G.W.(KG)', 'Amount (USD)'], [['Office chair', 40, 264, 400], ['Desk', 10, 275, 500]]), 'ci.xlsx'],
+      [await book(['Description', 'QTY', 'CTNS', 'N.W./CTN (KG)'], [['Office chair', 40, 20, 12], ['Desk', 10, 10, 25]]), 'pl.xlsx'],
+    ]);
+    // By hand: 20 × 12 = 240, and 264 is 10 % over it; 10 × 25 = 250, and 275 is 10 % over it — within
+    // the 25 % a gross row may stand over its cartons' netto.
+    expect(got.goods.map((g) => [g.weightKg, g.weightKind ?? null, g.packing?.kgPerCarton ?? null])).toEqual([
+      [264, 'gross', 12],
+      [275, 'gross', 25],
+    ]);
+    expect(got.table).not.toContain('qaysi biri to‘g‘ri?');
+    expect(got.said[1]).toContain('2 ta qatorga karobka ma’lumoti shu fayldan olindi.');
+  });
+});
+
 describe('the kernel judges the invoice’s own figure against the carried packages, as any file’s', () => {
   const invoiceWith = (cbm: number) =>
     book(['Description', 'QTY', 'CBM', 'Amount (USD)'], [
@@ -299,8 +368,8 @@ describe('carriedPacking / packingCarries — the rules, pure', () => {
   it('no kernel handed in — a caller from before — carries nothing, the rows as they were', () => {
     const held = [row({})];
     const list = [row({ packing: pk({ cartons: 20 }) })];
-    expect(packingCarries(held, [null], list, null)).toEqual({ goods: held, carried: 0 });
-    expect(positionalCarries(held, list)).toEqual({ goods: held, carried: 0 });
+    expect(packingCarries(held, [null], list, null)).toEqual({ goods: held, carried: 0, unplaced: 0 });
+    expect(positionalCarries(held, list)).toEqual({ goods: held, carried: 0, unplaced: 0 });
   });
 
   it('the packages go onto the row the list’s row MET, through the kernel handed in', () => {
