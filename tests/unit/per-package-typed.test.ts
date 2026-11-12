@@ -75,9 +75,11 @@ describe('T4 — one package’s or one piece’s figure is never the shipment�
   });
 
   it('what is NOT marked keeps every reading it had', () => {
-    // JN-8 (a): «dan» before «ortiq» is «more THAN», never «each».
+    // JN-8 (a): «dan» before «ortiq» is «more THAN», never «each» — even beside a count.
     expect(totals('jami 500 kg dan ortiq')).toEqual({ ...none, kg: 500 });
-    // «20 kg dan 30 kg gacha» is a range: «from».
+    expect(totals('Stul 20 karobka, 500 kg dan ortiq')).toEqual({ ...none, kg: 500 });
+    // «20 kg dan 30 kg gacha» is a range: «from». Two weights, so no total —
+    // and never the 30 alone, which reading «20 kg dan» as one carton's gives.
     expect(totals('Stul 20 karobka, 20 kg dan 30 kg gacha').kg).toBeNull();
     // «dan» with no count on the line marks nothing.
     expect(totals('500 kg dan')).toEqual({ ...none, kg: 500 });
