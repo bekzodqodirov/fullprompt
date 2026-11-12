@@ -3641,6 +3641,9 @@ beside the name and the print (three unshrinkable members); my screenshots were 
 runner's fonts are wider than this container's. The chip sits on its own line now. RULE: a width is checked in
 `ru`, the default locale, and «fits by a few pixels» is re-measured with the text widened (`letter-spacing`
 +10 %) before it is believed.
+**16,081 unit/integration (914 files) + 510 e2e** (1 skipped) green on a fresh gsr_xn in CI's order at e649d34f
+(the tree merged with PR #147), ledger 146; after the chip moved (a4ae3021) the 36 e2e of the six specs that open
+the card, the Russian width measure and typecheck were re-run here, and the full run of that head is CI's.
 OWED to him: three ⭐ questions (ties above or below the lots on a phone; the void in the fold; the long QR-less
 label) — CHANGELOG 2026-11-12.
 
