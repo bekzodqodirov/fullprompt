@@ -109,6 +109,70 @@ describe('the card', () => {
   });
 });
 
+describe('the deal cell inside the card’s «ties» (after the merge with docs/PRIXOD-KARTA.md)', () => {
+  // Comments out: each rule below is explained in the component in the rule's own words.
+  const link = read('src/app/(protected)/receipts/[id]/deal-link.tsx')
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('«Saqlash» is drawn while a deal of ANOTHER client stands, whatever the select holds', () => {
+    // Main's idiom alone — «only once the answer differs from what is shown» — never draws it there:
+    // `current` is null and the select opens on its empty option, so the prixod could be moved onto
+    // a deal of this client but never taken OFF the other client's.
+    expect(link).toContain("{(dealId !== (current?.id ?? '') || foreign !== null) && (");
+    expect(link).not.toMatch(/\{dealId !== \(current\?\.id \?\? ''\) && \(/);
+  });
+
+  it('the cell keeps the ties’ anatomy: label, ONE value line, the control row — and its sentences under it', () => {
+    const at = (testid: string) => link.indexOf(`data-testid="${testid}"`);
+    const pick = at('receipt-deal-pick');
+    expect(pick).toBeGreaterThan(-1);
+    // The void is the one sentence above the control: on a voided prixod there is no factory-trip
+    // select for «Bitim»'s to stand level with, and it is what the landing must show first.
+    expect(at('receipt-deal-voided')).toBeGreaterThan(-1);
+    expect(at('receipt-deal-voided')).toBeLessThan(pick);
+    // The foreign sentence is advice about what to pick: under the row, before the new-deal door.
+    expect(at('receipt-deal-foreign')).toBeGreaterThan(pick);
+    expect(at('receipt-deal-foreign')).toBeLessThan(at('receipt-deal-new'));
+    expect(at('receipt-deal-new')).toBeLessThan(at('receipt-deal-compensation'));
+  });
+
+  it('the foreign sentence offers only what this reader is offered', () => {
+    expect(link).toContain("{t(newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}");
+    for (const locale of ['uz', 'ru', 'en', 'zh-CN']) {
+      const bundle = JSON.parse(read(`messages/${locale}.json`)) as { receipts: Record<string, string>; deals: Record<string, string> };
+      const unlink = bundle.deals.unlink!;
+      // Both name the empty option by ITS label — the door the sentence sends the reader to.
+      expect(bundle.receipts.dealForeign).toContain(unlink);
+      expect(bundle.receipts.dealForeignPick).toContain(unlink);
+      expect(bundle.receipts.dealForeign).toContain('{code}');
+      expect(bundle.receipts.dealForeignPick).toContain('{code}');
+      // …and the one for a reader with no new-deal door is the shorter of the two.
+      expect(bundle.receipts.dealForeignPick!.length).toBeLessThan(bundle.receipts.dealForeign!.length);
+    }
+  });
+
+  it('the landing frame is an outline with an offset — the cell has no card of its own to wear a ring', () => {
+    expect(link).toContain('target:outline target:outline-2 target:outline-offset-4 target:outline-brand-500');
+    // The ?bitim=1 landing wears the SAME four classes, written out so that Tailwind can see them.
+    expect(link).toContain("el.classList.add('outline', 'outline-2', 'outline-offset-4', 'outline-brand-500');");
+    expect(link).not.toMatch(/ring-2|ring-brand/);
+    expect(link).toContain('scroll-mt-20');
+  });
+});
+
+describe('the «Fayllar» card goes with its last file', () => {
+  it('a reader who may not attach and removes the last file asks the page again', () => {
+    const panel = read('src/components/attachments-panel.tsx');
+    expect(panel).toContain('if (refreshWhenEmpty && !editable && left.length === 0) router.refresh();');
+    // Only the prixod card asks for it: its «Fayllar» card is drawn only while there is something
+    // to list or to attach (`showFiles`), so an emptied one is a heading over nothing.
+    const page = read('src/app/(protected)/receipts/[id]/page.tsx');
+    expect(page).toMatch(/removableIds=\{ownFileIds\}\n\s+refreshWhenEmpty\n/);
+    expect(page).toContain('const showFiles = canEdit || receiptFiles.length > 0;');
+  });
+});
+
 describe('a deal opened FOR a prixod (the card’s «+ Yangi bitim ochish»)', () => {
   const OWN = 'client-1';
   const row = (over: Partial<Parameters<typeof bornWithVerdict>[0]> = {}) => ({

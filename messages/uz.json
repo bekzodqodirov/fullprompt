@@ -1105,7 +1105,8 @@
     "dealLinkUpsalePaid": "Bu bitim bo‘yicha sotuvchi ulushi to‘langan — prixodni boshqa bitimga o‘tkazishdan oldin hisobchi to‘lovni qaytarsin",
     "attachInUse": "Bu hujjat lot tarkibiga biriktirilgan — tarkibdan olib tashlanmaguncha o'chirib bo'lmaydi",
     "dealNew": "Yangi bitim ochish",
-    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki yangisini oching.",
+    "dealForeign": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang, yangisini oching yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
+    "dealForeignPick": "Boshqa mijozning bitimida qolgan: {code}. Bu mijozning o'z bitimini tanlang yoki «Uzish»ni saqlab, o'sha bitimdan chiqaring.",
     "dealVoided": "Bu prixod bekor qilingan — uning yuki hech qaysi bitimda hisobga olinmaydi."
   },
   "stock": {

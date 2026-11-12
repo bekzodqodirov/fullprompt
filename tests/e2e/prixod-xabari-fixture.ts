@@ -71,6 +71,21 @@ export async function mint(sql: postgres.Sql, run: Run): Promise<{ receiptId: st
 }
 
 /**
+ * ONE file left on the prixod, the seller's own — the state in which taking
+ * it back leaves nothing to list for a reader who cannot attach.
+ */
+export async function leaveOnlySellerFile(sql: postgres.Sql, run: Run, receiptId: string): Promise<string> {
+  const [seller] = await sql<{ id: string }[]>`SELECT id FROM users WHERE phone = ${SELLER_PHONE}`;
+  if (!seller) throw new Error('the demo has no seller');
+  const name = `last-${run.marker}.pdf`;
+  await sql`DELETE FROM attachments WHERE entity_type = 'receipt' AND entity_id = ${receiptId}`;
+  await sql`
+    INSERT INTO attachments (id, entity_type, entity_id, kind, storage_key, file_name, content_type, size_bytes, uploaded_by)
+    VALUES (gen_random_uuid(), 'receipt', ${receiptId}, 'file', ${`pxtest/${receiptId}/${name}`}, ${name}, 'application/pdf', 1, ${seller.id})`;
+  return name;
+}
+
+/**
  * A SECOND client of the same seller — where a client correction moves the
  * prixod TO. Its code is the run's own digits shifted by half the range, so
  * it wears the spec's shape (and the cleanup's) and can never be the run's.

@@ -66,19 +66,26 @@ export async function landsOnBlock(page: Page, where: 'either' | 'under the bar'
   // (the route's own scroll, then the block's) must not decide it either way.
   await expect
     .poll(async () => {
-      const box = await block.boundingBox();
-      if (box === null) return 'no box';
-      const at = await page.evaluate(() => {
+      // ONE read for the block and the scroll (docs/PRIXOD-KARTA.md §8,
+      // «positions read in ONE frame»): two round trips can straddle a scroll
+      // step and compare a position with a page that has moved since.
+      const at = await block.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        // The tab bar is in the DOM at every width and hidden by CSS from
+        // `md`: a hidden bar has no box, and its «top» of 0 would make
+        // «whole above the bar» false for every desktop landing.
         const bar = document.querySelector('[data-testid="tab-bar"]');
         return {
+          top: box.top,
+          bottom: box.bottom,
           y: window.scrollY,
           max: document.documentElement.scrollHeight - window.innerHeight,
-          floor: bar ? bar.getBoundingClientRect().top : window.innerHeight,
+          floor: bar && bar.getClientRects().length > 0 ? bar.getBoundingClientRect().top : window.innerHeight,
         };
       });
-      if (box.y >= 56 && box.y <= 110) return 'under the bar';
-      if (where === 'either' && at.y >= at.max - 1 && box.y > 110 && box.y + box.height <= at.floor) return 'page end';
-      return `block at ${Math.round(box.y)}, scrolled ${Math.round(at.y)} of ${Math.round(at.max)}`;
+      if (at.top >= 56 && at.top <= 110) return 'under the bar';
+      if (where === 'either' && at.y >= at.max - 1 && at.top > 110 && at.bottom <= at.floor) return 'page end';
+      return `block at ${Math.round(at.top)}, scrolled ${Math.round(at.y)} of ${Math.round(at.max)}`;
     })
     .toMatch(where === 'either' ? /^(under the bar|page end)$/ : /^under the bar$/);
 }

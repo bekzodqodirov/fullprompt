@@ -39,8 +39,10 @@ export function DealLink({
    * The prixod still carries a deal of ANOTHER client (a client correction
    * leaves `deal_id` on the old client's job). It is no deal of this
    * prixod's — the seller's message said «no deal» — so the block must not
-   * print it as linked: it is named in one muted line, and the first save
-   * (or a new deal) replaces it.
+   * print it as linked: it is named in one muted line under the control
+   * row, and while it stands «Saqlash» is drawn whatever the select holds —
+   * a deal of this client replaces it, the empty option takes the prixod
+   * off it, and a new deal replaces it too.
    */
   foreign?: { code: string } | null;
   receiptId: string;
@@ -112,11 +114,6 @@ export function DealLink({
           {t('dealVoided')}
         </p>
       )}
-      {foreign && (
-        <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="receipt-deal-foreign">
-          {t('dealForeign', { code: foreign.code })}
-        </p>
-      )}
       <div className="flex gap-2">
         <select
           value={dealId}
@@ -132,7 +129,13 @@ export function DealLink({
             </option>
           ))}
         </select>
-        {dealId !== (current?.id ?? '') && (
+        {/* …or while a deal of ANOTHER client still stands on the prixod: then
+            «current» is null and the select opens on its empty option, so
+            «differs» alone would never draw the button for it — and the one
+            answer that needs no deal at all, «take it off that job», had no
+            door anywhere (the deal card only attaches). The press sends what
+            the select holds; empty detaches. */}
+        {(dealId !== (current?.id ?? '') || foreign !== null) && (
           <button
             type="button"
             disabled={pending}
@@ -150,6 +153,16 @@ export function DealLink({
           </button>
         )}
       </div>
+      {/* Under the control row, with the cell's other sentences: between the
+          value line and the select it pushed «Bitim»'s select below «Zavod
+          reysi»'s on a VED's desktop card — the very gap the ties' one
+          anatomy closed (docs/PRIXOD-KARTA.md §7.1). The sentence offers only
+          what this reader is offered: no «open a new one» without the link. */}
+      {foreign && (
+        <p className="text-xs text-ink-500 [overflow-wrap:anywhere]" data-testid="receipt-deal-foreign">
+          {t(newDealHref ? 'dealForeign' : 'dealForeignPick', { code: foreign.code })}
+        </p>
+      )}
       {newDealHref && (
         <Link href={newDealHref} className="inline-block text-sm font-semibold text-brand-700 underline" data-testid="receipt-deal-new">
           + {t('dealNew')}

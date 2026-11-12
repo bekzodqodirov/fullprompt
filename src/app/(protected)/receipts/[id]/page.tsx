@@ -1021,6 +1021,7 @@ export default async function ReceiptDetailPage({
                 initial={receiptFiles}
                 editable={canEdit}
                 removableIds={ownFileIds}
+                refreshWhenEmpty
               />
             </section>
           )}

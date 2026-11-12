@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { LightboxImg } from '@/components/lightbox-img';
 import { uploadAttachmentFile } from '@/components/upload-attachment';
@@ -23,6 +24,7 @@ export function AttachmentsPanel({
   initial,
   editable,
   removableIds,
+  refreshWhenEmpty = false,
   onAdd,
   onRemove,
 }: {
@@ -36,6 +38,13 @@ export function AttachmentsPanel({
    * will allow. Anything uploaded in this session is the reader's too.
    */
   removableIds?: string[];
+  /**
+   * The caller draws this panel only while there is something to list or to
+   * attach (the prixod card's «Fayllar», docs/PRIXOD-KARTA.md §7.1): when a
+   * reader who may not attach removes the last file, ask the page again, so
+   * that it takes its heading away instead of leaving it over nothing.
+   */
+  refreshWhenEmpty?: boolean;
   /** Called after each successful upload so a caller can persist the list (e.g. into a draft). */
   onAdd?: (item: AttachmentItem) => void;
   /**
@@ -48,6 +57,7 @@ export function AttachmentsPanel({
 }) {
   const t = useTranslations('receipts');
   const tr = useTranslations('receive');
+  const router = useRouter();
   const [items, setItems] = useState(initial ?? []);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,8 +68,13 @@ export function AttachmentsPanel({
     setError(null);
     const res = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
     if (res.ok || res.status === 404) {
+      const left = items.filter((item) => item.id !== id);
       setItems((prev) => prev.filter((item) => item.id !== id));
       onRemove?.(id);
+      // Nothing left and nothing to attach with: the card around this panel
+      // is a heading over nothing now. The page decides again (a plain
+      // fetch above, not a server action — nothing has revalidated it).
+      if (refreshWhenEmpty && !editable && left.length === 0) router.refresh();
       return;
     }
     // A refusal said in words — it was silently ignored, so a file a lot's

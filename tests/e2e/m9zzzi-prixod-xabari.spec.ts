@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { expect, test, type Page } from '@playwright/test';
-import { SELLER_PHONE, cleanupAll, database, mint, mintSibling, newRun } from './prixod-xabari-fixture';
+import { SELLER_PHONE, cleanupAll, database, leaveOnlySellerFile, mint, mintSibling, newRun } from './prixod-xabari-fixture';
 import { landsOnBlock, login } from './prixod-xabari-landing';
 
 /**
@@ -116,6 +116,24 @@ test('a seller takes back the file THEY put on the prixod — and nobody else’
   await page.reload();
   await expect(page.locator(`a[title="seller-${run.marker}.pdf"]`)).toHaveCount(0);
   await expect(page.locator(`a[title="office-${run.marker}.pdf"]`)).toBeVisible();
+
+  // The LAST file. A seller cannot attach from the card, so the «Fayllar»
+  // card is drawn for them only while there is something to list
+  // (docs/PRIXOD-KARTA.md §7.1) — taking the last file back must take the
+  // card with it, not leave its heading over nothing until the next visit.
+  const sql = database();
+  let last = '';
+  try {
+    last = await leaveOnlySellerFile(sql, run, receiptId);
+  } finally {
+    await sql.end();
+  }
+  await page.reload();
+  const only = page.locator(`a[title="${last}"]`);
+  await expect(only).toBeVisible();
+  await expect(page.getByTestId('receipt-files')).toHaveCount(1);
+  await only.locator('xpath=..').getByRole('button', { name: '✕' }).click();
+  await expect(page.getByTestId('receipt-files')).toHaveCount(0);
 });
 
 test('the VED may re-file the cargo but not open a deal: the block, without the link', async ({ page }) => {
@@ -229,6 +247,10 @@ test('a prixod a client correction left on ANOTHER client’s deal: the card doe
   await expect(page.getByTestId('receipt-deal-pick').locator(`option[value="${foreign.id}"]`)).toHaveCount(0);
   // «No deal of its own» = the new-deal link is offered, as on a bare prixod.
   await expect(page.getByTestId('receipt-deal-new')).toBeVisible();
+  // …and «Saqlash» stands although nothing has been chosen: the select opens
+  // on its empty option, which here is an answer — «take it off that deal».
+  await expect(page.getByTestId('receipt-deal-pick')).toHaveValue('');
+  await expect(page.getByTestId('receipt-deal-save')).toBeVisible();
   await fits(page);
 
   await page.getByTestId('receipt-deal-new').click();
@@ -249,6 +271,46 @@ test('a prixod a client correction left on ANOTHER client’s deal: the card doe
     const rows = await check<{ client_id: string }[]>`
       SELECT d.client_id FROM receipts r JOIN deals d ON d.id = r.deal_id WHERE r.id = ${receiptId}`;
     expect(rows.map((row) => row.client_id)).toEqual([sibling.clientId]);
+  } finally {
+    await check.end();
+  }
+});
+
+test('a reader who may NOT open a deal takes the prixod OFF another client’s deal — the empty option is a save while it stands', async ({ page }) => {
+  // The test above left the prixod with the sibling, on the sibling's new
+  // deal. Give it back to the first client: that deal is now ANOTHER
+  // client's. For the VED — who may re-file cargo and may not open a deal —
+  // the cell used to hold nothing that did anything: no «+ Yangi bitim
+  // ochish», and no «Saqlash» either, because the select opens on «— uzish»
+  // and main's idiom draws the button only once the answer DIFFERS.
+  const sql = database();
+  let foreignId = '';
+  try {
+    const [row] = await sql<{ deal_id: string | null }[]>`SELECT deal_id FROM receipts WHERE id = ${receiptId}`;
+    expect(row!.deal_id).not.toBeNull();
+    foreignId = row!.deal_id!;
+    await sql`UPDATE receipts SET client_id = ${clientId} WHERE id = ${receiptId}`;
+  } finally {
+    await sql.end();
+  }
+
+  await login(page, VED);
+  await page.goto(`/receipts/${receiptId}#bitim`);
+  await expect(page.getByTestId('receipt-deal-foreign')).toBeVisible();
+  await expect(page.getByTestId('receipt-deal-new')).toHaveCount(0);
+  await expect(page.getByTestId('receipt-deal-pick')).toHaveValue('');
+  await fits(page);
+  await page.getByTestId('receipt-deal-save').click();
+  await expect(page.getByTestId('receipt-deal-foreign')).toHaveCount(0);
+  // Back to the ties' own idiom: nothing differs, no button.
+  await expect(page.getByTestId('receipt-deal-save')).toHaveCount(0);
+
+  const check = database();
+  try {
+    const [after] = await check<{ deal_id: string | null }[]>`SELECT deal_id FROM receipts WHERE id = ${receiptId}`;
+    expect(after!.deal_id).toBeNull();
+    // The other client's deal is untouched — only the prixod left it.
+    expect(await check`SELECT id FROM deals WHERE id = ${foreignId}`).toHaveLength(1);
   } finally {
     await check.end();
   }
