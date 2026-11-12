@@ -612,7 +612,7 @@ export interface GoodsLine {
    * seller wrote them: off every column, kept for the row's note.
    */
   aside?: string[];
-  /** How many figures of the line were per one (placed or not): an ANSWER holding one is refused. */
+  /** Every per-one figure of the line as written, placed or not — an ANSWER holding one is refused. */
   perOne?: string[];
 }
 
@@ -1242,8 +1242,14 @@ function markOf(text: string, spaced: string, hit: FigureHit, hits: readonly Fig
   if (each) {
     const noun = each[1] ?? each[2] ?? each[3] ?? each[4];
     const owner = nounOwner(noun);
-    const container = /(?:ida|да)(?![\p{L}])|(?:da|да)\s*[\s,:：–-]*$/iu.test(each[0]) || owner === 'package';
-    return { ...fixed(owner, [markSpan(each[0], from + each.index)]), bind: noun === undefined, clause: true, ...(container ? { container: true as const } : {}) };
+    // «har birida», «har bittasida», «har bir karobkada» — the locative: IN each.
+    const container = /(?:da|да)$/iu.test(each[0].replace(/[\s,:：–-]*$/u, '')) || owner === 'package';
+    return {
+      ...fixed(owner, [markSpan(each[0], from + each.index)]),
+      bind: noun === undefined,
+      clause: true,
+      ...(container ? { container: true as const } : {}),
+    };
   }
   const one = PACKAGE_STEM.test(lower) ? ONE_LEAD.exec(before) : null;
   if (one) {
@@ -1453,10 +1459,10 @@ function packageSize(
   if (beside) return taken('package');
   const nounAfter = PACKAGE_NOUN_AFTER.exec(text.slice(token.end, token.end + 32));
   if (nounAfter) return taken('package', [[token.end, token.end + nounAfter[0].length]]);
-  // Inside an each-clause: «har biri 60x40x50 sm 15 kg» — whose the clause is
-  // the count it stands with says (a piece's each-size is the PRODUCT's own:
-  // «Stol 10 dona, 2 karobka, har biri ...» binds to the nearest count), «har
-  // bir karobka 60x40x50» its noun.
+  // Inside an each-clause: «har biri 60x40x50 sm 15 kg» — whose the clause is,
+  // the count it stands with says, or its noun does («har bir karobka
+  // 60x40x50»). A piece's each-size is the PRODUCT's own: «Stol 10 dona, 2
+  // karobka, har bir dona 120x80x75» multiplies nothing by the cartons.
   const each = EACH_LEAD.exec(before);
   if (each) {
     const owner = nounOwner(each[1] ?? each[2] ?? each[3] ?? each[4]) ?? boundOwner(token.start);

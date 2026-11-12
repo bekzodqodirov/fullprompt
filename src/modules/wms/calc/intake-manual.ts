@@ -24,9 +24,9 @@ import {
   blankSpans,
   codeIn,
   COUNTED_CUBES,
+  FIELD_LABELS,
   groupedReading,
   labelPattern,
-  FIELD_LABELS,
   NET_LABELS,
   normalizeTnved,
   packingRead,
@@ -984,7 +984,7 @@ const typedLine = (text: string) => parseGoodsLine(text, { scaled: true, packing
  * nearest, «20 x 15 kg» with no carton word: off every column, never lost.
  */
 const asideNote = (aside: readonly string[] | undefined): string | null =>
-  aside && aside.length > 0 ? `sotuvchi: ${aside.join(', ')}`.slice(0, 200) : null;
+  aside && aside.length > 0 ? `sotuvchi: ${aside.join(', ')}` : null;
 
 /**
  * A goods row from the kernel's reading, its packing multiplied out by the
@@ -1013,6 +1013,9 @@ const scaledWord = (word: string) => scaledKg(word)?.lone === false;
 /** Such a figure standing in a NAME — «Domkrat 5 tonna», «chay 500 gr» — number and word. */
 const SCALED_IN_NAME = new RegExp(String.raw`(?<![\p{L}\d.,])\d[\d.,]*${GAP}(?:${scaledPattern('words')})(?![\p{L}\d])`, 'giu');
 
+/** A tail's tokens: split on spaces, separators and what `figureTail` set aside. */
+const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
+
 /** The size words a typed size stands beside — «o‘lchami», «razmeri», «carton size» (units.ts `FIELD_LABELS`). */
 const SIZE_WORDS_BEFORE = new RegExp(
   String.raw`(?<![\p{L}])(?:${labelPattern([...FIELD_LABELS.packageSize, ...FIELD_LABELS.size])})\s*[.:：=]?\s*(?=${BLANK})`,
@@ -1028,9 +1031,6 @@ const SIZE_WORDS_BEFORE = new RegExp(
  * words of nothing the test knew. `perOne`: a per-one figure stood there —
  * a measure of the goods; `sized`: a size did.
  */
-/** A tail's tokens: split on spaces, separators and what `figureTail` set aside. */
-const TAIL_SPLIT = new RegExp(`[\\s,;/+${BLANK}]+`, 'u');
-
 function figureTail(tail: string): { text: string; perOne: boolean; sized: boolean } {
   const read = packingRead(tail, { scaled: true });
   const text = blankSpans(tail, read.consumed);
@@ -1141,7 +1141,6 @@ const wordsOf = (name: string) =>
     .split(/[\s,.;:：()]+/u)
     .filter(Boolean);
 
-/** At least two letters, and not a name made only of total, field or greeting words. */
 /**
  * A name's words with every size set aside (T6): a size kept in a name
  * («Stol 120x80x100 sm») describes the product and names nothing — a name of
@@ -1149,6 +1148,7 @@ const wordsOf = (name: string) =>
  */
 const nameWords = (name: string) => wordsOf(blankSizes(name).split(BLANK).join(' '));
 
+/** At least two letters, and not a name made only of total, field or greeting words. */
 const nameOk = (name: string) => (name.match(/\p{L}/gu) ?? []).length >= 2 && !nameWords(name).every(notGoodsWord);
 
 const figureless = (name: string): TypedGoods => ({
