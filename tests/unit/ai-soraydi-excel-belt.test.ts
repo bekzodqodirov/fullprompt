@@ -97,11 +97,15 @@ describe('X5 — the belt concludes ONE carton’s figure only when the arithmet
 
   it('…by the belt’s OWN rounding and nothing looser: a TOTAL 1.4 % off the product is no proof', () => {
     // 10 × 12 + 20 × 13 = 380 against a TOTAL of 385: 5 kg apart, over 1 kg and over 0.5 % of 385 (1.9 kg).
-    const read = sheet(['Description', 'QTY', 'CTNS', 'G.W.(KGS)'], ['Jacket', 200, 10, 12], ['Toy', 480, 20, 13], ['TOTAL', 680, 30, 385]);
+    const rows: Cell[][] = [['Description', 'QTY', 'CTNS', 'G.W.(KGS)'], ['Jacket', 200, 10, 12], ['Toy', 480, 20, 13], ['TOTAL', 680, 30, 385]];
+    const read = parseGoods(rows);
     expect(read.goods.every((g) => g.packing?.kgPerCarton == null)).toBe(true);
-    // …and it is no longer a line figure either: 12 + 13 = 25 is under half of 385 (192.5) while 380 is within
-    // 385 × 1.02 = 392.7 — one carton's as like as not (JS-33's test, over every row that has the figure).
-    expect(read.goods.map((g) => g.weightKg)).toEqual([null, null]);
+    // …and the column is COMPLETE: its Σ (25) and its product (380) are both known and neither meets 385 —
+    // an unexplained mismatch, which never nulls the lines (review JN-12, excel-break-4). The lines stand,
+    // the Σ is refused (X8 offers no TOTAL in its place, JR-3), and both sums are said.
+    expect(read.goods.map((g) => g.weightKg)).toEqual([12, 13]);
+    expect(read.grossKg).toBeNull();
+    expect(read.notes).toEqual([{ warn: true, text: '«G.W.(KGS)» ustuni: jami qatorida 385 kg, qatorlar yig‘indisi 25 kg — umumiy brutto fayldan olinmadi.' }]);
   });
 
   it('…a TOTAL printed to its own decimal agrees with the product, as it does with a Σ', () => {
@@ -399,5 +403,37 @@ describe('X8 — a summary line read in the trade’s words (units.ts’ vocabul
     // The column reading: the TOTAL row's 266 and 2.1 (the summary row states no figure of a column, so it is
     // not a section of them); the summary line is read only where the columns say nothing.
     expect([read.grossKg, read.volumeM3]).toEqual([266, 2.1]);
+  });
+});
+
+describe('X5 — a COMPLETE column nothing explains: the lines stand, the Σ is refused (review excel-break-4, excel-spec-2)', () => {
+  it('a pallet-heavy TOTAL over a column whose Σ and product both miss it: the row weights kept, no brutto', () => {
+    // 40 + 60 = 100 kg; 2 × 40 + 2 × 60 = 200 kg; the TOTAL says 250 — neither meets it.
+    const read = parseGoods([['Description', 'CTNS', 'G.W.(KG)', 'CBM'], ['Kurtka', 2, 40, 0.5], ['Shim', 2, 60, 0.6], ['TOTAL', 4, 250, 1.1]]);
+    expect(read.goods.map((g) => [g.weightKg, g.note])).toEqual([
+      [40, null],
+      [60, null],
+    ]);
+    // …and the refused Σ is not resurrected by X8's TOTAL row (JR-3: never after `contradicts`).
+    expect(read.grossKg).toBeNull();
+    // The cube: 0.5 + 0.6 = 1.1 = its TOTAL.
+    expect(read.volumeM3).toBe(1.1);
+  });
+
+  it('the cube alike: 0.5 + 0.6 = 1.1 and 2 × 0.5 + 3 × 0.6 = 2.8 against a TOTAL of 6 — the cubes kept, no shipment cube', () => {
+    const read = parseGoods([['Description', 'CTNS', 'G.W.(KG)', 'CBM'], ['Kurtka', 2, 40, 0.5], ['Shim', 3, 60, 0.6], ['TOTAL', 5, 100, 6.0]]);
+    expect(read.goods.map((g) => g.volumeM3)).toEqual([0.5, 0.6]);
+    expect(read.volumeM3).toBeNull();
+    // 40 + 60 = 100 = the weight's TOTAL.
+    expect(read.grossKg).toBe(100);
+  });
+
+  it('a TOTAL nothing meets by far (900 against 33 and 510) and one 3.8 % over the product (530 against 510): the same answer', () => {
+    // Σ 15 + 18 = 33; product 10 × 15 + 20 × 18 = 150 + 360 = 510.
+    for (const total of [900, 530]) {
+      const read = parseGoods([['Description', 'QTY', 'CTNS', 'G.W.'], ['Ladies jacket', 200, 10, 15], ['Pants', 480, 20, 18], ['TOTAL', 680, 30, total]]);
+      expect(read.goods.map((g) => g.weightKg), String(total)).toEqual([15, 18]);
+      expect(read.grossKg, String(total)).toBeNull();
+    }
   });
 });

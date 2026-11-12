@@ -52931,6 +52931,729 @@
    "why": "X10: the flag states the CELL's shape and changes no name; whether a model number is asked about is release 1b's to decide (said under the package's «open»). Base: the same names, unmarked.",
    "source": "ai-soraydi P-excel X10 (CR-3; review JS-9)",
    "weight": "defect"
+  },
+  {
+   "id": "c3572",
+   "input": [
+    [
+     "No.",
+     "Description",
+     "QTY(PCS)",
+     "CTNS",
+     "CTN SIZE (CM)",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     1,
+     "Ladies jacket",
+     300,
+     15,
+     "60*40*50",
+     157.5,
+     1.8
+    ],
+    [
+     2,
+     "Mens jacket",
+     240,
+     12,
+     "60*40*45",
+     134.4,
+     1.17
+    ],
+    [
+     null,
+     "Shipping marks:",
+     null,
+     null,
+     "N/M",
+     null,
+     null
+    ],
+    [
+     null,
+     "Made in China",
+     null,
+     "CTN NO. 1-27",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 157.5,
+       "volumeM3": 1.8
+      },
+      {
+       "name": "Mens jacket",
+       "weightKg": 134.4,
+       "volumeM3": 1.17
+      }
+     ],
+     "count": 2,
+     "absent": [
+      "Shipping marks:",
+      "Made in China"
+     ]
+    },
+    "grossKg": 291.9,
+    "volumeM3": 2.97
+   },
+   "said": "the shipping marks under a packing list stand in its CTNS and CTN SIZE columns («CTN NO. 1-27», «N/M»): text that READS as no figure of those columns is a footer, never a good — two goods, 157.5 + 134.4 = 291.9 kg and 1.8 + 1.17 = 2.97 m³",
+   "why": "review excel-break-3: a packing column states something only where its cell reads as that column's figure, as a line column does (`figureIn`). Base: the same (2 goods, 291.9 / 2.97); the reviewed head kept both footers as goods and lost both sums.",
+   "source": "ai-soraydi P-excel review (excel-break-3)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3573",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     2,
+     40,
+     0.5
+    ],
+    [
+     "Shim",
+     2,
+     60,
+     0.6
+    ],
+    [
+     "TOTAL",
+     4,
+     250,
+     1.1
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 40,
+       "note": null
+      },
+      {
+       "name": "Shim",
+       "weightKg": 60,
+       "note": null
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null,
+    "volumeM3": 1.1,
+    "notesInclude": [
+     "jami qatorida 250 kg, qatorlar yig‘indisi 100 kg"
+    ]
+   },
+   "said": "a pallet-heavy TOTAL: 40 + 60 = 100 kg and 2 × 40 + 2 × 60 = 200 kg both miss 250 — the row weights STAND, the brutto is refused and not offered from the TOTAL row, both sums said",
+   "why": "JN-12 / JR-11 (excel-break-4, excel-spec-2): a COMPLETE column nothing explains is an unexplained mismatch, which never nulls the lines; JR-3: X8 never states a total after `contradicts`. Base: rows 40 / 60, grossKg null (no note). The reviewed head nulled both rows and offered 250.",
+   "source": "ai-soraydi P-excel review (excel-break-4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3574",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     2,
+     40,
+     0.5
+    ],
+    [
+     "Shim",
+     3,
+     60,
+     0.6
+    ],
+    [
+     "TOTAL",
+     5,
+     100,
+     6.0
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Shim",
+       "volumeM3": 0.6
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 100,
+    "volumeM3": null
+   },
+   "said": "the cube alike: 0.5 + 0.6 = 1.1 and 2 × 0.5 + 3 × 0.6 = 2.8 against a TOTAL of 6 — the row cubes stand, no shipment cube; the weight's 40 + 60 = 100 meets its TOTAL",
+   "why": "JN-12 / JR-11 / JR-3 (excel-break-4). Base: rows 0.5 / 0.6, volumeM3 null. The reviewed head nulled the rows and offered 6.",
+   "source": "ai-soraydi P-excel review (excel-break-4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3575",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W."
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     15
+    ],
+    [
+     "Pants",
+     480,
+     20,
+     18
+    ],
+    [
+     "TOTAL",
+     680,
+     30,
+     900
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 15
+      },
+      {
+       "name": "Pants",
+       "weightKg": 18
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "Σ 15 + 18 = 33 kg and 10 × 15 + 20 × 18 = 510 kg, a TOTAL of 900 meets neither: the lines stand and 900 is not offered as the brutto",
+   "why": "JN-12 / JR-11 / JR-3 (excel-spec-2). Base: rows 15 / 18, grossKg null. The reviewed head nulled both rows and offered 900 under «✅».",
+   "source": "ai-soraydi P-excel review (excel-spec-2)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3576",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W."
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     15
+    ],
+    [
+     "Pants",
+     480,
+     20,
+     18
+    ],
+    [
+     "TOTAL",
+     680,
+     30,
+     530
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 15
+      },
+      {
+       "name": "Pants",
+       "weightKg": 18
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "a TOTAL 3.8 % over the product (530 against 510): no second tolerance — the belt's own rounding is 0.5 %, so nothing meets it, the lines stand, the brutto is refused",
+   "why": "JR-11: per carton is concluded by `contradicts`' own rounding and nothing looser (the 2 % bound of JS-33 is for a column with an EMPTY cell only). Base: rows 15 / 18, grossKg null.",
+   "source": "ai-soraydi P-excel review (excel-spec-2)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3577",
+   "input": [
+    [
+     "Description",
+     "CTNS",
+     "G.W.(KG)",
+     "CBM"
+    ],
+    [
+     "Kurtka",
+     2,
+     40,
+     0.5
+    ],
+    [
+     "Divan",
+     10,
+     600,
+     null
+    ],
+    [
+     "Shim",
+     3,
+     60,
+     0.6
+    ],
+    [
+     "TOTAL",
+     15,
+     700,
+     5.0
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "volumeM3": null,
+       "note": "hajm «0.5» — bitta karobkanikimi yoki qatornikimi, aniq emas"
+      },
+      {
+       "name": "Divan",
+       "volumeM3": null
+      },
+      {
+       "name": "Shim",
+       "volumeM3": null,
+       "note": "hajm «0.6» — bitta karobkanikimi yoki qatornikimi, aniq emas"
+      }
+     ],
+     "count": 3
+    },
+    "volumeM3": 5,
+    "grossKg": 700
+   },
+   "said": "one row (the biggest) lacks its CBM and the TOTAL covers it: 0.5 + 0.6 = 1.1 is under half of 5 and 2 × 0.5 + 3 × 0.6 = 2.8 does not pass 5.1 — the sofa's 3.9 m³ explains it as well as one carton's cube does, and nobody can say which; the stated cubes go to the notes, each row's cube is asked, the TOTAL stands for the shipment",
+   "why": "JS-33's judge fix for a column with an EMPTY cell (lines nulled, kept on the note — the only way the 1a table asks a figure; a kept one-carton cube would price as the line's). The reviewer (excel-break-5) asks to keep them; REJECTED by the fix round, the trade stated: here the kept 0.5 / 0.6 were right, in JS-33's own sheet they are 10-20× small. Base: rows 0.5 / 0.6, volumeM3 null.",
+   "source": "ai-soraydi P-excel review (excel-break-5, rejected)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3578",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Weight (kg)",
+     "Volume, m^3"
+    ],
+    [
+     "Jacket",
+     100,
+     250,
+     1.2
+    ],
+    [
+     "Pants",
+     50,
+     120,
+     0.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 1.2,
+       "note": null
+      },
+      {
+       "name": "Pants",
+       "volumeM3": 0.8,
+       "note": null
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 2
+   },
+   "said": "«m^3» is cubic metres with a caret: 1.2 + 0.8 = 2 m³",
+   "why": "review excel-break-7: X6's foreign-unit refusal read the «m» of «m^3» as a length. Base: the same.",
+   "source": "ai-soraydi P-excel review (excel-break-7)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3579",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Weight (kg)",
+     "Volume (m^3)"
+    ],
+    [
+     "Jacket",
+     100,
+     250,
+     1.2
+    ],
+    [
+     "Pants",
+     50,
+     120,
+     0.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Pants",
+       "volumeM3": 0.8
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 2
+   },
+   "said": "«(m^3)» bracketed: cubic metres",
+   "why": "review excel-break-7. Base: the same.",
+   "source": "ai-soraydi P-excel review (excel-break-7)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3580",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Weight (kg)",
+     "Объем, м^3"
+    ],
+    [
+     "Jacket",
+     100,
+     250,
+     1.2
+    ],
+    [
+     "Pants",
+     50,
+     120,
+     0.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Pants",
+       "volumeM3": 0.8
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 2
+   },
+   "said": "«м^3» in Cyrillic: cubic metres",
+   "why": "review excel-break-7. Base: the same.",
+   "source": "ai-soraydi P-excel review (excel-break-7)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3581",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Weight (kg)",
+     "Volume (cub.m)"
+    ],
+    [
+     "Jacket",
+     100,
+     250,
+     1.2
+    ],
+    [
+     "Pants",
+     50,
+     120,
+     0.8
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Pants",
+       "volumeM3": 0.8
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 2
+   },
+   "said": "«cub.m» is cubic metres, never a length",
+   "why": "review excel-break-7. Base: the same.",
+   "source": "ai-soraydi P-excel review (excel-break-7)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3582",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "G.W.",
+     "CBM"
+    ],
+    [
+     "鞋",
+     10,
+     100,
+     0.5
+    ],
+    [
+     "伞",
+     11,
+     100,
+     0.5
+    ],
+    [
+     "包",
+     12,
+     100,
+     0.5
+    ],
+    [
+     "杯",
+     13,
+     100,
+     0.5
+    ],
+    [
+     "袜子",
+     14,
+     100,
+     0.5
+    ],
+    [
+     "XJ-200",
+     15,
+     100,
+     0.5
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "鞋",
+       "nameIsArticle": null
+      },
+      {
+       "name": "伞",
+       "nameIsArticle": null
+      },
+      {
+       "name": "包",
+       "nameIsArticle": null
+      },
+      {
+       "name": "杯",
+       "nameIsArticle": null
+      },
+      {
+       "name": "袜子",
+       "nameIsArticle": null
+      },
+      {
+       "name": "XJ-200",
+       "nameIsArticle": true
+      }
+     ],
+     "count": 6
+    }
+   },
+   "said": "one Chinese character is a whole word — shoes, umbrella, bag, cup are goods named in words; only «XJ-200» is an article number",
+   "why": "review excel-break-9: X10's flag used `isWordCell`'s «two letters at least», right for ranking the name column and wrong of one Han good. Base: no flag at all.",
+   "source": "ai-soraydi P-excel review (excel-break-9)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3583",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Weight (kg)",
+     "Volume (cc)"
+    ],
+    [
+     "Jacket",
+     100,
+     250,
+     120000
+    ],
+    [
+     "Pants",
+     50,
+     120,
+     80000
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Jacket",
+       "volumeM3": 0.12
+      },
+      {
+       "name": "Pants",
+       "volumeM3": 0.08
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 0.2
+   },
+   "said": "«cc» is cubic centimetres: 120 000 cc = 0.12 m³, 80 000 cc = 0.08 m³, Σ 0.2",
+   "why": "review excel-break-10: «cc» was read as cubic metres (a line of 120 000 m³). Base: 120000 / 80000, volumeM3 200000.",
+   "source": "ai-soraydi P-excel review (excel-break-10)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3584",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "TOTAL G.W.: 710 USD",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2
+    },
+    "grossKg": null
+   },
+   "said": "a unitless figure after a weight label on a line with a currency mark is money, never kilos",
+   "why": "JN-21 (excel-spec-4): a label-first figure without its unit is read only on a line with no currency mark. Base: null (no summary reader). The reviewed head read 710 kg.",
+   "source": "ai-soraydi P-excel review (excel-spec-4)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3585",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "Unit price (USD)",
+     "Amount (USD)"
+    ],
+    [
+     "Office chair",
+     40,
+     10,
+     400
+    ],
+    [
+     "Desk",
+     40,
+     50,
+     2000
+    ],
+    [
+     "总毛重: 710kg 总体积: 3.8立方",
+     null,
+     null,
+     null
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "count": 2,
+     "absent": [
+      "总毛重: 710kg 总体积: 3.8立方"
+     ]
+    },
+    "grossKg": 710,
+    "volumeM3": 3.8
+   },
+   "said": "«总毛重» and «总体积» say «total» by themselves: the summary line under an invoice is its total row — 710 kg brutto, 3.8 m³",
+   "why": "X8 + units.ts WEIGHT_LABELS / VOLUME_LABELS (excel-spec-4). Base: null / null. The reviewed head read nothing (a total word was demanded beside the labels).",
+   "source": "ai-soraydi P-excel review (excel-spec-4)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [
