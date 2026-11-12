@@ -14,7 +14,9 @@ import {
   agentDrafts,
   agentOutbox,
   agentRuns,
+  agentSendCaps,
   auditLog,
+  calcFreightTariffs,
   clients,
   leadSources,
   leadStages,
@@ -71,6 +73,9 @@ import { autoPanel, webDrafts, webStats } from '@/modules/wms/agent/web-page';
 import { stampAgentPump } from '@/modules/wms/crm/account-guard';
 import { setWorkAccount } from '@/modules/wms/crm/telegram-accounts';
 import { CANCELLED_BY_HOLDER } from '@/modules/wms/agent/web-thread';
+import { DEFAULT_SEND_CAPS, __restoreSendCaps, readSendCaps, type SendCaps } from '@/modules/wms/agent/send-caps';
+import { TariffConfirmError, confirmTariff, currentTariffFingerprint, tariffExpiryNotice } from '@/modules/wms/agent/tariff-watch';
+import { tashkentDay } from '@/modules/platform/time/tashkent';
 
 /**
  * A seam in the press (fix pass A): `sendWindowFor` is asked by the gate's facts AND by `decideDraft` before its
@@ -1329,8 +1334,11 @@ describe('the money clause by OUTCOME (0146, spec §1.1, §1.4) — on a real ru
     expect((await verdictOf(d.id))!.state).toBe('pressed');
   });
 
-  it('a priced truck estimate names its tool on the ledger, and stays his until its estimates are stored and re-priced (§1.3) — even with «Narx» ticked', async () => {
+  it('a priced truck estimate names its tool on the ledger and KEEPS its figure (§1.3) — with «Narx» ticked it is no longer «money»', async () => {
     await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    // DELIBERATE EDIT (K2, spec §1.3): the run now stores the figure it quoted, which K1's version of this test said
+    // it did not yet — so the money clause admits the quote, and what is left is whatever the tariff's ✅ says (the
+    // price that goes by itself is pinned below, «the price that goes by itself»).
     const { d, toolCalls } = await answers("Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", [
       { name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } },
       compose("5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.", {
@@ -1340,9 +1348,9 @@ describe('the money clause by OUTCOME (0146, spec §1.1, §1.4) — on a real ru
     expect(toolCalls).toEqual([expect.objectContaining({ name: 'yolkira_estimate', ok: true, estimate: true })]);
     const ledger = (d.policy as { ledger: Record<string, unknown>[] }).ledger;
     expect(ledger).toContainEqual(expect.objectContaining({ kind: 'money', origin: 'tool', tool: 'yolkira_estimate', role: 'total' }));
-    const v = await verdictOf(d.id);
-    expect(v).toMatchObject({ eligible: false, state: null });
-    expect(v!.reasons).toContain('money');
+    const estimates = (d.policy as { memory: { estimates: unknown[] } }).memory.estimates;
+    expect(estimates).toEqual([expect.objectContaining({ tool: 'yolkira_estimate', kg: 1000, m3: 5, total: 800, rate: 160, unit: 'm3' })]);
+    expect((await verdictOf(d.id))!.reasons).not.toContain('money');
   });
 
   it('a REFUSED estimate makes the reply money, whatever it says (the model’s price after a refusal is nobody’s)', async () => {
@@ -2312,5 +2320,195 @@ describe('the second check — a card that went silently in the night is no coun
     expect(await verdictOf(c!.id)).toMatchObject({ state: 'refused', reasons: ['night'] });
     expect(await outboxOf(c!.id)).toBeNull();
     expect(await draftStatus(c!.id)).toBe('pending');
+  });
+});
+
+describe('the price that goes by itself — the figure still stands (0146, spec SPEC-P1-v2 §1.3, §1.6, §1.8)', () => {
+  const PRICED = "5 kub, 1000 kg yukingiz uchun Toshkentgacha yo'lkira taxminan 800 $ bo'ladi. Boj va QQS alohida hisoblanadi.";
+  const QUESTION = ["Yiwudan Toshkentga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?", "Yiwudan Toshkentga 5 kub 1000 kg kiyim bor, narxi qancha?"];
+  let caps: SendCaps = DEFAULT_SEND_CAPS;
+  let noticeFor: string | null = null;
+  const madeTariffs: string[] = [];
+
+  /** His ✅ on the China column, as `agent_send_caps` keeps it — null: never. */
+  const vouch = (at: Date | null) => db.update(agentSendCaps).set({ tariffConfirmedAt: at }).where(eq(agentSendCaps.id, 1));
+
+  /**
+   * An /admin/tarif edit on the machine's day — a row of the China column dated that day, which `tariffFor` takes over
+   * the seeded one. CONFIGURATION on the shared database (#183): every row is deleted after its test, pass or fail.
+   */
+  async function editTariff(row: { minDensity: number; maxDensity: number | null; priceUsd: number }) {
+    const [r] = await db
+      .insert(calcFreightTariffs)
+      .values({
+        zone: 'cn',
+        minDensity: row.minDensity.toFixed(2),
+        maxDensity: row.maxDensity === null ? null : row.maxDensity.toFixed(2),
+        priceUsd: row.priceUsd.toFixed(4),
+        perKg: false,
+        effectiveDate: tashkentDay(T0),
+      })
+      .returning({ id: calcFreightTariffs.id });
+    madeTariffs.push(r!.id);
+  }
+
+  /** The customer's question, the tool's truck figure, the reply that quotes it — its card shown on the machine's clock. */
+  async function quoted(opts: { peer?: bigint; question?: string; reply?: string } = {}) {
+    const peer = opts.peer ?? PEER;
+    const anchor = await inbound(opts.question ?? QUESTION[0]!, peer);
+    const out = await handleInbound(job(anchor, peer), {
+      callModel: scripted([{ name: 'yolkira_estimate', input: { weight_ref: 'w1', volume_ref: 'v1' } }, compose(opts.reply ?? PRICED, { category: 'price' })]),
+      now: () => T0,
+    });
+    expect(out, JSON.stringify(out)).toMatchObject({ outcome: 'draft' });
+    const draftId = (out as { draftId: string }).draftId;
+    await shownAt(draftId, T0);
+    const [d] = await db.select().from(agentDrafts).where(eq(agentDrafts.id, draftId));
+    return d!;
+  }
+
+  const stepCtx = () => ({ accountId, caughtUp: () => true, random: () => 0 });
+
+  beforeAll(async () => {
+    __forgetAgentFullP1Ready();
+    caps = await readSendCaps();
+    const [row] = await db.select({ noticeFor: agentSendCaps.tariffNoticeFor }).from(agentSendCaps).where(eq(agentSendCaps.id, 1));
+    noticeFor = row?.noticeFor ?? null;
+  });
+
+  beforeEach(async () => {
+    // «Narx» ticked, and the China column vouched for a moment ago — each test takes away what it is about.
+    await db.update(agentAutoConfig).set({ categories: ['greeting', 'qualification', 'faq', 'status', 'price'] }).where(eq(agentAutoConfig.id, 1));
+    await vouch(new Date());
+  });
+
+  afterEach(async () => {
+    if (madeTariffs.length) await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.id, madeTariffs.splice(0)));
+  });
+
+  afterAll(async () => {
+    await __restoreSendCaps(caps);
+    await db.update(agentSendCaps).set({ tariffNoticeFor: noticeFor }).where(eq(agentSendCaps.id, 1));
+  });
+
+  it('an estimate draft goes by itself: priced, its figure kept, priced again at the press, pressed', async () => {
+    const d = await quoted();
+    expect((d.policy as { memory: { estimates: unknown } }).memory.estimates).toEqual([
+      { tool: 'yolkira_estimate', kg: 1000, m3: 5, zone: 'cn', day: tashkentDay(T0), total: 800, rate: 160, unit: 'm3' },
+    ]);
+    const v = await verdictOf(d.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting', reasons: [] });
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect(await outboxOf(d.id)).toMatchObject({ status: 'agent' });
+    // …and the send step finds the figure standing.
+    const row = (await agentRowById((await outboxOf(d.id))!.id))!;
+    expect((await sendFactsFor(row, DUE, stepCtx())).offerStands).toBe('stands');
+  });
+
+  it('an /admin/tarif edit between the draft and the press: not pressed — `estimate_moved`', async () => {
+    const d = await quoted();
+    expect((await verdictOf(d.id))!.state).toBe('waiting');
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    expect(await pressDueAutos(DUE)).toBe(0);
+    const v = await verdictOf(d.id);
+    expect(v).toMatchObject({ state: 'refused' });
+    expect(v!.reasons).toContain('estimate_moved');
+    expect(await outboxOf(d.id)).toBeNull();
+  });
+
+  it('…at HIS ✅: refused in words, nothing queued', async () => {
+    const d = await quoted();
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+    expect(r).toEqual({ ok: false, code: 'estimate_moved' });
+    expect(await outboxOf(d.id)).toBeNull();
+    expect(await draftStatus(d.id)).toBe('pending');
+  });
+
+  it('…and at the SEND STEP after an approval: the row is cancelled `estimate_moved`, never sent with the old figure', async () => {
+    const d = await quoted();
+    const r = await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId });
+    expect(r).toMatchObject({ ok: true });
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    const row = (await agentRowById((await outboxOf(d.id))!.id))!;
+    const f = await sendFactsFor(row, new Date(), stepCtx());
+    expect(f.offerStands).toBe('estimate_moved');
+    expect(agentSendVerdict(row, f)).toEqual({ ok: false, final: true, reason: 'estimate_moved' });
+  });
+
+  it('a re-price that REFUSES — a band his edit made ambiguous — is a figure that moved: not sent at either end', async () => {
+    const d = await quoted();
+    await editTariff({ minDensity: 160, maxDensity: 250, priceUsd: 160 });
+    // The machine's press first (a person's press stops the countdown before it asks anything).
+    expect(await pressDueAutos(DUE)).toBe(0);
+    expect((await verdictOf(d.id))!.reasons).toContain('estimate_moved');
+    expect(await decideDraft(actorOf(ownerId), d.id, 'send', { digest: await cardDigestOf(d.id) }, { actorId: ownerId })).toEqual({
+      ok: false,
+      code: 'estimate_moved',
+    });
+    expect(await outboxOf(d.id)).toBeNull();
+  });
+
+  it('the China column written after his last ✅: the estimate waits for him; HIS ✅ on that card vouches for it, and the next one goes', async () => {
+    await vouch(null);
+    const first = await quoted();
+    expect((await verdictOf(first.id))!.reasons).toEqual(['tariff_unconfirmed']);
+    const r = await decideDraft(actorOf(ownerId), first.id, 'send', { digest: await cardDigestOf(first.id) }, { actorId: ownerId });
+    expect(r).toMatchObject({ ok: true });
+    // The mark is the run's own start: the column the figure was priced on, never a write during the run.
+    const [run] = await db.select({ createdAt: agentRuns.createdAt }).from(agentRuns).where(eq(agentRuns.id, first.runId!));
+    expect((await readSendCaps()).tariffConfirmedAt?.getTime()).toBe(run!.createdAt.getTime());
+    const next = await quoted({ peer: PEER2, question: QUESTION[1] });
+    const v = await verdictOf(next.id);
+    expect(v, JSON.stringify(v?.reasons)).toMatchObject({ eligible: true, state: 'waiting' });
+  });
+
+  it('…and the machine’s own press never vouches: only a person’s ✅ does', async () => {
+    // The mark `beforeEach` set, a moment BEFORE the run began: a vouch by this press would move it to the run's start.
+    const mark = (await readSendCaps()).tariffConfirmedAt!.getTime();
+    const d = await quoted();
+    expect(await pressDueAutos(DUE)).toBe(1);
+    expect((await verdictOf(d.id))!.state).toBe('pressed');
+    expect((await readSendCaps()).tariffConfirmedAt!.getTime()).toBe(mark);
+  });
+
+  it('another city named anywhere in what the customer wrote: the estimate is his — `foreign_destination`', async () => {
+    const d = await quoted({ question: "Yiwudan Andijonga 5 kub 1000 kg yuk bor, yo'lkira qancha bo'ladi?" });
+    expect((d.policy as { memory: { foreignDestination: boolean } }).memory.foreignDestination).toBe(true);
+    expect((await verdictOf(d.id))!.reasons).toEqual(['foreign_destination']);
+  });
+
+  it('the website table’s 14-day notice: once, by day, to the holder — and «✅ Tarif to‘g‘ri» vouches for the column it was sent with', async () => {
+    await vouch(null);
+    await db.update(agentSendCaps).set({ tariffNoticeFor: null }).where(eq(agentSendCaps.id, 1));
+    // Before the fourteen days: nothing. In them, at night: nothing (its one chance would arrive in silence).
+    expect(await tariffExpiryNotice(new Date('2026-12-16T07:00:00Z'))).toBe(false);
+    expect(await tariffExpiryNotice(new Date('2026-12-20T20:00:00Z'))).toBe(false);
+    // By day: once — two sweeps at the same minute send one (the claim's compare-and-set), and a later one none.
+    const both = await Promise.all([tariffExpiryNotice(new Date('2026-12-20T07:00:00Z')), tariffExpiryNotice(new Date('2026-12-20T07:00:00Z'))]);
+    expect(both.filter(Boolean)).toHaveLength(1);
+    expect(await tariffExpiryNotice(new Date('2026-12-21T07:00:00Z'))).toBe(false);
+    const cards = await db
+      .select({ payload: notifications.payload, userId: notifications.userId })
+      .from(notifications)
+      .where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, ownerId)));
+    expect(cards).toHaveLength(1);
+    const payload = cards[0]!.payload as { fingerprint: string; holderId: string };
+    expect(payload.fingerprint).toBe(await currentTariffFingerprint());
+    // A press from a chat that is not the holder's confirms nothing.
+    expect((await agentPress(otherId, 't', payload.holderId, payload.fingerprint)).toast).toMatch(/sizga emas/u);
+    expect((await readSendCaps()).tariffConfirmedAt).toBeNull();
+    // The column written since the notice: refused, never confirmed unseen.
+    await editTariff({ minDensity: 151, maxDensity: 200, priceUsd: 170 });
+    expect((await agentPress(ownerId, 't', payload.holderId, payload.fingerprint)).toast).toMatch(/o‘zgardi/u);
+    expect((await readSendCaps()).tariffConfirmedAt).toBeNull();
+    await db.delete(calcFreightTariffs).where(inArray(calcFreightTariffs.id, madeTariffs.splice(0)));
+    // The column as sent: confirmed.
+    expect((await agentPress(ownerId, 't', payload.holderId, payload.fingerprint)).toast).toMatch(/tasdiqlandi/u);
+    expect((await readSendCaps()).tariffConfirmedAt).not.toBeNull();
+    // The page's door is the same function: a stamp it did not draw is refused in words.
+    await expect(confirmTariff(actorOf(ownerId), '00000000', { actorId: ownerId })).rejects.toBeInstanceOf(TariffConfirmError);
+    await db.delete(notifications).where(and(eq(notifications.type, 'AgentTariffNotice'), eq(notifications.userId, ownerId)));
   });
 });

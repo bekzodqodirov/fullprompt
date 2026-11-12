@@ -6670,6 +6670,8 @@
       "auto_pressed": "太晚了——AI 已自行确认该回复。如不想发送，请点击「取消」。",
       "auto_sending": "太晚了——回复正在发送。",
       "auto_sent": "太晚了——回复已发送。",
+      "estimate_moved": "运价表已变更——此价格已过期，回复未发送。请自行填写正确价格。",
+      "tariff_changed": "页面打开后运价已变更——请刷新页面后重新检查。",
       "empty": "文字为空。",
       "not_ready": "数据库尚未更新。",
       "forbidden": "无权限。",
@@ -6767,7 +6769,11 @@
     "capsHint": "AI 每天和每小时最多可发送的消息数。留空——默认值：每天 {day} 条，每小时 {hour} 条。最多每天 {dayMax} 条、每小时 {hourMax} 条——CRM 自身的保护上限。前 14 天的逐步提升以及同一对话中的间隔不变。",
     "capsDay": "每天最多",
     "capsHour": "每小时最多",
-    "capsNow": "当前：每天 {day} 条，每小时 {hour} 条"
+    "capsNow": "当前：每天 {day} 条，每小时 {hour} 条",
+    "tariffConfirmed": "中国运价已确认：{when}。带价格的回复可以自动发送。",
+    "tariffUnconfirmed": "中国运价已变更或尚未确认——下一条带价格的回复将等待您的 ✅。",
+    "tariffHint": "卡车运费按「/admin/tarif」中国列核对；网站价格表有效至 {date}。请检查该列并确认——或在一张带价格的卡片上亲自按 ✅。",
+    "tariffConfirm": "✅ 运价正确"
   },
   "invoys": {
     "title": "同一海关编码的货物",

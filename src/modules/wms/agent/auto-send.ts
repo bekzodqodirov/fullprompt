@@ -24,6 +24,8 @@ import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { AUTO_DISARM_WORDS, autoTakeBackable } from './auto-card';
 import { AUTO_SEND_CATEGORIES } from './auto-categories';
 import { estimateUnnamed } from './auto-money';
+import { estimatesStand } from './estimate-check';
+import { tariffUnconfirmed } from './tariff-watch';
 import { autoVerdict, type AutoGateInput, type AutoLedgerLine, type AutoRefusal, type AutoToolCall } from './auto-gate';
 import { cardDigest, digestBody } from './card';
 import { agentAutoReady, agentFullP1Ready, agentRunning, disarmAutoInTx, mayRunAgent, readAgentConfig, type AutoDisarmReason } from './config';
@@ -99,6 +101,20 @@ export async function readAutoConfig(handle: Db | Tx = db): Promise<AutoConfig |
   if (!(await agentAutoReady())) return null;
   const [row] = await handle.select().from(agentAutoConfig).where(eq(agentAutoConfig.id, 1));
   return row ? toAutoConfig(row) : null;
+}
+
+/**
+ * His price act (spec SPEC-P1-v2 §1.2): `price` ticked among the kinds AND the layer armed. While it holds, the
+ * flight's PRICE may go by itself — the run's avia rule stops asking him about every quoted flight, and the head
+ * and the avia tool tell the model to quote the price alone. Off (or 0145 not landed), every word is today's.
+ */
+export function priceActArmedOf(auto: Pick<AutoConfig, 'armed' | 'categories'> | null): boolean {
+  return auto?.armed === true && auto.categories.includes('price');
+}
+
+/** `priceActArmedOf` over the stored row — read once per run. */
+export async function priceActArmed(): Promise<boolean> {
+  return priceActArmedOf(await readAutoConfig());
 }
 
 // ── the facts ───────────────────────────────────────────────────────────────
@@ -301,6 +317,9 @@ export async function autoFactsFor(
     .from(agentConversations)
     .where(and(eq(agentConversations.managerUserId, d.managerUserId), eq(agentConversations.peerId, d.peerId)));
   const memory = policy.memory;
+  const estimates = Array.isArray(memory?.estimates) ? memory.estimates : [];
+  // The machine's words carry the machine's figures; his own (✏️) are never auto-pressed anyway.
+  const quoted = estimates.length > 0 && d.finalBody === null;
   return {
     config: {
       armed: auto?.armed === true,
@@ -334,13 +353,15 @@ export async function autoFactsFor(
     tools,
     money: {
       unnamed: memory ? unnamedOf(digestBody(d), memory) : false,
-      // The facts whose readers are other parts of the spec, each false until its part computes it — and none can
-      // admit a quote by itself: a priced reply is refused `money` until its estimates are stored (§1.3), which is
-      // the part that also re-prices them (`moved`). §1.6 reads the tariff's confirmation, §1.8 the city, §2.2
-      // the ✍️ answer.
-      moved: false,
-      tariffUnconfirmed: false,
-      foreignDestination: false,
+      // The stored figures priced again NOW (§1.3) — at the scheduling and again at the press, with the function the
+      // send step asks: a tariff edit or a new avia rate during the hold never lets the old figure out by itself.
+      moved: quoted ? (await estimatesStand(estimates, opts.now)) === 'estimate_moved' : false,
+      // The China column written since his last ✅ on it (§1.6) — asked of a TRUCK figure only: the flight is his rate.
+      tariffUnconfirmed: quoted && estimates.some((e) => e?.tool === 'yolkira_estimate') ? await tariffUnconfirmed(opts.now) : false,
+      // The customer named another city or region (§1.8), read by the run over the whole window. A memory that does
+      // not say (none such carries estimates) reads as named.
+      foreignDestination: quoted ? memory?.foreignDestination !== false : false,
+      // §2.2's — the ✍️ answer — false until its part computes them.
       ownerPersonal: false,
       answerStale: false,
     },

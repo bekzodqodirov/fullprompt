@@ -9,6 +9,7 @@ import { countdownMayRide, recordAutoVerdictInTx, settleSupersededAuto, type Aut
 import { cardDrawsSend, cardExtra } from './card';
 import { renderDraftCardFull, type DraftRow } from './card-io';
 import { bindMoved, chatIdentity, type AgentContext } from './context';
+import { estimatesStand } from './estimate-check';
 import type { PolicyMemory } from './policy-input';
 import type { PolicyResult } from './policy';
 import type { CardMemory, ComposedAction, DraftPolicyJson } from './types';
@@ -329,34 +330,46 @@ export async function requestRecalculated(requestId: string): Promise<boolean> {
   return newer !== undefined;
 }
 
+/** What the send step, his ✅ and the press hear of a draft's figure: it stands, a VED recalculation took it, its table moved. */
+export type OfferStanding = 'stands' | 'offer_gone' | 'estimate_moved';
+
 /**
- * A price reply's figure still stands; null when the draft carries none.
+ * A draft's figure still stands; null when the draft carries none — a REASON, never a boolean (spec SPEC-P1-v2
+ * §1.3), so the send step cancels each in its own words.
  *
- * Two anchors. Since his 6 b a 💵 writes no offer row — the figure answers
- * the REQUEST it was typed on (`policy.priceRequestId`), and it stops
- * standing the moment a VED recalculation supersedes that request
- * (`notSupersededSql`'s rule, the money side's: a correction exists, so the
- * promise no longer stands — sealed or not). Without this an approval he made
- * before the recalc, waiting in agent_outbox (the night hold, the gaps), went
- * out with the old figure: there was no offer to be gone (answers review). A
- * draft from before 6 b still carries an offer row, asked as before.
+ * His 💵 (two anchors). Since his 6 b a 💵 writes no offer row — the figure answers the REQUEST it was typed on
+ * (`policy.priceRequestId`), and it stops standing the moment a VED recalculation supersedes that request
+ * (`notSupersededSql`'s rule, the money side's: a correction exists, so the promise no longer stands — sealed or
+ * not). Without this an approval he made before the recalc, waiting in agent_outbox (the night hold, the gaps),
+ * went out with the old figure: there was no offer to be gone (answers review). A draft from before 6 b still
+ * carries an offer row, asked as before. Either is `offer_gone` («VED qayta hisobladi»), the 💵's alone.
+ *
+ * The MACHINE's figures (§1.3): a draft whose memory keeps the estimates it quoted, and whose words are still the
+ * machine's (no `finalBody` — his ✏️ text is his own figure), prices each again with the same function on today's
+ * tariff and avia rate (`estimatesStand`) — `estimate_moved` when any moved or the re-price refused, never an
+ * exception (this runs in the listener). A machine draft written before the estimates were kept answers null, as
+ * it always did.
  */
-export async function draftOfferStands(draftId: string): Promise<boolean | null> {
+export async function draftOfferStands(draftId: string, now: Date = new Date()): Promise<OfferStanding | null> {
   const [draft] = await db
-    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy })
+    .select({ offerId: agentDrafts.offerId, kind: agentDrafts.kind, policy: agentDrafts.policy, finalBody: agentDrafts.finalBody })
     .from(agentDrafts)
     .where(eq(agentDrafts.id, draftId));
   const priced = draft?.kind === 'price' ? ((draft.policy ?? {}) as { priceRequestId?: unknown }).priceRequestId : undefined;
   if (typeof priced === 'string' && UUID.test(priced)) {
-    if (await requestRecalculated(priced)) return false;
-    if (!draft!.offerId) return true;
+    if (await requestRecalculated(priced)) return 'offer_gone';
+    if (!draft!.offerId) return 'stands';
   }
-  if (!draft?.offerId) return null;
-  const [row] = await db
-    .select({ id: calcOffers.id })
-    .from(calcOffers)
-    .where(and(eq(calcOffers.id, draft.offerId), releasedOfferWhere(), offerStandsSql()));
-  return row !== undefined;
+  if (draft?.offerId) {
+    const [row] = await db
+      .select({ id: calcOffers.id })
+      .from(calcOffers)
+      .where(and(eq(calcOffers.id, draft.offerId), releasedOfferWhere(), offerStandsSql()));
+    return row !== undefined ? 'stands' : 'offer_gone';
+  }
+  if (!draft || draft.finalBody !== null) return null;
+  const memory = ((draft.policy ?? {}) as Partial<DraftPolicyJson>).memory;
+  return estimatesStand(memory?.estimates, now);
 }
 
 /**

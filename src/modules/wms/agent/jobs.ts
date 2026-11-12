@@ -466,6 +466,16 @@ export async function agentSweep(
   } catch (err) {
     logger.error({ err }, '[agent] auto presses failed');
   }
+
+  // 8. The website table's 14-day notice (0146, spec SPEC-P1-v2 §1.6): once per `validThrough`, by day, to the
+  //    holder — after it the truck's price is /admin/tarif's, and «✅ Tarif to'g'ri» vouches for the column. Its
+  //    own catch: a notice must never cost the sweep's answers.
+  try {
+    const { tariffExpiryNotice } = await import('./tariff-watch');
+    await tariffExpiryNotice(now);
+  } catch (err) {
+    logger.error({ err }, '[agent] tariff notice failed');
+  }
   return { expired: expired.length, retired: retired.length, gap, retried, actions: stuck.length, reminded, interrupted: interrupted.length, autoPressed };
 }
 

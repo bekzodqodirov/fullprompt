@@ -76,6 +76,13 @@ export interface PolicyMemory {
    * with an estimate and none is refused by the auto layer (`money`, §1.1).
    */
   estimates?: StoredEstimate[];
+  /**
+   * The customer named a city or region other than Tashkent anywhere in what he wrote (spec §1.8, destination.ts
+   * `namesForeignPlace`) — the table is China → Tashkent, so an estimate reply waits for his ✅. A gate fact,
+   * never a policy block. Absent (stored before this) reads as named: such a draft carries no stored estimate
+   * and is refused `money` anyway.
+   */
+  foreignDestination?: boolean;
   ownCodes: string[];
   /** The customer's own manager — the one staff name a reply may carry. */
   managerName: string | null;

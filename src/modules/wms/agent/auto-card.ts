@@ -56,6 +56,7 @@ export const AUTO_PRESS_WORDS: Record<DecideRefusal, string> = {
   auto_pressed: 'AI javobni allaqachon tasdiqlagan',
   auto_sending: 'javob yuborilmoqda',
   auto_sent: 'javob yuborilgan',
+  estimate_moved: 'narx jadvali o‘zgargan — narx qayta tekshirilmagan',
   empty: 'javob bo‘sh',
 };
 

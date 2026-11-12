@@ -43,6 +43,13 @@ export const AGENT_LIMITS = {
   minShipment: { m3: 1, kg: 100 } as const,
   /** Avia has its own minimum and time (his 2026-10-24 «avia uchun 1kg minimum», «2-5 kun … reysimiz bolsa 2 kun»). */
   avia: { minKg: 1, daysMin: 2, daysMax: 5 } as const,
+  /**
+   * The truck's days once the website's table has run out (spec SPEC-P1-v2 §1.6, ⭐ Q5 a — asked of him): the
+   * snapshot's own 15-25 (site-estimate `SITE_TARIFF.truck.days`). Before its `validThrough` the website says
+   * them; after it the truck's price comes from /admin/tarif, which knows no days, and without these every
+   * «15-25 kun» in an estimate reply would have no source and block the card.
+   */
+  truckDays: [15, 25] as const,
   /** ≥ this long between two AI messages to one chat. */
   perChatGapMs: 20_000,
   /** A random gap between any two AI sends on the account, drawn from this range. */

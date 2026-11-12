@@ -95,8 +95,11 @@ export interface SendFacts {
   ruleExcluded: boolean;
   /** Today's identity decision for the chat differs from the draft's (leak-4). */
   identityChanged: boolean;
-  /** A price draft's offer: null when the draft carries none. */
-  offerStands: boolean | null;
+  /**
+   * The draft's figure (drafts `draftOfferStands`): a 💵's request or offer, or the machine's estimates priced again
+   * on today's tariff (spec SPEC-P1-v2 §1.3); null when the draft carries none.
+   */
+  offerStands: 'stands' | 'offer_gone' | 'estimate_moved' | null;
   /**
    * Caps, counted over agent_outbox rows handed to Telegram — 'sent' AND 'unknown' (S5). The hour and the
    * account's last send count the account's sent CRM replies as well (K5); the day and the chat's two are
@@ -134,7 +137,9 @@ export type FinalRefusal =
   | 'muted'
   | 'excluded'
   | 'identity_changed'
-  | 'offer_gone';
+  | 'offer_gone'
+  /** A machine estimate priced again today gives another figure, or the re-price refused (spec §1.3). */
+  | 'estimate_moved';
 
 export type WaitReason =
   | 'flood_wait'
@@ -194,7 +199,8 @@ export function agentSendVerdict(
   if (f.conversationMuted) return fin('muted');
   if (f.ruleExcluded) return fin('excluded');
   if (f.identityChanged) return fin('identity_changed');
-  if (f.offerStands === false) return fin('offer_gone');
+  if (f.offerStands === 'offer_gone') return fin('offer_gone');
+  if (f.offerStands === 'estimate_moved') return fin('estimate_moved');
 
   if (f.floodUntil && f.floodUntil.getTime() > now) return wait('flood_wait', f.floodUntil);
   // The night rule at the SEND, not only at the ✅ (his Q14 ⭐, review S3): a row a flood wait, the hour cap

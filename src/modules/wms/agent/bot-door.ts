@@ -32,6 +32,7 @@ import { knownNamesForMask } from './style';
 import { priceDraftFromText, type PriceDraftResult } from './calc-loop';
 import { withdrawRepliesFor } from './drafts';
 import { editAgentCopies, type AgentCopy } from './purge';
+import { confirmTariff, TariffConfirmError, type TariffConfirmRefusal } from './tariff-watch';
 import type { PolicyHit } from './policy';
 import type { ComposedAction, DraftPolicyJson } from './types';
 
@@ -42,7 +43,7 @@ import type { ComposedAction, DraftPolicyJson } from './types';
  * nothing».
  */
 
-export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f';
+export type AgentOp = 's' | 'e' | 'r' | 'h' | 'p' | 'n' | 'k' | 'x' | 'c' | 'b' | 'g' | 'u' | 'z' | 'a' | 'f' | 't';
 export type AgentWaitKind = 'agent_edit' | 'agent_price' | 'agent_code';
 
 export interface PressAnswer {
@@ -112,6 +113,8 @@ const DECIDE_WORDS: Record<DecideRefusal, string> = {
   auto_pressed: STOP_AUTO_WORDS.pressed,
   auto_sending: STOP_AUTO_WORDS.sending,
   auto_sent: STOP_AUTO_WORDS.sent,
+  // The figure priced again at the press moved (spec §1.3): /admin/tarif or the avia rate changed since the draft.
+  estimate_moved: 'Narx jadvali o‘zgardi — bu narx eskirdi, javob yuborilmadi. «✏️ O‘zgartirish» bilan to‘g‘ri narxni yozing yoki mijozga o‘zingiz javob bering.',
   empty: "Javob bo'sh.",
 };
 
@@ -292,6 +295,32 @@ export async function agentPress(staffId: string, op: AgentOp, id: string, diges
       if (!r.ok) return { toast: AUTO_FEEDBACK_WORDS[r.code].slice(0, 190) };
       return r.disarmed ? { toast: AUTO_BAD_DISARMED_TOAST } : { toast: AUTO_BAD_TOAST };
     }
+    case 't':
+      return tariffPress(actor, id, digest);
+  }
+}
+
+/** «✅ Tarif to'g'ri»'s answers (spec SPEC-P1-v2 §1.6, tariff-watch `confirmTariff`). */
+export const TARIFF_CONFIRM_WORDS: Record<TariffConfirmRefusal | 'ok' | 'not_yours', string> = {
+  ok: '✅ Xitoy tarifi tasdiqlandi — narxli javoblar yana o‘zi ketishi mumkin',
+  not_yours: 'Bu xabar sizga emas.',
+  not_ready: 'Server hali yangilanmagan — keyinroq bosing.',
+  forbidden: 'Bu tugmani faqat AI sotuvchi akkaunti egasi bosadi.',
+  tariff_changed: 'Tarif xabardan keyin o‘zgardi — «/admin/tarif»ni qayta ko‘rib, «Suhbatlar → AI sotuvchi» sahifasida tasdiqlang.',
+};
+
+/**
+ * «✅ Tarif to'g'ri» on the 14-day notice: the id is the holder the notice went to, the digest the stamp of the
+ * China column it was sent with — a press from another chat, or on a column written since, confirms nothing.
+ */
+async function tariffPress(actor: { id: string; roles: readonly string[] }, holderId: string, stamp: string | undefined): Promise<PressAnswer> {
+  if (actor.id !== holderId || !stamp) return { toast: TARIFF_CONFIRM_WORDS.not_yours };
+  try {
+    await confirmTariff(actor, stamp, { actorId: actor.id });
+    return { toast: TARIFF_CONFIRM_WORDS.ok };
+  } catch (err) {
+    if (err instanceof TariffConfirmError) return { toast: TARIFF_CONFIRM_WORDS[err.code].slice(0, 190) };
+    throw err;
   }
 }
 

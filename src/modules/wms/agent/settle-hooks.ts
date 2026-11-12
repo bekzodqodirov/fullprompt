@@ -12,14 +12,14 @@ export async function onAgentOutboxSettled(outboxId: string): Promise<void> {
 }
 
 /**
- * A price reply's figure still stands — its request not superseded by a
- * recalculation (his 6 b: a 💵 has no offer row), or its offer released and
- * not superseded; null when the draft carries neither. False cancels the row
- * as `offer_gone` at its next step.
+ * A reply's figure still stands — a 💵's request not superseded by a recalculation (his 6 b: a 💵 has no offer
+ * row), or its offer released and not superseded; a machine estimate priced again on today's tariff and avia rate
+ * (spec SPEC-P1-v2 §1.3). null when the draft carries none. `offer_gone` or `estimate_moved` cancels the row at its
+ * next step, each in its own words. Never throws on a re-price (`draftOfferStands`).
  */
-export async function offerStandsFor(draftId: string): Promise<boolean | null> {
+export async function offerStandsFor(draftId: string, now: Date = new Date()): Promise<'stands' | 'offer_gone' | 'estimate_moved' | null> {
   const { draftOfferStands } = await import('./drafts');
-  return draftOfferStands(draftId);
+  return draftOfferStands(draftId, now);
 }
 
 /** Live drafts a forced off expired: each card loses its buttons and says why. */

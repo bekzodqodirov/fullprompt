@@ -356,6 +356,7 @@ describe('a Chinese place we have no warehouse in is priced from ours — the co
       aviaUsdPerKg: 17,
       kb: async () => [],
       chinaPlaces: async () => OURS,
+      priceArmed: false,
     };
     const out = await runTool('calc_checklist', { section: 'podklyuch', goods: [{ name: 'kurtka', quantity: 100, weight_kg: null }] }, env);
     expect(out.checklist).toMatchObject({ complete: true, fromOurWarehouse: true, facts: { fromCity: 'Dongguan' } });
@@ -399,7 +400,7 @@ describe('the two warehouse sentences, said in natural words and in every langua
   });
 
   it('the model is told both sentences in all six languages in the prompt (the tool: agent-answers.integration)', () => {
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
     for (const l of AGENT_LOCALES) {
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].condition);
       expect(head, l).toContain(WAREHOUSE_SENTENCES[l].factory);

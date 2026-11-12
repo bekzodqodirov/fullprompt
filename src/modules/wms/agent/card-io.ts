@@ -87,6 +87,8 @@ const CANCEL_WORDS: Record<string, string> = {
   taken_over: "suhbatni o'zingizga oldingiz (🙋)",
   // Since his 6 b the one way a figure stops standing is a VED recalculation of its request (drafts `draftOfferStands`).
   offer_gone: 'VED qayta hisobladi — bu narx endi amal qilmaydi',
+  // The machine's estimate priced again at the send gave another figure, or could not be priced (drafts `draftOfferStands`, §1.3).
+  estimate_moved: 'narx jadvali o‘zgardi — bu narx yuborilmadi',
   // The web cancel's own lastError (web-thread.ts) — keyed by the constant, so
   // a reworded value still has its word and never prints raw.
   [CANCELLED_BY_HOLDER]: 'o‘zingiz qaytarib oldingiz',

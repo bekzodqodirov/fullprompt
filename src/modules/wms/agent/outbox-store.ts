@@ -345,7 +345,7 @@ export async function sendFactsFor(row: AgentOutboxRow, now: Date, ctx: StoreCon
   const sendingEnabled = (await getSetting('tg_sending_enabled')) === true;
   const chat = await chatFacts(row, now);
   const substantive = await newerSubstantiveInbound(row);
-  const offerStands = await offerStandsFor(row.draftId);
+  const offerStands = await offerStandsFor(row.draftId, now);
   const average = config?.startedAt ? await ownAverage(row.managerUserId, config.startedAt) : 0;
   // His caps, read at THIS tick like every other fact (spec §5.2) — the listener's copy of the number the ✅ uses.
   const caps = await readSendCaps();

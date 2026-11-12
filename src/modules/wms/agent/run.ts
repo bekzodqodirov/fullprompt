@@ -23,7 +23,8 @@ import { addsALoadIn, belowTruckMinimumFacts, ourChinaPlaces, runTool, TOOL_SPEC
 import { namedOrigins } from './origin';
 import { draftWorthy, mentionsRail, RAIL_OWNER_QUESTION } from './worthy';
 import { draftFromRun, writeDraft, writeNotice, type ComposedAction } from './drafts';
-import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion } from './auto-send';
+import { autoPlanFor, autoShapeOf, autoStepDownOnBotQuestion, priceActArmed } from './auto-send';
+import { namesForeignPlace } from './destination';
 import {
   airMentionIn,
   extractNumbers,
@@ -185,6 +186,8 @@ export async function runLoop(input: {
   now: () => Date;
   /** A run the OWNER's side started (a hand-back): what it is for, after the chat. */
   instruction?: string;
+  /** His price act (spec §1.2, `priceActArmed`), read ONCE for the run — the head and the avia tool say the same. */
+  priceArmed: boolean;
 }): Promise<LoopResult> {
   const { ctx } = input;
   const started = input.now().getTime();
@@ -207,12 +210,17 @@ export async function runLoop(input: {
       kbSearch({ clientIds: ctx.identity.cargoAllowed ? ctx.identity.codes.map((c) => c.id) : [], leadId: ctx.identity.leadId }, q),
     // Read once per run, and only when a tool asks where the cargo starts.
     chinaPlaces: () => (places ??= ourChinaPlaces()),
+    priceArmed: input.priceArmed,
   };
   for (let round = 0; round < AGENT_LIMITS.maxToolRounds; round++) {
     if (input.now().getTime() - started > LOOP_WALL_MS) throw new Error('wall_clock');
     const res = await input.callModel({
       model: STAFF_MODEL,
-      systemCached: stableHead({ styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null, facts: input.facts }),
+      systemCached: stableHead({
+        styleGuide: input.config.styleApprovedAt ? input.config.styleGuide : null,
+        facts: input.facts,
+        priceArmed: input.priceArmed,
+      }),
       system: runTail({ day: input.day, canary: input.canary }),
       messages,
       tools: TOOL_SPECS,
@@ -465,7 +473,9 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
     const facts = await generalFacts();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
     const day = tashkentDay(t);
-    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now });
+    // His price act, read once: the head, the avia tool and the avia rule below agree for the whole run (§1.2).
+    const act = { priceArmed: await priceActArmed() };
+    const loop = await runLoop({ ctx, config, facts, day, canary, callModel, now, priceArmed: act.priceArmed });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -473,7 +483,7 @@ export async function handleInbound(job: AgentInboundJob, deps: RunDeps = {}): P
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };
@@ -605,6 +615,12 @@ export function memoryFor(ctx: AgentContext, loop: LoopResult, facts: KbHit[], c
     // card says so — a chat the words misread costs him one look, never a
     // flight sent to a truck's warehouse in silence.
     aviaMentioned: road !== 'air' && aviaSpokenOf(ctx, road),
+    // Every figure this run QUOTED (spec §1.3): what the send step, his ✅ and the machine's press price again with
+    // the same function (estimate.ts `reprice`). Never in a rail chat — there no machine figure goes out at all.
+    estimates: rail ? [] : loop.outcomes.flatMap((o) => (o.priced ? [o.priced] : [])),
+    // The table is China → Tashkent (spec §1.8): the customer named another city or region anywhere in what he
+    // wrote — the window and the burst — and an estimate reply then waits for his ✅ (a gate fact, never a block).
+    foreignDestination: namesForeignPlace([...ctx.messages.filter((m) => m.direction === 'in'), ...ctx.burst].map((m) => m.body)),
     // What this run quoted, for the next run's `lastQuote` (review R1).
     quotedRoad: rail ? null : quotedRoadOf(loop),
     quotedAir: rail ? null : (loop.outcomes.find((o) => o.air)?.air ?? null),
@@ -793,14 +809,31 @@ export function withAviaRule(
   c: ComposeReply,
   loop: Pick<LoopResult, 'tools' | 'outcomes'>,
   ctx: Pick<AgentContext, 'burst' | 'messages' | 'measures' | 'lastQuote'>,
+  act: { priceArmed: boolean },
 ): ComposeReply {
   // A rail chat's question is the rail one — unless the CHAT chose the flight (#1540: «Poyezd kerak emas,
   // avia bilan»). Not this run's own avia figure: in a rail chat it never goes out (`memoryFor`).
   if (railChat(ctx, c) && chatRoadOf(ctx, { tools: [], outcomes: [] }) !== 'air') return c;
   const quoted = loop.outcomes.find((o) => o.air)?.air;
-  if (quoted) return withAviaQuestion(c, quoted);
-  if (c.replyNeeded && chatRoadOf(ctx, loop) === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  // His price act armed (spec SPEC-P1-v2 §1.2): the flight's PRICE may go by itself — a quote alone asks him
+  // nothing. Off, every quoted flight asks him with its cargo, as it always has.
+  if (quoted && !act.priceArmed) return withAviaQuestion(c, quoted);
+  const road = chatRoadOf(ctx, loop);
+  // The customer's own words asking where to send it — kept as it was (the burst, never the model's question).
+  if (c.replyNeeded && road === 'air' && asksWhereToSend(ctx.burst)) return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  // …and, armed only, a REPLY in a flight's chat that names a warehouse, a sending verb or an address: «Ivu
+  // omborimizga yuboring» anchors on none of our phones, Han pieces or house numbers (`statesChinaAddress`), and
+  // would send a flight's cargo to a truck's warehouse. The address is his, always (§18.5).
+  if (act.priceArmed && c.replyNeeded && (road === 'air' || road === 'both') && talksDelivery(c.replyText)) {
+    return withAviaQuestion(c, aviaCargoOf(loop, ctx));
+  }
+  // A question the model raised itself is never cleared here — its own `needs_owner` stands.
   return c;
+}
+
+/** The reply names a warehouse, a sending verb or an address word — the rule's own lists, applied to OUR words (§1.2). */
+function talksDelivery(replyText: string): boolean {
+  return WAREHOUSE_WORD.test(replyText) || SEND_VERB.test(replyText) || ADDRESS_WORD.test(replyText);
 }
 
 /**
@@ -1242,7 +1275,8 @@ export async function runOwnerTriggered(
   try {
     const facts = await generalFacts();
     const canary = `gsr-${randomBytes(4).toString('hex')}`;
-    const loop = await runLoop({ ctx, config, facts, day: tashkentDay(t), canary, callModel, now, instruction: input.instruction });
+    const act = { priceArmed: await priceActArmed() };
+    const loop = await runLoop({ ctx, config, facts, day: tashkentDay(t), canary, callModel, now, instruction: input.instruction, priceArmed: act.priceArmed });
     settle = {
       inputTokens: loop.usage.inputTokens,
       outputTokens: loop.usage.outputTokens,
@@ -1250,7 +1284,7 @@ export async function runOwnerTriggered(
       cacheWriteTokens: loop.usage.cacheWriteTokens,
       toolCalls: loop.tools.map((x) => ({ name: x.name, ok: x.ok, text: x.text, estimate: x.estimate })),
     };
-    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx);
+    const drafted = withAviaRule(withRailRule(loop.compose, ctx), loop, ctx, act);
     if (!drafted.replyNeeded && !drafted.needsOwner) {
       settle = { ...settle, outcome: 'no_reply', error: null };
       return { outcome: 'no_reply' };

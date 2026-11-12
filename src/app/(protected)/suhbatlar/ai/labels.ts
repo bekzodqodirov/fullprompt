@@ -7,6 +7,7 @@ import type { DecideRefusal } from '@/modules/wms/agent/decide';
 import type { KbRefusal } from '@/modules/wms/agent/kb';
 import type { CancelRefusal } from '@/modules/wms/agent/web-thread';
 import type { RetireRefusal } from '@/modules/wms/agent/web-kb';
+import type { TariffConfirmRefusal } from '@/modules/wms/agent/tariff-watch';
 import type { ClearRefusal } from '@/modules/wms/crm/account-guard';
 import type { PauseKind } from '@/modules/wms/crm/telegram-guard';
 
@@ -42,6 +43,8 @@ export type AgentErrorCode =
   | CancelRefusal
   | RetireRefusal
   | PriceRefusal
+  // «✅ Tarif to'g'ri» (0146, tariff-watch `confirmTariff`).
+  | TariffConfirmRefusal
   // `superseded` as the press found it (decide `redraftNewest`) — web-actions `SUPERSEDED_ERROR`.
   | 'superseded_no_draft'
   | 'superseded_capped'
@@ -86,6 +89,7 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   auto_pressed: 'errors.auto_pressed',
   auto_sending: 'errors.auto_sending',
   auto_sent: 'errors.auto_sent',
+  estimate_moved: 'errors.estimate_moved',
   empty: 'errors.empty',
   // the config's writers
   not_ready: 'errors.not_ready',
@@ -96,6 +100,8 @@ export const ERROR_KEYS: Record<AgentErrorCode, string> = {
   owner_not_connected: 'errors.owner_not_connected',
   turn_off_first: 'errors.turn_off_first',
   bad_value: 'errors.bad_value',
+  // «✅ Tarif to'g'ri»: the column changed since the page was drawn (tariff-watch `confirmTariff`).
+  tariff_changed: 'errors.tariff_changed',
   // writeKbFact
   money: 'errors.money',
   money_context: 'errors.money_context',

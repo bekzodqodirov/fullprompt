@@ -1184,7 +1184,8 @@ describe('an approved 💵 whose request a VED recalculation replaced never goes
       status: 'sent',
     });
     const standing = await sendFactsFor(row, new Date(), ctx(own.account.id));
-    expect(standing.offerStands).toBe(true);
+    // A reason, never a boolean (0146, spec SPEC-P1-v2 §1.3): «stands», or why it does not.
+    expect(standing.offerStands).toBe('stands');
     const on = { agentOn: true, ownerUserId: own.userId, sendingEnabled: true } as const;
     // Nothing makes it WRONG — at most a wait (this file's agent has no start day, so the ramp holds it).
     expect(agentSendVerdict(row, { ...standing, ...on })).not.toMatchObject({ final: true });
@@ -1192,7 +1193,7 @@ describe('an approved 💵 whose request a VED recalculation replaced never goes
     // The VED presses «Qayta hisoblash»: a correction is a NEW request naming this one.
     await priceRequest(priced);
     const facts = await sendFactsFor(row, new Date(), ctx(own.account.id));
-    expect(facts.offerStands).toBe(false);
+    expect(facts.offerStands).toBe('offer_gone');
     const verdict = agentSendVerdict(row, { ...facts, ...on });
     expect(verdict).toEqual({ ok: false, final: true, reason: 'offer_gone' });
     await applyAgentOutcome(row, verdictOutcome(row, verdict)!, own.account);

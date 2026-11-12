@@ -7,6 +7,8 @@ import { AUTO_PER_DAY_MAX } from '@/modules/wms/agent/auto-send';
 import { agentRunning, mayRunAgent, readAgentConfig, type AgentConfig } from '@/modules/wms/agent/config';
 import { AGENT_LIMITS } from '@/modules/wms/agent/limits';
 import { readSendCaps, SEND_CAP_BOUNDS } from '@/modules/wms/agent/send-caps';
+import { SITE_TARIFF } from '@/modules/wms/agent/site-estimate';
+import { currentTariffFingerprint, tariffUnconfirmed } from '@/modules/wms/agent/tariff-watch';
 import { AGENT_PAGE } from '@/modules/wms/agent/web-door';
 import { cancellable } from '@/modules/wms/agent/web-thread';
 import {
@@ -47,6 +49,7 @@ import {
   RetireButton,
   SendCapsForm,
   SessionConfirm,
+  TariffConfirmButton,
   StyleApprove,
 } from './agent-ui';
 import {
@@ -405,6 +408,10 @@ async function SettingsSection({
     // Today's constants one migration behind 0146 (`ready` false: no form).
     readSendCaps(),
   ]);
+  // Asked only where 0146 has landed: one migration behind there is no ✅ to keep (the card is not drawn).
+  const tariff = caps.ready
+    ? { unconfirmed: await tariffUnconfirmed(new Date()), fingerprint: await currentTariffFingerprint() }
+    : { unconfirmed: true, fingerprint: '' };
   const pct = (rate: number | null) => (rate === null ? '—' : `${Math.round(rate * 100)} %`);
   const holder = actor.id === config.ownerUserId;
   const proposal = config.styleGuideProposed?.trim() ?? '';
@@ -539,6 +546,16 @@ async function SettingsSection({
             {t('capsNow', { day: caps.dayCap, hour: caps.hourCap })}
           </p>
           <SendCapsForm stored={caps.stored} editable={holder || superAdmin} />
+          {/* The China column he vouched for (0146, spec §1.6): estimate replies wait for his ✅ after it changes. */}
+          <div className="space-y-1 border-t border-line pt-2" data-testid="agent-tariff">
+            <p className="text-sm" data-testid="agent-tariff-state">
+              {tariff.unconfirmed
+                ? t('tariffUnconfirmed')
+                : t('tariffConfirmed', { when: caps.tariffConfirmedAt ? tashkentWhen(caps.tariffConfirmedAt) : '—' })}
+            </p>
+            <p className="text-xs text-ink-500">{t('tariffHint', { date: SITE_TARIFF.validThrough.split('-').reverse().join('.') })}</p>
+            {(holder || superAdmin) && <TariffConfirmButton seen={tariff.fingerprint} />}
+          </div>
         </section>
       )}
 

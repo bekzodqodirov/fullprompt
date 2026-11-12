@@ -107,6 +107,7 @@ describe('a purged chat takes every agent copy with it (review leak-9)', () => {
       AgentCapReached: "the day's cap — no customer in it",
       AgentForcedOff: 'the account switched itself off — no customer in it',
       TgAccountPaused: 'the account was limited — no customer in it',
+      AgentTariffNotice: 'the website table runs out and the China column is his to vouch for (0146, §1.6) — no customer in it',
     };
     const src = strip(readFileSync('src/modules/wms/agent/purge.ts', 'utf8'));
     const where = src.slice(src.indexOf('function chatCardsWhere'), src.indexOf('export async function purgeAgentChat'));

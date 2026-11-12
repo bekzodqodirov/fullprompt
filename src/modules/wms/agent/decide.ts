@@ -27,16 +27,18 @@ import { listenerIsCurrent, readGuard } from '../crm/account-guard';
 import { afterPressOf, autoChatTakenInTx, autoPressStandsInTx, machinePressedReply, settleAutoPressInTx, stopAutoForPerson, type AutoPressLoss } from './auto-send';
 import { cardDigest, digestBody } from './card';
 import { LANDING_CLAIM, renderDraftCardFull, type SupersededStale } from './card-io';
-import { agentAutoReady, agentRunning, readAgentConfig } from './config';
+import { agentAutoReady, agentFullP1Ready, agentRunning, readAgentConfig } from './config';
 import { bindMoved, chatIdentity } from './context';
 import { zoneForOrigin } from './origin';
 import { ownerPolicyFor, policyFor } from './policy-input';
 import { AFTER_AUTO, keptFileSql } from './outbox-store';
 import { CANCELLED_BY_HOLDER } from './web-thread';
 import { AGENT_LIMITS } from './limits';
+import { estimatesStand } from './estimate-check';
 import { asksAnew, releaseAt } from './send-step';
 import { sendWindowFor } from './send-window';
 import { readSendCaps } from './send-caps';
+import { confirmTariffInTx } from './tariff-watch';
 import { capReached, dayRunCounts, OUTBOX_GOING, sendsToday } from './today';
 import { HUMAN_TAKEOVER_HOURS } from './limits';
 import { isFirstAsk, JOB_AGENT_INBOUND, nextRedraftAttempt, type AgentInboundJob } from './queues';
@@ -112,6 +114,12 @@ export type DecideRefusal =
   | 'auto_pressed'
   | 'auto_sending'
   | 'auto_sent'
+  /**
+   * The machine's estimate priced again at this press gives another figure, or could not be priced (spec
+   * SPEC-P1-v2 §1.3): a tariff edit or a new avia rate since the draft. Nothing is queued — the send step would
+   * only cancel it. His own words (✏️) carry his own figure and are never asked.
+   */
+  | 'estimate_moved'
   | 'empty';
 
 export type DecideResult =
@@ -811,6 +819,19 @@ async function afterMachinePress(
 }
 
 /**
+ * The moment his ✅ vouches for the China column (spec SPEC-P1-v2 §1.6): the draft quoted a TRUCK figure (the column
+ * prices only the truck — the flight is his rate) that was priced again at this press and stands, and 0146 has
+ * landed. The run's own start: the figure was priced on the column as it stood then, and a write during the run
+ * must stay unconfirmed. null: nothing to vouch for.
+ */
+async function tariffVouchOf(d: Pick<typeof agentDrafts.$inferSelect, 'runId'>, estimates: unknown): Promise<Date | null> {
+  if (!Array.isArray(estimates) || !estimates.some((e) => (e as { tool?: unknown })?.tool === 'yolkira_estimate')) return null;
+  if (!d.runId || !(await agentFullP1Ready())) return null;
+  const [run] = await db.select({ createdAt: agentRuns.createdAt }).from(agentRuns).where(eq(agentRuns.id, d.runId));
+  return run?.createdAt ?? null;
+}
+
+/**
  * `auto`: «o'zi yuborish»'s machine press (§18.3, auto-send `pressDueAutos`) —
  * the same ✅, stricter: only 'send', only a strictly 'pending' machine reply
  * (never 'editing', never his words, never a price), only with the digest the
@@ -1018,6 +1039,15 @@ export async function decideDraft(
     const asked = await anchorSentAt(d);
     if (asked && sendAt.getTime() - asked.getTime() > AGENT_LIMITS.anchorMaxAgeMs) return { ok: false, code: 'window_closed' };
   }
+  // The machine's figures priced again at THIS press (spec §1.3) — his ✅ and the machine's alike, before anything
+  // is landed or queued: asked at one end only, the door queued a reply the send step was certain to cancel (the
+  // 💵 precedent). His own words (`finalBody`) are his own figure.
+  const memory = p.memory;
+  const standing = d.finalBody === null ? await estimatesStand(memory?.estimates, now) : null;
+  if (standing === 'estimate_moved') return { ok: false, code: 'estimate_moved' };
+  // A PERSON's ✅ on a truck figure priced on today's China column vouches for that column (§1.6
+  // `tariff_unconfirmed`) — as of the moment its run began, so a tariff write during the run stays unconfirmed.
+  const vouchesTariff = !opts.auto && standing === 'stands' ? await tariffVouchOf(d, memory?.estimates) : null;
   if ((await budgetLeft(d.managerUserId, config!.startedAt, now)) <= 0) return { ok: false, code: 'budget_spent' };
 
   // The calculation first — the reply promises it (regression-4).
@@ -1108,6 +1138,7 @@ export async function decideDraft(
       before: { status: d.status },
       after: { status: 'approved', edited: d.finalBody !== null, sendAt: sendAt.toISOString(), requestId, ...(opts.auto ? { via: 'auto' } : {}) },
     });
+    if (vouchesTariff) await confirmTariffInTx(tx, vouchesTariff, actor.id);
     if (opts.auto && !(await settleAutoPressInTx(tx, draftId, opts.autoAt ?? now))) throw new AutoPressLost('auto_stopped');
     return true;
   }).catch((err: unknown) => {

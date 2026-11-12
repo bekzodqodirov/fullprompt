@@ -158,6 +158,7 @@ const env = (ctx: AgentContext): ToolEnv => ({
   aviaUsdPerKg: 17,
   kb: async () => [],
   chinaPlaces: async () => OURS,
+  priceArmed: false,
 });
 
 const compose = (over: Partial<ComposeReply> = {}): ComposeReply => ({
@@ -205,7 +206,7 @@ describe('the run carries it from the tool to the reply’s check and to the lan
 
 describe('written down for the model and in the knowledge', () => {
   it('the prompt says it, with the sentences the policy checks', () => {
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
     expect(head).toContain(WAREHOUSE_SENTENCES.uz.condition);
     expect(head).toContain(WAREHOUSE_SENTENCES.uz.factory);
   });

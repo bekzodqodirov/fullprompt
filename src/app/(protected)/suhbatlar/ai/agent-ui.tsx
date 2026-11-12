@@ -21,6 +21,7 @@ import {
   agentRememberAction,
   agentRetireFactAction,
   agentSendCapsAction,
+  agentConfirmTariffAction,
   agentSessionAction,
   type AgentActionResult,
 } from '@/modules/wms/agent/web-actions';
@@ -816,6 +817,29 @@ export function SendCapsForm({
           {t('save')}
         </button>
       )}
+      <Feedback error={error} note={null} />
+    </div>
+  );
+}
+
+/**
+ * «✅ Tarif to'g'ri» (0146, spec §1.6) — vouches for the China column this page was drawn with (`seen`, its stamp):
+ * a column written since is refused in words. The bot's 14-day notice carries the same press.
+ */
+export function TariffConfirmButton({ seen }: { seen: string }) {
+  const t = useTranslations('agentAi');
+  const { pending, error, run } = useAction();
+  return (
+    <div className="space-y-1">
+      <button
+        type="button"
+        className="btn-secondary"
+        disabled={pending || seen === ''}
+        data-testid="agent-tariff-confirm"
+        onClick={() => run(() => agentConfirmTariffAction(seen))}
+      >
+        {t('tariffConfirm')}
+      </button>
       <Feedback error={error} note={null} />
     </div>
   );

@@ -6670,6 +6670,8 @@
       "auto_pressed": "Too late — the AI approved the reply itself. To stop it, press «Cancel».",
       "auto_sending": "Too late — the reply is being sent.",
       "auto_sent": "Too late — the reply was sent.",
+      "estimate_moved": "The tariff changed — this price is out of date and the reply was not sent. Write the right price yourself.",
+      "tariff_changed": "The tariff changed after this page was opened — reload the page and check again.",
       "empty": "The text is empty.",
       "not_ready": "The database is not updated yet.",
       "forbidden": "No access.",
@@ -6767,7 +6769,11 @@
     "capsHint": "How many messages the AI may send in a day and in an hour. Empty — the defaults: {day} a day, {hour} an hour. At most {dayMax} a day and {hourMax} an hour — the CRM's own protection limit. The gradual ramp of the first 14 days and the gap within one chat do not change.",
     "capsDay": "At most a day",
     "capsHour": "At most an hour",
-    "capsNow": "Now: {day} a day, {hour} an hour"
+    "capsNow": "Now: {day} a day, {hour} an hour",
+    "tariffConfirmed": "China tariff confirmed: {when}. Priced replies may go by themselves.",
+    "tariffUnconfirmed": "The China tariff changed or is not confirmed yet — the next priced reply waits for your ✅.",
+    "tariffHint": "The truck price is checked against the China column on «/admin/tarif»; the website table runs until {date}. Check the column and confirm it — or press ✅ on one priced card yourself.",
+    "tariffConfirm": "✅ Tariff is right"
   },
   "invoys": {
     "title": "Goods under one HS code",

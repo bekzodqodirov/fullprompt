@@ -163,7 +163,9 @@ describe('agentSendVerdict', () => {
     [{ conversationMuted: true }, 'muted'],
     [{ ruleExcluded: true }, 'excluded'],
     [{ identityChanged: true }, 'identity_changed'],
-    [{ offerStands: false }, 'offer_gone'],
+    [{ offerStands: 'offer_gone' }, 'offer_gone'],
+    // The machine's estimate priced again at the step moved (spec SPEC-P1-v2 §1.3).
+    [{ offerStands: 'estimate_moved' }, 'estimate_moved'],
   ] as const)('refuses for good: %o → %s', (patch, reason) => {
     expect(agentSendVerdict(row, { ...facts, ...patch })).toEqual({ ok: false, final: true, reason });
   });

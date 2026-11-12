@@ -7,15 +7,15 @@ import { balanceMessages, cargoMessages } from '../client-cabinet/bot-text';
 import { cargoOverview, debtSummary } from '../client-cabinet/service';
 import { FIELD_LABEL, missingFields, type CalcFacts, type CalcGoodsFact, type CalcSection } from '../calc/intake';
 import { parseManualFacts } from '../calc/intake-manual';
-import { freightFor } from '../calc/pricing';
 import { tariffFor } from '../calc/tariff-read';
+import type { StoredEstimate } from './auto-money';
 import { AVIA_RATE_LABEL } from './config';
+import { aviaEstimate, TRUCK_ZONE, truckEstimate, YOLKIRA_GUARDS } from './estimate';
 import { AGENT_LIMITS } from './limits';
 import { AGENT_LOCALES } from './locale';
 import { namedOrigin, placesOf, quoteOrigin, type QuoteOrigin } from './origin';
 import { customerSources, extractNumbers, factSources, type NumberSource } from './numbers';
 import { warehouseSentencesText } from './policy';
-import { siteEstimate } from './site-estimate';
 import type { AgentContext, MeasureCandidate } from './context';
 import type { KbHit } from './kb';
 
@@ -43,6 +43,12 @@ export interface ToolEnv {
   kb: (query: string) => Promise<KbHit[]>;
   /** The places our China warehouses stand in (`ourChinaPlaces`) — asked only by a tool that needs the origin. */
   chinaPlaces: () => Promise<ReadonlySet<string>>;
+  /**
+   * His price act is armed (spec SPEC-P1-v2 §1.2: `price` among the auto kinds AND the layer armed — auto-send
+   * `priceActArmed`): the avia tool then tells the model to quote the price alone, and to ask HIM only when the
+   * address is asked. Off, its words are today's, byte for byte. Read once per run.
+   */
+  priceArmed: boolean;
 }
 
 /**
@@ -80,6 +86,12 @@ export interface ToolOutcome {
   factTexts?: string[];
   /** The website and /admin/tarif disagree for this load (money-3). */
   tariffMismatch?: boolean;
+  /**
+   * The figure this call QUOTED, as the draft's memory keeps it (spec §1.3 `memory.estimates`): what the send
+   * step, his ✅ and the machine's press price again with the same function (estimate.ts `reprice`). Set by
+   * the two estimate tools on a priced answer only — never on `below_minimum` or a refusal.
+   */
+  priced?: StoredEstimate;
   checklist?: ChecklistState;
   volume?: MeasureCandidate;
 }
@@ -384,13 +396,10 @@ export async function runTool(name: string, input: Record<string, unknown>, env:
 }
 
 /**
- * His Q7 ⭐: above these, or at an impossible density, the website's per-m³
- * figure is not a quote — the job goes to hisoblatish. The SMALL end is not
- * here any more: it is the company's own minimum (`AGENT_LIMITS.minShipment`,
- * his 2026-10-24 «eng kamida 1 kub yoki 100 kg»), which is not a reason to
- * calculate but a «we do not carry this».
+ * His Q7 ⭐ — the size guards and the $50 floor — live with the one arithmetic now (estimate.ts, spec §1.3);
+ * re-exported for the readers that always found them here.
  */
-export const YOLKIRA_GUARDS = { maxM3: 100, maxKg: 20_000, minTotalUsd: 50, minDensity: 1 } as const;
+export { YOLKIRA_GUARDS };
 
 /**
  * Cargo below BOTH halves of the truck's minimum (his «eng kamida 1 kub yoki
@@ -449,29 +458,21 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
   if (origin === 'unknown') return refuse("qayerdan jo'natilishi aytilmagan — so'ra");
   // China, or a Chinese place we do not stand in, is priced on the same column FROM our warehouses.
   const fromOurWarehouse = origin === 'our_warehouse';
-  const g = YOLKIRA_GUARDS;
-  if (!(kg > 0) || !(m3 > 0) || m3 > g.maxM3 || kg > g.maxKg || kg / m3 < g.minDensity) {
-    return refuse('juda kichik yoki juda katta yuk');
+  // ONE arithmetic for the quote and for the re-price at every send (estimate.ts, spec §1.3): the website's
+  // figure cross-checked against his table while the website's table is valid, his table after it (§1.6).
+  const priced = truckEstimate({ kg, m3, day: env.day, bands: await tariffFor(env.day) });
+  if (!priced.ok) {
+    if (priced.reason === 'size') return refuse('juda kichik yoki juda katta yuk');
+    if (priced.reason === 'min_total') return refuse('$50 dan kichik');
+    if (priced.reason === 'tariff_mismatch') return { ...refuse('sayt va /admin/tarif farq qiladi'), tariffMismatch: true };
+    return refuse(priced.detail ?? priced.reason);
   }
-  const site = siteEstimate({ mode: 'truck', kg, m3, day: env.day });
-  if (!site.ok) return refuse(site.reason);
-  const e = site.estimate;
-  if (e.total < g.minTotalUsd) return refuse("$50 dan kichik");
-
-  // The website's figure must still be the list price the VED would charge
-  // (money-3): the table he edits on /admin/tarif, today, China column.
-  const list = freightFor(await tariffFor(env.day), { zone: 'cn', weightKg: kg, volumeM3: m3 });
-  const same =
-    list.ok &&
-    Math.abs(list.band.priceUsd - e.rate) < 0.005 &&
-    list.band.perKg === (e.unit === 'kg');
-  if (!same) {
-    return { ...refuse("sayt va /admin/tarif farq qiladi"), tariffMismatch: true };
-  }
+  const e = priced.figure;
+  const site = e.source === 'site';
   const text =
-    `Taxminiy yo'lkira (sayt kalkulyatori): ${e.total} $ — ${e.unit === 'kg' ? `${e.rate} $/kg` : `${e.rate} $/kub`}, ` +
-    `zichlik ${e.densityKgM3 ?? '—'} kg/kub, ${m3} kub, ${kg} kg; muddat ${e.days[0]}-${e.days[1]} kun (va'da emas). ` +
-    `Boj va QQS bu narxga KIRMAYDI.` +
+    `Taxminiy yo'lkira (${site ? 'sayt kalkulyatori' : '/admin/tarif, Xitoy ustuni'}): ${e.total} $ — ${e.unit === 'kg' ? `${e.rate} $/kg` : `${e.rate} $/kub`}, ` +
+    `zichlik ${e.densityKgM3 ?? '—'} kg/kub, ${m3} kub, ${kg} kg; Toshkentgacha; muddat ${e.days[0]}-${e.days[1]} kun (va'da emas). ` +
+    `Boj va QQS bu narxga KIRMAYDI. Narxni aytsang, shu jumlada yukning kubi va kg ini ham, «Toshkentgacha»ni ham ayt.` +
     (fromOurWarehouse
       ? ` Mijoz faqat Xitoyni yoki omborimiz yo'q joyni aytdi — bu narx Xitoydagi OMBORIMIZDAN. Narxni aytsang, mijoz tilida ` +
         `ikkala jumla ham bo'lsin — har tilda aynan shu: ${warehouseSentencesText()}.`
@@ -481,14 +482,24 @@ async function yolkira(input: Record<string, unknown>, env: ToolEnv): Promise<To
     text,
     estimate: true,
     ...(fromOurWarehouse ? { fromOurWarehouse: true } : {}),
+    priced: { tool: 'yolkira_estimate', kg, m3, zone: TRUCK_ZONE, day: env.day, total: e.total, rate: e.rate, unit: e.unit },
     // Each source names this tool (spec §1.1): the auto layer asks which tool vouched for a money line.
     sources: [
       // Dollars, and which is the load's price and which the price of one unit (K16, K21).
-      { value: e.total, kind: 'money', label: "yo'lkira (sayt kalkulyatori)", origin: 'tool', tool: 'yolkira_estimate', currency: 'USD', role: 'total' },
-      { value: e.rate, kind: 'money', label: "yo'lkira tarifi (sayt)", origin: 'tool', tool: 'yolkira_estimate', currency: 'USD', role: 'rate' },
-      // The website's days are the TRUCK's — never a flight's figure.
-      { value: e.days[0], kind: 'duration', label: 'sayt muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
-      { value: e.days[1], kind: 'duration', label: 'sayt muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
+      {
+        value: e.total,
+        kind: 'money',
+        label: site ? "yo'lkira (sayt kalkulyatori)" : "yo'lkira (/admin/tarif)",
+        origin: 'tool',
+        tool: 'yolkira_estimate',
+        currency: 'USD',
+        role: 'total',
+      },
+      { value: e.rate, kind: 'money', label: site ? "yo'lkira tarifi (sayt)" : "yo'lkira tarifi (/admin/tarif)", origin: 'tool', tool: 'yolkira_estimate', currency: 'USD', role: 'rate' },
+      // The truck's days — the website's while its table is valid, the company's rule after it (§1.6) — never a
+      // flight's figure.
+      { value: e.days[0], kind: 'duration', label: site ? 'sayt muddati' : 'avto muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
+      { value: e.days[1], kind: 'duration', label: site ? 'sayt muddati' : 'avto muddati', origin: 'tool', tool: 'yolkira_estimate', mode: 'road' },
       { value: m3, kind: 'measure', label: `mijoz ${volume.messageRef}`, origin: 'tool', tool: 'yolkira_estimate' },
       { value: kg, kind: 'measure', label: `mijoz ${weight.messageRef}`, origin: 'tool', tool: 'yolkira_estimate' },
       ...(e.densityKgM3
@@ -533,29 +544,38 @@ async function avia(input: Record<string, unknown>, env: ToolEnv): Promise<ToolO
   if (stale) return { ok: false, text: stale, sources: [] };
   const kg = weight.value;
   const { minKg, daysMin, daysMax } = AGENT_LIMITS.avia;
-  if (!(kg >= minKg)) {
+  // ONE arithmetic for the quote and the re-price at every send (estimate.ts, spec §1.3).
+  const priced = aviaEstimate({ kg, rate });
+  if (!priced.ok) {
     return {
       ok: true,
       text: `below_minimum: avia eng kamida ${minKg} kg dan qabul qilinadi. Narx AYTMA — mijozga uning tilida shuni ayt.`,
       sources: [{ value: minKg, kind: 'measure', label: `avia minimal yuk (${minKg} kg)`, origin: 'tool' }],
     };
   }
-  const total = Math.round(kg * rate * 100) / 100;
+  const total = priced.total;
   // His fourth set «2» («yukini infosini menga bersang men adres beraman
   // telegramda sorasin») replaces K32's condition for the flight: the flight's
   // address is his to give, so no warehouse sentence is said and no address is
   // given — the run asks HIM, with the cargo (`air`). He said nothing about
   // where avia cargo is received, so nothing here claims it (review D7).
+  // His price act armed (spec §1.2): the PRICE may go by itself, the address stays his — the model quotes the
+  // price alone and asks him only when the address is asked. Off, the words are today's, byte for byte.
   const origin = namedOrigin(inboundText(ctx))?.place ?? null;
+  const ask = `owner_question="Avia: <tovar>, ${kg} kg, <qayerdan> — manzilni bering" — tovar va qayerdanni mijoz xabaridan yoz.`;
   return {
     ok: true,
     text:
       `Taxminiy avia yo'lkira: ${total} $ (${kg} kg × ${rate} $/kg). Yetib borishi taxminan ${daysMin}-${daysMax} kun, ` +
       `reys bo'lsa ${daysMin} kun — va'da emas. Boj va QQS bu narxga KIRMAYDI. ` +
-      `Avia uchun manzilni AI aytmaydi — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
-      `needs_owner=true, owner_question="Avia: <tovar>, ${kg} kg, <qayerdan> — manzilni bering" — tovar va qayerdanni mijoz xabaridan yoz.`,
+      (env.priceArmed
+        ? `Faqat narxni ayt: avia manzilini AYTMA, bilimdagi ombor manzilini ham, omborga yuborishni ham aytma — manzilni Bekzod beradi. ` +
+          `Mijoz manzilni yoki qayerga yuborishni so'rasa — needs_owner=true, ${ask}`
+        : `Avia uchun manzilni AI aytmaydi — avia manzilini AYTMA, bilimdagi ombor manzilini ham: manzilni Bekzod beradi. ` +
+          `needs_owner=true, ${ask}`),
     estimate: true,
     air: { kg, origin },
+    priced: { tool: 'avia_estimate', kg, m3: null, zone: null, day: env.day, total, rate: priced.rate, unit: 'kg' },
     // Each source names this tool (spec §1.1), as the truck's do.
     sources: [
       { value: total, kind: 'money', label: 'avia (tarif × kg)', origin: 'tool', tool: 'avia_estimate', currency: 'USD', role: 'total' },

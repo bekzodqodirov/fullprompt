@@ -6670,6 +6670,8 @@
       "auto_pressed": "Kech — AI javobni o‘zi tasdiqladi. Ketmasin desangiz, «Bekor qilish»ni bosing.",
       "auto_sending": "Kech — javob yuborilmoqda.",
       "auto_sent": "Kech — javob yuborildi.",
+      "estimate_moved": "Narx jadvali o‘zgardi — bu narx eskirdi, javob yuborilmadi. To‘g‘ri narxni o‘zingiz yozing.",
+      "tariff_changed": "Tarif sahifa ochilgandan keyin o‘zgardi — sahifani yangilab, qayta tekshiring.",
       "empty": "Matn bo‘sh.",
       "not_ready": "Baza hali yangilanmagan.",
       "forbidden": "Ruxsat yo‘q.",
@@ -6767,7 +6769,11 @@
     "capsHint": "AI bir kunda va bir soatda nechta xabar yuborishi mumkin. Bo‘sh — standart: kuniga {day}, soatiga {hour}. Ko‘pi bilan kuniga {dayMax}, soatiga {hourMax} — CRM’ning o‘z himoya chegarasi. Dastlabki 14 kunlik bosqichma-bosqich o‘sish va bitta chatdagi oraliq o‘zgarmaydi.",
     "capsDay": "Kuniga ko‘pi bilan",
     "capsHour": "Soatiga ko‘pi bilan",
-    "capsNow": "Hozir: kuniga {day}, soatiga {hour}"
+    "capsNow": "Hozir: kuniga {day}, soatiga {hour}",
+    "tariffConfirmed": "Xitoy tarifi tasdiqlangan: {when}. Narxli javoblar o‘zi ketishi mumkin.",
+    "tariffUnconfirmed": "Xitoy tarifi o‘zgargan yoki hali tasdiqlanmagan — keyingi narxli javob sizning ✅ingizni kutadi.",
+    "tariffHint": "Mashina yo‘lkirasi «/admin/tarif»dagi Xitoy ustuniga qarab tekshiriladi; saytdagi jadval {date} gacha. Ustunni tekshirib, to‘g‘ri bo‘lsa tasdiqlang — yoki bitta narxli kartaga o‘zingiz ✅ bosing.",
+    "tariffConfirm": "✅ Tarif to‘g‘ri"
   },
   "invoys": {
     "title": "Bir xil TNVED kodli tovarlar",

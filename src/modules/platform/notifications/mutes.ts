@@ -337,6 +337,8 @@ export const UNMUTABLE_TYPES = [
   'AgentStranger',
   'TgAccountPaused',
   'AgentForcedOff',
+  // The website table's 14-day notice (0146, spec SPEC-P1-v2 §1.6): once per table, and its «✅ Tarif to'g'ri».
+  'AgentTariffNotice',
 ] as const;
 
 export type UnmutableType = (typeof UNMUTABLE_TYPES)[number];

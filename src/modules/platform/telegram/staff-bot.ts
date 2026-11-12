@@ -391,18 +391,20 @@ export type BotCallback =
   /**
    * The AI sotuvchi's buttons (0138, docs/AI-SOTUVCHI.md §17.7) — ONE grammar
    * `ag:<op>:<uuid>[:<digest>]`. The id is a draft (s e r h g u z a f), a
-   * calculation request (p) or a tray rule (n k x c b); the digest rides only
-   * on ✅ and names what the card SHOWED, so a press on a card that has since
-   * changed is refused (leak-3). `ag:` collides with nothing: `a:` is
+   * calculation request (p), a tray rule (n k x c b) or the agent's holder (t);
+   * the digest rides on ✅ and names what the card SHOWED, so a press on a card
+   * that has since changed is refused (leak-3) — on «✅ Tarif to'g'ri» (t) it is
+   * the stamp of the China column the notice was sent with. `ag:` collides with nothing: `a:` is
    * anchored to `[01]:`.
    */
   | { kind: 'agent'; op: AgentOp; id: string; digest?: string };
 
 /**
  * ✅ send · ✏️ edit · ❌ reject · 🙋 his · 💵 price · 🆕 lead · 👤 code · 🚫 personal · ✔ code confirmed ·
- * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145).
+ * ↩ not that client · 📌 general · 👤 own · ✖ skip · ⏸ stop the machine's press (0145) · 👎 it sent wrong (0145) ·
+ * ✅ the China tariff is right (0146, spec SPEC-P1-v2 §1.6).
  */
-export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f'] as const;
+export const AGENT_OPS = ['s', 'e', 'r', 'h', 'p', 'n', 'k', 'x', 'c', 'b', 'g', 'u', 'z', 'a', 'f', 't'] as const;
 export type AgentOp = (typeof AGENT_OPS)[number];
 
 /**
@@ -452,6 +454,9 @@ export const PRESS_REPEAT: Record<BotCallback['kind'], 'cas' | 'keyed' | 'prompt
   // general fact's yes is the one two-press op, and its second press is a
   // button on the QUESTION carrying the arm's token (I3) — a press on the
   // card, redelivered or tapped twice into a bot that was down, only asks.
+  // «✅ Tarif to'g'ri» (t) compares the column's stamp each time and only ever
+  // moves the mark forward (agent tariff-watch `confirmTariff`): a second press
+  // confirms what the first did.
   agent: 'cas',
 };
 
@@ -923,6 +928,12 @@ function agentButtons(type: string, payload: Record<string, unknown>): BotButton
     // His own word for it (2026-10-29): «O‘zim yozaman» read as «I will answer the customer myself».
     first.push({ text: '✏️ O‘zgartirish', callback_data: `ag:e:${id}` });
     return [first, lastRow];
+  }
+  // The website table's 14-day notice (0146, spec §1.6): «✅ Tarif to'g'ri» vouches for the column it was sent with.
+  if (type === 'AgentTariffNotice') {
+    const holder = typeof payload.holderId === 'string' && UUID.test(payload.holderId) ? payload.holderId : null;
+    const stamp = typeof payload.fingerprint === 'string' && /^[0-9a-f]{8}$/.test(payload.fingerprint) ? payload.fingerprint : null;
+    return holder && stamp ? [[{ text: '✅ Tarif to‘g‘ri', callback_data: `ag:t:${holder}:${stamp}` }]] : null;
   }
   const requestId = typeof payload.requestId === 'string' && UUID.test(payload.requestId) ? payload.requestId : null;
   // A purged answer card (`live: false`) offers no price: its link went with the chat.

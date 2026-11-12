@@ -25,6 +25,7 @@ import { RetireError, addGeneralFact, assertFactSeen, editKbFact, retireKbFact }
 import { AGENT_PAGE } from './web-door';
 import { AutoConfigError, autoFeedback, setAutoArmed, setAutoCategories, setAutoPerDay, stopAuto, stopAutoForEdit } from './auto-send';
 import { SendCapsError, setSendCaps } from './send-caps';
+import { confirmTariff, TariffConfirmError } from './tariff-watch';
 
 /**
  * The web half of the AI sotuvchi's decisions (spec §17.7 «Web: the same
@@ -384,6 +385,22 @@ export async function agentSendCapsAction(values: { dayCap: string; hourCap: str
       await setSendCaps(actor, { dayCap: capOf(values?.dayCap), hourCap: capOf(values?.hourCap) }, ctx);
     } catch (err) {
       if (err instanceof SendCapsError) return { ok: false, error: `auto_${err.code}` };
+      throw err;
+    }
+  });
+}
+
+/**
+ * «✅ Tarif to'g'ri» on the page (0146, spec SPEC-P1-v2 §1.6): vouches for the China column the page SHOWED (`seen`,
+ * its stamp) — a column written since is refused in words, never confirmed unseen. The holder's or a super_admin's.
+ */
+export async function agentConfirmTariffAction(seen: string): Promise<AgentActionResult> {
+  return run(async ({ actor, ctx }) => {
+    if (typeof seen !== 'string' || !/^[0-9a-f]{8}$/u.test(seen)) return { ok: false, error: 'tariff_changed' };
+    try {
+      await confirmTariff(actor, seen, ctx);
+    } catch (err) {
+      if (err instanceof TariffConfirmError) return { ok: false, error: err.code };
       throw err;
     }
   });

@@ -118,8 +118,15 @@ const said = (body: string, n: number, direction: 'in' | 'out' = 'in'): ChatMess
   direction,
 });
 type ToolCall = { name: string; ok: boolean; text: string; estimate: boolean };
-/** The avia rule over a run's tools and outcomes, as `runOnce` calls it. */
-const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) => withAviaRule(c, { outcomes, tools }, ctx);
+/**
+ * The avia rule over a run's tools and outcomes, as `runOnce` calls it — with his price act OFF, the state every
+ * case below was written for (spec SPEC-P1-v2 §1.2: off, the rule is today's byte for byte). `ruleArmed` is the
+ * same rule with «Narx» ticked and the layer armed.
+ */
+const rule = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) =>
+  withAviaRule(c, { outcomes, tools }, ctx, { priceArmed: false });
+const ruleArmed = (c: ComposeReply, outcomes: ToolOutcome[], ctx: AgentContext, tools: ToolCall[] = []) =>
+  withAviaRule(c, { outcomes, tools }, ctx, { priceArmed: true });
 /** The flight he approved a draft for, as `loadContext` reads it back. */
 const AIR_QUOTE: AgentContext['lastQuote'] = { road: 'air', air: { kg: 30, origin: 'Shenzhen' }, at: new Date(0), text: null, tgMessageId: null, edited: false };
 const ROAD_QUOTE: AgentContext['lastQuote'] = { road: 'road', air: null, at: new Date(0), text: null, tgMessageId: null, edited: false };
@@ -359,6 +366,55 @@ describe('an avia quote: the address is his (his fourth set «2»)', () => {
   it('…but never in a rail chat: no machine figure goes out there, so no flight was quoted — the question is the rail one', () => {
     const rail = ctxOf("Temir yo'l bilan 40 kg qancha?", 'latin');
     expect(rule(compose('uz'), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+  });
+
+  describe('his price act ARMED (spec SPEC-P1-v2 §1.2) — the paired cases: the PRICE may go by itself, the address never', () => {
+    const line = aviaOwnerQuestion({ kg: 30, origin: 'Shenzhen' });
+
+    it('D8 armed: a price-only reply asks him nothing — the model’s own question is left exactly as it set it', () => {
+      expect(ruleArmed(compose('uz', { replyText: quoted }), [air], aviaChat)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+      for (const asked of ['Kairat aka chair buyurtma qilyapti', 'Avia narxini tasdiqlang']) {
+        // Never cleared, never lengthened: its own needs_owner stands as it set it.
+        expect(ruleArmed(compose('uz', { replyText: quoted, ownerQuestion: asked, needsOwner: true }), [air], aviaChat)).toMatchObject({
+          needsOwner: true,
+          ownerQuestion: asked,
+        });
+      }
+    });
+
+    it('«asks HIM with the cargo» armed: only a reply that names a warehouse, sending or an address — then with the same line', () => {
+      for (const reply of [
+        `${quoted} Ivu omborimizga yuboring.`,
+        `${quoted} Manzilni keyin yozaman.`,
+        "Avia bilan yuborsangiz taxminan 510 $ bo'ladi. Boj va QQS alohida hisoblanadi.",
+        'Авиа примерно 510 $. Пошлина и НДС считаются отдельно. Адрес склада пришлю.',
+        'Air freight is about $510. Ship it to our warehouse.',
+        '空运大约510美元。关税和增值税另行计算。请发到我们的仓库。',
+      ]) {
+        expect(ruleArmed(compose('uz', { replyText: reply }), [air], aviaChat), reply).toMatchObject({ needsOwner: true, ownerQuestion: line });
+      }
+    });
+
+    it('…the customer’s own «where do I send it» asks him, armed or not (the burst, never the model’s question)', () => {
+      const ask = ctxOf('Qayerga yuboray?', 'latin', [said('Shenzhendan avia 30 kg qancha?', 1)], [{ ref: 'w1', kind: 'weight', value: 30, messageRef: '#1' }]);
+      expect(ruleArmed(compose('uz', { replyText: quoted }), [], ask).needsOwner).toBe(true);
+      expect(rule(compose('uz', { replyText: quoted }), [], ask).needsOwner).toBe(true);
+    });
+
+    it('…a truck’s chat naming its warehouse asks nothing — the rule is the flight’s; a rail chat stays the rail one', () => {
+      const road = ctxOf('Ivudan fura bilan 5 kub qancha?', 'latin');
+      expect(ruleArmed(compose('uz', { replyText: `Ivu omborimizga yuboring. ${quoted}` }), [truck], road)).toMatchObject({ needsOwner: false });
+      const rail = ctxOf("Temir yo'l bilan 40 kg qancha?", 'latin');
+      expect(ruleArmed(compose('uz', { replyText: 'Ombor manzilini yuboraman.' }), [air], rail)).toMatchObject({ needsOwner: false, ownerQuestion: '' });
+    });
+
+    it('…and the guard after the policy is unchanged: an avia address in the reply still asks him', () => {
+      const held = { ok: false, blocks: [{ rule: 'G6' as const, code: 'avia_address' as const }], warnings: [], ledger: [] };
+      expect(withAviaGuard(compose('uz', { replyText: `${quoted} ${answer('china_address_yiwu@1')}` }), held, { outcomes: [air], tools: [] }, aviaChat)).toMatchObject({
+        needsOwner: true,
+        ownerQuestion: line,
+      });
+    });
   });
 });
 
@@ -691,7 +747,7 @@ describe('the road is what we quoted, whatever the words name — the third revi
 describe('written down for the model', () => {
   it('the prompt gives the warehouse address as the fact has it, and never a flight\'s', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
     expect(head).toMatch(/bilimdagidek, xitoycha qismini o'zgartirmay va tarjima qilmay, GS kod eslatmasi bilan/u);
     expect(head).toMatch(/avia manzilini HECH QACHON aytma/u);
     expect(head).toContain('owner_question="Avia: <tovar>, <kg> kg, <qayerdan> — manzilni bering"');
@@ -704,7 +760,7 @@ describe('written down for the model', () => {
   it('nothing claims avia cargo is not received in China — he said only that he gives its address (review D7)', async () => {
     const { stableHead } = await import('@/modules/wms/agent/prompt');
     const { readFileSync } = await import('node:fs');
-    const head = stableHead({ styleGuide: null, facts: [] });
+    const head = stableHead({ styleGuide: null, facts: [], priceArmed: false });
     const tool = readFileSync('src/modules/wms/agent/tools.ts', 'utf8');
     for (const text of [head, tool, answer('china_points@4')]) {
       expect(text).not.toMatch(/YUBORILMAYDI|yuborilmaydi —|manzillar EMAS/u);
@@ -739,7 +795,8 @@ describe('written down for the model', () => {
   it('both run paths — a customer\'s message and his hand-back — draft through the avia rule, judge THAT draft, then let the guard ask him', async () => {
     const { readFileSync } = await import('node:fs');
     const src = readFileSync('src/modules/wms/agent/run.ts', 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/gu, '');
-    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
+    // His price act is read once per run and given to the rule (spec SPEC-P1-v2 §1.2) — the same `act` on both paths.
+    const path = /const drafted = withAviaRule\(withRailRule\(loop\.compose, ctx\), loop, ctx, act\);[\s\S]*?body: drafted\.replyText,[\s\S]*?const c = withAviaGuard\(drafted, policy, loop, ctx\);\s*const \{ actions, notes \} = validateActions\(c,/gu;
     expect(src.match(path)?.length).toBe(2);
   });
 
