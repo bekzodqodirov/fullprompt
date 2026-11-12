@@ -49734,6 +49734,200 @@
    "why": "X2's guard, re-anchored: stripped, c3461 stayed GREEN (its cells hold no figure, so nothing was said either way). A bare package header is the carton column only when most of its cells read as counts; without that «Carton | 60x40x50» claimed the column as the carton count and called every size an unread number of cartons.",
    "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
    "weight": "pinned"
+  },
+  {
+   "id": "c3492",
+   "input": [
+    [
+     "Tovar",
+     "Mesta soni",
+     "Soni",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     10,
+     200,
+     120
+    ],
+    [
+     "Shim",
+     4,
+     100,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "unit": null,
+       "weightKg": 120,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "unit": null,
+       "weightKg": 50,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "note": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Mesta soni» standing LEFT of «Soni»: the pieces are «Soni»'s 200 and 100, and the cartons — 10 and 4 — the packing's; never 10 cartons as the count with the 200 pieces on no row",
+   "why": "X2, one vocabulary for the rank and the lone-column rule: the rank did not know «Mesta» as a package, so the header ranked as pieces and won by standing leftmost; the lone-column rule then (rightly) refused it as the piece column — and the count beside it was on no row. Base (fc089b3): quantity 10 / 4 — ten cartons as ten pieces (XLS-9).",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3493",
+   "input": [
+    [
+     "Tovar",
+     "Korobka soni",
+     "Soni",
+     "Vazni"
+    ],
+    [
+     "Kurtka",
+     10,
+     200,
+     120
+    ],
+    [
+     "Shim",
+     4,
+     100,
+     50
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "unit": null,
+       "weightKg": 120,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "unit": null,
+       "weightKg": 50,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    },
+    "facts": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "quantity": 200,
+       "note": null,
+       "packing": {
+        "cartons": 10,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      },
+      {
+       "name": "Shim",
+       "quantity": 100,
+       "note": null,
+       "packing": {
+        "cartons": 4,
+        "pcsPerCarton": null,
+        "kgPerCarton": null,
+        "kgPerCartonKind": null,
+        "m3PerCarton": null,
+        "size": null,
+        "from": "file"
+       }
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Korobka soni» standing LEFT of «Soni»: the pieces are «Soni»'s 200 and 100, and the cartons — 10 and 4 — the packing's; never 10 cartons as the count with the 200 pieces on no row",
+   "why": "X2, one vocabulary for the rank and the lone-column rule: the rank did not know «Korobka» as a package, so the header ranked as pieces and won by standing leftmost; the lone-column rule then (rightly) refused it as the piece column — and the count beside it was on no row. Base (fc089b3): quantity 10 / 4 — ten cartons as ten pieces (XLS-9).",
+   "source": "ai-soraydi P-excel X2 (XLS-4, XLS-9, DIM-7; JR-1)",
+   "weight": "defect"
   }
  ],
  "parseGoodsLineCases": [

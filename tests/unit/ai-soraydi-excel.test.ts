@@ -526,6 +526,16 @@ describe('X2 — the carton count is the row’s packing, never its pieces (XLS-
       const [fact] = landed(['Description', header, 'G.W.'], ['Chair', 10, 50]);
       expect([fact!.quantity, fact!.unit, fact!.weightKg, fact!.landedNote], header).toEqual([null, null, 50, '📦 10 karobka — fayldan']);
     }
+    // …and beside the piece count, on EITHER side of it: «<header> 10 | Soni 200» is 200 pieces in 10 cartons. A
+    // package word the rank did not know ranked as pieces, won by standing leftmost, and the 200 were on no row.
+    for (const header of ['Karobka soni', 'Joy soni', 'Mesta soni', 'Korobka soni', 'Кол-во мест']) {
+      for (const row of [
+        first(['Tovar', header, 'Soni', 'Vazni'], ['Kurtka', 10, 200, 120]),
+        first(['Tovar', 'Soni', header, 'Vazni'], ['Kurtka', 200, 10, 120]),
+      ]) {
+        expect([row.quantity, row.unit, row.packing], header).toEqual([200, null, packed({ cartons: 10 })]);
+      }
+    }
     // A bare header carries no quantity key: it never was a count, and its number stood on no row at all.
     for (const header of ['CTNS', 'Мест', '箱数']) {
       const row = first(['Description', header, 'G.W.'], ['Chair', 10, 50]);

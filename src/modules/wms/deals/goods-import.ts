@@ -1977,8 +1977,14 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   // piece unit: beside «Кол-во, шт» the pieces are the line's count (review
   // spec-510-unit-rank), and the measure it passed over is said on the line's
   // note (`alsoCounts`), never lost.
+  // (X2) A package is a package to the rank by the SAME words the lone-column
+  // rule reads (`countsPackages`): «Mesta soni», «Korobka soni» ranked as
+  // pieces stood LEFTMOST over «Soni» and took the count — then, a package
+  // header never being the piece column, the 200 pieces beside them were on
+  // no row at all. Only «件数» keeps the rank's own reading (`namesPackage`):
+  // below «数量», the pieces alone.
   const rank = (c: (typeof counts)[number]) => {
-    const packages = namesPackage(c.text);
+    const packages = namesPackage(c.text) || MORE_PACKAGES.test(foldKey(c.text));
     return [
       MONEY_HEADER.test(c.text) || namesWeight(c.text) || namesVolume(c.text) ? 1 : 0,
       !packages && (COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text)) ? 0 : 1,
