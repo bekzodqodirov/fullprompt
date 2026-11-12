@@ -706,15 +706,14 @@ export function receiveGoodsSheet(
   }
   const kinds = rowKindsOf(files, held.length);
   if (packing && packingOfHeld(held, kinds, goods, meta.weightKind)) {
-    // The same goods again: totals, the packages each row states, and the
-    // netto gaps — never a row. The packages first (`packingCarries`): a
-    // weight a carried netto computes is the bot's, never a «filled» one.
-    const carry = packingCarries(held, kinds, goods, meta.weightKind, sheet.repack);
-    const fill = packingFills(carry.goods, kinds, goods, meta.weightKind);
+    // The same goods again: totals, the netto gaps the lines state, and the
+    // packages each row states (`packingCarries`) — never a row.
+    const fill = packingFills(held, kinds, goods, meta.weightKind);
+    const carry = packingCarries(fill.goods, kinds, goods, meta.weightKind, sheet.repack);
     const totals = totalsOf(meta, goods, 'oldingi fayldan', fill.filled, carry.carried);
     return answer(
       {
-        invoiceGoods: fill.goods,
+        invoiceGoods: carry.goods,
         invoiceTexts: [...state.invoiceTexts, ...ownText(meta), ...texts],
         ...totals.patch,
       },
@@ -751,13 +750,13 @@ export function receiveGoodsSheet(
     // packing list's rows become its totals and its netto gap fills — under
     // the packing list's own receipt mark (PF-ADV-9).
     const invoiceKinds = Array.from({ length: goods.length }, () => meta.weightKind);
+    const fill = packingFills(goods, invoiceKinds, held, first.weightKind);
     // …and its rows take the packing list's packages, as they would the other way round.
-    const carry = packingCarries(goods, invoiceKinds, held, first.weightKind, sheet.repack);
-    const fill = packingFills(carry.goods, invoiceKinds, held, first.weightKind);
+    const carry = packingCarries(fill.goods, invoiceKinds, held, first.weightKind, sheet.repack);
     const totals = totalsOf(first, held, `${label} dan`, fill.filled, carry.carried);
     return answer(
       {
-        invoiceGoods: fill.goods,
+        invoiceGoods: carry.goods,
         invoiceTexts: [...state.invoiceTexts, ...ownText(first), ...texts],
         goodsFiles: [meta],
         ...totals.patch,
@@ -891,9 +890,9 @@ function receiveFurtherSheet(
     // writes no totals anyway (its note carries the list's own).
     const covers = ofHeld && (topUp || files.length <= 1 || packingCoversHeld(held, kinds, goods, m.weightKind));
     if (ofHeld && !covers) {
+      const fill = packingFills(held, kinds, goods, m.weightKind);
       // A part's packages are its rows' own still (`packingCarries`); only its totals are not the list's.
-      const carry = packingCarries(held, kinds, goods, m.weightKind, sheet.repack);
-      const fill = packingFills(carry.goods, kinds, goods, m.weightKind);
+      const carry = packingCarries(fill.goods, kinds, goods, m.weightKind, sheet.repack);
       // Totals a packing list gave BEFORE the fold that made this list a part
       // (review of the fixes RF-TOTALS-1, «[CI A, PL A] then [CI B, PL B]»):
       // factory B's invoice folds on the main path, which drops nothing, so
@@ -907,7 +906,7 @@ function receiveFurtherSheet(
       // the model on the AI door (SHEETS-1).
       return tools.answer(
         {
-          invoiceGoods: fill.goods,
+          invoiceGoods: carry.goods,
           ...(texts.length > 0 ? { invoiceTexts: [...state.invoiceTexts, ...texts] } : {}),
           ...(stale ? { fileTotals: null } : {}),
         },
@@ -925,8 +924,8 @@ function receiveFurtherSheet(
       held.every((h, i) => goodsNameKey(h.name) === goodsNameKey(further.goodsRows[i]!.name)) &&
       samePositions(further.goodsRows, goods);
     if (covers || inLine) {
-      const carry = covers ? packingCarries(held, kinds, goods, m.weightKind, sheet.repack) : positionalCarries(held, goods, sheet.repack);
-      const fill = covers ? packingFills(carry.goods, kinds, goods, m.weightKind) : positionalFills(carry.goods, goods, m.weightKind);
+      const fill = covers ? packingFills(held, kinds, goods, m.weightKind) : positionalFills(held, goods, m.weightKind);
+      const carry = covers ? packingCarries(fill.goods, kinds, goods, m.weightKind, sheet.repack) : positionalCarries(fill.goods, goods, sheet.repack);
       const totals = tools.totalsOf(m, goods, `${sheetName(further.goodsSheet)} varag‘idan`, fill.filled, carry.carried);
       // The text keeps the FILE's label: a later file that squeezes it names
       // «{file} ning boshqa varaqlari» (`squeezedLine`), and the sheet's own
@@ -934,7 +933,7 @@ function receiveFurtherSheet(
       return tools.answer(
         // Its own text (the model's) holds its every row; the receipt says
         // what was not taken as a row of the held goods (SHEETS-1).
-        { invoiceGoods: fill.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText({ ...m, label })], ...totals.patch },
+        { invoiceGoods: carry.goods, invoiceTexts: [...state.invoiceTexts, ...tools.ownText({ ...m, label })], ...totals.patch },
         [...totals.lines, ...cutLines],
       );
     }

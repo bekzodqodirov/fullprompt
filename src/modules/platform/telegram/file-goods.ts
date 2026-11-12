@@ -384,6 +384,14 @@ const grossOnly = (k: WeightKind) => k === 'gross';
  * netto a packing list may write into a goods row, or sum as one.
  */
 const cartonsGross = (g: GoodsList[number]): boolean => g.derived?.weightIsGross === true;
+/**
+ * A packing list row's weight that is the KERNEL's product, of any kind — what
+ * its packages give, never a figure its line states (docs/AI-SORAYDI.md §3.2
+ * X4). A netto fill copies only what the list STATES: the packages themselves
+ * travel (`packingCarries`), and the goods row's weight is computed from them
+ * there, marked as the bot's — or judged against a weight the row states.
+ */
+const fillable = (p: GoodsList[number]): boolean => !cartonsGross(p) && p.derived?.weightKg === undefined;
 const kindOf = (g: GoodsList[number], fileKind: WeightKind): WeightKind => (cartonsGross(g) ? 'gross' : fileKind);
 
 /**
@@ -1106,9 +1114,11 @@ function carryOnto(h: GoodsList[number], p: GoodsList[number] | undefined, repac
  * packing of its own keeps it — two packings are never merged here, a clash
  * would have nobody to ask. The row's own figures are judged by the kernel as
  * any file's are: one that agrees stands, one carton's is replaced and said,
- * any other is a doubt the table asks. Runs BEFORE the netto fills: a weight
- * the carried NETTO computed is the bot's (marked), never «filled». No
- * `repack` — a caller from before — carries nothing. Pure but for `repack`.
+ * any other is a doubt the table asks. Runs AFTER the netto fills, which copy
+ * only what the list's lines STATE (`fillable`): a line's netto is the file's
+ * figure and the packages are judged against it; a weight only the packages
+ * give is computed here, marked as the bot's. No `repack` — a caller from
+ * before — carries nothing. Pure but for `repack`.
  */
 export function packingCarries(
   held: GoodsList,
@@ -1164,7 +1174,7 @@ export function positionalFills(held: GoodsList, packing: GoodsList, packingKind
   let filled = 0;
   const goods = held.map((h, i) => {
     const p = packing[i];
-    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || cartonsGross(p) || countsDisagree(h, p)) return h;
+    if (!p || figureOf(h, 'weightKg') !== null || figureOf(p, 'weightKg') === null || p.weightKg! <= 0 || !fillable(p) || countsDisagree(h, p)) return h;
     filled += 1;
     return { ...h, weightKg: p.weightKg! };
   });
@@ -1198,7 +1208,7 @@ export function packingFills(
           !claimed.has(j) &&
           figureOf(packing[j]!, 'weightKg') !== null &&
           packing[j]!.weightKg! > 0 &&
-          !cartonsGross(packing[j]!) &&
+          fillable(packing[j]!) &&
           sameRowAgain(h, packing[j]!, { held: heldKinds[i] ?? null, read: packingKind }),
       );
     if (at === undefined) return h;

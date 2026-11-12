@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { describe, expect, it } from 'vitest';
-import { foldInvoice, packingFills, packingTotals, positionalFills } from '@/modules/platform/telegram/file-goods';
+import { foldInvoice, packingCarries, packingFills, packingTotals, positionalFills } from '@/modules/platform/telegram/file-goods';
 import { applyPacking, emptyPacking, type Packing } from '@/modules/wms/calc/carton-math';
 import { invoiceFacts, landingItems } from '@/modules/wms/calc/intake';
 import { fitSheetRows } from '@/modules/wms/calc/intake-ai';
@@ -1021,8 +1021,15 @@ describe('X4 — a weight made of the cartons’ gross beside another file (file
       weightNetto: true,
       volumeM3: null,
     });
-    // …and those netto lines do fill an invoice’s empty weights.
-    expect(packingFills(invoice(), [null, null], netRows, net.weightKind).goods.map((g) => g.weightKg)).toEqual([110, 140]);
+    // …and those netto lines reach an invoice’s empty weights — as the list’s PACKAGES, computed on the invoice’s
+    // row by the kernel and marked as the bot’s (`packingCarries`, phase 4’s seam; re-anchored: the fill copied
+    // the list row’s computed 110 / 140 as if the line stated them). The fill copies only a netto a line STATES.
+    expect(packingFills(invoice(), [null, null], netRows, net.weightKind).goods.map((g) => g.weightKg ?? null)).toEqual([null, null]);
+    const carried = packingCarries(invoice(), [null, null], netRows, net.weightKind, (row) => applyPacking(row).line);
+    expect(carried.goods.map((g) => [g.weightKg, g.derived?.weightKg])).toEqual([
+      [110, '10 × 11 kg'],
+      [140, '5 × 28 kg'],
+    ]);
   });
 
   it('the same row again in a second file, stating its GROSS: one order, landed once', () => {
