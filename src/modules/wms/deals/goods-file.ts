@@ -544,9 +544,13 @@ function keptColumns(rows: readonly Cell[][], covered: Covered | null, headerRow
     }
   }
   const heads = new Map<number, boolean>();
+  // A header heads a TABLE: three columns at least. The «header row» of a
+  // label|value card is its name line («Tovar nomi: | Kurtka»), whose value
+  // may stand alone in its column and is the good itself.
+  const tableHeader = (r: number): boolean => (rows[r] ?? []).filter((cell, c) => !blankInText(cell, r, c, covered) && !covered?.has(r, c)).length >= 3;
   const headsOnly = (c: number): boolean => {
     const r = first[c]!;
-    if (r === headerRow) return true;
+    if (r === headerRow) return tableHeader(r);
     if (!PICTURE_HEADER.test(String(rows[r]![c]).trim())) return false;
     let known = heads.get(r);
     if (known === undefined) heads.set(r, (known = headsFigures(rows, r, covered)));

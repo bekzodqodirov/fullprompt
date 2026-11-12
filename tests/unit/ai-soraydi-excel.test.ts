@@ -225,6 +225,16 @@ describe('X0 — a sheet handed to the model keeps its columns (CR-1, review JN-
       expect(read.ownText?.text).toBe('[PL]\nDescription | CTNS | G.W. (KG)\nChair | 5 | 50\nTable | 8 | 96');
     });
 
+    it('…but a label|value card’s name line is no table header: the good’s name, alone in the value column, stays', () => {
+      // The column reader reports the card's NAME line as its «header row».
+      const card: Cell[][] = [
+        ['Tovar nomi', 'Ayollar kurtkasi'],
+        ['Izoh', null],
+        ['Eslatma', null],
+      ];
+      expect(linesOf(textOf(card, 0).text)).toEqual(['Tovar nomi | Ayollar kurtkasi', 'Izoh |', 'Eslatma |']);
+    });
+
     it('a header cell merged down a two-row header goes with its repeats', () => {
       const rows: Cell[][] = [
         ['Picture', 'Description', 'G.W. (KG)'],
