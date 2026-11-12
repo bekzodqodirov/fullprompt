@@ -175,3 +175,46 @@ describe('a sheet’s packages, landed on the request’s items', () => {
     expect(items[0]!.note).toContain('📦 10 karobka · 12 juft/karobka — fayldan · o‘lchov hisoblangan: 10 × 12 juft = 120 juft');
   });
 });
+
+describe('X5 — a column the TOTAL row shows to be ONE carton’s, landed (XLS-1; review JN-12, JR-11)', () => {
+  it('unmarked per-carton «G.W.» and «CBM»: the items hold the cartons’ products, the request the TOTAL row’s cube', async () => {
+    const { items, request } = await landedItems(
+      'podklyuch',
+      ['No.', 'Description', 'QTY(PCS)', 'CTNS', 'G.W.(KGS)', 'CBM'],
+      [
+        [1, 'Ladies jacket', 200, 10, 12, 0.05],
+        [2, 'Kids toy plastic', 480, 20, 13, 0.06],
+        ['TOTAL', null, 680, 30, 380, 1.7],
+      ],
+    );
+    // 10 × 12 = 120 kg and 10 × 0.05 = 0.5 m³; 20 × 13 = 260 kg and 20 × 0.06 = 1.2 m³ — 380 kg and 1.7 m³,
+    // what the TOTAL row states, where the column's own 12 / 13 kg and 0.05 / 0.06 m³ landed before.
+    expect(items.map((i) => [i.name, i.quantity, i.kg, i.m3])).toEqual([
+      ['Ladies jacket', 200, 120, 0.5],
+      ['Kids toy plastic', 480, 260, 1.2],
+    ]);
+    expect(items[0]!.note).toContain('og‘irlik hisoblangan: 10 × 12 kg = 120 kg');
+    expect(items[0]!.note).toContain('hajm hisoblangan: 10 × 0.05 m³ = 0.5 m³');
+    expect(request.m3).toBe(1.7);
+  });
+
+  it('the rows that HAVE a per-carton-looking figure (JS-33): the figure is on the item’s note, never in its weight', async () => {
+    const { items } = await landedItems(
+      'rastamojka',
+      ['Description', 'QTY', 'CTNS', 'G.W.'],
+      [
+        ['Kurtka', 200, 20, 15],
+        ['Shim', 100, 10, 18],
+        ['Sumka', 50, 5, null],
+        ['TOTAL', 350, 35, 530],
+      ],
+    );
+    // 15 + 18 = 33 kg is under half of 530 (265), and 20 × 15 + 10 × 18 = 480 within 530 × 1.02 = 540.6.
+    expect(items.map((i) => [i.name, i.kg])).toEqual([
+      ['Kurtka', null],
+      ['Shim', null],
+      ['Sumka', null],
+    ]);
+    expect(items[0]!.note).toContain('vazn «15» — bitta karobkanikimi yoki qatornikimi, aniq emas');
+  });
+});

@@ -219,3 +219,41 @@ describe('a packing list beside an invoice: the goods are the invoice’s, and n
     expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
   });
 });
+
+describe('X5 — a column the sheet’s own TOTAL row shows to be ONE carton’s, end to end (XLS-1; review JN-12, JR-11)', () => {
+  it('W1 — unmarked per-carton «G.W.» and «CBM»: the lines computed, the shipment’s totals the TOTAL row’s, and the receipt says why', async () => {
+    const got = await collect('podklyuch', [
+      [await book([...HEAD, 'G.W.(KGS)', 'CBM'], [[...JACKET, 12, 0.05], [...TOY, 13, 0.06], [...LAMP, 11, 0.07], [...TOTAL, 710, 3.8]]), 'pl.xlsx'],
+    ]);
+    // 10 × 12 = 120, 20 × 13 = 260, 30 × 11 = 330 kg (Σ 710); 10 × 0.05 = 0.5, 20 × 0.06 = 1.2, 30 × 0.07 = 2.1 m³ (Σ 3.8).
+    expect(got.goods.map((g) => [g.name, g.weightKg, g.volumeM3])).toEqual([
+      ['Ladies jacket', 120, 0.5],
+      ['Kids toy plastic', 260, 1.2],
+      ['LED lamp 50W', 330, 2.1],
+    ]);
+    expect(got.totals).toMatchObject({ weightKg: 710, volumeM3: 3.8 });
+    expect(got.cube).toBe(3.8);
+    expect(got.table).toContain('✅ Og‘irlik (brutto): 710 kg');
+    expect(got.table).not.toMatch(/\b(?:12|13|11) kg\b/);
+    // The receipt says it, once per column — and it stays the file's note for the card.
+    expect(got.said[0]).toContain('📄 «pl.xlsx» — «G.W.(KGS)» ustunidagi son bitta karobkaniki: karobkalar soni × shu son = 710 kg, fayldagi jami bilan bir xil — qatorlar shundan hisoblandi.');
+    expect(got.said[0]).toContain('📄 «pl.xlsx» — «CBM» ustunidagi son bitta karobkaniki: karobkalar soni × shu son = 3.8 m³, fayldagi jami bilan bir xil — qatorlar shundan hisoblandi.');
+    expect(got.state.fileNotes.filter((n) => n.includes('bitta karobkaniki'))).toHaveLength(2);
+    // What the VED reads on each row: the factors and that the product is the bot's.
+    expect(got.notes[0]).toContain('hajm hisoblangan: 10 × 0.05 m³ = 0.5 m³');
+    expect(got.notes[0]).toContain('10 × 12 kg = 120 kg');
+  });
+
+  it('the pallet sheet — nothing explains the TOTAL: the lines stand, no brutto is offered, and both sums are said', async () => {
+    const got = await collect('podklyuch', [
+      [await book(['Description', 'CTN', 'G.W.(kg)', 'CBM'], [['Kurtka', 10, 100, 1.0], ['Shim', 5, 166, 1.1], ['TOTAL', 15, 300, 2.1]]), 'pl.xlsx'],
+    ]);
+    // 100 + 166 = 266 kg in the lines, 300 in the TOTAL row; the cube agrees (1.0 + 1.1 = 2.1).
+    expect(got.goods.map((g) => [g.name, g.weightKg, g.volumeM3])).toEqual([
+      ['Kurtka', 100, 1],
+      ['Shim', 166, 1.1],
+    ]);
+    expect(got.totals).toMatchObject({ weightKg: null, volumeM3: 2.1 });
+    expect(got.said[0]).toContain('⚠️ «pl.xlsx» — «G.W.(kg)» ustuni: jami qatorida 300 kg, qatorlar yig‘indisi 266 kg — umumiy brutto fayldan olinmadi.');
+  });
+});
