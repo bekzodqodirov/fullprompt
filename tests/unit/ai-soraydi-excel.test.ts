@@ -572,6 +572,15 @@ describe('X2 — the carton count is the row’s packing, never its pieces (XLS-
       [60, 0.5, 10],
       [40, null, null],
     ]);
+    // …and as the FILE reader hands a real merge: the master’s value repeated into the covered cells, with the mask
+    // that says which they are. The count is the first line’s alone; what one carton measures is every covered line’s.
+    const mask = new CoverMask();
+    mask.add(2, 2); // «CTNS» of the second line
+    mask.add(2, 3); // «CBM/CTN» of the second line
+    const merged = parseGoods([['Description', 'QTY', 'CTNS', 'CBM/CTN'], ['Chair red', 60, 10, 0.05], ['Chair blue', 40, 10, 0.05]], mask).goods;
+    expect(merged.map((g) => g.packing)).toEqual([packed({ cartons: 10, m3PerCarton: 0.05 }), packed({ m3PerCarton: 0.05 })]);
+    // Still 10 × 0.05 = 0.5 m³ in all — never two lines of ten cartons each.
+    expect(invoiceFacts(merged).map((g) => g.volumeM3)).toEqual([0.5, null]);
   });
 });
 
