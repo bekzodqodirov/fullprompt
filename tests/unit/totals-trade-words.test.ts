@@ -311,6 +311,26 @@ describe('the table’s totals answer, in the trade’s words (dg3-02, dg3-04)',
     }
   });
 
+  it('a bare figure after a field word takes that field’s unit — every word of the vocabulary’s lead labels', () => {
+    // Both totals are open, so only the WORD can say which a bare «3500» is:
+    // «vazni 3500» the kilos, «hajmi 12» the cube. The words are units.ts's
+    // (`TOTALS_LEAD_LABELS`) — this file's own two lists are gone.
+    for (const label of TOTALS_LEAD_LABELS.weightKg) {
+      const seg = answer(`${label} 3500`);
+      expect(seg.refused, label).toBeNull();
+      expect(seg.at, label).toEqual({ totals: 'weightKg' });
+      expect(seg.totals, label).toEqual({ weightKg: 3500, volumeM3: null, ambiguous: [] });
+    }
+    for (const label of TOTALS_LEAD_LABELS.volumeM3) {
+      const seg = answer(`${label} 12`);
+      expect(seg.refused, label).toBeNull();
+      expect(seg.at, label).toEqual({ totals: 'volumeM3' });
+      expect(seg.totals, label).toEqual({ weightKg: null, volumeM3: 12, ambiguous: [] });
+    }
+    // A word that says only «all of it» names neither: with both open it is asked.
+    expect(answer('jami 3500').refused?.reason).toBe('totals_unit');
+  });
+
   it('both figures of one answer are written (dg3-03: the cube was dropped under a 👍)', () => {
     for (const text of ['507 kg 5.92 cbm', '507 kgs 5.92 kub', '5.92 cbm 507 kgs']) {
       expect(answer(text).totals, text).toEqual({ weightKg: 507, volumeM3: 5.92, ambiguous: [] });
