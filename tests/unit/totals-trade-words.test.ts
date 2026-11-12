@@ -328,4 +328,23 @@ describe('the table’s totals answer, in the trade’s words (dg3-02, dg3-04)',
       expect(seg.refused, text).not.toBeNull();
     }
   });
+
+  it('…it is the ROW’s weight: beside one row that owes its kilos, a netto-labelled answer goes there', () => {
+    // The brutto and row 1's own weight are both open. A plain «480 kg» could
+    // be either (asked); «N/W 480 kgs» says which — the label is the
+    // vocabulary's, and «N/W» was on no list of the table's.
+    const owing: TableRef = {
+      rows: [{ no: 1, index: 0, seq: null, name: 'Kurtka', needs: ['kg'] }],
+      open: [{ line: 1 }, { totals: 'weightKg' }],
+      preferred: [{ line: 1 }, { totals: 'weightKg' }],
+      stage: 'review',
+    };
+    for (const text of ['netto 480 kg', 'N.W. 480 kgs', 'N/W 480 kgs', 'NW 480 kgs', 'sof 480 kg']) {
+      const [seg] = parseTableAnswer(text, owing).segments;
+      expect(seg!.refused, text).toBeNull();
+      expect(seg!.at, text).toEqual({ line: 1 });
+      expect(seg!.answer, text).toMatchObject({ kind: 'figures', figures: { weightKg: 480 } });
+    }
+    expect(parseTableAnswer('480 kg', owing).segments[0]!.refused?.reason).toBe('no_address');
+  });
 });
