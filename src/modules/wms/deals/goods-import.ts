@@ -3527,6 +3527,19 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
         kept[k] = { ...g, [field]: null, note: [g.note, `${what} «${cellAt(l.d, col)}» — bitta karobkanikimi yoki qatornikimi, aniq emas`].filter(Boolean).join(' · ') };
       });
     };
+    /**
+     * A row figure the belt proved ONE carton's, moved into the packing: said on
+     * the row's note too, as the file wrote it (review excel-break-6). The calc
+     * door multiplies the packing; the doors that keep no packing — the deal
+     * card's import, the VED's paste — read the row's own figure, which is now
+     * empty, and the paste promises that what it drops is in the note. The
+     * figure as READ, in its unit: a cm³ column's cell is already on the note
+     * as the file wrote it (X6).
+     */
+    const perCartonNote = (g: GoodsRow, field: 'weightKg' | 'volumeM3', value: number): string | null =>
+      [g.note, `${field === 'weightKg' ? `vazn ${fmtFigure(value)} kg` : `hajm ${fmtFigure(value)} m³`} — bitta karobkaniki (${fmtFigure(g.packing!.cartons!)} karobka)`]
+        .filter(Boolean)
+        .join(' · ');
     /** What a column's kept rows state, added up — the sum a refusal names. */
     const linesSum = (pick: (l: (typeof keptLanded)[number]) => number | 'covered' | null) =>
       keptLanded.reduce((n, l) => {
@@ -3554,7 +3567,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             const value = l.weight;
             if (typeof value !== 'number' || value <= 0) return;
             const g = kept[k]!;
-            kept[k] = { ...g, weightKg: null, packing: { ...g.packing!, kgPerCarton: value, kgPerCartonKind: kind } };
+            kept[k] = { ...g, weightKg: null, note: perCartonNote(g, 'weightKg', value), packing: { ...g.packing!, kgPerCarton: value, kgPerCartonKind: kind } };
           });
           if (isGross) grossKg = v.total;
           else netFromCartons = v.total;
@@ -3598,7 +3611,7 @@ export function parseGoods(rows: Cell[][], covered: Covered | null = null, hints
             const value = l.volume;
             if (typeof value !== 'number' || value <= 0) return;
             const g = kept[k]!;
-            kept[k] = { ...g, volumeM3: null, packing: { ...g.packing!, m3PerCarton: value } };
+            kept[k] = { ...g, volumeM3: null, note: perCartonNote(g, 'volumeM3', value), packing: { ...g.packing!, m3PerCarton: value } };
           });
           volumeM3 = v.total;
           notes.push(noteOf(columns.volume, 'm3', v, 'qatorlar shundan hisoblandi'));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { invoiceFacts } from '@/modules/wms/calc/intake';
+import { pasteItems } from '@/modules/wms/calc/send-rows';
 import { MAX_GOODS_ROWS, parseGoods, type Cell } from '@/modules/wms/deals/goods-import';
 
 /**
@@ -435,5 +436,34 @@ describe('X5 — a COMPLETE column nothing explains: the lines stand, the Σ is 
       expect(read.goods.map((g) => g.weightKg), String(total)).toEqual([15, 18]);
       expect(read.grossKg, String(total)).toBeNull();
     }
+  });
+});
+
+describe('X5 — a column the belt proved one carton’s is SAID on the row, for the doors that keep no packing (review excel-break-6)', () => {
+  // 20 × 15 + 10 × 18 = 300 + 180 = 480 kg and 20 × 0.12 + 10 × 0.1 = 2.4 + 1 = 3.4 m³ — the TOTAL row's; the
+  // lines' own sums, 33 kg and 0.22 m³, are what it contradicts.
+  const TSV = 'Description\tCTNS\tG.W.(KG)\tCBM\nKurtka\t20\t15\t0.12\nShim\t10\t18\t0.1\nTOTAL\t30\t480\t3.4';
+  const NOTES = [
+    'vazn 15 kg — bitta karobkaniki (20 karobka) · hajm 0.12 m³ — bitta karobkaniki (20 karobka)',
+    'vazn 18 kg — bitta karobkaniki (10 karobka) · hajm 0.1 m³ — bitta karobkaniki (10 karobka)',
+  ];
+
+  it('the VED’s paste lands the row empty — and the note says what the file wrote, and of how many cartons', () => {
+    expect(pasteItems(TSV).map((r) => [r.name, r.weightKg, r.volumeM3, r.note])).toEqual([
+      ['Kurtka', null, null, NOTES[0]],
+      ['Shim', null, null, NOTES[1]],
+    ]);
+  });
+
+  it('…the reader’s row (the deal card’s import reads the same) carries it; the calc door still multiplies the packing', () => {
+    const read = parseGoods(TSV.split('\n').map((l) => l.split('\t')));
+    expect(read.goods.map((g) => [g.weightKg, g.volumeM3, g.note])).toEqual([
+      [null, null, NOTES[0]],
+      [null, null, NOTES[1]],
+    ]);
+    expect(invoiceFacts(read.goods).map((g) => [g.weightKg, g.volumeM3])).toEqual([
+      [300, 2.4],
+      [180, 1],
+    ]);
   });
 });
