@@ -46073,6 +46073,690 @@
    "why": "X1's guard.",
    "source": "ai-soraydi P-excel X1 (XLS-3)",
    "weight": "pinned"
+  },
+  {
+   "id": "c3434",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "单价",
+     "金额",
+     "箱数",
+     "毛重",
+     "方数"
+    ],
+    [
+     "折叠椅",
+     480,
+     5,
+     2400,
+     20,
+     300,
+     2.4
+    ],
+    [
+     "办公椅",
+     120,
+     20,
+     2400,
+     10,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300,
+       "volumeM3": 2.4,
+       "amount": 2400
+      },
+      {
+       "name": "办公椅",
+       "weightKg": 150,
+       "volumeM3": 1.2,
+       "amount": 2400
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 450,
+    "volumeM3": 3.6
+   },
+   "said": "«方数» is the cube: 2.4 / 1.2 m³ on the lines, Σ 3.6",
+   "why": "XLS-7: 方 («fang») is how a Chinese forwarder writes cubic metres; the key list was closed. Base: volumeM3 null on every line — «umumiy hajmi (kub) — yozilmagan».",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3435",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "NW",
+     "GW",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     110,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     240,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 110,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 240,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7,
+    "shape": "packing"
+   },
+   "said": "bare «NW» and «GW» are the net and the gross weight: the lines weigh 110 / 240 kg netto, the shipment 380 kg brutto",
+   "why": "XLS-7: without their dots neither header was a weight at all. Base: weightKg null, grossKg null — «umumiy brutto og‘irligi — yozilmagan».",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3436",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "NW(KG)",
+     "GW(KG)",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     110,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     240,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 110,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 240,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7
+   },
+   "said": "«NW(KG) | GW(KG)»: the line's weight is the NET 110 / 240, the brutto 380 is read from the GW column",
+   "why": "XLS-8: both were «plain» weights by their «kg» and the heavier one — the GROSS — became the line's; a plain weight gives no brutto. Base: weightKg 120 / 260, grossKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3437",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G/W",
+     "N/W",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     110,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     240,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 110,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 240,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7
+   },
+   "said": "«G/W | N/W» — the slashed abbreviations — are the gross and the net weight",
+   "why": "XLS-7. Base: weightKg null, grossKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3438",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W.",
+     "Total CUBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5,
+       "amount": null
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2,
+       "amount": null
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380,
+    "volumeM3": 1.7,
+    "shape": "packing"
+   },
+   "said": "«Total CUBM» is the cube and never the line's money: 0.5 / 1.2 m³, no amount, a packing list",
+   "why": "XLS-7: «total» is a money key and «cubm» no volume key. Base: amount 0.5 / 1.2, volumeM3 null, shape invoice.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3439",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W.",
+     "CUBE"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 1.7
+   },
+   "said": "«CUBE» is the cube column",
+   "why": "XLS-7. Base: volumeM3 null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3440",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "G.W.",
+     "CU.M"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 1.7
+   },
+   "said": "«CU.M» alone — cubic metres spelled as a packing list abbreviates them — is the cube column",
+   "why": "XLS-7: «CU.M» was read only as the UNIT of a «MEAS» / «VOL» header. Base: volumeM3 null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3441",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "箱数",
+     "总重",
+     "总方数"
+    ],
+    [
+     "折叠椅",
+     480,
+     20,
+     300,
+     2.4
+    ],
+    [
+     "办公椅",
+     120,
+     10,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      },
+      {
+       "name": "办公椅",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    },
+    "volumeM3": 3.6
+   },
+   "said": "«总重» is the weight and «总方数» the cube",
+   "why": "XLS-7. Base: weightKg null, volumeM3 null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3442",
+   "input": [
+    [
+     "Description",
+     "QTY",
+     "CTNS",
+     "T.W",
+     "CBM"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     10,
+     120,
+     0.5
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     20,
+     260,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "volumeM3": 0.5
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«T.W» — total weight — is the line's weight",
+   "why": "XLS-7. Base: weightKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3443",
+   "input": [
+    [
+     "Наименование",
+     "Кол-во",
+     "Масса",
+     "Объем"
+    ],
+    [
+     "Куртка",
+     300,
+     150,
+     1.2
+    ],
+    [
+     "Брюки",
+     200,
+     100,
+     0.72
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Куртка",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      },
+      {
+       "name": "Брюки",
+       "weightKg": 100,
+       "volumeM3": 0.72
+      }
+     ],
+     "count": 2
+    }
+   },
+   "said": "«Масса» is the weight",
+   "why": "XLS-7. Base: weightKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3444",
+   "input": [
+    [
+     "Nomi",
+     "Soni",
+     "Massasi",
+     "Hajmi"
+    ],
+    [
+     "Kurtka",
+     300,
+     150,
+     1.2
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Kurtka",
+       "weightKg": 150,
+       "volumeM3": 1.2
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«Massasi» is the weight",
+   "why": "XLS-7, the Uzbek word. Base: weightKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3445",
+   "input": [
+    [
+     "品名",
+     "数量",
+     "公斤",
+     "体积"
+    ],
+    [
+     "折叠椅",
+     480,
+     300,
+     2.4
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "折叠椅",
+       "weightKg": 300,
+       "volumeM3": 2.4
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "«公斤» — kilos in Chinese — heads the weight",
+   "why": "XLS-7. Base: weightKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3446",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Unit price",
+     "Total",
+     "GW"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     6.5,
+     1300,
+     120
+    ],
+    [
+     "Kids toy plastic",
+     480,
+     2,
+     960,
+     260
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": 120,
+       "amount": 1300
+      },
+      {
+       "name": "Kids toy plastic",
+       "weightKg": 260,
+       "amount": 960
+      }
+     ],
+     "count": 2
+    },
+    "grossKg": 380
+   },
+   "said": "beside an invoice's «Total» the bare «GW» is the gross weight: 120 / 260 kg, the amounts 1300 / 960 untouched",
+   "why": "XLS-7. Base: weightKg null.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "defect"
+  },
+  {
+   "id": "c3447",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "G.W.",
+     "Cubic feet"
+    ],
+    [
+     "Sofa",
+     10,
+     400,
+     42
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Sofa",
+       "weightKg": 400,
+       "volumeM3": null
+      }
+     ],
+     "count": 1
+    },
+    "volumeM3": null
+   },
+   "said": "cubic FEET are not cubic metres: no volume",
+   "why": "X7's guard: only cubic METRES spelled out are a cube header.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "pinned"
+  },
+  {
+   "id": "c3448",
+   "input": [
+    [
+     "Description",
+     "Qty",
+     "Gross total",
+     "Discount",
+     "Net total"
+    ],
+    [
+     "Ladies jacket",
+     200,
+     1300,
+     100,
+     1200
+    ]
+   ],
+   "expected": {
+    "goods": {
+     "rows": [
+      {
+       "name": "Ladies jacket",
+       "weightKg": null,
+       "amount": 1200
+      }
+     ],
+     "count": 1
+    }
+   },
+   "said": "on an invoice that discounts, «Gross total | Discount | Net total» is money: no weight, the line's sum the net 1200",
+   "why": "X7's guard on R3-S8: the new whole-word GW / NW readers do not touch «gross» / «net» written out.",
+   "source": "ai-soraydi P-excel X7 (XLS-7, XLS-8)",
+   "weight": "pinned"
   }
  ],
  "parseGoodsLineCases": [

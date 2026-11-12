@@ -386,3 +386,82 @@ describe('X1 — «PKGS» is not kilos: the unit is a word, never a substring (X
     expect([read.goods[0]!.weightKg, read.weightKind, read.grossKg]).toEqual([110, 'net', 120]);
   });
 });
+
+describe('X7 — the cube and weight headers nobody mapped (XLS-7, XLS-8)', () => {
+  /** A line under `Description | Qty | CTNS | <header>`: its figure there is 42. */
+  const under = (header: string) => first(['Description', 'Qty', 'CTNS', header], ['Chair', 100, 10, 42]);
+
+  it('a cube by any of its names is the line’s volume', () => {
+    for (const header of ['方数', '总方数', 'CUBE', 'Cube (m3)', 'Cubes', 'Cubage', 'Cubic meter', 'CUBIC METERS', 'Cubic metre', 'CU.M', 'CU. M', 'CU M', 'CU.MTS', 'CMB', 'CUBM', 'Total CUBM', 'TOTAL CUBE']) {
+      const row = under(header);
+      expect([row.volumeM3, row.amount, row.weightKg], header).toEqual([42, null, null]);
+    }
+  });
+
+  it('…and what only looks like one is not', () => {
+    // Square metres counted («平方数»), cubic FEET, a cumulative count, and words «cub» / «cmb» are merely inside.
+    for (const header of ['平方数', 'Cubic feet', 'CUBIC FT', 'CUM', 'Cum. total', 'Cuba', 'Incubator', 'CMBS']) {
+      expect(under(header).volumeM3, header).toBeNull();
+    }
+    // «Cube (ft)» names a cube in a unit nobody converts: refused, and said (X6).
+    const feet = under('Cube (ft)');
+    expect([feet.volumeM3, feet.note]).toEqual([null, '«Cube (ft)»: 42']);
+  });
+
+  it('a weight by its abbreviation or as «mass» is the line’s weight', () => {
+    for (const header of ['GW', 'G/W', 'G / W', 'GW(KG)', 'GW/KGS', '总GW', 'NW', 'N/W', 'NW (KG)', 'T.W', 'T/W', 'T.W.(KG)', 'Масса', 'Масса, кг', 'Общая масса', 'Massa', 'Massasi (kg)', '总重', '公斤', '重量(公斤)']) {
+      expect(under(header).weightKg, header).toBe(42);
+    }
+  });
+
+  it('…as the kind it says: «GW» gross, «NW» net, the rest plain', () => {
+    const kind = (header: string) => sheet(['Description', 'Qty', header], ['Chair', 100, 42]).weightKind;
+    for (const header of ['GW', 'G/W', 'GW(KG)', '总GW']) expect(kind(header), header).toBe('gross');
+    for (const header of ['NW', 'N/W', 'NW (KG)']) expect(kind(header), header).toBe('net');
+    for (const header of ['T.W', 'Масса', 'Massa', '总重', '公斤']) expect(kind(header), header).toBe('plain');
+  });
+
+  it('…and letters that only look like the abbreviation are not', () => {
+    // A serial number and a warehouse, Taiwan, a part number's letters, a solid-wood column.
+    for (const header of ['S/N W/H', 'TW', 'NWT-200', 'GWP', 'Массив', 'Massaj']) {
+      expect(under(header).weightKg, header).toBeNull();
+    }
+  });
+
+  it('«NW | GW» in either order: the line is the NET, the shipment’s brutto the Σ of the GW column (XLS-8)', () => {
+    // Netto 110 and 240; brutto 120 + 260 = 380.
+    for (const [a, b] of [['NW(KG)', 'GW(KG)'], ['NW', 'GW'], ['N/W', 'G/W']] as const) {
+      const netFirst = sheet(['Description', 'Qty', a, b], ['Jacket', 200, 110, 120], ['Toy', 480, 240, 260]);
+      expect([netFirst.goods.map((g) => g.weightKg), netFirst.weightKind, netFirst.grossKg], `${a} | ${b}`).toEqual([[110, 240], 'net', 380]);
+      const grossFirst = sheet(['Description', 'Qty', b, a], ['Jacket', 200, 120, 110], ['Toy', 480, 260, 240]);
+      expect([grossFirst.goods.map((g) => g.weightKg), grossFirst.weightKind, grossFirst.grossKg], `${b} | ${a}`).toEqual([[110, 240], 'net', 380]);
+    }
+  });
+
+  it('a total that says it weighs or is a cube is never the line’s money, on an invoice either', () => {
+    // «Unit price» alone makes the header an invoice's: a bare «Total …» there is money — unless it names a weight or a cube.
+    const row = (header: string) => first(['Description', 'Qty', 'Unit price', header], ['Chair', 100, 6.5, 42]);
+    // The unit price is all the money there is — 6.5, never 42 — and the 42 lands as what its header says.
+    for (const header of ['Total GW', 'TOTAL N/W', 'Total T.W', 'Total масса']) {
+      expect([row(header).amount, row(header).weightKg], header).toEqual([6.5, 42]);
+    }
+    for (const header of ['Total CUBM', 'TOTAL CUBE', 'Total 方数', 'Total cubic meters']) {
+      expect([row(header).amount, row(header).volumeM3], header).toEqual([6.5, 42]);
+    }
+  });
+
+  it('a SECOND cube column — the volume is already chosen — is still never the line’s money', () => {
+    // «Total» is a money key; the first cube column took the volume, and the one left free must not become the sum.
+    for (const [a, b] of [['CUBE', 'Total CUBE'], ['CBM', 'Total CUBM'], ['CU.M', 'Total cubic meters'], ['方数', 'Total 方数']] as const) {
+      const row = first(['Description', 'Qty', a, b], ['Chair', 100, 0.5, 5]);
+      expect([row.volumeM3, row.amount], `${a} | ${b}`).toEqual([0.5, null]);
+    }
+  });
+
+  it('a per-package cube or weight under the new names is still nobody’s line figure', () => {
+    for (const header of ['CUBE/CTN', '方数/箱', 'GW/CTN', 'NW/CTN', 'Масса 1 места']) {
+      const row = under(header);
+      expect([row.volumeM3, row.weightKg], header).toEqual([null, null]);
+    }
+  });
+});

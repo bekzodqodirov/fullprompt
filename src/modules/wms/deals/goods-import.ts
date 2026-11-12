@@ -317,10 +317,10 @@ const TNVED_KEYS = ['hs code', 'hs-code', 'тн вэд', 'тнвэд', 'tn ved',
 const QTY_KEYS = ['кол-во', 'кол.', 'количество', 'колич', 'soni', 'miqdor', 'dona', 'nechta', 'qty', 'quantity', 'pcs', '数量', '件数'];
 const NECHA_COUNT = /(?<![\p{L}])necha(?![\p{L}])(?!\s*(?:so'?m|pul)(?![\p{L}]))/u;
 const UNIT_KEYS = ['ед.', 'ед изм', 'единиц', 'birlik', 'unit', '单位'];
-const WEIGHT_KEYS = ['вес', "og'irl", 'ogirl', 'vazn', 'weight', '重量', '毛重', '净重', 'g.w', 'n.w', 'gross', 'брутто', 'brutto'];
+const WEIGHT_KEYS = ['вес', "og'irl", 'ogirl', 'vazn', 'weight', '重量', '总重', '毛重', '净重', 'g.w', 'n.w', 'gross', 'брутто', 'brutto'];
 /**
  * Kilos as a unit WORD (docs/AI-SORAYDI.md §3.2 X1; XLS-3) — «KG», «KGS»,
- * «кг», the customs code «KGM» — and never a key: as a SUBSTRING «kg» is
+ * «кг», the customs code «KGM», «公斤» — and never a key: as a SUBSTRING «kg» is
  * inside «PKGS», «PKG» and «BKG NO», so a packing list's package count read
  * as the line's weight (10 / 20 / 30 «kg» for 120 / 260 / 330), outranked the
  * «G.W.» beside it — a plain weight column goes before a gross one — and
@@ -328,7 +328,23 @@ const WEIGHT_KEYS = ['вес', "og'irl", 'ogirl', 'vazn', 'weight', '重量', '�
  * own script on either side makes it another word; a digit («25KG») or a
  * Chinese character («总KG») does not.
  */
-const KG_WORD = /(?<![\p{Script=Latin}\p{Script=Cyrillic}])(?:kgs?|kgm|кг)(?![\p{Script=Latin}\p{Script=Cyrillic}])/iu;
+const KG_WORD = /(?<![\p{Script=Latin}\p{Script=Cyrillic}])(?:kgs?|kgm|кг)(?![\p{Script=Latin}\p{Script=Cyrillic}])|公斤|千克/iu;
+/**
+ * The weight's ABBREVIATIONS as words, and the «mass» a Russian or an Uzbek
+ * sheet says for it (§3.2 X7; XLS-7, XLS-8). «G.W.» and «N.W.» were keys by
+ * their dots, and a packing list writes «GW», «NW», «G/W», «N/W» as often:
+ * undotted, neither was a weight at all — or, with a unit («NW(KG) |
+ * GW(KG)»), both were «plain» weights by their «kg» and the heavier one, the
+ * GROSS, became the line's, with no brutto read for the shipment. Whole words
+ * only, the two letters together or with their dot or slash between — «S/N
+ * W/H» is a serial number and a warehouse. «T.W» (total weight) needs its dot
+ * or slash: «TW» is Taiwan in a column of origins.
+ */
+const WORD_EDGE = String.raw`[\p{Script=Latin}\p{Script=Cyrillic}]`;
+const GW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})g(?:\s*[./／]\s*)?w(?!${WORD_EDGE})`, 'iu');
+const NW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})n(?:\s*[./／]\s*)?w(?!${WORD_EDGE})`, 'iu');
+const TW_WORD = new RegExp(String.raw`(?<!${WORD_EDGE})t\s*[./／]\s*w(?!${WORD_EDGE})`, 'iu');
+const MASS_WORD = /(?<![\p{L}])(?:масс[аыеу]|massa(?:si)?)(?![\p{L}])/iu;
 /**
  * A line's weight is NETTO (the row's own unit of account, `CalcField`), so a
  * packing list carrying both «N.W.» and «G.W.» is read by its net column
@@ -337,6 +353,8 @@ const KG_WORD = /(?<![\p{Script=Latin}\p{Script=Cyrillic}])(?:kgs?|kgm|кг)(?![
  * weight (the review).
  */
 const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net w', 'net.w', '净重'];
+/** A header that names the NET weight: a net key, or «NW» / «N/W» as a word (X7). */
+const namesNet = (text: string): boolean => matchKey(text, NET_WEIGHT_KEYS) || NW_WORD.test(text);
 /**
  * …but «net» as a WORD is the net column when the header says it weighs
  * («Net, kg», «NET (KG)») or a gross column stands in the same header
@@ -346,8 +364,8 @@ const NET_WEIGHT_KEYS = ['нетто', 'netto', 'n.w', 'net w', 'net.w', '净重
  * it is as often the line's money.
  */
 const NET_WORD = /(?:^|[^\p{L}])net(?:[^\p{L}]|$)/iu;
-const WEIGHT_WORD = new RegExp(`${KG_WORD.source}|weight|\\bwt\\b|вес`, 'iu');
-const GROSS_HEADER = /gross|g\.\s*w|брутто|brutto|毛重/i;
+const WEIGHT_WORD = new RegExp(`${KG_WORD.source}|weight|\\bwt\\b|вес|${GW_WORD.source}|${NW_WORD.source}|${TW_WORD.source}|${MASS_WORD.source}`, 'iu');
+const GROSS_HEADER = new RegExp(String.raw`gross|g\.\s*w|брутто|brutto|毛重|${GW_WORD.source}`, 'iu');
 /**
  * A weight header that is not the LINE's weight. Per package — «N.W./CTN»
  * stands before «TOTAL N.W.» on a Chinese packing list and is one carton's,
@@ -412,6 +430,20 @@ const OWN_UNIT = /[(（,]/;
 /** Cubic metres written out — «cu.m», «cu m», «cubic metre(s)», «CU.MTS» — never «cu.ft» or «cu.cm». */
 const CUBIC_METRE = /\bcu(?:bic)?\.?\s*m(?:et(?:er|re)s?|trs?|ts?)?\b/i;
 /**
+ * The cube headers no key held (§3.2 X7, XLS-7): «CUBE», «Cubage», «CUBM»,
+ * the transposed «CMB», and cubic metres spelled out as a header of their own
+ * — «CU.M», «Cubic meter» (until now only the UNIT of a «MEAS» / «VOL»
+ * header). With «方数» / «总方数» — 方 («fang») is how a Chinese forwarder
+ * writes cubic metres; never «平方数», which counts SQUARE metres — these are
+ * the cube columns that read as nothing, or, under a «Total», as the line's
+ * MONEY. Whole words: «cub» is inside «Cuba» and «incubator». A bare «CUM» is
+ * not one of them («Cum. qty» counts), and «Cubic feet» never was.
+ */
+const CUBE_WORD = /(?<![\p{Script=Latin}])(?:cubes?|cubage|cubm|cmb)(?![\p{Script=Latin}])|(?<!平)方数/iu;
+const CUBIC_METRE_HEAD = /\b(?:cubic\s*m(?:et(?:er|re)s?|trs?|ts?)?|cu(?:\.\s*|\s+)m(?:trs?|ts?)?)\b/i;
+/** A header that names a VOLUME — one predicate for every reader of «is this a cube column». */
+const namesVolume = (text: string): boolean => matchKey(text, VOLUME_KEYS) || CUBE_WORD.test(text) || CUBIC_METRE_HEAD.test(text);
+/**
  * A volume header's OWN unit, when it is not cubic metres (docs/AI-SORAYDI.md
  * §3.2 X6, review JN-13; XLS-10). «m3» is inside «cm3» and «м3» inside «дм3»,
  * and header keys match as substrings: «Volume (cm3)» 120000 landed as
@@ -451,7 +483,7 @@ const FOREIGN_VOLUME_UNIT =
 const VOLUMETRIC_WEIGHT =
   /объ[её]мн\p{L}*\s+(?:вес|масс)|(?:вес|масса)\s+объ[её]мн|(?<![\p{L}])vol(?:ume|umetric|\.)?\s*(?:weight|wt)(?![\p{L}])|(?<![\p{L}])(?:volumetric|chargeable|dimensional)(?![\p{L}])|体积重|材积重|计费重|抛重/iu;
 const volumetricWeight = (text: string): boolean =>
-  VOLUMETRIC_WEIGHT.test(text) || (matchKey(text, VOLUME_KEYS) && KG_WORD.test(text));
+  VOLUMETRIC_WEIGHT.test(text) || (namesVolume(text) && KG_WORD.test(text));
 /**
  * What a volume column's figures are divided by to be cubic metres — or
  * `null`: its header names a unit nobody converts, and the column is no
@@ -527,14 +559,16 @@ const namesPackage = (text: string): boolean => PACKAGE_COUNT.test(text) || RANK
 /** …and the package a count of BAGS names — rice, sugar and resin ship in them. */
 const BAG_WORD = /(?<![\p{L}])(?:bags?|sacks?|qop\p{L}*)(?![\p{L}])|мешк|мешок|袋/iu;
 /**
- * A header that names a WEIGHT (X1): a weight's own word (`WEIGHT_KEYS`), or
- * kilos as a unit word — unless the unit is all it says of a weight and it
+ * A header that names a WEIGHT (X1, X7): a weight's own word (`WEIGHT_KEYS`,
+ * its abbreviations, «масса»), or kilos as a unit word — unless the unit is all it says of a weight and it
  * names a PACKAGE: «BAGS (25KG)», «PKGS (KG)», «Мест (кг)» count packages of
  * that size, and a package count is never a weight candidate. «Вес мест, кг»,
  * «Gross weight of packages», «Bag weight» say «weight» and stay one.
  */
 const namesWeight = (text: string): boolean =>
-  matchKey(text, WEIGHT_KEYS) || (KG_WORD.test(text) && !namesPackage(text) && !BAG_WORD.test(text));
+  matchKey(text, WEIGHT_KEYS) ||
+  [GW_WORD, NW_WORD, TW_WORD, MASS_WORD].some((word) => word.test(text)) ||
+  (KG_WORD.test(text) && !namesPackage(text) && !BAG_WORD.test(text));
 /** A count header that is the line's TOTAL — «TOTAL QTY», «Всего шт», «Jami soni», a leading 总 / 總 («总数量»). */
 const COUNT_TOTAL = /(?<![\p{L}])(?:total|totals|ttl|sum|всего|итого|итог|jami|жами|umumiy|умумий)(?![\p{L}])/iu;
 const COUNT_TOTAL_HAN = /^\s*[总總]|合计|总计|合計|總計/u;
@@ -1339,6 +1373,8 @@ const COLUMN_KEYS = [
 const keyish = (text: string): boolean =>
   fieldLabel(text) !== null ||
   matchKey(text, COLUMN_KEYS) ||
+  namesWeight(text) ||
+  namesVolume(text) ||
   [MONEY_HEADER, PACKAGE_COUNT, GROSS_HEADER, VOLUME_WORD, WEIGHT_ABBREV, KG_WORD, NET_WORD, NAME_ATTRIBUTE, NAME_PARTY].some((re) => re.test(text));
 
 /** Row `r` as a header candidate (`findHeader`'s order, steps a-f). */
@@ -1632,7 +1668,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
       !MONEY_HEADER.test(text) &&
       !matchKey(text, UNIT_KEYS) &&
       !namesWeight(text) &&
-      !matchKey(text, VOLUME_KEYS);
+      !namesVolume(text);
     if (taken.has(i) || !(namesCount(text) || pieces)) continue;
     // One package's count is nobody's count (FILES-1): passed over, so the
     // line's own total count column is the line's.
@@ -1667,7 +1703,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const rank = (c: (typeof counts)[number]) => {
     const packages = namesPackage(c.text);
     return [
-      MONEY_HEADER.test(c.text) || namesWeight(c.text) || matchKey(c.text, VOLUME_KEYS) ? 1 : 0,
+      MONEY_HEADER.test(c.text) || namesWeight(c.text) || namesVolume(c.text) ? 1 : 0,
       !packages && (COUNT_TOTAL.test(c.text) || COUNT_TOTAL_HAN.test(c.text)) ? 0 : 1,
       !packages && c.unit === 'dona' ? 0 : 1,
       packages ? 1 : 0,
@@ -1699,7 +1735,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
     alsoCounts = byRank
       .slice(1)
       .filter((c) => c.unit !== null && c.unit !== 'dona' && !namesPackage(c.text) && !MONEY_HEADER.test(c.text))
-      .filter((c) => !namesWeight(c.text) && !matchKey(c.text, VOLUME_KEYS))
+      .filter((c) => !namesWeight(c.text) && !namesVolume(c.text))
       .map((c) => ({ index: c.i, header: clipUnits(c.text, 30) }));
   }
   if (quantity === null && cartonCol) {
@@ -1743,7 +1779,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   const volumeHeads = (keyed: boolean): { i: number; divisor: number | null }[] =>
     header.flatMap((cell, i) => {
       const text = cellText(cell);
-      const named = keyed ? matchKey(text, VOLUME_KEYS) : VOLUME_WORD.test(text) && !matchKey(text, VOLUME_KEYS);
+      const named = keyed ? namesVolume(text) : VOLUME_WORD.test(text) && !namesVolume(text);
       if (taken.has(i) || !named || PER_PACKAGE.test(text) || volumetricWeight(text)) return [];
       return [{ i, divisor: volumeDivisor(text, keyed) }];
     });
@@ -1828,7 +1864,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
   });
   const isNetWeight = (text: string) =>
     !moneyTotal(text) &&
-    (matchKey(text, NET_WEIGHT_KEYS) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
+    (namesNet(text) || (NET_WORD.test(text) && (WEIGHT_WORD.test(text) || grossBeside)));
   const netWeight = weightFromQty === null ? lineWeight(isNetWeight) : null;
   const weight =
     weightFromQty ?? netWeight ?? lineWeight((text) => namesWeight(text) || WEIGHT_ABBREV.test(text));
@@ -1861,7 +1897,7 @@ function mapColumns(rows: Cell[][], r: number, header: Cell[], skip: ReadonlySet
         namesWeight(text) ||
         WEIGHT_ABBREV.test(text) ||
         isNetWeight(text) ||
-        matchKey(text, VOLUME_KEYS) ||
+        namesVolume(text) ||
         VOLUME_WORD.test(text) ||
         namesCount(text) ||
         PER_PACKAGE.test(text) ||
@@ -1930,9 +1966,9 @@ function repeatsHeader(row: Cell[], d: number, columns: ColumnMap, covered: Cove
   if (!matchKey(name, NAME_KEYS) || carriesFigure(name) || /\d/.test(name)) return false;
   const own: [number | null, (text: string) => boolean][] = [
     [columns.quantity, (text) => namesCount(text)],
-    [columns.weight, (text) => namesWeight(text) || matchKey(text, NET_WEIGHT_KEYS) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
+    [columns.weight, (text) => namesWeight(text) || namesNet(text) || GROSS_HEADER.test(text) || WEIGHT_ABBREV.test(text)],
     [columns.gross, (text) => GROSS_HEADER.test(text) || namesWeight(text)],
-    [columns.volume, (text) => matchKey(text, VOLUME_KEYS) || VOLUME_WORD.test(text)],
+    [columns.volume, (text) => namesVolume(text) || VOLUME_WORD.test(text)],
     [columns.amount, (text) => matchKey(text, AMOUNT_TOTAL_KEYS) || matchKey(text, AMOUNT_PRICE_KEYS) || MONEY_HEADER.test(text)],
     [columns.tnved, (text) => matchKey(text, TNVED_KEYS)],
     [columns.unit, (text) => matchKey(text, UNIT_KEYS)],
